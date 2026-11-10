@@ -194,6 +194,27 @@ pub struct Pushed {
     pub failed: u32,
 }
 
+/// What an account may do with hosted boxes now, by the launch switches
+/// the operator sets on the hub (#531, `arugula-control switches`). The
+/// platform checks it before it makes or wakes a box, and stops the boxes
+/// of a suspended account.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct Standing {
+    pub account: String,
+    /// Suspended for abuse: refused everything, its boxes stop.
+    pub suspended: bool,
+    /// New boxes, for everyone: `open` (any account), `waitlist` (admitted
+    /// accounts only) or `off` (none; those made keep going).
+    pub hosted: String,
+    /// Let in from the waitlist by the operator.
+    pub admitted: bool,
+    /// Live cloud workspaces it may have made at once.
+    pub boxes: u64,
+    /// Hours its cloud workspaces' boxes may run each UTC month.
+    pub box_hours: u64,
+}
+
 /// What an account used, for billing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]

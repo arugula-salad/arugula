@@ -185,6 +185,8 @@ pub enum Added {
     NameTaken,
     /// The project has as many live workspaces as it may.
     Full,
+    /// Its maker has made as many live workspaces as it may (this many).
+    MakerFull(u64),
 }
 
 /// How long a claim leases a workspace: what a machine that dies mid-step
@@ -229,6 +231,24 @@ impl Db {
         max: u64,
         now: u64,
     ) -> Result<Added> {
+        self.add_hosted_workspace_capped(id, project, name, spec, created_by, max, u64::MAX, now)
+    }
+
+    /// [`Db::add_hosted_workspace`], unless its maker has made `maker_max`
+    /// live ones already, in any project: [`Added::MakerFull`] (the launch
+    /// switches' cap per account, #531).
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_hosted_workspace_capped(
+        &self,
+        id: &str,
+        project: &str,
+        name: &str,
+        spec: &Spec,
+        created_by: &str,
+        max: u64,
+        maker_max: u64,
+        now: u64,
+    ) -> Result<Added> {
         let mut c = self.c();
         let tx = c.immediate()?;
         let live: u64 = tx.query_row(
@@ -238,6 +258,17 @@ impl Db {
         )?;
         if live >= max {
             return Ok(Added::Full);
+        }
+        if maker_max < u64::MAX {
+            let made: u64 = tx.query_row(
+                "SELECT count(*) FROM hosted_workspaces
+                 WHERE created_by = ?1 AND deleted_at IS NULL AND purpose = 'workspace'",
+                params![created_by],
+                |r| r.get(0),
+            )?;
+            if made >= maker_max {
+                return Ok(Added::MakerFull(made));
+            }
         }
         let made = tx.execute(
             "INSERT INTO hosted_workspaces (id, project_id, name, spec, spec_hash, state, created_by, created_at, updated_at)
@@ -583,6 +614,21 @@ impl Db {
     /// `ready` with a machine and a box, and nothing but a pause asked of
     /// it. Read by the leader alone, outside any lease: the sandbox id never
     /// leaves the platform.
+    /// The people's workspaces whose boxes may be running (what
+    /// [`Db::hosted_running`] holds, and those waking or being made), each
+    /// with its maker: the launch switches stop a suspended maker's, and
+    /// pause one over its hours (#531).
+    pub fn hosted_running_makers(&self) -> Result<Vec<(String, String)>> {
+        self.c().query_map(
+            "SELECT id, created_by FROM hosted_workspaces
+             WHERE deleted_at IS NULL AND purpose = 'workspace' AND created_by IS NOT NULL
+                 AND state IN ('creating', 'enrolling', 'ready', 'waking')
+             ORDER BY id",
+            params![],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+    }
+
     pub fn hosted_running(&self) -> Result<Vec<crate::hosted::hold::Running>> {
         self.c().query_map(
             "SELECT id, machine, sandbox_id FROM hosted_workspaces

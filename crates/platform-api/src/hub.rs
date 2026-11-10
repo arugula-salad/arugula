@@ -309,9 +309,21 @@ pub trait HubPort: Send + Sync {
         let _ = (client, user);
         Box::pin(async { anyhow::bail!("this hub doesn't say products' links") })
     }
+
+    /// What each of these accounts may do with hosted boxes now, by the
+    /// launch switches the operator sets on the hub (#531): suspended or
+    /// not, whether new boxes are open, waitlisted or off, its admission,
+    /// and its caps. `waiting`: the one account asked about was just turned
+    /// away from a new box for want of an admission, and the hub puts it on
+    /// the waitlist. Ids with no account are left out. A hub from before
+    /// #531 can't say.
+    fn standings<'a>(&'a self, accounts: &'a [String], waiting: bool) -> BoxFuture<'a, HubResult<Vec<Standing>>> {
+        let _ = (accounts, waiting);
+        Box::pin(async { anyhow::bail!("this hub doesn't keep the launch switches") })
+    }
 }
 
 pub use arugula_control_common::port::{
     Account, Change, ChangeKind, ChangePage, Daemon, Flags, LinkedAccount, Member, Meter, PasskeyAssertion,
-    ProductLink, PushOptions, Pushed, Resolved, Team,
+    ProductLink, PushOptions, Pushed, Resolved, Standing, Team,
 };

@@ -126,6 +126,14 @@ async fn wait(app: &Platform, project: &str, workspace: &str) -> anyhow::Result<
         let Some(w) = app.db.hosted_workspace(project, workspace)? else {
             return Ok(failed(WakeCode::Gone, "This workspace was deleted."));
         };
+        // Not a box whose maker is suspended or past its hours (#531).
+        if !asked
+            && w.asked.is_none()
+            && matches!(w.state.as_str(), "ready" | "paused")
+            && let Err(e) = super::switches::may_wake(app, &w).await
+        {
+            return Ok(failed(WakeCode::Refused, &e.1));
+        }
         let error = w.error.as_deref();
         match (w.state.as_str(), w.asked.as_deref()) {
             ("deleting" | "deleted", _) | (_, Some("delete")) => {

@@ -53,7 +53,7 @@ use arugula_control_wire::{
 
 use arugula_control_common::port::{
     Account, BoxMember, BoxPost, BoxPosted, ChangePage, Daemon, Deleted, Flags, GithubUser, HostedMachine, Meter,
-    Outcome, PushOptions, Pushed, Resolved, Team, TokenAnswer, UserToken, args::*,
+    Outcome, PushOptions, Pushed, Resolved, Standing, Team, TokenAnswer, UserToken, args::*,
 };
 
 use crate::{
@@ -265,6 +265,10 @@ impl HubPort for HttpHub {
         Box::pin(self.0.call("hosted_gone", WorkspacesArgs { workspaces: workspaces.to_vec() }))
     }
 
+    fn standings<'a>(&'a self, accounts: &'a [String], waiting: bool) -> BoxFuture<'a, HubResult<Vec<Standing>>> {
+        Box::pin(self.0.call("standings", StandingsArgs { accounts: accounts.to_vec(), waiting }))
+    }
+
     fn live_delegation<'a>(&'a self, project: &'a str, owner: &'a str) -> BoxFuture<'a, HubResult<Option<String>>> {
         Box::pin(
             self.0.call("live_delegation", DelegationArgs { project: project.to_owned(), owner: owner.to_owned() }),
@@ -398,6 +402,10 @@ async fn hub_call(State(s): State<Arc<Serving<dyn HubPort>>>, Path(method): Path
             "hosted_enrollment" => answer(hub.hosted_enrollment(&args::<EnrollAsk>(&body)?).await?)?,
             "hosted_enrolled" => answer(hub.hosted_enrolled(&args::<WorkspacesArgs>(&body)?.workspaces).await?)?,
             "hosted_gone" => answer(hub.hosted_gone(&args::<WorkspacesArgs>(&body)?.workspaces).await?)?,
+            "standings" => {
+                let a: StandingsArgs = args(&body)?;
+                answer(hub.standings(&a.accounts, a.waiting).await?)?
+            }
             "activity" => answer(hub.activity(&args::<IdsArgs>(&body)?.ids).await?)?,
             "machines_online" => answer(hub.machines_online(&args::<IdsArgs>(&body)?.ids).await?)?,
             "live_delegation" => {

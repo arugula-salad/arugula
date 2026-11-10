@@ -66,6 +66,10 @@ fn daemon_of(app: &App, id: &str) -> HubResult<Option<Daemon>> {
 }
 
 fn resolve(app: &App, p: &Principal) -> HubResult<Option<Resolved>> {
+    // A suspended account is no one to the platform (#531).
+    if app.switches.now().suspended(p.account()) {
+        return Ok(None);
+    }
     let Some(account) = account_of(app, p.account())? else { return Ok(None) };
     let daemon = match p {
         Principal::Person { .. } => None,
@@ -377,6 +381,14 @@ impl HubPort for InProcess {
 
     fn hosted_gone<'a>(&'a self, workspaces: &'a [String]) -> BoxFuture<'a, HubResult<()>> {
         Box::pin(async move { crate::hosted::gone(&*self.app()?, workspaces) })
+    }
+
+    fn standings<'a>(
+        &'a self,
+        accounts: &'a [String],
+        waiting: bool,
+    ) -> BoxFuture<'a, HubResult<Vec<arugula_platform_api::hub::Standing>>> {
+        Box::pin(async move { crate::switches::standings(&*self.app()?, accounts, waiting) })
     }
 
     fn activity<'a>(

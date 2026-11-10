@@ -312,3 +312,13 @@ pub struct UploadArgs {
     pub machine: HostedMachine,
     pub upload: Upload,
 }
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct StandingsArgs {
+    pub accounts: Vec<String>,
+    /// The one account asked for is turned away from a new box for want
+    /// of an admission: the hub puts it on the waitlist.
+    #[serde(default)]
+    pub waiting: bool,
+}

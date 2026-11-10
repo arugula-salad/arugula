@@ -110,6 +110,7 @@ mod roots;
 mod routes;
 #[cfg(test)]
 mod routing_wire;
+mod switches;
 #[cfg(test)]
 mod team_owners_wire;
 mod teams;
@@ -249,7 +250,7 @@ struct Args {
     relay_max_sockets: usize,
     #[arg(long, default_value_t = 50, env = "ARUGULA_RELAY_MAX_MACHINES")]
     relay_max_machines: usize,
-    #[arg(long, default_value_t = 2_000, env = "ARUGULA_RELAY_DAILY_MB")]
+    #[arg(long, default_value_t = switches::RELAY_MB, env = "ARUGULA_RELAY_DAILY_MB")]
     relay_daily_mb: u64,
     /// Relay sockets at once, every account's together (#344), 0 for no
     /// limit. Keep it below the proxy's connection limit (Fly's
@@ -450,6 +451,9 @@ pub struct App {
     /// The maintenance switch (M141): while it's on, every platform route
     /// answers 503 before anything is forwarded.
     pub maintenance: maintenance::Switch,
+    /// The launch switches (#531), as the hub last read them: the relay
+    /// holds them too.
+    pub switches: Arc<switches::Switches>,
     /// The platform's view of the hub, attached to this app by
     /// [`App::start`].
     pub hub_port: Arc<hub_port::InProcess>,
@@ -505,6 +509,7 @@ impl App {
             analytics::Analytics::default(),
         ));
         let platform = gateway::PlatformAt::InProcess(platform);
+        let switches = Arc::new(switches::Switches::default());
         App {
             cfg: Config {
                 push_hosts: vec![],
@@ -526,7 +531,7 @@ impl App {
             },
             db,
             http,
-            relay: Default::default(),
+            relay: relay::Relay::default().with_switches(switches.clone()),
             passkeys: Default::default(),
             app_codes: Default::default(),
             sends: Default::default(),
@@ -548,6 +553,7 @@ impl App {
             docs: Default::default(),
             platform,
             maintenance: Default::default(),
+            switches,
             hub_port,
             issuer: None,
         }
@@ -924,7 +930,8 @@ pub fn main(platforms: Box<dyn Platforms>) -> anyhow::Result<()> {
     // devices (account_reset.rs, aru-119). `account-delete`: an operator's
     // delete of an account, as Settings' (account_delete.rs). `maintenance`: the switch
     // (maintenance.rs), set in the database the running hub reads.
-    // `notice`: a notice for every account (notice.rs). `issuer`: the
+    // `switches`: the launch switches (switches.rs, #531), set in the
+    // database the running hub reads. `notice`: a notice for every account (notice.rs). `issuer`: the
     // issuer's keys and clients (issuer.rs). `import planter`: planter's
     // accounts as account links (planter_import.rs, M232). `hosted-enrollment`:
     // what the platform asks as it makes a hosted box (hosted.rs). `platform`: a
@@ -944,6 +951,9 @@ pub fn main(platforms: Box<dyn Platforms>) -> anyhow::Result<()> {
     }
     if argv.peek().is_some_and(|a| a == "maintenance") {
         return maintenance::run(argv.skip(1));
+    }
+    if argv.peek().is_some_and(|a| a == "switches") {
+        return switches::run(argv.skip(1));
     }
     if argv.peek().is_some_and(|a| a == "hosted-enrollment") {
         return hosted::run(argv.skip(1));
@@ -1030,6 +1040,7 @@ async fn run(platforms: Box<dyn Platforms>) -> anyhow::Result<()> {
         b.restore_if_missing().await?;
     }
     let db = db::Db::open(&a.db)?;
+    let switches = Arc::new(switches::Switches::default());
     let db_dir = a.db.parent().filter(|d| !d.as_os_str().is_empty()).unwrap_or(std::path::Path::new(".")).to_owned();
     let http = roots::client(std::time::Duration::from_secs(15))?;
     let mail = mail::Mailer::from_config(set(a.smtp_url).as_deref(), set(a.mail_from).as_deref())?;
@@ -1212,7 +1223,8 @@ async fn run(platforms: Box<dyn Platforms>) -> anyhow::Result<()> {
             daemons: a.relay_max_machines,
             daily_bytes: a.relay_daily_mb * 1_000_000,
             total: a.relay_max_total,
-        }),
+        })
+        .with_switches(switches.clone()),
         passkeys: Default::default(),
         app_codes: Default::default(),
         sends: Default::default(),
@@ -1236,6 +1248,7 @@ async fn run(platforms: Box<dyn Platforms>) -> anyhow::Result<()> {
         docs: if a.no_disk_guard { Default::default() } else { doc_links::Docs::at(db_dir) },
         platform,
         maintenance: Default::default(),
+        switches,
         hub_port,
         issuer,
     }
@@ -1246,6 +1259,8 @@ async fn run(platforms: Box<dyn Platforms>) -> anyhow::Result<()> {
     }
     // The maintenance switch, as the database says (M141).
     maintenance::start(app.clone());
+    // The launch switches, as the database says (#531).
+    switches::start(app.clone());
     // Deleted accounts the platform hasn't erased yet (M140).
     account::start_telling(app.clone());
     if let (Some(l), Some(j)) = (guest_listener, &app.jump) {

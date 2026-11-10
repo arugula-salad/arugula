@@ -110,6 +110,13 @@ struct State {
     /// Products' users linked to accounts (M229), by (client, user): the
     /// account and the GitHub id.
     product_links: BTreeMap<(String, String), (String, u64)>,
+    /// Accounts' standings by the launch switches (#531). One not here is
+    /// [`TestHub::standing`]'s.
+    standings: BTreeMap<String, crate::hub::Standing>,
+    /// `standings` fails.
+    standings_down: bool,
+    /// Accounts put on the waitlist, in order.
+    waiting: Vec<String>,
 }
 
 fn done<'a, T: Send + 'a>(t: T) -> BoxFuture<'a, HubResult<T>> {
@@ -269,6 +276,35 @@ impl TestHub {
     /// The hub can't say which machines are working until one says again.
     pub fn activity_down(&self) {
         self.state.lock().unwrap().activity_down = true;
+    }
+
+    /// What an account's standing is when nothing set it (#531): new boxes
+    /// waitlisted and the account not admitted, so the platform's own
+    /// `ARUGULA_HOSTED_ACCOUNTS` says who may, with room for plenty.
+    pub fn standing(account: &str) -> crate::hub::Standing {
+        crate::hub::Standing {
+            account: account.into(),
+            suspended: false,
+            hosted: "waitlist".into(),
+            admitted: false,
+            boxes: 1_000,
+            box_hours: 1_000_000,
+        }
+    }
+
+    /// Set an account's standing by the launch switches (#531).
+    pub fn set_standing(&self, s: crate::hub::Standing) {
+        self.state.lock().unwrap().standings.insert(s.account.clone(), s);
+    }
+
+    /// Whether `standings` fails.
+    pub fn standings_down(&self, down: bool) {
+        self.state.lock().unwrap().standings_down = down;
+    }
+
+    /// The accounts put on the waitlist, in order.
+    pub fn waiting(&self) -> Vec<String> {
+        self.state.lock().unwrap().waiting.clone()
     }
 
     /// The box of `workspace` enrolled, as `machine`, and its daemon is on
@@ -690,6 +726,22 @@ impl HubPort for TestHub {
                 })
                 .collect(),
         )
+    }
+
+    fn standings<'a>(
+        &'a self,
+        accounts: &'a [String],
+        waiting: bool,
+    ) -> BoxFuture<'a, HubResult<Vec<crate::hub::Standing>>> {
+        self.called("standings");
+        let mut s = self.state.lock().unwrap();
+        if s.standings_down {
+            return Box::pin(async { anyhow::bail!("the hub is down") });
+        }
+        if waiting && let [one] = accounts {
+            s.waiting.push(one.clone());
+        }
+        done(accounts.iter().map(|a| s.standings.get(a).cloned().unwrap_or_else(|| Self::standing(a))).collect())
     }
 
     fn activity<'a>(&'a self, machines: &'a [String]) -> BoxFuture<'a, HubResult<Vec<crate::hub::MachineActivity>>> {
