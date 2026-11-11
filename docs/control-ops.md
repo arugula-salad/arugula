@@ -1124,7 +1124,7 @@ across a restart. With this helper (as "The first window" below has it):
 ```
 hub()  { fly ssh console -q -a illogical-control -C "/arugula-control $*" | tr -d '\r'; }
 hub switches status --db /data/control.db                        # every switch; add an account for its own
-hub switches signups pause --db /data/control.db                 # --message "..." says something else
+hub switches signups pause --db /data/control.db                 # --message "'...'" says something else
 hub switches signups open --db /data/control.db
 hub switches hosted off --db /data/control.db                    # or open, or waitlist (the default)
 hub switches waitlist --db /data/control.db                      # who asked for a box, first first
@@ -1132,9 +1132,12 @@ hub switches admit github:LOGIN --by jake --db /data/control.db  # an account id
 hub switches unadmit ACCOUNT --db /data/control.db
 hub switches cap box-hours 120 --account github:LOGIN --db /data/control.db
 hub switches cap boxes default --db /data/control.db             # back to the default
-hub switches suspend github:LOGIN --by jake --why "mining on a box" --db /data/control.db
+hub switches suspend github:LOGIN --by jake --why "'mining on a box'" --db /data/control.db
 hub switches unsuspend ACCOUNT --db /data/control.db
 ```
+
+`hub` passes `$*`, which drops quotes: a word with spaces (`--why`,
+`--message`) needs a second pair inside the first, as above.
 
 - **Sign-ups paused** (`signups pause|open`). Nobody new gets an account,
   by GitHub or a passkey; whoever has one signs in as ever. A GitHub
