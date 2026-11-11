@@ -171,3 +171,10 @@ test("a project's Docs and one Doc (aru-118)", () => {
   assert.equal(pathOf({ page: "doc", project: P, doc: D }, (id) => (id === D ? "Release plan" : undefined)), `/p/${P}/docs/${D}-release-plan`);
   for (const p of [`/p/${P}/docs/brd_00ff11ee`, `/p/${P}/docs/${D}/x`]) assert.equal(parse(p).page, "missing", p);
 });
+
+test("the shell's hand-off: `/?to=` names a place for the current project", () => {
+  assert.deepEqual(parse("/", "?to=docs"), { page: "home", to: "docs" });
+  for (const to of ["projects", "boards", "chat"]) assert.deepEqual(parse("/", `?to=${to}`), { page: "home", to });
+  assert.deepEqual(parse("/", "?to=inbox"), { page: "home" });
+  assert.deepEqual(parse("/", "?to="), { page: "home" });
+});

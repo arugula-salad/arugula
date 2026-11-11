@@ -5,7 +5,9 @@
 // written with the current slug. Secrets never ride in these paths ("Secrets
 // stay in fragments"): they stay in the shell's fragments.
 //
-//   /                              the projects
+//   /                              the projects (`?to=docs`, `boards`, `chat` or
+//                                  `projects`: the shell's buttons, on to that
+//                                  place in the current project)
 //   /p/:project                    a project's home
 //   /p/:project/chat               its chat
 //   /p/:project/chat/:room         a room in it (`?msg=N`: at that message)
@@ -73,7 +75,8 @@
 export const TOP = ["p", "chat", "dm", "issues", "runs", "installed", "inbox", "settings", "deploys", "boards", "docs", "design"] as const;
 
 export type Route =
-  | { page: "home" }
+  /** `to`: a shell button's place, to open in the current project (./current-project). */
+  | { page: "home"; to?: "projects" | "docs" | "boards" | "chat" }
   | { page: "project"; project: string }
   | { page: "issues"; project: string; state?: "closed"; q?: string; label?: string; assignee?: string }
   | { page: "new-issue"; project: string }
@@ -178,7 +181,10 @@ export function parse(path: string, search = ""): Route {
   const inThread = q.get("thread");
   const thread = inThread !== null && /^\d+$/.test(inThread) ? { thread: Number(inThread) } : {};
   const missing: Route = { page: "missing", path };
-  if (parts.length === 0) return { page: "home" };
+  if (parts.length === 0) {
+    const to = q.get("to");
+    return to === "projects" || to === "docs" || to === "boards" || to === "chat" ? { page: "home", to } : { page: "home" };
+  }
   if (parts.length === 1 && parts[0] === "inbox") return { page: "inbox" };
   if (parts.length === 1 && parts[0] === "boards") return { page: "all-boards" };
   if (parts.length === 1 && parts[0] === "docs") return { page: "docs" };
