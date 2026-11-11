@@ -448,6 +448,11 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "team": {
+          "default": false,
+          "description": "A team's project, not its owner's personal one: where a team's Docs\nlive (Arugula #862). An older control sends none, which a machine\nreads as not a team's.",
+          "type": "boolean"
         }
       },
       "required": [

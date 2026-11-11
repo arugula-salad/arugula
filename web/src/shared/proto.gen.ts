@@ -3410,7 +3410,13 @@ both: boolean,
  * Every label on its native issues, open or closed, sorted: what the
  * label menus offer (UI audit #163).
  */
-labels: Array<string>, };
+labels: Array<string>, 
+/**
+ * A team's project, not its owner's personal one: where a team's Docs
+ * live (Arugula #862). An older control sends none, which a machine
+ * reads as not a team's.
+ */
+team: boolean, };
 
 /**
  * `PUT /api/projects/{project}/issue-home`: `native`, `github` (only with
@@ -4625,7 +4631,12 @@ writer: boolean,
  * project, a copy included (native #673). An older platform sends
  * none; the page then takes `writer`.
  */
-deleter: boolean, };
+deleter: boolean, 
+/**
+ * The Doc's page on the platform's page, which the team opens. An older
+ * platform sends none.
+ */
+link: string | null, };
 
 /**
  * `PUT` [`PROJECT_DOC`]: what changes. `title` renames it, `layout` lays it out. With `section`,

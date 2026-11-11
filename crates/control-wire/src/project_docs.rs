@@ -90,6 +90,8 @@ pub const AGENT_PROJECT_DOCS: &str = "/api/daemon/projects/{project}/docs";
 pub const AGENT_PROJECT_DOC: &str = "/api/daemon/projects/{project}/docs/{doc}";
 /// `PUT` the picture's bytes (the body): a picture of the Doc, answered
 /// [`Asset`], with the limits of a machine's copies' ([`MACHINE_DOC_ASSET`]).
+/// `GET`: the picture, [`AssetData`] (any Doc the owner reads; no power), for
+/// a team Doc's block, whose daemon reads JSON from control.
 pub const AGENT_PROJECT_DOC_ASSET: &str = "/api/daemon/projects/{project}/docs/{doc}/assets/{name}";
 
 /// The longest title, heading and intent, in characters: one line each.
@@ -183,6 +185,16 @@ pub struct Asset {
     pub rev: u64,
 }
 
+/// A picture's type and bytes, as `GET` [`AGENT_PROJECT_DOC_ASSET`] answers
+/// it: `data` is the file in base64.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct AssetData {
+    /// `image/png`, `image/jpeg`, `image/gif` or `image/webp`.
+    pub mime: String,
+    pub data: String,
+}
+
 /// One section: pending (`body` null) until it's written.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -216,6 +228,10 @@ pub struct DocView {
     /// none; the page then takes `writer`.
     #[serde(default)]
     pub deleter: bool,
+    /// The Doc's page on the platform's page, which the team opens. An older
+    /// platform sends none.
+    #[serde(default)]
+    pub link: Option<String>,
 }
 
 /// `GET` [`PROJECT_DOCS`]: a project's Docs, the latest changed first.

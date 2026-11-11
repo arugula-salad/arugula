@@ -1810,7 +1810,7 @@ mod tests {
             boards,
         };
         let reach = [project("prj_1", "Arugula", 3), project("prj_2", "Empty", 0), project("prj_me", "Me", 1)];
-        let chosen = |rule| Chosen { id: "prj_me".into(), name: "Me".into(), rule };
+        let chosen = |rule| Chosen { id: "prj_me".into(), name: "Me".into(), team: false, rule };
         let s = with_other_boards(&chosen(Rule::Personal), &reach);
         assert!(s.starts_with("Your personal project Me"), "{s}");
         assert!(s.ends_with("Projects with boards (pass project): Arugula (prj_1)"), "{s}");
