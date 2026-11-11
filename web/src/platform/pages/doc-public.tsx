@@ -4,20 +4,16 @@
 // editors change it. This browser seals the Doc and puts it to control
 // (shared/docs/public-link.ts): control never has the key.
 
-import { useEffect, useState } from "preact/hooks";
+import { useState } from "preact/hooks";
 import type { ProjectDocView } from "../../shared/proto";
-import { docViewer, publicBehind, publicUrl, revokePublic, sharePublic } from "../../shared/docs/public-link";
+import { publicBehind, revokePublic, sharePublic } from "../../shared/docs/public-link";
 import { toast } from "../toast";
 
 export function PublicLinkBar({ project, view, reload }: { project: string; view: ProjectDocView; reload: () => void }) {
-  const [viewer, setViewer] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    void docViewer().then(setViewer);
-  }, []);
   const link = view.public && view.public.ver > 0 ? view.public : undefined;
-  // This control keeps no shared Docs, or a reader has nothing to see.
-  if (!viewer || (!link && !view.writer)) return null;
+  // A reader has nothing to see until it's shared; an owner or editor can share.
+  if (!link && !view.writer) return null;
   const run = async (what: () => Promise<unknown>, said?: string) => {
     if (busy) return;
     setBusy(true);
@@ -32,7 +28,7 @@ export function PublicLinkBar({ project, view, reload }: { project: string; view
   };
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(publicUrl(viewer, link!));
+      await navigator.clipboard.writeText(link!.url);
       toast("Public link copied");
     } catch {
       toast("Couldn't copy the link");
@@ -43,7 +39,7 @@ export function PublicLinkBar({ project, view, reload }: { project: string; view
       {link ? (
         <>
           <span class="dim">Anyone with the link can read this Doc:</span>{" "}
-          <input type="text" readOnly value={publicUrl(viewer, link)} data-doc-public-url onFocus={(e) => (e.currentTarget as HTMLInputElement).select()} />{" "}
+          <input type="text" readOnly value={link.url} data-doc-public-url onFocus={(e) => (e.currentTarget as HTMLInputElement).select()} />{" "}
           <button type="button" class="secondary small" onClick={() => void copy()} data-doc-public-copy>
             Copy link
           </button>

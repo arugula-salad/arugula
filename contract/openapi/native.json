@@ -11969,6 +11969,11 @@
             "minimum": 0,
             "type": "integer"
           },
+          "url": {
+            "default": "",
+            "description": "The address anyone can open, `<viewer>/<id>#k=<key>`; empty when this\ncontrol keeps no shared Docs, or from an older platform. The platform\npage can't read `/control.json` (the platform's host answers none of\nthe hub's), so the platform says where the viewer is.",
+            "type": "string"
+          },
           "ver": {
             "description": "The version control serves; 0 while the first one isn't uploaded.",
             "format": "uint64",

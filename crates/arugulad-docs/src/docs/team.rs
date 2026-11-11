@@ -965,6 +965,7 @@ mod tests {
                                 ver: 0,
                                 updated_at: 0,
                                 behind: false,
+                                url: String::new(),
                             });
                             Ok(serde_json::to_value(p).unwrap())
                         }
@@ -1252,6 +1253,7 @@ mod tests {
             ver: 1,
             updated_at: 5,
             behind: false,
+            url: String::new(),
         });
         let dir = temp("cache-no-key");
         let file = dir.join(CACHE);

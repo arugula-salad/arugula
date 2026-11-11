@@ -10,22 +10,6 @@ import { platformFetch, refusalOf } from "../maintenance";
 import { fromBase64Url, sealParts, snapshotBytes, type SealManifest } from "./doc-seal";
 import { DocError, projectDocs } from "./store";
 
-/** Where the public viewer is, from `/control.json`'s `doc_viewer` (null
- * where this control keeps no shared Docs). */
-export async function docViewer(): Promise<string | null> {
-  try {
-    const res = await fetch("/control.json", { cache: "no-store" });
-    if (!res.ok) return null;
-    const j = (await res.json()) as { doc_viewer?: string | null };
-    return j.doc_viewer ?? null;
-  } catch {
-    return null;
-  }
-}
-
-/** The URL anyone can open: `<viewer>/<id>#k=<key>`. */
-export const publicUrl = (viewer: string, p: ProjectDocPublic) => `${viewer}/${p.id}#k=${p.key}`;
-
 /** Whether the link serves something, and the Doc has moved on since. */
 export const publicBehind = (p: ProjectDocPublic | undefined) => !!p && p.ver > 0 && p.behind;
 

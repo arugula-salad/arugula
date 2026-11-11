@@ -269,6 +269,12 @@ pub struct PublicLink {
     pub updated_at: u64,
     /// The Doc changed since the served version was sealed.
     pub behind: bool,
+    /// The address anyone can open, `<viewer>/<id>#k=<key>`; empty when this
+    /// control keeps no shared Docs, or from an older platform. The platform
+    /// page can't read `/control.json` (the platform's host answers none of
+    /// the hub's), so the platform says where the viewer is.
+    #[serde(default)]
+    pub url: String,
 }
 
 /// `PUT` [`PROJECT_DOC_PUBLIC`]: make the link. Empty.
