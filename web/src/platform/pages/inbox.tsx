@@ -28,6 +28,9 @@ import { PageHeader } from "../../shared/ui/page-header";
 import { StateChip, type Tone } from "../../shared/ui/state-chip";
 import { DraftList, useMyDrafts } from "../drafts";
 import { isSeen, noteInbox } from "../inbox-count";
+import { currentProject, onCurrentProject } from "../current-project";
+import { inboxPath, scopeOf } from "../scope";
+import { ScopeToggle } from "../scope-toggle";
 import { WaitingDeploys, useWaitingDeploys } from "./deploy";
 import { names, roomPath } from "../links";
 import { follow, pathOf } from "../router";
@@ -107,15 +110,19 @@ function EntryState({ e }: { e: InboxEntry }) {
  * (a PR wanting review, a run that failed), so the card doesn't. */
 const HEADING_SAYS = new Set(["review_requested", "changes_requested", "checks_failed", "run_failed"]);
 
-export function InboxPage() {
+export function InboxPage({ all }: { all?: boolean }) {
   const [entries, setEntries] = useState<InboxEntry[] | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const mine = useMyDrafts();
   const deploys = useWaitingDeploys();
   useSubscribe((fn) => chat.subscribe(fn));
+  useSubscribe((fn) => session.subscribe(fn));
+  useSubscribe((fn) => onCurrentProject(fn));
+  // The current project's, unless All (Arugula #881): the platform filters.
+  const scope = scopeOf({ page: "inbox", all: all || undefined }, currentProject(), (id) => !!session.project(id));
   const load = () =>
-    call<Inbox>("GET", "/api/inbox").then(
+    call<Inbox>("GET", inboxPath(scope)).then(
       (v) => {
         setEntries(v.entries);
         // The bar's count says the same (UI audit #170).
@@ -124,7 +131,10 @@ export function InboxPage() {
       },
       (e: Error) => setError(e.message),
     );
-  useEffect(() => void load(), []);
+  useEffect(() => {
+    setEntries(null);
+    void load();
+  }, [scope]);
   const mark = async (e: InboxEntry, what: { seen?: boolean; done?: boolean }) => {
     setBusy(`${e.item} ${e.reason}`);
     try {
@@ -148,6 +158,7 @@ export function InboxPage() {
     <section class="platform-section sw-page platform-inbox" data-platform-inbox>
       <PageHeader
         title="Inbox"
+        actions={<ScopeToggle r={{ page: "inbox" }} scoped={!!scope} all={!!all} />}
         stats={
           entries !== null &&
           !empty && (

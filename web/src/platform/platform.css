@@ -1441,3 +1441,10 @@ span.untri-title {
     overflow-x: auto;
   }
 }
+
+/* Boards, Docs and the Inbox widened to every project (Arugula #881). */
+[data-all-projects-toggle][aria-pressed="true"] {
+  background: var(--fg);
+  border-color: var(--fg);
+  color: var(--bg);
+}
