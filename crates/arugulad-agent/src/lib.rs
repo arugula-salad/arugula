@@ -2105,6 +2105,12 @@ impl Agent {
                 {
                     let st = adapters::status(a, &self.ctx.home, &env);
                     if !st.ok() {
+                        // #520: Node installed since the shell was read is
+                        // only in its rc files: read them again, so
+                        // starting the block again finds it.
+                        if matches!(st.state, adapters::State::NoNode { .. }) && self.ctx.sprite.is_none() {
+                            self.ctx.shell_env.refresh();
+                        }
                         return self.failed_with(inner, st.why(), Some(st.json()));
                     }
                 }

@@ -43,7 +43,7 @@ impl Handle for AdapterInstall {
         let kind: crate::agent::defs::Kind =
             serde_json::from_value(serde_json::json!(kind)).map_err(|_| bad(format!("no agent {kind}")))?;
         let a = crate::agent::adapters::of(kind).ok_or_else(|| bad("that agent has no adapter to install"))?;
-        let (home, env) = agent_env(cx.app).await?;
+        let (home, env) = crate::api::agent_env_for(cx.app, a).await?;
         let (st, home) = crate::task::spawn_blocking(move || (crate::agent::adapters::status(a, &home, &env), home))
             .await
             .map_err(|e| OpError::Failed(e.to_string()))?;
