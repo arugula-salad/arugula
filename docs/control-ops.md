@@ -3770,6 +3770,21 @@ been 24 h apart since. So:
 - **`ARUGULA_DUMP_EVERY_HOURS=0`** dumps on every run (the testnet
   rehearsal sets it).
 
+**Started once after each release** (since 2026-11-11, Arugula #867). The
+hourly schedule didn't fix it: no dump ran on its own from 2026-10-23 to
+2026-11-11. The real cause: Fly's schedule never starts a Machine that
+hasn't been started since its last update or create. chant's fly-release
+updates a scheduled Machine with `skip_launch` and leaves it stopped, and
+`fly machine update` on a scheduled Machine does the same, so each release
+left it that way. Seen on 2026-11-11: no run in the 3 h after the 00:46Z
+release, a start by hand at 03:51Z, runs at 04:12, 05:12 and 06:12, then
+the 06:20Z release and no run at 07:12 or 08:12. So after the dump's
+release, the release starts the Machine once (production's deploy, from
+2026-11-11). That run is harmless (the gate skips it), and from then Fly starts it every
+hour. Anyone who updates the Machine by hand must start it once too. The
+age check on the operator's machine (`scripts/dump-age-check`, hourly)
+opens a `backup` issue when the newest dump is over 26 h old.
+
 **What it does** (`packaging/platform-dump/dump.sh`, once a run, then it
 exits):
 0. **The gate** (above): skip while the newest dump is younger than
