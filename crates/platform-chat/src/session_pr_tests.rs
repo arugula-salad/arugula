@@ -292,10 +292,10 @@ async fn a_sessions_pr_says_when_it_changes_ci() {
 
 /// The push token (M259, S42 q2): the platform mints one only for the
 /// session's own box, for exactly the session's branch, on its linked repo,
-/// for an asker GitHub lets push to it (`sessions_tries_tests` has the
-/// askers it doesn't), with `contents: write` and `workflows: write`
-/// (aru-115, amended 2026-10-26: a branch that began before main changed
-/// CI needs it); a push outside `arugula/*`
+/// for an asker GitHub lets push to it, while everyone else who steers it
+/// may push there too (`sessions_tries_tests` has those who don't), with
+/// `contents: write` and never `workflows` (aru-115, amended 2026-11-10);
+/// a push outside `arugula/*`
 /// (`main`), another session's branch, another machine, or a session that
 /// ended gets none.
 #[tokio::test]
@@ -323,8 +323,9 @@ async fn a_push_outside_its_branch_is_refused() {
     }
     assert!(gh.lock().unwrap().minted.is_empty(), "nothing minted for them");
 
-    // Alice, its asker, is an admin of acme/app on GitHub: asked (with a
-    // read token of the repo), then the push's token is minted.
+    // Alice, its asker, is an admin of acme/app on GitHub, and bob, the
+    // project's editor, writes to it: each asked (with a read token of the
+    // repo), then the push's token is minted. Carol, a viewer, isn't asked.
     let got = app.hosted_session_push(&m("box1"), &ask(&branch)).await.unwrap();
     let PushGiven::Given { token, revoke, .. } = &got else { panic!("{got:?}") };
     assert_eq!(token, "ghs_fake");
@@ -332,12 +333,12 @@ async fn a_push_outside_its_branch_is_refused() {
     assert!(!format!("{got:?}").contains("ghs_fake"), "never printed");
     {
         let g = gh.lock().unwrap();
-        assert_eq!(g.asked, 1, "GitHub was asked about alice-gh's role on acme/app");
-        assert_eq!(g.minted.len(), 2, "{:?}", g.minted);
+        assert_eq!(g.asked, 2, "GitHub was asked about alice-gh's and bob-gh's roles on acme/app");
         assert_eq!(
-            g.minted[1],
-            json!({ "metadata": "read", "contents": "write", "workflows": "write" }),
-            "with workflows"
+            g.minted.last().unwrap(),
+            &json!({ "metadata": "read", "contents": "write" }),
+            "without workflows: {:?}",
+            g.minted
         );
     }
     let logged: Vec<(String, String, String)> = app
@@ -352,7 +353,7 @@ async fn a_push_outside_its_branch_is_refused() {
         .unwrap();
     assert_eq!(logged.len(), 1, "{logged:?}");
     assert_eq!((logged[0].0.as_str(), logged[0].1.as_str()), ("alice", "session:push"));
-    assert!(logged[0].2.contains(r#""workflows":"write""#), "{logged:?}");
+    assert!(!logged[0].2.contains("workflows"), "{logged:?}");
 
     // A clone of its repo (Fleet 6): the same checks, contents read alone.
     let clone = |b: &str| PushAsk { clone: true, ..ask(b) };

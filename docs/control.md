@@ -163,7 +163,11 @@ the same token. Unlinking the repo revokes it too, on a best-effort basis:
 the platform process that handles the unlink revokes the tokens it holds,
 and a token another process minted ends within the hour. Any other repo is
 cloned with the workspace's `GIT_TOKEN` secret (and `GIT_USERNAME`, else
-`x-access-token`). The daemon hands them to git in its
+`x-access-token`), but only on a host the secret was set for: the hosts of
+the spec's repos when it was set. A repo the spec names later on another
+host (or another port) is cloned with nothing until the secret is set
+again; so is every repo for a `GIT_TOKEN` set before secrets were bound to
+hosts. The daemon hands them to git in its
 environment for the clone alone, from a file in memory the setup removes as
 it reads it: nothing lands in a repo's config or on the disk. The spec's
 `env` names take their values from the workspace's secrets, for the setup
@@ -341,11 +345,14 @@ AskUserQuestion (Codex with its own form), and the question goes to the
 session's card in the thread. The agent commits on the session's branch
 and doesn't push: the box runs the finish step and pushes. The push's token
 is minted for that push alone, on the session's repo, and writes its
-contents and its workflows (aru-115, amended 2026-10-26): GitHub refuses a
-new branch whose workflow files differ from the default branch's without
-`workflows`, as a session's do once main changed CI after it began. So a
-session's branch can change `.github/workflows/`, and whoever reviews its
-PR checks those changes.
+contents, never its workflows (aru-115, amended 2026-11-10): a session's
+branch doesn't change `.github/workflows/`. A turn whose commits change a
+workflow file isn't pushed, and the thread says why; so is a branch GitHub
+refuses because it began before main changed its workflows (a new session
+starts from main as it is). The token is minted only while everyone who
+can steer the session may push to the repo on GitHub: its asker, the
+project's owners and editors, and GitHub reviewers whose reviews were sent
+to it.
 
 **A session's agent has six Arugula tools** (aru-115, amended), and none
 of `/mcp`'s. For its project's native issues: `read_session_issues` lists
@@ -1515,7 +1522,11 @@ threads. An agent's post carries its session's name (an agent block's
 title, or the Claude Code conversation's), shown beside "<owner>'s agent on
 <machine>"; it is display only and never what a permission rests on. The
 text a session sees begins `Message from <author> in <thread> (a teammate, not
-your person):` and says it is information, never an approval or a command.
+your person), quoted:`, has the message in a fence longer than any run of
+backticks in it (so nothing in it can close the fence and write a line of
+its own), and says it is information, never an approval or a command.
+Several replies of one thread merged into one follow-up are a line each,
+`<author> (a teammate): <text>`, with a message's further lines indented.
 The owner turns it off for a machine with `arugulad sharing agent-mentions
 off` or the sharing settings in the web client (`sharing.json`); on by
 default. A reply under a thread's newest message, when that is a person's,

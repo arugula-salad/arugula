@@ -400,13 +400,12 @@ async fn a_push_from_a_bundle_moves_one_ref() {
 /// A session that began before main changed CI (the v0.63.0 live test):
 /// GitHub compares a new branch's tree with the default branch's, so the
 /// branch's older workflow file reads as an edit, and a token without
-/// `workflows` is refused. The remote's hook stands in for GitHub's rule,
-/// knowing the token by the environment git hands it. With the token the
-/// platform mints now (`workflows: write`, aru-115 amended), it goes
-/// through.
+/// `workflows` (all a session's push gets, aru-115 amended 2026-11-10) is
+/// refused. The remote's hook stands in for GitHub's rule. The refusal is
+/// said plainly, and nothing moved.
 #[cfg(unix)]
 #[tokio::test]
-async fn a_branch_behind_a_main_that_changed_ci_pushes_with_workflows() {
+async fn a_branch_behind_a_main_that_changed_ci_is_refused_plainly() {
     let dir = crate::hosted::scratch("session-push-ci");
     let remote = dir.join("remote.git");
     git_in(&dir, &["init", "-q", "--bare", "-b", "main", remote.to_str().unwrap()]);
@@ -427,7 +426,6 @@ async fn a_branch_behind_a_main_that_changed_ci_pushes_with_workflows() {
     std::fs::write(work.join("NOTES.md"), "notes\n").unwrap();
     git_in(&work, &["add", "."]);
     git_in(&work, &["commit", "-qm", "add notes"]);
-    let head = git_in(&work, &["rev-parse", "HEAD"]);
     git_in(&work, &["switch", "-q", "main"]);
     std::fs::write(work.join(".github/workflows/test.yml"), "on: [push, pull_request]\n").unwrap();
     git_in(&work, &["commit", "-qam", "test on PRs too"]);
@@ -452,20 +450,26 @@ async fn a_branch_behind_a_main_that_changed_ci_pushes_with_workflows() {
     let mirror = dir.join("mirror.git");
     let url = remote.display().to_string();
 
-    // As before: contents only, refused, and nothing moved.
+    // Contents only: refused, said plainly, and nothing moved.
     let e = push::push_bundle(&mirror, &b, &id, &own, &own, &url, Some("ghs_contents_only"), &[]).await.unwrap_err();
-    assert!(e.contains("without `workflows` permission"), "{e}");
+    assert_eq!(e, push::CI_BEHIND);
+    assert!(e.contains("can't change workflow files") && e.contains("new session"), "{e}");
     assert_eq!(git_in(&remote, &["for-each-ref", "--format=%(refname)"]), "refs/heads/main");
-    // With workflows: through, and main is as it was.
-    let main = git_in(&remote, &["rev-parse", "refs/heads/main"]);
-    assert_eq!(
-        push::push_bundle(&mirror, &b, &id, &own, &own, &url, Some("ghs_with_workflows"), &[]).await.unwrap(),
-        head
-    );
-    assert_eq!(
-        git_in(&remote, &["for-each-ref", "--format=%(refname) %(objectname)"]),
-        format!("refs/heads/{own} {head}\nrefs/heads/main {main}")
-    );
+}
+
+/// A turn whose own commits change a workflow file isn't pushed: the box
+/// says which files and why, before it asks for a token. Other files, or
+/// none, push as before.
+#[test]
+fn a_turn_that_changes_workflow_files_says_why_it_isnt_pushed() {
+    assert_eq!(push::changes_ci(""), None);
+    assert_eq!(push::changes_ci("\n  \n"), None);
+    let why = push::changes_ci(".github/workflows/ci.yml\n.github/workflows/canary.yml\n").unwrap();
+    assert!(why.contains(".github/workflows/ci.yml, .github/workflows/canary.yml"), "{why}");
+    assert!(why.contains("a session's push can't change workflow files"), "{why}");
+    let many: String = (0..8).map(|i| format!(".github/workflows/w{i}.yml\n")).collect();
+    let why = push::changes_ci(&many).unwrap();
+    assert!(why.contains("w4.yml and 3 more") && !why.contains("w5.yml"), "{why}");
 }
 
 /// A stop while a push ran cleaned the slot under it, and the push made
@@ -598,4 +602,58 @@ fn a_session_runs_on_the_model_asked_for() {
         "once it's known, again on each turn"
     );
     assert_eq!(agent_config(&l)["model"], "opus", "the block switches to it as the session opens");
+}
+
+/// A slot keeps its build caches for its next session only when its last
+/// session was the same asker's: another asker's, or a slot with no
+/// session before it (or none it still knows of), starts from an empty
+/// home.
+#[test]
+fn a_slot_keeps_its_caches_only_for_the_same_asker() {
+    let dir = crate::hosted::scratch("session-same-asker");
+    let ledger = |n: char, asker: &str, user: &str, at: u64| AgentSessionLedger {
+        session: format!("ses_{}", n.to_string().repeat(32)),
+        project: "prj_1".into(),
+        workspace: "hw_1".into(),
+        asker: asker.into(),
+        repo: None,
+        branch: format!("arugula/{}-fix", n.to_string().repeat(8)),
+        user: AsUser { user: user.into(), home: dir.join(user).display().to_string() },
+        checkout: dir.join(user).join("work").display().to_string(),
+        block: None,
+        taken_at: at,
+        grant: None,
+        cleanup_owed: false,
+        n: 0,
+        state: "done".into(),
+        ended: Some("done".into()),
+        handed: vec![],
+        turn: None,
+        notes: None,
+        acted: vec![],
+        unnamed: vec![],
+        error: None,
+        last_at: 0,
+        events: vec![],
+        pushed_head: None,
+        turns_seen: None,
+        harness: None,
+        review: false,
+        model: None,
+        model_now: None,
+        model_said: None,
+        parked: None,
+        reopened: false,
+    };
+    let next = format!("ses_{}", "f".repeat(32));
+    assert!(!same_asker(&dir, "ses2", &next, "acct1"), "nothing before it");
+    assert!(claim(&dir, &ledger('a', "acct1", "ses2", 1)));
+    assert!(claim(&dir, &ledger('b', "acct2", "ses1", 5)));
+    assert!(same_asker(&dir, "ses2", &next, "acct1"));
+    assert!(!same_asker(&dir, "ses2", &next, "acct2"), "another asker's slot");
+    assert!(!same_asker(&dir, "ses2", &next, ""), "nobody's");
+    // The slot's latest session is what counts.
+    assert!(claim(&dir, &ledger('c', "acct2", "ses2", 9)));
+    assert!(!same_asker(&dir, "ses2", &next, "acct1"));
+    assert!(same_asker(&dir, "ses2", &next, "acct2"));
 }

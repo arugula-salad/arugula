@@ -617,6 +617,19 @@ fn push_mints(w: &World) -> Vec<crate::db::forge::TokenMint> {
     w.app.db.token_mints(0).unwrap().into_iter().filter(|m| m.purpose == "session:push").collect()
 }
 
+/// Everyone who steers team t's sessions, and may push to acme/app on
+/// GitHub: a (alice-gh, admin), b (bob-gh, write) and y (yan-gh, write).
+/// x, the viewer, has no GitHub identity.
+fn everyone_pushes(w: &World) {
+    w.hub.github("a", 1001, "alice-gh");
+    w.hub.github("b", 1002, "bob-gh");
+    w.hub.github("y", 1004, "yan-gh");
+    let mut g = w.gh.lock().unwrap();
+    g.roles.insert(("acme/app".into(), "alice-gh".into()), ("admin".into(), 1001));
+    g.roles.insert(("acme/app".into(), "bob-gh".into()), ("write".into(), 1002));
+    g.roles.insert(("acme/app".into(), "yan-gh".into()), ("write".into(), 1004));
+}
+
 /// A session pushes as its asker, so only where its asker may push on
 /// GitHub (`sessions::push`): b, an editor of the project, gets no token
 /// for their session while they have no GitHub identity, and none while
@@ -676,14 +689,15 @@ async fn an_asker_without_write_on_github_gets_no_push_token() {
 }
 
 /// An asker GitHub gives write on the repo gets the token for their
-/// session's branch: GitHub is asked about them each time, and the mint
-/// is logged for them, `session:push`, with the repo's contents and
-/// workflows (aru-115, amended) on acme/app alone.
+/// session's branch, while everyone else who steers the project's
+/// sessions may push there too: GitHub is asked about each of them each
+/// time, and the mint is logged for the asker, `session:push`, with the
+/// repo's contents and not its workflows (aru-115, amended 2026-11-10), on
+/// acme/app alone.
 #[tokio::test]
 async fn an_asker_with_write_on_github_gets_the_push_token() {
     let (w, s, m) = pushing_world().await;
-    w.hub.github("b", 1002, "bob-gh");
-    w.gh.lock().unwrap().roles.insert(("acme/app".into(), "bob-gh".into()), ("write".into(), 1002));
+    everyone_pushes(&w);
 
     let given = push_ask(&w, &m, &s, &s.branch, false).await;
     let PushGiven::Given { token, revoke, .. } = &given else { panic!("{given:?}") };
@@ -691,24 +705,76 @@ async fn an_asker_with_write_on_github_gets_the_push_token() {
     assert!(revoke.ends_with("/installation/token"), "{revoke}");
     {
         let g = w.gh.lock().unwrap();
-        assert_eq!(g.asked, 1, "GitHub was asked whether bob-gh may push to acme/app");
-        assert_eq!(g.minted.last().unwrap(), &json!({ "metadata": "read", "contents": "write", "workflows": "write" }));
+        assert_eq!(g.asked, 3, "GitHub was asked whether b, a and y may push to acme/app");
+        assert_eq!(g.minted.last().unwrap(), &json!({ "metadata": "read", "contents": "write" }));
     }
     let mints = push_mints(&w);
     assert_eq!(mints.len(), 1, "{mints:?}");
     assert_eq!(mints[0].caller, "b");
     assert_eq!(mints[0].repo_id, Some(77));
-    assert!(mints[0].permissions.contains("\"workflows\":\"write\""), "{}", mints[0].permissions);
+    assert!(!mints[0].permissions.contains("workflows"), "{}", mints[0].permissions);
 
     // Asked again on the next push: GitHub's answer isn't kept.
     let given = push_ask(&w, &m, &s, &s.branch, false).await;
     assert!(matches!(given, PushGiven::Given { .. }), "{given:?}");
-    assert_eq!(w.gh.lock().unwrap().asked, 2);
+    assert_eq!(w.gh.lock().unwrap().asked, 6);
     // So a role taken away on GitHub ends the session's pushes.
     w.gh.lock().unwrap().roles.insert(("acme/app".into(), "bob-gh".into()), ("read".into(), 1002));
     let given = push_ask(&w, &m, &s, &s.branch, false).await;
     assert!(format!("{given:?}").contains("can't push to acme/app on GitHub"), "{given:?}");
     assert_eq!(push_mints(&w).len(), 2);
+}
+
+/// A session pushes only when everyone who can steer it may push to its
+/// repo: an owner's session in a thread an editor replies in (a prompt,
+/// theirs) gets no token while that editor has no GitHub identity, or
+/// only read on the repo, and the refusal names them; nothing with
+/// contents write is minted. A viewer, who steers nothing, needs none.
+/// Once every owner and editor may push, it's given, without workflows.
+#[tokio::test]
+async fn a_session_pushes_only_when_everyone_who_steers_it_may_push() {
+    let w = world().await;
+    w.gh.lock().unwrap().grants.insert(
+        "acme/app".into(),
+        json!({
+            "actions": "read", "checks": "read", "contents": "write", "issues": "write", "members": "read",
+            "metadata": "read", "pull_requests": "write", "statuses": "read", "workflows": "write",
+        }),
+    );
+    w.hub.github("a", 1001, "alice-gh");
+    w.gh.lock().unwrap().roles.insert(("acme/app".into(), "alice-gh".into()), ("admin".into(), 1001));
+    let ask = format!("@{} fix the canary", crate::chat::sessions::MENTION);
+    let p = post_in(&w.base, "ch_general", "a", &ask, None).await["seq"].as_i64().unwrap();
+    let s = w.app.db.session_on_thread("ch_general", p as u64).unwrap().expect("the owner starts a session");
+    w.take(&s.id, "claude").await;
+    let m = HostedMachine {
+        project: w.project.clone(),
+        workspace: "hw_dev".into(),
+        machine: w.keys.id(),
+        sign: hex::encode(w.keys.sign_public()),
+    };
+    // b, an editor with no GitHub identity, replies: a prompt, theirs.
+    post_in(&w.base, "ch_general", "b", "also change the deploy script", Some(p)).await;
+    assert!(w.app.db.session_prompts(&s.id).unwrap().iter().any(|q| q.author == "b"));
+
+    let given = push_ask(&w, &m, &s, &s.branch, false).await;
+    let said = format!("{given:?}");
+    assert!(said.contains("hasn't signed in to control with GitHub") && said.contains("(editor)"), "{said}");
+    assert!(said.contains(crate::sessions::push::STEERERS), "{said}");
+    // On GitHub with read: still refused, and said so.
+    w.hub.github("b", 1002, "bob-gh");
+    w.gh.lock().unwrap().roles.insert(("acme/app".into(), "bob-gh".into()), ("read".into(), 1002));
+    let given = push_ask(&w, &m, &s, &s.branch, false).await;
+    assert!(format!("{given:?}").contains("can't push to acme/app on GitHub"), "{given:?}");
+    assert!(w.gh.lock().unwrap().minted.iter().all(|p| p["contents"] != "write"));
+    assert!(push_mints(&w).is_empty());
+
+    // Every owner and editor may push (x, the viewer, has no identity at all).
+    everyone_pushes(&w);
+    let given = push_ask(&w, &m, &s, &s.branch, false).await;
+    assert!(matches!(given, PushGiven::Given { .. }), "{given:?}");
+    assert_eq!(w.gh.lock().unwrap().minted.last().unwrap(), &json!({ "metadata": "read", "contents": "write" }));
+    assert_eq!(push_mints(&w)[0].caller, "a");
 }
 
 /// When GitHub can't say (a 5xx asking about the asker's role), no token:
@@ -734,8 +800,9 @@ async fn a_push_token_is_withheld_when_github_cant_be_asked() {
     assert!(push_mints(&w).is_empty());
 
     w.gh.lock().unwrap().permission_fails = None;
+    everyone_pushes(&w);
     let given = push_ask(&w, &m, &s, &s.branch, false).await;
     assert!(matches!(given, PushGiven::Given { .. }), "{given:?}");
-    assert_eq!(w.gh.lock().unwrap().asked, 2);
+    assert_eq!(w.gh.lock().unwrap().asked, 4);
     assert_eq!(push_mints(&w).len(), 1);
 }

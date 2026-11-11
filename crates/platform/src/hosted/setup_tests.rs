@@ -363,3 +363,60 @@ async fn a_kept_step_is_done_cloning_as_the_box_says_it() {
         assert!(app.hosted_setup(&project, &id2, "hosted-machine-2", &r).await.unwrap(), "{step}");
     }
 }
+
+/// The clone secret goes only to the hosts the spec's repos were on when
+/// it was set: a spec changed later to name another host (a mirror, a
+/// typo, anyone's) gets nothing for it, a host it was set for still gets
+/// it, and setting the secret again binds it to the spec as it is then.
+/// One set before secrets were bound goes nowhere until it's set again.
+#[tokio::test]
+async fn the_clone_secret_goes_only_to_the_hosts_it_was_set_for() {
+    use crate::db::Sql as _;
+    let (hub, _fake, app, base, project) = serve(EnrollBy::Sandbox).await;
+    hub.delegate(&project);
+    let (_, w) = make(&base, "alice", &project, "dev").await;
+    let id = w["id"].as_str().unwrap().to_owned();
+    let path = format!("/api/projects/{project}/workspaces/{id}");
+    let spec = json!({ "repos": ["https://git.corp.example/acme/lib.git"] });
+    assert_eq!(call(&base, "alice", "PUT", &format!("{path}/spec"), Some(spec)).await.0, 200);
+    let put = Some(json!({ "value": "corp-pat" }));
+    assert_eq!(call(&base, "alice", "PUT", &format!("{path}/secrets/GIT_TOKEN"), put).await.0, 204);
+    assert_eq!(app.db.hosted_secret_hosts(&id, "GIT_TOKEN").unwrap(), ["git.corp.example"]);
+
+    // An editor's spec names another host beside it, then a port on it.
+    let spec = json!({ "repos": [
+        "https://git.corp.example/acme/lib.git",
+        "https://elsewhere.example/x.git",
+        "https://git.corp.example:8443/acme/other.git",
+    ] });
+    assert_eq!(call(&base, "bob", "PUT", &format!("{path}/spec"), Some(spec)).await.0, 200);
+    let now = now_ms();
+    drive(&app, now).await;
+    let plan = app.hosted_plan(&project, &id, "hosted-machine-1").await.unwrap().expect("its box");
+    let repos: Vec<_> = plan.repos.iter().map(|r| (r.url.as_str(), r.via.as_str(), r.password.as_deref())).collect();
+    assert_eq!(
+        repos,
+        [
+            ("https://git.corp.example/acme/lib.git", "secret", Some("corp-pat")),
+            ("https://elsewhere.example/x.git", "none", None),
+            ("https://git.corp.example:8443/acme/other.git", "none", None),
+        ]
+    );
+
+    // Set again, it's bound to the spec as it is now.
+    let put = Some(json!({ "value": "corp-pat-2" }));
+    assert_eq!(call(&base, "alice", "PUT", &format!("{path}/secrets/GIT_TOKEN"), put).await.0, 204);
+    let plan = app.hosted_plan(&project, &id, "hosted-machine-1").await.unwrap().expect("its box");
+    assert!(plan.repos.iter().all(|r| r.via == "secret" && r.password.as_deref() == Some("corp-pat-2")));
+
+    // One from before secrets were bound: sent nowhere.
+    app.db
+        .c()
+        .execute(
+            "UPDATE hosted_workspace_secrets SET hosts = NULL WHERE workspace_id = ?1 AND name = 'GIT_TOKEN'",
+            crate::db::sql::params![id],
+        )
+        .unwrap();
+    let plan = app.hosted_plan(&project, &id, "hosted-machine-1").await.unwrap().expect("its box");
+    assert!(plan.repos.iter().all(|r| r.via == "none" && r.password.is_none()), "{:?}", plan.repos);
+}
