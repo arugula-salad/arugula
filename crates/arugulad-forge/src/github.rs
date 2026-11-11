@@ -209,7 +209,9 @@ impl Adapter for Github {
     }
 
     fn merge_queued<'a>(&'a self, repo: &'a str, number: u64) -> BoxFuture<'a, Result<Option<bool>, Error>> {
-        Box::pin(async move { Ok(Github::merge_queue(self, repo, number).await?.and_then(|(on, queued)| on.then_some(queued))) })
+        Box::pin(async move {
+            Ok(Github::merge_queue(self, repo, number).await?.and_then(|(on, queued)| on.then_some(queued)))
+        })
     }
 
     fn read_only(&self) -> Option<String> {
