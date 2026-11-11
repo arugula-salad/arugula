@@ -266,9 +266,11 @@ file, so a new one shows up in review.
 
 - `drives` (typing into a pane on the owner's machine needs their trust,
   M14) is `DRIVES: true` on `send`, `keys`, `mouse` and `followup` (#574),
-  and on `prompt` and `cd` (#959), and `ops::drives(method, path)` asks it. It used to match path suffixes, so
+  on `prompt` and `cd` (#959), and on what an agent's hooks call, which
+  speaks for the pane (`attention`, `ask`, `ask/withdraw`, `permit`,
+  `inbox`), and `ops::drives(method, path)` asks it. It used to match path suffixes, so
   a new route ending in `/send` got it by accident and a renamed one lost
-  it. The hand-written routes that drive (`upload`, `paste`, and the block
+  it. The hand-written routes that drive (`hook`, `upload`, `paste`, and the block
   call's `send`, `keys`, `mouse`, `followup`, `upload` and `paste`) are on
   `DRIVES_HAND_WRITTEN` in `ops/mod.rs`, each as a `POST` template.
 - `from_now` (a share from now on reads nothing before it began, M13)

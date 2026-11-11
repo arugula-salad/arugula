@@ -386,6 +386,8 @@ pub(crate) fn policy(method: &axum::http::Method, path: &str) -> Option<crate::a
 /// an operation says it does), as `POST` templates: `authz::check` asks the
 /// mux whether an editor may drive the pane for these too (M14).
 const DRIVES_HAND_WRITTEN: &[&str] = &[
+    // An agent's hook event, as its hooks send it: speaks for the pane.
+    "/api/panes/{id}/hook",
     // M70: writes a file where the pane runs.
     "/api/panes/{id}/upload",
     // Typing a path into the pane (with upload).
