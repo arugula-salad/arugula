@@ -275,7 +275,7 @@ pub fn seal(
     ver: u64,
     plain: &[u8],
     part_max: usize,
-    nonce: &mut dyn FnMut() -> [u8; 12],
+    nonce: &mut (dyn FnMut() -> [u8; 12] + Send),
 ) -> Result<Vec<Vec<u8>>, String> {
     let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| "a link's key is 32 bytes".to_owned())?;
     let chunks: Vec<&[u8]> = if plain.is_empty() { vec![plain] } else { plain.chunks(part_max).collect() };
@@ -554,7 +554,7 @@ pub async fn push_version(
     ver: u64,
     plain: Vec<u8>,
     part_max: usize,
-    nonce: &mut dyn FnMut() -> [u8; 12],
+    nonce: &mut (dyn FnMut() -> [u8; 12] + Send),
     replacing: Option<u64>,
     quota: bool,
 ) -> Result<u64, Fail> {
