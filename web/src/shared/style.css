@@ -5935,6 +5935,63 @@ html[data-scheme="light"] .doc {
   max-width: calc(var(--measure) - 32px);
 }
 
+/* A prototype Doc (Arugula #830): the title, its one line, and the frame
+   filling the rest of the view, edge to edge. The view sets the frame's
+   height (doc-render.tsx's PrototypeDoc), from its own box. */
+.doc-page-fill {
+  display: flex;
+  flex-direction: column;
+  max-width: none;
+  padding: 0;
+}
+
+.doc-head-fill {
+  flex: none;
+  margin: 0;
+  padding: 10px 16px 8px;
+}
+
+.doc-head-fill .doc-title {
+  font-size: var(--text-xl);
+  line-height: 1.2;
+}
+
+/* One line, cut with an ellipsis; a click shows it all. */
+.doc-line {
+  display: block;
+  max-width: 100%;
+  margin: 4px 0 0;
+  padding: 0;
+  overflow: hidden;
+  font: inherit;
+  font-size: var(--text-md);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--doc-ink-faint);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.doc-line-open {
+  white-space: normal;
+}
+
+.doc-fill {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.doc-layout-mark {
+  display: inline-flex;
+  margin-right: 6px;
+  vertical-align: -1px;
+  color: var(--dim);
+}
+
 /* Markdown (ui/markdown.tsx): a body's blocks. */
 .md {
   min-width: 0;
@@ -13346,6 +13403,34 @@ button.chat-agent-name:hover {
 
 .md .doc-prototype-box .doc-prototype {
   margin: 0;
+}
+
+/* A prototype Doc's frame (Arugula #830): the box fills the view, the label's
+   strip above it and the page in what is left, with no margin or round
+   corners of its own. */
+.doc .md .doc-prototype-box.doc-prototype-fill,
+.md .doc-prototype-box.doc-prototype-fill[popover] {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 0;
+  margin: 0;
+}
+
+.md .doc-prototype-fill .doc-prototype-bar {
+  padding: 2px 16px;
+}
+
+.md .doc-prototype-fill .doc-prototype {
+  flex: 1 1 0;
+  min-height: 0;
+  height: auto;
+  border-width: 1px 0 0;
+  border-radius: 0;
+}
+
+.doc-fill .doc-prototype-run {
+  margin: 12px 16px;
 }
 
 /* A phone's chat levels (#816): the level swiped away is the card, with the

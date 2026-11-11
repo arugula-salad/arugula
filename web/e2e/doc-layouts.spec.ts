@@ -1,9 +1,11 @@
-// Doc layouts in the views that draw a Doc on a machine (Arugula #829): a
-// `tabs` Doc shows its sections as tabs (an ARIA tablist with arrow keys,
+// Doc layouts in the views that draw a Doc on a machine (Arugula #829, #830):
+// a `tabs` Doc shows its sections as tabs (an ARIA tablist with arrow keys,
 // Home and End, a pending section's tab greyed, ids that carry the Doc's key
-// and an address that isn't the app's route left alone). The block and the
-// Docs page's preview. The platform's Doc page is in docs-platform.spec.ts
-// and the share viewer in doc-share.spec.ts, which have a control.
+// and an address that isn't the app's route touched), and a `prototype` Doc
+// is its title, one line and a frame that fills the view and follows its
+// resizes. The block, the Docs page's rows and its preview. The platform's
+// Doc page is in docs-platform.spec.ts and the share viewer in
+// doc-share.spec.ts, which have a control.
 
 import type { ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -174,12 +176,70 @@ test("a plain Doc has no tabs: its sections one after another, each with its hea
   await expect(block.locator(".doc-heading")).toHaveText(["Overview", "Corner tuner", "Motion"]);
 });
 
-test("the Docs page's preview draws a tabs Doc, with ids that carry the Doc's key", async ({ page }) => {
+test("a prototype Doc is its title, its one line and a frame that fills the view, and follows a resize", async ({ page }) => {
+  await reset(page);
+  // Tall enough that the frame is past its floor, so a resize shows.
+  await page.setViewportSize({ width: 1400, height: 1000 });
+  const d = await made(page, "Pomodoro", "prototype", [{ heading: "Pomodoro", intent: "a timer" }]);
+  const block = page.locator(`[data-doc-block="${d}"]`);
+  // Still to be written: a plain Doc, never a blank view.
+  await expect(block.locator(".doc-coming")).toBeVisible({ timeout: 15_000 });
+  await expect(block.locator("[data-doc-fill]")).toHaveCount(0);
+
+  await fill(post, d, "s1", `A timer that counts down 25 minutes.\n\n${PROTO("Pomodoro")}`);
+  await expect(block.locator("[data-doc-fill]")).toBeVisible({ timeout: 15_000 });
+  await expect(block.locator(".doc-title")).toHaveText("Pomodoro");
+  await expect(block.locator("[data-doc-line]")).toHaveText("A timer that counts down 25 minutes.");
+  // No section heading, and the frame runs.
+  await expect(block.locator(".doc-heading")).toHaveCount(0);
+  await expect(block.getByRole("tablist")).toHaveCount(0);
+  const frame = block.locator("[data-prototype-frame]");
+  await expect(frame).toBeVisible();
+  await expect(page.frameLocator(`[data-doc-block="${d}"] [data-prototype-frame]`).locator("#out")).toHaveText("ran", { timeout: 15_000 });
+
+  // It fills what is left of the view under the title and its line: its bottom is the Doc's.
+  const gap = () =>
+    block.evaluate((b) => {
+      const f = b.querySelector("[data-prototype-frame]")!.getBoundingClientRect();
+      const doc = b.getBoundingClientRect();
+      return { frame: f.height, bottom: Math.abs(doc.bottom - f.bottom) };
+    });
+  const before = await gap();
+  expect(before.frame).toBeGreaterThan(300);
+  expect(before.bottom).toBeLessThan(4);
+  // Taller than the fence's height=300, edge to edge: the fence's number isn't what sizes it.
+  const size = page.viewportSize()!;
+  // Only the height changes, so the title and its line don't move: the frame follows the container.
+  await page.setViewportSize({ width: size.width, height: size.height - 200 });
+  await expect.poll(async () => (await gap()).frame).toBeLessThan(before.frame - 100);
+  expect((await gap()).bottom).toBeLessThan(4);
+  await page.setViewportSize(size);
+  await expect.poll(async () => (await gap()).frame).toBeGreaterThan(before.frame - 4);
+
+  // The one line is cut to one line, and a click shows all of it.
+  const line = block.locator("[data-doc-line]");
+  await expect(line).toHaveAttribute("aria-expanded", "false");
+  await line.click();
+  await expect(line).toHaveAttribute("aria-expanded", "true");
+});
+
+test("the Docs page marks a tabs and a prototype Doc's row, and its preview draws each", async ({ page }) => {
   await reset(page);
   await tabsDoc(page, "Tabbed one");
+  const proto = await made(page, "Prototype one", "prototype", [{ heading: "Prototype one", intent: "a thing" }]);
+  await fill(post, proto, "s1", `One line about it.\n\n${PROTO("Thing")}`);
+  const plain = await made(page, "Plain two", "doc", [{ heading: "Notes", intent: "text" }]);
+  await fill(post, plain, "s1", "Some text.");
+  await expect(page.locator(`[data-doc-block="${plain}"] .doc-title`)).toHaveText("Plain two", { timeout: 15_000 });
+
   await page.locator("[data-machine-docs]").click();
   await expect(page.locator("[data-docs-page]")).toBeVisible();
   const row = (t: string) => page.locator("[data-doc]").filter({ hasText: t });
+  await expect(row("Tabbed one").getByRole("img", { name: "Tabs Doc" })).toHaveCount(1);
+  await expect(row("Prototype one").getByRole("img", { name: "Prototype Doc" })).toHaveCount(1);
+  await expect(row("Plain two").locator("[data-doc-layout]")).toHaveCount(0);
+
+  // A tabs Doc's preview: its tabs, on the first, with ids that carry the Doc's own key.
   await row("Tabbed one").click();
   const pv = page.locator("[data-list-preview]");
   await expect(pv.getByRole("tab")).toHaveText(["Overview", "Corner tuner", "Motion"]);
@@ -194,4 +254,11 @@ test("the Docs page's preview draws a tabs Doc, with ids that carry the Doc's ke
   // The page's address is `#docs`: a tab neither leaves it nor adds to it.
   expect(await page.evaluate(() => location.hash)).toBe("#docs");
   await expect(page.locator("[data-docs-page]")).toBeVisible();
+
+  // A prototype Doc's preview: the frame in the preview's own box, not a column.
+  await row("Prototype one").click();
+  await expect(pv.locator(".doc-title")).toHaveText("Prototype one");
+  await expect(pv.locator("[data-doc-line]")).toHaveText("One line about it.");
+  await expect(pv.locator("[data-prototype-frame]")).toBeVisible({ timeout: 15_000 });
+  await expect(pv.locator(".doc-heading")).toHaveCount(0);
 });

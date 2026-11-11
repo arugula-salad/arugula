@@ -369,7 +369,7 @@ for (const mode of [DOMAIN, null] as const) {
       }
     });
 
-    // Doc layouts (Arugula #829): the link carries the layout, a tab is
+    // Doc layouts (Arugula #829, #830): the link carries the layout, a tab is
     // named after the key (`&s=s2`), and the key survives choosing one.
     test("a tabs Doc opens on its first tab; choosing a tab names it after the key and a reload still opens it", async ({ browser }) => {
       const [{ id: term }] = (await (await fetch(`${r.mini}/api/panes`)).json()) as { id: number }[];
@@ -421,6 +421,34 @@ for (const mode of [DOMAIN, null] as const) {
           expect(v2.seen.every((u) => !u.includes(key)), "the key is never sent").toBe(true);
         } finally {
           await v2.ctx.close();
+        }
+      } finally {
+        await v.ctx.close();
+      }
+    });
+
+    test("a prototype Doc is its title, its line and a frame that fills the page", async ({ browser }) => {
+      const [{ id: term }] = (await (await fetch(`${r.mini}/api/panes`)).json()) as { id: number }[];
+      const made = await r.post("/api/blocks", { type: "doc", config: { title: "Proto share" }, split: term, local: true });
+      const d = made.block!;
+      await r.post(`/api/blocks/${d}/call/doc_outline`, { title: "Proto share", layout: "prototype", sections: [{ heading: "Proto share", intent: "a thing" }] });
+      await fill(r.post, d, "s1", "One line about it.\n\n```prototype height=300 Thing\n<!doctype html>\n<html><body><p>ran</p></body></html>\n```");
+      const url = await share(r, d);
+      const v = await visitor(browser, { viewport: { width: 1100, height: 900 } });
+      try {
+        await v.page.goto(url);
+        await expect(v.page.locator(".doc-title")).toHaveText("Proto share", { timeout: 15_000 });
+        await expect(v.page.locator("[data-doc-line]")).toHaveText("One line about it.");
+        await expect(v.page.locator(".doc-heading")).toHaveCount(0);
+        await expect(v.page.locator("[data-doc-fill]")).toBeVisible();
+        if (new URL(url).hostname.startsWith("docs.")) {
+          await v.page.locator("[data-prototype-run-button]").click();
+          const frame = v.page.locator("[data-prototype-frame]");
+          await expect(frame).toBeVisible({ timeout: 15_000 });
+          // Past its fence's 300, down to the foot of the window.
+          const box = await frame.evaluate((f) => f.getBoundingClientRect());
+          expect(box.height).toBeGreaterThan(400);
+          expect(900 - box.bottom).toBeLessThan(40);
         }
       } finally {
         await v.ctx.close();

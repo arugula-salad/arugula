@@ -22,6 +22,7 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
 import { opPath, OPS } from "../ops";
 import { DocBlock, type DocState } from "../../shared/docs/doc-render";
+import { LayoutMark } from "../../shared/docs/layout-mark";
 import { shareClosedDoc } from "./doc-share";
 import { DocActions, openTab } from "../../shared/docs/doc-actions";
 import type { DocAsset, DocContent, DocLinkUrl, DocRow, DocSectionShape } from "../../shared/proto.gen";
@@ -259,7 +260,12 @@ function Page({ client, inWorkspace }: { client: Client; inWorkspace?: boolean }
         row={(r) => ({
           tone: isOpen(r) ? "live" : undefined,
           dense: true,
-          title: <span data-doc-title>{r.title}</span>,
+          title: (
+            <>
+              <LayoutMark layout={r.layout} />
+              <span data-doc-title>{r.title}</span>
+            </>
+          ),
           tags: (
             <>
               {isOpen(r) && (

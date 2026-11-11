@@ -868,24 +868,34 @@ test("the project's Docs sort by updated or created, within the list, and a Doc'
   await alice.evaluate(() => localStorage.removeItem("docs-sort"));
 });
 
-// Doc layouts (Arugula #829): a project Doc keeps its layout, and the page and
-// its preview draw it, a tab in the page's address.
-test("a tabs Doc on the platform: the preview, and tabs in the page's address", async () => {
+// Doc layouts (Arugula #829, #830): a project Doc keeps its layout, and the
+// page, its preview and its rows draw it.
+test("a tabs Doc and a prototype Doc on the platform: rows marked, tabs in the page's address, a prototype filling the page", async () => {
   test.setTimeout(120_000);
   const project = /\/p\/(prj_[0-9a-f]+)/.exec(docPath)![1];
   await platform(alice, `/p/${project}/docs`);
-  const ids = await alice.evaluate(async (p) => {
-    const send = async (method: string, path: string, body: unknown) => (await fetch(`/api/projects/${p}${path}`, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) })).json();
-    const write = (id: string, heading: string, intent: string | null, markdown: string | null) => send("PUT", `/docs/${id}`, { title: null, section: null, heading, intent, markdown });
-    const tabs = await send("POST", "/docs", { title: "Layout tabs", sections: [], layout: "tabs" });
-    await write(tabs.doc.id, "Overview", null, "Overview words.");
-    await write(tabs.doc.id, "Notes", null, "Notes words.");
-    await write(tabs.doc.id, "Later", "still to come", null);
-    return { tabs: tabs.doc.id as string };
-  }, project);
+  const frame = '```prototype height=300 Timer\n<!doctype html>\n<html><body><p>ran</p></body></html>\n```';
+  const ids = await alice.evaluate(
+    async ([p, proto]) => {
+      const send = async (method: string, path: string, body: unknown) => (await fetch(`/api/projects/${p}${path}`, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) })).json();
+      const write = (id: string, heading: string, intent: string | null, markdown: string | null) => send("PUT", `/docs/${id}`, { title: null, section: null, heading, intent, markdown });
+      const tabs = await send("POST", "/docs", { title: "Layout tabs", sections: [], layout: "tabs" });
+      await write(tabs.doc.id, "Overview", null, "Overview words.");
+      await write(tabs.doc.id, "Notes", null, "Notes words.");
+      await write(tabs.doc.id, "Later", "still to come", null);
+      const one = await send("POST", "/docs", { title: "Layout prototype", sections: [], layout: "prototype" });
+      await write(one.doc.id, "Layout prototype", null, `A timer that counts down.\n\n${proto}`);
+      return { tabs: tabs.doc.id as string, one: one.doc.id as string };
+    },
+    [project, frame] as const,
+  );
 
+  // The list: each row says what it is, and the preview draws it.
   await alice.reload();
   await alice.locator("[data-list-search]").fill("Layout");
+  await expect(alice.locator("[data-doc]")).toHaveCount(2);
+  await expect(alice.locator("[data-doc]").filter({ hasText: "Layout tabs" }).getByRole("img", { name: "Tabs Doc" })).toHaveCount(1);
+  await expect(alice.locator("[data-doc]").filter({ hasText: "Layout prototype" }).getByRole("img", { name: "Prototype Doc" })).toHaveCount(1);
   await alice.locator("[data-doc]").filter({ hasText: "Layout tabs" }).click();
   const pv = alice.locator("[data-list-preview]");
   await expect(pv.getByRole("tab")).toHaveText(["Overview", "Notes", "Later"], { timeout: 15_000 });
@@ -917,4 +927,17 @@ test("a tabs Doc on the platform: the preview, and tabs in the page's address", 
   // A name the Doc doesn't have is the first tab.
   await alice.goto(`${at(ids.tabs)}#s9`);
   await expect(page.getByRole("tab").first()).toHaveAttribute("aria-selected", "true", { timeout: 15_000 });
+
+  // A prototype Doc: the title, its one line, and a frame that fills the page.
+  await alice.goto(at(ids.one));
+  await expect(page.locator(".doc-title")).toHaveText("Layout prototype", { timeout: 15_000 });
+  await expect(page.locator("[data-doc-line]")).toHaveText("A timer that counts down.");
+  await expect(page.locator(".doc-heading")).toHaveCount(0);
+  const proto = page.locator("[data-prototype-frame]");
+  await expect(proto).toBeVisible({ timeout: 15_000 });
+  const room = await alice.evaluate(() => innerHeight);
+  const box = await proto.evaluate((f) => f.getBoundingClientRect());
+  expect(box.height).toBeGreaterThan(Math.min(360, room / 2));
+  expect(box.bottom).toBeLessThanOrEqual(room);
+  expect(room - box.bottom, "the frame reaches the foot of the window").toBeLessThan(40);
 });

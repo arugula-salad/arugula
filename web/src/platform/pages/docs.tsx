@@ -24,6 +24,7 @@ import { PageHeader } from "../../shared/ui/page-header";
 import { Time } from "../../shared/ui/time";
 import { DocRowTime, DOC_SORTS, sortTime, useDocSort, type DocSort } from "../../shared/docs/doc-sort";
 import { DocBlock, type DocState } from "../../shared/docs/doc-render";
+import { LayoutMark } from "../../shared/docs/layout-mark";
 import { moveDocsToTeam, resultWords, type MoveResult } from "../../shared/docs/move-docs";
 import "../../shared/docs/docs.css";
 import { names } from "../links";
@@ -288,7 +289,12 @@ function DocList({ ps, narrowed }: { ps: PlatformProject[]; narrowed: boolean })
           return {
             dense: true,
             name: r.doc.title,
-            title: <span data-doc-title>{r.doc.title}</span>,
+            title: (
+              <>
+                <LayoutMark layout={r.doc.layout} />
+                <span data-doc-title>{r.doc.title}</span>
+              </>
+            ),
             detail: r.mine && copyFrom(r.doc) ? <span data-doc-machine>On {copyFrom(r.doc)}</span> : undefined,
             age: <DocRowTime doc={timesOf(r.doc)} by={sort} />,
             mark: s ? <Shape sections={s} /> : undefined,

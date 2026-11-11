@@ -14,9 +14,10 @@ import type { PaneId } from "../proto";
 import { plain } from "../ui/embeds";
 import { Markdown } from "../ui/markdown";
 import { ProtoScope } from "../ui/prototype-bridge";
+import { Prototype, ProtoFill } from "../ui/prototype-frame";
 import { BlockError, BlockLoading } from "../ui/block-states";
 import { DocTimes, madeAt } from "./doc-times";
-import { docLayout, type Link } from "./layout";
+import { docLayout, protoOnly, type Link, type ProtoOnly } from "./layout";
 
 export interface Section {
   id: string;
@@ -156,6 +157,8 @@ export function DocBlock({
   if (s.error) return <BlockError data-doc-block={id} title="Can't show this Doc" detail={s.error} />;
   const key = docKey ?? s.doc ?? String(id);
   const layout = docLayout(s.layout);
+  const proto = layout === "prototype" ? protoOnly(s) : null;
+  if (proto) return <PrototypeDoc id={id} s={s} proto={proto} share={share} docKey={key} foot={foot} />;
   const tabs = layout === "tabs" && s.entries.length > 0;
   const done = s.entries.filter((e) => e.body !== null).length;
   const times = madeAt(s) || s.updated ? <DocTimes doc={s} /> : null;
@@ -322,5 +325,61 @@ function DocTabs({ entries, fresh, docKey, link, body }: { entries: Section[]; f
         );
       })}
     </>
+  );
+}
+
+/** The least a prototype Doc's frame is, where the view around it has no
+ * height of its own (a preview, a page that grows). */
+const FILL_MIN = 360;
+
+/** A prototype Doc (Arugula #830): its title, its one line, and the frame
+ * filling the rest of the view, full bleed like an artifact. The frame is
+ * sized from the view's own box, by an observer on it and not on the window,
+ * because a Doc sits in a pane, a preview or a page. */
+function PrototypeDoc({ id, s, proto, share, docKey, foot }: { id: PaneId; s: DocState; proto: ProtoOnly; share?: ComponentChildren; docKey: string; foot?: ComponentChildren }) {
+  const root = useRef<HTMLDivElement>(null);
+  const head = useRef<HTMLElement>(null);
+  const fill = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  useLayoutEffect(() => {
+    const box = root.current;
+    if (!box || !head.current || !fill.current) return;
+    const size = () => {
+      // A pane scrolls its Doc, so the Doc's box is the height to fill; on a
+      // page that grows (overflow visible) it is what's left of the window.
+      const room = getComputedStyle(box).overflowY === "visible" ? innerHeight - box.getBoundingClientRect().top - 16 : box.clientHeight;
+      fill.current!.style.height = `${Math.max(FILL_MIN, Math.floor(room - head.current!.offsetHeight))}px`;
+    };
+    size();
+    if (typeof ResizeObserver === "undefined") return;
+    const watch = new ResizeObserver(size);
+    watch.observe(box);
+    watch.observe(head.current);
+    return () => watch.disconnect();
+  }, []);
+  return (
+    <div class="doc" data-doc-block={id} data-layout="prototype" ref={root}>
+      <div class="doc-page doc-page-fill">
+        <header class="doc-head doc-head-fill" ref={head}>
+          <div class="doc-head-row">
+            <h1 class="doc-title">{s.title || "Untitled"}</h1>
+            {share}
+          </div>
+          {proto.line && (
+            <button type="button" class={open ? "doc-line doc-line-open" : "doc-line"} aria-expanded={open} title={proto.line} data-doc-line onClick={() => setOpen(!open)}>
+              {proto.line}
+            </button>
+          )}
+        </header>
+        <div class="md doc-fill" ref={fill} data-doc-fill>
+          <ProtoFill.Provider value={true}>
+            <ProtoScope.Provider value={{ doc: docKey, section: proto.section }}>
+              <Prototype html={proto.html} alt={proto.alt} />
+            </ProtoScope.Provider>
+          </ProtoFill.Provider>
+        </div>
+        {foot}
+      </div>
+    </div>
   );
 }

@@ -174,6 +174,14 @@ export const TabsIcon = ({ size = "xs" }: Sized) => (
   </Svg>
 );
 
+/** A page with a play mark in it: a prototype Doc's mark in a list (Arugula #830). */
+export const PrototypeIcon = ({ size = "xs" }: Sized) => (
+  <Svg size={size}>
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <path d="M10 9l5 3-5 3z" />
+  </Svg>
+);
+
 /** nvim's mark (#1734): two uprights and the diagonal between them, as
  * a stroke. The pane header draws it for an nvim editor block, and the
  * swarm's preview beside an nvim's file. */
