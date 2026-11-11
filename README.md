@@ -131,6 +131,8 @@ plugin's README says where each one shows.
 
 When something goes wrong, or before you trust it with your machine:
 
+- [status.arugula.io](https://status.arugula.io): whether hosted Arugula (control, the
+  platform, installs and downloads) is up right now, and any incident we're working on.
 - [docs/gotchas/](docs/gotchas/README.md): sharp edges people have hit, one page each, found
   by what you see on screen.
 - [docs/what-leaves-your-machine.md](docs/what-leaves-your-machine.md): what the daemon sends to
