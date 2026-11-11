@@ -8,6 +8,8 @@
 // copy from a timer with no click must be refused; and the store's key
 // must name the Doc, or two Docs with a section `s1` share sliders.
 
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { expect, test, type Page } from "@playwright/test";
 import { fill, newDoc, type Post } from "./doc-steps";
 import { DOMAIN, rig, share, visitor, type Rig } from "./doc-share-rig";
@@ -122,26 +124,37 @@ test("a message from another window gets no answer, and the caps are enforced", 
   await expect(inside.locator("#out")).toHaveText("ready", { timeout: 15_000 });
 
   // A sibling frame (not the Doc's) and the page itself ask the Doc: no
-  // reply reaches the sibling, and nothing is written.
+  // reply reaches the sibling, and nothing is written. The sibling is a page
+  // of its own (a srcdoc one would take on the page's policy and run nothing).
+  const sibling = createServer((_, r) => {
+    r.writeHead(200, { "content-type": "text/html" });
+    r.end(`<script>addEventListener("message", (e) => parent.postMessage({ heard: JSON.stringify(e.data) }, "*"));
+      parent.postMessage({ type: "arugula.store.set", id: 1, key: "evil", value: 1 }, "*");
+      parent.postMessage({ type: "arugula.store.all", id: 2 }, "*");
+      parent.postMessage({ sibling: "ran" }, "*");</script>`);
+  });
+  await new Promise<void>((res) => sibling.listen(0, "127.0.0.1", res));
   const heard = await page.evaluate(
-    (d) =>
-      new Promise<string[]>((done) => {
+    (src) =>
+      new Promise<{ ran: boolean; got: string[] }>((done) => {
         const got: string[] = [];
+        let ran = false;
         const f = document.createElement("iframe");
         f.setAttribute("sandbox", "allow-scripts");
-        f.srcdoc = `<script>addEventListener("message", (e) => parent.postMessage({ heard: JSON.stringify(e.data) }, "*"));
-          parent.postMessage({ type: "arugula.store.set", id: 1, key: "evil", value: 1 }, "*");
-          parent.postMessage({ type: "arugula.store.all", id: 2 }, "*");<\/script>`;
+        f.src = src;
         addEventListener("message", (e) => {
-          if (e.source === f.contentWindow && (e.data as { heard?: string }).heard) got.push((e.data as { heard: string }).heard);
+          if (e.source !== f.contentWindow) return;
+          if ((e.data as { sibling?: string }).sibling) ran = true;
+          if ((e.data as { heard?: string }).heard) got.push((e.data as { heard: string }).heard);
         });
         document.body.append(f);
-        setTimeout(() => done(got), 1500);
-        void d;
+        setTimeout(() => done({ ran, got }), 1500);
       }),
-    doc,
+    `http://127.0.0.1:${(sibling.address() as AddressInfo).port}/`,
   );
-  expect(heard, "the sibling heard nothing").toEqual([]);
+  sibling.close();
+  expect(heard.ran, "the sibling ran").toBe(true);
+  expect(heard.got, "the sibling heard nothing").toEqual([]);
   expect(await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("arugula.proto.")))).toEqual([]);
 
   // Oversized keys, values and sections, and unknown shapes.

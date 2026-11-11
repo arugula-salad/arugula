@@ -40,7 +40,7 @@
 
 use std::{collections::HashSet, net::SocketAddr};
 
-use axum::http::{HeaderMap, StatusCode, header};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use sha2::{Digest, Sha256};
 
 use crate::acl::Principal;
@@ -430,8 +430,32 @@ pub fn owner_fix(login: &str) -> String {
     format!("arugulad install -- --owner {login}")
 }
 
-/// A refusal as a page, for a browser (#109): the fix's command copyable.
-pub fn refusal_page(status: StatusCode, why: &str) -> String {
+/// The script of the refusal page: its Copy button.
+const REFUSAL_SCRIPT: &str = "const b=document.getElementById('copy'),f=document.getElementById('fix');\
+if(b&&f)b.onclick=()=>navigator.clipboard.writeText(f.textContent).then(()=>b.textContent='Copied',\
+()=>getSelection().selectAllChildren(f))";
+
+/// A policy for a page whose only script is `script`, inline: that script
+/// and nothing else, no other page framing it.
+pub fn inline_page_csp(script: &str) -> HeaderValue {
+    use base64::Engine;
+    let hash = base64::engine::general_purpose::STANDARD.encode(Sha256::digest(script.as_bytes()));
+    let csp = format!(
+        "default-src 'none'; script-src 'sha256-{hash}'; style-src 'unsafe-inline'; base-uri 'none'; \
+         form-action 'none'; frame-ancestors 'none'"
+    );
+    HeaderValue::from_str(&csp).unwrap_or(HeaderValue::from_static("default-src 'none'; frame-ancestors 'none'"))
+}
+
+/// A refusal as a page, for a browser (#109), with its policy.
+pub fn refusal(status: StatusCode, why: &str) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    let csp = inline_page_csp(REFUSAL_SCRIPT);
+    (status, [(header::CONTENT_SECURITY_POLICY, csp)], axum::response::Html(refusal_page(status, why))).into_response()
+}
+
+/// A refusal as a page (#109): the fix's command copyable.
+fn refusal_page(status: StatusCode, why: &str) -> String {
     let esc = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;");
     let body: String = why
         .split("\n\n")
@@ -439,12 +463,7 @@ pub fn refusal_page(status: StatusCode, why: &str) -> String {
         .map(|p| {
             let p = p.trim();
             if p.starts_with("arugulad ") || p == "arugula web" {
-                format!(
-                    "<p class=cmd><code id=fix>{}</code> <button onclick=\"navigator.clipboard.writeText(\
-                     document.getElementById('fix').textContent).then(()=>this.textContent='Copied',()=>\
-                     getSelection().selectAllChildren(document.getElementById('fix')))\">Copy</button></p>",
-                    esc(p)
-                )
+                format!("<p class=cmd><code id=fix>{}</code> <button id=copy>Copy</button></p>", esc(p))
             } else {
                 format!("<p>{}</p>", esc(p))
             }
@@ -455,7 +474,7 @@ pub fn refusal_page(status: StatusCode, why: &str) -> String {
          <title>arugula: {}</title><style>body{{font:16px/1.5 system-ui,sans-serif;max-width:36em;\
          margin:3em auto;padding:0 16px;color:#222;background:#fff}}@media(prefers-color-scheme:dark){{\
          body{{color:#ddd;background:#111}}}}code{{font:14px ui-monospace,monospace;word-break:break-all}}\
-         .cmd{{display:flex;gap:.5em;align-items:center}}</style>{body}",
+         .cmd{{display:flex;gap:.5em;align-items:center}}</style>{body}<script>{REFUSAL_SCRIPT}</script>",
         status.as_u16()
     )
 }
@@ -561,7 +580,13 @@ mod tests {
         let page = refusal_page(StatusCode::FORBIDDEN, &a.not_yours("<b>@x.com"));
         assert!(page.contains("&lt;b&gt;@x.com") && !page.contains("<b>@"), "{page}");
         assert!(page.contains("<code id=fix>arugulad install -- --owner &lt;b&gt;@x.com</code>"), "{page}");
-        assert!(page.contains(">Copy</button>"));
+        assert!(page.contains(">Copy</button>") && !page.contains(" onclick="), "{page}");
+        // Its one script is the one its policy names.
+        let res = refusal(StatusCode::FORBIDDEN, "no");
+        let csp = res.headers()[header::CONTENT_SECURITY_POLICY].to_str().unwrap().to_owned();
+        assert_eq!(csp, inline_page_csp(REFUSAL_SCRIPT).to_str().unwrap());
+        assert!(page.contains(&format!("<script>{REFUSAL_SCRIPT}</script>")));
+        assert!(csp.contains("script-src 'sha256-") && !csp.contains("script-src 'unsafe-inline'"), "{csp}");
     }
 
     #[test]
