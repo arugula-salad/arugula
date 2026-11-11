@@ -109,7 +109,7 @@ pub const SESSION_POWERS: [&str; 2] = [SESSIONS_START, SESSIONS_REPLY];
 /// a team's context a Doc lives in the team's project, and its machine's
 /// agents write it there as their owner's. Over a project only, never given
 /// on join (a grant that already holds `issues.write` is given it by
-/// migration 0108), and never to an agent grant token: a token has no Docs
+/// migration 0109), and never to an agent grant token: a token has no Docs
 /// tool. Reading a project's Docs needs no power, only that the owner
 /// reads the project.
 pub const DOCS_WRITE: &str = "docs.write";

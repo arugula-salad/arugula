@@ -245,8 +245,10 @@ pub trait Op: Send + Sync + 'static {
     /// operation: its MCP tool or kind is listed only with it, and every way
     /// in (its route, its tool by name) is refused without it (#347).
     const FLAG: Option<&'static str> = None;
-    /// Types into a pane, so needs the owner's trust on their machine
-    /// (M14): `authz::check` asks the mux whether the caller may (`ops::drives`).
+    /// Types into a pane, or speaks for what runs in it (its agent's hooks:
+    /// attention, questions, permission prompts, the inbox), so needs the
+    /// owner's trust on their machine (M14): `authz::check` asks the mux
+    /// whether the caller may (`ops::drives`).
     const DRIVES: bool = false;
     /// A GET whose answer grants access (a sign-in link, a list of tokens):
     /// a read-only MCP token can't call it. Any other GET is read-only.
@@ -818,6 +820,7 @@ pub mod ops {
         const METHOD: Method = Method::Post;
         const PATH: &'static str = "/api/panes/{id}/attention";
         const ACCESS: Access = Access::Pane(Role::Editor);
+        const DRIVES: bool = true;
         type Path = PaneId;
         type Req = AttentionRequest;
         type Res = Empty;
@@ -878,6 +881,7 @@ pub mod ops {
         const METHOD: Method = Method::Post;
         const PATH: &'static str = "/api/panes/{id}/ask";
         const ACCESS: Access = Access::Pane(Role::Editor);
+        const DRIVES: bool = true;
         type Path = PaneId;
         type Req = AskRequest;
         type Res = AskAnswer;
@@ -891,6 +895,7 @@ pub mod ops {
         const METHOD: Method = Method::Post;
         const PATH: &'static str = "/api/panes/{id}/ask/withdraw";
         const ACCESS: Access = Access::Pane(Role::Editor);
+        const DRIVES: bool = true;
         type Path = PaneId;
         type Req = WithdrawRequest;
         type Res = Empty;
@@ -906,6 +911,7 @@ pub mod ops {
         const METHOD: Method = Method::Post;
         const PATH: &'static str = "/api/panes/{id}/permit";
         const ACCESS: Access = Access::Pane(Role::Editor);
+        const DRIVES: bool = true;
         type Path = PaneId;
         type Req = PermitRequest;
         type Res = PermitAnswer;
@@ -920,6 +926,7 @@ pub mod ops {
         const METHOD: Method = Method::Post;
         const PATH: &'static str = "/api/panes/{id}/inbox";
         const ACCESS: Access = Access::Pane(Role::Editor);
+        const DRIVES: bool = true;
         type Path = PaneId;
         type Req = serde_json::Value;
         type Res = InboxAnswer;

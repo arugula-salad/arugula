@@ -15,6 +15,7 @@ use arugula_e2e::{
     Kind,
     channel::{Channel, MAX_MSG, MAX_WIRE, Msg, Refusal, RequestHead, Responder, ResponseHead, Welcome, prologue},
 };
+use arugula_proto::{Frame, FrameKind};
 use axum::{
     Router,
     body::{Body, HttpBody},
@@ -35,9 +36,19 @@ use tracing::{debug, info, warn};
 
 use crate::{
     mux::Cmd,
-    pane::{Subscriber, ToClient, client_queue},
+    pane::{ClientRx, Subscriber, ToClient, client_queue},
     server::App,
 };
+
+/// A relayed channel's pane output goes at most this often (#856): a busy
+/// pane's thousands of small reads a second become one message per pane
+/// each time, so control's relay moves about 60 messages a second for it,
+/// not 4,000. Output after a quiet spell goes at once (a keystroke's echo).
+const COALESCE: std::time::Duration = std::time::Duration::from_millis(16);
+/// The most output one coalesced frame carries.
+const COALESCE_MAX: usize = 32 * 1024;
+/// The most queued items taken together.
+const COALESCE_ITEMS: usize = 512;
 
 pub const PATH: &str = "/e2e";
 
@@ -77,7 +88,7 @@ async fn serve_ws(app: Arc<App>, socket: WebSocket) {
     };
     let w = crate::task::spawn(writer);
     tokio::select! {
-        r = serve(app, in_rx, out_tx) => log_end(r),
+        r = serve(app, in_rx, out_tx, false) => log_end(r),
         _ = reader => {}
     }
     drain(w).await;
@@ -121,8 +132,9 @@ pub async fn serve_stream(app: Arc<App>, stream: DuplexStream) {
         let _ = wr.shutdown().await;
     };
     let w = crate::task::spawn(writer);
+    // Through control's relay: its output is coalesced (#856).
     tokio::select! {
-        r = serve(app, in_rx, out_tx) => log_end(r),
+        r = serve(app, in_rx, out_tx, true) => log_end(r),
         _ = reader => {}
     }
     drain(w).await;
@@ -155,7 +167,12 @@ impl Out {
     }
 }
 
-async fn serve(app: Arc<App>, mut inbound: mpsc::Receiver<Vec<u8>>, out: mpsc::Sender<Vec<u8>>) -> anyhow::Result<()> {
+async fn serve(
+    app: Arc<App>,
+    mut inbound: mpsc::Receiver<Vec<u8>>,
+    out: mpsc::Sender<Vec<u8>>,
+    relayed: bool,
+) -> anyhow::Result<()> {
     // Before anyone's looked up: a change from here on is one this channel
     // sees, however soon it comes.
     let mut changed = app.control.changed.subscribe();
@@ -227,6 +244,8 @@ async fn serve(app: Arc<App>, mut inbound: mpsc::Receiver<Vec<u8>>, out: mpsc::S
     // Its requests (a follow can run for as long as the channel does) end
     // with it: dropping the set aborts them.
     let mut requests = tokio::task::JoinSet::new();
+    // When this relayed channel last sent pane output (#856).
+    let mut last_output: Option<tokio::time::Instant> = None;
     loop {
         tokio::select! {
             Some(_) = requests.join_next(), if !requests.is_empty() => {}
@@ -271,8 +290,19 @@ async fn serve(app: Arc<App>, mut inbound: mpsc::Receiver<Vec<u8>>, out: mpsc::S
                 if let Some(r) = end { break r }
             }
             Some(o) = data_rx.recv() => {
-                let Some(m) = to_msg(o) else { break Ok(()) };
-                if let Err(e) = out.put(&m).await { break Err(e) }
+                let batch = if relayed { coalesced(o, &mut data_rx, &mut last_output).await } else { vec![o] };
+                let mut end = None;
+                for o in batch {
+                    let Some(m) = to_msg(o) else {
+                        end = Some(Ok(()));
+                        break;
+                    };
+                    if let Err(e) = out.put(&m).await {
+                        end = Some(Err(e));
+                        break;
+                    }
+                }
+                if let Some(r) = end { break r }
             }
             Ok(()) = changed.changed() => {
                 if let Some(why) = no_longer(app.control.device(&who).map(|(_, p)| p), &principal) {
@@ -411,6 +441,67 @@ impl Drop for Leave {
     }
 }
 
+/// What a relayed channel sends for `first` and whatever is queued behind
+/// it (#856). Pane output within [`COALESCE`] of the last that went waits
+/// out the rest of it, so a busy pane's output goes in one message per
+/// pane per [`COALESCE`]; then everything queued is taken, in order, with
+/// each pane's back-to-back output joined ([`join_output`]).
+async fn coalesced(first: ToClient, rx: &mut ClientRx, last: &mut Option<tokio::time::Instant>) -> Vec<ToClient> {
+    let output = matches!(&first, ToClient::Frame(b) if b.first() == Some(&(FrameKind::Output as u8)));
+    if output && let Some(at) = *last {
+        tokio::time::sleep_until(at + COALESCE).await;
+    }
+    let mut items = vec![first];
+    while items.len() < COALESCE_ITEMS {
+        let Some(o) = rx.try_recv() else { break };
+        items.push(o);
+    }
+    let items = join_output(items);
+    if items.iter().any(|o| matches!(o, ToClient::Frame(b) if b.first() == Some(&(FrameKind::Output as u8)))) {
+        *last = Some(tokio::time::Instant::now());
+    }
+    items
+}
+
+/// `items` in order, with each run of one pane's output whose offsets follow
+/// on joined into one frame (up to [`COALESCE_MAX`]): the client writes the
+/// same bytes at the same offsets either way.
+fn join_output(items: Vec<ToClient>) -> Vec<ToClient> {
+    let mut out: Vec<ToClient> = Vec::with_capacity(items.len());
+    // The output frame being built, not yet in `out`.
+    let mut open: Option<Frame> = None;
+    for o in items {
+        let f = match &o {
+            ToClient::Frame(b) => Frame::decode(b).ok().filter(|f| f.kind == FrameKind::Output),
+            _ => None,
+        };
+        match (f, open.as_mut()) {
+            (Some(f), Some(cur))
+                if f.pane == cur.pane
+                    && f.offset == cur.offset + cur.data.len() as u64
+                    && cur.data.len() + f.data.len() <= COALESCE_MAX =>
+            {
+                cur.data.extend_from_slice(&f.data);
+            }
+            (Some(f), _) => {
+                if let Some(cur) = open.replace(f) {
+                    out.push(ToClient::Frame(cur.encode()));
+                }
+            }
+            (None, _) => {
+                if let Some(cur) = open.take() {
+                    out.push(ToClient::Frame(cur.encode()));
+                }
+                out.push(o);
+            }
+        }
+    }
+    if let Some(cur) = open {
+        out.push(ToClient::Frame(cur.encode()));
+    }
+    out
+}
+
 /// `None`: hang up.
 fn to_msg(o: ToClient) -> Option<Msg> {
     match o {
@@ -501,6 +592,86 @@ async fn call(
     let status = res.status().as_u16();
     let ct = res.headers().get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).map(str::to_owned);
     Ok((status, ct, res.into_body()))
+}
+
+#[cfg(test)]
+mod coalesce_tests {
+    use super::*;
+
+    fn out(pane: u32, offset: u64, data: &[u8]) -> ToClient {
+        ToClient::Frame(Frame { kind: FrameKind::Output, pane, offset, data: data.to_vec() }.encode())
+    }
+
+    fn frames(items: &[ToClient]) -> Vec<(u32, u64, Vec<u8>)> {
+        items
+            .iter()
+            .map(|o| match o {
+                ToClient::Frame(b) => {
+                    let f = Frame::decode(b).unwrap();
+                    (f.pane, f.offset, f.data)
+                }
+                ToClient::Json(j) => (0, 0, j.as_bytes().to_vec()),
+                _ => (0, 0, vec![]),
+            })
+            .collect()
+    }
+
+    /// A pane's output that follows on is one frame; another pane's, a gap,
+    /// or anything else in between keeps the order and starts a new one.
+    #[test]
+    fn back_to_back_output_is_joined_in_order() {
+        let items = vec![
+            out(1, 0, b"ab"),
+            out(1, 2, b"cd"),
+            out(2, 0, b"x"),
+            out(1, 4, b"ef"),
+            out(1, 9, b"gap"),
+            ToClient::Json("{}".into()),
+            out(1, 12, b"h"),
+        ];
+        assert_eq!(
+            frames(&join_output(items)),
+            vec![
+                (1, 0, b"abcd".to_vec()),
+                (2, 0, b"x".to_vec()),
+                (1, 4, b"ef".to_vec()),
+                (1, 9, b"gap".to_vec()),
+                (0, 0, b"{}".to_vec()),
+                (1, 12, b"h".to_vec()),
+            ]
+        );
+    }
+
+    /// A joined frame stops at [`COALESCE_MAX`].
+    #[test]
+    fn joined_output_is_bounded() {
+        let chunk = vec![b'x'; COALESCE_MAX / 2 + 1];
+        let items = vec![out(1, 0, &chunk), out(1, chunk.len() as u64, &chunk)];
+        assert_eq!(join_output(items).len(), 2);
+    }
+
+    /// A busy pane's thousand small reads go as a few messages, and output
+    /// after a quiet spell goes at once.
+    #[tokio::test]
+    async fn a_busy_panes_output_goes_once_per_interval() {
+        let (tx, mut rx) = client_queue();
+        let mut last = None;
+        let first = out(1, 0, b"a");
+        let t = tokio::time::Instant::now();
+        let sent = coalesced(first, &mut rx, &mut last).await;
+        assert_eq!(sent.len(), 1);
+        assert!(t.elapsed() < COALESCE, "the first goes at once");
+        for i in 1..1000u64 {
+            tx.try_send(ToClient::Frame(
+                Frame { kind: FrameKind::Output, pane: 1, offset: i, data: b"a".to_vec() }.encode(),
+            ))
+            .unwrap();
+        }
+        let next = rx.recv().await.unwrap();
+        let sent = coalesced(next, &mut rx, &mut last).await;
+        assert!(last.unwrap() >= t + COALESCE, "the next waits out the interval");
+        assert_eq!(frames(&sent), vec![(1, 1, vec![b'a'; COALESCE_ITEMS])]);
+    }
 }
 
 #[cfg(test)]

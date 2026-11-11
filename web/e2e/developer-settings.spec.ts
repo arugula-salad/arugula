@@ -48,7 +48,8 @@ test.afterAll(() => {
   if (state) rmSync(state, { recursive: true, force: true });
 });
 
-const FLAGS = ["sandbox-providers", "studio", "chant-workspaces", "additional-forges", "agent-delegation"] as const;
+// GitLab and Forgejo left Labs (native #523): their links are blocks with no flag.
+const FLAGS = ["sandbox-providers", "studio", "chant-workspaces", "agent-delegation"] as const;
 type Flag = (typeof FLAGS)[number];
 
 const setFlag = (flag: string, on: boolean, as?: string) =>
@@ -80,13 +81,11 @@ async function shown(page: Page, pane: number): Promise<(Flag | "guest-ssh")[]> 
     const c = window.__arugula.client as unknown as { flag(n: string): boolean; forgeLink(u: string): string | null };
     return {
       workspaces: c.flag("chant-workspaces"),
-      forges: c.forgeLink("https://gitlab.com/g/p/-/merge_requests/2"),
       // M76 is the daemon's and the CLI's; the page's catalog is M77's.
       agents: c.flag("agent-delegation"),
     };
   });
   if (page_says.workspaces) out.push("chant-workspaces");
-  if (page_says.forges) out.push("additional-forges");
   if (page_says.agents) out.push("agent-delegation");
   return [...FLAGS, "guest-ssh" as const].filter((f) => out.includes(f));
 }
@@ -171,7 +170,6 @@ test("a renamed flag's old name still turns its feature on, under its new name",
   const renamed = [
     ["vms", "sandbox-providers"],
     ["workspaces", "chant-workspaces"],
-    ["forges", "additional-forges"],
     ["agents", "agent-delegation"],
   ] as const;
   for (const [old, now] of renamed) {
@@ -196,7 +194,6 @@ const GATED: [Flag, string, string, unknown][] = [
   ["studio", "GET", "/api/studio", undefined],
   ["studio", "POST", "/api/blocks", { type: "app", config: { app: "nothing-here" }, local: true }],
   ["chant-workspaces", "POST", "/api/blocks", { type: "workspace", config: {}, local: true }],
-  ["additional-forges", "POST", "/api/blocks", { type: "forge", config: { repo: "o/r", number: 0, provider: "forgejo" }, local: true }],
   ["agent-delegation", "GET", "/api/a2a/agents", undefined],
 ];
 

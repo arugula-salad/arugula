@@ -469,15 +469,21 @@ async fn relay(app: Arc<App>, origin_key: String, req: Request) -> Response {
     let owner = owner.meter().to_owned();
     let deadlines = app.blocks.deadlines;
     up.max_message_size(MAX_WIRE).read_buffer_size(CLIENT_READ_BUFFER).on_upgrade(move |ws| async move {
-        let _seat = seat;
-        let done = tokio::select! {
-            n = splice(ws, stream, slow, &ticket, deadlines) => Some(n),
-            _ = ticket.gone() => None,
-        };
-        let Some((up, down)) = done else { return };
-        if let Err(e) = app.db.add_relay_bytes(&owner, &crate::day(now_ms()), up + down) {
-            warn!(error = %e, "metering");
-        }
+        // Spliced on the relay's runtime, metered off it (#857).
+        crate::runtimes::spawn_relay(async move {
+            let _seat = seat;
+            let done = tokio::select! {
+                n = splice(ws, stream, slow, &ticket, deadlines) => Some(n),
+                _ = ticket.gone() => None,
+            };
+            let Some((up, down)) = done else { return };
+            crate::runtimes::blocking(move || {
+                if let Err(e) = app.db.add_relay_bytes(&owner, &crate::day(now_ms()), up + down) {
+                    warn!(error = %e, "metering");
+                }
+            })
+            .await;
+        })
     })
 }
 

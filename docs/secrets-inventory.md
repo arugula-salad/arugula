@@ -31,7 +31,7 @@ listed is at the end.
 | Store | What's in it | Who can read it |
 | --- | --- | --- |
 | Fly secrets, org `personal` | The hub (`illogical-control`) and the platform (`arugula-platform`); `arugula-deploy-test` has none | Jake, the Fly org's only member; and whoever holds a deploy token for the app, since a deploy token can run commands in its machines. The two deploy tokens are GitHub secrets on `arugula` (below) |
-| GitHub Actions secrets | `arugula`, `studio`, `arcade`, `experimental`; no other repo has any, and no environment has its own | Nobody reads them back through the API. A workflow run reads them, so anyone who can push a branch with a workflow can: the org's three members, all admins (`jhgaylor`, `alecraso`, `lex00`). Pull requests from forks get none |
+| GitHub Actions secrets | `arugula`, `studio`, `arcade`, `experimental`; no other repo has any. On `arugula`, release, signing and deploy secrets are in environments (below) | Nobody reads them back through the API. A repository secret reaches any workflow run, so anyone who can push a branch with a workflow can read it: the org's three members, all admins (`jhgaylor`, `alecraso`, `lex00`). An environment's reaches only the branches and tags its policy names. Pull requests from forks get none |
 | Infisical (home-cloud's own instance) | Projects `arugula`, `arugula-flux`, `github-runners`, `planter`, `planter-apps`, `redone`, `beds`, `studio`, `arcade`, `loam`, `sandpit-substrate` | Jake's account. Each project has a viewer machine identity whose Kubernetes auth accepts one service account; the operator renders a Kubernetes Secret from it, which that namespace's pods can mount. Writers are named per project below |
 | The platform's database | Projects' secrets, sealed with each project's data key; the data keys, wrapped by the master key | The platform process, holding the master key (`ARUGULA_CLOUD_SECRET_KEY`). Backups (Litestream, the nightly dump) hold ciphertext and never the key |
 | The hub's database | Control's VAPID key pair and its hosted-machine signing key (`settings`) | The hub process; Litestream's copy |
@@ -102,23 +102,34 @@ Operator.
 
 ## arugula: releases and CI
 
-GitHub Actions on `arugula-salad/arugula`:
+GitHub Actions on `arugula-salad/arugula`. A secret in an environment reaches
+only a job that names the environment and runs from a branch or tag its policy
+allows; `v*` and `app-v*` tags are protected, so only admins make them:
 
-| Name | Used by | Copies | Fate |
-| --- | --- | --- | --- |
-| `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`, `APPLE_PROVISIONING_PROFILE` (D2: the Developer ID provisioning profile, base64; not secret, kept beside the others) | `app-release.yml` | Infisical `/illogical/release`; the certificate's files on the workstation | Operator |
-| `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | `app-release.yml` | Infisical `/illogical/release` (with `TAURI_UPDATER_PUBKEY`, public) | Operator |
-| `FLY_API_TOKEN` (deploys the hub), `FLY_PLATFORM_API_TOKEN` (deploys the platform) | `server-release.yml` | none; Fly mints new ones | Operator |
-| `E2B_API_KEY` | `release.yml` (the hosted template) | Infisical | Operator |
-| `HOMEBREW_TAP_KEY` | `release.yml` | none | Operator |
-| `CI_GREEN_TOKEN` | `app-release.yml`, `auto-revert.yml`, `chant-ci-green.yml`, `server-release.yml` (pushes `chant/lifecycle`) | none | Operator |
-| `SCCACHE_WEBDAV_PASSWORD` | `check.yml`, `testnet-break.yml` | none | Operator |
-| `ARUGULA_GH_APP_PRIVATE_KEY` (the forge-test App) | `forges-nightly.yml` | Infisical `/illogical/forge-tests` (with `ARUGULA_GH_APP_ID`) | Operator |
-| `ARUGULA_GH_AUTHOR_TOKEN`, `ARUGULA_GH_REVIEWER_TOKEN` (the test bots') | `forges-nightly.yml` | none | Operator |
+| Environment | Who reaches it |
+| --- | --- |
+| `ci-green` | `main` |
+| `deploy` | `main`, `v*` tags |
+| `release`, `marketplace` | `v*` tags |
+| `app-release` | `app-v*` tags |
+
+| Name | Where | Used by | Copies | Fate |
+| --- | --- | --- | --- | --- |
+| `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`, `APPLE_PROVISIONING_PROFILE` (D2: the Developer ID provisioning profile, base64; not secret, kept beside the others) | `app-release` | `app-release.yml` | Infisical `/illogical/release`; the certificate's files on the workstation | Operator |
+| `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | `app-release` | `app-release.yml` | Infisical `/illogical/release` (with `TAURI_UPDATER_PUBKEY`, public) | Operator |
+| `FLY_API_TOKEN` (deploys the hub), `FLY_PLATFORM_API_TOKEN` (deploys the platform) | `deploy` | `server-release.yml` | none; Fly mints new ones | Operator |
+| `E2B_API_KEY` | `release` | `release.yml` (the hosted template) | Infisical | Operator |
+| `HOMEBREW_TAP_KEY` | `marketplace` | `release.yml` | none | Operator |
+| `RELEASE_SUMS_KEY` (Ed25519, PEM: signs a release's `SHA256SUMS`; the public half is in `crates/proto/src/release_sums.rs`, `scripts/install.sh` and `scripts/release`) | `marketplace` | `release.yml` | the workstation's `~/.config/arugula/release-sums/` | Operator. Losing it means a new key, and daemons from before it can't update themselves (install.sh again) |
+| `CI_GREEN_TOKEN` | `ci-green`, `deploy`, `app-release` | `app-release.yml`, `auto-revert.yml`, `chant-ci-green.yml`, `rare-nightly.yml`, `release-train.yml`, `server-release.yml` (pushes `chant/lifecycle`) | none | Operator |
+| `SCCACHE_WEBDAV_PASSWORD` | repository | `check.yml`, `pull-request.yml`, the nightlies, `server-release.yml`'s Postgres tests; not the builds that ship | none | Operator |
+| `ARUGULA_GH_APP_PRIVATE_KEY` (the forge-test App) | repository | `forges-nightly.yml` | Infisical `/illogical/forge-tests` (with `ARUGULA_GH_APP_ID`) | Operator |
+| `ARUGULA_GH_AUTHOR_TOKEN`, `ARUGULA_GH_REVIEWER_TOKEN` (the test bots') | repository | `forges-nightly.yml` | none | Operator |
 
 Variables (not secrets): `ARUGULA_GH_APP_ID`, `ARUGULA_GH_TEST_REPO`, and
-`AZURE_CLIENT_ID`, `AZURE_TENANT_ID` for the Marketplace's OIDC sign-in. The
-`marketplace` environment has no secrets: releases publish by OIDC.
+`AZURE_CLIENT_ID`, `AZURE_TENANT_ID` for the Marketplace's OIDC sign-in.
+`chant-ci-green.yml` is chant's generated file: its `environment: ci-green`
+line is ours, so keep it when regenerating.
 
 In Infisical, outside `/illogical`, all Operator:
 

@@ -13,6 +13,7 @@ import { registerBlock, type BlockView } from "./view";
 import { Chip } from "../../shared/ui/state-chip";
 import { Bar } from "../../shared/ui/bar";
 import { ExternalIcon, IconButton, ReloadIcon } from "../../shared/ui/icons";
+import { webLink } from "../../shared/web-link";
 
 export interface BrowserState {
   /** Where the page is now. */
@@ -159,7 +160,7 @@ function BrowserBlock({ client, id, s }: { client: Client; id: PaneId; s: Browse
           <input name="url" value={shown(s)} spellcheck={false} autocomplete="off" />
         </form>
         <RoutePill id={id} />
-        {/^https?:/.test(s.url) && <OpenOutside href={s.url} />}
+        {webLink(s.url) && <OpenOutside href={s.url} />}
       </Bar>
       {s.error ? (
         <BlockError title={port ? `Nothing is answering on ${where}` : `Couldn't load ${where}`} detail={s.error} retry={() => call("reload")}>
@@ -173,7 +174,7 @@ function BrowserBlock({ client, id, s }: { client: Client; id: PaneId; s: Browse
           title={`${where} won't show here.`}
           why="It doesn't allow being shown inside another page."
           action={
-            <a class="primary" href={s.url} target="_blank" rel="noopener noreferrer">
+            <a class="primary" href={webLink(s.url)} target="_blank" rel="noopener noreferrer">
               Open in a new tab <ExternalIcon size="xs" />
             </a>
           }
@@ -195,11 +196,12 @@ function BrowserBlock({ client, id, s }: { client: Client; id: PaneId; s: Browse
           sandbox="allow-scripts allow-forms allow-same-origin"
         />
       ) : (
-        // A web page, on its own site.
+        // A web page, on its own site: a web address only, whatever the
+        // state says (it can come from another host).
         <iframe
           key={`${s.src}#${s.reloads}`}
           class="browser-frame"
-          src={s.src}
+          src={webLink(s.src) ?? "about:blank"}
           title={s.title ?? s.url}
           sandbox="allow-scripts allow-forms allow-same-origin allow-popups"
           referrerpolicy="no-referrer"

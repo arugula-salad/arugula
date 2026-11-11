@@ -290,6 +290,8 @@ jobs:
   rare-passed:
     needs: [core, test-postgres, testnet, stack, webkit]
     runs-on: ubuntu-latest
+    # CI_GREEN_TOKEN is the ci-green environment's, which only main reaches.
+    environment: ci-green
     permissions: {}
     steps:
       - name: Tag the commit ci/rare/<sha>

@@ -69,7 +69,7 @@ export default {
         tag,
         latest: true,
         sbom: false,
-        assets: [...tarballs, `${dist}/arugula-${version}-x86_64-pc-windows-msvc.zip`, vsix, `${dist}/SHA256SUMS`],
+        assets: [...tarballs, `${dist}/arugula-${version}-x86_64-pc-windows-msvc.zip`, vsix, `${dist}/SHA256SUMS`, `${dist}/SHA256SUMS.sig`],
       },
       {
         type: "homebrew",

@@ -910,10 +910,21 @@ pub async fn lock(State(app): State<Arc<App>>, s: Session, Path(team): Path<Stri
 // ---------------------------------------------------------------- daemons
 
 /// A team daemon's team: rosters after the version it has, every member's
-/// certificates, and whether it's locked.
+/// certificates, and whether it's locked. A machine that isn't a team's
+/// (one whose owner left it, say) hears nothing new: no rosters, no one's
+/// certificates, and keeps what it has.
 pub async fn daemon_team(State(app): State<Arc<App>>, d: DaemonAuth, Query(q): Query<wire::TeamQuery>) -> R {
     app.db.set_daemon_features(&d.cert.device, &q.features)?;
-    let Some(team) = app.db.daemon_team(&d.cert.device)? else { return crate::reply(&wire::TeamNone::default()) };
+    let Some(team) = app.db.daemon_team(&d.cert.device)? else {
+        return crate::reply(&wire::TeamAnswer {
+            team: None,
+            locked: false,
+            lock: None,
+            rosters: vec![],
+            certs: Default::default(),
+            names: Default::default(),
+        });
+    };
     let t = app.db.team(&team)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such team"))?;
     // A machine downgraded after its team took a presigned invite would
     // stop at the first version one wrote and keep whoever was in then,

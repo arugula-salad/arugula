@@ -6251,7 +6251,6 @@ export const FLAGS = [
   { name: "sandbox-providers", title: "External sandbox providers", about: "VM tabs and panes, machines and the sandboxes page, from your own sandbox provider. Cloud workspaces don't need it.", default: false, local_only: false },
   { name: "studio", title: "Studio apps", about: "Studio app blocks. Needs a linked studio.", default: false, local_only: false },
   { name: "chant-workspaces", title: "Chant workspaces", about: "Chant workspace blocks: a workspace's members, relationships and gates.", default: false, local_only: false },
-  { name: "additional-forges", title: "GitLab and Forgejo", about: "PR and issue blocks for GitLab and Forgejo, beside GitHub's.", default: false, local_only: false },
   { name: "agent-delegation", title: "Local agent delegation", about: "Agent recipes, offering them from this machine, your team's agent catalog and tasks between machines.", default: false, local_only: true },
 ] as const;
 
@@ -6260,6 +6259,5 @@ export const FLAGS = [
 export const FLAG_ALIASES = [
   ["vms", "sandbox-providers"],
   ["workspaces", "chant-workspaces"],
-  ["forges", "additional-forges"],
   ["agents", "agent-delegation"],
 ] as const;

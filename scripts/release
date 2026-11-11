@@ -41,7 +41,8 @@
 # The app (app-v*):
 #   release sidecars TARGET DIR    the latest daemon release's arugulad and
 #                                  arugula for TARGET, checked against its
-#                                  SHA256SUMS, into DIR (Windows: with ConPTY)
+#                                  SHA256SUMS, which the release key must have
+#                                  signed, into DIR (Windows: with ConPTY)
 #
 # Publishing, which chant does (#1986): release.yml and app-release.yml cut
 # the tag's release with `chant release cut --lane` from the commit the tag
@@ -58,6 +59,8 @@
 #   release sums TAG DIR           SHA256SUMS in DIR of TAG's files there: a
 #                                  daemon release's four tarballs and Windows
 #                                  zip, or an app release's every download
+#   release sign-sums DIR          DIR/SHA256SUMS.sig, a daemon release's
+#                                  SHA256SUMS signed with RELEASE_SUMS_KEY
 #   release draft TAG              TAG's GitHub release as a draft, titled, with
 #                                  its notes from TAG's message, or for a tag
 #                                  with none from docs/releases/ as TAG has them
@@ -145,6 +148,25 @@ notes_path() { case "$1" in app-v*) echo "docs/releases/app-${1#app-v}.md" ;; *)
 # tag from before that, whose message is a title and maybe a trailer, has none.
 notes_begin='<!-- release notes -->'
 notes_end='<!-- end of release notes -->'
+
+# The key that signs a daemon release's SHA256SUMS (SHA256SUMS.sig: Ed25519,
+# base64), as arugula_proto::release_sums, install.sh and `arugulad update`
+# have it. release.yml's publish job signs with the private half
+# (RELEASE_SUMS_KEY, the marketplace environment's).
+sums_key='-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAsD4YB+GbXgEt8eueJnob85euFZyEZYmLeTfOJhrdsVo=
+-----END PUBLIC KEY-----'
+
+# sums_signed SUMS SIG: SIG is the release key's signature of SUMS (node's
+# crypto, which every release job has; openssl's Ed25519 varies by machine).
+sums_signed() {
+  SUMS_KEY=$sums_key node -e '
+    const c = require("crypto"), fs = require("fs");
+    const [sums, sig] = process.argv.slice(1);
+    const raw = Buffer.from(fs.readFileSync(sig, "utf8").trim(), "base64");
+    process.exit(raw.length === 64 && c.verify(null, fs.readFileSync(sums), process.env.SUMS_KEY, raw) ? 0 : 1);
+  ' "$1" "$2"
+}
 
 # The release for a tag, made as a draft if it isn't there yet.
 ensure_release() {
@@ -876,7 +898,8 @@ case "${1:-}" in
     case "$target" in *-windows-*) ext=zip ;; *) ext=tar.gz ;; esac
     name=arugula-$v-$target
     dir=$(mktemp -d)
-    gh release download "$tag" -R "$repo" -p "$name.$ext" -p SHA256SUMS -D "$dir"
+    gh release download "$tag" -R "$repo" -p "$name.$ext" -p SHA256SUMS -p SHA256SUMS.sig -D "$dir"
+    sums_signed "$dir/SHA256SUMS" "$dir/SHA256SUMS.sig" || { echo "$tag's SHA256SUMS isn't signed by the release key" >&2; exit 1; }
     want=$(awk -v f="$name.$ext" '$2 == f { print $1 }' "$dir/SHA256SUMS")
     [ -n "$want" ] || { echo "$name.$ext isn't in $tag's SHA256SUMS" >&2; exit 1; }
     if command -v sha256sum >/dev/null; then got=$(sha256sum "$dir/$name.$ext" | cut -d' ' -f1); else got=$(shasum -a 256 "$dir/$name.$ext" | cut -d' ' -f1); fi
@@ -913,6 +936,21 @@ case "${1:-}" in
         (cd "$dir" && sha256sum -- arugula-[0-9]*.tar.gz arugula-[0-9]*.zip > SHA256SUMS && cat SHA256SUMS)
         ;;
     esac
+    ;;
+  sign-sums)
+    # SHA256SUMS.sig beside DIR's SHA256SUMS (`sums`), signed with
+    # RELEASE_SUMS_KEY (an Ed25519 private key, PEM), and checked against
+    # the key the daemon and install.sh know before anything is published.
+    dir=${2:?usage: release sign-sums DIR}
+    [ -f "$dir/SHA256SUMS" ] || { echo "no $dir/SHA256SUMS: run \`release sums\` first" >&2; exit 1; }
+    [ -n "${RELEASE_SUMS_KEY:-}" ] || { echo "RELEASE_SUMS_KEY isn't set: a release's SHA256SUMS must be signed" >&2; exit 1; }
+    node -e '
+      const c = require("crypto"), fs = require("fs");
+      const sums = process.argv[1];
+      fs.writeFileSync(sums + ".sig", c.sign(null, fs.readFileSync(sums), process.env.RELEASE_SUMS_KEY).toString("base64") + "\n");
+    ' "$dir/SHA256SUMS"
+    sums_signed "$dir/SHA256SUMS" "$dir/SHA256SUMS.sig" || { echo "RELEASE_SUMS_KEY isn't the release key: SHA256SUMS.sig wouldn't check" >&2; exit 1; }
+    echo "signed $dir/SHA256SUMS: $dir/SHA256SUMS.sig"
     ;;
   draft)
     # Before `chant release publish` (#1986): TAG's release, made as a draft

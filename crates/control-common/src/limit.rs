@@ -23,6 +23,12 @@ pub struct Limits {
     /// Per (what, who): when each recent use happened.
     seen: Mutex<HashMap<(&'static str, String), Vec<Instant>>>,
     pub proxy_header: Option<String>,
+    /// Client addresses no per-address limit counts (#530): the load
+    /// test's generators, which enrol thousands of machines from one
+    /// address. Only a `loadtest` build has it, and only a staging control
+    /// sets it (control's `loadtest.rs`): the release build has no way in.
+    #[cfg(feature = "loadtest")]
+    exempt: Vec<IpAddr>,
 }
 
 const WINDOW: Duration = Duration::from_secs(3600);
@@ -44,7 +50,20 @@ pub fn bucket(ip: IpAddr) -> IpAddr {
 
 impl Limits {
     pub fn new(proxy_header: Option<String>) -> Self {
-        Self { seen: Mutex::new(HashMap::new()), proxy_header }
+        Self {
+            seen: Mutex::new(HashMap::new()),
+            proxy_header,
+            #[cfg(feature = "loadtest")]
+            exempt: Vec::new(),
+        }
+    }
+
+    /// These client addresses skip the per-address limits (#530, a load
+    /// test's generators). A `loadtest` build only.
+    #[cfg(feature = "loadtest")]
+    pub fn exempt(mut self, ips: Vec<IpAddr>) -> Self {
+        self.exempt = ips.into_iter().map(bucket).collect();
+        self
     }
 
     pub fn client_ip(&self, peer: SocketAddr, headers: &HeaderMap) -> IpAddr {
@@ -59,6 +78,10 @@ impl Limits {
 
     /// Count one use from a client address; refuse once over the limit.
     pub fn check(&self, what: (&'static str, usize), ip: IpAddr) -> Result<(), ApiError> {
+        #[cfg(feature = "loadtest")]
+        if self.exempt.contains(&bucket(ip)) {
+            return Ok(());
+        }
         self.count(what, format!("ip:{}", bucket(ip)), "too many of those from here; try again later")
     }
 
@@ -153,6 +176,19 @@ mod tests {
         assert_eq!(l.client_ip("127.0.0.1:1".parse().unwrap(), &h), "203.0.113.9".parse::<IpAddr>().unwrap());
         let plain = Limits::new(None);
         assert_eq!(plain.client_ip("127.0.0.1:1".parse().unwrap(), &h), "127.0.0.1".parse::<IpAddr>().unwrap());
+    }
+
+    #[cfg(feature = "loadtest")]
+    #[test]
+    fn an_exempt_address_is_never_counted() {
+        let generator: IpAddr = "203.0.113.7".parse().unwrap();
+        let l = Limits::new(None).exempt(vec![generator]);
+        for _ in 0..10 {
+            l.check(("t", 1), generator).unwrap();
+        }
+        let other: IpAddr = "203.0.113.8".parse().unwrap();
+        l.check(("t", 1), other).unwrap();
+        assert!(l.check(("t", 1), other).is_err(), "everyone else is still counted");
     }
 
     #[test]

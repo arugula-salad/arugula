@@ -135,6 +135,17 @@ async fn daemon_signatures_cover_the_request_and_are_good_once() {
     let again = get(h, pq).await.unwrap();
     assert_eq!(again.status(), 401, "a copy of a request does nothing");
     assert!(again.text().await.unwrap().contains("used already"));
+    // Nor does a copy whose signature is spelled another way (hex reads in
+    // either case), in whole or in one letter.
+    let h = v2(&d, "GET", pq, b"");
+    let (head, sig) = h.rsplit_once(' ').unwrap();
+    let upper = format!("{head} {}", sig.to_ascii_uppercase());
+    let i = sig.find(|c: char| c.is_ascii_lowercase()).unwrap();
+    let one = format!("{head} {}{}{}", &sig[..i], sig[i..=i].to_ascii_uppercase(), &sig[i + 1..]);
+    assert_eq!(get(upper.clone(), pq).await.unwrap().status(), 200, "either case is a good signature");
+    for copy in [h, upper, one] {
+        assert_eq!(get(copy, pq).await.unwrap().status(), 401, "a respelled copy does nothing");
+    }
     // Another query than the one signed.
     let h = v2(&d, "GET", pq, b"");
     assert_eq!(get(h, "/api/daemon/trust?features=other").await.unwrap().status(), 401);
@@ -214,7 +225,10 @@ async fn joining_again_needs_the_machines_key() {
     // Its holder can (to move it, say), with a fresh proof each time.
     let proven = join_body(&joined, true);
     assert_eq!(post(proven.clone()).await.unwrap().status(), 200);
+    let mut respelled = proven.clone();
+    respelled["proof"]["sig"] = json!(proven["proof"]["sig"].as_str().unwrap().to_ascii_uppercase());
     assert_eq!(post(proven).await.unwrap().status(), 401, "a proof is good once");
+    assert_eq!(post(respelled).await.unwrap().status(), 401, "in any spelling");
     // A new machine on Arugula before 0.17 (no proof) is told to update.
     let fresh = DeviceKeys::generate();
     assert_eq!(post(join_body(&fresh, false)).await.unwrap().status(), 426);
@@ -885,6 +899,112 @@ async fn control_routes_a_daemon_only_to_accounts_with_a_say_in_it() {
     let (st, _) =
         c.as_person(&oth, "POST", &format!("/api/shares/{}", lone.id()), Some(json!({ "accept": true }))).await;
     assert_eq!(st, 404);
+}
+
+/// Someone who put their own machine into a team, and is then taken out
+/// of the team, takes the machine out with them, through the routes: it
+/// hears no new roster or anyone's certificates, gets no member's push
+/// subscriptions and can't push to them, the team's members aren't routed
+/// to it nor see it among their machines, and the platform hears it moved.
+/// It's still its owner's.
+#[tokio::test]
+async fn a_member_who_leaves_takes_their_machine_out_of_the_team() {
+    use arugula_e2e::team::{Move, TeamPin};
+    let c = control(|_| {}).await;
+    let owner_root = person(&c.app, "owner", "own1");
+    let mate_root = person(&c.app, "mate", "mate1");
+    let other_root = person(&c.app, "other", "oth1");
+    let d = daemon(&c.app, "mate1", "matebox");
+    let team = "0123456789abcdef";
+    let r1 = roster(
+        team,
+        1,
+        vec![
+            member("own1", &owner_root, TeamRole::Owner),
+            member("mate1", &mate_root, TeamRole::Editor),
+            member("oth1", &other_root, TeamRole::Editor),
+        ],
+        &owner_root,
+    );
+    let t = Team {
+        id: team.into(),
+        name: "Acme".into(),
+        founder: "own1".into(),
+        founder_root: owner_root.id(),
+        locked: false,
+    };
+    c.app.db.add_team(&t, 1, &serde_json::to_string(&r1).unwrap(), now_ms()).unwrap();
+    let (owner, mate, other) = (session(&c.app, "own1"), session(&c.app, "mate1"), session(&c.app, "oth1"));
+    for (a, e) in [("own1", "o"), ("oth1", "x")] {
+        let body = json!({ "account": a, "endpoint": format!("https://fcm.googleapis.com/fcm/send/{e}") });
+        c.app.db.put_push_sub(&format!("https://fcm.googleapis.com/fcm/send/{e}"), a, &body.to_string()).unwrap();
+    }
+    let subs = |v: &Value| -> Vec<String> {
+        let mut a: Vec<String> =
+            v["subs"].as_array().unwrap().iter().map(|s| s["account"].as_str().unwrap().to_owned()).collect();
+        a.sort();
+        a
+    };
+    // mate moves their own machine in (any member may), as its daemon would
+    // be told by a device of theirs; it says it doesn't take owners' moves.
+    let pin = TeamPin { team: team.into(), founder: "own1".into(), founder_root: owner_root.id() };
+    let at = now_ms();
+    let sig = hex::encode(mate_root.signature(Move::body(&d.id(), Some(&pin), at).as_bytes()));
+    let mv = Move { team: Some(pin), at, by: mate_root.id(), sig };
+    let (st, v) = c.as_person(&mate, "POST", &format!("/api/daemons/{}/team", d.id()), Some(json!(mv))).await;
+    assert_eq!(st, 200, "{v}");
+    let features = "/api/daemon/team?since=0&features=presigned-invites,join-secret,owner-passkeys";
+    let (st, v) = c.daemon_get(&d, features).await;
+    assert_eq!((st, v["rosters"].as_array().map(Vec::len)), (200, Some(1)), "{v}");
+    let (_, v) = c.daemon_get(&d, "/api/daemon/push-subs").await;
+    assert_eq!(subs(&v), vec!["oth1", "own1"]);
+    assert!(crate::teams::may_reach(&c.app, "oth1", &d.id()).unwrap());
+    let (_, dir) = c.as_person(&other, "GET", "/api/directory", None).await;
+    assert_eq!(dir["daemons"][0]["id"], d.id(), "a teammate's machine, while it's the team's");
+    let before = c.app.db.last_change().unwrap();
+
+    // The owner takes mate out of the team.
+    let r2 = roster(
+        team,
+        2,
+        vec![member("own1", &owner_root, TeamRole::Owner), member("oth1", &other_root, TeamRole::Editor)],
+        &owner_root,
+    );
+    let (st, v) =
+        c.as_person(&owner, "POST", &format!("/api/teams/{team}/roster"), Some(json!({ "roster": r2 }))).await;
+    assert_eq!(st, 200, "{v}");
+
+    // The machine is out of the team at once, everywhere.
+    assert_eq!(c.app.db.daemon_team(&d.id()).unwrap(), None);
+    assert!(c.app.db.team_daemons(team).unwrap().is_empty());
+    let (st, v) =
+        c.daemon_get(&d, "/api/daemon/team?since=1&features=presigned-invites,join-secret,owner-passkeys").await;
+    assert_eq!(st, 200, "an answer its daemon takes, and keeps what it has by");
+    assert_eq!((v["rosters"].clone(), v["certs"].clone(), v["team"].clone()), (json!([]), json!({}), Value::Null));
+    let (_, v) = c.daemon_get(&d, "/api/daemon/push-subs").await;
+    assert_eq!(subs(&v), Vec::<String>::new(), "no member's subscriptions");
+    let (st, _) = c
+        .daemon_post(
+            &d,
+            "/api/daemon/push",
+            &json!({ "endpoint": "https://fcm.googleapis.com/fcm/send/o", "body": "AAAA" }),
+        )
+        .await;
+    assert_eq!(st, 403, "no notification to the team's owner");
+    for a in ["own1", "oth1"] {
+        assert!(!crate::teams::may_reach(&c.app, a, &d.id()).unwrap(), "{a} isn't routed to it");
+    }
+    let (_, dir) = c.as_person(&other, "GET", "/api/directory", None).await;
+    assert_eq!(dir["daemons"], json!([]), "nor among a member's machines");
+    let moved = c.app.db.changes(before, 100).unwrap().changes;
+    assert!(
+        moved.iter().any(|ch| ch.kind == arugula_platform_api::hub::ChangeKind::DaemonMoved && ch.subject == d.id()),
+        "the platform hears it moved: {moved:?}"
+    );
+    // Still mate's own, out of any team.
+    assert!(crate::teams::may_reach(&c.app, "mate1", &d.id()).unwrap());
+    let (_, dir) = c.as_person(&mate, "GET", "/api/directory", None).await;
+    assert_eq!((dir["daemons"][0]["id"].clone(), dir["daemons"][0]["team"].clone()), (json!(d.id()), Value::Null));
 }
 
 #[tokio::test]

@@ -63,7 +63,8 @@ test("a picture shows in WebKit, a replaced one with no reload, and other images
   await imagesInPlace(page, post, doc);
 });
 
-// #506: a prototype runs in WebKit's sandboxed srcdoc frame and gets out of nowhere.
+// #506: a prototype runs in WebKit's sandboxed frame (the daemon's runner page)
+// and gets out of nowhere.
 test("a prototype runs its script in WebKit and gets out of nowhere", async ({ page }) => {
   const a = await attacker();
   try {

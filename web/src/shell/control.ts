@@ -99,6 +99,20 @@ export function showMoving(info: ControlInfo): void {
   movingTo = new URL(location.pathname + location.search + location.hash, info.primary);
 }
 
+/** One of the account's devices, for a waiting page to name (#77). */
+export interface Approver {
+  cert: Cert;
+  /** When control last saw it load the page; null if never. */
+  used: number | null;
+}
+
+export interface Approvers {
+  /** Those that may approve what waits. */
+  can: Approver[];
+  /** The account's other browsers and apps, which may not. */
+  cannot: Approver[];
+}
+
 export interface DirDaemon {
   id: string;
   name: string;
@@ -1646,13 +1660,38 @@ export class ControlSession {
     this.emit();
   }
 
-  /** #1581: while waiting, the account's other browsers and apps
-   * as control lists them (not revoked), for the page to say why this one
-   * is asked again. Control's word: for showing, never for trust. */
-  async otherDevices(): Promise<Cert[]> {
-    const devs = await api<{ certs: Cert[]; revocations: Revocation[] }>("/api/devices");
+  /** #1581, #77: while waiting, the account's other browsers and apps as
+   * control lists them (not revoked), each with when control last saw it
+   * used: `can`, those that may approve one of `kind` (this browser, this
+   * app window, or a machine), and `cannot`, the rest (the desktop app
+   * approves machines and apps, never a browser). Control's word: for
+   * showing, never for trust; control checks the approval itself. */
+  async approvers(kind: Kind): Promise<Approvers> {
+    const devs = await api<{
+      trust: { account: string; root: string } | null;
+      certs: Cert[];
+      revocations: Revocation[];
+      used?: Record<string, number>;
+      legacy_app_children?: string[];
+    }>("/api/devices");
     const gone = new Set(devs.revocations.map((r) => r.device));
-    return devs.certs.filter((c) => (c.kind === "browser" || c.kind === "app") && !gone.has(c.device) && c.device !== this.keys?.id);
+    const legacy = new Set(devs.legacy_app_children ?? []);
+    // One row a device: its newest certificate.
+    const byDevice = new Map<string, Cert>();
+    for (const c of devs.certs) {
+      if ((c.kind !== "browser" && c.kind !== "app") || gone.has(c.device) || c.device === this.keys?.id) continue;
+      const had = byDevice.get(c.device);
+      if (!had || c.created > had.created) byDevice.set(c.device, c);
+    }
+    const may = (c: Cert) =>
+      certifies(c.kind, kind) &&
+      // A browser is approved from a browser's chain alone, as control asks.
+      (kind !== "browser" || (!!devs.trust && browserOrLegacyChained(devs.trust, devs.certs, c.device, legacy)));
+    const row = (c: Cert): Approver => ({ cert: c, used: devs.used?.[c.device] ?? null });
+    // Last used first; never seen used, newest added first.
+    const order = (a: Approver, b: Approver) => (b.used ?? 0) - (a.used ?? 0) || b.cert.created - a.cert.created;
+    const all = [...byDevice.values()];
+    return { can: all.filter(may).map(row).sort(order), cannot: all.filter((c) => !may(c)).map(row).sort(order) };
   }
 
   /** While waiting for approval: approve this browser with a recovery

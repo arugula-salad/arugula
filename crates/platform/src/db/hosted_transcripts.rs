@@ -3,6 +3,8 @@
 //! only under its project. What's kept and who reads it is
 //! [`crate::hosted::transcripts`]'s.
 
+use std::collections::HashMap;
+
 use anyhow::Result;
 use serde::Serialize;
 
@@ -131,6 +133,18 @@ impl Db {
                 row,
             ),
         }
+    }
+
+    /// The chat rooms of a project's agent sessions, by the machine and the
+    /// block they ran in: whose thread a transcript of that block is.
+    pub fn session_rooms_by_block(&self, project: &str) -> Result<HashMap<(String, String), String>> {
+        let rows: Vec<(String, String, String)> = self.c().query_map(
+            "SELECT machine, block, room_id FROM agent_sessions
+             WHERE project_id = ?1 AND machine IS NOT NULL AND block IS NOT NULL",
+            params![project],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )?;
+        Ok(rows.into_iter().map(|(m, b, room)| ((m, b), room)).collect())
     }
 
     /// One of a project's transcripts, with its text.

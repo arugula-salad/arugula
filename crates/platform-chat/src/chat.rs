@@ -520,6 +520,22 @@ async fn room_for(app: &Platform, account: &str, id: &str) -> Result<(Room, u64,
     Ok((room, from, facts))
 }
 
+/// Whether `account`, a member of its project, may see what an agent does
+/// in room `id` (its sessions): a public channel is its team's, which they
+/// may join, so it's open to every member; any other room only to those
+/// who see it now. A room that's gone is nobody's.
+pub(crate) async fn open_to(app: &Platform, account: &str, id: &str) -> anyhow::Result<bool> {
+    let Some(room) = app.db.chat_room(id)? else { return Ok(false) };
+    let facts = Facts::of(app, Some(account), &[&room]).await?;
+    if room.kind == "channel"
+        && !facts.meta(&room.id).private
+        && let Some(team) = room.scope.strip_prefix("team:")
+    {
+        return Ok(facts.role(team, account).is_some());
+    }
+    Ok(sight(app, &facts, account, &room).await?.is_some())
+}
+
 fn kind_of(kind: &str) -> ChatKind {
     match kind {
         "channel" => ChatKind::Channel,
@@ -2892,9 +2908,11 @@ async fn push(
             }
         }
     }
-    // The thread's followers (#106), at their level for followed threads.
+    // The thread's followers (#106), at their level for followed threads:
+    // only those who still see the room. A follow outlives leaving it, or
+    // the team, and is read as if it weren't there.
     if let Some(t) = thread.as_ref().filter(|_| !inboxed) {
-        for a in &t.followers {
+        for a in t.followers.iter().filter(|a| people.contains(a)) {
             if a != author && !to.iter().any(|(x, _)| x == a) {
                 to.push((a.clone(), ChatPushWhy::Thread));
             }

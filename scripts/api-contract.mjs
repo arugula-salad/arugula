@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 // The native client's API (#599): contract/openapi/native.json, written from
 // contract/api/native.json (which route takes and answers which type),
-// crates/control/routes.toml (which routes exist, who calls them) and
-// contract/schema/ (the types). Without --check it writes the document; with
-// it, it says so if the document is stale, and always fails if:
+// contract/api/routes.json (which routes exist, who calls them) and
+// contract/schema/ (the types). routes.json is crates/control/routes.toml's
+// rows the contract cares about (in scope, or listing native), written here
+// too, so the contract reads only contract/. Without --check it writes both
+// files; with it, it says so if either is stale, and always fails if:
 //
 // - a route in scope isn't classified, as an operation or as out of scope;
 // - an operation names a route routes.toml doesn't have;
@@ -22,6 +24,7 @@ import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (p) => readFileSync(join(root, p), "utf8");
 const OUT = "contract/openapi/native.json";
+const ROUTES = "contract/api/routes.json";
 const SCOPED_AUTH = new Set(["session", "session_or_client", "cloud_driver"]);
 
 /** routes.toml's rows. Its shape is flat: `[[route]]`, then `key = "text"` or
@@ -106,9 +109,19 @@ function signature(file, fn) {
   return found.length ? found.join("\n") : null;
 }
 
+/** routes.toml's rows the contract cares about: in scope, or listing
+ * native. contract/api/routes.json, sorted by path and method. */
+export function contractRoutes(rows, map) {
+  const scope = map.scope.map((s) => new RegExp(s));
+  return rows
+    .filter((r) => (SCOPED_AUTH.has(r.auth) && scope.some((s) => s.test(r.path))) || r.clients.includes("native"))
+    .map(({ method, path, auth, clients }) => ({ method, path, auth, clients }))
+    .sort((a, b) => `${a.path} ${a.method}`.localeCompare(`${b.path} ${b.method}`));
+}
+
 function build() {
   const map = JSON.parse(read("contract/api/native.json"));
-  const routes = parseRoutes(read("crates/control/routes.toml"));
+  const routes = contractRoutes(parseRoutes(read("crates/control/routes.toml")), map);
   const types = loadTypes();
   const errors = [];
   const key = (r) => `${r.method} ${r.path}`;
@@ -222,28 +235,32 @@ function build() {
       schemas: Object.fromEntries([...schemas].sort(([a], [b]) => (a < b ? -1 : 1))),
     },
   };
-  return { doc, errors };
+  return { doc, routes, errors };
 }
 
-const { doc, errors } = build();
-const text = `${JSON.stringify(doc, null, 2)}\n`;
+const { doc, routes, errors } = build();
+const files = { [ROUTES]: `{\n  "routes": [\n${routes.map((r) => `    ${JSON.stringify(r)}`).join(",\n")}\n  ]\n}\n`, [OUT]: `${JSON.stringify(doc, null, 2)}\n` };
 const check = process.argv.includes("--check");
-let stale = false;
+const stale = [];
 if (check) {
-  let now = null;
-  try {
-    now = read(OUT);
-  } catch {}
-  stale = now !== text;
+  for (const [path, text] of Object.entries(files)) {
+    let now = null;
+    try {
+      now = read(path);
+    } catch {}
+    if (now !== text) stale.push(path);
+  }
 }
-if (errors.length || stale) {
+if (errors.length || stale.length) {
   for (const e of errors) console.error(`api-contract: ${e}`);
-  if (stale) console.error(`api-contract: ${OUT} is stale: run \`just api-contract\``);
+  for (const path of stale) console.error(`api-contract: ${path} is stale: run \`just api-contract\``);
   process.exit(1);
 }
 if (!check) {
-  mkdirSync(join(root, dirname(OUT)), { recursive: true });
-  writeFileSync(join(root, OUT), text);
+  for (const [path, text] of Object.entries(files)) {
+    mkdirSync(join(root, dirname(path)), { recursive: true });
+    writeFileSync(join(root, path), text);
+  }
 }
 const ops = Object.values(doc.paths).flatMap((p) => Object.values(p));
 console.log(`api-contract: ${ops.length} operations, ${ops.filter((o) => o["x-arugula-untyped"]).length} not fully typed, ${Object.keys(doc.components.schemas).length} types`);

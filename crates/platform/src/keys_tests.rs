@@ -248,7 +248,7 @@ fn reseal_leaves_what_it_cant_do() {
     let store = &STORES[0];
     let row = store.read(&db.c()).unwrap().into_iter().find(|r| r.a == "hw_c").unwrap();
     let newer = Sealed { key_version: MASTER, bytes: master(NEW).seal("hw_c", "T", "newer").unwrap() };
-    db.set_hosted_secret("hw_c", "T", Some(&newer), 2).unwrap();
+    db.set_hosted_secret("hw_c", "T", Some(&newer), None, 2).unwrap();
     assert!(!reseal_row(&db, &master(NEW), store, &row).unwrap());
     assert_eq!(db.hosted_secret_sealed("hw_c", "T").unwrap().unwrap(), newer);
 }

@@ -1699,10 +1699,21 @@ impl Inner {
         (state, changed as u64)
     }
 
+    /// What the block has spent: `cost {total, currency, last_turn}` (null
+    /// when the agent reports none: codex-acp sends tokens only) and
+    /// `tokens {total, last_turn}`.
+    fn spend(&self) -> (Value, Value) {
+        let total: u64 = self.turns.iter().filter_map(|t| t.tokens.as_ref()?["totalTokens"].as_u64()).sum();
+        let cost = self.cost.map(
+            |c| json!({ "total": c, "currency": self.currency, "last_turn": self.turns.last().and_then(|t| t.cost) }),
+        );
+        (json!(cost), json!({ "total": total, "last_turn": self.turns.last().and_then(|t| t.tokens.clone()) }))
+    }
+
     fn state(&self, ctx: &AgentCtx) -> Value {
         let (from, entries) = self.t.for_state(ENTRIES_IN_STATE);
         let (attention, _) = self.attention();
-        let total_tokens: u64 = self.turns.iter().filter_map(|t| t.tokens.as_ref()?["totalTokens"].as_u64()).sum();
+        let (cost, tokens) = self.spend();
         let mut state = json!({
             "agent": self.cfg.def.agent,
             "label": self.cfg.def.label(),
@@ -1721,8 +1732,8 @@ impl Inner {
             "pending": self.pending,
             "asks": self.asks.iter().map(|a| &a.ask).collect::<Vec<_>>(),
             "queued": self.queue.iter().map(Queued::label).collect::<Vec<_>>(),
-            "cost": self.cost.map(|c| json!({ "total": c, "currency": self.currency, "last_turn": self.turns.last().and_then(|t| t.cost) })),
-            "tokens": { "total": total_tokens, "last_turn": self.turns.last().and_then(|t| t.tokens.clone()) },
+            "cost": cost,
+            "tokens": tokens,
             "turns": self.turns.len(),
             "recent_turns": self.turns.iter().rev().take(20).collect::<Vec<_>>(),
             "allow": self.cfg.allow,
@@ -2127,6 +2138,12 @@ impl Agent {
                 {
                     let st = adapters::status(a, &self.ctx.home, &env);
                     if !st.ok() {
+                        // #520: Node installed since the shell was read is
+                        // only in its rc files: read them again, so
+                        // starting the block again finds it.
+                        if matches!(st.state, adapters::State::NoNode { .. }) && self.ctx.sprite.is_none() {
+                            self.ctx.shell_env.refresh();
+                        }
                         return self.failed_with(inner, st.why(), Some(st.json()));
                     }
                 }
@@ -3697,6 +3714,10 @@ impl Block for Agent {
             "set_work" => self.set_work(&args),
             "set_model" => self.set_model(&args),
             "state" => Ok(self.state()),
+            "spend" => {
+                let (cost, tokens) = self.inner.lock().unwrap().spend();
+                Ok(json!({ "cost": cost, "tokens": tokens }))
+            }
             "turn_result" => return self.turn_result(),
             "image" => images::read(&self.ctx.dir, args["name"].as_str().unwrap_or_default()),
             m => Err(no_method(self.kind(), m)),

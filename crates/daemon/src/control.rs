@@ -4696,27 +4696,27 @@ pub(crate) mod tests {
     /// control says nothing of them, and go when the machine leaves.
     #[tokio::test]
     async fn control_pushes_labs_flags_and_the_machine_overrides() {
-        use arugula_proto::flags::{self, ADDITIONAL_FORGES, SANDBOX_PROVIDERS, STUDIO, Source};
+        use arugula_proto::flags::{self, CHANT_WORKSPACES, SANDBOX_PROVIDERS, STUDIO, Source};
         let r = rig("flags").await;
         // `vms`, the flag's old name (aru-117), as a control from before
         // the rename pushes it.
         r.fake.lock().unwrap().flags =
-            Some(serde_json::json!({ "account": { "vms": false }, "team": { "forges": true, "vms": true } }));
+            Some(serde_json::json!({ "account": { "vms": false }, "team": { "workspaces": true, "vms": true } }));
         let c = r.daemon().await;
         assert!(
-            flags::get(&r.dir, ADDITIONAL_FORGES)
+            flags::get(&r.dir, CHANT_WORKSPACES)
                 && !flags::get(&r.dir, SANDBOX_PROVIDERS)
                 && !flags::get(&r.dir, STUDIO)
         );
         let source = |name| flags::explain(&r.dir).into_iter().find(|(f, _)| f.name == name).unwrap().1.source;
-        assert_eq!((source(ADDITIONAL_FORGES), source(SANDBOX_PROVIDERS)), (Source::Team, Source::Account));
+        assert_eq!((source(CHANT_WORKSPACES), source(SANDBOX_PROVIDERS)), (Source::Team, Source::Account));
 
         // The machine forces one off; a team change doesn't move it.
-        flags::set(&r.dir, ADDITIONAL_FORGES, false).unwrap();
+        flags::set(&r.dir, CHANT_WORKSPACES, false).unwrap();
         r.fake.lock().unwrap().flags =
-            Some(serde_json::json!({ "team": { "forges": true, "studio": true, "vms": true } }));
+            Some(serde_json::json!({ "team": { "workspaces": true, "studio": true, "vms": true } }));
         assert!(c.refresh_now(REFRESH_WAIT).await);
-        assert!(!flags::get(&r.dir, ADDITIONAL_FORGES) && flags::get(&r.dir, STUDIO));
+        assert!(!flags::get(&r.dir, CHANT_WORKSPACES) && flags::get(&r.dir, STUDIO));
         // VMs follow the account's word going away: the team's says on.
         assert!(flags::get(&r.dir, SANDBOX_PROVIDERS) && source(SANDBOX_PROVIDERS) == Source::Team);
 
@@ -4734,7 +4734,7 @@ pub(crate) mod tests {
         assert!(
             !flags::get(&r.dir, STUDIO)
                 && !flags::get(&r.dir, SANDBOX_PROVIDERS)
-                && !flags::get(&r.dir, ADDITIONAL_FORGES)
+                && !flags::get(&r.dir, CHANT_WORKSPACES)
         );
         let _ = std::fs::remove_dir_all(&r.dir);
     }
@@ -4753,10 +4753,15 @@ pub(crate) mod tests {
     }
 
     /// aru-117: control's renamed flags are the registry's, so what it
-    /// stores, takes and pushes under an old name is what the daemon reads.
+    /// stores, takes and pushes under an old name is what the daemon reads;
+    /// but for `forges`, whose flag left Labs (native #523): control keeps
+    /// the pair for daemons from before that, which still have the flag.
     #[test]
     fn controls_flag_aliases_are_the_registrys() {
-        assert_eq!(arugula_proto::flags::ALIASES, wire::FLAG_ALIASES);
+        let mut registry = arugula_proto::flags::ALIASES.to_vec();
+        registry.insert(2, ("forges", "additional-forges"));
+        assert_eq!(registry, wire::FLAG_ALIASES);
+        assert!(arugula_proto::flags::retired("additional-forges").is_some());
     }
 
     /// #347: a machine with Developer settings says so to control, which

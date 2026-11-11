@@ -883,8 +883,8 @@ fn a_block_uses_the_login_of_whoever_started_it() {
     let e = d.open_with(json!({ "type": "agent", "config": claude("expired") }));
     d.wait(e, "idle");
     let text = d.raw("GET", &format!("/api/panes/{e}/capture"), None).1;
-    assert!(text.contains("It used the default login (no CLAUDE_CONFIG_DIR)"), "{text}");
-    assert!(text.contains("`env -u CLAUDE_CONFIG_DIR claude`, then /login"), "{text}");
+    assert!(text.contains("It used Claude Code's default login"), "{text}");
+    assert!(text.contains("run `claude`, then /login"), "{text}");
     // Another agent's failure is left as it was.
     let other = d.open_with(json!({ "type": "agent", "config": { "agent": "acp", "command": ["python3", fake()], "cwd": d.sessions, "prompt": "expired" } }));
     d.wait(other, "idle");

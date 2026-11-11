@@ -97,7 +97,7 @@ jobs:
         with:
           # gitleaks reads the history.
           fetch-depth: 0
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: just
       # Pull requests run the same (binaries.yml's quick).
@@ -170,7 +170,7 @@ jobs:
           # The desktop app's system libraries (packaging/desktop/Containerfile),
           # for `just desktop-check` below.
           packages: libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev libxdo-dev libasound2-dev libopus-dev
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cargo-about@0.9.2
       - run: just bootstrap

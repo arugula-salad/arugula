@@ -3786,6 +3786,17 @@ button.att {
   color: var(--dim);
 }
 
+/* The devices that can approve what waits (#77): one a line, its name in
+   the page's colour and when it was last used dim beside it. */
+.control-approvers {
+  margin: 4px 0 8px;
+  padding-left: 18px;
+}
+
+.control-approvers b {
+  color: var(--fg);
+}
+
 /* Add a phone or browser (#105): the control URL as a QR code. */
 .control-qr {
   display: block;

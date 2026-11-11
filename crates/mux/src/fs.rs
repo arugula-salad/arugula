@@ -17,7 +17,8 @@
 //!   couldn't `cat` themselves. On top of that it refuses `/proc`, `/sys`
 //!   and `/dev` (other processes' environments and memory, kernel knobs,
 //!   devices that block or never end), its own state directory, and the
-//!   secrets it knows of (the provider token, agent credentials). Paths are
+//!   secrets it knows of (the provider token, agent credentials), and the
+//!   usual homes of the user's own logins and keys ([`CREDENTIALS`]). Paths are
 //!   resolved (symlinks followed) before that check, and an opened file or
 //!   directory is checked again by what the kernel says it is
 //!   (`/proc/self/fd`), so a link, or one swapped in between the check and
@@ -96,29 +97,87 @@ fn system(p: &Path) -> bool {
     SYSTEM.iter().any(|s| p.starts_with(s))
 }
 
+/// Where people's logins and keys usually are, from the home directory:
+/// never served, whoever asks. A terminal is the way to them.
+pub const CREDENTIALS: &[&str] = &[
+    ".ssh",
+    ".gnupg",
+    ".aws",
+    ".azure",
+    ".kube",
+    ".docker/config.json",
+    ".netrc",
+    ".git-credentials",
+    ".config/git/credentials",
+    ".config/gh",
+    ".config/gcloud",
+    ".config/hub",
+    ".claude/.credentials.json",
+    ".claude.json",
+    ".codex/auth.json",
+    ".npmrc",
+    ".pypirc",
+    ".cargo/credentials.toml",
+    ".cargo/credentials",
+    ".fly",
+    ".local/share/keyrings",
+    ".password-store",
+];
+
+/// `p` resolved as far as it exists, the rest as written: a link in the
+/// home directory's path (macOS's `/var`) is followed, so it compares
+/// with what a read resolves to even before the file is there.
+fn resolved(p: PathBuf) -> PathBuf {
+    if let Ok(real) = p.canonicalize() {
+        return real;
+    }
+    match (p.parent(), p.file_name()) {
+        (Some(up), Some(name)) if up != p => resolved(up.to_path_buf()).join(name),
+        _ => p,
+    }
+}
+
 /// This host's files, as its user, minus what's refused.
 #[derive(Debug, Clone)]
 pub struct Scope {
     home: PathBuf,
-    /// The daemon's state directory and the secret files it knows of.
+    /// The daemon's state directory, the secret files it knows of and the
+    /// user's [`CREDENTIALS`].
     private: Vec<PathBuf>,
+    /// The only directory served, when set ([`Scope::inside`]).
+    inside: Option<PathBuf>,
 }
 
 impl Scope {
     pub fn new(home: PathBuf, private: Vec<PathBuf>) -> Self {
+        let creds = CREDENTIALS.iter().map(|c| home.join(c));
         // Compare like with like: resolved paths.
-        let private = private.into_iter().map(|p| p.canonicalize().unwrap_or(p)).collect();
-        Self { home, private }
+        let private = private.into_iter().chain(creds).map(resolved).collect();
+        Self { home, private, inside: None }
+    }
+
+    /// The same, serving only what's in `dir` (resolved).
+    pub fn inside(&self, dir: &str) -> Res<Self> {
+        let abs = self.absolute(dir);
+        let real = abs.canonicalize().map_err(|e| FsError::io(&abs, e))?;
+        Ok(Self { inside: Some(real), ..self.clone() })
     }
 
     fn refused(&self, p: &Path) -> Option<FsError> {
         if system(p) {
             return Some(FsError::Denied(format!("{}: /proc, /sys and /dev aren't served", p.display())));
         }
-        self.private
-            .iter()
-            .any(|x| p.starts_with(x))
-            .then(|| FsError::Denied(format!("{}: Arugula's own state and secrets aren't served", p.display())))
+        if let Some(dir) = &self.inside
+            && !p.starts_with(dir)
+        {
+            return Some(FsError::Denied(format!("{}: only what's in {} is served here", p.display(), dir.display())));
+        }
+        self.private.iter().any(|x| p.starts_with(x)).then(|| {
+            FsError::Denied(format!(
+                "{}: Arugula's own state and secrets, and logins and keys, aren't served",
+                p.display()
+            ))
+        })
     }
 
     /// `~`, `~/x` and relative paths are the home directory's.
@@ -290,6 +349,8 @@ pub fn lexical(p: &Path) -> PathBuf {
 pub struct Machine {
     provider: Arc<dyn Provider>,
     sprite: String,
+    /// The only directory served, when set ([`Target::inside`]).
+    inside: Option<PathBuf>,
 }
 
 impl Machine {
@@ -367,6 +428,13 @@ impl Machine {
             }
             _ => return Err(FsError::Bad(format!("{}: not a file", list.path))),
         };
+        // No link is followed on a machine (below), so the path as written
+        // is where it is.
+        if let Some(dir) = &self.inside
+            && !lexical(Path::new(&abs)).starts_with(dir)
+        {
+            return Err(FsError::Denied(format!("{abs}: only what's in {} is served here", dir.display())));
+        }
         // No directory on the way may be a link either.
         let mut prefix = PathBuf::from("/");
         let parts: Vec<_> = Path::new(&abs).components().skip(1).collect();
@@ -397,7 +465,21 @@ pub enum Target {
 impl Target {
     /// A machine's, through `provider`.
     pub fn machine(provider: Arc<dyn Provider>, sprite: String) -> Self {
-        Target::Machine(Machine { provider, sprite })
+        Target::Machine(Machine { provider, sprite, inside: None })
+    }
+
+    /// The same, reading only what's in `dir` (on a machine, an absolute
+    /// path).
+    pub fn inside(self, dir: &str) -> Res<Self> {
+        Ok(match self {
+            Target::Local(s) => Target::Local(Arc::new(s.inside(dir)?)),
+            Target::Machine(m) => {
+                if !Path::new(dir).is_absolute() {
+                    return Err(FsError::Bad(format!("{dir}: not an absolute path")));
+                }
+                Target::Machine(Machine { inside: Some(lexical(Path::new(dir))), ..m })
+            }
+        })
     }
 
     /// Up to `len` bytes (at most [`READ_MAX`]) from `offset`, and the size.
@@ -521,6 +603,46 @@ mod tests {
         assert!(matches!(s.read("~/st/key", 0, 10), Err(FsError::Denied(_))));
         // The link itself is listed (by name), but not followed.
         assert!(s.list("~", false).unwrap().entries.iter().any(|e| e.name == "env"));
+        std::fs::remove_dir_all(home).unwrap();
+    }
+
+    /// People's logins and keys are never served, through a link either,
+    /// and a missing one is refused by where it would be.
+    #[test]
+    fn refuses_logins_and_keys() {
+        let home = tmp("creds");
+        for f in [".ssh/id_ed25519", ".config/gh/hosts.yml", ".claude/.credentials.json", ".netrc"] {
+            std::fs::create_dir_all(home.join(f).parent().unwrap()).unwrap();
+            std::fs::write(home.join(f), "x").unwrap();
+        }
+        std::fs::write(home.join(".claude/settings.json"), "{}").unwrap();
+        symlink(home.join(".ssh"), home.join("keys")).unwrap();
+        let s = Scope::new(home.clone(), vec![]);
+        for p in ["~/.ssh/id_ed25519", "~/.config/gh/hosts.yml", "~/.claude/.credentials.json", "~/.netrc"] {
+            assert!(matches!(s.read(p, 0, 10), Err(FsError::Denied(_))), "{p}");
+        }
+        assert!(matches!(s.list("~/.ssh", false), Err(FsError::Denied(_))));
+        assert!(matches!(s.read("~/keys/id_ed25519", 0, 10), Err(FsError::Denied(_))));
+        assert!(matches!(s.read("~/.aws/credentials", 0, 10), Err(FsError::Denied(_))));
+        // The rest of those directories is the user's as before.
+        assert!(s.read("~/.claude/settings.json", 0, 10).is_ok());
+        std::fs::remove_dir_all(home).unwrap();
+    }
+
+    /// Inside a directory: nothing outside it, by `..` or a link.
+    #[test]
+    fn inside_a_directory_only() {
+        let home = tmp("inside");
+        std::fs::create_dir_all(home.join("proj/src")).unwrap();
+        std::fs::write(home.join("proj/src/main.rs"), "fn main() {}").unwrap();
+        std::fs::write(home.join("notes.txt"), "mine").unwrap();
+        symlink(home.join("notes.txt"), home.join("proj/notes")).unwrap();
+        let s = Scope::new(home.clone(), vec![]).inside("~/proj").unwrap();
+        assert!(s.read("~/proj/src/main.rs", 0, 100).is_ok());
+        for p in ["~/notes.txt", "~/proj/../notes.txt", "~/proj/notes", "/etc/hostname"] {
+            assert!(matches!(s.read(p, 0, 10), Err(FsError::Denied(_))), "{p}");
+        }
+        assert!(matches!(s.list("~", false), Err(FsError::Denied(_))));
         std::fs::remove_dir_all(home).unwrap();
     }
 }

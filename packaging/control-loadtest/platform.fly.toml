@@ -1,0 +1,52 @@
+# The load test's staging copy of control's platform (#530):
+# packaging/platform's fly.toml, sized the same (two shared-cpu-1x, 512 MB,
+# on a Managed Postgres 17 of the same Basic plan, arugula-platform-loadtest-db17),
+# with nothing that reaches anyone real: no Stripe, no E2B or hosted boxes,
+# no GitHub App, no PostHog, no Infisical. Flycast only, like production:
+#
+#   fly ips allocate-v6 --private -a arugula-platform-loadtest
+#
+# Secrets (fresh, never prod's): ARUGULA_PLATFORM_KEY (the hub's too), and
+# ARUGULA_PLATFORM_DATABASE_URL from `fly mpg attach`. docs/control-ops.md,
+# "Load testing".
+app = "arugula-platform-loadtest"
+primary_region = "iad"
+kill_signal = "SIGTERM"
+kill_timeout = "25s"
+
+[deploy]
+  strategy = "rolling"
+  max_unavailable = 1
+
+[env]
+  ARUGULA_PLATFORM_LISTEN = "[::]:7700"
+  ARUGULA_PLATFORM_REQUIRE_POSTGRES = "1"
+  ARUGULA_PLATFORM_HUB = "http://arugula-control-loadtest.internal:7691"
+  ARUGULA_CONTROL_URL = "https://arugula-control-loadtest.fly.dev"
+
+[[services]]
+  protocol = "tcp"
+  internal_port = 7700
+  auto_stop_machines = "off"
+  auto_start_machines = false
+  min_machines_running = 2
+
+  [[services.ports]]
+    port = 7700
+
+  [services.concurrency]
+    type = "connections"
+    soft_limit = 4000
+    hard_limit = 5000
+
+  [[services.http_checks]]
+    method = "get"
+    path = "/platform.json"
+    protocol = "http"
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "10s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

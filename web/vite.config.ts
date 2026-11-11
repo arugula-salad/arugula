@@ -71,6 +71,7 @@ export default defineConfig({
     proxy: {
       "/ws": { target: "ws://127.0.0.1:7682", ws: true, changeOrigin: true },
       "/auth": { target: "http://127.0.0.1:7682", changeOrigin: true },
+      "/proto/": { target: "http://127.0.0.1:7682", changeOrigin: true },
     },
   },
   build: {

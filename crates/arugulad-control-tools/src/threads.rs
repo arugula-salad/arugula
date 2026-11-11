@@ -738,7 +738,7 @@ async fn upload_file(c: &Call<'_>, room: &str, path: &str) -> Result<String, Str
     let mut bytes: Vec<u8> = vec![];
     loop {
         let (chunk, size) =
-            crate::fs::read_on(c.app(), pane, &full, bytes.len() as u64, arugula_proto::fs::READ_MAX).await?;
+            crate::fs::read_on(c.app(), pane, &full, bytes.len() as u64, arugula_proto::fs::READ_MAX, None).await?;
         if size > MAX_FILE_BYTES as u64 {
             return Err(format!("{path} is {size} bytes: a file in chat is at most {MAX_FILE_BYTES}"));
         }

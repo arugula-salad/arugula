@@ -1,0 +1,11 @@
+{
+  "name": "arugula-release-tools",
+  "private": true,
+  "license": "MIT OR Apache-2.0",
+  "description": "What the release workflows run with their tokens and signing keys, installed from package-lock.json (npm ci), not resolved afresh with npx",
+  "dependencies": {
+    "@intentius/chant": "0.124.70",
+    "@tauri-apps/cli": "2.12.4",
+    "@vscode/vsce": "4.0.0"
+  }
+}

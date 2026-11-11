@@ -1124,7 +1124,7 @@ across a restart. With this helper (as "The first window" below has it):
 ```
 hub()  { fly ssh console -q -a illogical-control -C "/arugula-control $*" | tr -d '\r'; }
 hub switches status --db /data/control.db                        # every switch; add an account for its own
-hub switches signups pause --db /data/control.db                 # --message "..." says something else
+hub switches signups pause --db /data/control.db                 # --message "'...'" says something else
 hub switches signups open --db /data/control.db
 hub switches hosted off --db /data/control.db                    # or open, or waitlist (the default)
 hub switches waitlist --db /data/control.db                      # who asked for a box, first first
@@ -1132,9 +1132,12 @@ hub switches admit github:LOGIN --by jake --db /data/control.db  # an account id
 hub switches unadmit ACCOUNT --db /data/control.db
 hub switches cap box-hours 120 --account github:LOGIN --db /data/control.db
 hub switches cap boxes default --db /data/control.db             # back to the default
-hub switches suspend github:LOGIN --by jake --why "mining on a box" --db /data/control.db
+hub switches suspend github:LOGIN --by jake --why "'mining on a box'" --db /data/control.db
 hub switches unsuspend ACCOUNT --db /data/control.db
 ```
+
+`hub` passes `$*`, which drops quotes: a word with spaces (`--why`,
+`--message`) needs a second pair inside the first, as above.
 
 - **Sign-ups paused** (`signups pause|open`). Nobody new gets an account,
   by GitHub or a passkey; whoever has one signs in as ever. A GitHub
@@ -3471,7 +3474,28 @@ sign-ins still get through when it's full). Each minute it changed,
 `fly logs` has `relay sockets` with the count (`sockets`, `daemons`,
 `clients`), the ceiling (`max`) and how many were refused for it
 (`refused`); `the relay is full` and `the relay has room again` mark
-when it fills and empties.
+when it fills and when it's back under 90% of the ceiling.
+
+The load test (#530, "Load testing" below) found the hub's CPU runs out
+first, not memory or sockets. Busy sockets cost about 100 KB each (615 MB
+at the 5,000 ceiling). CPU costs about 20% of a core per 1,000 idle
+machines, and about 3% per busy pane watched over the relay. A
+`shared-cpu-1x` machine keeps only about 8% of a core once its burst is
+spent (`steal` in Fly's metrics goes to about 90%), and then every route
+slows together (#855).
+
+Since #857 the hub has two runtimes: the relay's (named `relay` in a
+thread list) accepts every connection and moves relayed bytes, and the
+main one runs every request's handler with its database calls, so a
+burst of writes, each synced to disk, no longer holds up relayed
+sockets. `ARUGULA_CONTROL_ONE_RUNTIME=1` puts everything back on one, as
+before; `ARUGULA_CONTROL_WORKERS` sets the main one's threads (default:
+the cores, at least 4). A daemon sends a busy pane's output over the relay
+at most every 16 ms per page, as one message (#856), so a busy pane is
+about 60 relayed messages a second, not thousands.
+`ARUGULA_RELAY_MAX_MBPS` (off unless set) is a budget for the whole relay,
+in MB a second: past it, the sockets moving more than an even share of it
+are slowed to about 64 KB/s, the heaviest first, and the rest go on (#856).
 
 ### Metrics
 
@@ -3505,6 +3529,56 @@ fly-metrics.net, or Fly's Prometheus API with your token:
 curl -sG https://api.fly.io/prometheus/personal/api/v1/query \
   -H "Authorization: FlyV1 $(fly auth token)" --data-urlencode 'query=arugula_relay_sockets'
 ```
+
+### Load testing (#530)
+
+The load test runs against a staging copy of control, never the hosted
+one: `arugula-control-loadtest` (the hub, `packaging/control-loadtest/fly.toml`)
+and `arugula-platform-loadtest` (the platform, `platform.fly.toml` beside
+it) on their own Managed Postgres 17 (`fly mpg create --pg-major-version 17`:
+the platform's schema needs it), `arugula-platform-loadtest-db17`, each
+sized as production is. Their secrets are made for them (a fresh
+`ARUGULA_PLATFORM_KEY`, the generators' addresses), and nothing that
+reaches a third party is set: no GitHub App, SMTP, PostHog, Stripe, E2B or
+Litestream.
+
+The hub there is a `loadtest` build (`crates/control/src/loadtest.rs`):
+the addresses in `ARUGULA_LOADTEST_EXEMPT_IPS` skip the per-address limits
+(10 sign-ups and 30 joins an hour), so one host can sign up thousands of
+people and enrol their machines through the real routes. A release never
+has the feature, and a `loadtest` build refuses to start unless every URL
+it answers at is a loopback one or a `-loadtest` host.
+
+The generator is `crates/control-load` (`arugula-control-load`, its
+README): fake daemons dialed in to the relay, pages on `/api/relay/m`
+with pane output at a busy pane's pace (#443), and a sign-up burst.
+`crates/control-load/fly-watch.sh` records what Fly sees (memory, CPU,
+connections, the edge's response times) alongside. Run both on geek under
+`nice -n 19`, and watch its load: CI's pods share it.
+
+Bringing it up (from a checkout, with `just web` built):
+
+```sh
+t=x86_64-unknown-linux-musl
+export ZIG_MUSL_ARCH=x86_64 "CC_${t//-/_}=$PWD/scripts/zig-cc-musl" "AR_${t//-/_}=$PWD/scripts/zig-ar"
+scripts/server-cargo build --release --target $t -p arugula-control -p arugula-platform \
+  --features arugula-control/loadtest
+# The platform first, then the hub, each from a context of its own.
+ctx=$(mktemp -d); cp $CARGO_TARGET_DIR/$t/release/arugula-platform packaging/platform/Dockerfile "$ctx"/
+cp packaging/control-loadtest/platform.fly.toml "$ctx"/fly.toml
+(cd "$ctx" && fly deploy --local-only --ha=false --no-public-ips && fly scale count 2 --yes)
+ctx=$(mktemp -d); cp $CARGO_TARGET_DIR/$t/release/arugula-control packaging/control/Dockerfile "$ctx"/
+cp packaging/control-loadtest/fly.toml "$ctx"/fly.toml
+(cd "$ctx" && fly deploy --local-only --ha=false)
+```
+
+Once they're deployed, `fly scale count 0 --yes` on each (`-a
+arugula-control-loadtest`, `-a arugula-platform-loadtest`) stops them
+between uses (the hub's volume stays), and `fly scale count 1` (the hub)
+and `fly scale count 2` (the platform) bring them back. Its Postgres keeps
+running (and billing, $38 a month) until it's destroyed. Tearing it all
+down: `fly apps destroy` both apps, then `fly mpg destroy` the cluster
+(`fly mpg list` has its id).
 
 ### Shared Docs
 
@@ -3695,6 +3769,21 @@ been 24 h apart since. So:
   21 h apart, well inside the drill's 26 h `--age` limit.
 - **`ARUGULA_DUMP_EVERY_HOURS=0`** dumps on every run (the testnet
   rehearsal sets it).
+
+**Started once after each release** (since 2026-11-11, Arugula #867). The
+hourly schedule didn't fix it: no dump ran on its own from 2026-10-23 to
+2026-11-11. The real cause: Fly's schedule never starts a Machine that
+hasn't been started since its last update or create. chant's fly-release
+updates a scheduled Machine with `skip_launch` and leaves it stopped, and
+`fly machine update` on a scheduled Machine does the same, so each release
+left it that way. Seen on 2026-11-11: no run in the 3 h after the 00:46Z
+release, a start by hand at 03:51Z, runs at 04:12, 05:12 and 06:12, then
+the 06:20Z release and no run at 07:12 or 08:12. So after the dump's
+release, the release starts the Machine once (production's deploy, from
+2026-11-11). That run is harmless (the gate skips it), and from then Fly starts it every
+hour. Anyone who updates the Machine by hand must start it once too. The
+age check on the operator's machine (`scripts/dump-age-check`, hourly)
+opens a `backup` issue when the newest dump is over 26 h old.
 
 **What it does** (`packaging/platform-dump/dump.sh`, once a run, then it
 exits):

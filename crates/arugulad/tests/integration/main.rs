@@ -75,6 +75,8 @@ mod forges_real;
 mod fs;
 #[cfg(feature = "labs")]
 mod guest_ssh;
+#[cfg(feature = "labs")]
+mod guests_agents;
 mod hand;
 #[cfg(unix)]
 mod hint_facts;

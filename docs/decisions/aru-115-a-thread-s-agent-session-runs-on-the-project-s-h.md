@@ -27,7 +27,7 @@ options:
     tradeoff: "A machine would act on GitHub as the project with nobody sending it, against \"agents draft, people send\", and a token that pushes any ref can push to main."
 choice:
   option: "a"
-  reason: "Thread = session (Jake, 2026-10-25, Arugula #129): a thread asks for work and watches it happen, on the project's own box, never a person's machine, as the person who asked, and nothing reaches GitHub's main line without a person sending it. The box, the grant, untrusted text, three sessions per box and @arugula before @<recipe> are the lead's calls in #129. Amended (Jake, 2026-10-26): the push token writes workflows too, since GitHub refuses a branch that began before main changed CI without it; reviewers check a session's workflow changes. Amended again (Jake, 2026-10-26, Arugula #214): with several workspaces and none chosen, the session picks a box with the repo (awake with a free slot, then the least busy) instead of asking, and Move to… on its card sends it to another; what still needs the asker is a form that mentions them. Amended again (Jake, 2026-10-27, Arugula #215): a box runs three sessions and holds six (or as many session users as it says it has, three when it doesn't say); a done one idle 30 minutes is parked (its agent closed, its user, checkout and conversation kept) and opens again on a reply when there's a running slot. Amended again (Jake, 2026-10-27, Arugula #216): a session's agent reads and comments on its own project's native issues, with its asker's rights and as the session itself, through a server of its own and a route that takes the session as the authority, not machine grants. Amended again (Jake, 2026-10-27, the session Docs ask): it also opens issues in that project, as the session's own, telling nobody, and makes, writes (its own) and reads the project's Docs (aru-118). Amended again (Jake, 2026-10-27, Arugula #265, aru-121): a person's agent on a machine, by its owner's sessions.start grant, starts a session as them (they stay the asker and the payer; the card says it was their agent), and by sessions.reply answers a session's question or prompts it; a message an agent posts without those grants still starts and prompts nothing. Amended again (Jake, 2026-10-28, Fleet 6): a repo linked to the project that no box's spec has is one a session may work in: the ask may name it and the which-repo form offers it, and the session's box clones it into the session's home at its start, shallow, with an installation token minted for that clone (contents read, the session's repo alone, revoked after), without adding it to the box's spec. Amended again (Jake, 2026-11-04): the standing grant is enforced: a session's work carries it, its box checks it, and a revoke ends live sessions."
+  reason: "Thread = session (Jake, 2026-10-25, Arugula #129): a thread asks for work and watches it happen, on the project's own box, never a person's machine, as the person who asked, and nothing reaches GitHub's main line without a person sending it. The box, the grant, untrusted text, three sessions per box and @arugula before @<recipe> are the lead's calls in #129. Amended (Jake, 2026-10-26): the push token writes workflows too, since GitHub refuses a branch that began before main changed CI without it; reviewers check a session's workflow changes. Amended again (Jake, 2026-10-26, Arugula #214): with several workspaces and none chosen, the session picks a box with the repo (awake with a free slot, then the least busy) instead of asking, and Move to… on its card sends it to another; what still needs the asker is a form that mentions them. Amended again (Jake, 2026-10-27, Arugula #215): a box runs three sessions and holds six (or as many session users as it says it has, three when it doesn't say); a done one idle 30 minutes is parked (its agent closed, its user, checkout and conversation kept) and opens again on a reply when there's a running slot. Amended again (Jake, 2026-10-27, Arugula #216): a session's agent reads and comments on its own project's native issues, with its asker's rights and as the session itself, through a server of its own and a route that takes the session as the authority, not machine grants. Amended again (Jake, 2026-10-27, the session Docs ask): it also opens issues in that project, as the session's own, telling nobody, and makes, writes (its own) and reads the project's Docs (aru-118). Amended again (Jake, 2026-10-27, Arugula #265, aru-121): a person's agent on a machine, by its owner's sessions.start grant, starts a session as them (they stay the asker and the payer; the card says it was their agent), and by sessions.reply answers a session's question or prompts it; a message an agent posts without those grants still starts and prompts nothing. Amended again (Jake, 2026-10-28, Fleet 6): a repo linked to the project that no box's spec has is one a session may work in: the ask may name it and the which-repo form offers it, and the session's box clones it into the session's home at its start, shallow, with an installation token minted for that clone (contents read, the session's repo alone, revoked after), without adding it to the box's spec. Amended again (Jake, 2026-11-04): the standing grant is enforced: a session's work carries it, its box checks it, and a revoke ends live sessions. Amended again (Jake, 2026-11-10): the push token no longer writes workflows, so a session's branch never changes CI, and a push GitHub refuses for that (its commits change `.github/workflows/`, or it began before main changed them) is said plainly in the thread; and the token is minted only while everyone who can steer the session (its asker, the project's owners and editors, and GitHub reviewers whose reviews were sent to it) may push to the repo on GitHub. A review from anyone else isn't sent to the session."
 rejected:
   - option: "b"
     why: "Agents on personal machines are never woken by other people's mentions: a person's machine runs what its person starts."
@@ -191,8 +191,8 @@ agents draft while people send".
     sessions' branches are refused before git runs.
   - The platform mints the token only for the session's own box, for the
     session's branch exactly, on its linked repo, with `contents: write`
-    and `workflows: write` (amended below). The box revokes it once it
-    pushed.
+    (and, from 2026-10-26 to 2026-11-10, `workflows: write`: amended
+    below). The box revokes it once it pushed.
   - A session whose repo no box's setup cloned (amended, Fleet 6) gets a
     token for its clone the same way, after the same checks, with
     `contents: read` alone, revoked once it's cloned. Its daemon clones
@@ -219,6 +219,23 @@ agents draft while people send".
     amendment that includes a workflow the agent itself changed on its
     branch: an `on: push` workflow runs from the pushed branch's own file,
     with the repository's secrets, before anyone reviews the PR.
+  - **Amended again (Jake, 2026-11-10): no `workflows`, and everyone who
+    steers the session must be able to push.** The token is `contents:
+    write` alone again, so GitHub refuses any session push that creates
+    or changes a file under `.github/workflows/`. The box says so before
+    it asks for a token when the turn's own commits change one, and says
+    plainly when GitHub refuses a branch that began before main changed
+    its workflows (a new session starts from main as it is). The session's
+    rules tell the agent not to change them and to say in its answer what
+    should change. And the platform mints only while everyone who can
+    steer the session may push to the repo on GitHub, asked of GitHub for
+    each push: its asker; the project's owners and editors, whose replies
+    in the thread are prompts and who set the workspace's setup and finish
+    steps and use its box; and GitHub reviewers whose reviews were sent to
+    it. A review is sent to a session only when GitHub says its author may
+    push to the repo; anyone else's is a line in the thread that a person
+    can pass on. So a session's push carries nothing that someone who
+    couldn't push it themselves chose.
   - What this doesn't stop is an agent that gets from its session user to
     the daemon's user, which could use a token in the seconds it lives. A
     git proxy in control that holds the token and reads the ref list would

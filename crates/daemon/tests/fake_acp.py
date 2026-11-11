@@ -17,9 +17,11 @@ Prompts:
                  and says "done" (AR-1, #1475)
   slow           streams for ~10s unless cancelled
   slowly…        slow, with anything after it (a session's notes)
-                 A mention ("Message from … : slowly") is slow too (#611).
+                 A mention ("Message from … : slowly", or its text quoted
+                 as "slowly") is slow too (#611).
   remember WORD  remembers WORD; "recall" says it (across processes)
-  crash          exits with code 3 mid-turn (a mention "…: crash" too, #613)
+  crash          exits with code 3 mid-turn (a mention "…: crash", or its
+                 text quoted as "crash", too, #613)
   env NAME       says NAME from its environment ("ENV NAME=value", or
                  "ENV NAME unset"), #379
   expired        fails the turn as claude-agent-acp does on a stale login:
@@ -628,7 +630,9 @@ def prompt(mid, p):
                         "kind": "read", "status": "pending"})
         update(sid, s, {"sessionUpdate": "tool_call_update", "toolCallId": tid, "status": "failed"})
         msg("Couldn't read it.")
-    elif text == "slow" or text.startswith("slowly") or (text.startswith("Message from ") and ": slowly\n" in text):
+    elif text == "slow" or text.startswith("slowly") or (
+        text.startswith("Message from ") and (": slowly\n" in text or "quoted:\n```text\nslowly\n" in text)
+    ):
         for i in range(50):
             if sid in cancelled:
                 cancelled.discard(sid)
@@ -712,7 +716,9 @@ def prompt(mid, p):
         update(sid, s, {"sessionUpdate": "tool_call", "toolCallId": f"bg{n}", "title": "Monitor",
                         "kind": "other", "status": "in_progress"})
         msg("All done; the report is above.")
-    elif text == "crash" or (text.startswith("Message from ") and ": crash\n" in text):
+    elif text == "crash" or (
+        text.startswith("Message from ") and (": crash\n" in text or "quoted:\n```text\ncrash\n" in text)
+    ):
         msg("bye")
         os._exit(3)
     elif text.startswith("env "):

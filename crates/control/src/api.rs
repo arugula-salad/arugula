@@ -670,7 +670,7 @@ fn join_proven(app: &App, b: &wire::JoinRequest) -> Result<bool, ApiError> {
     if now_ms().abs_diff(p.ms) > PROOF_SKEW_MS {
         return Err(err(StatusCode::UNAUTHORIZED, "clock skew: check this machine's time"));
     }
-    if !app.daemon_sigs.first(&format!("join {}", p.sig), p.ms + PROOF_SKEW_MS + 60_000) {
+    if !app.daemon_sigs.first_sig("join", &p.sig, p.ms + PROOF_SKEW_MS + 60_000) {
         return Err(err(StatusCode::UNAUTHORIZED, "that join request was used already; run join again"));
     }
     Ok(true)
