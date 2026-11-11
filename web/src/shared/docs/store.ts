@@ -4,7 +4,7 @@
 // shape (a title, then sections of Markdown, pending until written), so the
 // page draws it with the Doc block's renderer.
 
-import type { NewProjectDoc, ProjectDoc, ProjectDocCopies, ProjectDocCopy, ProjectDocList, ProjectDocView, ProjectDocWrite } from "../proto";
+import type { NewProjectDoc, ProjectDoc, ProjectDocCopies, ProjectDocCopy, ProjectDocList, ProjectDocTrash, ProjectDocView, ProjectDocWrite } from "../proto";
 import { chat } from "../chat-store";
 import { platformFetch, refusalOf } from "../maintenance";
 
@@ -79,6 +79,10 @@ export const projectDocs = {
   updateCopy: (project: string, id: string, to: string, replace: boolean) =>
     call<ProjectDocCopy>("PUT", `${docPath(project, id)}/copies/${enc(to)}`, { replace }),
   remove: (project: string, id: string) => call<{ deleted: string }>("DELETE", docPath(project, id)),
+  /** The project's trashed Docs (Arugula #866), the latest deleted first. */
+  trash: (project: string) => call<ProjectDocTrash>("GET", `/api/projects/${enc(project)}/docs/trash`),
+  /** Bring a trashed Doc back, whole. */
+  restore: async (project: string, id: string): Promise<ProjectDocView> => view(await call<ProjectDocView>("POST", `${docPath(project, id)}/restore`)),
   /** The Doc's thread (made the first time someone opens it): the room the
    * platform pushes a change on, so a page hears of it live. */
   thread: (id: string) => chat.openObject(id),
