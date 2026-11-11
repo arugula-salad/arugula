@@ -166,6 +166,22 @@
   overflow-wrap: anywhere;
 }
 
+/* A row that needs the reader: a dot before its title (#903). */
+.board-needs-dot {
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin: 6px -4px 0 0;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* The title shares the line with the dot instead of wrapping under it. */
+.board-needs-dot + .board-title {
+  flex: 1 1 0;
+}
+
 .board-title {
   min-width: 0;
   overflow-wrap: anywhere;
@@ -295,10 +311,6 @@
   border-left: 3px solid var(--warn);
   border-radius: 4px;
   background: var(--raised);
-}
-
-.board-ask.raised {
-  border-left-color: var(--dim);
 }
 
 .board-ask-question {
@@ -579,16 +591,6 @@
 }
 
 /* A row is a Card with its lane's tone (shared/ui/card.css): its bar, edge and fill, and selected, are the card's. */
-
-/* Open and waiting on the reader: the ring stays outside the edge. */
-.board .board-rows > .board-row[aria-current="true"][data-needs-you] {
-  box-shadow: var(--selected-edge), 0 0 0 2px var(--accent);
-}
-
-/* A row that waits on the reader keeps its lane's tone; the ring is what sets it apart. */
-.board .board-rows > .board-row[data-needs-you] {
-  box-shadow: 0 0 0 2px var(--accent);
-}
 
 .board .board-row .board-main {
   display: flex;
