@@ -754,6 +754,18 @@ async fn a_teams_other_owner_cant_share_a_doc_or_read_its_link() {
     }
 }
 
+/// A Doc in this machine's library, as one made before it joined a team
+/// leaves it: `doc new` on a team's machine makes the team's (Arugula #862).
+#[cfg(feature = "labs")]
+fn a_library_doc(state: &std::path::Path, title: &str) -> String {
+    let id = "0123456789abcdef";
+    let dir = state.join("docs").join(id);
+    std::fs::create_dir_all(&dir).unwrap();
+    let meta = json!({ "id": id, "title": title, "made": 1, "updated": 1, "by": "alex" });
+    std::fs::write(dir.join("meta.json"), meta.to_string()).unwrap();
+    id.to_owned()
+}
+
 /// Native #673: a Doc's row says where its copy on the platform is, which
 /// sits in the owner's personal project. The owner's list has it; a team's
 /// other owner, `Owner` here but not that account, isn't pointed at it.
@@ -768,10 +780,8 @@ async fn a_teams_other_owner_isnt_pointed_at_a_docs_copy() {
     let via_mcp = |args: Value| -> Value {
         std::thread::scope(|t| t.spawn(|| Mcp::bridge(&d, Some(pane)).call("doc", args).unwrap()).join().unwrap())
     };
-    let sections = json!([{ "heading": "One", "intent": "first" }]);
-    via_mcp(json!({ "kind": "new", "title": "Plan", "sections": sections }));
-    let rows = d.get("/api/docs");
-    let id = rows[0]["id"].as_str().unwrap().to_owned();
+    let id = a_library_doc(&d.state, "Plan");
+    via_mcp(json!({ "kind": "open", "doc": id }));
     // Where the copy landed, as the machine notes it after a put.
     let file = d.state.join("docs").join(&id).join("meta.json");
     let mut meta: Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
@@ -804,8 +814,8 @@ async fn a_teams_other_owner_cant_answer_a_docs_share_card() {
     let via_mcp = |args: Value| -> Value {
         std::thread::scope(|t| t.spawn(|| Mcp::bridge(&d, Some(pane)).call("doc", args).unwrap()).join().unwrap())
     };
-    let sections = json!([{ "heading": "One", "intent": "first" }]);
-    let doc = via_mcp(json!({ "kind": "new", "title": "Plan", "sections": sections }))["block"].as_u64().unwrap();
+    let id = a_library_doc(&d.state, "Plan");
+    let doc = via_mcp(json!({ "kind": "open", "doc": id }))["block"].as_u64().unwrap();
     let r = via_mcp(json!({ "kind": "share", "block": doc }));
     assert_eq!(r["status"], "waiting", "{r}");
     let card =
