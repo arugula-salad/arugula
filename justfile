@@ -321,7 +321,7 @@ desktop-macos arch="" *tauri_args="":
     root={{justfile_directory()}}
     dist=$root/dist
     mkdir -p "$dist"
-    command -v cargo-tauri >/dev/null || cargo install tauri-cli --version "^2" --locked
+    command -v cargo-tauri >/dev/null || cargo install tauri-cli --version "=2.12.1" --locked
     # Passkeys in the window (D2): with the Developer ID provisioning
     # profile (APPLE_PROVISIONING_PROFILE, a base64 .provisionprofile) the
     # bundle carries it as Contents/embedded.provisionprofile, and

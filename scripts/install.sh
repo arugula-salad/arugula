@@ -8,8 +8,9 @@
 #   curl -fsSL https://arugula.io/install.sh | sh
 #   curl -fsSL https://arugula.io/install.sh | sh -s -- --no-app
 #
-# arugula.io serves this file from this repo's main (arugula-salad/site's
-# Worker, cached 5 minutes): merging a change here ships it.
+# arugula.io serves this file as the newest daemon release's commit has it
+# (arugula-salad/site's Worker, cached 5 minutes): a change here ships with
+# the next release, not when it merges.
 #
 # On a Mac with someone logged in at the screen, it installs the desktop app
 # too, from the app's own releases (app-latest, #393): in /Applications if
