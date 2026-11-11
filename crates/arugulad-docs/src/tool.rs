@@ -241,15 +241,24 @@ enum Home {
     Team(Chosen),
     /// On this machine; the reason is control's, when it couldn't say.
     Library(Option<String>),
+    /// A team machine that can't tell its project: its Docs are the team's,
+    /// so none is made (the sentence says why).
+    Refused(&'static str),
 }
+
+/// Said when a team machine can't reach control to choose its project.
+const TEAM_UNREACHABLE: &str =
+    "Arugula control can't be reached, and a team machine's Docs live in the team's project: try again when it's back.";
 
 /// The home a project choice means: a team's project is the team's, a
 /// personal one is never a Doc's home (the machine is), and no answer is
-/// the machine too, which says why.
-fn home_of(chosen: Result<Chosen, String>) -> Home {
+/// the machine too, which says why. A team machine (known without the
+/// network) never falls back to the library.
+fn home_of(chosen: Result<Chosen, String>, team_machine: bool) -> Home {
     match chosen {
         Ok(c) if c.team => Home::Team(c),
         Ok(_) => Home::Library(None),
+        Err(_) if team_machine => Home::Refused(TEAM_UNREACHABLE),
         Err(why) => Home::Library(Some(why)),
     }
 }
@@ -260,7 +269,7 @@ async fn home(call: &Call<'_>) -> Home {
     if call.owners_own("a team's Doc").await.is_err() {
         return Home::Library(None);
     }
-    home_of(call.chosen_project(None).await)
+    home_of(call.chosen_project(None).await, call.app().control.is_team())
 }
 
 /// `doc new`: a Doc in the library, or the team's in its project; its block
@@ -281,6 +290,7 @@ async fn doc_new(call: &Call<'_>, a: DocNewArgs) -> Out {
     let kept = match home(call).await {
         Home::Team(chosen) => return doc_new_team(call, a.title, sections, layout, beside, host, chosen).await,
         Home::Library(why) => why,
+        Home::Refused(why) => return Err(why.into()),
     };
     let state = call.app().control.state_dir().to_owned();
     // Two doc new make two Docs: each is made here, before its block.
@@ -615,11 +625,29 @@ mod tests {
     #[test]
     fn a_team_projects_docs_are_the_teams_and_a_personal_projects_stay_on_the_machine() {
         use arugulad_base::mcp::issues::Rule;
-        assert!(matches!(home_of(Ok(chosen(true, Rule::Personal))), Home::Team(_)));
-        assert!(matches!(home_of(Ok(chosen(true, Rule::Linked("acme/app".into())))), Home::Team(_)));
-        assert!(matches!(home_of(Ok(chosen(false, Rule::Personal))), Home::Library(None)));
-        assert!(matches!(home_of(Ok(chosen(false, Rule::Linked("acme/app".into())))), Home::Library(None)));
-        assert!(matches!(home_of(Err("can't reach control".into())), Home::Library(Some(_))));
+        assert!(matches!(home_of(Ok(chosen(true, Rule::Personal)), false), Home::Team(_)));
+        assert!(matches!(home_of(Ok(chosen(true, Rule::Linked("acme/app".into()))), false), Home::Team(_)));
+        assert!(matches!(home_of(Ok(chosen(false, Rule::Personal)), false), Home::Library(None)));
+        assert!(matches!(home_of(Ok(chosen(false, Rule::Linked("acme/app".into()))), false), Home::Library(None)));
+    }
+
+    /// A personal machine that can't reach control keeps its Docs on the
+    /// machine, with the reason.
+    #[test]
+    fn a_personal_machine_without_control_keeps_the_library_and_says_why() {
+        let Home::Library(Some(why)) = home_of(Err("can't reach control".into()), false) else { panic!() };
+        assert_eq!(why, "can't reach control");
+    }
+
+    /// aru-139: a team machine's Docs are always the team's, so with control
+    /// out of reach `new` is refused and nothing goes to the library.
+    #[test]
+    fn a_team_machine_without_control_refuses_new_and_never_uses_the_library() {
+        let Home::Refused(why) = home_of(Err("can't reach control".into()), true) else { panic!("fell back") };
+        assert_eq!(
+            why,
+            "Arugula control can't be reached, and a team machine's Docs live in the team's project: try again when it's back."
+        );
     }
 
     /// The answer says which, in the rule's own words.
