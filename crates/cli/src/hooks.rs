@@ -507,7 +507,23 @@ fn install(path: &Path, dry_run: bool, allow_acting: bool) -> anyhow::Result<()>
 /// What `install --json` says it did: Getting started's "Use Claude Code
 /// with Arugula" runs it and says so in its own words.
 fn said_json(path: &Path, merged: &Merged, plugin: Option<&str>) -> Value {
-    json!({ "settings": path, "hooks_added": merged.added, "rules_added": merged.allowed, "plugin": plugin })
+    json!({
+        "settings": path, "hooks_added": merged.added, "rules_added": merged.allowed, "plugin": plugin,
+        "blocked": blocked_json(path),
+    })
+}
+
+/// #395: what stops Claude Code running the hooks in `path` (the settings
+/// it reads), if anything.
+fn blocked(path: &Path) -> Option<arugula_proto::claude_policy::HooksBlocked> {
+    arugula_proto::claude_policy::hooks_blocked(Some(path))
+}
+
+/// [`blocked`] as JSON: the file, the key, whether it's managed, and the
+/// sentence that says so (`says`); null when nothing blocks them.
+fn blocked_json(path: &Path) -> Value {
+    blocked(path)
+        .map_or(Value::Null, |b| json!({ "file": b.file, "key": b.key, "managed": b.managed, "says": b.says() }))
 }
 
 /// `install`, where the user's settings may enable the plugin (`plugin`, its
@@ -542,9 +558,11 @@ fn install_for(
     }
     let live = plugin.as_deref().is_some_and(|p| live_on(&settings, p) || live_for_user(p));
     let offer = live_offer(plugin.as_deref(), live);
+    let warn = blocked(path).map(|b| b.says());
     if !merged.changed() && path.exists() {
         println!("{}: the hooks and permission rules are already there", path.display());
         offer.iter().for_each(|o| println!("{o}"));
+        warn.iter().for_each(|w| println!("{w}"));
         return Ok(());
     }
     write_atomic(path, &text)?;
@@ -561,6 +579,7 @@ fn install_for(
     }
     println!("{}: {}", path.display(), said.join("; "));
     offer.iter().for_each(|o| println!("{o}"));
+    warn.iter().for_each(|w| println!("{w}"));
     Ok(())
 }
 
@@ -650,12 +669,15 @@ fn status_for(path: &Path, json_out: bool, plugin: Option<String>) -> anyhow::Re
         let permissions = json!({ "read": read.says(), "acting": acting.says() });
         let v = json!({
             "settings": path, "installed": installed, "events": map, "permissions": permissions,
-            "plugin": plugin, "live": live,
+            "plugin": plugin, "live": live, "blocked": blocked_json(path),
         });
         println!("{}", serde_json::to_string_pretty(&v).unwrap_or_default());
         return Ok(());
     }
     println!("{}", path.display());
+    if let Some(b) = blocked(path) {
+        println!("  blocked: {}", b.says());
+    }
     for (event, h) in &events {
         let says = match h {
             Has::Present => "present",
@@ -783,7 +805,11 @@ mod tests {
         assert!(present(&v).iter().all(|(_, h)| *h == Has::Present));
         let m = merge(&mut v, false).unwrap();
         let said = said_json(&path, &m, None);
-        assert_eq!(said, json!({ "settings": path, "hooks_added": false, "rules_added": false, "plugin": null }));
+        // `blocked` is this machine's (#395): tests/hooks_blocked.rs pins it.
+        assert_eq!(
+            said,
+            json!({ "settings": path, "hooks_added": false, "rules_added": false, "plugin": null, "blocked": blocked_json(&path) })
+        );
         let fresh = said_json(&path, &Merged { added: true, allowed: true }, Some("arugula@arugula"));
         assert_eq!((fresh["hooks_added"].clone(), fresh["plugin"].clone()), (json!(true), json!("arugula@arugula")));
     }
