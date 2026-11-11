@@ -22,7 +22,8 @@ pub const PROJECTS: &str = "/api/projects";
 /// list against it before giving anything; the web's `VIEWER_REFUSED`
 /// (web/src/platform/settings/grants.ts) is its copy, which
 /// [`tests::the_webs_refused_list_is_this_one`] keeps equal.
-pub const VIEWER_REFUSED: [&str; 5] = ["issues.write", "trackers.write", "runs.start", "runs.command", "secrets.write"];
+pub const VIEWER_REFUSED: [&str; 6] =
+    ["issues.write", "docs.write", "trackers.write", "runs.start", "runs.command", "secrets.write"];
 
 #[cfg(test)]
 mod tests {

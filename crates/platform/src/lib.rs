@@ -67,6 +67,7 @@ pub use arugula_platform_api::page;
 pub mod planter;
 mod port;
 pub mod project_docs;
+pub mod project_docs_agent;
 pub mod project_docs_machine;
 pub mod project_grants;
 #[cfg(test)]

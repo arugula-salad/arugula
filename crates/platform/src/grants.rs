@@ -77,9 +77,9 @@ use crate::{
     Platform,
     auth::{Machine, Person},
     db::projects::{
-        AGENT_POWERS, BOARD_POWERS, CLOUD_DRIVE, DEPLOYS_PLAN, Grant, ISSUES_WRITE, Limited, REVOKED_BY_ERASED,
-        REVOKED_BY_PLATFORM, RUN_POWERS, SECRETS_WRITE, SESSION_POWERS, TRACKERS_WRITE, ViewerUse, refused_for_viewer,
-        subject_kind, viewer_use,
+        AGENT_POWERS, BOARD_POWERS, CLOUD_DRIVE, DEPLOYS_PLAN, DOCS_WRITE, Grant, ISSUES_WRITE, Limited,
+        REVOKED_BY_ERASED, REVOKED_BY_PLATFORM, RUN_POWERS, SECRETS_WRITE, SESSION_POWERS, TRACKERS_WRITE, ViewerUse,
+        refused_for_viewer, subject_kind, viewer_use,
     },
     hub::{Daemon, HubResult},
 };
@@ -205,12 +205,14 @@ pub fn is_agent_power(power: &str) -> bool {
         || BOARD_POWERS.contains(&power)
         || SESSION_POWERS.contains(&power)
         || power == TRACKERS_WRITE
+        || power == DOCS_WRITE
 }
 
 /// Whether an agent's `power` is over a project only, never the owner's
 /// DMs.
 fn project_only(power: &str) -> bool {
     power == ISSUES_WRITE
+        || power == DOCS_WRITE
         || power == DEPLOYS_PLAN
         || power == SECRETS_WRITE
         || RUN_POWERS.contains(&power)
@@ -221,10 +223,10 @@ fn project_only(power: &str) -> bool {
 
 /// Whether `power` is one an agent grant token may hold (M230): the agent
 /// powers but a session's (aru-121: a machine's agents', whose card names
-/// the machine), and `secrets.write`. Never `cloud.drive`, and never an
-/// approval: no grant is.
+/// the machine) and Docs' (#862: a token has no Docs tool), and
+/// `secrets.write`. Never `cloud.drive`, and never an approval: no grant is.
 pub fn is_token_power(power: &str) -> bool {
-    (is_agent_power(power) && !SESSION_POWERS.contains(&power)) || power == SECRETS_WRITE
+    (is_agent_power(power) && !SESSION_POWERS.contains(&power) && power != DOCS_WRITE) || power == SECRETS_WRITE
 }
 
 /// What an agent with no machine is called beside its owner's name, in
@@ -757,7 +759,7 @@ pub async fn give(State(app): State<Arc<Platform>>, s: Person, Json(b): Json<Giv
         _ => {
             return Err(err(
                 StatusCode::BAD_REQUEST,
-                "the powers there are to give are cloud.drive, threads.read, threads.post, issues.write, deploys.plan, \
+                "the powers there are to give are cloud.drive, threads.read, threads.post, issues.write, docs.write, deploys.plan, \
                  runs.read, runs.start, runs.command, boards.read, boards.write, trackers.write, sessions.start and sessions.reply",
             ));
         }

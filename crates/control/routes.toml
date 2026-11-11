@@ -3257,7 +3257,7 @@ path = "/api/daemon/issue-home"  # wire::issues::AGENT_ISSUE_HOME
 process = "platform"
 auth = "daemon"
 clients = ["daemon"]
-note = "The project an agent's #N means (`project`, else the one `repo` is linked to, else the owner's personal one) and where its new issues go."
+note = "The project an agent's #N means (`project`, else the one `repo` is linked to, else on a team's machine the team's default project, else the owner's personal one) and where its new issues and Docs go."
 
 [[route]]
 method = "GET"
@@ -3439,6 +3439,46 @@ process = "platform"
 auth = "daemon"
 clients = ["daemon"]
 note = "Moves a Doc along the board's Docs strip (`boards.write`)."
+
+# ---- platform: project Docs for a machine's agents (Arugula #862)
+# In a team's context a Doc lives in the team's project (aru-139). The
+# machine's agents make and write it there as the owner's, labelled with the
+# machine. The owner's role in the project is the ceiling (from the hub's
+# roster, so a demoted owner is refused whatever the machine holds), and the
+# machine needs `docs.write` over it, asked on every call; reading needs only
+# that the owner reads the project.
+
+[[route]]
+method = "POST"
+path = "/api/daemon/projects/{project}/docs"  # wire::project_docs::AGENT_PROJECT_DOCS
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "Makes a Doc at once, as the owner's agent on the machine: `docs.write` over the project, and the owner an owner or editor (403 `agent_ungranted` without the grant, a viewer refused)."
+
+[[route]]
+method = "GET"
+path = "/api/daemon/projects/{project}/docs/{doc}"  # wire::project_docs::AGENT_PROJECT_DOC
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "A Doc with its sections, as its owner may read it: no power."
+
+[[route]]
+method = "PUT"
+path = "/api/daemon/projects/{project}/docs/{doc}"  # wire::project_docs::AGENT_PROJECT_DOC
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "Renames a Doc, or writes or adds a section, as the person's `PUT` does: `docs.write`, and the owner an owner or editor. A machine's copy is read-only."
+
+[[route]]
+method = "PUT"
+path = "/api/daemon/projects/{project}/docs/{doc}/assets/{name}"  # wire::project_docs::AGENT_PROJECT_DOC_ASSET
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "A picture of the Doc, the bytes as the body, with a machine copy's limits (PNG, JPEG, GIF or WebP by what they say, at most 2 MB and 20 to a Doc): `docs.write`, and the owner an owner or editor."
 
 [[route]]
 method = "PUT"

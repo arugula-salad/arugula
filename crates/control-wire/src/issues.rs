@@ -36,7 +36,9 @@ pub const ISSUE_EVENTS: &str = "/api/issues/{id}/events";
 /// (M197: `threads.read` to read, `issues.write` to write). `GET
 /// ?project=&repo=`: the project an agent's `#N` means, and where its new
 /// issues go, [`IssueHome`]: `project` (an id or `personal`), else the one
-/// `repo` (`owner/name`) is linked to, else the owner's personal one.
+/// `repo` (`owner/name`) is linked to, else, on a team's machine, the team's
+/// default project (where a team's Docs live too, Arugula #862), else the
+/// owner's personal one.
 pub const AGENT_ISSUE_HOME: &str = "/api/daemon/issue-home";
 /// [`PROJECT_ISSUES`], [`PROJECT_ISSUE`], [`ISSUE`] and [`ISSUE_EVENTS`]
 /// for a machine's agents. Comments are posted to the issue's thread

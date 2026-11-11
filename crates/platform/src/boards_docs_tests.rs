@@ -140,6 +140,7 @@ async fn a_strip_holds_at_most_twenty_docs() {
             title: &format!("Doc {i}"),
             made_by: "a",
             made_by_session: None,
+            made_by_agent: None,
             sections: &[],
             layout: None,
         };
@@ -283,6 +284,7 @@ async fn row_docs_are_once_per_row_in_their_own_order_and_go_with_the_row() {
             title: &format!("Doc {i}"),
             made_by: "a",
             made_by_session: None,
+            made_by_agent: None,
             sections: &[],
             layout: None,
         };

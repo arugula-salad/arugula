@@ -29,7 +29,7 @@ export type Role = "owner" | "editor" | "viewer";
  * `VIEWER_REFUSED` (crates/control-wire/src/projects.rs), whose test
  * checks this line is the same list; the switches and the token form
  * leave them out for a viewer rather than ask and be refused. */
-export const VIEWER_REFUSED = ["issues.write", "trackers.write", "runs.start", "runs.command", "secrets.write"];
+export const VIEWER_REFUSED = ["issues.write", "docs.write", "trackers.write", "runs.start", "runs.command", "secrets.write"];
 
 /** `powers` without those a viewer's machine is refused, when `role` is viewer. */
 export const forRole = (powers: string[], role?: Role) => (role === "viewer" ? powers.filter((p) => !VIEWER_REFUSED.includes(p)) : powers);
@@ -47,7 +47,7 @@ export interface AgentScope {
 /** What a switch gives over each scope: for a viewer's project (Arugula
  * #683), only what a viewer's machine is given. */
 export function powersFor(kind: AgentScope["kind"], role?: Role): string[] {
-  return forRole(kind === "project" ? ["threads.read", "threads.post", "issues.write"] : ["threads.read", "threads.post"], role);
+  return forRole(kind === "project" ? ["threads.read", "threads.post", "issues.write", "docs.write"] : ["threads.read", "threads.post"], role);
 }
 
 /** M218: an agent's power to plan a project's deploys and ask for their

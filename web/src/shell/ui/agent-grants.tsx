@@ -30,6 +30,7 @@ export const POWERS: Record<string, string> = {
   "threads.read": "Read threads",
   "threads.post": "Post in threads",
   "issues.write": "Open and change issues",
+  "docs.write": "Write Docs",
   "deploys.plan": "Plan deploys and ask for their approval",
   "runs.read": "Read runs",
   "runs.start": "Start run specs",

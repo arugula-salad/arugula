@@ -13,7 +13,7 @@
 
 use std::sync::Arc;
 
-use arugula_control_common::err;
+use arugula_control_common::{ApiError, err};
 use arugula_control_wire::issues as wire;
 use axum::{
     Json,
@@ -34,10 +34,31 @@ fn actor(d: &Machine) -> Actor<'_> {
     Actor { account: &d.account, agent: Some(&d.daemon) }
 }
 
+/// The team's default project, when `d` is a team's machine (control's
+/// kind `team`) and its owner still reads it: where a context with no
+/// project of its own means (a team's Docs live there, Arugula #862).
+/// `None` for a personal machine, or one whose team or owner's place in it
+/// is gone. Asked without the machine's `threads.read`: it names the
+/// project only, and what's done there asks for its own power.
+async fn team_home(app: &Platform, d: &Machine) -> Result<Option<wire::IssueHome>, ApiError> {
+    let machines = app.cache.daemons(&*app.hub, std::slice::from_ref(&d.daemon)).await?;
+    let Some(team) = machines.get(&d.daemon).and_then(|m| m.team.as_deref()) else { return Ok(None) };
+    let Some(project) = crate::projects::team_project(app, team).await? else { return Ok(None) };
+    match crate::project_docs::place(app, &d.account, &project, false).await {
+        Ok(place) => {
+            let p =
+                app.db.issue_project(&place.project)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such project"))?;
+            Ok(Some(super::home_of(app, &p)?))
+        }
+        Err(e) if e.0 == StatusCode::NOT_FOUND => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
 /// `GET /api/daemon/issue-home?project=&repo=`: the project an agent's
-/// `#N` means and where its new issues go: `project`, else the project
-/// `repo` is linked to (one its owner is in), else the owner's personal
-/// project.
+/// `#N` means and where its new issues and Docs go: `project`, else the
+/// project `repo` is linked to (one its owner is in), else, on a team's
+/// machine, the team's default project, else the owner's personal project.
 pub async fn home(
     State(app): State<Arc<Platform>>,
     d: Machine,
@@ -55,13 +76,24 @@ pub async fn home(
                     &format!("{repo} isn't linked to a project of this machine's owner: name the project"),
                 )
             };
-            let link = app.db.linked_repo_named(repo)?.ok_or_else(not_linked)?;
-            return match super::home(&app, actor(&d), &link.project_id).await {
-                Err(e) if e.0 == StatusCode::NOT_FOUND => Err(not_linked()),
-                h => Ok(Json(h?)),
+            let linked = match app.db.linked_repo_named(repo)? {
+                Some(link) => match super::home(&app, actor(&d), &link.project_id).await {
+                    Err(e) if e.0 == StatusCode::NOT_FOUND => None,
+                    h => Some(h?),
+                },
+                None => None,
+            };
+            return match (linked, team_home(&app, &d).await?) {
+                (Some(h), _) | (None, Some(h)) => Ok(Json(h)),
+                (None, None) => Err(not_linked()),
             };
         }
-        (None, None) => PERSONAL.to_owned(),
+        (None, None) => {
+            if let Some(h) = team_home(&app, &d).await? {
+                return Ok(Json(h));
+            }
+            PERSONAL.to_owned()
+        }
     };
     Ok(Json(super::home(&app, actor(&d), &project).await?))
 }

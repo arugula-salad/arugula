@@ -75,6 +75,23 @@ pub const MACHINE_DOC: &str = "/api/daemon/docs/{machine_doc}";
 /// Doc's pictures, answered [`Asset`].
 pub const MACHINE_DOC_ASSET: &str = "/api/daemon/docs/{machine_doc}/assets/{name}";
 
+/// A machine's agents' (Arugula #862), signed by the machine, acting for
+/// its owner in a team's project: each checked against the owner's role
+/// there and the machine's `docs.write` grant over the project, asked on
+/// every call (reading needs only that the owner reads the project). What an
+/// agent writes lands at once, as the owner's, labelled "<owner>'s agent on
+/// <machine>" ([`Doc::agent`]). `POST` [`NewDoc`]: make a Doc in the project
+/// (its id, or `personal`), answered [`DocView`]; 403 `agent_ungranted` without
+/// the grant, and the person's refusals otherwise (a viewer, a full project).
+pub const AGENT_PROJECT_DOCS: &str = "/api/daemon/projects/{project}/docs";
+/// `GET`: a Doc with its sections, [`DocView`]; `PUT` [`DocWrite`]: as
+/// [`PROJECT_DOC`]'s, answered [`DocView`]. A Doc that is a machine's copy
+/// is read-only, as for a person.
+pub const AGENT_PROJECT_DOC: &str = "/api/daemon/projects/{project}/docs/{doc}";
+/// `PUT` the picture's bytes (the body): a picture of the Doc, answered
+/// [`Asset`], with the limits of a machine's copies' ([`MACHINE_DOC_ASSET`]).
+pub const AGENT_PROJECT_DOC_ASSET: &str = "/api/daemon/projects/{project}/docs/{doc}/assets/{name}";
+
 /// The longest title, heading and intent, in characters: one line each.
 pub const TITLE_MAX: usize = 200;
 pub const HEADING_MAX: usize = 200;
@@ -100,11 +117,13 @@ pub struct Doc {
     pub id: String,
     pub project: String,
     pub title: String,
-    /// The account that made it, or "" once it's deleted, or for one an
-    /// agent session made.
+    /// The account that made it (an agent's owner's, for one a machine's
+    /// agent made), or "" once it's deleted, or for one an agent session made.
     pub author: String,
     /// The agent session that made it as itself (aru-115): its `machine`
-    /// the session's id (`ses_…`), its name `Agent session <id>`.
+    /// the session's id (`ses_…`), its name `Agent session <id>`; or the
+    /// machine whose agent made it for `author` (Arugula #862), its
+    /// `machine` and `machine_name` the machine's.
     pub agent: Option<ChatAgent>,
     /// How many sections it has, and how many are written.
     pub sections: u32,
@@ -397,6 +416,21 @@ pub fn project_doc_copies(project: &str, id: &str) -> String {
 /// [`PROJECT_DOC_COPY`] for the team Doc of copy `id` in `to`.
 pub fn project_doc_copy(project: &str, id: &str, to: &str) -> String {
     format!("/api/projects/{project}/docs/{id}/copies/{to}")
+}
+
+/// [`AGENT_PROJECT_DOCS`] for `project`.
+pub fn agent_project_docs(project: &str) -> String {
+    format!("/api/daemon/projects/{project}/docs")
+}
+
+/// [`AGENT_PROJECT_DOC`] for `doc` in `project`.
+pub fn agent_project_doc(project: &str, doc: &str) -> String {
+    format!("/api/daemon/projects/{project}/docs/{doc}")
+}
+
+/// [`AGENT_PROJECT_DOC_ASSET`] for `name` of `doc` in `project`.
+pub fn agent_project_doc_asset(project: &str, doc: &str, name: &str) -> String {
+    format!("/api/daemon/projects/{project}/docs/{doc}/assets/{name}")
 }
 
 /// [`MACHINE_DOC`] for the machine's Doc `machine_doc`.
