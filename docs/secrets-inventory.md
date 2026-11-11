@@ -120,6 +120,7 @@ allows; `v*` and `app-v*` tags are protected, so only admins make them:
 | `FLY_API_TOKEN` (deploys the hub), `FLY_PLATFORM_API_TOKEN` (deploys the platform) | `deploy` | `server-release.yml` | none; Fly mints new ones | Operator |
 | `E2B_API_KEY` | `release` | `release.yml` (the hosted template) | Infisical | Operator |
 | `HOMEBREW_TAP_KEY` | `marketplace` | `release.yml` | none | Operator |
+| `RELEASE_SUMS_KEY` (Ed25519, PEM: signs a release's `SHA256SUMS`; the public half is in `crates/proto/src/release_sums.rs`, `scripts/install.sh` and `scripts/release`) | `marketplace` | `release.yml` | the workstation's `~/.config/arugula/release-sums/` | Operator. Losing it means a new key, and daemons from before it can't update themselves (install.sh again) |
 | `CI_GREEN_TOKEN` | `ci-green`, `deploy`, `app-release` | `app-release.yml`, `auto-revert.yml`, `chant-ci-green.yml`, `rare-nightly.yml`, `release-train.yml`, `server-release.yml` (pushes `chant/lifecycle`) | none | Operator |
 | `SCCACHE_WEBDAV_PASSWORD` | repository | `check.yml`, `pull-request.yml`, the nightlies, `server-release.yml`'s Postgres tests; not the builds that ship | none | Operator |
 | `ARUGULA_GH_APP_PRIVATE_KEY` (the forge-test App) | repository | `forges-nightly.yml` | Infisical `/illogical/forge-tests` (with `ARUGULA_GH_APP_ID`) | Operator |
