@@ -33,6 +33,11 @@ export interface Manifest {
   /** Absent in a snapshot from before layouts, or of a plain Doc; read it
    * with `layoutOf`. */
   layout?: string;
+  /** When the Doc was made (absent where it isn't known: a Doc from before
+   * Docs were kept) and last changed, in ms; absent in a snapshot from
+   * before them (Arugula #825). */
+  made?: number;
+  updated?: number;
   entries: ManifestEntry[];
   assets: ManifestAsset[];
 }

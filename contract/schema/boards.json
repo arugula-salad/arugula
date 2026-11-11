@@ -2420,6 +2420,13 @@
           "minimum": 0,
           "type": "integer"
         },
+        "sessions": {
+          "description": "The agent sessions started on the row's issue, oldest first\n(Arugula #843). A live one puts the row in Doing.",
+          "items": {
+            "$ref": "#/$defs/RowSession"
+          },
+          "type": "array"
+        },
         "status": {
           "$ref": "#/$defs/Status",
           "description": "Kept for old clients: `needs_input` when the row has an open ask\n(#367), `none` otherwise. Nothing writes it."
@@ -2579,6 +2586,41 @@
         "direction",
         "source",
         "removable"
+      ],
+      "type": "object"
+    },
+    "RowSession": {
+      "description": "An agent session started on a row's issue (Arugula #843).",
+      "properties": {
+        "branch": {
+          "description": "The one ref it may push, `arugula/<8 hex>-<slug>`.",
+          "type": "string"
+        },
+        "live": {
+          "description": "Whether it moves the row: it is under way, or done with its PR not\nyet sent. A session that isn't live is shown dimmed.",
+          "type": "boolean"
+        },
+        "pr": {
+          "description": "Its PR's link, once its asker sent it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "session": {
+          "description": "`ses_…`, for its thread.",
+          "type": "string"
+        },
+        "state": {
+          "description": "Its state as the platform keeps it: `queued`, `working`,\n`needs_input`, `done`, `failed`, `unresponsive` or `stopped`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session",
+        "state",
+        "live",
+        "branch"
       ],
       "type": "object"
     },

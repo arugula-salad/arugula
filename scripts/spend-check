@@ -1,0 +1,378 @@
+#!/usr/bin/env -S python3 -I
+"""The daily spend check (part of Arugula #532): what hosted Arugula costs
+this month on Fly and E2B, and an alert when it runs past a limit.
+
+Fly has no billing API or billing alerts, and E2B has no usage API, so this
+reckons the bill itself, read-only, from what Fly's managed Prometheus and
+API say (docs/launch-runbook.md, "Spend"):
+
+- Machines: each instance's hours up (`fly_instance_up`, sampled every 5
+  minutes) at its size (`fly_instance_info`: shared or performance vCPUs
+  and memory), at Fly's prices. Every app in the org counts, so a forgotten
+  staging or test app shows up by name.
+- Egress: `fly_edge_data_out` per app, at $0.02/GB (North America and
+  Europe).
+- Volumes, dedicated IPv4s and Managed Postgres clusters, from the API, as
+  they are now.
+- E2B: the platform's own reckoning of this month's boxes
+  (`arugula_hosted_cost_usd{period="month"}`, its /metrics), and
+  ARUGULA_SPEND_FIXED for plan fees nothing here can see (E2B Pro's $150).
+
+Fly's Prometheus keeps about ten days, so each run writes each finished
+UTC day to a ledger (`$XDG_STATE_HOME/arugula-spend/ledger.json`, or
+ARUGULA_SPEND_STATE's) and
+the month is the ledger's days plus today so far. A day the ledger missed
+and Prometheus no longer has is taken at the newest finished day's rate and
+marked estimated.
+
+It's an estimate: Fly's invoice is the truth (the dashboard's Billing
+page). It leaves out snapshots past 10 GB, stopped Machines' root disks,
+and Fly's waivers and credits.
+
+Over a limit (the month's projection past ARUGULA_SPEND_MONTH_LIMIT, or the
+last 24 hours past ARUGULA_SPEND_DAY_LIMIT), it opens a native issue
+labelled `spend`, assigned to ARUGULA_SPEND_ASSIGNEE, with the breakdown, or
+comments on the one already open (once a day). Under them it prints the
+breakdown and exits 0.
+
+    scripts/spend-check                 # check, and alert if over
+    scripts/spend-check --dry-run       # print what it would file; write nothing
+    scripts/spend-check --install       # the daily systemd user timer, on geek
+
+Needs flyctl logged in (or FLY_API_TOKEN) and, to alert, `arugula login`.
+"""
+
+import argparse
+import datetime as dt
+import json
+import os
+import pathlib
+import shutil
+import subprocess
+import sys
+import urllib.parse
+import urllib.request
+
+# Fly's prices (https://docs.fly.io/about/pricing, checked 2026-11-10), per
+# 30-day month: a shared vCPU $0.69 and a performance vCPU $21, plus $6 per
+# GB of memory (shared-cpu-1x 1 GB is $6.70, performance-1x 2 GB $33).
+MONTH_HOURS = 720
+SHARED_VCPU = 0.69
+PERFORMANCE_VCPU = 21.0
+MEMORY_GB = 6.0
+EGRESS_GB = 0.02
+VOLUME_GB = 0.15
+IPV4 = 2.0
+MPG_BASIC = 38.0
+MPG_GB = 0.28
+# A cluster whose size the API doesn't say is taken as hosted control's.
+MPG_DEFAULT_GB = 10
+
+STEP_MIN = 5
+
+
+def env(name, default):
+    return os.environ.get(name) or default
+
+
+def log(*a):
+    print(*a, file=sys.stderr)
+
+
+def fly(*args):
+    out = subprocess.run(["fly", *args, "--json"], capture_output=True, text=True, timeout=120)
+    if out.returncode != 0:
+        raise RuntimeError(f"fly {' '.join(args)}: {out.stderr.strip()[:300]}")
+    return json.loads(out.stdout or "null") or []
+
+
+def token():
+    t = os.environ.get("FLY_API_TOKEN")
+    if t:
+        return t
+    out = subprocess.run(["fly", "auth", "token"], capture_output=True, text=True, timeout=60)
+    t = out.stdout.strip().splitlines()[-1] if out.stdout.strip() else ""
+    if not t:
+        raise RuntimeError("no Fly token: fly auth login, or set FLY_API_TOKEN")
+    return t
+
+
+class Prom:
+    def __init__(self, org, tok):
+        self.url = f"https://api.fly.io/prometheus/{org}/api/v1/query"
+        # A macaroon (fm2_…) goes as FlyV1; an older token as Bearer.
+        self.auth = ("FlyV1 " if tok.startswith("fm") else "Bearer ") + tok
+
+    def query(self, q, at):
+        url = self.url + "?" + urllib.parse.urlencode({"query": q, "time": f"{at.timestamp():.0f}"})
+        req = urllib.request.Request(url, headers={"Authorization": self.auth})
+        with urllib.request.urlopen(req, timeout=60) as r:
+            body = json.load(r)
+        if body.get("status") != "success":
+            raise RuntimeError(f"prometheus: {body.get('error', body)}")
+        return [(s["metric"], float(s["value"][1])) for s in body["data"]["result"]]
+
+
+def machine_month_price(kind, cpus, memory_mb):
+    vcpu = PERFORMANCE_VCPU if kind == "performance" else SHARED_VCPU
+    return cpus * vcpu + memory_mb / 1024 * MEMORY_GB
+
+
+def window_costs(prom, start, end):
+    """Each app's Machine and egress dollars in [start, end)."""
+    secs = int((end - start).total_seconds())
+    if secs <= 0:
+        return {}
+    machines = {}
+    q = (
+        f"sum by (app, cpu_kind, cpu_count, memory_mb) (sum_over_time(("
+        f"fly_instance_up * on (instance) group_left (cpu_kind, cpu_count, memory_mb) "
+        f"max by (instance, cpu_kind, cpu_count, memory_mb) (fly_instance_info)"
+        f")[{secs}s:{STEP_MIN}m]))"
+    )
+    for m, samples in prom.query(q, end):
+        hours = samples * STEP_MIN / 60
+        per_month = machine_month_price(m.get("cpu_kind", "shared"), int(m.get("cpu_count", 1)), int(m.get("memory_mb", 256)))
+        machines[m["app"]] = machines.get(m["app"], 0.0) + hours * per_month / MONTH_HOURS
+    egress = {m["app"]: v for m, v in prom.query(f"sum by (app) (increase(fly_edge_data_out[{secs}s]))", end)}
+    apps = set(machines) | set(egress)
+    return {a: {"machines": round(machines.get(a, 0.0), 4), "egress_gb": round(egress.get(a, 0.0) / 1e9, 3)} for a in apps}
+
+
+def fixed_monthly(org):
+    """What Fly bills by the month whatever runs: volumes, IPv4s, Postgres."""
+    items = {}
+    for app in fly("apps", "list", "--org", org):
+        name = app.get("Name") or app.get("name")
+        vols = fly("volumes", "list", "-a", name)
+        gb = sum(v.get("size_gb") or v.get("SizeGb") or 0 for v in vols)
+        v4 = sum(1 for ip in fly("ips", "list", "-a", name) if (ip.get("Type") or ip.get("type")) == "v4")
+        if gb or v4:
+            items[name] = round(gb * VOLUME_GB + v4 * IPV4, 2)
+    for c in fly("mpg", "list", "--org", org):
+        gb = c.get("disk") or MPG_DEFAULT_GB
+        items[f"postgres:{c.get('name')}"] = round(MPG_BASIC + gb * MPG_GB, 2)
+    return items
+
+
+def e2b_month(prom, now):
+    """The platform's E2B reckoning this month, now and 24 hours ago."""
+    q = 'max(arugula_hosted_cost_usd{period="month"})'
+    try:
+        cur = prom.query(q, now)
+        ago = prom.query(q, now - dt.timedelta(days=1))
+    except Exception as e:  # noqa: BLE001
+        log(f"spend-check: E2B: {e}")
+        return None, None
+    if not cur:
+        return None, None
+    month = cur[0][1]
+    before = ago[0][1] if ago and (now - dt.timedelta(days=1)).month == now.month else 0.0
+    return month, max(month - before, 0.0)
+
+
+def dollars(d):
+    return d["machines"] + d["egress_gb"] * EGRESS_GB
+
+
+def check(args):
+    org = env("ARUGULA_SPEND_ORG", "personal")
+    month_limit = float(env("ARUGULA_SPEND_MONTH_LIMIT", "400"))
+    day_limit = float(env("ARUGULA_SPEND_DAY_LIMIT", "30"))
+    fixed_extra = float(env("ARUGULA_SPEND_FIXED", "0"))
+    state = pathlib.Path(
+        env("ARUGULA_SPEND_STATE", str(pathlib.Path(env("XDG_STATE_HOME", str(pathlib.Path.home() / ".local/state"))) / "arugula-spend"))
+    )
+    ledger_path = state / "ledger.json"
+    ledger = json.loads(ledger_path.read_text()) if ledger_path.exists() else {}
+
+    prom = Prom(org, token())
+    now = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
+    today = now.replace(hour=0, minute=0, second=0)
+    month_start = today.replace(day=1)
+    days_in_month = ((month_start + dt.timedelta(days=32)).replace(day=1) - month_start).days
+
+    # Finished days this month: from the ledger, else Prometheus (about ten
+    # days back), else the newest finished day's rate, marked estimated.
+    newest = None
+    d = today - dt.timedelta(days=1)
+    missing = []
+    while d >= month_start:
+        key = d.date().isoformat()
+        if key in ledger and not ledger[key].get("estimated"):
+            newest = newest or ledger[key]
+        elif (today - d).days <= 9:
+            try:
+                ledger[key] = {"apps": window_costs(prom, d, d + dt.timedelta(days=1))}
+                newest = newest or ledger[key]
+            except Exception as e:  # noqa: BLE001
+                log(f"spend-check: {key}: {e}")
+                missing.append(key)
+        else:
+            missing.append(key)
+        d -= dt.timedelta(days=1)
+    for key in missing:
+        ledger[key] = {"apps": (newest or {"apps": {}})["apps"], "estimated": True}
+
+    month_apps = {}
+    for key, day in ledger.items():
+        if key >= month_start.date().isoformat() and key < today.date().isoformat():
+            for app, c in day["apps"].items():
+                month_apps[app] = month_apps.get(app, 0.0) + dollars(c)
+    so_far = window_costs(prom, today, now)
+    for app, c in so_far.items():
+        month_apps[app] = month_apps.get(app, 0.0) + dollars(c)
+    last_day = {app: dollars(c) for app, c in window_costs(prom, now - dt.timedelta(days=1), now).items()}
+
+    fixed = fixed_monthly(org)
+    elapsed = (now - month_start).total_seconds() / (days_in_month * 86400)
+    fixed_month = sum(fixed.values()) + fixed_extra
+    e2b, e2b_day = e2b_month(prom, now)
+
+    usage_mtd = sum(month_apps.values())
+    mtd = usage_mtd + fixed_month * elapsed + (e2b or 0.0)
+    day = sum(last_day.values()) + fixed_month / days_in_month + (e2b_day or 0.0)
+    remaining_days = days_in_month * (1 - elapsed)
+    projected = mtd + day * remaining_days
+
+    lines = [
+        f"Spend check, {now.isoformat()} (an estimate from Fly's metrics and API; Fly's invoice is the truth)",
+        "",
+        f"- **Month to date:** ${mtd:,.2f}",
+        f"- **Last 24 hours:** ${day:,.2f} (limit ${day_limit:,.2f})",
+        f"- **Projected for {month_start:%B}:** ${projected:,.2f} (limit ${month_limit:,.2f})",
+        f"- **E2B this month:** " + (f"${e2b:,.2f}" if e2b is not None else "not measured (the platform's /metrics isn't scraped yet)"),
+        "",
+        "| Fly app | month to date | last 24 h |",
+        "|---|---:|---:|",
+    ]
+    for app in sorted(set(month_apps) | set(last_day), key=lambda a: -month_apps.get(a, 0.0)):
+        if month_apps.get(app, 0) >= 0.005 or last_day.get(app, 0) >= 0.005:
+            lines.append(f"| {app} | ${month_apps.get(app, 0.0):,.2f} | ${last_day.get(app, 0.0):,.2f} |")
+    lines += ["", "| Monthly whatever runs | per month |", "|---|---:|"]
+    for k, v in sorted(fixed.items(), key=lambda kv: -kv[1]):
+        lines.append(f"| {k} | ${v:,.2f} |")
+    if fixed_extra:
+        lines.append(f"| ARUGULA_SPEND_FIXED (plans nothing here sees) | ${fixed_extra:,.2f} |")
+    if missing:
+        lines += ["", f"Estimated at the newest day's rate (Prometheus no longer has them): {', '.join(sorted(missing))}."]
+    report = "\n".join(lines)
+    print(report)
+
+    over = []
+    if projected > month_limit:
+        over.append(f"projected ${projected:,.0f} for {month_start:%B}, past ${month_limit:,.0f}")
+    if day > day_limit:
+        over.append(f"${day:,.2f} in the last 24 hours, past ${day_limit:,.2f}")
+
+    if not args.dry_run:
+        state.mkdir(parents=True, exist_ok=True)
+        keep = (month_start - dt.timedelta(days=40)).date().isoformat()
+        ledger = {k: v for k, v in sorted(ledger.items()) if k >= keep}
+        ledger_path.write_text(json.dumps(ledger, indent=1, sort_keys=True))
+    if over:
+        alert(args, "; ".join(over), report, state)
+    return 0
+
+
+def alert(args, why, report, state):
+    title = f"Spend: {why}"
+    body = (
+        f"{report}\n\nFrom `scripts/spend-check` on a daily timer (docs/launch-runbook.md, \"Spend\"). "
+        "What to do: the runbook's \"Spend\" section. Close this when it's handled; the next run over a "
+        "limit opens another."
+    )
+    project = env("ARUGULA_SPEND_PROJECT", "")
+    where = ["--native"] + (["--project", project] if project else [])
+    if args.dry_run:
+        print(f"\n--dry-run: would alert: {title}")
+        return
+    listed = subprocess.run(
+        ["arugula", "issue", "list", *where, "--state", "open", "--label", "spend", "--json"],
+        capture_output=True, text=True, timeout=60,
+    )
+    open_issues = json.loads(listed.stdout or "{}").get("issues", []) if listed.returncode == 0 else []
+    stamp = state / "alerted"
+    today = dt.date.today().isoformat()
+    if open_issues:
+        if stamp.exists() and stamp.read_text().strip() == today:
+            log("spend-check: over a limit; already said so today")
+            return
+        n = f"#{open_issues[0]['number']}"
+        cmd = ["arugula", "issue", "comment", *where, n, f"**{title}**\n\n{body}"]
+    else:
+        assignee = env("ARUGULA_SPEND_ASSIGNEE", "jhgaylor")
+        cmd = ["arugula", "issue", "new", *where, "--title", title, "--body", body,
+               "--label", "spend", "--assignee", assignee]
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    if r.returncode != 0:
+        log(f"spend-check: alerting failed: {r.stderr.strip()[:300]}")
+        sys.exit(3)
+    stamp.write_text(today)
+    log(f"spend-check: alerted: {title}")
+
+
+UNIT = """[Unit]
+Description=Arugula's daily spend check (docs/launch-runbook.md)
+
+[Service]
+Type=oneshot
+Environment=PATH={path}
+EnvironmentFile=-%h/.config/arugula-spend/env
+ExecStart={script}
+"""
+
+TIMER = """[Unit]
+Description=Arugula's daily spend check
+
+[Timer]
+OnCalendar=*-*-* 13:00:00 UTC
+Persistent=true
+RandomizedDelaySec=10m
+
+[Install]
+WantedBy=timers.target
+"""
+
+
+def install():
+    home = pathlib.Path.home()
+    share = home / ".local/share/arugula-spend"
+    share.mkdir(parents=True, exist_ok=True)
+    script = share / "spend-check"
+    shutil.copy2(__file__, script)
+    script.chmod(0o755)
+    units = home / ".config/systemd/user"
+    units.mkdir(parents=True, exist_ok=True)
+    path = os.pathsep.join(
+        p for p in [str(pathlib.Path(shutil.which("fly") or "").parent), str(pathlib.Path(shutil.which("arugula") or "").parent),
+                    "/usr/local/bin", "/usr/bin", "/bin"] if p and p != "."
+    )
+    (units / "arugula-spend-check.service").write_text(UNIT.format(path=path, script=script))
+    (units / "arugula-spend-check.timer").write_text(TIMER)
+    conf = home / ".config/arugula-spend/env"
+    if not conf.exists():
+        conf.parent.mkdir(parents=True, exist_ok=True)
+        conf.write_text(
+            "# The spend check's settings (scripts/spend-check). Not secrets.\n"
+            "ARUGULA_SPEND_MONTH_LIMIT=400\nARUGULA_SPEND_DAY_LIMIT=30\nARUGULA_SPEND_FIXED=0\n"
+            "ARUGULA_SPEND_PROJECT=\nARUGULA_SPEND_ASSIGNEE=jhgaylor\n"
+        )
+    subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
+    subprocess.run(["systemctl", "--user", "enable", "--now", "arugula-spend-check.timer"], check=True)
+    print(f"installed {script}, arugula-spend-check.timer (daily 13:00 UTC); settings in {conf}")
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0], formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--dry-run", action="store_true", help="print the report and what it would file; write nothing")
+    p.add_argument("--install", action="store_true", help="install the daily systemd user timer")
+    args = p.parse_args()
+    if args.install:
+        install()
+        return 0
+    return check(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

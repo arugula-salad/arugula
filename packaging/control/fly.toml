@@ -34,6 +34,14 @@ kill_timeout = "15s"
   # signs it ("Developer ID Application: Jake Gaylor (HNDPMQPF22)"), named
   # in /.well-known/apple-app-site-association. Not a secret.
   ARUGULA_CONTROL_APPLE_TEAM_ID = "HNDPMQPF22"
+  # Prometheus metrics on the private network (part of Arugula #532), which
+  # [metrics] has Fly's managed Prometheus scrape for the launch dashboard
+  # (docs/launch-runbook.md). Never a [[services]] port.
+  ARUGULA_METRICS_LISTEN = "[::]:9091"
+
+[metrics]
+  port = 9091
+  path = "/metrics"
 
 [[mounts]]
   source = "control_data"

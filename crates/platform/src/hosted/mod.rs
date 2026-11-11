@@ -52,6 +52,10 @@
 //! - **Snapshots** (M263): a workspace that set up all right has a box of
 //!   its own set up from its spec, wiped and snapshotted, and its new boxes
 //!   and rebuilds start from that snapshot, set up ([`snapshot`]).
+//! - **The launch switches** ([`switches`], #531): the operator's, kept by
+//!   the hub. New boxes may be off or waitlisted; an account has caps on
+//!   live workspaces made and on its boxes' hours a month; a suspended
+//!   account's boxes stop.
 //! - **Public previews** ([`previews`], M187): a port an owner or editor
 //!   makes public is served to anyone at `<id>.<preview domain>`, through
 //!   the hub, for 7 days unless renewed.
@@ -80,6 +84,7 @@ pub mod setup;
 #[cfg(test)]
 mod setup_tests;
 pub mod snapshot;
+pub mod switches;
 #[cfg(any(test, feature = "testing"))]
 pub mod tests;
 pub mod transcripts;

@@ -22,12 +22,12 @@
 // to make again.
 
 import { useEffect, useId, useRef, useState } from "preact/hooks";
-import type { RelationKind, BoardLane, BoardAsk, BoardAnsweredAsk, BoardAttachment, BoardGroup, BoardPointer, ForgeText, ProjectBoard, BoardRow, BoardView, BoardWorkItem, BoardZone } from "../proto";
+import type { RelationKind, BoardLane, BoardAsk, BoardAnsweredAsk, BoardAttachment, BoardGroup, BoardPointer, ForgeText, ProjectBoard, BoardRow, BoardRowSession, BoardView, BoardWorkItem, BoardZone } from "../proto";
 import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
 import { Card } from "../ui/card";
 import { Markdown } from "../ui/markdown";
-import { ArrowIcon, ChevronIcon, CloseIcon, ExternalIcon, IconButton, MoreIcon, PlusIcon } from "../ui/icons";
+import { ArrowIcon, CheckCircleIcon, ChevronIcon, CloseIcon, ExternalIcon, IconButton, LinksIcon, MoreIcon, PlusIcon } from "../ui/icons";
 import { ConfirmRemove } from "../ui/confirm";
 import { SideSheet } from "../ui/side-sheet";
 import { StateChip, Chip, ObjectChip } from "../ui/state-chip";
@@ -42,7 +42,7 @@ import { agentShort } from "../agent-label";
 import { day } from "../time";
 import { BoardError, STALE_ORDER, STALE_REV, boards, type ForgeChecks } from "./store";
 import { StepsView } from "./steps-view";
-import { loadDone, loadMode, nudge, saveDone, saveMode, stepPlace, type BoardMode, type Reorder } from "./steps";
+import { loadDone, loadLinks, loadMode, nudge, saveDone, saveLinks, saveMode, stepPlace, type BoardMode, type Reorder } from "./steps";
 import { DocLink, DocPicker } from "./docs";
 import "./bar.css";
 import "./boards.css";
@@ -105,6 +105,9 @@ export function BoardPanel({
   /** Whether the Steps view draws done rows (#831), as this viewer last picked. */
   const [showDone, setShowDoneNow] = useState(loadDone);
   const setShowDone = (on: boolean) => (setShowDoneNow(on), saveDone(on));
+  const [showLinks, setShowLinksNow] = useState(loadLinks);
+  const setShowLinks = (on: boolean) => (setShowLinksNow(on), saveLinks(on));
+  const phone = usePhone();
   /** The row whose reorder was refused because someone else moved its group first (Steps). */
   const [behind, setBehind] = useState<string | null>(null);
   useEffect(() => {
@@ -124,6 +127,9 @@ export function BoardPanel({
   const [dropping, setDropping] = useState<BoardGroup | null>(null);
   /** The row a move to Done waits on: its issue is closed once the person confirms (#494). */
   const [closing, setClosing] = useState<BoardRow | null>(null);
+  /** The close-epic form is open and what it has been given: the trigger is in the view switch's row, the form under the progress bar. */
+  const [epicClosing, setEpicClosing] = useState(false);
+  const [epicNote, setEpicNote] = useState("");
   const [closeReason, setCloseReason] = useState("completed");
   /** The find box's text (#546); the bar is always there (#614), so empty is no find. */
   const [find, setFind] = useState<string>(() => (keepInUrl ? (parseFilterHash(location.hash)?.q ?? "") : ""));
@@ -343,9 +349,10 @@ export function BoardPanel({
             </button>
           ))}
         </div>
-        {mode === "steps" && (
-          <button type="button" class="secondary small" aria-pressed={showDone} data-board-done onClick={() => setShowDone(!showDone)}>
-            Done
+        <span class="board-switch-gap" />
+        {write && view.board.closed_at == null && !epicClosing && (
+          <button type="button" class="secondary small board-close" data-board-close onClick={() => (setEpicNote(""), setEpicClosing(true))}>
+            Close epic…
           </button>
         )}
       </div>
@@ -378,7 +385,7 @@ export function BoardPanel({
           </button>
         )}
       </div>
-      <Epic b={view.board} act={act} id={id} write={write} view={view} platform={platform} />
+      <Epic b={view.board} closing={epicClosing} setClosing={setEpicClosing} note={epicNote} setNote={setEpicNote} act={act} id={id} write={write} view={view} platform={platform} />
       {stale && (
         <p class="board-stale" role="status" data-board-stale>
           {STALE_SAID}
@@ -404,7 +411,19 @@ export function BoardPanel({
         />
       )}
       {mode === "steps" && allRows.length > 0 && !(narrows && found.length === 0) && (
-        <StepsView view={narrowed} write={write} open={setDrawer} opened={drawer} move={(r, m) => void reorderRow(r, m)} behind={behind} showDone={showDone} />
+        <>
+          <div class="steps-toggles" data-steps-toggles>
+            <button type="button" class="secondary small steps-toggle" aria-pressed={showDone} data-board-done title={showDone ? "Hide done rows" : "Show done rows"} aria-label={phone ? (showDone ? "Hide done rows" : "Show done rows") : undefined} onClick={() => setShowDone(!showDone)}>
+              <CheckCircleIcon />
+              {!phone && "Done"}
+            </button>
+            <button type="button" class="secondary small steps-toggle" aria-pressed={showLinks} data-board-links title={showLinks ? "Hide links" : "Show links"} aria-label={phone ? (showLinks ? "Hide links" : "Show links") : undefined} onClick={() => setShowLinks(!showLinks)}>
+              <LinksIcon />
+              {!phone && "Links"}
+            </button>
+          </div>
+          <StepsView view={narrowed} write={write} open={setDrawer} opened={drawer} move={(r, m) => void reorderRow(r, m)} behind={behind} showDone={showDone} showLinks={showLinks} />
+        </>
       )}
       {mode === "lanes" && sections(narrowed).map((s) => {
         const grouped = !!view.groups?.length;
@@ -527,11 +546,9 @@ export function BoardPanel({
 }
 
 /** A board's goal, progress and closing, under its title. The panel doesn't know whether the person may write (the pin block has no project), so without `write` the controls still show and the platform's refusal comes back as `act`'s toast. */
-function Epic({ b, act, id, write, view, platform }: { b: ProjectBoard; act: Act; id: string; write: boolean; view: BoardView; platform: (path: string) => string | undefined }) {
+function Epic({ b, closing, setClosing, note, setNote, act, id, write, view, platform }: { b: ProjectBoard; closing: boolean; setClosing: (on: boolean) => void; note: string; setNote: (note: string) => void; act: Act; id: string; write: boolean; view: BoardView; platform: (path: string) => string | undefined }) {
   const [goalOpen, setGoalOpen] = useState(false);
   const [goal, setGoal] = useState("");
-  const [closing, setClosing] = useState(false);
-  const [note, setNote] = useState("");
   const e = epicLine(b.progress);
   const waiting = needsYou(view);
   const saveGoal = async () => {
@@ -631,12 +648,6 @@ function Epic({ b, act, id, write, view, platform }: { b: ProjectBoard; act: Act
             </button>
           </span>
         </div>
-      ) : write ? (
-        <p class="board-epic-actions">
-          <button type="button" data-board-close onClick={() => (setNote(""), setClosing(true))}>
-            Close epic…
-          </button>
-        </p>
       ) : null}
     </div>
   );
@@ -846,6 +857,31 @@ function Lane({
         </ul>
       )}
     </section>
+  );
+}
+
+/** A session started on the row's issue (#843): its branch without the `arugula/` prefix, and its state, a link to its thread where the reader has one. Dim once it no longer moves the row. */
+function SessionChip({ s, project }: { s: BoardRowSession; project: string }) {
+  const api = usePlatformApi();
+  const href = api.sessionHref?.(project, s.session);
+  const branch = s.branch.replace(/^arugula\//, "");
+  const state = s.state.replace(/_/g, " ");
+  return (
+    <ObjectChip
+      class={s.live ? undefined : "dim"}
+      title={s.live ? "An agent session working on this issue" : "An agent session that has stopped moving this row"}
+      fact={{ tone: s.live ? (s.state === "needs_input" ? "accent" : "muted") : "muted", text: state }}
+      data-board-session={s.session}
+      data-board-session-live={s.live ? "" : undefined}
+    >
+      {href ? (
+        <a class="board-ptr" href={href} target="_blank" rel="noopener noreferrer">
+          {branch}
+        </a>
+      ) : (
+        <span class="board-ptr">{branch}</span>
+      )}
+    </ObjectChip>
   );
 }
 
@@ -1152,10 +1188,13 @@ function Row({
               {closedWithLine(r.live)}
             </div>
           )}
-          {current.length > 0 && (
+          {(current.length > 0 || (r.sessions ?? []).length > 0) && (
             <div class="board-line board-chips" data-board-attachments>
               {current.map((a) => (
                 <AttachmentChip key={a.id} a={a} platform={platform} />
+              ))}
+              {(r.sessions ?? []).map((x) => (
+                <SessionChip key={x.session} s={x} project={project} />
               ))}
             </div>
           )}
@@ -1389,6 +1428,16 @@ function Drawer({ steps, r, platform, close, project, others, write, act, id, mo
       )}
       {(r.relations?.length || (write && itemId(r))) && <Relations r={r} project={project} others={others} write={write} act={act} id={id} />}
       <RowDocs r={r} project={project} platform={platform} write={write} act={act} id={id} />
+      {(r.sessions ?? []).length > 0 && (
+        <section data-board-drawer-sessions>
+          <h3>Sessions</h3>
+          {(r.sessions ?? []).map((x) => (
+            <div key={x.session} class="board-drawer-attached">
+              <SessionChip s={x} project={project} />
+            </div>
+          ))}
+        </section>
+      )}
       {r.attachments.length > 0 && (
         <section data-board-drawer-attachments>
           <h3>Attached</h3>

@@ -518,7 +518,10 @@ async fn wake(app: &Platform, sub: &dyn Substrate, job: &mut HostedJob, now: u64
 /// pauses itself after the turn, since nothing holds it then.
 async fn pause(app: &Platform, sub: &dyn Substrate, job: &mut HostedJob, now: u64) -> Result<Step> {
     let Some(sandbox) = job.sandbox.clone() else { return Ok(with(fail(job, GONE, now), Ask::Pause)) };
-    if !matches!(working(app, job).await, Ok(None | Some(false))) {
+    // A suspended maker's box pauses mid-turn too (#531).
+    if !matches!(working(app, job).await, Ok(None | Some(false)))
+        && !super::switches::maker_suspended(app, &job.w).await
+    {
         tracing::info!(workspace = %job.w.id, "not pausing a hosted box mid-turn: it pauses itself after");
         return Ok((Some(Ask::Pause), now + READY_MS));
     }

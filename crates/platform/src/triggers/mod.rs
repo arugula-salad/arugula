@@ -104,7 +104,7 @@ pub enum Cannot {
 pub async fn may_start(app: &Platform, project: &str, account: &str) -> anyhow::Result<Option<Cannot>> {
     match crate::forge::links::membership(app, account, project, true).await {
         Ok((_, TeamRole::Viewer)) => Ok(Some(Cannot::Viewer)),
-        Ok(_) if !app.hosted.allows(account) => Ok(Some(Cannot::Unlisted)),
+        Ok(_) if !crate::hosted::switches::open_to(app, account).await => Ok(Some(Cannot::Unlisted)),
         Ok(_) => Ok(None),
         Err(e) if e.0 == StatusCode::NOT_FOUND => Ok(Some(Cannot::Outside)),
         Err(e) => anyhow::bail!("asking the hub who's in the project: {}", e.1),

@@ -60,13 +60,15 @@ pub struct Connection {
     pub last_delivery_at: Option<u64>,
     /// Each open epic has a board that follows it (#483).
     pub epics_as_boards: bool,
+    /// A merged PR moves the items it names to Done (#852).
+    pub close_on_merge: bool,
 }
 
 const COLUMNS: &str = "c.id, c.project_id, c.provider, c.workspace_slug, c.source_project_id, c.identifier, c.name, \
      c.mirror_id, c.write_policy, c.attribution, c.linked_by, c.created_at, c.unlinked_at, c.purge_after, \
      c.backfilled_at, EXISTS (SELECT 1 FROM project_secrets s WHERE s.project_id = c.project_id \
          AND s.name = 'tracker/plane/' || c.id || '/webhook'), \
-     c.last_delivery_at, c.epics_as_boards";
+     c.last_delivery_at, c.epics_as_boards, c.close_on_merge";
 
 fn row(r: &Row) -> Result<Connection> {
     Ok(Connection {
@@ -88,6 +90,7 @@ fn row(r: &Row) -> Result<Connection> {
         has_webhook_secret: r.get(15)?,
         last_delivery_at: r.get(16)?,
         epics_as_boards: r.get(17)?,
+        close_on_merge: r.get(18)?,
     })
 }
 
@@ -259,6 +262,39 @@ impl Db {
             params![on, project, id],
         )?;
         Ok(n == 1)
+    }
+
+    /// Turn close-on-merge on or off, on a live connection: whether there
+    /// was one.
+    pub fn set_tracker_close_on_merge(&self, project: &str, id: &str, on: bool) -> Result<bool> {
+        let n = self.c().execute(
+            "UPDATE tracker_connections SET close_on_merge = ?1 WHERE project_id = ?2 AND id = ?3 AND unlinked_at IS NULL",
+            params![on, project, id],
+        )?;
+        Ok(n == 1)
+    }
+
+    /// Note that Arugula moved item `number` to Done for a merged PR.
+    pub fn tracker_merge_closed(&self, connection: &str, number: u64, now: u64) -> Result<()> {
+        self.c().execute(
+            "INSERT INTO tracker_merge_closes (connection_id, number, closed_at) VALUES (?1, ?2, ?3) \
+             ON CONFLICT (connection_id, number) DO NOTHING",
+            params![connection, number, now],
+        )?;
+        Ok(())
+    }
+
+    /// Whether Arugula has moved item `number` to Done on a merge before.
+    pub fn tracker_was_merge_closed(&self, connection: &str, number: u64) -> Result<bool> {
+        Ok(self
+            .c()
+            .query_row(
+                "SELECT 1 FROM tracker_merge_closes WHERE connection_id = ?1 AND number = ?2",
+                params![connection, number],
+                |r| r.get::<i64>(0),
+            )
+            .optional()?
+            .is_some())
     }
 
     /// Note that a delivery with a good signature arrived at `now`.
@@ -479,6 +515,17 @@ impl Db {
             )
             .optional()?;
         Ok(group.flatten())
+    }
+
+    /// The tracker's ids of a connection's items that aren't done or
+    /// cancelled, in a stable order: whose relations a reconcile sweeps.
+    pub fn tracker_open_items(&self, connection: &str) -> Result<Vec<String>> {
+        self.c().query_map(
+            "SELECT source_item_id FROM forge_items WHERE connection_id = ?1
+             AND COALESCE(state_group, '') NOT IN ('completed', 'cancelled') ORDER BY source_item_id",
+            params![connection],
+            |r| r.get(0),
+        )
     }
 
     /// The newest `updated_at` mirrored for a connection: where a reconcile

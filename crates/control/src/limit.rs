@@ -12,7 +12,10 @@ pub use arugula_control_common::limit::{Limits, bucket};
 
 /// How many per hour.
 pub const JOINS: (&str, usize) = ("join", 30);
-pub const ACCOUNTS: (&str, usize) = ("account", 10);
+/// New accounts, by a passkey or GitHub, per client address: the count's
+/// name. How many is a launch switch (#531, `switches::SIGNUPS_PER_HOUR`
+/// unless the operator sets it).
+pub const ACCOUNTS: (&str, usize) = ("account", 60);
 pub const SIGN_INS: (&str, usize) = ("sign-in", 60);
 /// The issuer's `/oauth/*` (M228), per client address: a product's
 /// server swaps codes and reads userinfo for everyone it signs in, so it's

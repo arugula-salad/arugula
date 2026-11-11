@@ -61,6 +61,7 @@ pub mod inbox;
 pub mod issues;
 pub mod jobs;
 pub mod keys;
+pub mod metrics;
 pub mod notify;
 pub use arugula_platform_api::page;
 pub mod planter;

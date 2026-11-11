@@ -123,14 +123,18 @@ pub(crate) async fn link(c: &Call<'_>, a: LinkArgs) -> Out {
     if n > LINKS_MAX {
         return Err(format!("at most {LINKS_MAX} links in one call; you gave {n}"));
     }
-    let chosen = c.chosen_project(a.project.as_deref()).await?;
+    let ends_said: Vec<&str> = add.iter().chain(&remove).flat_map(|l| [l.from.as_str(), l.to.as_str()]).collect();
+    let project = match super::plane_home::home(c, a.project.as_deref(), &ends_said).await? {
+        Some(p) => p,
+        None => c.chosen_project(a.project.as_deref()).await?.id,
+    };
     let said: Vec<String> = add.iter().chain(&remove).map(Pair::words).collect();
     let batch = LinkBatch {
         add: add.into_iter().map(Pair::ends).collect(),
         remove: remove.into_iter().map(Pair::ends).collect(),
     };
     let body = serde_json::to_value(batch).map_err(|e| e.to_string())?;
-    let v = c.issues_call(Method::POST, &agent_project_relations_batch(&chosen.id), Some(body)).await?;
+    let v = c.issues_call(Method::POST, &agent_project_relations_batch(&project), Some(body)).await?;
     let got: LinksDone =
         serde_json::from_value(v).map_err(|e| format!("Arugula control sent an answer I can't read: {e}"))?;
     Ok(answer(&said, &got))
