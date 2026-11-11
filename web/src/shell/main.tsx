@@ -77,10 +77,10 @@ if (info) restoreInvite();
 if (info) showMoving(info);
 // M153: chat is on the platform page, when control has one.
 setPlatformOrigin(info?.platform);
-// #506: served by control, `script-src 'self'` stops a srcdoc frame's scripts, so a
-// Doc's prototype loads from control's proto origin, or says there is none.
-// A page a daemon serves keeps srcdoc.
-if (info) setProtoOrigin(info.proto ?? null);
+// #506: `script-src 'self'` stops a srcdoc frame's scripts, so a Doc's
+// prototype loads from control's proto origin (or says there is none), or on a
+// page a daemon serves, from the daemon's own runner page.
+setProtoOrigin(info ? (info.proto ?? null) : `${location.origin}/proto`);
 // M154: an old link of the platform's (`#chat…`, `#cloud…`, `#cloud-ws…`)
 // lands on its new page there. Keep this forever (./fragments).
 const moved = platformOrigin() ? platformPath(location.hash) : null;

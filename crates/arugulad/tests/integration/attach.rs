@@ -431,23 +431,38 @@ async fn rejects_foreign_host_and_origin() {
     assert!(connect_async(req).await.is_err(), "tailnet user without --owner must be refused");
 }
 
+/// The page runs only its own files' scripts and nothing frames it; a Doc's
+/// prototype runs on a runner page of its own, opaque and framed only by the
+/// page.
 #[tokio::test]
-async fn pages_refuse_to_be_framed() {
+async fn pages_refuse_to_be_framed_and_run_only_their_own_scripts() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let d = start().await;
-    let mut s = TcpStream::connect(("127.0.0.1", d.port)).await.unwrap();
-    let req = format!(
-        "GET / HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nAuthorization: Bearer {}\r\nConnection: close\r\n\r\n",
-        d.port,
-        d.token()
-    );
-    s.write_all(req.as_bytes()).await.unwrap();
-    let mut res = Vec::new();
-    timeout(Duration::from_secs(5), s.read_to_end(&mut res)).await.unwrap().unwrap();
-    let head = String::from_utf8_lossy(&res).to_ascii_lowercase();
-    let head = head.split("\r\n\r\n").next().unwrap();
-    assert!(head.contains("content-security-policy: frame-ancestors 'none'"), "{head}");
-    assert!(head.contains("x-frame-options: deny"), "{head}");
+    let head = |path: &'static str| {
+        let (port, token) = (d.port, d.token());
+        async move {
+            let mut s = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+            let req = format!(
+                "GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAuthorization: Bearer {token}\r\nConnection: close\r\n\r\n"
+            );
+            s.write_all(req.as_bytes()).await.unwrap();
+            let mut res = Vec::new();
+            timeout(Duration::from_secs(5), s.read_to_end(&mut res)).await.unwrap().unwrap();
+            let res = String::from_utf8_lossy(&res).into_owned();
+            let (head, body) = res.split_once("\r\n\r\n").unwrap();
+            (head.to_ascii_lowercase(), body.to_owned())
+        }
+    };
+    let (page, _) = head("/").await;
+    let csp = "content-security-policy: script-src 'self'; object-src 'none'; base-uri 'none'; \
+               form-action 'self'; frame-ancestors 'none'";
+    assert!(page.contains(csp), "{page}");
+    assert!(page.contains("x-frame-options: deny"), "{page}");
+    let (runner, body) = head("/proto/").await;
+    assert!(runner.starts_with("http/1.1 200"), "{runner}");
+    assert!(runner.contains("content-security-policy: sandbox allow-scripts; default-src 'none'"), "{runner}");
+    assert!(runner.contains("frame-ancestors 'self'") && !runner.contains("script-src 'self'"), "{runner}");
+    assert!(body.contains("<title>prototype</title>"), "{body}");
 }
 
 #[tokio::test]

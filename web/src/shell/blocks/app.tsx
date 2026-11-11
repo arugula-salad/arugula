@@ -23,6 +23,7 @@ import type { BlockRenderer, BlockView } from "./view";
 import { BlockError, BlockLoading, EmptyState, OpenOutside } from "./block-states";
 import { Bar } from "../../shared/ui/bar";
 import { Caret, IconButton, ReloadIcon } from "../../shared/ui/icons";
+import { webLink } from "../../shared/web-link";
 
 export interface AppState {
   app: string;
@@ -169,7 +170,7 @@ function AppBlock({ client, id, s }: { client: Client; id: PaneId; s: AppState |
         >
           Records <Caret />
         </button>
-        <OpenOutside href={s.box_url} />
+        {webLink(s.box_url) && <OpenOutside href={s.box_url} />}
       </Bar>
       {s.gates.length > 0 && (
         <div class="app-gates" data-app-gates>
@@ -213,7 +214,7 @@ function AppBlock({ client, id, s }: { client: Client; id: PaneId; s: AppState |
             ref={frame}
             class="browser-frame"
             style={phase === "in" ? undefined : { display: "none" }}
-            src={s.box_url + "/"}
+            src={webLink(s.box_url) ? s.box_url + "/" : "about:blank"}
             title={name}
             sandbox="allow-scripts allow-forms allow-same-origin allow-popups"
             referrerpolicy="no-referrer"

@@ -1,9 +1,10 @@
 // #506: a ```prototype section in a Doc runs its own script in a sandboxed frame
-// and can't get out. Here, in the Doc block on the daemon's own app, which
-// has no script CSP, so the frame is the host page by `srcdoc`. The shared
-// viewer and the platform page, whose CSP would stop a srcdoc frame's
-// scripts, are in doc-share.spec.ts and docs-platform.spec.ts; WebKit's are
-// doc.webkit.spec.ts and doc-share.webkit.spec.ts.
+// and can't get out. Here, in the Doc block on the daemon's own app, whose
+// `script-src 'self'` would stop a srcdoc frame's scripts, so the frame is the
+// daemon's runner page (`/proto/`). The shared viewer and the platform page,
+// which load it from control's proto origin, are in doc-share.spec.ts and
+// docs-platform.spec.ts; WebKit's are doc.webkit.spec.ts and
+// doc-share.webkit.spec.ts.
 //
 // What it must do: write into its own DOM, in the Doc's colour scheme. What it
 // must not: reach the page above (`parent.document`), move it (`top.location`),
@@ -31,9 +32,10 @@ test("a prototype runs its own script in a sandboxed frame and gets out of nowhe
     const doc = await newDoc(post(page), term);
     await fill(post(page), doc, "s1", `Here it is:\n\n${prototype(a)}\nAfter it.`);
     await expect(page.locator(`[data-doc-block="${doc}"] [data-section=s1]`)).toContainText("After it.");
-    // By srcdoc: this page has no script CSP, so no other origin is needed.
-    await expect(page.locator("[data-prototype-frame]")).toHaveAttribute("srcdoc", /arugula\.html/);
-    await expect(page.locator("[data-prototype-frame]")).not.toHaveAttribute("src", /.*/);
+    // From the daemon's runner page, not by srcdoc, which would take on the
+    // page's policy.
+    await expect(page.locator("[data-prototype-frame]")).toHaveAttribute("src", `${new URL(page.url()).origin}/proto/`);
+    await expect(page.locator("[data-prototype-frame]")).not.toHaveAttribute("srcdoc", /.*/);
     await prototypeRan(page, a, "dark");
 
     // A switch while it is open reaches the page without reloading it: its own
@@ -105,7 +107,9 @@ test("an html fence stays code: nothing framed, nothing run", async ({ page }) =
 });
 
 test("the runner takes its page from its parent only, and only once", async ({ page }) => {
-  await reset(page);
+  // Its own logic, however it's loaded: on a page with no policy, so the
+  // frames here can be srcdoc ones with scripts of their own.
+  await page.goto("about:blank");
   const host = readFileSync(new URL("../src/shared/ui/runner.html", import.meta.url), "utf8");
   // Two sandboxed frames, as the Doc makes them: the host, and a sibling that
   // tries to hand the host a page of its own before the parent does.

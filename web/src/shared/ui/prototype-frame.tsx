@@ -5,13 +5,13 @@
 // (`runner.html`) lets it run its own inline scripts and styles and loads
 // nothing, not even a fetch.
 //
-// Where the page has no script CSP (the daemon's own app), the frame is the
-// runner page by `srcdoc`. A srcdoc frame inherits its parent's CSP, so where the
-// page has one (control's platform pages and the shared viewer: `script-src
-// 'self'`) the inline scripts would never run: the frame loads the same page
-// from control's proto origin instead, which serves it under a CSP of its
-// own and which those pages' `frame-src` names. With no proto origin there (no
-// block domain) the section says so.
+// A srcdoc frame inherits its parent's CSP, and every page that shows a Doc has
+// one (`script-src 'self'`), under which the runner's inline scripts would never
+// run: the frame loads the same page from control's proto origin, which serves
+// it under a CSP of its own and which control's pages' `frame-src` names, or on a
+// daemon's own page from the daemon (`/proto/`, under the same CSP). With no
+// proto origin (no block domain) the section says so. By `srcdoc` is what's left
+// for a page that says nothing.
 //
 // On the shared viewer, where the reader is a stranger, nothing is framed until
 // they click "Run prototype". In the Doc block and on project Docs it runs at once.
@@ -29,7 +29,8 @@ export const SANDBOX = "allow-scripts";
 
 interface Mode {
   /** Where the runner loads from: `undefined`, by `srcdoc`; a proto origin
-   * (`https://proto.<block domain>`); `null`, nowhere (the page can't run one). */
+   * (`https://proto.<block domain>`) or a daemon's runner (`<its page>/proto`),
+   * at `/` under it; `null`, nowhere (the page can't run one). */
   origin: string | null | undefined;
   /** Whether a reader has to click before anything is framed. */
   click: boolean;
