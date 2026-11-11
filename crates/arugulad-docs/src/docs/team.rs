@@ -190,6 +190,8 @@ pub struct Team {
     name: String,
     id: String,
     cloud: Option<Arc<dyn Cloud>>,
+    /// The owner's share card (`team_ask.rs`).
+    pub(super) card: super::ask::Card,
     /// Control's Doc links, for the public link's parts (Arugula #871).
     remote: Mutex<Option<Arc<dyn Remote>>>,
     changed: Changed,
@@ -234,6 +236,7 @@ impl Team {
             name,
             id,
             cloud,
+            card: Default::default(),
             remote: Mutex::new(link::remote()),
             changed,
             cache,
@@ -668,21 +671,6 @@ impl Team {
         }))
     }
 
-    /// `doc share` by an agent: the public link, made if the Doc has none
-    /// (its machine's `docs.write` is the grant, as for every write to a
-    /// team Doc), and the team's page.
-    async fn share_ask(&self) -> Result<Value, String> {
-        let _ = self.refresh().await;
-        let page = self.link();
-        let have = self.public().is_some_and(|p| p.ver > 0);
-        let got = if have { self.shares().await } else { self.share(false).await };
-        Ok(match got {
-            Ok(v) if v["url"].is_string() => json!({ "status": "shared", "url": v["url"], "page": page }),
-            Ok(v) => json!({ "status": "team", "url": page, "why": v["why"] }),
-            Err(why) => json!({ "status": "failed", "why": why, "url": page }),
-        })
-    }
-
     /// The Doc's page on the platform's page, once it has been read.
     fn link(&self) -> Option<String> {
         self.state.lock().unwrap().view.as_ref().and_then(|v| v.link.clone())
@@ -778,7 +766,7 @@ impl Block for Team {
         self.call_by(method, args, None)
     }
 
-    fn call_by(&self, method: &str, args: Value, _by: Option<&str>) -> BoxFuture<'static, Result<Value, String>> {
+    fn call_by(&self, method: &str, args: Value, by: Option<&str>) -> BoxFuture<'static, Result<Value, String>> {
         let me = self.me.upgrade();
         match method {
             // `doc new` made it through control: read what it made.
@@ -811,7 +799,11 @@ impl Block for Team {
                 })
             }
             // `doc share`: the public link and the team's page.
-            "doc_share_ask" => Box::pin(async move { me.ok_or("closed")?.share_ask().await }),
+            // An agent's ask raises the owner's card; nothing is made until they tap (Arugula #871).
+            "doc_share_ask" => {
+                let by = by.map(str::to_owned);
+                Box::pin(async move { me.ok_or("closed")?.share_ask(by).await })
+            }
             // The public link (Arugula #871): made, updated and taken down
             // through the platform, which keeps the key.
             "doc_share" | "doc_share_update" => {
@@ -850,7 +842,9 @@ impl Block for Team {
         }
     }
 
-    fn close(&self) {}
+    fn close(&self) {
+        self.drop_card();
+    }
 
     fn summary(&self) -> Summary {
         let title = self.state.lock().unwrap().title.clone();
@@ -863,7 +857,9 @@ impl Block for Team {
 /// the outline only.
 pub(super) fn open(ctx: BlockCtx, project: String, name: String, id: String, title: String) -> Arc<dyn Block> {
     let (rt, cache) = (ctx.rt.clone(), ctx.dir.join(CACHE));
+    let card_ctx = ctx.clone();
     let team = Team::new(project, name, id, title, cloud(), Arc::new(move || ctx.changed()), Some(cache));
+    let _ = team.card.ctx.set(card_ctx);
     team.start(&rt);
     team
 }
@@ -878,6 +874,9 @@ pub fn title_ok(title: &str) -> Result<(), String> {
     }
     Ok(())
 }
+
+#[path = "team_ask.rs"]
+mod card_ask;
 
 #[cfg(test)]
 mod tests {
@@ -1201,8 +1200,7 @@ mod tests {
         team.refresh().await.unwrap();
         let (id, key) = ("ab".repeat(16), URL_SAFE_NO_PAD.encode([7u8; 32]));
 
-        let out = team.call("doc_share_ask", json!({})).await.unwrap();
-        assert_eq!(out["status"], "shared");
+        let out = team.call("doc_share", json!({})).await.unwrap();
         assert_eq!(out["url"], format!("https://docs.test/{id}#k={key}"));
         assert_eq!(out["page"], "https://app.test/p/prj_t/docs/pdc_1", "both the public URL and the team's page");
         // Control had the parts and the commit; not one call or body has the key.
@@ -1261,5 +1259,24 @@ mod tests {
         team.refresh().await.unwrap();
         let held = std::fs::read_to_string(&file).unwrap();
         assert!(held.contains("pdc_1") && !held.contains(&URL_SAFE_NO_PAD.encode([7u8; 32])), "{held}");
+    }
+
+    /// An agent's `doc share` on a team Doc never publishes: it needs the
+    /// owner's card, so with no card to show it says so, and control and the
+    /// platform are never asked to make a link.
+    #[tokio::test]
+    async fn an_agents_share_of_a_team_doc_makes_no_link_without_the_owners_tap() {
+        let fake = seeded();
+        let (team, _) = block(&fake, None);
+        let control = link::fake::Fake::new();
+        team.set_remote(control.clone());
+        team.refresh().await.unwrap();
+        let err = team.call_by("doc_share_ask", json!({}), Some("mcp:claude-code")).await.unwrap_err();
+        assert!(err.contains("can't ask"), "{err}");
+        let err = team.call_by("doc_share_ask", json!({}), None).await.unwrap_err();
+        assert!(err.contains("agent asks"), "{err}");
+        assert!(control.calls.lock().unwrap().is_empty(), "nothing went to control");
+        assert!(fake.view.lock().unwrap().as_ref().unwrap().public.is_none(), "the platform made no link");
+        assert!(fake.calls().iter().all(|(m, p)| !(m != "GET" && p.ends_with("/public"))), "{:?}", fake.calls());
     }
 }

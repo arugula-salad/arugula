@@ -40,7 +40,7 @@ const DETAIL: &str =
 
 /// How long a card waits before it lapses (a debug build's tests may say,
 /// `ARUGULA_DOC_SHARE_TTL_MS`).
-fn ttl() -> Duration {
+pub(super) fn ttl() -> Duration {
     let day = Duration::from_secs(24 * 3600);
     if !cfg!(debug_assertions) {
         return day;
@@ -63,7 +63,7 @@ pub(super) enum Outcome {
 }
 
 impl Outcome {
-    fn word(self) -> &'static str {
+    pub(super) fn word(self) -> &'static str {
         match self {
             Outcome::Waiting => "waiting",
             Outcome::Declined => "declined",
@@ -90,13 +90,13 @@ pub(super) struct Asked {
 /// the config, and the card on screen.
 #[derive(Default)]
 pub(super) struct Card {
-    ctx: OnceLock<BlockCtx>,
+    pub(super) ctx: OnceLock<BlockCtx>,
     pub asked: Mutex<Option<Asked>>,
     /// The card on screen: its ask's id and token.
-    token: Mutex<Option<(String, u64)>>,
+    pub(super) token: Mutex<Option<(String, u64)>>,
     /// One card raised at a time.
-    raising: tokio::sync::Mutex<()>,
-    closed: AtomicBool,
+    pub(super) raising: tokio::sync::Mutex<()>,
+    pub(super) closed: AtomicBool,
 }
 
 impl Doc {
@@ -316,13 +316,13 @@ impl Doc {
     }
 }
 
-fn card_id(at: u64) -> String {
+pub(super) fn card_id(at: u64) -> String {
     format!("share-{at}")
 }
 
 /// The owner's card: the question and what it means; the client's buttons
 /// are Share (an answer) and Not now (a decline).
-fn card(at: u64, title: &str, by: &str) -> Ask {
+pub(super) fn card(at: u64, title: &str, by: &str) -> Ask {
     let agent = by.strip_prefix("mcp:").unwrap_or(by).to_owned();
     let schema = json!({
         "type": "object",
