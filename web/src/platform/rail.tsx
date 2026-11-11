@@ -12,6 +12,7 @@ import { usePhone, useSubscribe } from "../shared/ui/hooks";
 import { Rail, type RailItem } from "../shared/ui/rail";
 import { ChatIcon, DocsIcon, Mark, PanesIcon, ProjectsIcon, SettingsIcon, SwarmIcon } from "../shared/ui/icons";
 import { chatPath, sectionOf } from "./bar";
+import { chatTeam } from "./chat-scope";
 import { currentProject, entryPath, onCurrentProject } from "./current-project";
 import { go, useRoute } from "./router";
 import { names } from "./links";
@@ -33,7 +34,7 @@ export function PlatformRail() {
   // Where a button opens: the project the bar is in, else the current one (Arugula #880).
   const inProject = session.project(project ?? currentProject());
   const chatTo = project ? chatPath(project) : entryPath("chat", inProject, names);
-  const { n, mention } = !unknown && (!project || p) ? chatUnread(chat.rooms, p ? (p.team?.id ?? null) : undefined) : { n: 0, mention: false };
+  const { n, mention } = !unknown && (!project || p) ? chatUnread(chat.rooms, chatTeam(p, inProject)) : { n: 0, mention: false };
   const place = (to: string) => () => go(to);
   // Projects goes to the current project while it's still one of the reader's; else the list.
   const projectsTo = entryPath("projects", inProject, names);

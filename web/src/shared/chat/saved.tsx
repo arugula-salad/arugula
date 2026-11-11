@@ -6,6 +6,7 @@
 import { BlockLoading, EmptyState } from "../ui/block-states";
 import { useEffect, useState } from "preact/hooks";
 import { chat } from "../chat-store";
+import { inView, type ChatScope } from "./sidebar";
 import { usePlatformApi } from "../platform-api";
 import { useSubscribe } from "../ui/hooks";
 import { Markup } from "../ui/markup";
@@ -78,14 +79,15 @@ function SavedRow({ item, onError }: { item: ChatSavedItem; onError: (e: string)
 }
 
 /** Saved: the messages this person saved, to do first, then done
- * ones, each with its room, a link to it and what to do with it. */
-export function SavedView({ phone }: { phone: boolean }) {
+ * ones, in the scope's rooms, each with its room, a link to it and what to do with it. */
+export function SavedView({ phone, scope }: { phone: boolean; scope?: ChatScope }) {
   useSubscribe((fn) => chat.subscribe(fn));
   const [err, setErr] = useState("");
   useEffect(() => {
     void chat.loadSaved();
   }, []);
-  const items = chat.saved;
+  // In a scope, the messages of its rooms (Arugula #883).
+  const items = chat.saved?.filter((i) => inView(chat.room(i.room), scope)) ?? null;
   const todo = items?.filter((i) => i.done === null) ?? [];
   const finished = items?.filter((i) => i.done !== null) ?? [];
   return (

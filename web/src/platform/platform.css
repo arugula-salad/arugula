@@ -1468,3 +1468,16 @@ span.untri-title {
   border-color: var(--fg);
   color: var(--bg);
 }
+
+/* Search's "All teams", beside the box (Arugula #883). */
+.platform-bar .chat-search-all {
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  flex: none;
+  color: var(--dim);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}

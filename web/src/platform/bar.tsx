@@ -9,6 +9,7 @@ import { usePhone, useSubscribe } from "../shared/ui/hooks";
 import { useRef } from "preact/hooks";
 import { openMenu, useMenuFrom, type MenuItem } from "../shared/ui/menu";
 import { WindowButtons } from "../shared/ui/window-buttons";
+import { chatTeam } from "./chat-scope";
 import { currentProject, entryPath } from "./current-project";
 import { follow, go, pathOf, useRoute, type Route } from "./router";
 import { controlOrigin, session } from "./session";
@@ -218,7 +219,7 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
           <Place to={chatTo} here={here === "chat"} data="chat">
             Chat
             {/* An id that's none of the reader's counts nothing. */}
-            {!unknown && (!project || p) && <ChatPlaceUnread team={p ? (p.team?.id ?? null) : undefined} />}
+            {!unknown && (!project || p) && <ChatPlaceUnread team={chatTeam(p, session.project(currentProject()))} />}
           </Place>
         )}
         <Place to="/inbox" here={here === "inbox"} data="inbox">

@@ -15,6 +15,7 @@ import type { ChatRoute } from "./route";
 import { handled } from "./escape";
 import { Bar, BarTitle, BarWhere } from "../ui/bar";
 import { ChevronIcon, IconButton } from "../ui/icons";
+import { inView, searchTeam, type ChatScope } from "./sidebar";
 
 export function when(at: number): string {
   const d = new Date(at);
@@ -94,8 +95,9 @@ export function whereOf(r: ChatRoom, api: PlatformApi): string {
 
 /** Search over the rooms this person reads, by control (`GET
  * /api/chat/search`: words, `mea*`, `in:#ch`, `from:@login`,
- * `has:quote`). */
-export function RoomSearchView({ store, q, phone }: { store: ChatStore; q: string; phone: boolean }) {
+ * `has:quote`); on a team's page, that team's, unless `all`. */
+export function RoomSearchView({ store, q, phone, scope, all }: { store: ChatStore; q: string; phone: boolean; scope?: ChatScope; all?: boolean }) {
+  const team = searchTeam(scope, all);
   const [hits, setHits] = useState<ChatHit[] | null>(null);
   const [err, setErr] = useState("");
   useEffect(() => {
@@ -103,23 +105,23 @@ export function RoomSearchView({ store, q, phone }: { store: ChatStore; q: strin
     setErr("");
     if (!q.trim()) return setHits([]);
     setHits(null);
-    store.search(q).then(
+    store.search(q, team).then(
       (r) => live && setHits(r.found),
       (e: Error) => live && (setErr(e.message), setHits([])),
     );
     return () => {
       live = false;
     };
-  }, [q]);
+  }, [q, team]);
   const n = hits?.length ?? 0;
   return (
     <section class="chat-thread chat-view" aria-label="Search" data-chat-search-view>
       {/* The view's name, and what was looked for under it: a name is set as
           a page's, and the words are the reader's own. */}
       <ViewHead title="Search" sub={q ? (hits === null ? `Looking for “${q}”…` : `${n >= 50 ? "50+" : n} ${n === 1 ? "message" : "messages"} for “${q}”`) : undefined} phone={phone} />
-      {phone && <SearchField route={{ view: "search", q }} phone />}
+      {phone && <SearchField route={{ view: "search", q, all }} phone scope={scope} />}
       <div class="thread-list">
-        {!q && <EmptyLine>Type to search every room you read. in:#channel, from:@someone and has:quote narrow it.</EmptyLine>}
+        {!q && <EmptyLine>{team ? "Type to search this team's rooms." : "Type to search every room you read."} in:#channel, from:@someone and has:quote narrow it.</EmptyLine>}
         {q && hits?.length === 0 && !err && <EmptyLine>No messages match.</EmptyLine>}
         {err && <p class="thread-error">{err}</p>}
         <RoomHits store={store} hits={(hits ?? []).map((h) => ({ room: h.room, m: h.message }))} mark={hitMark(q)} />
@@ -131,15 +133,17 @@ export function RoomSearchView({ store, q, phone }: { store: ChatStore; q: strin
 /** How many rooms Activity reads for mentions of you. */
 const ACTIVITY_ROOMS = 30;
 
-/** What needs you on every machine, and messages that mention you. */
-export function RoomActivityView({ store, phone }: { store: ChatStore; phone: boolean }) {
+/** What needs you on every machine, and messages that mention you, in the
+ * scope's rooms (Arugula #883; DMs are the sidebar's). */
+export function RoomActivityView({ store, phone, scope }: { store: ChatStore; phone: boolean; scope?: ChatScope }) {
   const api = usePlatformApi();
   useSubscribe((fn) => api.subscribe(fn));
   useSubscribe((fn) => store.subscribe(fn));
   // Recent mentions, read or not: the newest page of the rooms that spoke
   // most recently (those with an unread mention first), not only those
   // with one unread.
-  const recent = [...store.rooms]
+  const rooms = store.rooms.filter((r) => inView(r, scope));
+  const recent = [...rooms]
     .filter((r) => r.last !== 0)
     .sort((a, b) => b.mentions - a.mentions || b.last - a.last)
     .slice(0, ACTIVITY_ROOMS)
@@ -148,7 +152,7 @@ export function RoomActivityView({ store, phone }: { store: ChatStore; phone: bo
     for (const id of recent) void store.load(id).catch(() => {});
   }, [recent.join(",")]);
   const hits: { room: string; m: ChatMessage }[] = [];
-  for (const r of store.rooms) for (const m of store.messages(r.id)?.list ?? []) if (m.mentions.includes(store.me) && m.deleted === null) hits.push({ room: r.id, m });
+  for (const r of rooms) for (const m of store.messages(r.id)?.list ?? []) if (m.mentions.includes(store.me) && m.deleted === null) hits.push({ room: r.id, m });
   hits.sort((a, b) => b.m.at - a.m.at);
   // What needs you on the machines, where this page sees them (the shell's).
   const needs = api.needsYou?.count() ?? 0;
@@ -171,7 +175,7 @@ export function RoomActivityView({ store, phone }: { store: ChatStore; phone: bo
 /** The bar's search field: results show as you type. On a phone (#889)
  * it heads the results instead, opened from the list's search button: it
  * takes the focus when it's empty, and emptying it stays on the results. */
-export function SearchField({ route, phone }: { route: ChatRoute; phone?: boolean }) {
+export function SearchField({ route, phone, scope }: { route: ChatRoute; phone?: boolean; scope?: ChatScope }) {
   const { nav } = usePlatformApi();
   const shown = route.view === "search" ? (route.q ?? "") : "";
   const [text, setText] = useState(shown);
@@ -187,33 +191,42 @@ export function SearchField({ route, phone }: { route: ChatRoute; phone?: boolea
   }, []);
   const go = (v: string, now = false) => {
     clearTimeout(timer.current);
-    const run = () => (v.trim() || phone ? nav.openChatView("search", v.trim()) : route.view === "search" && nav.openChat());
+    const run = () => (v.trim() || phone ? nav.openChatView("search", v.trim(), route.all) : route.view === "search" && nav.openChat());
     if (now) run();
     else timer.current = window.setTimeout(run, 200);
   };
   return (
-    <input
-      ref={input}
-      class="chat-search"
-      type="search"
-      placeholder="Search chat"
-      aria-label="Search chat"
-      data-chat-search
-      value={text}
-      onInput={(e) => {
-        const v = (e.target as HTMLInputElement).value;
-        setText(v);
-        go(v);
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") go(text, true);
-        if (e.key === "Escape") {
-          handled(e);
-          setText("");
-          go("", true);
-          input.current?.blur();
-        }
-      }}
-    />
+    <>
+      <input
+        ref={input}
+        class="chat-search"
+        type="search"
+        placeholder="Search chat"
+        aria-label="Search chat"
+        data-chat-search
+        value={text}
+        onInput={(e) => {
+          const v = (e.target as HTMLInputElement).value;
+          setText(v);
+          go(v);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") go(text, true);
+          if (e.key === "Escape") {
+            handled(e);
+            setText("");
+            go("", true);
+            input.current?.blur();
+          }
+        }}
+      />
+      {/* A team's page searches its team's rooms; the URL carries the choice (#883). */}
+      {scope?.team && route.view === "search" && (
+        <label class="chat-search-all" title="Search every team's rooms, not only this one's">
+          <input type="checkbox" data-chat-search-all checked={!!route.all} onChange={(e) => nav.openChatView("search", text.trim(), (e.target as HTMLInputElement).checked)} />
+          All teams
+        </label>
+      )}
+    </>
   );
 }
