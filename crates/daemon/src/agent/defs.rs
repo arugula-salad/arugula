@@ -39,9 +39,8 @@ pub fn login_hint(env: &[(String, String)]) -> String {
         Some(dir) => format!(
             "It used the login in CLAUDE_CONFIG_DIR={dir}: to log in to that one, run `CLAUDE_CONFIG_DIR={dir} claude`, then /login."
         ),
-        None => "It used the default login (no CLAUDE_CONFIG_DIR): to log in to that one, run \
-                 `env -u CLAUDE_CONFIG_DIR claude`, then /login."
-            .into(),
+        // #520: a stranger never set CLAUDE_CONFIG_DIR, so the plain command.
+        None => "It used Claude Code's default login: to log in, run `claude`, then /login.".into(),
     };
     if let Some(k) = key {
         out.push_str(&format!(" Its environment also has {k}, which Claude Code may use instead."));
@@ -471,11 +470,8 @@ mod tests {
             "It used the login in CLAUDE_CONFIG_DIR=/u/two: to log in to that one, run `CLAUDE_CONFIG_DIR=/u/two claude`, then /login."
         );
         let h = login_hint(&e(&[("CLAUDE_CONFIG_DIR", ""), ("ANTHROPIC_API_KEY", "sk-secret")]));
-        assert!(h.starts_with("It used the default login (no CLAUDE_CONFIG_DIR)"), "{h}");
-        assert!(
-            h.contains("`env -u CLAUDE_CONFIG_DIR claude`, then /login.") && h.contains("ANTHROPIC_API_KEY"),
-            "{h}"
-        );
+        assert!(h.starts_with("It used Claude Code's default login"), "{h}");
+        assert!(h.contains("run `claude`, then /login.") && h.contains("ANTHROPIC_API_KEY"), "{h}");
         assert!(!h.contains("sk-secret"), "{h}");
     }
 
