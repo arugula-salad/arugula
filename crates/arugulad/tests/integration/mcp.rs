@@ -664,6 +664,54 @@ async fn http_with_a_token_until_it_is_revoked() {
     assert_eq!(res.status(), 403);
 }
 
+/// `read_file`: a read-only token reads in a pane's directory only, and
+/// no token reads the config directory or people's logins and keys, whose
+/// home directory's other files stay readable.
+#[tokio::test(flavor = "multi_thread")]
+async fn read_file_keeps_to_what_a_token_may_read() {
+    let home = std::env::temp_dir().join(format!("ilg-mcp-read-file-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&home);
+    for (f, body) in [
+        ("proj/src/main.rs", "fn main() {}\n"),
+        ("notes.txt", "mine\n"),
+        (".config/arugula/cli-key", "k\n"),
+        (".ssh/id_ed25519", "k\n"),
+        (".config/gh/hosts.yml", "k\n"),
+    ] {
+        std::fs::create_dir_all(home.join(f).parent().unwrap()).unwrap();
+        std::fs::write(home.join(f), body).unwrap();
+    }
+    let home = home.canonicalize().unwrap();
+    let (h, cfg) = (home.display().to_string(), home.join(".config").display().to_string());
+    let d = Daemon::child_env(&[], &[("HOME", h.as_str()), ("XDG_CONFIG_HOME", cfg.as_str())]);
+    let full = d.post("/api/mcp/tokens", json!({ "name": "laptop" }))["token"].as_str().unwrap().to_owned();
+    let s = http(&d, &full, Client::named("claude-code")).await.unwrap();
+    let proj = home.join("proj").display().to_string();
+    let pane = call(&s, "run", json!({ "command": "sleep 600", "cwd": proj })).await["pane"].as_u64().unwrap();
+
+    // A full token: the home directory, but not the logins and keys in it.
+    assert_eq!(call(&s, "read_file", json!({ "path": "~/notes.txt" })).await["text"], "mine\n");
+    for path in ["~/.config/arugula/cli-key", "~/.ssh/id_ed25519", "~/.config/gh/hosts.yml"] {
+        assert!(refused(&s, "read_file", json!({ "path": path })).await.contains("aren't served"), "{path}");
+    }
+
+    // A read-only token: in a pane's directory, nowhere else.
+    let ro =
+        d.post("/api/mcp/tokens", json!({ "name": "watcher", "scope": "read" }))["token"].as_str().unwrap().to_owned();
+    let w = http(&d, &ro, Client::named("watcher")).await.unwrap();
+    let r = call(&w, "read_file", json!({ "pane": pane, "path": "src/main.rs" })).await;
+    assert_eq!(r["text"], "fn main() {}\n");
+    assert!(refused(&w, "read_file", json!({ "path": "~/notes.txt" })).await.contains("give a pane"));
+    for path in ["~/notes.txt", "../notes.txt", "/etc/hostname"] {
+        let why = refused(&w, "read_file", json!({ "pane": pane, "path": path })).await;
+        assert!(why.contains("only what's in"), "{path}: {why}");
+    }
+    s.cancel().await.unwrap();
+    w.cancel().await.unwrap();
+    drop(d);
+    let _ = std::fs::remove_dir_all(&home);
+}
+
 /// The agent's own MCP call, through the server Arugula gave it: the
 /// result's structured content, or its error.
 pub(crate) fn agent_mcp(d: &Daemon, agent: u64, tool: &str, args: Value) -> Result<Value, String> {
