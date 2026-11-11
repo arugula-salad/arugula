@@ -209,21 +209,84 @@ an image rollback, the next release goes forward as usual.
   an hour before with `--at`). Fly also keeps daily volume snapshots for 5
   days.
 - **The platform's Postgres:** Fly's own backups (hourly incremental, daily
-  full) and the nightly encrypted dump in R2. **The dump's schedule doesn't
-  fire on its own** (Arugula #867): on 2026-11-11 the newest dump was 18 days
-  old. Before and during the watch, check its age and start it by hand when
-  it's past a day:
-
-  ```
-  scripts/platform-restore-drill --age          # exit 1 past 26 h
-  D=$(fly machine list -a arugula-platform --json | jq -r '.[] | select(.config.metadata.role == "platform-dump") | .id')
-  fly machine start "$D" -a arugula-platform
-  fly logs -a arugula-platform --machine "$D" --no-tail | grep platform-dump   # platform-dump: ok …
-  ```
+  full) and the nightly encrypted dump in R2 ("The platform's nightly dump",
+  below). An hourly check on the operator's machine alerts when the newest
+  dump is over 26 h old.
 
 **Before the watch, and each day of it:** run both drills' quick checks,
 `scripts/hub-restore-drill` and `scripts/platform-restore-drill --age`, on
-geek with Infisical logged in.
+geek with Infisical logged in, and check `arugula-dump-age-check.timer` is
+listed.
+
+### The platform's nightly dump
+
+The `platform-dump` Machine in `arugula-platform` dumps the platform's
+Postgres to R2, encrypted, about once a day: Fly starts it every hour, and
+it dumps only when the newest dump is 20 h old (control-ops.md, "The
+nightly dump"). **Fly's schedule never starts a Machine that hasn't been
+started since its last update** (Arugula #867: no dump ran on its own for
+18 days). Production's release starts it once after updating it, once
+that fix has shipped; until then, check it's armed after each release
+("Is it scheduled?", below). If you
+`fly machine update` it by hand, start it once after, or it never runs
+again.
+
+**The alert:** `scripts/dump-age-check`, hourly on a systemd user timer on
+the operator's machine, reads the newest dump's record in R2. When it's over
+26 h old, or the check can't read it, it opens a native issue labelled
+`backup`, assigned to the operator, or comments on the open one once a day.
+
+**The last dump's age:**
+
+```
+scripts/dump-age-check --dry-run               # newest platform dump …, N h old (limit 26 h)
+scripts/platform-restore-drill --age           # the same, exit 1 past 26 h
+journalctl --user -u arugula-dump-age-check -n 20
+```
+
+Both read R2's keys from Infisical at each run, so run them on geek with
+Infisical logged in.
+
+**Is it scheduled?** A Machine that's armed shows a `start` from `flyd`
+about every hour in its events; one that isn't shows the release's
+`launch` and `update`, then nothing:
+
+```
+D=$(fly machine list -a arugula-platform --json | jq -r '.[] | select(.config.metadata.role == "platform-dump") | .id')
+fly machine status "$D" -a arugula-platform                     # Event Logs
+fly logs -a arugula-platform --machine "$D" --no-tail | grep platform-dump
+```
+
+**Run one by hand** (also what arms the schedule again). It skips while the
+newest dump is under 20 h old: `platform-dump: skipped: …`. To force a dump,
+start it with the gate at 0, then put it back. Each update leaves it
+stopped, so start it after each one:
+
+```
+fly machine start "$D" -a arugula-platform
+fly logs -a arugula-platform --machine "$D" --no-tail | grep platform-dump   # platform-dump: ok …
+
+# A dump now, whatever the newest one's age:
+fly machine update "$D" -a arugula-platform --env ARUGULA_DUMP_EVERY_HOURS=0 -y
+fly machine start "$D" -a arugula-platform                      # dumps
+fly machine update "$D" -a arugula-platform --env ARUGULA_DUMP_EVERY_HOURS=20 -y
+fly machine start "$D" -a arugula-platform                      # skips, and arms the schedule
+```
+
+The next release puts back its declared config (no
+`ARUGULA_DUMP_EVERY_HOURS`, so 20).
+
+**Install the alert** (once, on the operator's machine):
+
+```
+INFISICAL_PROJECT_ID=<arugula's> scripts/dump-age-check --install   # copies it to ~/.local/share/arugula-dump-age, hourly
+systemctl --user list-timers arugula-dump-age-check.timer
+```
+
+Its settings are in `~/.config/arugula-dump-age/env`: set
+`ARUGULA_DUMP_AGE_PROJECT` to the project the `backup` issue goes in. To see
+an alert end to end once, run it with `ARUGULA_DUMP_AGE_LIMIT_HOURS=0`, then
+close the issue it opens.
 
 ### The hub
 
