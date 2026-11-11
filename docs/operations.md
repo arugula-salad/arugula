@@ -260,7 +260,10 @@ more: `GET /api/signin-link` returns a link carrying the daemon's local
 token, and `/api/mcp/tokens` and `/api/shares` list secrets. Those declare
 `CREDENTIAL: true`, and a read-only token can't call them. A test lists
 every GET operation a read-only token can reach, against a checked-in
-file, so a new one shows up in review.
+file, so a new one shows up in review. Its `read_file` takes a pane and
+reads only in that pane's directory; and no caller's `read_file`, nor the
+owner's Files, reads the config directory or the usual homes of logins and
+keys (`CREDENTIALS` in `crates/mux/src/fs.rs`).
 
 **`authz.rs`'s special cases:**
 
