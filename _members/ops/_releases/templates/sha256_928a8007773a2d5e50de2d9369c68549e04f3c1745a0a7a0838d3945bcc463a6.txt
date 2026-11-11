@@ -1,0 +1,160 @@
+{
+  "platformA": {
+    "body": {
+      "config": {
+        "env": {
+          "ARUGULA_CONTROL_URL": "https://control.arugula.io",
+          "ARUGULA_METRICS_LISTEN": "[::]:9091",
+          "ARUGULA_PLATFORM_HOST": "app.arugula.io",
+          "ARUGULA_PLATFORM_HUB": "http://illogical-control.internal:7691",
+          "ARUGULA_PLATFORM_LISTEN": "[::]:7700",
+          "ARUGULA_PLATFORM_REQUIRE_POSTGRES": "1",
+          "ARUGULA_PREVIEW_DOMAIN": "arugula.site",
+          "FLY_PROCESS_GROUP": "app",
+          "OTEL_RESOURCE_ATTRIBUTES": "chant.workspace=arugula,chant.member=ops,chant.decl=platformA",
+          "OTEL_SERVICE_NAME": "arugula-platform",
+          "PRIMARY_REGION": "iad"
+        },
+        "guest": {
+          "cpu_kind": "shared",
+          "cpus": 1,
+          "memory_mb": 512
+        },
+        "image": "registry.fly.io/arugula-platform:declared",
+        "metadata": {
+          "fly_process_group": "app",
+          "managed-by": "chant"
+        },
+        "metrics": {
+          "path": "/metrics",
+          "port": 9091
+        },
+        "restart": {
+          "max_retries": 10,
+          "policy": "on-failure"
+        },
+        "services": [
+          {
+            "autostart": false,
+            "autostop": false,
+            "checks": [
+              {
+                "grace_period": "10s",
+                "interval": "15s",
+                "method": "get",
+                "path": "/platform.json",
+                "protocol": "http",
+                "timeout": "5s",
+                "type": "http"
+              }
+            ],
+            "concurrency": {
+              "hard_limit": 5000,
+              "soft_limit": 4000,
+              "type": "connections"
+            },
+            "internal_port": 7700,
+            "min_machines_running": 2,
+            "ports": [
+              {
+                "port": 7700
+              }
+            ],
+            "protocol": "tcp"
+          }
+        ],
+        "stop_config": {
+          "signal": "SIGTERM",
+          "timeout": "25s"
+        }
+      },
+      "name": "shy-snowflake-5940",
+      "region": "iad"
+    },
+    "endpoint": "/v1/apps/arugula-platform/machines",
+    "method": "POST"
+  },
+  "platformApp": {
+    "body": {
+      "app_name": "arugula-platform",
+      "org_slug": "jake-gaylor"
+    },
+    "endpoint": "/v1/apps",
+    "method": "POST"
+  },
+  "platformB": {
+    "body": {
+      "config": {
+        "env": {
+          "ARUGULA_CONTROL_URL": "https://control.arugula.io",
+          "ARUGULA_METRICS_LISTEN": "[::]:9091",
+          "ARUGULA_PLATFORM_HOST": "app.arugula.io",
+          "ARUGULA_PLATFORM_HUB": "http://illogical-control.internal:7691",
+          "ARUGULA_PLATFORM_LISTEN": "[::]:7700",
+          "ARUGULA_PLATFORM_REQUIRE_POSTGRES": "1",
+          "ARUGULA_PREVIEW_DOMAIN": "arugula.site",
+          "FLY_PROCESS_GROUP": "app",
+          "OTEL_RESOURCE_ATTRIBUTES": "chant.workspace=arugula,chant.member=ops,chant.decl=platformB",
+          "OTEL_SERVICE_NAME": "arugula-platform",
+          "PRIMARY_REGION": "iad"
+        },
+        "guest": {
+          "cpu_kind": "shared",
+          "cpus": 1,
+          "memory_mb": 512
+        },
+        "image": "registry.fly.io/arugula-platform:declared",
+        "metadata": {
+          "fly_process_group": "app",
+          "managed-by": "chant"
+        },
+        "metrics": {
+          "path": "/metrics",
+          "port": 9091
+        },
+        "restart": {
+          "max_retries": 10,
+          "policy": "on-failure"
+        },
+        "services": [
+          {
+            "autostart": false,
+            "autostop": false,
+            "checks": [
+              {
+                "grace_period": "10s",
+                "interval": "15s",
+                "method": "get",
+                "path": "/platform.json",
+                "protocol": "http",
+                "timeout": "5s",
+                "type": "http"
+              }
+            ],
+            "concurrency": {
+              "hard_limit": 5000,
+              "soft_limit": 4000,
+              "type": "connections"
+            },
+            "internal_port": 7700,
+            "min_machines_running": 2,
+            "ports": [
+              {
+                "port": 7700
+              }
+            ],
+            "protocol": "tcp"
+          }
+        ],
+        "stop_config": {
+          "signal": "SIGTERM",
+          "timeout": "25s"
+        }
+      },
+      "name": "dawn-tree-5447",
+      "region": "iad"
+    },
+    "endpoint": "/v1/apps/arugula-platform/machines",
+    "method": "POST"
+  }
+}
