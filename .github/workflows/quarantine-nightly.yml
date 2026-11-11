@@ -81,7 +81,7 @@ jobs:
           {
             echo '### Quarantined (chant.workspace.json)'
             echo '```'
-            report test "$CARGO_TARGET_DIR/nextest/ci/junit.xml" "$CARGO_TARGET_DIR/nextest/ci/junit-server.xml"
+            report test "$CARGO_TARGET_DIR/nextest/ci/junit.xml"
             report e2e web/junit.xml
             scripts/chant ci quarantine check 2>&1 || true
             echo '```'

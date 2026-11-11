@@ -153,15 +153,23 @@ For working on Arugula itself:
   your terminals.
 - [DECISIONS.md](DECISIONS.md): the decisions that still hold, an index of the records in
   [docs/decisions/](docs/decisions/).
-- [docs/managoat.md](docs/managoat.md): Managoat, the first backend for Cloud workspaces,
-  and what became of it (removed, on control's side and the daemon's).
-- [docs/platform-features.md](docs/platform-features.md): which agent platform features (ACP, MCP,
-  A2A, skills, scheduled tasks) Arugula brings in, which are planned, and the gaps.
-- [docs/secrets-inventory.md](docs/secrets-inventory.md): every secret store and key across the
-  org, by name and owner only, and where each goes as the org converges on the platform.
 - [docs/plan-archive.md](docs/plan-archive.md): the original plan and every milestone.
+
+## What's open
+
+This repository is the open part of Arugula: the daemon (`arugulad`), the
+CLI, the web client, the desktop app, the iOS app and its Rust core, the
+editor extensions, and the wire contract they and control speak
+([contract/](contract/README.md)).
+
+Arugula control and the platform, the hosted service behind
+control.arugula.io and app.arugula.io, are closed source and live in a
+private repository. Their code was published here under MIT OR Apache-2.0
+until it moved out, and that code stays under those licences: it's in this
+repository's history (`git log -- crates/control crates/platform`).
 
 ## License
 
-MIT OR Apache-2.0, at your option. Terminal emulation by
-[libghostty](https://ghostty.org); see [THIRD_PARTY.md](THIRD_PARTY.md).
+MIT OR Apache-2.0, at your option, for everything in this repository.
+Terminal emulation by [libghostty](https://ghostty.org); see
+[THIRD_PARTY.md](THIRD_PARTY.md).

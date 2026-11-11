@@ -4,7 +4,7 @@
 # `fetch: run-debug`). check.yml's build on the pods and pull-request.yml's
 # on GitHub's runners both run this, after .github/actions/setup.
 name: build-debug
-description: The debug daemon, CLI and control with web/dist embedded, uploaded as the run-debug artifact
+description: The debug daemon and CLI with web/dist embedded, uploaded as the run-debug artifact
 runs:
   using: composite
   steps:
@@ -14,10 +14,6 @@ runs:
       run: just web
     - shell: bash
       run: mise exec -- cargo build -p arugulad -p arugula --features arugulad/debug-embed
-    # Control: the server's own workspace (server/Cargo.toml), into the
-    # same target dir.
-    - shell: bash
-      run: mise exec -- scripts/server-cargo build -p arugula-control --features arugula-control/debug-embed
     - shell: bash
       run: scripts/ci-env keep debug
     - name: Hand them to the jobs that need them

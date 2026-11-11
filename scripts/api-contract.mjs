@@ -1,21 +1,16 @@
 #!/usr/bin/env node
 // The native client's API (#599): contract/openapi/native.json, written from
 // contract/api/native.json (which route takes and answers which type),
-// contract/api/routes.json (which routes exist, who calls them) and
-// contract/schema/ (the types). routes.json is crates/control/routes.toml's
-// rows the contract cares about (in scope, or listing native), written here
-// too, so the contract reads only contract/. Without --check it writes both
-// files; with it, it says so if either is stale, and always fails if:
+// contract/api/routes.json (which routes exist, their auth and who may call
+// them) and contract/schema/ (the types). Control serves it from its own
+// repo, which writes routes.json from its routes and checks its handlers
+// against native.json (arugula-salad/cloud's `just api-routes`); here the
+// contract stands on its own. Without --check it writes the document; with
+// it, it says so if the document is stale, and always fails if:
 //
 // - a route in scope isn't classified, as an operation or as out of scope;
-// - an operation names a route routes.toml doesn't have;
-// - a type isn't in contract/schema/;
-// - a handler's signature doesn't mention the types its operation names.
-//
-// It's a script, not part of crates/control-wire or a new crate, because
-// the hub's release inputs (ops/src/control.component.ts) count any change to
-// control-wire, routes.toml or a crate's Cargo.toml as a hub change, and a
-// hub deploy drops every relayed terminal.
+// - an operation names a route routes.json doesn't have;
+// - a type isn't in contract/schema/.
 
 import { readFileSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -26,23 +21,6 @@ const read = (p) => readFileSync(join(root, p), "utf8");
 const OUT = "contract/openapi/native.json";
 const ROUTES = "contract/api/routes.json";
 const SCOPED_AUTH = new Set(["session", "session_or_client", "cloud_driver"]);
-
-/** routes.toml's rows. Its shape is flat: `[[route]]`, then `key = "text"` or
- * `key = ["a", "b"]`, each on a line, with comments after a value. */
-export function parseRoutes(text) {
-  const rows = [];
-  let row = null;
-  for (const line of text.split("\n")) {
-    if (line.trim() === "[[route]]") rows.push((row = {}));
-    else if (row) {
-      const m = /^(method|path|auth|clients) = (.*)$/.exec(line);
-      if (!m) continue;
-      if (m[1] === "clients") row.clients = [...m[2].matchAll(/"([^"]+)"/g)].map((c) => c[1]);
-      else row[m[1]] = /^"([^"]*)"/.exec(m[2])[1];
-    }
-  }
-  return rows;
-}
 
 /** Every type in contract/schema/, under one name each. A name two modules
  * define differently is `module.Name`; `canon(module, name)` says which. */
@@ -83,45 +61,9 @@ function rewrite(v, module, canon, found) {
   return out;
 }
 
-/** A handler's parameters and return type as written, or null: its file's
- * `pub async fn`s of that name, or failing that any `fn` of that name. */
-function signature(file, fn) {
-  let text;
-  try {
-    text = read(file);
-  } catch {
-    return null;
-  }
-  const all = (re) =>
-    [...text.matchAll(re)].map((m) => {
-      // Past the parameters, whose patterns can hold braces (`Person { account }`).
-      let at = text.indexOf("(", m.index + m[0].length);
-      for (let depth = 1; depth > 0 && at < text.length - 1; ) {
-        at += 1;
-        if (text[at] === "(") depth += 1;
-        if (text[at] === ")") depth -= 1;
-      }
-      const open = text.indexOf("{", at);
-      return text.slice(m.index, open < 0 ? undefined : open);
-    });
-  const handlers = all(new RegExp(`pub(?:\\([a-z]+\\))? async fn ${fn}\\b`, "g"));
-  const found = handlers.length ? handlers : all(new RegExp(`\\bfn ${fn}\\b`, "g"));
-  return found.length ? found.join("\n") : null;
-}
-
-/** routes.toml's rows the contract cares about: in scope, or listing
- * native. contract/api/routes.json, sorted by path and method. */
-export function contractRoutes(rows, map) {
-  const scope = map.scope.map((s) => new RegExp(s));
-  return rows
-    .filter((r) => (SCOPED_AUTH.has(r.auth) && scope.some((s) => s.test(r.path))) || r.clients.includes("native"))
-    .map(({ method, path, auth, clients }) => ({ method, path, auth, clients }))
-    .sort((a, b) => `${a.path} ${a.method}`.localeCompare(`${b.path} ${b.method}`));
-}
-
 function build() {
   const map = JSON.parse(read("contract/api/native.json"));
-  const routes = contractRoutes(parseRoutes(read("crates/control/routes.toml")), map);
+  const routes = JSON.parse(read(ROUTES)).routes;
   const types = loadTypes();
   const errors = [];
   const key = (r) => `${r.method} ${r.path}`;
@@ -142,7 +84,7 @@ function build() {
 
   // A route the gate lets a native app call is one the document describes.
   for (const r of routes) {
-    if (r.clients.includes("native") && !map.operations[key(r)]) errors.push(`${key(r)} lists native in routes.toml but isn't in contract/api/native.json`);
+    if (r.clients.includes("native") && !map.operations[key(r)]) errors.push(`${key(r)} lists native in contract/api/routes.json but isn't in contract/api/native.json`);
   }
 
   const schemas = new Map();
@@ -161,19 +103,10 @@ function build() {
   for (const [k, op] of Object.entries(map.operations)) {
     const row = listed.get(k);
     if (!row) {
-      errors.push(`${k}: not in crates/control/routes.toml`);
+      errors.push(`${k}: not in contract/api/routes.json`);
       continue;
     }
-    const [file, fn] = op.handler.split("#");
-    const sig = signature(file, fn);
-    if (sig === null) errors.push(`${k}: no fn ${fn} in ${file}`);
-    else {
-      for (const t of [op.request, op.query, op.response].filter(Boolean)) {
-        const bare = t.split(".").pop();
-        if (!new RegExp(`\\b${bare}\\b`).test(sig)) errors.push(`${k}: ${file}#${fn}'s signature doesn't mention ${bare}`);
-      }
-    }
-    if (!row.clients.includes("native")) errors.push(`${k}: its row in crates/control/routes.toml doesn't list native`);
+    if (!row.clients.includes("native")) errors.push(`${k}: its row in contract/api/routes.json doesn't list native`);
     const params = [...row.path.matchAll(/\{(\w+)\}/g)].map((m) => ({ name: m[1], in: "path", required: true, schema: { type: "string" } }));
     const operation = { operationId: k.replace(/[^A-Za-z0-9]+/g, "_").replace(/_$/, ""), "x-arugula-clients": row.clients, security: ["join_proof", "poll_token"].includes(row.auth) ? [] : [{ deviceSignature: [] }, { sessionCookie: [] }], responses: { default: { description: "Refused", content: { "application/json": { schema: { $ref: "#/components/schemas/Refusal" } } } } } };
     if (op.query) {
@@ -235,11 +168,11 @@ function build() {
       schemas: Object.fromEntries([...schemas].sort(([a], [b]) => (a < b ? -1 : 1))),
     },
   };
-  return { doc, routes, errors };
+  return { doc, errors };
 }
 
-const { doc, routes, errors } = build();
-const files = { [ROUTES]: `{\n  "routes": [\n${routes.map((r) => `    ${JSON.stringify(r)}`).join(",\n")}\n  ]\n}\n`, [OUT]: `${JSON.stringify(doc, null, 2)}\n` };
+const { doc, errors } = build();
+const files = { [OUT]: `${JSON.stringify(doc, null, 2)}\n` };
 const check = process.argv.includes("--check");
 const stale = [];
 if (check) {

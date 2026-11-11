@@ -45,8 +45,7 @@ jobs:
         run: if scripts/suite-changed "${{ github.event.before }}"; then echo run=true >> "$GITHUB_OUTPUT"; else echo run=false >> "$GITHUB_OUTPUT"; fi
 
   # M55 (#218): the workspace compiles on Windows, and its unit tests pass.
-  # The root workspace only: control and its platform run on Fly, and are a
-  # workspace of their own (server/Cargo.toml). Under cargo-nextest (.config/nextest.toml's ci profile, as
+  # Under cargo-nextest (.config/nextest.toml's ci profile, as
   # on Linux): `cargo test` ran the test binaries one at a time, 4 min of
   # this job's 14 (2026-10-23). Clippy is workspace-clippy, beside it.
   workspace:

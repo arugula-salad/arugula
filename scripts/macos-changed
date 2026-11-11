@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Could this push behave differently on macOS? check.yml's macos job asks
-# first, so a docs-, site-, testnet- or control-only push doesn't wait on
+# first, so a docs-, site- or testnet-only push doesn't wait on
 # GitHub's macOS runner. main runs it on every push the merge queue hasn't
 # already passed (scripts/queue-tested), and on its nightly full run. The paths
-# are the workspaces but control, plus what the macOS job also runs: the web UI
+# are the workspaces, plus what the macOS job also runs: the web UI
 # (the WebKit specs, and the daemon embeds it), the justfile, mise and
 # nextest's config.
 #
@@ -19,5 +19,5 @@ if [ "${GITHUB_REF:-}" = refs/heads/main ]; then
   exit 0
 fi
 exec "$(dirname "$0")/changed" "macOS" "${1:-}" \
-  crates ':!crates/control' Cargo.toml Cargo.lock server/Cargo.toml server/Cargo.lock server/.config rust-toolchain.toml \
+  crates Cargo.toml Cargo.lock rust-toolchain.toml \
   web justfile .mise.toml .config/nextest.toml .github/workflows/check.yml scripts/macos-changed scripts/changed

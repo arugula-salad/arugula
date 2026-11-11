@@ -3,15 +3,6 @@
 # Bring up one profile of the test stack.
 #
 #   testnet/up.sh ssh       bastion, box-bare, box-systemd and git (see README.md)
-#   testnet/up.sh control   the same, and arugula-control with its fakes;
-#                           needs this tree's static binaries (`just static`).
-#                           ARUGULA_TESTNET_PLATFORM=out runs control's
-#                           platform out of process (M140): the `platform`
-#                           service, with control as its gateway;
-#                           ARUGULA_TESTNET_PLATFORM=two runs two of them on
-#                           Postgres (M144, two.yaml);
-#                           ARUGULA_TESTNET_HOSTED=1 makes hosted
-#                           workspaces at a fake E2B (M183, hosted.yaml)
 #   testnet/up.sh tailnet   headscale, ts-box and ts-client (S28's comparison)
 #
 # Makes the stack's keys in testnet/.state (.state-<name> for another
@@ -39,53 +30,15 @@ need_docker
 files="-f $HERE/compose.yaml"
 case "$PROFILE" in
   ssh) boxes="bastion box-bare box-systemd git"; profiles="--profile ssh" ;;
-  control)
-    boxes="bastion box-bare box-systemd git"; profiles="--profile ssh --profile control"
-    # Control's platform out of process (M140), twice on Postgres (M144),
-    # or in it (the default).
-    case "${ARUGULA_TESTNET_PLATFORM:-in}" in
-      out) profiles="$profiles --profile platform"; export ARUGULA_TESTNET_PLATFORM_URL=http://platform:7700 ;;
-      two)
-        files="$files -f $HERE/two.yaml"
-        profiles="$profiles --profile platform --profile two"
-        export ARUGULA_TESTNET_PLATFORM_URL=http://platforms:7700 ARUGULA_TESTNET_POSTGRES=1 ;;
-      in) unset ARUGULA_TESTNET_PLATFORM_URL ;;
-      *) echo "ARUGULA_TESTNET_PLATFORM is in, out or two" >&2; exit 2 ;;
-    esac
-    # Hosted workspaces at the fake E2B (M183, hosted.yaml), with the
-    # platform in process.
-    if [ "${ARUGULA_TESTNET_HOSTED:-}" = 1 ]; then
-      [ "${ARUGULA_TESTNET_PLATFORM:-in}" = in ] || { echo "ARUGULA_TESTNET_HOSTED=1 needs ARUGULA_TESTNET_PLATFORM=in" >&2; exit 2; }
-      files="$files -f $HERE/hosted.yaml"
-    fi ;;
   tailnet) boxes="ts-box ts-client"; profiles="--profile tailnet" ;;
-  *) echo "usage: testnet/up.sh ssh|control|tailnet" >&2; exit 2 ;;
+  *) echo "usage: testnet/up.sh ssh|tailnet" >&2; exit 2 ;;
 esac
-
-if [ "$PROFILE" = control ]; then
-  # The static binaries for Docker's architecture, mounted into control
-  # (and installed on the boxes by the tests).
-  arch="$(docker info --format '{{.Architecture}}')"
-  case "$arch" in arm64) arch=aarch64 ;; amd64) arch=x86_64 ;; esac
-  export ARUGULA_TESTNET_BINARIES="${ARUGULA_TESTNET_BINARIES:-$(cd "$HERE/.." && pwd)/target/$arch-unknown-linux-musl/release}"
-  [ -x "$ARUGULA_TESTNET_BINARIES/arugula-control" ] || die "no $ARUGULA_TESTNET_BINARIES/arugula-control: run 'just static $arch'"
-fi
 
 mkdir -p "$STATE"
 [ -f "$STATE/id_ed25519" ] || ssh-keygen -q -t ed25519 -N '' -C arugula-testnet -f "$STATE/id_ed25519"
 for b in $boxes; do
   [ -f "$STATE/${b}_host_ed25519" ] || ssh-keygen -q -t ed25519 -N '' -C "$b" -f "$STATE/${b}_host_ed25519"
 done
-# The platform's throwaway GitHub App key (M161: compose.yaml), PEM.
-if [ ! -f "$STATE/github-app.pem" ]; then
-  ssh-keygen -q -t rsa -b 2048 -m PEM -N '' -C github-app -f "$STATE/github-app.pem"
-  rm -f "$STATE/github-app.pem.pub"
-fi
-# The issuer's keys (M228, compose.yaml): one that signs, and no next or
-# previous until the `issuer` claim rotates them.
-mkdir -p "$STATE/issuer"
-[ -s "$STATE/issuer/current" ] || openssl rand -hex 32 > "$STATE/issuer/current"
-for f in next previous previous_until; do [ -f "$STATE/issuer/$f" ] || : > "$STATE/issuer/$f"; done
 # The git server's HTTPS (M183): a self-signed certificate for `git`, which
 # the boxes are told to trust (GIT_SSL_CAINFO), and a password for its basic
 # auth, user x-access-token, as a forge takes a token.
@@ -145,7 +98,7 @@ fi
 # Docker (a CI pod's own) that's minutes of apt-get, which is work, not
 # waiting, so no deadline. Then started, and ready within WAIT seconds:
 # every service with a healthcheck passing it (compose.yaml's x-ready), so
-# a box answers ssh and control and its fakes answer, not just run.
+# a box answers ssh, not just run.
 wait="${ARUGULA_TESTNET_WAIT:-180}"
 # shellcheck disable=SC2086 # several words: the files and profiles
 docker compose $files $profiles up --build --no-start >&2
@@ -176,7 +129,6 @@ blocked() {
   local to
   case "$PROFILE" in
     ssh) to="box-bare:22" ;;
-    control) to="box-bare:22 fakes:9001" ;;  # the inner network, and the outer
     *) return 1 ;;
   esac
   for t in $to; do
@@ -192,40 +144,6 @@ if [ -n "$lost" ]; then
   start
   lost="$(blocked)" || true
   [ -z "$lost" ] || die "the bastion still can't reach $lost, with every service healthy: the host's firewall (iptables FORWARD) drops traffic between the stack's containers (#282)"
-fi
-
-if [ "$PROFILE" = control ]; then
-  # What the control profile's tests need (test.sh reads it): control's
-  # public URL and where the host reaches it and the fake GitHub.
-  net="${ARUGULA_TESTNET_INNER_NET:-10.229.80}"
-  cport="${ARUGULA_TESTNET_CONTROL_PORT:-22980}"
-  cat > "$STATE/control.env" <<ENV
-# Written by testnet/up.sh control. The stack's settings, so a test that
-# recreates a box gets the same networks.
-CONTROL_URL=http://$net.10:8080
-CONTROL_VIA="--via http://$net.10:8080=http://127.0.0.1:$cport --via http://fakes:9001=http://127.0.0.1:${ARUGULA_TESTNET_FAKES_PORT:-22981}"
-export ARUGULA_TESTNET_BINARIES="$ARUGULA_TESTNET_BINARIES"
-export ARUGULA_TESTNET_INNER_NET=$net
-export ARUGULA_TESTNET_SSH_PORT=$PORT
-export ARUGULA_TESTNET_CONTROL_PORT=$cport
-# The platform page's host (M151, compose.yaml's ARUGULA_PLATFORM_HOST).
-PLATFORM_HOST=app.control.test
-export ARUGULA_TESTNET_FAKES_PORT=${ARUGULA_TESTNET_FAKES_PORT:-22981}
-export ARUGULA_TESTNET_GUEST_SSH_PORT=${ARUGULA_TESTNET_GUEST_SSH_PORT:-22982}
-# Where control's platform runs (M140): in (its process), out (the
-# platform service) or two (platform and platform2, on Postgres: M144).
-export ARUGULA_TESTNET_PLATFORM=${ARUGULA_TESTNET_PLATFORM:-in}
-# The compose files and profiles it came up with (a claim that recreates a
-# service needs them).
-export ARUGULA_TESTNET_COMPOSE="$files $profiles"
-export ARUGULA_TESTNET_PLATFORM_PORT=${ARUGULA_TESTNET_PLATFORM_PORT:-22983}
-export ARUGULA_TESTNET_PLATFORM2_PORT=${ARUGULA_TESTNET_PLATFORM2_PORT:-22984}
-# Hosted workspaces at the fake E2B (M183, hosted.yaml): 1, or empty.
-export ARUGULA_TESTNET_HOSTED=${ARUGULA_TESTNET_HOSTED:-}
-ENV
-  # Healthy, so it answers; this is the published port, as the tests reach it.
-  curl -fsS "http://127.0.0.1:$cport/control.json" >/dev/null || die "control did not answer on 127.0.0.1:$cport"
-  log "control: http://$net.10:8080 (127.0.0.1:$cport from here), platform ${ARUGULA_TESTNET_PLATFORM:-in} of process"
 fi
 
 if [ "$PROFILE" = tailnet ]; then

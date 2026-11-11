@@ -1,24 +1,12 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
-# The hosted server (control, its platform and what they share) is a
-# workspace of its own, server/Cargo.toml, so the daemon's builds never
-# compile it and its builds never compile the daemon or Ghostty. The desktop
-# app is one too (#388).
+# Control's hub and its platform are closed source, in their own repo
+# (arugula-salad/cloud), which uses this repo's shared crates at a pinned
+# commit. The desktop app is a workspace of its own (#388).
 exclude = [
     "vendor/libghostty-vt-sys",
     "crates/desktop",
-    "crates/arugula-control",
-    "crates/arugula-platform",
-    "crates/control",
-    "crates/control-common",
-    "crates/control-load",
-    "crates/platform",
-    "crates/platform-agents",
-    "crates/platform-all",
-    "crates/platform-chat",
-    "crates/platform-api",
-    "crates/platform-deploys",
 ]
 
 # libghostty-vt-sys with Ghostty patched at build time (M9): see
