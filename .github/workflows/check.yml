@@ -4,9 +4,8 @@
 #     shards (build's binaries);
 #   - build: the debug binaries, once;
 #   - clippy: Linux, Apple silicon (cross; Intel's is macos-intel.yml's,
-#     weekly), each for both workspaces (the root's and the server's,
-#     server/Cargo.toml), the desktop app (when the push
-#     changes it: scripts/app-changed), the workspaces apart
+#     weekly), the desktop app (when the push
+#     changes it: scripts/app-changed), no cloud crate in the workspace
 #     (`just workspace-guard`), and notices;
 #   - desktop-xvfb: the Linux desktop app's claims under Xvfb, against
 #     static's binaries, in a test image kept on GHCR;
@@ -16,15 +15,13 @@
 #     wait for them, and on GitHub's runners it took up to 10.7 min after a
 #     change to the crates, against the pods' 2-5 (2026-11-03, #2131);
 #   - test: `just test` (the Rust tests under nextest), built beside static;
-#     the server's suite runs while static builds, the rest once static's
-#     binaries are in (scripts/ci-wait-job). These stayed: on GitHub's
+#     the suite runs once static's binaries are in (scripts/ci-wait-job). These stayed: on GitHub's
 #     runners they took 20-32 min against the pods' 9-11 (2026-11-03,
 #     #2131), and would have been the run's longest path;
 # - macos (test): test on our Macs' Tart VMs (home-cloud's mac_runner;
 #   when the push changes what runs there: scripts/macos-changed; main
 #   always).
-# The jobs that rarely failed left on 2026-10-28 (#305): test-postgres,
-# core, testnet, stack and the WebKit specs run in rare-nightly.yml, every
+# The jobs that rarely failed left on 2026-10-28 (#305): core, testnet, stack and the WebKit specs run in rare-nightly.yml, every
 # night and on a release candidate, and a daemon release needs a passing
 # run of them (scripts/release).
 # A push that changes none of what they read (scripts/suite-changed: the
@@ -120,6 +117,8 @@ jobs:
           # Ghostty for x86_64-linux-gnu, as build and test both build it
           # (clippy's adds macOS's, static's musl: their own).
           ghostty-key: gnu
+          # It only builds: none of the specs' packages, so no apt.
+          base-packages: "false"
       # The binaries and the run-debug artifact (pull-request.yml builds
       # the same on GitHub's runners).
       - uses: ./.github/actions/build-debug
@@ -137,6 +136,8 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           cache-key: static
+          # It only builds: none of the specs' packages, so no apt.
+          base-packages: "false"
       - run: just bootstrap
       # opt-level 1, not release's 3: these only run the tests (the ssh
       # tests, desktop-xvfb), and release.yml builds what
@@ -177,10 +178,7 @@ jobs:
       - run: just web
       - if: needs.changes.outputs.suite == 'true'
         run: mise exec -- cargo clippy --workspace --all-targets -- -D warnings
-      # The server's workspace (server/Cargo.toml: control and its platform).
-      - if: needs.changes.outputs.suite == 'true'
-        run: mise exec -- scripts/server-cargo clippy --workspace --all-targets -- -D warnings
-      - name: The root workspace builds no server crate, the server's no daemon crate
+      - name: The workspace builds no cloud crate
         if: needs.changes.outputs.suite == 'true'
         run: just workspace-guard
       - if: needs.changes.outputs.suite == 'true'
@@ -201,8 +199,7 @@ jobs:
         if: always() && env.RUSTC_WRAPPER == 'sccache'
         run: sccache --show-stats
 
-  # Starts beside static, not after it: it builds the tests first, runs
-  # the server workspace's (which need nothing of static's), and waits for
+  # Starts beside static, not after it: it builds the tests first, and waits for
   # static's binaries (the ssh tests' ARUGULA_SSH_BINARIES, all it takes
   # from static) only before the rest run: they had waited ~1 min for
   # static with nothing running (#259). With `needs: static` it
@@ -213,10 +210,8 @@ jobs:
   # Half the Rust tests each, on a pod each (`just test-run PART`): on one
   # pod the run took 9-10 min, the run's longest path with the e2e shards
   # (2026-10-23). test runs the first half; test-2 the second half,
-  # the doctests and control-smoke (the first half drew the slower tests,
-  # #1680). The platform on Postgres had
-  # run after test-2's half, 2 min on the run's longest path: it became
-  # test-postgres, a job of its own (#259), and rare-nightly.yml's (#305).
+  # the doctests and e2e-interop (the first half drew the slower tests,
+  # #1680).
   # Two jobs, not a matrix: a skipped matrix job's check run is named
   # without its part, and chant's test phase names both.
   test:
@@ -246,12 +241,6 @@ jobs:
         # Four, not ci-env's six: since platform step 8 three test compiles
         # of ~3.2-3.5 GiB each ran at once and the pod was OOM-killed.
         run: CARGO_BUILD_JOBS=4 just test-build
-      # The server's suite needs nothing of static's: it runs while static
-      # builds (#259).
-      - name: The server's tests, the first half
-        run: just test-run 1 server
-        env:
-          ARUGULA_REQUIRE_SYSTEMD: "1"
       - name: Wait for static
         run: scripts/ci-wait-job static
       - name: static's binaries
@@ -263,7 +252,7 @@ jobs:
         run: mkdir -p "$CI_RUN" && tar -xf "$RUNNER_TEMP/artifacts/run-static.tar" -C "$CI_RUN"
       # The suite, on what test-build built: `just test` would build the web
       # client again first, for nothing.
-      - run: ARUGULA_SSH_BINARIES="$CI_RUN/x86_64-unknown-linux-musl/release" just test-run 1 rest
+      - run: ARUGULA_SSH_BINARIES="$CI_RUN/x86_64-unknown-linux-musl/release" just test-run 1
         env:
           # The service tests run, or fail (testkit's user_manager).
           ARUGULA_REQUIRE_SYSTEMD: "1"
@@ -298,12 +287,6 @@ jobs:
         # Four, not ci-env's six: since platform step 8 three test compiles
         # of ~3.2-3.5 GiB each ran at once and the pod was OOM-killed.
         run: CARGO_BUILD_JOBS=4 just test-build
-      # The server's suite needs nothing of static's: it runs while static
-      # builds (#259).
-      - name: The server's tests, the second half
-        run: just test-run 2 server
-        env:
-          ARUGULA_REQUIRE_SYSTEMD: "1"
       - name: Wait for static
         run: scripts/ci-wait-job static
       - name: static's binaries
@@ -313,7 +296,7 @@ jobs:
           path: ${{ runner.temp }}/artifacts
       - name: Into the run directory
         run: mkdir -p "$CI_RUN" && tar -xf "$RUNNER_TEMP/artifacts/run-static.tar" -C "$CI_RUN"
-      - run: ARUGULA_SSH_BINARIES="$CI_RUN/x86_64-unknown-linux-musl/release" just test-run 2 rest
+      - run: ARUGULA_SSH_BINARIES="$CI_RUN/x86_64-unknown-linux-musl/release" just test-run 2
         env:
           ARUGULA_REQUIRE_SYSTEMD: "1"
       - name: sccache's hits

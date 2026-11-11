@@ -73,11 +73,10 @@ cd "$tmp/work"
 
 # A workspace in miniature: the daemon's crates at 0.1.0, the app at 0.1.0
 # too, and serde, someone else's crate, at 0.1.0 as well (it must stay).
-# The server's workspace (server/) with a crate only its lock file names,
-# arugula-control, at the daemon's version. And a client fixture, which
+# And a client fixture, which
 # changes after two, so a release of two must copy two's (#200). No commit
 # moves a version.
-mkdir -p crates/daemon crates/core crates/control crates/desktop crates/proto/fixtures docs/releases server src
+mkdir -p crates/daemon crates/core crates/desktop crates/proto/fixtures docs/releases src
 echo '{"a session":1}' >crates/proto/fixtures/session.jsonl
 tree() { # DAEMON APP: the daemon's crates at DAEMON, the app at APP
   printf '[workspace]\nmembers = ["crates/*"]\nexclude = ["crates/desktop"]\n\n[workspace.package]\nversion = "%s"\nedition = "2024"\n' "$1" >Cargo.toml
@@ -88,10 +87,6 @@ tree() { # DAEMON APP: the daemon's crates at DAEMON, the app at APP
   { lock arugula-core "$1"; lock arugula-desktop "$2"; lock serde 0.1.0 registry+https://github.com/rust-lang/crates.io-index; } >crates/desktop/Cargo.lock
   printf -- '- [arugula-core %s](https://github.com/arugula-salad/arugula)\n- [arugulad %s](https://github.com/arugula-salad/arugula)\n- [serde 0.1.0](https://github.com/serde-rs/serde)\n' "$1" "$1" >THIRD_PARTY.md
   printf -- '- [arugula-core %s](https://github.com/arugula-salad/arugula)\n- [arugula-desktop %s](https://crates.io/crates/arugula-desktop)\n' "$1" "$2" >crates/desktop/THIRD_PARTY.md
-  printf '[workspace]\nmembers = ["../crates/control"]\n\n[workspace.package]\nversion = "%s"\nedition = "2024"\n' "$1" >server/Cargo.toml
-  printf '[package]\nname = "arugula-control"\nworkspace = "../../server"\nversion.workspace = true\n' >crates/control/Cargo.toml
-  { lock arugula-control "$1"; lock arugula-core "$1"; lock serde 0.1.0 registry+https://github.com/rust-lang/crates.io-index; } >server/Cargo.lock
-  printf -- '- [arugula-control %s](https://github.com/arugula-salad/arugula)\n- [serde 0.1.0](https://github.com/serde-rs/serde)\n' "$1" >server/THIRD_PARTY.md
 }
 lock() { # NAME VERSION [SOURCE]
   printf '[[package]]\nname = "%s"\nversion = "%s"\n' "$1" "$2"
@@ -537,13 +532,10 @@ if grep -q '^version = "0.1.7"' Cargo.toml && [ "$(grep -c '"0.1.7"' Cargo.lock)
   grep -q 'arugula-core = { version = "0.1.7"' crates/daemon/Cargo.toml &&
   grep -A1 '"arugula-core"' crates/desktop/Cargo.lock | grep -q '0.1.7' && grep -q 'arugulad 0.1.7' THIRD_PARTY.md; then ok "stamp v0.1.7: the daemon's crates at 0.1.7"
 else bad "stamp v0.1.7: $(git diff)"; fi
-if grep -q '^version = "0.1.7"' server/Cargo.toml && [ "$(grep -c '"0.1.7"' server/Cargo.lock)" = 2 ] &&
-  grep -q 'arugula-control 0.1.7' server/THIRD_PARTY.md; then ok "stamp v0.1.7: the server's workspace at 0.1.7 too"
-else bad "stamp v0.1.7: the server's workspace: $(git diff -- server)"; fi
 if grep -A1 '"serde"' Cargo.lock | grep -q '0.1.0' && grep -q 'serde = { version = "0.1.0" }' crates/daemon/Cargo.toml &&
   grep -q 'serde 0.1.0' THIRD_PARTY.md && grep -q '^version = "0.1.0"' crates/desktop/Cargo.toml; then ok "stamp v0.1.7: serde and the app keep their versions"
 else bad "stamp v0.1.7 moved serde or the app"; fi
-if [ "$(git diff --name-only | tr '\n' ' ')" = "Cargo.lock Cargo.toml THIRD_PARTY.md crates/daemon/Cargo.toml crates/desktop/Cargo.lock crates/desktop/THIRD_PARTY.md server/Cargo.lock server/Cargo.toml server/THIRD_PARTY.md " ]; then ok "stamp v0.1.7: only version files"
+if [ "$(git diff --name-only | tr '\n' ' ')" = "Cargo.lock Cargo.toml THIRD_PARTY.md crates/daemon/Cargo.toml crates/desktop/Cargo.lock crates/desktop/THIRD_PARTY.md " ]; then ok "stamp v0.1.7: only version files"
 else bad "stamp v0.1.7 changed: $(git diff --name-only)"; fi
 before=$(git diff)
 run 0 "stamp v0.1.7 again" stamp v0.1.7

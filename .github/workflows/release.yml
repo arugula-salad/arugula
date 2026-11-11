@@ -10,9 +10,8 @@
 # the tag's release with SHA256SUMS and publishes it as latest, commits the
 # Homebrew formula to the tap and sends the editor extension to the
 # marketplaces. Beside the publish, build the hosted workspace's E2B
-# templates (M177, one per size: M266). No hosted control here: the same
-# tag starts server-release.yml, which releases its hub and platform
-# through chant (#1983). No desktop app: it has its own release, app-v*
+# templates (M177, one per size: M266). No hosted control here: control
+# and its platform release from their own repository. No desktop app: it has its own release, app-v*
 # tags (app-release.yml, #393), and the daemon updates itself (#391).
 name: release
 on:
