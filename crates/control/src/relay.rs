@@ -574,7 +574,7 @@ pub async fn dial(
     up.max_message_size(DAEMON_MAX_MESSAGE)
         .max_frame_size(DAEMON_MAX_MESSAGE)
         .read_buffer_size(DAEMON_READ_BUFFER)
-        .on_upgrade(move |ws| daemon_socket(app, id, hosted, ws, ticket))
+        .on_upgrade(move |ws| async move { crate::runtimes::spawn_relay(daemon_socket(app, id, hosted, ws, ticket)) })
 }
 
 /// A machine on the relay was heard from: a hosted one (M178) is kept
@@ -670,8 +670,10 @@ async fn daemon_socket(app: Arc<App>, id: String, hosted: bool, ws: WebSocket, t
                 // writes a second); whether it's online is the relay's own
                 // map, never this. A hosted machine's, every ping, as before.
                 pings += 1;
+                // On the blocking pool, not this relay thread (#857).
                 if hosted || pings.is_multiple_of(SEEN_EVERY) {
-                    let _ = seen(&app, &id, hosted, None);
+                    let (app, id) = (app.clone(), id.clone());
+                    tokio::task::spawn_blocking(move || seen(&app, &id, hosted, None));
                 }
             }
             _ = stop.notified() => break,
@@ -687,7 +689,10 @@ async fn daemon_socket(app: Arc<App>, id: String, hosted: bool, ws: WebSocket, t
     drop(live);
     app.guest_routes.drop_daemon(&id, generation);
     app.relay.activity.drop_daemon(&id, generation);
-    let _ = seen(&app, &id, hosted, None);
+    {
+        let (app, id) = (app.clone(), id.clone());
+        tokio::task::spawn_blocking(move || seen(&app, &id, hosted, None));
+    }
     info!(daemon = %id, "daemon left the relay");
     app.analytics.capture(
         &ticket.account,
@@ -818,16 +823,23 @@ async fn splice_to(
         return err(StatusCode::SERVICE_UNAVAILABLE, "that daemon just went away").into_response();
     };
     up.max_message_size(MAX_WIRE).read_buffer_size(CLIENT_READ_BUFFER).on_upgrade(move |ws| async move {
-        let done = tokio::select! {
-            n = splice(ws, stream, slow, &ticket) => Some(n),
-            _ = ticket.gone() => None,
-        };
-        let Some((up, down)) = done else { return };
-        let day = crate::day(now_ms());
-        if let Err(e) = app.db.add_relay_bytes(&who, &day, up + down) {
-            warn!(error = %e, "metering");
-        }
-        note_session(&app, &who, if account.is_some() { "client" } else { "link" }, started, up, down, slow);
+        // Spliced on the relay's runtime, metered off it (#857).
+        crate::runtimes::spawn_relay(async move {
+            let done = tokio::select! {
+                n = splice(ws, stream, slow, &ticket) => Some(n),
+                _ = ticket.gone() => None,
+            };
+            let Some((up, down)) = done else { return };
+            crate::runtimes::blocking(move || {
+                let day = crate::day(now_ms());
+                if let Err(e) = app.db.add_relay_bytes(&who, &day, up + down) {
+                    warn!(error = %e, "metering");
+                }
+                note_session(&app, &who, if account.is_some() { "client" } else { "link" }, started, up, down, slow);
+                drop(ticket);
+            })
+            .await;
+        })
     })
 }
 
@@ -961,7 +973,7 @@ pub async fn many(State(app): State<Arc<App>>, s: Session, headers: HeaderMap, u
     };
     up.max_message_size(MAX_WIRE + 5)
         .read_buffer_size(CLIENT_READ_BUFFER)
-        .on_upgrade(move |ws| many_socket(app, s.account, ws, ticket))
+        .on_upgrade(move |ws| async move { crate::runtimes::spawn_relay(many_socket(app, s.account, ws, ticket)) })
 }
 
 async fn many_socket(app: Arc<App>, account: String, ws: WebSocket, ticket: Arc<Ticket>) {
@@ -1052,8 +1064,13 @@ async fn channel(
     ticket: &Ticket,
 ) -> bool {
     let refuse = |why: &str| mframe(M_CLOSE, chan, why.as_bytes());
-    match crate::teams::may_reach(&app, &account, &id) {
-        Ok(true) => {}
+    // On the blocking pool, not this relay thread (#857).
+    let may = {
+        let (app, account, id) = (app.clone(), account.clone(), id.clone());
+        crate::runtimes::blocking(move || crate::teams::may_reach(&app, &account, &id)).await
+    };
+    match may {
+        Some(Ok(true)) => {}
         _ => {
             let _ = out.send(refuse("no such daemon")).await;
             return false;
@@ -1136,8 +1153,11 @@ async fn channel(
         _ = down => {},
     }
     let (sent, got) = (sent.load(Ordering::Relaxed), got.load(Ordering::Relaxed));
-    let _ = app.db.add_relay_bytes(&account, &crate::day(now_ms()), sent + got);
-    note_session(&app, &account, "page", started, sent, got, slow);
+    crate::runtimes::blocking(move || {
+        let _ = app.db.add_relay_bytes(&account, &crate::day(now_ms()), sent + got);
+        note_session(&app, &account, "page", started, sent, got, slow);
+    })
+    .await;
     true
 }
 

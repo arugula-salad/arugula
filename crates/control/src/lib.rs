@@ -113,6 +113,7 @@ mod roots;
 mod routes;
 #[cfg(test)]
 mod routing_wire;
+mod runtimes;
 mod switches;
 #[cfg(test)]
 mod team_owners_wire;
@@ -791,6 +792,9 @@ pub fn router(app: Arc<App>) -> Router {
         // Outermost of all: a public preview's host reaches nothing of
         // control's (M187).
         .layer(axum::middleware::from_fn_with_state(app.clone(), previews::split))
+        // Before anything else, the request leaves the relay's runtime for
+        // the main one, where the database is (#857, `runtimes.rs`).
+        .layer(axum::middleware::from_fn(runtimes::off_relay))
         .with_state(app)
 }
 
@@ -994,7 +998,26 @@ pub fn main(platforms: Box<dyn Platforms>) -> anyhow::Result<()> {
     if argv.peek().is_some_and(|a| a == "platform") {
         return platforms.window("arugula-control platform", argv.skip(1).collect());
     }
-    tokio::runtime::Builder::new_multi_thread().worker_threads(workers()).enable_all().build()?.block_on(run(platforms))
+    let main = tokio::runtime::Builder::new_multi_thread().worker_threads(workers()).enable_all().build()?;
+    // The relay's own runtime (#857, `runtimes.rs`), unless told otherwise.
+    let one = std::env::var(runtimes::ONE_RUNTIME).is_ok_and(|v| !v.is_empty() && v != "0");
+    let relay = if one {
+        None
+    } else {
+        let r = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(std::thread::available_parallelism().map_or(1, |n| n.get()).max(2))
+            .thread_name("relay")
+            .enable_all()
+            .build()?;
+        runtimes::set(main.handle().clone(), r.handle().clone());
+        Some(r)
+    };
+    let r = main.block_on(run(platforms));
+    // Its sockets go with it, without waiting for them.
+    if let Some(relay) = relay {
+        relay.shutdown_background();
+    }
+    r
 }
 
 /// The runtime's worker threads: the machine's cores, and never fewer than
@@ -1028,8 +1051,15 @@ async fn run(platforms: Box<dyn Platforms>) -> anyhow::Result<()> {
     let a = <Args as clap::FromArgMatches>::from_arg_matches(&matches)?;
     let pa = platforms.args(&matches)?;
     raise_open_files();
-    // Bound first, so port 0 is known before the URL is (#67).
-    let l = tokio::net::TcpListener::bind(a.listen).await?;
+    // Bound first, so port 0 is known before the URL is (#67). On the
+    // relay's runtime when it has its own (#857): every connection is
+    // accepted and carried there.
+    let l = std::net::TcpListener::bind(a.listen)?;
+    l.set_nonblocking(true)?;
+    let l = {
+        let _on = runtimes::relay().map(|h| h.enter());
+        tokio::net::TcpListener::from_std(l)?
+    };
     let listen = l.local_addr()?;
     let mut public_url = a.public_url.trim_end_matches('/').to_owned();
     if a.listen.port() == 0 {
@@ -1355,9 +1385,14 @@ async fn run(platforms: Box<dyn Platforms>) -> anyhow::Result<()> {
         let _ = t.set_nodelay(true);
     });
     info!(%listen, url = %app.cfg.public_url, "Arugula control");
-    let serve = axum::serve(l, router(app.clone()).into_make_service_with_connect_info::<SocketAddr>());
+    let serve = axum::serve(l, router(app.clone()).into_make_service_with_connect_info::<SocketAddr>()).into_future();
+    // Served on the relay's runtime when it has its own (#857).
+    let serve = match runtimes::relay() {
+        Some(h) => h.spawn(serve),
+        None => tokio::spawn(serve),
+    };
     tokio::select! {
-        r = serve => r?,
+        r = serve => r??,
         _ = stopping() => info!("stopping"),
     }
     // An in-process platform's jobs checkpoint before it goes (M144).
