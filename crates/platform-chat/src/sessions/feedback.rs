@@ -12,6 +12,11 @@
 //! - **From insiders only.** A review or comment by someone GitHub doesn't
 //!   call the repo's `OWNER`, `MEMBER` or `COLLABORATOR`, or on a fork's
 //!   PR, is ignored ([`Routed::Outsider`]), as an event rule refuses it.
+//! - **From people who may push, as a prompt.** A review is sent to the
+//!   session only when GitHub says its author may push to the repo now
+//!   (write or better, [`reviewer_pushes`]), as the session's push asks
+//!   of everyone who steers it (`sessions::push`). Anyone else's isn't
+//!   sent: the thread says so, and a person can pass it on by replying.
 //! - **Gathered, then one prompt** (`db::session_feedback`). A CI round is
 //!   every failed check of one head commit, gathered for up to
 //!   [`CI_GATHER_MS`] or until its check suite completes with nothing of
@@ -656,12 +661,26 @@ pub async fn flush(app: &Platform, s: &AgentSession, now: u64) -> Result<Option<
             Some(b) if !s.state.terminal() => reads(app, s, &app.db.feedback_items(&b.id)?).await,
             _ => Reads::default(),
         };
+        // A review that would be sent, from someone who may not push: why
+        // it isn't.
+        let review = batches.iter().find(|b| b.id == id).filter(|b| b.kind == FeedbackKind::Review);
+        let unsent = match review {
+            Some(b) if !s.state.terminal() && review_prompt(b, &app.db.feedback_items(&b.id)?).is_some() => {
+                reviewer_pushes(app, s, b).await.err()
+            }
+            _ => None,
+        };
         let settled = app.db.settle_feedback(&id, by, now, |fb, items, s| match fb.kind {
             FeedbackKind::Ci if !items.iter().any(|i| reads.counts(i)) => Answer::NotRequired,
             FeedbackKind::Ci => Answer::Send(ci_prompt(fb, &reads.listed(items), s, s.ci_rounds + 1, &reads)),
+            FeedbackKind::Review if unsent.is_some() => Answer::Nothing,
             FeedbackKind::Review => review_prompt(fb, items).map_or(Answer::Nothing, Answer::Send),
         })?;
         let Some((fb, items, how)) = settled else { continue };
+        let unsent = match unsent.filter(|_| how == Settled::Nothing) {
+            Some(why) => Some((reviewer(app, s, &fb).await, why)),
+            None => None,
+        };
         let checks = plural(items.len(), "check");
         let line = match (&how, fb.kind) {
             (Settled::Sent { round, .. }, FeedbackKind::Ci) => {
@@ -688,6 +707,9 @@ pub async fn flush(app: &Platform, s: &AgentSession, now: u64) -> Result<Option<
             (Settled::Ended, FeedbackKind::Review) => {
                 Some(ended_line(fb.kind, fb.login.as_deref().unwrap_or_default()))
             }
+            (Settled::Nothing, FeedbackKind::Review) => unsent.as_ref().map(|(who, why)| {
+                format!("Review from {who}: not sent to the session, since {why}. Reply here to pass it on.")
+            }),
             (Settled::Nothing, _) => None,
         };
         info!(session = s.id, feedback = fb.id, kind = fb.kind.as_str(), settled = ?how, "a session's feedback was settled");
@@ -701,6 +723,32 @@ pub async fn flush(app: &Platform, s: &AgentSession, now: u64) -> Result<Option<
         }
     }
     app.db.next_feedback_due(&s.id)
+}
+
+/// Whether review `fb`'s author may push to session `s`'s repo on GitHub
+/// now (module docs): `Err` is why not, in words for the thread. Fails
+/// closed: no App, no link, no id, or GitHub not answering.
+pub async fn reviewer_pushes(app: &Platform, s: &AgentSession, fb: &Feedback) -> Result<(), String> {
+    let login = fb.login.clone().unwrap_or_default();
+    let (Some(gh), Some(repo)) = (app.github.as_ref(), s.repo.as_deref()) else {
+        return Err(format!("the platform can't check whether {login} may push to the session's repo"));
+    };
+    let link = match app.db.linked_repo_named(repo) {
+        Ok(Some(l)) if l.project_id == s.project && l.unlinked_at.is_none() => l,
+        _ => return Err(format!("{repo} isn't linked to the project, so {login}'s access can't be checked")),
+    };
+    let Some(id) = fb.github_id.filter(|_| !login.is_empty()) else {
+        return Err(format!("GitHub didn't say who wrote it, so their access to {repo} can't be checked"));
+    };
+    let user = crate::forge::GithubUser { id, login: login.clone() };
+    match gh.may_push(&Caller::of(app, &s.asker), link.installation_id, link.repo_id, &user, repo).await {
+        Ok(_) => Ok(()),
+        Err(r) if r.clear => Err(format!("{login} can't push to {repo}")),
+        Err(r) => {
+            warn!(session = s.id, login, why = r.why, "couldn't check a reviewer's access to a session's repo");
+            Err(format!("GitHub couldn't say whether {login} may push to {repo}"))
+        }
+    }
 }
 
 /// Whether session `s` needs a person: CI failed again after its last

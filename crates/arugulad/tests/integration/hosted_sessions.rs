@@ -1284,17 +1284,38 @@ fn a_finish_step_runs_after_each_turn() {
     assert_eq!(pushes(&z), 0, "it asked for no token");
     assert_eq!(on_github(&format!("arugula/{}-broken", &z[4..12])), "", "nothing of it reached GitHub");
 
-    // A session that ends leaves its slot clean: its checkout and its
-    // user's ~/.claude go.
-    let claude = homes.join("ses2").join(".claude");
+    // A session that ends leaves its slot clean: its checkout, its user's
+    // ~/.claude, and everything else in its home that isn't a build cache
+    // (config its agent or its tools would read in the next session) go.
+    let home = homes.join("ses2");
+    let claude = home.join(".claude");
     std::fs::create_dir_all(claude.join("projects")).unwrap();
     std::fs::write(claude.join("projects").join("x.jsonl"), "{}\n").unwrap();
+    let planted =
+        [".claude.json", ".gitconfig", ".codex/config.toml", ".local/bin/git", ".cargo/config.toml", ".npmrc"];
+    for f in planted {
+        std::fs::create_dir_all(home.join(f).parent().unwrap()).unwrap();
+        std::fs::write(home.join(f), "x\n").unwrap();
+    }
+    // A directory its agent made unwritable goes too.
+    std::fs::create_dir_all(home.join(".config/locked")).unwrap();
+    std::fs::set_permissions(home.join(".config"), std::os::unix::fs::PermissionsExt::from_mode(0o500)).unwrap();
+    for f in [".cache/sccache/a", ".cargo/registry/index/b"] {
+        std::fs::create_dir_all(home.join(f).parent().unwrap()).unwrap();
+        std::fs::write(home.join(f), "kept\n").unwrap();
+    }
     // And what its push left: the daemon's own repo for it.
     let pushed = state.join("work").join("sessions").join(format!("{x}.push"));
     assert!(pushed.join("repo.git").exists(), "{pushed:?}");
     f.stop(&x);
-    let checkout = homes.join("ses2").join("work").join(&x);
+    let checkout = home.join("work").join(&x);
     wait(&marks, &f, "x's slot cleaned", || !checkout.exists() && !claude.exists() && !pushed.exists());
+    for f in planted.iter().chain(&[".config", ".codex", ".local"]) {
+        assert!(!home.join(f).exists(), "{f} went with the session");
+    }
+    for f in [".cache/sccache/a", ".cargo/registry/index/b"] {
+        assert!(home.join(f).exists(), "{f}: a build cache stays for the slot's next session of the same asker");
+    }
     assert!(homes.join("ses1").join("work").join(&p).exists(), "the others' are left alone");
 }
 

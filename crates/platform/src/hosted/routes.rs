@@ -326,7 +326,8 @@ pub async fn secrets(
 
 /// Set a secret, sealed with the workspace's project's key (M209), bound to
 /// the workspace and its name. Its box reads it on its next setup: a spec's env
-/// name, or `GIT_TOKEN` and `GIT_USERNAME` to clone with.
+/// name, or `GIT_TOKEN` and `GIT_USERNAME` to clone with. `GIT_TOKEN` is
+/// bound to the hosts of the spec's repos as it's set (`setup::hosts_of`).
 pub async fn put_secret(
     State(app): State<Arc<Platform>>,
     CloudDriver(Person { account }): CloudDriver,
@@ -347,7 +348,9 @@ pub async fn put_secret(
     };
     let sealed =
         crate::keys::seal_value(&app.db.c(), cipher, &project, &crate::keys::hosted_name(&w.id, &name), &b.value)?;
-    app.db.set_hosted_secret(&w.id, &name, Some(&sealed), now_ms())?;
+    // The clone secret goes only to the hosts the spec's repos are on now.
+    let hosts = (name == super::setup::GIT_TOKEN).then(|| super::setup::hosts_of(&w.spec));
+    app.db.set_hosted_secret(&w.id, &name, Some(&sealed), hosts.as_deref(), now_ms())?;
     info!(%account, %project, workspace = %w.id, name, "set a hosted workspace's secret");
     Ok(StatusCode::NO_CONTENT)
 }

@@ -119,10 +119,9 @@ enum Scope {
     /// workflows, written.
     DeployScaffold,
     /// An agent session's push of its branch (M259, S42 q2): one
-    /// repository's contents and workflows, written. Without `workflows`
-    /// GitHub refuses a new branch whose workflow files differ from the
-    /// default branch's, as every session's do once main changed CI after
-    /// it began (aru-115, amended 2026-10-26).
+    /// repository's contents, written, and not its workflows, so GitHub
+    /// refuses a session's push that changes `.github/workflows/`
+    /// (aru-115, amended 2026-11-10).
     SessionPush,
     /// An agent session's clone of a linked repo no box's setup cloned
     /// (Fleet 6): one repository's contents, read.
@@ -186,7 +185,7 @@ impl Scope {
             Scope::DeployScaffold => {
                 json!({ "metadata": "read", "contents": "write", "pull_requests": "write", "workflows": "write" })
             }
-            Scope::SessionPush => json!({ "metadata": "read", "contents": "write", "workflows": "write" }),
+            Scope::SessionPush => json!({ "metadata": "read", "contents": "write" }),
             Scope::SessionClone | Scope::BoxClone => json!({ "metadata": "read", "contents": "read" }),
             Scope::Send(Writes::Issues) => json!({ "metadata": "read", "issues": "write" }),
             Scope::Send(Writes::PullRequests) => json!({ "metadata": "read", "pull_requests": "write" }),
@@ -705,7 +704,7 @@ impl GithubApp {
     }
 
     /// A token for one push of an agent session's branch (M259): one
-    /// repository's contents and workflows, written, minted now (and
+    /// repository's contents, written (never its workflows), minted now (and
     /// logged), never cached. The box that asked revokes it once it pushed
     /// ([`GithubApp::revoke_url`]); it lasts an hour at most anyway.
     /// `(token, expires_at)`.
