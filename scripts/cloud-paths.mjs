@@ -23,6 +23,10 @@ export const CLOUD = [
   "docs/secrets-inventory.md",
   "docs/platform-features.md",
   "docs/managoat.md",
+  "docs/launch-runbook.md",
+  "docs/launch-dashboard.json",
+  "docs/design/control-email.md",
+  "scripts/hub-restore-drill",
 ];
 
 /** Whether a repo path is one of the cloud's, or under one. */
