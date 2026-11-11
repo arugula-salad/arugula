@@ -5,7 +5,7 @@
 // does), each with its rows; a board whose author made groups (phases, waves)
 // shows each as a section with its progress and the four lanes of its rows
 // under it, the rows with no group last. A row's marks say what its lane
-// doesn't: merged but not closed, waiting on another PR, earlier agents
+// doesn't: marked not finished (or merged and still open), waiting on another PR, earlier agents
 // folded away. Each row has: a glyph for the row's lane, a link to what it
 // points at with that item's state now (`live`), chips for what is attached
 // to it, on a Done row the mark that says it is proven or not yet, and a
@@ -47,7 +47,7 @@ import { DocLink, DocPicker } from "./docs";
 import "./bar.css";
 import "./boards.css";
 import { groupFold, groupLaneFold, isFolded, laneFold, loadFolds, saveFolds, type Folds } from "./folds";
-import { MOVE_LANES, closeName, closedWithLine, doneRefusal, laneOfZone, laneSetLine, PICK_DELAY_MS, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, PICK_LIMIT, assigneesLine, GOAL_MAX, answerReady, askWaitingLine, blockFacts, BLOCK_LABEL, chipOf, settledFacts, debounced, earlierLine, epicLine, holdsRow, groupLine, isCard, laneCount, liveWord, marksOf, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, relationLine, RELATION_KINDS, sections, sourceLine, sourceLinked, leftOutLine, stepActive, workLabel, findLine, type BoardFilter, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, topAndMore, initialsOf } from "./text";
+import { MOVE_LANES, closeName, closedWithLine, doneRefusal, laneOfZone, laneSetLine, PICK_DELAY_MS, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, PICK_LIMIT, assigneesLine, GOAL_MAX, answerReady, askWaitingLine, blockFacts, BLOCK_LABEL, chipOf, settledFacts, debounced, earlierLine, epicLine, holdsRow, groupLine, isCard, laneCount, liveWord, marksOf, notFinishedLine, type NotFinished, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, relationLine, RELATION_KINDS, sections, sourceLine, sourceLinked, leftOutLine, stepActive, workLabel, findLine, type BoardFilter, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, topAndMore, initialsOf } from "./text";
 
 const STALE_SAID = "That changed while you were editing, so the board is read again. Make your change again if it still applies.";
 
@@ -1154,11 +1154,11 @@ function Row({
             )}
           </div>
           {card && <Labels labels={r.live!.labels ?? []} />}
-          {(marks.merged || marks.cancelled || marks.after || marks.stalled || marks.blocked.length > 0) && (
+          {(marks.notFinished || marks.cancelled || marks.after || marks.stalled || marks.blocked.length > 0) && (
             <div class="board-line board-marks" data-board-marks>
-              {marks.merged && (
-                <StateChip tone="merged" data-board-mark="merged_not_closed" title="A PR of this row merged, but its issue is still open">
-                  merged, not closed
+              {marks.notFinished && (
+                <StateChip tone="warn" class="board-mark-nf" data-board-mark="not_finished" title={notFinishedTitle(marks.notFinished)}>
+                  {notFinishedLine(marks.notFinished)}
                 </StateChip>
               )}
               {marks.cancelled && (
@@ -1272,6 +1272,83 @@ async function readRow(r: BoardRow): Promise<Read> {
   await Promise.all(reads);
   out.checks = checks.flatMap((c) => (c ? [c] : []));
   return out;
+}
+
+/** What the card's chip says in full on hover: the words, and who marked it and when. */
+function notFinishedTitle(n: NotFinished): string {
+  const who = n.by ? ` Marked by ${n.by}${n.at ? ` on ${day(n.at)}` : ""}.` : "";
+  const merged = n.merged ? " A PR of this row merged, and the issue stays open." : "";
+  return `${notFinishedLine(n)}.${merged}${who}`;
+}
+
+/** The drawer's Not finished section (#841), above the attachments: the reason, who marked it and when, with Clear the mark for those who may edit; with no mark, Mark not finished… opens a line for what is left. Only on a native issue or a Plane item that isn't done. */
+function NotFinishedSection({ r, nf, write, act, id }: { r: BoardRow; nf: NotFinished | null; write: boolean; act: (write: () => Promise<BoardView>) => Promise<boolean>; id: string }) {
+  const [marking, setMarking] = useState(false);
+  const [reason, setReason] = useState("");
+  const holdable = r.pointer.kind === "issue" || (r.pointer.kind === "forge_item" && r.live?.provider === "plane");
+  if (!holdable || (r.lane === "done" && !nf)) return null;
+  // A mark with a writer is a hold; one with none only says a PR merged.
+  const held = !!nf && nf.at !== undefined;
+  const save = async () => {
+    if (await act(() => boards.hold(id, r.id, reason.trim()))) {
+      setMarking(false);
+      setReason("");
+    }
+  };
+  return (
+    <section data-board-drawer-not-finished>
+      <h3>Not finished</h3>
+      {nf && (
+        <p data-board-drawer-not-finished-reason>
+          {nf.reason ?? "No reason given."}
+          {held && nf.by && (
+            <span class="dim">
+              {" "}
+              · {nf.by}
+              {nf.at ? `, ${day(nf.at)}` : ""}
+            </span>
+          )}
+        </p>
+      )}
+      {!nf && <p class="dim">A merged PR closes this issue. Mark it not finished to keep it open, with what is left.</p>}
+      {write && !marking && (
+        <div class="board-line">
+          {held && (
+            <button type="button" class="secondary small" data-board-clear-mark title="Take the mark off. The issue closes now if a PR that names it has merged." onClick={() => void act(() => boards.release(id, r.id))}>
+              Clear the mark
+            </button>
+          )}
+          <button type="button" class="secondary small" data-board-mark-start onClick={() => { setReason(nf?.reason ?? ""); setMarking(true); }}>
+            {held ? "Change the reason…" : "Mark not finished…"}
+          </button>
+        </div>
+      )}
+      {write && marking && (
+        <div class="board-line" data-board-mark-form>
+          <input
+            type="text"
+            value={reason}
+            maxLength={200}
+            placeholder="What is left"
+            aria-label="What is left"
+            data-board-mark-input
+            autoFocus
+            onInput={(e) => setReason(e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && reason.trim()) void save();
+              if (e.key === "Escape") setMarking(false);
+            }}
+          />
+          <button type="button" class="primary small" data-board-mark-save disabled={!reason.trim()} onClick={() => void save()}>
+            Mark
+          </button>
+          <button type="button" class="secondary small" data-board-mark-cancel onClick={() => setMarking(false)}>
+            Cancel
+          </button>
+        </div>
+      )}
+    </section>
+  );
 }
 
 /** The drawer: a row's item, read-only, beside the board (a sheet on a phone). Its title, state and link out; the body, the latest comments, the PRs' checks, the attachments and the proof's evidence. */
@@ -1438,6 +1515,7 @@ function Drawer({ steps, r, platform, close, project, others, write, act, id, mo
           ))}
         </section>
       )}
+      <NotFinishedSection r={r} nf={marks.notFinished} write={write} act={act} id={id} />
       {r.attachments.length > 0 && (
         <section data-board-drawer-attachments>
           <h3>Attached</h3>

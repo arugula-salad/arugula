@@ -1646,6 +1646,7 @@ pub(crate) fn erase_account(c: &impl Sql, d: &Deleted) -> Result<()> {
     super::boards_asks::erase_account(c, d)?;
     super::boards_relations::erase_account(c, d)?;
     super::boards_docs::erase_account(c, d)?;
+    super::item_holds::erase_account(c, d)?;
     c.execute("DELETE FROM board_settings WHERE project_id NOT IN (SELECT id FROM projects)", params![])?;
     c.execute("DELETE FROM boards WHERE project_id NOT IN (SELECT id FROM projects)", params![])?;
     c.execute("UPDATE boards SET created_by = '' WHERE created_by = ?1", params![d.account])?;

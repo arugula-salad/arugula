@@ -7,7 +7,8 @@
 //! `(#N)` in passing in the body, a PR closed unmerged and an issue of
 //! another project close nothing; one closed already stays as it was; a PR a
 //! person attached to a row closes that row's issue; a second pass adds no
-//! event.
+//! event. A ticket marked Not finished (Arugula #841) isn't closed by a merge,
+//! and closes when the mark comes off.
 
 use std::time::Instant;
 
@@ -289,4 +290,168 @@ async fn the_webhooks_body_closes_the_issue_with_content_off() {
     open_and_merge(&app, &pr(72, "Plumbing", "Arugula #2"), BOB).await;
     assert_eq!(closed_events(&app, &b.0).len(), 1, "named as Arugula's, whatever GitHub has at #2");
     assert_eq!(kept(&app), (false, 0));
+}
+
+/// The row of `issue` on `board`.
+fn row_of(v: &Value, issue: &str) -> String {
+    on(v, issue).1["id"].as_str().unwrap().to_owned()
+}
+
+/// A hold on an issue (Arugula #841): a merged PR that names it plainly
+/// attaches and doesn't close it, its row stays in Review marked Not
+/// finished with the reason, and taking the mark off closes it at once,
+/// naming the PR that merged.
+#[tokio::test]
+async fn a_held_issue_is_not_closed_by_a_merge_and_closes_when_released() {
+    use arugula_control_wire::boards::board_row_hold;
+    let (base, app, team, board) = start().await;
+    mirror_bodies(&app);
+    let (issue, n) = native(&base, &team, "Two PRs").await;
+    let v = add(&base, &board, json!({ "kind": "issue", "id": issue })).await;
+    let row = row_of(&v, &issue);
+    let path = board_row_hold(&board, &row);
+
+    // Held with nothing merged: its own lane, marked, and not merged.
+    let (s, v) = call(&base, "bob", "PUT", &path, Some(json!({ "reason": "  second PR for the API " }))).await;
+    assert_eq!(s, 200, "{v}");
+    assert_eq!(on(&v, &issue).0, "lane_next");
+    let marks = &on(&v, &issue).1["marks"];
+    assert_eq!(marks[0]["kind"], "not_finished", "{marks}");
+    assert_eq!(
+        (&marks[0]["reason"], &marks[0]["merged"], &marks[0]["by"]),
+        (&json!("second PR for the API"), &json!(false), &json!("bob"))
+    );
+    assert!(marks[0]["at"].is_u64());
+
+    // Merged, naming it plainly.
+    let body = format!("Does it.\n\nArugula #{n}");
+    open_and_merge(&app, &pr(70, "First", &body), BOB).await;
+    assert!(closed_events(&app, &issue).is_empty(), "held: not closed");
+    assert_eq!(app.db.issue(&issue).unwrap().unwrap().state.as_str(), "open");
+    let v = read(&base, "bob", &board).await;
+    assert_eq!(on(&v, &issue).0, "lane_review", "{v}");
+    assert_eq!(on(&v, &issue).1["marks"][0]["merged"], true, "{v}");
+    assert_eq!(on(&v, &issue).1["marks"][0]["reason"], "second PR for the API");
+    let attached = on(&v, &issue).1["attachments"].to_string();
+    assert!(attached.contains(&pr_id(&app, 70)), "the PR still attaches: {attached}");
+    // Redelivered, and the poller's pass: still open.
+    closes::merged(&app, 88, &[70]).await;
+    assert!(closed_events(&app, &issue).is_empty());
+
+    // Reasons are checked.
+    for bad in ["", "   ", "two\nlines", &"x".repeat(201)] {
+        let (s, _) = call(&base, "bob", "PUT", &path, Some(json!({ "reason": bad }))).await;
+        assert_eq!(s, 400, "{bad:?}");
+    }
+
+    // Released: closed now, as completed, naming the PR that merged.
+    let (s, v) = call(&base, "bob", "DELETE", &path, None).await;
+    assert_eq!(s, 200, "{v}");
+    let events = closed_events(&app, &issue);
+    assert_eq!(events.len(), 1, "{events:?}");
+    assert_eq!(events[0].detail["pr"], "acme/site#70");
+    assert_eq!(events[0].detail["reason"], "completed");
+    assert_eq!(events[0].detail["by"], format!("\"Arugula #{n}\" in the body"));
+    assert_eq!(on(&v, &issue).0, "lane_done", "{v}");
+    assert!(on(&v, &issue).1["marks"].as_array().is_none_or(|m| m.is_empty()), "{v}");
+    assert!(app.db.hold_of(&app.db.issue(&issue).unwrap().unwrap().project, &issue).unwrap().is_none());
+    // Released again: nothing more.
+    let (s, _) = call(&base, "bob", "DELETE", &path, None).await;
+    assert_eq!(s, 200);
+    assert_eq!(closed_events(&app, &issue).len(), 1);
+}
+
+/// Releasing an issue nothing merged for leaves it open; an issue merged
+/// with `part of` only is not closed by its release either, and shows Not
+/// finished with no reason while no one has marked it.
+#[tokio::test]
+async fn a_release_with_nothing_merged_closes_nothing() {
+    use arugula_control_wire::boards::board_row_hold;
+    let (base, app, team, board) = start().await;
+    mirror_bodies(&app);
+    let (issue, n) = native(&base, &team, "Nothing yet").await;
+    let (other, m) = native(&base, &team, "Only linked").await;
+    let v = add(&base, &board, json!({ "kind": "issue", "id": issue })).await;
+    let row = row_of(&v, &issue);
+    let v = add(&base, &board, json!({ "kind": "issue", "id": other })).await;
+    let other_row = row_of(&v, &other);
+
+    // `part of`: merged, still open, unmarked: Review, no reason given.
+    open_and_merge(&app, &pr(72, "Part", &format!("Part of Arugula #{m}")), BOB).await;
+    let v = read(&base, "bob", &board).await;
+    assert_eq!(on(&v, &other).0, "lane_review", "{v}");
+    assert_eq!(on(&v, &other).1["marks"], json!([{ "kind": "not_finished", "merged": true }]), "{v}");
+
+    // Held after that merge, then released: it only linked, so it stays open.
+    let path = board_row_hold(&board, &other_row);
+    let (s, _) = call(&base, "bob", "PUT", &path, Some(json!({ "reason": "verify on staging" }))).await;
+    assert_eq!(s, 200);
+    let v = read(&base, "bob", &board).await;
+    assert_eq!(on(&v, &other).1["marks"][0]["reason"], "verify on staging", "{v}");
+    let (s, _) = call(&base, "bob", "DELETE", &path, None).await;
+    assert_eq!(s, 200);
+    assert!(closed_events(&app, &other).is_empty());
+
+    // Held and released with nothing merged at all.
+    let path = board_row_hold(&board, &row);
+    call(&base, "bob", "PUT", &path, Some(json!({ "reason": "wait" }))).await;
+    call(&base, "bob", "DELETE", &path, None).await;
+    assert_eq!(app.db.issue(&issue).unwrap().unwrap().state.as_str(), "open");
+    let _ = n;
+}
+
+/// A hold set after a merge that closed the issue and then reopened: the
+/// release finds the merged PR by its references and closes it again, and
+/// a hold on a closed issue is ignored by the board (Done).
+#[tokio::test]
+async fn a_release_finds_a_merged_pr_by_its_references() {
+    use arugula_control_wire::boards::board_row_hold;
+    let (base, app, team, board) = start().await;
+    mirror_bodies(&app);
+    let (issue, n) = native(&base, &team, "Found by text").await;
+    let v = add(&base, &board, json!({ "kind": "issue", "id": issue })).await;
+    let row = row_of(&v, &issue);
+    open_and_merge(&app, &pr(73, "Wire", &format!("Arugula #{n}")), BOB).await;
+    assert_eq!(closed_events(&app, &issue).len(), 1);
+
+    // A hold on a closed issue: Done, no mark.
+    let path = board_row_hold(&board, &row);
+    let (s, v) = call(&base, "bob", "PUT", &path, Some(json!({ "reason": "later" }))).await;
+    assert_eq!(s, 200, "{v}");
+    assert_eq!(on(&v, &issue).0, "lane_done", "{v}");
+    assert!(on(&v, &issue).1["marks"].as_array().is_none_or(|m| m.is_empty()), "{v}");
+
+    // Reopened, still held: Review, not finished; released: closed again by the PR.
+    let (s, _) = call(&base, "bob", "PATCH", &format!("/api/issues/{issue}"), Some(json!({ "state": "open" }))).await;
+    assert_eq!(s, 200);
+    let v = read(&base, "bob", &board).await;
+    assert_eq!(on(&v, &issue).1["marks"][0]["reason"], "later", "{v}");
+    let (s, _) = call(&base, "bob", "DELETE", &path, None).await;
+    assert_eq!(s, 200);
+    let events = closed_events(&app, &issue);
+    assert_eq!(events.len(), 2, "{events:?}");
+    assert_eq!(events[1].detail["pr"], "acme/site#73");
+}
+
+/// With the project's content off the mirror keeps no body, so a release
+/// can't read the PR's words again: the hold remembered the merge it
+/// skipped, and the release closes the issue naming that PR and its words.
+#[tokio::test]
+async fn a_release_closes_by_the_merge_the_hold_skipped_with_content_off() {
+    let (base, app, team, _) = start().await;
+    let (issue, n) = native(&base, &team, "No bodies").await;
+    let project = app.db.issue(&issue).unwrap().unwrap().project;
+    app.db.hold_set(&project, &issue, "second PR", crate::db::issues::Actor::person("bob"), 5).unwrap();
+
+    open_and_merge(&app, &pr(79, "Plumbing", &format!("Arugula #{n}")), BOB).await;
+    assert!(closed_events(&app, &issue).is_empty(), "held");
+    let skipped = app.db.hold_of(&project, &issue).unwrap().unwrap().skipped.unwrap();
+    assert_eq!((skipped.reference.as_str(), skipped.merged_by), ("acme/site#79", Some(1002)));
+
+    closes::released(&app, &project, &issue, Some(skipped)).await;
+    let events = closed_events(&app, &issue);
+    assert_eq!(events.len(), 1, "{events:?}");
+    assert_eq!(events[0].detail["pr"], "acme/site#79");
+    assert_eq!(events[0].detail["by"], format!("\"Arugula #{n}\" in the body"));
+    assert_eq!(events[0].actor, "bob", "closed as the person who merged it");
 }

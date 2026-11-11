@@ -59,6 +59,7 @@ pub mod hosted_usage;
 pub mod inbox;
 pub mod inference;
 pub mod issues;
+pub mod item_holds;
 pub mod jobs;
 mod legacy;
 pub mod link_previews;

@@ -109,7 +109,7 @@ async fn a_pr_attaches_to_its_issues_row_and_lets_go() {
     check(&app, 88, "h40", "build", "completed", Some("success"));
     hook(&app, 88, "closed", 40, "Plumbing", &format!("feat/{n}-plumbing"), 14, true);
     let v = read(&base, "bob", &id).await;
-    assert_eq!(on(&v, &issue).1["marks"], json!([{ "kind": "merged_not_closed" }]), "{v}");
+    assert_eq!(on(&v, &issue).1["marks"], json!([{ "kind": "not_finished", "merged": true }]), "{v}");
     app.db
         .c()
         .execute(

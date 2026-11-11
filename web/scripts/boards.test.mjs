@@ -3,7 +3,7 @@
 // the board routes' paths. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { closedWithLine, holdsRow, stalledFor, settledFacts, LANE_GLYPH, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, readyCount, relationLine, UNSEEN_BLOCKER, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip, onIssueChip, boardGroup, clusterOrder, NO_BOARD, sourceLine, sourceLinked, leftOutLine, docWords, docHref, onBoardWords, pointerText, doneRefusal, laneOfZone, laneSetLine, closeName, rowMatches, findLine, boardMatches, rowHasLabel, rowHasPerson, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, topAndMore, initialsOf } from "../src/shared/boards/text.ts";
+import { closedWithLine, holdsRow, stalledFor, settledFacts, LANE_GLYPH, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, notFinishedLine, readyCount, relationLine, UNSEEN_BLOCKER, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip, onIssueChip, boardGroup, clusterOrder, NO_BOARD, sourceLine, sourceLinked, leftOutLine, docWords, docHref, onBoardWords, pointerText, doneRefusal, laneOfZone, laneSetLine, closeName, rowMatches, findLine, boardMatches, rowHasLabel, rowHasPerson, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, topAndMore, initialsOf } from "../src/shared/boards/text.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
@@ -214,17 +214,22 @@ test("a board with groups is a section for each, its lanes under it, and the row
   assert.equal(groupLine({ done: 0, total: 0 }), "no work yet");
 });
 
-test("a row's marks: merged but not closed, after a PR, and earlier agents folded", () => {
-  assert.deepEqual(marksOf({}), { merged: false, cancelled: false, after: null, stalled: null, blocked: [], earlier: new Set() });
+test("a row's marks: not finished, after a PR, and earlier agents folded", () => {
+  assert.deepEqual(marksOf({}), { notFinished: null, cancelled: false, after: null, stalled: null, blocked: [], earlier: new Set() });
   const m = marksOf({
     marks: [
-      { kind: "merged_not_closed" },
+      { kind: "not_finished", reason: "second PR", merged: true, by: "ana", at: 5 },
       { kind: "after", number: 1859, repo: "acme/app" },
       { kind: "earlier", attachment: "att_1" },
       { kind: "earlier", attachment: "att_2" },
     ],
   });
-  assert.equal(m.merged, true);
+  assert.deepEqual(m.notFinished, { reason: "second PR", merged: true, by: "ana", at: 5 });
+  assert.equal(notFinishedLine(m.notFinished), "Not finished: second PR");
+  assert.equal(notFinishedLine({ reason: null }), "Not finished · no reason given");
+  // A marked row with nothing merged, and a platform from before the mark.
+  assert.deepEqual(marksOf({ marks: [{ kind: "not_finished", reason: "verify", merged: false }] }).notFinished, { reason: "verify", merged: false, by: undefined, at: undefined });
+  assert.deepEqual(marksOf({ marks: [{ kind: "merged_not_closed" }] }).notFinished, { reason: null, merged: true });
   assert.deepEqual(m.after, { words: "after #1859", repo: "acme/app" });
   assert.deepEqual([...m.earlier], ["att_1", "att_2"]);
   assert.equal(marksOf({ marks: [{ kind: "after", number: 3 }] }).after.repo, undefined);

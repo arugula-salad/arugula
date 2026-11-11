@@ -106,6 +106,10 @@ export const boards = {
   /** Move a row to a lane by hand (#494; owners and editors). Next, Doing and Review hold until the row's work changes its lane; Done closes the row's native issue (`reason`: completed, not_planned or duplicate), and moving out of Done reopens it. */
   setLane: (id: string, row: string, lane: BoardLane, reason?: string) =>
     call<BoardView>("PUT", `/api/boards/${enc(id)}/rows/${enc(row)}/lane`, { lane, reason: reason ?? null }),
+  /** Mark a row's issue (a native issue or a Plane item) Not finished with what is left, so a merged PR doesn't close it (#841; owners and editors). */
+  hold: (id: string, row: string, reason: string) => call<BoardView>("PUT", `/api/boards/${enc(id)}/rows/${enc(row)}/hold`, { reason }),
+  /** Take the mark off: the issue closes now if a PR that names it has merged. */
+  release: (id: string, row: string) => call<BoardView>("DELETE", `/api/boards/${enc(id)}/rows/${enc(row)}/hold`),
   /** The drawer's reads, through the routes the Issues page and the forge blocks use: a native issue, a mirrored item's body and comments, a PR's checks. */
   issue: (id: string) => call<NativeIssue>("GET", `/api/issues/${enc(id)}`),
   content: (item: string) => call<ForgeContent>("GET", `/api/forge/items/${enc(item)}/content`),

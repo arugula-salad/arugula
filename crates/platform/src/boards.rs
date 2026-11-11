@@ -37,7 +37,7 @@
 //! areas): named, ordered sections, made, renamed, moved and deleted by
 //! people and agents alike, with a row's group and its place in it changed
 //! by a move. A read answers them as `groups`, with each row's `group`, and
-//! a row's `marks` say what its lane doesn't: `merged_not_closed`, `cancelled`, `after`
+//! a row's `marks` say what its lane doesn't: `not_finished`, `cancelled`, `after`
 //! another open PR it is stacked on, and `earlier` agents that were
 //! replaced. A row's primary item is an issue or a PR (its pointer); a PR, an
 //! agent block or a run goes with it as a `work` attachment, a run or a link
@@ -103,6 +103,7 @@ use axum::{
 };
 
 use crate::db::boards_docs as db_docs;
+use crate::db::item_holds::Hold;
 use crate::{
     Platform,
     auth::{Machine, Person},
@@ -131,6 +132,7 @@ pub mod asks;
 pub mod auto;
 pub mod docs;
 pub mod epics;
+pub mod holds;
 pub mod lanes;
 pub mod refs;
 pub mod relations;
@@ -706,6 +708,11 @@ struct Facts {
     /// By `iss_` and `fi_` id: the sessions started on it, oldest first
     /// (Arugula #843).
     sessions: HashMap<String, Vec<wire::RowSession>>,
+    /// By `iss_` and `fi_` id: the tickets of the project marked Not
+    /// finished (Arugula #841).
+    holds: HashMap<String, Hold>,
+    /// By `iss_` and `fi_` id of a hold: who marked it, as a reader is told.
+    held_by: HashMap<String, String>,
 }
 
 /// The facts for `ids`, in `project`; `blocks` is what [`block_states`] found.
@@ -737,6 +744,7 @@ fn facts(app: &Platform, project: &str, ids: &Ids, blocks: &Blocks) -> Result<Fa
         f.by_id.insert(i.id, fact);
     }
     f.after = app.db.stacked_on(project, &found)?.into_iter().collect();
+    f.holds = app.db.holds(project)?.into_iter().map(|h| (h.item.clone(), h)).collect();
     let issues: Vec<&str> = ids.issues.iter().map(String::as_str).collect();
     for i in app.db.issue_states(project, &issues)? {
         f.by_id.insert(i.id, Fact::Issue { category: i.category, review: false });
@@ -758,6 +766,47 @@ fn facts(app: &Platform, project: &str, ids: &Ids, blocks: &Blocks) -> Result<Fa
         f.blocks.insert(k.clone(), Fact::Block { closed });
     }
     Ok(f)
+}
+
+/// Say who marked each hold in `facts`: the person's login or name, or their
+/// agent on its machine.
+async fn name_holds(app: &Platform, facts: &mut Facts) -> Result<(), ApiError> {
+    if facts.holds.is_empty() {
+        return Ok(());
+    }
+    let mut accounts: Vec<String> = facts.holds.values().map(|h| h.by.clone()).filter(|a| !a.is_empty()).collect();
+    accounts.sort();
+    accounts.dedup();
+    let mut people = HashMap::new();
+    if !accounts.is_empty() {
+        for (a, p) in app.cache.accounts(&*app.hub, &accounts).await? {
+            people.insert(a, if p.login.is_empty() { p.name } else { p.login });
+        }
+    }
+    let mut machines: Vec<String> = facts.holds.values().filter_map(|h| h.by_agent.clone()).collect();
+    machines.sort();
+    machines.dedup();
+    let mut named = HashMap::new();
+    if !machines.is_empty() {
+        for (m, d) in crate::grants::agent_names(app, &machines).await? {
+            named.insert(m, d.name);
+        }
+    }
+    for h in facts.holds.values() {
+        let person = people.get(&h.by).filter(|n| !n.is_empty());
+        let by = match (&h.by_agent, person) {
+            (Some(m), Some(p)) => {
+                format!("{p}'s agent on {}", named.get(m).filter(|n| !n.is_empty()).map_or("a machine", |n| n))
+            }
+            (Some(m), None) => {
+                format!("an agent on {}", named.get(m).filter(|n| !n.is_empty()).map_or("a machine", |n| n))
+            }
+            (None, Some(p)) => p.clone(),
+            (None, None) => "someone who left".to_owned(),
+        };
+        facts.held_by.insert(h.item.clone(), by);
+    }
+    Ok(())
 }
 
 /// A session as a row shows it. It is live while its turn is under way
@@ -820,7 +869,9 @@ struct Assessed {
     lane: wire::Lane,
     /// On a Done row.
     proof: Option<wire::Proof>,
-    merged_not_closed: bool,
+    /// The row's `not_finished` mark ([`lanes::not_finished`]): whether a PR
+    /// of the row merged, when its issue is held or merged and open.
+    not_finished: Option<bool>,
     /// The primary issue is canceled: Done, never proven.
     cancelled: bool,
 }
@@ -839,13 +890,14 @@ fn assess(pointer: &wire::Pointer, attached: &[Attach<'_>], facts: &Facts) -> As
     let mut seen: Vec<Fact> = work.iter().map(|(_, f)| *f).collect();
     seen.extend(facts.sessions_of(pointer).iter().map(|s| Fact::Session { live: s.live }));
     let lane = lanes::lane(primary, &seen);
-    let merged_not_closed = lanes::merged_not_closed(primary, &seen);
+    let held = matches!(pointer, wire::Pointer::Issue { id } | wire::Pointer::ForgeItem { id } if facts.holds.contains_key(id));
+    let not_finished = lanes::not_finished(primary, &seen, held);
     let cancelled = lanes::cancelled(primary);
     if lane != wire::Lane::Done || !counted {
-        return Assessed { lane, proof: None, merged_not_closed, cancelled };
+        return Assessed { lane, proof: None, not_finished, cancelled };
     }
     let evidence = attached.iter().find(|(r, ..)| *r == wire::AttachRole::Proof).map(|(_, p, _)| *p);
-    Assessed { lane, proof: lanes::proof((pointer, item.as_ref()), &work, evidence), merged_not_closed, cancelled }
+    Assessed { lane, proof: lanes::proof((pointer, item.as_ref()), &work, evidence), not_finished, cancelled }
 }
 
 /// How far a row's derived lane can be trusted, from its blocks' reports
@@ -887,7 +939,7 @@ fn forget_stale(app: &Platform, board: &str, row: &str, derived: wire::Lane, set
 }
 
 /// A row's marks (see [`wire::Mark`]), from what [`assess`] found:
-/// `merged_not_closed`; `cancelled`; `after` the
+/// `not_finished` (with its reason, when held); `cancelled`; `after` the
 /// first open PR of the row (its own, then those attached) that is stacked
 /// on another, with the repo as `repo_of` says it; the `blocked` marks of
 /// its item's open blockers ([`relations`]); `stalled` when [`stall_of`]
@@ -902,8 +954,17 @@ fn marks_of(
     repo_of: &dyn Fn(&wire::Pointer) -> Option<String>,
 ) -> Vec<wire::Mark> {
     let mut marks = vec![];
-    if assessed.merged_not_closed {
-        marks.push(wire::Mark::MergedNotClosed);
+    if let Some(merged) = assessed.not_finished {
+        let hold = match pointer {
+            wire::Pointer::Issue { id } | wire::Pointer::ForgeItem { id } => facts.holds.get(id).map(|h| (id, h)),
+            _ => None,
+        };
+        marks.push(wire::Mark::NotFinished {
+            reason: hold.map(|(_, h)| h.reason.clone()),
+            merged,
+            by: hold.and_then(|(id, _)| facts.held_by.get(id).cloned()),
+            at: hold.map(|(_, h)| h.at),
+        });
     }
     if assessed.cancelled {
         marks.push(wire::Mark::Cancelled);
@@ -1206,7 +1267,8 @@ async fn read(app: &Platform, account: &str, id: &str) -> Result<wire::BoardView
     );
     let live = chips(app, account, &project, &ids).await?;
     let blocks = block_states(app, &project, &ids.blocks).await?;
-    let facts = facts(app, &project, &ids, &blocks)?;
+    let mut facts = facts(app, &project, &ids, &blocks)?;
+    name_holds(app, &mut facts).await?;
     let (now, minutes) = (now_ms(), app.db.stall_minutes(&project, wire::STALL_MINUTES_DEFAULT)?);
     // One label call for the board: the machines of its Docs and blocks
     // that the reader is told of only if they may reach them.

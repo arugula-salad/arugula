@@ -334,7 +334,7 @@ async fn merged_isnt_done_until_the_issue_closes() {
     check(&app, 88, "h_fix", "build", "completed", Some("success"));
     let v = read(&base, "bob", &id).await;
     assert_eq!(on(&v, &login).0, "lane_review", "merged is not done: {v}");
-    assert_eq!(on(&v, &login).1["marks"], json!([{ "kind": "merged_not_closed" }]), "{v}");
+    assert_eq!(on(&v, &login).1["marks"], json!([{ "kind": "not_finished", "merged": true }]), "{v}");
     assert!(on(&v, &login).1.get("proof").is_none(), "{v}");
     assert_eq!(v["board"]["progress"], json!({ "done": 0, "total": 1, "proven": 0, "review": 1, "doing": 0 }), "{v}");
 
@@ -391,7 +391,11 @@ async fn a_stacked_pr_is_after_the_one_below() {
     app.db.c().execute("UPDATE forge_items SET head_ref = 'feat/low' WHERE id = 'fi_low'", params![]).unwrap();
     app.db.c().execute("UPDATE forge_items SET state = 'merged' WHERE id = 'fi_a1'", params![]).unwrap();
     let v = read(&base, "bob", &id).await;
-    assert_eq!(on(&v, &login).1["marks"], json!([{ "kind": "merged_not_closed" }]), "the upper PR merged: {v}");
+    assert_eq!(
+        on(&v, &login).1["marks"],
+        json!([{ "kind": "not_finished", "merged": true }]),
+        "the upper PR merged: {v}"
+    );
     app.db.c().execute("UPDATE forge_items SET state = 'open' WHERE id = 'fi_a1'", params![]).unwrap();
     app.db.c().execute("UPDATE forge_items SET repo_id = 88 WHERE id = 'fi_low'", params![]).unwrap();
     let v = read(&base, "bob", &id).await;

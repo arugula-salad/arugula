@@ -3048,6 +3048,22 @@ note = "Asks a member of the project a question on a row (Arugula #367): owners 
 
 [[route]]
 method = "PUT"
+path = "/api/boards/{id}/rows/{row}/hold"  # wire::boards::BOARD_ROW_HOLD
+process = "platform"
+auth = "session"
+clients = ["page", "native"]
+note = "Marks the row's issue Not finished with a reason of 1 to 200 characters (Arugula #841): owners and editors. A merged PR that names the issue then doesn't close it (a native issue or a Plane item), and the row stays in Review. Only a row whose item is a native issue or a Plane item (422)."
+
+[[route]]
+method = "DELETE"
+path = "/api/boards/{id}/rows/{row}/hold"  # wire::boards::BOARD_ROW_HOLD
+process = "platform"
+auth = "session"
+clients = ["page", "native"]
+note = "Takes the Not finished mark off the row's issue (owners and editors); the issue closes now if a PR that names it has already merged. Not marked: nothing changes."
+
+[[route]]
+method = "PUT"
 path = "/api/boards/{id}/rows/{row}/lane"  # wire::boards::BOARD_ROW_LANE
 process = "platform"
 auth = "session"
@@ -3511,6 +3527,22 @@ process = "platform"
 auth = "daemon"
 clients = ["daemon"]
 note = "Asks a person of the project a question on a row (`boards.write`); it says an agent asked. It reads the answer from the board: there is no route for an agent to answer."
+
+[[route]]
+method = "PUT"
+path = "/api/daemon/boards/{id}/rows/{row}/hold"  # wire::boards::AGENT_BOARD_ROW_HOLD
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "Marks the row's issue Not finished with what is left (`boards.write`), so a merged PR doesn't close it; it says an agent marked it."
+
+[[route]]
+method = "DELETE"
+path = "/api/daemon/boards/{id}/rows/{row}/hold"  # wire::boards::AGENT_BOARD_ROW_HOLD
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "Takes the Not finished mark off the row's issue (`boards.write`); the issue closes now if a PR that names it has already merged."
 
 [[route]]
 method = "POST"

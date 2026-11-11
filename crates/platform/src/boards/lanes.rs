@@ -28,8 +28,12 @@
 //! `cancelled` mark, whatever merged.
 //!
 //! Merged isn't done (decision 7): a PR that merged while its issue is open
-//! leaves the row in Review, marked `merged_not_closed`
-//! ([`merged_not_closed`]), until the issue is closed. A closed block no
+//! leaves the row in Review ([`merged_not_closed`]), marked `not_finished`
+//! with no reason ([`not_finished`]), until the issue is closed. A person or
+//! an agent can hold the issue with a reason (Arugula #841): a merge then
+//! doesn't close it, the same mark carries the reason, and a held issue
+//! with nothing merged keeps the lane its work gives it. A hold on a closed
+//! issue is ignored. A closed block no
 //! longer counts toward Doing, so a replaced agent leaves the row where the
 //! work puts it.
 //! **Proven** is a mark on a Done row: by CI when the primary PR or an
@@ -183,6 +187,21 @@ pub fn merged_not_closed(primary: Primary<'_>, attached: &[Fact]) -> bool {
     }
     let merged = |f: &Fact| matches!(f, Fact::Pr(Pr::Merged { .. }));
     attached.iter().any(merged) && !attached.iter().any(|f| matches!(f, Fact::Pr(Pr::Open)))
+}
+
+/// The row's `not_finished` mark: `Some(merged)` when its issue is held
+/// (`held`, Arugula #841) or merged and still open with no hold, `merged`
+/// saying a PR of the row merged. None for a closed issue, whatever its
+/// hold, and for a row whose primary isn't an issue.
+pub fn not_finished(primary: Primary<'_>, attached: &[Fact], held: bool) -> Option<bool> {
+    let Primary::Item(Some(Fact::Issue { category, .. })) = primary else { return None };
+    if category.is_done() {
+        return None;
+    }
+    if held {
+        return Some(attached.iter().any(|f| matches!(f, Fact::Pr(Pr::Merged { .. }))));
+    }
+    merged_not_closed(primary, attached).then_some(true)
 }
 
 /// Whether a Done row is proven, and how. `item`: the primary pointer and its
@@ -392,6 +411,32 @@ mod tests {
     }
 
     /// Only completed and canceled are Done; every other category is open.
+    /// The mark `not_finished` (Arugula #841): held or merged and open; a
+    /// hold keeps a merged row in Review and a closed one Done.
+    #[test]
+    fn a_hold_marks_the_row_and_a_merge_leaves_it_in_review() {
+        let open = Fact::Issue { category: Category::Unstarted, review: false };
+        let closed = Fact::Issue { category: Category::Completed, review: false };
+        let nf = |p: &Fact, a: &[Fact], held| not_finished(Primary::Item(Some(p)), a, held);
+        // Held and merged: Review, merged.
+        assert_eq!(lane(Primary::Item(Some(&open)), &[MERGED]), Lane::Review);
+        assert_eq!(nf(&open, &[MERGED], true), Some(true));
+        // Not held, merged and open: the same mark, no reason to come.
+        assert_eq!(nf(&open, &[MERGED], false), Some(true));
+        // Held with nothing merged: the lane the work gives, marked not merged.
+        assert_eq!(lane(Primary::Item(Some(&open)), &[LIVE_BLOCK]), Lane::Doing);
+        assert_eq!(nf(&open, &[LIVE_BLOCK], true), Some(false));
+        assert_eq!(nf(&open, &[], true), Some(false));
+        assert_eq!(nf(&open, &[], false), None);
+        assert_eq!(nf(&open, &[MERGED, OPEN_PR], false), None, "another PR is open: Review for that");
+        assert_eq!(nf(&open, &[MERGED, OPEN_PR], true), Some(true));
+        // Held and closed: Done, no mark.
+        assert_eq!(lane(Primary::Item(Some(&closed)), &[MERGED]), Lane::Done);
+        assert_eq!(nf(&closed, &[MERGED], true), None);
+        assert_eq!(not_finished(Primary::Note, &[MERGED], true), None);
+        assert_eq!(not_finished(Primary::Item(Some(&MERGED)), &[], true), None, "only an issue is held");
+    }
+
     #[test]
     fn completed_and_canceled_are_done_and_the_rest_are_not() {
         use Category::*;

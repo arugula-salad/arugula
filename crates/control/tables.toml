@@ -1118,6 +1118,17 @@ note = "It stops naming the account as who connected it. A connection of a proje
 seen_by = ["litestream"]
 
 [[table]]
+name = "item_holds"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "Each native issue or Plane item marked Not finished (#841), by project and item id: the reason (what is left), who marked it (an account, and the machine of the agent that did) and when. While a row is here a merged PR doesn't close the ticket."
+why_asleep = "A merge closes its tickets, or leaves a held one open, whether or not any machine is up."
+with_account = "partly"
+note = "A project that went with the account takes its holds with it. A hold the account made in a project that stays keeps the account's id as who marked it."
+seen_by = ["litestream"]
+
+[[table]]
 name = "tracker_merge_closes"
 plane = "platform"
 process = "platform"

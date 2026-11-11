@@ -25,6 +25,9 @@
 //!   [`ATTEMPTS`] times; then the job ends `failed` with its error in
 //!   `platform_jobs`. A retry reads the item first, so one whose move did
 //!   land (a crash before the job was marked done) sends nothing.
+//! - **Not finished** (#841): an item marked so ([`crate::db::item_holds`])
+//!   isn't moved, and the move isn't queued. Taking the mark off queues it
+//!   again for a PR that merged, once ([`queue_released`]).
 //! - **Once.** A redelivered webhook or a second pass over the PR queues the
 //!   same job id, which is refused; and a moved item is left alone.
 
@@ -74,6 +77,15 @@ pub fn queue(db: &Db, pr: &str, to: &Move) -> anyhow::Result<bool> {
     db.enqueue_job(&id, JobKind::PlaneDone, &serde_json::to_value(to)?, now_ms(), now_ms())
 }
 
+/// Queue `to` again for a PR whose move a Not finished mark held back
+/// (Arugula #841), now that the mark came off at `at`: its job id has the
+/// time, so the one a held merge ended is no bar. A move that already
+/// happened is left alone by the step, as for any retry.
+pub fn queue_released(db: &Db, pr: &str, to: &Move, at: u64) -> anyhow::Result<bool> {
+    let id = format!("planedone:{pr}:{}:{}:released:{at}", to.connection, to.number);
+    db.enqueue_job(&id, JobKind::PlaneDone, &serde_json::to_value(to)?, now_ms(), now_ms())
+}
+
 /// Whether Plane's state group is one that is left alone.
 fn finished(group: &str) -> bool {
     matches!(group, "completed" | "cancelled")
@@ -98,6 +110,10 @@ impl Moves {
         let Some(t) = db.tracker_target(&m.project, &reference)?.filter(|t| t.connection_id == c.id) else {
             return Ok(Step::Done);
         };
+        // Held while the move waited: the mark's release queues it again.
+        if db.hold_of(&m.project, &t.id)?.is_some() {
+            return Ok(Step::Done);
+        }
         if db.tracker_item_group(&c.id, &t.source_item_id)?.is_some_and(|g| finished(&g)) {
             return Ok(Step::Done);
         }

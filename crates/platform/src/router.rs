@@ -122,6 +122,11 @@ fn routes() -> Routes {
         .route(boards::BOARD_ROW_LANE, put(crate::boards::set_lane_route))
         .route(boards::BOARD_ASK_ANSWER, post(crate::boards::asks::answer_route))
         .route(boards::AGENT_BOARD_ROW_ASK, post(crate::boards::agent::ask))
+        .route(
+            boards::BOARD_ROW_HOLD,
+            put(crate::boards::holds::hold_route).delete(crate::boards::holds::release_route),
+        )
+        .route(boards::AGENT_BOARD_ROW_HOLD, put(crate::boards::agent::hold).delete(crate::boards::agent::release))
         .route(boards::AGENT_PROJECT_RELATIONS, post(crate::boards::agent::relate))
         .route(boards::AGENT_PROJECT_RELATIONS_BATCH, post(crate::boards::agent::link))
         .route(boards::AGENT_PROJECT_RELATION, axum::routing::delete(crate::boards::agent::unrelate))

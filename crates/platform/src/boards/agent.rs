@@ -245,6 +245,28 @@ pub async fn ask(
     Ok(Json(super::asks::ask(&app, actor(&d), &id, &row, &n).await?))
 }
 
+/// `PUT /api/daemon/boards/{id}/rows/{row}/hold`: mark the row's issue Not
+/// finished; the mark says an agent made it.
+pub async fn hold(
+    State(app): State<Arc<Platform>>,
+    d: Machine,
+    Path((id, row)): Path<(String, String)>,
+    Json(h): Json<wire::HoldRow>,
+) -> J<wire::BoardView> {
+    app.limits.check_daemon(AGENT_BOARD_WRITES, &d.daemon)?;
+    Ok(Json(super::holds::hold(&app, actor(&d), &id, &row, &h).await?))
+}
+
+/// `DELETE /api/daemon/boards/{id}/rows/{row}/hold`: take the mark off.
+pub async fn release(
+    State(app): State<Arc<Platform>>,
+    d: Machine,
+    Path((id, row)): Path<(String, String)>,
+) -> J<wire::BoardView> {
+    app.limits.check_daemon(AGENT_BOARD_WRITES, &d.daemon)?;
+    Ok(Json(super::holds::release(&app, actor(&d), &id, &row).await?))
+}
+
 /// `POST /api/daemon/projects/{project}/relations`: relate two items of the
 /// project (`issues.write` over it); the edge says an agent made it.
 pub async fn relate(

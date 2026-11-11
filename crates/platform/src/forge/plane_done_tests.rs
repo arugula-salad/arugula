@@ -310,3 +310,86 @@ async fn an_item_a_person_reopened_is_not_closed_again() {
     assert_eq!(w.run(now()).await, 1);
     assert_eq!(w.fake.sent().len(), 4);
 }
+
+/// A Plane item marked Not finished (Arugula #841) is not moved by a merge
+/// that names it, and no job is queued; its row stays in Review marked with
+/// the reason. Taking the mark off sends the move to Done for the PR that
+/// merged, once; a release with nothing merged sends nothing.
+#[tokio::test]
+async fn a_held_plane_item_is_not_moved_and_moves_when_released() {
+    use arugula_control_wire::boards::board_row_hold;
+    let w = start().await;
+    let (second, third) = (w.row(2), w.row(1));
+    let v = add(&w.base, &w.board, fi(&second)).await;
+    let row = on(&v, &second).1["id"].as_str().unwrap().to_owned();
+    let v = add(&w.base, &w.board, fi(&third)).await;
+    let other = on(&v, &third).1["id"].as_str().unwrap().to_owned();
+    let path = board_row_hold(&w.board, &row);
+
+    let (s, v) = call(&w.base, "bob", "PUT", &path, Some(json!({ "reason": "verify on staging" }))).await;
+    assert_eq!(s, 200, "{v}");
+    assert_eq!(on(&v, &second).1["marks"][0]["reason"], "verify on staging", "{v}");
+
+    // Merged naming both: only the unheld one is moved.
+    w.merge(70, "ARUGU-2 and ARUGU-1: plumbing", true).await;
+    assert_eq!(w.jobs().len(), 1, "no job for the held item");
+    assert_eq!(w.run(now()).await, 1);
+    assert_eq!(w.group(2).as_deref(), Some("started"), "held: still open");
+    assert_eq!(w.group(1).as_deref(), Some("completed"));
+    assert_eq!(w.fake.sent().iter().filter(|m| m.kind == "state").count(), 1);
+    let v = read(&w.base, "bob", &w.board).await;
+    assert_eq!(on(&v, &second).0, "lane_review", "{v}");
+    assert_eq!(on(&v, &second).1["marks"][0]["merged"], true, "{v}");
+    let _ = other;
+
+    // Released: queued, and the move to Done lands, naming the PR.
+    let (s, v) = call(&w.base, "bob", "DELETE", &path, None).await;
+    assert_eq!(s, 200, "{v}");
+    assert_eq!(w.jobs().len(), 2);
+    assert_eq!(w.run(now()).await, 1);
+    assert_eq!(w.group(2).as_deref(), Some("completed"));
+    let sent = w.fake.sent();
+    let html = sent.last().unwrap().html.as_deref().unwrap();
+    assert!(html.contains("acme/site#70 merged"), "{html}");
+    let v = read(&w.base, "bob", &w.board).await;
+    assert_eq!(on(&v, &second).0, "lane_done", "{v}");
+
+    // A release again, or with nothing merged: nothing queued.
+    call(&w.base, "bob", "DELETE", &path, None).await;
+    assert_eq!(w.jobs().len(), 2);
+}
+
+/// A hold set while a move is already queued stops it when it runs, and a
+/// release with nothing merged queues nothing.
+#[tokio::test]
+async fn a_hold_stops_a_queued_move_and_a_release_with_no_merge_sends_nothing() {
+    use arugula_control_wire::boards::board_row_hold;
+    let w = start().await;
+    let second = w.row(2);
+    let v = add(&w.base, &w.board, fi(&second)).await;
+    let row = on(&v, &second).1["id"].as_str().unwrap().to_owned();
+    let path = board_row_hold(&w.board, &row);
+
+    w.merge(71, "ARUGU-2: plumbing", true).await;
+    assert_eq!(w.jobs().len(), 1);
+    let (s, _) = call(&w.base, "bob", "PUT", &path, Some(json!({ "reason": "one more check" }))).await;
+    assert_eq!(s, 200);
+    assert_eq!(w.run(now()).await, 1);
+    assert!(w.fake.sent().is_empty(), "held when the job ran: {:?}", w.fake.sent());
+    assert_eq!(w.group(2).as_deref(), Some("started"));
+
+    // The job ended with the move skipped, so the release queues one of its own.
+    call(&w.base, "bob", "DELETE", &path, None).await;
+    assert_eq!(w.run(now()).await, 1);
+    assert_eq!(w.group(2).as_deref(), Some("completed"));
+
+    // A different item with nothing merged.
+    let third = w.row(1);
+    let v = add(&w.base, &w.board, fi(&third)).await;
+    let row = on(&v, &third).1["id"].as_str().unwrap().to_owned();
+    let path = board_row_hold(&w.board, &row);
+    call(&w.base, "bob", "PUT", &path, Some(json!({ "reason": "wait" }))).await;
+    call(&w.base, "bob", "DELETE", &path, None).await;
+    assert_eq!(w.jobs().len(), 2, "nothing queued");
+    assert_eq!(w.group(1).as_deref(), Some("backlog"));
+}
