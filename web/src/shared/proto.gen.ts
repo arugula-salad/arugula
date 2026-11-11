@@ -5420,7 +5420,12 @@ question: string | null, pr: string | null, merged_at: number | null,
 /**
  * Why it failed or stopped.
  */
-reason: string | null, created_at: number, updated_at: number, };
+reason: string | null, 
+/**
+ * The latest error its box reported since a turn last pushed its
+ * branch, such as a failed push (Arugula #859).
+ */
+error?: string | null, created_at: number, updated_at: number, };
 
 /**
  * [`PROJECT_SESSION_SETTINGS`]: "agents use model …" (Arugula #215), one

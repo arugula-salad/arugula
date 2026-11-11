@@ -305,6 +305,26 @@ fn pushed_in(events: &[Event]) -> bool {
     events.iter().any(|e| e.kind == Kind::Turn && detail(e).pushed == Some(true))
 }
 
+/// The latest error its box reported since a turn last pushed its branch
+/// (Arugula #859): why a branch isn't pushed, say, when its finish step's
+/// push failed. Its start, at most [`ERROR_MAX`] characters.
+pub(crate) fn error_since_push(events: &[Event]) -> Option<String> {
+    let e = events
+        .iter()
+        .rev()
+        .take_while(|e| !(e.kind == Kind::Turn && detail(e).pushed == Some(true)))
+        .find(|e| e.kind == Kind::Error)
+        .and_then(|e| detail(e).error)
+        .filter(|e| !e.trim().is_empty())?;
+    Some(match e.char_indices().nth(ERROR_MAX) {
+        Some((i, _)) => format!("{}…", &e[..i]),
+        None => e,
+    })
+}
+
+/// How much of an error [`error_since_push`] keeps.
+const ERROR_MAX: usize = 400;
+
 /// Why it ended, or why it's queued again (its box was rebuilt).
 pub(crate) fn reason_of(s: &AgentSession, events: &[Event]) -> Option<String> {
     let again = s.state == State::Queued && s.last_seq > 1;

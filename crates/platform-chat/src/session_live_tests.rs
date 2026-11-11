@@ -286,3 +286,28 @@ async fn a_quiet_boxs_session_stops_responding_when_its_job_looks() {
     b0x.say(&app, &s.id, Kind::Heartbeat, None, json!({})).await;
     assert_eq!(call(&base, "a", "GET", &path, None).await.1["card"]["state"], json!("working"));
 }
+
+/// A push that failed shows until a later turn pushes (Arugula #859).
+#[test]
+fn the_error_since_its_last_push_shows() {
+    let ev = |seq: u64, kind: Kind, detail: Value| Event {
+        session: "ses_1".into(),
+        seq,
+        kind,
+        from: Some(State::Working),
+        to: State::Done,
+        at: seq,
+        detail: detail.to_string(),
+        daemon: None,
+        daemon_n: None,
+        sig: None,
+    };
+    let full = ev(2, Kind::Error, json!({ "error": "couldn't push b: No space left on device" }));
+    let mut events =
+        vec![ev(1, Kind::Turn, json!({ "pushed": true })), full, ev(3, Kind::Turn, json!({ "pushed": false }))];
+    assert_eq!(error_since_push(&events).as_deref(), Some("couldn't push b: No space left on device"));
+    events.push(ev(4, Kind::Turn, json!({ "pushed": true })));
+    assert_eq!(error_since_push(&events), None, "a later push clears it");
+    let long = vec![ev(1, Kind::Error, json!({ "error": "é".repeat(500) }))];
+    assert_eq!(error_since_push(&long).unwrap().chars().count(), 401, "its start, cut");
+}

@@ -1203,6 +1203,13 @@
           "minimum": 0,
           "type": "integer"
         },
+        "error": {
+          "description": "The latest error its box reported since a turn last pushed its\nbranch, such as a failed push (Arugula #859).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "head": {
           "description": "HEAD after its latest turn, and when a turn last pushed the branch.",
           "type": [

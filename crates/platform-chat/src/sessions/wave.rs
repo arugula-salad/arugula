@@ -61,7 +61,7 @@ use crate::{
     },
     forge::links::membership,
     grants::{AgentScope, agent_may, owner_reads},
-    session_live::{detail, last_turn, reason_of},
+    session_live::{detail, error_since_push, last_turn, reason_of},
 };
 
 type J<T> = Result<Json<T>, ApiError>;
@@ -239,6 +239,7 @@ impl Seen {
             pr: s.pr.clone(),
             merged_at: s.merged_at,
             reason: reason_of(s, events),
+            error: error_since_push(events),
             created_at: s.created_at,
             updated_at: s.updated_at,
         })
