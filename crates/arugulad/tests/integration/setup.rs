@@ -66,6 +66,10 @@ fn use_claude_code_installs_the_hooks_and_says_where() {
 /// files, which the daemon read when it started. "Use Claude Code with
 /// Arugula" reads them again when what it kept has no Node new enough,
 /// instead of saying to install the Node that's there.
+// Linux only: a macOS login shell runs path_helper (/etc/profile), which
+// puts the system's own directories, and any Node in them, ahead of the
+// test's, so its old Node isn't the one found first.
+#[cfg(target_os = "linux")]
 #[test]
 fn use_claude_code_finds_node_installed_after_the_daemon_started() {
     assert!(Command::new(env!("CARGO")).args(["build", "-q", "-p", "arugula"]).status().unwrap().success());
