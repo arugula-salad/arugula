@@ -883,6 +883,10 @@ pub struct TrackerConnection {
     /// turned off; off, the boards stay and stop following.
     #[serde(default = "yes")]
     pub epics_as_boards: bool,
+    /// Whether a merged PR that names an item moves it to Done (#852). On
+    /// unless turned off.
+    #[serde(default = "yes")]
+    pub close_on_merge: bool,
 }
 
 fn yes() -> bool {
@@ -938,6 +942,9 @@ pub struct TrackerSettings {
     /// Whether each open epic has a board that follows it.
     #[serde(default)]
     pub epics_as_boards: Option<bool>,
+    /// Whether a merged PR moves the items it names to Done.
+    #[serde(default)]
+    pub close_on_merge: Option<bool>,
 }
 
 impl std::fmt::Debug for TrackerSettings {
@@ -948,6 +955,7 @@ impl std::fmt::Debug for TrackerSettings {
             .field("attribution", &self.attribution)
             .field("webhook_secret", &self.webhook_secret.as_ref().map(|_| "<redacted>"))
             .field("epics_as_boards", &self.epics_as_boards)
+            .field("close_on_merge", &self.close_on_merge)
             .finish()
     }
 }
@@ -1026,6 +1034,13 @@ pub const AGENT_TRACKER_WRITES: &str = "/api/daemon/projects/{project}/tracker-w
 /// `GET /api/daemon/trackers/reach`: the projects the machine holds
 /// `trackers.write` over ([`TrackerReach`]).
 pub const AGENT_TRACKER_REACH: &str = "/api/daemon/trackers/reach";
+
+/// `GET /api/daemon/trackers/homes?also=prj_…`: which of the projects the
+/// machine's grants reach hold a Plane connection, by identifier
+/// ([`TrackerHomes`]), so an `IDENT-N` with no project finds its project.
+/// `also` adds one project the owner reads (the default one) even when no
+/// grant names it.
+pub const AGENT_TRACKER_HOMES: &str = "/api/daemon/trackers/homes";
 
 /// [`AGENT_TRACKER_WRITES`] for `project`.
 pub fn agent_tracker_writes(project: &str) -> String {
@@ -1223,6 +1238,23 @@ pub struct TrackerReachProject {
     pub connections: Vec<TrackerReachConnection>,
 }
 
+/// The projects a machine reaches that hold a live Plane connection, and
+/// the identifiers of those.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct TrackerHomes {
+    pub projects: Vec<TrackerHome>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct TrackerHome {
+    pub id: String,
+    pub name: String,
+    /// Its live connections' identifiers, like `ARUGU`.
+    pub identifiers: Vec<String>,
+}
+
 /// A live Plane connection of a project an agent reaches.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -1236,4 +1268,10 @@ pub struct TrackerReachConnection {
     pub agent_writes: String,
     /// Per kind: `allow` or `approve`.
     pub write_policy: TrackerWritePolicy,
+    /// Whether each open epic has a board that follows it (#483).
+    #[serde(default = "yes")]
+    pub epics_as_boards: bool,
+    /// Whether a merged PR moves the items it names to Done (#852).
+    #[serde(default = "yes")]
+    pub close_on_merge: bool,
 }

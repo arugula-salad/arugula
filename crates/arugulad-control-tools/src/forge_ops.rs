@@ -553,6 +553,12 @@ pub(crate) async fn forge_ops(c: &Call<'_>, tool: &str, kind: &str, a: Value) ->
         let i = c.native_issue(&at, a["project"].as_str()).await?;
         a["issue"] = i["id"].clone();
     }
+    if (tool, kind) == ("forge_read", "issue")
+        && let Some(item) = a["item"].as_str()
+        && let Some(p) = super::plane_home::home(c, a["project"].as_str(), &[item]).await?
+    {
+        a["project"] = p.into();
+    }
     let o = op(tool, kind, a, &c.by())?;
     let r = c.forge_op(o.clone(), said).await?;
     let mut out = match r {

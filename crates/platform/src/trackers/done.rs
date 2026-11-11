@@ -7,8 +7,16 @@
 //!   decision, so the connection's write policy (which covers what agents
 //!   write) isn't asked and nothing waits for approval. It is a close as
 //!   completed ([`writes::send`]): the first `completed` state of the Plane
-//!   project, a state change alone, so no comment, body or footer. Whoever
-//!   merged it is who it is for when they are in the project, else Arugula.
+//!   project. Whoever merged it is who it is for when they are in the
+//!   project, else Arugula.
+//! - **Says what closed it** (#852): Plane's log shows only the API key's
+//!   user, so a short comment follows the move, naming the merged PR and
+//!   saying Arugula closed it on merge, with the connection's footer. A
+//!   comment that fails is logged and not retried: the item is closed.
+//! - **A switch, and a rule.** A connection's `close_on_merge` (on unless
+//!   turned off) stops the moves. An item Arugula closed on a merge once
+//!   (`tracker_merge_closes`) is never closed again: a person who moved it
+//!   out of Done meant it.
 //! - **Left alone** once the item is `completed` or `cancelled`: the mirror
 //!   says so, or, when it doesn't, one read of the item from Plane does,
 //!   which also catches a mirror a webhook hasn't caught up.
@@ -29,7 +37,7 @@ use axum::http::StatusCode;
 use futures_util::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tracing::info;
+use tracing::{info, warn};
 
 use super::{TrackerError, connect::ingest_page, writes};
 use crate::{
@@ -83,6 +91,9 @@ impl Moves {
         let Some(c) = db.tracker_connection(&m.project, &m.connection)?.filter(|c| c.unlinked_at.is_none()) else {
             return Ok(Step::Done);
         };
+        if !c.close_on_merge {
+            return Ok(Step::Done);
+        }
         let reference = format!("{}-{}", c.identifier, m.number);
         let Some(t) = db.tracker_target(&m.project, &reference)?.filter(|t| t.connection_id == c.id) else {
             return Ok(Step::Done);
@@ -101,6 +112,8 @@ impl Moves {
                 }
                 return Ok(Step::Done);
             }
+            // Open after Arugula closed it: a person reopened it.
+            Ok(_) if db.tracker_was_merge_closed(&c.id, m.number)? => return Ok(Step::Done),
             Ok(_) => {}
             Err(TrackerError::NotFound) => return Ok(Step::Done),
             Err(e) => bail!("couldn't read {reference} in Plane: {e}"),
@@ -114,7 +127,7 @@ impl Moves {
             None => "Arugula".to_owned(),
         };
         let who = writes::Who { person, agent: None };
-        let close = TrackerWrite::Close { item: t.id, close_as: TrackerClose::Completed };
+        let close = TrackerWrite::Close { item: t.id.clone(), close_as: TrackerClose::Completed };
         let landed = match writes::send(app, &m.project, &c, &close, &who).await {
             Ok(landed) => landed,
             // The item or the connection went while it was sent.
@@ -125,6 +138,12 @@ impl Moves {
             }
             Err(e) => bail!("{}", e.1),
         };
+        db.tracker_merge_closed(&c.id, m.number, now_ms())?;
+        let note =
+            TrackerWrite::Comment { item: t.id.clone(), text: format!("Arugula moved this to Done: {} merged.", m.pr) };
+        if let Err(e) = writes::send(app, &m.project, &c, &note, &who).await {
+            warn!(project = %m.project, connection = %c.id, "couldn't say on {reference} that Arugula closed it: {}", e.1);
+        }
         let state = landed.state.as_deref().unwrap_or("Done");
         let line = format!("moved {reference} to {state}: merged {}", m.pr);
         info!(project = %m.project, connection = %c.id, by = by.as_deref().unwrap_or("Arugula"), "{line}");

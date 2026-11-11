@@ -2193,6 +2193,14 @@ note = "The projects the machine holds `trackers.write` over, as its owner reads
 
 [[route]]
 method = "GET"
+path = "/api/daemon/trackers/homes"  # wire::projects::AGENT_TRACKER_HOMES
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "The projects any grant of the machine reaches that hold a Plane connection, by identifier, so an IDENT-N with no project finds its project."
+
+[[route]]
+method = "GET"
 path = "/api/projects/{project}/workspaces"
 process = "platform"
 auth = "cloud_driver"
