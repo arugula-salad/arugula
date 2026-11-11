@@ -7,7 +7,7 @@
 
 import type { ProjectDocPublic, ProjectDocView } from "../proto";
 import { platformFetch, refusalOf } from "../maintenance";
-import { fromBase64Url, sealParts, snapshotBytes, type Manifest } from "../../shell/doc-link";
+import { fromBase64Url, sealParts, snapshotBytes, type SealManifest } from "./doc-seal";
 import { DocError, projectDocs } from "./store";
 
 /** Where the public viewer is, from `/control.json`'s `doc_viewer` (null
@@ -30,9 +30,9 @@ export const publicUrl = (viewer: string, p: ProjectDocPublic) => `${viewer}/${p
 export const publicBehind = (p: ProjectDocPublic | undefined) => !!p && p.ver > 0 && p.behind;
 
 /** The Doc as a snapshot's manifest and picture bytes. */
-async function snapshotOf(project: string, v: ProjectDocView): Promise<{ manifest: Manifest; blobs: Uint8Array[] }> {
+async function snapshotOf(project: string, v: ProjectDocView): Promise<{ manifest: SealManifest; blobs: Uint8Array[] }> {
   const blobs = await Promise.all(v.assets.map((a) => projectDocs.assetBytes(project, v.doc.id, a.name)));
-  const manifest: Manifest = {
+  const manifest: SealManifest = {
     title: v.doc.title,
     layout: v.doc.layout ?? "doc",
     made: v.doc.created_at,

@@ -4603,6 +4603,34 @@ project: string, id: string,
 machine_name: string | null, };
 
 /**
+ * A team Doc's public link (Arugula #871). The platform keeps its key with
+ * the Doc, and gives it only to those who read the Doc; control holds the
+ * ciphertext and never the key. The URL is `<viewer>/<id>#k=<key>`, the
+ * viewer being `/control.json`'s `doc_viewer`.
+ */
+export type ProjectDocPublic = { 
+/**
+ * The link's id at control: 32 lower-case hex digits.
+ */
+id: string, 
+/**
+ * The link's key, base64url without padding: 32 bytes.
+ */
+key: string, 
+/**
+ * The version control serves; 0 while the first one isn't uploaded.
+ */
+ver: number, 
+/**
+ * When the served version was made (ms); 0 while there is none.
+ */
+updated_at: number, 
+/**
+ * The Doc changed since the served version was sealed.
+ */
+behind: boolean, };
+
+/**
  * One section: pending (`body` null) until it's written.
  */
 export type ProjectDocSection = { 
@@ -4651,46 +4679,6 @@ link: string | null,
  * an agent session, which is never given the key.
  */
 public?: ProjectDocPublic, };
-
-/**
- * A team Doc's public link (Arugula #871). The platform keeps its key with
- * the Doc, and gives it only to those who read the Doc; control holds the
- * ciphertext and never the key. The URL is `<viewer>/<id>#k=<key>`, the
- * viewer being `/control.json`'s `doc_viewer`.
- */
-export type ProjectDocPublic = { 
-/**
- * The link's id at control: 32 lower-case hex digits.
- */
-id: string, 
-/**
- * The link's key, base64url without padding: 32 bytes.
- */
-key: string, 
-/**
- * The version control serves; 0 while the first one isn't uploaded.
- */
-ver: number, 
-/**
- * When the served version was made (ms); 0 while there is none.
- */
-updated_at: number, 
-/**
- * The Doc changed since the served version was sealed.
- */
-behind: boolean, };
-
-/**
- * `PUT` [`PROJECT_DOC_PUBLIC`]: make the link. Empty.
- */
-export type ProjectDocPublicMake = Record<string, never>;
-
-/**
- * `POST` [`PROJECT_DOC_PUBLIC`]: the client put version `ver` to control and
- * it was committed. `rev` is the Doc's rev it sealed, so the page can say
- * when the Doc has moved on. Answered [`PublicLink`].
- */
-export type ProjectDocPublicServed = { ver: number, rev: number, };
 
 /**
  * `PUT` [`PROJECT_DOC`]: what changes. `title` renames it, `layout` lays it out. With `section`,
