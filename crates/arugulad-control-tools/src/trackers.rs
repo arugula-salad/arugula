@@ -257,10 +257,7 @@ async fn write_of(c: &Call<'_>, kind: &str, a: Value) -> Result<(String, Tracker
         | TrackerWrite::Edit { item, .. } => vec![item.as_str()],
         _ => vec![],
     };
-    let project = match super::plane_home::home(c, project.as_deref(), &items).await? {
-        Some(p) => p,
-        None => c.current_project(project.as_deref()).await?,
-    };
+    let project = super::plane_home::home_or_main(c, project.as_deref(), &items).await?;
     Ok((project, write))
 }
 
