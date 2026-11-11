@@ -409,6 +409,11 @@ async fn the_clone_secret_goes_only_to_the_hosts_it_was_set_for() {
     let plan = app.hosted_plan(&project, &id, "hosted-machine-1").await.unwrap().expect("its box");
     assert!(plan.repos.iter().all(|r| r.via == "secret" && r.password.as_deref() == Some("corp-pat-2")));
 
+    // The list says where it's used.
+    let (_, listed) = call(&base, "alice", "GET", &format!("{path}/secrets"), None).await;
+    let hosts = &listed["secrets"].as_array().unwrap().iter().find(|s| s["name"] == "GIT_TOKEN").unwrap()["hosts"];
+    assert_eq!(hosts, &json!(["git.corp.example", "elsewhere.example", "git.corp.example:8443"]));
+
     // One from before secrets were bound: sent nowhere.
     app.db
         .c()
@@ -419,4 +424,9 @@ async fn the_clone_secret_goes_only_to_the_hosts_it_was_set_for() {
         .unwrap();
     let plan = app.hosted_plan(&project, &id, "hosted-machine-1").await.unwrap().expect("its box");
     assert!(plan.repos.iter().all(|r| r.via == "none" && r.password.is_none()), "{:?}", plan.repos);
+    // And the list says so, so the CLI can say to set it again.
+    let (_, listed) = call(&base, "alice", "GET", &format!("{path}/secrets"), None).await;
+    let git = listed["secrets"].as_array().unwrap().iter().find(|s| s["name"] == "GIT_TOKEN").unwrap().clone();
+    assert_eq!(git["hosts"], json!([]), "{listed}");
+    assert!(listed["secrets"].as_array().unwrap().iter().all(|s| s["name"] == "GIT_TOKEN" || s.get("hosts").is_none()));
 }

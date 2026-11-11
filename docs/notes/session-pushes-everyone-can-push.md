@@ -24,7 +24,8 @@ pass it on by replying.
 **A cloud workspace's `GIT_TOKEN`** is used only on the hosts its repos are on when
 the token is set. After adding a repo on another host, set it again with
 `arugula cloud secret set <workspace> GIT_TOKEN`. A token set before this release
-clones nothing until it's set again.
+clones nothing until it's set again: `arugula cloud secret ls <workspace>` says
+which hosts it's used on, or that it must be set again.
 
 **Session slots** start empty for each session, apart from build caches. A slot
 keeps those only for the same person's next session.

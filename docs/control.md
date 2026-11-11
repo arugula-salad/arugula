@@ -167,7 +167,8 @@ cloned with the workspace's `GIT_TOKEN` secret (and `GIT_USERNAME`, else
 the spec's repos when it was set. A repo the spec names later on another
 host (or another port) is cloned with nothing until the secret is set
 again; so is every repo for a `GIT_TOKEN` set before secrets were bound to
-hosts. The daemon hands them to git in its
+hosts. `arugula cloud secret ls` lists the hosts it's used on, or says to
+set it again. The daemon hands them to git in its
 environment for the clone alone, from a file in memory the setup removes as
 it reads it: nothing lands in a repo's config or on the disk. The spec's
 `env` names take their values from the workspace's secrets, for the setup

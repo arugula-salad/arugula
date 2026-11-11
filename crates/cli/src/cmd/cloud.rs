@@ -454,6 +454,12 @@ fn secret(e: &Enrolled, cmd: SecretCmd, json_out: bool) -> anyhow::Result<i32> {
                     "Set {name} on {}: its machine reads it on its next setup.",
                     w["name"].as_str().unwrap_or_default()
                 );
+                if name == "GIT_TOKEN" {
+                    println!(
+                        "It's used only on the hosts the workspace's repos are on now: set it again after adding a \
+                         repo on another host."
+                    );
+                }
             }
         }
         SecretCmd::Ls { workspace, project } => {
@@ -467,7 +473,7 @@ fn secret(e: &Enrolled, cmd: SecretCmd, json_out: bool) -> anyhow::Result<i32> {
                     println!("No secrets.");
                 }
                 for s in names {
-                    println!("{}", s["name"].as_str().unwrap_or_default());
+                    println!("{}", secret_line(&s));
                 }
             }
         }
@@ -477,6 +483,22 @@ fn secret(e: &Enrolled, cmd: SecretCmd, json_out: bool) -> anyhow::Result<i32> {
         }
     }
     Ok(0)
+}
+
+/// A secret as `cloud secret ls` lists it: its name, and for the clone
+/// secret, the hosts it's used on, or that it's used on none until it's set
+/// again (one set before it was bound to hosts, or with no repos in the
+/// spec).
+fn secret_line(s: &Value) -> String {
+    let name = s["name"].as_str().unwrap_or_default();
+    match s["hosts"].as_array() {
+        Some(h) if h.is_empty() => format!("{name} (used on no host: set it again to clone with it)"),
+        Some(h) => {
+            let hosts: Vec<&str> = h.iter().filter_map(Value::as_str).collect();
+            format!("{name} (used on {})", hosts.join(", "))
+        }
+        None => name.to_owned(),
+    }
 }
 
 /// Before a rebuild: ask the box, through the relay, for repos with work
@@ -773,5 +795,16 @@ mod tests {
         assert!(line(&w).ends_with("hw_1  large"), "{}", line(&w));
         let w = json!({ "name": "dev", "state": "ready", "id": "hw_1", "spec": { "size": "small" } });
         assert!(line(&w).ends_with("hw_1"), "{}", line(&w));
+    }
+
+    /// The clone secret says which hosts it's used on, or that it must be
+    /// set again; the rest are their names.
+    #[test]
+    fn secret_lines() {
+        assert_eq!(secret_line(&json!({ "name": "NPM_TOKEN", "store": "sealed" })), "NPM_TOKEN");
+        let used = json!({ "name": "GIT_TOKEN", "store": "sealed", "hosts": ["git.corp.example", "git.example:8443"] });
+        assert_eq!(secret_line(&used), "GIT_TOKEN (used on git.corp.example, git.example:8443)");
+        let none = json!({ "name": "GIT_TOKEN", "store": "sealed", "hosts": [] });
+        assert_eq!(secret_line(&none), "GIT_TOKEN (used on no host: set it again to clone with it)");
     }
 }
