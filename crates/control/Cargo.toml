@@ -76,3 +76,7 @@ hkdf = { workspace = true }
 # The platform page's build too (web/dist-platform, M151), which an
 # in-process platform serves.
 debug-embed = ["rust-embed/debug-embed", "arugula-platform-api/debug-embed"]
+# A staging control for the load test (#530, `src/loadtest.rs`): the
+# generators' addresses skip the per-address limits, and it starts only at a
+# staging URL. Never in a release build.
+loadtest = ["arugula-control-common/loadtest"]

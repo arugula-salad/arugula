@@ -80,6 +80,8 @@ mod limit;
 mod links;
 #[cfg(test)]
 mod links_wire;
+#[cfg(feature = "loadtest")]
+mod loadtest;
 #[cfg(test)]
 mod machine_rename_wire;
 mod mail;
@@ -747,6 +749,22 @@ impl Routes {
     }
 }
 
+/// The rate limits' counter. A load-test build (#530) leaves the
+/// generators' addresses out of the per-address limits, and starts only at
+/// a staging URL (`loadtest.rs`).
+fn limits(proxy_header: Option<String>, sites: &[Site]) -> anyhow::Result<limit::Limits> {
+    let l = limit::Limits::new(proxy_header);
+    #[cfg(feature = "loadtest")]
+    let l = {
+        let ips = loadtest::exempt(sites, std::env::var(loadtest::EXEMPT).ok().as_deref())?;
+        tracing::warn!(?ips, "a load-test build (#530): these addresses skip the per-address limits");
+        l.exempt(ips)
+    };
+    #[cfg(not(feature = "loadtest"))]
+    let _ = sites;
+    Ok(l)
+}
+
 pub fn router(app: Arc<App>) -> Router {
     // The platform's routes: in process behind the gate that says who's
     // asking, or forwarded to it (M140); either way behind the maintenance
@@ -976,7 +994,22 @@ pub fn main(platforms: Box<dyn Platforms>) -> anyhow::Result<()> {
     if argv.peek().is_some_and(|a| a == "platform") {
         return platforms.window("arugula-control platform", argv.skip(1).collect());
     }
-    tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(run(platforms))
+    tokio::runtime::Builder::new_multi_thread().worker_threads(workers()).enable_all().build()?.block_on(run(platforms))
+}
+
+/// The runtime's worker threads: the machine's cores, and never fewer than
+/// four (#530). A database call blocks the thread it runs on (SQLite behind
+/// one lock, a sync to disk each write), so with one thread per core, on
+/// the hosted one's single vCPU a burst of sign-ups and joins stalled every
+/// relay socket and the health check behind it. With more threads than
+/// cores, the others carry on while one waits for the disk.
+/// `ARUGULA_CONTROL_WORKERS` sets it outright.
+fn workers() -> usize {
+    std::env::var("ARUGULA_CONTROL_WORKERS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .filter(|n| *n > 0)
+        .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()).max(4))
 }
 
 /// The hub's command line: its own flags and the platform's (#314).
@@ -1102,6 +1135,7 @@ async fn run(platforms: Box<dyn Platforms>) -> anyhow::Result<()> {
         .chain(also_urls.iter().map(String::as_str))
         .map(Site::new)
         .collect::<anyhow::Result<_>>()?;
+    let limits = limits(a.trust_proxy_header.clone(), &sites)?;
     // DK3: passkeys from before the passkey log go into it, once per
     // account. Which site each was made at wasn't kept, so their RP is
     // each of control's sites (the one whose hash an assertion carries is
@@ -1235,7 +1269,7 @@ async fn run(platforms: Box<dyn Platforms>) -> anyhow::Result<()> {
         app_codes: Default::default(),
         sends: Default::default(),
         github_links: Default::default(),
-        limits: limit::Limits::new(a.trust_proxy_header),
+        limits,
         vapid,
         live: Default::default(),
         hosted_key,
