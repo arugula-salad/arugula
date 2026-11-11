@@ -60,7 +60,7 @@ pub(crate) const LIST: crate::mcp::tools::Kind = crate::mcp::tools::Kind {
 
 pub(crate) const START_DESCRIPTION: &str = "Start an agent session in Arugula control as your person: @arugula on a native issue (issue: #N in the current project, or iss_…) or in a project's channel (room, and thread: a message's seq to ask in its thread). It runs on the project's cloud workspace, as your person (the asker, who pays for it), and its card says it was started by their agent on this machine. Needs their sessions.start grant over the project. prompt is what to ask (it may name the repo, owner/name, and a model); on an issue it defaults to working on it. Returns the session (ses_…), or what the platform said instead: why not, or which repo it asks (ask again there with the repo, owner/name, in prompt). session_reply answers it or prompts it after.";
 
-pub(crate) const READ_DESCRIPTION: &str = "Read an agent session in Arugula control (ses_…): its state, Cloud workspace, branch, HEAD and last push (and its box's latest error since, such as a failed push), what its latest turn left (commits, diffstat, its finish step), what it asks while it waits on a person, and its last answer whole, as its machine sent it (the thread's copy keeps only its end). Needs your person's sessions.start, sessions.reply or threads.read grant over its project. wait with agent_session waits for its turn to finish.";
+pub(crate) const READ_DESCRIPTION: &str = "Read an agent session in Arugula control (ses_…): its state, Cloud workspace, branch, HEAD and last push (and its workspace's latest error since, such as a failed push), what its latest turn left (commits, diffstat, its finish step), what it asks while it waits on a person, and its last answer whole, as its machine sent it (the thread's copy keeps only its end). Needs your person's sessions.start, sessions.reply or threads.read grant over its project. wait with agent_session waits for its turn to finish.";
 
 pub(crate) const REPLY_DESCRIPTION: &str = "Reply to an agent session in Arugula control as your person (ses_…, from session_start or the thread's card), in its thread: when it waits on a question, your text answers it; otherwise it's the session's next prompt (queued while a turn runs). Never an approval: a permission waits on a person, and your text is queued for after it. Needs your person's sessions.reply grant over its project. Says which it did.";
 
@@ -177,7 +177,7 @@ pub(crate) fn row_line(r: &Value) -> String {
         None => out += " · not pushed",
     }
     if let Some(e) = r["error"].as_str() {
-        out += &format!(" · its box's error since: {e}");
+        out += &format!(" · its workspace's error since: {e}");
     }
     if let Some(by) = r["started_by"].as_str() {
         out += &format!(" · started by {by}");
@@ -574,7 +574,7 @@ mod tests {
             "pushed_at": null, "error": "couldn't push b: No space left on device" } }));
         assert!(
             failed.starts_with(
-                "ses_3 done · on  · b · not pushed · its box's error since: couldn't push b: No space left on device"
+                "ses_3 done · on  · b · not pushed · its workspace's error since: couldn't push b: No space left on device"
             ),
             "{failed}"
         );
