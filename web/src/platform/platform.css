@@ -263,6 +263,26 @@ html[data-corners="square"] .platform-section {
   box-shadow: 0 12px 40px var(--platform-shadow);
 }
 
+/* A link into another team's room says where it opened (Arugula #882). */
+.platform-arrival {
+  position: fixed;
+  z-index: 70;
+  left: 50%;
+  top: 12px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100vw - 32px);
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--chip-radius);
+  background: var(--surface);
+  color: var(--fg);
+  font-size: var(--text-sm);
+  box-shadow: 0 12px 40px var(--platform-shadow);
+}
+
 /* One phone width for every column (UI audit #186): the bar's, usePhone's. */
 @media (max-width: 700px) {
   .platform-columns {

@@ -4,8 +4,10 @@
 // says. History is at most list, room, thread deep: down a level pushes, a
 // step sideways replaces.
 
+import { arrival, leaveChat } from "./current-project";
 import { names } from "./links";
-import { current, go, onRoute, parse, pathOf, type Route } from "./router";
+import { cameFrom, current, go, onRoute, parse, pathOf, type Route } from "./router";
+import { session } from "./session";
 
 export type ChatLevel = "list" | "room" | "thread";
 
@@ -97,12 +99,29 @@ function note(r: Route = current()) {
 note();
 onRoute(() => note());
 
+/** Where leaving chat from `project` goes (Arugula #882): a project's home,
+ * never `/`. `back`: the page before is ours and in this project, so it's a
+ * step back in history instead of a new entry. */
+export function chatOut(project: string): { path: string; back: boolean } {
+  const from = cameFrom();
+  const before = !!from && from.page !== "chat" && from.page !== "dm" && "project" in from && from.project === project;
+  const out = leaveChat(project, arrival(), (id) => !!session.project(id), before);
+  return { path: pathOf({ page: "project", project: out.project }, names), back: out.back };
+}
+
+/** Leave chat by its close button or Back's own: see `chatOut`. */
+export function leaveChatTo(project: string) {
+  const out = chatOut(project);
+  if (out.back) history.back();
+  else go(out.path);
+}
+
 /** Where a swipe right goes from here: one level up (what Back does), or from
- * the list out to the projects at `/`. Null where chat isn't. */
+ * the list out to the project's home. Null where chat isn't. */
 export function swipeUp(r: Route = current()): string | null {
   const level = chatLevel(r);
-  if (level === null) return null;
-  if (level === "list") return r.page === "chat" && r.view ? pathOf({ page: "chat", project: r.project }, names) : "/";
+  if (level === null || (r.page !== "chat" && r.page !== "dm")) return null;
+  if (level === "list") return r.page === "chat" && r.view ? pathOf({ page: "chat", project: r.project }, names) : chatOut(r.project).path;
   return chatUp(r);
 }
 
@@ -115,8 +134,9 @@ export function swipeDown(r: Route = current()): string | null {
   return null;
 }
 
-/** Commit a swipe's target: `/` is a plain push, the rest are chat's levels. */
+/** Commit a swipe's target: out of chat is `leaveChatTo`'s, the rest are chat's levels. */
 export function swipeGo(path: string) {
-  if (path === "/") return go("/");
+  const r = current();
+  if ((r.page === "chat" || r.page === "dm") && path === chatOut(r.project).path) return leaveChatTo(r.project);
   chatGo(path);
 }

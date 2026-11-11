@@ -6,6 +6,7 @@ import { boards } from "../shared/boards/store";
 import { projectDocs } from "../shared/docs/store";
 import { listedInChat } from "../shared/chat/unread";
 import { issues } from "../shared/issues/store";
+import { chatProject, currentProject, lastTeamProject } from "./current-project";
 import { runs } from "./runs";
 import { current, pathOf, type Route } from "./router";
 import { session } from "./session";
@@ -76,7 +77,8 @@ export function resolve(r: Extract<Route, { page: "find" }>): string | null {
       if (chat.on === null) return null;
       return roomPath(r.room, r.msg, r.thread);
     }
-    const team = session.projects.find((p) => p.team)?.id;
+    // The current project's team, else the last one's, else the first (Arugula #882).
+    const team = chatProject(session.projects, currentProject(), lastTeamProject());
     return pathOf({ page: "chat", project: team ?? own, ...(r.view ? { view: r.view, q: r.q } : {}) }, names);
   }
   if (r.what === "issue") {

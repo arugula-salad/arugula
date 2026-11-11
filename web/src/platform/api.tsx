@@ -5,7 +5,8 @@
 
 import { noMachines, type PlatformApi, type PlatformTeam } from "../shared/platform-api";
 import { PlatformBar } from "./bar";
-import { chatGo, swipeDown, swipeGo, swipeUp } from "./chat-nav";
+import { chatGo, leaveChatTo, swipeDown, swipeGo, swipeUp } from "./chat-nav";
+import { chatProject, currentProject, lastTeamProject } from "./current-project";
 import { names, roomPath } from "./links";
 import { current, go, pathOf, type Route } from "./router";
 import { controlOrigin, session } from "./session";
@@ -14,8 +15,8 @@ import { barProject } from "./where";
 
 const chatIn = (view?: "activity" | "saved" | "search" | "threads", q?: string): Route | null => {
   // The project the bar is in (each has its own rooms, UI audit #169),
-  // else the first team's.
-  const project = barProject(current()) ?? session.projects.find((p) => p.team)?.id ?? session.personal()?.id;
+  // else a team's: the current one's (Arugula #882).
+  const project = barProject(current()) ?? chatProject(session.projects, currentProject(), lastTeamProject()) ?? session.personal()?.id;
   return project ? { page: "chat", project, view, q } : null;
 };
 
@@ -31,7 +32,8 @@ export const platformApi: PlatformApi = {
     },
     closeChat() {
       const project = barProject(current());
-      go(project ? pathOf({ page: "project", project }, names) : "/");
+      if (project) leaveChatTo(project);
+      else go("/");
     },
     openRoom: (room, msg, thread) => chatGo(roomPath(room, msg, thread)),
     up: () => swipeUp(),
