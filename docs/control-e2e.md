@@ -263,6 +263,14 @@ device nobody trusted. Now:
   founder). The daemon pins only a team signed that way, or named in a
   signed move (`illogical machine move v1`) from one of its account's
   devices or, taking it out, an owner of its team.
+- A machine is its team's only while its account is in the team. The
+  version that leaves that account out takes its machines out of the team
+  at control, in the same write (`drop_departed_machines` in
+  `crates/control/src/db.rs`), with no move to sign: control serves it no
+  newer roster, nobody's certificates and no member's push subscriptions,
+  routes no member to it, and the platform hears it moved. The machine
+  keeps the last roster it checked; asking for more, it's answered with
+  none.
 - **A team's member list** (its roster) is versioned, and each version is
   signed by a device of an owner in the version before. The one exception
   is a **presigned invite**:

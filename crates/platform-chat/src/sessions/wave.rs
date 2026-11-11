@@ -271,12 +271,25 @@ async fn wave(app: &Platform, project: &str, q: &SessionWaveQuery, reader: &str,
     let mut seen = Seen::default();
     let mut rows = Vec::new();
     let mut more = false;
+    // Only sessions whose thread's room the reader sees, asked once a room.
+    let mut open: HashMap<String, bool> = HashMap::new();
     for s in app.db.project_sessions(project, LOOKED_AT)? {
         if s.role == Role::Review
             || q.asker.as_deref().is_some_and(|a| a != s.asker)
             || q.agent.as_deref().is_some_and(|m| s.asker_agent.as_deref() != Some(m))
             || (q.going && (s.state.terminal() || s.merged_at.is_some()))
         {
+            continue;
+        }
+        let sees = match open.get(&s.room) {
+            Some(yes) => *yes,
+            None => {
+                let yes = crate::chat::open_to(app, reader, &s.room).await?;
+                open.insert(s.room.clone(), yes);
+                yes
+            }
+        };
+        if !sees {
             continue;
         }
         let issue = seen.issue(app, &s)?;
@@ -362,6 +375,10 @@ async fn followed(app: &Platform, d: &Machine, id: &str) -> Result<(AgentSession
         return Err(none());
     }
     let role = may_follow(app, d, &s.project).await?;
+    // Its thread's room, as its owner sees it.
+    if !crate::chat::open_to(app, &d.account, &s.room).await? {
+        return Err(none());
+    }
     Ok((s, role))
 }
 

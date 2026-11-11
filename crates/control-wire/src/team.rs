@@ -98,9 +98,10 @@ pub struct TeamAnswer {
     pub names: BTreeMap<String, String>,
 }
 
-/// What control answers a machine that isn't in a team: `{"team": null}`.
-/// A daemon only asks once it has pinned one, and reads this as it always
-/// has, as an answer [`TeamAnswer`] can't parse.
+/// What control answered a machine that isn't in a team, before it
+/// answered an empty [`TeamAnswer`] (no team, rosters or certificates) a
+/// daemon parses and keeps what it has by: `{"team": null}`, which a
+/// daemon read as an answer it can't parse.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct TeamNone {

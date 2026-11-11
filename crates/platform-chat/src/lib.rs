@@ -333,6 +333,15 @@ impl features::Chat for Hooks {
         session_live::told(app, ids)
     }
 
+    fn open_to<'a>(
+        &'a self,
+        app: &'a Platform,
+        account: &'a str,
+        room: &'a str,
+    ) -> BoxFuture<'a, anyhow::Result<bool>> {
+        Box::pin(chat::open_to(app, account, room))
+    }
+
     fn grant_revoked<'a>(
         &'a self,
         app: &'a Platform,
