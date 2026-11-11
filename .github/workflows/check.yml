@@ -120,6 +120,8 @@ jobs:
           # Ghostty for x86_64-linux-gnu, as build and test both build it
           # (clippy's adds macOS's, static's musl: their own).
           ghostty-key: gnu
+          # It only builds: none of the specs' packages, so no apt.
+          base-packages: "false"
       # The binaries and the run-debug artifact (pull-request.yml builds
       # the same on GitHub's runners).
       - uses: ./.github/actions/build-debug
@@ -137,6 +139,8 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           cache-key: static
+          # It only builds: none of the specs' packages, so no apt.
+          base-packages: "false"
       - run: just bootstrap
       # opt-level 1, not release's 3: these only run the tests (the ssh
       # tests, desktop-xvfb), and release.yml builds what

@@ -26,6 +26,9 @@ inputs:
   packages:
     description: More apt packages
     default: ""
+  base-packages:
+    description: The packages the specs and caches use (vim-tiny, libnss-myhostname, zstd); "false" for a job that only builds, which then needs no apt
+    default: "true"
   claude-code:
     description: The Claude Code CLI, which the specs that set it up (journey-j5) find on PATH, as they did on geek
     default: "false"
@@ -51,12 +54,32 @@ runs:
       shell: bash
       run: |
         missing=()
-        for p in vim-tiny libnss-myhostname zstd ${{ inputs.packages }}; do
+        base=""
+        if [ "${{ inputs.base-packages }}" = true ]; then base="vim-tiny libnss-myhostname zstd"; fi
+        for p in $base ${{ inputs.packages }}; do
           dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q 'install ok installed' || missing+=("$p")
         done
         if [ ${#missing[@]} -gt 0 ]; then
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends "${missing[@]}" >/dev/null
+          # GitHub's Ubuntu images try azure.archive.ubuntu.com first, which
+          # stalls or doesn't resolve for whole stretches, and at times
+          # archive.ubuntu.com doesn't either (actions/runner-images#14594):
+          # apt goes to kernel.org's mirror, then archive.ubuntu.com. Each try
+          # is bounded, and a stalled one is tried again on a fresh connection.
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            printf '%s\tpriority:%s\n' http://mirrors.edge.kernel.org/ubuntu/ 1 http://archive.ubuntu.com/ubuntu/ 2 \
+              | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
+          fi
+          apt=(sudo apt-get -qq -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
+          tries() {
+            for n in 1 2 3; do
+              timeout 120 "$@" && return 0
+              echo "::warning::try $n of 3 failed: $*"
+              sleep 5
+            done
+            return 1
+          }
+          tries "${apt[@]}" update
+          tries "${apt[@]}" install -y --no-install-recommends "${missing[@]}" >/dev/null
         fi
     # GitHub's VMs boot systemd but start no user manager for the runner,
     # whose job isn't a login session: linger starts one, and systemctl
