@@ -30,6 +30,7 @@ pub mod fs;
 pub mod hosts;
 pub mod keys;
 pub mod op;
+pub mod release_sums;
 pub mod service;
 pub mod setup;
 pub mod sharing;

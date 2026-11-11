@@ -71,6 +71,8 @@ workspace = true
 # A push notice's envelope, opened as a browser would (control.rs's tests).
 aes-gcm = { workspace = true }
 futures-util = { workspace = true }
+# A fake release's signed SHA256SUMS (selfupdate.rs's tests).
+ed25519-dalek = { workspace = true }
 arugula-proto = { workspace = true, features = ["fixtures"] }
 arugula-testkit = { path = "../testkit" }
 rmcp = { version = "=3.5.0", default-features = false, features = ["client", "transport-streamable-http-client-reqwest", "transport-child-process"] }

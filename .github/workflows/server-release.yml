@@ -115,7 +115,9 @@ jobs:
           echo "Releasing $c as $v: $(git log -1 --format=%s)" >>"$GITHUB_STEP_SUMMARY"
       - uses: ./.github/actions/setup
         with:
-          cache-key: release-static
+          # Not release-static: a run started on main saves its rust-cache,
+          # and those saved while this build used sccache aren't restored.
+          cache-key: release-server
           cache-workspace: server
           ghostty: "false"
       - run: just bootstrap

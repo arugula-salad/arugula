@@ -523,9 +523,12 @@ version, or when you want different notes.
    (`arugulad update` from a terminal); `install.sh` picks it up by
    itself. The site and the docs for users are
    [arugula-salad/site](https://github.com/arugula-salad/site), which deploys
-   on merge; arugula.io serves `scripts/install.sh` and `install.ps1` from
-   this repo's `main`, so a change to them is live within 5 minutes of
-   merging.
+   on merge; arugula.io serves `scripts/install.sh` and `install.ps1` as the
+   newest release's commit has them, so a change to them goes out with the
+   next release. The release's `SHA256SUMS` is signed (`SHA256SUMS.sig`,
+   `scripts/release sign-sums` with the `marketplace` environment's
+   `RELEASE_SUMS_KEY`); `arugulad update` and `install.sh` check it against
+   the key in `crates/proto/src/release_sums.rs`.
 
 A build from main (`just build`, `just dist`) reports the version
 `Cargo.toml` has, which stays at the last version a commit set (0.66.12,
