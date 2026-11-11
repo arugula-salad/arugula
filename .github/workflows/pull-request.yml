@@ -78,6 +78,7 @@ jobs:
         with:
           cache-key: build
           ghostty-key: gnu
+          base-packages: "false"
       - uses: ./.github/actions/build-debug
       - name: sccache's hits
         if: always() && env.RUSTC_WRAPPER == 'sccache'
