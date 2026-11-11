@@ -60,3 +60,54 @@ fn use_claude_code_installs_the_hooks_and_says_where() {
     assert_eq!(o["ok"], true, "{o}");
     assert!(!o["done"].to_string().contains("hooks to"), "{o}");
 }
+
+/// #520: Node installed after the daemon started (with nvm, say: the
+/// "needs Node 20+" message says to install it) is only in the shell's rc
+/// files, which the daemon read when it started. "Use Claude Code with
+/// Arugula" reads them again when what it kept has no Node new enough,
+/// instead of saying to install the Node that's there.
+// Linux only: a macOS login shell runs path_helper (/etc/profile), which
+// puts the system's own directories, and any Node in them, ahead of the
+// test's, so its old Node isn't the one found first.
+#[cfg(target_os = "linux")]
+#[test]
+fn use_claude_code_finds_node_installed_after_the_daemon_started() {
+    assert!(Command::new(env!("CARGO")).args(["build", "-q", "-p", "arugula"]).status().unwrap().success());
+    let Some(bash) = ["/bin/bash", "/usr/bin/bash"].into_iter().find(|p| Path::new(p).is_file()) else {
+        eprintln!("skipped: no bash");
+        return;
+    };
+    let state = std::env::temp_dir().join(format!("ilg-setup-node-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&state);
+    let bin = state.join("bin");
+    // On the daemon's PATH, a Node too old: whatever else is on PATH, this
+    // one is found first.
+    script(&bin.join("node"), "echo v18.0.0");
+    script(&bin.join("npm"), "echo 'added 1 package'");
+    script(&bin.join("claude"), "exit 0");
+    // The one "nvm installs" later, put first by the login shell's rc file.
+    let nvm = state.join("nvm/bin");
+    script(&nvm.join("node"), "echo v22.1.0");
+    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default());
+    let d = arugulad!("setup-node")
+        .state_dir(&state)
+        .home_in_state()
+        .no_provider()
+        // The login shell, rc files and all, as a user's daemon reads it.
+        .default_shell()
+        .env("PATH", &path)
+        .env("SHELL", bash)
+        .env("ARUGULA_NPM", bin.join("npm"))
+        .env("ARUGULA_AGENTS_DIR", state.join("agents"))
+        .start();
+    // The shell read at the start has only the old Node.
+    let adapter = || d.get("/api/setup?part=agents")["adapters"].clone();
+    assert!(adapter().to_string().contains("v18.0.0"), "{}", adapter());
+
+    // Now Node is installed, as nvm does it: in the rc file.
+    std::fs::write(state.join("home/.bash_profile"), format!("export PATH=\"{}:$PATH\"\n", nvm.display())).unwrap();
+    let o: Value = d.post("/api/setup/agents/claude", json!({}));
+    assert_eq!(o["ok"], true, "{o}");
+    let done = o["done"].to_string();
+    assert!(done.contains("Installed Claude Code's adapter"), "{o}");
+}

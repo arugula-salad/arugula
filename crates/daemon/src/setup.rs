@@ -719,7 +719,7 @@ fn installed_line(a: &Adapter, was: &AdapterState) -> String {
 /// The adapter, installed or updated to the pin, waiting for npm: what
 /// changed (a line), or nothing when it was current.
 async fn install(app: &App, a: &'static Adapter) -> Result<Option<String>, Outcome> {
-    let (home, env) = crate::api::agent_env(app).await.map_err(|e| Outcome::err(e.1))?;
+    let (home, env) = crate::api::agent_env_for(app, a).await.map_err(|e| Outcome::err(e.1))?;
     let (st, path, home) = crate::task::spawn_blocking(move || {
         let st = crate::agent::adapters::status(a, &home, &env);
         let path = crate::agent::adapters::node_path(&home, &env);
