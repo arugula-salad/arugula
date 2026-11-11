@@ -300,6 +300,11 @@ pub struct Secrets {
 pub struct SecretName {
     pub name: String,
     pub store: String,
+    /// For the clone secret (`GIT_TOKEN`): the hosts it's sent to, bound as
+    /// it was set (`setup::hosts_of`). None means it clones nothing until
+    /// it's set again.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hosts: Option<Vec<String>>,
 }
 
 /// `PUT /api/projects/{project}/workspaces/{id}/secrets/{name}`.
@@ -319,8 +324,18 @@ pub async fn secrets(
     enabled(&app)?;
     let (project, _) = membership(&app, &account, &project, false).await?;
     let w = found(app.db.hosted_workspace(&project, &id)?)?;
-    let secrets =
-        app.db.hosted_secret_names(&w.id)?.into_iter().map(|(name, store)| SecretName { name, store }).collect();
+    let secrets = app
+        .db
+        .hosted_secret_names(&w.id)?
+        .into_iter()
+        .map(|(name, store)| {
+            let hosts = match name == super::setup::GIT_TOKEN {
+                true => Some(app.db.hosted_secret_hosts(&w.id, &name)?),
+                false => None,
+            };
+            Ok(SecretName { name, store, hosts })
+        })
+        .collect::<anyhow::Result<_>>()?;
     Ok(Json(Secrets { secrets }))
 }
 
