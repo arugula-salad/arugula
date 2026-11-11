@@ -19,6 +19,7 @@ pub use arugula_core::{
 pub mod api;
 pub mod ask;
 pub mod block_patch;
+pub mod claude_policy;
 pub mod dirs;
 #[cfg(feature = "fixtures")]
 pub mod fixture;

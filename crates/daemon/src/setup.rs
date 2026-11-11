@@ -197,6 +197,10 @@ struct ClaudeStatus {
     /// `arugula hooks status` says Arugula's hooks are there (or its
     /// plugin's): a terminal Claude's questions come to cards.
     hooks: bool,
+    /// #395: what stops Claude Code running them (a policy, or the user's
+    /// `disableAllHooks`), said for a person; absent when nothing does.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hooks_blocked: Option<String>,
 }
 
 /// The join in flight, if any, and the last one's failure.
@@ -569,18 +573,22 @@ fn scope_of(out: &str) -> Option<&'static str> {
 }
 
 async fn claude_status(app: &App) -> ClaudeStatus {
-    let hooks = hooks_status(app).await;
-    let Some(c) = claude(app).await else { return ClaudeStatus { hooks, ..Default::default() } };
-    ClaudeStatus { installed: true, tools: mcp_scope(app, &c, MCP_NAME).await.is_some(), hooks }
+    let (hooks, hooks_blocked) = hooks_status(app).await;
+    let Some(c) = claude(app).await else { return ClaudeStatus { hooks, hooks_blocked, ..Default::default() } };
+    ClaudeStatus { installed: true, tools: mcp_scope(app, &c, MCP_NAME).await.is_some(), hooks, hooks_blocked }
 }
 
 /// `arugula --json hooks status`: whether the settings.json Claude Code
-/// reads has Arugula's hooks, or the plugin brings them.
-async fn hooks_status(app: &App) -> bool {
-    let Some(cli) = cli(app).await else { return false };
+/// reads has Arugula's hooks, or the plugin brings them, and what stops
+/// Claude Code running them, if anything (#395).
+async fn hooks_status(app: &App) -> (bool, Option<String>) {
+    let Some(cli) = cli(app).await else { return (false, None) };
     match run(app, &cli, &["--json", "hooks", "status"], Duration::from_secs(10)).await {
-        Ok((true, out, _)) => serde_json::from_str::<Value>(&out).is_ok_and(|v| v["installed"] == true),
-        _ => false,
+        Ok((true, out, _)) => {
+            let v: Value = serde_json::from_str(&out).unwrap_or_default();
+            (v["installed"] == true, v["blocked"]["says"].as_str().map(str::to_owned))
+        }
+        _ => (false, None),
     }
 }
 
@@ -620,6 +628,10 @@ fn hooks_lines(said: &Value) -> Vec<String> {
         lines.push(format!(
             "Allowed Arugula's read-only commands and tools in {file} (permissions.allow), so Claude Code uses them without asking."
         ));
+    }
+    // #395: installed, but Claude Code won't run them here.
+    if let Some(says) = said["blocked"]["says"].as_str() {
+        lines.push(says.to_owned());
     }
     lines
 }
