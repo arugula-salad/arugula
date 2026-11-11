@@ -373,7 +373,7 @@ test("a phone needs the laptop's approval", async ({ browser }) => {
   await expect(phone.locator("[data-waiting-machine]")).toContainText("doesn't need this one");
   await expect(phone.locator("[data-sign-out]")).toBeVisible();
   // #1581: the account has a device already, so it says why this one is asked.
-  await expect(phone.locator("[data-why-again]")).toContainText("Approve it from a device that opens");
+  await expect(phone.locator("[data-why-again]")).toContainText("that can approve it");
   // #761: it shows a code, as a QR code and as text, and its fingerprint
   // only for an older approving page, a click away.
   const code = await deviceCode(phone);
