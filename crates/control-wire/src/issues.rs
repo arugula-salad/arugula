@@ -294,6 +294,11 @@ pub struct IssueHome {
     /// label menus offer (UI audit #163).
     #[serde(default)]
     pub labels: Vec<String>,
+    /// A team's project, not its owner's personal one: where a team's Docs
+    /// live (Arugula #862). An older control sends none, which a machine
+    /// reads as not a team's.
+    #[serde(default)]
+    pub team: bool,
 }
 
 /// `PUT /api/projects/{project}/issue-home`: `native`, `github` (only with

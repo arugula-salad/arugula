@@ -594,7 +594,16 @@ export type BoardLiveState = "open" | "checks_running" | "checks_failed" | "merg
  * A note on a row that its lane doesn't say, worked out on every read and
  * never stored (aru-125, decisions 7 to 9).
  */
-export type BoardMark = { "kind": "merged_not_closed" } | { "kind": "cancelled" } | { "kind": "after", number: number, repo?: string, } | { "kind": "earlier", attachment: string, } | { "kind": "stalled", since: number, } | { "kind": "blocked_by", number?: number, title?: string, repo?: string, 
+export type BoardMark = { "kind": "merged_not_closed" } | { "kind": "not_finished", reason?: string, merged: boolean, 
+/**
+ * Who marked it: a login or name, and for an agent "<person>'s
+ * agent on <machine>" as the board names an agent.
+ */
+by?: string, 
+/**
+ * When, in milliseconds.
+ */
+at?: number, } | { "kind": "cancelled" } | { "kind": "after", number: number, repo?: string, } | { "kind": "earlier", attachment: string, } | { "kind": "stalled", since: number, } | { "kind": "blocked_by", number?: number, title?: string, repo?: string, 
 /**
  * The other board the blocker is a row of, when the reader may read
  * the blocker and it is on a board other than this one.
@@ -739,7 +748,7 @@ proof?: BoardProof,
  */
 group?: string, 
 /**
- * What the lane doesn't say, in a fixed order: `merged_not_closed`,
+ * What the lane doesn't say, in a fixed order: `not_finished`,
  * `cancelled`, `after`, `blocked_by`, then one `earlier` for each closed block.
  */
 marks?: Array<BoardMark>, 
@@ -3410,7 +3419,13 @@ both: boolean,
  * Every label on its native issues, open or closed, sorted: what the
  * label menus offer (UI audit #163).
  */
-labels: Array<string>, };
+labels: Array<string>, 
+/**
+ * A team's project, not its owner's personal one: where a team's Docs
+ * live (Arugula #862). An older control sends none, which a machine
+ * reads as not a team's.
+ */
+team: boolean, };
 
 /**
  * `PUT /api/projects/{project}/issue-home`: `native`, `github` (only with
@@ -4629,7 +4644,12 @@ writer: boolean,
  * project, a copy included (native #673). An older platform sends
  * none; the page then takes `writer`.
  */
-deleter: boolean, };
+deleter: boolean, 
+/**
+ * The Doc's page on the platform's page, which the team opens. An older
+ * platform sends none.
+ */
+link: string | null, };
 
 /**
  * `PUT` [`PROJECT_DOC`]: what changes. `title` renames it, `layout` lays it out. With `section`,

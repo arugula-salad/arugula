@@ -3311,6 +3311,8 @@ async fn an_agent_reads_and_writes_a_board() {
             "unlink_doc",
             "ask",
             "note",
+            "hold",
+            "release",
             "group",
             "drop",
             "add_group",

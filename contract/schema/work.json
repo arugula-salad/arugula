@@ -1130,6 +1130,14 @@
         "doc": {
           "$ref": "#/$defs/Doc"
         },
+        "link": {
+          "default": null,
+          "description": "The Doc's page on the platform's page, which the team opens. An older\nplatform sends none.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "sections": {
           "items": {
             "$ref": "#/$defs/Section"

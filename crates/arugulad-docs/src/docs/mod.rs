@@ -52,6 +52,10 @@
 //! which Share with… (the dialog's, from the page as the person) names it
 //! by. The machine itself never writes to a team's project.
 //!
+//! **A team's Doc** (Arugula #862, [`team`]): in a team's context the block's
+//! config also names a `project`, and the Doc is that project's on the
+//! platform, read and filled through control; none of it is in the library.
+//!
 //! Docs left Labs (native #204): no flag gates them, and sharing is still
 //! only ever the owner's tap or the card an agent's `share` raises.
 
@@ -62,6 +66,7 @@ pub(crate) mod embeds;
 pub mod library;
 pub mod link;
 pub mod shape;
+pub(crate) mod team;
 
 use std::{
     path::{Path, PathBuf},
@@ -98,6 +103,13 @@ pub struct DocKind;
 impl BlockKind for DocKind {
     fn create(&self, ctx: BlockCtx, config: Value) -> Result<Arc<dyn Block>, String> {
         let config: Config = serde_json::from_value(config).map_err(|e| format!("doc config: {e}"))?;
+        // A team's Doc is in its project on the platform, not in the library
+        // (Arugula #862, [`team`]).
+        if let Some(project) = config.project.clone().filter(|p| !p.is_empty()) {
+            let id = config.doc.clone().filter(|d| !d.is_empty()).ok_or("a team Doc's config names its Doc")?;
+            let name = config.project_name.clone().unwrap_or_default();
+            return Ok(team::open(ctx, project, name, id, config.title));
+        }
         let id = match config.doc {
             Some(id) => id,
             // Only a layout from before the library has none, and the
@@ -138,6 +150,12 @@ struct Config {
     doc: Option<String>,
     #[serde(default)]
     title: String,
+    /// A team Doc's project, and its name (Arugula #862): `doc` is then the
+    /// platform's id for it (`pdc_…`), and nothing of it is in the library.
+    #[serde(default)]
+    project: Option<String>,
+    #[serde(default)]
+    project_name: Option<String>,
     /// #1067: an agent's ask to share, kept across a restart.
     #[serde(default)]
     share_ask: Option<ask::Asked>,

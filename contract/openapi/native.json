@@ -914,6 +914,128 @@
         }
       }
     },
+    "/api/boards/{id}/rows/{row}/hold": {
+      "put": {
+        "operationId": "PUT_api_boards_id_rows_row_hold",
+        "x-arugula-clients": [
+          "page",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoardView"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "row",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HoldRow"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "DELETE_api_boards_id_rows_row_hold",
+        "x-arugula-clients": [
+          "page",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoardView"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "row",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
     "/api/boards/{id}/rows/{row}/lane": {
       "put": {
         "operationId": "PUT_api_boards_id_rows_row_lane",
@@ -9615,6 +9737,14 @@
           "doc": {
             "$ref": "#/components/schemas/Doc"
           },
+          "link": {
+            "default": null,
+            "description": "The Doc's page on the platform's page, which the team opens. An older\nplatform sends none.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "sections": {
             "items": {
               "$ref": "#/components/schemas/Section"
@@ -10117,6 +10247,19 @@
           "id",
           "rev",
           "title"
+        ],
+        "type": "object"
+      },
+      "HoldRow": {
+        "additionalProperties": false,
+        "description": "[`BOARD_ROW_HOLD`]'s body: what is left, 1 to [`HOLD_MAX`] characters\nonce trimmed, on one line.",
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
         ],
         "type": "object"
       },
@@ -10844,7 +10987,7 @@
           },
           {
             "const": "review",
-            "description": "A PR is open, or the issue is open and its PR merged (see\n[`Mark::MergedNotClosed`]).",
+            "description": "A PR is open, or the issue is open and its PR merged (see\n[`Mark::NotFinished`]).",
             "type": "string"
           },
           {
@@ -11096,11 +11239,50 @@
         "description": "A note on a row that its lane doesn't say, worked out on every read and\nnever stored (aru-125, decisions 7 to 9).",
         "oneOf": [
           {
-            "description": "The issue is open and a PR of the row merged, with none open: the\nwork is in, the issue isn't closed. The row is in Review.",
+            "description": "What a build before Arugula #841 said of an open issue whose PR\nmerged, with none open: read as `NotFinished` with no reason and\n`merged`. Current platforms never send it.",
             "properties": {
               "kind": {
                 "const": "merged_not_closed",
                 "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "The row's issue is marked Not finished (Arugula #841), or it is open\nand a PR of the row merged, with none open: a merge doesn't close a\nmarked ticket. `merged`: a PR of the row merged, and the row is in\nReview. `reason` is what is left, and is none when nobody marked it\n(a merged PR that only said `part of`). A marked row with nothing\nmerged keeps the lane its work gives it.",
+            "properties": {
+              "at": {
+                "description": "When, in milliseconds.",
+                "format": "uint64",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "by": {
+                "description": "Who marked it: a login or name, and for an agent \"<person>'s\nagent on <machine>\" as the board names an agent.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "kind": {
+                "const": "not_finished",
+                "type": "string"
+              },
+              "merged": {
+                "default": false,
+                "type": "boolean"
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             },
             "required": [
@@ -12034,7 +12216,7 @@
             "description": "A `fi_`, `iss_` or `run_` pointer's state now, when the reader may see the\nitem ([`BoardView`] is read with it; a write's answer has it too)."
           },
           "marks": {
-            "description": "What the lane doesn't say, in a fixed order: `merged_not_closed`,\n`cancelled`, `after`, `blocked_by`, then one `earlier` for each closed block.",
+            "description": "What the lane doesn't say, in a fixed order: `not_finished`,\n`cancelled`, `after`, `blocked_by`, then one `earlier` for each closed block.",
             "items": {
               "$ref": "#/components/schemas/Mark"
             },

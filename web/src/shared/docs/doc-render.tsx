@@ -63,6 +63,10 @@ export interface DocState {
   made?: number | null;
   updated?: number | null;
   by?: string;
+  /** A team's Doc (Arugula #862): in its project on the platform, read and
+   * filled through control. `offline` is why control can't be reached, when
+   * it can't: what's shown is the last read, read-only. */
+  team?: { project: string; name: string; link: string | null; offline: string | null; writer: boolean };
   error?: string;
 }
 

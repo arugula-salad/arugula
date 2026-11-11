@@ -73,6 +73,12 @@ pub const PROJECT_DOC_BOARDS: &str = "/api/projects/{project}/docs/{doc}/boards"
 /// `POST` [`NewAsk`]: a person asks a question on a row (owners and
 /// editors). One open ask per row, and only on a row with an issue or a PR.
 pub const BOARD_ROW_ASK: &str = "/api/boards/{id}/rows/{row}/ask";
+/// `PUT` [`HoldRow`]: mark the row's issue Not finished (Arugula #841), so a
+/// merged PR doesn't close it; `DELETE`: take the mark off, which closes the
+/// issue if a PR that names it has merged. Both answer [`BoardView`]. Owners
+/// and editors. Only a row whose item is a native issue or a Plane item
+/// (422); the mark is on the issue, so every board it is on shows it.
+pub const BOARD_ROW_HOLD: &str = "/api/boards/{id}/rows/{row}/hold";
 /// `PUT` [`SetLane`]: a person moves a row to another lane (#494), answered
 /// [`BoardView`]. Next, Doing and Review set a lane that holds until the
 /// row's work changes it; Done closes a native issue, and moving out of
@@ -157,6 +163,10 @@ pub fn agent_board_lead(id: &str) -> String {
 /// (`boards.write`). It reads the answer from the board; there is no route
 /// for it to answer.
 pub const AGENT_BOARD_ROW_ASK: &str = "/api/daemon/boards/{id}/rows/{row}/ask";
+
+/// `PUT` [`HoldRow`] and `DELETE`, as [`BOARD_ROW_HOLD`] for an agent
+/// (`boards.write`); the mark says an agent made it.
+pub const AGENT_BOARD_ROW_HOLD: &str = "/api/daemon/boards/{id}/rows/{row}/hold";
 
 /// `POST` [`ResolveItems`]: an agent asks which issues and PRs of the board's
 /// project its references (`#N`, `owner/repo#N`, `IDENT-N`) name, before it
@@ -243,6 +253,11 @@ pub fn board_row_ask(id: &str, row: &str) -> String {
     format!("/api/boards/{id}/rows/{row}/ask")
 }
 
+/// [`BOARD_ROW_HOLD`] for `row` of `id`.
+pub fn board_row_hold(id: &str, row: &str) -> String {
+    format!("/api/boards/{id}/rows/{row}/hold")
+}
+
 /// [`BOARD_ROW_LANE`] for `row` of `id`.
 pub fn board_row_lane(id: &str, row: &str) -> String {
     format!("/api/boards/{id}/rows/{row}/lane")
@@ -256,6 +271,11 @@ pub fn board_ask_answer(id: &str, ask: &str) -> String {
 /// [`AGENT_BOARD_ROW_ASK`] for `row` of `id`.
 pub fn agent_board_row_ask(id: &str, row: &str) -> String {
     format!("/api/daemon/boards/{id}/rows/{row}/ask")
+}
+
+/// [`AGENT_BOARD_ROW_HOLD`] for `row` of `id`.
+pub fn agent_board_row_hold(id: &str, row: &str) -> String {
+    format!("/api/daemon/boards/{id}/rows/{row}/hold")
 }
 
 /// [`AGENT_BOARD_RESOLVE`] for `id`.
@@ -446,7 +466,7 @@ pub enum Lane {
     /// An agent block that isn't closed, or a run that is running.
     Doing,
     /// A PR is open, or the issue is open and its PR merged (see
-    /// [`Mark::MergedNotClosed`]).
+    /// [`Mark::NotFinished`]).
     Review,
     /// The issue is closed, or the PR merged or closed.
     Done,
@@ -685,9 +705,32 @@ pub struct Proof {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardMark"))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Mark {
-    /// The issue is open and a PR of the row merged, with none open: the
-    /// work is in, the issue isn't closed. The row is in Review.
+    /// What a build before Arugula #841 said of an open issue whose PR
+    /// merged, with none open: read as `NotFinished` with no reason and
+    /// `merged`. Current platforms never send it.
     MergedNotClosed,
+    /// The row's issue is marked Not finished (Arugula #841), or it is open
+    /// and a PR of the row merged, with none open: a merge doesn't close a
+    /// marked ticket. `merged`: a PR of the row merged, and the row is in
+    /// Review. `reason` is what is left, and is none when nobody marked it
+    /// (a merged PR that only said `part of`). A marked row with nothing
+    /// merged keeps the lane its work gives it.
+    NotFinished {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts", ts(optional))]
+        reason: Option<String>,
+        #[serde(default)]
+        merged: bool,
+        /// Who marked it: a login or name, and for an agent "<person>'s
+        /// agent on <machine>" as the board names an agent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts", ts(optional))]
+        by: Option<String>,
+        /// When, in milliseconds.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts", ts(optional))]
+        at: Option<u64>,
+    },
     /// The row's item was canceled (a Plane `cancelled` state, a native issue
     /// closed as not planned or as a duplicate): the row is Done and never
     /// proven, whatever merged.
@@ -1537,6 +1580,19 @@ pub struct RowRelation {
     pub removable: bool,
 }
 
+/// [`BOARD_ROW_HOLD`]'s body: what is left, 1 to [`HOLD_MAX`] characters
+/// once trimmed, on one line.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardHoldRow"))]
+#[serde(deny_unknown_fields)]
+pub struct HoldRow {
+    pub reason: String,
+}
+
+/// The longest reason a ticket is marked Not finished with.
+pub const HOLD_MAX: usize = 200;
+
 /// [`BOARD_ROW_ASK`]'s body: `who` is an account of the project. `options`
 /// are 0 to [`ASK_OPTIONS_MAX`] (none: free text), and `recommend` is one
 /// of them.
@@ -1767,7 +1823,7 @@ pub struct Row {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub group: Option<String>,
-    /// What the lane doesn't say, in a fixed order: `merged_not_closed`,
+    /// What the lane doesn't say, in a fixed order: `not_finished`,
     /// `cancelled`, `after`, `blocked_by`, then one `earlier` for each closed block.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub marks: Vec<Mark>,
@@ -2152,11 +2208,19 @@ fn now_ms() -> u64 {
 }
 
 impl Mark {
-    /// `merged, not closed`, `after #1859`, `blocked by #1860`, `earlier agent`,
+    /// `merged · not finished: second PR`, `after #1859`, `blocked by #1860`, `earlier agent`,
     /// `stalled 42m`.
     fn words(&self) -> String {
         match self {
-            Mark::MergedNotClosed => "merged, not closed".to_owned(),
+            Mark::MergedNotClosed => Mark::NotFinished { reason: None, merged: true, by: None, at: None }.words(),
+            Mark::NotFinished { reason, merged, .. } => {
+                let merged = if *merged { "merged · " } else { "" };
+                match reason {
+                    Some(r) => format!("{merged}not finished: {r}"),
+                    None if !merged.is_empty() => format!("{merged}not finished · no reason given"),
+                    None => "not finished".to_owned(),
+                }
+            }
             Mark::Cancelled => "cancelled".to_owned(),
             Mark::After { number, .. } => format!("after #{number}"),
             Mark::Earlier { .. } => "earlier agent".to_owned(),
@@ -2173,7 +2237,7 @@ impl Mark {
 }
 
 /// The words of a row's marks, with its closed blocks counted:
-/// `merged, not closed · after #1859 · earlier agents (2)`. `cancelled` is
+/// `merged · not finished: second PR · after #1859 · earlier agents (2)`. `cancelled` is
 /// left out: the row's proof slot says it.
 pub fn marks_line(marks: &[Mark]) -> String {
     let earlier = marks.iter().filter(|m| matches!(m, Mark::Earlier { .. })).count();
@@ -3073,13 +3137,16 @@ Done: People can sign up.
     fn marks_are_a_line_under_the_row() {
         let mut r = row(Pointer::Issue { id: "iss_1".into() }, Lane::Review, "Fix login");
         r.marks = vec![
-            Mark::MergedNotClosed,
+            Mark::NotFinished { reason: Some("API".into()), merged: true, by: None, at: None },
             Mark::After { number: 1859, repo: Some("acme/app".into()) },
             Mark::Earlier { attachment: "att_1".into() },
             Mark::Earlier { attachment: "att_2".into() },
         ];
         let text = render(&view(lanes(vec![(Lane::Review, vec![r])])));
-        assert!(text.contains("Fix login\n      merged, not closed · after #1859 · earlier agents (2)\n"), "{text}");
+        assert!(
+            text.contains("Fix login\n      merged · not finished: API · after #1859 · earlier agents (2)\n"),
+            "{text}"
+        );
         assert_eq!(marks_line(&[Mark::Earlier { attachment: "a".into() }]), "earlier agents (1)");
         assert_eq!(marks_line(&[]), "");
         // A cancelled row says so once, in its proof slot.
@@ -3088,7 +3155,16 @@ Done: People can sign up.
         let text = render(&view(lanes(vec![(Lane::Done, vec![c])])));
         assert!(text.contains("[cancelled] Dropped"), "{text}");
         assert_eq!(text.matches("cancelled").count(), 1, "{text}");
-        assert_eq!(marks_line(&[Mark::Cancelled, Mark::MergedNotClosed]), "merged, not closed");
+        assert_eq!(marks_line(&[Mark::Cancelled, Mark::MergedNotClosed]), "merged · not finished · no reason given");
+        let nf = |reason: Option<&str>, merged| Mark::NotFinished {
+            reason: reason.map(Into::into),
+            merged,
+            by: None,
+            at: None,
+        };
+        assert_eq!(marks_line(&[nf(Some("verify on staging"), true)]), "merged · not finished: verify on staging");
+        assert_eq!(marks_line(&[nf(None, true)]), "merged · not finished · no reason given");
+        assert_eq!(marks_line(&[nf(Some("second PR"), false)]), "not finished: second PR");
     }
 
     /// With groups the text is a header for each group (with its progress)
@@ -3166,6 +3242,14 @@ Done: People can sign up.
         let marks = [
             (Mark::MergedNotClosed, json!({ "kind": "merged_not_closed" })),
             (Mark::Cancelled, json!({ "kind": "cancelled" })),
+            (
+                Mark::NotFinished { reason: Some("api".into()), merged: true, by: Some("ana".into()), at: Some(5) },
+                json!({ "kind": "not_finished", "reason": "api", "merged": true, "by": "ana", "at": 5 }),
+            ),
+            (
+                Mark::NotFinished { reason: None, merged: false, by: None, at: None },
+                json!({ "kind": "not_finished", "merged": false }),
+            ),
             (Mark::After { number: 3, repo: None }, json!({ "kind": "after", "number": 3 })),
             (
                 Mark::After { number: 3, repo: Some("a/b".into()) },
