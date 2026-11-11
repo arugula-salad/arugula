@@ -9745,6 +9745,17 @@
               "null"
             ]
           },
+          "public": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PublicLink"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Doc's public link, when it has one (Arugula #871). Left out for\nan agent session, which is never given the key."
+          },
           "sections": {
             "items": {
               "$ref": "#/components/schemas/Section"
@@ -11936,6 +11947,43 @@
             "type": "string"
           }
         ]
+      },
+      "PublicLink": {
+        "description": "A team Doc's public link (Arugula #871). The platform keeps its key with\nthe Doc, and gives it only to those who read the Doc; control holds the\nciphertext and never the key. The URL is `<viewer>/<id>#k=<key>`, the\nviewer being `/control.json`'s `doc_viewer`.",
+        "properties": {
+          "behind": {
+            "description": "The Doc changed since the served version was sealed.",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "The link's id at control: 32 lower-case hex digits.",
+            "type": "string"
+          },
+          "key": {
+            "description": "The link's key, base64url without padding: 32 bytes.",
+            "type": "string"
+          },
+          "updated_at": {
+            "description": "When the served version was made (ms); 0 while there is none.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "ver": {
+            "description": "The version control serves; 0 while the first one isn't uploaded.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "ver",
+          "updated_at",
+          "behind"
+        ],
+        "type": "object"
       },
       "PutEntry": {
         "description": "[`BOARD_ENTRIES`]' body. Without `id` it adds a row, last (`entry` is\n`row` or absent), or, with `entry: zone`, a group with a `title`, last;\nwith `id` it changes that row or group: what is absent is left as it is,\nand a change to `pointer`, `note` or a group's `title` names `rev`. A\nnew row's `zone` is the group it goes in. `kind`, and a `zone` that is a\nlane, are refused, and so is every `status` (aru-125: lanes follow the work;\na question for a person is an ask, #367). The row's\n`pointer` is an issue or a PR (or a link, for a note).",
