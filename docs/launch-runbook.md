@@ -202,13 +202,28 @@ an image rollback, the next release goes forward as usual.
 
 ## Restore
 
-**Today (2026-11-10), both databases can be restored:**
+**Both databases can be restored** (checked 2026-11-11):
 - **The hub's SQLite:** Litestream is on, replicating to R2 within about a
-  second. A restore plan from R2 (`litestream restore -dry-run`) covers the
-  whole history up to the moment it was run. Fly also keeps daily volume
-  snapshots for 5 days.
+  second. `scripts/hub-restore-drill` restored production's backup from R2
+  onto geek in 34 s: integrity `ok`, 63 tables, current to the second (and to
+  an hour before with `--at`). Fly also keeps daily volume snapshots for 5
+  days.
 - **The platform's Postgres:** Fly's own backups (hourly incremental, daily
-  full) and the nightly encrypted dump in R2.
+  full) and the nightly encrypted dump in R2. **The dump's schedule doesn't
+  fire on its own** (Arugula #867): on 2026-11-11 the newest dump was 18 days
+  old. Before and during the watch, check its age and start it by hand when
+  it's past a day:
+
+  ```
+  scripts/platform-restore-drill --age          # exit 1 past 26 h
+  D=$(fly machine list -a arugula-platform --json | jq -r '.[] | select(.config.metadata.role == "platform-dump") | .id')
+  fly machine start "$D" -a arugula-platform
+  fly logs -a arugula-platform --machine "$D" --no-tail | grep platform-dump   # platform-dump: ok …
+  ```
+
+**Before the watch, and each day of it:** run both drills' quick checks,
+`scripts/hub-restore-drill` and `scripts/platform-restore-drill --age`, on
+geek with Infisical logged in.
 
 ### The hub
 
@@ -226,10 +241,14 @@ fly logs -a illogical-control --no-tail | grep -E 'restoring the latest backup|d
 fly status -a illogical-control                              # the clone started, 1/1 checks
 ```
 
-Not rehearsed end to end from R2 (2026-11-10): that needs the bucket's keys
-from Infisical. Litestream restoring to an empty disk was proven on
-2026-10-04 (control-ops.md, "Restoring"), and a restore plan from R2 for the
-live hub came back complete.
+Rehearsed end to end (2026-11-11), word for word, on a throwaway copy of the
+hub running the production build and backing up to an R2 prefix of its own
+(`LITESTREAM_PATH=rehearsal-…`, never `control`): stopped, cloned, and the
+clone said `no database: restoring the latest backup` then `database
+restored from its backup`, answering in 12 s with the same database (its
+push key, which lives there, unchanged). The copy and its prefix were
+deleted after. Production's own backup restores too: `scripts/hub-restore-drill`
+above.
 
 Check that the newest account or machine is there before declaring it
 over, then `fly machine destroy "$M" -a illogical-control`. Keep the old
