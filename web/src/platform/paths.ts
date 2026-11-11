@@ -13,7 +13,7 @@
 //   /p/:project/chat/:room         a room in it (`?msg=N`: at that message)
 //   /p/:project/chat/activity      Activity
 //   /p/:project/chat/saved         Saved
-//   /p/:project/chat/search?q=…    search
+//   /p/:project/chat/search?q=…    search (`&all=1`: every team's)
 //   /p/:project/dm/:room           a direct message, in its team's project
 //                                  (UI audit #169)
 //   /p/:project/issues             its issues (M201): `?state=closed`,
@@ -90,7 +90,7 @@ export type Route =
   | { page: "run"; project: string; run: string; msg?: number }
   | { page: "sessions"; project: string; label?: string; tracker?: number; asker?: string; going?: boolean }
   | { page: "session"; project: string; session: string }
-  | { page: "chat"; project: string; room?: string; msg?: number; thread?: number; view?: "activity" | "saved" | "search" | "threads"; q?: string }
+  | { page: "chat"; project: string; room?: string; msg?: number; thread?: number; view?: "activity" | "saved" | "search" | "threads"; q?: string; all?: boolean }
   | { page: "dm"; project: string; room: string; msg?: number; thread?: number }
   | { page: "workspaces"; project: string }
   | { page: "workspace"; project: string; workspace: string }
@@ -104,7 +104,7 @@ export type Route =
   | { page: "design" }
   | { page: "deploy"; deploy: string }
   /** An id-only address, to be put where it belongs (`resolve`). */
-  | { page: "find"; what: "chat"; room?: string; msg?: number; thread?: number; view?: "activity" | "saved" | "search" | "threads"; q?: string }
+  | { page: "find"; what: "chat"; room?: string; msg?: number; thread?: number; view?: "activity" | "saved" | "search" | "threads"; q?: string; all?: boolean }
   | { page: "find"; what: "issue"; issue: string; msg?: number }
   | { page: "find"; what: "run"; run: string; msg?: number }
   | { page: "missing"; path: string };
@@ -196,7 +196,7 @@ export function parse(path: string, search = ""): Route {
     if (parts.length === 1) return { page: "find", what: "chat" };
     if (parts[1] === "activity" || parts[1] === "saved") return { page: "find", what: "chat", view: parts[1] };
     if (parts[1] === "threads") return { page: "find", what: "chat", view: "threads" };
-    if (parts[1] === "search") return { page: "find", what: "chat", view: "search", q: q.get("q") ?? "" };
+    if (parts[1] === "search") return { page: "find", what: "chat", view: "search", q: q.get("q") ?? "", ...(q.get("all") === "1" && { all: true }) };
     const room = idOf(parts[1]);
     return room ? { page: "find", what: "chat", room, ...msg, ...thread } : missing;
   }
@@ -237,7 +237,7 @@ export function parse(path: string, search = ""): Route {
     if (parts.length === 3) return { page: "chat", project };
     if (parts.length === 4 && (parts[3] === "activity" || parts[3] === "saved")) return { page: "chat", project, view: parts[3] };
     if (parts.length === 4 && parts[3] === "threads") return { page: "chat", project, view: "threads" };
-    if (parts.length === 4 && parts[3] === "search") return { page: "chat", project, view: "search", q: q.get("q") ?? "" };
+    if (parts.length === 4 && parts[3] === "search") return { page: "chat", project, view: "search", q: q.get("q") ?? "", ...(q.get("all") === "1" && { all: true }) };
     const room = parts.length === 4 ? idOf(parts[3]) : null;
     return room ? { page: "chat", project, room, ...msg, ...thread } : missing;
   }
@@ -313,6 +313,12 @@ function issueRoute(project: string, rest: string[], q: URLSearchParams, msg: { 
 export type Names = (id: string) => string | null | undefined;
 
 /** A room's `?msg=N&thread=P`: the message to show, and the thread beside it (#106). */
+/** Search's query string: what was looked for, and `all` for every team's. */
+function searchQuery(r: { q?: string; all?: boolean }): string {
+  const parts = [r.q ? `q=${encodeURIComponent(r.q)}` : "", r.all ? "all=1" : ""].filter(Boolean);
+  return parts.length ? `?${parts.join("&")}` : "";
+}
+
 function at(r: { msg?: number; thread?: number }): string {
   const q = [r.msg !== undefined ? `msg=${r.msg}` : "", r.thread !== undefined ? `thread=${r.thread}` : ""].filter(Boolean);
   return q.length ? `?${q.join("&")}` : "";
@@ -329,7 +335,7 @@ export function pathOf(r: Route, names: Names = () => null): string {
     case "chat": {
       const base = `/p/${s(r.project)}/chat`;
       if (r.view === "activity" || r.view === "saved" || r.view === "threads") return `${base}/${r.view}`;
-      if (r.view === "search") return `${base}/search${r.q ? `?q=${encodeURIComponent(r.q)}` : ""}`;
+      if (r.view === "search") return `${base}/search${searchQuery(r)}`;
       return r.room ? `${base}/${s(r.room)}${at(r)}` : base;
     }
     case "issues": {
@@ -398,7 +404,7 @@ export function pathOf(r: Route, names: Names = () => null): string {
     case "find":
       if (r.what === "chat") {
         if (r.view === "activity" || r.view === "saved" || r.view === "threads") return `/chat/${r.view}`;
-        if (r.view === "search") return `/chat/search${r.q ? `?q=${encodeURIComponent(r.q)}` : ""}`;
+        if (r.view === "search") return `/chat/search${searchQuery(r)}`;
         return r.room ? `/chat/${s(r.room)}${at(r)}` : "/chat";
       }
       if (r.what === "issue") return `/issues/${s(r.issue)}${r.msg !== undefined ? `?msg=${r.msg}` : ""}`;

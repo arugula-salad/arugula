@@ -108,3 +108,13 @@ export interface ChatScope {
 
 /** Whether `r` is one `scope` lists; every room is, with none. */
 export const inScope = (r: ChatRoom, scope?: ChatScope): boolean => !scope || (scope.team ? r.team === scope.team : !r.team);
+
+/** Whether a view that reads across rooms (Activity, Saved, Threads) takes
+ * the room `r` (Arugula #883): the scope's rooms, and no DMs, which aren't a
+ * team's (the sidebar still lists them). A room the store doesn't know isn't
+ * in a scope. With no scope, every room. */
+export const inView = (r: ChatRoom | undefined, scope?: ChatScope): boolean => !scope || (!!r && r.kind !== "dm" && inScope(r, scope));
+
+/** The team a search is limited to: the scope's, unless it's every team's
+ * (`all`). Personal has no team to name: it searches as before. */
+export const searchTeam = (scope: ChatScope | undefined, all: boolean | undefined): string | undefined => (all ? undefined : (scope?.team ?? undefined));

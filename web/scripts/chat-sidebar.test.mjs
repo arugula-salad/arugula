@@ -7,12 +7,14 @@ import {
   collapse,
   emptySidebar,
   inScope,
+  inView,
   ordered,
   place,
   placed,
   placeOf,
   present,
   removeSection,
+  searchTeam,
   renameSection,
   setSort,
   sortOf,
@@ -79,4 +81,25 @@ test("a project's page lists its team's rooms, and Personal the rooms of no team
   assert.deepEqual([ch, other, pane].filter((r) => inScope(r, acme)).map((r) => r.id), ["c"]);
   assert.deepEqual([ch, other, pane].filter((r) => inScope(r, own)).map((r) => r.id), ["p"]);
   assert.deepEqual([ch, other, pane].filter((r) => inScope(r)).map((r) => r.id), ["c", "o", "p"]);
+});
+
+test("Activity, Saved and Threads take a team's rooms and no DMs; Search names its team unless All teams (#883)", () => {
+  const r = (kind, team) => ({ id: `${kind}_${team}`, kind, team });
+  const scope = { team: "t1", name: "Acme" };
+  const mine = { team: null, name: "Me" };
+  assert.equal(inView(r("channel", "t1"), scope), true);
+  assert.equal(inView(r("channel", "t2"), scope), false);
+  assert.equal(inView(r("dm", "t1"), scope), false);
+  assert.equal(inView(r("pane", null), scope), false);
+  // A room the store doesn't know isn't in a scope.
+  assert.equal(inView(undefined, scope), false);
+  // Personal: the rooms of no team.
+  assert.equal(inView(r("pane", null), mine), true);
+  assert.equal(inView(r("channel", "t1"), mine), false);
+  // No scope: every room, as the shell has it.
+  for (const room of [r("dm", "t1"), r("channel", "t2"), undefined]) assert.equal(inView(room), true);
+  assert.equal(searchTeam(scope, false), "t1");
+  assert.equal(searchTeam(scope, true), undefined);
+  assert.equal(searchTeam(mine, false), undefined);
+  assert.equal(searchTeam(undefined, undefined), undefined);
 });

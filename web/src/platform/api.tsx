@@ -13,11 +13,11 @@ import { controlOrigin, session } from "./session";
 import { toast } from "./toast";
 import { barProject } from "./where";
 
-const chatIn = (view?: "activity" | "saved" | "search" | "threads", q?: string): Route | null => {
+const chatIn = (view?: "activity" | "saved" | "search" | "threads", q?: string, all?: boolean): Route | null => {
   // The project the bar is in (each has its own rooms, UI audit #169),
   // else a team's: the current one's (Arugula #882).
   const project = barProject(current()) ?? chatProject(session.projects, currentProject(), lastTeamProject()) ?? session.personal()?.id;
-  return project ? { page: "chat", project, view, q } : null;
+  return project ? { page: "chat", project, view, q, all } : null;
 };
 
 export const platformApi: PlatformApi = {
@@ -39,8 +39,8 @@ export const platformApi: PlatformApi = {
     up: () => swipeUp(),
     down: () => swipeDown(),
     goTo: swipeGo,
-    openChatView(view, q = "") {
-      const r = chatIn(view, q);
+    openChatView(view, q = "", all = false) {
+      const r = chatIn(view, q, all);
       if (!r) return;
       // Typing in search replaces the entry, so Back doesn't step through it.
       const now = current();

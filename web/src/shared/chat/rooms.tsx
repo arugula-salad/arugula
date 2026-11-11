@@ -416,13 +416,13 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
 
   const view = route.view ? (
     route.view === "activity" ? (
-      <RoomActivityView store={store} phone={phone} />
+      <RoomActivityView store={store} phone={phone} scope={scope} />
     ) : route.view === "saved" ? (
-      <SavedView phone={phone} />
+      <SavedView phone={phone} scope={scope} />
     ) : route.view === "threads" ? (
-      <ThreadsView store={store} phone={phone} />
+      <ThreadsView store={store} phone={phone} scope={scope} />
     ) : (
-      <RoomSearchView store={store} q={route.q ?? ""} phone={phone} />
+      <RoomSearchView store={store} q={route.q ?? ""} phone={phone} scope={scope} all={route.all} />
     )
   ) : picked ? (
     <RoomView key={picked.id} store={store} room={picked} phone={phone} focus={route.msg} thread={route.thread} />
@@ -530,7 +530,7 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
   return (
     <div class="chat" ref={root} data-chat data-chat-control>
       <Bar>
-        <SearchField route={route} />
+        <SearchField route={route} scope={scope} />
       </Bar>
       <MaintenanceNote />
       <RoomSwitcher rooms={order} open={switching} close={() => setSwitching(false)} />

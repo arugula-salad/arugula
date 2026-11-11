@@ -60,7 +60,7 @@ function Routed() {
   if (s === null) return <Shell><p class="platform-section dim">Loading…</p></Shell>;
   if (s === "signed-out") return <SignIn />;
   if (typeof s === "object") return <Shell><p class="platform-section control-error">{s.error}</p></Shell>;
-  if (r.page === "chat") return <ChatPage project={r.project} route={{ room: r.room, msg: r.msg, thread: r.thread, view: r.view, q: r.q }}><Toast /></ChatPage>;
+  if (r.page === "chat") return <ChatPage project={r.project} route={{ room: r.room, msg: r.msg, thread: r.thread, view: r.view, q: r.q, all: r.all }}><Toast /></ChatPage>;
   if (r.page === "dm") return <ChatPage project={r.project} route={{ room: r.room, msg: r.msg, thread: r.thread }}><Toast /></ChatPage>;
   return <Shell>{body(r, lost)}</Shell>;
 }
