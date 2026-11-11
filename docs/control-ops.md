@@ -3484,6 +3484,19 @@ machines, and about 3% per busy pane watched over the relay. A
 spent (`steal` in Fly's metrics goes to about 90%), and then every route
 slows together (#855).
 
+Since #857 the hub has two runtimes: the relay's (named `relay` in a
+thread list) accepts every connection and moves relayed bytes, and the
+main one runs every request's handler with its database calls, so a
+burst of writes, each synced to disk, no longer holds up relayed
+sockets. `ARUGULA_CONTROL_ONE_RUNTIME=1` puts everything back on one, as
+before; `ARUGULA_CONTROL_WORKERS` sets the main one's threads (default:
+the cores, at least 4). A daemon sends a busy pane's output over the relay
+at most every 16 ms per page, as one message (#856), so a busy pane is
+about 60 relayed messages a second, not thousands.
+`ARUGULA_RELAY_MAX_MBPS` (off unless set) is a budget for the whole relay,
+in MB a second: past it, the sockets moving more than an even share of it
+are slowed to about 64 KB/s, the heaviest first, and the rest go on (#856).
+
 ### Metrics
 
 The hub and the platform each serve Prometheus metrics at `/metrics` on

@@ -371,8 +371,9 @@ async fn a_suspended_account_is_refused_everywhere() {
 #[test]
 fn the_relay_cap_follows_the_switch() {
     let switches = Arc::new(Switches::default());
-    let r = crate::relay::Relay::new(crate::relay::Caps { sockets: 0, daemons: 0, daily_bytes: 100, total: 0 })
-        .with_switches(switches.clone());
+    let r =
+        crate::relay::Relay::new(crate::relay::Caps { sockets: 0, daemons: 0, daily_bytes: 100, total: 0, budget: 0 })
+            .with_switches(switches.clone());
     let db = Db::memory();
     let t = r.admit(&db, "a1", false, false).unwrap();
     assert!(!t.count(100));
