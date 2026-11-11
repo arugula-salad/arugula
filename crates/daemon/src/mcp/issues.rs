@@ -9,9 +9,10 @@
 //! call names (`project`: an id, or `personal`), else the issue's project
 //! when the caller is an agent `start_agent` started on one (its block's
 //! `work.project`, Arugula #771), else the one the caller's clone's GitHub
-//! repo is linked to, else the owner's personal project. A
-//! clone of a GitHub repo that no project of the owner's links is
-//! refused, not guessed (as `arugula issue`'s `#N` there is GitHub's).
+//! repo is linked to, else control's default: the owner's personal project,
+//! or a team machine's team project. A clone of a GitHub repo that no
+//! project of the owner's links is refused, not guessed (as `arugula
+//! issue`'s `#N` there is GitHub's).
 //!
 //! **GitHub's issues stay drafts** a person sends (aru-041, aru-085):
 //! `draft` and `forge_draft` refuse a native issue and say to use
@@ -52,7 +53,8 @@ pub enum Rule {
     Started(String),
     /// The clone's GitHub repo (`owner/name`) is linked to it.
     Linked(String),
-    /// Neither: the owner's personal project.
+    /// Neither: control's default for this machine, the owner's personal
+    /// project or, on a team machine, the team's default project.
     Personal,
 }
 
@@ -106,6 +108,7 @@ impl Chosen {
     pub fn says(&self) -> String {
         let name = if self.name.is_empty() { self.id.clone() } else { self.name.clone() };
         match &self.rule {
+            Rule::Personal if self.team => format!("Your team's default project {name} ({})", self.rule.why()),
             Rule::Personal => format!("Your personal project {name} ({})", self.rule.why()),
             r => format!("Project {name} ({})", r.why()),
         }
@@ -435,6 +438,10 @@ mod tests {
         );
         assert!(chosen(Rule::Personal).says().starts_with("Your personal project Arugula (you named no project"));
         assert!(chosen(Rule::Personal).is_personal_by_default());
+        let team = Chosen { id: "prj_t".into(), name: "Acme".into(), team: true, rule: Rule::Personal };
+        let said = team.says();
+        assert!(said.starts_with("Your team's default project Acme (you named no project"), "{said}");
+        assert!(!said.to_lowercase().contains("personal"), "{said}");
         assert_eq!(chosen(Rule::Started("#9".into())).says(), "Project Arugula (you were started on its issue #9)");
         let nameless = Chosen { id: "prj_1".into(), name: String::new(), team: false, rule: Rule::Asked };
         assert_eq!(nameless.says(), "Project prj_1 (the one you named)");
