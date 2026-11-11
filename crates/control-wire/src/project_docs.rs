@@ -53,6 +53,15 @@ pub const PROJECT_DOCS: &str = "/api/projects/{project}/docs";
 /// rename it, or write or add a section, answered [`DocView`]; `DELETE`:
 /// it goes (owners and editors; a copy too).
 pub const PROJECT_DOC: &str = "/api/projects/{project}/docs/{id}";
+/// `GET`: a project's trashed Docs, newest first, [`TrashList`] (any member).
+/// A team Doc that is deleted waits here for [`TRASH_DAYS`] days (Arugula
+/// #866). Ids are `pdc_` and hex, so `trash` is never taken for one.
+pub const PROJECT_DOCS_TRASH: &str = "/api/projects/{project}/docs/trash";
+/// `POST`: bring a trashed Doc back whole, answered [`DocView`] (owners,
+/// editors and the Doc's maker).
+pub const PROJECT_DOC_RESTORE: &str = "/api/projects/{project}/docs/{id}/restore";
+/// How long a deleted team Doc waits in the trash before it goes for good.
+pub const TRASH_DAYS: u64 = 30;
 
 /// A Doc's team Docs. `POST` [`ShareCopy`]: Share with… makes one in the
 /// project `to`, answered [`DocView`] (409 [`Shared`] when there is one
@@ -243,6 +252,34 @@ pub struct DocList {
     pub docs: Vec<Doc>,
     /// Whether the reader may make one.
     pub writer: bool,
+}
+
+/// One trashed Doc: its head, who deleted it and when.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "ProjectDocTrashed"))]
+pub struct Trashed {
+    pub doc: Doc,
+    /// When it was deleted (ms).
+    pub trashed_at: u64,
+    /// The account that deleted it, or "" once that account is deleted.
+    /// The page names it from the team's members, as it does a Doc's
+    /// `author`.
+    pub trashed_by: String,
+    /// Whether the reader may restore it.
+    pub restorable: bool,
+}
+
+/// `GET` [`PROJECT_DOCS_TRASH`]: a project's trashed Docs, the latest
+/// deleted first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "ProjectDocTrash"))]
+pub struct TrashList {
+    pub project: String,
+    pub docs: Vec<Trashed>,
+    /// How many days a Doc waits ([`TRASH_DAYS`]).
+    pub days: u64,
 }
 
 /// A new Doc's section: a heading, and its Markdown now or an intent for
