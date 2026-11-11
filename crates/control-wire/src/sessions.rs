@@ -878,6 +878,10 @@ pub struct SessionRow {
     pub merged_at: Option<u64>,
     /// Why it failed or stopped.
     pub reason: Option<String>,
+    /// The latest error its box reported since a turn last pushed its
+    /// branch, such as a failed push (Arugula #859).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
     pub created_at: u64,
     pub updated_at: u64,
 }
