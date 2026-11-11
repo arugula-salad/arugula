@@ -3493,6 +3493,9 @@ before; `ARUGULA_CONTROL_WORKERS` sets the main one's threads (default:
 the cores, at least 4). A daemon sends a busy pane's output over the relay
 at most every 16 ms per page, as one message (#856), so a busy pane is
 about 60 relayed messages a second, not thousands.
+`ARUGULA_RELAY_MAX_MBPS` (off unless set) is a budget for the whole relay,
+in MB a second: past it, the sockets moving more than an even share of it
+are slowed to about 64 KB/s, the heaviest first, and the rest go on (#856).
 
 ### Metrics
 

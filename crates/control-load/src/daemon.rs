@@ -112,7 +112,11 @@ async fn serve(ctx: &Arc<Ctx>, ws: Ws) {
 
 /// One page's channel: output at a busy or an idle pane's pace, and echoes.
 async fn channel(ctx: Arc<Ctx>, s: DuplexStream) {
-    let busy = rand_f64() < ctx.cfg.busy;
+    // Every so many channels is busy, in the order they open, so a share of
+    // `busy` is that many busy panes, not a draw that varies run to run.
+    static OPENED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = OPENED.fetch_add(1, Ordering::Relaxed) as f64;
+    let busy = ((n + 1.0) * ctx.cfg.busy).floor() > (n * ctx.cfg.busy).floor();
     let rate = if busy { ctx.cfg.busy_rate } else { ctx.cfg.idle_rate };
     let (mut rd, mut wr) = tokio::io::split(s);
     // What to write: echoes and output in the order they came, as a pane's

@@ -97,6 +97,10 @@ struct Open {
     /// Bytes relayed since control started, every socket and both ways
     /// (the launch dashboard's, part of Arugula #532).
     bytes: AtomicU64,
+    /// The relay's bytes this second, every socket together, against
+    /// [`Caps::budget`] (#856): the second, and the bytes.
+    second: AtomicU64,
+    in_second: AtomicU64,
 }
 
 /// Per-account relay limits (#174), so one account can't take the whole
@@ -116,11 +120,17 @@ pub struct Caps {
     /// the proxy's connection limit, so a full relay leaves room for
     /// control's pages and sign-ins.
     pub total: usize,
+    /// Relayed bytes a second, every socket together (#856), 0 for no
+    /// limit. Past it, the sockets moving more than an even share of it
+    /// are slowed (as an account past its daily bytes is), the heaviest
+    /// first, and everyone else's go on as they were: pages, sign-ins and
+    /// the API keep the CPU they need.
+    pub budget: u64,
 }
 
 impl Default for Caps {
     fn default() -> Self {
-        Self { sockets: 32, daemons: 50, daily_bytes: 2_000_000_000, total: 5_000 }
+        Self { sockets: 32, daemons: 50, daily_bytes: 2_000_000_000, total: 5_000, budget: 0 }
     }
 }
 
@@ -170,13 +180,45 @@ pub struct Ticket {
     /// `Caps::daily_bytes`, unless the operator's cap says otherwise.
     daily: u64,
     switches: Arc<crate::switches::Switches>,
+    /// `Caps::budget`, and this socket's bytes this second against it:
+    /// the second, and the bytes.
+    budget: u64,
+    mine: Mutex<(u64, u64)>,
 }
 
 impl Ticket {
     /// Count bytes moved; whether the account is now past today's budget:
     /// the operator's cap for it as it is now (#531), else
     /// `Caps::daily_bytes`. 0 is none, and so is billing's.
+    /// Past the relay's budget a second (#856), a socket moving more than
+    /// its even share of it is slowed too.
     pub fn count(&self, n: u64) -> bool {
+        let heavy = self.over_budget(n, now_ms() / 1000);
+        self.count_today(n) || heavy
+    }
+
+    /// Whether the relay is past [`Caps::budget`] this second (`second`)
+    /// and this socket has moved more than an even share of it: the
+    /// budget over every relay socket open.
+    fn over_budget(&self, n: u64, second: u64) -> bool {
+        if self.budget == 0 {
+            return false;
+        }
+        let o = &self.open;
+        if o.second.swap(second, Ordering::Relaxed) != second {
+            o.in_second.store(0, Ordering::Relaxed);
+        }
+        let all = o.in_second.fetch_add(n, Ordering::Relaxed) + n;
+        let mut mine = self.mine.lock().unwrap();
+        if mine.0 != second {
+            *mine = (second, 0);
+        }
+        mine.1 += n;
+        let share = self.budget / o.all.load(Ordering::Relaxed).max(1) as u64;
+        all > self.budget && mine.1 > share
+    }
+
+    fn count_today(&self, n: u64) -> bool {
         self.open.bytes.fetch_add(n, Ordering::Relaxed);
         let mut t = self.u.today.lock().unwrap();
         let day = crate::day(now_ms());
@@ -327,6 +369,8 @@ impl Relay {
             billing,
             daily: self.caps.daily_bytes,
             switches: self.switches.clone(),
+            budget: self.caps.budget,
+            mine: Mutex::new((0, 0)),
         })
     }
 
@@ -1187,10 +1231,32 @@ fn note_refused(app: &App, who: &str, kind: &str, why: &Refused) {
 mod tests {
     use super::*;
 
+    /// Past the relay's budget a second (#856), the socket moving more
+    /// than its even share is slowed, and a light one isn't; a new second
+    /// starts over.
+    #[tokio::test]
+    async fn the_heaviest_sockets_are_slowed_past_the_budget() {
+        let db = crate::db::Db::memory();
+        let r = Relay::new(Caps { sockets: 0, daemons: 0, daily_bytes: 0, total: 0, budget: 1_000 });
+        let heavy = r.admit(&db, "a", false, true).unwrap();
+        let light = r.admit(&db, "b", false, true).unwrap();
+        // Under the budget, nobody is slowed, however uneven.
+        assert!(!heavy.over_budget(900, 7));
+        assert!(!light.over_budget(50, 7));
+        // Past it: the one over its share (500) is, the other isn't.
+        assert!(heavy.over_budget(200, 7));
+        assert!(!light.over_budget(10, 7));
+        // The next second, the window is empty again.
+        assert!(!heavy.over_budget(600, 8));
+        // No budget, no slowing.
+        let none = Relay::new(Caps { budget: 0, ..Caps::default() }).admit(&db, "c", false, true).unwrap();
+        assert!(!none.over_budget(u64::MAX / 2, 7));
+    }
+
     #[tokio::test]
     async fn caps_per_account() {
         let db = crate::db::Db::memory();
-        let r = Relay::new(Caps { sockets: 2, daemons: 1, daily_bytes: 100, total: 0 });
+        let r = Relay::new(Caps { sockets: 2, daemons: 1, daily_bytes: 100, total: 0, budget: 0 });
         let a1 = r.admit(&db, "a", false, false).unwrap();
         let a2 = r.admit(&db, "a", false, false).unwrap();
         let Err(Refused::Account(why)) = r.admit(&db, "a", false, false) else { panic!("over the account's limit") };
@@ -1220,7 +1286,7 @@ mod tests {
     #[test]
     fn a_ceiling_over_every_account() {
         let db = crate::db::Db::memory();
-        let r = Relay::new(Caps { sockets: 2, daemons: 1, daily_bytes: 0, total: 4 });
+        let r = Relay::new(Caps { sockets: 2, daemons: 1, daily_bytes: 0, total: 4, budget: 0 });
         // A is at its own limit: refused for that, which takes nothing from
         // the ceiling, so B still gets in.
         let a = [r.admit(&db, "a", false, false).unwrap(), r.admit(&db, "a", false, false).unwrap()];

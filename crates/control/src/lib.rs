@@ -262,6 +262,11 @@ struct Args {
     /// sign-ins.
     #[arg(long, default_value_t = 5_000, env = "ARUGULA_RELAY_MAX_TOTAL")]
     relay_max_total: usize,
+    /// Relayed MB a second, every socket together (#856), 0 for no limit.
+    /// Past it, the sockets moving more than an even share are slowed, so
+    /// a few heavy ones can't take the CPU pages and sign-ins need.
+    #[arg(long, default_value_t = 0, env = "ARUGULA_RELAY_MAX_MBPS")]
+    relay_max_mbps: u64,
 
     /// Product analytics (analytics.rs): a PostHog project's API key turns
     /// them on (POSTHOG_API_KEY), sent to its host. Off when unset.
@@ -1293,6 +1298,7 @@ async fn run(platforms: Box<dyn Platforms>) -> anyhow::Result<()> {
             daemons: a.relay_max_machines,
             daily_bytes: a.relay_daily_mb * 1_000_000,
             total: a.relay_max_total,
+            budget: a.relay_max_mbps * 1_000_000,
         })
         .with_switches(switches.clone()),
         passkeys: Default::default(),
