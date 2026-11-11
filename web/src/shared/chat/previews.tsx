@@ -97,6 +97,35 @@ export function mayLink(text: string): boolean {
   return /https?:\/\//i.test(text);
 }
 
+/** A link without its fragment, normalised the way control's link reading
+ * does (WHATWG URLs both), or null when it isn't one. */
+function bare(link: string): string | null {
+  try {
+    const u = new URL(link);
+    u.hash = "";
+    return u.href;
+  } catch {
+    return null;
+  }
+}
+
+/** Where a card goes: the link as the message wrote it (Arugula #879). Control
+ * reads and matches links without their fragment, so a card's `url` has
+ * none; but a shared Doc's key is its link's fragment (`#k=…`, which never
+ * reaches a server), and without it the Doc says its link is broken. So a
+ * card whose link the message wrote with a fragment opens that. */
+export function asWritten(text: string, url: string): string {
+  const want = bare(url);
+  if (want === null) return url;
+  for (const m of text.matchAll(/https?:\/\/[^\s<>()"`]+/gi)) {
+    // A sentence's last mark isn't the link's, as the message's own link
+    // ends (ui/markup.tsx). Not `_`: a Doc's key may end in one.
+    const link = m[0].replace(/[.,;:!?'"]+$/, "");
+    if (link.includes("#") && bare(link) === want) return link;
+  }
+  return url;
+}
+
 // ---- the cards
 
 /** The cards under one message. `mine`: its author, who may remove them. */
@@ -124,9 +153,11 @@ export function MessagePreviews({ room, seq, text, mine }: { room: string; seq: 
   if (!wants || removed || cards.length === 0) return null;
   return (
     <div class="link-cards" data-link-cards>
-      {cards.map((c) =>
-        c.kind === "object" ? <ObjectCard key={c.url} c={c} /> : c.kind === "board" ? <BoardCard key={c.url} c={c} /> : <WebCard key={c.url} c={c} />,
-      )}
+      {cards.map((card) => {
+        // #879: the link as written, a Doc's key with it.
+        const c = { ...card, url: asWritten(text, card.url) };
+        return c.kind === "object" ? <ObjectCard key={card.url} c={c} /> : c.kind === "board" ? <BoardCard key={card.url} c={c} /> : <WebCard key={card.url} c={c} />;
+      })}
       {mine && (
         <button
           class="link-card-remove"
