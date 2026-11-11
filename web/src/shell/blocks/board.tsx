@@ -17,7 +17,7 @@ import { BoardPanel } from "../../shared/boards/view";
 import { boards } from "../../shared/boards/store";
 import { platformFetch } from "../../shared/maintenance";
 import { askText, type PromptChoice } from "../../shared/ui/menu";
-import { PlatformApiContext } from "../../shared/platform-api";
+import { PlatformApiContext, type PlatformApi } from "../../shared/platform-api";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { BlockLoading, EmptyState } from "./block-states";
 import { shellPlatformApi } from "../platform-api";
@@ -30,7 +30,7 @@ export interface BoardState {
   board: string;
 }
 
-function BoardBlock({ client, s, shown }: { client: Client; s: BoardState | null; shown: boolean }) {
+function BoardBlock({ client, id, s, shown }: { client: Client; id: PaneId; s: BoardState | null; shown: boolean }) {
   const session = getControlSession();
   useSubscribe((fn) => session?.subscribe(fn) ?? (() => {}));
   let body;
@@ -45,12 +45,26 @@ function BoardBlock({ client, s, shown }: { client: Client; s: BoardState | null
       />
     );
   return (
-    <PlatformApiContext.Provider value={shellPlatformApi(client)}>
+    <PlatformApiContext.Provider value={boardApi(client, id)}>
       <div class="board-block" data-board-block={s?.board}>
         {body}
       </div>
     </PlatformApiContext.Provider>
   );
+}
+
+/** The shell's api for a board in this pane: a machine Doc opens beside it, and an agent block of this layout comes forward where it is. */
+function boardApi(client: Client, id: PaneId): PlatformApi {
+  const base = shellPlatformApi(client);
+  return {
+    ...base,
+    machineDoc: base.machineDoc && { ...base.machineDoc, open: (machine, doc) => base.machineDoc!.open(machine, doc, id) },
+    goToPane(machine, pane, quote) {
+      const n = Number(pane);
+      if (!quote && base.machineDoc?.here(machine) && client.info(n)) return client.setActive(n);
+      base.goToPane(machine, pane, quote);
+    },
+  };
 }
 
 /** A board's id in what was typed: `brd_…` alone, or in a board page's
@@ -97,12 +111,12 @@ export async function pinBoard(client: Client, o: { from: PaneId }) {
   await client.openBlock({ type: "board", config: { board }, local: true, split: o.from, from_pane: o.from }, "couldn't pin that board");
 }
 
-registerBlock("board", (client: Client, _id: PaneId): BlockView => {
+registerBlock("board", (client: Client, id: PaneId): BlockView => {
   const host = document.createElement("div");
   host.className = "block block-board";
   let state: BoardState | null = null;
   let visible = true;
-  const draw = () => render(<BoardBlock client={client} s={state} shown={visible} />, host);
+  const draw = () => render(<BoardBlock client={client} id={id} s={state} shown={visible} />, host);
   draw();
   return {
     host,
