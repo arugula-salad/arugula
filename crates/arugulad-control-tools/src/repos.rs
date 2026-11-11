@@ -68,15 +68,19 @@ fn project_path(project: &str) -> Result<String, String> {
 
 /// The path of the asked project's repos, or of the current project's
 /// (explicit, the block's issue, the clone's linked repo, control's
-/// default), with the line saying which when it was chosen.
-async fn repos_path(c: &Call<'_>, project: Option<&str>) -> Result<(String, Option<String>), String> {
-    match project.map(str::trim).filter(|p| !p.is_empty()) {
-        Some(p) => Ok((project_path(p)?, None)),
-        None => {
-            let chosen = c.chosen_project(None).await?;
-            Ok((project_path(&chosen.id)?, Some(chosen.says())))
-        }
+/// default), with the line saying which when it was chosen. `link` of the
+/// repo the clone is in, which no project links yet, is the one call the
+/// rule refuses that must work: it falls back to control's default.
+async fn repos_path(c: &Call<'_>, project: Option<&str>, linking: bool) -> Result<(String, Option<String>), String> {
+    if let Some(p) = project.map(str::trim).filter(|p| !p.is_empty()) {
+        return Ok((project_path(p)?, None));
     }
+    let chosen = match (c.chosen_project(None).await, linking) {
+        (Ok(chosen), _) => chosen,
+        (Err(_), true) => c.default_project().await?,
+        (Err(e), false) => return Err(e),
+    };
+    Ok((project_path(&chosen.id)?, Some(chosen.says())))
 }
 
 /// OWNER and NAME, as GitHub spells them.
@@ -103,7 +107,7 @@ async fn repos_call(c: &Call<'_>, method: Method, path: &str, body: Option<Value
 }
 
 pub(crate) async fn list_linked_repos(c: &Call<'_>, a: ProjectArgs) -> Out {
-    let (path, chose) = repos_path(c, a.project.as_deref()).await?;
+    let (path, chose) = repos_path(c, a.project.as_deref(), false).await?;
     let v = repos_call(c, Method::GET, &path, None).await?;
     let repos = v["repos"].as_array().cloned().unwrap_or_default();
     let summary = if repos.is_empty() {
@@ -120,7 +124,7 @@ pub(crate) async fn list_linked_repos(c: &Call<'_>, a: ProjectArgs) -> Out {
 
 pub(crate) async fn link_repo(c: &Call<'_>, kind: &str, a: RepoArgs) -> Out {
     let (owner, name) = owner_name(&a.repo)?;
-    let (path, chose) = repos_path(c, a.project.as_deref()).await?;
+    let (path, chose) = repos_path(c, a.project.as_deref(), kind == "link").await?;
     let v = match kind {
         "link" => repos_call(c, Method::POST, &path, Some(json!({ "repo": format!("{owner}/{name}") }))).await?,
         _ => repos_call(c, Method::DELETE, &format!("{path}/{owner}/{name}"), None).await?,

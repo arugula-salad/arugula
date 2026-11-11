@@ -2259,6 +2259,9 @@ async fn fake_native(f: FakeNative) -> String {
                 { "kind": "project", "id": "prj_1", "name": "acme",
                   "powers": ["issues.write", "threads.post", "threads.read"] }] }))
             .into_response(),
+            ("GET", ["api", "daemon", "issue-home"]) if at.contains("repo=acme%2Fnew") => {
+                no(StatusCode::NOT_FOUND, "acme/new is linked to none of your projects")
+            }
             ("GET", ["api", "daemon", "issue-home"]) => Json(json!({
                 "project": "prj_1", "home": "native", "chosen": false, "repos": [],
                 "native_issues": f.issues.lock().unwrap().len(), "both": false,
@@ -2346,6 +2349,9 @@ async fn fake_native(f: FakeNative) -> String {
                 "project": "prj_1", "repos": [{ "full_name": "acme/app", "private": true, "purge_after": null }],
             }))
             .into_response(),
+            ("POST", ["api", "projects", "prj_1", "repos"]) => {
+                Json(json!({ "full_name": b["repo"], "private": false, "purge_after": null })).into_response()
+            }
             ("POST", ["api", "forge", "ops"]) if b["op"] == "draft.create" => {
                 let d = json!({
                     "id": "dft_00000000000000000000000000000001", "project": "prj_1", "repo": b["repo"],
@@ -2457,8 +2463,24 @@ async fn an_agent_files_comments_on_and_closes_a_native_issue() {
     let said = repos["summary"].as_str().unwrap();
     assert!(said.contains("acme/app (private)") && said.contains("Project"), "{repos}");
 
+    // Linking the repo of a clone no project links yet: control's default, said so.
+    let new = d.sessions.join("new");
+    std::fs::create_dir_all(&new).unwrap();
+    for args in [&["init", "-q"][..], &["remote", "add", "origin", "git@github.com:acme/new.git"]] {
+        assert!(Command::new("git").arg("-C").arg(&new).args(args).status().unwrap().success());
+    }
+    let pane2 = call(&s0, "run", json!({ "cwd": new })).await["pane"].as_u64().unwrap();
+    let s2 = bridge_in(&d, Client::named("claude-code"), Some(pane2)).await;
+    let linked = call(&s2, "link_repo", json!({ "kind": "link", "repo": "acme/new" })).await;
+    let said = linked["summary"].as_str().unwrap();
+    assert!(said.starts_with("Linked acme/new") && said.contains("control's default"), "{linked}");
+    let refused_list = refused(&s2, "list", json!({ "kind": "linked_repos" })).await;
+    assert!(refused_list.contains("linked to none"), "{refused_list}");
+    s2.cancel().await.unwrap();
+
     let calls = fake.calls.lock().unwrap().clone();
     let at: Vec<&str> = calls.iter().map(|(a, _, _)| a.as_str()).collect();
+    assert!(at.contains(&"POST /api/projects/prj_1/repos"), "linked to the default: {at:?}");
     assert!(at.contains(&"GET /api/projects/prj_1/repos"), "the current project's repos: {at:?}");
     assert!(!at.iter().any(|a| a.contains("/projects/personal/")), "{at:?}");
     assert!(at.contains(&"GET /api/daemon/issue-home?repo=acme%2Fapp"), "the pane's clone: {at:?}");

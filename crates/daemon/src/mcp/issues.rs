@@ -54,6 +54,9 @@ pub enum Rule {
     Linked(String),
     /// Neither: the owner's personal project.
     Personal,
+    /// Control's default, asked for because the clone's GitHub repo is
+    /// linked to no project yet.
+    Default,
 }
 
 impl Rule {
@@ -97,6 +100,7 @@ impl Rule {
             Rule::Started(issue) => format!("you were started on its issue {issue}"),
             Rule::Linked(repo) => format!("this clone's repo {repo} is linked to it"),
             Rule::Personal => "you named no project, and no GitHub repo of this clone says another".into(),
+            Rule::Default => "this clone's repo is linked to no project yet, so control's default".into(),
         }
     }
 }
@@ -335,6 +339,16 @@ impl Call<'_> {
         let id = v["project"].as_str().ok_or("Arugula control named no project")?;
         let (name, team) = (v["name"].as_str().unwrap_or_default().to_owned(), v["team"] == true);
         Ok(Chosen { id: id.to_owned(), name, team, rule })
+    }
+
+    /// Control's default project (issue-home with no query: personal on a
+    /// personal machine, the team's on a team machine), for a call that
+    /// links a repo from a clone whose own repo no project links yet.
+    pub async fn default_project(&self) -> Result<Chosen, String> {
+        let v = self.issues_call(Method::GET, AGENT_ISSUE_HOME, None).await?;
+        let id = v["project"].as_str().ok_or("Arugula control named no project")?;
+        let (name, team) = (v["name"].as_str().unwrap_or_default().to_owned(), v["team"] == true);
+        Ok(Chosen { id: id.to_owned(), name, team, rule: Rule::Default })
     }
 
     /// A native issue, as the platform answers it.
