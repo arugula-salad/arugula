@@ -55,8 +55,26 @@ runs:
           dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q 'install ok installed' || missing+=("$p")
         done
         if [ ${#missing[@]} -gt 0 ]; then
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends "${missing[@]}" >/dev/null
+          # GitHub's Ubuntu images try azure.archive.ubuntu.com first, which
+          # stalls or doesn't resolve for whole stretches
+          # (actions/runner-images#14594): leave it out, so apt goes to
+          # archive.ubuntu.com. Each try is bounded, and a stalled one is
+          # tried again on a fresh connection.
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
+            grep -q . /etc/apt/apt-mirrors.txt || echo 'http://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
+          fi
+          apt=(sudo apt-get -qq -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
+          tries() {
+            for n in 1 2 3; do
+              timeout 300 "$@" && return 0
+              echo "::warning::try $n of 3 failed: $*"
+              sleep 5
+            done
+            return 1
+          }
+          tries "${apt[@]}" update
+          tries "${apt[@]}" install -y --no-install-recommends "${missing[@]}" >/dev/null
         fi
     # GitHub's VMs boot systemd but start no user manager for the runner,
     # whose job isn't a login session: linger starts one, and systemctl
