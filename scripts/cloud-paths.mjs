@@ -27,6 +27,7 @@ export const CLOUD = [
   "docs/launch-dashboard.json",
   "docs/design/control-email.md",
   "scripts/hub-restore-drill",
+  "scripts/dump-age-check",
 ];
 
 /** Whether a repo path is one of the cloud's, or under one. */
