@@ -303,12 +303,42 @@ Each one is flipped without a deploy.
   fly ssh console -a illogical-control -C "/arugula-control maintenance off --db /data/control.db"
   ```
 
-- **Pause sign-ups, waitlist mode, no new hosted boxes, per-account caps and
-  kill switch, sign-up rate limits:** Arugula #531 builds these. Its section in
-  control-ops.md has the commands. The caps decided for the beta: per account,
-  2 hosted boxes, 60 box-hours a month, 10 GB of relay a day and 300 TURN
-  minutes a day; sign-ups at most 60 an hour per IP; hosted boxes
-  waitlist-only.
+- **The launch switches** (Arugula #531): pause sign-ups, sign-ups per
+  address, new hosted boxes open, waitlisted or off, admissions, per-account
+  caps and the kill switch. Each takes effect within a second, without a
+  restart. What each does and what people see is in control-ops.md, "Launch
+  switches". These are the commands as rehearsed on the staging copy
+  (2026-11-11). Run each as a whole `-C "..."` string: a word with spaces
+  (`--why`, `--message`) needs its own quotes inside it, and a helper that
+  passes `$*` loses them.
+
+  ```
+  c() { fly ssh console -q -a illogical-control -C "/arugula-control switches $1 --db /data/control.db" | tr -d '\r'; }
+  c "status"                                           # every switch; add an account for its own
+  c "signups pause --message 'Back in an hour.'"       # or no --message, for the usual sentence
+  c "signups open"
+  c "cap signups-per-hour 30"                          # new accounts per address an hour (60)
+  c "hosted off"                                       # or open, or waitlist (the default)
+  c "waitlist"                                         # who asked for a box, first first
+  c "admit github:LOGIN --by NAME"                     # an account id works too; several at once
+  c "unadmit ACCOUNT"
+  c "cap boxes 5 --account github:LOGIN"               # boxes, box-hours, relay-mb; 'default' puts one back
+  c "suspend github:LOGIN --by NAME --why 'mining on a hosted box'"
+  c "unsuspend ACCOUNT"
+  ```
+
+  The caps decided for the beta: per account, 2 hosted boxes, 60 box-hours a
+  month and 10 GB of relay a day; sign-ups at most 60 an hour per address;
+  hosted boxes waitlist-only. (TURN minutes aren't capped: control hands out
+  no TURN credentials.) Note them in the shift's handoff when you change one.
+  What the rehearsal showed:
+  - A suspended account's page, platform calls and machines get 403 at once,
+    and its relay sockets drop; nobody else's notice.
+  - Past `relay-mb`, relayed traffic slows to about 64 KB/s per account: a busy
+    pane's keystroke echo went from about 20 ms to over 10 s. Raise an
+    account's cap rather than leave someone working there.
+  - The staging copy's generator addresses (`ARUGULA_LOADTEST_EXEMPT_IPS`)
+    skip `signups-per-hour`; production has no such exemption.
 - **Who may use hosted workspaces** today: `ARUGULA_HOSTED_ACCOUNTS` on
   `arugula-platform` (a secret: setting it restarts the platform's machines
   one at a time).
