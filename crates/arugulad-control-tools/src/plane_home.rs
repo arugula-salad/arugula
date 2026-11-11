@@ -9,6 +9,8 @@ use arugula_control_wire::{
     boards::IssueRef,
     projects::{AGENT_TRACKER_HOMES, TrackerHome, TrackerHomes},
 };
+use std::future::Future;
+
 use reqwest::Method;
 
 use crate::mcp::tools::Call;
@@ -86,9 +88,35 @@ pub(crate) async fn home(c: &Call<'_>, asked: Option<&str>, items: &[&str]) -> R
     Ok(chosen)
 }
 
+/// `home`'s project, else the main rule's (`Call::chosen_project`): `home`
+/// is `None` when the current project holds the identifier, or there is none.
+pub(crate) async fn home_or_main(c: &Call<'_>, asked: Option<&str>, items: &[&str]) -> Result<String, String> {
+    or_main(home(c, asked, items).await?, async { Ok(c.chosen_project(asked).await?.id) }).await
+}
+
+/// `home`, or what `main` resolves to; `main` only runs on a miss.
+async fn or_main(home: Option<String>, main: impl Future<Output = Result<String, String>>) -> Result<String, String> {
+    match home {
+        Some(p) => Ok(p),
+        None => main.await,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A Plane-home miss sends the main rule's project, not none; a hit
+    /// never asks the main rule.
+    #[tokio::test]
+    async fn a_miss_falls_to_the_main_rule() {
+        assert_eq!(or_main(None, async { Ok("prj_main".to_owned()) }).await, Ok("prj_main".to_owned()));
+        assert_eq!(
+            or_main(Some("prj_home".into()), async { Err("asked".to_owned()) }).await,
+            Ok("prj_home".to_owned())
+        );
+        assert_eq!(or_main(None, async { Err("no project".to_owned()) }).await, Err("no project".to_owned()));
+    }
 
     fn home(id: &str, name: &str, idents: &[&str]) -> TrackerHome {
         TrackerHome { id: id.into(), name: name.into(), identifiers: idents.iter().map(|s| s.to_string()).collect() }
