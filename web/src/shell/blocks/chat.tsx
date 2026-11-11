@@ -11,7 +11,7 @@ import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
 import { AdapterHelp, installAdapter } from "../ui/adapter";
 import { AgentMessage } from "../../shared/agent-message";
-import { Composer, EarlierNote, KeptImage, STATUS, filesOf, money, type AgentState, type Entry } from "./agent";
+import { Composer, EarlierNote, KeptImage, STATUS, filesOf, forgetKept, money, type AgentState, type Entry } from "./agent";
 import { BlockLoading, EmptyState } from "./block-states";
 import { registerBlock, type BlockView } from "./view";
 import { Bar } from "../../shared/ui/bar";
@@ -168,6 +168,7 @@ registerBlock("chat", (client, id): BlockView => {
     text: () => (state ? chatText(state) : ""),
     focus: () => host.querySelector<HTMLElement>(".agent-composer textarea")?.focus(),
     dispose: () => {
+      forgetKept(client, id);
       render(null, host);
       host.remove();
     },

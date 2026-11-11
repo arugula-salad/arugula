@@ -107,6 +107,12 @@ fn policy(method: &Method, path: &str) -> Policy {
         ["api", "blocks", id, "call", "doc_asset"] if !get => {
             pane(id).map_or(Policy::Owner, |p| Policy::On(p, Role::Viewer))
         }
+        // Arugula #85: so are an agent (or chat) block's kept images (M71),
+        // which its transcript names and a viewer's page shows. Reading one
+        // changes nothing.
+        ["api", "blocks", id, "call", "image"] if !get => {
+            pane(id).map_or(Policy::Owner, |p| Policy::On(p, Role::Viewer))
+        }
         ["api", "blocks", id, "call", _] if !get => pane(id).map_or(Policy::Owner, |p| Policy::On(p, Role::Editor)),
         // M76: what's offered to other people's agents is the owner's to
         // choose; the cards (and, from M78, their tasks) are for anyone who
@@ -363,6 +369,9 @@ mod tests {
         // `asset` is the editor's.
         assert_eq!(policy(&p, "/api/blocks/7/call/doc_asset"), Policy::On(7, Role::Viewer));
         assert_eq!(policy(&p, "/api/blocks/7/call/asset"), Policy::On(7, Role::Editor));
+        // Arugula #85: an agent block's kept images are read by a viewer too.
+        assert_eq!(policy(&p, "/api/blocks/7/call/image"), Policy::On(7, Role::Viewer));
+        assert_eq!(policy(&p, "/api/blocks/7/call/images"), Policy::On(7, Role::Editor));
         assert_eq!(policy(&g, "/api/blocks/7"), Policy::On(7, Role::Viewer));
         assert_eq!(policy(&p, "/api/blocks/7/call/comment"), Policy::On(7, Role::Editor));
         assert_eq!(policy(&p, "/api/blocks/7/call/answer"), Policy::On(7, Role::Editor));
