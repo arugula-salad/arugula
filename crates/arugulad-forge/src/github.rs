@@ -208,6 +208,12 @@ impl Adapter for Github {
         Box::pin(Github::merge_styles(self, repo))
     }
 
+    fn merge_queued<'a>(&'a self, repo: &'a str, number: u64) -> BoxFuture<'a, Result<Option<bool>, Error>> {
+        Box::pin(async move {
+            Ok(Github::merge_queue(self, repo, number).await?.and_then(|(on, queued)| on.then_some(queued)))
+        })
+    }
+
     fn read_only(&self) -> Option<String> {
         self.tokens().via_app().map(|_| {
             "read-only: no gh login here, so it reads through Arugula control's GitHub App; writes go out as you, so they need your own login (`gh auth login`, then refresh)".to_owned()

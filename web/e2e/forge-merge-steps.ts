@@ -27,6 +27,8 @@ export function mergeSpecs(tag: string) {
   let repoReads = 0;
   let pullNotModified = 0;
   const merges: { style: string; auth: string }[] = [];
+  // #878: whether the branch has a merge queue, and whether the PR is in it.
+  const queue = { on: false, queued: false };
 
   function answer(res: ServerResponse, inm: string | undefined, v: unknown, pull = false) {
     const body = JSON.stringify(v);
@@ -53,9 +55,10 @@ export function mergeSpecs(tag: string) {
       let raw = "";
       req.on("data", (c) => (raw += c));
       req.on("end", () => {
-        // A merge asks first whether the branch has a merge queue: this one hasn't.
+        // A merge, and each poll of an open PR (#878), ask whether the
+        // branch has a merge queue and the PR is in it: by default it hasn't.
         if (req.method === "POST" && u.pathname === "/graphql") {
-          const pullRequest = { id: "PR_node", isInMergeQueue: false, isMergeQueueEnabled: false };
+          const pullRequest = { id: "PR_node", isInMergeQueue: queue.on && queue.queued, isMergeQueueEnabled: queue.on };
           return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ data: { repository: { pullRequest } } }));
         }
         if (req.method === "PUT" && p === `/pulls/${N}/merge`) {
@@ -95,6 +98,7 @@ export function mergeSpecs(tag: string) {
     repoReads = 0;
     pullNotModified = 0;
     merges.length = 0;
+    Object.assign(queue, { on: false, queued: false });
     Object.assign(item, { state: "open", merged: false, merged_at: null, merged_by: null, mergeable_state: "blocked" });
   });
 
@@ -135,6 +139,22 @@ export function mergeSpecs(tag: string) {
     expect(await release(page, block)).toBe(200);
     await expect(el.locator("[data-merge]")).toBeVisible();
     await expect(el.locator('[data-item-next="info"]')).toHaveCount(0);
+    expect(merges).toEqual([]);
+  });
+
+  test(`${tag}: a PR in the merge queue says Queued and offers no Merge; out of it, it's Open again (#878)`, async ({ page }) => {
+    item.mergeable_state = "clean"; // would be "Ready to merge" if it weren't queued
+    Object.assign(queue, { on: true, queued: true });
+    await reset(page);
+    const block = await open(page);
+    const el = page.locator(`[data-forge-block="${block}"]`);
+    await expect(el.locator("[data-item-pill]")).toHaveText("Queued");
+    await expect(el.locator('[data-item-next="info"]')).toContainText("In the merge queue");
+    await expect(el.locator("[data-merge]")).toHaveCount(0);
+    // Taken out of the queue (its group failed): Open, and Merge is back.
+    queue.queued = false;
+    await expect(el.locator("[data-item-pill]")).toHaveText("Open");
+    await expect(el.locator("[data-merge]")).toBeVisible();
     expect(merges).toEqual([]);
   });
 

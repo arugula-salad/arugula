@@ -235,6 +235,7 @@ fn item(r: &Read) -> Item {
             .collect(),
         comments: comments as u64,
         updated_at: i.updated_at as i64,
+        queued: i.state == "open" && i.queued,
         ..Default::default()
     };
     item.head.sha = i.head_sha.clone().unwrap_or_default();
@@ -414,6 +415,7 @@ mod tests {
                 base_ref: Some("main".into()),
                 created_at: 1,
                 updated_at: 9,
+                queued: false,
             },
             checks: vec![
                 ForgeCheck {
@@ -583,6 +585,18 @@ mod tests {
             (ItemKind::Issue, ItemState::Closed, "https://github.com/acme/app/issues/7")
         );
         assert!(i.item.head_ref.is_empty() && i.linked.is_empty());
+    }
+
+    /// Arugula #878: the platform's `queued` is the block's while the PR is
+    /// open; a merged PR that a stale mirror still calls queued isn't.
+    #[test]
+    fn queued_while_open() {
+        let mut r = read();
+        assert!(!pr(&r).item.queued);
+        r.item.queued = true;
+        assert!(pr(&r).item.queued);
+        r.item.state = "merged".into();
+        assert!(!pr(&r).item.queued);
     }
 
     #[test]

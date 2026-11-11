@@ -53,6 +53,11 @@ test.beforeAll(async () => {
     const p = u.pathname.replace(`/repos/${REPO}`, "");
     req.resume();
     req.on("end", () => {
+      // Each poll of an open PR asks whether it's in a merge queue (#878): no queue here. Not a write.
+      if (req.method === "POST" && u.pathname === "/graphql") {
+        const pullRequest = { id: "PR_node", isInMergeQueue: false, isMergeQueueEnabled: false };
+        return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ data: { repository: { pullRequest } } }));
+      }
       if (req.method === "POST") {
         writes.push({ route: p, auth: req.headers.authorization! });
         for (const c of runs) if (c.conclusion === "failure") Object.assign(c, { status: "queued", conclusion: null });
