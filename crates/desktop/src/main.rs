@@ -672,6 +672,9 @@ fn allow_control(app: &AppHandle) {
 
 fn open_window(app: &AppHandle, url: WebviewUrl) -> tauri::Result<tauri::WebviewWindow> {
     allow_control(app);
+    // A pane popped out (#497, `#pop=`): a window of its own, for another
+    // monitor, never a tab of the window it came from; and pane-sized.
+    let popped = matches!(&url, WebviewUrl::External(u) if pop_out(u));
     let n = WINDOWS.fetch_add(1, Ordering::SeqCst);
     let label = format!("w{n}");
     let handle = app.clone();
@@ -687,7 +690,7 @@ fn open_window(app: &AppHandle, url: WebviewUrl) -> tauri::Result<tauri::Webview
         builder = builder
             .title_bar_style(tauri::TitleBarStyle::Overlay)
             .hidden_title(true)
-            .tabbing_identifier("arugula")
+            .tabbing_identifier(&if popped { format!("arugula-pop-{n}") } else { "arugula".into() })
             // Shown once it's set to join the others as a tab.
             .visible(false);
     }
@@ -697,7 +700,7 @@ fn open_window(app: &AppHandle, url: WebviewUrl) -> tauri::Result<tauri::Webview
     }
     let w = builder
         .title("Arugula")
-        .inner_size(1280.0, 820.0)
+        .inner_size(if popped { 720.0 } else { 1280.0 }, 820.0)
         .initialization_script(cloud::init_script(cloud::control().is_some_and(|c| cloud::signed_in(app, &c))))
         // The microphone and camera for the client's own pages (a lent
         // device's record_audio, S33; scanning a QR code; macOS still asks,
@@ -793,7 +796,7 @@ fn open_window(app: &AppHandle, url: WebviewUrl) -> tauri::Result<tauri::Webview
         _ => {}
     });
     #[cfg(target_os = "macos")]
-    tab_in(&w);
+    tab_in(&w, popped);
     // Back from an update's restart on its own: not in front of whatever
     // someone's doing now (#561).
     if !updates::quiet() {
@@ -802,16 +805,25 @@ fn open_window(app: &AppHandle, url: WebviewUrl) -> tauri::Result<tauri::Webview
     Ok(w)
 }
 
+/// A pane popped out into a window of its own (#497): the page's `#pop=`.
+fn pop_out(url: &tauri::Url) -> bool {
+    url.fragment().is_some_and(|f| f.starts_with("pop="))
+}
+
 /// macOS: a new window opens as a tab of the window in front, whatever the
-/// system's "Prefer tabs" setting says.
+/// system's "Prefer tabs" setting says; a popped-out pane's never does.
 #[cfg(target_os = "macos")]
-fn tab_in(w: &tauri::WebviewWindow) {
+fn tab_in(w: &tauri::WebviewWindow, popped: bool) {
     let Ok(ptr) = w.ns_window() else { return };
     let (ptr, w2) = (ptr as usize, w.clone());
     let _ = w.run_on_main_thread(move || {
         // SAFETY: the window's NSWindow, on the main thread, while it lives.
         let ns = unsafe { &*(ptr as *const objc2_app_kit::NSWindow) };
-        ns.setTabbingMode(objc2_app_kit::NSWindowTabbingMode::Preferred);
+        ns.setTabbingMode(if popped {
+            objc2_app_kit::NSWindowTabbingMode::Disallowed
+        } else {
+            objc2_app_kit::NSWindowTabbingMode::Preferred
+        });
         keep_full_screen_on_escape();
         let _ = w2.show();
         if !updates::quiet() {

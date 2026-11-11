@@ -33,6 +33,7 @@ import { confirmCloseTab } from "./close-tab";
 import { sessionThreadItems, threadItems } from "./threads";
 import { docShareItems } from "./doc-share";
 import { focusItems } from "./panes/layout";
+import { canPopOut, popOut } from "./panes/pop-out";
 import { watchingNote } from "./shell/live";
 import { bigTipsOn, setBigTips, setTips, tipsOn } from "../../shared/seen";
 import { clientTarget, EDITORS, editorShown, openInEditor, setEditorPref } from "../open-in-editor";
@@ -172,6 +173,8 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
     ...(info?.type === "doc" ? [...docShareItems(client, id), "separator" as const] : []),
     ...clipboard,
     ...focus,
+    // #497: a block alone in a window of its own (a second monitor).
+    ...(canPopOut(client, id, phone) ? [{ label: "Pop out", shortcut: keyHint("pane.pop-out"), run: () => popOut(client, id) } as MenuItem] : []),
     { label: "Split right", run: () => client.intent({ op: "split", pane: id, edge: "right" }) },
     { label: "Split down", run: () => client.intent({ op: "split", pane: id, edge: "bottom" }) },
     ...(tabMachine ? [{ label: "Split (local)", run: () => client.intent({ op: "split", pane: id, edge: "right", local: true }) } as MenuItem] : []),

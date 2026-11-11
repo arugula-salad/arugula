@@ -10,6 +10,7 @@ import { DropOverlay } from "./drop-overlay";
 import { len, px } from "./geometry";
 import { paneChrome, PIXELS } from "./chrome-geometry";
 import { PaneSlot } from "./pane-slot";
+import { PoppedOut } from "./pop-out";
 import { attachSwipe } from "../../../shared/ui/swipe";
 import { FONT_SIZE } from "../../terminal-view";
 
@@ -185,9 +186,16 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
           transform: scale < 1 ? `scale(${scale})` : undefined,
         }}
       >
-        {drawingTab.layout.panes.map(([id, r]) => (
-          <PaneSlot key={id} client={client} id={id} rect={r} cell={drawingCell} active={id === active} phone={phone} />
-        ))}
+        {drawingTab.layout.panes.map(([id, r]) =>
+          // #497: out in a window of its own, it leaves a placeholder.
+          tab.popped?.includes(id) ? (
+            <div key={id} class="pane popped" data-pane={id} style={px(r, drawingCell)}>
+              <PoppedOut client={client} id={id} />
+            </div>
+          ) : (
+            <PaneSlot key={id} client={client} id={id} rect={r} cell={drawingCell} active={id === active} phone={phone} />
+          ),
+        )}
         {headers &&
           drawingTab.layout.panes.map(([id, r]) => (
             <PaneHeader key={`h${id}`} client={client} tab={tab} id={id} rect={r} cell={drawingCell} height={chrome?.header} active={id === active} sizedElsewhere={id === chipOn ? claimHere : undefined} />

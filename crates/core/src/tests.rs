@@ -393,6 +393,34 @@ fn focus_belongs_to_the_client_holding_the_tab() {
     assert_eq!(m.layout(1).unwrap().panes.len(), 4);
 }
 
+/// #497: a pane popped out keeps its place in the tree, and comes back when
+/// its window (the client that popped it) goes, when it's closed, or when
+/// it's brought back. Popping a focused pane out ends the focus.
+#[test]
+fn a_popped_out_pane_comes_back_with_its_window() {
+    let mut m = tab_of(3);
+    let (desktop, window) = (7, 9);
+    m.view(desktop, 1, 100, 40, None, true).unwrap();
+    let before = m.layout(1).unwrap();
+    m.apply(Intent::Focus { tab: 1, pane: Some(2) }).unwrap();
+    m.apply(Intent::PopOut { pane: 2, out: true, by: Some(window) }).unwrap();
+    let t = m.tab(1).unwrap();
+    assert_eq!((t.popped.get(&2), t.focus), (Some(&Some(window)), None));
+    assert_eq!(m.layout(1).unwrap(), before, "its place stays");
+    // Another client going changes nothing; its window going brings it back.
+    assert!(!m.release(desktop) || m.tab(1).unwrap().popped.contains_key(&2));
+    assert!(m.release(window));
+    assert!(m.tab(1).unwrap().popped.is_empty());
+    // Brought back by hand, or closed.
+    m.apply(Intent::PopOut { pane: 3, out: true, by: Some(window) }).unwrap();
+    m.apply(Intent::PopOut { pane: 3, out: false, by: None }).unwrap();
+    assert!(m.tab(1).unwrap().popped.is_empty());
+    m.apply(Intent::PopOut { pane: 3, out: true, by: Some(window) }).unwrap();
+    m.apply(Intent::ClosePane { pane: 3 }).unwrap();
+    assert!(m.tab(1).unwrap().popped.is_empty());
+    assert!(m.apply(Intent::PopOut { pane: 42, out: true, by: None }).is_err());
+}
+
 #[test]
 fn an_old_save_loads_without_focus() {
     let mut m = tab_of(3);

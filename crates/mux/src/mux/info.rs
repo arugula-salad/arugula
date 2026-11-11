@@ -379,6 +379,9 @@ impl Daemon {
                     owner: t.owner,
                     zoom: t.zoom,
                     focus: t.focus,
+                    // Only those still in this tab: a pane moved to another
+                    // leaves its pop-out behind.
+                    popped: t.popped.keys().copied().filter(|p| t.root.contains(*p)).collect(),
                     layout: self.mux.layout(t.id).ok()?,
                 })
             })

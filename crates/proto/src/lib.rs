@@ -1086,6 +1086,11 @@ pub struct TabView {
     /// already shows it.
     #[serde(default)]
     pub focus: Option<PaneId>,
+    /// Panes shown in a window of their own (Arugula #497): their place in
+    /// `layout` holds a placeholder.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<Vec<PaneId>>", optional))]
+    pub popped: Vec<PaneId>,
     pub layout: Layout,
 }
 
