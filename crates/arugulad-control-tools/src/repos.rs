@@ -18,7 +18,7 @@ use crate::mcp::tools::{Call, Kind, Out, done};
 
 #[derive(Deserialize, JsonSchema)]
 pub struct ProjectArgs {
-    /// The project's id (prj_…). Default: the user's personal project.
+    /// The project's id (prj_…), or personal. Default: the current project.
     #[serde(default)]
     pub project: Option<String>,
 }
@@ -27,14 +27,14 @@ pub struct ProjectArgs {
 pub struct RepoArgs {
     /// The repo on GitHub, OWNER/NAME.
     pub repo: String,
-    /// The project's id (prj_…). Default: the user's personal project.
+    /// The project's id (prj_…), or personal. Default: the current project.
     #[serde(default)]
     pub project: Option<String>,
 }
 
 pub(crate) const LIST_LINKED: Kind = Kind {
     name: "linked_repos",
-    description: "The GitHub repos linked to one of the user's projects in Arugula control (default their personal one): each one's name, whether it's private, and, for one unlinked, when its rows are purged.",
+    description: "The GitHub repos linked to one of the user's projects in Arugula control (default the current one): each one's name, whether it's private, and, for one unlinked, when its rows are purged.",
     schema: schema_for_type::<ProjectArgs>,
     flag: None,
 };
@@ -42,7 +42,7 @@ pub(crate) const LIST_LINKED: Kind = Kind {
 pub(crate) const LINK: &[Kind] = &[
     Kind {
         name: "link",
-        description: "Link a GitHub repo to one of the user's projects (default their personal one), as the user: they must be an admin or maintainer of it on GitHub. If Arugula's GitHub App isn't installed where it lives, the answer says where the user installs it.",
+        description: "Link a GitHub repo to one of the user's projects (default the current one), as the user: they must be an admin or maintainer of it on GitHub. If Arugula's GitHub App isn't installed where it lives, the answer says where the user installs it.",
         schema: schema_for_type::<RepoArgs>,
         flag: None,
     },
@@ -56,16 +56,26 @@ pub(crate) const LINK: &[Kind] = &[
 
 /// The project in a path: its id, or `personal`. Nothing that isn't an id
 /// reaches the path.
-fn project_path(project: Option<&str>) -> Result<String, String> {
+fn project_path(project: &str) -> Result<String, String> {
     match project {
-        None => Ok("/api/projects/personal/repos".into()),
-        Some(p)
-            if p.strip_prefix("prj_")
-                .is_some_and(|h| !h.is_empty() && h.chars().all(|c| c.is_ascii_alphanumeric())) =>
-        {
+        "personal" => Ok("/api/projects/personal/repos".into()),
+        p if p.strip_prefix("prj_").is_some_and(|h| !h.is_empty() && h.chars().all(|c| c.is_ascii_alphanumeric())) => {
             Ok(format!("/api/projects/{p}/repos"))
         }
-        Some(p) => Err(format!("project: a project's id (prj_…), not {p:?}")),
+        p => Err(format!("project: a project's id (prj_…) or personal, not {p:?}")),
+    }
+}
+
+/// The path of the asked project's repos, or of the current project's
+/// (explicit, the block's issue, the clone's linked repo, control's
+/// default), with the line saying which when it was chosen.
+async fn repos_path(c: &Call<'_>, project: Option<&str>) -> Result<(String, Option<String>), String> {
+    match project.map(str::trim).filter(|p| !p.is_empty()) {
+        Some(p) => Ok((project_path(p)?, None)),
+        None => {
+            let chosen = c.chosen_project(None).await?;
+            Ok((project_path(&chosen.id)?, Some(chosen.says())))
+        }
     }
 }
 
@@ -93,25 +103,31 @@ async fn repos_call(c: &Call<'_>, method: Method, path: &str, body: Option<Value
 }
 
 pub(crate) async fn list_linked_repos(c: &Call<'_>, a: ProjectArgs) -> Out {
-    let v = repos_call(c, Method::GET, &project_path(a.project.as_deref())?, None).await?;
+    let (path, chose) = repos_path(c, a.project.as_deref()).await?;
+    let v = repos_call(c, Method::GET, &path, None).await?;
     let repos = v["repos"].as_array().cloned().unwrap_or_default();
     let summary = if repos.is_empty() {
         "No GitHub repos are linked to the project.".to_owned()
     } else {
         format!("{} linked: {}", repos.len(), repos.iter().map(line).collect::<Vec<_>>().join(", "))
     };
+    let summary = match chose {
+        Some(s) => format!("{s}: {summary}"),
+        None => summary,
+    };
     done(summary, json!({ "project": v["project"], "repos": repos }))
 }
 
 pub(crate) async fn link_repo(c: &Call<'_>, kind: &str, a: RepoArgs) -> Out {
     let (owner, name) = owner_name(&a.repo)?;
-    let path = project_path(a.project.as_deref())?;
+    let (path, chose) = repos_path(c, a.project.as_deref()).await?;
     let v = match kind {
         "link" => repos_call(c, Method::POST, &path, Some(json!({ "repo": format!("{owner}/{name}") }))).await?,
         _ => repos_call(c, Method::DELETE, &format!("{path}/{owner}/{name}"), None).await?,
     };
     let said = if kind == "link" { "Linked" } else { "Unlinked" };
-    done(format!("{said} {}", line(&v)), v)
+    let summary = format!("{said} {}", line(&v));
+    done(chose.map_or(summary.clone(), |s| format!("{summary}. {s}")), v)
 }
 
 #[cfg(test)]
@@ -120,10 +136,10 @@ mod tests {
 
     #[test]
     fn only_ids_and_repo_names_reach_the_path() {
-        assert_eq!(project_path(None).unwrap(), "/api/projects/personal/repos");
-        assert_eq!(project_path(Some("prj_ab12")).unwrap(), "/api/projects/prj_ab12/repos");
-        assert!(project_path(Some("prj_../x")).is_err());
-        assert!(project_path(Some("Acme")).is_err());
+        assert_eq!(project_path("personal").unwrap(), "/api/projects/personal/repos");
+        assert_eq!(project_path("prj_ab12").unwrap(), "/api/projects/prj_ab12/repos");
+        assert!(project_path("prj_../x").is_err());
+        assert!(project_path("Acme").is_err());
         assert_eq!(owner_name("acme/app").unwrap(), ("acme", "app"));
         assert!(owner_name("acme/app/x").is_err());
         assert!(owner_name("../x").is_err());

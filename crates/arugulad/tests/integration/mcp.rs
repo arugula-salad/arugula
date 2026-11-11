@@ -2342,6 +2342,10 @@ async fn fake_native(f: FakeNative) -> String {
                 let seq = cs.iter().filter(|(on, _)| on == id).count();
                 Json(json!({ "seq": seq, "mentions": [], "unreached": [], "pushed": [] })).into_response()
             }
+            ("GET", ["api", "projects", "prj_1", "repos"]) => Json(json!({
+                "project": "prj_1", "repos": [{ "full_name": "acme/app", "private": true, "purge_after": null }],
+            }))
+            .into_response(),
             ("POST", ["api", "forge", "ops"]) if b["op"] == "draft.create" => {
                 let d = json!({
                     "id": "dft_00000000000000000000000000000001", "project": "prj_1", "repo": b["repo"],
@@ -2448,8 +2452,15 @@ async fn an_agent_files_comments_on_and_closes_a_native_issue() {
         assert!(why.contains("issue_write writes to them at once"), "{tool}: {why}");
     }
 
+    // No project: the linked repos are the current project's, not the personal one's.
+    let repos = call(&s, "list", json!({ "kind": "linked_repos" })).await;
+    let said = repos["summary"].as_str().unwrap();
+    assert!(said.contains("acme/app (private)") && said.contains("Project"), "{repos}");
+
     let calls = fake.calls.lock().unwrap().clone();
     let at: Vec<&str> = calls.iter().map(|(a, _, _)| a.as_str()).collect();
+    assert!(at.contains(&"GET /api/projects/prj_1/repos"), "the current project's repos: {at:?}");
+    assert!(!at.iter().any(|a| a.contains("/projects/personal/")), "{at:?}");
     assert!(at.contains(&"GET /api/daemon/issue-home?repo=acme%2Fapp"), "the pane's clone: {at:?}");
     assert!(at.contains(&"GET /api/daemon/projects/prj_1/issues/1"), "{at:?}");
     assert!(at.contains(&format!("POST /api/daemon/chat/rooms/{id}/messages").as_str()), "{at:?}");
