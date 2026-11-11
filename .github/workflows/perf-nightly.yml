@@ -40,7 +40,6 @@ jobs:
       - run: just bootstrap
       - run: just web
       - run: mise exec -- cargo build -p arugulad -p arugula --features arugulad/debug-embed
-      - run: mise exec -- scripts/server-cargo build -p arugula-control --features arugula-control/debug-embed
       - run: scripts/ci-env keep debug
       - name: Hand them to the perf job
         run: tar -cf "$RUNNER_TEMP/run-debug.tar" -C "$CI_RUN" debug dist

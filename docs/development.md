@@ -19,25 +19,12 @@ builds static Linux binaries (musl, with Zig as the C compiler);
 `just static aarch64` builds them for arm64. `just dist` makes the
 release tarballs in `dist/`.
 
-Two Cargo workspaces, so daemon work never compiles the hosted server and
-server work never compiles the daemon or Ghostty: the root's
-(`Cargo.toml`: the daemon, the CLI, the mux, the VT engine and the crates
-both sides share, `arugula-control-wire`, `arugula-e2e`,
-`arugula-forge-github`, `arugula-proto` and `arugula-core`), and the
-server's (`server/Cargo.toml`: `arugula-control`, `arugula-platform` and
-`arugula-control-common`, which stay in `crates/` and reach the shared
-crates by path). Each has its own `Cargo.lock`; both carry the same
-version, which a release's build stamps together (`scripts/release stamp`). `cargo` at the root works on
-the root's; for the server's, `scripts/server-cargo build -p
-arugula-control` (or any cargo command) from anywhere in the checkout, or
-plain `cargo` in `server/` or a server crate. `scripts/server-cargo` and the
-justfile build it into the root's target dir (`CARGO_TARGET_DIR`, else
-`target/`), so its binaries sit beside arugulad's; a plain `cargo` in
-`server/` uses `server/target` unless `CARGO_TARGET_DIR` is set. `just
-test`, `just check`, `just static` and the recipes that start control
-cover both; `just workspace-guard` checks that neither builds the other's
-crates. A dependency's version goes in both workspaces'
-`[workspace.dependencies]` when both use it.
+One Cargo workspace (`Cargo.toml`): the daemon, the CLI, the mux, the VT
+engine and the crates the hosted control shares with them
+(`arugula-control-wire`, `arugula-e2e`, `arugula-forge-github`,
+`arugula-proto` and `arugula-core`). Control and its platform left for
+their own repository, which builds against this one at a pinned commit;
+`just workspace-guard` checks that none of their crates comes back.
 
 The repository is a chant workspace too (`chant.workspace.json`: its
 members, decision records and CI's green tags). `npm install` at the root
@@ -165,12 +152,12 @@ HEAD is behind origin/main, it says so at the start and in the verdict.
 It runs:
 
 - the lint job's steps (`.github/actions/lint`'s, with gitleaks);
-- the rest of `just check`'s (the web import rule and paths, control's
-  tables, the binaries check, the workspace and mux guards);
-- clippy on both workspaces, macOS's (`just check-macos`) and `core`'s
+- the rest of `just check`'s (the web import rule and paths, the binaries
+  check, the workspace and mux guards);
+- clippy on the workspace, macOS's (`just check-macos`) and `core`'s
   (`just check-core`);
 - every Rust test under CI's nextest profile, with `--no-fail-fast`,
-  plus the doctests and control-smoke;
+  plus the doctests and e2e-interop;
 - the e2e specs CI's shards run (`E2E_SET=rest`).
 
 Every step runs, whatever failed before it, and writes a log of its
@@ -506,14 +493,8 @@ version, or when you want different notes.
    and a store that refuses the upload is a warning that holds back
    neither the other store nor the release: bump
    `crates/arugulad-editor/src/editor/ext/package.json` to ship a new one.
-   It doesn't deploy the hosted control: the same tag starts
-   server-release.yml, which releases its platform and then its hub through
-   chant from the server lane's green commit, with no approval step
-   (`just server-release` for another commit or a re-run;
-   control-ops.md (in the cloud repo's docs/control-ops.md)). The hub holds every relayed
-   terminal, so it deploys only when something it's built from changed
-   since the release production runs it from; a version number alone
-   doesn't count. Its `template` job
+   It doesn't deploy the hosted control, which releases from its own
+   repository. Its `template` job
    builds a hosted workspace's E2B templates, one per size:
    `arugula-workspace:vX.Y.Z` and `arugula-workspace-large:vX.Y.Z`,
    from the same build (the `E2B_API_KEY` secret;
@@ -542,11 +523,9 @@ Each lane is a `kind: chant` member of `chant.workspace.json` whose
 `chant.config.ts` declares what its release publishes (`release.publish`)
 and which green lane it's cut from (`release.lane`): `release/daemon`
 (`daemon-release`, the `daemon` lane) for `v*` tags and `release/app`
-(`app-release`, the `app` lane) for `app-v*` tags. They're apart from
-#1983's `ops/` member, which releases control and the platform to
-production from `ci/green-server`: a member publishes every target it
-declares on each of its releases, and the three ship on different tags and
-lanes.
+(`app-release`, the `app` lane) for `app-v*` tags: a member publishes
+every target it declares on each of its releases, and the two ship on
+different tags and lanes.
 
 A `cut` job runs first: `chant release cut TAG --at <the tag's commit>
 --lane daemon|app --yes` in the member, which refuses a commit that isn't
@@ -647,7 +626,6 @@ passed (`ci.green.require` and `ci.green.lanes` in chant.workspace.json;
 | --- | --- | --- | --- |
 | `ci/green/<sha>` | the daemon, the CLI, the web client it embeds, the editor extension | all eight | `just release`, the arugula-release driver |
 | `ci/green-daemon/<sha>` | the same | the same as `ci/green` | `chant release cut --lane daemon` (release.yml) |
-| `ci/green-server/<sha>` | control, the platform, the hosted workspace templates | lint, build, test, e2e | `scripts/release last-green server` |
 | `ci/green-app/<sha>` | the desktop app | lint, build, e2e, claims, windows-desktop | `just release --app`, `chant release cut --lane app` (app-release.yml) |
 
 The phases and their jobs: lint (lint, changes, suite-changed), build
@@ -657,15 +635,11 @@ workspace and workspace-clippy) and windows-desktop (windows-desktop.yml's
 desktop, a phase of its own so the app's lane can need it without the
 workspace's Windows jobs).
 
-The server runs on Linux only, so its lane leaves out macos, both Windows
-phases and claims. It needs the whole of test and build: test, test-2
-and clippy each check both workspaces in one job (the server's and the
-root's), so there's no server half to need alone. It needs every e2e
-shard too, since control's specs are spread over them. The app's lane
+The app's lane
 leaves out test, macos and the workspace's Windows jobs: the app carries
 the daemon of the latest daemon release (`scripts/release sidecars`), which
 passed those already. It keeps e2e for the specs that read
-`crates/desktop/dist` (control.spec.ts and the journey's app.ts), and build
+`crates/desktop/dist` (the journey's app.ts), and build
 for static (desktop-xvfb's binaries) and clippy (`just desktop-check`). No
 job on main's pushes builds the macOS app; app-release.yml does, and fails
 the release if it doesn't build.
@@ -683,9 +657,8 @@ sha=$(npx @intentius/chant@0.124.70 ci last-green --lane daemon) # the daemon's
 sha=$(npx @intentius/chant@0.124.70 ci last-green --lane app)    # the app's
 ```
 
-`scripts/release last-green [daemon|app|server]` answers the same from
-GitHub with git alone, as `just release` picks it; `last-green server` is
-the commit a server promote (#308) starts from. `just green` lists the
+`scripts/release last-green [daemon|app]` answers the same from
+GitHub with git alone, as `just release` picks it. `just green` lists the
 newest of them, newest first (`just green 50` for more, `just green 20 app`
 for a lane's). The tags page on GitHub sorts them by name, not by date.
 

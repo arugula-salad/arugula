@@ -34,12 +34,6 @@ jobs:
           cache-key: static
       - run: scripts/ci-env testnet
       - run: just bootstrap
-      # The relay claim's phones (web/fixtures/m52-phones.ts): Google Chrome
-      # and WebKit, as in check.yml's testnet.
-      - name: Playwright's browsers
-        run: just browsers
-      - name: Google Chrome
-        run: command -v google-chrome >/dev/null || (cd web && pnpm exec playwright install --with-deps chrome)
       # check.yml's static (opt-level 1) and build's CLI.
       - run: just static x86_64
         env:
@@ -50,10 +44,10 @@ jobs:
           echo "ARUGULA_TESTNET_BINARIES=$CARGO_TARGET_DIR/x86_64-unknown-linux-musl/release" >> "$GITHUB_ENV"
           echo "ARUGULA_SSH_BINARIES=$CARGO_TARGET_DIR/x86_64-unknown-linux-musl/release" >> "$GITHUB_ENV"
           echo "ARUGULA_CLI=$CARGO_TARGET_DIR/debug/arugula" >> "$GITHUB_ENV"
-      - name: The control profile's stack
-        run: just testnet down && just testnet up control
+      - name: The ssh profile's stack
+        run: just testnet down && just testnet up ssh
       - name: The claims under BREAK=1
-        run: just testnet break ssh && just testnet break control
+        run: just testnet break ssh
       - name: Take the test stack down
         if: always()
         run: just testnet down

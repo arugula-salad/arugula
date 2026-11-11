@@ -48,19 +48,6 @@
       ]
     },
     {
-      "name": "control",
-      "dir": "crates/control",
-      "kind": "other",
-      "because": "the hub's Rust crates, arugula-control-base here with its binary (crates/arugula-control), which runs the platform (crates/platform, crates/arugula-platform) in process: accounts, devices, the directory and the relay, serving the web client",
-      "outputs": ["arugula-control"],
-      "links": [
-        { "member": "web", "output": "dist" },
-        { "member": "core", "output": "crate" },
-        { "member": "control-wire", "output": "crate" },
-        { "member": "e2e", "output": "crate" }
-      ]
-    },
-    {
       "name": "desktop",
       "dir": "crates/desktop",
       "kind": "other",
@@ -169,16 +156,6 @@
       "links": [{ "member": "cli", "output": "arugula" }]
     },
     {
-      "name": "packaging-control",
-      "dir": "packaging/control",
-      "kind": "other",
-      "because": "the hosted control's image and Fly config, from the static binaries",
-      "links": [
-        { "member": "control", "output": "arugula-control" },
-        { "member": "daemon", "output": "arugulad" }
-      ]
-    },
-    {
       "name": "packaging-desktop",
       "dir": "packaging/desktop",
       "kind": "other",
@@ -223,13 +200,6 @@
       ]
     },
     {
-      "name": "ops",
-      "dir": "ops",
-      "kind": "chant",
-      "because": "control's hub and its platform as chant components on Fly, released from the server lane's green commits behind a production gate (server-release.yml, #1983)",
-      "links": [{ "member": "control", "output": "arugula-control" }]
-    },
-    {
       "name": "chant-fixtures",
       "kind": "examples",
       "glob": "web/e2e/fixtures/chant-*"
@@ -256,7 +226,6 @@
       },
       "require": ["lint", "build", "test", "e2e", "claims", "macos", "windows", "windows-desktop"],
       "lanes": {
-        "server": { "require": ["lint", "build", "test", "e2e"] },
         "daemon": { "require": ["lint", "build", "test", "e2e", "claims", "macos", "windows", "windows-desktop"] },
         "app": { "require": ["lint", "build", "e2e", "claims", "windows-desktop"] }
       }
@@ -266,7 +235,6 @@
     { "name": "daemon", "member": "daemon" },
     { "name": "cli", "member": "cli" },
     { "name": "web", "member": "web" },
-    { "name": "control", "member": "control" },
     { "name": "desktop", "member": "desktop" },
     { "name": "mux", "member": "mux" },
     { "name": "core", "member": "core" },
@@ -279,7 +247,6 @@
     { "name": "nvim", "member": "nvim" },
     { "name": "devcontainer", "member": "devcontainer" },
     { "name": "claude-code-plugin", "member": "claude-code-plugin" },
-    { "name": "packaging-control", "member": "packaging-control" },
     { "name": "packaging-desktop", "member": "packaging-desktop" },
     { "name": "packaging-homebrew", "member": "packaging-homebrew" },
     { "name": "testnet", "member": "testnet" }

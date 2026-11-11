@@ -131,8 +131,8 @@ access work there as described in its AGENTS.md.
   what a Claude Code session cost with it (#398).
 - `crates/testkit`: the harness for the daemon's integration tests.
 - `native/ios`: the iPhone app (SwiftUI on `native/core`, aru-132). `just
-  native-phone DEVICE` signs and installs it from a Mac; `ARUGULA_NATIVE_SIM_HOST=MAC
-  just testnet test control native-sim` taps through it on a simulator.
+  native-phone DEVICE` signs and installs it from a Mac (its simulator
+  test against a control runs in the cloud's repository).
 - `native/core`: what native clients share (signing, channels, panes, the
   terminal; aru-132). Its own workspace, outside `crates/` so it isn't a hub
   input. `just native-check`, and `just native-ios` on a Mac.

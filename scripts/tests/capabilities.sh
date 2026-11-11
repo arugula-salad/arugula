@@ -20,7 +20,7 @@ git init -q -b main
 git config user.email t@example.com
 git config user.name t
 mkdir -p scripts docs/decisions docs/capabilities crates/a/src
-cp "$here"/decisions-index.mjs "$here"/capabilities.mjs "$here"/map.mjs scripts/
+cp "$here"/decisions-index.mjs "$here"/capabilities.mjs "$here"/map.mjs "$here"/cloud-paths.mjs scripts/
 : >crates/a/src/lib.rs
 decision() { # file state path
   printf -- '---\nid: "%s"\ntitle: "T"\narea: "A"\nstate: "%s"\nconstrains:\n  - "path:%s"\n---\nBody\n' "${1%%-t*}" "$2" "$3" >"docs/decisions/$1.md"
