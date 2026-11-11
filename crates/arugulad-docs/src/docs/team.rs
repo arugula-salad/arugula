@@ -35,14 +35,23 @@ use std::{
 };
 
 use arugula_control_wire::project_docs::{
-    AssetData, DocView, DocWrite, NewDoc, NewSection, agent_project_doc, agent_project_doc_asset, agent_project_docs,
+    AssetData, DocView, DocWrite, NewDoc, NewSection, PublicLink, PublicMake, PublicServed, agent_project_doc,
+    agent_project_doc_asset, agent_project_doc_public, agent_project_docs,
 };
-use arugula_proto::{BlockType, fs::READ_MAX};
+use arugula_proto::{BlockType, api::DocLayout, fs::READ_MAX};
+use base64::{
+    Engine,
+    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
+};
 use futures_util::future::BoxFuture;
 use serde_json::{Value, json};
 use std::sync::OnceLock;
 
-use super::{ASSET_MAX, ASSETS_MAX, Changed, Entry, HEADING_MAX, SECTION_MAX, assets, embeds, hash, markdown};
+use super::{
+    ASSET_MAX, ASSETS_MAX, Changed, Entry, HEADING_MAX, SECTION_MAX, assets, embeds, hash,
+    link::{self, Fail, Manifest, ManifestAsset, ManifestEntry, PART_PLAIN, Remote},
+    markdown,
+};
 use crate::{
     block::{Block, BlockCtx, Summary, no_method},
     store::{private_dir, write_atomic},
@@ -181,6 +190,8 @@ pub struct Team {
     name: String,
     id: String,
     cloud: Option<Arc<dyn Cloud>>,
+    /// Control's Doc links, for the public link's parts (Arugula #871).
+    remote: Mutex<Option<Arc<dyn Remote>>>,
     changed: Changed,
     cache: Option<PathBuf>,
     state: Mutex<State>,
@@ -223,6 +234,7 @@ impl Team {
             name,
             id,
             cloud,
+            remote: Mutex::new(link::remote()),
             changed,
             cache,
             state: Mutex::new(state),
@@ -251,6 +263,11 @@ impl Team {
         });
     }
 
+    #[cfg(test)]
+    fn set_remote(&self, r: Arc<dyn Remote>) {
+        *self.remote.lock().unwrap() = Some(r);
+    }
+
     fn cloud(&self) -> Result<&Arc<dyn Cloud>, String> {
         self.cloud
             .as_ref()
@@ -272,7 +289,9 @@ impl Team {
             st.rev += 1;
         }
         if let Some(path) = &self.cache {
-            let bytes = serde_json::to_vec(&view).unwrap_or_default();
+            // The public link's key is the platform's and the person's
+            // to read, never this folder's.
+            let bytes = serde_json::to_vec(&DocView { public: None, ..view.clone() }).unwrap_or_default();
             if let Some(dir) = path.parent() {
                 let _ = private_dir(dir);
             }
@@ -486,6 +505,184 @@ impl Team {
         Ok(json!({ "mime": data.mime, "data": data.data }))
     }
 
+    /// The Doc's public link as the platform has it, once it has been read.
+    fn public(&self) -> Option<PublicLink> {
+        self.state.lock().unwrap().view.as_ref().and_then(|v| v.public.clone())
+    }
+
+    fn remote(&self) -> Result<Arc<dyn Remote>, String> {
+        self.remote.lock().unwrap().clone().ok_or_else(|| crate::control::DOC_NOT_JOINED.to_owned())
+    }
+
+    /// The URL of a link anyone can open: the viewer, the id and the key
+    /// in the fragment.
+    fn url(viewer: &str, p: &PublicLink) -> String {
+        format!("{viewer}/{}#k={}", p.id, p.key)
+    }
+
+    /// One call to the platform's public-link route.
+    async fn public_call<B: serde::Serialize>(&self, method: &'static str, body: Option<&B>) -> Result<Value, String> {
+        let path = agent_project_doc_public(&self.project, &self.id);
+        let body = match body {
+            Some(b) => Body::Json(serde_json::to_value(b).map_err(|e| e.to_string())?),
+            None => Body::None,
+        };
+        match self.cloud()?.call(method, path, body).await {
+            Ok(v) => Ok(v),
+            Err(Refused::Offline(why)) => {
+                self.offline(&why);
+                Err(Refused::Offline(why).sentence())
+            }
+            Err(e) => Err(e.sentence()),
+        }
+    }
+
+    /// The Doc as a snapshot: its sections and its pictures, as the
+    /// platform has them now.
+    async fn plain(&self, view: &DocView) -> Result<Vec<u8>, String> {
+        let (mut assets, mut blobs) = (Vec::new(), Vec::new());
+        for a in &view.assets {
+            let path = agent_project_doc_asset(&self.project, &self.id, &a.name);
+            let got = self.cloud()?.call("GET", path, Body::None).await.map_err(|e| e.sentence())?;
+            let data: AssetData =
+                serde_json::from_value(got).map_err(|e| format!("control's answer isn't a picture: {e}"))?;
+            let bytes = STANDARD.decode(&data.data).map_err(|_| format!("the picture {} isn't base64", a.name))?;
+            assets.push(ManifestAsset { name: a.name.clone(), mime: data.mime, size: bytes.len() as u64 });
+            blobs.push(bytes);
+        }
+        let manifest = Manifest {
+            title: view.doc.title.clone(),
+            layout: DocLayout::from_name(view.doc.layout.as_deref().unwrap_or("doc")),
+            made: Some(view.doc.created_at),
+            updated: Some(view.doc.updated_at),
+            entries: view
+                .sections
+                .iter()
+                .map(|s| ManifestEntry {
+                    id: s.id.clone(),
+                    heading: s.heading.clone(),
+                    intent: s.intent.clone(),
+                    body: s.body.clone(),
+                })
+                .collect(),
+            assets,
+        };
+        Ok(link::snapshot(&manifest, &blobs))
+    }
+
+    /// `doc_share` and `doc_share_update` (Arugula #871): make the Doc's
+    /// public link, or put what the Doc says now to the one it has. The
+    /// platform keeps the key and says the id; this machine seals the
+    /// snapshot and puts it to control; the platform is told which version
+    /// is served. `{url, page, ver}`; the URL has the key.
+    async fn share(&self, update: bool) -> Result<Value, String> {
+        let _io = self.io.lock().await;
+        let remote = self.remote()?;
+        let viewer = remote.viewer().await?;
+        self.refresh().await?;
+        let view = self.state.lock().unwrap().view.clone().ok_or("this Doc can't be read")?;
+        let served = view.public.as_ref().is_some_and(|p| p.ver > 0);
+        if served && !update {
+            return Err("this Doc is already shared: use Update to change what its link shows".into());
+        }
+        if !served && update {
+            return Err("this Doc isn't shared: use Share link first".into());
+        }
+        let plain = self.plain(&view).await?;
+        let made = self.public_call::<PublicMake>("PUT", Some(&PublicMake::default())).await?;
+        let link: PublicLink =
+            serde_json::from_value(made).map_err(|e| format!("control's answer isn't a link: {e}"))?;
+        let key: [u8; 32] = URL_SAFE_NO_PAD
+            .decode(&link.key)
+            .ok()
+            .and_then(|k| k.try_into().ok())
+            .ok_or("the link's key isn't one: unshare the Doc and share it again")?;
+        let ver = link.ver + 1;
+        let mut nonce = || crate::push::random::<12>();
+        let pushed = link::push_version(
+            &*remote,
+            &link.id,
+            &key,
+            ver,
+            plain,
+            PART_PLAIN,
+            &mut nonce,
+            (link.ver > 0).then_some(0),
+            false,
+        )
+        .await;
+        match pushed {
+            Ok(_) => {}
+            Err(Fail::Gone) => {
+                // Control doesn't have it any more: the platform forgets it too.
+                let _ = self.public_call::<()>("DELETE", None).await;
+                let _ = self.refresh().await;
+                return Err(link::UNSHARED_ELSEWHERE.into());
+            }
+            Err(Fail::Said(e)) => return Err(e),
+        }
+        let served = PublicServed { ver, rev: view.doc.rev };
+        let got = self.public_call("POST", Some(&served)).await?;
+        let link: PublicLink =
+            serde_json::from_value(got).map_err(|e| format!("control's answer isn't a link: {e}"))?;
+        let _ = self.refresh().await;
+        Ok(json!({ "url": Self::url(&viewer, &link), "page": view.link, "ver": ver }))
+    }
+
+    /// `doc_unshare`: with an `id`, only if that is this Doc's link. Control
+    /// takes the link down (a 404 is as good), then the platform forgets it.
+    async fn unshare(&self, id: Option<String>) -> Result<Value, String> {
+        let _io = self.io.lock().await;
+        self.refresh().await?;
+        let Some(link) = self.public() else {
+            return if id.is_some() { Ok(json!({ "other": true })) } else { Err("this Doc isn't shared".into()) };
+        };
+        if id.as_ref().is_some_and(|i| *i != link.id) {
+            return Ok(json!({ "other": true }));
+        }
+        let (status, v) = self.remote()?.call("DELETE", format!("/api/doc-links/{}", link.id), vec![]).await?;
+        if status != 200 && status != 404 {
+            return Err(link::refused(status, &v));
+        }
+        self.public_call::<()>("DELETE", None).await?;
+        let _ = self.refresh().await;
+        Ok(json!({}))
+    }
+
+    /// `doc_shares`, for the bar: the public link and the team's page.
+    async fn shares(&self) -> Result<Value, String> {
+        let _ = self.refresh().await;
+        let page = self.link();
+        let Some(link) = self.public().filter(|p| p.ver > 0) else {
+            return Ok(match self.remote() {
+                Ok(r) => match r.viewer().await {
+                    Ok(_) => json!({ "shared": null, "can": true, "platform": page }),
+                    Err(why) => json!({ "shared": null, "can": false, "why": why, "platform": page }),
+                },
+                Err(why) => json!({ "shared": null, "can": false, "why": why, "platform": page }),
+            });
+        };
+        let viewer = self.remote()?.viewer().await?;
+        Ok(json!({
+            "url": Self::url(&viewer, &link), "made": link.updated_at, "updated": link.updated_at, "platform": page,
+        }))
+    }
+
+    /// `doc share` by an agent: the public link, made if the Doc has none
+    /// (its machine's `docs.write` is the grant, as for every write to a
+    /// team Doc), and the team's page.
+    async fn share_ask(&self) -> Result<Value, String> {
+        let _ = self.refresh().await;
+        let page = self.link();
+        let have = self.public().is_some_and(|p| p.ver > 0);
+        let got = if have { self.shares().await } else { self.share(false).await };
+        Ok(match got {
+            Ok(v) if v["url"].is_string() => json!({ "status": "shared", "url": v["url"], "page": page }),
+            Ok(v) => json!({ "status": "team", "url": page, "why": v["why"] }),
+            Err(why) => json!({ "status": "failed", "why": why, "url": page }),
+        })
+    }
+
     /// The Doc's page on the platform's page, once it has been read.
     fn link(&self) -> Option<String> {
         self.state.lock().unwrap().view.as_ref().and_then(|v| v.link.clone())
@@ -519,7 +716,11 @@ impl Team {
         };
         let mut v = json!({
             "title": st.title, "entries": Self::entries(view), "entries_from": 0, "assets": view.assets,
-            "rev": st.rev, "shared": null, "doc": self.id,
+            "rev": st.rev, "doc": self.id,
+            // A public link shows as a library Doc's does (Arugula #871),
+            // without its key: the bar's Update reads `shared_older`.
+            "shared": view.public.as_ref().filter(|p| p.ver > 0).map(|p| json!({ "made": p.updated_at, "updated": p.updated_at })),
+            "shared_older": view.public.as_ref().is_some_and(|p| p.ver > 0 && p.behind),
             "made": view.doc.created_at, "updated": view.doc.updated_at,
             "by": view.doc.agent.as_ref().map(|a| a.machine_name.clone()).unwrap_or_else(|| view.doc.author.clone()),
             "team": team(view.link.clone(), view.writer),
@@ -537,12 +738,6 @@ impl Team {
         v
     }
 }
-
-/// What `doc share` and the bar's Share say of a team Doc: a team's is the
-/// team's already, and its page is the link. A public link for one is
-/// a follow-up.
-const TEAM_SHARED: &str =
-    "this is the team's Doc: the team opens it on its page; a public link for a team Doc isn't offered yet";
 
 impl Block for Team {
     fn kind(&self) -> BlockType {
@@ -615,17 +810,20 @@ impl Block for Team {
                     me.asset(&name.ok_or("doc_asset needs {name}")?).await
                 })
             }
-            // `doc share`: the team's page, which the team opens.
-            "doc_share_ask" => Box::pin(async move {
-                let link = me.ok_or("closed")?.link();
-                Ok(json!({ "status": "team", "url": link, "why": TEAM_SHARED }))
-            }),
-            "doc_share" | "doc_share_update" | "doc_unshare" => Box::pin(async move { Err(TEAM_SHARED.to_owned()) }),
-            // What the bar asks: no public link, and the team's page.
-            "doc_shares" => Box::pin(async move {
-                let link = me.ok_or("closed")?.link();
-                Ok(json!({ "shared": null, "can": false, "why": TEAM_SHARED, "platform": link }))
-            }),
+            // `doc share`: the public link and the team's page.
+            "doc_share_ask" => Box::pin(async move { me.ok_or("closed")?.share_ask().await }),
+            // The public link (Arugula #871): made, updated and taken down
+            // through the platform, which keeps the key.
+            "doc_share" | "doc_share_update" => {
+                let update = method == "doc_share_update";
+                Box::pin(async move { me.ok_or("closed")?.share(update).await })
+            }
+            "doc_unshare" => {
+                let id = args["id"].as_str().map(str::to_owned);
+                Box::pin(async move { me.ok_or("closed")?.unshare(id).await })
+            }
+            // What the bar asks: the public link, and the team's page.
+            "doc_shares" => Box::pin(async move { me.ok_or("closed")?.shares().await }),
             "state" => {
                 let s = self.state();
                 Box::pin(async move { Ok(s) })
@@ -744,6 +942,7 @@ mod tests {
             writer: true,
             deleter: false,
             link: Some(format!("https://app.test/p/{project}/docs/{id}")),
+            public: None,
         }
     }
 
@@ -756,6 +955,34 @@ mod tests {
                     return Err(r);
                 }
                 let mut held = self.view.lock().unwrap();
+                // The platform's public-link route, as it keeps the link.
+                if path.ends_with("/public") {
+                    let view = held.as_mut().unwrap();
+                    return match (method, body) {
+                        ("PUT", _) => {
+                            let p = view.public.get_or_insert(PublicLink {
+                                id: "ab".repeat(16),
+                                key: URL_SAFE_NO_PAD.encode([7u8; 32]),
+                                ver: 0,
+                                updated_at: 0,
+                                behind: false,
+                            });
+                            Ok(serde_json::to_value(p).unwrap())
+                        }
+                        ("POST", Body::Json(v)) => {
+                            let s: PublicServed = serde_json::from_value(v).unwrap();
+                            let rev = view.doc.rev;
+                            let p = view.public.as_mut().unwrap();
+                            (p.ver, p.updated_at, p.behind) = (s.ver, 99, rev > s.rev);
+                            Ok(serde_json::to_value(p).unwrap())
+                        }
+                        ("DELETE", _) => {
+                            view.public = None;
+                            Ok(json!({}))
+                        }
+                        other => panic!("unexpected {} {path}", other.0),
+                    };
+                }
                 match (method, body) {
                     ("POST", Body::Json(v)) => {
                         let new: NewDoc = serde_json::from_value(v).unwrap();
@@ -962,17 +1189,77 @@ mod tests {
         assert_eq!(make(&*fake, "prj_t", "Plan", &sections, "doc").await.unwrap_err(), "no docs.write");
     }
 
-    /// `doc share` of a team Doc is its page, and a public link isn't offered.
+    /// `doc share` of a team Doc makes a public link (Arugula #871): the
+    /// platform keeps the key, this machine seals what it reads and puts the
+    /// ciphertext to control, and control is never sent the key.
     #[tokio::test]
-    async fn sharing_a_team_doc_gives_its_page() {
+    async fn sharing_a_team_doc_makes_a_public_link_whose_key_stays_with_the_platform() {
         let fake = seeded();
         let (team, _) = block(&fake, None);
+        let control = link::fake::Fake::new();
+        team.set_remote(control.clone());
         team.refresh().await.unwrap();
+        let (id, key) = ("ab".repeat(16), URL_SAFE_NO_PAD.encode([7u8; 32]));
+
         let out = team.call("doc_share_ask", json!({})).await.unwrap();
-        assert_eq!(
-            (out["status"].as_str(), out["url"].as_str()),
-            (Some("team"), Some("https://app.test/p/prj_t/docs/pdc_1"))
-        );
-        assert!(team.call("doc_share", json!({})).await.unwrap_err().contains("team's Doc"));
+        assert_eq!(out["status"], "shared");
+        assert_eq!(out["url"], format!("https://docs.test/{id}#k={key}"));
+        assert_eq!(out["page"], "https://app.test/p/prj_t/docs/pdc_1", "both the public URL and the team's page");
+        // Control had the parts and the commit; not one call or body has the key.
+        let calls = control.calls.lock().unwrap().clone();
+        assert!(calls.iter().all(|(_, path)| path.starts_with("/api/doc-links/") && !path.contains(&key)), "{calls:?}");
+        assert!(control.parts.lock().unwrap().values().all(|p| !p.windows(32).any(|w| w == [7u8; 32])));
+        // What control holds opens with the platform's key, as version 1.
+        let parts: Vec<Vec<u8>> = control
+            .parts
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|((i, v, _), _)| *i == id && *v == 1)
+            .map(|(_, p)| p.clone())
+            .collect();
+        let plain = link::open(&[7u8; 32], &id, 1, &parts).expect("opens with the key");
+        assert_eq!(&plain[..4], link::MAGIC);
+        assert!(String::from_utf8_lossy(&plain).contains("\"title\":\"Plan\""));
+        // The platform was told version 1 is served.
+        let st = team.state();
+        assert!(st["shared"].is_object() && st["shared_older"] == false, "{st}");
+        assert!(!st.to_string().contains(&key), "the block's state never has the key");
+        assert!(team.call("doc_share", json!({})).await.unwrap_err().contains("already shared"));
+
+        // The Doc changes: the link shows an older version until Update.
+        team.call("doc_fill", json!({ "section": "s1", "markdown": "hello" })).await.unwrap();
+        assert_eq!(team.state()["shared_older"], true);
+        let up = team.call("doc_share_update", json!({})).await.unwrap();
+        assert_eq!(up["url"], out["url"], "the same link");
+        assert_eq!(team.state()["shared_older"], false);
+        assert_eq!(control.served.lock().unwrap().get(&id).map(|s| s.0), Some(2));
+
+        // Unshare: control first, then the platform's record.
+        team.call("doc_unshare", json!({})).await.unwrap();
+        assert!(control.served.lock().unwrap().is_empty());
+        assert!(fake.view.lock().unwrap().as_ref().unwrap().public.is_none());
+        assert!(team.state()["shared"].is_null());
+        assert!(team.call("doc_unshare", json!({})).await.unwrap_err().contains("isn't shared"));
+        assert!(team.call("doc_share_update", json!({})).await.unwrap_err().contains("isn't shared"));
+    }
+
+    /// The Doc cached for a restart never has the key.
+    #[tokio::test]
+    async fn the_cached_team_doc_has_no_key() {
+        let fake = seeded();
+        fake.view.lock().unwrap().as_mut().unwrap().public = Some(PublicLink {
+            id: "ab".repeat(16),
+            key: URL_SAFE_NO_PAD.encode([7u8; 32]),
+            ver: 1,
+            updated_at: 5,
+            behind: false,
+        });
+        let dir = temp("cache-no-key");
+        let file = dir.join(CACHE);
+        let (team, _) = block(&fake, Some(file.clone()));
+        team.refresh().await.unwrap();
+        let held = std::fs::read_to_string(&file).unwrap();
+        assert!(held.contains("pdc_1") && !held.contains(&URL_SAFE_NO_PAD.encode([7u8; 32])), "{held}");
     }
 }

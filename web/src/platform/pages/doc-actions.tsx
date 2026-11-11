@@ -18,6 +18,7 @@ import { DocActions, openTab } from "../../shared/docs/doc-actions";
 import { moveDocsToTeam, resultWords } from "../../shared/docs/move-docs";
 import { EditedDialog, ShareWith, type Edited } from "../../shared/docs/share-with";
 import { DocError, projectDocs } from "../../shared/docs/store";
+import { docViewer, publicUrl, revokePublic, sharePublic } from "../../shared/docs/public-link";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { IconButton, MoreIcon } from "../../shared/ui/icons";
 import { Modal } from "../../shared/ui/modal";
@@ -124,6 +125,33 @@ function useDocActions(p: PlatformProject, doc: ProjectDoc, eager: boolean, relo
   };
   const open = () => openTab(linkOf(p, doc));
 
+  /** Arugula #871, from the list: make (or update) the Doc's public link and copy it. */
+  const sharePublicly = async () => {
+    try {
+      const viewer = await docViewer();
+      if (!viewer) return toast("This control keeps no shared Docs");
+      const link = await sharePublic(p.id, doc.id);
+      await navigator.clipboard.writeText(publicUrl(viewer, link)).catch(() => {});
+      toast("Public link copied");
+      reload?.();
+    } catch (e) {
+      toast((e as Error).message);
+    }
+  };
+  const stopPublic = async () => {
+    try {
+      const v = await projectDocs.get(p.id, doc.id);
+      if (!v.public) return toast("It has no public link");
+      await revokePublic(p.id, doc.id, v.public);
+      toast("The link no longer opens");
+      reload?.();
+    } catch (e) {
+      toast((e as Error).message);
+    }
+  };
+  // A team Doc's owners and editors; a copy from a machine is its machine's to share.
+  const publicly = !!p.team && mayWrite(p) && !doc.machine;
+
   /** The ⋯ menu: the same actions, and the dialog for a Doc with several teams to say. */
   const items = (from: HTMLElement, made: ProjectDocCopy[] = copies): MenuItem[] => {
     const s = shareOf(made);
@@ -131,6 +159,12 @@ function useDocActions(p: PlatformProject, doc: ProjectDoc, eager: boolean, relo
       { label: "Copy link", run: () => void copy().then((ok) => ok && toast("Link copied")) },
       ...(s ? [{ label: s.word, run: () => s.run(from) }] : []),
       ...(s && doc.machine && s.word !== "Share with…" ? [{ label: "Share with…", run: () => setPicking(true) }] : []),
+      ...(publicly
+        ? [
+            { label: "Share public link", run: () => void sharePublicly() },
+            { label: "Stop public link", run: () => void stopPublic() },
+          ]
+        : []),
       { label: "Open in browser", run: open },
     ];
   };

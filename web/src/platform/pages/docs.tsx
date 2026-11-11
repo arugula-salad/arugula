@@ -35,6 +35,7 @@ import { toast } from "../toast";
 import { mayWrite } from "./issues";
 import { Missing } from "./project";
 import { PlatformDocActions, RowMenu } from "./doc-actions";
+import { PublicLinkBar } from "./doc-public";
 
 /** Who's who in `p`, for a Doc's maker. */
 function nameOf(p: PlatformProject) {
@@ -570,6 +571,7 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
           }
         />
       ) : null}
+      {view && !copy && <PublicLinkBar project={project} view={view} reload={again} />}
       {onBoards.length > 0 && (
         <p class="dim project-doc-boards" data-doc-boards>
           On boards:{" "}
