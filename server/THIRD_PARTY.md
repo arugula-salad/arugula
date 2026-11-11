@@ -10,7 +10,7 @@ software below. The daemon's and the CLI's are in the root THIRD_PARTY.md.
   Some of those icons derive from Feather, MIT, Copyright (c) 2013-present Cole Bemis. Both licences are below.
 - **Rust crates**, by license:
 
-- Apache License 2.0 (257)
+- Apache License 2.0 (258)
 - MIT License (66)
 - Unicode License v3 (20)
 - BSD 3-Clause "New" or "Revised" License (6)
@@ -5255,6 +5255,7 @@ Used by:
 - [arugula-platform 0.66.13](https://github.com/arugula-salad/arugula)
 - [arugula-control-base 0.66.13](https://github.com/arugula-salad/arugula)
 - [arugula-control-common 0.66.13](https://github.com/arugula-salad/arugula)
+- [arugula-control-load 0.66.13](https://github.com/arugula-salad/arugula)
 - [arugula-control-wire 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugula-core 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugula-e2e 0.0.0](https://github.com/arugula-salad/arugula)
