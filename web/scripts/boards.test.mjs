@@ -576,3 +576,11 @@ test("columns close the gaps between the places drawn, and the Done toggle is ke
   assert.doesNotThrow(() => saveDone(false));
   delete globalThis.localStorage;
 });
+
+test("a host is this page's machine when its address is the client's, and one that is gone is not", async () => {
+  const { isThisMachine } = await import("../src/shell/this-machine.ts");
+  assert.equal(isThisMachine("e2e:dmn_a", () => "e2e:dmn_a"), true);
+  assert.equal(isThisMachine("e2e:dmn_a", () => "e2e:dmn_b"), false);
+  assert.equal(isThisMachine("", () => ""), true);
+  assert.equal(isThisMachine("", () => { throw new Error("gone"); }), false);
+});
