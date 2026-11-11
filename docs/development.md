@@ -52,7 +52,7 @@ What a new install hides until its flag is on (`arugulad flags sandbox-providers
 one to a feature: studio, chant workspaces, sandbox providers, agent delegation) is described
 in [labs.md](labs.md); the public docs leave it out. Running control
 yourself, operating the hosted one and testing it are in
-[control-ops.md](control-ops.md).
+control-ops.md (in the cloud repo's docs/control-ops.md).
 
 `just dev` runs a separate daemon on 7682 (state in
 `~/.local/state/arugula-dev`) plus Vite on 5173, leaving the real one
@@ -510,14 +510,14 @@ version, or when you want different notes.
    server-release.yml, which releases its platform and then its hub through
    chant from the server lane's green commit, with no approval step
    (`just server-release` for another commit or a re-run;
-   [control-ops.md](control-ops.md#deploys)). The hub holds every relayed
+   control-ops.md (in the cloud repo's docs/control-ops.md)). The hub holds every relayed
    terminal, so it deploys only when something it's built from changed
    since the release production runs it from; a version number alone
    doesn't count. Its `template` job
    builds a hosted workspace's E2B templates, one per size:
    `arugula-workspace:vX.Y.Z` and `arugula-workspace-large:vX.Y.Z`,
    from the same build (the `E2B_API_KEY` secret;
-   [control-ops.md](control-ops.md#hosted-workspaces-template)). It builds
+   control-ops.md (in the cloud repo's docs/control-ops.md)). It builds
    no app.
 4. Running daemons find it within 12 hours and offer *Update now*
    (`arugulad update` from a terminal); `install.sh` picks it up by
@@ -535,7 +535,7 @@ A build from main (`just build`, `just dist`) reports the version
 the last bump before #1986), whatever has been released since.
 
 Instead of step 3, a release can run as a deploy, approved from an
-owner's phone: [control-ops.md](control-ops.md#releasing-arugula-as-a-deploy-m221).
+owner's phone: control-ops.md (in the cloud repo's docs/control-ops.md).
 
 <a id="publishing-through-chant"></a>**Publishing through chant (#1986).**
 Each lane is a `kind: chant` member of `chant.workspace.json` whose

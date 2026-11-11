@@ -106,13 +106,6 @@ map *args:
 whats-new:
     node scripts/whats-new.mjs
 
-# Write "What control stores" in docs/control-e2e.md from control's table
-# manifest (crates/control/tables.toml). Without `write`, check it's
-# current, and that the manifest lists every table control has: the same
-# tests `just test` runs, so CI runs them too.
-control-tables mode="write":
-    {{ if mode == "write" { "ARUGULA_WRITE_DOCS=1" } else { "" } }} {{server_cargo}} test -q -p arugula-control-base tables::
-
 # Release build of the daemon and the CLI (the root workspace; control and
 # its platform: `just static`).
 build: web
@@ -164,41 +157,6 @@ ops-check:
 server-release commit="":
     gh workflow run server-release.yml -R arugula-salad/arugula -f commit={{quote(commit)}}
     @echo "Started: gh run list -R arugula-salad/arugula -w server-release -L 1"
-
-# Deploy the hosted Arugula control to Fly (packaging/control/fly.toml):
-# the static x86_64 binary in a distroless image, from a small build context.
-# Releases deploy it through chant (`just server-release`, #1983); this is
-# for hotfixes. Its image isn't a release's: chant's ledger still names the
-# release before it until the next one.
-control-deploy: static-server
-    #!/usr/bin/env bash
-    set -euo pipefail
-    ctx=$(mktemp -d)
-    trap 'rm -rf "$ctx"' EXIT
-    cp {{target_dir}}/x86_64-unknown-linux-musl/release/arugula-control packaging/control/Dockerfile packaging/control/fly.toml "$ctx"/
-    cd "$ctx" && fly deploy --local-only --ha=false
-
-# Deploy control's platform to Fly (packaging/platform/fly.toml, M140): the
-# static x86_64 binary in a distroless image. Releases deploy it through
-# chant before the hub (`just server-release`, #1983); this is for hotfixes.
-platform-deploy: static-server
-    #!/usr/bin/env bash
-    set -euo pipefail
-    ctx=$(mktemp -d)
-    trap 'rm -rf "$ctx"' EXIT
-    cp {{target_dir}}/x86_64-unknown-linux-musl/release/arugula-platform packaging/platform/Dockerfile packaging/platform/fly.toml "$ctx"/
-    # Its service is Flycast's, never public (fly.toml): no public IPs.
-    cd "$ctx" && fly deploy --local-only --ha=false --no-public-ips
-
-# The daemons the hosted control saw in the last 30 days, by version: a
-# read-only look at its database (docs/control-ops.md, "Daemon census").
-control-census days="30":
-    fly ssh console -a illogical-control -C "/arugula-control census --db /data/control.db --days {{days}}"
-
-# Hosted workspaces' usage and cost on E2B, read-only (docs/control-ops.md,
-# "E2B (hosted workspaces' boxes)").
-platform-usage days="7":
-    fly ssh console -a arugula-platform -C "/arugula-platform usage --db env:ARUGULA_PLATFORM_DATABASE_URL --days {{days}}"
 
 # The macOS daemon and CLI for Intel Macs, cross-compiled on Apple silicon
 # (or built natively on an Intel Mac): target/x86_64-apple-darwin/release/.
@@ -725,13 +683,6 @@ test-platform-postgres:
     ARUGULA_TEST_POSTGRES_URL="postgres://postgres:platform@127.0.0.1:$port/postgres" \
         {{server_cargo}} nextest run --workspace -E "package(/^arugula-platform/) & ($q)"
 
-# Control end to end without a browser: sign in (fake GitHub), enroll,
-# join a daemon, reach it through the relay and directly.
-control-smoke:
-    {{test_bins}}
-    {{server_test_bins}}
-    cd web && TARGET_DIR="{{target_dir}}/debug" {{suite_lock}} node --experimental-strip-types --no-warnings control-smoke.ts
-
 # The swarm (M26) by hand: three throwaway daemons with scripted work on
 # 7730-7732 (t: make trouble, a: an agent asks, x: quit).
 fake-fleet:
@@ -1222,34 +1173,6 @@ run *args: build
 # Install as a systemd user service (starts at boot with lingering).
 install: build
     {{target_dir}}/release/arugulad install
-
-# This checkout's web client as control.arugula.io serves it: a local
-# control (fake GitHub sign-in) on 7690 with machines joined to it
-# (default: workstation laptop), rebuilt on every change (web/dev-control.ts).
-# DEV_CONTROL_APPROVE_BROWSERS=0 leaves a signed-in browser waiting.
-dev-control *machines:
-    {{cargo}} build -p arugulad
-    {{server_cargo}} build -p arugula-control
-    cd web && TARGET_DIR="{{target_dir}}/debug" node --experimental-strip-types --no-warnings dev-control.ts {{machines}}
-
-# A seeded demo fleet (#399) on a throwaway control at 127.0.0.1:7790, for
-# screenshots, demos and perf runs: made-up people on laptops and a build
-# box, agents in every state, chat, a board and a Doc, and no real account
-# data. --seed N (the same N, the same fleet), --chaos (keeps it moving),
-# --load N (N more agents and terminals). Ctrl-C removes all of it.
-# web/demo-fleet.ts says what's in it.
-demo-fleet *args:
-    {{cargo}} build -p arugulad
-    {{server_cargo}} build -p arugula-control
-    cd web && TARGET_DIR="{{target_dir}}/debug" node --experimental-strip-types --no-warnings dev-control.ts --demo {{args}}
-
-# The platform page (M150) on 127.0.0.1:7691, beside `just dev-control`
-# (run that first): Vite serves it and sends control's paths to 7690. Sign
-# in on control's page; the session cookie is the same host's, so this page
-# is signed in too. DEV_CONTROL_CHAT=1 on dev-control gives it a team's
-# chat to show.
-dev-platform:
-    cd web && pnpm run dev-platform
 
 # A headless Chrome on a page, driven by plain commands, for screenshots:
 # a virtual passkey authenticator (--passkey), a login (--login), a profile

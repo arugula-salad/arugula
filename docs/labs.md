@@ -10,7 +10,7 @@ moved to the site.
 
 Managoat was here until it left Labs (#942, F5). Its daemon side was
 removed on 2026-10-18 and control's on 2026-10-23; agents in the cloud run
-on hosted workspaces now ([managoat.md](managoat.md)). Huddles,
+on hosted workspaces now (managoat.md (in the cloud repo's docs/managoat.md)). Huddles,
 voice calls on a session, were here until they were removed (2026-10-18,
 DECISIONS.md "Huddles are removed"); a `huddles` flag left in `flags.json`
 does nothing. Live presence and People blocks, video presence

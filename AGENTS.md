@@ -111,33 +111,13 @@ Each has a `README.md` with where to start reading.
   (`tests/integration/`; their fixtures stay in `crates/daemon/tests/`).
 - `crates/cli`: `arugula`, the CLI. It doesn't link `arugula-vt`, so it
   builds without libghostty and Zig.
-The server crates (`crates/control`, `crates/platform`,
-`crates/control-common`, and the binaries `crates/arugula-control` and
-`crates/arugula-platform`) are a Cargo workspace of their own,
-`server/Cargo.toml`, so daemon work never compiles them and server work
-never compiles the daemon, the mux or Ghostty: build them with
-`scripts/server-cargo` (or `cargo` in `server/`), as the justfile does
-([docs/development.md](docs/development.md), "Build from source").
+Control's hub and its platform aren't here: they're closed source, in
+their own repository (arugula-salad/cloud), which builds against this one's
+shared crates (`control-wire`, `core`, `e2e`, `proto`, `prices`,
+`forge-github`) at a pinned commit. A change to those crates or to
+`contract/` lands here first; the cloud moves its pin after. Agents with
+access work there as described in its AGENTS.md.
 
-- `crates/control`: Arugula control's hub (`arugula-control-base`, a
-  library): accounts, devices, the directory and the relay. It runs the
-  platform in process, or is its gateway when the platform runs as its own
-  (`arugula-platform`, M140). It builds against `crates/platform-api`
-  (`arugula-platform-api`: the ports, the page, the platform in process),
-  never the platform's base; its binary is `crates/arugula-control` (#314),
-  which registers the platform's feature crates and makes the platform.
-- `crates/platform`: control's platform (#1150, `arugula-platform-base`, a
-  library): billing, Cloud, chat's core, projects and grants are here
-  (chat's routes and its agent sessions are `crates/platform-chat`); its binary
-  is `crates/arugula-platform` (#314), and its feature crates are
-  `crates/platform-*` (`arugula-platform-<area>`, side by side on the base,
-  registered by `crates/platform-all`). Its tests are under
-  `-p arugula-platform-base` and each feature crate's (`-p
-  arugula-platform` is the binary). It
-  reaches the hub only through `HubPort`, and the hub reaches it through
-  `PlatformPort`, in process or over the private network (`remote`).
-- `crates/control-common`: what the hub and the platform both use: the SQLite
-  opener, API errors, rate limits, analytics and the signed principal.
 - `crates/control-wire`: the enrolment, routing, relay, push and TURN messages
   between daemons and control (and the CLI's join), one type each, so both
   sides build from the same definition.

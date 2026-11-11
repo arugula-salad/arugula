@@ -3,7 +3,7 @@
 Using control (signing in, devices, joining machines, teams) is on
 **[docs.arugula.io/control](https://docs.arugula.io/control/)**. Operating the
 hosted one, running your own (unsupported for now, #662) and testing it are in
-[control-ops.md](control-ops.md); the design in [control-e2e.md](control-e2e.md).
+control-ops.md (in the cloud repo's docs/control-ops.md); the design in [control-e2e.md](control-e2e.md).
 
 **A joined machine acts as its owner in their Cloud workspaces (#1094).**
 Cloud workspaces are hosted workspaces (below). Control takes a daemon's
@@ -20,7 +20,7 @@ tool's `cloud_workspace` among them, by one check before any tool runs
 Cloud workspaces through the agents there.** That was decided, not
 overlooked (`cloud::CloudDriver` in `crates/platform/src/cloud/mod.rs`).
 The Managoat-backed Cloud workspaces that came first were removed in
-M189 and M190 ([managoat.md](managoat.md)).
+M189 and M190 (managoat.md (in the cloud repo's docs/managoat.md)).
 
 **That power is a grant (M130, #1126).** Every machine joined to an account
 holds a `cloud.drive` grant over it: machines joined before M130 got one
@@ -1055,7 +1055,7 @@ Each driver takes only the secret names it declares (the fake driver
 `GITHUB_TOKEN`; apps-platform `APPS_PLATFORM_TOKEN`; arugula-release and
 planter's drivers none,
 its tokens are minted, see
-[control-ops.md](control-ops.md#releasing-arugula-as-a-deploy-m221)). Names that change how a shell or a tool behaves
+control-ops.md (in the cloud repo's docs/control-ops.md)). Names that change how a shell or a tool behaves
 (`PATH`, `IFS`, `BASH_ENV`, `LD_*`, `NODE_*`, `GIT_*`, `NPM_CONFIG_*`,
 `SSL_*`, `*_PROXY`, `DEPLOY_*` and the like) are refused everywhere, and a
 value can't hold a NUL. Values are sealed with the project's key and never
@@ -1128,7 +1128,7 @@ approved on an owner's device like any other. They render with planter's own
 `crates/e2e/src/planter/` and run with node on the box; the plan names their
 digest. Their tokens are installation tokens of planter's GitHub App (the
 deploy App), minted for the run, one repository each, never the platform's
-App ([control-ops.md](control-ops.md#planters-deploys-m233)).
+App (control-ops.md (in the cloud repo's docs/control-ops.md)).
 
 - **`planter-prod`** (planter's Prod): the pull request that gives an app's
   repository (`arugula-salad/<app>`, linked to the project, a commit on its

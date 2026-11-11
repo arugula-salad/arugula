@@ -1,7 +1,7 @@
 # Launch runbook
 
 What to watch and what to run while hosted Arugula takes its launch traffic
-(part of Arugula #532). It replaces the launch-day section of #75. The background is in [control-ops.md](control-ops.md); this
+(part of Arugula #532). It replaces the launch-day section of #75. The background is in control-ops.md (in the cloud repo's docs/control-ops.md); this
 page has the commands, in the order you'd reach for them.
 
 Hosted control is two Fly apps:
@@ -53,7 +53,7 @@ Grafana at fly-metrics.net (Fly's managed Grafana for the org), dashboard
 [launch-dashboard.json](launch-dashboard.json): import it (*Dashboards → New
 → Import*), and pick the Prometheus data source. It reads Fly's own metrics
 and control's (`/metrics` on the hub and the platform:
-[control-ops.md, "Metrics"](control-ops.md#metrics)).
+control-ops.md, "Metrics" (in the cloud repo's docs/control-ops.md)).
 
 | Panel | Red at | First step |
 |---|---|---|
@@ -93,7 +93,7 @@ same update. Add
 `fly.toml` (6,000 soft, 8,000 hard: raise those with a `fly deploy` of the
 hub's `fly.toml`). Each idle relay socket costs about 28 KB, so it's open
 files and the proxy's limits that bind, not memory
-([control-ops.md, "Capacity"](control-ops.md#capacity)).
+(control-ops.md, "Capacity" (in the cloud repo's docs/control-ops.md)).
 
 **Make it stick:** the next release applies the Machine as
 `ops/src/fly/control/control.fly.ts` declares it, and that would undo the
@@ -344,7 +344,7 @@ Putting the whole hub back to that moment isn't one command today: the
 image has no shell to swap the files with, and a restore on start takes
 only the latest. Recover the rows you need from the file by hand, or
 restore it on another machine with the bucket's keys
-([control-ops.md, "Restoring"](control-ops.md#restoring)) and bring the
+(control-ops.md, "Restoring" (in the cloud repo's docs/control-ops.md)) and bring the
 file onto a fresh volume. `-dry-run` shows any restore's plan first.
 Arugula #853 is the follow-up that would make it one step.
 
@@ -371,7 +371,7 @@ Put the new cluster's connection string (Fly's dashboard, *Managed Postgres →
 Connect*) in Infisical and in `ARUGULA_PLATFORM_DATABASE_URL`
 (`fly secrets set -a arugula-platform ARUGULA_PLATFORM_DATABASE_URL=…`, which
 restarts the machines one at a time), unpause, and turn maintenance off. Without Fly's backups, use the nightly dump
-([control-ops.md, "Restoring the platform's Postgres"](control-ops.md#restoring-the-platforms-postgres)).
+(control-ops.md, "Restoring the platform's Postgres" (in the cloud repo's docs/control-ops.md)).
 
 ## Switches
 

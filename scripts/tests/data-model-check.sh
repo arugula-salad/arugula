@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # docs/data-model.md's check (scripts/data-model-check.mjs, Arugula #751).
-# It fails on a table that's gone from tables.toml, a path that's gone, an ID
-# prefix nothing mints outside tests, and a "Don't say" word in the MCP tool
-# list or the CLI's help, but not in an allowed phrase, and not in a doc
-# comment clap never shows, and on reading fewer help texts than its floor.
+# It fails on a path that's gone (but not one that moved to the cloud's
+# repo), and a "Don't say" word in the MCP tool list or the CLI's help, but
+# not in an allowed phrase, and not in a doc comment clap never shows, and
+# on reading fewer help texts than its floor. Table names and ID prefixes
+# are checked in the cloud's repo.
 # Against a small fake checkout.
 #
 #   scripts/tests/data-model-check.sh
@@ -17,8 +18,8 @@ bad() { printf 'FAIL  %s\n' "$*"; fail=1; }
 ok() { printf 'ok    %s\n' "$*"; }
 
 cd "$tmp"
-mkdir -p scripts docs crates/control crates/a/src crates/a/tests crates/cli/src crates/daemon/src crates/arugulad-mcp/tests/fixtures
-cp "$here"/data-model-check.mjs scripts/
+mkdir -p scripts docs crates/a/src crates/a/tests crates/cli/src crates/daemon/src crates/arugulad-mcp/tests/fixtures
+cp "$here"/data-model-check.mjs "$here"/cloud-paths.mjs scripts/
 # The fake CLI's help is 5 texts, not the real one's hundreds.
 perl -pi -e 's/^const minHelp = \d+;/const minHelp = 5;/' scripts/data-model-check.mjs
 grep -q '^const minHelp = 5;' scripts/data-model-check.mjs || bad "the test couldn't set minHelp"
@@ -27,7 +28,7 @@ cat >docs/data-model.md <<'EOF'
 
 | Noun | Truth | ID |
 |---|---|---|
-| **Thing** | Platform `things`, in [crates/a/src/lib.rs](../crates/a/src/lib.rs) and `crates/a/src/lib.rs:1-2` | `abc_` |
+| **Thing** | Platform `things`, in [crates/a/src/lib.rs](../crates/a/src/lib.rs), `crates/a/src/lib.rs:1-2` and `crates/platform/src/things.rs` | `abc_` |
 
 ## Don't say
 
@@ -37,7 +38,6 @@ cat >docs/data-model.md <<'EOF'
 
 ## After
 EOF
-printf '[[table]]\nname = "things"\n' >crates/control/tables.toml
 printf 'fn id() -> String { format!("abc_{}", 1) }\n' >crates/a/src/lib.rs
 printf '{"tools": [{"name": "show", "description": "A hud box as a block"}]}\n' >crates/arugulad-mcp/tests/fixtures/mcp-tool-list.json
 cat >crates/cli/src/main.rs <<'EOF'
@@ -83,39 +83,9 @@ fails() { # name text-it-says
 
 if out=$(check); then ok "a clean checkout passes"; else bad "a clean checkout should pass: $out"; fi
 
-perl -pi -e 's/name = "things"/name = "widgets"/' crates/control/tables.toml
-fails "a renamed table" "\`things\` isn't a table"
-perl -pi -e 's/name = "widgets"/name = "things"/' crates/control/tables.toml
-
 mv crates/a/src/lib.rs crates/a/src/gone.rs
 fails "a deleted path" "names crates/a/src/lib.rs, which isn't there"
 mv crates/a/src/gone.rs crates/a/src/lib.rs
-
-mv crates/a/src/lib.rs crates/a/tests/lib.rs
-: >crates/a/src/lib.rs
-fails "a prefix minted only in tests" "\`abc_\` isn't minted"
-mv crates/a/tests/lib.rs crates/a/src/lib.rs
-
-mint() { printf '%s\n' "$1" >crates/a/src/lib.rs; }
-mint 'fn id() -> String { new_id("abc") }'
-if out=$(check); then ok "new_id(\"abc\") mints abc_"; else bad "new_id should mint abc_: $out"; fi
-mint 'pub const ID_PREFIX: &str = "abc_"; fn id() -> String { format!("{ID_PREFIX}{}", 1) }'
-if out=$(check); then ok "a const a format! starts with mints abc_"; else bad "a const prefix should mint abc_: $out"; fi
-mint 'fn grant() -> &'"'"'static str { "abc_grant" }'
-fails "a string that only starts with the prefix" "\`abc_\` isn't minted"
-mint 'fn real() {}
-#[cfg(test)]
-mod tests {
-    fn id() -> String { format!("abc_{}", "{") }
-}'
-fails "a prefix minted only in a #[cfg(test)] module" "\`abc_\` isn't minted"
-mint 'struct S {
-    #[cfg(test)]
-    seam: Option<u8>,
-}
-fn id() -> String { format!("abc_{}", 1) }'
-if out=$(check); then ok "a #[cfg(test)] field strips only itself"; else bad "a #[cfg(test)] field: $out"; fi
-mint 'fn id() -> String { format!("abc_{}", 1) }'
 
 perl -pi -e 's/a workspace.s machine/a box/' crates/cli/src/main.rs
 fails "a banned word in a multi-line derive's enum" '"box" in crates/cli/src/main.rs:25'
