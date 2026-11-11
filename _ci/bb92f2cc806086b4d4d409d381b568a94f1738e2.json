@@ -3,7 +3,8 @@
   "commit": "bb92f2cc806086b4d4d409d381b568a94f1738e2",
   "branch": "main",
   "state": "red",
-  "at": "2026-11-11T15:08:24Z",
+  "at": "2026-11-11T17:50:15Z",
+  "revoked": true,
   "phases": {
     "lint": {
       "verdict": "pass",
