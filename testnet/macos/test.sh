@@ -3,31 +3,17 @@
 # macOS checks that need a whole Mac, each in a fresh tart VM clone
 # (testnet/macos/vm.sh), with no person and no GUI on the host.
 #
-#   testnet/macos/test.sh tools                safari and launchd in one VM,
-#                                              booted once
+#   testnet/macos/test.sh tools                launchd in a fresh VM
 #   testnet/macos/test.sh launchd [claim...]   claims below
 #   BREAK=1 testnet/macos/test.sh launchd      every claim must fail
-#   testnet/macos/test.sh safari               web/safari against real Safari
-#   testnet/macos/test.sh ios [claim...]       the key probe and the presigned
-#                                              invite (and S27, asked for) in
-#                                              the iOS Simulator (ios.sh; the
-#                                              Xcode base, `vm.sh base --xcode`;
-#                                              parked, #257)
-#   testnet/macos/test.sh app                  #178, the app in cloud mode
-#                                              (app-cloud.ts)
-#   testnet/macos/test.sh journey              #551, J1 on the real app and
-#                                              Safari, then J2a: Riley in a
-#                                              browser, graphed (journey-j2a.ts)
 #   testnet/macos/test.sh journey-j3           #664, J3: the app by hand from the
 #                                              site, Gatekeeper, an older daemon (journey-j3.ts)
 #   testnet/macos/test.sh journey-j4           #664, J4: an agent installs over
 #                                              ssh from the site and --help (journey-j4.ts)
 #   KEEP=1 ...                                 leave the clone running
 #
-# tools runs launchd last: its reboot restarts the VM, it leaves a sudoers
-# drop-in, and its user must never have had a GUI session. safari
-# installs no service and runs as admin; what it leaves running is
-# stopped before launchd starts.
+# Safari's checks (web/safari), the iOS Simulator's, the app in cloud mode
+# and J2a start a control: they left with it for its own repository.
 #
 # launchd (S28 #153, M52 #155): a user made with sysadminctl who has never
 # logged in to the GUI, reached only over ssh, installs the daemon with
@@ -222,15 +208,12 @@ t_launchd() {
   fi
 }
 
-# One boot for safari and launchd, in that order.
+# launchd's claims, in a fresh VM.
 t_tools() {
   [ $# = 0 ] || { echo "tools takes no claims: name them with launchd alone" >&2; exit 2; }
   [ -z "$BREAK" ] || { echo "BREAK=1 is one test's: launchd" >&2; exit 2; }
   launchd_claims
   fresh
-  if ARUGULA_MACOS_UP=1 "$HERE/safari.sh"; then echo "[macos safari] ok"; else echo "[macos safari] FAIL" >&2; failed=1; fi
-  # safaridriver stays up.
-  v ssh 'pkill -x safaridriver; true'
   test=launchd
   t_launchd
 }
@@ -239,10 +222,6 @@ failed=
 case "$test" in
   tools) t_tools "$@" ;;
   launchd) launchd_claims "$@"; fresh; t_launchd ;;
-  safari) exec "$HERE/safari.sh" "$@" ;;
-  ios) exec "$HERE/ios.sh" "$@" ;;
-  app) cd "$ROOT" && exec node --experimental-strip-types --no-warnings testnet/macos/app-cloud.ts "$@" ;;
-  journey) cd "$ROOT" && exec node --experimental-strip-types --no-warnings testnet/macos/journey-j2a.ts "$@" ;;
   journey-j3) cd "$ROOT" && exec node --experimental-strip-types --no-warnings testnet/macos/journey-j3.ts "$@" ;;
   journey-j4) cd "$ROOT" && exec node --experimental-strip-types --no-warnings testnet/macos/journey-j4.ts "$@" ;;
   *) sed -n '3,55p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;

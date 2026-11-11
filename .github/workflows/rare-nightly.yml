@@ -1,5 +1,5 @@
 # The jobs that rarely fail (#305), moved out of check.yml on 2026-10-28:
-# in main's runs from 10-23 test-postgres failed 0 times in 73, testnet 0
+# in main's runs from 10-23 testnet failed 0 times
 # in 107, stack 1 in 107, core 2 in 108 and macos (webkit) 0 in 110, and
 # on every push they added pod and Mac load that drove test's p90. They
 # run here every night on main's head, and on a release candidate:
@@ -74,7 +74,6 @@ jobs:
       - run: just bootstrap
       - run: just web
       - run: mise exec -- cargo build -p arugulad -p arugula --features arugulad/debug-embed
-      - run: mise exec -- scripts/server-cargo build -p arugula-control --features arugula-control/debug-embed
       - run: scripts/ci-env keep debug
       - name: Hand them to the jobs that need them
         run: tar -cf "$RUNNER_TEMP/run-debug.tar" -C "$CI_RUN" debug dist
@@ -135,39 +134,9 @@ jobs:
         if: always() && env.RUSTC_WRAPPER == 'sccache'
         run: sccache --show-stats
 
-  # The platform's suite again, on Postgres (M143): a postgres:17 container
-  # on the runner's Docker, reached as the test stack is, rather than a
-  # `services:` container. It builds only the server workspace's tests (no
-  # Ghostty, no daemon).
-  test-postgres:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.sha || github.sha }}
-      - uses: ./.github/actions/setup
-        with:
-          cache-key: test-postgres
-          cache-workspace: server
-          ghostty: "false"
-      - run: just bootstrap
-      # The platform embeds web/dist-platform, and control web/dist.
-      - run: just web
-      - name: The platform on Postgres
-        run: just test-platform-postgres
-        env:
-          # As check.yml's test (scripts/ci-env): the platform's tests
-          # compile at ~3.2-3.5 GiB each (four, not six), and six threads.
-          CARGO_BUILD_JOBS: "4"
-          NEXTEST_TEST_THREADS: "6"
-      - name: sccache's hits
-        if: always() && env.RUSTC_WRAPPER == 'sccache'
-        run: sccache --show-stats
-
-  # The test stack's claims on fresh boxes. One stack, the control
-  # profile's: it has every box the ssh profile has, so the ssh claims run
-  # on it first, and building and starting it once saves a second round.
-  # The claims under BREAK=1 are testnet-break.yml's, every night.
+  # The test stack's claims on fresh boxes: the ssh profile's (control's
+  # left with it for its own repository). The claims under BREAK=1 are
+  # testnet-break.yml's, every night.
   testnet:
     # Not after rare-static: it sets up and starts the stack's tools while
     # rare-static builds, and waits for its musl binaries before it needs
@@ -186,13 +155,6 @@ jobs:
           fetch: run-debug
       - run: scripts/ci-env testnet
       - run: just bootstrap
-      # The relay claim's phones (web/fixtures/m52-phones.ts): a Pixel in
-      # Google Chrome itself, not Playwright's Chromium, and an iPhone in
-      # WebKit.
-      - name: Playwright's browsers
-        run: just browsers
-      - name: Google Chrome
-        run: command -v google-chrome >/dev/null || (cd web && pnpm exec playwright install --with-deps chrome)
       - name: Wait for rare-static
         run: scripts/ci-wait-job rare-static
       - name: rare-static's binaries
@@ -207,10 +169,10 @@ jobs:
           echo "ARUGULA_TESTNET_BINARIES=$CI_RUN/x86_64-unknown-linux-musl/release" >> "$GITHUB_ENV"
           echo "ARUGULA_SSH_BINARIES=$CI_RUN/x86_64-unknown-linux-musl/release" >> "$GITHUB_ENV"
           echo "ARUGULA_CLI=$CI_RUN/debug/arugula" >> "$GITHUB_ENV"
-      - name: The control profile's stack
-        run: just testnet down && just testnet up control
+      - name: The ssh profile's stack
+        run: just testnet down && just testnet up ssh
       - name: The claims
-        run: just testnet test ssh && just testnet test control
+        run: just testnet test ssh
       - name: Take the test stack down
         if: always()
         run: just testnet down
@@ -288,7 +250,7 @@ jobs:
   # tags are; this job checks out nothing, so the token never meets the
   # commit's code.
   rare-passed:
-    needs: [core, test-postgres, testnet, stack, webkit]
+    needs: [core, testnet, stack, webkit]
     runs-on: ubuntu-latest
     # CI_GREEN_TOKEN is the ci-green environment's, which only main reaches.
     environment: ci-green

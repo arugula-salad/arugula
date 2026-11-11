@@ -5,9 +5,9 @@
 # daemon's: install.sh, install.ps1 and the daemon's update check read it.
 #
 # Each reads its own green tag (#307): the daemon's ci/green/<sha> (every
-# phase; chant's ci/green-daemon/<sha> is the same verdict), the app's
-# ci/green-app/<sha>, and the server's ci/green-server/<sha>
-# (chant.workspace.json's ci.green.lanes, docs/development.md).
+# phase; chant's ci/green-daemon/<sha> is the same verdict) and the app's
+# ci/green-app/<sha> (chant.workspace.json's ci.green.lanes,
+# docs/development.md).
 #
 # A release is a green commit as it is (#1986): its tag names the commit CI
 # passed, and no commit moves the versions. The build jobs write the tag's
@@ -50,8 +50,8 @@
 # release/app, the members that declare what each publishes). These are the
 # steps around it:
 #   release stamp TAG              TAG's version into this checkout: the
-#                                  daemon's (every arugula crate but the app,
-#                                  and the server's workspace) for v*, the
+#                                  daemon's (every arugula crate but the app)
+#                                  for v*, the
 #                                  app's (crates/desktop) for app-v*; and TAG's
 #                                  notes as docs/releases/, where What's new's
 #                                  build reads them, with those of any earlier
@@ -72,16 +72,14 @@
 # Both lanes:
 #   release check-green TAG [LANE] TAG's commit passed CI: GitHub has its
 #                                  green tag and no revoked one (#503). LANE is
-#                                  daemon (ci/green/<sha>, ci/revoked/<sha>),
-#                                  app (ci/green-app/<sha>) or server
-#                                  (ci/green-server/<sha>); without it, app for
-#                                  an app-v* tag, else daemon.
+#                                  daemon (ci/green/<sha>, ci/revoked/<sha>)
+#                                  or app (ci/green-app/<sha>); without it, app
+#                                  for an app-v* tag, else daemon.
 #                                  ARUGULA_RELEASE_SKIP_GREEN=1 skips it. The
 #                                  release workflows leave this to chant's cut.
 #   release last-green [LANE]      the newest commit on main with LANE's green
 #                                  tag and no revoked one (default daemon), as
-#                                  `bump` picks it; `last-green server` is the
-#                                  server's newest deployable commit
+#                                  `bump` picks it
 #   release bump [patch|minor|major] [--app] [COMMIT|--older] [--notes FILE] [--rare] [--dry-run]
 #                                  (`just release`) tag the newest green commit
 #                                  on main (or COMMIT; --app: the newest with
@@ -117,9 +115,7 @@
 #   release blank PATH             the file PATH names (a Cargo.toml, Cargo.lock
 #                                  or THIRD_PARTY.md), read from stdin, with every
 #                                  arugula crate's version as @V@, so two copies
-#                                  that differ only by a version match (the
-#                                  hub's inputs in ops/src/control.component.ts
-#                                  compare Cargo.toml and Cargo.lock through it)
+#                                  that differ only by a version match
 #
 # GH_TOKEN (bump --rare) starts and watches a run of rare-nightly.yml;
 # GH_TOKEN (draft, check-latest, sidecars) reads and writes releases (in CI,
@@ -211,8 +207,8 @@ url=${GITHUB_SERVER_URL:-https://github.com}/$repo.git
 lane_tags() {
   case "$1" in
     daemon) green_tag=ci/green revoked_tag=ci/revoked ;;
-    app|server) green_tag=ci/green-$1 revoked_tag=ci/revoked-$1 ;;
-    *) echo "no release lane $1: daemon, app or server" >&2; exit 2 ;;
+    app) green_tag=ci/green-$1 revoked_tag=ci/revoked-$1 ;;
+    *) echo "no release lane $1: daemon or app" >&2; exit 2 ;;
   esac
 }
 
@@ -400,9 +396,9 @@ vers() {
 # The files a version may change, and how vers reads each.
 vers_kind() {
   case "$1" in
-    Cargo.lock|server/Cargo.lock|crates/*/Cargo.lock) echo lock ;;
-    Cargo.toml|server/Cargo.toml|crates/*/Cargo.toml) echo toml ;;
-    THIRD_PARTY.md|server/THIRD_PARTY.md|crates/*/THIRD_PARTY.md) echo notices ;;
+    Cargo.lock|crates/*/Cargo.lock) echo lock ;;
+    Cargo.toml|crates/*/Cargo.toml) echo toml ;;
+    THIRD_PARTY.md|crates/*/THIRD_PARTY.md) echo notices ;;
     *) return 1 ;;
   esac
 }
@@ -427,19 +423,17 @@ next_version() {
 
 # apply_version LANE OLD NEW: in the current directory, every file a
 # version is in, from OLD to NEW. The daemon's lane is every arugula crate in
-# Cargo.lock and server/Cargo.lock (the server's workspace, whose
-# [workspace.package] version is the root's) but the app; the app's is
-# arugula-desktop.
+# Cargo.lock but the app; the app's is arugula-desktop.
 apply_version() {
   local lane=$1 old=$2 new=$3 names f k
   if [ "$lane" = app ]; then names=" arugula-desktop "
   else
     # Not mapfile: macOS's bash 3.2 has none.
     local locks=() l
-    while IFS= read -r l; do locks+=("$l"); done < <(git ls-files Cargo.lock server/Cargo.lock)
+    while IFS= read -r l; do locks+=("$l"); done < <(git ls-files Cargo.lock)
     names=" $(awk 'BEGIN { RS = "" } /^\[\[package\]\]/ && !/\nsource = / { n = $0; sub(/^[^\n]*\nname = "/, "", n); sub(/".*/, "", n); if (n ~ /^arugula/ && n != "arugula-desktop") printf "%s ", n }' "${locks[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' ')"
   fi
-  for f in $(git ls-files Cargo.toml Cargo.lock THIRD_PARTY.md server/Cargo.toml server/Cargo.lock server/THIRD_PARTY.md 'crates/*/Cargo.toml' 'crates/*/Cargo.lock' 'crates/*/THIRD_PARTY.md'); do
+  for f in $(git ls-files Cargo.toml Cargo.lock THIRD_PARTY.md 'crates/*/Cargo.toml' 'crates/*/Cargo.lock' 'crates/*/THIRD_PARTY.md'); do
     k=$(vers_kind "$f") || continue
     vers bump "$k" "$names" "$old" "$new" <"$f" >"$f.new"
     mv "$f.new" "$f"
@@ -473,7 +467,7 @@ tag_fixtures() { git ls-tree "$1" crates/proto/fixtures/ | awk -F'\t' '$1 ~ / bl
 # checkout's has only the commit's message. Into FETCH_HEAD, no ref moves and
 # the tree isn't touched, so a publish still sees a clean checkout. A shallow
 # checkout stays shallow: without --depth this would fetch an older tag's whole
-# history; a full one stays full, which control's build needs.
+# history; a full one stays full.
 tag_message() {
   local depth=()
   if [ "$(git rev-parse --is-shallow-repository)" = true ]; then depth=(--depth=1); fi
@@ -638,11 +632,6 @@ case "${1:-}" in
     if [ "$lane" = app ]; then f=crates/desktop/Cargo.toml; else f=Cargo.toml; fi
     now=$(awk '/^\[/ { s = $0 } (s == "[workspace.package]" || s == "[package]") && /^version = "/ { print substr($0, 12, length($0) - 12); exit }' "$f")
     [ "$now" = "$v" ] || { echo "$f's version is $now after stamping $v" >&2; exit 1; }
-    # The server's workspace carries the daemon's version.
-    if [ "$lane" = daemon ] && [ -f server/Cargo.toml ]; then
-      sv=$(awk '/^\[/ { s = $0 } s == "[workspace.package]" && /^version = "/ { print substr($0, 12, length($0) - 12); exit }' server/Cargo.toml)
-      [ "$sv" = "$v" ] || { echo "server/Cargo.toml's version is $sv after stamping $v (it was not $old)" >&2; exit 1; }
-    fi
     echo "stamped $tag: $old -> $v ($lane)"
     notes=$(notes_path "$tag")
     if [ "$lane" = daemon ]; then
@@ -663,7 +652,6 @@ case "${1:-}" in
     check_green "$2" "${3:-}"
     ;;
   last-green)
-    # What #308's server promote starts from: `last-green server`.
     lane=${2:-daemon}
     lane_tags "$lane"
     git fetch -q "$url" main

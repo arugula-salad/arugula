@@ -6,8 +6,9 @@
 # not Playwright's --shard by count: six of those ran 155-316 s (#868).
 # Twelve since #259: on GitHub's runners a shard more costs no pod time,
 # and seven ran ~5.8 min of specs each while test and macOS end at ~10.
-# Twelve is about the floor: control.spec.ts alone is ~170 s of the ~190 s
-# each gets, so more shards wouldn't end any sooner. The count is the
+# Since control's specs left with it for its own repository (about half the
+# time), each gets ~90 s; workspace.spec.ts alone is ~130 s, so more
+# shards wouldn't end any sooner. The count is the
 # caller's matrix's (strategy.job-total). A stale durations.json
 # unbalances them (a 125 s spec weighed as 7 s held one 2 min longer):
 # refresh it when a shard runs well over the rest. Each keeps its JSON

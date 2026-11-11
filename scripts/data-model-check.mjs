@@ -3,10 +3,8 @@
 // way scripts/decisions-index.mjs --check does for the decision records.
 // `just decisions check` runs both, in CI's lint step. Fails when:
 //
-// - a backticked table name in the doc isn't in crates/control/tables.toml;
-// - a repo path the doc names, as a link or in backticks, isn't there;
-// - an ID prefix in backticks (`pdc_`) isn't minted anywhere in crates/,
-//   outside tests;
+// - a repo path the doc names, as a link or in backticks, isn't there (nor
+//   in the cloud's repo: scripts/cloud-paths.mjs);
 // - a word in the doc's "Don't say" table is in the MCP tools' text (the
 //   blessed tool list) or the CLI's help, outside the phrases the table
 //   allows for it.
@@ -18,10 +16,13 @@
 //
 //   node scripts/data-model-check.mjs [--check]
 //
-// Without --check it also says what it checked.
+// Without --check it also says what it checked. The doc's table names and
+// ID prefixes are checked against control's and the platform's code in
+// their repo (arugula-salad/cloud's scripts/data-model-check.mjs).
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { inCloud } from "./cloud-paths.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const check = process.argv.includes("--check");
@@ -33,30 +34,6 @@ const cliHelp = ["crates/cli/src", "crates/daemon/src/args.rs"];
 // help() lost some.
 const minHelp = 400;
 
-// Lowercase words the doc puts in backticks that aren't tables: commands,
-// functions, settings, columns, stored values and wire names. A new one
-// goes here.
-const notTables = new Set([
-  "arugulad",
-  "chat",
-  "deploy",
-  "dropped",
-  "gh",
-  "glab",
-  "group",
-  "may_reach",
-  "platform",
-  "post_thread",
-  "purpose",
-  "read_thread",
-  "role",
-  "snapshot",
-  "tea",
-  "thread",
-  "workspace",
-  "zone",
-  "zones",
-]);
 
 const problems = [];
 const said = [];
@@ -66,19 +43,6 @@ const said = [];
 const dontSay = doc.match(/^## Don't say\n[\s\S]*?(?=^## )/m)?.[0] ?? "";
 const body = doc.replace(dontSay, "");
 const ticks = [...body.matchAll(/`([^`\n]+)`/g)].map((m) => m[1]);
-
-// Tables.
-const tables = new Set(
-  [...readFileSync(join(root, "crates/control/tables.toml"), "utf8").matchAll(/^name = "([^"]+)"$/gm)].map((m) => m[1]),
-);
-const named = [...new Set(ticks.filter((t) => /^[a-z][a-z0-9]*(_[a-z0-9]+)*$/.test(t) && !notTables.has(t)))];
-for (const t of named) {
-  if (!tables.has(t))
-    problems.push(
-      `\`${t}\` isn't a table in crates/control/tables.toml. Name the table it is now, or, if it isn't meant as one, add it to notTables in scripts/data-model-check.mjs`,
-    );
-}
-said.push(`${named.length} tables`);
 
 // Paths: links relative to the doc, and backticked paths from the repo's
 // root (a first part that's one of the root's entries; `:12-30` dropped).
@@ -93,28 +57,8 @@ for (const t of ticks) {
   const p = t.replace(/:\d+(-\d+)?$/, "");
   if (p.includes("/") && top.has(p.split("/")[0]) && /^[\w./-]+$/.test(p)) paths.add(p);
 }
-for (const p of paths) if (!existsSync(join(root, p))) problems.push(`${docPath} names ${p}, which isn't there`);
+for (const p of paths) if (!existsSync(join(root, p)) && !inCloud(p)) problems.push(`${docPath} names ${p}, which isn't there`);
 said.push(`${paths.size} paths`);
-
-// ID prefixes, minted in crates/ outside tests: test files and
-// #[cfg(test)] items are left out. A mint is `format!("run_{...}`, a
-// `new_id("ob_")` (or `new_id("ses")`), or a const holding the prefix that
-// a format! starts with (`format!("{ID_PREFIX}...`). A string that only
-// starts with the prefix ("run_grant") isn't one.
-const sources = [];
-const walk = (dir) => {
-  for (const e of readdirSync(join(root, dir), { withFileTypes: true })) {
-    const p = `${dir}/${e.name}`;
-    if (e.isDirectory()) {
-      if (e.name !== "tests" && e.name !== "target" && e.name !== "node_modules") walk(p);
-    } else if (e.name.endsWith(".rs") && !/(^|_)tests?\.rs$/.test(e.name)) sources.push(p);
-  }
-};
-walk("crates");
-const code = sources.map((p) => withoutTests(readFileSync(join(root, p), "utf8"))).join("\n");
-const prefixes = [...new Set(ticks.filter((t) => /^[a-z]{1,5}_$/.test(t)))];
-for (const p of prefixes) if (!minted(p)) problems.push(`\`${p}\` isn't minted anywhere in crates/: say what the ID looks like now`);
-said.push(`${prefixes.length} ID prefixes`);
 
 // Don't say.
 const rows = dontSay
@@ -245,58 +189,4 @@ function help(file) {
     } else joined.push({ ...d, end: n });
   }
   return joined.map(({ where, text }) => ({ where, text }));
-}
-
-// Whether `p` (`run_`) is minted in `code`.
-function minted(p) {
-  const stem = p.slice(0, -1);
-  if (code.includes(`format!("${p}{`)) return true;
-  if (new RegExp(`\\bnew_id\\(\\s*"${stem}_?"\\s*\\)`).test(code)) return true;
-  for (const m of code.matchAll(new RegExp(`\\bconst (\\w+): &str = "${p}";`, "g")))
-    if (code.includes(`format!("{${m[1]}}`)) return true;
-  return false;
-}
-
-// A Rust file without its #[cfg(test)] items: a `mod tests { ... }` (or
-// any item with a body) up to its closing brace, an item up to its `;`, or
-// a field up to its `,`.
-// Strings, chars and comments are skipped when counting braces.
-function withoutTests(src) {
-  let out = "";
-  let from = 0;
-  for (let at = src.indexOf("#[cfg(test)]"); at >= 0; at = src.indexOf("#[cfg(test)]", from)) {
-    out += src.slice(from, at);
-    from = itemEnd(src, at + "#[cfg(test)]".length);
-  }
-  return out + src.slice(from);
-}
-
-// Where the item starting at `i` ends: after its body's closing brace,
-// after its `;` or `,` if it has none, or before the brace that closes
-// what it's in.
-function itemEnd(src, i) {
-  let depth = 0;
-  while (i < src.length) {
-    const c = src[i];
-    if (c === "/" && src[i + 1] === "/") i = (src.indexOf("\n", i) + 1 || src.length) - 1;
-    else if (c === "/" && src[i + 1] === "*") i = (src.indexOf("*/", i + 2) + 2 || src.length) - 1;
-    else if (c === '"' || (c === "r" && /^r#*"/.test(src.slice(i, i + 8)) && !/\w/.test(src[i - 1] ?? ""))) {
-      if (c === "r") {
-        const hashes = src.slice(i + 1).match(/^#*/)[0];
-        const close = src.indexOf(`"${hashes}`, i + hashes.length + 2);
-        i = close < 0 ? src.length : close + hashes.length;
-      } else {
-        for (i++; i < src.length && src[i] !== '"'; i++) if (src[i] === "\\") i++;
-      }
-    } else if (c === "'" && /^'(?:[^'\\]|\\.[^']*)'/.test(src.slice(i, i + 12))) {
-      i += src.slice(i, i + 12).match(/^'(?:[^'\\]|\\.[^']*)'/)[0].length - 1;
-    } else if ("([{".includes(c)) depth++;
-    else if (")]}".includes(c)) {
-      depth--;
-      if (depth < 0) return i;
-      if (depth === 0 && c === "}") return i + 1;
-    } else if ((c === ";" || c === ",") && depth === 0) return i + 1;
-    i++;
-  }
-  return src.length;
 }

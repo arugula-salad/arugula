@@ -15,7 +15,7 @@ layout, and [docs/testing.md](docs/testing.md) the tests. In short:
 
 ```sh
 just bootstrap   # once: toolchains and the web client's packages
-just check       # what CI runs: format, lints, the Rust tests, interop and control
+just check       # what CI runs: format, lints, the Rust tests and interop
 just e2e         # the browser tests (run them if you touched web/)
 ```
 
@@ -26,6 +26,11 @@ just e2e         # the browser tests (run them if you touched web/)
 - CI doesn't run on pull requests: it runs on our own machines, on every
   push to `main`. Run `just check` (and `just e2e` if you touched web/)
   before you open one; a maintainer runs them again before merging.
+
+Control and the platform are closed source and not in this repository
+(README, "What's open"). The web client's control-mode pages are tested
+against control in its own repository after a change here lands, so a pull
+request that breaks them is fixed in a follow-up.
 
 By contributing you agree your work is licensed under the project's terms:
 MIT OR Apache-2.0, at the user's option.

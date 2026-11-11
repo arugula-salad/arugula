@@ -9,7 +9,7 @@
 testnet = { max-threads = 1 }
 
 [[profile.default.overrides]]
-filter = "package(arugulad) & binary(integration) & (test(/^ssh::/) | test(/^reboot::/) | test(/^guest_ssh::.*jump_host/))"
+filter = "package(arugulad) & binary(integration) & (test(/^ssh::/) | test(/^reboot::/))"
 test-group = "testnet"
 # One at a time and among the slowest (reboot, the jump host): start early.
 priority = 10
