@@ -4,7 +4,7 @@
 // ACP server the daemon's tests use, so nothing here costs anything.
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { devices, expect, test, type Page } from "@playwright/test";
@@ -365,6 +365,18 @@ test("Getting started: the Agents step checks Claude Code's hooks", async ({ pag
     await open();
     await expect(hooks).toHaveText("Questions on cards: Claude Code has Arugula's hooks");
     await expect(hooksRow).toHaveAttribute("data-check", "done");
+    await expect(panel.locator("[data-start-hooks-partial]")).toHaveCount(0);
+    await panel.getByRole("button", { name: "Close" }).click();
+
+    // #906: an older install, without SessionStart: partly, which, and the command.
+    const v = JSON.parse(readFileSync(settings, "utf8"));
+    delete v.hooks.SessionStart;
+    writeFileSync(settings, JSON.stringify(v));
+    await open();
+    await expect(hooks).toHaveText("Questions on cards: Arugula's hooks are only partly installed (SessionStart missing)");
+    await expect(hooksRow).toHaveAttribute("data-check", "wait");
+    await expect(panel.locator("[data-start-hooks-partial]")).toContainText("SessionStart is missing. arugula hooks install adds the rest and changes nothing else.");
+    await expect(panel.locator("[data-start-claude]")).toBeVisible();
     await panel.getByRole("button", { name: "Close" }).click();
   } finally {
     rmSync(settings, { force: true });

@@ -4,7 +4,9 @@
 //! app's *Daemon* menu says them; its standing with Arugula control
 //! (#325): joined where and whether connected, not joined, or dropped by
 //! control and what it said; and the agents (#335): each ACP adapter's
-//! state and whether Claude Code has Arugula's MCP server; and who shares
+//! state, whether Claude Code has Arugula's MCP server, and its hooks:
+//! there, only partly (which, and how to finish, #906), blocked by a
+//! policy (#395), or not (an offer); and who shares
 //! a login or called from a tagged device (#663). Each part is a
 //! [`Line`].
 //!
@@ -167,8 +169,58 @@ pub fn agent_lines(v: &Value) -> Vec<Line> {
             _ => ("Claude Code isn't on this machine".to_owned(), None),
         };
         out.push(Line { part: "mcp", says, fix });
+        out.extend(hooks_line(c));
     }
     out
+}
+
+/// Claude Code's hooks for Arugula (#906), from what the daemon's `hooks
+/// status` said: blocked by a policy (#395), only partly installed (which,
+/// and the command that finishes it), all there, or not there (an offer).
+/// None from an older daemon, or where Claude Code isn't.
+fn hooks_line(c: &Value) -> Option<Line> {
+    let hooks = c["hooks"].as_bool()?;
+    if let Some(b) = c["hooks_blocked"].as_str() {
+        return Some(Line { part: "hooks", says: b.to_owned(), fix: None });
+    }
+    if let Some(p) = c["hooks_partial"].as_object() {
+        let mut what: Vec<String> = vec![];
+        let events = |k: &str| -> Vec<String> {
+            p.get(k)
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|e| e.as_str().map(str::to_owned))
+                .collect()
+        };
+        let (missing, outdated) = (events("missing"), events("outdated"));
+        if !missing.is_empty() {
+            what.push(format!("{} missing", missing.join(", ")));
+        }
+        if !outdated.is_empty() {
+            what.push(format!("{} out of date", outdated.join(", ")));
+        }
+        if p.get("rules") == Some(&Value::Bool(true)) {
+            what.push("some read-only permission rules missing".into());
+        }
+        return Some(Line {
+            part: "hooks",
+            says: format!("Arugula's hooks are only partly installed: {}", what.join("; ")),
+            fix: Some("`arugula hooks install` adds the rest and changes nothing else".into()),
+        });
+    }
+    if c["installed"] != true {
+        return None;
+    }
+    Some(Line {
+        part: "hooks",
+        says: if hooks {
+            "Claude Code has Arugula's hooks".into()
+        } else {
+            "Claude Code doesn't have Arugula's hooks (optional: `arugula hooks install` puts a terminal Claude's questions on cards)".into()
+        },
+        fix: None,
+    })
 }
 
 pub fn run(ctx: Ctx) -> anyhow::Result<i32> {
@@ -314,6 +366,44 @@ mod tests {
 
         // An older daemon: no adapters, no lines for them.
         assert_eq!(agent_lines(&json!({})).len(), 0);
+    }
+
+    /// #906: the hooks' line, for each of full, none, partial and blocked.
+    #[test]
+    fn the_hooks_line_says_partial_full_none_or_blocked() {
+        let hooks = |claude: Value| -> Option<(String, Option<String>)> {
+            agent_lines(&json!({ "claude": claude })).into_iter().find(|l| l.part == "hooks").map(|l| (l.says, l.fix))
+        };
+        let full = hooks(json!({ "installed": true, "tools": true, "hooks": true })).unwrap();
+        assert_eq!(full, ("Claude Code has Arugula's hooks".to_owned(), None));
+
+        // None: an offer, not a fix.
+        let (says, fix) = hooks(json!({ "installed": true, "tools": true, "hooks": false })).unwrap();
+        assert!(
+            says.starts_with("Claude Code doesn't have Arugula's hooks (optional: `arugula hooks install`"),
+            "{says}"
+        );
+        assert_eq!(fix, None);
+
+        // Partial: which, and the one command.
+        let partial = json!({ "missing": ["SessionStart"], "outdated": ["Stop"], "rules": true, "says": "…" });
+        let (says, fix) =
+            hooks(json!({ "installed": true, "tools": true, "hooks": false, "hooks_partial": partial })).unwrap();
+        assert_eq!(
+            says,
+            "Arugula's hooks are only partly installed: SessionStart missing; Stop out of date; some read-only permission rules missing"
+        );
+        assert_eq!(fix.as_deref(), Some("`arugula hooks install` adds the rest and changes nothing else"));
+
+        // Blocked by a policy: that, not "install".
+        let blocked = "Claude Code won't run Arugula's hooks on this machine: /etc/claude-code/managed-settings.json sets allowManagedHooksOnly, a policy";
+        let (says, fix) =
+            hooks(json!({ "installed": true, "tools": true, "hooks": true, "hooks_blocked": blocked })).unwrap();
+        assert_eq!((says.as_str(), fix), (blocked, None));
+
+        // An older daemon (no `hooks`), or no Claude Code: no line.
+        assert_eq!(hooks(json!({ "installed": true, "tools": true })), None);
+        assert_eq!(hooks(json!({ "installed": false, "tools": false, "hooks": false })), None);
     }
 
     #[test]

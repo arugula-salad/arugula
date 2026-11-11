@@ -201,6 +201,48 @@ struct ClaudeStatus {
     /// `disableAllHooks`), said for a person; absent when nothing does.
     #[serde(skip_serializing_if = "Option::is_none")]
     hooks_blocked: Option<String>,
+    /// #906: some of Arugula's hooks (or read-only rules) are there and
+    /// some aren't: which, and the sentence `hooks status` says with the
+    /// command that finishes it. Absent when all are, none are, or a
+    /// policy blocks them (`hooks_blocked` says so instead).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hooks_partial: Option<HooksPartial>,
+}
+
+/// `arugula --json hooks status`'s `partial` (#906).
+#[derive(Serialize, serde::Deserialize, Default, Debug, Clone, PartialEq)]
+struct HooksPartial {
+    /// Events with none of Arugula's hooks.
+    #[serde(default)]
+    missing: Vec<String>,
+    /// Events with some of them, not all.
+    #[serde(default)]
+    outdated: Vec<String>,
+    /// Some of the read-only permission rules, not all.
+    #[serde(default)]
+    rules: bool,
+    /// For a person: what's missing, and `arugula hooks install`.
+    #[serde(default)]
+    says: String,
+}
+
+/// What `arugula --json hooks status` says, as Getting started uses it.
+#[derive(Default, Debug, PartialEq)]
+struct HooksSaid {
+    installed: bool,
+    blocked: Option<String>,
+    partial: Option<HooksPartial>,
+}
+
+impl HooksSaid {
+    fn of(v: &Value) -> Self {
+        let blocked = v["blocked"]["says"].as_str().map(str::to_owned);
+        // A policy is said instead of "install the rest".
+        let partial = serde_json::from_value::<HooksPartial>(v["partial"].clone())
+            .ok()
+            .filter(|p| blocked.is_none() && !p.says.is_empty());
+        HooksSaid { installed: v["installed"] == true, blocked, partial }
+    }
 }
 
 /// The join in flight, if any, and the last one's failure.
@@ -573,22 +615,28 @@ fn scope_of(out: &str) -> Option<&'static str> {
 }
 
 async fn claude_status(app: &App) -> ClaudeStatus {
-    let (hooks, hooks_blocked) = hooks_status(app).await;
-    let Some(c) = claude(app).await else { return ClaudeStatus { hooks, hooks_blocked, ..Default::default() } };
-    ClaudeStatus { installed: true, tools: mcp_scope(app, &c, MCP_NAME).await.is_some(), hooks, hooks_blocked }
+    let HooksSaid { installed: hooks, blocked: hooks_blocked, partial: hooks_partial } = hooks_status(app).await;
+    let Some(c) = claude(app).await else {
+        return ClaudeStatus { hooks, hooks_blocked, hooks_partial, ..Default::default() };
+    };
+    ClaudeStatus {
+        installed: true,
+        tools: mcp_scope(app, &c, MCP_NAME).await.is_some(),
+        hooks,
+        hooks_blocked,
+        hooks_partial,
+    }
 }
 
 /// `arugula --json hooks status`: whether the settings.json Claude Code
-/// reads has Arugula's hooks, or the plugin brings them, and what stops
-/// Claude Code running them, if anything (#395).
-async fn hooks_status(app: &App) -> (bool, Option<String>) {
-    let Some(cli) = cli(app).await else { return (false, None) };
+/// reads has Arugula's hooks, or the plugin brings them, what stops
+/// Claude Code running them, if anything (#395), and what's left of a
+/// partial install (#906).
+async fn hooks_status(app: &App) -> HooksSaid {
+    let Some(cli) = cli(app).await else { return HooksSaid::default() };
     match run(app, &cli, &["--json", "hooks", "status"], Duration::from_secs(10)).await {
-        Ok((true, out, _)) => {
-            let v: Value = serde_json::from_str(&out).unwrap_or_default();
-            (v["installed"] == true, v["blocked"]["says"].as_str().map(str::to_owned))
-        }
-        _ => (false, None),
+        Ok((true, out, _)) => HooksSaid::of(&serde_json::from_str(&out).unwrap_or_default()),
+        _ => HooksSaid::default(),
     }
 }
 
@@ -847,6 +895,42 @@ mod tests {
         assert!(o.get("done").is_none());
         let o = serde_json::to_value(Outcome { done: vec![fresh], ..Outcome::ok() }).unwrap();
         assert_eq!(o["done"].as_array().unwrap().len(), 1);
+    }
+
+    /// #906: `hooks status`'s partial install reaches Getting started; a
+    /// policy that blocks the hooks is said instead.
+    #[test]
+    fn a_partial_install_is_passed_on_unless_blocked() {
+        let says = "Arugula's hooks are only partly installed in ~/.claude/settings.json: SessionStart is missing. `arugula hooks install` adds the rest and changes nothing else.";
+        let partial = serde_json::json!({ "missing": ["SessionStart"], "outdated": [], "rules": false, "says": says });
+        let v = serde_json::json!({ "installed": false, "blocked": null, "partial": partial });
+        let said = HooksSaid::of(&v);
+        assert_eq!(
+            said.partial,
+            Some(HooksPartial {
+                missing: vec!["SessionStart".into()],
+                outdated: vec![],
+                rules: false,
+                says: says.into()
+            })
+        );
+        let shown = serde_json::to_value(ClaudeStatus { hooks_partial: said.partial, ..Default::default() }).unwrap();
+        assert_eq!(shown["hooks_partial"]["says"], says);
+
+        // Full, none, or an older CLI: nothing partial.
+        for v in [
+            serde_json::json!({ "installed": true, "blocked": null, "partial": null }),
+            serde_json::json!({ "installed": false }),
+        ] {
+            let said = HooksSaid::of(&v);
+            assert_eq!(said.partial, None, "{v}");
+            assert!(serde_json::to_value(ClaudeStatus::default()).unwrap().get("hooks_partial").is_none());
+        }
+
+        // Blocked: the policy, not "install the rest".
+        let v = serde_json::json!({ "installed": false, "blocked": { "says": "Claude Code won't run Arugula's hooks" }, "partial": partial });
+        let said = HooksSaid::of(&v);
+        assert_eq!((said.blocked.as_deref(), said.partial), (Some("Claude Code won't run Arugula's hooks"), None));
     }
 
     #[test]
