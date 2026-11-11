@@ -27,17 +27,25 @@ export function openChatView(view: "activity" | "saved" | "search" | "threads", 
   openPlatform(view === "search" ? `/chat/search${q ? `?q=${encodeURIComponent(q)}` : ""}` : `/chat/${view}`);
 }
 
-/** Chat, on the platform page (M153). */
+/** The platform page's places the shell's buttons hand over (`/?to=`): the
+ * platform page opens each in the current project, which only it knows
+ * (another origin, Arugula #880), or the global one without. */
+export const CHAT_TO = "/?to=chat";
+export const BOARDS_TO = "/?to=boards";
+export const DOCS_TO = "/?to=docs";
+export const PROJECTS_TO = "/?to=projects";
+
+/** Chat, on the platform page (M153): the current project's team's. */
 export function openChat() {
   closeThread();
-  openPlatform("/chat");
+  openPlatform(CHAT_TO);
 }
 
-/** Boards, on the platform page: every project's (#339). The shell knows
- * no session's linked project, so it can't open one project's. */
+/** Boards, on the platform page: the current project's (#339), or every
+ * project's. */
 export function openBoards() {
   closeThread();
-  openPlatform("/boards");
+  openPlatform(BOARDS_TO);
 }
 
 /** M123: a room in control's chat, at message `msg`, on the platform page. */

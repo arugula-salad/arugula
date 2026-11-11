@@ -9,6 +9,7 @@ import { usePhone, useSubscribe } from "../shared/ui/hooks";
 import { useRef } from "preact/hooks";
 import { openMenu, useMenuFrom, type MenuItem } from "../shared/ui/menu";
 import { WindowButtons } from "../shared/ui/window-buttons";
+import { currentProject, entryPath } from "./current-project";
 import { follow, go, pathOf, useRoute, type Route } from "./router";
 import { controlOrigin, session } from "./session";
 import { signOut } from "./signin";
@@ -97,7 +98,8 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
   // body says it isn't one of theirs.
   const unknown = !!project && !p && session.state === "ready";
   const here = unknown ? null : sectionOf(r);
-  const chatTo = chatPath(project);
+  // Off a project (Inbox, All projects), Chat is still the current one's (Arugula #880).
+  const chatTo = project ? chatPath(project) : entryPath("chat", session.project(currentProject()), names);
   const pick = (e: MouseEvent) => {
     const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const items: MenuItem[] = [

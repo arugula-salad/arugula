@@ -15,7 +15,7 @@ import { SWARM_ABOUT, onSwarmRoute, openSwarm } from "../../swarm/route";
 import { openSettings } from "../settings-route";
 import { Rail as SharedRail, type RailItem } from "../../../shared/ui/rail";
 import { openPlatform, platformHref } from "../../platform-links";
-import { chatUnread, closePlace, currentPlace, hasChat, openChat, openOverview, useChatTick, type Place } from "../places";
+import { DOCS_TO, PROJECTS_TO, chatUnread, closePlace, currentPlace, hasChat, openChat, openOverview, useChatTick, type Place } from "../places";
 import { countView } from "../../../shared/telemetry";
 import { ChatIcon, DocsIcon, Mark, PanesIcon, ProjectsIcon, SettingsIcon, SwarmIcon } from "../../../shared/ui/icons";
 import { focusSessionSearch } from "./prefs";
@@ -42,11 +42,10 @@ export function Rail({ client }: { client: Client }) {
   const threads = hasChat();
   const { n, mention } = threads ? chatUnread() : { n: 0, mention: false };
   const host = directory.current || "this machine";
-  // Back to the page you left there (Arugula #638), or the list on a first visit.
-  const PROJECTS_PATH = "/?back";
-  const projects = platformHref(PROJECTS_PATH);
-  const DOCS_PATH = "/docs";
-  const teamDocs = platformHref(DOCS_PATH);
+  // The current project, which the platform page knows (Arugula #880), or the
+  // list on a first visit.
+  const projects = platformHref(PROJECTS_TO);
+  const teamDocs = platformHref(DOCS_TO);
   const panes = () => {
     if (at !== "panes") closePlace(at);
     else client.viewOf(client.active() ?? -1)?.focus();
@@ -66,7 +65,7 @@ export function Rail({ client }: { client: Client }) {
       icon: <ProjectsIcon />,
       href: projects,
       target: "arugula-platform",
-      onClick: () => openPlatform(PROJECTS_PATH),
+      onClick: () => openPlatform(PROJECTS_TO),
     },
     // A machine's Docs light the rail's Docs, or Panes where there's none (Arugula #796).
     { label: "Panes", tip: "Your panes: back to this session's last tab and pane", here: at === "panes" || at === "agents" || (at === "docs" && !teamDocs), hook: "data-open-panes", icon: <PanesIcon />, onClick: panes },
@@ -89,8 +88,8 @@ export function Rail({ client }: { client: Client }) {
       count: { n, mention },
       onClick: () => openChat(),
     },
-    // The platform's /docs: the team's Docs and the reader's from every machine.
-    // This machine's own are its bar's.
+    // The platform's Docs: the current project's, or the team's and the reader's
+    // from every machine. This machine's own are its bar's.
     !!teamDocs && {
       label: "Docs",
       tip: "Docs: your team's Docs, and yours from your machines",
@@ -99,7 +98,7 @@ export function Rail({ client }: { client: Client }) {
       icon: <DocsIcon />,
       href: teamDocs,
       target: "arugula-platform",
-      onClick: () => openPlatform(DOCS_PATH),
+      onClick: () => openPlatform(DOCS_TO),
     },
   ];
   const brand = (
