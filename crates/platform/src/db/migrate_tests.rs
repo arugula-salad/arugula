@@ -445,7 +445,7 @@ fn relations_keep_their_edges_and_take_before() {
     };
     c.execute_batch(&edge("rel_1", "blocks")).unwrap();
     assert!(c.execute_batch(&edge("rel_2", "before")).is_err(), "not before 0103");
-    assert_eq!(run(&mut c).unwrap().ran, [103, 104, 105, 106, 107]);
+    assert_eq!(run(&mut c).unwrap().ran, [103, 104, 105, 106, 107, 108, 109]);
     assert_eq!(count(&c, "SELECT count(*) FROM work_relations"), 1);
     c.execute_batch(&edge("rel_2", "before")).unwrap();
     assert!(c.execute_batch(&edge("rel_3", "before")).is_err(), "one edge of a kind between two items");
@@ -471,7 +471,7 @@ fn a_connections_agent_writes_become_a_policy_for_every_kind() {
         run(&mut c).unwrap().ran,
         [
             82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106,
-            107
+            107, 108, 109
         ]
     );
     c.execute_batch(&format!("{add}) VALUES ('tc_new', 'p', 'plane', 'w', 's4', 'D', 'D', -4, 1);")).unwrap();
@@ -514,4 +514,50 @@ fn linked_repos_start_their_full_pass_clock_at_their_last_reconcile() {
         .map(Result::unwrap)
         .collect();
     assert_eq!(full, [Some(500), Some(20), None]);
+}
+
+/// Docs' power (0108, Arugula #862): every machine with a live `issues.write`
+/// over a project is given `docs.write` there, by whoever gave the first;
+/// a revoked one, a token's, an account-wide grant of another power, and a
+/// machine that has it already are left as they were.
+#[test]
+fn a_live_issues_write_grant_gets_docs_write_beside_it() {
+    let mut c = Connection::open_in_memory().unwrap();
+    run_to(&mut c, 107).unwrap();
+    let grant = |id: &str, kind: &str, subject: &str, power: &str, scope: &str, revoked: &str| {
+        format!(
+            "INSERT INTO grants (id, subject_kind, subject_id, power, scope_kind, scope_id, granted_by, created_at, revoked_at)
+             VALUES ('{id}', '{kind}', '{subject}', '{power}', '{scope}', 'p1', 'alice', 1, {revoked});"
+        )
+    };
+    c.execute_batch(
+        &[
+            grant("g1", "daemon", "m1", "issues.write", "project", "NULL"),
+            grant("g2", "daemon", "m2", "issues.write", "project", "5"),
+            grant("g3", "agent", "agt_1", "issues.write", "project", "NULL"),
+            grant("g4", "daemon", "m3", "threads.read", "project", "NULL"),
+            grant("g5", "daemon", "m4", "issues.write", "project", "NULL"),
+            grant("g6", "daemon", "m4", "docs.write", "project", "NULL"),
+        ]
+        .concat(),
+    )
+    .unwrap();
+    assert_eq!(run(&mut c).unwrap().ran, [108, 109]);
+    let docs: Vec<(String, String, String, i64)> = c
+        .prepare("SELECT subject_id, scope_id, granted_by, created_at FROM grants WHERE power = 'docs.write' ORDER BY subject_id")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    assert_eq!(docs.len(), 2, "m1's, and m4's own: {docs:?}");
+    assert_eq!((docs[0].0.as_str(), docs[0].1.as_str(), docs[0].2.as_str()), ("m1", "p1", "alice"));
+    assert!(docs[0].3 > 1, "made now");
+    assert_eq!(docs[1], ("m4".to_owned(), "p1".to_owned(), "alice".to_owned(), 1), "m4's is as it was");
+    let id: String = c
+        .query_row("SELECT id FROM grants WHERE subject_id = 'm1' AND power = 'docs.write'", [], |r| r.get(0))
+        .unwrap();
+    assert!(id.starts_with("grt_") && id.len() == 36, "{id}");
+    // The new one is live and the unique index of live grants held.
+    assert_eq!(count(&c, "SELECT count(*) FROM grants WHERE power = 'docs.write' AND revoked_at IS NULL"), 2);
 }

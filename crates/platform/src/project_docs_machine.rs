@@ -72,7 +72,7 @@ fn sniff(bytes: &[u8]) -> Option<&'static str> {
 }
 
 /// A picture's name and bytes, and the type they agree on, or why not.
-fn picture(name: &str, bytes: &[u8]) -> Result<&'static str, ApiError> {
+pub(crate) fn picture(name: &str, bytes: &[u8]) -> Result<&'static str, ApiError> {
     let b = name.as_bytes();
     let plain_name = (1..=100).contains(&b.len())
         && b[0].is_ascii_alphanumeric()

@@ -50,6 +50,12 @@
 //! reads its project, and that isn't the question); nothing is live, and a
 //! machine never writes to a team's project.
 //!
+//! **A machine's agent** ([`By::Agent`], Arugula #862) makes and writes a
+//! team's Docs as its owner, labelled with the machine
+//! ([`project_docs_agent`](crate::project_docs_agent)): the owner's role is
+//! the ceiling, and the machine needs `docs.write` over the project, asked
+//! on every write. It reads with no power, and never deletes.
+//!
 //! **Live:** a write pushes an object change on the Doc's thread
 //! ([`changed`]), as a board's does, so pages showing it read it again.
 //!
@@ -72,7 +78,11 @@ use crate::{
     Platform,
     auth::Person,
     chat::{CHAT_OFF, chat_on},
-    db::project_docs::{self as db, Refused},
+    db::{
+        project_docs::{self as db, Refused},
+        projects::DOCS_WRITE,
+    },
+    grants::{AgentScope, agent_may},
     issues::PERSONAL,
 };
 
@@ -85,13 +95,17 @@ pub enum By<'a> {
     Person(&'a str),
     /// An agent session, with its asker's rights, as itself.
     Session { asker: &'a str, session: &'a str },
+    /// A machine's agent (Arugula #862), signed by the machine, as its
+    /// owner's: the owner's role is the ceiling, and the machine needs
+    /// `docs.write` over the project to make or write a Doc.
+    Agent { owner: &'a str, machine: &'a str },
 }
 
 impl By<'_> {
     /// Whose rights are checked.
     fn account(&self) -> &str {
         match self {
-            By::Person(a) | By::Session { asker: a, .. } => a,
+            By::Person(a) | By::Session { asker: a, .. } | By::Agent { owner: a, .. } => a,
         }
     }
 }
@@ -191,6 +205,19 @@ pub(crate) async fn place_gated(
     Ok(Place { project: project.id, role })
 }
 
+/// A machine's agent needs `docs.write` over the project to make or write
+/// a Doc, asked of the database on every call, on top of its owner's role
+/// (which [`place`] has checked, from the hub's roster, with `write`): a
+/// grant outlives the owner's demotion, and the role is what refuses then.
+/// Reading needs only that the owner reads the project.
+async fn agent_may_write(app: &Platform, by: By<'_>, place: &Place) -> Result<(), ApiError> {
+    if let By::Agent { owner, machine } = by {
+        let m = crate::auth::Machine { account: owner.to_owned(), daemon: machine.to_owned() };
+        agent_may(app, &m, DOCS_WRITE, &AgentScope::Project(place.project.clone())).await?;
+    }
+    Ok(())
+}
+
 /// The Doc `id` in the project `asked` names, as `by` sees it: 404 unless
 /// it's that project's and they may read it.
 async fn doc_in(
@@ -201,6 +228,9 @@ async fn doc_in(
     write: bool,
 ) -> Result<(Place, db::Stored), ApiError> {
     let place = place(app, by.account(), asked, write).await?;
+    if write {
+        agent_may_write(app, by, &place).await?;
+    }
     let doc = app.db.project_doc(id)?.filter(|d| d.project == place.project).ok_or_else(no_doc)?;
     Ok((place, doc))
 }
@@ -295,8 +325,11 @@ type Names = std::collections::HashMap<String, String>;
 /// The names of the machines these Docs are copies from (none for one
 /// control doesn't know any more).
 async fn machine_names<'a>(app: &Platform, docs: impl Iterator<Item = &'a db::Stored>) -> anyhow::Result<Names> {
-    let ids: Vec<String> =
-        docs.filter_map(|d| d.machine.clone()).collect::<std::collections::BTreeSet<_>>().into_iter().collect();
+    let ids: Vec<String> = docs
+        .flat_map(|d| d.machine.iter().chain(&d.made_by_agent).cloned())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect();
     if ids.is_empty() {
         return Ok(Names::new());
     }
@@ -309,11 +342,19 @@ pub(crate) fn doc_wire(d: &db::Stored, names: &Names) -> wire::Doc {
         project: d.project.clone(),
         title: d.title.clone(),
         author: d.made_by.clone(),
-        agent: d.made_by_session.as_ref().map(|s| ChatAgent {
-            machine: s.clone(),
-            machine_name: crate::issues::session_name(s),
-            session: None,
-        }),
+        // A session made it as itself; a machine's agent made it for its
+        // owner, labelled with the machine (as an issue's is).
+        agent: match (&d.made_by_session, &d.made_by_agent) {
+            (Some(s), _) => {
+                Some(ChatAgent { machine: s.clone(), machine_name: crate::issues::session_name(s), session: None })
+            }
+            (None, Some(m)) => Some(ChatAgent {
+                machine: m.clone(),
+                machine_name: names.get(m).filter(|n| !n.is_empty()).cloned().unwrap_or_default(),
+                session: None,
+            }),
+            (None, None) => None,
+        },
         sections: d.sections,
         written: d.written,
         rev: d.rev,
@@ -390,6 +431,7 @@ pub async fn list(app: &Platform, by: By<'_>, project: &str) -> Result<wire::Doc
 /// Make a Doc in `project` as `by`.
 pub async fn create(app: &Platform, by: By<'_>, project: &str, new: &wire::NewDoc) -> Result<wire::DocView, ApiError> {
     let place = place(app, by.account(), project, true).await?;
+    agent_may_write(app, by, &place).await?;
     let title = title_ok(&new.title)?;
     let mut kept = Vec::with_capacity(new.sections.len());
     for s in &new.sections {
@@ -397,13 +439,21 @@ pub async fn create(app: &Platform, by: By<'_>, project: &str, new: &wire::NewDo
     }
     let sections: Vec<db::NewSection> =
         kept.iter().map(|(h, i, b)| db::NewSection { heading: h, intent: i, body: *b }).collect();
-    let (made_by, made_by_session) = match by {
-        By::Person(a) => (a, None),
-        By::Session { session, .. } => ("", Some(session)),
+    let (made_by, made_by_session, made_by_agent) = match by {
+        By::Person(a) => (a, None, None),
+        By::Session { session, .. } => ("", Some(session), None),
+        By::Agent { owner, machine } => (owner, None, Some(machine)),
     };
     let layout = layout_ok(new.layout.as_deref())?;
-    let n =
-        db::NewDoc { project: &place.project, title: &title, made_by, made_by_session, sections: &sections, layout };
+    let n = db::NewDoc {
+        project: &place.project,
+        title: &title,
+        made_by,
+        made_by_session,
+        made_by_agent,
+        sections: &sections,
+        layout,
+    };
     let doc = app.db.create_project_doc(&n, now_ms(), wire::DOCS_MAX)?.map_err(refused)?;
     view(app, by, &place, &doc).await
 }
@@ -458,6 +508,31 @@ pub async fn asset(
     id_ok(id)?;
     let (_, doc) = doc_in(app, by, project, id, false).await?;
     app.db.project_doc_asset(&doc.id, name)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such picture"))
+}
+
+/// Keep a picture of a Doc under `name` as `by` (a machine's agent): the
+/// limits are the machine's copies' ([`picture`]). A picture is a write, so a
+/// copy is refused as for any write.
+pub async fn put_asset(
+    app: &Platform,
+    by: By<'_>,
+    project: &str,
+    id: &str,
+    name: &str,
+    bytes: &[u8],
+) -> Result<wire::Asset, ApiError> {
+    id_ok(id)?;
+    let mime = crate::project_docs_machine::picture(name, bytes)?;
+    let (place, doc) = doc_in(app, by, project, id, true).await?;
+    if doc.machine.is_some() {
+        return Err(copy_refused(&doc, &machine_names(app, std::iter::once(&doc)).await?));
+    }
+    may_write(by, &place, &doc)?;
+    let (a, was_changed) = app.db.put_project_doc_asset(&doc.id, name, mime, bytes, now_ms())?.map_err(refused)?;
+    if was_changed {
+        changed(app, &place.project, id);
+    }
+    Ok(wire::Asset { name: a.name, mime: a.mime, size: a.size, rev: a.rev })
 }
 
 /// Delete a Doc: owners and editors, never a session. A copy too: the

@@ -105,6 +105,15 @@ pub const SESSIONS_START: &str = "sessions.start";
 pub const SESSIONS_REPLY: &str = "sessions.reply";
 pub const SESSION_POWERS: [&str; 2] = [SESSIONS_START, SESSIONS_REPLY];
 
+/// An agent's power to make and write a project's Docs (Arugula #862): in
+/// a team's context a Doc lives in the team's project, and its machine's
+/// agents write it there as their owner's. Over a project only, never given
+/// on join (a grant that already holds `issues.write` is given it by
+/// migration 0108), and never to an agent grant token: a token has no Docs
+/// tool. Reading a project's Docs needs no power, only that the owner
+/// reads the project.
+pub const DOCS_WRITE: &str = "docs.write";
+
 /// An agent with no machine's power to set a project's secrets by name
 /// (M230), over a project only: write-only, never read back. Only a token
 /// is given it ([`crate::agent_tokens`]), never a machine.
@@ -121,6 +130,9 @@ pub const SECRETS_WRITE: &str = "secrets.write";
 /// Where each is refused, and what still works:
 /// - `issues.write`: `issues::place` and `boards::relations::place`
 ///   refuse a viewer; nothing reads with it.
+/// - `docs.write`: `project_docs::place` refuses a viewer's make and
+///   write; nothing reads with it (a project's Docs are read by its
+///   members, with no power).
 /// - `trackers.write`: `trackers::writes::writer` refuses a viewer; its
 ///   `reach` only lists the grant.
 /// - `runs.start`, `runs.command`: `triggers::routes::changer` refuses a
@@ -148,8 +160,9 @@ pub enum ViewerUse {
     Only(&'static str, &'static str),
 }
 
-pub const WRITE_POWERS: [(&str, ViewerUse); 8] = [
+pub const WRITE_POWERS: [(&str, ViewerUse); 9] = [
     (ISSUES_WRITE, ViewerUse::Nothing),
+    (DOCS_WRITE, ViewerUse::Nothing),
     (TRACKERS_WRITE, ViewerUse::Nothing),
     (RUNS_START, ViewerUse::Nothing),
     (RUNS_COMMAND, ViewerUse::Nothing),

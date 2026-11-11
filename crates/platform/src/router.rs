@@ -156,6 +156,17 @@ fn routes() -> Routes {
             get(crate::project_docs::copies_route).post(crate::project_docs::share_route),
         )
         .route(project_docs::PROJECT_DOC_COPY, put(crate::project_docs::update_route))
+        // A machine's agents on them (Arugula #862).
+        .route(project_docs::AGENT_PROJECT_DOCS, post(crate::project_docs_agent::create_route))
+        .route(
+            project_docs::AGENT_PROJECT_DOC,
+            get(crate::project_docs_agent::get_route).put(crate::project_docs_agent::put_route),
+        )
+        .route(
+            project_docs::AGENT_PROJECT_DOC_ASSET,
+            put(crate::project_docs_agent::asset_route)
+                .layer(axum::extract::DefaultBodyLimit::max(project_docs::ASSET_MAX + 1)),
+        )
         .route(
             project_docs::MACHINE_DOC,
             put(crate::project_docs_machine::put_route).delete(crate::project_docs_machine::delete_route),

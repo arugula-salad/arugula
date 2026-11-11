@@ -40,6 +40,8 @@ pub struct Stored {
     pub made_by: String,
     /// The agent session that made it.
     pub made_by_session: Option<String>,
+    /// The machine whose agent made it for `made_by` (Arugula #862).
+    pub made_by_agent: Option<String>,
     pub rev: u64,
     pub created_at: u64,
     pub updated_at: u64,
@@ -131,6 +133,7 @@ pub struct NewDoc<'a> {
     pub title: &'a str,
     pub made_by: &'a str,
     pub made_by_session: Option<&'a str>,
+    pub made_by_agent: Option<&'a str>,
     pub sections: &'a [NewSection<'a>],
     pub layout: Option<&'a str>,
 }
@@ -164,7 +167,7 @@ pub enum Refused {
 const COLS: &str = "d.id, d.project_id, d.title, d.made_by, d.made_by_session, d.rev, d.created_at, d.updated_at, \
                     (SELECT count(*) FROM project_doc_sections s WHERE s.doc_id = d.id), \
                     (SELECT count(*) FROM project_doc_sections s WHERE s.doc_id = d.id AND s.body IS NOT NULL), \
-                    d.machine, d.machine_doc, d.made_from_project, d.made_from_doc, d.made_from_rev, d.made_rev, d.layout";
+                    d.machine, d.machine_doc, d.made_from_project, d.made_from_doc, d.made_from_rev, d.made_rev, d.layout, d.made_by_agent";
 
 fn doc_row(r: &Row) -> Result<Stored> {
     let made_from = match (r.get::<Option<String>>(12)?, r.get::<Option<String>>(13)?) {
@@ -191,6 +194,7 @@ fn doc_row(r: &Row) -> Result<Stored> {
         machine_doc: r.get(11)?,
         made_from,
         layout: r.get(16)?,
+        made_by_agent: r.get(17)?,
     })
 }
 
@@ -343,9 +347,9 @@ impl Db {
         }
         let id = new_id();
         tx.execute(
-            "INSERT INTO project_docs (id, project_id, title, made_by, made_by_session, created_at, updated_at, layout)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7)",
-            params![id, n.project, n.title, n.made_by, n.made_by_session, at, n.layout.and_then(layout_kept)],
+            "INSERT INTO project_docs (id, project_id, title, made_by, made_by_session, created_at, updated_at, layout, made_by_agent)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7, ?8)",
+            params![id, n.project, n.title, n.made_by, n.made_by_session, at, n.layout.and_then(layout_kept), n.made_by_agent],
         )?;
         for (i, s) in n.sections.iter().enumerate() {
             tx.execute(

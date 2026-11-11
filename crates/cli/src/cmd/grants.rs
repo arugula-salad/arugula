@@ -22,10 +22,11 @@ use crate::util::print_json;
 
 /// The powers an agent gets over a scope (M197, M218's deploys.plan,
 /// M216's over runs, and aru-121's over sessions).
-const AGENT_POWERS: [&str; 12] = [
+const AGENT_POWERS: [&str; 13] = [
     "threads.read",
     "threads.post",
     "issues.write",
+    "docs.write",
     "deploys.plan",
     "runs.read",
     "runs.start",
@@ -44,8 +45,9 @@ const AGENT_POWERS: [&str; 12] = [
 use arugula_control_wire::projects::VIEWER_REFUSED;
 
 /// Those over a project only.
-const PROJECT_ONLY: [&str; 10] = [
+const PROJECT_ONLY: [&str; 11] = [
     "issues.write",
+    "docs.write",
     "deploys.plan",
     "runs.read",
     "runs.start",
@@ -93,7 +95,8 @@ pub enum GrantsCmd {
     /// Give a machine's agents a power over a project or your DMs.
     ///
     /// The powers are threads.read, threads.post or issues.write over a
-    /// project (`--project`) or your DMs (`--dms`), deploys.plan over a
+    /// project (`--project`) or your DMs (`--dms`), docs.write (make and write
+    /// a project's Docs) over a project, deploys.plan over a
     /// project (plan deploys and ask for approval, never approve),
     /// runs.read, runs.start (its run specs) or runs.command (its own
     /// commands) over a project, boards.read (a project's boards) or
@@ -111,7 +114,7 @@ pub enum GrantsCmd {
         /// The machine: its name or id.
         machine: String,
         /// One or more of threads.read, threads.post, issues.write,
-        /// deploys.plan, runs.read, runs.start, runs.command, boards.read,
+        /// docs.write, deploys.plan, runs.read, runs.start, runs.command, boards.read,
         /// boards.write, trackers.write, sessions.start, sessions.reply (or cloud.drive,
         /// with no scope).
         #[arg(required = true)]
@@ -433,7 +436,7 @@ fn give(daemon: &str, power: &str, scope: Option<&Value>) -> anyhow::Result<Valu
             bail!("{p} is over a project or your DMs: add --project NAME or --dms")
         }
         (p, _) => bail!(
-            "there's no power called {p}: threads.read, threads.post, issues.write, deploys.plan, runs.read, \
+            "there's no power called {p}: threads.read, threads.post, issues.write, docs.write, deploys.plan, runs.read, \
              runs.start, runs.command, boards.read, boards.write, trackers.write, sessions.start, sessions.reply or cloud.drive"
         ),
     }

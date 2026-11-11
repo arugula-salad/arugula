@@ -4479,13 +4479,15 @@ export type ProjectDoc = {
  */
 id: string, project: string, title: string, 
 /**
- * The account that made it, or "" once it's deleted, or for one an
- * agent session made.
+ * The account that made it (an agent's owner's, for one a machine's
+ * agent made), or "" once it's deleted, or for one an agent session made.
  */
 author: string, 
 /**
  * The agent session that made it as itself (aru-115): its `machine`
- * the session's id (`ses_…`), its name `Agent session <id>`.
+ * the session's id (`ses_…`), its name `Agent session <id>`; or the
+ * machine whose agent made it for `author` (Arugula #862), its
+ * `machine` and `machine_name` the machine's.
  */
 agent: ChatAgent | null, 
 /**
