@@ -661,8 +661,9 @@ fn a_guest_reads_wait_but_not_the_rules() {
 /// #574, M14: what drives a pane is what its operation declares (`DRIVES`),
 /// or a hand-written route lists. An editor the owner hasn't trusted with the
 /// pane is refused on every one of them with the owner's-machine sentence,
-/// and a viewer on all of them as a viewer; `attention` is an editor's call
-/// that types nothing, so the editor gets it.
+/// and a viewer on all of them as a viewer. What an agent's hooks call
+/// (attention, questions, permission prompts, the inbox) speaks for the
+/// pane, so it's among them; trusted, the editor gets it.
 #[test]
 fn an_untrusted_editor_may_not_drive_the_owners_pane() {
     const FRIEND: &str = "friend@example.com";
@@ -689,9 +690,15 @@ fn an_untrusted_editor_may_not_drive_the_owners_pane() {
         ("mouse", r#"{"x":1,"y":1}"#),
         ("followup", r#"{"text":"x"}"#),
         ("paste", r#"{"paths":["/etc/passwd"]}"#),
+        ("attention", r#"{"state":"done"}"#),
+        ("ask", r#"{"questions":[]}"#),
+        ("ask/withdraw", r#"{"id":"x"}"#),
+        ("permit", r#"{"tool_name":"Bash","tool_input":{}}"#),
+        ("inbox", r#"{}"#),
+        ("hook", r#"{"hook_event_name":"Stop"}"#),
     ];
     d.post("/api/acl", json!({ "session": session, "principal": format!("tailnet:{FRIEND}"), "role": "viewer" }));
-    for (verb, body) in drives.iter().chain(&[("attention", r#"{"state":"done"}"#)]) {
+    for (verb, body) in &drives {
         let (status, why) = as_friend(verb, body);
         assert_eq!(status, 403, "viewer: {verb}: {why}");
         assert!(why.contains("you're watching this session"), "viewer: {verb}: {why}");
@@ -702,10 +709,9 @@ fn an_untrusted_editor_may_not_drive_the_owners_pane() {
         assert_eq!(status, 403, "editor: {verb}: {why}");
         assert!(why.contains("ask them to trust you"), "editor: {verb}: {why}");
     }
-    let (status, why) = as_friend("attention", r#"{"state":"done"}"#);
-    assert_eq!(status, 200, "editor: attention: {why}");
-    // Something that isn't a driving route is not the trust's to refuse, and
-    // the owner's own calls are never asked.
+    d.trust(pane, &format!("tailnet:{FRIEND}"), 30);
+    d.wait_for("the trust", || as_friend("attention", r#"{"state":"done"}"#).0 == 200);
+    // The owner's own calls are never asked.
     assert_eq!(d.raw("POST", &format!("/api/panes/{pane}/keys"), Some(json!({ "keys": ["a"] }))).0, 200);
 }
 

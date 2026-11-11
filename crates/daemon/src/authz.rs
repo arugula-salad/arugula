@@ -422,8 +422,12 @@ mod tests {
         for verb in ["prompt", "cd"] {
             assert!(drives(&p, &format!("/api/panes/3/{verb}")), "{verb}");
         }
+        // So do the calls an agent's hooks make: they speak for the pane.
+        for verb in ["attention", "ask", "ask/withdraw", "permit", "hook", "inbox"] {
+            assert!(drives(&p, &format!("/api/panes/3/{verb}")), "{verb}");
+        }
         // An editor's other calls on a pane don't.
-        for verb in ["attention", "close", "ask", "permit", "hook", "inbox", "capture", "diff", "process"] {
+        for verb in ["close", "capture", "diff", "process"] {
             assert!(!drives(&p, &format!("/api/panes/3/{verb}")), "{verb}");
         }
         // Answering for an agent is checked by its handler (`api::call`),
