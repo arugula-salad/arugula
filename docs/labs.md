@@ -44,6 +44,13 @@ Labs (native #191, 2026-11-02, Aaron): they're on for everyone, and a
 `boards` flag left in `flags.json` or a team's Labs does nothing.
 [Boards](control.md#boards) describes them.
 
+GitLab merge requests and Forgejo pull requests and issues, as blocks and
+with their webhooks, were the `additional-forges` flag (`forges` before
+2026-10-26) until they left Labs for the launch (native #523, 2026-11-11,
+Jake): they're on for everyone, beside GitHub's, and either name left in
+`flags.json` or a team's Labs does nothing. A build without Labs' code
+(`--no-default-features`) still opens only GitHub's.
+
 ## Turning a feature on
 
 Each feature has a flag, off on a new install:
@@ -53,7 +60,6 @@ Each feature has a flag, off on a new install:
 | `sandbox-providers` | VM tabs and panes, machines and the sandboxes page, from your own sandbox provider (cloud workspaces are the platform's, and need no flag) |
 | `studio` | Studio app blocks |
 | `chant-workspaces` | Chant workspace blocks: a workspace's members, relationships and gates |
-| `additional-forges` | GitLab and Forgejo pull request and issue blocks (GitHub's are always on), until they fit platform projects and workflows |
 | `agent-delegation` | Agent recipes, offering them from this machine as A2A agents, the team's agent catalog and tasks between machines (#403); set only on the machine |
 
 A flag also lists its feature's tools, commands and options in `arugula mcp`,
@@ -71,7 +77,6 @@ one isn't made.
 | `sandbox-providers` | `/api/machines`, `/api/sandboxes`, a new VM pane or tab, a borrowed sandbox (`run --sandbox`), *Share machine with tab* |
 | `studio` | `/api/studio…`, app blocks, `show` kind `app` |
 | `chant-workspaces` | chant workspace blocks |
-| `additional-forges` | Forgejo and GitLab blocks and webhooks |
 | `agent-delegation` | `/api/a2a/…`, the agent catalog block, recipes, `delegate` |
 
 ```
@@ -81,8 +86,9 @@ arugulad flags sandbox-providers on       # and `off`, or `unset`
 
 Four flags were renamed on 2026-10-26 (DECISIONS.md "Four Labs flags
 stay, renamed; the rest graduate or retire"): `vms` is
-`sandbox-providers`, `workspaces` is `chant-workspaces`, `forges` is
-`additional-forges` and `agents` is `agent-delegation`. The old names
+`sandbox-providers`, `workspaces` is `chant-workspaces`, `forges` was
+`additional-forges` (which has since left Labs) and `agents` is
+`agent-delegation`. The old names
 still work, forever, wherever a name comes in: in `flags.json`, in what
 control pushes, in `PUT /api/flags/NAME` and in `arugulad flags NAME on`
 (`flags::ALIASES`). Only the new names are listed.

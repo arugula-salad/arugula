@@ -87,8 +87,6 @@ pub const SANDBOX_PROVIDERS: &str = "sandbox-providers";
 pub const STUDIO: &str = "studio";
 /// Chant workspace blocks. Was `workspaces`.
 pub const CHANT_WORKSPACES: &str = "chant-workspaces";
-/// Forgejo and GitLab blocks, beside GitHub's. Was `forges`.
-pub const ADDITIONAL_FORGES: &str = "additional-forges";
 /// Agent recipes offered from this machine, the team's agent catalog and
 /// A2A tasks. Was `agents`.
 pub const AGENT_DELEGATION: &str = "agent-delegation";
@@ -165,7 +163,6 @@ pub const FLAGS: &[Flag] = &[
         "Chant workspaces",
         "Chant workspace blocks: a workspace's members, relationships and gates.",
     ),
-    row(ADDITIONAL_FORGES, "GitLab and Forgejo", "PR and issue blocks for GitLab and Forgejo, beside GitHub's."),
     local_row(
         AGENT_DELEGATION,
         "Local agent delegation",
@@ -205,6 +202,11 @@ pub const RETIRED: &[(&str, &str)] = &[
         "boards",
         "Boards are no longer in Labs: every account has them, and an agent's grants (boards.read, boards.write) decide what it may do",
     ),
+    // Graduated (native #523, the launch's scope): GitLab merge requests
+    // and Forgejo PRs and issues are blocks for everyone, as GitHub's are.
+    // `forges` was its name before aru-117.
+    ("additional-forges", "GitLab and Forgejo blocks are no longer in Labs: every machine has them, beside GitHub's"),
+    ("forges", "GitLab and Forgejo blocks are no longer in Labs: every machine has them, beside GitHub's"),
     // Never a flag, but the name it would have now.
     (
         "managoat",
@@ -215,12 +217,8 @@ pub const RETIRED: &[(&str, &str)] = &[
 /// Flags that were renamed (aru-117, 2026-10-26): the old name, then the
 /// new. An old name is read forever, wherever a name comes in (the file, a
 /// control push, [`get`], [`set`], [`unset`]), and never listed.
-pub const ALIASES: &[(&str, &str)] = &[
-    ("vms", SANDBOX_PROVIDERS),
-    ("workspaces", CHANT_WORKSPACES),
-    ("forges", ADDITIONAL_FORGES),
-    ("agents", AGENT_DELEGATION),
-];
+pub const ALIASES: &[(&str, &str)] =
+    &[("vms", SANDBOX_PROVIDERS), ("workspaces", CHANT_WORKSPACES), ("agents", AGENT_DELEGATION)];
 
 /// A flag's name now: `name`, unless it's an old name in [`ALIASES`].
 pub fn canonical(name: &str) -> &str {
@@ -662,17 +660,17 @@ mod tests {
     #[test]
     fn a_flag_is_at_its_default_until_set_and_then_follows_the_file() {
         let d = dir("set");
-        assert!(!get(&d, ADDITIONAL_FORGES) && !on(&d).any() && !unlocked(&d));
-        set(&d, ADDITIONAL_FORGES, true).unwrap();
-        assert!(get(&d, ADDITIONAL_FORGES) && unlocked(&d));
+        assert!(!get(&d, STUDIO) && !on(&d).any() && !unlocked(&d));
+        set(&d, STUDIO, true).unwrap();
+        assert!(get(&d, STUDIO) && unlocked(&d));
         assert_eq!(
             fs::read_to_string(d.join(FILE)).unwrap().replace(char::is_whitespace, ""),
-            r#"{"flags":{"additional-forges":true}}"#
+            r#"{"flags":{"studio":true}}"#
         );
         // One flag turns on alone.
-        assert_eq!(names(&d), [ADDITIONAL_FORGES]);
+        assert_eq!(names(&d), [STUDIO]);
         set(&d, CHANT_WORKSPACES, true).unwrap();
-        set(&d, ADDITIONAL_FORGES, false).unwrap();
+        set(&d, STUDIO, false).unwrap();
         assert_eq!(names(&d), [CHANT_WORKSPACES]);
         assert_eq!(all(&d).iter().filter(|(_, on)| *on).map(|(f, _)| f.name).collect::<Vec<_>>(), [CHANT_WORKSPACES]);
         assert_eq!(all(&d).len(), FLAGS.len());
@@ -687,7 +685,7 @@ mod tests {
         let d = dir("unlock");
         unlock(&d).unwrap();
         assert!(unlocked(&d) && !on(&d).any());
-        set(&d, ADDITIONAL_FORGES, true).unwrap();
+        set(&d, STUDIO, true).unwrap();
         let before = fs::read_to_string(d.join(FILE)).unwrap();
         unlock(&d).unwrap();
         assert_eq!(fs::read_to_string(d.join(FILE)).unwrap(), before);
@@ -724,10 +722,10 @@ mod tests {
     #[test]
     fn a_write_keeps_the_keys_and_flags_it_doesnt_know() {
         let d = dir("keeps");
-        fs::write(d.join(FILE), r#"{"other":{"a":1},"flags":{"future":true,"additional-forges":false}}"#).unwrap();
-        set(&d, ADDITIONAL_FORGES, true).unwrap();
+        fs::write(d.join(FILE), r#"{"other":{"a":1},"flags":{"future":true,"studio":false}}"#).unwrap();
+        set(&d, STUDIO, true).unwrap();
         let v: Value = serde_json::from_str(&fs::read_to_string(d.join(FILE)).unwrap()).unwrap();
-        assert_eq!(v, serde_json::json!({"other":{"a":1},"flags":{"future":true,"additional-forges":true}}));
+        assert_eq!(v, serde_json::json!({"other":{"a":1},"flags":{"future":true,"studio":true}}));
         fs::remove_dir_all(&d).unwrap();
     }
 
@@ -736,12 +734,12 @@ mod tests {
         let d = dir("bad");
         for bad in ["{not json", "[]", r#"{"flags":3}"#] {
             fs::write(d.join(FILE), bad).unwrap();
-            assert!(!get(&d, ADDITIONAL_FORGES), "{bad}");
+            assert!(!get(&d, STUDIO), "{bad}");
             assert_eq!(fs::read_to_string(d.join(FILE)).unwrap(), bad, "a read left it alone");
         }
         fs::write(d.join(FILE), "{not json").unwrap();
-        set(&d, ADDITIONAL_FORGES, true).unwrap();
-        assert!(get(&d, ADDITIONAL_FORGES));
+        set(&d, STUDIO, true).unwrap();
+        assert!(get(&d, STUDIO));
         assert_eq!(fs::read_to_string(d.join(format!("{FILE}.bad"))).unwrap(), "{not json");
         fs::remove_dir_all(&d).unwrap();
     }
@@ -756,14 +754,14 @@ mod tests {
         assert_eq!(on(&d), On::all());
         // One turned off there leaves the rest.
         set(&d, SANDBOX_PROVIDERS, false).unwrap();
-        assert!(!get(&d, SANDBOX_PROVIDERS) && get(&d, ADDITIONAL_FORGES));
+        assert!(!get(&d, SANDBOX_PROVIDERS) && get(&d, STUDIO));
         assert_eq!(names(&d).len(), FLAGS.len() - 1);
 
         // On is all of them, off none.
         fs::write(d.join(FILE), r#"{"flags":{"labs":true,"studio":false}}"#).unwrap();
-        assert!(get(&d, ADDITIONAL_FORGES) && !get(&d, STUDIO));
-        fs::write(d.join(FILE), r#"{"flags":{"labs":false,"forges":true}}"#).unwrap();
-        assert_eq!(names(&d), [ADDITIONAL_FORGES]);
+        assert!(get(&d, CHANT_WORKSPACES) && !get(&d, STUDIO));
+        fs::write(d.join(FILE), r#"{"flags":{"labs":false,"workspaces":true}}"#).unwrap();
+        assert_eq!(names(&d), [CHANT_WORKSPACES]);
         fs::remove_dir_all(&d).unwrap();
 
         // The marker file alone is neither Labs nor Developer settings.
@@ -794,22 +792,22 @@ mod tests {
         assert!(
             write_control(
                 &d,
-                &pushed(&[("vms", false)], &[(ADDITIONAL_FORGES, true), (SANDBOX_PROVIDERS, true), ("future", true)])
+                &pushed(&[("vms", false)], &[(CHANT_WORKSPACES, true), (SANDBOX_PROVIDERS, true), ("future", true)])
             )
             .unwrap()
         );
         assert!(
             !write_control(
                 &d,
-                &pushed(&[("vms", false)], &[(ADDITIONAL_FORGES, true), (SANDBOX_PROVIDERS, true), ("future", true)])
+                &pushed(&[("vms", false)], &[(CHANT_WORKSPACES, true), (SANDBOX_PROVIDERS, true), ("future", true)])
             )
             .unwrap()
         );
         // Control saying something offers Developer settings, to see it.
         assert!(unlocked(&d) && !d.join(FILE).exists());
-        assert_eq!(names(&d), [ADDITIONAL_FORGES]);
+        assert_eq!(names(&d), [CHANT_WORKSPACES]);
         assert_eq!(
-            state_of(&d, ADDITIONAL_FORGES),
+            state_of(&d, CHANT_WORKSPACES),
             State { on: true, source: Source::Team, local: None, account: None, team: Some(true) }
         );
         assert_eq!(state_of(&d, SANDBOX_PROVIDERS).source, Source::Account);
@@ -818,16 +816,16 @@ mod tests {
 
         // The machine forces either way, and taking its word back follows
         // control again.
-        set(&d, ADDITIONAL_FORGES, false).unwrap();
+        set(&d, CHANT_WORKSPACES, false).unwrap();
         set(&d, SANDBOX_PROVIDERS, true).unwrap();
         assert_eq!(names(&d), [SANDBOX_PROVIDERS]);
         assert_eq!(
-            state_of(&d, ADDITIONAL_FORGES),
+            state_of(&d, CHANT_WORKSPACES),
             State { on: false, source: Source::Machine, local: Some(false), account: None, team: Some(true) }
         );
-        unset(&d, ADDITIONAL_FORGES).unwrap();
+        unset(&d, CHANT_WORKSPACES).unwrap();
         unset(&d, SANDBOX_PROVIDERS).unwrap();
-        assert_eq!(names(&d), [ADDITIONAL_FORGES]);
+        assert_eq!(names(&d), [CHANT_WORKSPACES]);
         assert_eq!(fs::read_to_string(d.join(FILE)).unwrap().replace(char::is_whitespace, ""), r#"{"flags":{}}"#);
         assert_eq!(unset(&d, "nope").unwrap_err().kind(), io::ErrorKind::InvalidInput);
 
@@ -835,10 +833,10 @@ mod tests {
         assert!(forget_control(&d).unwrap());
         assert!(!on(&d).any() && !forget_control(&d).unwrap());
         // And a control that pushes nothing any more takes the file away.
-        write_control(&d, &pushed(&[(ADDITIONAL_FORGES, true)], &[])).unwrap();
-        assert!(get(&d, ADDITIONAL_FORGES));
+        write_control(&d, &pushed(&[(CHANT_WORKSPACES, true)], &[])).unwrap();
+        assert!(get(&d, CHANT_WORKSPACES));
         assert!(write_control(&d, &Pushed::default()).unwrap());
-        assert!(!d.join(CONTROL_FILE).exists() && !get(&d, ADDITIONAL_FORGES));
+        assert!(!d.join(CONTROL_FILE).exists() && !get(&d, CHANT_WORKSPACES));
         fs::remove_dir_all(&d).unwrap();
     }
 
@@ -848,14 +846,14 @@ mod tests {
     fn taking_one_back_from_labs_keeps_the_rest() {
         let d = dir("unset-labs");
         fs::write(d.join(FILE), r#"{"flags":{"labs":true,"studio":false}}"#).unwrap();
-        write_control(&d, &pushed(&[], &[(ADDITIONAL_FORGES, false)])).unwrap();
-        assert!(get(&d, ADDITIONAL_FORGES) && state_of(&d, ADDITIONAL_FORGES).source == Source::Machine);
-        unset(&d, ADDITIONAL_FORGES).unwrap();
-        assert_eq!(state_of(&d, ADDITIONAL_FORGES).source, Source::Team);
-        assert!(!get(&d, ADDITIONAL_FORGES) && get(&d, SANDBOX_PROVIDERS) && !get(&d, STUDIO));
+        write_control(&d, &pushed(&[], &[(CHANT_WORKSPACES, false)])).unwrap();
+        assert!(get(&d, CHANT_WORKSPACES) && state_of(&d, CHANT_WORKSPACES).source == Source::Machine);
+        unset(&d, CHANT_WORKSPACES).unwrap();
+        assert_eq!(state_of(&d, CHANT_WORKSPACES).source, Source::Team);
+        assert!(!get(&d, CHANT_WORKSPACES) && get(&d, SANDBOX_PROVIDERS) && !get(&d, STUDIO));
         assert_eq!(names(&d).len(), FLAGS.len() - 2);
         let v: Value = serde_json::from_str(&fs::read_to_string(d.join(FILE)).unwrap()).unwrap();
-        assert!(v["flags"].get(LABS).is_none() && v["flags"].get(ADDITIONAL_FORGES).is_none());
+        assert!(v["flags"].get(LABS).is_none() && v["flags"].get(CHANT_WORKSPACES).is_none());
         fs::remove_dir_all(&d).unwrap();
     }
 
@@ -867,9 +865,9 @@ mod tests {
         let local: Vec<_> = FLAGS.iter().filter(|f| f.local_only).map(|f| f.name).collect();
         assert_eq!(local, [AGENT_DELEGATION]);
         let d = dir("local-only");
-        write_control(&d, &pushed(&[(AGENT_DELEGATION, true)], &[(AGENT_DELEGATION, true), (ADDITIONAL_FORGES, true)]))
+        write_control(&d, &pushed(&[(AGENT_DELEGATION, true)], &[(AGENT_DELEGATION, true), (CHANT_WORKSPACES, true)]))
             .unwrap();
-        assert_eq!(names(&d), [ADDITIONAL_FORGES]);
+        assert_eq!(names(&d), [CHANT_WORKSPACES]);
         assert_eq!(
             state_of(&d, AGENT_DELEGATION),
             State { on: false, source: Source::Default, local: None, account: None, team: None }
@@ -889,8 +887,8 @@ mod tests {
     fn a_retired_flag_in_the_file_is_ignored_and_kept() {
         assert!(FLAGS.iter().all(|f| RETIRED.iter().all(|(n, _)| *n != f.name)));
         let d = dir("retired");
-        fs::write(d.join(FILE), r#"{"flags":{"fountain":true,"forges":true}}"#).unwrap();
-        assert_eq!(names(&d), [ADDITIONAL_FORGES]);
+        fs::write(d.join(FILE), r#"{"flags":{"fountain":true,"workspaces":true}}"#).unwrap();
+        assert_eq!(names(&d), [CHANT_WORKSPACES]);
         assert!(!get(&d, "fountain"));
         assert_eq!(all(&d).len(), FLAGS.len());
         fs::write(d.join(FILE), r#"{"flags":{"fountain":false}}"#).unwrap();
@@ -923,12 +921,38 @@ mod tests {
         write_control(&d, &pushed(&[("boards", false)], &[("boards", true)])).unwrap();
         assert_eq!(names(&d), [STUDIO]);
         assert!(!get(&d, "boards"));
-        set(&d, ADDITIONAL_FORGES, true).unwrap();
+        set(&d, CHANT_WORKSPACES, true).unwrap();
         let v: Value = serde_json::from_str(&fs::read_to_string(d.join(FILE)).unwrap()).unwrap();
         assert_eq!(v["flags"]["boards"], true, "an older daemon still reads its word");
         let e = set(&d, "boards", true).unwrap_err();
         assert_eq!(e.kind(), io::ErrorKind::InvalidInput);
         assert!(e.to_string().contains("no longer in Labs"), "{e}");
+        fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// GitLab and Forgejo left Labs (native #523): `additional-forges`, or
+    /// its old name `forges`, in a file or a push turns nothing on or off
+    /// and survives a write; setting either says why it's gone.
+    #[test]
+    fn gitlab_and_forgejo_left_labs_by_either_name() {
+        assert!(FLAGS.iter().all(|f| !f.name.contains("forges")), "the Labs list doesn't offer them");
+        assert!(ALIASES.iter().all(|(old, _)| *old != "forges"));
+        let d = dir("forges-retired");
+        fs::write(d.join(FILE), r#"{"flags":{"additional-forges":false,"forges":true,"studio":true}}"#).unwrap();
+        write_control(&d, &pushed(&[("additional-forges", true)], &[("forges", true)])).unwrap();
+        assert_eq!(names(&d), [STUDIO]);
+        assert!(!get(&d, "additional-forges") && !get(&d, "forges"));
+        set(&d, CHANT_WORKSPACES, true).unwrap();
+        let v: Value = serde_json::from_str(&fs::read_to_string(d.join(FILE)).unwrap()).unwrap();
+        assert_eq!(
+            (v["flags"]["additional-forges"].clone(), v["flags"]["forges"].clone()),
+            (Value::Bool(false), Value::Bool(true))
+        );
+        for name in ["additional-forges", "forges"] {
+            let e = set(&d, name, true).unwrap_err();
+            assert_eq!(e.kind(), io::ErrorKind::InvalidInput);
+            assert!(e.to_string().contains("no longer in Labs"), "{e}");
+        }
         fs::remove_dir_all(&d).unwrap();
     }
 
@@ -938,11 +962,11 @@ mod tests {
     #[test]
     fn huddles_on_from_before_loads_and_means_nothing() {
         let d = dir("huddles");
-        fs::write(d.join(FILE), r#"{"flags":{"huddles":true,"forges":true}}"#).unwrap();
-        assert_eq!(names(&d), [ADDITIONAL_FORGES]);
+        fs::write(d.join(FILE), r#"{"flags":{"huddles":true,"workspaces":true}}"#).unwrap();
+        assert_eq!(names(&d), [CHANT_WORKSPACES]);
         assert!(!get(&d, "huddles"));
         write_control(&d, &pushed(&[("huddles", true)], &[("huddles", true)])).unwrap();
-        assert_eq!(names(&d), [ADDITIONAL_FORGES]);
+        assert_eq!(names(&d), [CHANT_WORKSPACES]);
         set(&d, SANDBOX_PROVIDERS, true).unwrap();
         let v: Value = serde_json::from_str(&fs::read_to_string(d.join(FILE)).unwrap()).unwrap();
         assert_eq!(v["flags"]["huddles"], true, "kept for an older daemon");
@@ -991,15 +1015,15 @@ mod tests {
             r#"{"flags":{"sandbox-providers":true}}"#
         );
         assert_eq!(names(&d), [SANDBOX_PROVIDERS]);
-        fs::write(d.join(FILE), r#"{"flags":{"forges":true}}"#).unwrap();
-        set(&d, ADDITIONAL_FORGES, false).unwrap();
+        fs::write(d.join(FILE), r#"{"flags":{"workspaces":true}}"#).unwrap();
+        set(&d, CHANT_WORKSPACES, false).unwrap();
         let v: Value = serde_json::from_str(&fs::read_to_string(d.join(FILE)).unwrap()).unwrap();
-        assert_eq!(v["flags"], serde_json::json!({"forges": false, "additional-forges": false}));
-        set(&d, "forges", true).unwrap();
-        assert!(get(&d, ADDITIONAL_FORGES));
-        unset(&d, "forges").unwrap();
+        assert_eq!(v["flags"], serde_json::json!({"workspaces": false, "chant-workspaces": false}));
+        set(&d, "workspaces", true).unwrap();
+        assert!(get(&d, CHANT_WORKSPACES));
+        unset(&d, "workspaces").unwrap();
         assert_eq!(fs::read_to_string(d.join(FILE)).unwrap().replace(char::is_whitespace, ""), r#"{"flags":{}}"#);
-        assert_eq!(state_of(&d, ADDITIONAL_FORGES).source, Source::Default);
+        assert_eq!(state_of(&d, CHANT_WORKSPACES).source, Source::Default);
         fs::remove_dir_all(&d).unwrap();
     }
 
@@ -1008,11 +1032,7 @@ mod tests {
     #[test]
     fn control_pushing_an_old_name_still_works() {
         let d = dir("alias-pushed");
-        write_control(
-            &d,
-            &pushed(&[("workspaces", true), ("forges", true), (ADDITIONAL_FORGES, false)], &[("agents", true)]),
-        )
-        .unwrap();
+        write_control(&d, &pushed(&[("workspaces", true), ("forges", true)], &[("agents", true)])).unwrap();
         assert_eq!(state_of(&d, CHANT_WORKSPACES).source, Source::Account);
         assert_eq!(names(&d), [CHANT_WORKSPACES]);
         assert_eq!(
@@ -1030,7 +1050,7 @@ mod tests {
         fs::write(d.join(FILE), r#"{"flags":{"labs":true,"vms":false}}"#).unwrap();
         assert!(!get(&d, SANDBOX_PROVIDERS) && get(&d, CHANT_WORKSPACES));
         unset(&d, CHANT_WORKSPACES).unwrap();
-        assert!(!get(&d, SANDBOX_PROVIDERS) && get(&d, ADDITIONAL_FORGES) && !get(&d, CHANT_WORKSPACES));
+        assert!(!get(&d, SANDBOX_PROVIDERS) && get(&d, STUDIO) && !get(&d, CHANT_WORKSPACES));
         let v: Value = serde_json::from_str(&fs::read_to_string(d.join(FILE)).unwrap()).unwrap();
         assert!(v["flags"].get(SANDBOX_PROVIDERS).is_none() && v["flags"]["vms"] == false, "{v}");
         fs::remove_dir_all(&d).unwrap();
@@ -1041,8 +1061,8 @@ mod tests {
         let d = dir("pushed-bad");
         fs::write(d.join(CONTROL_FILE), "{not json").unwrap();
         assert!(!on(&d).any() && !unlocked(&d));
-        assert!(write_control(&d, &pushed(&[(ADDITIONAL_FORGES, true)], &[])).unwrap());
-        assert!(get(&d, ADDITIONAL_FORGES));
+        assert!(write_control(&d, &pushed(&[(STUDIO, true)], &[])).unwrap());
+        assert!(get(&d, STUDIO));
         fs::remove_dir_all(&d).unwrap();
     }
 
@@ -1051,7 +1071,7 @@ mod tests {
     fn the_file_is_private_to_the_owner() {
         use std::os::unix::fs::PermissionsExt;
         let d = dir("mode");
-        set(&d, ADDITIONAL_FORGES, true).unwrap();
+        set(&d, STUDIO, true).unwrap();
         assert_eq!(fs::metadata(d.join(FILE)).unwrap().permissions().mode() & 0o777, 0o600);
         let tmps = fs::read_dir(&d)
             .unwrap()

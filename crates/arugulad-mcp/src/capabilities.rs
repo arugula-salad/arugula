@@ -2,7 +2,7 @@
 //! can plan its work around it without its person reading the docs first.
 //! The blocks and tools are what `tools/list` shows it (the Labs flags
 //! leave out the same ones); the forges are asked of the user's own CLIs
-//! (`gh`, and with the `additional-forges` flag `tea` and `glab`) as a block would;
+//! (`gh`, and in a build with Labs' code `tea` and `glab`) as a block would;
 //! hooks are live in a pane when a Claude Code hook has reached the daemon
 //! from it ([`App::hooks_heard`](crate::server::App)), which, with the
 //! hooks installed, includes the `PreToolUse` of this very call.
@@ -231,8 +231,8 @@ fn shown(name: &str) -> String {
     }
 }
 
-/// GitHub through `gh`, and Labs' forges where the flag is on.
-async fn forges(app: &App, on: On) -> Vec<ForgeSignIn> {
+/// GitHub through `gh`, and Forgejo's and GitLab's (out of Labs, #523).
+async fn forges(app: &App, _on: On) -> Vec<ForgeSignIn> {
     if !crate::forges::built() {
         return Vec::new();
     }
@@ -263,9 +263,7 @@ async fn forges(app: &App, on: On) -> Vec<ForgeSignIn> {
             Err(e) => e,
         },
     }];
-    if on.has(arugula_proto::flags::ADDITIONAL_FORGES) {
-        out.extend(crate::lab_hooks::labs().forge_logins(&runner, app.control.state_dir()).await);
-    }
+    out.extend(crate::lab_hooks::labs().forge_logins(&runner, app.control.state_dir()).await);
     out
 }
 

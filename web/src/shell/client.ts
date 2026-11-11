@@ -1502,18 +1502,10 @@ export class Client {
   }
 
   /** What a link in terminal output opens as: a PR or an issue block, or
-   * null for a plain link. Forgejo and GitLab are Labs: without their flag
-   * only GitHub's links (`/pull/N`; issues on github.com) become blocks. */
+   * null for a plain link. GitHub's, Forgejo's and GitLab's alike (they
+   * left Labs at launch, native #523). */
   forgeLink(uri: string): "pr" | "issue" | null {
-    const what = forgePr(uri) ? "pr" : forgeIssue(uri) ? "issue" : null;
-    if (!what || this.flag("additional-forges")) return what;
-    try {
-      const u = new URL(uri);
-      if (what === "pr") return /^\/[^/]+\/[^/]+\/pull\/\d+(?:\/|$)/.test(u.pathname) ? what : null;
-      return /^(?:www\.)?github\.com$/.test(u.hostname) && !u.pathname.includes("/-/") ? what : null;
-    } catch {
-      return null;
-    }
+    return forgePr(uri) ? "pr" : forgeIssue(uri) ? "issue" : null;
   }
 
   /** A PR's or an issue's link from `pane` as a block beside it; false

@@ -39,7 +39,9 @@ pub const LOCAL_ONLY_FLAGS: &[&str] = &["guest-ssh", "agent-delegation"];
 /// Labs flags that were renamed (aru-117): the old name, then the new.
 /// Control stores and pushes the new name, takes the old one from an older
 /// page, and pushes it beside the new for a daemon from before the rename.
-/// The daemon's tests check this is `arugula_proto::flags::ALIASES`.
+/// The daemon's tests check this is `arugula_proto::flags::ALIASES`, but
+/// for `forges`: its flag left Labs (native #523), and the pair stays for
+/// daemons from before that, which still have it.
 pub const FLAG_ALIASES: &[(&str, &str)] = &[
     ("vms", "sandbox-providers"),
     ("workspaces", "chant-workspaces"),
