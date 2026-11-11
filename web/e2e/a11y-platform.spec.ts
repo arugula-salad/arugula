@@ -24,6 +24,7 @@ let project = "";
 let issuePath = "";
 let boardPath = "";
 let docPath = "";
+let tabsPath = "";
 let room = "";
 
 async function api(p: Page, method: string, path: string, body?: unknown) {
@@ -103,6 +104,16 @@ test.beforeAll(async ({ browser }) => {
   await alice.locator("[data-doc-new]").click();
   await expect(alice.locator("[data-doc-page] .doc-title")).toHaveText("Private notes", { timeout: 15_000 });
 
+  // A tabs Doc (Arugula #829), on the lists and as a page.
+  const prj = /\/p\/(prj_[0-9a-f]+)/.exec(project)![1]!;
+  const layouts = async (title: string, layout: string, heading: string, intent: string | null, markdown: string | null) => {
+    const made = (await api(alice, "POST", `/api/projects/${prj}/docs`, { title, sections: [], layout })).body!.doc.id as string;
+    await api(alice, "PUT", `/api/projects/${prj}/docs/${made}`, { title: null, section: null, heading, intent, markdown });
+    if (layout === "tabs") await api(alice, "PUT", `/api/projects/${prj}/docs/${made}`, { title: null, section: null, heading: "Later", intent: "still to come", markdown: null });
+    return `${project}/docs/${made}`;
+  };
+  tabsPath = await layouts("Tabbed notes", "tabs", "Overview", null, "Overview words.");
+
   await prepare(alice);
 });
 
@@ -134,6 +145,7 @@ place("all-boards", () => "/boards", (p) => p.locator("[data-all-boards-page] [d
 place("project-docs", () => `${project}/docs`, (p) => p.locator("[data-docs-page] [data-doc]"));
 place("all-docs", () => "/docs", (p) => p.locator("[data-docs-page] [data-doc]"));
 place("project-doc", () => docPath, (p) => p.locator("[data-doc-page] .doc-section[data-section=s1]"));
+place("project-doc-tabs", () => tabsPath, (p) => p.locator("[data-doc-page] [role=tab]"));
 place("chat", () => `/chat/${room}`, (p) => p.locator("[data-room-view]").getByText("The release is cut from main."));
 
 // Mine's rows carry a box (selectable) and a ⋯ (actions): a control inside an

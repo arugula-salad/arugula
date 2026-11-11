@@ -469,6 +469,7 @@ function stateOf(v: ProjectDocView): DocState {
   return {
     title: v.doc.title,
     rev: v.doc.rev,
+    layout: v.doc.layout,
     ...timesOf(v.doc),
     entries: v.sections.map((s) => ({ id: s.id, heading: s.heading, intent: s.intent, body: s.body, rev: s.rev })),
   };
@@ -550,6 +551,7 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
           s={state}
           fresh={fresh}
           load={noImages}
+          link="page"
           share={view && <PlatformDocActions p={p} doc={view.doc} menu />}
           byline={
             // A copy's line above the Doc already says where it's from and when.

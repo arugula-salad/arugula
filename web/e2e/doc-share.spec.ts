@@ -368,6 +368,64 @@ for (const mode of [DOMAIN, null] as const) {
         for (const word of [MARK, "Findings", "Report", "red.png", "Sales by month"]) expect(bytes.includes(word), `${f} holds ${word}`).toBe(false);
       }
     });
+
+    // Doc layouts (Arugula #829): the link carries the layout, a tab is
+    // named after the key (`&s=s2`), and the key survives choosing one.
+    test("a tabs Doc opens on its first tab; choosing a tab names it after the key and a reload still opens it", async ({ browser }) => {
+      const [{ id: term }] = (await (await fetch(`${r.mini}/api/panes`)).json()) as { id: number }[];
+      const made = await r.post("/api/blocks", { type: "doc", config: { title: "Tabbed share" }, split: term, local: true });
+      const d = made.block!;
+      await r.post(`/api/blocks/${d}/call/doc_outline`, {
+        title: "Tabbed share",
+        layout: "tabs",
+        sections: [
+          { heading: "Overview", intent: "what" },
+          { heading: "Detail", intent: "more" },
+          { heading: "Later", intent: "still to come" },
+        ],
+      });
+      await fill(r.post, d, "s1", "Overview words.");
+      await fill(r.post, d, "s2", "Detail words.");
+      const url = await share(r, d);
+      const key = url.split("#k=")[1]!;
+
+      const v = await visitor(browser);
+      try {
+        await v.page.goto(url);
+        const tabs = v.page.getByRole("tab");
+        await expect(tabs).toHaveText(["Overview", "Detail", "Later"], { timeout: 15_000 });
+        await expect(tabs.first()).toHaveAttribute("aria-selected", "true");
+        await expect(v.page.getByRole("tabpanel")).toContainText("Overview words.");
+        await expect(tabs.nth(2)).toHaveAttribute("data-pending", "");
+        const entries = await v.page.evaluate(() => history.length);
+
+        await tabs.nth(1).click();
+        await expect(v.page.getByRole("tabpanel")).toContainText("Detail words.");
+        // The key stays whole, the tab follows it, and no history entry was added.
+        await expect.poll(() => v.page.evaluate(() => location.hash)).toBe(`#k=${key}&s=s2`);
+        expect(await v.page.evaluate(() => history.length)).toBe(entries);
+        await v.page.keyboard.press("ArrowRight");
+        await expect.poll(() => v.page.evaluate(() => location.hash)).toBe(`#k=${key}&s=s3`);
+        await expect(v.page.getByRole("tabpanel")).toContainText("still to come");
+
+        // A reload decrypts with the same key and opens that tab.
+        await v.page.reload();
+        await expect(v.page.getByRole("tab").nth(2)).toHaveAttribute("aria-selected", "true", { timeout: 15_000 });
+        await expect(v.page.getByRole("tabpanel")).toContainText("still to come");
+        // A link made with a tab opens it, in a fresh context too.
+        const v2 = await visitor(browser);
+        try {
+          await v2.page.goto(`${url}&s=s2`);
+          await expect(v2.page.getByRole("tab").nth(1)).toHaveAttribute("aria-selected", "true", { timeout: 15_000 });
+          await expect(v2.page.getByRole("tabpanel")).toContainText("Detail words.");
+          expect(v2.seen.every((u) => !u.includes(key)), "the key is never sent").toBe(true);
+        } finally {
+          await v2.ctx.close();
+        }
+      } finally {
+        await v.ctx.close();
+      }
+    });
   });
 }
 

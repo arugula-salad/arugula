@@ -94,6 +94,28 @@ test("docs", async ({ page }) => {
   });
 });
 
+// A tabs Doc (a tablist and its panel), in the preview of the Docs page (Arugula #829).
+test("docs: a tabs Doc", async ({ page }) => {
+  await prepare(page);
+  await open(page);
+  const [term] = await panes(page);
+  const made = async (title: string, layout: string, body: string) => {
+    const d = (await post("/api/blocks", { type: "doc", config: { title }, split: term, local: true })).block!;
+    await post(`/api/blocks/${d}/call/doc_outline`, { title, layout, sections: [{ heading: "Overview", intent: "what" }, { heading: "Detail", intent: "more" }] });
+    await fill(post, d, "s1", body);
+    return d;
+  };
+  await made("Tabbed", "tabs", "Overview words.");
+  for (const title of ["Tabbed"]) {
+    await everyWay(page, `docs-${title.toLowerCase()}`, async () => {
+      await page.goto("/#docs");
+      await page.locator("[data-doc]").filter({ hasText: title }).click();
+      await expect(page.locator("[data-list-preview] .doc-title")).toHaveText(title);
+      await expect(page.locator("[data-list-preview] [role=tab]").first()).toBeVisible();
+    });
+  }
+});
+
 test("agents: Recipes", async ({ page }) => {
   // A project of its own, so the home directory's recipes aren't what's made.
   const project = join(dir, "project");

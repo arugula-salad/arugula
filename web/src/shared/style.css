@@ -5844,6 +5844,97 @@ html[data-scheme="light"] .doc {
   }
 }
 
+/* A tabs Doc (Arugula #829): the sections are tabs. The page takes the width
+   the container gives, so a prototype in a panel has all of it; the title and
+   the text keep the measure. The strip sticks to the top of what scrolls and
+   scrolls sideways itself when it is narrow, without wrapping. */
+.doc[data-layout="tabs"] .doc-page {
+  max-width: none;
+}
+
+.doc[data-layout="tabs"] .doc-head {
+  max-width: calc(var(--measure) - 32px);
+  margin-bottom: 0;
+  border-bottom: 0;
+}
+
+.doc-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  gap: 2px;
+  margin: 14px 0 20px;
+  background: var(--doc-paper);
+  border-bottom: 1px solid var(--doc-line);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.doc-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.doc-tab {
+  position: relative;
+  flex: none;
+  max-width: 28ch;
+  padding: 9px 12px;
+  overflow: hidden;
+  font: 600 var(--text-md)/1.2 var(--f-ui);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--doc-ink-faint);
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+}
+
+.doc-tab:hover {
+  color: var(--doc-ink-soft);
+}
+
+.doc-tab[aria-selected="true"] {
+  color: var(--doc-ink);
+  border-bottom-color: var(--doc-live);
+}
+
+/* A section still to come: its heading greyed out and slanted. Not faded
+   with opacity: that is under the contrast a tab's label needs. */
+.doc-tab[data-pending] {
+  font-style: italic;
+  font-weight: 500;
+}
+
+.doc-tab[data-pending][aria-selected="false"] {
+  color: var(--doc-ink-faint);
+}
+
+.doc-tab:focus-visible {
+  outline: 2px solid var(--doc-live);
+  outline-offset: -2px;
+}
+
+/* A tab filled while you were on another. */
+.doc-tab-new {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 6px;
+  vertical-align: middle;
+  border-radius: 50%;
+  background: var(--doc-live);
+}
+
+.doc-panel[hidden] {
+  display: none;
+}
+
+.doc-panel .md > :not(.doc-prototype-box, .doc-prototype-run, .chart-box) {
+  max-width: calc(var(--measure) - 32px);
+}
+
 /* Markdown (ui/markdown.tsx): a body's blocks. */
 .md {
   min-width: 0;

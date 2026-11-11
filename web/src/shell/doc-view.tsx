@@ -16,7 +16,7 @@ import "./doc-view.css";
 import { DocBlock, type DocState } from "../shared/docs/doc-render";
 import { protoOfViewer } from "../shared/ui/prototype-messages";
 import { setProtoOrigin } from "../shared/ui/prototype-frame";
-import { Broken, keyFromHash, openSnapshot, toBase64, type Opened } from "./doc-link";
+import { Broken, keyFromHash, layoutOf, openSnapshot, toBase64, type Opened } from "./doc-link";
 
 type View =
   | { kind: "loading" }
@@ -41,6 +41,7 @@ function viewOf(o: Opened, ver: number, was: DocState | null): View {
   });
   const state: DocState = {
     title: manifest.title,
+    layout: layoutOf(manifest),
     made: manifest.made,
     updated: manifest.updated,
     // A section whose body changed gets a new rev, so its body is a new
@@ -163,7 +164,7 @@ function Page({ view }: { view: View }) {
       </Paper>
     );
   }
-  return <DocBlock id={0} docKey={base().id} s={view.state} fresh={new Map()} load={view.load} foot={<Made />} />;
+  return <DocBlock id={0} docKey={base().id} s={view.state} fresh={new Map()} load={view.load} link="share" foot={<Made />} />;
 }
 
 // The Doc's own look (#253) has a light set and a dark one, which style.css

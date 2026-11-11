@@ -47,7 +47,7 @@ interface Read {
 const NO_FRESH = new Map<string, number>();
 
 /** A Doc as the Doc block's renderer takes it. */
-const stateOf = (c: DocContent, row: DocRow): DocState => ({ ...c, doc: c.doc ?? undefined, error: c.error ?? undefined, made: row.made, updated: row.updated, by: row.by });
+const stateOf = (c: DocContent, row: DocRow): DocState => ({ ...c, doc: c.doc ?? undefined, error: c.error ?? undefined, made: row.made, updated: row.updated, by: row.by, layout: row.layout });
 
 /** The page, while the route says so and this is the machine's owner. In
  * the workspace (`inWorkspace`) it sits under the workspace's header, beside

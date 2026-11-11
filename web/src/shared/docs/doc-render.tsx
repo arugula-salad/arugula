@@ -9,13 +9,14 @@
 // imports this file and must stay free of it.
 
 import type { ComponentChildren } from "preact";
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { PaneId } from "../proto";
 import { plain } from "../ui/embeds";
 import { Markdown } from "../ui/markdown";
 import { ProtoScope } from "../ui/prototype-bridge";
 import { BlockError, BlockLoading } from "../ui/block-states";
 import { DocTimes, madeAt } from "./doc-times";
+import { docLayout, type Link } from "./layout";
 
 export interface Section {
   id: string;
@@ -52,8 +53,9 @@ export interface DocState {
   /** The machine has put a copy of it on the platform (Arugula #708); the
    * page is the owner's to ask for (`doc_shares`). */
   platform?: boolean;
-  /** How the Doc is laid out; absent is `doc` (Arugula #827). */
-  layout?: "doc" | "tabs" | "prototype";
+  /** How the Doc is laid out; absent, or a name this build doesn't know, is
+   * `doc` (Arugula #827): read it with `docLayout`. */
+  layout?: string | null;
   /** When it was made and last changed (ms), and by whom (Arugula #825): the
    * header says them. A daemon from before them, and a share from before
    * them, send none. */
@@ -120,6 +122,7 @@ export function DocBlock({
   foot,
   share,
   docKey,
+  link,
 }: {
   id: PaneId;
   s: DocState | null;
@@ -134,6 +137,11 @@ export function DocBlock({
   /** What names this Doc to a prototype's kept settings (#508): the block's
    * id by default, a project Doc's id or a share link's id where `id` is 0. */
   docKey?: string;
+  /** Where a tab is named in the address (Arugula #829): `page` is `#s2`, for
+   * a page whose address is its own; `share` is `&s=s2` after a share link's
+   * key. Left out, a tab is kept in the view only: the app's address is its
+   * route (`#docs`, `#pane=…`). */
+  link?: Link;
 }) {
   // Drawn again when a picture is added or replaced, and not otherwise.
   const kept = JSON.stringify(s?.assets ?? []);
@@ -146,10 +154,27 @@ export function DocBlock({
   }, [kept, load, cached]);
   if (!s) return <BlockLoading what="the Doc" />;
   if (s.error) return <BlockError data-doc-block={id} title="Can't show this Doc" detail={s.error} />;
+  const key = docKey ?? s.doc ?? String(id);
+  const layout = docLayout(s.layout);
+  const tabs = layout === "tabs" && s.entries.length > 0;
   const done = s.entries.filter((e) => e.body !== null).length;
   const times = madeAt(s) || s.updated ? <DocTimes doc={s} /> : null;
+  const body = (e: Section) =>
+    e.body !== null ? (
+      // A refill is a new element, so its highlight plays again.
+      <div key={e.rev} class={fresh.get(e.id) === e.rev ? "doc-body doc-fresh" : "doc-body"}>
+        <ProtoScope.Provider value={{ doc: key, section: e.id }}>
+          <Markdown text={e.body} refs={null} embeds image={image} />
+        </ProtoScope.Provider>
+      </div>
+    ) : (
+      <div class="doc-pending">
+        <span class="doc-coming">Coming…</span>
+        {e.intent && <span class="doc-intent"> {e.intent}</span>}
+      </div>
+    );
   return (
-    <div class="doc" data-doc-block={id}>
+    <div class="doc" data-doc-block={id} data-layout={tabs ? "tabs" : undefined}>
       <div class="doc-page">
         <header class="doc-head">
           {share ? (
@@ -178,27 +203,124 @@ export function DocBlock({
             </p>
           )}
         </header>
-        {s.entries.map((e) => (
-          <section key={e.id} class="doc-section" data-section={e.id} data-pending={e.body === null ? "" : undefined}>
-            <h2 class="doc-heading">{e.heading}</h2>
-            {e.body !== null ? (
-              // A refill is a new element, so its highlight plays again.
-              <div key={e.rev} class={fresh.get(e.id) === e.rev ? "doc-body doc-fresh" : "doc-body"}>
-                <ProtoScope.Provider value={{ doc: docKey ?? s.doc ?? String(id), section: e.id }}>
-                  <Markdown text={e.body} refs={null} embeds image={image} />
-                </ProtoScope.Provider>
-              </div>
-            ) : (
-              <div class="doc-pending">
-                <span class="doc-coming">Coming…</span>
-                {e.intent && <span class="doc-intent"> {e.intent}</span>}
-              </div>
-            )}
-          </section>
-        ))}
+        {tabs ? (
+          <DocTabs entries={s.entries} fresh={fresh} docKey={key} link={link} body={body} />
+        ) : (
+          s.entries.map((e) => (
+            <section key={e.id} class="doc-section" data-section={e.id} data-pending={e.body === null ? "" : undefined}>
+              <h2 class="doc-heading">{e.heading}</h2>
+              {body(e)}
+            </section>
+          ))
+        )}
         {foot}
       </div>
     </div>
   );
 }
 
+/** What names a tab and its panel to each other: the Doc's key, with what an
+ * id can't hold made safe, so two Docs on one page (`id` is 0 in the previews
+ * and the share page) never share one. */
+const tabIds = (key: string, section: string) => {
+  const safe = `${key}-${section}`.replace(/[^\w-]/g, "_");
+  return { tab: `doc-tab-${safe}`, panel: `doc-panel-${safe}` };
+};
+
+/** The tab a link names: `#s2`, or `&s=s2` after a share link's key. */
+function tabInHash(link: Link | undefined): string | null {
+  if (!link) return null;
+  const m = link === "share" ? /^#k=[\w-]+&s=([\w-]+)$/.exec(location.hash) : /^#([\w-]+)$/.exec(location.hash);
+  return m ? m[1]! : null;
+}
+
+/** Says the tab in the address, in place: a tab is not a page, so it never
+ * adds a history entry. A share link's hash is its key, kept whole. */
+function tabToHash(link: Link | undefined, section: string) {
+  if (!link) return;
+  const key = link === "share" ? /^#(k=[\w-]+)/.exec(location.hash) : null;
+  if (link === "share" && !key) return;
+  const hash = key ? `#${key[1]}&s=${section}` : `#${section}`;
+  if (location.hash !== hash) history.replaceState(history.state, "", `${location.pathname}${location.search}${hash}`);
+}
+
+/** The tabs of a `tabs` Doc (Arugula #829): a strip of each section's heading,
+ * sticky at the top of the Doc's scroll area and scrolling sideways when it is
+ * narrow, and the chosen section's panel. Only that one is drawn, so a
+ * prototype in another tab isn't running. Arrows, Home and End move between
+ * tabs, and the tab chosen takes focus. */
+function DocTabs({ entries, fresh, docKey, link, body }: { entries: Section[]; fresh: Map<string, number>; docKey: string; link?: Link; body: (e: Section) => ComponentChildren }) {
+  const [chosen, choose] = useState<string | null>(() => tabInHash(link));
+  const strip = useRef<HTMLDivElement>(null);
+  // A tab that isn't there (the link's, or one the Doc lost) is the first.
+  const at = Math.max(0, entries.findIndex((e) => e.id === chosen));
+  const on = entries[at]!;
+  // The tabs filled while the reader was on another, until they're opened.
+  const seen = useRef(new Set<string>());
+  seen.current.add(`${on.id}/${on.rev}`);
+  const go = (i: number, focus = false) => {
+    const e = entries[i]!;
+    choose(e.id);
+    tabToHash(link, e.id);
+    if (focus) (strip.current?.children[i] as HTMLElement | undefined)?.focus();
+  };
+  // A link edited by hand, or followed from another to the same page.
+  useEffect(() => {
+    if (!link) return;
+    const fn = () => choose(tabInHash(link));
+    addEventListener("hashchange", fn);
+    return () => removeEventListener("hashchange", fn);
+  }, [link]);
+  // The tab chosen stays in view in a strip that scrolls. By hand: scrollIntoView would scroll the Doc too.
+  useLayoutEffect(() => {
+    const bar = strip.current;
+    const t = bar?.children[at] as HTMLElement | undefined;
+    if (!bar || !t) return;
+    if (t.offsetLeft < bar.scrollLeft) bar.scrollLeft = t.offsetLeft;
+    else if (t.offsetLeft + t.offsetWidth > bar.scrollLeft + bar.clientWidth) bar.scrollLeft = t.offsetLeft + t.offsetWidth - bar.clientWidth;
+  }, [on.id, entries.length]);
+  const key = (e: KeyboardEvent) => {
+    const n = entries.length;
+    const to = e.key === "ArrowRight" ? (at + 1) % n : e.key === "ArrowLeft" ? (at + n - 1) % n : e.key === "Home" ? 0 : e.key === "End" ? n - 1 : -1;
+    if (to < 0) return;
+    e.preventDefault();
+    go(to, true);
+  };
+  return (
+    <>
+      <div class="doc-tabs" role="tablist" aria-label="Sections" ref={strip} onKeyDown={key} data-doc-tabs>
+        {entries.map((e, i) => {
+          const ids = tabIds(docKey, e.id);
+          const news = i !== at && e.body !== null && fresh.get(e.id) === e.rev && !seen.current.has(`${e.id}/${e.rev}`);
+          return (
+            <button
+              key={e.id}
+              type="button"
+              role="tab"
+              id={ids.tab}
+              class="doc-tab"
+              aria-selected={i === at}
+              aria-controls={ids.panel}
+              tabIndex={i === at ? 0 : -1}
+              title={e.heading}
+              data-doc-tab={e.id}
+              data-pending={e.body === null ? "" : undefined}
+              onClick={() => go(i)}
+            >
+              {e.heading}
+              {news && <span class="doc-tab-new" data-doc-tab-new role="img" aria-label="written just now" />}
+            </button>
+          );
+        })}
+      </div>
+      {entries.map((e, i) => {
+        const ids = tabIds(docKey, e.id);
+        return (
+          <section key={e.id} class="doc-panel" role="tabpanel" id={ids.panel} aria-labelledby={ids.tab} hidden={i !== at} data-section={e.id} data-pending={e.body === null ? "" : undefined}>
+            {i === at && body(e)}
+          </section>
+        );
+      })}
+    </>
+  );
+}

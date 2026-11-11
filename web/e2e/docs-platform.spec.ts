@@ -867,3 +867,54 @@ test("the project's Docs sort by updated or created, within the list, and a Doc'
   await expect(alice.locator("[data-doc-page] [data-doc-times]")).toContainText("Created");
   await alice.evaluate(() => localStorage.removeItem("docs-sort"));
 });
+
+// Doc layouts (Arugula #829): a project Doc keeps its layout, and the page and
+// its preview draw it, a tab in the page's address.
+test("a tabs Doc on the platform: the preview, and tabs in the page's address", async () => {
+  test.setTimeout(120_000);
+  const project = /\/p\/(prj_[0-9a-f]+)/.exec(docPath)![1];
+  await platform(alice, `/p/${project}/docs`);
+  const ids = await alice.evaluate(async (p) => {
+    const send = async (method: string, path: string, body: unknown) => (await fetch(`/api/projects/${p}${path}`, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) })).json();
+    const write = (id: string, heading: string, intent: string | null, markdown: string | null) => send("PUT", `/docs/${id}`, { title: null, section: null, heading, intent, markdown });
+    const tabs = await send("POST", "/docs", { title: "Layout tabs", sections: [], layout: "tabs" });
+    await write(tabs.doc.id, "Overview", null, "Overview words.");
+    await write(tabs.doc.id, "Notes", null, "Notes words.");
+    await write(tabs.doc.id, "Later", "still to come", null);
+    return { tabs: tabs.doc.id as string };
+  }, project);
+
+  await alice.reload();
+  await alice.locator("[data-list-search]").fill("Layout");
+  await alice.locator("[data-doc]").filter({ hasText: "Layout tabs" }).click();
+  const pv = alice.locator("[data-list-preview]");
+  await expect(pv.getByRole("tab")).toHaveText(["Overview", "Notes", "Later"], { timeout: 15_000 });
+  expect(await pv.getByRole("tab").first().getAttribute("id")).toContain(ids.tabs);
+  expect(await alice.evaluate(() => location.hash)).toBe("");
+
+  // The page: the first tab, then a click names a tab in the address, in place.
+  const at = (id: string) => `${app}/p/${project}/docs/${id}`;
+  await alice.goto(at(ids.tabs));
+  const page = alice.locator("[data-doc-page]");
+  const tabs = page.getByRole("tab");
+  await expect(tabs).toHaveText(["Overview", "Notes", "Later"], { timeout: 15_000 });
+  await expect(tabs.first()).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tabpanel")).toContainText("Overview words.");
+  const entries = await alice.evaluate(() => history.length);
+  await tabs.nth(1).click();
+  await expect(page.getByRole("tabpanel")).toContainText("Notes words.");
+  await expect.poll(() => alice.evaluate(() => location.hash)).toBe("#s2");
+  expect(await alice.evaluate(() => history.length), "a tab is not a history entry").toBe(entries);
+  await alice.keyboard.press("ArrowRight");
+  await expect.poll(() => alice.evaluate(() => location.hash)).toBe("#s3");
+  await expect(page.getByRole("tabpanel")).toContainText("still to come");
+  // A reload, and a link to a tab, open that tab.
+  await alice.reload();
+  await expect(page.getByRole("tab").nth(2)).toHaveAttribute("aria-selected", "true", { timeout: 15_000 });
+  await alice.goto(`${at(ids.tabs)}#s2`);
+  await expect(page.getByRole("tab").nth(1)).toHaveAttribute("aria-selected", "true", { timeout: 15_000 });
+  await expect(page.getByRole("tabpanel")).toContainText("Notes words.");
+  // A name the Doc doesn't have is the first tab.
+  await alice.goto(`${at(ids.tabs)}#s9`);
+  await expect(page.getByRole("tab").first()).toHaveAttribute("aria-selected", "true", { timeout: 15_000 });
+});

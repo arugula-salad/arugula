@@ -56,9 +56,9 @@ export function fromBase64Url(s: string): Uint8Array {
   return Uint8Array.from(bin, (c) => c.charCodeAt(0));
 }
 
-/** The key in a URL's fragment (`#k=…`): 32 bytes, or null. */
+/** The key in a URL's fragment (`#k=…`, and a tab after it as `&s=s2`): 32 bytes, or null. */
 export function keyFromHash(hash: string): Uint8Array | null {
-  const m = /^#?k=([A-Za-z0-9_-]+)$/.exec(hash);
+  const m = /^#?k=([A-Za-z0-9_-]+)(?:&s=[\w-]+)?$/.exec(hash);
   if (!m) return null;
   try {
     const key = fromBase64Url(m[1]!);
