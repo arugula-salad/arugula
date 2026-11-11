@@ -605,9 +605,9 @@
 <script>
 // The runner of a Doc's prototype (#506). The page is static: it
 // waits for one message from its parent, then replaces itself with the
-// prototype, the frame's policy first. Served by `srcdoc` where the page has
-// no script CSP, and from control's proto origin where it has (the
-// `Host::Proto` page in crates/control/src/blocks.rs); the web client's
+// prototype, the frame's policy first. Served from control's proto origin
+// (the `Host::Proto` page in crates/control/src/blocks.rs) and a daemon's
+// `/proto/` (crates/daemon/src/server.rs), or by `srcdoc`; the web client's
 // `prototype-frame.tsx` is the other side, and the message names are
 // `prototype-messages.ts`'s. Bridge (#508): before the page, `window.arugula`
 // (`copy`, `store.get/set/all`) asks the parent, which answers each request
@@ -661,8 +661,11 @@
     document.close();
   }
   addEventListener("message", onmessage);
-  // A frame can't be sent to before its listener is there: say when it is.
-  parent.postMessage({ type: "arugula.ready" }, "*");
+  // A frame can't be sent to before its listener is there: say when it is,
+  // once this page has loaded, so the parent has seen this page's load before
+  // it hands the prototype over (it counts the loads after that).
+  if (document.readyState === "complete") parent.postMessage({ type: "arugula.ready" }, "*");
+  else addEventListener("load", function () { parent.postMessage({ type: "arugula.ready" }, "*"); });
 })();
 </script>
 </body>

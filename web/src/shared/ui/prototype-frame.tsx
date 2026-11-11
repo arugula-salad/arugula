@@ -55,10 +55,14 @@ function useMode(): Mode {
   return mode;
 }
 
-/** Loads of the frame that are the runner's own: its first, and the one
- * `document.close()` fires when it has written the prototype. A third is the
- * prototype navigating itself. */
-export const OWN_LOADS = 2;
+/** Loads of the frame after the page is handed over that are the runner's
+ * own: the one `document.close()` fires when it has written the prototype. A
+ * second is the prototype navigating itself. What comes before the handover
+ * isn't counted: the runner's own load (it says it's ready once it has
+ * loaded), a lazy frame's `about:blank` first, or the runner loading again
+ * when the frame is moved, which says it's ready again and is handed the page
+ * again. */
+export const OWN_LOADS = 1;
 
 /** Full window rides on the top layer (#507): the box itself is a manual
  * popover, so the same iframe is drawn over the window without moving in the
@@ -93,15 +97,17 @@ export function Prototype({ html, alt }: { html: string; alt: string }) {
   const why = checkPrototype(html);
   const live = !why && origin !== null && (!click || armed) && !left;
   const copied = useBridge(frame, live);
-  // A layout effect: the listener is there before the frame's first task, in
+  // A layout effect: the listener is there before the frame loads, after
   // which the runner says it is ready.
   useLayoutEffect(() => {
     if (!live) return;
-    // The first time the frame says it is ready, and no other.
     handed.current = false;
+    loads.current = 0;
+    // Each time the frame says it is ready: the runner, loaded (again).
     const on = (e: MessageEvent) => {
-      if (handed.current || !readyFrom(e, frame.current?.contentWindow)) return;
+      if (!readyFrom(e, frame.current?.contentWindow)) return;
       handed.current = true;
+      loads.current = 0;
       // An opaque origin has no name to target: "*", for this one message.
       frame.current!.contentWindow!.postMessage(htmlMessage(html, schemeNow.current), "*");
     };
@@ -208,6 +214,7 @@ export function Prototype({ html, alt }: { html: string; alt: string }) {
         referrerpolicy="no-referrer"
         style={full ? undefined : { height: `${height}px` }}
         onLoad={() => {
+          if (!handed.current) return;
           if (++loads.current > OWN_LOADS) {
             setFull(false);
             setLeft(true);
