@@ -2,7 +2,7 @@
 schema: 1
 id: "aru-140"
 title: "An owner has many projects; channels belong to the team; the default project is a setting"
-state: "proposed"
+state: "decided"
 area: "Federation and control"
 source:
   via: "cli"
@@ -51,7 +51,7 @@ constrains:
 Every team and every account has had exactly one project, and nothing made a
 second, so a team and its project read as one thing (aru-072, aru-134). The
 projects RFC (Doc dcc5ded86b870131) makes the project the thing a person is
-in and switches between. Proposed (Aaron, 2026-11-11), for Jake's review:
+in and switches between. Decided (Aaron, 2026-11-11; Jake agreed in review):
 
 - **An owner has many projects.** A project is still owned by one team or
   one account (aru-072 stands), and Personal stays account-owned. One `Owner`
