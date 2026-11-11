@@ -125,6 +125,12 @@ pub struct Doc {
     /// from. Null for any other Doc, and from an older platform.
     #[serde(default)]
     pub made_from: Option<MadeFrom>,
+    /// How the Doc is laid out: `doc`, `tabs` or `prototype`. Sent only when
+    /// it isn't `doc`: absent, or a name the reader doesn't know, is `doc`,
+    /// and an older page ignores it and draws the column.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub layout: Option<String>,
 }
 
 /// The Doc a team Doc was made from: a machine's copy, or one written here.
@@ -225,9 +231,13 @@ pub struct NewDoc {
     pub title: String,
     #[serde(default)]
     pub sections: Vec<NewSection>,
+    /// `doc`, `tabs` or `prototype`; missing is `doc`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub layout: Option<String>,
 }
 
-/// `PUT` [`PROJECT_DOC`]: what changes. `title` renames it. With `section`,
+/// `PUT` [`PROJECT_DOC`]: what changes. `title` renames it, `layout` lays it out. With `section`,
 /// that section's body becomes `markdown` (and its heading `heading`, when
 /// given); with no `section` but a `heading`, a section is added at the
 /// end, written when `markdown` is given and pending otherwise.
@@ -245,6 +255,11 @@ pub struct DocWrite {
     pub intent: Option<String>,
     #[serde(default)]
     pub markdown: Option<String>,
+    /// Sets the layout (`doc`, `tabs` or `prototype`); omitted leaves it as
+    /// it is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub layout: Option<String>,
 }
 
 /// `POST` [`PROJECT_DOC_COPIES`]: Share with… this project.
@@ -418,5 +433,40 @@ mod tests {
         assert_eq!(serde_json::from_value::<OldMachineDoc>(tabs.clone()).unwrap().title, "T");
         assert_eq!(serde_json::from_value::<MachineDoc>(plain).unwrap().layout, None);
         assert_eq!(serde_json::from_value::<MachineDoc>(tabs).unwrap().layout.as_deref(), Some("tabs"));
+    }
+
+    /// A page from before layouts: a `Doc` as it read it.
+    #[derive(Deserialize)]
+    #[allow(dead_code)]
+    struct OldDoc {
+        id: String,
+        title: String,
+    }
+
+    #[test]
+    fn a_doc_names_its_layout_only_off_doc_and_an_older_page_and_platform_take_it() {
+        let body = |layout: Option<&str>| {
+            let mut v = serde_json::json!({
+                "id": "pdc_1", "project": "prj_1", "title": "T", "author": "", "agent": null, "sections": 0,
+                "written": 0, "rev": 1, "created_at": 1, "updated_at": 1,
+            });
+            if let Some(l) = layout {
+                v["layout"] = l.into();
+            }
+            v
+        };
+        // From an older platform: no field, so `doc`.
+        assert_eq!(serde_json::from_value::<Doc>(body(None)).unwrap().layout, None);
+        let tabs: Doc = serde_json::from_value(body(Some("tabs"))).unwrap();
+        assert_eq!(tabs.layout.as_deref(), Some("tabs"));
+        // A plain Doc's body is what it was; an older page reads a tabs one.
+        assert!(
+            serde_json::to_value(serde_json::from_value::<Doc>(body(None)).unwrap()).unwrap().get("layout").is_none()
+        );
+        assert_eq!(serde_json::from_value::<OldDoc>(serde_json::to_value(&tabs).unwrap()).unwrap().title, "T");
+        // The writes are omitted when none, so an older platform takes them.
+        assert!(serde_json::to_value(DocWrite::default()).unwrap().get("layout").is_none());
+        let n = NewDoc { title: "T".into(), sections: vec![], layout: None };
+        assert!(serde_json::to_value(n).unwrap().get("layout").is_none());
     }
 }

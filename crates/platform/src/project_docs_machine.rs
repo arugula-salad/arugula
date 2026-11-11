@@ -177,7 +177,7 @@ pub async fn put_route(
         Some((_, p)) => p.project,
         None => place_gated(&app, &d.account, PERSONAL, true, Gate::Copies).await?.project,
     };
-    let whole = db::MachineDoc { title: &title, sections: &sections };
+    let whole = db::MachineDoc { title: &title, sections: &sections, layout: doc.layout.as_deref() };
     let (stored, was_changed) = app
         .db
         .put_machine_doc(

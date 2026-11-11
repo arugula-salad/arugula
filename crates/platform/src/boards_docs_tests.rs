@@ -141,6 +141,7 @@ async fn a_strip_holds_at_most_twenty_docs() {
             made_by: "a",
             made_by_session: None,
             sections: &[],
+            layout: None,
         };
         let d = app.db.create_project_doc(&new, 1, 100).unwrap().unwrap().id;
         let (st, v) = link(&base, "a", &id, json!({ "kind": "doc", "id": d })).await;
@@ -283,6 +284,7 @@ async fn row_docs_are_once_per_row_in_their_own_order_and_go_with_the_row() {
             made_by: "a",
             made_by_session: None,
             sections: &[],
+            layout: None,
         };
         let d = app.db.create_project_doc(&new, 1, 100).unwrap().unwrap().id;
         let (st, v) = link_row(&base, "a", &id, &r2, ptr(&d)).await;
