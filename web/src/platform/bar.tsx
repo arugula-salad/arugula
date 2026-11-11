@@ -19,6 +19,7 @@ import { AccountPicture } from "../shared/chat/avatar";
 import { presenceItems } from "../shared/chat/presence";
 import { ChatPlaceUnread, PlaceUnread } from "./thread-unread";
 import { barProject, where } from "./where";
+import { scopable, scopeOf } from "./scope";
 import { InboxCount } from "./inbox-count";
 import { Caret } from "../shared/ui/icons";
 
@@ -92,7 +93,8 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
   // A phone has no rail (#377): the bar keeps what the rail has elsewhere.
   const rail = !usePhone();
   // None on a page that's no project's: the bar says "All projects".
-  const project = barProject(r);
+  // The bar keeps the current project while Boards, Docs and the Inbox are scoped to it (Arugula #881).
+  const project = barProject(r) ?? (scopable(r) ? scopeOf(r, currentProject(), (id) => !!session.project(id)) : undefined);
   const p = session.project(project);
   // An id that's none of the reader's lights no place (UI audit #170): the
   // body says it isn't one of theirs.

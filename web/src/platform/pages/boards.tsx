@@ -26,6 +26,9 @@ import { toast } from "../toast";
 import { roleIn } from "../settings/environments";
 import { mayWrite } from "./issues";
 import { Missing } from "./project";
+import { currentProject, onCurrentProject } from "../current-project";
+import { scopeOf } from "../scope";
+import { ScopeToggle } from "../scope-toggle";
 import { NotOnBoard, dropOn, useTriage, useUntriaged, type Triage } from "./triage";
 import { ChevronIcon } from "../../shared/ui/icons";
 
@@ -107,9 +110,11 @@ function BoardFilter({ q, setQ }: { q: string; setQ: (q: string) => void }) {
 
 /** `/boards`: the boards of every project the reader belongs to, by
  * project. A project with none isn't listed. */
-export function AllBoardsPage() {
+export function AllBoardsPage({ all }: { all?: boolean }) {
   useSubscribe((fn) => session.subscribe(fn));
-  const projects = session.projects;
+  useSubscribe((fn) => onCurrentProject(fn));
+  const scope = scopeOf({ page: "all-boards", all: all || undefined }, currentProject(), (id) => !!session.project(id));
+  const projects = scope ? session.projects.filter((p) => p.id === scope) : session.projects;
   const key = projects.map((p) => p.id).join(",");
   const [lists, setLists] = useState<Map<string, ProjectBoard[]> | null>(null);
   const [q, setQ] = useState("");
@@ -136,7 +141,7 @@ export function AllBoardsPage() {
   const open = useUntriaged(counted);
   return (
     <section class="platform-section sw-page" data-all-boards-page>
-      <PageHeader title="Boards" />
+      <PageHeader title="Boards" actions={<ScopeToggle r={{ page: "all-boards" }} scoped={!!scope} all={!!all} />} />
       {lists === null && <BlockLoading inline what="boards" />}
       {lists && shown.length === 0 && (
         <EmptyState where="page" title="No boards yet." why="A board follows a goal across its issues and PRs. Make one on a project's Boards page." />

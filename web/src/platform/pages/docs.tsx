@@ -33,6 +33,9 @@ import { SectionHead } from "../../shared/ui/section-head";
 import { session, type PlatformProject } from "../session";
 import { toast } from "../toast";
 import { mayWrite } from "./issues";
+import { currentProject, onCurrentProject } from "../current-project";
+import { scopeOf } from "../scope";
+import { ScopeToggle } from "../scope-toggle";
 import { Missing } from "./project";
 import { PlatformDocActions, RowMenu } from "./doc-actions";
 
@@ -168,11 +171,16 @@ function useRows(ps: PlatformProject[]): { rows: Row[] | null; sections: Map<str
   return { rows, sections: read, reload: () => setAgain((n) => n + 1) };
 }
 
-export function DocsPage({ project }: { project?: string }) {
+export function DocsPage({ project, all }: { project?: string; all?: boolean }) {
   useSubscribe((fn) => session.subscribe(fn));
+  useSubscribe((fn) => onCurrentProject(fn));
   const one = project ? session.project(project) : undefined;
   if (project && !one) return <Missing what="That project isn't one of yours (or it's gone)." />;
-  return <DocList ps={one ? [one] : session.projects} narrowed={!!one} />;
+  // Team Docs are the current project's, unless All; Mine is the machine's library either way.
+  // Personal has no team to narrow to.
+  const at = project ? undefined : scopeOf({ page: "docs", all: all || undefined }, currentProject(), (id) => !!session.project(id));
+  const scope = at && session.project(at)?.team ? at : undefined;
+  return <DocList ps={one ? [one] : session.projects} narrowed={!!one} scope={scope} widened={!project && !!all && !!currentProject()} />;
 }
 
 function groupsOf(shown: Row[], narrowed: boolean, single: boolean, sort: DocSort): ListGroup<Row>[] {
@@ -209,13 +217,14 @@ function saveFilter(f: DocFilter) {
   } catch {}
 }
 
-function DocList({ ps, narrowed }: { ps: PlatformProject[]; narrowed: boolean }) {
+function DocList({ ps, narrowed, scope, widened }: { ps: PlatformProject[]; narrowed: boolean; scope?: string; widened?: boolean }) {
   const { rows, sections, reload } = useRows(ps);
   const [filter, setFilter] = useState<DocFilter>(savedFilter);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useDocSort();
   const [making, setMaking] = useState(false);
-  const all = rows ?? [];
+  // Team Docs of the current project alone, while scoped.
+  const all = (rows ?? []).filter((r) => r.mine || !scope || r.p.id === scope);
   const q = query.trim().toLowerCase();
   const shown = all.filter(
     (r) =>
@@ -261,11 +270,14 @@ function DocList({ ps, narrowed }: { ps: PlatformProject[]; narrowed: boolean })
               title="Docs"
               sub={sub}
               actions={
-                writable.length > 0 && (
-                  <button type="button" class="secondary small" aria-expanded={making} data-doc-new-open onClick={() => setMaking(!making)}>
-                    New Doc
-                  </button>
-                )
+                <>
+                  <ScopeToggle r={{ page: "docs" }} scoped={!!scope} all={!!widened} />
+                  {writable.length > 0 && (
+                    <button type="button" class="secondary small" aria-expanded={making} data-doc-new-open onClick={() => setMaking(!making)}>
+                      New Doc
+                    </button>
+                  )}
+                </>
               }
               stats={all.length > 0 && <ListCounts counts={counts} on={narrowed ? "all" : filter} pick={narrowed ? () => {} : pick} />}
             />

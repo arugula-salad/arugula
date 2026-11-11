@@ -12,6 +12,9 @@ import { chat, chatStore } from "../shared/chat-store";
 import { threadNews } from "../shared/chat/unread";
 import { platformFetch } from "../shared/maintenance";
 import { useSubscribe } from "../shared/ui/hooks";
+import { currentProject, onCurrentProject } from "./current-project";
+import { useRoute } from "./router";
+import { inboxPath, scopeOf } from "./scope";
 import { session } from "./session";
 
 let entries: InboxEntry[] | null = null;
@@ -36,7 +39,7 @@ export function noteWaitingDeploys(n: number) {
   listeners.forEach((fn) => fn());
 }
 
-async function load() {
+async function load(scope: string | undefined) {
   const read = async <T,>(path: string): Promise<T | null> => {
     try {
       const r = await platformFetch(path, { credentials: "same-origin" });
@@ -46,7 +49,7 @@ async function load() {
       return null;
     }
   };
-  const [inbox, deploys] = await Promise.all([read<{ entries: InboxEntry[] }>("/api/inbox"), read<{ deploys: unknown[] }>("/api/deploys/waiting")]);
+  const [inbox, deploys] = await Promise.all([read<{ entries: InboxEntry[] }>(inboxPath(scope)), read<{ deploys: unknown[] }>("/api/deploys/waiting")]);
   if (deploys) noteWaitingDeploys(deploys.deploys.length);
   if (inbox) noteInbox(inbox.entries);
 }
@@ -72,13 +75,17 @@ export function InboxCount() {
   // Once signed in: the bar is drawn while the page signs in, and a call
   // before then would race the sign-in.
   const ready = session.state === "ready";
+  // The current project's count, and the total under All (Arugula #881): the page reads the same.
+  useSubscribe((fn) => onCurrentProject(fn));
+  const r = useRoute();
+  const scope = scopeOf(r, currentProject(), (id) => !!session.project(id));
   useEffect(() => {
     if (!ready) return;
-    void load();
-    const back = () => document.visibilityState === "visible" && void load();
+    void load(scope);
+    const back = () => document.visibilityState === "visible" && void load(scope);
     document.addEventListener("visibilitychange", back);
     return () => document.removeEventListener("visibilitychange", back);
-  }, [ready]);
+  }, [ready, scope]);
   const unseen = inboxUnseen();
   const n = unseen + waiting;
   if (!n) return null;

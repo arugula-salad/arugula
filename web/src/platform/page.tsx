@@ -90,7 +90,7 @@ function body(r: Route, lost: string | null) {
     case "board":
       return <BoardPage project={r.project} board={r.board} />;
     case "docs":
-      return <DocsPage project={r.project} />;
+      return <DocsPage project={r.project} all={r.all} />;
     case "doc":
       return <DocPage project={r.project} doc={r.doc} />;
     case "runs":
@@ -115,9 +115,9 @@ function body(r: Route, lost: string | null) {
       // M184: a hosted workspace is a machine of the project.
       return <HostedWorkspacePage project={r.project} workspace={r.workspace} />;
     case "inbox":
-      return <InboxPage />;
+      return <InboxPage all={r.all} />;
     case "all-boards":
-      return <AllBoardsPage />;
+      return <AllBoardsPage all={r.all} />;
     case "settings":
       return <SettingsPage />;
     case "deploy":

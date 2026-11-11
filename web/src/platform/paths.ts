@@ -84,7 +84,7 @@ export type Route =
   | { page: "triage"; project: string }
   | { page: "boards"; project: string }
   | { page: "board"; project: string; board: string }
-  | { page: "docs"; project?: string }
+  | { page: "docs"; project?: string; all?: true }
   | { page: "doc"; project: string; doc: string }
   | { page: "runs"; project: string; state?: string; trigger?: string; spec?: string }
   | { page: "run"; project: string; run: string; msg?: number }
@@ -98,8 +98,8 @@ export type Route =
   | { page: "deploys"; project: string }
   | { page: "new-deploy"; project: string; env?: string }
   | { page: "installed"; project?: string; repo?: string }
-  | { page: "inbox" }
-  | { page: "all-boards" }
+  | { page: "inbox"; all?: true }
+  | { page: "all-boards"; all?: true }
   | { page: "settings" }
   | { page: "design" }
   | { page: "deploy"; deploy: string }
@@ -185,9 +185,11 @@ export function parse(path: string, search = ""): Route {
     const to = q.get("to");
     return to === "projects" || to === "docs" || to === "boards" || to === "chat" ? { page: "home", to } : { page: "home" };
   }
-  if (parts.length === 1 && parts[0] === "inbox") return { page: "inbox" };
-  if (parts.length === 1 && parts[0] === "boards") return { page: "all-boards" };
-  if (parts.length === 1 && parts[0] === "docs") return { page: "docs" };
+  // `?all=1` opens these across every project, not the current one's (Arugula #881).
+  const all = q.get("all") === "1" ? { all: true as const } : {};
+  if (parts.length === 1 && parts[0] === "inbox") return { page: "inbox", ...all };
+  if (parts.length === 1 && parts[0] === "boards") return { page: "all-boards", ...all };
+  if (parts.length === 1 && parts[0] === "docs") return { page: "docs", ...all };
   if (parts.length === 1 && parts[0] === "settings") return { page: "settings" };
   if (parts.length === 1 && parts[0] === "design") return { page: "design" };
   if (parts[0] === "chat" && parts.length <= 2) {
@@ -348,7 +350,7 @@ export function pathOf(r: Route, names: Names = () => null): string {
     case "board":
       return `/p/${s(r.project)}/boards/${s(r.board)}`;
     case "docs":
-      return r.project ? `/p/${s(r.project)}/docs` : "/docs";
+      return r.project ? `/p/${s(r.project)}/docs` : r.all ? "/docs?all=1" : "/docs";
     case "doc":
       return `/p/${s(r.project)}/docs/${s(r.doc)}`;
     case "runs": {
@@ -384,9 +386,9 @@ export function pathOf(r: Route, names: Names = () => null): string {
     case "installed":
       return r.project && r.repo ? `/installed?state=${encodeURIComponent(`${r.project}:${r.repo}`)}` : "/installed";
     case "inbox":
-      return "/inbox";
+      return r.all ? "/inbox?all=1" : "/inbox";
     case "all-boards":
-      return "/boards";
+      return r.all ? "/boards?all=1" : "/boards";
     case "settings":
       return "/settings";
     case "design":
