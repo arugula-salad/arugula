@@ -115,6 +115,8 @@
     {"method":"GET","path":"/api/projects/{project}/docs/{id}/copies","auth":"session","clients":["page"]},
     {"method":"POST","path":"/api/projects/{project}/docs/{id}/copies","auth":"session","clients":["page"]},
     {"method":"PUT","path":"/api/projects/{project}/docs/{id}/copies/{to}","auth":"session","clients":["page"]},
+    {"method":"POST","path":"/api/projects/{project}/docs/{id}/restore","auth":"session","clients":["page"]},
+    {"method":"GET","path":"/api/projects/{project}/docs/trash","auth":"session","clients":["page"]},
     {"method":"GET","path":"/api/projects/{project}/drafts","auth":"cloud_driver","clients":["page","cli","native","daemon"]},
     {"method":"GET","path":"/api/projects/{project}/drivers","auth":"session","clients":["page"]},
     {"method":"GET","path":"/api/projects/{project}/environments","auth":"session","clients":["page","cli"]},
