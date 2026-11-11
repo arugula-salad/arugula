@@ -268,6 +268,12 @@ pub struct ForgeItem {
     /// GitHub's times, in milliseconds.
     pub created_at: u64,
     pub updated_at: u64,
+    /// An open PR in its branch's merge queue: from GitHub's `enqueued`,
+    /// until `dequeued` or it closes (Arugula #878). An older platform
+    /// doesn't say, so false.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    pub queued: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

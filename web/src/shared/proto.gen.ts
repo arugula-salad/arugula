@@ -3508,7 +3508,11 @@ blocked: boolean,
  * Review requests still pending (Forgejo's `requested_reviewers` also
  * keeps whoever already reviewed: see `forge::forgejo`).
  */
-requested: Array<Reviewer>, comments: number, updated_at: number, merged_at: number | null, merged_by: string | null, };
+requested: Array<Reviewer>, comments: number, updated_at: number, merged_at: number | null, merged_by: string | null, 
+/**
+ * An open PR in its branch's merge queue (GitHub only; Arugula #878).
+ */
+queued?: boolean, };
 
 export type ItemKind = "pr" | "issue";
 
