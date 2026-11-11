@@ -55,6 +55,8 @@ impl arugulad_base::features::Feature for Docs {
     fn with_control(&self, control: &Arc<control::Control>) {
         // Doc blocks share through control (#1066).
         docs::link::init(control.clone());
+        // ...and team Docs are read and written there (Arugula #862).
+        docs::team::init(control.clone());
         // ...and are copied up to the platform (#418).
         docs::copies::start(control.clone());
     }

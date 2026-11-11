@@ -29,7 +29,7 @@ use axum::{
 use crate::{
     Platform,
     auth::Machine,
-    project_docs::{By, create, get, put_asset, write},
+    project_docs::{By, asset, create, get, put_asset, write},
 };
 
 /// Reads a machine's agents make, per hour (a Doc).
@@ -79,6 +79,20 @@ pub async fn put_route(
 ) -> J<wire::DocView> {
     app.limits.check_daemon(AGENT_DOC_WRITES, &d.daemon)?;
     Ok(Json(write(&app, by(&d), &project, &doc, &w).await?))
+}
+
+/// `GET /api/daemon/projects/{project}/docs/{doc}/assets/{name}`: a
+/// picture as JSON (its type and its bytes in base64), as the owner may read
+/// the Doc (no power): the daemon reads JSON from control.
+pub async fn get_asset_route(
+    State(app): State<Arc<Platform>>,
+    d: Machine,
+    Path((project, doc, name)): Path<(String, String, String)>,
+) -> J<wire::AssetData> {
+    use base64::Engine;
+    app.limits.check_daemon(AGENT_DOC_READS, &d.daemon)?;
+    let (mime, bytes) = asset(&app, by(&d), &project, &doc, &name).await?;
+    Ok(Json(wire::AssetData { mime, data: base64::engine::general_purpose::STANDARD.encode(bytes) }))
 }
 
 /// `PUT /api/daemon/projects/{project}/docs/{doc}/assets/{name}`: a

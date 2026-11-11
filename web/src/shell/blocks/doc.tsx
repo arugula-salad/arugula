@@ -92,6 +92,11 @@ function DocBar({ client, id, s }: { client: Client; id: PaneId; s: DocState | n
       <span class="review-path" title={title}>
         <b>{title}</b>
       </span>
+      {s?.team?.offline && (
+        <span class="doc-wait doc-offline" data-doc-offline title={s.team.offline}>
+          Offline: read-only
+        </span>
+      )}
       {s && !s.error && docHooks.bar?.(client, id, s)}
     </Bar>
   );

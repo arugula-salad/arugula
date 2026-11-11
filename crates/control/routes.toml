@@ -3473,6 +3473,14 @@ clients = ["daemon"]
 note = "Renames a Doc, or writes or adds a section, as the person's `PUT` does: `docs.write`, and the owner an owner or editor. A machine's copy is read-only."
 
 [[route]]
+method = "GET"
+path = "/api/daemon/projects/{project}/docs/{doc}/assets/{name}"  # wire::project_docs::AGENT_PROJECT_DOC_ASSET
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "A picture of the Doc as JSON (its type, and the bytes in base64), as its owner may read the Doc: no power."
+
+[[route]]
 method = "PUT"
 path = "/api/daemon/projects/{project}/docs/{doc}/assets/{name}"  # wire::project_docs::AGENT_PROJECT_DOC_ASSET
 process = "platform"

@@ -398,7 +398,8 @@ async fn view(app: &Platform, by: By<'_>, place: &Place, d: &db::Stored) -> Resu
         let names = machine_names(app, std::iter::once(&src)).await?;
         m.machine_name = src.machine.as_ref().and_then(|m| names.get(m)).filter(|n| !n.is_empty()).cloned();
     }
-    Ok(wire::DocView { doc, sections, assets, writer, deleter })
+    let link = Some(link(app, &place.project, &d.id));
+    Ok(wire::DocView { doc, sections, assets, writer, deleter, link })
 }
 
 /// The Doc `id`, in `project`, changed: pages showing it read it again,

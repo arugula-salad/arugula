@@ -460,6 +460,7 @@ dependencies = [
  "futures-util",
  "hex",
  "regex",
+ "reqwest",
  "rmcp",
  "schemars",
  "serde",

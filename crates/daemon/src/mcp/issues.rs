@@ -37,6 +37,9 @@ pub struct Chosen {
     pub id: String,
     /// Its name (empty from a control that sends none).
     pub name: String,
+    /// A team's project, not its owner's personal one (Arugula #862): where
+    /// a team's Docs live.
+    pub team: bool,
     pub rule: Rule,
 }
 
@@ -116,6 +119,18 @@ impl Chosen {
             "no #{n} in {named}, the current project ({}); pass project (a prj_ id, or personal) to look in another",
             self.rule.why()
         )
+    }
+
+    /// "A team Doc in <name>: <rule>", for `doc new`: the rule in its own
+    /// words, as `issue_write` says it. A team machine's default project is
+    /// the one no rule chose.
+    pub fn team_doc(&self) -> String {
+        let name = if self.name.is_empty() { self.id.clone() } else { self.name.clone() };
+        let why = match &self.rule {
+            Rule::Personal => "this is the team's machine, and no project was named".to_owned(),
+            r => r.why(),
+        };
+        format!("A team Doc in {name}: {why}")
     }
 
     /// Whether nothing chose it but the fallback.
@@ -318,7 +333,8 @@ impl Call<'_> {
         let path = if q.is_empty() { AGENT_ISSUE_HOME.to_owned() } else { format!("{AGENT_ISSUE_HOME}?{}", query(&q)) };
         let v = self.issues_call(Method::GET, &path, None).await?;
         let id = v["project"].as_str().ok_or("Arugula control named no project")?;
-        Ok(Chosen { id: id.to_owned(), name: v["name"].as_str().unwrap_or_default().to_owned(), rule })
+        let (name, team) = (v["name"].as_str().unwrap_or_default().to_owned(), v["team"] == true);
+        Ok(Chosen { id: id.to_owned(), name, team, rule })
     }
 
     /// A native issue, as the platform answers it.
@@ -411,7 +427,7 @@ mod tests {
 
     #[test]
     fn the_chosen_project_says_which_rule_chose_it() {
-        let chosen = |rule| Chosen { id: "prj_1".into(), name: "Arugula".into(), rule };
+        let chosen = |rule| Chosen { id: "prj_1".into(), name: "Arugula".into(), team: false, rule };
         assert_eq!(chosen(Rule::Asked).says(), "Project Arugula (the one you named)");
         assert_eq!(
             chosen(Rule::Linked("acme/app".into())).says(),
@@ -420,7 +436,7 @@ mod tests {
         assert!(chosen(Rule::Personal).says().starts_with("Your personal project Arugula (you named no project"));
         assert!(chosen(Rule::Personal).is_personal_by_default());
         assert_eq!(chosen(Rule::Started("#9".into())).says(), "Project Arugula (you were started on its issue #9)");
-        let nameless = Chosen { id: "prj_1".into(), name: String::new(), rule: Rule::Asked };
+        let nameless = Chosen { id: "prj_1".into(), name: String::new(), team: false, rule: Rule::Asked };
         assert_eq!(nameless.says(), "Project prj_1 (the one you named)");
     }
 
@@ -428,14 +444,14 @@ mod tests {
     /// elsewhere.
     #[test]
     fn a_missing_number_names_the_project_it_looked_in() {
-        let personal = Chosen { id: "prj_125a".into(), name: "Personal".into(), rule: Rule::Personal };
+        let personal = Chosen { id: "prj_125a".into(), name: "Personal".into(), team: false, rule: Rule::Personal };
         let said = personal.has_no(761);
         assert!(
             said.starts_with("no #761 in Personal (prj_125a), the current project (you named no project"),
             "{said}"
         );
         assert!(said.ends_with("pass project (a prj_ id, or personal) to look in another"), "{said}");
-        let nameless = Chosen { id: "prj_1".into(), name: String::new(), rule: Rule::Asked };
+        let nameless = Chosen { id: "prj_1".into(), name: String::new(), team: false, rule: Rule::Asked };
         assert!(nameless.has_no(3).starts_with("no #3 in prj_1, the current project (the one you named)"));
     }
 

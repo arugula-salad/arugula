@@ -1335,6 +1335,7 @@ mod tests {
             native_issues: 0,
             both: false,
             labels: vec![],
+            team: false,
         };
         assert_eq!(home_says(false, &home("native", &[])), None);
         assert_eq!(home_says(false, &home("github", &["acme/app"])), Some(Some("acme/app".into())));

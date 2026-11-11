@@ -519,6 +519,7 @@ fn home_of(app: &Platform, p: &db::IssueProject) -> Result<wire::IssueHome, ApiE
         repos,
         native_issues,
         labels: app.db.issue_labels(&p.id)?,
+        team: p.team.is_some(),
     })
 }
 

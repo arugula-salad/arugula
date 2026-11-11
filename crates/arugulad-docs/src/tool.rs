@@ -12,13 +12,20 @@ use arugulad_base::mcp::{
     registry,
     tools::{Args, Call, Def, Kind, Needs, NoArgs, Out, PaneArg, confine, done, line, parse},
 };
+use std::sync::Arc;
+
 use futures_util::future::BoxFuture;
 use rmcp::handler::server::common::schema_for_type;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::{Docs, mux::Api};
+use crate::{
+    Docs,
+    docs::team::{self, Cloud},
+    mux::Api,
+};
+use arugulad_base::mcp::issues::Chosen;
 
 #[derive(Deserialize, JsonSchema)]
 pub struct DocShareArgs {
@@ -134,7 +141,7 @@ Every fence is checked before anything is written: a bad chart, tile, drawing or
 pub static DOC: &[Kind] = &[
     Kind {
         name: "new",
-        description: "Make a Doc and its outline (each section's heading and intent). Returns the block and section ids: fill them in order. Layout: tabs for several prototypes or long parts; prototype when the whole screen is the thing.",
+        description: "Make a Doc and its outline (each section's heading and intent). Returns the block and section ids to fill in order. Layout: tabs for many prototypes or long parts; prototype for a whole-screen one. In a team's context (a repo or issue of a team project, or a team machine) a new Doc is the team's, in its project on Arugula; otherwise it stays on this machine.",
         schema: schema_for_type::<DocNewArgs>,
         flag: None,
     },
@@ -147,7 +154,7 @@ pub static DOC: &[Kind] = &[
     },
     Kind {
         name: "fill",
-        description: r##"Write one section in Markdown: headings, lists, emphasis, `code`, links, tables; no HTML. ![alt](assets/<name>) shows a picture put there by asset first. At most 64 KB a section, 40 sections and 1 MiB a Doc; filling again replaces. Callouts, ```stats, ```chart, ```svg and ```prototype (an interactive page, with arugula.copy and arugula.store) draw as more than code: call doc fences for their format before writing one."##,
+        description: r##"Write one section in Markdown (headings, lists, `code`, links, tables; no HTML). ![alt](assets/<name>) shows a picture put there by asset first. At most 64 KB a section, 40 sections, 1 MiB a Doc; filling again replaces. Callouts, ```stats, ```chart, ```svg and ```prototype (an interactive page with arugula.copy and arugula.store) draw as more than code: call doc fences for their format before writing one."##,
         schema: schema_for_type::<DocFillArgs>,
         flag: None,
     },
@@ -159,13 +166,13 @@ pub static DOC: &[Kind] = &[
     },
     Kind {
         name: "asset",
-        description: r##"Put a picture in a Doc (block, name, path or data): PNG, JPEG, GIF or WebP, up to 2 MB. path is an absolute path; an agent on a machine of its own sends base64 data. The name ends in the file's real extension; an SVG file is refused (use a ```svg fence). Put it before the fill that names it, or that fill is refused."##,
+        description: r##"Put a picture in a Doc: PNG, JPEG, GIF or WebP, up to 2 MB. path is an absolute path; an agent on a machine of its own sends base64 data. The name ends in the file's real extension; SVG is refused (use a ```svg fence). Put it before the fill that names it."##,
         schema: schema_for_type::<DocAssetArgs>,
         flag: None,
     },
     Kind {
         name: "share",
-        description: r##"Ask the user to share a finished Doc by link. They decide on a card; this returns {status: "waiting"} at once. Call share again for the outcome: shared (with the url), declined, lapsed (unanswered in a day) or failed (with why). Ask once."##,
+        description: r##"Ask the user to share a finished Doc by link. They decide on a card; this returns {status: "waiting"} at once. Call share again for the outcome: shared (with the url), declined, lapsed (a day unanswered) or failed (with why). Ask once."##,
         schema: schema_for_type::<DocShareArgs>,
         flag: None,
     },
@@ -176,7 +183,7 @@ fn def() -> Def {
     Def {
         name: "doc",
         title: "Build a document for the user",
-        description: "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user watches fill in. Make the outline with new first, then fill each section in order, saying one sentence about it in the pane. Never write the Doc's files by hand.",
+        description: "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user watches fill in. Make the outline with new, then fill each section in order, saying one sentence about it in the pane. Never write its files by hand.",
         args: Args::Kinds { kinds: DOC.iter().collect(), default: None },
         read_only: false,
         destructive: false,
@@ -200,7 +207,7 @@ fn run<'a>(call: &'a Call<'a>, kind: Option<&'static str>, args: Value) -> BoxFu
                 Ok(a) => doc_new(call, a).await,
                 Err(e) => Err(e),
             },
-            Some("list") => call_of::<DocsList, Docs>(call, args).await,
+            Some("list") => doc_list(call, args).await,
             Some("open") => match parse(args) {
                 Ok(a) => doc_open(call, a).await,
                 Err(e) => Err(e),
@@ -228,8 +235,36 @@ pub fn register() {
     registry::tool(registry::Tool { after: Some("show"), def, run });
 }
 
-/// `doc new`: a Doc in the library, its block beside the caller's pane,
-/// then its outline.
+/// Where a new Doc goes (aru-139): the team's project when the call's
+/// context is a team's, else this machine's library. Nobody picks.
+enum Home {
+    Team(Chosen),
+    /// On this machine; the reason is control's, when it couldn't say.
+    Library(Option<String>),
+}
+
+/// The home a project choice means: a team's project is the team's, a
+/// personal one is never a Doc's home (the machine is), and no answer is
+/// the machine too, which says why.
+fn home_of(chosen: Result<Chosen, String>) -> Home {
+    match chosen {
+        Ok(c) if c.team => Home::Team(c),
+        Ok(_) => Home::Library(None),
+        Err(why) => Home::Library(Some(why)),
+    }
+}
+
+/// `doc new`'s home for this call. Only the owner's own agents act as the
+/// owner in a team's project.
+async fn home(call: &Call<'_>) -> Home {
+    if call.owners_own("a team's Doc").await.is_err() {
+        return Home::Library(None);
+    }
+    home_of(call.chosen_project(None).await)
+}
+
+/// `doc new`: a Doc in the library, or the team's in its project; its block
+/// beside the caller's pane, then its outline.
 async fn doc_new(call: &Call<'_>, a: DocNewArgs) -> Out {
     let layout = a.layout;
     // A prototype Doc is one section: made here when none is given.
@@ -242,8 +277,12 @@ async fn doc_new(call: &Call<'_>, a: DocNewArgs) -> Out {
             sections.push(DocSection { heading: a.title.clone(), intent: "the prototype".into() });
         }
     }
-    let state = call.app().control.state_dir().to_owned();
     let (beside, host) = call.beside(a.beside.as_ref()).await?;
+    let kept = match home(call).await {
+        Home::Team(chosen) => return doc_new_team(call, a.title, sections, layout, beside, host, chosen).await,
+        Home::Library(why) => why,
+    };
+    let state = call.app().control.state_dir().to_owned();
     // Two doc new make two Docs: each is made here, before its block.
     let by = call.by();
     let title = a.title.clone();
@@ -295,14 +334,106 @@ async fn doc_new(call: &Call<'_>, a: DocNewArgs) -> Out {
     };
     let sections = outline["sections"].clone();
     let ids: Vec<&str> = sections.as_array().into_iter().flatten().filter_map(|s| s["id"].as_str()).collect();
+    let home = match &kept {
+        Some(why) => format!(" It is kept on this machine; control didn't name a team's project ({why})."),
+        None => " It is kept on this machine.".to_owned(),
+    };
     done(
         format!(
-            "Doc block %{block} with {} sections ({}): fill them in order with doc fill",
+            "Doc block %{block} with {} sections ({}): fill them in order with doc fill.{home}",
             ids.len(),
             ids.join(", ")
         ),
-        json!({ "block": block, "doc": meta.id, "sections": sections }),
+        json!({ "block": block, "doc": meta.id, "sections": sections, "home": "machine" }),
     )
+}
+
+/// `doc new` in a team's project: made through control as the owner's agent,
+/// then its block. A refusal (no `docs.write`) is control's own sentence:
+/// the Doc is never kept on this machine instead.
+async fn doc_new_team(
+    call: &Call<'_>,
+    title: String,
+    sections: Vec<DocSection>,
+    layout: DocLayoutArg,
+    beside: Option<arugula_core::PaneId>,
+    host: Option<u32>,
+    chosen: Chosen,
+) -> Out {
+    team::title_ok(&title)?;
+    if sections.is_empty() {
+        return Err("a Doc needs at least one section".into());
+    }
+    let cloud: Arc<dyn Cloud> = call.app().control.clone();
+    let plan: Vec<(String, String)> = sections.into_iter().map(|s| (s.heading, s.intent)).collect();
+    let view = team::make(&*cloud, &chosen.id, &title, &plan, layout.name()).await?;
+    let id = view.doc.id.clone();
+    let req = OpenRequest {
+        kind: BlockType::Doc,
+        config: json!({ "doc": id, "project": chosen.id, "project_name": chosen.name, "title": title }),
+        session: None,
+        split: beside,
+        from_pane: beside,
+        vm: false,
+        image: None,
+        host,
+        local: host.is_none(),
+    };
+    // An agent never deletes a team's Doc: if its block can't open, it is
+    // there, and `doc open` shows it.
+    let kept = |e: String| format!("{e}; the Doc {id} was made in {}: doc open {id} shows it", chosen.name);
+    let block = call.open(req).await.map_err(&kept)?;
+    let outlined = match call.app().mux.api(|r| Api::Block(block, r)).await.flatten() {
+        Some(b) => b.call_by("doc_outline", json!({}), Some(&call.by())).await,
+        None => Err("the Doc's block closed".into()),
+    };
+    let outline = match outlined {
+        Ok(o) => o,
+        Err(e) => {
+            let _ = call.app().mux.api(|r| Api::Close(block, r)).await;
+            return Err(kept(e));
+        }
+    };
+    let sections = outline["sections"].clone();
+    let ids: Vec<&str> = sections.as_array().into_iter().flatten().filter_map(|s| s["id"].as_str()).collect();
+    done(
+        format!(
+            "{}. Doc block %{block} with {} sections ({}): fill them in order with doc fill",
+            chosen.team_doc(),
+            ids.len(),
+            ids.join(", ")
+        ),
+        json!({ "block": block, "doc": id, "sections": sections, "home": "team", "project": chosen.id,
+                "link": view.link }),
+    )
+}
+
+/// `doc list`: the library, and the team Docs open in blocks on this
+/// machine, marked with their project.
+async fn doc_list(call: &Call<'_>, args: Value) -> Out {
+    let mut out = call_of::<DocsList, Docs>(call, args).await?;
+    let mut rows = Vec::new();
+    for p in call.panes().await {
+        if p.info.kind != BlockType::Doc || call.readable(p.info.id).await.is_err() {
+            continue;
+        }
+        let Some(b) = call.app().mux.api(|r| Api::Block(p.info.id, r)).await.flatten() else { continue };
+        let (config, state) = (b.config(), b.state());
+        if config["project"].as_str().is_none_or(str::is_empty) {
+            continue;
+        }
+        rows.push(json!({
+            "id": config["doc"], "title": state["title"], "project": config["project"],
+            "project_name": config["project_name"], "open": p.info.id, "updated": state["updated"],
+            "layout": state["layout"], "link": state["team"]["link"],
+        }));
+    }
+    if !rows.is_empty() {
+        let was = out["summary"].as_str().unwrap_or_default().to_owned();
+        out["summary"] = json!(format!("{was}; {} team Docs open here (team_docs, with their project)", rows.len()));
+        out["team_docs"] = json!(rows);
+    }
+    Ok(out)
 }
 
 /// `doc open`: a Doc from the library in a block beside the caller's
@@ -312,8 +443,12 @@ async fn doc_new(call: &Call<'_>, a: DocNewArgs) -> Out {
 async fn doc_open(call: &Call<'_>, a: DocOpenArgs) -> Out {
     let (beside, host) = call.beside(a.beside.as_ref()).await?;
     confine(call.on_machine().await?, host.is_some())?;
-    let req = DocOpenRequest { id: Some(a.doc.clone()), link: None, session: None, split: beside };
-    let (block, made) = crate::doc_ops::open_doc(call.app(), None, req).await.map_err(crate::ops::OpError::sentence)?;
+    let (block, made) = if a.doc.starts_with("pdc_") {
+        open_team(call, &a.doc, beside, host).await?
+    } else {
+        let req = DocOpenRequest { id: Some(a.doc.clone()), link: None, session: None, split: beside };
+        crate::doc_ops::open_doc(call.app(), None, req).await.map_err(crate::ops::OpError::sentence)?
+    };
     let unclaimed = match call.app().mux.api(Api::Panes).await {
         Some(panes) => panes.iter().find(|p| p.info.id == block).is_some_and(|p| p.info.started_by.is_none()),
         None => false,
@@ -330,6 +465,40 @@ async fn doc_open(call: &Call<'_>, a: DocOpenArgs) -> Out {
         format!("{what} Doc {} in block %{block} ({} sections); doc fill goes on with it", a.doc, sections.len()),
         json!({ "block": block, "doc": a.doc, "title": state["title"], "sections": sections }),
     )
+}
+
+/// A team Doc (`pdc_…`) in a block, or the block that has it: the Doc is in
+/// the call's team project, read through control.
+async fn open_team(
+    call: &Call<'_>,
+    doc: &str,
+    beside: Option<arugula_core::PaneId>,
+    host: Option<u32>,
+) -> Result<(arugula_core::PaneId, bool), String> {
+    if let Some(block) = crate::doc_ops::open_blocks(call.app()).await.get(doc) {
+        return Ok((*block, false));
+    }
+    call.owners_own("a team's Doc").await?;
+    let chosen = call.chosen_project(None).await?;
+    if !chosen.team {
+        return Err(format!(
+            "no Doc {doc} in the library: a team Doc opens in its team's context (a repo or issue of a team project, or a team machine)"
+        ));
+    }
+    let cloud: Arc<dyn Cloud> = call.app().control.clone();
+    let view = team::read(&*cloud, &chosen.id, doc).await?;
+    let req = OpenRequest {
+        kind: BlockType::Doc,
+        config: json!({ "doc": doc, "project": chosen.id, "project_name": chosen.name, "title": view.doc.title }),
+        session: None,
+        split: beside,
+        from_pane: beside,
+        vm: false,
+        image: None,
+        host,
+        local: host.is_none(),
+    };
+    Ok((call.open(req).await?, true))
 }
 
 /// `doc fill`: one section of a Doc this caller may drive.
@@ -361,6 +530,10 @@ async fn doc_share(call: &Call<'_>, a: DocShareArgs) -> Out {
     let status = out["status"].as_str().unwrap_or("waiting").to_owned();
     let summary = match status.as_str() {
         "shared" => format!("Doc %{block} is shared: {}", out["url"].as_str().unwrap_or_default()),
+        "team" => format!(
+            "Doc %{block} is the team's: its page is {}; a public link for a team Doc isn't offered yet",
+            out["url"].as_str().unwrap_or("not read yet")
+        ),
         "waiting" => format!("Asked the user to share Doc %{block}; call share again to see what they chose"),
         "failed" => {
             format!("Sharing Doc %{block} failed: {}", out["why"].as_str().unwrap_or("it didn't go through"))
@@ -430,6 +603,50 @@ mod tests {
         assert!(svg.contains("fill=\"leaf-soft\"") && !svg.contains('#'), "{svg}");
         for name in ["arugula.copy", "arugula.store", "```prototype", "```chart", "```stats"] {
             assert!(fill.contains(name), "{name}");
+        }
+    }
+
+    fn chosen(team: bool, rule: arugulad_base::mcp::issues::Rule) -> Chosen {
+        Chosen { id: "prj_1".into(), name: "Acme".into(), team, rule }
+    }
+
+    /// aru-139: a team's project is the Doc's home; a personal one never is
+    /// (the machine is), and no answer from control is the machine too.
+    #[test]
+    fn a_team_projects_docs_are_the_teams_and_a_personal_projects_stay_on_the_machine() {
+        use arugulad_base::mcp::issues::Rule;
+        assert!(matches!(home_of(Ok(chosen(true, Rule::Personal))), Home::Team(_)));
+        assert!(matches!(home_of(Ok(chosen(true, Rule::Linked("acme/app".into())))), Home::Team(_)));
+        assert!(matches!(home_of(Ok(chosen(false, Rule::Personal))), Home::Library(None)));
+        assert!(matches!(home_of(Ok(chosen(false, Rule::Linked("acme/app".into())))), Home::Library(None)));
+        assert!(matches!(home_of(Err("can't reach control".into())), Home::Library(Some(_))));
+    }
+
+    /// The answer says which, in the rule's own words.
+    #[test]
+    fn the_answer_says_the_team_and_the_rule() {
+        use arugulad_base::mcp::issues::Rule;
+        assert_eq!(
+            chosen(true, Rule::Linked("acme/app".into())).team_doc(),
+            "A team Doc in Acme: this clone's repo acme/app is linked to it"
+        );
+        assert_eq!(
+            chosen(true, Rule::Started("#9".into())).team_doc(),
+            "A team Doc in Acme: you were started on its issue #9"
+        );
+        assert_eq!(
+            chosen(true, Rule::Personal).team_doc(),
+            "A team Doc in Acme: this is the team's machine, and no project was named"
+        );
+    }
+
+    /// The tool says where Docs go, within the limit.
+    #[test]
+    fn the_tool_text_says_where_docs_go_and_fits() {
+        let new = DOC.iter().find(|k| k.name == "new").unwrap().description;
+        assert!(new.contains("In a team's context (a repo or issue of a team project, or a team machine) a new Doc is the team's, in its project on Arugula; otherwise it stays on this machine."));
+        for k in DOC {
+            assert!(k.description.chars().count() <= 2048, "{}", k.name);
         }
     }
 

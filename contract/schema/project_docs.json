@@ -30,6 +30,23 @@
       ],
       "type": "object"
     },
+    "AssetData": {
+      "description": "A picture's type and bytes, as `GET` [`AGENT_PROJECT_DOC_ASSET`] answers\nit: `data` is the file in base64.",
+      "properties": {
+        "data": {
+          "type": "string"
+        },
+        "mime": {
+          "description": "`image/png`, `image/jpeg`, `image/gif` or `image/webp`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mime",
+        "data"
+      ],
+      "type": "object"
+    },
     "ChatAgent": {
       "description": "The agent that wrote a message (M197): the machine whose grant it acted\nthrough, and its name now. The message's author is the machine's owner.",
       "properties": {
@@ -262,6 +279,14 @@
         },
         "doc": {
           "$ref": "#/$defs/Doc"
+        },
+        "link": {
+          "default": null,
+          "description": "The Doc's page on the platform's page, which the team opens. An older\nplatform sends none.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "sections": {
           "items": {

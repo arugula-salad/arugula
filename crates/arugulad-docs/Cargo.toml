@@ -22,6 +22,7 @@ base64 = { workspace = true }
 futures-util = { workspace = true }
 hex = { workspace = true }
 regex = { workspace = true }
+reqwest = { workspace = true }
 # MCP (M16), pinned as the base pins it.
 rmcp = { version = "=3.5.0", default-features = false, features = ["server", "schemars"] }
 schemars = "1.0"

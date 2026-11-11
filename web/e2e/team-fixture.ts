@@ -90,6 +90,11 @@ export class TeamControl {
     }
   }
 
+  /** Control goes away and stays away: its machines are on their own. */
+  stopControl() {
+    this.procs[0].kill("SIGKILL");
+  }
+
   stop() {
     for (const p of this.procs) p.kill("SIGKILL");
     this.gh?.closeAllConnections();

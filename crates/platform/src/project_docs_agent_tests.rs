@@ -83,6 +83,9 @@ async fn a_machine_with_docs_write_makes_and_writes_its_owners_team_docs() {
     assert!(!made["doc"]["agent"]["machine_name"].as_str().unwrap().is_empty(), "{made}");
     assert_eq!((&made["doc"]["sections"], &made["doc"]["written"]), (&json!(2), &json!(1)), "{made}");
 
+    // It says its page, which the team opens.
+    assert_eq!(made["link"].as_str().map(|l| l.ends_with(&format!("/p/{t}/docs/{id}"))), Some(true), "{made}");
+
     // The team reads it; an editor sees it as theirs to write.
     let (st, seen) = call(&base, "b", "GET", &project_doc(&t, &id), None).await;
     assert_eq!((st, &seen["writer"], &seen["doc"]["agent"]["machine"]), (200, &json!(true), &json!("geek")), "{seen}");
@@ -193,6 +196,11 @@ async fn a_machine_uploads_a_picture_with_a_copys_limits() {
         .await
         .unwrap();
     assert_eq!((r.status().as_u16(), r.bytes().await.unwrap().len()), (200, 11), "a teammate reads it");
+    // The machine reads it back as JSON (a daemon reads no bytes), with no power.
+    let (st, got) = signed(&base, "a geek", "GET", &path("pic.png"), None).await;
+    assert_eq!((st, &got["mime"]), (200, &json!("image/png")), "{got}");
+    assert_eq!(got["data"].as_str().unwrap().len(), 16, "11 bytes in base64");
+    assert_eq!(signed(&base, "a geek", "GET", &path("nope.png"), None).await.0, 404);
 
     assert_eq!(put_png(&base, "a geek", &path("pic.jpg"), b"x").await.0, 400, "named for another type");
     assert_eq!(put_png(&base, "a geek", &path("pic.txt"), b"x").await.0, 400, "not a picture's name");
@@ -217,14 +225,14 @@ async fn a_team_machines_home_is_the_teams_default_project() {
 
     // Without a grant of any kind: the team's project is named, no more.
     let (st, h) = signed(&base, "a geek", "GET", "/api/daemon/issue-home", None).await;
-    assert_eq!((st, &h["project"]), (200, &json!(t)), "{h}");
+    assert_eq!((st, &h["project"], &h["team"]), (200, &json!(t), &json!(true)), "{h}");
     let (st, h) = signed(&base, "a geek", "GET", "/api/daemon/issue-home?repo=acme/none", None).await;
     assert_eq!((st, &h["project"]), (200, &json!(t)), "linked to nothing: {h}");
     // A personal machine's, with its grant, is as it was.
     let (st, _) = call(&base, "a", "POST", "/api/grants", give("apad", "threads.read", project(&personal))).await;
     assert_eq!(st, 200);
     let (st, h) = signed(&base, "a apad", "GET", "/api/daemon/issue-home", None).await;
-    assert_eq!((st, &h["project"]), (200, &json!(personal)), "{h}");
+    assert_eq!((st, &h["project"], &h["team"]), (200, &json!(personal), &json!(false)), "{h}");
     let (st, h) = signed(&base, "a apad", "GET", "/api/daemon/issue-home?repo=acme/none", None).await;
     assert_eq!(st, 404, "a personal machine's unlinked repo is still refused: {h}");
 

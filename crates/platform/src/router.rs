@@ -164,7 +164,8 @@ fn routes() -> Routes {
         )
         .route(
             project_docs::AGENT_PROJECT_DOC_ASSET,
-            put(crate::project_docs_agent::asset_route)
+            get(crate::project_docs_agent::get_asset_route)
+                .put(crate::project_docs_agent::asset_route)
                 .layer(axum::extract::DefaultBodyLimit::max(project_docs::ASSET_MAX + 1)),
         )
         .route(
