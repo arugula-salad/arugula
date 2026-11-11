@@ -229,6 +229,24 @@ pub enum Until {
     /// An agent session in Arugula control (session) finished its turn,
     /// waits on a person, or ended.
     Done,
+    /// A pull request (pr): none of its checks is queued or running.
+    ChecksDone,
+    /// A pull request: a check failed.
+    ChecksFailed,
+    /// A pull request: checks green and it merges cleanly.
+    Ready,
+    /// A pull request: it was merged.
+    Merged,
+    /// A pull request: it was closed, or merged.
+    Closed,
+}
+
+/// One pull request or several: `OWNER/REPO#N`, its link, or a PR block.
+#[derive(Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum PrArgs {
+    One(PaneArg),
+    Many(Vec<PaneArg>),
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -261,6 +279,11 @@ pub struct WaitArgs {
     /// spaces), not pane: until done, when any of them finishes its turn.
     #[serde(default, alias = "session")]
     pub agent_session: Option<String>,
+    /// Or pull requests on GitHub, not pane: `OWNER/REPO#N`, its link, or a
+    /// PR block (%N), one or several. Until checks_done, checks_failed,
+    /// ready, merged or closed: when any of them gets there.
+    #[serde(default)]
+    pub pr: Option<PrArgs>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -1106,7 +1129,7 @@ fn all_defs() -> Vec<Def> {
         Def {
             name: "wait",
             title: "Wait for a pane",
-            description: "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). An agent block that's idle comes back with turn: its last message and the work it left (branch, pushed, uncommitted files, commits since the turn began). Or, instead of pane, one of a Cloud workspace's agent blocks (cloud_workspace and agent_block, its pane number there) until idle or needs_input. Or a run in Arugula control (run) until it ends. Or agent sessions in Arugula control (agent_session: ses_… ids) until done: when any of them finishes its turn (or waits on a person, or ends), with each finished one's branch, HEAD and whole last answer; call it again with the rest. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
+            description: "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). An agent block that's idle comes back with turn: its last message and the work it left (branch, pushed, uncommitted files, commits since the turn began). Or, instead of pane, one of a Cloud workspace's agent blocks (cloud_workspace and agent_block, its pane number there) until idle or needs_input. Or a run in Arugula control (run) until it ends. Or agent sessions in Arugula control (agent_session: ses_… ids) until done: when any of them finishes its turn (or waits on a person, or ends), with each finished one's branch, HEAD and whole last answer; call it again with the rest. Or pull requests on GitHub (pr: OWNER/REPO#N, its link or a PR block, one or several; until checks_done, checks_failed, ready (checks green and mergeable clean) or merged or closed): when any of them gets there, with one verdict each: checks counted by state, the failing ones' names, mergeable, whether it's in the merge queue, and who merged it; read from GitHub itself with the user's login, and a PR they can't see answers as one that doesn't exist. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
             args: Args::One(schema_for_type::<WaitArgs>),
             read_only: true,
             destructive: false,
@@ -2340,6 +2363,22 @@ impl ToolCall<'_, '_> {
     }
 
     async fn wait(&self, a: WaitArgs) -> Out {
+        if let Some(pr) = &a.pr {
+            if a.pane.is_some()
+                || a.agent_block.is_some()
+                || a.cloud_workspace.is_some()
+                || a.run.is_some()
+                || a.agent_session.is_some()
+            {
+                return Err(
+                    "give a pane, a Cloud workspace's agent block, a run, agent sessions, or pr: one of them".into()
+                );
+            }
+            return self.wait_prs(pr, &a.until, Call::limit(a.timeout)).await;
+        }
+        if matches!(a.until, Until::ChecksDone | Until::ChecksFailed | Until::Ready | Until::Merged | Until::Closed) {
+            return Err("until checks_done, checks_failed, ready, merged and closed are for pull requests (pr)".into());
+        }
         // Fleet 5: agent sessions, in control.
         if let Some(ses) = &a.agent_session {
             if a.pane.is_some() || a.agent_block.is_some() || a.cloud_workspace.is_some() || a.run.is_some() {
@@ -2403,7 +2442,9 @@ impl ToolCall<'_, '_> {
             Until::Match => "match",
             Until::Idle => "idle",
             Until::NeedsInput => "needs-input",
-            Until::Done => unreachable!("refused above"),
+            Until::Done | Until::ChecksDone | Until::ChecksFailed | Until::Ready | Until::Merged | Until::Closed => {
+                unreachable!("refused above")
+            }
         };
         if p.info.kind != BlockType::Terminal && !matches!(until, "idle" | "needs-input") {
             return Err(format!("%{pane} is an agent or browser block: wait until idle or needs_input"));
@@ -2436,6 +2477,121 @@ impl ToolCall<'_, '_> {
                 self.not_yet(pane, limit, label).await
             }
         }
+    }
+
+    /// A pull request to wait on: a link or `OWNER/REPO#N`, or a PR block's.
+    async fn pr_ref(&self, a: &PaneArg) -> Result<crate::forge_wait::PrRef, String> {
+        use crate::forge_wait::PrRef;
+        if let PaneArg::Name(s) = a
+            && let Some(p) = PrRef::parse(s)
+        {
+            return Ok(p);
+        }
+        let (id, b) = self.forge(a).await.map_err(|e| match a {
+            PaneArg::Name(s) if !s.trim().trim_start_matches('%').chars().all(|c| c.is_ascii_digit()) => {
+                format!("{s:?} isn't a pull request: give OWNER/REPO#N, its link, or a PR block's number")
+            }
+            _ => e,
+        })?;
+        let st = forge_state(&b)?;
+        if st.provider != arugula_proto::forge::Provider::Github || st.kind != ItemKind::Pr || st.number == 0 {
+            return Err(format!("%{id} isn't a GitHub pull request: wait on a PR block of one, or give OWNER/REPO#N"));
+        }
+        Ok(PrRef { host: st.host.unwrap_or_else(|| "github.com".into()), repo: st.repo, number: st.number })
+    }
+
+    /// `wait` with `pr`: asks GitHub itself, every few seconds, until any of
+    /// the pull requests is what `until` says, or `limit`.
+    async fn wait_prs(&self, prs: &PrArgs, until: &Until, limit: Duration) -> Out {
+        use crate::{
+            forge_wait::{PrVerdict, PrWant},
+            forges::PrRead,
+        };
+        let want = match until {
+            Until::ChecksDone => PrWant::ChecksDone,
+            Until::ChecksFailed => PrWant::ChecksFailed,
+            Until::Ready => PrWant::Ready,
+            Until::Merged => PrWant::Merged,
+            Until::Closed => PrWant::Closed,
+            _ => return Err("a pull request waits until checks_done, checks_failed, ready, merged or closed".into()),
+        };
+        let given: Vec<&PaneArg> = match prs {
+            PrArgs::One(p) => vec![p],
+            PrArgs::Many(v) => v.iter().collect(),
+        };
+        let mut refs: Vec<crate::forge_wait::PrRef> = Vec::new();
+        for g in given {
+            // `a#1 b#2`, as agent sessions are given.
+            let parts: Vec<PaneArg> = match g {
+                PaneArg::Name(s) if s.split([' ', ',']).filter(|p| !p.is_empty()).count() > 1 => {
+                    s.split([' ', ',']).filter(|p| !p.is_empty()).map(|p| PaneArg::Name(p.into())).collect()
+                }
+                g => vec![g.clone()],
+            };
+            for p in &parts {
+                let r = self.pr_ref(p).await?;
+                if !refs.contains(&r) {
+                    refs.push(r);
+                }
+            }
+        }
+        if refs.is_empty() {
+            return Err("wait for which pull request? pr is OWNER/REPO#N, its link, or a PR block".into());
+        }
+        let (every, settle) = pr_wait_timing();
+        let started = Instant::now();
+        let last = std::sync::Mutex::new(Vec::<PrVerdict>::new());
+        let failed = std::sync::Mutex::new(None::<String>);
+        let poll = async {
+            loop {
+                let reads = crate::forges::pr_verdicts(self.app, &refs).await;
+                let settled = started.elapsed() >= settle;
+                let mut now = Vec::new();
+                for (pr, read) in refs.iter().zip(reads) {
+                    match read {
+                        PrRead::Verdict(mut v) => {
+                            v.met = v.meets(want, settled);
+                            now.push(*v);
+                        }
+                        PrRead::Gone => now.push(PrVerdict::gone(pr)),
+                        PrRead::NoLogin(why) => return Err::<Vec<PrVerdict>, String>(why),
+                        // Asked again; what it said last stands meanwhile.
+                        PrRead::Failed(why) => {
+                            *failed.lock().unwrap() = Some(why);
+                            if let Some(v) = last.lock().unwrap().iter().find(|v| v.pr == pr.to_string()) {
+                                now.push(v.clone());
+                            }
+                        }
+                    }
+                }
+                *last.lock().unwrap() = now.clone();
+                if now.iter().any(|v| v.met) {
+                    return Ok(now);
+                }
+                tokio::time::sleep(every).await;
+            }
+        };
+        let what = format!("waiting for {}", refs.iter().map(ToString::to_string).collect::<Vec<_>>().join(", "));
+        let (state, prs) = match self.waiting(&what, limit, poll).await {
+            Some(r) => ("met", r?),
+            None => ("still running", last.into_inner().unwrap()),
+        };
+        let met: Vec<String> = prs.iter().filter(|v| v.met).map(|v| v.pr.clone()).collect();
+        let secs = started.elapsed().as_secs();
+        let mut summary = if met.is_empty() {
+            format!("None is {} yet after {secs}s: call wait with pr again.", until_words(want))
+        } else {
+            format!("{} {}.", met.join(", "), until_words(want))
+        };
+        if met.is_empty()
+            && let Some(why) = failed.into_inner().unwrap()
+        {
+            summary += &format!(" The last read of GitHub failed ({why}).");
+        }
+        for v in &prs {
+            summary += &format!("\n{}", v.line());
+        }
+        done(summary, results::PrsWaited { state, met, prs })
     }
 
     /// Panes this caller may read the history of: all, or its tab's.
@@ -3602,6 +3758,28 @@ fn native(b: &Arc<dyn crate::block::Block>) -> Option<Value> {
 
 fn forge_state(b: &Arc<dyn crate::block::Block>) -> Result<ForgeState, String> {
     serde_json::from_value(b.state()).map_err(|e| format!("the forge block's state: {e}"))
+}
+
+/// How often a wait on a pull request asks GitHub, and how long it waits
+/// for a pull request with no checks to get some, before there's none to
+/// wait for (`ARUGULA_PR_WAIT_MS=every,settle`, for tests).
+fn pr_wait_timing() -> (Duration, Duration) {
+    let given = std::env::var("ARUGULA_PR_WAIT_MS").ok().and_then(|v| {
+        let (a, b) = v.split_once(',')?;
+        Some((Duration::from_millis(a.trim().parse().ok()?), Duration::from_millis(b.trim().parse().ok()?)))
+    });
+    given.unwrap_or((Duration::from_secs(10), Duration::from_secs(60)))
+}
+
+fn until_words(w: crate::forge_wait::PrWant) -> &'static str {
+    use crate::forge_wait::PrWant::*;
+    match w {
+        ChecksDone => "has its checks done",
+        ChecksFailed => "has a failed check",
+        Ready => "is ready to merge, or is no longer open",
+        Merged => "is merged",
+        Closed => "is closed",
+    }
 }
 
 /// A block's text (an agent's transcript), paged by character.

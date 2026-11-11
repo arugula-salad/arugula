@@ -25,6 +25,7 @@ use serde_json::Value;
 use crate::{
     block::{Block, BlockCtx, BlockKind, BlockKinds},
     control::Control,
+    forge_wait::{PrRef, PrVerdict},
     review::Runner,
     server::App,
 };
@@ -49,6 +50,19 @@ pub trait Forges: Send + Sync + 'static {
     fn linked<'a>(&'a self, st: &'a ForgeState) -> BoxFuture<'a, bool>;
     /// Control's `forge.send` op (M168).
     fn send<'a>(&'a self, app: &'a Arc<App>, s: ForgeSend) -> BoxFuture<'a, OpAnswer>;
+    /// Each pull request read from GitHub now, with the person's `gh` login.
+    fn pr_verdicts<'a>(&'a self, app: &'a Arc<App>, prs: &'a [PrRef]) -> BoxFuture<'a, Vec<PrRead>>;
+}
+
+/// What reading a pull request for `wait` came to.
+pub enum PrRead {
+    Verdict(Box<PrVerdict>),
+    /// It isn't there, or the person can't see it: one answer for both.
+    Gone,
+    /// No login to read with: nothing to wait on.
+    NoLogin(String),
+    /// A read that failed this time; the wait asks again.
+    Failed(String),
 }
 
 static FORGES: OnceLock<Box<dyn Forges>> = OnceLock::new();
@@ -114,6 +128,15 @@ pub async fn gh_signed_in(runner: &Runner, host: &str) -> Result<(), String> {
     match forges() {
         Some(f) => f.gh_signed_in(runner, host).await,
         None => Err(not_built("GitHub")),
+    }
+}
+
+/// Each pull request as GitHub says now (`wait` with `pr`), not as a
+/// block or the platform's mirror last had it.
+pub async fn pr_verdicts(app: &Arc<App>, prs: &[PrRef]) -> Vec<PrRead> {
+    match forges() {
+        Some(f) => f.pr_verdicts(app, prs).await,
+        None => prs.iter().map(|_| PrRead::NoLogin(not_built("GitHub"))).collect(),
     }
 }
 

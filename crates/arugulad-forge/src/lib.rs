@@ -73,6 +73,7 @@ pub mod others;
 pub mod pin;
 pub mod platform;
 pub mod send_op;
+pub mod wait_pr;
 // The normalized model (M160: the GitHub crate's, which Forgejo and GitLab
 // map onto too).
 pub use arugula_forge_github::model;
@@ -165,6 +166,14 @@ impl Forges for Forge {
         s: arugula_control_wire::forge::ForgeSend,
     ) -> BoxFuture<'a, arugula_control_wire::forge::OpAnswer> {
         Box::pin(send_op::forge_send(app, s))
+    }
+
+    fn pr_verdicts<'a>(
+        &'a self,
+        app: &'a Arc<crate::server::App>,
+        prs: &'a [arugulad_base::forge_wait::PrRef],
+    ) -> BoxFuture<'a, Vec<forges::PrRead>> {
+        Box::pin(wait_pr::read(app, prs))
     }
 }
 

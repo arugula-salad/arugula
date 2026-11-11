@@ -582,6 +582,20 @@ impl<T: TokenSource> Github<T> {
 
     /// Merge a pull request: `merge` (the default), `squash` or `rebase`.
     ///
+    /// Whether the PR's branch has a merge queue, and whether the PR is in
+    /// it (GraphQL: REST doesn't say). `None` when GitHub didn't say.
+    pub async fn merge_queue(&self, repo: &str, number: u64) -> Result<Option<(bool, bool)>, Error> {
+        const READ: &str = "query($owner: String!, $name: String!, $number: Int!) {
+            repository(owner: $owner, name: $name) {
+                pullRequest(number: $number) { isInMergeQueue isMergeQueueEnabled }
+            }
+        }";
+        let (owner, name) = repo.split_once('/').unwrap_or((repo, ""));
+        let data = self.graphql(repo, READ, json!({ "owner": owner, "name": name, "number": number })).await?;
+        let pr = &data["repository"]["pullRequest"];
+        Ok(pr["isMergeQueueEnabled"].as_bool().zip(pr["isInMergeQueue"].as_bool()))
+    }
+
     /// A branch with a merge queue is asked about first and never merged
     /// over REST: GitHub answers that with a real merge for anyone who may
     /// bypass the ruleset, skipping the queue. So it goes in the queue, has

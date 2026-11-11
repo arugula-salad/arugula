@@ -148,6 +148,16 @@ pub struct Screen {
     pub text: String,
 }
 
+/// `wait` on pull requests: the ones that met what's waited for (`state`
+/// `met`), or every one's state as it stands (`still running`).
+#[derive(Debug, Serialize)]
+pub struct PrsWaited {
+    pub state: &'static str,
+    /// The `OWNER/REPO#N` of each that met it.
+    pub met: Vec<String>,
+    pub prs: Vec<crate::forge_wait::PrVerdict>,
+}
+
 /// The `arugula://block/N` resource: the pane, and the block's state.
 #[derive(Debug, Serialize)]
 pub struct BlockResource {
