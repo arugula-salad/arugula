@@ -30,6 +30,7 @@ import { nextNeedingYou, togglePalette } from "./palette";
 import { openPicker } from "./picker";
 import { paneIds } from "../client";
 import { layoutRefusal, resizeActive, toggleFocus, type Way } from "./panes/layout";
+import { canPopOut, popOut } from "./panes/pop-out";
 import { addPane } from "./shell/add-pane";
 
 export type Os = "mac" | "other";
@@ -111,6 +112,20 @@ const table: Binding[] = [
     keys: { mac: ctrlOrCmd("Enter"), other: ["Ctrl+Shift+Enter"] },
     when: () => focusTarget() !== null,
     run: () => toggleFocus(workspace!.client, focusTarget()!),
+  },
+  {
+    id: "pane.pop-out",
+    label: "Pop the pane out into its own window",
+    keys: { mac: ctrlOrCmd("KeyO"), other: ["Ctrl+Shift+KeyO"] },
+    when: () => {
+      const w = workspace;
+      const pane = focusTarget() && w ? w.client.active(w.client.tabView()!.id) : undefined;
+      return pane !== undefined && canPopOut(w!.client, pane, w!.phone);
+    },
+    run: () => {
+      const c = workspace!.client;
+      popOut(c, c.active(c.tabView()!.id)!);
+    },
   },
   {
     id: "pane.add",

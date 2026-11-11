@@ -255,6 +255,20 @@ impl Daemon {
             }
             i => i,
         };
+        // #497: the window that pops a pane out holds it, and its going
+        // brings the pane back. A block only: a terminal's size is its tab's
+        // until sizes are per pane (#477).
+        let intent = match intent {
+            Intent::PopOut { pane, out, .. } => {
+                if out && !self.blocks.contains_key(&pane) {
+                    let why = "only a block pops out, not a terminal yet".to_owned();
+                    info!(?client, pane, why, "intent refused");
+                    return Err(why);
+                }
+                Intent::PopOut { pane, out, by: client }
+            }
+            i => i,
+        };
         let refused = |why: String| {
             info!(?client, ?intent, why, "intent refused");
             why
