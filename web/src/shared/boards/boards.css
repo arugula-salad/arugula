@@ -592,16 +592,6 @@
 
 /* A row is a Card with its lane's tone (shared/ui/card.css): its bar, edge and fill, and selected, are the card's. */
 
-/* Open and waiting on the reader: the ring stays outside the edge. */
-.board .board-rows > .board-row[aria-current="true"][data-needs-you] {
-  box-shadow: var(--selected-edge), 0 0 0 2px var(--accent);
-}
-
-/* A row that waits on the reader keeps its lane's tone; the ring is what sets it apart. */
-.board .board-rows > .board-row[data-needs-you] {
-  box-shadow: 0 0 0 2px var(--accent);
-}
-
 .board .board-row .board-main {
   display: flex;
   flex-direction: column;

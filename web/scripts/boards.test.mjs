@@ -149,9 +149,10 @@ test("a row needs the reader when a question, failed checks, a waiting agent or 
   assert.equal(needsDot(row({ attachments: [block("needs_input")] })), true);
   assert.equal(needsDot(row({ attachments: [block("needs_input", { released: true })] })), false, "a released agent doesn't hold the row");
   assert.equal(needsDot(row({ attachments: [block("working")] })), false);
-  assert.equal(needsDot(row({ marks: [{ kind: "stalled", since: 1 }] })), true);
+  assert.equal(needsDot(row({ marks: [{ kind: "stalled", since: 1 }] })), false, "a stall reaches the reader as ask.mine, which the server scopes to the block's owner");
+  assert.equal(needsDot(row({ marks: [{ kind: "stalled", since: 1 }], ask: { ...ask, raised: true, id: "" } })), true);
   const both = row({ id: "both", ask, attachments: [pr("checks_failed")] });
-  assert.deepEqual(needsYou({ zones: [{ rows: [both, row({ id: "none" })] }, { rows: [row({ id: "stalled", marks: [{ kind: "stalled", since: 1 }] })] }] }).map((r) => r.id), ["both", "stalled"]);
+  assert.deepEqual(needsYou({ zones: [{ rows: [both, row({ id: "none" })] }, { rows: [row({ id: "stalled", marks: [{ kind: "stalled", since: 1 }] })] }] }).map((r) => r.id), ["both"]);
 });
 
 test("a block's chip is its title, and work on an issue says its board and links to the row (#372)", () => {

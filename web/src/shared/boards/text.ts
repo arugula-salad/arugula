@@ -19,12 +19,11 @@ export function rowGlyph(r: Pick<BoardRow, "lane" | "status">): string {
   return r.status === "needs_input" ? "?" : LANE_GLYPH[r.lane];
 }
 
-/** Whether a row needs the reader: a question that names them (asked, or raised by the board), a PR whose checks failed, or an agent that waits for input or has stalled. The row's chips say which; its title takes a dot (#903). Only what the reader may see counts: an item they can't read has no `live`. */
-export function needsDot(r: Pick<BoardRow, "ask" | "live" | "attachments" | "marks">): boolean {
+/** Whether a row needs the reader: a question that names them (asked, or raised by the board), a PR whose checks failed, or an agent that waits for input. A stall is for the block's owner only, and reaches the reader as `ask.mine`; the amber chip says it to everyone. The row's chips say which; its title takes a dot (#903). Only what the reader may see counts: an item they can't read has no `live`. */
+export function needsDot(r: Pick<BoardRow, "ask" | "live" | "attachments">): boolean {
   if (r.ask?.mine) return true;
   if (r.live?.state === "checks_failed" || r.attachments?.some((a) => a.role === "work" && a.live?.state === "checks_failed")) return true;
-  if (r.attachments?.some((a) => holdsRow(a) && a.block?.state === "needs_input")) return true;
-  return !!r.marks?.some((m) => m.kind === "stalled");
+  return !!r.attachments?.some((a) => holdsRow(a) && a.block?.state === "needs_input");
 }
 
 /** The rows that wait on the reader, in the board's order: those [`needsDot`] marks. A row counts once, however many things in it wait. */
@@ -473,7 +472,7 @@ export function pointerHref(r: Pick<BoardRow, "pointer" | "live">, platform: (pa
   return undefined;
 }
 
-/** A card's tone, which is its lane's and the progress bar's: Next muted, Doing warn, Review accent, Done ok. A stalled row is danger (warn is Doing's); a row that waits on the reader keeps its lane's tone and shows it with a ring instead (`data-needs-you`). */
+/** A card's tone, which is its lane's and the progress bar's: Next muted, Doing warn, Review accent, Done ok. A stalled row is danger (warn is Doing's); a row that waits on the reader keeps its lane's tone and shows it with a dot before its title (`needsDot`). */
 export function cardTone(r: Pick<BoardRow, "lane"> & Partial<Pick<BoardRow, "marks">>): Tone {
   if (r.marks?.some((m) => m.kind === "stalled")) return "danger";
   return r.lane === "next" ? "muted" : r.lane === "doing" ? "warn" : r.lane === "review" ? "accent" : "ok";
