@@ -90,7 +90,8 @@ test("the host says labs is off, and what follows it", async () => {
   });
 });
 
-test("links to Forgejo and GitLab stay plain links; GitHub's still open as blocks", async ({ page }) => {
+// GitLab and Forgejo left Labs (native #523): their links are blocks with Labs off too.
+test("links to Forgejo, GitLab and GitHub open as blocks with Labs off", async ({ page }) => {
   await open(page);
   await expect.poll(() => page.evaluate(() => window.__arugula.client.features !== null)).toBe(true);
   const kinds = (uris: string[]) =>
@@ -104,7 +105,7 @@ test("links to Forgejo and GitLab stay plain links; GitHub's still open as block
       "https://github.com/o/r/pull/3",
       "https://github.com/o/r/issues/3",
     ]),
-  ).toEqual([null, null, null, null, "pr", "issue"]);
+  ).toEqual(["pr", "issue", "pr", "issue", "pr", "issue"]);
 });
 
 test("on a desktop: no chat or threads, no studio or VMs, no ssh invite", async ({ page }) => {
@@ -276,7 +277,7 @@ test("setting the flag on the running daemon brings it all back, with no restart
     // `labs`, the one switch from before, is every flag (#665), and keeps guest ssh on as
     // Guest SSH access, a sharing setting (native #205).
     guest_ssh: true,
-    flags: ["sandbox-providers", "studio", "chant-workspaces", "additional-forges", "agent-delegation"],
+    flags: ["sandbox-providers", "studio", "chant-workspaces", "agent-delegation"],
   });
 
   await open(page);

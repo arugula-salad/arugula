@@ -71,21 +71,13 @@ fn refused() -> Response {
     (StatusCode::UNAUTHORIZED, Json(json!({ "error": "bad signature" }))).into_response()
 }
 
-/// What a delivery gets where the machine's Labs is off.
-fn off() -> Response {
-    StatusCode::NOT_FOUND.into_response()
-}
-
 /// `POST /api/forge/hooks/forgejo?k=…`: a Forgejo webhook, signed.
 pub async fn forgejo_hook(
-    State(app): State<Arc<App>>,
+    State(_app): State<Arc<App>>,
     Query(q): Query<HookQuery>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    if !crate::on(app.control.state_dir(), arugula_proto::flags::ADDITIONAL_FORGES) {
-        return off();
-    }
     let h = |k: &str| headers.get(k).and_then(|v| v.to_str().ok());
     let Some(rec) = rec_by(&q.k, Provider::Forgejo) else { return refused() };
     let sig = h("x-forgejo-signature").or(h("x-gitea-signature"));
@@ -105,14 +97,11 @@ pub async fn forgejo_hook(
 
 /// `POST /api/forge/hooks/gitlab?k=…`: a GitLab webhook, with its token.
 pub async fn gitlab_hook(
-    State(app): State<Arc<App>>,
+    State(_app): State<Arc<App>>,
     Query(q): Query<HookQuery>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    if !crate::on(app.control.state_dir(), arugula_proto::flags::ADDITIONAL_FORGES) {
-        return off();
-    }
     let Some(rec) = rec_by(&q.k, Provider::Gitlab) else { return refused() };
     let token = headers.get("x-gitlab-token").and_then(|v| v.to_str().ok()).unwrap_or_default();
     if !eq_ct(token.as_bytes(), rec.secret.as_bytes()) {

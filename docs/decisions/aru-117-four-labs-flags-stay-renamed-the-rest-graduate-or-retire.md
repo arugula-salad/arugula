@@ -73,7 +73,12 @@ machine overrides" (aru-068).
   workspace inspection, relationships and gates.
 - **`additional-forges`** (was `forges`), *GitLab and Forgejo*: stays in
   Labs until their integration with platform projects and workflows is
-  coherent. GitHub's blocks are always on.
+  coherent. GitHub's blocks are always on. **Changed 2026-11-11** (Jake,
+  the launch's scope freeze, native #523): GitLab and Forgejo left Labs,
+  since the public docs already offered them. They're on for everyone;
+  `additional-forges` and `forges` are RETIRED names
+  (`arugula_proto::flags::RETIRED`), and control keeps the `forges` pair
+  in `FLAG_ALIASES` for daemons from before, which still have the flag.
 - **`agent-delegation`** (was `agents`), *Local agent delegation*:
   recipes, the team's catalog and A2A tasks. Still local-only (only the
   machine's `flags.json` sets it) and still offering nothing until its
