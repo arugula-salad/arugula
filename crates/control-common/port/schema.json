@@ -780,7 +780,7 @@
       "type": "object"
     },
     "DocWrite": {
-      "description": "`PUT` [`PROJECT_DOC`]: what changes. `title` renames it. With `section`,\nthat section's body becomes `markdown` (and its heading `heading`, when\ngiven); with no `section` but a `heading`, a section is added at the\nend, written when `markdown` is given and pending otherwise.",
+      "description": "`PUT` [`PROJECT_DOC`]: what changes. `title` renames it, `layout` lays it out. With `section`,\nthat section's body becomes `markdown` (and its heading `heading`, when\ngiven); with no `section` but a `heading`, a section is added at the\nend, written when `markdown` is given and pending otherwise.",
       "properties": {
         "heading": {
           "default": null,
@@ -791,6 +791,13 @@
         },
         "intent": {
           "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "layout": {
+          "description": "Sets the layout (`doc`, `tabs` or `prototype`); omitted leaves it as\nit is.",
           "type": [
             "string",
             "null"
@@ -1602,6 +1609,13 @@
     "NewDoc": {
       "description": "`POST` [`PROJECT_DOCS`]: make a Doc.",
       "properties": {
+        "layout": {
+          "description": "`doc`, `tabs` or `prototype`; missing is `doc`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "sections": {
           "default": [],
           "items": {
