@@ -2510,6 +2510,14 @@ button.att {
   margin-top: 6px;
 }
 
+button.agent-image {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+}
+
 .agent-image img {
   display: block;
   max-width: min(240px, 100%);
