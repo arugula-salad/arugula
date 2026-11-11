@@ -16,6 +16,7 @@
 // On the shared viewer, where the reader is a stranger, nothing is framed until
 // they click "Run prototype". In the Doc block and on project Docs it runs at once.
 
+import { createContext } from "preact";
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { useScheme } from "./drawing";
 import { checkPrototype, prototypeInfo } from "./embeds";
@@ -65,6 +66,10 @@ export const OWN_LOADS = 2;
  * the pane area is CSS-scaled, and a transform makes `fixed` relative to it. */
 const canFull = typeof HTMLElement !== "undefined" && "showPopover" in HTMLElement.prototype;
 
+/** Set by a prototype Doc's view (Arugula #830): the frame fills the box it
+ * is in, whose height the view sets, and not the fence's `height=`. */
+export const ProtoFill = createContext(false);
+
 /** A reader's click to run, kept per Doc and section (`ProtoScope`) so a new
  * version of the section (#509) doesn't ask again. */
 const armedKeys = new Set<string>();
@@ -78,6 +83,7 @@ export function Prototype({ html, alt }: { html: string; alt: string }) {
   const schemeNow = useRef(scheme);
   schemeNow.current = scheme;
   const scope = useContext(ProtoScope);
+  const fill = useContext(ProtoFill);
   const armKey = scope ? `${scope.doc}/${scope.section}` : null;
   const [armed, arm] = useState(() => armKey !== null && armedKeys.has(armKey));
   const setArmed = (on: boolean) => {
@@ -172,7 +178,7 @@ export function Prototype({ html, alt }: { html: string; alt: string }) {
   }
   // Remounted when the text or a reload changes: the page is handed over once.
   return (
-    <div class="doc-prototype-box" ref={box} data-prototype-box {...(canFull ? { popover: "manual" } : {})}>
+    <div class={fill ? "doc-prototype-box doc-prototype-fill" : "doc-prototype-box"} ref={box} data-prototype-box {...(canFull ? { popover: "manual" } : {})}>
       <span class="doc-prototype-bar">
         {canFull && (
           <button
@@ -205,7 +211,7 @@ export function Prototype({ html, alt }: { html: string; alt: string }) {
         allow=""
         loading="lazy"
         referrerpolicy="no-referrer"
-        style={full ? undefined : { height: `${height}px` }}
+        style={full || fill ? undefined : { height: `${height}px` }}
         onLoad={() => {
           if (++loads.current > OWN_LOADS) {
             setFull(false);

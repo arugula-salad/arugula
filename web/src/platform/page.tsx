@@ -219,11 +219,12 @@ function useTitle(r: Route) {
  * are read, so an old slug lands, and the bar shows the current one. An id
  * whose name isn't known yet (a Doc's, until it's read) keeps the slug it
  * has, so loading a page doesn't take it off the address and put it back. A
- * room of another project's goes to its own (UI audit #169). */
+ * room of another project's goes to its own (UI audit #169). The hash stays:
+ * it can name a Doc's tab. */
 function useSlug(r: Route) {
   const known = (id: string) => names(id) ?? slugIn(location.pathname, id);
   const want = r.page === "missing" || r.page === "find" ? null : (roomElsewhere(r) ?? pathOf(r, known));
   useEffect(() => {
-    if (want && want !== location.pathname + location.search && session.state === "ready") go(want, true);
+    if (want && want !== location.pathname + location.search && session.state === "ready") go(want + location.hash, true);
   }, [want, session.state]);
 }
