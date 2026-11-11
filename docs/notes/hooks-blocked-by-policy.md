@@ -1,7 +1,7 @@
 ---
 section: Changed
 title: Says when Claude Code's policy blocks Arugula's hooks
-line: Where an organization's Claude Code policy (allowManagedHooksOnly) or disableAllHooks stops Arugula's hooks, Getting started, `arugula hooks status` and setup now say so, instead of showing them as working.
+line: When a Claude Code policy (allowManagedHooksOnly) or disableAllHooks stops Arugula's hooks, Getting started and `arugula hooks status` say so and why.
 headline: no
 ---
 Claude Code runs no user or plugin hooks when its managed settings set
