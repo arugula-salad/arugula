@@ -1129,7 +1129,7 @@ fn all_defs() -> Vec<Def> {
         Def {
             name: "wait",
             title: "Wait for a pane",
-            description: "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). An agent block that's idle comes back with turn: its last message and the work it left (branch, pushed, uncommitted files, commits since the turn began). Or, instead of pane, one of a Cloud workspace's agent blocks (cloud_workspace and agent_block, its pane number there) until idle or needs_input. Or a run in Arugula control (run) until it ends. Or agent sessions in Arugula control (agent_session: ses_… ids) until done: when any of them finishes its turn (or waits on a person, or ends), with each finished one's branch, HEAD and whole last answer; call it again with the rest. Or pull requests on GitHub (pr: OWNER/REPO#N, its link or a PR block, one or several; until checks_done, checks_failed, ready (checks green and mergeable clean) or merged or closed): when any of them gets there, with one verdict each: checks counted by state, the failing ones' names, mergeable, whether it's in the merge queue, and who merged it; read from GitHub itself with the user's login, and a PR they can't see answers as one that doesn't exist. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
+            description: "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). An agent block that's idle comes back with turn: its last message and the work it left (branch, pushed, uncommitted files, commits since the turn began) and what it has spent. Or, instead of pane, one of a Cloud workspace's agent blocks (cloud_workspace and agent_block, its pane number there) until idle or needs_input. Or a run in Arugula control (run) until it ends. Or agent sessions in Arugula control (agent_session: ses_… ids) until done: when any of them finishes its turn (or waits on a person, or ends), with each finished one's branch, HEAD and whole last answer; call it again with the rest. Or pull requests on GitHub (pr: OWNER/REPO#N, its link or a PR block, one or several; until checks_done, checks_failed, ready (checks green and mergeable clean) or merged or closed): when any of them gets there, with one verdict each: checks counted by state, the failing ones' names, mergeable, whether it's in the merge queue, and who merged it; read from GitHub itself with the user's login, and a PR they can't see answers as one that doesn't exist. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
             args: Args::One(schema_for_type::<WaitArgs>),
             read_only: true,
             destructive: false,
@@ -1670,7 +1670,7 @@ impl ToolCall<'_, '_> {
                 Err(e) => Err(e),
             },
             // list
-            ("list", Some("panes")) => crate::mcp::ops::call::<ListPanes>(self, args).await,
+            ("list", Some("panes")) => self.with_spend(crate::mcp::ops::call::<ListPanes>(self, args).await).await,
             ("list", Some("devices")) => self.list_devices(),
             ("delegate", Some(kind @ ("send" | "get" | "answer" | "cancel" | "review" | "apply"))) => match parse(args)
             {
@@ -2127,7 +2127,7 @@ impl ToolCall<'_, '_> {
                     (Attention::Done, _) => finished("finished its turn"),
                     _ => finished("is idle"),
                 };
-                done(summary, results::Attended { pane, state, ask, turn })
+                self.with_spend_of(pane, done(summary, results::Attended { pane, state, ask, turn })).await
             }
             WaitResult::Timeout => self.still_running(pane, Duration::ZERO).await,
         }
@@ -2276,9 +2276,9 @@ impl ToolCall<'_, '_> {
                 self.app.mux.api(|r| Api::Block(pane, r)).await.flatten().ok_or_else(|| format!("no block %{pane}"))?;
             if a.format == Some(ReadFormat::Messages) {
                 let all = b.messages().ok_or_else(|| format!("%{pane} has no messages: format raw"))?;
-                return page_messages(pane, &all, a.offset, max);
+                return self.with_spend_of(pane, page_messages(pane, &all, a.offset, max)).await;
             }
-            return page_text(pane, &b.text(), a.offset, max);
+            return self.with_spend_of(pane, page_text(pane, &b.text(), a.offset, max)).await;
         }
         let closed = || {
             self.app

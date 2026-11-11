@@ -44,6 +44,7 @@ pub mod registry;
 pub mod relay;
 pub mod results;
 pub mod session;
+pub mod spend;
 pub mod tokens;
 pub mod tools;
 

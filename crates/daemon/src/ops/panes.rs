@@ -28,7 +28,7 @@ impl McpOp for ListPanes {
     const SURFACE: Surface = Surface::Kind {
         tool: "list",
         kind: "panes",
-        description: "Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.",
+        description: "Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it, agents' spend.",
     };
     type Args = ListArgs;
     type Answer = serde_json::Value;
