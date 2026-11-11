@@ -160,8 +160,9 @@ fn no_session() -> ApiError {
     err(StatusCode::NOT_FOUND, "no such session")
 }
 
-/// The session, if `account` is a member of its project, with whether they
-/// may act on it (an owner or editor).
+/// The session, if `account` is a member of its project and sees its
+/// thread's room ([`crate::chat::open_to`]), with whether they may act on
+/// it (an owner or editor).
 pub(crate) async fn readable(
     app: &Platform,
     account: &str,
@@ -169,11 +170,15 @@ pub(crate) async fn readable(
     now: bool,
 ) -> Result<(AgentSession, bool), ApiError> {
     let s = app.db.session(id)?.ok_or_else(no_session)?;
-    match membership(app, account, &s.project, now).await {
-        Ok((_, role)) => Ok((s, role != TeamRole::Viewer)),
-        Err(e) if e.0 == StatusCode::NOT_FOUND => Err(no_session()),
-        Err(e) => Err(e),
+    let role = match membership(app, account, &s.project, now).await {
+        Ok((_, role)) => role,
+        Err(e) if e.0 == StatusCode::NOT_FOUND => return Err(no_session()),
+        Err(e) => return Err(e),
+    };
+    if !crate::chat::open_to(app, account, &s.room).await? {
+        return Err(no_session());
     }
+    Ok((s, role != TeamRole::Viewer))
 }
 
 pub(crate) async fn actor(app: &Platform, account: &str, id: &str) -> Result<AgentSession, ApiError> {

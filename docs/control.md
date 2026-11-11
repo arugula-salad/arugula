@@ -1659,9 +1659,12 @@ HEAD, when it last pushed, who started it, and what waits on the reader
 again, its PR to send for its asker). It narrows by its issue's label, by
 a tracker issue (`tracker=N`: the issues its body names as `#N`, those
 whose body names it, and itself), by who asked and to the ones going,
-among the project's latest 500. A machine's agents read the same with
-`sessions.start`, `sessions.reply` or `threads.read` over the project (any
-of them): MCP's `list` kind `agent_sessions` (`GET
+among the project's latest 500. A session asked in a private channel, a
+DM or anywhere else not open to the whole team is listed, read, answered
+and stopped only by those who see that room now (a public channel's are
+every member's), and so is its block's transcript. A machine's agents
+read the same with `sessions.start`, `sessions.reply` or `threads.read`
+over the project (any of them): MCP's `list` kind `agent_sessions` (`GET
 /api/daemon/projects/{project}/sessions`, `mine` for those its own agents
 started), `read_session` (`GET /api/daemon/sessions/{ses}`: the row, its
 latest turn, and its last answer whole as its machine sent it, where the

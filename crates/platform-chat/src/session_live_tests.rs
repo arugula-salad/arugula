@@ -259,6 +259,106 @@ async fn a_sessions_card_lives_in_its_thread_and_its_people_answer_it() {
     assert_eq!(call(&base, "b", "POST", &format!("{path}/stop"), None).await.0, 409);
 }
 
+/// A session asked in a private channel is the channel's: a member of the
+/// project who isn't in it neither reads its card, the project's list of
+/// sessions nor its block's transcript, nor answers or stops it. Someone
+/// added to the channel then does; a transcript of no session's block is
+/// still the whole project's.
+#[tokio::test]
+async fn a_private_channels_sessions_are_its_members_alone() {
+    use crate::db::hosted_transcripts::NewTranscript;
+    let hub = Arc::new(TestHub::default());
+    let (app, base) = serve(hub.clone()).await;
+    let b0x = HostedBox::new();
+    hub.team("t", &[("a", TeamRole::Owner), ("b", TeamRole::Editor), ("v", TeamRole::Viewer)]);
+    hub.flag("team:t", true);
+    let project = app.db.team_project("t", "t", 1).unwrap();
+    let (st, ch) =
+        call(&base, "a", "POST", "/api/chat/teams/t/channels", Some(json!({ "name": "plans", "private": true }))).await;
+    assert_eq!(st, 200, "{ch}");
+    let room = ch["id"].as_str().unwrap().to_owned();
+    let (st, m) = call(
+        &base,
+        "a",
+        "POST",
+        &format!("/api/chat/rooms/{room}/messages"),
+        Some(json!({ "text": "@arugula plan it" })),
+    )
+    .await;
+    assert_eq!(st, 200, "{m}");
+    let crate::db::hosted::Added::Made(ws) =
+        app.db.add_hosted_workspace("hw_dev", &project, "dev", &crate::hosted::Spec::default(), "a", 10, 1).unwrap()
+    else {
+        panic!("no workspace");
+    };
+    app.db.c().execute("UPDATE hosted_workspaces SET machine = ?2 WHERE id = ?1", params![ws.id, b0x.id]).unwrap();
+    let new = NewAgentSession {
+        project: &project,
+        room: &room,
+        parent_seq: m["seq"].as_u64().unwrap(),
+        asker: "a",
+        workspace: &ws.id,
+        repo: Some("o/r"),
+        slug: "plan",
+        prompt: NewPrompt { author: "a", source: Source::Member, association: None, text: "plan it" },
+    };
+    let (s, _) = app.db.create_session(&new, now_ms()).unwrap().unwrap();
+    post_card(&app, &s).unwrap();
+    let prompt = app.db.session_prompts(&s.id).unwrap()[0].id.clone();
+    b0x.say(&app, &s.id, Kind::State, Some(State::Working), json!({ "prompts": [prompt], "block": "4" })).await;
+    let asks = json!({ "question": "Which way?", "request": "req_1", "ask": "question" });
+    b0x.say(&app, &s.id, Kind::State, Some(State::NeedsInput), asks).await;
+    let transcript = |block: u64, title: &'static str| NewTranscript {
+        project: &project,
+        workspace: &ws.id,
+        machine: &b0x.id,
+        block,
+        agent: "claude",
+        title,
+        cwd: None,
+        started_at: 1,
+        closed_at: 2,
+        cut: false,
+        body: "the agent's words",
+    };
+    let id = crate::hosted::transcripts::new_id;
+    let session_block = app.db.add_hosted_transcript(&id(), &transcript(4, "the session's"), 10, 3).unwrap();
+    app.db.add_hosted_transcript(&id(), &transcript(9, "someone's own"), 10, 3).unwrap();
+
+    let path = format!("/api/sessions/{}", s.id);
+    let listed = |v: &Value| -> Vec<String> {
+        v["sessions"].as_array().unwrap().iter().map(|r| r["session"].as_str().unwrap().to_owned()).collect()
+    };
+    let titles = |v: &Value| -> Vec<String> {
+        v["transcripts"].as_array().unwrap().iter().map(|t| t["title"].as_str().unwrap().to_owned()).collect()
+    };
+    let transcripts = format!("/api/projects/{project}/transcripts");
+    let one = format!("{transcripts}/{session_block}");
+    for who in ["b", "v"] {
+        assert_eq!(call(&base, who, "GET", &path, None).await.0, 404, "{who} reads the card");
+        let (st, v) = call(&base, who, "GET", &format!("/api/projects/{project}/sessions"), None).await;
+        assert_eq!((st, listed(&v)), (200, vec![]), "{who}'s list: {v}");
+        let (st, v) = call(&base, who, "GET", &transcripts, None).await;
+        assert_eq!((st, titles(&v)), (200, vec!["someone's own".to_owned()]), "{who}'s transcripts: {v}");
+        assert_eq!(call(&base, who, "GET", &one, None).await.0, 404, "{who} reads its transcript");
+    }
+    let answer = json!({ "kind": "answer", "request": "req_1", "answer": { "question_0": "this way" } });
+    assert_eq!(call(&base, "b", "POST", &format!("{path}/actions"), Some(answer.clone())).await.0, 404);
+    assert_eq!(call(&base, "b", "POST", &format!("{path}/stop"), None).await.0, 404);
+    assert_eq!(app.db.session(&s.id).unwrap().unwrap().state, State::NeedsInput, "nothing they did reached it");
+
+    // Its own: a, and b once added to the channel.
+    let (st, v) = call(&base, "a", "GET", &format!("/api/projects/{project}/sessions"), None).await;
+    assert_eq!((st, listed(&v)), (200, vec![s.id.clone()]), "{v}");
+    let (st, _) =
+        call(&base, "a", "POST", &format!("/api/chat/rooms/{room}/members"), Some(json!({ "accounts": ["b"] }))).await;
+    assert_eq!(st, 200);
+    assert_eq!(call(&base, "b", "GET", &path, None).await.0, 200);
+    assert_eq!(call(&base, "b", "GET", &one, None).await.0, 200);
+    assert_eq!(call(&base, "b", "POST", &format!("{path}/actions"), Some(answer)).await.0, 200);
+    assert_eq!(call(&base, "v", "GET", &path, None).await.0, 404, "v still isn't in it");
+}
+
 #[tokio::test]
 async fn a_quiet_boxs_session_stops_responding_when_its_job_looks() {
     let hub = Arc::new(TestHub::default());

@@ -595,7 +595,7 @@
       "type": "object"
     },
     "TeamNone": {
-      "description": "What control answers a machine that isn't in a team: `{\"team\": null}`.\nA daemon only asks once it has pinned one, and reads this as it always\nhas, as an answer [`TeamAnswer`] can't parse.",
+      "description": "What control answered a machine that isn't in a team, before it\nanswered an empty [`TeamAnswer`] (no team, rosters or certificates) a\ndaemon parses and keeps what it has by: `{\"team\": null}`, which a\ndaemon read as an answer it can't parse.",
       "properties": {
         "team": {
           "anyOf": [

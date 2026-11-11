@@ -64,7 +64,23 @@ async fn session_with(app: &crate::Platform, gh: &crate::forge::links_tests::Sha
     else {
         panic!("no workspace");
     };
+    // Its thread, in a channel of t1's.
     let room = format!("rm_{}", ws.id);
+    let channel = crate::db::chat::Room {
+        id: room.clone(),
+        scope: "team:t1".into(),
+        kind: "channel".into(),
+        name: room.clone(),
+        machine: None,
+        target: None,
+        created_by: "alice".into(),
+        created: 1,
+        archived: None,
+        last_seq: 0,
+    };
+    if app.db.chat_room(&room).unwrap().is_none() {
+        app.db.add_chat_room(&channel, &["alice", "bob"], Some(team)).unwrap();
+    }
     let new = NewAgentSession {
         project: team,
         room: &room,
@@ -207,19 +223,14 @@ async fn a_sessions_pr_reads_its_commits_from_github_when_its_turns_name_none() 
     use crate::db::issues::{Actor, NewIssue};
     let n = NewIssue { project: &team, title: "Add a farewell function", body: "", labels: &[], assignees: &[] };
     let issue = app.db.create_issue(&n, Actor::person("alice"), 1).unwrap().unwrap();
-    let room = crate::db::chat::Room {
-        id: "rm_hw_pr".into(),
-        scope: "team:t1".into(),
-        kind: "object".into(),
-        name: "issue #1".into(),
-        machine: None,
-        target: Some(issue.id.clone()),
-        created_by: "alice".into(),
-        created: 1,
-        archived: None,
-        last_seq: 0,
-    };
-    app.db.add_chat_room(&room, &["alice"], Some(&team)).unwrap();
+    // The session's thread is the issue's.
+    app.db
+        .c()
+        .execute(
+            "UPDATE chat_rooms SET kind = 'object', name = 'issue #1', target = ?2 WHERE id = ?1",
+            params!["rm_hw_pr", issue.id],
+        )
+        .unwrap();
     let (_, v) = call(&base, "alice", "GET", &format!("/api/sessions/{ses}/pr"), None).await;
     assert_eq!(v["title"], "Add a farewell function", "{v}");
     let body = v["body"].as_str().unwrap();

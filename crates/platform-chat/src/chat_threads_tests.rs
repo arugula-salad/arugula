@@ -257,6 +257,53 @@ async fn followers_are_pushed_for_replies_and_the_mentioned_follow() {
     assert_eq!(v["pushed"], json!([]), "{v}");
 }
 
+/// A follow lasts only while its follower sees the room: someone who left
+/// a private channel, or was taken out of the team, hears no more of the
+/// threads they followed there, while the others following still do.
+#[tokio::test]
+async fn followers_who_no_longer_see_the_room_hear_no_more_of_it() {
+    let (hub, app, base, _t, _u) = seeded().await;
+    // A private channel of a, b and x: b and x follow a's thread, and b leaves.
+    let (st, ch) =
+        call(&base, "a", "POST", "/api/chat/teams/t/channels", Some(json!({ "name": "plans", "private": true }))).await;
+    assert_eq!(st, 200, "{ch}");
+    let plans = format!("/api/chat/rooms/{}", ch["id"].as_str().unwrap());
+    let (st, _) = call(&base, "a", "POST", &format!("{plans}/members"), Some(json!({ "accounts": ["b", "x"] }))).await;
+    assert_eq!(st, 200);
+    let (st, m) = call(&base, "a", "POST", &format!("{plans}/messages"), Some(json!({ "text": "the plan" }))).await;
+    assert_eq!(st, 200, "{m}");
+    let p = m["seq"].as_i64().unwrap();
+    for who in ["b", "x"] {
+        let (st, v) =
+            call(&base, who, "POST", &format!("{plans}/threads/{p}/follow"), Some(json!({ "following": true }))).await;
+        assert_eq!(st, 200, "{v}");
+    }
+    assert_eq!(call(&base, "b", "POST", &format!("{plans}/leave"), None).await.0, 204);
+    let (st, v) = call(
+        &base,
+        "a",
+        "POST",
+        &format!("{plans}/messages"),
+        Some(json!({ "text": "the plan, changed", "parent": p })),
+    )
+    .await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(v["pushed"], json!([{ "account": "x", "why": "thread" }]), "only who's still in it: {v}");
+
+    // In #general, b and x follow a's thread, and b is taken out of the team.
+    let p = say(&base, "a", "the roadmap").await;
+    for who in ["b", "x"] {
+        follow(&base, who, p, true).await;
+    }
+    hub.team("t", &[("a", arugula_e2e::team::TeamRole::Owner), ("x", arugula_e2e::team::TeamRole::Viewer)]);
+    crate::cache::catch_up(&app).await.unwrap();
+    let v = reply(&base, "a", p, "the roadmap, changed", false).await;
+    assert_eq!(v["pushed"], json!([{ "account": "x", "why": "thread" }]), "only who's still in the team: {v}");
+    let pushes = pushed(&hub).await;
+    assert!(!pushes.iter().any(|(to, _)| to == "b"), "{pushes:?}");
+    assert_eq!(pushes.iter().filter(|(to, _)| to == "x").count(), 2, "{pushes:?}");
+}
+
 /// A reply open in the thread isn't pushed to the person reading it, but
 /// the room being open isn't enough.
 #[tokio::test]
