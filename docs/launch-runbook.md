@@ -394,9 +394,27 @@ have caps in their own consoles. Set each before the launch:
 
 ## Status page
 
-Public, and linked from the site and the README. It runs off Fly, so it says
-"down" when control is. To post an incident there:
-*to be filled in once the status page is chosen and set up (Arugula #532)*.
+**https://status.arugula.io**, linked from the site's footer, the docs and the
+README. It's [arugula-salad/status](https://github.com/arugula-salad/status):
+UptimeFlare on Cloudflare Workers and Pages, checking every minute from
+Cloudflare's network. It runs off Fly, so it says "down" when control is.
+It watches control (`/control.json`), the platform (through
+`app.arugula.io`), `install.sh`, the newest release's downloads, the site and
+the docs.
+
+**Post an incident** as soon as the dashboard shows something people will
+notice: add an entry to `maintenances` in that repository's `uptime.config.ts`
+and push to `main` (the deploy takes about three minutes; its README has the
+exact shape):
+
+```ts
+{ monitors: ['control'], title: 'Investigating slow sign-ins',
+  body: "Some people can't sign in. We're looking into it.",
+  start: '2026-12-01T14:05:00Z', color: 'red' },
+```
+
+Update `body` as it goes, and add `end` when it's over. Watch the deploy with
+`gh run list -R arugula-salad/status -L 1`.
 
 ## After the 48 hours
 
