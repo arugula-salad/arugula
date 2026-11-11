@@ -101,6 +101,15 @@
   flex-wrap: wrap;
 }
 
+/* Not finished (#841): the reason is on the card, cut with an ellipsis; the title has it whole. */
+.board-marks .board-mark-nf {
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .board-earlier summary {
   cursor: pointer;
   font-size: var(--text-sm);

@@ -101,17 +101,26 @@ export function groupLine(p: Pick<BoardProgress, "done" | "total">): string {
   return p.total ? `${p.done} of ${p.total} done` : "no work yet";
 }
 
-/** What a row's marks say, for its card: `merged, not closed`; `cancelled`; `after #1859`
+/** A row's Not finished mark (#841): the issue is marked with `reason` (what is left), or an open issue's PR merged and nobody said why (`reason` null). `merged`: a PR of the row merged. `by` and `at` are who marked it and when, when someone did. A server from before the mark says `merged_not_closed`, which reads as no reason, merged. */
+export type NotFinished = { reason: string | null; merged: boolean; by?: string; at?: number };
+
+/** The card's words for the mark: `Not finished: second PR for the API`, or `Not finished · no reason given`. */
+export function notFinishedLine(n: Pick<NotFinished, "reason">): string {
+  return n.reason ? `Not finished: ${n.reason}` : "Not finished · no reason given";
+}
+
+/** What a row's marks say, for its card: `not finished: why`; `cancelled`; `after #1859`
  * for a PR stacked on another (the row waits for it); `blocked by #7` for each
  * open blocker, or `blocked by something you can't see` when the reader may not
  * read it (#403); and the attachments of agents that were replaced
  * (`earlier`), which the card folds. */
-export function marksOf(r: Pick<BoardRow, "marks">, now: number = Date.now()): { merged: boolean; cancelled: boolean; after: { words: string; repo?: string } | null; stalled: { words: string; since: number } | null; blocked: { words: string; title?: string; repo?: string }[]; earlier: Set<string> } {
+export function marksOf(r: Pick<BoardRow, "marks">, now: number = Date.now()): { notFinished: NotFinished | null; cancelled: boolean; after: { words: string; repo?: string } | null; stalled: { words: string; since: number } | null; blocked: { words: string; title?: string; repo?: string }[]; earlier: Set<string> } {
   const marks: BoardMark[] = r.marks ?? [];
   const after = marks.find((m) => m.kind === "after");
   const stalled = marks.find((m) => m.kind === "stalled");
+  const nf = marks.find((m) => m.kind === "not_finished" || m.kind === "merged_not_closed");
   return {
-    merged: marks.some((m) => m.kind === "merged_not_closed"),
+    notFinished: !nf ? null : nf.kind === "not_finished" ? { reason: nf.reason ?? null, merged: nf.merged, by: nf.by, at: nf.at } : { reason: null, merged: true },
     cancelled: marks.some((m) => m.kind === "cancelled"),
     after: after && after.kind === "after" ? { words: `after #${after.number}`, repo: after.repo } : null,
     stalled: stalled && stalled.kind === "stalled" ? { words: `stalled ${stalledFor(stalled.since, now)}`, since: stalled.since } : null,

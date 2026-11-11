@@ -55,7 +55,7 @@ use arugula_control_wire::boards::{
     IssueRef, LeadBoard, Live, MoveEntry, NewAsk, NewBoard, Pointer, PutEntry, ResolveItems, Resolved, Row,
     agent_board, agent_board_attachment, agent_board_attachments, agent_board_close, agent_board_doc, agent_board_docs,
     agent_board_entries, agent_board_entry, agent_board_entry_move, agent_board_lead, agent_board_reopen,
-    agent_board_resolve, agent_board_row_ask, agent_project_boards,
+    agent_board_resolve, agent_board_row_ask, agent_board_row_hold, agent_project_boards,
 };
 use arugula_control_wire::issues::{NewIssue, agent_project_issues};
 use reqwest::Method;
@@ -76,7 +76,7 @@ pub(crate) const WRITE_TOOL: &str = "board_write";
 
 pub(crate) const READ_DESCRIPTION: &str = "Read a project's board in Arugula control (an epic when it has a goal; with this machine's boards.read grant over its project). One row is one piece of work: an issue (or a PR with no issue), or a note, with a one-line note and what is attached to it (work: PRs, agent blocks, runs; proof: runs, links). The lanes follow the work and nobody sets them. Lane by the row's primary item: Next (Plane triage, backlog or unstarted; a note), Doing (a Plane started state; or an agent block that isn't closed, or a run running), Review (a PR is open; or a Plane started state with 'review' in its name), Done (the issue is completed or canceled, or the PR merged or closed). A canceled item (a Plane project's cancelled state, or a native issue closed as not planned or a duplicate) is Done, marked cancelled and never proven; any other Done row is proven by CI or by evidence, or not proven yet. Groups are the plan's phases or waves. Returns the board as 72-column text, each row by its item (#N, IDENT-N), its Docs (the research and prototypes linked to it, with the ids unlink_doc takes), and its progress; a Steps block after the lanes puts open rows in order by what they wait on (blocks edges, stacked PRs; Doing and Review rows are step 1), with the longest open chain; with verbose: true, also the JSON with ids, revs and each row's step. With board (brd_…): that board, or only its matching rows with q (an item's number #541, a Plane key ARUGU-12, or words in the title or note), lane (next, doing, review or done) and group (its title or zon_…), under a line that says how many of the rows are shown. Without: the project's boards (project, else the one this clone's GitHub repo is linked to, else your person's personal project), to pick one from.";
 
-pub(crate) const WRITE_DESCRIPTION: &str = "Write to a project's board in Arugula control, at once, labelled as your person's agent on this machine, never as them. Their boards.write grant says you may. One row is one piece of work, addressed by its item (#N, owner/repo#N, IDENT-N or an iss_/fi_ id: a bare #N is the project's native issue when it has one, else the one linked repo's item with that number, and a repo's PR or issue is owner/repo#N; IDENT-N, such as ALL-2212, names a Plane item directly, and forge_read items with provider plane gives its fi_ id), never by a row id. The lanes (Next, Doing, Review, Done) follow the work, as board_read describes: there are no statuses, and you can't set a lane. Add issues with add. A PR or an agent block is not a row of its own: attach it to the row of its issue. A merged PR closes a native issue it names as Closes #N or Arugula #N, or (#N) in its title; other #Ns only link. When you need a person's decision, ask with options (ask: who, the question, up to four options, a recommendation, why); they answer on the board, and you read it in board_read, never by waiting. Groups are your phases or waves: add_group, rename_group, move_group, delete_group, and group puts a row in one. note sets a row's one-line note (pass the rev to refuse a stale write), drop removes a row you added, detach takes off an attachment you made. What comes before or blocks what is the link tool's, not a board's. Link a Doc to a board with link_doc (a pdc_ Doc, or one from doc list): in the board's Docs strip, or with row on one row as its spike or research; a Doc moves no lane and is no proof; unlink_doc takes one off. You may also make a board (an epic, with a goal; a Plane epic can be followed as a board: capabilities shows epics_as_boards, set in the project's Plane settings), set its title and goal, close it with a note on what a person can now do, and reopen it. The session that makes a board leads it (when it has a name); lead_board takes the lead with this session, or with release: true lets it go (only the lead's own machine or a person can). A write answers briefly; verbose: true gives the whole board. If one item of a batch fails, the rest still land.";
+pub(crate) const WRITE_DESCRIPTION: &str = "Write to a project's board in Arugula control, labelled as your person's agent on this machine, never as them. One row is one piece of work, addressed by its item (#N, owner/repo#N, IDENT-N or an iss_/fi_ id: a bare #N is the project's native issue when it has one, else the one linked repo's item, and a repo's PR or issue is owner/repo#N; IDENT-N, such as ALL-2212, is a Plane item, and forge_read items with provider plane gives its fi_ id), never by a row id. The lanes follow the work, as board_read describes: there are no statuses, and you can't set a lane. Add issues with add. A PR or an agent block is not a row of its own: attach it to the row of its issue. A merged PR closes a native issue it names as Closes #N or Arugula #N, or (#N) in its title; other #Ns only link. hold marks an issue not finished, so a merged PR doesn't close it; release clears it, closing the issue if its PR already merged. When a PR is only part of an issue (part of Arugula #N), hold the issue with what's left. When you need a person's decision, ask (who, the question, up to four options, a recommendation, why); they answer on the board: read it in board_read, never wait. Groups are your phases or waves: add_group, rename_group, move_group, delete_group, and group puts a row in one. note sets a row's one-line note (rev refuses a stale write), drop removes a row you added, detach takes off an attachment you made. What comes before or blocks what is the link tool's. Link a Doc to a board with link_doc (a pdc_ Doc, or one from doc list): in the board's Docs strip, or with row on one row as its spike or research (no lane, no proof); unlink_doc takes one off. You may also make a board (an epic, with a goal; capabilities has epics_as_boards), set its title and goal, reopen it, or close it with a note on what a person can now do. A named session that makes a board leads it; lead_board takes the lead, release: true lets it go (only the lead's machine or a person can). A write answers briefly; verbose: true gives the whole board. If one item of a batch fails, the rest still land.";
 
 /// The most a batch takes.
 const BATCH_MAX: usize = wire::RESOLVE_MAX;
@@ -376,6 +376,28 @@ pub struct NoteArgs {
     pub verbose: bool,
 }
 
+#[derive(Deserialize, JsonSchema)]
+pub struct HoldArgs {
+    /// The board.
+    pub board: String,
+    /// The row, by its item.
+    pub item: String,
+    /// What's left.
+    pub reason: String,
+    #[serde(default)]
+    pub verbose: bool,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct ReleaseArgs {
+    /// The board.
+    pub board: String,
+    /// The row, by its item.
+    pub item: String,
+    #[serde(default)]
+    pub verbose: bool,
+}
+
 /// A string, or a list of strings: what agents send for `to`.
 #[derive(Deserialize, JsonSchema)]
 #[serde(untagged)]
@@ -509,6 +531,18 @@ pub(crate) const WRITE: &[Kind] = &[
         name: "note",
         description: "Set the one-line note of the row of an item. With rev, a row that changed since is not written and the answer is its current note.",
         schema: schema_for_type::<NoteArgs>,
+        flag: None,
+    },
+    Kind {
+        name: "hold",
+        description: "Mark a row's issue (native or Plane) not finished, with what's left (one line, 200 characters).",
+        schema: schema_for_type::<HoldArgs>,
+        flag: None,
+    },
+    Kind {
+        name: "release",
+        description: "Clear a row's not-finished mark.",
+        schema: schema_for_type::<ReleaseArgs>,
         flag: None,
     },
     Kind {
@@ -1527,6 +1561,21 @@ pub(crate) async fn board_write(c: &Call<'_>, kind: &str, a: Value) -> Out {
             let v = put_entry(c, &a.board, &put).await?;
             one_row(&view_of(v)?, &format!("Noted {}.", row.item_label()), &row.id, a.verbose)
         }
+        "hold" => {
+            let a: HoldArgs = args(a)?;
+            let view = read_view(c, &a.board).await?;
+            let row = find_row(&view, &a.item)?;
+            let body = given(wire::HoldRow { reason: a.reason })?;
+            let v = boards_call(c, Method::PUT, &agent_board_row_hold(&a.board, &row.id), Some(body)).await?;
+            one_row(&view_of(v)?, &format!("Marked {} not finished.", row.item_label()), &row.id, a.verbose)
+        }
+        "release" => {
+            let a: ReleaseArgs = args(a)?;
+            let view = read_view(c, &a.board).await?;
+            let row = find_row(&view, &a.item)?;
+            let v = boards_call(c, Method::DELETE, &agent_board_row_hold(&a.board, &row.id), None).await?;
+            one_row(&view_of(v)?, &format!("Took the not finished mark off {}.", row.item_label()), &row.id, a.verbose)
+        }
         "group" => {
             let a: GroupArgs = args(a)?;
             let Some(group) = a.group else {
@@ -1875,6 +1924,8 @@ mod tests {
                 "unlink_doc",
                 "ask",
                 "note",
+                "hold",
+                "release",
                 "group",
                 "drop",
                 "add_group",
@@ -1895,6 +1946,19 @@ mod tests {
         let body = |zone| serde_json::to_value(MoveEntry { rev: None, zone, before: None, seen: None }).unwrap();
         assert_eq!(body(Some(None))["zone"], Value::Null, "out of its group goes out as null");
         assert!(body(None).get("zone").is_none(), "no zone: its own");
+    }
+
+    /// hold takes what is left, and release only the row (#841).
+    #[test]
+    fn hold_takes_a_reason_and_release_takes_none() {
+        let h: HoldArgs = serde_json::from_value(json!({ "board": "b", "item": "#1", "reason": "second PR" })).unwrap();
+        assert_eq!(given(wire::HoldRow { reason: h.reason }).unwrap(), json!({ "reason": "second PR" }));
+        assert!(
+            serde_json::from_value::<HoldArgs>(json!({ "board": "b", "item": "#1" })).is_err(),
+            "a reason is needed"
+        );
+        let r: ReleaseArgs = serde_json::from_value(json!({ "board": "b", "item": "ARUGU-2" })).unwrap();
+        assert_eq!((r.item.as_str(), r.verbose), ("ARUGU-2", false));
     }
 
     /// An ask names who and the question, and leaves out what isn't given.
@@ -2064,12 +2128,24 @@ mod tests {
     fn a_card_and_the_progress_are_short() {
         let mut r = row("row_1", json!({ "kind": "issue", "id": "iss_a" }), native(12), json!([]));
         r["group"] = json!("zon_1");
-        r["marks"] = json!([{ "kind": "merged_not_closed" }]);
+        r["marks"] = json!([{ "kind": "not_finished", "reason": "verify on staging", "merged": true }]);
         r["ask"] = json!({ "id": "ask_1", "who": "a2", "who_name": "Sam", "question": "Ship it?", "options": [],
                            "asked_by": "agent", "raised": false, "mine": false, "can_answer": false, "created_at": 1 });
         let v = board(json!([r]));
         let lines = card(&v, rows(&v).next().unwrap());
-        assert_eq!(lines, ["#12 ○ Next · rev 2 · in Wave 1 · n", "  merged, not closed", "  ? Ship it? (for Sam)"]);
+        assert_eq!(
+            lines,
+            [
+                "#12 ○ Next · rev 2 · in Wave 1 · n",
+                "  merged · not finished: verify on staging",
+                "  ? Ship it? (for Sam)"
+            ]
+        );
+        // A server from before the mark says only that it merged and is open.
+        let mut old = row("row_1", json!({ "kind": "issue", "id": "iss_a" }), native(12), json!([]));
+        old["marks"] = json!([{ "kind": "merged_not_closed" }]);
+        let old = board(json!([old]));
+        assert_eq!(card(&old, rows(&old).next().unwrap())[1], "  merged · not finished · no reason given");
         assert_eq!(progress(&v), "Launch (brd_1): 1/3 done, 1 proven, 1 group(s)");
     }
 
