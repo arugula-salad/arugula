@@ -275,7 +275,7 @@ function DocList({ ps, narrowed }: { ps: PlatformProject[]; narrowed: boolean })
                 <>
                   {all.length > 0 && <ListCounts counts={counts} on={narrowed ? "all" : filter} pick={narrowed ? () => {} : pick} />}
                   {narrowed && (
-                    <button type="button" class="link" aria-expanded={trashOpen} data-docs-trash-open onClick={() => setTrashOpen(!trashOpen)}>
+                    <button type="button" class="link docs-trash-open" aria-expanded={trashOpen} data-docs-trash-open onClick={() => setTrashOpen(!trashOpen)}>
                       Trash
                     </button>
                   )}
