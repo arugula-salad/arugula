@@ -116,6 +116,21 @@ pub fn checked(c: &impl Sql, from: u64, to: u64) -> Result<Vec<Checked>> {
 }
 
 impl Db {
+    /// How long the boxes of the people's workspaces `account` made ran in
+    /// `[from, to)`, in ms, deleted ones' included: what the launch
+    /// switches' box-hours cap counts (#531). An interval still open runs
+    /// to `to`.
+    pub fn hosted_ms_made_by(&self, account: &str, from: u64, to: u64) -> Result<u64> {
+        let spans: Vec<(u64, Option<u64>)> = self.c().query_map(
+            "SELECT u.started_at, u.ended_at FROM hosted_usage u JOIN hosted_workspaces w ON w.id = u.workspace_id
+             WHERE w.created_by = ?1 AND w.purpose = 'workspace'
+                 AND u.started_at < ?3 AND (u.ended_at IS NULL OR u.ended_at > ?2)",
+            params![account, from, to],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        Ok(spans.iter().map(|(s, e)| e.unwrap_or(to).min(to).saturating_sub((*s).max(from))).sum())
+    }
+
     /// Every interval that overlaps `[from, to)`, oldest first.
     pub fn hosted_usage(&self, from: u64, to: u64) -> Result<Vec<Interval>> {
         intervals(&self.c(), from, to)

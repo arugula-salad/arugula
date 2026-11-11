@@ -11,6 +11,7 @@
 //! (M140).
 
 pub mod changes;
+pub mod counts;
 pub mod doc_links;
 pub mod email;
 pub mod hosted;
@@ -20,6 +21,7 @@ pub mod platform;
 pub mod reset;
 #[cfg(test)]
 mod secrets_list;
+pub mod switches;
 #[cfg(test)]
 mod tables;
 
@@ -748,6 +750,7 @@ impl Db {
         conn.execute_batch(hosted::SCHEMA)?;
         conn.execute_batch(changes::SCHEMA)?;
         conn.execute_batch(platform::SCHEMA)?;
+        conn.execute_batch(switches::SCHEMA)?;
         issuer::ensure(&conn)?;
         migrate(&conn)?;
         if !answers_before {
@@ -766,6 +769,7 @@ impl Db {
         conn.execute_batch(hosted::SCHEMA).unwrap();
         conn.execute_batch(changes::SCHEMA).unwrap();
         conn.execute_batch(platform::SCHEMA).unwrap();
+        conn.execute_batch(switches::SCHEMA).unwrap();
         issuer::ensure(&conn).unwrap();
         migrate(&conn).unwrap();
         Self { conn: Mutex::new(conn) }
@@ -3103,6 +3107,7 @@ impl Db {
             "DELETE FROM identities WHERE account = ?1",
             "DELETE FROM sessions WHERE account = ?1",
             "DELETE FROM app_sessions WHERE account = ?1",
+            "DELETE FROM account_switches WHERE account = ?1",
             "DELETE FROM issuer_tokens WHERE account = ?1",
             "DELETE FROM account_links WHERE account = ?1",
             "DELETE FROM account_link_events WHERE account = ?1",

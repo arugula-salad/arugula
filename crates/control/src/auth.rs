@@ -90,6 +90,7 @@ impl FromRequestParts<Arc<App>> for Session {
                 if let Some(a) = parts.extensions.get::<crate::analytics::Asker>() {
                     a.set(&cert.account);
                 }
+                // (A suspended account's signature was refused already.)
                 return Ok(Session { account: cert.account.clone() });
             }
             Some(Signed(Ok(_))) => return Err(err(StatusCode::UNAUTHORIZED, "sign in first")),
@@ -107,6 +108,7 @@ impl FromRequestParts<Arc<App>> for Session {
             }
             let account = crate::app_signin::account(app, &parts.headers)?
                 .ok_or_else(|| err(StatusCode::UNAUTHORIZED, "sign in first"))?;
+            app.switches.check(&account)?;
             if let Some(a) = parts.extensions.get::<crate::analytics::Asker>() {
                 a.set(&account);
             }
@@ -125,6 +127,9 @@ impl FromRequestParts<Arc<App>> for Session {
             cookie(&parts.headers, SESSION_COOKIE).ok_or_else(|| err(StatusCode::UNAUTHORIZED, "sign in first"))?;
         let account =
             app.db.session(&hash(token), now_ms())?.ok_or_else(|| err(StatusCode::UNAUTHORIZED, "sign in again"))?;
+        // A suspended account's sessions are refused (#531), not ended: a
+        // lifted suspension finds them as they were.
+        app.switches.check(&account)?;
         if let Some(a) = parts.extensions.get::<crate::analytics::Asker>() {
             a.set(&account);
         }
@@ -321,6 +326,12 @@ pub async fn verify_daemon(
     if let Ok(cert) = &checked {
         note_old_host(&app, &parts.headers, cert);
     }
+    // A suspended account's devices and machines are refused (#531), as
+    // its sessions are.
+    let checked = checked.and_then(|cert| match app.switches.check(&cert.account) {
+        Ok(()) => Ok(cert),
+        Err(e) => Err((e.0, e.1)),
+    });
     parts.extensions.insert(Signed(checked));
     next.run(axum::extract::Request::from_parts(parts, axum::body::Body::from(bytes))).await
 }
@@ -585,7 +596,8 @@ pub async fn github_callback(
     if q.state.as_deref().is_some_and(|s| s.starts_with(crate::github_link::STATE_PREFIX)) {
         return crate::github_link::finish(&app, &headers, q).await;
     }
-    match github_finish(&app, &headers, q).await {
+    let ip = app.limits.client_ip(peer, &headers);
+    match github_finish(&app, &headers, q, ip).await {
         Ok((account, next)) => {
             let cookie = match start_session(&app, &account, kept_via(&app, &headers, Via::Github)) {
                 Ok(c) => c,
@@ -598,7 +610,12 @@ pub async fn github_callback(
             h.append(header::SET_COOKIE, set_cookie(&app, STATE_COOKIE, "", 0));
             res
         }
-        Err(why) => {
+        // A launch switch's refusal (#531): a page that says what it is.
+        Err(Failed::Refused(e)) => {
+            info!(why = e.1, "GitHub sign-in refused");
+            crate::switches::page(&e)
+        }
+        Err(Failed::Other(why)) => {
             warn!(%why, "GitHub sign-in failed");
             app.analytics.capture("anonymous", "sign-in failed", serde_json::json!({ "method": "github" }));
             (StatusCode::BAD_REQUEST, format!("Sign-in failed: {why}")).into_response()
@@ -606,10 +623,36 @@ pub async fn github_callback(
     }
 }
 
-async fn github_finish(app: &App, headers: &HeaderMap, q: Callback) -> Result<(String, String), String> {
+/// Why a GitHub sign-in didn't sign anyone in.
+enum Failed {
+    /// Refused by a launch switch or the sign-up limit (#531): sign-ups
+    /// are paused, the account is suspended, or too many new accounts came
+    /// from here.
+    Refused(ApiError),
+    Other(String),
+}
+
+impl From<String> for Failed {
+    fn from(s: String) -> Self {
+        Failed::Other(s)
+    }
+}
+
+impl From<&str> for Failed {
+    fn from(s: &str) -> Self {
+        Failed::Other(s.to_owned())
+    }
+}
+
+async fn github_finish(
+    app: &App,
+    headers: &HeaderMap,
+    q: Callback,
+    ip: std::net::IpAddr,
+) -> Result<(String, String), Failed> {
     let gh = app.cfg.github.as_ref().ok_or("not configured")?;
     if let Some(e) = q.error {
-        return Err(e);
+        return Err(Failed::Other(e));
     }
     let (code, state) = q.code.zip(q.state).ok_or("missing code")?;
     let kept = cookie(headers, STATE_COOKIE).and_then(|c| c.split_once('.'));
@@ -620,18 +663,29 @@ async fn github_finish(app: &App, headers: &HeaderMap, q: Callback) -> Result<(S
         if let Ok(t) = exchange(app, gh, &code, &callback_url(app, headers)).await {
             crate::forge_send::revoke(app, gh, &t).await;
         }
-        return Err(
-            if kept.is_none() { "the sign-in took too long; try again" } else { "state mismatch; try again" }.into()
-        );
+        return Err(Failed::Other(
+            if kept.is_none() { "the sign-in took too long; try again" } else { "state mismatch; try again" }.into(),
+        ));
     };
     let next = safe_next(unbase64_url(next).as_deref());
     let access = exchange(app, gh, &code, &callback_url(app, headers)).await?;
     let user = github_user(app, gh, &access).await?;
+    // A new account (#531): not while sign-ups are paused, and only so
+    // many from one address an hour. Someone with an account signs in.
+    let subject = user.id.to_string();
+    if app.db.identity_account("github", &subject).map_err(|e| e.to_string())?.is_none() {
+        let refused = app.switches.check_signup().and_then(|()| crate::switches::count_signup(app, ip));
+        if let Err(e) = refused {
+            crate::forge_send::revoke(app, gh, &access).await;
+            return Err(Failed::Refused(e));
+        }
+    }
     let new_id = new_account_id();
-    let account = app
-        .db
-        .account_for("github", &user.id.to_string(), &user.login, &new_id, now_ms())
-        .map_err(|e| e.to_string())?;
+    let account = app.db.account_for("github", &subject, &user.login, &new_id, now_ms()).map_err(|e| e.to_string())?;
+    if let Err(e) = app.switches.check(&account) {
+        crate::forge_send::revoke(app, gh, &access).await;
+        return Err(Failed::Refused(e));
+    }
     app.analytics.signed_in(&account, "github", account == new_id);
     // Its address for security notices (#1609), best-effort: a sign-in
     // never fails over it, nor waits on more than GitHub's one answer.

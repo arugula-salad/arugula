@@ -728,6 +728,12 @@ const SQLITE: &[Migration] = &[
     },
     Migration {
         version: 106,
+        name: "close_on_merge",
+        sql: include_str!("../../migrations/sqlite/0106_close_on_merge.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 107,
         name: "project_doc_layout",
         sql: include_str!("../../migrations/sqlite/0107_project_doc_layout.sql"),
         additive: true,
@@ -1370,6 +1376,12 @@ const POSTGRES: &[Migration] = &[
     },
     Migration {
         version: 106,
+        name: "close_on_merge",
+        sql: include_str!("../../migrations/postgres/0106_close_on_merge.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 107,
         name: "project_doc_layout",
         sql: include_str!("../../migrations/postgres/0107_project_doc_layout.sql"),
         additive: true,

@@ -368,6 +368,24 @@ export const CheckIcon = ({ size = "sm" }: Sized) => (
   </Svg>
 );
 
+/** A check in a circle. */
+export const CheckCircleIcon = ({ size = "sm" }: Sized) => (
+  <Svg size={size}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="m8 12.5 3 3 5-6" />
+  </Svg>
+);
+
+/** Two small boxes joined by an elbow arrow. */
+export const LinksIcon = ({ size = "sm" }: Sized) => (
+  <Svg size={size}>
+    <rect x="3" y="3.5" width="6" height="5" rx="1" />
+    <rect x="15" y="15.5" width="6" height="5" rx="1" />
+    <path d="M6 8.5v4.5a2 2 0 0 0 2 2h4.5" />
+    <path d="m11 12.5 2.5 2.5-2.5 2.5" />
+  </Svg>
+);
+
 export const CloseIcon = ({ size = "sm" }: Sized) => (
   <Svg size={size}>
     <path d="M18 6 6 18" />

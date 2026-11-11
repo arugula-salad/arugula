@@ -106,6 +106,43 @@ export interface ListGroup<T> {
   attrs?: Record<string, string>;
 }
 
+/** One way a list can be ordered. */
+export interface ListSortOption<K extends string = string> {
+  key: K;
+  label: string;
+}
+
+/** What a list offers to sort by: the options, the one in force, and what
+ * choosing another does. The page sorts its own rows; the list draws the
+ * control and, with `useListSort`, remembers the choice. */
+export interface ListSort<K extends string = string> {
+  options: ListSortOption<K>[];
+  value: K;
+  onSort(key: K): void;
+}
+
+/** A list's sort, kept in this browser under `storeKey`: the first option
+ * until someone chooses. */
+export function useListSort<K extends string>(storeKey: string, options: ListSortOption<K>[]): [K, (key: K) => void] {
+  const [key, setKey] = useState<K>(() => {
+    try {
+      const was = localStorage.getItem(storeKey);
+      return options.find((o) => o.key === was)?.key ?? options[0].key;
+    } catch {
+      return options[0].key;
+    }
+  });
+  const pick = (next: K) => {
+    setKey(next);
+    try {
+      localStorage.setItem(storeKey, next);
+    } catch {
+      /* It's only remembered while storage works. */
+    }
+  };
+  return [key, pick];
+}
+
 export interface ListPageProps<T> {
   /** What the list is, for the back link and for assistive tech: "Docs". */
   label: string;
@@ -115,6 +152,9 @@ export interface ListPageProps<T> {
   searchLabel: string;
   query: string;
   setQuery: (q: string) => void;
+  /** A control beside the search to order the rows; none, and the page's
+   * order is all there is. */
+  sort?: ListSort;
   groups: ListGroup<T>[];
   keyOf: (item: T) => string;
   row: (item: T) => ListRowParts;
@@ -182,7 +222,7 @@ function store(key: string, px: number | null) {
   }
 }
 
-export function ListPage<T>({ label, header, searchLabel, query, setQuery, groups, keyOf, row, preview, previewOn = "hover", onOpen, splitKey, notice, status, above, below, pane, select, selectable, selection }: ListPageProps<T>) {
+export function ListPage<T>({ label, header, searchLabel, query, setQuery, sort, groups, keyOf, row, preview, previewOn = "hover", onOpen, splitKey, notice, status, above, below, pane, select, selectable, selection }: ListPageProps<T>) {
   const root = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLInputElement>(null);
@@ -453,6 +493,15 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, group
               />
               <kbd aria-hidden="true">/</kbd>
             </label>
+            {sort && (
+              <select class="list-sort" aria-label="Sort by" value={sort.value} data-list-sort onChange={(e) => sort.onSort(e.currentTarget.value)}>
+                {sort.options.map((o) => (
+                  <option key={o.key} value={o.key}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
           {notice}
           {selectable && selection && <div class="list-selection" role="status" data-list-selection>{selection({ items: tickedItems, clear: clearTicks })}</div>}

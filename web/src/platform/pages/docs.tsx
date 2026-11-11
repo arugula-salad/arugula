@@ -22,6 +22,7 @@ import { ConfirmRemove } from "../../shared/ui/confirm";
 import { ListCounts, ListPage, ListPreview, type ListCount, type ListGroup, type ListTicked } from "../../shared/ui/list-page";
 import { PageHeader } from "../../shared/ui/page-header";
 import { Time } from "../../shared/ui/time";
+import { DocRowTime, DOC_SORTS, sortTime, useDocSort, type DocSort } from "../../shared/docs/doc-sort";
 import { DocBlock, type DocState } from "../../shared/docs/doc-render";
 import { moveDocsToTeam, resultWords, type MoveResult } from "../../shared/docs/move-docs";
 import "../../shared/docs/docs.css";
@@ -173,7 +174,7 @@ export function DocsPage({ project }: { project?: string }) {
   return <DocList ps={one ? [one] : session.projects} narrowed={!!one} />;
 }
 
-function groupsOf(shown: Row[], narrowed: boolean, single: boolean): ListGroup<Row>[] {
+function groupsOf(shown: Row[], narrowed: boolean, single: boolean, sort: DocSort): ListGroup<Row>[] {
   const by = new Map<string, ListGroup<Row> & { mine: boolean }>();
   for (const r of shown) {
     const g = by.get(r.p.id) ?? { title: r.mine ? (narrowed ? "Yours, private" : "Mine") : narrowed || single ? undefined : r.p.name, items: [], mine: r.mine };
@@ -181,10 +182,13 @@ function groupsOf(shown: Row[], narrowed: boolean, single: boolean): ListGroup<R
     by.set(r.p.id, g);
   }
   const out = [...by.values()];
-  for (const g of out) g.items.sort((a, b) => b.doc.updated_at - a.doc.updated_at);
+  for (const g of out) g.items.sort((a, b) => sortTime(timesOf(b.doc), sort) - sortTime(timesOf(a.doc), sort));
   // Their own project's first; the others as the session lists them.
   return out.sort((a, b) => Number(b.mine) - Number(a.mine));
 }
+
+/** A project Doc's times, as the Docs' sort and line say them. */
+const timesOf = (d: ProjectDoc) => ({ made: d.created_at, updated: d.updated_at });
 
 type DocFilter = "team" | "mine";
 const FILTER_KEY = "platform-docs-filter";
@@ -208,6 +212,7 @@ function DocList({ ps, narrowed }: { ps: PlatformProject[]; narrowed: boolean })
   const { rows, sections, reload } = useRows(ps);
   const [filter, setFilter] = useState<DocFilter>(savedFilter);
   const [query, setQuery] = useState("");
+  const [sort, setSort] = useDocSort();
   const [making, setMaking] = useState(false);
   const all = rows ?? [];
   const q = query.trim().toLowerCase();
@@ -269,7 +274,8 @@ function DocList({ ps, narrowed }: { ps: PlatformProject[]; narrowed: boolean })
         searchLabel="Search titles and headings"
         query={query}
         setQuery={setQuery}
-        groups={groupsOf(shown, narrowed, ps.length === 1)}
+        sort={{ options: DOC_SORTS, value: sort, onSort: setSort }}
+        groups={groupsOf(shown, narrowed, ps.length === 1, sort)}
         keyOf={(r) => r.doc.id}
         // Mine's Docs can be put in a team; Team's are already there. Leaving Mine forgets the ticks.
         selectable={!narrowed && filter === "mine" && teams.length > 0}
@@ -284,7 +290,7 @@ function DocList({ ps, narrowed }: { ps: PlatformProject[]; narrowed: boolean })
             name: r.doc.title,
             title: <span data-doc-title>{r.doc.title}</span>,
             detail: r.mine && copyFrom(r.doc) ? <span data-doc-machine>On {copyFrom(r.doc)}</span> : undefined,
-            age: <Time at={r.doc.updated_at} title="Updated" />,
+            age: <DocRowTime doc={timesOf(r.doc)} by={sort} />,
             mark: s ? <Shape sections={s} /> : undefined,
             actions: <RowMenu p={r.p} doc={r.doc} reload={reload} />,
             attrs: { "data-doc": r.doc.id, "data-private": String(r.mine) },
@@ -463,6 +469,7 @@ function stateOf(v: ProjectDocView): DocState {
   return {
     title: v.doc.title,
     rev: v.doc.rev,
+    ...timesOf(v.doc),
     entries: v.sections.map((s) => ({ id: s.id, heading: s.heading, intent: s.intent, body: s.body, rev: s.rev })),
   };
 }
@@ -549,7 +556,7 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
             view &&
             !copy && (
               <>
-                <span data-doc-maker>{whoLabel(view.doc.author, view.doc.agent, nameOf(p))}</span> · <Time at={view.doc.updated_at} />
+                <span data-doc-maker>{whoLabel(view.doc.author, view.doc.agent, nameOf(p))}</span>
               </>
             )
           }

@@ -16,6 +16,7 @@
 //! | the primary issue is started, and its state's name says review   | Review |
 //! | the primary issue is started                                     | Doing  |
 //! | an attached agent block that isn't closed, or a run running      | Doing  |
+//! | a live session on the row's issue                                | Doing  |
 //! | otherwise (triage, backlog or unstarted)                         | Next   |
 //!
 //! Only the primary item's category counts: an attached issue never moves a
@@ -67,6 +68,11 @@ pub enum Fact {
     Run {
         running: bool,
     },
+    /// An agent session started on the row's issue. `live`: it is queued,
+    /// working or waiting on its person, or done with its PR not yet sent.
+    Session {
+        live: bool,
+    },
 }
 
 /// A row's primary item.
@@ -95,7 +101,9 @@ pub fn lane(primary: Primary<'_>, attached: &[Fact]) -> Lane {
     if matches!(item, Some(Fact::Issue { review: true, .. })) {
         return Lane::Review;
     }
-    let under_way = |f: &Fact| matches!(f, Fact::Block { closed: false } | Fact::Run { running: true });
+    let under_way = |f: &Fact| {
+        matches!(f, Fact::Block { closed: false } | Fact::Run { running: true } | Fact::Session { live: true })
+    };
     if started || attached.iter().any(under_way) { Lane::Doing } else { Lane::Next }
 }
 
@@ -152,13 +160,14 @@ pub fn plane_category(group: Option<&str>, state: &str) -> Category {
 /// it that isn't closed is idle (`idle[i]` is when the i-th went idle, none
 /// for one that is not), the last of them went idle more than `minutes` ago,
 /// and no PR (or running run) is on it. The time is when that last block
-/// went idle. `attached` are the row's work facts, `idle` has one entry for
+/// went idle. A live session on the row also keeps it from stalling.
+/// `attached` are the row's work facts, `idle` has one entry for
 /// each open block among them.
 pub fn stalled(lane: Lane, attached: &[Fact], idle: &[Option<u64>], now: u64, minutes: u32) -> Option<u64> {
     if lane != Lane::Doing || idle.is_empty() || idle.iter().any(Option::is_none) {
         return None;
     }
-    if attached.iter().any(|f| matches!(f, Fact::Pr(_) | Fact::Run { running: true })) {
+    if attached.iter().any(|f| matches!(f, Fact::Pr(_) | Fact::Run { running: true } | Fact::Session { live: true })) {
         return None;
     }
     let since = idle.iter().flatten().copied().max()?;
@@ -208,6 +217,8 @@ mod tests {
     const MERGED: Fact = Fact::Pr(Pr::Merged { green: true });
     const LIVE_BLOCK: Fact = Fact::Block { closed: false };
     const RUNNING: Fact = Fact::Run { running: true };
+    const LIVE_SESSION: Fact = Fact::Session { live: true };
+    const SPENT_SESSION: Fact = Fact::Session { live: false };
 
     fn lane_of(primary: Primary<'_>, attached: &[Fact]) -> Lane {
         lane(primary, attached)
@@ -238,6 +249,15 @@ mod tests {
         assert_eq!(lane_of(item(&issue_open), &[LIVE_BLOCK]), Lane::Doing);
         assert_eq!(lane_of(item(&issue_open), &[RUNNING]), Lane::Doing);
         assert_eq!(lane_of(item(&issue_open), &[Fact::Pr(Pr::Closed), LIVE_BLOCK]), Lane::Doing);
+        // A live session is Doing too; a spent one is nothing; a PR still
+        // lifts it to Review, a closed issue is Done, a note stays Next.
+        assert_eq!(lane_of(item(&issue_open), &[LIVE_SESSION]), Lane::Doing);
+        assert_eq!(lane_of(item(&issue_open), &[SPENT_SESSION]), Lane::Next);
+        assert_eq!(lane_of(item(&issue_open), &[LIVE_SESSION, OPEN_PR]), Lane::Review);
+        assert_eq!(lane_of(item(&issue_open), &[LIVE_SESSION, MERGED]), Lane::Review);
+        assert_eq!(lane_of(item(&issue_closed), &[LIVE_SESSION]), Lane::Done);
+        assert_eq!(lane_of(Primary::Note, &[LIVE_SESSION]), Lane::Next);
+        assert_eq!(lane_of(Primary::Item(None), &[LIVE_SESSION]), Lane::Doing);
         // Next: otherwise.
         assert_eq!(lane_of(item(&issue_open), &[]), Lane::Next);
         assert_eq!(lane_of(item(&issue_open), &[Fact::Block { closed: true }]), Lane::Next);
@@ -300,6 +320,9 @@ mod tests {
         // A PR on the row (any state), or a run running: not stalled.
         assert_eq!(st(Lane::Doing, &[LIVE_BLOCK, Fact::Pr(Pr::Closed)], &[Some(0)]), None);
         assert_eq!(st(Lane::Doing, &[LIVE_BLOCK, RUNNING], &[Some(0)]), None);
+        // A live session on the row: not stalled; a spent one doesn't stop it.
+        assert_eq!(st(Lane::Doing, &[LIVE_BLOCK, LIVE_SESSION], &[Some(0)]), None);
+        assert_eq!(st(Lane::Doing, &[LIVE_BLOCK, SPENT_SESSION], &[Some(0)]), Some(0));
         // Only a Doing row; no open block says nothing.
         assert_eq!(st(Lane::Review, &[LIVE_BLOCK], &[Some(0)]), None);
         assert_eq!(st(Lane::Doing, &[RUNNING], &[]), None);

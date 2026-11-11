@@ -174,7 +174,7 @@ pub(crate) async fn changer(app: &Platform, account: &str, project: &str, beta: 
     if role == TeamRole::Viewer {
         return Err(err(StatusCode::FORBIDDEN, "a viewer can't change a project's runs"));
     }
-    if beta && !app.hosted.allows(account) {
+    if beta && !crate::hosted::switches::open_to(app, account).await {
         return Err(err(StatusCode::FORBIDDEN, "runs on cloud workspaces are in a limited beta"));
     }
     Ok(project)

@@ -1983,6 +1983,23 @@ impl Db {
         )
     }
 
+    /// The sessions of `project` started on one of these issues (`iss_` or
+    /// `fi_` ids, as the session recorded it), oldest first. One statement.
+    pub fn sessions_on(&self, project: &str, ids: &[&str]) -> Result<Vec<AgentSession>> {
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let c = self.c();
+        c.query_map(
+            &format!(
+                "SELECT {COLS} FROM agent_sessions WHERE project_id = ?1 AND {} ORDER BY created_at, id",
+                super::chat::in_json(&c, "work_item", 2)
+            ),
+            params![project, super::chat::json_list(ids)?],
+            session_row,
+        )
+    }
+
     /// Every session of `project` that hasn't ended, oldest first.
     pub fn live_sessions_of(&self, project: &str) -> Result<Vec<AgentSession>> {
         self.c().query_map(

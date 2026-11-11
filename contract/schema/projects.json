@@ -1405,6 +1405,11 @@
             "null"
           ]
         },
+        "close_on_merge": {
+          "default": true,
+          "description": "Whether a merged PR that names an item moves it to Done (#852). On\nunless turned off.",
+          "type": "boolean"
+        },
         "created_at": {
           "format": "uint64",
           "minimum": 0,
@@ -1809,6 +1814,16 @@
           "description": "`allow` if every kind of write is allowed, else `approve`.",
           "type": "string"
         },
+        "close_on_merge": {
+          "default": true,
+          "description": "Whether a merged PR moves the items it names to Done (#852).",
+          "type": "boolean"
+        },
+        "epics_as_boards": {
+          "default": true,
+          "description": "Whether each open epic has a board that follows it (#483).",
+          "type": "boolean"
+        },
         "id": {
           "type": "string"
         },
@@ -1874,6 +1889,14 @@
           "default": null,
           "type": [
             "string",
+            "null"
+          ]
+        },
+        "close_on_merge": {
+          "default": null,
+          "description": "Whether a merged PR moves the items it names to Done.",
+          "type": [
+            "boolean",
             "null"
           ]
         },

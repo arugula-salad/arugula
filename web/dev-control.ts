@@ -67,6 +67,10 @@
 //                      E2B nobody answers: no box is made, so a hosted
 //                      workspace and its runs (M215's runs page) are rows
 //                      written into control's database by hand.
+//   DEV_CONTROL_HOSTED_ACCOUNTS
+//                      who's on ARUGULA_HOSTED_ACCOUNTS with hosted
+//                      workspaces on [default: *]; empty for nobody, so the
+//                      launch switches' waitlist (#531) decides
 //   DEV_CONTROL_CLOUD=api,docs
 //                      hosted machines (M178) in the account's project, by
 //                      these names: hosted workspaces on (as
@@ -284,7 +288,7 @@ async function startControl() {
       ...["--github-url", gh, "--github-api", gh],
       ...(blockDomain ? ["--block-domain", blockDomain] : []),
       ...(platformHost ? ["--platform-host", platformHost, "--platform-static-dir", platformWeb] : []),
-      ...(hosted ? ["--hosted-accounts", "*", "--e2b-api-key", cloud.length ? "e2b-testnet" : "dev-nobody", "--e2b-url", e2bUrl] : []),
+      ...(hosted ? ["--hosted-accounts", process.env.DEV_CONTROL_HOSTED_ACCOUNTS ?? "*", "--e2b-api-key", cloud.length ? "e2b-testnet" : "dev-nobody", "--e2b-url", e2bUrl] : []),
       // `dev-studio`'s SHA-256.
       ...(process.env.DEV_CONTROL_BROKER === "1"
           ? ["--inference-clients", "studio:1edd80a2427c1ddb2398ac22c980e5e9513aa02f1ae50c52ea68df4b49502b81:20:payers", "--inference-upstream", "http://127.0.0.1:9", "--cloud-secret-key", "de".repeat(32)]

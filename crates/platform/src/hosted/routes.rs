@@ -6,9 +6,9 @@
 //! |---|---|
 //! | `GET /api/workspaces` (every project's the caller is in) | members |
 //! | `GET /api/projects/{project}/workspaces` | members |
-//! | `POST /api/projects/{project}/workspaces` | owners and editors, on `ARUGULA_HOSTED_ACCOUNTS` |
-//! | `GET /api/projects/{project}/workspaces/{id}` (open: wakes a paused box) | members |
-//! | `POST /api/projects/{project}/workspaces/{id}/rebuild` | owners and editors, on `ARUGULA_HOSTED_ACCOUNTS` |
+//! | `POST /api/projects/{project}/workspaces` | owners and editors, under the launch switches ([`super::switches`]) |
+//! | `GET /api/projects/{project}/workspaces/{id}` (open: wakes a paused box, unless its maker is suspended or past its hours) | members |
+//! | `POST /api/projects/{project}/workspaces/{id}/rebuild` | owners and editors, under the launch switches |
 //! | `DELETE /api/projects/{project}/workspaces/{id}` | owners and editors |
 //! | `PUT /api/projects/{project}/workspaces/{id}/spec` ("rebuild needed" until it's rebuilt) | owners and editors |
 //! | `GET /api/projects/{project}/workspaces/{id}/secrets` (names only) | members |
@@ -81,15 +81,11 @@ fn enabled(app: &Platform) -> Result<(), ApiError> {
 }
 
 /// A member who may make, rebuild and delete workspaces: not a team's
-/// viewer. `making`: making a box, which also needs the account on the
-/// allowlist.
-async fn changer(app: &Platform, account: &str, project: &str, making: bool) -> Result<String, ApiError> {
+/// viewer.
+async fn changer(app: &Platform, account: &str, project: &str) -> Result<String, ApiError> {
     let (project, role) = membership(app, account, project, true).await?;
     if role == TeamRole::Viewer {
         return Err(err(StatusCode::FORBIDDEN, "a viewer can't change a project's cloud workspaces"));
-    }
-    if making && !app.hosted.allows(account) {
-        return Err(err(StatusCode::FORBIDDEN, "cloud workspaces are in a limited beta"));
     }
     Ok(project)
 }
@@ -179,7 +175,7 @@ pub async fn create(
     Json(b): Json<NewWorkspace>,
 ) -> Result<(StatusCode, Json<HostedWorkspace>), ApiError> {
     enabled(&app)?;
-    let project = changer(&app, &account, &project, true).await?;
+    let project = changer(&app, &account, &project).await?;
     let name = b.name.trim();
     if !super::good_name(name) {
         return Err(err(
@@ -188,8 +184,20 @@ pub async fn create(
         ));
     }
     b.spec.check().map_err(|e| err(StatusCode::UNPROCESSABLE_ENTITY, &e))?;
+    // The launch switches (#531): new boxes open to this account, its
+    // hours left, and how many it may have made.
+    let mine = super::switches::may_make(&app, &account, true).await?;
     let id = super::new_id();
-    let w = match app.db.add_hosted_workspace(&id, &project, name, &b.spec, &account, MAX_PER_PROJECT, now_ms())? {
+    let w = match app.db.add_hosted_workspace_capped(
+        &id,
+        &project,
+        name,
+        &b.spec,
+        &account,
+        MAX_PER_PROJECT,
+        mine,
+        now_ms(),
+    )? {
         Added::Made(w) => *w,
         Added::NameTaken => {
             return Err(err(StatusCode::CONFLICT, &format!("this project has a cloud workspace called {name}")));
@@ -200,6 +208,7 @@ pub async fn create(
                 &format!("a project has at most {MAX_PER_PROJECT} cloud workspaces: delete one first"),
             ));
         }
+        Added::MakerFull(made) => return Err(super::switches::box_cap(made)),
     };
     info!(%account, %project, workspace = %w.id, "made a hosted workspace");
     app.analytics.capture(&account, "hosted workspace created", json!({ "repos": b.spec.repos.len() }));
@@ -216,6 +225,9 @@ pub async fn open(
     enabled(&app)?;
     let (project, _) = membership(&app, &account, &project, false).await?;
     let w = found(app.db.hosted_workspace(&project, &id)?)?;
+    if w.state == "paused" {
+        super::switches::may_wake(&app, &w).await?;
+    }
     if w.state == "paused" && super::ask(&app, &w.id, Ask::Wake)? {
         let w = found(app.db.hosted_workspace(&project, &w.id)?)?;
         return Ok(Json(shown_after(&app, &project, w).await));
@@ -229,8 +241,9 @@ pub async fn rebuild(
     Path((project, id)): Path<(String, String)>,
 ) -> Result<Json<HostedWorkspace>, ApiError> {
     enabled(&app)?;
-    let project = changer(&app, &account, &project, true).await?;
+    let project = changer(&app, &account, &project).await?;
     let w = found(app.db.hosted_workspace(&project, &id)?)?;
+    super::switches::may_make(&app, &account, false).await?;
     if !super::ask(&app, &w.id, Ask::Rebuild)? {
         return Err(err(StatusCode::CONFLICT, "this cloud workspace is being deleted"));
     }
@@ -245,7 +258,7 @@ pub async fn delete(
     Path((project, id)): Path<(String, String)>,
 ) -> Result<Json<HostedWorkspace>, ApiError> {
     enabled(&app)?;
-    let project = changer(&app, &account, &project, false).await?;
+    let project = changer(&app, &account, &project).await?;
     let w = found(app.db.hosted_workspace(&project, &id)?)?;
     super::ask(&app, &w.id, Ask::Delete)?;
     // Its thread sessions end now (M256), not when their jobs next look.
@@ -267,7 +280,7 @@ pub async fn set_spec(
     Json(spec): Json<Spec>,
 ) -> Result<Json<HostedWorkspace>, ApiError> {
     enabled(&app)?;
-    let project = changer(&app, &account, &project, false).await?;
+    let project = changer(&app, &account, &project).await?;
     let w = found(app.db.hosted_workspace(&project, &id)?)?;
     spec.check().map_err(|e| err(StatusCode::UNPROCESSABLE_ENTITY, &e))?;
     let w = found(app.db.set_hosted_spec(&project, &w.id, &spec, now_ms())?)?;
@@ -321,7 +334,7 @@ pub async fn put_secret(
     Json(b): Json<SecretValue>,
 ) -> Result<StatusCode, ApiError> {
     enabled(&app)?;
-    let project = changer(&app, &account, &project, false).await?;
+    let project = changer(&app, &account, &project).await?;
     let w = found(app.db.hosted_workspace(&project, &id)?)?;
     if !crate::secrets::valid_name(&name) {
         return Err(err(StatusCode::BAD_REQUEST, "a secret's name: capital letters, digits and '_'"));
@@ -345,7 +358,7 @@ pub async fn delete_secret(
     Path((project, id, name)): Path<(String, String, String)>,
 ) -> Result<StatusCode, ApiError> {
     enabled(&app)?;
-    let project = changer(&app, &account, &project, false).await?;
+    let project = changer(&app, &account, &project).await?;
     let w = found(app.db.hosted_workspace(&project, &id)?)?;
     if !app.db.remove_hosted_secret(&w.id, &name)? {
         return Err(err(StatusCode::NOT_FOUND, "no such secret"));

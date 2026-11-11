@@ -71,6 +71,14 @@ kill_timeout = "25s"
   # Public previews of hosted workspaces' ports (M187), as the hub serves
   # them (packaging/control/fly.toml).
   ARUGULA_PREVIEW_DOMAIN = "arugula.site"
+  # Prometheus metrics on the private network (part of Arugula #532), which
+  # [metrics] has Fly's managed Prometheus scrape for the launch dashboard
+  # (docs/launch-runbook.md). Never in [[services]]: Flycast would carry it.
+  ARUGULA_METRICS_LISTEN = "[::]:9091"
+
+[metrics]
+  port = 9091
+  path = "/metrics"
 
 # Flycast only (see the top): plain TCP on 7700, passed through to the
 # platform as it is, with no handlers (no TLS, no HTTP rewriting, no

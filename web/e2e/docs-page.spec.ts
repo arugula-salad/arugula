@@ -665,3 +665,64 @@ test.describe("the page drawn", () => {
     });
   }
 });
+
+/** A Doc's times and maker as its `meta.json` keeps them: the list reads them from disk. */
+function setMeta(id: string, patch: Record<string, unknown>) {
+  const file = join(state, "docs", id, "meta.json");
+  writeFileSync(file, JSON.stringify({ ...(JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>), ...patch }));
+}
+
+test("the list sorts by updated or created, each row says which, and the browser remembers (Arugula #825)", async ({ page }) => {
+  await reset(page);
+  await doc(page, "Tally old made");
+  await doc(page, "Tally new made");
+  const [oldMade, newMade] = [await docId("Tally old made"), await docId("Tally new made")];
+  const day = 86_400_000;
+  // Old was made first but touched last: Updated puts it on top, Created last.
+  setMeta(oldMade, { made: Date.now() - 6 * day, updated: Date.now() - 3_600_000 });
+  setMeta(newMade, { made: Date.now() - 2 * day, updated: Date.now() - 5 * 3_600_000 });
+  await goToDocs(page);
+  await page.locator("[data-list-search]").fill("Tally");
+  const titles = () => page.locator("[data-doc] [data-doc-title]").allTextContents();
+  const sort = page.locator("[data-list-sort]");
+
+  await expect(sort).toHaveValue("updated");
+  await expect.poll(titles).toEqual(["Tally old made", "Tally new made"]);
+  await expect(row(page, "Tally old made").locator(".list-row-age")).toHaveText("edited 1h ago");
+
+  await sort.selectOption("created");
+  await expect.poll(titles).toEqual(["Tally new made", "Tally old made"]);
+  await expect(row(page, "Tally new made").locator(".list-row-age")).toHaveText("created 2d ago");
+  expect(await page.evaluate(() => localStorage.getItem("docs-sort"))).toBe("created");
+
+  await page.reload();
+  await page.locator("[data-list-search]").fill("Tally");
+  await expect(sort).toHaveValue("created");
+  await expect.poll(titles).toEqual(["Tally new made", "Tally old made"]);
+});
+
+test("an open Doc says when it was created and last edited; one from before Docs were kept says only the edit (Arugula #825)", async ({ page }) => {
+  await reset(page);
+  const d = await doc(page, "Stamped");
+  const id = await docId("Stamped");
+  const day = 86_400_000;
+  setMeta(id, { made: Date.now() - 9 * day, updated: Date.now() - 3 * 3_600_000 });
+  // The block's state is read when it opens: close it and open it again.
+  await post(`/api/panes/${d}/close`, {});
+  await goToDocs(page);
+
+  const p = await preview(page, "Stamped");
+  await expect(p.locator("[data-doc-times]")).toHaveText(/^Created \w+ \d+ · edited 3h ago$/);
+  await expect(p.locator("[data-doc-created] time")).toHaveAttribute("title", /\d{4}.*\d:\d\d/);
+  await p.locator("[data-open-doc]").click();
+  const block = page.locator("[data-doc-block]");
+  await expect(block.locator("[data-doc-times]")).toHaveText(/^Created \w+ \d+ · edited 3h ago$/);
+
+  // Its made time is the migration's, or a file's: not said.
+  setMeta(id, { by: "migrated" });
+  await post(`/api/panes/${await activePane(page)}/close`, {});
+  await goToDocs(page);
+  const m = await preview(page, "Stamped");
+  await expect(m.locator("[data-doc-times]")).toHaveText("Edited 3h ago");
+  await expect(m.locator("[data-doc-created]")).toHaveCount(0);
+});

@@ -10,6 +10,7 @@ import {
   Machine,
   MachineConfig,
   MachineGuest,
+  MachineMetrics,
   MachineMount,
   MachinePort,
   MachineRestart,
@@ -42,6 +43,9 @@ export const control = new Machine({
       ARUGULA_CONTROL_BLOCK_DOMAIN: "arugula.run",
       ARUGULA_PREVIEW_DOMAIN: "arugula.site",
       ARUGULA_CONTROL_APPLE_TEAM_ID: "HNDPMQPF22",
+      // Prometheus metrics on the private network, which `metrics` below
+      // has Fly's managed Prometheus scrape (part of Arugula #532).
+      ARUGULA_METRICS_LISTEN: "[::]:9091",
       // What `fly deploy` sets, kept so `fly status` and a hotfix's deploy see the same Machine.
       FLY_PROCESS_GROUP: "app",
       PRIMARY_REGION: "ewr",
@@ -54,6 +58,8 @@ export const control = new Machine({
     restart: new MachineRestart({ policy: "on-failure", max_retries: 10 }),
     // On a stop, control lets Litestream sync one last time (up to 10 s).
     stop_config: new StopConfig({ signal: "SIGTERM", timeout: "15s" }),
+    // The launch dashboard's (docs/launch-runbook.md), at fly-metrics.net.
+    metrics: new MachineMetrics({ port: 9091, path: "/metrics" }),
     metadata: { fly_process_group: "app" },
     services: [
       new MachineService({
