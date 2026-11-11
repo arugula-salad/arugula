@@ -135,6 +135,17 @@ async fn daemon_signatures_cover_the_request_and_are_good_once() {
     let again = get(h, pq).await.unwrap();
     assert_eq!(again.status(), 401, "a copy of a request does nothing");
     assert!(again.text().await.unwrap().contains("used already"));
+    // Nor does a copy whose signature is spelled another way (hex reads in
+    // either case), in whole or in one letter.
+    let h = v2(&d, "GET", pq, b"");
+    let (head, sig) = h.rsplit_once(' ').unwrap();
+    let upper = format!("{head} {}", sig.to_ascii_uppercase());
+    let i = sig.find(|c: char| c.is_ascii_lowercase()).unwrap();
+    let one = format!("{head} {}{}{}", &sig[..i], sig[i..=i].to_ascii_uppercase(), &sig[i + 1..]);
+    assert_eq!(get(upper.clone(), pq).await.unwrap().status(), 200, "either case is a good signature");
+    for copy in [h, upper, one] {
+        assert_eq!(get(copy, pq).await.unwrap().status(), 401, "a respelled copy does nothing");
+    }
     // Another query than the one signed.
     let h = v2(&d, "GET", pq, b"");
     assert_eq!(get(h, "/api/daemon/trust?features=other").await.unwrap().status(), 401);
@@ -214,7 +225,10 @@ async fn joining_again_needs_the_machines_key() {
     // Its holder can (to move it, say), with a fresh proof each time.
     let proven = join_body(&joined, true);
     assert_eq!(post(proven.clone()).await.unwrap().status(), 200);
+    let mut respelled = proven.clone();
+    respelled["proof"]["sig"] = json!(proven["proof"]["sig"].as_str().unwrap().to_ascii_uppercase());
     assert_eq!(post(proven).await.unwrap().status(), 401, "a proof is good once");
+    assert_eq!(post(respelled).await.unwrap().status(), 401, "in any spelling");
     // A new machine on Arugula before 0.17 (no proof) is told to update.
     let fresh = DeviceKeys::generate();
     assert_eq!(post(join_body(&fresh, false)).await.unwrap().status(), 426);
