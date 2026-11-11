@@ -13,7 +13,11 @@
 //!   past its clones, and one per machine and repo each few minutes
 //!   ([`GithubApp::box_clone_token`]). Any other repo is cloned
 //!   with the workspace's `GIT_TOKEN` secret (and `GIT_USERNAME`, else
-//!   `x-access-token`), when it has one.
+//!   `x-access-token`), when it has one, and only when the repo's host is
+//!   one the secret was set for: the hosts of the spec's repos when it was
+//!   set ([`hosts_of`]), kept beside it. A repo on any other host, one the
+//!   spec named later, is cloned with nothing, until someone sets the
+//!   secret again with that host in the spec.
 //!   The daemon hands them to git in its environment for the clone alone:
 //!   nothing is written to the box's disk.
 //! - **What it's built from.** Reading the plan marks the box built from
@@ -61,6 +65,29 @@ fn secret(app: &Platform, project: &str, workspace: &str, name: &str) -> anyhow:
         return Ok(None);
     };
     Ok(Some(crate::keys::open_hosted(&app.db.c(), master, project, workspace, name, &sealed)?))
+}
+
+/// A clone URL's host, as a secret is bound to it: lowercase, with its
+/// port when it names one.
+pub fn host_of(url: &str) -> Option<String> {
+    let u = url::Url::parse(url).ok()?;
+    let host = u.host_str()?.to_ascii_lowercase();
+    Some(match u.port() {
+        Some(p) => format!("{host}:{p}"),
+        None => host,
+    })
+}
+
+/// The hosts of `spec`'s repos, each once, in order: what `GIT_TOKEN` is
+/// bound to as it's set.
+pub fn hosts_of(spec: &super::Spec) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for h in spec.repos.iter().filter_map(|r| host_of(r)) {
+        if !out.contains(&h) {
+            out.push(h);
+        }
+    }
+    out
 }
 
 /// `OWNER/NAME` of a GitHub clone URL.
@@ -114,6 +141,7 @@ pub async fn plan(app: &Platform, project: &str, workspace: &str, machine: &str)
     // A builder sets up with its workspace's secrets.
     let secrets_of = w.parent.clone().unwrap_or_else(|| w.id.clone());
     let token = secret(app, project, &secrets_of, GIT_TOKEN)?;
+    let token_hosts = app.db.hosted_secret_hosts(&secrets_of, GIT_TOKEN)?;
     let user = secret(app, project, &secrets_of, GIT_USERNAME)?.filter(|u| !u.is_empty());
     // The box said it's done cloning: no more App tokens until it's rebuilt.
     let cloning = w
@@ -134,7 +162,7 @@ pub async fn plan(app: &Platform, project: &str, workspace: &str, machine: &str)
                 password: Some(t),
                 revoke: Some(revoke),
             }
-        } else if let Some(t) = &token {
+        } else if let Some(t) = token.as_ref().filter(|_| host_of(url).is_some_and(|h| token_hosts.contains(&h))) {
             SetupRepo {
                 url: url.clone(),
                 via: "secret".into(),

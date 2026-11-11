@@ -1699,6 +1699,29 @@ pub async fn agent_env(app: &App) -> Res<(std::path::PathBuf, Vec<(String, Strin
     Ok((home, crate::shellenv::merge(&env, &shell, None)))
 }
 
+/// #520: `agent_env` for installing `a`'s adapter, with the shell read
+/// again first when what was kept has no Node that runs it. Node installed
+/// after the daemon started (nvm, fnm, nodejs.org, as the "needs Node"
+/// message says to) is only in the rc files, which were read at the start.
+pub async fn agent_env_for(
+    app: &App,
+    a: &'static crate::agent::adapters::Adapter,
+) -> Res<(std::path::PathBuf, Vec<(String, String)>)> {
+    let (home, env) = agent_env(app).await?;
+    let (h, e) = (home.clone(), env.clone());
+    let no_node = crate::task::spawn_blocking(move || {
+        matches!(crate::agent::adapters::status(a, &h, &e).state, crate::agent::adapters::State::NoNode { .. })
+    })
+    .await
+    .unwrap_or(false);
+    if !no_node {
+        return Ok((home, env));
+    }
+    tracing::info!(adapter = a.package, "no Node for an adapter: reading the shell's environment again (#520)");
+    app.mux.shell_env.refresh();
+    agent_env(app).await
+}
+
 pub(crate) fn agents_json(snap: &crate::inventory::Snapshot) -> AgentsInventory {
     let (run, off): (Vec<_>, Vec<_>) = arugula_vt::detect::AGENTS.iter().map(|a| a.id).partition(|id| snap.runs(id));
     let own = |ids: Vec<&str>| ids.into_iter().map(str::to_owned).collect();

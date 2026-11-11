@@ -692,22 +692,43 @@ impl Db {
     /// Keep a secret's name for a workspace, its value sealed here
     /// (`Some`, with the project's key: [`crate::keys::seal_value`] with
     /// [`crate::keys::hosted_name`]) or in the provider's broker.
+    /// Set `workspace`'s secret `name`. `hosts`: the hosts it may be sent
+    /// to, for a clone secret (`GIT_TOKEN`, bound as it's set:
+    /// `hosted::setup`), else `None`; setting it again binds it again.
     pub fn set_hosted_secret(
         &self,
         workspace: &str,
         name: &str,
         sealed: Option<&crate::keys::Sealed>,
+        hosts: Option<&[String]>,
         now: u64,
     ) -> Result<()> {
         let store = if sealed.is_some() { "sealed" } else { "broker" };
+        let hosts = hosts.map(serde_json::to_string).transpose()?;
         self.c().execute(
-            "INSERT INTO hosted_workspace_secrets (workspace_id, name, store, sealed, key_version, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            "INSERT INTO hosted_workspace_secrets (workspace_id, name, store, sealed, key_version, updated_at, hosts)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
              ON CONFLICT (workspace_id, name) DO UPDATE SET store = excluded.store, sealed = excluded.sealed,
-                 key_version = excluded.key_version, updated_at = excluded.updated_at",
-            params![workspace, name, store, sealed.map(|s| &s.bytes), sealed.map_or(0, |s| s.key_version), now],
+                 key_version = excluded.key_version, updated_at = excluded.updated_at, hosts = excluded.hosts",
+            params![workspace, name, store, sealed.map(|s| &s.bytes), sealed.map_or(0, |s| s.key_version), now, hosts],
         )?;
         Ok(())
+    }
+
+    /// The hosts `workspace`'s secret `name` was bound to as it was set
+    /// ([`Self::set_hosted_secret`]): none when it isn't set, or was set
+    /// unbound (before secrets were bound, or another kind).
+    pub fn hosted_secret_hosts(&self, workspace: &str, name: &str) -> Result<Vec<String>> {
+        let hosts: Option<String> = self
+            .c()
+            .query_row(
+                "SELECT hosts FROM hosted_workspace_secrets WHERE workspace_id = ?1 AND name = ?2",
+                params![workspace, name],
+                |r| r.get(0),
+            )
+            .optional()?
+            .flatten();
+        Ok(hosts.and_then(|h| serde_json::from_str(&h).ok()).unwrap_or_default())
     }
 
     /// A workspace's secrets: each name and where its value is.
@@ -984,8 +1005,15 @@ mod tests {
         let db = Db::test();
         made(db.add_hosted_workspace("hw_1", "prj_a", "dev", &spec(), "alice", 5, 0).unwrap());
         let sealed = crate::keys::Sealed { key_version: 1, bytes: vec![1, 2, 3] };
-        db.set_hosted_secret("hw_1", "NPM_TOKEN", Some(&sealed), 1).unwrap();
-        db.set_hosted_secret("hw_1", "ANTHROPIC_KEY", None, 1).unwrap();
+        db.set_hosted_secret("hw_1", "NPM_TOKEN", Some(&sealed), None, 1).unwrap();
+        db.set_hosted_secret("hw_1", "ANTHROPIC_KEY", None, None, 1).unwrap();
+        assert!(db.hosted_secret_hosts("hw_1", "NPM_TOKEN").unwrap().is_empty());
+        let hosts = vec!["git.example".to_owned()];
+        db.set_hosted_secret("hw_1", "GIT_TOKEN", Some(&sealed), Some(&hosts), 1).unwrap();
+        assert_eq!(db.hosted_secret_hosts("hw_1", "GIT_TOKEN").unwrap(), hosts);
+        db.set_hosted_secret("hw_1", "GIT_TOKEN", Some(&sealed), Some(&[]), 2).unwrap();
+        assert!(db.hosted_secret_hosts("hw_1", "GIT_TOKEN").unwrap().is_empty(), "set again, bound again");
+        assert!(db.remove_hosted_secret("hw_1", "GIT_TOKEN").unwrap());
         assert_eq!(
             db.hosted_secret_names("hw_1").unwrap(),
             [("ANTHROPIC_KEY".to_owned(), "broker".to_owned()), ("NPM_TOKEN".to_owned(), "sealed".to_owned())]

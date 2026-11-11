@@ -1,4 +1,4 @@
--- 0108: `docs.write`, an agent's power to make and write a project's Docs
+-- 0109: `docs.write`, an agent's power to make and write a project's Docs
 -- (Arugula #862). A team's Docs live in its project, and a machine's agents
 -- write them there as their owner's, so every machine that may write the
 -- project's issues (`issues.write`, live, over a project) is given it too,

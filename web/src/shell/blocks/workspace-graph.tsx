@@ -10,6 +10,7 @@ import { BlockError, BlockLoading } from "./block-states";
 import type { WorkspaceState } from "./workspace";
 import { Bar } from "../../shared/ui/bar";
 import { CloseIcon, IconButton } from "../../shared/ui/icons";
+import { webLink } from "../../shared/web-link";
 
 export type GraphStatus =
   | { is: "off" }
@@ -24,6 +25,7 @@ export type Clicks = "shell" | "changes" | "none";
  * `member` (or the whole estate) and `env` ("" is the source graph), its
  * gate strip reading `gates` (the block's env, whatever the graph shows). */
 function beholdSrc(root: string, member: string | null, env: string, gates: string, host: string): string {
+  if (!webLink(root)) return "about:blank";
   const q = new URLSearchParams();
   if (member) q.set("member", member);
   q.set("env", env);

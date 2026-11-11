@@ -407,11 +407,16 @@ function PermCard({ client, id, p, cwd, owner }: { client: Client; id: PaneId; p
   );
 }
 
-/** Images the block keeps (M71), fetched once each: a URL to show. */
+/** Images the block keeps (M71), fetched once each per host: a URL to
+ * show. */
 const kept = new Map<string, Promise<string | null>>();
 
+/** The kinds of picture a block keeps (the daemon's `agent::images`); the
+ * page opens nothing else it's sent as one. */
+const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+
 function keptImage(client: Client, id: PaneId, name: string): Promise<string | null> {
-  const key = `${id}/${name}`;
+  const key = `${client.base} ${id}/${name}`;
   let p = kept.get(key);
   if (!p) {
     p = client
@@ -419,6 +424,7 @@ function keptImage(client: Client, id: PaneId, name: string): Promise<string | n
       .then(async (res) => {
         if (!res.ok) return null;
         const { mime, data } = await res.json<{ mime: string; data: string }>();
+        if (!IMAGE_TYPES.includes(mime)) return null;
         const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
         return URL.createObjectURL(new Blob([bytes], { type: mime }));
       })

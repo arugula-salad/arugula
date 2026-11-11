@@ -246,6 +246,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "arugula-control-load"
+version = "0.66.13"
+dependencies = [
+ "anyhow",
+ "arugula-control-wire",
+ "arugula-e2e",
+ "base64 0.23.1",
+ "ciborium",
+ "clap",
+ "ed25519-dalek",
+ "futures-util",
+ "hex",
+ "reqwest",
+ "rustls",
+ "rustls-native-certs",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tokio",
+ "tokio-tungstenite 0.30.0",
+ "url",
+]
+
+[[package]]
 name = "arugula-control-wire"
 version = "0.0.0"
 dependencies = [
@@ -461,6 +485,8 @@ name = "arugula-proto"
 version = "0.0.0"
 dependencies = [
  "arugula-core",
+ "base64 0.23.1",
+ "ed25519-dalek",
  "getrandom 0.4.3",
  "serde",
  "serde_json",

@@ -277,6 +277,8 @@ version = "0.0.0"
 dependencies = [
  "arugula-control-wire",
  "arugula-core",
+ "base64 0.23.1",
+ "ed25519-dalek",
  "getrandom 0.4.3",
  "schemars",
  "serde",
@@ -391,6 +393,7 @@ dependencies = [
  "axum",
  "base64 0.23.1",
  "clap",
+ "ed25519-dalek",
  "futures-util",
  "getrandom 0.4.3",
  "hex",

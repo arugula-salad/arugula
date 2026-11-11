@@ -19,11 +19,18 @@
 //!    (`core.hooksPath=/dev/null`), no system or global config, and none of
 //!    the agent's.
 //! 4. The token comes from control for this push alone (`WORK_SESSION_PUSH`:
-//!    the session's repo, `contents: write` and `workflows: write`, since
-//!    GitHub refuses a branch that began before main changed CI without
-//!    it: aru-115, amended), reaches git
+//!    the session's repo, `contents: write`, never `workflows`: aru-115,
+//!    amended 2026-11-10), reaches git
 //!    through a credential helper reading one process's environment (never
 //!    a file, never argv), and is revoked once the push is done.
+//!
+//! **Workflow files.** Without `workflows`, GitHub refuses a push that
+//! creates or changes a file under `.github/workflows/`. So a turn whose
+//! commits change one isn't pushed: the box says so before it asks for a
+//! token ([`changes_ci`]), and a refusal GitHub gives anyway (a branch
+//! that began before the default branch changed its workflows: GitHub
+//! compares a new branch's tree with the default branch's) is said plainly
+//! too ([`CI_BEHIND`]), for the thread.
 //!
 //! The push goes to `https://github.com/<owner>/<name>.git`, the session's
 //! repo on GitHub (tests name another base, `ARUGULA_GITHUB_GIT`), never to
@@ -61,6 +68,38 @@ const BUNDLE_MAX: usize = 512 * 1024 * 1024;
 /// The credential helper git asks: the token from its own environment.
 const HELPER: &str =
     "!f() { test \"$1\" = get || exit 0; echo username=x-access-token; echo \"password=$ARUGULA_PUSH_TOKEN\"; }; f";
+
+/// Where GitHub's workflow files are.
+pub const WORKFLOWS: &str = ".github/workflows";
+
+/// What GitHub says refusing a push that changes a workflow file without
+/// `workflows`.
+const GITHUB_CI_REFUSAL: &str = "without `workflows` permission";
+
+/// Why a branch GitHub refused for its workflow files wasn't pushed, when
+/// its own commits don't change any: it began before the default branch
+/// changed them.
+pub const CI_BEHIND: &str = "GitHub refused it: this branch's workflow files (.github/workflows/) differ from the \
+                             default branch's, and a session's push can't change workflow files. The default \
+                             branch's workflows changed after this session began; ask again in a new session, \
+                             which starts from the default branch as it is now";
+
+/// Why a turn whose commits change a workflow file isn't pushed, from the
+/// names `git diff --name-only` gave for [`WORKFLOWS`]: `None` when it
+/// changes none.
+pub fn changes_ci(names: &str) -> Option<String> {
+    let files: Vec<&str> = names.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+    if files.is_empty() {
+        return None;
+    }
+    let shown: Vec<String> = files.iter().take(5).map(|f| super::super::printable(f)).collect();
+    let more = if files.len() > 5 { format!(" and {} more", files.len() - 5) } else { String::new() };
+    Some(format!(
+        "its commits change GitHub workflow files ({}{more}), and a session's push can't change workflow files. \
+         Take those changes out of its commits and say in its answer what should change, for someone who can push it",
+        shown.join(", ")
+    ))
+}
 
 /// Whether session `session`, whose own branch is `own`, may push
 /// `branch`: its own, exactly, and a session's branch by its shape.
@@ -248,8 +287,11 @@ pub async fn push_bundle(
     if let Some(t) = token {
         c.env("ARUGULA_PUSH_TOKEN", t);
     }
-    run(c, &format!("push {branch}")).await?;
-    Ok(sha)
+    match run(c, &format!("push {branch}")).await {
+        Ok(_) => Ok(sha),
+        Err(e) if e.contains(GITHUB_CI_REFUSAL) => Err(CI_BEHIND.into()),
+        Err(e) => Err(e),
+    }
 }
 
 /// Bytes the session user's `argv` printed.
@@ -343,6 +385,30 @@ pub async fn push_turn(app: &App, l: &AgentSessionLedger) -> Result<Option<Strin
     .unwrap_or(true);
     if !ahead {
         return Ok(None);
+    }
+    // Its own commits since it left the repo's branch, against the files
+    // its token can't write: refused here, plainly, before a token's asked
+    // for. (The agent's checkout could hide them; GitHub refuses the push
+    // all the same, and that's said plainly too.)
+    let ci = super::as_user(
+        &l.user,
+        &[
+            "git",
+            "-C",
+            &l.checkout,
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--name-only",
+            &format!("refs/remotes/origin/HEAD...{own}"),
+            "--",
+            WORKFLOWS,
+        ],
+    )
+    .await
+    .unwrap_or_default();
+    if let Some(why) = changes_ci(&ci) {
+        return Err(why);
     }
     let dir = app.control.state_dir().to_owned();
     let place = place(&dir, l);

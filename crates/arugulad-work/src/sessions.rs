@@ -97,8 +97,12 @@
 //!   no push. Its turn's reply is the review, which control posts in its
 //!   thread.
 //! - **A slot is left clean** ([`clean_slot`]): when a session ends (or
-//!   fails), what its pushes left, its checkout and its user's `~/.claude`
-//!   go, so the next session in that slot starts with nothing of it.
+//!   fails), what its pushes left and everything in its user's home go
+//!   (its checkout, its agent's config and conversations, dotfiles), and
+//!   its user's files in the temporary directories, so the next session in
+//!   that slot starts with nothing of it. Its build caches stay for the
+//!   slot's next session only when that's the same asker's; another
+//!   asker's session finds an empty home ([`fresh_home`]).
 //! - **People's answers** ([`SessionAction`]: a question's answer, a
 //!   permission's approval or denial, cancelling the turn) are done once
 //!   each, as the person who asked, and named in the next report.
@@ -859,6 +863,12 @@ async fn take(app: &Arc<App>, w: &AgentSessionWork) {
     };
     if real {
         super::kill_user(&l.user.user).await;
+    }
+    // The slot's home as its last session left it, but nothing of another
+    // asker's: their build caches go too.
+    let keep = same_asker(&dir, &l.user.user, &l.session, &l.asker);
+    if let Err(why) = fresh_home(&l.user, keep).await {
+        return fail(l, format!("its slot: {why}"));
     }
     match checkout(app, &dir, &l, src, real).await {
         Ok(notes) => l.notes = notes,
@@ -2080,21 +2090,77 @@ async fn stop_agent(app: &App, l: &AgentSessionLedger, polite: bool) {
     kill_agent(app, l, l.block).await;
 }
 
+/// Empty session user `u`'s home for the next session in its slot, as `u`
+/// (who owns it: never as root, through paths the agent could have made
+/// links of): everything in it goes, its agent's config and conversations,
+/// dotfiles, shell startup files, `~/.local`, the checkout, and then the
+/// system's skeleton files come back. With `keep_caches`, its build
+/// caches stay (`~/.cache`, where a setup puts sccache's and cargo's
+/// target, and `~/.cargo`'s registry and git, its downloaded crates), so a
+/// slot's next session of the same asker doesn't build its dependencies
+/// again; nothing that's configuration (`~/.cargo`'s config and bin go).
+/// Then `u`'s own files in the shared temporary directories go.
+async fn fresh_home(u: &AsUser, keep_caches: bool) -> Result<(), String> {
+    // Each of the home's entries but those kept, made writable first (an
+    // agent may have taken its own write bit away), then removed; `rm -rf`
+    // and `chmod -R` follow no links.
+    const SCRIPT: &str = r#"set -u
+home=$1; keep=$2; shift 2
+[ -d "$home" ] || exit 0
+cd -- "$home" || exit 1
+gone() { chmod -R u+rwX -- "$1" 2>/dev/null; rm -rf -- "$1"; }
+for e in .[!.]* ..?* *; do
+  [ -e "$e" ] || [ -L "$e" ] || continue
+  if [ "$keep" = 1 ] && [ "$e" = .cache ] && [ -d .cache ] && [ ! -L .cache ]; then continue; fi
+  if [ "$keep" = 1 ] && [ "$e" = .cargo ] && [ -d .cargo ] && [ ! -L .cargo ]; then
+    for c in .cargo/.[!.]* .cargo/..?* .cargo/*; do
+      [ -e "$c" ] || [ -L "$c" ] || continue
+      case $c in .cargo/registry | .cargo/git) [ -L "$c" ] && gone "$c" ;; *) gone "$c" ;; esac
+    done
+    continue
+  fi
+  gone "$e"
+done
+if [ -d /etc/skel ]; then cp -R /etc/skel/. "$home"/ 2>/dev/null || true; fi
+"#;
+    let keep = if keep_caches { "1" } else { "0" };
+    as_user(u, &["sh", "-c", SCRIPT, "sh", &u.home, keep]).await.map(|_| ())?;
+    // Its files in the shared temporary directories, by its own name: none
+    // where there's no such user.
+    if AsUser::plain(&u.user) {
+        let _ = as_user(
+            u,
+            &["find", "/tmp", "/var/tmp", "/dev/shm", "-xdev", "-mindepth", "1", "-user", &u.user, "-delete"],
+        )
+        .await;
+    }
+    Ok(())
+}
+
 /// Leave an ended session's slot clean for the next session in it: what
 /// its pushes left ([`push::clean`]: the daemon's repo and bundle under
-/// `dir`), then its checkout and its user's `~/.claude` (its agent's
-/// conversations). The slot's are removed as the session's user, who owns
-/// them: never as root, through paths the agent could have made links of.
-/// `end` and `fail` call it, once each session.
+/// `dir`), then everything in its user's home but its build caches
+/// ([`fresh_home`]), its checkout and its agent's conversations included.
+/// `end` and `fail` call it, once each session. The caches go too when the
+/// slot's next session is another asker's ([`take`]).
 pub async fn clean_slot(dir: &Path, l: &AgentSessionLedger) {
     push::clean(dir, l).await;
-    let claude = Path::new(&l.user.home).join(".claude").display().to_string();
-    match as_user(&l.user, &["rm", "-rf", "--", &l.checkout, &claude]).await {
+    match fresh_home(&l.user, true).await {
         Ok(_) => info!(session = l.session, user = l.user.user, "hosted: cleaned an ended session's slot"),
         Err(e) => {
             warn!(session = l.session, user = l.user.user, error = e, "hosted: can't clean an ended session's slot")
         }
     }
+}
+
+/// Whether slot user `user`'s last session before `session` was asked by
+/// `asker`: only then does `session` keep the slot's build caches.
+fn same_asker(dir: &Path, user: &str, session: &str, asker: &str) -> bool {
+    all(dir)
+        .into_iter()
+        .filter(|l| l.user.user == user && l.session != session)
+        .max_by_key(|l| l.taken_at)
+        .is_some_and(|l| !asker.is_empty() && l.asker == asker)
 }
 
 /// Send session `id`'s reports control hasn't answered, in order, until

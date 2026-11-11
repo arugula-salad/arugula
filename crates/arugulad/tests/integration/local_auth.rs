@@ -132,6 +132,15 @@ fn a_signin_link_gives_the_page_its_key_and_goes_to_the_page() {
     let clear = format!("set-cookie: arugula_{}=; path=/; httponly; samesite=lax; max-age=0", d.port);
     assert!(head.contains(&clear), "{head}");
     assert!(head.contains("cache-control: no-store"), "{head}");
+    // Its one script, and no other, by its hash.
+    let script = page.split_once("<script>").and_then(|(_, r)| r.split_once("</script>")).unwrap().0;
+    let hash = {
+        use base64::Engine;
+        use sha2::Digest;
+        base64::engine::general_purpose::STANDARD.encode(sha2::Sha256::digest(script.as_bytes()))
+    };
+    let csp = format!("content-security-policy: default-src 'none'; script-src 'sha256-{}'", hash.to_ascii_lowercase());
+    assert!(head.contains(&csp), "{head}");
     // Only a path of ours.
     for next in ["//evil.example/", "https://evil.example/", "/%5Cevil.example"] {
         let (status, _, page) = tcp(&d, "GET", &format!("/auth?token={token}&next={next}"), &[]);

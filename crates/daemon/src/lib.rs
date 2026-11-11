@@ -995,8 +995,8 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         ProviderArgs { loam_url: args.loam_url.as_deref().filter(|u| !u.is_empty()), loam_key_file: &loam_key_file },
     );
     let old_wisp_token = old_wisp_token();
+    let config = arugula_proto::dirs::config_dir().unwrap_or_else(|| home().join(".config/arugula"));
     let secrets = {
-        let config = arugula_proto::dirs::config_dir().unwrap_or_else(|| home().join(".config/arugula"));
         block::Secrets {
             anthropic_key: args.anthropic_key_file.clone().unwrap_or_else(|| config.join("anthropic-key")),
             claude_token: args.claude_token_file.clone().unwrap_or_else(|| config.join("claude-oauth-token")),
@@ -1005,8 +1005,11 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     // Studio apps (M35): the token that lists them and mints ways in.
     let studio_file = args.studio_file.clone().unwrap_or_else(|| state_dir.join("studio.json"));
     lab_hooks::labs().install_studio(studio_file.clone(), args.studio_file.is_some());
-    // What `fs` never serves, besides the state directory.
+    // What `fs` never serves, besides the state directory and people's
+    // logins (`fs::CREDENTIALS`): the config directory (the CLI's device
+    // key, agents' keys) and the secrets kept elsewhere.
     let private = vec![
+        config,
         old_wisp_token,
         loam_key_file,
         secrets.anthropic_key.clone(),

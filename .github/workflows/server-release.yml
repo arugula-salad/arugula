@@ -65,21 +65,22 @@ env:
   CHANT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
 
 jobs:
-  # On the home cloud's runners, as release.yml's linux job. The whole
-  # history and every tag: the green tags, and control's build.rs serves
-  # editors/nvim with a commit for each release that changed it (#1748).
+  # On the home cloud's runners, as release.yml's linux job, and like it
+  # without sccache: what production runs is compiled here, from source. The
+  # whole history and every tag: the green tags, and control's build.rs
+  # serves editors/nvim with a commit for each release that changed it
+  # (#1748).
   build:
     runs-on: arugula-amd64
-    env:
-      SCCACHE_WEBDAV_PASSWORD: ${{ secrets.SCCACHE_WEBDAV_PASSWORD }}
     outputs:
       commit: ${{ steps.which.outputs.commit }}
       version: ${{ steps.which.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
       - name: Which commit
@@ -114,7 +115,9 @@ jobs:
           echo "Releasing $c as $v: $(git log -1 --format=%s)" >>"$GITHUB_STEP_SUMMARY"
       - uses: ./.github/actions/setup
         with:
-          cache-key: release-static
+          # Not release-static: a run started on main saves its rust-cache,
+          # and those saved while this build used sccache aren't restored.
+          cache-key: release-server
           cache-workspace: server
           ghostty: "false"
       - run: just bootstrap
@@ -124,7 +127,7 @@ jobs:
           VERSION: ${{ steps.which.outputs.version }}
       - run: just static-server x86_64
       - run: tar -cf "$RUNNER_TEMP/server-binaries.tar" -C "$CARGO_TARGET_DIR/x86_64-unknown-linux-musl/release" arugula-control arugula-platform
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: server-binaries
           path: ${{ runner.temp }}/server-binaries.tar
@@ -137,15 +140,19 @@ jobs:
   images:
     needs: build
     runs-on: ubuntu-latest
+    # The Fly tokens are the deploy environment's, which only main and v*
+    # tags reach.
+    environment: deploy
     outputs:
       control: ${{ steps.push.outputs.control }}
       platform: ${{ steps.push.outputs.platform }}
       dump: ${{ steps.push.outputs.dump }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ needs.build.outputs.commit }}
-      - uses: actions/download-artifact@v4
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: server-binaries
           path: ${{ runner.temp }}/bin
@@ -191,7 +198,7 @@ jobs:
   # The platform's suite on Postgres, as rare-nightly's test-postgres runs it,
   # on the commit this release is built from. On GitHub's runner, for Docker.
   # Beside images, so a release waits for it only when it's the slower of the
-  # two.
+  # two. Tests, not what ships, so they may compile through sccache.
   postgres:
     needs: build
     runs-on: ubuntu-24.04
@@ -207,9 +214,10 @@ jobs:
       CARGO_PROFILE_DEV_DEBUG: line-tables-only
       CARGO_PROFILE_TEST_DEBUG: line-tables-only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ needs.build.outputs.commit }}
+          persist-credentials: false
       - uses: ./.github/actions/setup
         with:
           cache-key: test-postgres
@@ -232,17 +240,18 @@ jobs:
   cut:
     needs: [build, images, postgres]
     runs-on: ubuntu-latest
+    environment: deploy
     permissions:
       contents: write
     outputs:
       label: ${{ steps.cut.outputs.label }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ needs.build.outputs.commit }}
           fetch-depth: 0
           token: ${{ secrets.CI_GREEN_TOKEN || github.token }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           cache: npm
@@ -283,18 +292,19 @@ jobs:
   platform:
     needs: [build, cut]
     runs-on: ubuntu-latest
+    environment: deploy
     permissions:
       contents: write
     concurrency:
       group: platform-deploy
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ needs.build.outputs.commit }}
           fetch-depth: 0
           token: ${{ secrets.CI_GREEN_TOKEN || github.token }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           cache: npm
@@ -325,20 +335,21 @@ jobs:
   control:
     needs: [build, cut, platform]
     runs-on: ubuntu-latest
+    environment: deploy
     permissions:
       contents: write
     concurrency:
       group: control-deploy
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ needs.build.outputs.commit }}
           # The history back to the release production runs the hub from, to
           # compare what it's built from.
           fetch-depth: 0
           token: ${{ secrets.CI_GREEN_TOKEN || github.token }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           cache: npm

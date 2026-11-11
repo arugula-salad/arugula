@@ -260,15 +260,20 @@ more: `GET /api/signin-link` returns a link carrying the daemon's local
 token, and `/api/mcp/tokens` and `/api/shares` list secrets. Those declare
 `CREDENTIAL: true`, and a read-only token can't call them. A test lists
 every GET operation a read-only token can reach, against a checked-in
-file, so a new one shows up in review.
+file, so a new one shows up in review. Its `read_file` takes a pane and
+reads only in that pane's directory; and no caller's `read_file`, nor the
+owner's Files, reads the config directory or the usual homes of logins and
+keys (`CREDENTIALS` in `crates/mux/src/fs.rs`).
 
 **`authz.rs`'s special cases:**
 
 - `drives` (typing into a pane on the owner's machine needs their trust,
   M14) is `DRIVES: true` on `send`, `keys`, `mouse` and `followup` (#574),
-  and on `prompt` and `cd` (#959), and `ops::drives(method, path)` asks it. It used to match path suffixes, so
+  on `prompt` and `cd` (#959), and on what an agent's hooks call, which
+  speaks for the pane (`attention`, `ask`, `ask/withdraw`, `permit`,
+  `inbox`), and `ops::drives(method, path)` asks it. It used to match path suffixes, so
   a new route ending in `/send` got it by accident and a renamed one lost
-  it. The hand-written routes that drive (`upload`, `paste`, and the block
+  it. The hand-written routes that drive (`hook`, `upload`, `paste`, and the block
   call's `send`, `keys`, `mouse`, `followup`, `upload` and `paste`) are on
   `DRIVES_HAND_WRITTEN` in `ops/mod.rs`, each as a `POST` template.
 - `from_now` (a share from now on reads nothing before it began, M13)

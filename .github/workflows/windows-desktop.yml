@@ -62,7 +62,7 @@ jobs:
       - uses: actions/checkout@v4
       # Under a key app-release.yml's windows job reads: a tag's run can
       # only read main's caches, and this is main's release build of the app.
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: crates/desktop
           shared-key: windows-desktop

@@ -32,8 +32,9 @@ on:
   push:
     tags: ["app-v*"]
 
+# Read by default: only the cut (chant/lifecycle) and the publish write.
 permissions:
-  contents: write
+  contents: read
 
 # The tag's commit must have passed CI (#503), the app's lane of it
 # (ci/green-app, #307): chant's cut refuses it otherwise. The repository
@@ -48,8 +49,11 @@ jobs:
   linux:
     needs: cut
     runs-on: ubuntu-24.04
+    environment: app-release
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup
         with:
           rust: "false"
@@ -67,7 +71,7 @@ jobs:
           ARUGULA_DESKTOP_BINARIES: ${{ runner.temp }}/sidecars
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-app-linux-x86_64
           path: dist/arugula-desktop-*
@@ -80,9 +84,12 @@ jobs:
   linux-arm64:
     needs: cut
     runs-on: ubuntu-24.04-arm
+    environment: app-release
     steps:
-      - uses: actions/checkout@v4
-      - uses: taiki-e/install-action@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: just
       - run: scripts/release stamp "$GITHUB_REF_NAME"
@@ -94,7 +101,7 @@ jobs:
           ARUGULA_DESKTOP_BINARIES: ${{ runner.temp }}/sidecars
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-app-linux-aarch64
           path: dist/arugula-desktop-*
@@ -105,8 +112,11 @@ jobs:
   macos:
     needs: cut
     runs-on: [self-hosted, macos-arm64]
+    environment: app-release
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - run: echo "CARGO_TARGET_DIR=$HOME/.cache/illogical-ci/app-release" >> "$GITHUB_ENV"
       - run: scripts/ci-cap-target 30
       - run: just bootstrap
@@ -132,7 +142,7 @@ jobs:
           APPLE_PROVISIONING_PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-app-macos
           path: dist/arugula-desktop-*
@@ -144,15 +154,20 @@ jobs:
   windows:
     needs: cut
     runs-on: windows-latest
+    environment: app-release
     defaults:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      # The Tauri CLI from release/tools' lockfile, not resolved afresh.
+      - run: npm ci --prefix release/tools --no-fund --no-audit
       - run: scripts/release stamp "$GITHUB_REF_NAME"
       # main's warm build of the app (windows-desktop.yml); a tag's run
       # only reads it.
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: crates/desktop
           shared-key: windows-desktop
@@ -169,7 +184,7 @@ jobs:
           cp "$RUNNER_TEMP/sidecars/conpty.dll" "$RUNNER_TEMP/sidecars/OpenConsole.exe" "$RUNNER_TEMP/sidecars/ConPTY-LICENSE.txt" "$b/"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - run: cd crates/desktop && npx --yes @tauri-apps/cli@2 build --bundles nsis
+      - run: cd crates/desktop && ../../release/tools/node_modules/.bin/tauri build --bundles nsis
       - run: |
           mkdir -p dist
           v=$(sed -n 's/^version = "\(.*\)"/\1/p' crates/desktop/Cargo.toml | head -1)
@@ -179,7 +194,7 @@ jobs:
       # key (#384).
       - run: |
           if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
-            npx --yes @tauri-apps/cli@2 signer sign dist/arugula-desktop-windows-x86_64-setup.exe >/dev/null
+            release/tools/node_modules/.bin/tauri signer sign dist/arugula-desktop-windows-x86_64-setup.exe >/dev/null
             echo "signed the installer for the updater"
           else
             echo "no updater signature: TAURI_SIGNING_PRIVATE_KEY isn't set"
@@ -187,7 +202,7 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-app-windows
           path: dist/arugula-desktop-windows-x86_64-setup.exe*
@@ -205,22 +220,26 @@ jobs:
   # the `chant approve` line to run; re-run it once that's done.
   cut:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
       - run: git fetch -q origin chant/lifecycle:chant/lifecycle
       - run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      # chant from release/tools' lockfile, not resolved afresh.
+      - run: npm ci --prefix release/tools --no-fund --no-audit && echo "$PWD/release/tools/node_modules/.bin" >>"$GITHUB_PATH"
       - working-directory: release/app
         run: |
           override=()
           if [ "${ARUGULA_RELEASE_SKIP_GREEN:-}" = 1 ]; then override=(--override-green); fi
-          npx --yes @intentius/chant@0.124.70 release cut "$GITHUB_REF_NAME" --at "$(git rev-parse "$GITHUB_REF_NAME^{commit}")" --lane app "${override[@]}" --yes
+          chant release cut "$GITHUB_REF_NAME" --at "$(git rev-parse "$GITHUB_REF_NAME^{commit}")" --lane app "${override[@]}" --yes
 
   # Publishes what the build jobs made, through chant
   # (release/app/chant.config.ts), from a checkout of the tag's commit (the
@@ -235,18 +254,23 @@ jobs:
   publish:
     needs: [cut, linux, linux-arm64, macos, windows]
     runs-on: ubuntu-latest
+    # TAG_TOKEN is the app-release environment's, which only app-v* tags
+    # reach, as are the build jobs' signing keys.
+    environment: app-release
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
       - run: git fetch -q origin chant/lifecycle:chant/lifecycle
       - run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: release-app-*
           merge-multiple: true
@@ -255,8 +279,9 @@ jobs:
       - run: scripts/release draft "$GITHUB_REF_NAME"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: npm ci --prefix release/tools --no-fund --no-audit && echo "$PWD/release/tools/node_modules/.bin" >>"$GITHUB_PATH"
       - working-directory: release/app
-        run: npx --yes @intentius/chant@0.124.70 release publish "$GITHUB_REF_NAME" --yes
+        run: chant release publish "$GITHUB_REF_NAME" --yes
         env:
           ARUGULA_RELEASE_TAG: ${{ github.ref_name }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

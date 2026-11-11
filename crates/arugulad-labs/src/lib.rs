@@ -269,8 +269,7 @@ impl Hooks for Labs {
         Box::pin(agents::tool::team_agents(call, a))
     }
 
-    /// `tea`'s Forgejo logins, and whether `glab` has gitlab.com's. None
-    /// unless the `additional-forges` flag is on.
+    /// `tea`'s Forgejo logins, and whether `glab` has gitlab.com's.
     fn forge_logins<'a>(&'a self, runner: &'a Runner, state_dir: &'a Path) -> BoxFuture<'a, Vec<ForgeSignIn>> {
         Box::pin(forge_logins(runner, state_dir))
     }
@@ -311,10 +310,7 @@ impl forge::others::OtherForges for Labs {
 
 /// Labs' forges and the user's logins for them, for MCP's `capabilities`
 /// (#229).
-async fn forge_logins(runner: &Runner, state_dir: &Path) -> Vec<ForgeSignIn> {
-    if !on(state_dir, arugula_proto::flags::ADDITIONAL_FORGES) {
-        return Vec::new();
-    }
+async fn forge_logins(runner: &Runner, _state_dir: &Path) -> Vec<ForgeSignIn> {
     let mut out = Vec::new();
     let tea = tea::Tea { runner: runner.clone() };
     match tea.logins().await {

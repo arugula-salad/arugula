@@ -141,11 +141,45 @@ fn api_routes(app: &Arc<App>) -> Router<Arc<App>> {
 /// every request passes the access checks, and API calls from a browser
 /// must come from one of our origins. Serve it with
 /// `into_make_service_with_connect_info::<SocketAddr>()`.
+/// The policy of the page and of every answer that sets none of its own:
+/// scripts only from the page's own files (none inline, none from another
+/// host's state), nothing framing it, no plugins, no `<base>`, and forms
+/// sent only here.
+pub const PAGE_CSP: &str =
+    "script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+
+/// Where a Doc's prototype runs (#506): the runner page, which the app
+/// frames from here, as control's pages frame it from control's proto
+/// origin (a frame by `srcdoc` would take on the page's policy, and its
+/// inline scripts wouldn't run).
+pub const RUNNER_PATH: &str = "/proto/";
+
+/// The runner (`web/src/shared/ui/runner.html`): static text.
+const RUNNER: &str = include_str!("../../../web/src/shared/ui/runner.html");
+
+/// What the runner is served under, as control serves it: `sandbox
+/// allow-scripts` keeps its origin opaque even opened on its own (none of
+/// this page's storage, nor the page key), the page and the prototype it
+/// becomes run inline code and load nothing, and only this page frames it.
+const RUNNER_CSP: &str = "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; \
+     style-src 'unsafe-inline'; img-src data: blob:; font-src data:; base-uri 'none'; form-action 'none'; \
+     frame-ancestors 'self'";
+
+async fn runner() -> Response {
+    Response::builder()
+        .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
+        .header(header::CACHE_CONTROL, "no-cache")
+        .header(header::CONTENT_SECURITY_POLICY, RUNNER_CSP)
+        .body(Body::from(RUNNER))
+        .unwrap()
+}
+
 pub fn router(app: Arc<App>) -> Router {
     let r = Router::new()
         .route("/ws", get(ws))
         .route(crate::e2e::PATH, get(crate::e2e::ws))
         .route(crate::localauth::AUTH_PATH, get(signin))
+        .route(RUNNER_PATH, get(runner))
         .merge(
             api_routes(&app)
                 .layer(middleware::from_fn_with_state(app.clone(), crate::authz::check))
@@ -337,11 +371,7 @@ async fn guard(
                 .get(header::ACCEPT)
                 .and_then(|v| v.to_str().ok())
                 .is_some_and(|a| a.contains("text/html"));
-            let mut res = if page {
-                (status, axum::response::Html(crate::access::refusal_page(status, &why))).into_response()
-            } else {
-                (status, why).into_response()
-            };
+            let mut res = if page { crate::access::refusal(status, &why) } else { (status, why).into_response() };
             // The page's cue to go to the sign-in link's page (local-key.ts),
             // rather than any 401 an API call answers for its own reasons.
             if status == StatusCode::UNAUTHORIZED
@@ -355,9 +385,10 @@ async fn guard(
     };
     // serve authenticates by source, so any page the owner visits could frame
     // the logged-in app (clickjacking). Nothing frames us legitimately.
-    // (A stricter policy already set stays.)
+    // Scripts come from the page's own files only. (A page that sets its
+    // own policy, one inline script's, keeps it.)
     let h = res.headers_mut();
-    h.entry(header::CONTENT_SECURITY_POLICY).or_insert(HeaderValue::from_static("frame-ancestors 'none'"));
+    h.entry(header::CONTENT_SECURITY_POLICY).or_insert(HeaderValue::from_static(PAGE_CSP));
     h.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
     res
 }
@@ -406,6 +437,7 @@ fn shell_file(path: &str) -> bool {
     let file = path.trim_start_matches('/');
     file.is_empty()
         || path == arugula_control_wire::CONTROL_JSON
+        || path == RUNNER_PATH
         || (!file.starts_with("api/") && !file.contains("..") && Assets::get(file).is_some())
 }
 
@@ -503,37 +535,37 @@ async fn signin(
             "This machine's Arugula needs you to sign in from it.\n\n\
              Run this in a terminal here, which opens the page signed in:\n\narugula web"
         };
-        return (
-            StatusCode::UNAUTHORIZED,
-            axum::response::Html(crate::access::refusal_page(StatusCode::UNAUTHORIZED, why)),
-        )
-            .into_response();
+        return crate::access::refusal(StatusCode::UNAUTHORIZED, why);
     };
     // Only a path of ours: never another site.
     let next = q.next.filter(|n| n.starts_with('/') && !n.starts_with("//") && !n.contains('\\')).unwrap_or("/".into());
     let clear = format!("{}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0", app.access.legacy_cookie_name());
+    let script = signin_script(key, &next);
     let mut res = Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
         .header(header::CACHE_CONTROL, "no-store")
-        .header(header::REFERRER_POLICY, "no-referrer");
+        .header(header::REFERRER_POLICY, "no-referrer")
+        .header(header::CONTENT_SECURITY_POLICY, crate::access::inline_page_csp(&script));
     if let Ok(v) = HeaderValue::from_str(&clear) {
         res = res.header(header::SET_COOKIE, v);
     }
-    res.body(Body::from(signin_page(key, &next))).unwrap()
+    res.body(Body::from(signin_page(&script))).unwrap()
 }
 
-/// The sign-in link's page: stores `key` where the app's page looks for it
-/// (`web/src/shell/local-key.ts`), then goes to `next`.
-fn signin_page(key: &str, next: &str) -> String {
+/// The sign-in link's script: stores `key` where the app's page looks for
+/// it (`web/src/shell/local-key.ts`), then goes to `next`.
+fn signin_script(key: &str, next: &str) -> String {
     // JSON in a script: `<` escaped, so nothing in it can close the tag.
     let js = |v: &str| serde_json::to_string(v).unwrap_or_default().replace('<', "\\u003c");
+    format!("try{{localStorage.setItem(\"arugula.key\",{})}}catch(e){{}}location.replace({})", js(key), js(next))
+}
+
+/// The sign-in link's page, around its script.
+fn signin_page(script: &str) -> String {
     format!(
         "<!doctype html><meta charset=utf-8><meta name=referrer content=no-referrer><title>arugula</title>\
-         <script>try{{localStorage.setItem(\"arugula.key\",{})}}catch(e){{}}location.replace({})</script>\
-         <noscript>Arugula's page needs JavaScript.</noscript>",
-        js(key),
-        js(next)
+         <script>{script}</script><noscript>Arugula's page needs JavaScript.</noscript>"
     )
 }
 
@@ -733,11 +765,11 @@ mod tests {
 
     #[test]
     fn the_signin_page_stores_the_key_and_goes_on() {
-        let p = signin_page("ilp_abc", "/#pane=3");
+        let p = signin_page(&signin_script("ilp_abc", "/#pane=3"));
         assert!(p.contains(r#"localStorage.setItem("arugula.key","ilp_abc")"#), "{p}");
         assert!(p.contains(r#"location.replace("/#pane=3")"#), "{p}");
         // Nothing in `next` closes the script.
-        let p = signin_page("ilp_abc", "/</script><script>alert(1)//");
+        let p = signin_page(&signin_script("ilp_abc", "/</script><script>alert(1)//"));
         assert!(!p.contains("</script><script>alert"), "{p}");
         assert!(!shell_file("/api/panes") && !shell_file("/ws") && !shell_file("/auth"));
         assert!(shell_file("/") && shell_file("/control.json"));

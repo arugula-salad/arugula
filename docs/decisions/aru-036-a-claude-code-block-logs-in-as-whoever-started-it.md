@@ -64,7 +64,8 @@ block's log, so a rebuilt block knows too), naming any key or token variable
 by name only. A turn or session that fails with ACP's `authRequired` (-32000),
 or a message about authenticating, says in the transcript and the card's
 error which login it used and how to log in to that one
-(`CLAUDE_CONFIG_DIR=… claude`, or `env -u CLAUDE_CONFIG_DIR claude`, then
-`/login`); a VM block names its token or key file.
+(`CLAUDE_CONFIG_DIR=… claude`, or for the default login plain `claude`,
+then `/login`; #520 dropped `env -u CLAUDE_CONFIG_DIR`, which read oddly to
+someone who never set it); a VM block names its token or key file.
 Where: `crates/daemon/src/agent/defs.rs` (`claude_config_dir`, `login_hint`), `crates/daemon/src/agent/mod.rs` (`local_login`, `auth_failed`), `crates/mux/src/mux/blocks.rs` (`agent_login`), `crates/daemon/src/mcp/tools.rs` (`start_agent`), `crates/cli/src/cmd/agent.rs`, `crates/cli/src/mcp.rs`.
 From: #379.

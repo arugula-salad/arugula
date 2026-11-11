@@ -202,13 +202,91 @@ an image rollback, the next release goes forward as usual.
 
 ## Restore
 
-**Today (2026-11-10), both databases can be restored:**
+**Both databases can be restored** (checked 2026-11-11):
 - **The hub's SQLite:** Litestream is on, replicating to R2 within about a
-  second. A restore plan from R2 (`litestream restore -dry-run`) covers the
-  whole history up to the moment it was run. Fly also keeps daily volume
-  snapshots for 5 days.
+  second. `scripts/hub-restore-drill` restored production's backup from R2
+  onto geek in 34 s: integrity `ok`, 63 tables, current to the second (and to
+  an hour before with `--at`). Fly also keeps daily volume snapshots for 5
+  days.
 - **The platform's Postgres:** Fly's own backups (hourly incremental, daily
-  full) and the nightly encrypted dump in R2.
+  full) and the nightly encrypted dump in R2 ("The platform's nightly dump",
+  below). An hourly check on the operator's machine alerts when the newest
+  dump is over 26 h old.
+
+**Before the watch, and each day of it:** run both drills' quick checks,
+`scripts/hub-restore-drill` and `scripts/platform-restore-drill --age`, on
+geek with Infisical logged in, and check `arugula-dump-age-check.timer` is
+listed.
+
+### The platform's nightly dump
+
+The `platform-dump` Machine in `arugula-platform` dumps the platform's
+Postgres to R2, encrypted, about once a day: Fly starts it every hour, and
+it dumps only when the newest dump is 20 h old (control-ops.md, "The
+nightly dump"). **Fly's schedule never starts a Machine that hasn't been
+started since its last update** (Arugula #867: no dump ran on its own for
+18 days). Production's release starts it once after updating it, once
+that fix has shipped; until then, check it's armed after each release
+("Is it scheduled?", below). If you
+`fly machine update` it by hand, start it once after, or it never runs
+again.
+
+**The alert:** `scripts/dump-age-check`, hourly on a systemd user timer on
+the operator's machine, reads the newest dump's record in R2. When it's over
+26 h old, or the check can't read it, it opens a native issue labelled
+`backup`, assigned to the operator, or comments on the open one once a day.
+
+**The last dump's age:**
+
+```
+scripts/dump-age-check --dry-run               # newest platform dump …, N h old (limit 26 h)
+scripts/platform-restore-drill --age           # the same, exit 1 past 26 h
+journalctl --user -u arugula-dump-age-check -n 20
+```
+
+Both read R2's keys from Infisical at each run, so run them on geek with
+Infisical logged in.
+
+**Is it scheduled?** A Machine that's armed shows a `start` from `flyd`
+about every hour in its events; one that isn't shows the release's
+`launch` and `update`, then nothing:
+
+```
+D=$(fly machine list -a arugula-platform --json | jq -r '.[] | select(.config.metadata.role == "platform-dump") | .id')
+fly machine status "$D" -a arugula-platform                     # Event Logs
+fly logs -a arugula-platform --machine "$D" --no-tail | grep platform-dump
+```
+
+**Run one by hand** (also what arms the schedule again). It skips while the
+newest dump is under 20 h old: `platform-dump: skipped: …`. To force a dump,
+start it with the gate at 0, then put it back. Each update leaves it
+stopped, so start it after each one:
+
+```
+fly machine start "$D" -a arugula-platform
+fly logs -a arugula-platform --machine "$D" --no-tail | grep platform-dump   # platform-dump: ok …
+
+# A dump now, whatever the newest one's age:
+fly machine update "$D" -a arugula-platform --env ARUGULA_DUMP_EVERY_HOURS=0 -y
+fly machine start "$D" -a arugula-platform                      # dumps
+fly machine update "$D" -a arugula-platform --env ARUGULA_DUMP_EVERY_HOURS=20 -y
+fly machine start "$D" -a arugula-platform                      # skips, and arms the schedule
+```
+
+The next release puts back its declared config (no
+`ARUGULA_DUMP_EVERY_HOURS`, so 20).
+
+**Install the alert** (once, on the operator's machine):
+
+```
+INFISICAL_PROJECT_ID=<arugula's> scripts/dump-age-check --install   # copies it to ~/.local/share/arugula-dump-age, hourly
+systemctl --user list-timers arugula-dump-age-check.timer
+```
+
+Its settings are in `~/.config/arugula-dump-age/env`: set
+`ARUGULA_DUMP_AGE_PROJECT` to the project the `backup` issue goes in. To see
+an alert end to end once, run it with `ARUGULA_DUMP_AGE_LIMIT_HOURS=0`, then
+close the issue it opens.
 
 ### The hub
 
@@ -226,10 +304,14 @@ fly logs -a illogical-control --no-tail | grep -E 'restoring the latest backup|d
 fly status -a illogical-control                              # the clone started, 1/1 checks
 ```
 
-Not rehearsed end to end from R2 (2026-11-10): that needs the bucket's keys
-from Infisical. Litestream restoring to an empty disk was proven on
-2026-10-04 (control-ops.md, "Restoring"), and a restore plan from R2 for the
-live hub came back complete.
+Rehearsed end to end (2026-11-11), word for word, on a throwaway copy of the
+hub running the production build and backing up to an R2 prefix of its own
+(`LITESTREAM_PATH=rehearsal-…`, never `control`): stopped, cloned, and the
+clone said `no database: restoring the latest backup` then `database
+restored from its backup`, answering in 12 s with the same database (its
+push key, which lives there, unchanged). The copy and its prefix were
+deleted after. Production's own backup restores too: `scripts/hub-restore-drill`
+above.
 
 Check that the newest account or machine is there before declaring it
 over, then `fly machine destroy "$M" -a illogical-control`. Keep the old
@@ -303,12 +385,42 @@ Each one is flipped without a deploy.
   fly ssh console -a illogical-control -C "/arugula-control maintenance off --db /data/control.db"
   ```
 
-- **Pause sign-ups, waitlist mode, no new hosted boxes, per-account caps and
-  kill switch, sign-up rate limits:** Arugula #531 builds these. Its section in
-  control-ops.md has the commands. The caps decided for the beta: per account,
-  2 hosted boxes, 60 box-hours a month, 10 GB of relay a day and 300 TURN
-  minutes a day; sign-ups at most 60 an hour per IP; hosted boxes
-  waitlist-only.
+- **The launch switches** (Arugula #531): pause sign-ups, sign-ups per
+  address, new hosted boxes open, waitlisted or off, admissions, per-account
+  caps and the kill switch. Each takes effect within a second, without a
+  restart. What each does and what people see is in control-ops.md, "Launch
+  switches". These are the commands as rehearsed on the staging copy
+  (2026-11-11). Run each as a whole `-C "..."` string: a word with spaces
+  (`--why`, `--message`) needs its own quotes inside it, and a helper that
+  passes `$*` loses them.
+
+  ```
+  c() { fly ssh console -q -a illogical-control -C "/arugula-control switches $1 --db /data/control.db" | tr -d '\r'; }
+  c "status"                                           # every switch; add an account for its own
+  c "signups pause --message 'Back in an hour.'"       # or no --message, for the usual sentence
+  c "signups open"
+  c "cap signups-per-hour 30"                          # new accounts per address an hour (60)
+  c "hosted off"                                       # or open, or waitlist (the default)
+  c "waitlist"                                         # who asked for a box, first first
+  c "admit github:LOGIN --by NAME"                     # an account id works too; several at once
+  c "unadmit ACCOUNT"
+  c "cap boxes 5 --account github:LOGIN"               # boxes, box-hours, relay-mb; 'default' puts one back
+  c "suspend github:LOGIN --by NAME --why 'mining on a hosted box'"
+  c "unsuspend ACCOUNT"
+  ```
+
+  The caps decided for the beta: per account, 2 hosted boxes, 60 box-hours a
+  month and 10 GB of relay a day; sign-ups at most 60 an hour per address;
+  hosted boxes waitlist-only. (TURN minutes aren't capped: control hands out
+  no TURN credentials.) Note them in the shift's handoff when you change one.
+  What the rehearsal showed:
+  - A suspended account's page, platform calls and machines get 403 at once,
+    and its relay sockets drop; nobody else's notice.
+  - Past `relay-mb`, relayed traffic slows to about 64 KB/s per account: a busy
+    pane's keystroke echo went from about 20 ms to over 10 s. Raise an
+    account's cap rather than leave someone working there.
+  - The staging copy's generator addresses (`ARUGULA_LOADTEST_EXEMPT_IPS`)
+    skip `signups-per-hour`; production has no such exemption.
 - **Who may use hosted workspaces** today: `ARUGULA_HOSTED_ACCOUNTS` on
   `arugula-platform` (a secret: setting it restarts the platform's machines
   one at a time).
@@ -364,9 +476,27 @@ have caps in their own consoles. Set each before the launch:
 
 ## Status page
 
-Public, and linked from the site and the README. It runs off Fly, so it says
-"down" when control is. To post an incident there:
-*to be filled in once the status page is chosen and set up (Arugula #532)*.
+**https://status.arugula.io**, linked from the site's footer, the docs and the
+README. It's [arugula-salad/status](https://github.com/arugula-salad/status):
+UptimeFlare on Cloudflare Workers and Pages, checking every minute from
+Cloudflare's network. It runs off Fly, so it says "down" when control is.
+It watches control (`/control.json`), the platform (through
+`app.arugula.io`), `install.sh`, the newest release's downloads, the site and
+the docs.
+
+**Post an incident** as soon as the dashboard shows something people will
+notice: add an entry to `maintenances` in that repository's `uptime.config.ts`
+and push to `main` (the deploy takes about three minutes; its README has the
+exact shape):
+
+```ts
+{ monitors: ['control'], title: 'Investigating slow sign-ins',
+  body: "Some people can't sign in. We're looking into it.",
+  start: '2026-12-01T14:05:00Z', color: 'red' },
+```
+
+Update `body` as it goes, and add `end` when it's over. Watch the deploy with
+`gh run list -R arugula-salad/status -L 1`.
 
 ## After the 48 hours
 

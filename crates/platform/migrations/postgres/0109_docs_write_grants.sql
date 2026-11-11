@@ -1,4 +1,4 @@
--- 0108: `docs.write` for every machine that holds a live `issues.write`
+-- 0109: `docs.write` for every machine that holds a live `issues.write`
 -- over a project (Arugula #862). See SQLite's file, in Postgres's words.
 INSERT INTO grants (id, subject_kind, subject_id, power, scope_kind, scope_id, granted_by, created_at)
 SELECT 'grt_' || md5(random()::text || clock_timestamp()::text || g.id), g.subject_kind, g.subject_id, 'docs.write',

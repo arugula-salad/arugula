@@ -410,7 +410,9 @@ async fn object_cards(
                 }
             }
             Link::Session(id) => {
-                if let Some(s) = app.db.session(id)? {
+                if let Some(s) = app.db.session(id)?
+                    && super::open_to(app, account, &s.room).await?
+                {
                     let short: String = id.trim_start_matches("ses_").chars().take(8).collect();
                     seen.push(Seen {
                         url: url.clone(),

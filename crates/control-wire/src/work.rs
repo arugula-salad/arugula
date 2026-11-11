@@ -774,7 +774,7 @@ pub struct PushAsk {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PushGiven {
     /// An installation token for the session's repo alone, with
-    /// `contents: write` and `workflows: write` (aru-115, amended), or
+    /// `contents: write` and never `workflows` (aru-115, amended), or
     /// `contents: read` for a clone, minted for this push or clone: the box hands it to git in one process's environment, never
     /// to a file, then revokes it at `revoke` (`DELETE`, the token as its
     /// bearer). `expires_at` is GitHub's.

@@ -2,7 +2,7 @@
 //! can plan its work around it without its person reading the docs first.
 //! The blocks and tools are what `tools/list` shows it (the Labs flags
 //! leave out the same ones); the forges are asked of the user's own CLIs
-//! (`gh`, and with the `additional-forges` flag `tea` and `glab`) as a block would;
+//! (`gh`, and in a build with Labs' code `tea` and `glab`) as a block would;
 //! hooks are live in a pane when a Claude Code hook has reached the daemon
 //! from it ([`App::hooks_heard`](crate::server::App)), which, with the
 //! hooks installed, includes the `PreToolUse` of this very call.
@@ -138,13 +138,29 @@ impl ToolCall<'_, '_> {
                 "Claude Code's hooks reach Arugula from %{pane}: your questions and permission prompts are cards on the phone and the swarm{}",
                 if inbox { ", and a follow-up sent now goes straight in" } else { "" }
             )
+        } else if let Some(b) = hooks_blocked() {
+            // #395: installing them wouldn't help.
+            format!("No Claude Code hook has reached Arugula from %{pane}. {}", b.says())
         } else {
             format!(
-                "No Claude Code hook has reached Arugula from %{pane}: your questions and permission prompts stay in the terminal. {INSTALL}"
+                "No Claude Code hook has reached Arugula from %{pane}: your questions and permission prompts stay in the terminal. {INSTALL} If they're installed and still don't arrive, a Team or Enterprise policy may be blocking them."
             )
         };
         HooksLive { pane: Some(pane), live: Some(live), heard_secs_ago: ago.map(|a| a / 1000), inbox, note }
     }
+}
+
+/// #395: what stops Claude Code running hooks here: a managed policy, or
+/// the user's own `disableAllHooks` in the settings.json Claude Code reads
+/// (`$CLAUDE_CONFIG_DIR`'s, else `~/.claude`'s, as the daemon sees them).
+fn hooks_blocked() -> Option<arugula_proto::claude_policy::HooksBlocked> {
+    let dir =
+        std::env::var_os("CLAUDE_CONFIG_DIR").filter(|d| !d.is_empty()).map(std::path::PathBuf::from).or_else(|| {
+            std::env::var_os("HOME")
+                .or_else(|| std::env::var_os("USERPROFILE"))
+                .map(|h| std::path::PathBuf::from(h).join(".claude"))
+        });
+    arugula_proto::claude_policy::hooks_blocked(dir.map(|d| d.join("settings.json")).as_deref())
 }
 
 /// What a client does to get a tool list it hasn't asked for again.
@@ -231,8 +247,8 @@ fn shown(name: &str) -> String {
     }
 }
 
-/// GitHub through `gh`, and Labs' forges where the flag is on.
-async fn forges(app: &App, on: On) -> Vec<ForgeSignIn> {
+/// GitHub through `gh`, and Forgejo's and GitLab's (out of Labs, #523).
+async fn forges(app: &App, _on: On) -> Vec<ForgeSignIn> {
     if !crate::forges::built() {
         return Vec::new();
     }
@@ -263,9 +279,7 @@ async fn forges(app: &App, on: On) -> Vec<ForgeSignIn> {
             Err(e) => e,
         },
     }];
-    if on.has(arugula_proto::flags::ADDITIONAL_FORGES) {
-        out.extend(crate::lab_hooks::labs().forge_logins(&runner, app.control.state_dir()).await);
-    }
+    out.extend(crate::lab_hooks::labs().forge_logins(&runner, app.control.state_dir()).await);
     out
 }
 

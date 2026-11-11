@@ -147,17 +147,27 @@ async fn an_agent_never_writes_past_its_owners_role() {
 }
 
 /// The project an agent's `#N` means: one it names, the one its clone's
-/// repo is linked to, else its owner's personal project; a repo linked to
-/// nobody's project of the owner's is refused, not guessed.
+/// repo is linked to, else, on a team's machine, the team's default project
+/// (Arugula #862), else its owner's personal project. On a personal machine
+/// a repo linked to nobody's project of the owner's is refused, not guessed.
 #[tokio::test]
 async fn an_agents_current_project() {
-    let (_hub, app, base, t, u) = seeded().await;
-    for scope in [json!({ "kind": "project", "id": t }), json!({ "kind": "project", "id": u })] {
-        call(&base, "a", "POST", "/api/grants", give("geek", THREADS_READ, scope)).await;
-    }
+    let (hub, app, base, t, u) = seeded().await;
+    hub.daemon("solo", "a", None);
+    crate::cache::catch_up(&app).await.unwrap();
     let personal = crate::projects::personal_project(&app, "a").await.unwrap().unwrap();
-    call(&base, "a", "POST", "/api/grants", give("geek", THREADS_READ, json!({ "kind": "project", "id": personal })))
-        .await;
+    for machine in ["geek", "solo"] {
+        for scope in [&t, &u, &personal] {
+            call(
+                &base,
+                "a",
+                "POST",
+                "/api/grants",
+                give(machine, THREADS_READ, json!({ "kind": "project", "id": scope })),
+            )
+            .await;
+        }
+    }
     for (repo, project) in [("acme/app", &t), ("other/thing", &u)] {
         app.db
             .c()
@@ -167,17 +177,38 @@ async fn an_agents_current_project() {
             )
             .unwrap();
     }
-    let (st, h) = geek(&base, "GET", &format!("{AGENT_ISSUE_HOME}?repo=Acme/App"), None).await;
-    assert_eq!((st, &h["project"], &h["home"]), (200, &json!(t), &json!("github")), "{h}");
-    let (st, h) = geek(&base, "GET", AGENT_ISSUE_HOME, None).await;
-    assert_eq!((st, &h["project"], &h["home"]), (200, &json!(personal), &json!("native")), "{h}");
-    assert!(h["name"].as_str().is_some_and(|n| !n.is_empty()), "the project's name comes with its id: {h}");
+    let solo = |path: String| {
+        let base = base.clone();
+        async move { signed(&base, "a solo", "GET", &path, None).await }
+    };
+
+    // A linked repo and a named project mean the same on either machine.
+    for (st, h) in [
+        geek(&base, "GET", &format!("{AGENT_ISSUE_HOME}?repo=Acme/App"), None).await,
+        solo(format!("{AGENT_ISSUE_HOME}?repo=Acme/App")).await,
+    ] {
+        assert_eq!((st, &h["project"], &h["home"]), (200, &json!(t), &json!("github")), "{h}");
+    }
     let (_, h) = geek(&base, "GET", &format!("{AGENT_ISSUE_HOME}?project={t}&repo=nobody/here"), None).await;
     assert_eq!(h["project"], json!(t), "a named project wins");
+
+    // A personal machine: the owner's personal project, and an unlinked
+    // repo is refused.
+    let (st, h) = solo(AGENT_ISSUE_HOME.to_owned()).await;
+    assert_eq!((st, &h["project"], &h["home"]), (200, &json!(personal), &json!("native")), "{h}");
+    assert!(h["name"].as_str().is_some_and(|n| !n.is_empty()), "the project's name comes with its id: {h}");
     for repo in ["other/thing", "nobody/here"] {
-        let (st, v) = geek(&base, "GET", &format!("{AGENT_ISSUE_HOME}?repo={repo}"), None).await;
+        let (st, v) = solo(format!("{AGENT_ISSUE_HOME}?repo={repo}")).await;
         assert_eq!(st, 404, "{repo}: {v}");
         assert!(v["error"].as_str().unwrap().contains("name the project"), "{v}");
+    }
+
+    // A team's machine: anything not linked elsewhere is the team's.
+    let (st, h) = geek(&base, "GET", AGENT_ISSUE_HOME, None).await;
+    assert_eq!((st, &h["project"]), (200, &json!(t)), "{h}");
+    for repo in ["other/thing", "nobody/here"] {
+        let (st, h) = geek(&base, "GET", &format!("{AGENT_ISSUE_HOME}?repo={repo}"), None).await;
+        assert_eq!((st, &h["project"]), (200, &json!(t)), "{repo}: {h}");
     }
 }
 

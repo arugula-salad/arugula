@@ -96,7 +96,8 @@ interface Setup {
   };
   /** `hooks`: Arugula's hooks are in Claude Code's settings (`arugula
    * hooks status`; absent from an older daemon). */
-  claude: { installed: boolean; tools: boolean; hooks?: boolean };
+  /** `hooks_blocked` (#395): what stops Claude Code running them, said for a person. */
+  claude: { installed: boolean; tools: boolean; hooks?: boolean; hooks_blocked?: string };
   /** #335: each adapter, with `found` (its agent's CLI is here). Absent
    * from an older daemon. */
   adapters?: Adapter[];
@@ -915,11 +916,23 @@ function Agents({ client, setup, manual, refresh, close }: { client: Client | nu
                     </span>
                   </Check>
                   {cl?.hooks !== undefined && (
-                    <Check state={cl.hooks ? "done" : "todo"}>
-                      <span data-start-hooks>{cl.hooks ? "Questions on cards: Claude Code has Arugula's hooks" : "Questions on cards: Arugula's hooks aren't in Claude Code's settings yet"}</span>
+                    <Check state={cl.hooks_blocked ? "fail" : cl.hooks ? "done" : "todo"}>
+                      <span data-start-hooks>
+                        {cl.hooks_blocked
+                          ? "Questions on cards: Claude Code won't run Arugula's hooks here"
+                          : cl.hooks
+                            ? "Questions on cards: Claude Code has Arugula's hooks"
+                            : "Questions on cards: Arugula's hooks aren't in Claude Code's settings yet"}
+                      </span>
                     </Check>
                   )}
                 </ul>
+                {/* #395: a policy (or disableAllHooks) stops Claude Code running them: why, and what still works. */}
+                {cl?.hooks_blocked ? (
+                  <p class="start-dim" data-start-hooks-blocked>
+                    {cl.hooks_blocked}
+                  </p>
+                ) : null}
                 <UseClaude setup={setup} refresh={refresh} />
                 {/* Where the hooks are offered, the plugin too (Discovery 10). */}
                 {cl?.installed !== false && (!cl?.tools || cl.hooks === false) && <ClaudePlugin live />}

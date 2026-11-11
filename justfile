@@ -321,7 +321,7 @@ desktop-macos arch="" *tauri_args="":
     root={{justfile_directory()}}
     dist=$root/dist
     mkdir -p "$dist"
-    command -v cargo-tauri >/dev/null || cargo install tauri-cli --version "^2" --locked
+    command -v cargo-tauri >/dev/null || cargo install tauri-cli --version "=2.12.1" --locked
     # Passkeys in the window (D2): with the Developer ID provisioning
     # profile (APPLE_PROVISIONING_PROFILE, a base64 .provisionprofile) the
     # bundle carries it as Contents/embedded.provisionprofile, and
@@ -948,7 +948,9 @@ macos cmd="tools" *args:
 # a server release's preflight and its older-release guard
 # (scripts/ci-server-deploy); the hosted template's supervision of arugulad (M258); its templates, one
 # per workspace size (M266); its tools for session users (Arugula #215);
-# binaries.yml's gate on pull requests that change CI (#304);
+# binaries.yml's gate on pull requests that change CI (#304); that release,
+# signing and deploy secrets are read only through environments, what ships
+# compiles without the shared cache, and actions are pinned;
 # and last the flaky tests' quarantine (`just quarantine`), which fails
 # when an entry is past its `until`. Also the nvim key tips' `:help` tags,
 # against a real nvim when there is one (`just nvim-tips-check`).
@@ -962,6 +964,7 @@ test-scripts:
     scripts/tests/data-model-check.sh
     scripts/tests/install.sh
     scripts/tests/release-targets.sh
+    scripts/tests/release-workflows.sh
     scripts/tests/notices.sh
     scripts/tests/release-green.sh
     scripts/tests/suite-lock.sh

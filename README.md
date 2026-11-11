@@ -93,6 +93,11 @@ curl -fsSL https://arugula.io/install.sh | sh
 On Windows, in PowerShell: `irm https://arugula.io/install.ps1 | iex`. With Homebrew:
 `brew tap arugula-salad/tap && brew trust arugula-salad/tap && brew install arugula && arugulad install`.
 
+The Mac app is signed and notarized. The Windows installer isn't signed yet:
+SmartScreen says *Windows protected your PC*, and *More info*, then *Run anyway*
+gets past it. Every download has a SHA-256 in its release's `SHA256SUMS`, and the
+installers have a minisign signature: [Check a download](https://docs.arugula.io/install/#check-a-download).
+
 [Install](https://docs.arugula.io/install/) has the details, and the [quickstart](https://docs.arugula.io/quickstart/) goes from
 the browser to your phone, scripts, agents and MCP.
 
@@ -131,6 +136,8 @@ plugin's README says where each one shows.
 
 When something goes wrong, or before you trust it with your machine:
 
+- [status.arugula.io](https://status.arugula.io): whether hosted Arugula (control, the
+  platform, installs and downloads) is up right now, and any incident we're working on.
 - [docs/gotchas/](docs/gotchas/README.md): sharp edges people have hit, one page each, found
   by what you see on screen.
 - [docs/what-leaves-your-machine.md](docs/what-leaves-your-machine.md): what the daemon sends to

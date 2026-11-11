@@ -2025,7 +2025,7 @@
       "description": "[`WORK_SESSION_PUSH`]'s answer.",
       "oneOf": [
         {
-          "description": "An installation token for the session's repo alone, with\n`contents: write` and `workflows: write` (aru-115, amended), or\n`contents: read` for a clone, minted for this push or clone: the box hands it to git in one process's environment, never\nto a file, then revokes it at `revoke` (`DELETE`, the token as its\nbearer). `expires_at` is GitHub's.",
+          "description": "An installation token for the session's repo alone, with\n`contents: write` and never `workflows` (aru-115, amended), or\n`contents: read` for a clone, minted for this push or clone: the box hands it to git in one process's environment, never\nto a file, then revokes it at `revoke` (`DELETE`, the token as its\nbearer). `expires_at` is GitHub's.",
           "properties": {
             "expires_at": {
               "type": "string"

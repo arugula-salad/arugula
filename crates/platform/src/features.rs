@@ -233,6 +233,18 @@ pub trait Chat: Send + Sync + 'static {
     fn told(&self, _app: &Platform, _ids: &[String]) -> anyhow::Result<()> {
         Ok(())
     }
+    /// Whether `account`, a member of its project, may see what an agent
+    /// does in chat room `room` (a session's thread): every member for a
+    /// public channel, those who see it for any other room. Without chat,
+    /// there's no such room.
+    fn open_to<'a>(
+        &'a self,
+        _app: &'a Platform,
+        _account: &'a str,
+        _room: &'a str,
+    ) -> BoxFuture<'a, anyhow::Result<bool>> {
+        Box::pin(async { Ok(false) })
+    }
     /// The project's standing grant was just revoked, saying `running`: its
     /// live sessions end, a turn under way first if `finish`. How many ended.
     fn grant_revoked<'a>(

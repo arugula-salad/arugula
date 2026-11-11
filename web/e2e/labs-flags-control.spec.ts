@@ -114,11 +114,12 @@ async function reopen(page: Page) {
   await expect(dialog(page)).toBeVisible();
 }
 
+// GitLab and Forgejo left Labs (native #523): sandbox providers stand in as the team's flag.
 test("a team's and an account's flags reach the machine, each saying where it comes from", async ({ page }) => {
   expect(existsSync(join(state, "flags.json"))).toBe(false);
   // No machine of the account has Developer settings: the page offers none.
   expect((await me.api<{ dev: boolean }>("/api/flags")).dev).toBe(false);
-  await setOnControl("additional-forges", true, team);
+  await setOnControl("sandbox-providers", true, team);
   await setOnControl("chant-workspaces", true, team);
   // An older page's old name (aru-117) is stored as the new one.
   await setOnControl("workspaces", false);
@@ -131,26 +132,26 @@ test("a team's and an account's flags reach the machine, each saying where it co
   // before the rename.
   await expect.poll(fromControl, { timeout: 20_000 }).toEqual({
     account: { "chant-workspaces": false, workspaces: false },
-    team: { "additional-forges": true, forges: true, "chant-workspaces": true, workspaces: true },
+    team: { "sandbox-providers": true, vms: true, "chant-workspaces": true, workspaces: true },
   });
 
   await reopen(page);
-  await expect(row(page, "additional-forges").locator("input")).toBeChecked();
-  await expect(row(page, "additional-forges").locator("[data-flag-source]")).toHaveText("Set for your team");
+  await expect(row(page, "sandbox-providers").locator("input")).toBeChecked();
+  await expect(row(page, "sandbox-providers").locator("[data-flag-source]")).toHaveText("Set for your team");
   // The account's word beats the team's.
   await expect(row(page, "chant-workspaces").locator("input")).not.toBeChecked();
   await expect(row(page, "chant-workspaces").locator("[data-flag-source]")).toHaveText("Set for your account");
-  await expect(row(page, "sandbox-providers").locator("[data-flag-source]")).toHaveCount(0);
+  await expect(row(page, "studio").locator("[data-flag-source]")).toHaveCount(0);
   // The agent catalog is the machine's alone: control won't take it, and
   // the dialog says so. Nor guest ssh, a sharing setting now (native #205).
   await expect(setOnControl("agent-delegation", true, team)).rejects.toThrow(/400/);
   await expect(setOnControl("guest-ssh", true, team)).rejects.toThrow(/400/);
   await expect(row(page, "agent-delegation").locator("[data-flag-local-only]")).toBeVisible();
   await expect(row(page, "guest-ssh")).toHaveCount(0);
-  await expect(row(page, "additional-forges").locator("[data-flag-local-only]")).toHaveCount(0);
+  await expect(row(page, "sandbox-providers").locator("[data-flag-local-only]")).toHaveCount(0);
   // Control saying something is the machine asking: the menus offer them.
   await expect.poll(() => page.evaluate(() => window.__arugula.client.hasDev())).toBe(true);
-  await expect.poll(() => page.evaluate(() => window.__arugula.client.flag("additional-forges"))).toBe(true);
+  await expect.poll(() => page.evaluate(() => window.__arugula.client.flag("sandbox-providers"))).toBe(true);
   // And it tells control so on its next refresh (a change nudges one), so
   // control's page now offers the flags.
   await setOnControl("studio", true);
@@ -160,22 +161,22 @@ test("a team's and an account's flags reach the machine, each saying where it co
 
 test("the machine overrides control, and Use your team's takes its word back", async ({ page }) => {
   await reopen(page);
-  await row(page, "additional-forges").locator("input").uncheck();
-  await expect(row(page, "additional-forges").locator("[data-flag-source]")).toHaveText("Set on this machine; it's on for your team");
-  expect(JSON.parse(readFileSync(join(state, "flags.json"), "utf8"))).toEqual({ flags: { "additional-forges": false } });
-  await expect.poll(() => page.evaluate(() => window.__arugula.client.flag("additional-forges"))).toBe(false);
+  await row(page, "sandbox-providers").locator("input").uncheck();
+  await expect(row(page, "sandbox-providers").locator("[data-flag-source]")).toHaveText("Set on this machine; it's on for your team");
+  expect(JSON.parse(readFileSync(join(state, "flags.json"), "utf8"))).toEqual({ flags: { "sandbox-providers": false } });
+  await expect.poll(() => page.evaluate(() => window.__arugula.client.flag("sandbox-providers"))).toBe(false);
 
-  await row(page, "additional-forges").getByRole("button", { name: "Use your team's for GitLab and Forgejo" }).click();
-  await expect(row(page, "additional-forges").locator("input")).toBeChecked();
-  await expect(row(page, "additional-forges").locator("[data-flag-source]")).toHaveText("Set for your team");
-  await expect(row(page, "additional-forges").getByRole("button")).toHaveCount(0);
+  await row(page, "sandbox-providers").getByRole("button", { name: "Use your team's for External sandbox providers" }).click();
+  await expect(row(page, "sandbox-providers").locator("input")).toBeChecked();
+  await expect(row(page, "sandbox-providers").locator("[data-flag-source]")).toHaveText("Set for your team");
+  await expect(row(page, "sandbox-providers").getByRole("button")).toHaveCount(0);
   expect(JSON.parse(readFileSync(join(state, "flags.json"), "utf8"))).toEqual({ flags: {} });
 });
 
 test("unset on control, the machine is back to the flag's default", async ({ page }) => {
-  await setOnControl("additional-forges", null, team);
+  await setOnControl("sandbox-providers", null, team);
   await expect.poll(() => JSON.parse(readFileSync(join(state, "flags.control.json"), "utf8")).team, { timeout: 20_000 }).toEqual({ "chant-workspaces": true, workspaces: true });
   await reopen(page);
-  await expect(row(page, "additional-forges").locator("input")).not.toBeChecked();
-  await expect(row(page, "additional-forges").locator("[data-flag-source]")).toHaveCount(0);
+  await expect(row(page, "sandbox-providers").locator("input")).not.toBeChecked();
+  await expect(row(page, "sandbox-providers").locator("[data-flag-source]")).toHaveCount(0);
 });

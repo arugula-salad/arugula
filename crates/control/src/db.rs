@@ -513,6 +513,18 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         )?;
         conn.execute("INSERT OR IGNORE INTO settings (k, v) VALUES (?1, '1')", params![DOC_COPIES_CARRIED])?;
     }
+    // Lookups by a device's id alone, and by a machine's account or team
+    // (#530): every signed request from a machine or the CLI finds its
+    // certificate by id (`approved_cert`), and every page's directory lists
+    // its account's machines, each by reading the whole table. With 5,000
+    // machines enrolled that alone kept a core busy. Here, after the columns
+    // the migrations above add.
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS devices_id ON devices (id);
+         CREATE INDEX IF NOT EXISTS daemons_account ON daemons (account);
+         CREATE INDEX IF NOT EXISTS daemons_team ON daemons (team);
+         CREATE INDEX IF NOT EXISTS revocations_account ON revocations (account);",
+    )?;
     Ok(())
 }
 
@@ -720,6 +732,55 @@ fn taken(e: rusqlite::Error) -> anyhow::Error {
     }
 }
 
+/// A team's machines whose owners its latest roster leaves out go back to
+/// their owners' accounts, as a disband takes them, with the move noted:
+/// whoever leaves a team takes their machines out of it. Their last signed
+/// move stays, so an old one can't be sent again.
+fn drop_departed_machines(c: &Connection, team: &str) -> anyhow::Result<()> {
+    let latest: Option<String> = c
+        .query_row("SELECT body FROM rosters WHERE team = ?1 ORDER BY version DESC LIMIT 1", params![team], |r| {
+            r.get(0)
+        })
+        .optional()?;
+    let Some(body) = latest else { return Ok(()) };
+    let roster = match serde_json::from_str::<serde_json::Value>(&body) {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!(team, error = %e, "a team's latest roster doesn't parse; its machines stay as they are");
+            return Ok(());
+        }
+    };
+    let members: std::collections::HashSet<String> = roster["members"]
+        .as_array()
+        .map(|ms| ms.iter().filter_map(|m| m["account"].as_str().map(str::to_owned)).collect())
+        .unwrap_or_default();
+    let machines: Vec<(String, String)> = {
+        let mut q = c.prepare("SELECT id, account FROM daemons WHERE team = ?1")?;
+        q.query_map(params![team], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<Result<_, _>>()?
+    };
+    for (id, account) in machines.into_iter().filter(|(_, a)| !members.contains(a)) {
+        c.execute("UPDATE daemons SET team = NULL WHERE id = ?1", params![id])?;
+        changed(c, ChangeKind::DaemonMoved, &id)?;
+        tracing::info!(team, machine = %id, account = %account, "a machine's owner left its team: out of it too");
+    }
+    Ok(())
+}
+
+/// [`drop_departed_machines`] for every team, once as control starts:
+/// machines kept in a team their owner had left before it took them out.
+fn drop_all_departed_machines(conn: &mut Connection) -> anyhow::Result<()> {
+    let tx = conn.transaction()?;
+    let teams: Vec<String> = {
+        let mut q = tx.prepare("SELECT DISTINCT team FROM daemons WHERE team IS NOT NULL")?;
+        q.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?
+    };
+    for t in teams {
+        drop_departed_machines(&tx, &t)?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
 fn cert_of(s: String) -> rusqlite::Result<Cert> {
     serde_json::from_str(&s)
         .map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e)))
@@ -756,6 +817,7 @@ impl Db {
         if !answers_before {
             grandfather_shares(&conn)?;
         }
+        drop_all_departed_machines(&mut conn)?;
         Ok(Self { conn: Mutex::new(conn) })
     }
 
@@ -2348,6 +2410,7 @@ impl Db {
             tx.execute("UPDATE teams SET name = ?2 WHERE id = ?1", params![team, name])?;
         }
         changed(&tx, ChangeKind::TeamRoster, team)?;
+        drop_departed_machines(&tx, team)?;
         tx.commit()?;
         Ok(())
     }
@@ -3298,6 +3361,31 @@ mod tests {
         }
     }
 
+    /// What every signed request and every page's directory look up is
+    /// found by an index, not by reading the whole table (#530).
+    #[test]
+    fn hot_lookups_use_an_index() {
+        let db = Db::memory();
+        let c = db.conn();
+        for q in [
+            "SELECT cert FROM devices WHERE id = 'd' AND kind = 'daemon' AND approved = 1",
+            "SELECT EXISTS (SELECT 1 FROM devices WHERE id = 'd')",
+            "SELECT id, name, urls, last_seen FROM daemons WHERE account = 'a' ORDER BY name",
+            "SELECT id FROM daemons WHERE team = 't'",
+            "SELECT body FROM revocations WHERE account = 'a'",
+        ] {
+            let plan: Vec<String> = c
+                .prepare(&format!("EXPLAIN QUERY PLAN {q}"))
+                .unwrap()
+                .query_map([], |r| r.get(3))
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap();
+            assert!(plan.iter().any(|p| p.starts_with("SEARCH")), "{q}: {plan:?}");
+            assert!(!plan.iter().any(|p| p.starts_with("SCAN") && !p.contains("CONSTANT ROW")), "{q}: {plan:?}");
+        }
+    }
+
     /// Sessions from before they said how they signed in: the desktop app's
     /// windows, by the device they said they are or their User-Agent, are
     /// marked as the app's when the column comes; the rest stay unknown.
@@ -3459,6 +3547,38 @@ mod tests {
         assert_eq!(db.team_followers("t1", 0).unwrap()[0].1, "presigned-invites");
         // A share that stopped asking ages out.
         assert_eq!(db.team_followers("t1", 100).unwrap().len(), 1);
+    }
+
+    /// A machine stays in a team only while its owner is: a new roster
+    /// without them takes it out, and one kept from before is taken out
+    /// as control opens its database.
+    #[test]
+    fn a_teams_machines_are_its_members_own() {
+        let dir = std::env::temp_dir().join(format!("arugula-machines-{}", hex::encode(arugula_e2e::random::<6>())));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("control.db");
+        let db = Db::open(&path).unwrap();
+        let roster = |accounts: &[&str]| {
+            let members: Vec<_> = accounts.iter().map(|a| serde_json::json!({ "account": a })).collect();
+            serde_json::json!({ "members": members }).to_string()
+        };
+        for (id, owner) in [("d1", "a1"), ("d2", "a2"), ("d3", "a3")] {
+            db.put_daemon(owner, id, id, &[]).unwrap();
+        }
+        db.add_roster("t1", 1, &roster(&["a1", "a2", "a3"])).unwrap();
+        for d in ["d1", "d2", "d3"] {
+            db.set_daemon_team(d, "t1").unwrap();
+        }
+        db.add_roster("t1", 2, &roster(&["a1", "a3"])).unwrap();
+        assert_eq!(db.team_daemons("t1").unwrap(), ["d1", "d3"]);
+        assert_eq!(db.daemon_team("d2").unwrap(), None);
+        // One moved in by a version from before, its owner gone since.
+        db.c().execute("UPDATE daemons SET team = 't1' WHERE id = 'd2'", []).unwrap();
+        db.c().execute("UPDATE rosters SET body = ?1 WHERE team = 't1' AND version = 2", [roster(&["a1"])]).unwrap();
+        drop(db);
+        let db = Db::open(&path).unwrap();
+        assert_eq!(db.team_daemons("t1").unwrap(), ["d1"]);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

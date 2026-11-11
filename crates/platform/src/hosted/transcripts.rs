@@ -4,7 +4,8 @@
 //! hub hands it here ([`archive`], `PlatformPort::hosted_transcript`). It's
 //! kept read only under the workspace's project
 //! ([`crate::db::hosted_transcripts`]), for the project's members to read
-//! after the box is gone ([`list`], [`read`]).
+//! after the box is gone ([`list`], [`read`]). A session's block is read
+//! only by those who see its thread's room, as the session is.
 //!
 //! - **Only the workspace's own machine** archives into it: the hub says
 //!   which machine signed, and its certificate's workspace; a machine that
@@ -16,7 +17,7 @@
 //! - **Plaintext, project-plane.** What the agent and its people wrote, as
 //!   chat is: `tables.toml` says so, and docs/control-e2e.md.
 
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use arugula_control_common::{ApiError, err};
 use arugula_control_wire::transcripts::{MAX_TEXT, TranscriptPost};
@@ -125,8 +126,34 @@ pub async fn list(
     Query(q): Query<Which>,
 ) -> Result<Json<Transcripts>, ApiError> {
     let (project, _) = membership(&app, &account, &project, false).await?;
-    let transcripts = app.db.hosted_transcripts(&project, q.workspace.as_deref())?;
+    let rooms = app.db.session_rooms_by_block(&project)?;
+    let mut open: HashMap<String, bool> = HashMap::new();
+    let mut transcripts = Vec::new();
+    for t in app.db.hosted_transcripts(&project, q.workspace.as_deref())? {
+        if open_to(&app, &account, &rooms, &t, &mut open).await? {
+            transcripts.push(t);
+        }
+    }
     Ok(Json(Transcripts { project, transcripts }))
+}
+
+/// Whether `account`, a member of the project, reads transcript `t`: a
+/// session's block only when they see its thread's room, as the session
+/// itself; any other block's, every member. `open` keeps each room's answer.
+async fn open_to(
+    app: &Platform,
+    account: &str,
+    rooms: &HashMap<(String, String), String>,
+    t: &HostedTranscript,
+    open: &mut HashMap<String, bool>,
+) -> anyhow::Result<bool> {
+    let Some(room) = rooms.get(&(t.machine.clone(), t.block.to_string())) else { return Ok(true) };
+    if let Some(yes) = open.get(room) {
+        return Ok(*yes);
+    }
+    let yes = crate::features::chat().open_to(app, account, room).await?;
+    open.insert(room.clone(), yes);
+    Ok(yes)
 }
 
 /// One archived transcript, with its text, for the project's members.
@@ -136,7 +163,11 @@ pub async fn read(
     Path((project, id)): Path<(String, String)>,
 ) -> Result<Json<Transcript>, ApiError> {
     let (project, _) = membership(&app, &account, &project, false).await?;
-    let (transcript, text) =
-        app.db.hosted_transcript(&project, &id)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such transcript"))?;
+    let gone = || err(StatusCode::NOT_FOUND, "no such transcript");
+    let (transcript, text) = app.db.hosted_transcript(&project, &id)?.ok_or_else(gone)?;
+    let rooms = app.db.session_rooms_by_block(&project)?;
+    if !open_to(&app, &account, &rooms, &transcript, &mut HashMap::new()).await? {
+        return Err(gone());
+    }
     Ok(Json(Transcript { transcript, text }))
 }

@@ -1,9 +1,10 @@
-//! Forgejo and GitLab are Labs (#457): where Labs is off on the machine
-//! (no `labs` file in the state dir) or in the build (`--no-default-features`)
-//! only GitHub's pull requests and issues open. A link, a bare
-//! `OWNER/REPO#N` and a whole config that come out as Forgejo's or GitLab's
-//! are refused with a message; a layout saved with such a block brings it
-//! back, unavailable; and the two webhook routes answer as unknown ones do.
+//! Forgejo and GitLab left Labs' flags at launch (native #523): in the
+//! default build they open with no flag on, and their webhook routes take
+//! signed deliveries. A build without Labs' code (`--no-default-features`)
+//! still opens only GitHub's: a link, a bare `OWNER/REPO#N` and a whole
+//! config that come out as Forgejo's or GitLab's are refused with a
+//! message, a layout saved with such a block brings it back, unavailable,
+//! and the two webhook routes answer as unknown ones do.
 
 // Over the daemon's Unix socket; Windows gets its named pipe in M56 (#219).
 #![cfg(unix)]
@@ -12,7 +13,7 @@ use serde_json::{Value, json};
 
 use crate::agentd::Daemon;
 
-/// A daemon with no `gh`, `tea` or `glab` to find, and no `labs` file.
+/// A daemon with no `gh`, `tea` or `glab` to find, and no flags on.
 fn daemon() -> Daemon {
     Daemon::child_env(&[], &[("PATH", "/usr/bin:/bin")])
 }
@@ -21,18 +22,12 @@ fn open(d: &Daemon, config: Value) -> (u16, String) {
     d.raw("POST", "/api/blocks", Some(json!({ "type": "forge", "config": config, "local": true })))
 }
 
-/// What a refusal says: this build has Labs and the machine has it off, or
-/// this build lacks it.
+/// What a build without Labs' code says of one.
 fn refusal(name: &str) -> String {
-    if cfg!(feature = "labs") {
-        format!(
-            "{name} blocks are a Labs feature that's off on this machine: its owner turns it on with `arugulad flags additional-forges on` there, or in Developer settings"
-        )
-    } else {
-        format!("A {name} block isn't in this build (built without labs)")
-    }
+    format!("A {name} block isn't in this build (built without labs)")
 }
 
+#[cfg(not(feature = "labs"))]
 fn block_configs(layout: &mut Value, f: &mut dyn FnMut(&mut Value)) {
     match layout {
         Value::Object(o) => {
@@ -50,7 +45,7 @@ fn block_configs(layout: &mut Value, f: &mut dyn FnMut(&mut Value)) {
 }
 
 #[test]
-fn a_daemon_without_labs_opens_github_and_refuses_forgejo_and_gitlab() {
+fn forgejo_and_gitlab_need_no_flag_and_github_opens_as_ever() {
     let d = daemon();
     for config in [
         // Forgejo's link, and what says it is Forgejo's some other way.
@@ -61,8 +56,11 @@ fn a_daemon_without_labs_opens_github_and_refuses_forgejo_and_gitlab() {
         json!({ "repo": "o/r", "number": 3, "provider": "forgejo" }),
     ] {
         let (status, body) = open(&d, config.clone());
-        assert_eq!(status, 400, "{config}: {body}");
-        assert!(body.contains(&refusal("Forgejo")), "{config}: {body}");
+        assert!(!body.contains("Labs feature"), "{config}: {body}");
+        if !cfg!(feature = "labs") {
+            assert_eq!(status, 400, "{config}: {body}");
+            assert!(body.contains(&refusal("Forgejo")), "{config}: {body}");
+        }
     }
     for config in [
         json!({ "pr": "https://gitlab.com/g/p/-/merge_requests/2" }),
@@ -70,17 +68,22 @@ fn a_daemon_without_labs_opens_github_and_refuses_forgejo_and_gitlab() {
         json!({ "pr": "o/r#3", "host": "gitlab.example.org" }),
     ] {
         let (status, body) = open(&d, config.clone());
-        assert_eq!(status, 400, "{config}: {body}");
-        assert!(body.contains(&refusal("GitLab")), "{config}: {body}");
+        assert!(!body.contains("Labs feature"), "{config}: {body}");
+        if !cfg!(feature = "labs") {
+            assert_eq!(status, 400, "{config}: {body}");
+            assert!(body.contains(&refusal("GitLab")), "{config}: {body}");
+        }
     }
-    assert!(d.get("/api/panes").as_array().unwrap().iter().all(|p| p["type"] != "forge"));
+    if !cfg!(feature = "labs") {
+        assert!(d.get("/api/panes").as_array().unwrap().iter().all(|p| p["type"] != "forge"));
+    }
 
     // GitHub's open as they always did (nothing here can read them).
     for config in [
         json!({ "pr": "https://github.com/cli/cli/pull/14519" }),
         json!({ "issue": "https://github.com/cli/cli/issues/9" }),
         json!({ "provider": "github", "repo": "cli/cli", "number": 3 }),
-        // A bare reference is GitHub's where Labs is off.
+        // A bare reference is GitHub's.
         json!({ "pr": "cli/cli#3" }),
         json!({ "issue": "new", "title": "T", "repo": "o/r" }),
     ] {
@@ -89,6 +92,9 @@ fn a_daemon_without_labs_opens_github_and_refuses_forgejo_and_gitlab() {
     }
 }
 
+/// Only a build without Labs' code: in the default one it comes back as
+/// itself.
+#[cfg(not(feature = "labs"))]
 #[test]
 fn a_saved_forgejo_block_comes_back_unavailable_and_stays_in_the_layout() {
     let mut d = daemon();
@@ -128,30 +134,19 @@ fn a_saved_forgejo_block_comes_back_unavailable_and_stays_in_the_layout() {
 }
 
 #[test]
-fn the_forgejo_and_gitlab_hook_routes_are_not_there_without_labs() {
+fn the_forgejo_and_gitlab_hook_routes_need_no_flag() {
     use crate::forge_live::deliver;
     let d = daemon();
     let unknown = deliver(&d, "/api/forge/hooks/nowhere?k=x", &[], "{}");
     for path in ["/api/forge/hooks/forgejo?k=x", "/api/forge/hooks/gitlab?k=x"] {
         let status = deliver(&d, path, &[("X-Gitlab-Token", "x")], "{}");
         if cfg!(feature = "labs") {
-            // Open to a forge without a login (a delivery is trusted by its
-            // signature), so Labs off answers 404 itself.
-            assert_eq!(status, 404, "{path}");
+            // There with no flag on, and it takes a delivery only if it is
+            // signed.
+            assert_eq!(status, 401, "{path}");
         } else {
             // No route, and so not let past the guard either.
             assert_eq!(status, unknown, "{path}");
         }
-    }
-    #[cfg(feature = "labs")]
-    {
-        // The switch is read on each delivery: with it on the route is there
-        // and takes a delivery only if it is signed.
-        arugula_testkit::labs(&d.state, true);
-        for path in ["/api/forge/hooks/forgejo?k=x", "/api/forge/hooks/gitlab?k=x"] {
-            assert_eq!(deliver(&d, path, &[("X-Gitlab-Token", "x")], "{}"), 401, "{path}");
-        }
-        arugula_testkit::labs(&d.state, false);
-        assert_eq!(deliver(&d, "/api/forge/hooks/forgejo?k=x", &[], "{}"), 404);
     }
 }

@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+#
+# The hub's restore drill (part of Arugula #532, docs/launch-runbook.md
+# "Restore"): the hosted hub's Litestream backup in R2 (path `control`)
+# restored to its newest moment into a private temp directory on this machine
+# (never production's volume), checked, its counts printed, and deleted. It
+# only reads R2, and it never runs `litestream replicate`, so it can't touch
+# the backup.
+#
+#   scripts/hub-restore-drill                    the newest moment
+#   scripts/hub-restore-drill --at 2026-12-01T14:00:00Z   a point in time
+#
+# It prints how long the restore took, SQLite's integrity check, the table
+# count, accounts, machines, and the newest time a machine was seen (which
+# shows how current the backup is). Exit 1 if the restore or the integrity
+# check fails.
+#
+# R2: LITESTREAM_ENDPOINT, LITESTREAM_BUCKET, LITESTREAM_ACCESS_KEY_ID and
+# LITESTREAM_SECRET_ACCESS_KEY from the environment, else from Infisical
+# (`arugula` prod, /illogical/control). Run it where arugula's
+# .infisical.json is (or set INFISICAL_PROJECT_ID). Nothing secret is printed.
+# Litestream is the image's version (packaging/control/Dockerfile), fetched
+# and checksummed into the temp directory unless --litestream names one.
+#
+# Needs curl, tar, sha256sum and python3.
+set -euo pipefail
+umask 077
+here=$(cd "$(dirname "$0")/.." && pwd)
+
+at="" ls_bin=""
+while [ $# -gt 0 ]; do
+  case $1 in
+    --at) at=$2; shift 2 ;;
+    --litestream) ls_bin=$2; shift 2 ;;
+    *) sed -n '9,11p' "$0" >&2; exit 2 ;;
+  esac
+done
+
+log() { echo "[hub-drill] $*" >&2; }
+die() { log "FAIL: $*"; exit 1; }
+
+infisical_get() {
+  local args=(secrets get "$1" --env prod --path /illogical/control --plain --silent)
+  [ -z "${INFISICAL_PROJECT_ID:-}" ] || args+=(--projectId "$INFISICAL_PROJECT_ID")
+  infisical "${args[@]}" 2>/dev/null
+}
+from() { # NAME: the environment's, else Infisical's
+  local v=${!1:-}
+  [ -n "$v" ] || v=$(infisical_get "$1") || v=""
+  [ -n "$v" ] || die "no $1 in the environment or Infisical"
+  printf '%s' "$v"
+}
+
+work=$(mktemp -d)
+trap 'find "$work" -type f -exec shred -u {} + 2>/dev/null; rm -rf "$work"' EXIT
+
+if [ -z "$ls_bin" ]; then
+  df=$here/packaging/control/Dockerfile
+  ver=$(sed -n 's/^ARG LITESTREAM=//p' "$df")
+  sum=$(sed -n 's/^ARG LITESTREAM_SHA256=//p' "$df")
+  curl -fsSL -o "$work/ls.tgz" "https://github.com/benbjohnson/litestream/releases/download/v$ver/litestream-$ver-linux-x86_64.tar.gz"
+  echo "$sum  $work/ls.tgz" | sha256sum -c --quiet - || die "litestream $ver's checksum differs"
+  tar -xzf "$work/ls.tgz" -C "$work" litestream
+  ls_bin=$work/litestream
+fi
+
+export LITESTREAM_ACCESS_KEY_ID LITESTREAM_SECRET_ACCESS_KEY
+LITESTREAM_ACCESS_KEY_ID=$(from LITESTREAM_ACCESS_KEY_ID)
+LITESTREAM_SECRET_ACCESS_KEY=$(from LITESTREAM_SECRET_ACCESS_KEY)
+cat >"$work/ls.yml" <<YML
+dbs:
+  - path: $work/control.db
+    replica:
+      type: s3
+      bucket: $(from LITESTREAM_BUCKET)
+      path: control
+      region: auto
+      endpoint: $(from LITESTREAM_ENDPOINT)
+      force-path-style: true
+YML
+
+args=(restore -config "$work/ls.yml" -o "$work/restored.db")
+[ -z "$at" ] || args+=(-timestamp "$at")
+log "restoring control${at:+ at $at} with $("$ls_bin" version)"
+start=$(date +%s)
+"$ls_bin" "${args[@]}" "$work/control.db" >"$work/restore.log" 2>&1 ||
+  { grep -viE 'key|secret' "$work/restore.log" | tail -5 >&2; die "litestream restore failed"; }
+log "restored in $(($(date +%s) - start)) s: $(stat -c %s "$work/restored.db") bytes"
+
+python3 -I - "$work/restored.db" <<'PY'
+import sqlite3, sys
+c = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True)
+ok = c.execute("PRAGMA integrity_check").fetchone()[0]
+print("integrity:", ok)
+print("tables:", c.execute("SELECT count(*) FROM sqlite_master WHERE type='table'").fetchone()[0])
+print("accounts:", c.execute("SELECT count(*) FROM accounts").fetchone()[0])
+print("machines:", c.execute("SELECT count(*) FROM daemons").fetchone()[0])
+print("newest machine seen (UTC):", c.execute("SELECT datetime(max(last_seen)/1000, 'unixepoch') FROM daemons").fetchone()[0])
+sys.exit(0 if ok == "ok" else 1)
+PY

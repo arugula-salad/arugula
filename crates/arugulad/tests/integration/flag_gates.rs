@@ -56,12 +56,7 @@ fn requests() -> Vec<(&'static str, &'static str, String, Option<Value>)> {
         ("studio", "POST", "/api/blocks".into(), block("app", json!({ "app": "nothing-here" }))),
         ("chant-workspaces", "POST", "/api/blocks".into(), block("workspace", json!({}))),
         ("agent-delegation", "GET", "/api/a2a/agents".into(), None),
-        (
-            "additional-forges",
-            "POST",
-            "/api/blocks".into(),
-            block("forge", json!({ "repo": "o/r", "number": 0, "provider": "forgejo" })),
-        ),
+        // GitLab and Forgejo left Labs (native #523): forge_labs_off.rs.
     ]
 }
 
@@ -169,10 +164,10 @@ fn managoat_is_gone_and_an_old_flag_changes_nothing() {
         assert!(d.get("/api/flags").as_array().unwrap().iter().all(|f| f["name"] != "fountain"));
     }
     // What the file said is kept, for an older daemon reading it.
-    set(&d.state, "forges", true);
+    set(&d.state, "workspaces", true);
     let file: Value = serde_json::from_str(&std::fs::read_to_string(d.state.join("flags.json")).unwrap()).unwrap();
     // An old name is written as its new one (aru-117).
-    assert_eq!(file["flags"], json!({ "fountain": true, "additional-forges": true }));
+    assert_eq!(file["flags"], json!({ "fountain": true, "chant-workspaces": true }));
 
     let arugulad = |args: &[&str]| {
         arugula_testkit::command(Path::new(env!("CARGO_BIN_EXE_arugulad")))
@@ -185,7 +180,8 @@ fn managoat_is_gone_and_an_old_flag_changes_nothing() {
     let list = arugulad(&["flags"]);
     assert!(list.status.success());
     let list = String::from_utf8_lossy(&list.stdout);
-    assert!(list.contains("forges") && !list.lines().any(|l| l.starts_with("fountain")), "{list}");
+    assert!(list.contains("chant-workspaces") && !list.lines().any(|l| l.starts_with("fountain")), "{list}");
+    assert!(!list.contains("forges"), "GitLab and Forgejo left Labs (native #523): {list}");
     for args in [&["flags", "fountain", "on"][..], &["flags", "fountain"][..]] {
         let out = arugulad(args);
         let err = String::from_utf8_lossy(&out.stderr);
@@ -216,14 +212,14 @@ fn an_old_flag_name_still_turns_its_feature_on() {
     assert!(!text.contains("arugulad flags"), "agents set by its old name: {text}");
 
     let out = arugula_testkit::command(Path::new(env!("CARGO_BIN_EXE_arugulad")))
-        .args(["flags", "forges", "on", "--state-dir"])
+        .args(["flags", "workspaces", "on", "--state-dir"])
         .arg(&d.state)
         .output()
         .unwrap();
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
-    assert!(String::from_utf8_lossy(&out.stdout).starts_with("additional-forges is on"));
+    assert!(String::from_utf8_lossy(&out.stdout).starts_with("chant-workspaces is on"));
     let file: Value = serde_json::from_str(&std::fs::read_to_string(d.state.join("flags.json")).unwrap()).unwrap();
-    assert_eq!(file["flags"], json!({ "vms": true, "agent-delegation": true, "additional-forges": true }));
+    assert_eq!(file["flags"], json!({ "vms": true, "agent-delegation": true, "chant-workspaces": true }));
 }
 
 type Ws = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;

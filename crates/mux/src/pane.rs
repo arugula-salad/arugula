@@ -125,6 +125,14 @@ impl ClientRx {
         self.bytes.fetch_sub(item.queued_bytes(), Ordering::Relaxed);
         Some(item)
     }
+
+    /// The next item if one is queued now (#856: a relayed channel takes
+    /// what's waiting together).
+    pub fn try_recv(&mut self) -> Option<ToClient> {
+        let item = self.rx.try_recv().ok()?;
+        self.bytes.fetch_sub(item.queued_bytes(), Ordering::Relaxed);
+        Some(item)
+    }
 }
 
 /// What a client connection receives.

@@ -1129,7 +1129,7 @@ fn all_defs() -> Vec<Def> {
         Def {
             name: "wait",
             title: "Wait for a pane",
-            description: "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). An agent block that's idle comes back with turn: its last message and the work it left (branch, pushed, uncommitted files, commits since the turn began). Or, instead of pane, one of a Cloud workspace's agent blocks (cloud_workspace and agent_block, its pane number there) until idle or needs_input. Or a run in Arugula control (run) until it ends. Or agent sessions in Arugula control (agent_session: ses_… ids) until done: when any of them finishes its turn (or waits on a person, or ends), with each finished one's branch, HEAD and whole last answer; call it again with the rest. Or pull requests on GitHub (pr: OWNER/REPO#N, its link or a PR block, one or several; until checks_done, checks_failed, ready (checks green and mergeable clean) or merged or closed): when any of them gets there, with one verdict each: checks counted by state, the failing ones' names, mergeable, whether it's in the merge queue, and who merged it; read from GitHub itself with the user's login, and a PR they can't see answers as one that doesn't exist. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
+            description: "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). An agent block that's idle comes back with turn: its last message and the work it left (branch, pushed, uncommitted files, commits since the turn began) and what it has spent. Or, instead of pane, one of a Cloud workspace's agent blocks (cloud_workspace and agent_block, its pane number there) until idle or needs_input. Or a run in Arugula control (run) until it ends. Or agent sessions in Arugula control (agent_session: ses_… ids) until done: when any of them finishes its turn (or waits on a person, or ends), with each finished one's branch, HEAD and whole last answer; call it again with the rest. Or pull requests on GitHub (pr: OWNER/REPO#N, its link or a PR block, one or several; until checks_done, checks_failed, ready (checks green and mergeable clean) or merged or closed): when any of them gets there, with one verdict each: checks counted by state, the failing ones' names, mergeable, whether it's in the merge queue, and who merged it; read from GitHub itself with the user's login, and a PR they can't see answers as one that doesn't exist. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
             args: Args::One(schema_for_type::<WaitArgs>),
             read_only: true,
             destructive: false,
@@ -1670,7 +1670,7 @@ impl ToolCall<'_, '_> {
                 Err(e) => Err(e),
             },
             // list
-            ("list", Some("panes")) => crate::mcp::ops::call::<ListPanes>(self, args).await,
+            ("list", Some("panes")) => self.with_spend(crate::mcp::ops::call::<ListPanes>(self, args).await).await,
             ("list", Some("devices")) => self.list_devices(),
             ("delegate", Some(kind @ ("send" | "get" | "answer" | "cancel" | "review" | "apply"))) => match parse(args)
             {
@@ -2127,7 +2127,7 @@ impl ToolCall<'_, '_> {
                     (Attention::Done, _) => finished("finished its turn"),
                     _ => finished("is idle"),
                 };
-                done(summary, results::Attended { pane, state, ask, turn })
+                self.with_spend_of(pane, done(summary, results::Attended { pane, state, ask, turn })).await
             }
             WaitResult::Timeout => self.still_running(pane, Duration::ZERO).await,
         }
@@ -2261,7 +2261,7 @@ impl ToolCall<'_, '_> {
         let max = a.max_chars.unwrap_or(PAGE).clamp(200, PAGE_MAX);
         // Open, or closed and still on disk (a full token only: a closed
         // pane's tab is unknown).
-        let info = match self.readable(pane).await {
+        let info = match self.contents_readable(pane).await {
             Ok(p) => Some(p),
             Err(e) if self.me().is_some() => return Err(e),
             Err(_) => None,
@@ -2276,9 +2276,9 @@ impl ToolCall<'_, '_> {
                 self.app.mux.api(|r| Api::Block(pane, r)).await.flatten().ok_or_else(|| format!("no block %{pane}"))?;
             if a.format == Some(ReadFormat::Messages) {
                 let all = b.messages().ok_or_else(|| format!("%{pane} has no messages: format raw"))?;
-                return page_messages(pane, &all, a.offset, max);
+                return self.with_spend_of(pane, page_messages(pane, &all, a.offset, max)).await;
             }
-            return page_text(pane, &b.text(), a.offset, max);
+            return self.with_spend_of(pane, page_text(pane, &b.text(), a.offset, max)).await;
         }
         let closed = || {
             self.app
@@ -2344,7 +2344,7 @@ impl ToolCall<'_, '_> {
 
     async fn capture(&self, a: PaneOnly) -> Out {
         let pane = a.pane.id()?;
-        let p = self.readable(pane).await?;
+        let p = self.contents_readable(pane).await?;
         let text = if p.info.kind == BlockType::Terminal {
             let h =
                 self.app.mux.api(|r| Api::Pane(pane, r)).await.flatten().ok_or_else(|| format!("no pane %{pane}"))?;
@@ -2595,11 +2595,23 @@ impl ToolCall<'_, '_> {
     }
 
     /// Panes this caller may read the history of: all, or its tab's.
+    /// The panes whose history and output an agent block's token reads:
+    /// those in its tab it may read the contents of.
     async fn tab_panes(&self) -> Option<Vec<PaneId>> {
         let me = self.me()?;
         let panes = self.panes().await;
         let tab = panes.iter().find(|p| p.info.id == me).map(|p| p.tab);
-        Some(panes.iter().filter(|p| Some(p.tab) == tab).map(|p| p.info.id).collect())
+        let in_tab = panes.iter().filter(|p| Some(p.tab) == tab);
+        if self.guest_behind_me().await.is_none() {
+            return Some(in_tab.map(|p| p.info.id).collect());
+        }
+        let mut only = vec![];
+        for p in in_tab {
+            if self.contents_readable(p.info.id).await.is_ok() {
+                only.push(p.info.id);
+            }
+        }
+        Some(only)
     }
 
     async fn history(&self, a: HistoryArgs) -> Out {
@@ -3656,17 +3668,27 @@ impl ToolCall<'_, '_> {
             (None, own) => own,
         };
         let mut path = a.path.clone();
+        let mut cwd = None;
         if let Some(p) = pane {
-            let info = self.readable(p).await?;
+            let info = self.contents_readable(p).await?;
+            cwd = info.info.cwd;
             if !path.starts_with('/')
                 && !path.starts_with('~')
-                && let Some(cwd) = info.info.cwd.as_deref()
+                && let Some(cwd) = cwd.as_deref()
             {
                 path = format!("{}/{path}", cwd.trim_end_matches('/'));
             }
         }
+        // A read-only token reads in a pane's directory, nowhere else.
+        let inside = match (self.scope(), &cwd) {
+            (Scope::Read, Some(dir)) => Some(dir.as_str()),
+            (Scope::Read, None) => {
+                return Err("this token reads files in a pane's directory: give a pane that has one".into());
+            }
+            _ => None,
+        };
         let offset = a.offset.unwrap_or(0);
-        let (bytes, size) = crate::fs::read_on(self.app, pane, &path, offset, max as u64).await?;
+        let (bytes, size) = crate::fs::read_on(self.app, pane, &path, offset, max as u64, inside).await?;
         if bytes.iter().take(8000).any(|b| *b == 0) {
             return Err(format!("{path} looks binary ({size} bytes); read_file reads text"));
         }

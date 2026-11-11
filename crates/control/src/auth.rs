@@ -231,9 +231,17 @@ pub const MAX_SIGNED_BODY: usize = 1 << 20;
 pub struct Replays(std::sync::Mutex<std::collections::HashMap<String, u64>>);
 
 impl Replays {
+    /// Whether this is the first time the hex signature `sig` is used
+    /// under `scope` (a signer's id, or what kind of proof it is);
+    /// remembered until `until` (ms). Hex decodes in either case, so one
+    /// signature has many spellings: it's remembered in one of them.
+    pub fn first_sig(&self, scope: &str, sig: &str, until: u64) -> bool {
+        self.first(&format!("{scope} {}", sig.to_ascii_lowercase()), until)
+    }
+
     /// Whether this is the first time `key` is used; remembered until
     /// `until` (ms).
-    pub fn first(&self, key: &str, until: u64) -> bool {
+    fn first(&self, key: &str, until: u64) -> bool {
         let now = now_ms();
         let mut m = self.0.lock().unwrap();
         if m.len() > 50_000 {
@@ -409,7 +417,7 @@ fn check_hosted(app: &App, parts: &Parts, body: &[u8]) -> Result<Option<HostedRo
     if !arugula_e2e::cert::verify_hex(&row.cert.sign, msg.as_bytes(), sig) {
         return Err(bad());
     }
-    if !app.daemon_sigs.first(&format!("{id} {sig}"), ms + SKEW_MS + 60_000) {
+    if !app.daemon_sigs.first_sig(id, sig, ms + SKEW_MS + 60_000) {
         return Err(err(StatusCode::UNAUTHORIZED, "that signature was used already"));
     }
     Ok(Some(row))
@@ -438,7 +446,7 @@ fn check_daemon(app: &App, parts: &Parts, body: &[u8]) -> Result<Cert, ApiError>
         return Err(bad());
     }
     // Once each: a copy of a request (from a log, a proxy) does nothing.
-    if !app.daemon_sigs.first(&format!("{id} {sig}"), ms + SKEW_MS + 60_000) {
+    if !app.daemon_sigs.first_sig(id, sig, ms + SKEW_MS + 60_000) {
         return Err(err(StatusCode::UNAUTHORIZED, "that signature was used already"));
     }
     Ok(cert)
