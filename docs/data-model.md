@@ -180,6 +180,12 @@ code (Jake, 2026-11-05, Doc c2508fcdab6cf131): when a team gets one, the
 work it already has and its channels stay in the default project, and only
 new work goes in the new one. Nothing moves objects between projects.
 
+Proposed in [aru-140](decisions/aru-140-an-owner-has-many-projects-channels-belong-to-the-team.md)
+(not built yet): an owner has many projects, team channels belong to the
+team rather than its default project, the default project becomes an
+owner's `default_project` setting, a repo links to exactly one project, and
+a whole project can move to another owner.
+
 | Noun | What it is | Truth | ID |
 |---|---|---|---|
 | **Linked repo** | A GitHub repo tied to one project | Platform `linked_repos` | GitHub's |
