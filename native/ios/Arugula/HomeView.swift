@@ -13,6 +13,8 @@ struct HomeView: View {
 
     var body: some View {
         TabView {
+            // Tabs and titles in the theme (Theme.swift); each tab's lists sit
+            // on the void.
             ProjectsView(control: control)
                 .tabItem { Label("Projects", systemImage: "folder") }
             ChatRoomsView(control: control)
@@ -33,7 +35,7 @@ struct DetailTitle: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .navigationTitle(title)
+            .navigationTitle(width == .regular ? title.uppercased() : title)
             .navigationBarTitleDisplayMode(width == .regular ? .large : .inline)
     }
 }
@@ -59,7 +61,7 @@ struct Loaded<T, Content: View>: View {
             } else if let problem {
                 Problem(message: problem) { Task { await refresh() } }
             } else {
-                ProgressView()
+                ProgressView().tint(Palette.accent).frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .task {
@@ -97,28 +99,46 @@ struct ProjectsView: View {
             Loaded(load: { try await control.get("/api/projects", as: Projects.self) }) { p in
                 List(p.projects, selection: $picked) { project in
                     NavigationLink(value: project) {
-                        VStack(alignment: .leading) {
-                            Text(project.name)
-                            if let team = project.team {
-                                Text("\(team.name) · \(team.role)").font(.caption).foregroundStyle(.secondary)
-                            }
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(project.name).font(Face.ui(16, "SemiBold"))
+                            Text(project.team.map { "\($0.name) · \($0.role)" } ?? "personal")
+                                .font(Face.mono(11)).foregroundStyle(Palette.dim)
                         }
+                        .padding(.vertical, 4)
                     }
+                    .voidRow()
                     .accessibilityIdentifier("project-\(project.name)")
                 }
+                .voidList()
             }
-            .navigationTitle("Projects")
+            .navigationTitle("PROJECTS")
+            .background(Palette.void)
         } detail: {
             NavigationStack {
                 if let picked {
                     ProjectView(control: control, project: picked)
                 } else {
-                    ContentUnavailableView("Pick a project", systemImage: "folder")
+                    Empty(text: "Pick a project", symbol: "folder")
                 }
             }
             .id(picked?.id)
         }
         .navigationSplitViewStyle(.balanced)
+    }
+}
+
+/// What a detail shows before anything is picked.
+struct Empty: View {
+    let text: String
+    let symbol: String
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: symbol).font(.system(size: 34, weight: .light)).foregroundStyle(Palette.muted)
+            Caps(text)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Palette.void)
     }
 }
 
@@ -135,36 +155,32 @@ struct ProjectView: View {
             }
             .pickerStyle(.segmented)
             .padding(.horizontal)
+            .padding(.vertical, 8)
             if section == 0 {
                 Loaded(load: { try await control.get("/api/projects/\(project.id)/issues", as: IssueList.self) }) { l in
                     List(l.issues) { issue in
-                        NavigationLink(value: issue) {
-                            VStack(alignment: .leading) {
-                                Text(issue.title).lineLimit(2)
-                                Text("#\(issue.number) · \(issue.state)").font(.caption).foregroundStyle(.secondary)
-                            }
-                        }
+                        NavigationLink(value: issue) { IssueRow(issue: issue) }.voidRow()
                     }
-                    .overlay { if l.issues.isEmpty { Text("No open issues").foregroundStyle(.secondary) } }
+                    .voidList()
+                    .overlay { if l.issues.isEmpty { Caps("No open issues") } }
                 }
             } else {
                 Loaded(load: { try await control.get("/api/projects/\(project.id)/boards", as: BoardList.self) }) { l in
-                    List(l.boards) { b in
-                        NavigationLink(value: b) {
-                            VStack(alignment: .leading) {
-                                Text(b.title)
-                                if let p = b.progress, let total = p.total, total > 0 {
-                                    ProgressView(value: Double(p.done ?? 0), total: Double(total))
-                                    Text("\(p.done ?? 0) of \(total) done").font(.caption).foregroundStyle(.secondary)
-                                }
+                    ScrollView {
+                        LazyVStack(spacing: 12) {
+                            ForEach(l.boards) { b in
+                                NavigationLink(value: b) { BoardCard(board: b) }
+                                    .buttonStyle(.plain)
+                                    .accessibilityIdentifier("board-\(b.title)")
                             }
                         }
-                        .accessibilityIdentifier("board-\(b.title)")
+                        .padding()
                     }
-                    .overlay { if l.boards.isEmpty { Text("No boards").foregroundStyle(.secondary) } }
+                    .overlay { if l.boards.isEmpty { Caps("No boards") } }
                 }
             }
         }
+        .background(Palette.void)
         .detailTitle(project.name)
         .navigationDestination(for: Issue.self) { IssueView(issue: $0) }
         .navigationDestination(for: Board.self) { BoardScreen(control: control, board: $0) }
@@ -174,54 +190,231 @@ struct ProjectView: View {
     }
 }
 
-/// A board: its lanes in order, each with its rows. A row with a native issue
-/// opens it.
-struct BoardScreen: View {
-    let control: Control
-    let board: Board
+struct IssueRow: View {
+    let issue: Issue
 
     var body: some View {
-        Loaded(load: { try await control.get("/api/boards/\(board.id)", as: BoardDetail.self) }) { b in
-            List {
-                if let goal = b.board.goal, !goal.isEmpty {
-                    Section { Text(goal).font(.callout).foregroundStyle(.secondary) }
-                }
-                ForEach(b.zones) { lane in
-                    Section("\(lane.title) · \(lane.rows.count)") {
-                        ForEach(lane.rows) { row in
-                            if row.pointer?.kind == "issue", let id = row.pointer?.id {
-                                NavigationLink(value: IssueRef(id: id)) { BoardRowLabel(row: row, group: b.groupTitle(row.group)) }
-                            } else {
-                                BoardRowLabel(row: row, group: b.groupTitle(row.group))
-                            }
-                        }
-                    }
-                }
-            }
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text("#\(issue.number)").font(Face.mono(12, "Medium")).foregroundStyle(Palette.dim)
+                .frame(minWidth: 44, alignment: .leading)
+            Text(issue.title).font(Face.ui(15, "Medium")).lineLimit(2)
+            Spacer(minLength: 0)
+            StateChip(state: issue.state)
         }
-        .detailTitle(board.title)
+        .padding(.vertical, 4)
     }
 }
 
-struct BoardRowLabel: View {
-    let row: BoardDetail.Row
-    let group: String?
+/// An issue's or PR's state, as a small chip in its tone.
+struct StateChip: View {
+    let state: String
+
+    var tone: Tone {
+        switch state {
+        case "open": .ok
+        case "merged": .accent
+        case "closed": .muted
+        default: .info
+        }
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            if let live = row.live, let title = live.title {
-                Text(live.number.map { "#\($0) \(title)" } ?? title).lineLimit(2)
-                if let note = row.note, !note.isEmpty {
-                    Text(note).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                }
-            } else {
-                Text(row.note.flatMap { $0.isEmpty ? nil : $0 } ?? row.pointer?.url ?? "A note").lineLimit(3)
+        Text(state.uppercased())
+            .font(Face.mono(9, "Bold"))
+            .tracking(0.6)
+            .foregroundStyle(tone.color)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .overlay(Capsule().strokeBorder(tone.color.opacity(0.5), lineWidth: 1))
+    }
+}
+
+// ---- boards
+
+/// The four lanes: their ids, words and tones, as the web's board has them
+/// (Next plain, Doing warn, Review accent, Done ok).
+enum LaneKind: String {
+    case next = "lane_next", doing = "lane_doing", review = "lane_review", done = "lane_done"
+
+    var tone: Tone {
+        switch self {
+        case .next: .muted
+        case .doing: .warn
+        case .review: .accent
+        case .done: .ok
+        }
+    }
+}
+
+/// A board on a project's list: its title, its lanes as one bar, and the counts.
+struct BoardCard: View {
+    let board: Board
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(board.title.uppercased()).font(Face.display(24)).foregroundStyle(Palette.fg).lineLimit(2)
+            if let goal = board.goal, !goal.isEmpty {
+                Text(goal).font(Face.ui(13)).foregroundStyle(Palette.subtle).lineLimit(2)
             }
-            let tags = [group, row.live?.state].compactMap { $0 }
-            if !tags.isEmpty {
-                Text(tags.joined(separator: " · ")).font(.caption2).foregroundStyle(.tertiary)
+            if let p = board.progress, let total = p.total, total > 0 {
+                LaneBar(done: p.done ?? 0, review: p.review ?? 0, doing: p.doing ?? 0, total: total)
+                HStack(spacing: 14) {
+                    Count(n: p.done ?? 0, of: total, label: "done", tone: .ok)
+                    if let r = p.review, r > 0 { Count(n: r, label: "review", tone: .accent) }
+                    if let d = p.doing, d > 0 { Count(n: d, label: "doing", tone: .warn) }
+                }
             }
         }
+        .card(.accent)
+    }
+}
+
+/// A board's progress as one bar: done, review and doing in their lanes' tones.
+struct LaneBar: View {
+    let done: Int, review: Int, doing: Int, total: Int
+
+    var body: some View {
+        GeometryReader { g in
+            HStack(spacing: 0) {
+                ForEach(Array([(done, Palette.ok), (review, Palette.accent), (doing, Palette.warn)].enumerated()), id: \.offset) { _, part in
+                    Rectangle().fill(part.1).frame(width: g.size.width * CGFloat(part.0) / CGFloat(max(total, 1)))
+                }
+                Spacer(minLength: 0)
+            }
+        }
+        .frame(height: 6)
+        .background(Palette.raised)
+        .clipShape(Capsule())
+    }
+}
+
+/// A count in the display face, with its word in mono capitals.
+struct Count: View {
+    let n: Int
+    var of: Int?
+    let label: String
+    let tone: Tone
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
+            Text(of.map { "\(n)/\($0)" } ?? "\(n)").font(Face.display(20)).foregroundStyle(tone.color)
+            Caps(label)
+        }
+    }
+}
+
+/// A board: its goal, the four lanes' counts, and the lanes with their rows as
+/// cards in each lane's tone. On an iPad the lanes stand side by side and
+/// scroll sideways; on an iPhone they stack. A row with a native issue opens it.
+struct BoardScreen: View {
+    let control: Control
+    let board: Board
+    @Environment(\.horizontalSizeClass) private var width
+
+    var body: some View {
+        Loaded(load: { try await control.get("/api/boards/\(board.id)", as: BoardDetail.self) }) { b in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    header(b)
+                    if width == .regular {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(alignment: .top, spacing: 14) {
+                                ForEach(b.zones) { lane in column(lane, b).frame(width: 290) }
+                            }
+                            .padding(.horizontal)
+                        }
+                    } else {
+                        VStack(alignment: .leading, spacing: 22) {
+                            ForEach(b.zones) { lane in column(lane, b) }
+                        }
+                        .padding(.horizontal)
+                    }
+                }
+                .padding(.vertical)
+            }
+            .background(Palette.void)
+        }
+        .background(Palette.void)
+        .detailTitle(board.title)
+    }
+
+    private func header(_ b: BoardDetail) -> some View {
+        let total = b.zones.reduce(0) { $0 + $1.rows.count }
+        let n = { (k: LaneKind) in b.zones.first { $0.id == k.rawValue }?.rows.count ?? 0 }
+        return VStack(alignment: .leading, spacing: 12) {
+            if let goal = b.board.goal, !goal.isEmpty {
+                Text(goal).font(Face.ui(15)).foregroundStyle(Palette.subtle).frame(maxWidth: 720, alignment: .leading)
+            }
+            HStack(alignment: .bottom, spacing: 22) {
+                ForEach(b.zones) { lane in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(lane.rows.count)").font(Face.display(40, "Black"))
+                            .foregroundStyle((LaneKind(rawValue: lane.id)?.tone ?? .muted).color)
+                        Caps(lane.title)
+                    }
+                }
+            }
+            LaneBar(done: n(.done), review: n(.review), doing: n(.doing), total: total)
+                .frame(maxWidth: 720)
+        }
+        .padding(.horizontal)
+    }
+
+    private func column(_ lane: BoardDetail.Lane, _ b: BoardDetail) -> some View {
+        let kind = LaneKind(rawValue: lane.id)
+        let tone = kind?.tone ?? .muted
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(lane.title.uppercased()).font(Face.display(22)).foregroundStyle(tone.color)
+                Text("\(lane.rows.count)").font(Face.mono(12, "Bold")).foregroundStyle(Palette.dim)
+            }
+            Rectangle().fill(tone.color.opacity(0.6)).frame(height: 1)
+            if lane.rows.isEmpty {
+                Caps("Nothing here").padding(.vertical, 6)
+            }
+            ForEach(lane.rows) { row in
+                let card = BoardRowCard(row: row, group: b.groupTitle(row.group), tone: tone, live: kind == .doing)
+                if row.pointer?.kind == "issue", let id = row.pointer?.id {
+                    NavigationLink(value: IssueRef(id: id)) { card }.buttonStyle(.plain)
+                } else {
+                    card
+                }
+            }
+        }
+    }
+}
+
+/// A board's row as a card in its lane's tone: the item's number and kind,
+/// its title, the row's note and its group. Rows being worked on glow.
+struct BoardRowCard: View {
+    let row: BoardDetail.Row
+    let group: String?
+    let tone: Tone
+    let live: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 6) {
+                if let live = row.live, let n = live.number {
+                    Text("#\(n)").font(Face.mono(12, "Bold")).foregroundStyle(tone.color)
+                    if let kind = live.kind { Caps(kind == "native" ? "issue" : kind) }
+                } else {
+                    Caps("note")
+                }
+                Spacer(minLength: 0)
+                if let state = row.live?.state { StateChip(state: state) }
+            }
+            if let title = row.live?.title {
+                Text(title).font(Face.ui(15, "SemiBold")).foregroundStyle(Palette.fg).lineLimit(3)
+            }
+            if let note = row.note, !note.isEmpty {
+                Text(note).font(Face.ui(13)).foregroundStyle(Palette.subtle).lineLimit(row.live == nil ? 5 : 2)
+            } else if row.live == nil, let url = row.pointer?.url {
+                Text(url).font(Face.mono(11)).foregroundStyle(Palette.subtle).lineLimit(2)
+            }
+            if let group { Caps(group) }
+        }
+        .card(tone, glow: live)
     }
 }
 
@@ -231,14 +424,19 @@ struct IssueView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                Text(issue.title).font(.title3.weight(.semibold))
-                Text("#\(issue.number) · \(issue.state)").font(.caption).foregroundStyle(.secondary)
-                Text((try? AttributedString(markdown: issue.body, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(issue.body))
-                    .textSelection(.enabled)
+                HStack(spacing: 8) {
+                    Text("#\(issue.number)").font(Face.mono(13, "Bold")).foregroundStyle(Palette.accent)
+                    StateChip(state: issue.state)
+                    ForEach(issue.labels, id: \.self) { Caps($0) }
+                }
+                Text(issue.title).font(Face.display(32)).foregroundStyle(Palette.fg)
+                ChatText(text: issue.body)
             }
+            .frame(maxWidth: 760, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding()
         }
+        .background(Palette.void)
         .navigationBarTitleDisplayMode(.inline)
     }
 }
@@ -253,18 +451,27 @@ struct YouView: View {
         NavigationStack {
             Loaded(load: { try await control.get("/api/projects", as: Projects.self) }) { p in
                 List {
-                    Section("Signed in as") {
-                        Text(p.me.name)
-                        Text(p.me.login).foregroundStyle(.secondary)
+                    Section {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(p.me.name.uppercased()).font(Face.display(30))
+                            Text(p.me.login).font(Face.mono(12)).foregroundStyle(Palette.dim)
+                        }
+                        .padding(.vertical, 6)
+                        .voidRow()
+                    } header: {
+                        Caps("Signed in as")
                     }
                     Section {
-                        Button("Forget this \(device)", role: .destructive) { model.forget() }
+                        Button("Forget this \(device)", role: .destructive) { model.forget() }.voidRow()
                     } footer: {
                         Text("Deletes this \(device)'s keys. Remove it from your devices in a browser too, and it can't come back with them.")
+                            .font(Face.ui(12)).foregroundStyle(Palette.dim)
                     }
                 }
+                .voidList()
             }
-            .navigationTitle("You")
+            .navigationTitle("YOU")
+            .background(Palette.void)
         }
     }
 }

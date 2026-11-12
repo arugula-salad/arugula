@@ -6,6 +6,11 @@ import SwiftUI
 struct ArugulaApp: App {
     @StateObject private var model = AppModel()
 
+    init() {
+        Face.register()
+        applyBarAppearance()
+    }
+
     var body: some Scene {
         WindowGroup {
             Group {
@@ -15,7 +20,10 @@ struct ArugulaApp: App {
                     PairView().environmentObject(model)
                 }
             }
-            .tint(Color(red: 0.36, green: 0.72, blue: 0.40))
+            .tint(Palette.accent)
+            .font(Face.ui(16))
+            .foregroundStyle(Palette.fg)
+            .preferredColorScheme(.dark)
         }
     }
 }
@@ -58,9 +66,9 @@ struct Problem: View {
 
     var body: some View {
         ContentUnavailableView {
-            Label("Can't load this", systemImage: "exclamationmark.triangle")
+            Label("Can't load this", systemImage: "exclamationmark.triangle").foregroundStyle(Palette.danger)
         } description: {
-            Text(message)
+            Text(message).font(Face.mono(12)).foregroundStyle(Palette.subtle)
         } actions: {
             if let retry { Button("Try again", action: retry) }
         }

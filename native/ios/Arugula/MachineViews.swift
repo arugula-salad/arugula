@@ -106,22 +106,30 @@ struct MachinesView: View {
             Loaded(load: { try await control.get("/api/directory", as: Directory.self) }) { d in
                 List(d.daemons, selection: $picked) { m in
                     NavigationLink(value: m) {
-                        HStack {
-                            Circle().fill(m.online == true ? Color.green : Color.secondary).frame(width: 8, height: 8)
-                            Text(m.name)
+                        HStack(spacing: 10) {
+                            Circle().fill(m.online == true ? Palette.ok : Palette.muted).frame(width: 8, height: 8)
+                                .shadow(color: m.online == true ? Palette.ok.opacity(0.8) : .clear, radius: 4)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(m.name).font(Face.ui(16, "SemiBold"))
+                                Caps(m.online == true ? "online" : "offline")
+                            }
                         }
+                        .padding(.vertical, 4)
                     }
+                    .voidRow()
                     .accessibilityIdentifier("machine-\(m.name)")
                 }
-                .overlay { if d.daemons.isEmpty { Text("No machines yet").foregroundStyle(.secondary) } }
+                .voidList()
+                .overlay { if d.daemons.isEmpty { Caps("No machines yet") } }
             }
-            .navigationTitle("Machines")
+            .navigationTitle("MACHINES")
+            .background(Palette.void)
         } detail: {
             NavigationStack {
                 if let picked {
                     MachineView(control: control, machine: picked)
                 } else {
-                    ContentUnavailableView("Pick a machine", systemImage: "terminal")
+                    Empty(text: "Pick a machine", symbol: "terminal")
                 }
             }
             .id(picked?.id)
@@ -142,34 +150,48 @@ struct MachineView: View {
     }
 
     var body: some View {
-        List {
-            if let p = session.problem ?? problem {
-                Text(p).font(.footnote).foregroundStyle(.red).accessibilityIdentifier("machine-problem")
-            }
-            Button {
-                Task {
-                    do {
-                        pendingPane = try await session.newTerminal()
-                        openPending()
-                    } catch {
-                        problem = describe(error)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                if let p = session.problem ?? problem {
+                    Text(p).font(Face.mono(12)).foregroundStyle(Palette.danger).accessibilityIdentifier("machine-problem")
+                }
+                Button {
+                    Task {
+                        do {
+                            pendingPane = try await session.newTerminal()
+                            openPending()
+                        } catch {
+                            problem = describe(error)
+                        }
+                    }
+                } label: {
+                    Label("New terminal", systemImage: "plus")
+                        .font(Face.mono(13, "Bold"))
+                        .foregroundStyle(session.connected ? Palette.void : Palette.dim)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
+                        .background(session.connected ? Palette.accent : Palette.raised, in: RoundedRectangle(cornerRadius: 8))
+                }
+                .disabled(!session.connected)
+                .accessibilityIdentifier("new-terminal")
+                if session.connected {
+                    Caps("\(session.panes.count) panes")
+                }
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 12)], spacing: 12) {
+                    ForEach(session.panes) { pane in
+                        Button { opened = pane } label: { PaneCard(pane: pane, machine: session.machine.name) }
+                            .buttonStyle(.plain)
                     }
                 }
-            } label: {
-                Label("New terminal", systemImage: "plus")
             }
-            .disabled(!session.connected)
-            .accessibilityIdentifier("new-terminal")
-            ForEach(session.panes) { pane in
-                Button { opened = pane } label: {
-                    VStack(alignment: .leading) {
-                        Text(pane.command ?? pane.tab_name ?? "Terminal \(pane.id)").foregroundStyle(.primary)
-                        if let cwd = pane.cwd { Text(cwd).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head) }
-                    }
-                }
+            .padding()
+        }
+        .background(Palette.void)
+        .overlay {
+            if !session.connected && session.problem == nil {
+                ProgressView { Caps("Connecting") }.tint(Palette.accent)
             }
         }
-        .overlay { if !session.connected && session.problem == nil { ProgressView("Connecting…") } }
         .detailTitle(session.machine.name)
         .task { await session.connect() }
         .onChange(of: session.panes) { _, _ in openPending() }
@@ -187,5 +209,26 @@ struct MachineView: View {
         guard let want = pendingPane, let row = session.panes.first(where: { $0.id == want }) else { return }
         pendingPane = nil
         opened = row
+    }
+}
+
+/// A pane as the swarm's rail shows one: its identity in mono ("%62 · tab 3 ·
+/// geek"), what runs in it in the display face, and where. Running panes take
+/// the ok tone and glow.
+struct PaneCard: View {
+    let pane: PaneRow
+    let machine: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("%\(pane.id) · \(pane.tab_name ?? "tab \(pane.tab)") · \(machine)")
+                .font(Face.mono(11)).foregroundStyle(Palette.dim).lineLimit(1)
+            Text((pane.command ?? "shell").uppercased())
+                .font(Face.display(22)).foregroundStyle(pane.running ? Palette.ok : Palette.subtle).lineLimit(1)
+            if let cwd = pane.cwd {
+                Text(cwd).font(Face.mono(12)).foregroundStyle(Palette.subtle).lineLimit(1).truncationMode(.head)
+            }
+        }
+        .card(pane.running ? .ok : .muted, glow: pane.running)
     }
 }

@@ -17,6 +17,11 @@ struct PairView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
+                    VStack(spacing: 4) {
+                        Text("ARUGULA").font(Face.display(56, "Black")).tracking(1)
+                        Caps("Your machines, your agents, one place")
+                    }
+                    .padding(.top, 24)
                     if let pairing {
                         waiting(pairing)
                     } else {
@@ -25,14 +30,16 @@ struct PairView: View {
                     if let problem {
                         Text(problem)
                             .font(.footnote)
-                            .foregroundStyle(.red)
+                            .foregroundStyle(Palette.danger)
                             .multilineTextAlignment(.center)
                             .accessibilityIdentifier("pair-problem")
                     }
                 }
                 .padding()
+                .frame(maxWidth: 520)
+                .frame(maxWidth: .infinity)
             }
-            .navigationTitle("Arugula")
+            .background(Palette.void)
         }
         .task(id: pairing?.code) { await waitForApproval() }
     }
