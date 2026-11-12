@@ -175,9 +175,12 @@ struct PaneRow: Decodable, Identifiable, Hashable {
     /// only an id (a conversation's hash) isn't a name.
     var name: String {
         let cleaned = (title ?? "").drop { !$0.isLetter && !$0.isNumber }.trimmingCharacters(in: .whitespaces)
-        if Self.readable(cleaned), cleaned != program, cleaned.lowercased() != "claude code" { return cleaned }
+        // A shell's own "user@host: dir" isn't a name: its folder is.
+        let shellTitle = cleaned.range(of: #"^[^\s@]+@[^\s:]+:"#, options: .regularExpression) != nil
+        if Self.readable(cleaned), !shellTitle, cleaned != program, cleaned.lowercased() != "claude code" { return cleaned }
         if let r = resumes?.replacingOccurrences(of: "Claude Code conversation ", with: ""), Self.readable(r) { return r }
         if let project { return "\(program ?? "shell") in \(project)" }
+        if let folder = cwd?.split(separator: "/").last { return "\(program ?? "shell") in \(folder)" }
         return program ?? "shell"
     }
 
@@ -203,6 +206,15 @@ struct PaneRow: Decodable, Identifiable, Hashable {
 struct PaneList: Decodable {
     var panes: [PaneRow]
     var tabs: [TabLayout]?
+    var sessions: [MuxSession]?
+}
+
+/// One of a machine's sessions: a named group of its tabs, maybe in a project.
+struct MuxSession: Decodable, Identifiable, Equatable {
+    var id: UInt32
+    var name: String
+    var project: String?
+    var tabs: [UInt32]
 }
 
 /// A tab as the machine lays it out: its grid, and each pane's rectangle in it
