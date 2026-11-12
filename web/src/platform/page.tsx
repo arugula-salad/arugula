@@ -11,6 +11,7 @@ import { PageHeader } from "../shared/ui/page-header";
 import { PlatformBar } from "./bar";
 import { WithRail } from "./rail";
 import { names, resolve, roomElsewhere } from "./links";
+import { currentProject, entryPath, type Entry } from "./current-project";
 import { slugIn } from "./paths";
 import { arrive } from "./chat-nav";
 import { go, pathOf, useRoute, type Route } from "./router";
@@ -59,7 +60,7 @@ function Routed() {
   if (s === null) return <Shell><p class="platform-section dim">Loading…</p></Shell>;
   if (s === "signed-out") return <SignIn />;
   if (typeof s === "object") return <Shell><p class="platform-section control-error">{s.error}</p></Shell>;
-  if (r.page === "chat") return <ChatPage project={r.project} route={{ room: r.room, msg: r.msg, thread: r.thread, view: r.view, q: r.q }}><Toast /></ChatPage>;
+  if (r.page === "chat") return <ChatPage project={r.project} route={{ room: r.room, msg: r.msg, thread: r.thread, view: r.view, q: r.q, all: r.all }}><Toast /></ChatPage>;
   if (r.page === "dm") return <ChatPage project={r.project} route={{ room: r.room, msg: r.msg, thread: r.thread }}><Toast /></ChatPage>;
   return <Shell>{body(r, lost)}</Shell>;
 }
@@ -73,7 +74,7 @@ function body(r: Route, lost: string | null) {
       if (r.what === "run" && lost === r.run) return <Missing what="That run isn't one you can read (or it's gone)." />;
       return <p class="platform-section dim">Finding it…</p>;
     case "home":
-      return <Home />;
+      return r.to ? <Entering to={r.to} /> : <Home />;
     case "project":
       return <ProjectHome id={r.project} />;
     case "issues":
@@ -89,7 +90,7 @@ function body(r: Route, lost: string | null) {
     case "board":
       return <BoardPage project={r.project} board={r.board} />;
     case "docs":
-      return <DocsPage project={r.project} />;
+      return <DocsPage project={r.project} all={r.all} />;
     case "doc":
       return <DocPage project={r.project} doc={r.doc} />;
     case "runs":
@@ -114,9 +115,9 @@ function body(r: Route, lost: string | null) {
       // M184: a hosted workspace is a machine of the project.
       return <HostedWorkspacePage project={r.project} workspace={r.workspace} />;
     case "inbox":
-      return <InboxPage />;
+      return <InboxPage all={r.all} />;
     case "all-boards":
-      return <AllBoardsPage />;
+      return <AllBoardsPage all={r.all} />;
     case "settings":
       return <SettingsPage />;
     case "deploy":
@@ -124,6 +125,17 @@ function body(r: Route, lost: string | null) {
     default:
       return <Missing what="Nothing's at this address." />;
   }
+}
+
+/** A shell button's place (`/?to=docs`): in the current project once the page
+ * knows the reader's, else the global page. */
+function Entering({ to }: { to: Entry }) {
+  useSubscribe((fn) => session.subscribe(fn));
+  const ready = session.state === "ready";
+  useEffect(() => {
+    if (ready) go(entryPath(to, session.project(currentProject()), names), true);
+  }, [ready]);
+  return <p class="platform-section dim">Finding it…</p>;
 }
 
 function Shell({ children }: { children: preact.ComponentChildren }) {
@@ -223,7 +235,7 @@ function useTitle(r: Route) {
  * it can name a Doc's tab. */
 function useSlug(r: Route) {
   const known = (id: string) => names(id) ?? slugIn(location.pathname, id);
-  const want = r.page === "missing" || r.page === "find" ? null : (roomElsewhere(r) ?? pathOf(r, known));
+  const want = r.page === "missing" || r.page === "find" || (r.page === "home" && r.to) ? null : (roomElsewhere(r) ?? pathOf(r, known));
   useEffect(() => {
     if (want && want !== location.pathname + location.search && session.state === "ready") go(want + location.hash, true);
   }, [want, session.state]);

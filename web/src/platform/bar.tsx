@@ -9,6 +9,8 @@ import { usePhone, useSubscribe } from "../shared/ui/hooks";
 import { useRef } from "preact/hooks";
 import { openMenu, useMenuFrom, type MenuItem } from "../shared/ui/menu";
 import { WindowButtons } from "../shared/ui/window-buttons";
+import { chatTeam } from "./chat-scope";
+import { currentProject, entryPath } from "./current-project";
 import { follow, go, pathOf, useRoute, type Route } from "./router";
 import { controlOrigin, session } from "./session";
 import { signOut } from "./signin";
@@ -18,6 +20,7 @@ import { AccountPicture } from "../shared/chat/avatar";
 import { presenceItems } from "../shared/chat/presence";
 import { ChatPlaceUnread, PlaceUnread } from "./thread-unread";
 import { barProject, where } from "./where";
+import { scopable, scopeOf } from "./scope";
 import { InboxCount } from "./inbox-count";
 import { Caret } from "../shared/ui/icons";
 
@@ -91,13 +94,15 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
   // A phone has no rail (#377): the bar keeps what the rail has elsewhere.
   const rail = !usePhone();
   // None on a page that's no project's: the bar says "All projects".
-  const project = barProject(r);
+  // The bar keeps the current project while Boards, Docs and the Inbox are scoped to it (Arugula #881).
+  const project = barProject(r) ?? (scopable(r) ? scopeOf(r, currentProject(), (id) => !!session.project(id)) : undefined);
   const p = session.project(project);
   // An id that's none of the reader's lights no place (UI audit #170): the
   // body says it isn't one of theirs.
   const unknown = !!project && !p && session.state === "ready";
   const here = unknown ? null : sectionOf(r);
-  const chatTo = chatPath(project);
+  // Off a project (Inbox, All projects), Chat is still the current one's (Arugula #880).
+  const chatTo = project ? chatPath(project) : entryPath("chat", session.project(currentProject()), names);
   const pick = (e: MouseEvent) => {
     const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const items: MenuItem[] = [
@@ -214,7 +219,7 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
           <Place to={chatTo} here={here === "chat"} data="chat">
             Chat
             {/* An id that's none of the reader's counts nothing. */}
-            {!unknown && (!project || p) && <ChatPlaceUnread team={p ? (p.team?.id ?? null) : undefined} />}
+            {!unknown && (!project || p) && <ChatPlaceUnread team={chatTeam(p, session.project(currentProject()))} />}
           </Place>
         )}
         <Place to="/inbox" here={here === "inbox"} data="inbox">

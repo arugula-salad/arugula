@@ -174,6 +174,7 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-135](docs/decisions/aru-135-a-machine-s-doc-is-the-truth-its-platform-copy-is-read-only.md): A machine's Doc is the truth; its platform copy is read-only
 - [aru-136](docs/decisions/aru-136-a-machine-s-kind-is-one-type-control-json-keeps-its-flat-shape.md): A machine's kind is one type; control.json keeps its flat shape
 - [aru-139](docs/decisions/aru-139-a-doc-s-home-follows-the-context-with-no-copies.md): A Doc's home follows the context, with no copies
+- [aru-140](docs/decisions/aru-140-an-owner-has-many-projects-channels-belong-to-the-team.md): An owner has many projects; channels belong to the team; the default project is a setting
 
 ## Build and release
 

@@ -6,6 +6,7 @@ import { EmptyState } from "../ui/block-states";
 import "./threads.css";
 import { useEffect } from "preact/hooks";
 import type { ChatStore } from "../chat-store";
+import { inView, type ChatScope } from "./sidebar";
 import type { ChatThreadItem } from "../proto";
 import { useSubscribe } from "../ui/hooks";
 import { Markup } from "../ui/markup";
@@ -67,13 +68,14 @@ function Row({ store, it }: { store: ChatStore; it: ChatThreadItem }) {
   );
 }
 
-/** Followed threads over every room I read (`GET /api/chat/threads`). */
-export function ThreadsView({ store, phone }: { store: ChatStore; phone: boolean }) {
+/** Followed threads over every room I read (`GET /api/chat/threads`), or
+ * the scope's (Arugula #883). */
+export function ThreadsView({ store, phone, scope }: { store: ChatStore; phone: boolean; scope?: ChatScope }) {
   useSubscribe((fn) => store.subscribe(fn));
   useEffect(() => store.threads.watch(), []);
   const list = store.threads.list;
   // A thread I just stopped following goes at once.
-  const shown = (list?.threads ?? []).filter((it) => it.parent.thread?.following !== false);
+  const shown = (list?.threads ?? []).filter((it) => it.parent.thread?.following !== false && inView(store.room(it.room), scope));
   const n = shown.length;
   return (
     <section class="chat-thread chat-view" aria-label="Threads" data-chat-threads-view>

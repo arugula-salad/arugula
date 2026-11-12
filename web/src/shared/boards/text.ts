@@ -19,9 +19,16 @@ export function rowGlyph(r: Pick<BoardRow, "lane" | "status">): string {
   return r.status === "needs_input" ? "?" : LANE_GLYPH[r.lane];
 }
 
-/** The rows that wait on the reader, in the board's order: those whose ask names them, and those the board raised itself (a PR's red checks, an agent waiting). */
+/** Whether a row needs the reader: a question that names them (asked, or raised by the board), a PR whose checks failed, or an agent that waits for input. A stall is for the block's owner only, and reaches the reader as `ask.mine`; the amber chip says it to everyone. The row's chips say which; its title takes a dot (#903). Only what the reader may see counts: an item they can't read has no `live`. */
+export function needsDot(r: Pick<BoardRow, "ask" | "live" | "attachments">): boolean {
+  if (r.ask?.mine) return true;
+  if (r.live?.state === "checks_failed" || r.attachments?.some((a) => a.role === "work" && a.live?.state === "checks_failed")) return true;
+  return !!r.attachments?.some((a) => holdsRow(a) && a.block?.state === "needs_input");
+}
+
+/** The rows that wait on the reader, in the board's order: those [`needsDot`] marks. A row counts once, however many things in it wait. */
 export function needsYou(v: Pick<BoardView, "zones">): BoardRow[] {
-  return v.zones.flatMap((z) => z.rows).filter((r) => r.ask?.mine);
+  return v.zones.flatMap((z) => z.rows).filter(needsDot);
 }
 
 /** The board header's count: `Needs you (2)`. */
@@ -30,8 +37,8 @@ export function needsYouLine(n: number): string {
 }
 
 /** What a card says of who an ask waits on, when the reader can't answer it. */
-export function askWaitingLine(a: Pick<BoardAsk, "raised" | "who_name" | "asked_by">): string {
-  return a.raised ? "Raised by the board; it clears when its cause does." : `Waiting for ${a.who_name}, asked by ${a.asked_by}.`;
+export function askWaitingLine(a: Pick<BoardAsk, "who_name" | "asked_by">): string {
+  return `Waiting for ${a.who_name}, asked by ${a.asked_by}.`;
 }
 
 /** Whether a typed answer to a free-text ask can be sent. */
@@ -101,17 +108,26 @@ export function groupLine(p: Pick<BoardProgress, "done" | "total">): string {
   return p.total ? `${p.done} of ${p.total} done` : "no work yet";
 }
 
-/** What a row's marks say, for its card: `merged, not closed`; `cancelled`; `after #1859`
+/** A row's Not finished mark (#841): the issue is marked with `reason` (what is left), or an open issue's PR merged and nobody said why (`reason` null). `merged`: a PR of the row merged. `by` and `at` are who marked it and when, when someone did. A server from before the mark says `merged_not_closed`, which reads as no reason, merged. */
+export type NotFinished = { reason: string | null; merged: boolean; by?: string; at?: number };
+
+/** The card's words for the mark: `Not finished: second PR for the API`, or `Not finished · no reason given`. */
+export function notFinishedLine(n: Pick<NotFinished, "reason">): string {
+  return n.reason ? `Not finished: ${n.reason}` : "Not finished · no reason given";
+}
+
+/** What a row's marks say, for its card: `not finished: why`; `cancelled`; `after #1859`
  * for a PR stacked on another (the row waits for it); `blocked by #7` for each
  * open blocker, or `blocked by something you can't see` when the reader may not
  * read it (#403); and the attachments of agents that were replaced
  * (`earlier`), which the card folds. */
-export function marksOf(r: Pick<BoardRow, "marks">, now: number = Date.now()): { merged: boolean; cancelled: boolean; after: { words: string; repo?: string } | null; stalled: { words: string; since: number } | null; blocked: { words: string; title?: string; repo?: string }[]; earlier: Set<string> } {
+export function marksOf(r: Pick<BoardRow, "marks">, now: number = Date.now()): { notFinished: NotFinished | null; cancelled: boolean; after: { words: string; repo?: string } | null; stalled: { words: string; since: number } | null; blocked: { words: string; title?: string; repo?: string }[]; earlier: Set<string> } {
   const marks: BoardMark[] = r.marks ?? [];
   const after = marks.find((m) => m.kind === "after");
   const stalled = marks.find((m) => m.kind === "stalled");
+  const nf = marks.find((m) => m.kind === "not_finished" || m.kind === "merged_not_closed");
   return {
-    merged: marks.some((m) => m.kind === "merged_not_closed"),
+    notFinished: !nf ? null : nf.kind === "not_finished" ? { reason: nf.reason ?? null, merged: nf.merged, by: nf.by, at: nf.at } : { reason: null, merged: true },
     cancelled: marks.some((m) => m.kind === "cancelled"),
     after: after && after.kind === "after" ? { words: `after #${after.number}`, repo: after.repo } : null,
     stalled: stalled && stalled.kind === "stalled" ? { words: `stalled ${stalledFor(stalled.since, now)}`, since: stalled.since } : null,
@@ -234,15 +250,24 @@ export function laneSetLine(r: Pick<BoardRow, "lane_set">, nameOf: (account: str
   return r.lane_set ? `set by ${nameOf(r.lane_set.by) || "someone who left"}` : null;
 }
 
-/** An attachment's chip: what it points at, and its state when the reader
- * may see it (an item they can't read says nothing but what it is). */
-export function chipOf(a: Pick<BoardAttachment, "pointer" | "live" | "block" | "role">): { label: string; state: string | null } {
-  const label = pointerLabel(a.pointer, a.live);
+/** The words of a PR's chip: its repo's short name and number, `cloud#16`, since `#16` alone doesn't say which repo (#903). The board doesn't tell the project's own linked repo from another, so it is always short. */
+function prLabel(live: BoardLive): string {
+  return `${live.repo!.split("/").pop()}#${live.number}`;
+}
+
+/** An attachment's chip: what it points at, its state when the reader may see it (an item they can't read says nothing but what it is), and the tone of that state. The chip in trouble carries the problem (#903): a PR's `checks failed` in danger, an agent's `waiting for you` in accent, and with `stalled` (the row's words, `stalled 2h`) the agent holding the row in warn. */
+export function chipOf(a: Pick<BoardAttachment, "pointer" | "live" | "block" | "role"> & Partial<Pick<BoardAttachment, "released">>, stalled?: string | null): { label: string; state: string | null; tone: Tone | null } {
+  const label = a.live?.kind === "pr" && a.live.repo && a.pointer.kind === "forge_item" ? prLabel(a.live) : pointerLabel(a.pointer, a.live);
   // The block's own name, when its starter gave it one (#372).
   // "working" is what the Doing lane already says; the other states stay.
-  if (a.block) return { label: a.block.title?.trim() || label, state: a.block.state === "working" ? null : BLOCK_LABEL[a.block.state] };
-  if (a.live) return { label, state: liveWord(a.live) };
-  return { label, state: null };
+  if (a.block) {
+    const name = a.block.title?.trim() || label;
+    if (stalled && holdsRow({ role: a.role, block: a.block, released: a.released })) return { label: name, state: stalled, tone: "warn" };
+    if (a.block.state === "needs_input") return { label: name, state: "waiting for you", tone: "accent" };
+    return { label: name, state: a.block.state === "working" ? null : BLOCK_LABEL[a.block.state], tone: "muted" };
+  }
+  if (a.live) return { label, state: liveWord(a.live), tone: a.live.state === "merged" ? "merged" : liveTone(a.live.state) };
+  return { label, state: null, tone: null };
 }
 
 /** Work that knows its issue (#372): the chip `#12 · Launch` on an agent block's or a session's header, or `#12` when it is on no board (or isn't known to be), and the platform page's address of the board with `#row=` its row, for its link. */
@@ -447,7 +472,7 @@ export function pointerHref(r: Pick<BoardRow, "pointer" | "live">, platform: (pa
   return undefined;
 }
 
-/** A card's tone, which is its lane's and the progress bar's: Next muted, Doing warn, Review accent, Done ok. A stalled row is danger (warn is Doing's); a row that waits on the reader keeps its lane's tone and shows it with a ring instead (`data-needs-you`). */
+/** A card's tone, which is its lane's and the progress bar's: Next muted, Doing warn, Review accent, Done ok. A stalled row is danger (warn is Doing's); a row that waits on the reader keeps its lane's tone and shows it with a dot before its title (`needsDot`). */
 export function cardTone(r: Pick<BoardRow, "lane"> & Partial<Pick<BoardRow, "marks">>): Tone {
   if (r.marks?.some((m) => m.kind === "stalled")) return "danger";
   return r.lane === "next" ? "muted" : r.lane === "doing" ? "warn" : r.lane === "review" ? "accent" : "ok";

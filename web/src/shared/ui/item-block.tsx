@@ -15,12 +15,14 @@ import { Card } from "./card";
 import "./item-block.css";
 
 export type ItemKind = "pr" | "issue";
-/** The state pill: Open green, Draft grey, Merged purple, Closed red. */
-export type ItemState = "open" | "draft" | "merged" | "closed";
+/** The state pill: Open green, Draft grey, Queued blue (in the merge queue,
+ * Arugula #878), Merged purple, Closed red. */
+export type ItemState = "open" | "draft" | "queued" | "merged" | "closed";
 
 const STATE: Record<ItemState, { tone: Tone; word: string }> = {
   open: { tone: "ok", word: "Open" },
   draft: { tone: "muted", word: "Draft" },
+  queued: { tone: "info", word: "Queued" },
   merged: { tone: "merged", word: "Merged" },
   closed: { tone: "danger", word: "Closed" },
 };

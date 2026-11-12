@@ -202,6 +202,15 @@
       "request": "NewAsk",
       "response": "BoardView"
     },
+    "PUT /api/boards/{id}/rows/{row}/hold": {
+      "handler": "crates/platform/src/boards/holds.rs#hold_route",
+      "request": "HoldRow",
+      "response": "BoardView"
+    },
+    "DELETE /api/boards/{id}/rows/{row}/hold": {
+      "handler": "crates/platform/src/boards/holds.rs#release_route",
+      "response": "BoardView"
+    },
     "PUT /api/boards/{id}/rows/{row}/lane": {
       "handler": "crates/platform/src/boards.rs#set_lane_route",
       "request": "SetLane",

@@ -97,6 +97,7 @@ pub fn item(it: &Value) -> Item {
         updated_at: t(&it["updated_at"]).unwrap_or(0),
         merged_at: t(&it["merged_at"]),
         merged_by: login(&it["merged_by"]),
+        queued: false,
     }
 }
 

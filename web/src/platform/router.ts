@@ -3,6 +3,7 @@
 // ./paths.
 
 import { useEffect, useState } from "preact/hooks";
+import { currentProject, forgetCurrentProject, noteRoute, setCurrentProject } from "./current-project";
 import { parse, type Route } from "./paths";
 
 export * from "./paths";
@@ -11,44 +12,24 @@ export * from "./paths";
 export const current = (): Route => parse(location.pathname, location.search);
 
 const LAST = "arugula.platform-last-page";
-const ACTIVE = "arugula.platform-active-project";
-
-/** The project the platform rail's Projects goes to (Arugula #586): the last
- * one a page was opened under or picked, kept in this browser. */
-export function activeProject(): string | null {
-  try {
-    return localStorage.getItem(ACTIVE);
-  } catch {
-    return null;
-  }
-}
-
-/** Forget it: it's gone or no longer the reader's, or this page's sign-out. */
-export function forgetActiveProject() {
-  try {
-    localStorage.removeItem(ACTIVE);
-  } catch {
-    // nothing kept, then
-  }
-}
 
 /** Where this browser last was on this page, for the shell's Projects to
  * come back to (Arugula #638). Its path, never a fragment: secrets stay in
  * those. */
-function remember() {
+function remember(popped = false) {
   const route = current();
-  // Any page under a project makes it the active one; the picker goes through here too.
-  if ("project" in route && route.project) {
-    try {
-      localStorage.setItem(ACTIVE, route.project);
-    } catch {
-      // without storage, Projects lands on the list
-    }
-  }
+  const was = currentProject();
+  // Any page under a project makes it the current one; the picker goes through here too.
+  const project = "project" in route && route.project ? route.project : undefined;
+  if (project) setCurrentProject(project);
+  const chat = route.page === "chat" || route.page === "dm";
+  noteRoute(was, { project, chat, room: chat && !!route.room }, popped);
   // Chat and account settings are the rail's own places, not the projects';
   // the design reference is no place to come back to.
   const { page } = route;
   if (page === "chat" || page === "dm" || page === "settings" || page === "design") return;
+  // A shell button's hand-off passes through; where it lands is the place.
+  if (route.page === "home" && route.to) return;
   try {
     localStorage.setItem(LAST, location.pathname + location.search);
   } catch {
@@ -60,10 +41,10 @@ function remember() {
 export function forgetLastPage() {
   try {
     localStorage.removeItem(LAST);
-    localStorage.removeItem(ACTIVE);
   } catch {
     // nothing kept, then
   }
+  forgetCurrentProject();
 }
 
 // `/?back` is the shell's Projects: on to where this browser last was, or the
@@ -81,11 +62,20 @@ if (location.pathname === "/" && new URLSearchParams(location.search).has("back"
 remember();
 
 const listeners = new Set<() => void>();
-const changed = () => {
-  remember();
+// The route this page was at before its last step forward, while Back hasn't
+// moved it since (then it isn't known): the entry under this one is ours.
+let before: Route | null = null;
+/** The page this one was opened from, if it's one of ours. */
+export const cameFrom = (): Route | null => before;
+
+const changed = (popped = false) => {
+  remember(popped);
   listeners.forEach((fn) => fn());
 };
-addEventListener("popstate", changed);
+addEventListener("popstate", () => {
+  before = null;
+  changed(true);
+});
 
 /** Hear every change of route (the page's own and Back's). */
 export function onRoute(fn: () => void): () => void {
@@ -98,7 +88,10 @@ export function onRoute(fn: () => void): () => void {
 export function go(path: string, replace = false, state: unknown = null) {
   if (path === location.pathname + location.search) return changed();
   if (replace) history.replaceState(state, "", path);
-  else history.pushState(state, "", path);
+  else {
+    before = current();
+    history.pushState(state, "", path);
+  }
   changed();
 }
 

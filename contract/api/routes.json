@@ -15,6 +15,8 @@
     {"method":"POST","path":"/api/boards/{id}/entries/many","auth":"session","clients":["page","native"]},
     {"method":"POST","path":"/api/boards/{id}/reopen","auth":"session","clients":["page","cli","native"]},
     {"method":"POST","path":"/api/boards/{id}/rows/{row}/ask","auth":"session","clients":["page","cli","native"]},
+    {"method":"DELETE","path":"/api/boards/{id}/rows/{row}/hold","auth":"session","clients":["page","native"]},
+    {"method":"PUT","path":"/api/boards/{id}/rows/{row}/hold","auth":"session","clients":["page","native"]},
     {"method":"PUT","path":"/api/boards/{id}/rows/{row}/lane","auth":"session","clients":["page","native"]},
     {"method":"GET","path":"/api/chat","auth":"session","clients":["page","native"]},
     {"method":"GET","path":"/api/chat/avatar/{account}","auth":"session","clients":["page","native"]},

@@ -34,6 +34,11 @@ test("each route parses", () => {
   assert.deepEqual(parse(`/p/${P}/chat/saved`), { page: "chat", project: P, view: "saved" });
   assert.equal(pathOf({ page: "chat", project: P, view: "saved" }), `/p/${P}/chat/saved`);
   assert.deepEqual(parse(`/p/${P}/chat/search`, "?q=from%3A%40sam"), { page: "chat", project: P, view: "search", q: "from:@sam" });
+  // Search's "All teams" rides in the URL (#883).
+  assert.deepEqual(parse(`/p/${P}/chat/search`, "?q=deploy&all=1"), { page: "chat", project: P, view: "search", q: "deploy", all: true });
+  assert.equal(pathOf({ page: "chat", project: P, view: "search", q: "deploy", all: true }), `/p/${P}/chat/search?q=deploy&all=1`);
+  assert.equal(pathOf({ page: "chat", project: P, view: "search", all: true }), `/p/${P}/chat/search?all=1`);
+  assert.equal(pathOf({ page: "chat", project: P, view: "search", q: "deploy", all: false }), `/p/${P}/chat/search?q=deploy`);
   // A DM is its team's project's (UI audit #169); an id-only one finds it.
   assert.deepEqual(parse(`/p/${P}/dm/dm_00aa11bb22cc33dd-sam`), { page: "dm", project: P, room: "dm_00aa11bb22cc33dd" });
   assert.deepEqual(parse("/dm/dm_00aa11bb22cc33dd-sam", "?msg=3"), { page: "find", what: "chat", room: "dm_00aa11bb22cc33dd", msg: 3 });
@@ -64,6 +69,7 @@ test("links carry the current slug, and read back as the same route", () => {
     { page: "project", project: P },
     { page: "chat", project: P, room: "ch_0123456789abcdef", msg: 4 },
     { page: "chat", project: P, view: "search", q: "has:quote deploy" },
+    { page: "chat", project: P, view: "search", q: "deploy", all: true },
     { page: "dm", project: P, room: "dm_00aa11bb22cc33dd" },
     { page: "workspace", project: P, workspace: "hw_0123456789abcdef0123456789abcdef" },
     { page: "project-settings", project: P, link: "acme/app" },
@@ -170,4 +176,11 @@ test("a project's Docs and one Doc (aru-118)", () => {
   assert.deepEqual(parse(`/p/${P}/docs/${D}-release-plan`), { page: "doc", project: P, doc: D });
   assert.equal(pathOf({ page: "doc", project: P, doc: D }, (id) => (id === D ? "Release plan" : undefined)), `/p/${P}/docs/${D}-release-plan`);
   for (const p of [`/p/${P}/docs/brd_00ff11ee`, `/p/${P}/docs/${D}/x`]) assert.equal(parse(p).page, "missing", p);
+});
+
+test("the shell's hand-off: `/?to=` names a place for the current project", () => {
+  assert.deepEqual(parse("/", "?to=docs"), { page: "home", to: "docs" });
+  for (const to of ["projects", "boards", "chat"]) assert.deepEqual(parse("/", `?to=${to}`), { page: "home", to });
+  assert.deepEqual(parse("/", "?to=inbox"), { page: "home" });
+  assert.deepEqual(parse("/", "?to="), { page: "home" });
 });

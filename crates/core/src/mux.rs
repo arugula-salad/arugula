@@ -46,6 +46,13 @@ pub struct Tab {
     /// The client that set `focus`: the tab's owner at the time.
     #[serde(skip)]
     pub focus_by: Option<ClientId>,
+    /// Panes shown in a window of their own (Arugula #497,
+    /// [`Intent::PopOut`]), each with the client that popped it out: that
+    /// window. The pane keeps its place in `root`, where every other
+    /// screen shows that it's out; its window closing (the client going
+    /// away) brings it back. Not saved.
+    #[serde(skip)]
+    pub popped: std::collections::BTreeMap<PaneId, Option<ClientId>>,
 }
 
 /// A whole-tab arrangement for [`Intent::Arrange`].
@@ -230,6 +237,16 @@ pub enum Intent {
         tab: TabId,
         pane: Option<PaneId>,
     },
+    /// Show `pane` in a window of its own (`out`), or bring it back
+    /// (Arugula #497). See [`Tab::popped`]. `by` is the client that sent it,
+    /// which the daemon fills in: the window that shows it.
+    PopOut {
+        pane: PaneId,
+        out: bool,
+        #[serde(skip)]
+        #[cfg_attr(feature = "ts", ts(skip))]
+        by: Option<ClientId>,
+    },
     /// Set an option, or unset it (`value: None`). No client sends it
     /// since the tmux front end was removed; kept in the protocol (see
     /// [`Options`]).
@@ -356,6 +373,7 @@ impl Mux {
                 zoom: None,
                 focus: None,
                 focus_by: None,
+                popped: Default::default(),
             },
         );
         let s = self.session_mut(session)?;
@@ -387,6 +405,7 @@ impl Mux {
                 if tab.focus == Some(pane) {
                     tab.focus = None;
                 }
+                tab.popped.remove(&pane);
             }
             None => self.remove_tab(tab_id),
         }
@@ -584,6 +603,20 @@ impl Mux {
                 t.focus_by = pane.and(t.owner);
                 Ok(vec![])
             }
+            PopOut { pane, out, by } => {
+                let tab = self.tab_of(pane)?;
+                let t = self.tabs.get_mut(&tab).ok_or(Error::NoTab(tab))?;
+                if out {
+                    t.popped.insert(pane, by);
+                    // Out of the tab, it can't fill it.
+                    if t.focus == Some(pane) {
+                        (t.focus, t.focus_by) = (None, None);
+                    }
+                } else {
+                    t.popped.remove(&pane);
+                }
+                Ok(vec![])
+            }
             SetOption { scope, name, value } => {
                 match scope {
                     OptionScope::Global => {}
@@ -684,6 +717,10 @@ impl Mux {
                 (t.focus, t.focus_by) = (None, None);
                 changed = true;
             }
+            // Its pop-out windows closed: those panes come back (#497).
+            let n = t.popped.len();
+            t.popped.retain(|_, by| *by != Some(client));
+            changed |= t.popped.len() != n;
         }
         if changed {
             self.rev += 1;

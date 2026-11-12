@@ -147,6 +147,7 @@ test("an image pasted into the composer reaches the agent and shows in the trans
   await expect(page.getByRole("menuitem")).toHaveCount(0);
   await give(".agent-composer textarea", "paste", "shot.png");
   await expect(composer.locator(".agent-attached-file img")).toHaveCount(1);
+  await expect(composer.locator(".agent-attached-file img")).toHaveAttribute("src", /^data:image\/png;base64,/);
   await expect(composer.locator("textarea")).toHaveValue("");
   await give(".agent-log", "drop", "other.png");
   await expect(composer.locator(".agent-attached-file")).toHaveCount(2);
@@ -160,6 +161,15 @@ test("an image pasted into the composer reaches the agent and shows in the trans
   const shown = block.locator(".agent-user").last().locator(".agent-image img");
   await expect(shown).toBeVisible();
   expect(await shown.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(1);
+  // Arugula #85: from a data: URL (control's page allows no blob:), and a
+  // click shows it full size over the page, which Escape closes.
+  expect(await shown.getAttribute("src")).toMatch(/^data:image\/png;base64,/);
+  await shown.click();
+  const viewer = page.locator("[data-image-viewer] img");
+  await expect(viewer).toBeVisible();
+  expect(await viewer.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(1);
+  await page.keyboard.press("Escape");
+  await expect(page.locator("[data-image-viewer]")).toHaveCount(0);
 });
 
 // #166: "From now on…" on a card makes a standing rule the daemon keeps:

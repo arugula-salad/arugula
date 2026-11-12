@@ -263,6 +263,26 @@ html[data-corners="square"] .platform-section {
   box-shadow: 0 12px 40px var(--platform-shadow);
 }
 
+/* A link into another team's room says where it opened (Arugula #882). */
+.platform-arrival {
+  position: fixed;
+  z-index: 70;
+  left: 50%;
+  top: 12px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100vw - 32px);
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--chip-radius);
+  background: var(--surface);
+  color: var(--fg);
+  font-size: var(--text-sm);
+  box-shadow: 0 12px 40px var(--platform-shadow);
+}
+
 /* One phone width for every column (UI audit #186): the bar's, usePhone's. */
 @media (max-width: 700px) {
   .platform-columns {
@@ -1440,4 +1460,24 @@ span.untri-title {
     max-width: 100%;
     overflow-x: auto;
   }
+}
+
+/* Boards, Docs and the Inbox widened to every project (Arugula #881). */
+[data-all-projects-toggle][aria-pressed="true"] {
+  background: var(--fg);
+  border-color: var(--fg);
+  color: var(--bg);
+}
+
+/* Search's "All teams", beside the box (Arugula #883). */
+.platform-bar .chat-search-all {
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  flex: none;
+  color: var(--dim);
+  font-size: var(--text-sm);
+  white-space: nowrap;
 }

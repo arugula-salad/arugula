@@ -159,6 +159,8 @@ pub fn item(it: &Value) -> Item {
         updated_at: t(&it["updated_at"]).unwrap_or(0),
         merged_at: t(&it["merged_at"]),
         merged_by: user(&it["merged_by"]).or_else(|| user(&it["merge_user"])),
+        // GitLab has merge trains, not GitHub's queue: not asked (Arugula #878).
+        queued: false,
     }
 }
 

@@ -12,6 +12,8 @@ export interface ChatRoute {
    * threads you follow. */
   view?: "activity" | "saved" | "search" | "threads";
   q?: string;
+  /** #883: search every team's rooms, not only the current team's. */
+  all?: boolean;
   /** M123: a room in control's chat (`#chat=<room>`). */
   room?: string;
 }

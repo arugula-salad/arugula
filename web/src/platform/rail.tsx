@@ -12,7 +12,9 @@ import { usePhone, useSubscribe } from "../shared/ui/hooks";
 import { Rail, type RailItem } from "../shared/ui/rail";
 import { ChatIcon, DocsIcon, Mark, PanesIcon, ProjectsIcon, SettingsIcon, SwarmIcon } from "../shared/ui/icons";
 import { chatPath, sectionOf } from "./bar";
-import { activeProject, forgetActiveProject, go, pathOf, useRoute } from "./router";
+import { chatTeam } from "./chat-scope";
+import { currentProject, entryPath, onCurrentProject } from "./current-project";
+import { go, useRoute } from "./router";
 import { names } from "./links";
 import { controlOrigin, session } from "./session";
 import { barProject, where } from "./where";
@@ -21,6 +23,7 @@ export function PlatformRail() {
   useSubscribe((fn) => session.subscribe(fn));
   useSubscribe((fn) => chat.subscribe(fn));
   useSubscribe((fn) => where.subscribe(fn));
+  useSubscribe(onCurrentProject);
   const r = useRoute();
   const project = barProject(r);
   const p = session.project(project);
@@ -28,18 +31,14 @@ export function PlatformRail() {
   const unknown = !!project && !p && session.state === "ready";
   const here = unknown ? null : sectionOf(r);
   const control = controlOrigin();
-  const chatTo = chatPath(project);
-  const { n, mention } = !unknown && (!project || p) ? chatUnread(chat.rooms, p ? (p.team?.id ?? null) : undefined) : { n: 0, mention: false };
+  // Where a button opens: the project the bar is in, else the current one (Arugula #880).
+  const inProject = session.project(project ?? currentProject());
+  const chatTo = project ? chatPath(project) : entryPath("chat", inProject, names);
+  const { n, mention } = !unknown && (!project || p) ? chatUnread(chat.rooms, chatTeam(p, inProject)) : { n: 0, mention: false };
   const place = (to: string) => () => go(to);
-  // Projects goes to the project last open (Arugula #586) while it's still one
-  // of the reader's; else the list.
-  const active = activeProject();
-  const projectsTo = active && session.project(active) ? pathOf({ page: "project", project: active }, names) : "/";
-  const openProjects = () => {
-    // Gone, or no longer the reader's: forget it, so the list is where this lands.
-    if (active && projectsTo === "/" && session.state === "ready") forgetActiveProject();
-    go(projectsTo);
-  };
+  // Projects goes to the current project while it's still one of the reader's; else the list.
+  const projectsTo = entryPath("projects", inProject, names);
+  const docsTo = entryPath("docs", inProject, names);
   const items: RailItem[] = [
     {
       label: "Projects",
@@ -50,7 +49,7 @@ export function PlatformRail() {
       hook: "data-open-projects",
       icon: <ProjectsIcon />,
       href: projectsTo,
-      onClick: openProjects,
+      onClick: place(projectsTo),
     },
     { label: "Panes", tip: "Your panes, on your machines", here: false, hook: "data-open-panes", icon: <PanesIcon />, href: `${control}/` },
     { label: "Swarm", tip: "Swarm: every agent on every machine", here: false, hook: "data-open-swarm", icon: <SwarmIcon />, href: `${control}/#swarm` },
@@ -65,15 +64,16 @@ export function PlatformRail() {
       href: chatTo,
       onClick: place(chatTo),
     },
-    // Team Docs and the reader's own, on every Docs page: a project's and a Doc's too.
+    // A project's Docs, or with none current the team Docs and the reader's own;
+    // lit on every Docs page: a project's and a Doc's too.
     {
       label: "Docs",
       tip: "Docs: your team's Docs, and yours from your machines",
       here: !unknown && here === "docs",
       hook: "data-open-docs-all",
       icon: <DocsIcon />,
-      href: "/docs",
-      onClick: place("/docs"),
+      href: docsTo,
+      onClick: place(docsTo),
     },
   ];
   const brand = (

@@ -10,6 +10,7 @@ import type { Client } from "./client";
 import type { FleetPane } from "./fleet";
 import { directory } from "./hosts";
 import { whatItDoes } from "./swarm/model";
+import { isThisMachine } from "./this-machine";
 import { openDoc } from "./ui/docs-route";
 import { openPlatform, platformHref } from "./platform-links";
 import { getFleet } from "./ui/hosts";
@@ -101,9 +102,9 @@ function build(client: Client): PlatformApi {
       here: (machine) => {
         const fleet = getFleet();
         const h = fleet?.hostById(machine);
-        return !!h && h.state === "connected" && fleet?.clientOf(h.name) === client;
+        return !!h && h.state === "connected" && isThisMachine(client.base, () => directory.base(h.name));
       },
-      open: (_machine, doc) => void openDoc(client, doc).then((why) => why && toast(`Couldn't open the Doc: ${why}`)),
+      open: (_machine, doc, beside) => void openDoc(client, doc, beside).then((why) => why && toast(`Couldn't open the Doc: ${why}`)),
     },
     // Chat's page, which draws the bar, isn't the shell's (M155).
     Bar: ({ children }) => <>{children}</>,

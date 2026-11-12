@@ -5,6 +5,7 @@ import { chat } from "../shared/chat-store";
 import { shellPlatformApi } from "./platform-api";
 import { platformOrigin, setPlatformOrigin } from "./platform-links";
 import { platformPath } from "./fragments";
+import { POP_HASH, PopOutPage } from "./ui/panes/pop-out";
 import { PlatformApiContext } from "../shared/platform-api";
 // Arugula web client: tabs and splits of terminals owned by the daemon.
 
@@ -294,6 +295,12 @@ fitViewport();
 
 const cell = await measureCell();
 const root = document.getElementById("root")!;
+// #497: a pane popped out into a window of its own (`#pop=<daemon>.<pane>`):
+// the page shows it alone, with no rail, tabs or other panes.
+const popAt = POP_HASH.exec(location.hash);
+const shell = () =>
+  popAt ? <PopOutPage client={client} pane={Number(popAt[2])} daemon={popAt[1]} /> : <App key={client.base} client={client} cell={cell} />;
+
 function ControlRoot({ s }: { s: ControlSession }) {
   useControl(s);
   useSubscribe((fn) => directory.subscribe(fn));
@@ -301,7 +308,7 @@ function ControlRoot({ s }: { s: ControlSession }) {
     s.phase !== "ready" ? (
       <ControlGate s={s} />
     ) : client.e2e ? (
-      <App key={client.base} client={client} cell={cell} />
+      shell()
     ) : s.daemons.length ? (
       // Machines, but none picked yet: not "Add a machine" (#749).
       <Connecting name={directory.current} />
@@ -422,8 +429,8 @@ const draw = () =>
   render(
     // What a pane's thread reaches the shell through (M147).
     <PlatformApiContext.Provider value={shellPlatformApi(client)}>
-      {session ? <ControlRoot key={client.base} s={session} /> : <App key={client.base} client={client} cell={cell} />}
-      <Swarm key={client.base} client={client} />
+      {session ? <ControlRoot key={client.base} s={session} /> : shell()}
+      {!popAt && <Swarm key={client.base} client={client} />}
       <AgentDialogLayer />
       <AppearanceLayer />
       <MachineTelemetryLayer />

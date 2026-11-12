@@ -6,6 +6,7 @@
 // --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { chatTeam } from "../src/platform/chat-scope.ts";
 import { bold, counted, chatUnread, listedInChat, objectUnread, projectUnread, threadNews } from "../src/shared/chat/unread.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
@@ -145,4 +146,20 @@ test("a channel on mentions counts its mentions and shows its other unread as bo
   assert.equal(counted(thread("iss_x", { level: "mentions", unread: 2 })), 2, "a server from before `wants`");
   // The Chat button follows: a quiet channel adds nothing.
   assert.deepEqual(chatUnread([quiet, room("dm", { level: "all", unread: 1 })]), { n: 1, mention: false });
+});
+
+test("the Chat count is the current team's: the route's project's, else the current one's (#883)", () => {
+  const acme = { team: { id: "t1" } };
+  const other = { team: { id: "t2" } };
+  const mine = {};
+  assert.equal(chatTeam(acme, other), "t1");
+  // Personal on the route counts the rooms of no team, as before.
+  assert.equal(chatTeam(mine, acme), null);
+  // Off a project's pages: the current project's team, else every room.
+  assert.equal(chatTeam(undefined, other), "t2");
+  assert.equal(chatTeam(undefined, mine), undefined);
+  assert.equal(chatTeam(undefined, undefined), undefined);
+  const rooms = [room("channel", { unread: 2, team: "t1" }), room("channel", { unread: 5, team: "t2" }), room("pane", { unread: 1 })];
+  assert.equal(chatUnread(rooms, chatTeam(undefined, acme)).n, 2);
+  assert.equal(chatUnread(rooms, chatTeam(undefined, undefined)).n, 8);
 });

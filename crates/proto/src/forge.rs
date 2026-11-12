@@ -109,6 +109,10 @@ pub struct Item {
     pub updated_at: i64,
     pub merged_at: Option<i64>,
     pub merged_by: Option<String>,
+    /// An open PR in its branch's merge queue (GitHub only; Arugula #878).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    pub queued: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -761,6 +765,7 @@ mod wire {
             updated_at: 1_790_975_391_548,
             merged_at: None,
             merged_by: None,
+            queued: false,
         }
     }
 
