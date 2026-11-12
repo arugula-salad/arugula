@@ -254,6 +254,7 @@ fn generate() -> String {
     {
         use arugula_control_wire::project_docs::*;
         c.visit::<DocList>();
+        c.visit::<TrashList>();
         c.visit::<DocView>();
         c.visit::<NewDoc>();
         c.visit::<DocWrite>();

@@ -4628,6 +4628,35 @@ body: string | null,
 rev: number, };
 
 /**
+ * `GET` [`PROJECT_DOCS_TRASH`]: a project's trashed Docs, the latest
+ * deleted first.
+ */
+export type ProjectDocTrash = { project: string, docs: Array<ProjectDocTrashed>, 
+/**
+ * How many days a Doc waits ([`TRASH_DAYS`]).
+ */
+days: number, };
+
+/**
+ * One trashed Doc: its head, who deleted it and when.
+ */
+export type ProjectDocTrashed = { doc: ProjectDoc, 
+/**
+ * When it was deleted (ms).
+ */
+trashed_at: number, 
+/**
+ * The account that deleted it, or "" once that account is deleted.
+ * The page names it from the team's members, as it does a Doc's
+ * `author`.
+ */
+trashed_by: string, 
+/**
+ * Whether the reader may restore it.
+ */
+restorable: boolean, };
+
+/**
  * `GET` [`PROJECT_DOC`]: a Doc with its sections, in order.
  */
 export type ProjectDocView = { doc: ProjectDoc, sections: Array<ProjectDocSection>, 
