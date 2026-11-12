@@ -167,18 +167,22 @@ runs:
       with:
         path: ~/.local/share/mise/installs
         key: mise-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.mise.toml') }}
-    - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
-      with:
-        tool: just
     # What the runner image has already (home-cloud's gha-runner, target
-    # arugula: #868), so the steps after don't fetch it again.
+    # arugula: #868), or the e2e shards' container (packaging/ci-e2e), so
+    # the steps after don't fetch it again. The container's browsers are
+    # where Playwright's image keeps them, PLAYWRIGHT_BROWSERS_PATH.
     - name: What the image has
       id: have
       shell: bash
       run: |
+        if command -v just >/dev/null; then echo just=true; else echo just=false; fi >> "$GITHUB_OUTPUT"
         case "$(node --version 2>/dev/null)" in v24.*) echo node=true ;; *) echo node=false ;; esac >> "$GITHUB_OUTPUT"
         case "$(pnpm --version 2>/dev/null)" in 12.*) echo pnpm=true ;; *) echo pnpm=false ;; esac >> "$GITHUB_OUTPUT"
-        if compgen -G "$HOME/.cache/ms-playwright/chromium-*" >/dev/null; then echo browsers=true; else echo browsers=false; fi >> "$GITHUB_OUTPUT"
+        if compgen -G "${PLAYWRIGHT_BROWSERS_PATH:-$HOME/.cache/ms-playwright}/chromium-*" >/dev/null; then echo browsers=true; else echo browsers=false; fi >> "$GITHUB_OUTPUT"
+    - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+      if: steps.have.outputs.just != 'true'
+      with:
+        tool: just
     # geek's: MISE_NODE_VERSION=24 and pnpm 12.
     - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
       if: steps.have.outputs.node != 'true'
@@ -193,8 +197,12 @@ runs:
       shell: bash
       # Under ~/.local (on PATH since the mise step), not npm's global
       # prefix: the runner image's Node is root's /usr/local (#868), and
-      # npm -g there fails with EACCES.
-      run: npm install -g --silent --prefix "$HOME/.local" @anthropic-ai/claude-code@2.1.296
+      # npm -g there fails with EACCES. The e2e shards' image has this
+      # version (packaging/ci-e2e/Dockerfile, which pins it too).
+      run: |
+        v=2.1.296
+        case "$(claude --version 2>/dev/null)" in "$v "*) exit 0 ;; esac
+        npm install -g --silent --prefix "$HOME/.local" "@anthropic-ai/claude-code@$v"
     - name: pnpm's store
       id: pnpm
       shell: bash

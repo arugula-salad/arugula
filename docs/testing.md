@@ -1235,6 +1235,33 @@ failed five of main's jobs in one run (2026-10-28).
   it public: the org's Packages → the package → Package settings → Change
   visibility. It's a setting on GitHub's site; there is no API for it.
 
+One image is our own: the one check.yml's `e2e` shards and pull-request.yml's
+`pr-e2e` run in (`container:`), so a shard downloads nothing from the
+runners' Ubuntu mirror, which once held shards for hours fetching WebKit's
+packages (https://app.arugula.io/issues/iss_db99400ba2c2d962bd012371678e2cb7).
+
+- **What's in it.** [`packaging/ci-e2e/Dockerfile`](../packaging/ci-e2e/Dockerfile):
+  Playwright's own image (`mcr.microsoft.com/playwright:v<version>-noble`,
+  its browsers and their system packages), plus what
+  `.github/actions/setup` would fetch (vim-tiny, libnss-myhostname, zstd,
+  nvim, just, pnpm, Claude Code), python3, procps, sudo, and
+  `/etc/arugula-ci/browser-deps`, which tells `just browsers` and the
+  e2e-shard action to install no system packages. The jobs run it as
+  `pwuser`, uid 1001, the runner's own.
+- **How it's named.** `ghcr.io/arugula-salad/arugula-ci-e2e:<Playwright>-<hash>`:
+  web's `@playwright/test` from `web/pnpm-lock.yaml`, and a hash of the
+  Dockerfile with it. `scripts/ci-e2e-image ref` prints it.
+- **How it's built.** Each run's `e2e-image` job
+  (`.github/actions/e2e-image`) looks for the tag on GHCR, and builds and
+  pushes it when it's missing, so bumping Playwright or editing the
+  Dockerfile builds it once, in the first run that wants it. A fork's pull
+  request can't push: if the image is new there, its shards run on the
+  runner as before. A version the setup action pins (nvim, Claude Code)
+  is pinned in the Dockerfile too; if they differ, the setup action
+  installs its own, and the run still passes.
+- **Public.** The jobs pull it with the run's token, but make the package
+  public once (as above); the `e2e-image` job warns while it isn't.
+
 ### The test stack
 
 [`testnet/`](../testnet/README.md) is a Docker Compose stack, one profile per

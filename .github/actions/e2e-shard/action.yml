@@ -44,7 +44,12 @@ runs:
       id: debs
       shell: bash
       run: |
-        if [ "$(uname -s)" != Linux ] || [ -e /etc/arugula-ci/browser-deps ]; then exit 0; fi
+        if [ "$(uname -s)" != Linux ]; then exit 0; fi
+        # The e2e shards' container (packaging/ci-e2e) has them: no apt.
+        if [ -e /etc/arugula-ci/browser-deps ]; then
+          echo "the browsers' system packages are in the image ($(cat /etc/arugula-ci/browser-deps)): no apt"
+          exit 0
+        fi
         dir=$RUNNER_TEMP/apt-archives
         mkdir -p "$dir/partial"
         # Root fetches, as the cache's directory is ours rather than _apt's.
