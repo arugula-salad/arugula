@@ -53,7 +53,7 @@ import { SwarmView } from "./swarm/view";
 import { AppBar, setAccount } from "./ui/app-bar";
 import { fakeSwarm } from "./swarm/fake";
 import { closeSwarm, onSwarmRoute, swarmRoute } from "./swarm/route";
-import { setupDesktop, tauriInvoke } from "../shared/desktop";
+import { followChatBadge, setupDesktop, tauriInvoke } from "../shared/desktop";
 import { installKeys } from "./ui/keys";
 import { openDeveloper } from "./ui/developer";
 import { openGettingStarted, type Section } from "./ui/welcome";
@@ -241,6 +241,8 @@ function untilShown(done: (c: Client) => boolean) {
 // Inside the desktop app: its titlebar (M46). The page's keys, the app's
 // among them (ui/keys.ts).
 setupDesktop();
+// Chat's unread on the app's Dock badge (#498).
+followChatBadge(chat);
 installKeys(() => client);
 /** Hand a machine of yours the teams this browser pinned (#233), and drop
  * those it has that this account isn't in now (only once the teams have

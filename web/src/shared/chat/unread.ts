@@ -77,6 +77,21 @@ export function chatUnread(rooms: readonly ChatRoom[], team?: string | null): { 
   return { n, mention };
 }
 
+/** The desktop app's Dock badge (#498): the Chat button's count across
+ * every project (mentions, DMs, rooms set to every message), and whether
+ * anything chat lists is unread at all, bold in the sidebar, for a dot
+ * when nothing counts. Muted rooms add only their mentions, as there. */
+export function dockBadge(rooms: readonly ChatRoom[]): { count: number; unread: boolean } {
+  let count = 0;
+  let unread = false;
+  for (const r of rooms) {
+    if (!listedInChat(r)) continue;
+    count += counted(r);
+    unread ||= bold(r);
+  }
+  return { count, unread };
+}
+
 /** The thread on an object (`iss_…`, `run_…`), if someone's opened it. */
 export function objectRoom(rooms: readonly ChatRoom[], target: string): ChatRoom | undefined {
   return rooms.find((r) => r.kind === "object" && r.target === target);
