@@ -4333,3 +4333,42 @@ async fn a_session_wait_outlives_a_dropped_ask() {
     assert!(said.contains("call wait with agent_session again") && said.contains("didn't answer"), "{said}");
     s.cancel().await.unwrap();
 }
+
+/// `capture` of a board block (Arugula #778) is the board's text, as
+/// `board_read` prints it, from the MCP tool and the CLI's route alike; one
+/// control can't give is one line saying why, and flags change nothing.
+#[cfg(feature = "labs")]
+#[tokio::test(flavor = "multi_thread")]
+async fn capture_of_a_board_block_is_the_boards_text() {
+    let d = Daemon::child_with(&[]);
+    let keys = arugula_e2e::DeviceKeys::load_or_create(&d.state.join("daemon.key")).unwrap();
+    let url = fake_boards(FakeBoards::default()).await;
+    let cert = arugula_e2e::Cert::new(&keys, "a1", arugula_e2e::Kind::Daemon, "test");
+    let saved = json!({ "url": url, "trust": { "account": "a1", "root": keys.id() }, "cert": cert });
+    std::fs::write(d.state.join("control.json"), saved.to_string()).unwrap();
+    let s = bridge(&d, Client::named("claude-code")).await;
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    while call_raw(&s, "board_read", json!({ "project": "prj_1" })).await.is_error == Some(true) {
+        assert!(std::time::Instant::now() < deadline, "never joined");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    let read = call(&s, "board_read", json!({ "board": "brd_1", "verbose": true })).await;
+    let want = read["text"].as_str().unwrap().to_owned();
+    assert!(want.starts_with("Launch\n") && want.contains("Next"), "{want}");
+
+    let block = d.open_with(json!({ "type": "board", "config": { "board": "brd_1" } }));
+    let path = format!("/api/panes/{block}/capture");
+    assert_eq!(d.raw("GET", &path, None).1, want);
+    // A terminal's flags don't apply to it, and aren't an error.
+    let (status, text) = d.raw("GET", &format!("{path}?format=ansi&scope=scrollback"), None);
+    assert_eq!((status, text), (200, want.clone()));
+    let seen = call(&s, "read_output", json!({ "pane": block, "screen": true })).await;
+    assert_eq!(seen["text"].as_str().unwrap(), want.trim_end());
+
+    // A board control has no answer for: one line, no hang.
+    let gone = d.open_with(json!({ "type": "board", "config": { "board": "brd_gone" } }));
+    let text = d.raw("GET", &format!("/api/panes/{gone}/capture"), None).1;
+    assert!(text.starts_with("Board brd_gone: can't read it: ") && text.trim_end().lines().count() == 1, "{text}");
+    s.cancel().await.unwrap();
+    drop(d);
+}

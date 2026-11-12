@@ -40,6 +40,56 @@ mod tests {
         );
         assert!(ts.lines().any(|l| l == want), "{} must have the line\n{want}", path.display());
     }
+
+    use super::{Project, ProjectCreate, ProjectOwner, ProjectOwnerRef, ProjectPatch};
+    use serde_json::json;
+
+    /// An older control's project has no `owner`, `slug` or `archived`, and
+    /// goes back without them. A newer one's go back as they came.
+    #[test]
+    fn a_project_parses_with_and_without_its_owner() {
+        let older = json!({ "id": "prj_1", "name": "Jake", "team": null });
+        let p: Project = serde_json::from_value(older.clone()).unwrap();
+        assert_eq!((&p.owner, &p.slug, p.archived), (&None, &None, false));
+        assert_eq!(serde_json::to_value(&p).unwrap(), older, "nothing new is sent");
+
+        let newer = json!({ "id": "prj_2", "name": "Acme", "team": { "id": "tm_1", "name": "Acme", "role": "owner",
+            "members": [] }, "owner": { "kind": "team", "id": "tm_1", "name": "Acme" }, "slug": "acme",
+            "archived": true });
+        let p: Project = serde_json::from_value(newer.clone()).unwrap();
+        assert_eq!(p.owner, Some(ProjectOwner::Team { id: "tm_1".into(), name: "Acme".into() }));
+        assert_eq!(
+            (p.slug.as_deref(), p.archived, p.team.as_ref().map(|t| t.id.as_str())),
+            (Some("acme"), true, Some("tm_1"))
+        );
+        assert_eq!(serde_json::to_value(&p).unwrap(), newer, "it goes back as it came");
+    }
+
+    #[test]
+    fn a_new_project_and_a_patch_round_trip() {
+        let team = json!({ "name": "Web", "owner": { "kind": "team", "id": "tm_1" }, "slug": "web" });
+        let c: ProjectCreate = serde_json::from_value(team.clone()).unwrap();
+        assert_eq!(c.owner, ProjectOwnerRef::Team { id: "tm_1".into() });
+        assert_eq!(serde_json::to_value(&c).unwrap(), team);
+        let mine = json!({ "name": "Notes", "owner": { "kind": "personal" } });
+        let c: ProjectCreate = serde_json::from_value(mine.clone()).unwrap();
+        assert_eq!((c.owner, c.slug), (ProjectOwnerRef::Personal, None));
+
+        let p: ProjectPatch = serde_json::from_value(json!({})).unwrap();
+        assert_eq!(p, ProjectPatch::default(), "nothing changes");
+        assert_eq!(serde_json::to_value(&p).unwrap(), json!({}));
+        let moved = json!({ "name": "Web app", "archived": false, "owner": { "kind": "personal" } });
+        let p: ProjectPatch = serde_json::from_value(moved.clone()).unwrap();
+        assert_eq!(
+            p,
+            ProjectPatch {
+                name: Some("Web app".into()),
+                archived: Some(false),
+                owner: Some(ProjectOwnerRef::Personal)
+            }
+        );
+        assert_eq!(serde_json::to_value(&p).unwrap(), moved);
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -79,6 +129,91 @@ pub struct Project {
     pub name: String,
     /// The team it's the default project of; `None` for the person's own.
     pub team: Option<ProjectTeam>,
+    /// Whose it is: a team's or a person's own. An older control sends
+    /// none, and a reader goes by `team` then.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub owner: Option<ProjectOwner>,
+    /// Its short name in links, unique among its owner's projects. An older
+    /// control sends none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub slug: Option<String>,
+    /// Its owner archived it. Its issues, Docs and boards stay.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    pub archived: bool,
+}
+
+/// Whose a project is. The web client has another `Owner` (a pane's), so
+/// this one is named for what it owns.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ProjectOwner {
+    /// A team's: its id and name.
+    Team { id: String, name: String },
+    /// A person's own: their account.
+    Personal { account: String },
+}
+
+impl ProjectOwner {
+    pub fn is_team(&self) -> bool {
+        matches!(self, Self::Team { .. })
+    }
+}
+
+/// An owner named by what it is, without its name: a team by its id, or
+/// the reader's own account.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ProjectOwnerRef {
+    /// A team the reader owns.
+    Team { id: String },
+    /// The reader's own account.
+    Personal,
+}
+
+/// `POST /api/projects` (Arugula #892): a new project. Only a team's owners
+/// make one for the team; anyone makes their own. Who may read and write it
+/// is its owner's: a team's roles, or only its person.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ProjectCreate {
+    pub name: String,
+    pub owner: ProjectOwnerRef,
+    /// Its short name in links; when not given, control makes one from the
+    /// name. Refused if the owner has a project with it already.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub slug: Option<String>,
+}
+
+/// `PATCH /api/projects/{project}` (Arugula #892): what changes, the rest
+/// as it was. Anyone who may write the project renames it. Only its owner
+/// archives it or moves it: a team's owners, or its person for their own;
+/// a move needs the same of the new owner. Access stays the owner's, so a
+/// move gives it to the new one's people. Its issues keep their numbers,
+/// and its Docs, boards, linked repos and workspaces go with it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ProjectPatch {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub name: Option<String>,
+    /// Archive it, or bring it back.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub archived: Option<bool>,
+    /// Move it to this owner.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub owner: Option<ProjectOwnerRef>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

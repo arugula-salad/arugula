@@ -180,6 +180,12 @@ impl Scope {
 /// Requests from the HTTP API and the CLI.
 pub enum Api {
     Panes(oneshot::Sender<Vec<PaneSummary>>),
+    /// Whether a session may still get its project from a pane's linked
+    /// repo ([`arugula_core::Session::inferable`]): asked before control is.
+    Inferable(SessionId, oneshot::Sender<bool>),
+    /// A session's project, from its pane's linked repo: set only while it
+    /// may be ([`arugula_core::Mux::infer_project`]). Whether it was set.
+    InferProject(SessionId, arugula_core::ProjectRef, oneshot::Sender<bool>),
     Run(RunRequest, oneshot::Sender<Result<PaneId, String>>),
     Pane(PaneId, oneshot::Sender<Option<PaneHandle>>),
     /// The Claude Code conversation running in a terminal now, by its id,

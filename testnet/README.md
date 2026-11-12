@@ -48,7 +48,9 @@ not run. CI never sets it. The claims expect fresh boxes: after installing anyth
 | `tailnet` | `headscale`, `ts-box`, `ts-client` | validated | S28's tailnet comparison |
 
 Control's profile, and its claims, left with control for its own
-repository. Forgejo and GitLab have a stack of their own in
+repository, where its testnet/compose.yaml goes over this one: it uses this
+stack's boxes, networks and `.state`, so change them with that in mind.
+Forgejo and GitLab have a stack of their own in
 [`forges/`](forges/README.md).
 
 ### `ssh`

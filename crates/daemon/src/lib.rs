@@ -73,7 +73,7 @@ mod public_preview;
 use arugula_mux::procinfo;
 use arugula_mux::provider;
 pub mod board_attach;
-mod board_block;
+pub mod board_block;
 mod board_state;
 pub mod push;
 pub mod relay_ws;
@@ -82,6 +82,7 @@ pub mod roots;
 pub mod rules;
 mod selfupdate;
 pub mod server;
+mod session_project;
 mod setup;
 mod share;
 mod team_chat;
@@ -1157,6 +1158,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         );
     }
     control.start(app.clone());
+    session_project::start(mux.clone(), control.clone());
     if args.hosted {
         hosted::start(&app, state_dir.clone(), args.control_url.clone());
     }

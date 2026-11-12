@@ -439,6 +439,17 @@
           "minimum": 0,
           "type": "integer"
         },
+        "owner": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProjectOwner"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Whose project it is: a team's or a person's own. It replaces `team`\nas the test of a team's project; an older control sends none, and a\nmachine reads `team` then. `team` stays for a release, for older\nmachines."
+        },
         "project": {
           "type": "string"
         },
@@ -722,6 +733,49 @@
         "title"
       ],
       "type": "object"
+    },
+    "ProjectOwner": {
+      "description": "Whose a project is. The web client has another `Owner` (a pane's), so\nthis one is named for what it owns.",
+      "oneOf": [
+        {
+          "description": "A team's: its id and name.",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "team",
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id",
+            "name"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A person's own: their account.",
+          "properties": {
+            "account": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "personal",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "account"
+          ],
+          "type": "object"
+        }
+      ]
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",

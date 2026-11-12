@@ -30,6 +30,9 @@ without the hooks installed, there's nothing to ask Arugula at all.
 
 - Run Claude Code in an Arugula pane (or as an agent block).
 - `arugula hooks status` says what's installed and what's missing;
-  `arugula hooks install` (or the Claude Code plugin) installs them.
+  `arugula hooks install` (or the Claude Code plugin) installs them. An
+  install from an older version can leave some out (SessionStart, say):
+  `arugula status` and Getting started say so, and the same `install`
+  adds the rest without changing anything else.
 - If the daemon isn't answering, see
   [arugula says "can't reach arugulad"](daemon-not-running.md).

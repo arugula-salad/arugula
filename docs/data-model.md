@@ -116,7 +116,7 @@ over a repo directory, and the **shell's workspace** is its layout.
 
 | Word | What it means | Truth | ID |
 |---|---|---|---|
-| **Session** | A group of tabs on a machine, and the unit of sharing | `layout.json` | `$N` |
+| **Session** | A group of tabs on a machine, and the unit of sharing. It's in one project, or none: inferred once from its first pane's linked repo, then moved only by hand. A pane's `project` is its git repo, not this | `layout.json` | `$N` |
 | **Tab** | A tab in a session | `layout.json` | `@N` |
 | **Pane** | A process on a PTY, or any leaf of a tab | `layout.json`, `blocks/<id>/` | `%N` |
 | **Block** | A typed leaf: agent, browser, Doc, editor and so on | `layout.json`, `blocks/<id>/` | `%N`, the same range as panes |

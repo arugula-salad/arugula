@@ -1253,12 +1253,34 @@
     },
     "Project": {
       "properties": {
+        "archived": {
+          "description": "Its owner archived it. Its issues, Docs and boards stay.",
+          "type": "boolean"
+        },
         "id": {
           "description": "`prj_` and 32 hex characters.",
           "type": "string"
         },
         "name": {
           "type": "string"
+        },
+        "owner": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProjectOwner"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Whose it is: a team's or a person's own. An older control sends\nnone, and a reader goes by `team` then."
+        },
+        "slug": {
+          "description": "Its short name in links, unique among its owner's projects. An older\ncontrol sends none.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "team": {
           "anyOf": [
@@ -1275,6 +1297,29 @@
       "required": [
         "id",
         "name"
+      ],
+      "type": "object"
+    },
+    "ProjectCreate": {
+      "description": "`POST /api/projects` (Arugula #892): a new project. Only a team's owners\nmake one for the team; anyone makes their own. Who may read and write it\nis its owner's: a team's roles, or only its person.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "owner": {
+          "$ref": "#/$defs/ProjectOwnerRef"
+        },
+        "slug": {
+          "description": "Its short name in links; when not given, control makes one from the\nname. Refused if the owner has a project with it already.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "owner"
       ],
       "type": "object"
     },
@@ -1296,6 +1341,114 @@
         "name",
         "role"
       ],
+      "type": "object"
+    },
+    "ProjectOwner": {
+      "description": "Whose a project is. The web client has another `Owner` (a pane's), so\nthis one is named for what it owns.",
+      "oneOf": [
+        {
+          "description": "A team's: its id and name.",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "team",
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id",
+            "name"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A person's own: their account.",
+          "properties": {
+            "account": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "personal",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "account"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ProjectOwnerRef": {
+      "description": "An owner named by what it is, without its name: a team by its id, or\nthe reader's own account.",
+      "oneOf": [
+        {
+          "description": "A team the reader owns.",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "team",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The reader's own account.",
+          "properties": {
+            "kind": {
+              "const": "personal",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ProjectPatch": {
+      "description": "`PATCH /api/projects/{project}` (Arugula #892): what changes, the rest\nas it was. Anyone who may write the project renames it. Only its owner\narchives it or moves it: a team's owners, or its person for their own;\na move needs the same of the new owner. Access stays the owner's, so a\nmove gives it to the new one's people. Its issues keep their numbers,\nand its Docs, boards, linked repos and workspaces go with it.",
+      "properties": {
+        "archived": {
+          "description": "Archive it, or bring it back.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "owner": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProjectOwnerRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Move it to this owner."
+        }
+      },
       "type": "object"
     },
     "ProjectTeam": {

@@ -10,6 +10,10 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Whose a project is: [`crate::projects`]' now, kept here for the code
+/// that names it from before.
+pub use crate::projects::ProjectOwner;
+
 /// The agent that wrote something for its owner (M197), labelled
 /// "<owner>'s agent on <machine>": chat's.
 pub use crate::chat::ChatAgent;
@@ -299,6 +303,20 @@ pub struct IssueHome {
     /// reads as not a team's.
     #[serde(default)]
     pub team: bool,
+    /// Whose project it is: a team's or a person's own. It replaces `team`
+    /// as the test of a team's project; an older control sends none, and a
+    /// machine reads `team` then. `team` stays for a release, for older
+    /// machines.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub owner: Option<ProjectOwner>,
+}
+
+impl IssueHome {
+    /// A team's project: `owner` when control sent one, else `team`.
+    pub fn is_team(&self) -> bool {
+        self.owner.as_ref().map_or(self.team, ProjectOwner::is_team)
+    }
 }
 
 /// `PUT /api/projects/{project}/issue-home`: `native`, `github` (only with
@@ -379,4 +397,30 @@ pub struct IssueExport {
     /// reader (Arugula #746). Absent when they're there.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub comments_in_chat: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An older control sends no `owner`: `team` says then. A newer one's
+    /// `owner` wins.
+    #[test]
+    fn an_issue_home_parses_with_and_without_its_owner() {
+        let older = serde_json::json!({ "project": "prj_t", "name": "Acme", "home": "native", "chosen": false,
+            "repos": [], "native_issues": 0, "both": false, "labels": [], "team": true });
+        let home: IssueHome = serde_json::from_value(older.clone()).unwrap();
+        assert_eq!((home.owner.as_ref(), home.is_team()), (None, true));
+        assert!(serde_json::to_value(&home).unwrap().get("owner").is_none(), "none isn't sent");
+
+        let mut newer = older;
+        newer["owner"] = serde_json::json!({ "kind": "team", "id": "tm_1", "name": "Acme" });
+        let home: IssueHome = serde_json::from_value(newer.clone()).unwrap();
+        assert_eq!(home.owner, Some(ProjectOwner::Team { id: "tm_1".into(), name: "Acme".into() }));
+        assert_eq!(serde_json::to_value(&home).unwrap(), newer, "it goes back as it came");
+
+        newer["owner"] = serde_json::json!({ "kind": "personal", "account": "acc_1" });
+        let home: IssueHome = serde_json::from_value(newer).unwrap();
+        assert!(!home.is_team(), "owner wins over team");
+    }
 }

@@ -3227,7 +3227,7 @@ export type InboxMarked = { item: string,
  */
 marked: number, };
 
-export type Intent = { "op": "new_session", name: string | null, from_pane: number | null, } | { "op": "rename_session", session: number, name: string, } | { "op": "close_session", session: number, } | { "op": "new_tab", session: number, from_pane: number | null, cwd?: string, } | { "op": "rename_tab", tab: number, name: string | null, } | { "op": "close_tab", tab: number, } | { "op": "move_tab", tab: number, session: number, index: number, } | { "op": "split", pane: number, edge: Edge, local?: boolean, cwd?: string, } | { "op": "close_pane", pane: number, } | { "op": "move_pane", pane: number, target: number, edge: Edge, } | { "op": "break_pane", pane: number, session: number, index: number | null, } | { "op": "dock_tab", tab: number, target: number, edge: Edge, } | { "op": "resize_split", split: number, weights: Array<number>, } | { "op": "arrange", tab: number, preset: Preset, main?: number, } | { "op": "focus", tab: number, pane: number | null, } | { "op": "pop_out", pane: number, out: boolean, } | { "op": "set_option", scope: OptionScope, name: string, value: string | null, };
+export type Intent = { "op": "new_session", name: string | null, from_pane: number | null, } | { "op": "rename_session", session: number, name: string, } | { "op": "set_session_project", session: number, project: ProjectRef | null, } | { "op": "close_session", session: number, } | { "op": "new_tab", session: number, from_pane: number | null, cwd?: string, } | { "op": "rename_tab", tab: number, name: string | null, } | { "op": "close_tab", tab: number, } | { "op": "move_tab", tab: number, session: number, index: number, } | { "op": "split", pane: number, edge: Edge, local?: boolean, cwd?: string, } | { "op": "close_pane", pane: number, } | { "op": "move_pane", pane: number, target: number, edge: Edge, } | { "op": "break_pane", pane: number, session: number, index: number | null, } | { "op": "dock_tab", tab: number, target: number, edge: Edge, } | { "op": "resize_split", split: number, weights: Array<number>, } | { "op": "arrange", tab: number, preset: Preset, main?: number, } | { "op": "focus", tab: number, pane: number | null, } | { "op": "pop_out", pane: number, out: boolean, } | { "op": "set_option", scope: OptionScope, name: string, value: string | null, };
 
 /**
  * How an invite's push went: `sent` once a subscription took it,
@@ -3425,7 +3425,14 @@ labels: Array<string>,
  * live (Arugula #862). An older control sends none, which a machine
  * reads as not a team's.
  */
-team: boolean, };
+team: boolean, 
+/**
+ * Whose project it is: a team's or a person's own. It replaces `team`
+ * as the test of a team's project; an older control sends none, and a
+ * machine reads `team` then. `team` stays for a release, for older
+ * machines.
+ */
+owner?: ProjectOwner, };
 
 /**
  * `PUT /api/projects/{project}/issue-home`: `native`, `github` (only with
@@ -4275,9 +4282,15 @@ kind?: WorkKind | null,
  */
 resumes?: string | null, 
 /**
- * The git repository it works in, if any (M23).
+ * The git repo it works in, if any (M23). Named `project` on the
+ * wire from before projects; the Arugula project is `session_project`.
  */
 project?: Project | null, 
+/**
+ * The Arugula project its session is in ([`Session::project`]), if
+ * it's in one.
+ */
+session_project?: ProjectRef | null, 
 /**
  * Its repository's checked-out branch, or a short commit when HEAD is
  * detached (M109).
@@ -4358,7 +4371,21 @@ id: string, name: string,
 /**
  * The team it's the default project of; `None` for the person's own.
  */
-team: ProjectTeam | null, };
+team: ProjectTeam | null, 
+/**
+ * Whose it is: a team's or a person's own. An older control sends
+ * none, and a reader goes by `team` then.
+ */
+owner?: ProjectOwner, 
+/**
+ * Its short name in links, unique among its owner's projects. An older
+ * control sends none.
+ */
+slug?: string, 
+/**
+ * Its owner archived it. Its issues, Docs and boards stay.
+ */
+archived?: boolean, };
 
 export type PlatformProjects = { me: PlatformMe, projects: Array<PlatformProject>, 
 /**
@@ -4430,7 +4457,8 @@ export type PresenceState = "active" | "away" | "offline";
 export type Preset = "columns" | "grid" | "main_stack";
 
 /**
- * The git repository a pane's working directory is in (M23).
+ * The git repo a pane's working directory is in (M23); not an Arugula
+ * project, which is a [`ProjectRef`].
  */
 export type Project = { 
 /**
@@ -4738,6 +4766,22 @@ export type ProjectMember = { account: string,
  * What the roster calls them.
  */
 name: string, role: string, };
+
+/**
+ * Whose a project is. The web client has another `Owner` (a pane's), so
+ * this one is named for what it owns.
+ */
+export type ProjectOwner = { "kind": "team", id: string, name: string, } | { "kind": "personal", account: string, };
+
+/**
+ * A project in Arugula control, as a session keeps it: its id, and its
+ * name when it was set, to show without asking control.
+ */
+export type ProjectRef = { 
+/**
+ * `prj_…`.
+ */
+id: string, name: string, };
 
 export type ProjectTeam = { id: string, name: string, 
 /**
@@ -5121,7 +5165,20 @@ back: string | null, };
  */
 export type ServerMsg = { "type": "hello", version: string, client: number, state: State, } | { "type": "state", state: State, } | { "type": "size", pane: number, cols: number, rows: number, } | { "type": "resync", pane: number, } | { "type": "error", id: number | null, message: string, } | { "type": "block", block: number, state: unknown, } | { "type": "pong", id: number, } | { "type": "notice", message: string, } | { "type": "control_request", pane: number, who: string, name: string, } | { "type": "trust_request", pane: number, who: string, name: string, } | { "type": "delta", delta: Delta, } | { "type": "follow", pane: number, msg: FollowMsg, } | { "type": "hand_call", id: number, tool: string, args: Record<string, unknown>, from: string, };
 
-export type Session = { id: number, name: string, tabs: Array<number>, };
+export type Session = { id: number, name: string, tabs: Array<number>, 
+/**
+ * The project it's in (Arugula projects RFC): inferred once, from the
+ * repo of the first pane whose clone is linked to one
+ * ([`Mux::infer_project`]), or set by hand
+ * ([`Intent::SetSessionProject`]). Never moved after that by a repo's
+ * link. A layout from before has none, and an older daemon drops it.
+ */
+project?: ProjectRef, 
+/**
+ * Its project was set by hand, or taken away ([`Intent::SetSessionProject`]):
+ * nothing infers one after, even while it has none.
+ */
+project_by_hand?: boolean, };
 
 /**
  * [`SESSION_ACTIONS`]'s body: what to ask of the session's box.

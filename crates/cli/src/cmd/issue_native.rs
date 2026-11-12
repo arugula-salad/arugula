@@ -1270,7 +1270,14 @@ mod tests {
         Projects {
             me: Me { account: "acc_me".into(), login: "jake".into(), name: "Jake".into() },
             projects: vec![
-                Project { id: "prj_1".into(), name: "Jake".into(), team: None },
+                Project {
+                    id: "prj_1".into(),
+                    name: "Jake".into(),
+                    team: None,
+                    owner: None,
+                    slug: None,
+                    archived: false,
+                },
                 Project {
                     id: "prj_2".into(),
                     name: "Acme".into(),
@@ -1280,8 +1287,18 @@ mod tests {
                         role: "owner".into(),
                         members: vec![member("acc_me", "Jake"), member("acc_al", "Alice")],
                     }),
+                    owner: None,
+                    slug: None,
+                    archived: false,
                 },
-                Project { id: "prj_3".into(), name: "acme".into(), team: None },
+                Project {
+                    id: "prj_3".into(),
+                    name: "acme".into(),
+                    team: None,
+                    owner: None,
+                    slug: None,
+                    archived: false,
+                },
             ],
             hosted: false,
         }
@@ -1336,6 +1353,7 @@ mod tests {
             both: false,
             labels: vec![],
             team: false,
+            owner: None,
         };
         assert_eq!(home_says(false, &home("native", &[])), None);
         assert_eq!(home_says(false, &home("github", &["acme/app"])), Some(Some("acme/app".into())));
