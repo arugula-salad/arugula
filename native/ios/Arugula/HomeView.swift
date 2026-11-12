@@ -14,7 +14,6 @@ struct HomeView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ProjectBar()
             TabView {
                 // What's in the current project, then the account's machines and
                 // the account itself. Tabs and titles in the theme (Theme.swift).
@@ -71,40 +70,58 @@ final class Scope: ObservableObject {
     }
 }
 
-/// The current project, always on screen above the tabs: its name as a
-/// pull-down menu of every project, and whose it is.
-struct ProjectBar: View {
+/// The heading at the top of a tab's list. In a project's tabs (Issues,
+/// Boards, Chat) it's the current project, as a pull-down menu of every
+/// project, with whose it is: there's no separate bar for something that's
+/// seldom changed, and the tab's own name is already in the tab bar. Machines
+/// and You, the account's, are headed by their name.
+struct TabHeading: ViewModifier {
+    let title: String
+    var project = false
     @EnvironmentObject private var scope: Scope
 
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Menu {
-                ForEach(scope.projects) { p in
-                    Button { scope.pick(p) } label: {
-                        if p == scope.current { Label(p.name, systemImage: "checkmark") } else { Text(p.name) }
+    func body(content: Content) -> some View {
+        content
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                VStack(alignment: .leading, spacing: 2) {
+                    if project {
+                        Menu {
+                            ForEach(scope.projects) { p in
+                                Button { scope.pick(p) } label: {
+                                    if p == scope.current { Label(p.name, systemImage: "checkmark") } else { Text(p.name) }
+                                }
+                            }
+                        } label: {
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                Text((scope.current?.name ?? title).uppercased())
+                                    .font(Face.display(30)).foregroundStyle(Palette.fg).lineLimit(1)
+                                Image(systemName: "chevron.down").font(.system(size: 13, weight: .bold)).foregroundStyle(Palette.accent)
+                            }
+                        }
+                        .accessibilityIdentifier("project-switcher")
+                        if let team = scope.current?.team {
+                            Caps("\(team.name) · \(team.role)")
+                        }
+                    } else {
+                        Text(title.uppercased()).font(Face.display(30)).foregroundStyle(Palette.fg)
+                    }
+                    if let problem = scope.problem {
+                        Text(problem).font(Face.mono(11)).foregroundStyle(Palette.danger).lineLimit(2)
                     }
                 }
-            } label: {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text((scope.current?.name ?? "Arugula").uppercased())
-                        .font(Face.display(26)).foregroundStyle(Palette.fg).lineLimit(1)
-                    Image(systemName: "chevron.down").font(.system(size: 12, weight: .bold)).foregroundStyle(Palette.accent)
-                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal)
+                .padding(.bottom, 10)
+                .background(Palette.void)
             }
-            .accessibilityIdentifier("project-switcher")
-            if let team = scope.current?.team {
-                Caps("\(team.name) · \(team.role)")
-            }
-            Spacer(minLength: 0)
-            if let problem = scope.problem {
-                Text(problem).font(Face.mono(11)).foregroundStyle(Palette.danger).lineLimit(1)
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 4)
-        .padding(.bottom, 8)
-        .background(Palette.void)
-        .overlay(alignment: .bottom) { Rectangle().fill(Palette.raised).frame(height: 1) }
+    }
+}
+
+extension View {
+    func tabHeading(_ title: String, project: Bool = false) -> some View {
+        modifier(TabHeading(title: title, project: project))
     }
 }
 
@@ -227,7 +244,7 @@ struct IssuesView: View {
                     ProgressView().tint(Palette.accent)
                 }
             }
-            .navigationTitle("ISSUES")
+            .tabHeading("Issues", project: true)
             .background(Palette.void)
         } detail: {
             NavigationStack {
@@ -276,7 +293,7 @@ struct BoardsView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Palette.void)
-            .navigationTitle("BOARDS")
+            .tabHeading("Boards", project: true)
             .navigationDestination(for: Board.self) { BoardScreen(control: control, board: $0) }
             .navigationDestination(for: IssueRef.self) { ref in
                 Loaded(load: { try await control.get("/api/issues/\(ref.id)", as: Issue.self) }) { IssueView(issue: $0) }
@@ -653,7 +670,7 @@ struct YouView: View {
                 }
                 .voidList()
             }
-            .navigationTitle("YOU")
+            .tabHeading("You")
             .background(Palette.void)
         }
     }

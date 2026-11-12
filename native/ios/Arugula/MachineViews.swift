@@ -165,7 +165,7 @@ struct MachinesView: View {
                 .voidList()
                 .overlay { if d.daemons.isEmpty { Caps("No machines yet") } }
             }
-            .navigationTitle("MACHINES")
+            .tabHeading("Machines")
             .background(Palette.void)
         } detail: {
             NavigationStack {
