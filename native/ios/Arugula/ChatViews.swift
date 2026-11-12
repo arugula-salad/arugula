@@ -92,8 +92,7 @@ struct ChatRoomView: View {
                 .background(.bar)
             }
         }
-        .navigationTitle(room.name)
-        .navigationBarTitleDisplayMode(.inline)
+        .detailTitle(room.kind == "channel" ? "# \(room.name)" : room.name)
         .task {
             while !Task.isCancelled {
                 await load()

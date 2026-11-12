@@ -25,6 +25,23 @@ struct HomeView: View {
     }
 }
 
+/// A detail's title: large, at the leading edge, on an iPad, where iPadOS puts
+/// the tabs in a bar across the top and an inline title would sit under it.
+struct DetailTitle: ViewModifier {
+    let title: String
+    @Environment(\.horizontalSizeClass) private var width
+
+    func body(content: Content) -> some View {
+        content
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(width == .regular ? .large : .inline)
+    }
+}
+
+extension View {
+    func detailTitle(_ title: String) -> some View { modifier(DetailTitle(title: title)) }
+}
+
 // ---- a list that loads
 
 struct Loaded<T, Content: View>: View {
@@ -145,8 +162,7 @@ struct ProjectView: View {
                 }
             }
         }
-        .navigationTitle(project.name)
-        .navigationBarTitleDisplayMode(.inline)
+        .detailTitle(project.name)
         .navigationDestination(for: Issue.self) { IssueView(issue: $0) }
     }
 }
