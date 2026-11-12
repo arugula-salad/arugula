@@ -96,13 +96,16 @@ export function popOutSpecs(tag: string) {
       page.locator(`[data-pane="${d}"] [data-doc-block="${d}"]`),
     ).toBeVisible();
     // A window the page didn't open itself may stay: it says the pane is back.
+    // It can close between isClosed() and the read (Arugula #911): a read
+    // that finds it closing counts as closed.
     await expect
       .poll(
         async () =>
           again.isClosed() ||
           (await again
             .locator(`[data-pop-out-page="${d}"]`)
-            .getAttribute("data-phase")) === "back",
+            .getAttribute("data-phase")
+            .catch(() => (again.isClosed() ? "back" : null))) === "back",
       )
       .toBe(true);
   });
