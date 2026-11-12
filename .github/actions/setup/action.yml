@@ -146,11 +146,40 @@ runs:
           echo "::warning::ci-cache didn't answer: compiling without sccache"
           exit 0
         fi
+        # sccache 0.18 takes the server's startup timeout (10 seconds by
+        # default) only from its config file, not from the environment.
+        conf=$RUNNER_TEMP/sccache.toml
+        echo "server_startup_timeout_ms = 60000" > "$conf"
+        export SCCACHE_CONF=$conf
+        export SCCACHE_WEBDAV_ENDPOINT=https://ci-cache.inevitable.fyi
+        export SCCACHE_WEBDAV_USERNAME=arugula-ci
+        export SCCACHE_WEBDAV_KEY_PREFIX=arugula
+        # The server stays up for the job: by default it stops after 10 idle
+        # minutes, and the build's first compile would start it again, with
+        # nothing to fall back on if that start is slow.
+        export SCCACHE_IDLE_TIMEOUT=0
+        # Start the server here rather than at the build's first compile,
+        # where a slow start fails the build (ci-cache answered and the
+        # server still timed out): tried here, and left out if it won't come up.
+        started=false
+        for n in 1 2 3; do
+          if sccache --start-server; then started=true; break; fi
+          echo "::warning::sccache's server didn't start (try $n of 3)"
+          sccache --stop-server >/dev/null 2>&1 || true
+          sleep 5
+        done
+        if [ "$started" != true ]; then
+          echo "::warning::sccache's server didn't start: compiling without sccache"
+          echo "RUSTC_WRAPPER=" >> "$GITHUB_ENV"
+          exit 0
+        fi
         {
           echo "RUSTC_WRAPPER=sccache"
-          echo "SCCACHE_WEBDAV_ENDPOINT=https://ci-cache.inevitable.fyi"
-          echo "SCCACHE_WEBDAV_USERNAME=arugula-ci"
-          echo "SCCACHE_WEBDAV_KEY_PREFIX=arugula"
+          echo "SCCACHE_CONF=$SCCACHE_CONF"
+          echo "SCCACHE_WEBDAV_ENDPOINT=$SCCACHE_WEBDAV_ENDPOINT"
+          echo "SCCACHE_WEBDAV_USERNAME=$SCCACHE_WEBDAV_USERNAME"
+          echo "SCCACHE_WEBDAV_KEY_PREFIX=$SCCACHE_WEBDAV_KEY_PREFIX"
+          echo "SCCACHE_IDLE_TIMEOUT=0"
           # sccache can't cache incremental builds.
           echo "CARGO_INCREMENTAL=0"
           # If the server goes away mid-build, compile without it.
