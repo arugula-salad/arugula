@@ -312,7 +312,6 @@ function issueRoute(project: string, rest: string[], q: URLSearchParams, msg: { 
  * its slug. */
 export type Names = (id: string) => string | null | undefined;
 
-/** A room's `?msg=N&thread=P`: the message to show, and the thread beside it (#106). */
 /** An id-only chat view's route in a project: its view, and search's query
  * and `all` with it (Arugula #908). */
 export function chatViewIn(r: Extract<Route, { page: "find"; what: "chat" }>, project: string): Route {
@@ -326,6 +325,7 @@ function searchQuery(r: { q?: string; all?: boolean }): string {
   return parts.length ? `?${parts.join("&")}` : "";
 }
 
+/** A room's `?msg=N&thread=P`: the message to show, and the thread beside it (#106). */
 function at(r: { msg?: number; thread?: number }): string {
   const q = [r.msg !== undefined ? `msg=${r.msg}` : "", r.thread !== undefined ? `thread=${r.thread}` : ""].filter(Boolean);
   return q.length ? `?${q.join("&")}` : "";
