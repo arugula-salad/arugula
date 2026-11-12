@@ -121,11 +121,14 @@ pub enum CloudCmd {
     },
     /// Make a cloud workspace's machine again from its spec.
     ///
-    /// It asks the machine first: a repo with changes or commits that aren't
-    /// pushed stops it, unless `--download` saves them first or `--force`.
+    /// It asks the machine first: work in any git repo in its homes that
+    /// a new machine wouldn't have (changed or untracked files, commits on
+    /// a branch no remote has, stashes) stops it, unless `--download` saves
+    /// it first or `--force`.
     Rebuild {
         workspace: String,
-        /// Save a tarball of the repos with unpushed work here first.
+        /// Save a tarball of the repos with unpushed work here first, at
+        /// their paths on the machine.
         #[arg(long)]
         download: Option<std::path::PathBuf>,
         /// Rebuild even if the machine has unpushed work, or can't be asked.
@@ -501,10 +504,11 @@ fn secret_line(s: &Value) -> String {
     }
 }
 
-/// Before a rebuild: ask the box, through the relay, for repos with work
-/// that isn't pushed, and save it to `download` if asked. Whether to go on:
-/// not when there is some (or the box can't be asked) and nothing saved
-/// it, unless `force`.
+/// Before a rebuild: ask the box, through the relay, for work a rebuild
+/// would lose (in every repo in its homes, on any branch, in stashes,
+/// changed or untracked: Arugula #932), and save it to `download` if
+/// asked. Whether to go on: not when there is some (or the box can't be
+/// asked, or couldn't look somewhere) and nothing saved it, unless `force`.
 fn before_rebuild(w: &Value, download: Option<&std::path::Path>, force: bool) -> anyhow::Result<bool> {
     use arugula_proto::{api::Empty, op::ops::HostedSetupGet};
     let name = w["name"].as_str().unwrap_or_default();
@@ -512,9 +516,15 @@ fn before_rebuild(w: &Value, download: Option<&std::path::Path>, force: bool) ->
     let asked = crate::control::target(machine).and_then(|t| {
         let t = t.with_context(|| format!("control doesn't list its machine {machine}"))?;
         let setup = crate::http::call::<HostedSetupGet>(&t, &(), &Empty {})?;
-        Ok((t, setup))
+        // A box from before Arugula #932 looks only at its cloned repos'
+        // checked-out branches: look with the same script, in a pane.
+        let looked = match &setup.check {
+            Some(_) => None,
+            None => Some(look_in_a_pane(&t).context("looking through its repos in a pane")?),
+        };
+        Ok((t, setup, looked))
     });
-    let (target, setup) = match asked {
+    let (target, setup, looked) = match asked {
         Ok(got) => got,
         Err(err) if force => {
             eprintln!("arugula: couldn't ask {name} for unpushed work ({err:#}); rebuilding anyway (--force)");
@@ -526,14 +536,33 @@ fn before_rebuild(w: &Value, download: Option<&std::path::Path>, force: bool) ->
             return Ok(false);
         }
     };
-    let dirty: Vec<_> = setup.repos.iter().filter(|r| r.dirty()).collect();
-    if dirty.is_empty() {
+    let (lost, missed) = match &looked {
+        Some(c) => (c.found.iter().map(|f| &f.repo).filter(|r| r.dirty()).collect::<Vec<_>>(), &c.check.missed),
+        None => (setup.repos.iter().filter(|r| r.dirty()).collect(), &setup.check.as_ref().expect("asked").missed),
+    };
+    if lost.is_empty() && missed.is_empty() {
         return Ok(true);
     }
-    for r in &dirty {
-        eprintln!("arugula: {}: {} changed file(s), {} commit(s) on no remote branch", r.dir, r.changed, r.unpushed);
+    eprintln!("arugula: {name} has work a rebuild would lose:");
+    for l in lost_lines(&lost, missed) {
+        eprintln!("  {l}");
     }
     if let Some(to) = download {
+        // An older box's tarball has only the repos it calls dirty, so not
+        // a stash or another branch; nothing saves what it couldn't look at.
+        let unsaved: Vec<&str> = lost
+            .iter()
+            .filter(|r| looked.is_some() && !setup.repos.iter().any(|s| s.dir == r.dir && s.dirty()))
+            .map(|r| r.dir.as_str())
+            .chain(missed.iter().map(|m| m.dir.as_str()))
+            .collect();
+        if !unsaved.is_empty() && !force {
+            eprintln!(
+                "arugula: --download can't save what's in {}: push it, or rebuild anyway with --force",
+                unsaved.join(", ")
+            );
+            return Ok(false);
+        }
         let mut res = crate::http::request(&target, "GET", "/api/hosted/setup/archive", None)?;
         if res.status != 200 {
             bail!("{name} didn't hand over its unpushed work: {}", String::from_utf8_lossy(&res.bytes()?));
@@ -541,16 +570,100 @@ fn before_rebuild(w: &Value, download: Option<&std::path::Path>, force: bool) ->
         let mut f = std::fs::File::create(to).with_context(|| format!("writing {}", to.display()))?;
         let n = std::io::copy(&mut res, &mut f).with_context(|| format!("writing {}", to.display()))?;
         eprintln!("arugula: saved {} ({n} bytes)", to.display());
+        if !unsaved.is_empty() {
+            eprintln!("arugula: rebuilding anyway (--force): what's in {} is lost", unsaved.join(", "));
+        }
         return Ok(true);
     }
     if force {
         eprintln!("arugula: rebuilding anyway (--force): that work is lost");
         return Ok(true);
     }
-    eprintln!(
-        "arugula: a rebuild loses that work: push it, save it with --download FILE, or rebuild anyway with --force"
-    );
+    eprintln!("arugula: {SAVE_IT}");
     Ok(false)
+}
+
+/// How to keep what a rebuild would lose.
+const SAVE_IT: &str = "push it first (a branch: `git push origin BRANCH`; a stash: `git stash branch NAME`, then push \
+     that), save it to a file with --download FILE, or rebuild anyway with --force";
+
+/// What a rebuild would lose, a line a repo: `/home/user/app: 2 changed or
+/// untracked files; branch feature: 3 commits on no remote; 1 stash`, and
+/// each place the box couldn't look.
+fn lost_lines(lost: &[&arugula_proto::api::HostedRepo], missed: &[arugula_proto::api::HostedMissed]) -> Vec<String> {
+    let n = |n: u32, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
+    let mut out = Vec::new();
+    for r in lost {
+        let mut parts = Vec::new();
+        if r.changed > 0 {
+            parts.push(n(r.changed, "changed or untracked file", "changed or untracked files"));
+        }
+        for b in &r.branches {
+            parts.push(if b.name == "HEAD" {
+                format!("detached HEAD: {} on no branch", n(b.commits, "commit", "commits"))
+            } else {
+                format!("branch {}: {} on no remote", b.name, n(b.commits, "commit", "commits"))
+            });
+        }
+        // An older box counts them without saying where.
+        if r.branches.is_empty() && r.unpushed > 0 {
+            parts.push(format!("{} on no remote branch", n(r.unpushed, "commit", "commits")));
+        }
+        if r.stashes > 0 {
+            parts.push(n(r.stashes, "stash", "stashes"));
+        }
+        out.push(format!("{}: {}", r.dir, parts.join("; ")));
+    }
+    for m in missed {
+        out.push(format!("{}: couldn't look ({})", m.dir, m.why));
+    }
+    out
+}
+
+/// Look for work a rebuild would lose on a box whose daemon doesn't (one
+/// from before Arugula #932): the daemon's script, in a pane of its own,
+/// whose output comes back base64 between markers (a terminal turns tabs
+/// to spaces and wraps long lines). The pane is closed after.
+fn look_in_a_pane(target: &crate::http::Target) -> anyhow::Result<arugula_proto::hosted_check::Checked> {
+    use arugula_proto::{
+        api::{Empty, RunRequest, RunResponse, WaitResult},
+        hosted_check::SCRIPT,
+        op::ops::ClosePane,
+    };
+    use base64::Engine as _;
+    let script = base64::engine::general_purpose::STANDARD.encode(SCRIPT);
+    // The markers as the shell prints them: the command line itself never
+    // shows them whole.
+    let command = format!(
+        "printf %s {script} | base64 -d | bash -s | {{ echo ARUGULA-CHECK-''START; base64 -w0; echo; echo ARUGULA-CHECK-''END; }}"
+    );
+    let body = RunRequest { command: Some(command), ..RunRequest::default() };
+    let RunResponse { pane } = crate::http::request_as(target, "POST", "/api/run", &body)?.parse()?;
+    let read = (|| {
+        let path = format!("/api/panes/{pane}/wait?until=exit&timeout=120");
+        let w: WaitResult = crate::http::request(target, "GET", &path, None)?.parse()?;
+        if matches!(w, WaitResult::Timeout) {
+            bail!("it took over two minutes");
+        }
+        let path = format!("/api/panes/{pane}/capture?format=text&scope=scrollback");
+        let text = crate::http::request(target, "GET", &path, None)?.ok()?.text()?;
+        from_pane(&text)
+    })();
+    let _ = crate::http::call::<ClosePane>(target, &pane, &Empty {});
+    read
+}
+
+/// What [`look_in_a_pane`]'s pane shows, read back.
+fn from_pane(text: &str) -> anyhow::Result<arugula_proto::hosted_check::Checked> {
+    use base64::Engine as _;
+    let (start, end) = ("ARUGULA-CHECK-START", "ARUGULA-CHECK-END");
+    let after = text.find(start).map(|i| &text[i + start.len()..]).context("the pane printed nothing")?;
+    let inside = &after[..after.find(end).context("the pane's output stopped short")?];
+    let b64: String = inside.chars().filter(|c| !c.is_whitespace()).collect();
+    let out = base64::engine::general_purpose::STANDARD.decode(b64).context("the pane's output")?;
+    let checked = arugula_proto::hosted_check::parse(&String::from_utf8_lossy(&out));
+    anyhow::ensure!(!checked.check.homes.is_empty() || !checked.check.missed.is_empty(), "the pane looked nowhere");
+    Ok(checked)
 }
 
 /// `5173  public  https://….arugula.site  by alice until 2026-10-29 14:00 UTC`,
@@ -724,6 +837,63 @@ fn with_tail(mut w: Value) -> Value {
 mod tests {
     use super::*;
     use clap::Parser;
+
+    /// Arugula #932: the refusal names each repo and what in it a rebuild
+    /// would lose, and where the box couldn't look.
+    #[test]
+    fn it_names_what_a_rebuild_would_lose() {
+        use arugula_proto::api::{HostedBranch, HostedMissed, HostedRepo};
+        let branch = |name: &str, commits| HostedBranch { name: name.into(), commits };
+        let app = HostedRepo {
+            dir: "/home/user/app".into(),
+            changed: 2,
+            unpushed: 4,
+            branches: vec![branch("main", 1), branch("feature", 3)],
+            stashes: 1,
+            ..HostedRepo::default()
+        };
+        let detached = HostedRepo {
+            dir: "/home/ses1/work/app".into(),
+            unpushed: 1,
+            branches: vec![branch("HEAD", 1)],
+            ..HostedRepo::default()
+        };
+        // From an older box: a count, no branches.
+        let old = HostedRepo { dir: "/home/user/old".into(), unpushed: 2, ..HostedRepo::default() };
+        let stash = HostedRepo { dir: "/home/user/s".into(), stashes: 2, ..HostedRepo::default() };
+        let missed = [HostedMissed { dir: "/home/ses2".into(), why: "can't read it as ses2".into() }];
+        assert_eq!(
+            lost_lines(&[&app, &detached, &old, &stash], &missed),
+            [
+                "/home/user/app: 2 changed or untracked files; branch main: 1 commit on no remote; branch feature: 3 \
+             commits on no remote; 1 stash",
+                "/home/ses1/work/app: detached HEAD: 1 commit on no branch",
+                "/home/user/old: 2 commits on no remote branch",
+                "/home/user/s: 2 stashes",
+                "/home/ses2: couldn't look (can't read it as ses2)",
+            ]
+        );
+    }
+
+    /// An older box's pane: the script's lines come back base64 between
+    /// markers, however the terminal wrapped them.
+    #[test]
+    fn a_pane_says_what_it_found() {
+        use base64::Engine as _;
+        let said = "arugula-check\thome\t/home/user\n\
+                    arugula-check\trepo\t/home/user/app\t\t/home/user/app/.git\tmain\t0\t0\t1\n";
+        let b64 = base64::engine::general_purpose::STANDARD.encode(said);
+        let wrapped: Vec<String> = b64.as_bytes().chunks(20).map(|c| String::from_utf8_lossy(c).into_owned()).collect();
+        let text = format!(
+            "Welcome!\nARUGULA-CHECK-START\n{}\nARUGULA-CHECK-END\n\n[exited with code 0]\n",
+            wrapped.join("\n")
+        );
+        let got = from_pane(&text).unwrap();
+        assert_eq!(got.check.homes, ["/home/user"]);
+        assert_eq!((got.found[0].repo.dir.as_str(), got.found[0].repo.stashes), ("/home/user/app", 1));
+        assert!(from_pane("bash: base64: command not found").is_err());
+        assert!(from_pane("ARUGULA-CHECK-START\nAAAA").is_err(), "cut short");
+    }
 
     #[test]
     fn commands_parse() {

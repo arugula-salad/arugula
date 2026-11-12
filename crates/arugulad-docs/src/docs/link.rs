@@ -275,7 +275,7 @@ pub fn seal(
     ver: u64,
     plain: &[u8],
     part_max: usize,
-    nonce: &mut dyn FnMut() -> [u8; 12],
+    nonce: &mut (dyn FnMut() -> [u8; 12] + Send),
 ) -> Result<Vec<Vec<u8>>, String> {
     let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| "a link's key is 32 bytes".to_owned())?;
     let chunks: Vec<&[u8]> = if plain.is_empty() { vec![plain] } else { plain.chunks(part_max).collect() };
@@ -363,7 +363,7 @@ impl From<String> for Fail {
 }
 
 /// One line for a refusal of control's: its `reason`, with what to do.
-fn refused(status: u16, v: &Value) -> String {
+pub fn refused(status: u16, v: &Value) -> String {
     let said = |fallback: &str| {
         v["error"].as_str().filter(|s| !s.is_empty() && !s.contains('\n')).unwrap_or(fallback).to_owned()
     };
@@ -494,9 +494,9 @@ impl Link {
         Ok(Shared { url: entry.url(&id), made: entry.made, updated: entry.updated })
     }
 
-    /// Check the quota, seal `plain` as `entry.ver + 1`, upload the parts and
-    /// commit; on success `entry` has the new version and size. The store is
-    /// the caller's to write.
+    /// Seal `plain` as `entry.ver + 1`, upload the parts and commit; on
+    /// success `entry` has the new version and size. The store is the
+    /// caller's to write.
     async fn push(
         &self,
         id: &str,
@@ -507,9 +507,69 @@ impl Link {
     ) -> Result<(), Fail> {
         let remote = self.remote()?;
         let ver = entry.ver + 1;
-        let mb = |n: u64| n >> 20;
-        let parts_n = plain.len().div_ceil(self.part_max()).max(1);
-        let size = (plain.len() + parts_n * OVERHEAD) as u64;
+        let size =
+            push_version(&**remote, id, key, ver, plain, self.part_max(), &mut *self.nonces(), replacing, true).await?;
+        (entry.ver, entry.size) = (ver, size);
+        Ok(())
+    }
+
+    /// What this Doc's link is, asking control (anonymously, as a visitor
+    /// would) whether it still serves it.
+    pub async fn shares(&self) -> Result<Option<Shared>, Fail> {
+        let Some((id, entry)) = self.current() else { return Ok(None) };
+        if let Some(remote) = &self.remote
+            && let Ok(404) = remote.probe(format!("{}/{id}/data/meta", entry.viewer)).await
+        {
+            forget(&self.state_dir, &id)?;
+            return Err(Fail::Gone);
+        }
+        Ok(Some(Shared { url: entry.url(&id), made: entry.made, updated: entry.updated }))
+    }
+
+    /// Unshare `id` (default this Doc's): control deletes it (a 404 is as
+    /// good), then the key goes.
+    pub async fn unshare(&self, id: Option<&str>) -> Result<(), String> {
+        let id = match id {
+            Some(id) => id.to_owned(),
+            None => self.current().ok_or("this Doc isn't shared")?.0,
+        };
+        unshare_id(&self.state_dir, self.remote()?, &id).await
+    }
+}
+
+/// Check the quota (when `quota`), seal `plain` as version `ver` of link `id`
+/// under `key`, upload the parts and commit; the ciphertext's size. `replacing`
+/// is the size of the version this one replaces, for a link that is served.
+///
+/// A team Doc's public link (Arugula #871) is pushed by this too, with
+/// `quota` off: its bytes count against the project's owner at control, not
+/// against this machine's account, which `GET /api/doc-links/quota` answers
+/// for, so control's own limits (checked per part and again at the commit)
+/// are the ones that say no.
+#[allow(clippy::too_many_arguments)]
+pub async fn push_version(
+    remote: &dyn Remote,
+    id: &str,
+    key: &[u8; 32],
+    ver: u64,
+    plain: Vec<u8>,
+    part_max: usize,
+    nonce: &mut (dyn FnMut() -> [u8; 12] + Send),
+    replacing: Option<u64>,
+    quota: bool,
+) -> Result<u64, Fail> {
+    let mb = |n: u64| n >> 20;
+    let parts_n = plain.len().div_ceil(part_max).max(1);
+    let size = (plain.len() + parts_n * OVERHEAD) as u64;
+    if !quota && parts_n > MAX_PARTS {
+        return Err(format!(
+            "this Doc is {} MB once encrypted and a shared one is at most {} MB: shorten it or drop a picture",
+            mb(size).max(1),
+            MAX_PARTS
+        )
+        .into());
+    }
+    if quota {
         // Before anything is sealed or sent.
         let (status, q) = remote.call("GET", "/api/doc-links/quota".into(), vec![]).await?;
         if status != 200 {
@@ -536,49 +596,24 @@ impl Link {
             )
             .into());
         }
-        let sealed = seal(key, id, ver, &plain, self.part_max(), &mut *self.nonces())?;
-        for (i, part) in sealed.iter().enumerate() {
-            let (status, v) =
-                remote.call("PUT", format!("/api/doc-links/{id}/v/{ver}/parts/{i}"), part.clone()).await?;
-            self.check(status, &v, replacing.is_some())?;
-        }
-        let body = serde_json::to_vec(&json!({ "parts": sealed.len(), "size": size })).expect("JSON");
-        let (status, v) = remote.call("POST", format!("/api/doc-links/{id}/v/{ver}/commit"), body).await?;
-        self.check(status, &v, replacing.is_some())?;
-        (entry.ver, entry.size) = (ver, size);
-        info!(link = id, ver, parts = sealed.len(), size, "shared a Doc");
-        Ok(())
     }
-
-    fn check(&self, status: u16, v: &Value, known: bool) -> Result<(), Fail> {
-        match status {
-            200 => Ok(()),
-            404 if known => Err(Fail::Gone),
-            _ => Err(refused(status, v).into()),
-        }
+    let sealed = seal(key, id, ver, &plain, part_max, nonce)?;
+    for (i, part) in sealed.iter().enumerate() {
+        let (status, v) = remote.call("PUT", format!("/api/doc-links/{id}/v/{ver}/parts/{i}"), part.clone()).await?;
+        check(status, &v, replacing.is_some())?;
     }
+    let body = serde_json::to_vec(&json!({ "parts": sealed.len(), "size": size })).expect("JSON");
+    let (status, v) = remote.call("POST", format!("/api/doc-links/{id}/v/{ver}/commit"), body).await?;
+    check(status, &v, replacing.is_some())?;
+    info!(link = id, ver, parts = sealed.len(), size, "shared a Doc");
+    Ok(size)
+}
 
-    /// What this Doc's link is, asking control (anonymously, as a visitor
-    /// would) whether it still serves it.
-    pub async fn shares(&self) -> Result<Option<Shared>, Fail> {
-        let Some((id, entry)) = self.current() else { return Ok(None) };
-        if let Some(remote) = &self.remote
-            && let Ok(404) = remote.probe(format!("{}/{id}/data/meta", entry.viewer)).await
-        {
-            forget(&self.state_dir, &id)?;
-            return Err(Fail::Gone);
-        }
-        Ok(Some(Shared { url: entry.url(&id), made: entry.made, updated: entry.updated }))
-    }
-
-    /// Unshare `id` (default this Doc's): control deletes it (a 404 is as
-    /// good), then the key goes.
-    pub async fn unshare(&self, id: Option<&str>) -> Result<(), String> {
-        let id = match id {
-            Some(id) => id.to_owned(),
-            None => self.current().ok_or("this Doc isn't shared")?.0,
-        };
-        unshare_id(&self.state_dir, self.remote()?, &id).await
+fn check(status: u16, v: &Value, known: bool) -> Result<(), Fail> {
+    match status {
+        200 => Ok(()),
+        404 if known => Err(Fail::Gone),
+        _ => Err(refused(status, v).into()),
     }
 }
 

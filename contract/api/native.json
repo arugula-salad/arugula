@@ -23,6 +23,10 @@
       "why": "Restoring a trashed Doc is on the web for now (Arugula #866)"
     },
     {
+      "match": "^/api/projects/\\{project\\}/settings$",
+      "why": "A project's settings are on the web for now (Arugula #891)"
+    },
+    {
       "match": "/docs/\\{id\\}/copies",
       "why": "Share with… is on the web for now"
     },
@@ -558,6 +562,16 @@
       "untyped": [
         "query and response: local to the handler"
       ]
+    },
+    "POST /api/projects": {
+      "handler": "crates/platform/src/projects.rs#create",
+      "request": "ProjectCreate",
+      "response": "Project"
+    },
+    "PATCH /api/projects/{project}": {
+      "handler": "crates/platform/src/projects.rs#patch",
+      "request": "ProjectPatch",
+      "response": "Project"
     },
     "GET /api/projects": {
       "handler": "crates/platform/src/projects.rs#list",

@@ -75,6 +75,18 @@ pub const PROJECT_DOC_COPIES: &str = "/api/projects/{project}/docs/{id}/copies";
 /// `replace` isn't set. Only the Doc's owner, who still writes in `to`.
 pub const PROJECT_DOC_COPY: &str = "/api/projects/{project}/docs/{id}/copies/{to}";
 
+/// A team Doc's public link (Arugula #871). `PUT` [`PublicMake`]: make it
+/// (or answer the one it has), answered [`PublicLink`] at version 0, which
+/// serves nothing until the client that sealed the Doc has put the parts to
+/// control and says so with `POST` [`PublicServed`]. `DELETE`: forget it,
+/// after the client took it down at control. Owners and editors, as a person
+/// or a machine with `docs.write`; a viewer is refused (403) and an agent
+/// session never makes or revokes one. Any member who reads the Doc sees the
+/// link in its [`DocView`].
+pub const PROJECT_DOC_PUBLIC: &str = "/api/projects/{project}/docs/{id}/public";
+/// The same for a machine's agents, signed by the machine: `docs.write`
+/// over the project, and the owner an owner or editor.
+pub const AGENT_PROJECT_DOC_PUBLIC: &str = "/api/daemon/projects/{project}/docs/{doc}/public";
 /// `GET`: one of a Doc's pictures, the bytes (any member).
 pub const PROJECT_DOC_ASSET: &str = "/api/projects/{project}/docs/{id}/assets/{name}";
 /// `PUT` [`MachineDoc`]: a machine copies one of its Docs up for its owner,
@@ -241,6 +253,54 @@ pub struct DocView {
     /// platform sends none.
     #[serde(default)]
     pub link: Option<String>,
+    /// The Doc's public link, when it has one (Arugula #871). Left out for
+    /// an agent session, which is never given the key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub public: Option<PublicLink>,
+}
+
+/// A team Doc's public link (Arugula #871). The platform keeps its key with
+/// the Doc, and gives it only to those who read the Doc; control holds the
+/// ciphertext and never the key. The URL is `<viewer>/<id>#k=<key>`, the
+/// viewer being `/control.json`'s `doc_viewer`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "ProjectDocPublic"))]
+pub struct PublicLink {
+    /// The link's id at control: 32 lower-case hex digits.
+    pub id: String,
+    /// The link's key, base64url without padding: 32 bytes.
+    pub key: String,
+    /// The version control serves; 0 while the first one isn't uploaded.
+    pub ver: u64,
+    /// When the served version was made (ms); 0 while there is none.
+    pub updated_at: u64,
+    /// The Doc changed since the served version was sealed.
+    pub behind: bool,
+    /// The address anyone can open, `<viewer>/<id>#k=<key>`; empty when this
+    /// control keeps no shared Docs, or from an older platform. The platform
+    /// page can't read `/control.json` (the platform's host answers none of
+    /// the hub's), so the platform says where the viewer is.
+    #[serde(default)]
+    pub url: String,
+}
+
+/// `PUT` [`PROJECT_DOC_PUBLIC`]: make the link. Empty.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "ProjectDocPublicMake"))]
+pub struct PublicMake {}
+
+/// `POST` [`PROJECT_DOC_PUBLIC`]: the client put version `ver` to control and
+/// it was committed. `rev` is the Doc's rev it sealed, so the page can say
+/// when the Doc has moved on. Answered [`PublicLink`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "ProjectDocPublicServed"))]
+pub struct PublicServed {
+    pub ver: u64,
+    pub rev: u64,
 }
 
 /// `GET` [`PROJECT_DOCS`]: a project's Docs, the latest changed first.
@@ -484,6 +544,11 @@ pub fn agent_project_doc(project: &str, doc: &str) -> String {
 /// [`AGENT_PROJECT_DOC_ASSET`] for `name` of `doc` in `project`.
 pub fn agent_project_doc_asset(project: &str, doc: &str, name: &str) -> String {
     format!("/api/daemon/projects/{project}/docs/{doc}/assets/{name}")
+}
+
+/// [`AGENT_PROJECT_DOC_PUBLIC`] for `doc` in `project`.
+pub fn agent_project_doc_public(project: &str, doc: &str) -> String {
+    format!("/api/daemon/projects/{project}/docs/{doc}/public")
 }
 
 /// [`MACHINE_DOC`] for the machine's Doc `machine_doc`.

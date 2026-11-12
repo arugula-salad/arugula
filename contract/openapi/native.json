@@ -4481,6 +4481,54 @@
       }
     },
     "/api/projects": {
+      "post": {
+        "operationId": "POST_api_projects",
+        "x-arugula-clients": [
+          "page",
+          "cli",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectCreate"
+              }
+            }
+          }
+        }
+      },
       "get": {
         "operationId": "GET_api_projects",
         "x-arugula-clients": [
@@ -4514,6 +4562,66 @@
                 "schema": {
                   "$ref": "#/components/schemas/Projects"
                 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project}": {
+      "patch": {
+        "operationId": "PATCH_api_projects_project",
+        "x-arugula-clients": [
+          "page",
+          "cli",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectPatch"
               }
             }
           }
@@ -9745,6 +9853,17 @@
               "null"
             ]
           },
+          "public": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PublicLink"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Doc's public link, when it has one (Arugula #871). Left out for\nan agent session, which is never given the key."
+          },
           "sections": {
             "items": {
               "$ref": "#/components/schemas/Section"
@@ -10086,6 +10205,17 @@
             },
             "type": "array"
           },
+          "left_queue": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LeftQueue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why it last left the merge queue unmerged: GitHub's `dequeued`.\nCleared by the next `enqueued` and by a merge; it stays after a\nclose, so the row still says why."
+          },
           "merge_state": {
             "type": [
               "string",
@@ -10114,6 +10244,15 @@
           "queued": {
             "description": "An open PR in its branch's merge queue: from GitHub's `enqueued`,\nuntil `dequeued` or it closes (Arugula #878). An older platform\ndoesn't say, so false.",
             "type": "boolean"
+          },
+          "queued_since": {
+            "description": "When it last entered the merge queue, in milliseconds: GitHub's\n`enqueued`, as the platform heard it (Arugula #766). Kept after it\nleaves, so a reader tells how long it was queued from `left_queue`.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "repo": {
             "default": null,
@@ -11060,6 +11199,26 @@
         ],
         "type": "object"
       },
+      "LeftQueue": {
+        "description": "A PR's last unmerged exit from its merge queue (Arugula #766).",
+        "properties": {
+          "at": {
+            "description": "When the platform heard it, in milliseconds.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "reason": {
+            "description": "GitHub's `reason` as it came, in upper case: `CHECKS_TIMED_OUT`,\n`CHECKS_FAILED`, `MERGE_CONFLICT`, `MANUAL`, `BRANCH_PROTECTIONS`,\n`GIT_TREE_INVALID`, `INVALID_MERGE_COMMIT`, `UNKNOWN_REMOVAL_REASON`.\nOne GitHub adds later is kept as it is.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason",
+          "at"
+        ],
+        "type": "object"
+      },
       "Live": {
         "description": "The item a row points at, as it is now: what the page draws beside the\nrow's own status, and the label of its link.",
         "properties": {
@@ -11113,6 +11272,17 @@
             },
             "type": "array"
           },
+          "left_queue": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LeftQueue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A PR that left the queue unmerged, and why (`ForgeItem::left_queue`)."
+          },
           "number": {
             "description": "A run has none: 0.",
             "format": "uint64",
@@ -11123,6 +11293,19 @@
             "description": "`plane` for a tracker's item; absent for GitHub, native issues and runs.",
             "type": [
               "string",
+              "null"
+            ]
+          },
+          "queued": {
+            "description": "A PR in its branch's merge queue now (Arugula #766). A repo with no\nqueue, a platform from before it and every other kind say false.",
+            "type": "boolean"
+          },
+          "queued_since": {
+            "description": "With `queued`: when it entered the queue, in milliseconds.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
               "null"
             ]
           },
@@ -11855,6 +12038,29 @@
         ],
         "type": "object"
       },
+      "ProjectCreate": {
+        "description": "`POST /api/projects` (Arugula #892): a new project. Only a team's owners\nmake one for the team; anyone makes their own. Who may read and write it\nis its owner's: a team's roles, or only its person.",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "owner": {
+            "$ref": "#/components/schemas/ProjectOwnerRef"
+          },
+          "slug": {
+            "description": "Its short name in links; when not given, control makes one from the\nname. Refused if the owner has a project with it already.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "owner"
+        ],
+        "type": "object"
+      },
       "ProjectMember": {
         "properties": {
           "account": {
@@ -11917,6 +12123,71 @@
             "type": "object"
           }
         ]
+      },
+      "ProjectOwnerRef": {
+        "description": "An owner named by what it is, without its name: a team by its id, or\nthe reader's own account.",
+        "oneOf": [
+          {
+            "description": "A team the reader owns.",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "const": "team",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "The reader's own account.",
+            "properties": {
+              "kind": {
+                "const": "personal",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "ProjectPatch": {
+        "description": "`PATCH /api/projects/{project}` (Arugula #892): what changes, the rest\nas it was. Anyone who may write the project renames it. Only its owner\narchives it or moves it: a team's owners, or its person for their own;\na move needs the same of the new owner. Access stays the owner's, so a\nmove gives it to the new one's people. Its issues keep their numbers,\nand its Docs, boards, linked repos and workspaces go with it.",
+        "properties": {
+          "archived": {
+            "description": "Archive it, or bring it back.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectOwnerRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Move it to this owner."
+          }
+        },
+        "type": "object"
       },
       "ProjectTeam": {
         "properties": {
@@ -12005,6 +12276,48 @@
             "type": "string"
           }
         ]
+      },
+      "PublicLink": {
+        "description": "A team Doc's public link (Arugula #871). The platform keeps its key with\nthe Doc, and gives it only to those who read the Doc; control holds the\nciphertext and never the key. The URL is `<viewer>/<id>#k=<key>`, the\nviewer being `/control.json`'s `doc_viewer`.",
+        "properties": {
+          "behind": {
+            "description": "The Doc changed since the served version was sealed.",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "The link's id at control: 32 lower-case hex digits.",
+            "type": "string"
+          },
+          "key": {
+            "description": "The link's key, base64url without padding: 32 bytes.",
+            "type": "string"
+          },
+          "updated_at": {
+            "description": "When the served version was made (ms); 0 while there is none.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "url": {
+            "default": "",
+            "description": "The address anyone can open, `<viewer>/<id>#k=<key>`; empty when this\ncontrol keeps no shared Docs, or from an older platform. The platform\npage can't read `/control.json` (the platform's host answers none of\nthe hub's), so the platform says where the viewer is.",
+            "type": "string"
+          },
+          "ver": {
+            "description": "The version control serves; 0 while the first one isn't uploaded.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "ver",
+          "updated_at",
+          "behind"
+        ],
+        "type": "object"
       },
       "PutEntry": {
         "description": "[`BOARD_ENTRIES`]' body. Without `id` it adds a row, last (`entry` is\n`row` or absent), or, with `entry: zone`, a group with a `title`, last;\nwith `id` it changes that row or group: what is absent is left as it is,\nand a change to `pointer`, `note` or a group's `title` names `rev`. A\nnew row's `zone` is the group it goes in. `kind`, and a `zone` that is a\nlane, are refused, and so is every `status` (aru-125: lanes follow the work;\na question for a person is an ask, #367). The row's\n`pointer` is an issue or a PR (or a link, for a note).",
