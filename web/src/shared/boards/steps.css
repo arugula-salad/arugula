@@ -218,6 +218,11 @@
   color: var(--dim);
 }
 
+.step-waiting {
+  flex: none;
+  font-size: var(--text-xs);
+}
+
 .step-said {
   flex: none;
   color: var(--warn);

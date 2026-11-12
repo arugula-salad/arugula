@@ -47,7 +47,7 @@ import { DocLink, DocPicker } from "./docs";
 import "./bar.css";
 import "./boards.css";
 import { groupFold, groupLaneFold, isFolded, laneFold, loadFolds, saveFolds, type Folds } from "./folds";
-import { MOVE_LANES, closeName, closedWithLine, doneRefusal, laneOfZone, laneSetLine, PICK_DELAY_MS, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, PICK_LIMIT, assigneesLine, GOAL_MAX, answerReady, askWaitingLine, blockFacts, BLOCK_LABEL, chipOf, settledFacts, debounced, earlierLine, epicLine, holdsRow, groupLine, isCard, laneCount, liveWord, queueChip, marksOf, notFinishedLine, type NotFinished, needsDot, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, relationLine, RELATION_KINDS, sections, sourceLine, sourceLinked, leftOutLine, stepActive, workLabel, findLine, type BoardFilter, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, topAndMore, initialsOf } from "./text";
+import { MOVE_LANES, closeName, closedWithLine, doneRefusal, laneOfZone, laneSetLine, PICK_DELAY_MS, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, PICK_LIMIT, assigneesLine, GOAL_MAX, answerReady, askWaitingLine, blockFacts, BLOCK_LABEL, chipOf, settledFacts, debounced, earlierLine, epicLine, holdsRow, groupLine, isCard, laneCount, liveWord, queueChip, marksOf, waitingOf, notFinishedLine, type NotFinished, needsDot, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, relationLine, RELATION_KINDS, sections, sourceLine, sourceLinked, leftOutLine, stepActive, workLabel, findLine, type BoardFilter, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, topAndMore, initialsOf } from "./text";
 
 const STALE_SAID = "That changed while you were editing, so the board is read again. Make your change again if it still applies.";
 
@@ -886,9 +886,9 @@ function SessionChip({ s, project }: { s: BoardRowSession; project: string }) {
 }
 
 /** An attachment as an object chip: what it points at, and its state. An agent block is one chip, its title and its state (no second status line), a link to its pane where the reader can reach it: control's page on the platform page, the pane itself in the shell. `facts` says its branch and the rest after the chip, dim: `settled`, once it has stopped; `all`, in the drawer. */
-function AttachmentChip({ a, platform, facts = "settled", stalled }: { a: BoardAttachment; platform: (path: string) => string | undefined; facts?: "settled" | "all"; stalled?: string | null }) {
+function AttachmentChip({ a, platform, facts = "settled", stalled, waiting }: { a: BoardAttachment; platform: (path: string) => string | undefined; facts?: "settled" | "all"; stalled?: string | null; waiting?: { words: string; mine: boolean } | null }) {
   const api = usePlatformApi();
-  const c = chipOf(a, stalled);
+  const c = chipOf(a, stalled, waiting);
   const p = a.pointer;
   // An agent block with no name of its own is named by its pane, as the machine reports it.
   if (p.kind === "block" && !a.block?.title?.trim()) c.label = api.paneTitle(p.machine, p.pane) || c.label;
@@ -1069,8 +1069,11 @@ function Row({
   const mark = proofMark(r);
   const marks = marksOf(r);
   // A stalled row says so on its agent's chip; with no such chip the mark stays.
-  const stalledMark = r.attachments.some(holdsRow) ? null : marks.stalled;
+  const waiting = waitingOf(r);
+  const stalledMark = r.attachments.some(holdsRow) || waiting ? null : marks.stalled;
   const stalledWords = marks.stalled?.words;
+  // A row that waits on a person says who on its agent's chip, else as a mark of its own (#764).
+  const waitingMark = r.attachments.some(holdsRow) ? null : waiting;
   const earlier = r.attachments.filter((a) => marks.earlier.has(a.id));
   const current = r.attachments.filter((a) => !marks.earlier.has(a.id));
   const tone = cardTone(r);
@@ -1159,7 +1162,7 @@ function Row({
             )}
           </div>
           {card && <Labels labels={r.live!.labels ?? []} />}
-          {(marks.notFinished || marks.cancelled || marks.after || stalledMark || marks.blocked.length > 0) && (
+          {(marks.notFinished || marks.cancelled || marks.after || stalledMark || waitingMark || marks.blocked.length > 0) && (
             <div class="board-line board-marks" data-board-marks>
               {marks.notFinished && (
                 <StateChip tone="warn" class="board-mark-nf" data-board-mark="not_finished" title={notFinishedTitle(marks.notFinished)}>
@@ -1181,6 +1184,11 @@ function Row({
                   {stalledMark.words}
                 </StateChip>
               )}
+              {waitingMark && (
+                <StateChip tone={waitingMark.mine ? "accent" : "muted"} data-board-mark="waiting" title="This row has an open question for a person">
+                  {waitingMark.words}
+                </StateChip>
+              )}
               {marks.blocked.map((m, i) => (
                 <StateChip key={i} tone="accent" data-board-mark="blocked_by" title={m.title ? `${m.title}${m.repo ? ` (${m.repo})` : ""}` : "You can't read the item that blocks this one"}>
                   {m.words}
@@ -1196,7 +1204,7 @@ function Row({
           {(current.length > 0 || (r.sessions ?? []).length > 0) && (
             <div class="board-line board-chips" data-board-attachments>
               {current.map((a) => (
-                <AttachmentChip key={a.id} a={a} platform={platform} stalled={stalledWords} />
+                <AttachmentChip key={a.id} a={a} platform={platform} stalled={stalledWords} waiting={waiting} />
               ))}
               {(r.sessions ?? []).map((x) => (
                 <SessionChip key={x.session} s={x} project={project} />
@@ -1373,6 +1381,8 @@ function Drawer({ steps, r, platform, close, project, others, write, act, id, mo
   const readable = r.pointer.kind === "issue" || (r.pointer.kind === "forge_item" && r.live?.provider !== "plane");
   const external = r.pointer.kind === "forge_item" || r.pointer.kind === "link";
   const marks = marksOf(r);
+  const waiting = waitingOf(r);
+  const holding = r.attachments.some(holdsRow);
   return (
     <SideSheet title={title} close={close} class="board-drawer" root={{ "data-board-drawer": r.id }} titleAttrs={{ "data-board-drawer-title": true }} closeAttrs={{ "data-board-drawer-close": true }}>
       <div class="board-line board-drawer-lane">
@@ -1432,16 +1442,21 @@ function Drawer({ steps, r, platform, close, project, others, write, act, id, mo
           {closedWithLine(r.live)}
         </div>
       )}
-      {((marks.stalled && !r.attachments.some(holdsRow)) || marks.blocked.length > 0 || r.marks?.some((m) => m.kind === "cycle")) && (
+      {((marks.stalled && !holding && !waiting) || (waiting && !holding) || marks.blocked.length > 0 || r.marks?.some((m) => m.kind === "cycle")) && (
         <div class="board-line" data-board-drawer-marks>
           {r.marks?.some((m) => m.kind === "cycle") && (
             <StateChip tone="warn" data-board-mark="cycle" title="This row and others wait on each other, so they share a step">
               cycle
             </StateChip>
           )}
-          {marks.stalled && !r.attachments.some(holdsRow) && (
+          {marks.stalled && !holding && !waiting && (
             <StateChip tone="warn" data-board-mark="stalled" title="Every agent on this row has been idle past the project's limit, and no pull request is open">
               {marks.stalled.words}
+            </StateChip>
+          )}
+          {waiting && !holding && (
+            <StateChip tone={waiting.mine ? "accent" : "muted"} data-board-mark="waiting" title="This row has an open question for a person">
+              {waiting.words}
             </StateChip>
           )}
           {marks.blocked.map((m, i) => (
@@ -1526,7 +1541,7 @@ function Drawer({ steps, r, platform, close, project, others, write, act, id, mo
           <h3>Attached</h3>
           {r.attachments.map((a) => (
             <div key={a.id} class="board-drawer-attached">
-              <AttachmentChip a={a} platform={platform} facts="all" stalled={marks.stalled?.words} />
+              <AttachmentChip a={a} platform={platform} facts="all" stalled={marks.stalled?.words} waiting={waiting} />
               {write && holdsRow(a) && (
                 <button type="button" class="secondary small" data-board-release={a.id} title="Take this agent off the row; it keeps running, and another may take the row" onClick={() => void act(() => boards.detach(id, a.id))}>
                   Release

@@ -2085,6 +2085,13 @@ impl Pointer {
 }
 
 impl Row {
+    /// The person the row waits on: who its open ask, if a person or an
+    /// agent asked it, is for (Arugula #764). A raised ask is the board's
+    /// own and waits on nobody.
+    pub fn waiting_on(&self) -> Option<&str> {
+        self.ask.as_ref().filter(|a| !a.raised && !a.who_name.is_empty()).map(|a| a.who_name.as_str())
+    }
+
     /// Whether the row answers a find (#546), case-insensitive. Each word of
     /// `q` has to hold: `#541` is the item's number, `541` is that or text,
     /// `ARUGU-12` a tracker key or text, anything else text in the item's
@@ -2307,7 +2314,13 @@ fn lane_text<'a>(out: &mut String, title: &str, rows: impl Iterator<Item = &'a R
         };
         *out += format!("{lead}{note}").trim_end();
         out.push('\n');
-        let marks = marks_line(&r.marks);
+        let mut marks = marks_line(&r.marks);
+        if let Some(who) = r.waiting_on() {
+            if !marks.is_empty() {
+                marks += " · ";
+            }
+            marks += &format!("waiting on {who}");
+        }
         if !marks.is_empty() {
             *out += &format!("      {}\n", fit(&marks, TEXT_WIDTH - 6));
         }
@@ -3199,6 +3212,19 @@ Done: People can sign up.
         });
         let text = render(&view(lanes(vec![(Lane::Review, vec![r.clone()])])));
         assert!(text.contains("      ? Ship it? (for sam)\n"), "{text}");
+        assert!(text.contains("      waiting on sam\n"), "{text}");
+        // The board's own ask waits on nobody; a stall is still a stall.
+        let mut stalled = r.clone();
+        stalled.ask.as_mut().unwrap().raised = true;
+        stalled.marks = vec![Mark::Stalled { since: 0 }];
+        let text = render(&view(lanes(vec![(Lane::Review, vec![stalled])])));
+        assert!(!text.contains("waiting on"), "{text}");
+        assert!(text.contains("      stalled "), "{text}");
+        // A person's ask beside other marks.
+        let mut after = r.clone();
+        after.marks = vec![Mark::After { number: 7, repo: None }];
+        let text = render(&view(lanes(vec![(Lane::Review, vec![after])])));
+        assert!(text.contains("      after #7 · waiting on sam\n"), "{text}");
         r.ask = None;
         r.asked = vec![AnsweredAsk {
             id: "ask_1".into(),
