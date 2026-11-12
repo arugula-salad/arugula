@@ -1310,9 +1310,14 @@ fn a_finish_step_runs_after_each_turn() {
     f.stop(&x);
     let checkout = home.join("work").join(&x);
     wait(&marks, &f, "x's slot cleaned", || !checkout.exists() && !claude.exists() && !pushed.exists());
+    // The system's skeleton files come back (fresh_home), and a runner's
+    // /etc/skel may have some of these (GitHub's has a .config): what was
+    // planted in them still goes.
+    let skel = std::path::Path::new("/etc/skel");
     for f in planted.iter().chain(&[".config", ".codex", ".local"]) {
-        assert!(!home.join(f).exists(), "{f} went with the session");
+        assert!(!home.join(f).exists() || skel.join(f).exists(), "{f} went with the session");
     }
+    assert!(!home.join(".config/locked").exists(), "the unwritable directory went with the session");
     for f in [".cache/sccache/a", ".cargo/registry/index/b"] {
         assert!(home.join(f).exists(), "{f}: a build cache stays for the slot's next session of the same asker");
     }
