@@ -2,12 +2,15 @@
 // progress, and the words for a file's size and kind. A file goes up as soon
 // as it's chosen (`POST /api/chat/rooms/{id}/files?name=`, the bytes the
 // body), is kept for its uploader, and a message is posted with the ids
-// (`ChatPost.files`). The limits are control's (`MAX_FILE_BYTES`,
-// `MAX_FILES`); they are checked here only to refuse early.
+// (`ChatPost.files`). The limits are control's; they are checked here only
+// to refuse early. A control sets its own file limit (100 MB on the hosted
+// one, whose files are in a bucket: Arugula #125; 10 MB on one that keeps
+// them in its database) and refuses past it, saying so.
 
 import type { ChatFile } from "../proto";
 
-export const MAX_FILE_BYTES = 10 * 1024 * 1024;
+/** The most any control takes: the hosted one's. */
+export const MAX_FILE_BYTES = 100 * 1024 * 1024;
 export const MAX_FILES = 10;
 
 /** One file on its way into a message. */

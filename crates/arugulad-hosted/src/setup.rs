@@ -32,8 +32,11 @@
 //!   from the snapshot runs no setup: it says `ready` at step `snapshot`,
 //!   from the record the builder left.
 //! - **What a rebuild would lose** ([`status`], `GET /api/hosted/setup`):
-//!   each repo's changed files and commits on no remote branch, and
-//!   [`archive`], a tarball of the repos that have any.
+//!   every git repo in the box's homes (the box's user's, where the setup
+//!   clones, and each session user's, read as them), each with its files
+//!   changed or not tracked, its local branches' commits on no remote
+//!   branch, and its stashes (Arugula #932, `arugula_proto::hosted_check`);
+//!   and [`archive`], a tarball of the repos that have any.
 
 use std::{
     path::{Path, PathBuf},
@@ -45,7 +48,8 @@ use anyhow::Context as _;
 use arugula_control_wire::hosted::{FROM_SNAPSHOT, SEALED, SetupPlan, SetupReport, SetupStatus, past_clones};
 use arugula_proto::{
     PaneId, Policy,
-    api::{HostedRepo, HostedSetup, RunRequest},
+    api::{HostedCheck, HostedMissed, HostedRepo, HostedSetup, RunRequest},
+    hosted_check::{self, Checked, Found},
 };
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
@@ -629,12 +633,44 @@ fn tail(text: &str) -> String {
     out
 }
 
-/// `GET /api/hosted/setup`: what the setup did, and where each repo stands.
+/// How long the look for work a rebuild would lose may take.
+const CHECK_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// `GET /api/hosted/setup`: what the setup did, where each repo it cloned
+/// stands, and every other repo in the box's homes with work a rebuild
+/// would lose (Arugula #932).
 pub async fn status(state_dir: &Path) -> HostedSetup {
+    status_in(state_dir, &[]).await
+}
+
+/// [`status`], looking through `homes` (none: the box's).
+async fn status_in(state_dir: &Path, homes: &[PathBuf]) -> HostedSetup {
     let saved = Saved::load(state_dir);
+    let checked = run_check(homes).await.unwrap_or_else(|why| Checked {
+        check: HostedCheck { homes: Vec::new(), missed: vec![HostedMissed { dir: "this box".into(), why }] },
+        found: Vec::new(),
+    });
+    let is = |f: &Found, c: &Cloned| {
+        Path::new(&f.repo.dir) == c.dir || std::fs::canonicalize(&c.dir).is_ok_and(|d| Path::new(&f.repo.dir) == d)
+    };
     let mut repos = Vec::new();
     for c in &saved.repos {
-        repos.push(repo_state(c).await);
+        let dir = c.dir.to_string_lossy().into_owned();
+        let r = match checked.found.iter().find(|f| is(f, c)) {
+            Some(f) => HostedRepo { dir, url: c.url.clone(), ..f.repo.clone() },
+            None => HostedRepo {
+                dir,
+                url: c.url.clone(),
+                error: Some(if c.dir.join(".git").exists() { "not looked at" } else { "not cloned" }.into()),
+                ..HostedRepo::default()
+            },
+        };
+        repos.push(r);
+    }
+    for f in &checked.found {
+        if f.repo.dirty() && !saved.repos.iter().any(|c| is(f, c)) {
+            repos.push(f.repo.clone());
+        }
     }
     HostedSetup {
         status: saved.status.map(|s| s.as_str().to_owned()),
@@ -643,7 +679,54 @@ pub async fn status(state_dir: &Path) -> HostedSetup {
         tail: saved.tail,
         spec_hash: saved.spec_hash,
         repos,
+        check: Some(checked.check),
     }
+}
+
+/// Look through `homes` (none: the box's) for work a rebuild would lose:
+/// [`arugula_proto::hosted_check::SCRIPT`], with bash.
+async fn run_check(homes: &[PathBuf]) -> Result<Checked, String> {
+    use tokio::io::AsyncWriteExt as _;
+    let mut child = tokio::process::Command::new("bash")
+        .args(["-s", "--"])
+        .args(homes)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|e| format!("bash: {e}"))?;
+    let mut stdin = child.stdin.take().ok_or("bash's stdin")?;
+    stdin.write_all(hosted_check::SCRIPT.as_bytes()).await.map_err(|e| format!("bash: {e}"))?;
+    drop(stdin);
+    let out = tokio::time::timeout(CHECK_TIMEOUT, child.wait_with_output())
+        .await
+        .map_err(|_| format!("looking took over {} s", CHECK_TIMEOUT.as_secs()))?
+        .map_err(|e| format!("bash: {e}"))?;
+    if !out.status.success() {
+        let why = String::from_utf8_lossy(&out.stderr).trim().to_owned();
+        return Err(if why.is_empty() { format!("the check {}", out.status) } else { why });
+    }
+    Ok(hosted_check::parse(&String::from_utf8_lossy(&out.stdout)))
+}
+
+/// Git in `dir`, as `owner` (empty: this daemon's user).
+async fn git_as(owner: &str, dir: &Path, args: &[&str]) -> Result<String, String> {
+    if owner.is_empty() {
+        return git(dir, args).await;
+    }
+    let out = tokio::process::Command::new("sudo")
+        .args(["-n", "-H", "-u", owner, "--", "git", "-C"])
+        .arg(dir)
+        .args(args)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .output()
+        .await
+        .map_err(|e| format!("sudo: {e}"))?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_owned());
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 async fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
@@ -661,50 +744,68 @@ async fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
-async fn repo_state(c: &Cloned) -> HostedRepo {
-    let mut r = HostedRepo { dir: c.dir.to_string_lossy().into_owned(), url: c.url.clone(), ..HostedRepo::default() };
-    if !c.dir.join(".git").exists() {
-        r.error = Some("not cloned".into());
-        return r;
-    }
-    match git(&c.dir, &["status", "--porcelain"]).await {
-        Ok(s) => r.changed = s.lines().filter(|l| !l.is_empty()).count() as u32,
-        Err(e) => r.error = Some(e),
-    }
-    // A repo with no commits yet has nothing to count.
-    if let Ok(n) = git(&c.dir, &["rev-list", "--count", "HEAD", "--not", "--remotes"]).await {
-        r.unpushed = n.trim().parse().unwrap_or(0);
-    }
-    r.branch = git(&c.dir, &["symbolic-ref", "--short", "-q", "HEAD"]).await.unwrap_or_default().trim().to_owned();
-    r
+/// `GET /api/hosted/setup/archive`: a gzipped tarball of the repos with
+/// work a rebuild would lose, wherever [`status`] found them: each of
+/// their worktrees' files that aren't ignored, and their git directory
+/// (commits on no remote, stashes), at their paths on the box. `None` when
+/// no repo has any.
+pub async fn archive(state_dir: &Path) -> anyhow::Result<Option<tokio::process::Child>> {
+    archive_in(state_dir, &[]).await
 }
 
-/// `GET /api/hosted/setup/archive`: a gzipped tarball of the repos with
-/// work a rebuild would lose: each one's files that aren't ignored, and its
-/// `.git` (its unpushed commits). `None` when no repo has any.
-pub async fn archive(state_dir: &Path) -> anyhow::Result<Option<tokio::process::Child>> {
-    let saved = Saved::load(state_dir);
+/// [`archive`], of the repos in `homes` (none: the box's).
+async fn archive_in(_state_dir: &Path, homes: &[PathBuf]) -> anyhow::Result<Option<tokio::process::Child>> {
+    let checked = run_check(homes).await.map_err(anyhow::Error::msg)?;
+    let with_work: std::collections::HashSet<&str> =
+        checked.found.iter().filter(|f| f.repo.dirty()).map(|f| f.git_dir.as_str()).collect();
     let mut list: Vec<u8> = Vec::new();
-    let mut root: Option<PathBuf> = None;
-    for c in &saved.repos {
-        if !repo_state(c).await.dirty() {
-            continue;
+    let mut add = |path: &str| {
+        list.extend_from_slice(path.trim_start_matches('/').as_bytes());
+        list.push(0);
+    };
+    let mut sudo = false;
+    let mut git_dirs = std::collections::HashSet::new();
+    for f in checked.found.iter().filter(|f| with_work.contains(f.git_dir.as_str())) {
+        let dir = Path::new(&f.repo.dir);
+        let owner = f.owner.as_str();
+        sudo |= !owner.is_empty();
+        // Tracked files, but not a submodule's (a repo found on its own).
+        let tracked = git_as(owner, dir, &["ls-files", "-z", "-c", "-s"]).await.map_err(anyhow::Error::msg)?;
+        for e in tracked.split('\0').filter(|e| !e.is_empty()) {
+            let Some((meta, file)) = e.split_once('\t') else { continue };
+            if !meta.starts_with("160000 ") {
+                add(&format!("{}/{file}", f.repo.dir));
+            }
         }
-        let (Some(parent), Some(name)) = (c.dir.parent(), c.dir.file_name()) else { continue };
-        let parent = parent.to_path_buf();
-        anyhow::ensure!(root.as_ref().is_none_or(|r| *r == parent), "the repos aren't in one directory");
-        root = Some(parent);
-        let name = name.to_string_lossy();
-        let files = git(&c.dir, &["ls-files", "-z", "-co", "--exclude-standard"]).await.map_err(anyhow::Error::msg)?;
-        for f in files.split('\0').filter(|f| !f.is_empty()) {
-            list.extend_from_slice(format!("{name}/{f}\0").as_bytes());
+        // Untracked ones, but not a repo inside this one (found on its own).
+        let others =
+            git_as(owner, dir, &["ls-files", "-z", "-o", "--exclude-standard"]).await.map_err(anyhow::Error::msg)?;
+        for file in others.split('\0').filter(|e| !e.is_empty() && !e.ends_with('/')) {
+            add(&format!("{}/{file}", f.repo.dir));
         }
-        list.extend_from_slice(format!("{name}/.git\0").as_bytes());
+        // A linked worktree's `.git` is a file naming its repo's.
+        let dot_git = format!("{}/.git", f.repo.dir);
+        if dot_git != f.git_dir {
+            add(&dot_git);
+        }
+        if git_dirs.insert(f.git_dir.as_str()) {
+            add(&f.git_dir);
+        }
     }
-    let Some(root) = root else { return Ok(None) };
-    let mut child = tokio::process::Command::new("tar")
+    if git_dirs.is_empty() {
+        return Ok(None);
+    }
+    // A session user's home is closed to this daemon's user.
+    let mut tar = if sudo {
+        let mut c = tokio::process::Command::new("sudo");
+        c.args(["-n", "tar"]);
+        c
+    } else {
+        tokio::process::Command::new("tar")
+    };
+    let mut child = tar
         .args(["-czf", "-", "--null", "-T", "-"])
-        .current_dir(&root)
+        .current_dir("/")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
@@ -1097,6 +1198,8 @@ mod tests {
 
     /// Where the repos stand: changed files and commits on no remote
     /// branch; the archive holds only the repos with any.
+    // The check is a bash script, with GNU or BSD tools.
+    #[cfg(unix)]
     #[tokio::test]
     async fn what_a_rebuild_would_lose() {
         if std::process::Command::new("git").arg("--version").output().is_err() {
@@ -1142,13 +1245,14 @@ mod tests {
             ..Saved::default()
         };
         saved.save(&st);
-        let s = status(&st).await;
+        let homes = [home.clone()];
+        let s = status_in(&st, &homes).await;
         assert_eq!(s.status.as_deref(), Some("ready"));
         let got: Vec<_> = s.repos.iter().map(|r| (r.changed, r.unpushed, r.error.is_some())).collect();
         assert_eq!(got, [(0, 0, false), (1, 1, false), (0, 0, true)]);
         assert_eq!(s.repos[1].branch, "main");
 
-        let child = archive(&st).await.unwrap().expect("one repo has work");
+        let child = archive_in(&st, &homes).await.unwrap().expect("one repo has work");
         let out = child.wait_with_output().await.unwrap();
         let tgz = root.join("a.tgz");
         std::fs::write(&tgz, &out.stdout).unwrap();
@@ -1160,6 +1264,138 @@ mod tests {
         std::fs::remove_file(dirty.join("new")).unwrap();
         std::fs::remove_file(dirty.join("ignored")).unwrap();
         git(&dirty, &["reset", "-q", "--hard", "origin/main"]);
-        assert!(archive(&st).await.unwrap().is_none(), "nothing unpushed");
+        assert!(archive_in(&st, &homes).await.unwrap().is_none(), "nothing unpushed");
+    }
+
+    /// Arugula #932: work a rebuild would lose that isn't on a cloned
+    /// repo's checked-out branch: only on a second branch, only in a
+    /// stash, only in untracked files, in a linked worktree, in a repo the
+    /// setup didn't clone. Each stops a rebuild and goes in the tarball;
+    /// once it's all pushed, or gone, nothing does.
+    // The check is a bash script, with GNU or BSD tools.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn work_off_the_checked_out_branch_is_found_too() {
+        if std::process::Command::new("git").arg("--version").output().is_err() {
+            eprintln!("no git here: skipped");
+            return;
+        }
+        let root = super::super::scratch("setup-932");
+        let git = |dir: &Path, args: &[&str]| {
+            let o = std::process::Command::new("git")
+                .current_dir(dir)
+                .args(["-c", "user.name=t", "-c", "user.email=t@e"])
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(o.status.success(), "{args:?}: {}", String::from_utf8_lossy(&o.stderr));
+        };
+        let remote = root.join("remote");
+        std::fs::create_dir_all(&remote).unwrap();
+        git(&remote, &["init", "-q", "-b", "main"]);
+        std::fs::write(remote.join("a"), "a").unwrap();
+        git(&remote, &["add", "a"]);
+        git(&remote, &["commit", "-q", "-m", "a"]);
+        let home = root.join("home");
+        std::fs::create_dir_all(home.join("work")).unwrap();
+        for n in ["clean", "branch", "stash", "untracked", "worktree"] {
+            git(&home, &["clone", "-q", &remote.to_string_lossy(), n]);
+        }
+        // Not the setup's: a session's clone, say.
+        git(&home.join("work"), &["clone", "-q", &remote.to_string_lossy(), "mine"]);
+
+        let branch = home.join("branch");
+        git(&branch, &["checkout", "-q", "-b", "feature"]);
+        std::fs::write(branch.join("b"), "b").unwrap();
+        git(&branch, &["add", "b"]);
+        git(&branch, &["commit", "-q", "-m", "b"]);
+        git(&branch, &["checkout", "-q", "main"]);
+        let stash = home.join("stash");
+        std::fs::write(stash.join("a"), "changed").unwrap();
+        git(&stash, &["stash", "-q"]);
+        let untracked = home.join("untracked");
+        std::fs::create_dir_all(untracked.join("d")).unwrap();
+        std::fs::write(untracked.join("d/new"), "new").unwrap();
+        let worktree = home.join("worktree");
+        git(&worktree, &["worktree", "add", "-q", ".claude/worktrees/x", "-b", "x"]);
+        std::fs::write(worktree.join(".claude/worktrees/x/y"), "y").unwrap();
+        let mine = home.join("work/mine");
+        std::fs::write(mine.join("m"), "m").unwrap();
+        git(&mine, &["add", "m"]);
+        git(&mine, &["commit", "-q", "-m", "m"]);
+
+        let st = root.join("st");
+        std::fs::create_dir_all(&st).unwrap();
+        let cloned = ["clean", "branch", "stash", "untracked", "worktree"];
+        Saved {
+            status: Some(SetupStatus::Ready),
+            repos: cloned.iter().map(|n| Cloned { url: format!("u-{n}"), dir: home.join(n) }).collect(),
+            ..Saved::default()
+        }
+        .save(&st);
+        let homes = [home.clone()];
+        let s = status_in(&st, &homes).await;
+        let check = s.check.clone().expect("it says where it looked");
+        assert_eq!(check.homes, [home.to_string_lossy()], "{check:?}");
+        assert!(check.missed.is_empty(), "{check:?}");
+        let tail = |r: &HostedRepo| {
+            let d = r.dir.trim_end_matches('/');
+            d[d.rfind("/home/").map_or(0, |i| i + "/home/".len())..].to_owned()
+        };
+        let got: Vec<_> = s
+            .repos
+            .iter()
+            .map(|r| {
+                let b: Vec<_> = r.branches.iter().map(|b| format!("{}:{}", b.name, b.commits)).collect();
+                (tail(r), r.changed, r.unpushed, r.stashes, b.join(","))
+            })
+            .collect();
+        let want = |d: &str, c, u, st, b: &str| (d.to_owned(), c, u, st, b.to_owned());
+        assert_eq!(
+            &got[..5],
+            [
+                want("clean", 0, 0, 0, ""),
+                want("branch", 0, 1, 0, "feature:1"),
+                want("stash", 0, 0, 1, ""),
+                want("untracked", 1, 0, 0, ""),
+                // Its worktree inside it isn't one of its untracked files.
+                want("worktree", 0, 0, 0, ""),
+            ]
+        );
+        let mut rest: Vec<_> = got[5..].to_vec();
+        rest.sort();
+        assert_eq!(rest, [want("work/mine", 0, 1, 0, "main:1"), want("worktree/.claude/worktrees/x", 1, 0, 0, "")]);
+        assert_eq!(s.repos[0].url, "u-clean");
+        assert!(!s.repos[0].dirty() && s.repos[1..4].iter().all(HostedRepo::dirty));
+
+        let child = archive_in(&st, &homes).await.unwrap().expect("there's work");
+        let out = child.wait_with_output().await.unwrap();
+        let tgz = root.join("a.tgz");
+        std::fs::write(&tgz, &out.stdout).unwrap();
+        let listed = std::process::Command::new("tar").arg("-tzf").arg(&tgz).output().unwrap();
+        let listed = String::from_utf8_lossy(&listed.stdout);
+        for has in [
+            "home/branch/.git/refs/heads/feature",
+            "home/stash/.git/refs/stash",
+            "home/untracked/d/new",
+            "home/worktree/.claude/worktrees/x/y",
+            "home/worktree/.claude/worktrees/x/.git",
+            "home/work/mine/m",
+        ] {
+            assert!(listed.contains(has), "{has}: {listed}");
+        }
+        assert!(!listed.contains("home/clean/"), "{listed}");
+
+        // Pushed, dropped, removed: a rebuild loses nothing.
+        git(&branch, &["push", "-q", "origin", "feature"]);
+        git(&stash, &["stash", "drop", "-q"]);
+        std::fs::remove_dir_all(untracked.join("d")).unwrap();
+        std::fs::remove_file(worktree.join(".claude/worktrees/x/y")).unwrap();
+        std::fs::remove_dir_all(&mine).unwrap();
+        let s = status_in(&st, &homes).await;
+        assert!(s.repos.iter().all(|r| !r.dirty()), "{:?}", s.repos);
+        assert_eq!(s.repos.len(), 5, "only the cloned ones: {:?}", s.repos);
+        assert!(s.check.is_some_and(|c| c.missed.is_empty()));
+        assert!(archive_in(&st, &homes).await.unwrap().is_none(), "nothing to save");
     }
 }

@@ -7,7 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { chatTeam } from "../src/platform/chat-scope.ts";
-import { bold, counted, chatUnread, listedInChat, objectUnread, projectUnread, threadNews } from "../src/shared/chat/unread.ts";
+import { bold, counted, chatUnread, dockBadge, listedInChat, objectUnread, projectUnread, threadNews } from "../src/shared/chat/unread.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
 const Q = "prj_00112233445566778899aabbccddeeff";
@@ -162,4 +162,18 @@ test("the Chat count is the current team's: the route's project's, else the curr
   const rooms = [room("channel", { unread: 2, team: "t1" }), room("channel", { unread: 5, team: "t2" }), room("pane", { unread: 1 })];
   assert.equal(chatUnread(rooms, chatTeam(undefined, acme)).n, 2);
   assert.equal(chatUnread(rooms, chatTeam(undefined, undefined)).n, 8);
+});
+
+test("the Dock badge (#498): a number for mentions and DMs, a dot for unread alone, nothing when read", () => {
+  // A channel on the default level: its messages are a dot, its mentions a number.
+  assert.deepEqual(dockBadge([room("channel", { level: "mentions", unread: 4 })]), { count: 0, unread: true });
+  assert.deepEqual(dockBadge([room("channel", { level: "mentions", unread: 4, mentions: 2 })]), { count: 2, unread: true });
+  // A DM counts every message, in any project.
+  assert.deepEqual(dockBadge([room("dm", { level: "mentions", unread: 3, team: "t2" })]), { count: 3, unread: true });
+  // A muted room: only its mentions, and no dot for the rest.
+  assert.deepEqual(dockBadge([room("channel", { level: "nothing", unread: 9 })]), { count: 0, unread: false });
+  assert.deepEqual(dockBadge([room("channel", { level: "nothing", unread: 9, mentions: 1 })]), { count: 1, unread: true });
+  // An object's thread is its list's and the inbox's, not chat's.
+  assert.deepEqual(dockBadge([thread("iss_a", { unread: 4, mentions: 4 })]), { count: 0, unread: false });
+  assert.deepEqual(dockBadge([]), { count: 0, unread: false });
 });

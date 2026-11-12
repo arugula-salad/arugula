@@ -1062,7 +1062,7 @@
                 "type": "string"
               },
               "kind": {
-                "description": "`project` (its channels, issues and their threads) or `account`\n(the owner's DMs).",
+                "description": "`project` (its issues and their threads; a team's default project,\nits channels too), `team` (its channels) or `account` (the\nowner's DMs).",
                 "type": "string"
               },
               "name": {
@@ -6205,7 +6205,7 @@
                 "type": "string"
               },
               "kind": {
-                "description": "`project` (its channels, issues and their threads) or `account`\n(the owner's DMs).",
+                "description": "`project` (its issues and their threads; a team's default project,\nits channels too), `team` (its channels) or `account` (the\nowner's DMs).",
                 "type": "string"
               },
               "name": {
@@ -11279,7 +11279,7 @@
                 "type": "string"
               },
               "kind": {
-                "description": "`project` (its channels, issues and their threads) or `account`\n(the owner's DMs).",
+                "description": "`project` (its issues and their threads; a team's default project,\nits channels too), `team` (its channels) or `account` (the\nowner's DMs).",
                 "type": "string"
               },
               "name": {
@@ -16422,7 +16422,7 @@
                 "type": "string"
               },
               "kind": {
-                "description": "`project` (its channels, issues and their threads) or `account`\n(the owner's DMs).",
+                "description": "`project` (its issues and their threads; a team's default project,\nits channels too), `team` (its channels) or `account` (the\nowner's DMs).",
                 "type": "string"
               },
               "name": {
@@ -21079,7 +21079,7 @@
                 "type": "string"
               },
               "kind": {
-                "description": "`project` (its channels, issues and their threads) or `account`\n(the owner's DMs).",
+                "description": "`project` (its issues and their threads; a team's default project,\nits channels too), `team` (its channels) or `account` (the\nowner's DMs).",
                 "type": "string"
               },
               "name": {
@@ -23152,7 +23152,7 @@
                 "type": "string"
               },
               "kind": {
-                "description": "`project` (its channels, issues and their threads) or `account`\n(the owner's DMs).",
+                "description": "`project` (its issues and their threads; a team's default project,\nits channels too), `team` (its channels) or `account` (the\nowner's DMs).",
                 "type": "string"
               },
               "name": {

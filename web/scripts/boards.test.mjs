@@ -3,7 +3,7 @@
 // the board routes' paths. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { closedWithLine, heldChip, holdsRow, stalledFor, settledFacts, LANE_GLYPH, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, notFinishedLine, readyCount, relationLine, UNSEEN_BLOCKER, needsDot, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip, onIssueChip, boardGroup, clusterOrder, NO_BOARD, sourceLine, sourceLinked, leftOutLine, docWords, docHref, onBoardWords, pointerText, doneRefusal, laneOfZone, laneSetLine, closeName, rowMatches, findLine, boardMatches, rowHasLabel, rowHasPerson, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, topAndMore, initialsOf } from "../src/shared/boards/text.ts";
+import { closedWithLine, heldChip, holdsRow, stalledFor, settledFacts, LANE_GLYPH, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, waitingOf, notFinishedLine, readyCount, relationLine, UNSEEN_BLOCKER, needsDot, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip, onIssueChip, boardGroup, clusterOrder, NO_BOARD, sourceLine, sourceLinked, leftOutLine, docWords, docHref, onBoardWords, pointerText, doneRefusal, laneOfZone, laneSetLine, closeName, rowMatches, findLine, boardMatches, rowHasLabel, rowHasPerson, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, topAndMore, initialsOf } from "../src/shared/boards/text.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
@@ -137,7 +137,7 @@ test("the chip in trouble carries the problem: failed checks, waiting for you, s
 test("a PR's chip says it's queued, for how long, or that it left the queue and why (#766)", () => {
   const pr = { kind: "forge_item", id: "fi_1" };
   const live = (extra) => ({ state: "open", kind: "pr", repo: "acme/cloud", number: 16, title: "x", ...extra });
-  const chip = (l, now) => chipOf({ role: "work", pointer: pr, live: l }, null, now);
+  const chip = (l, now) => chipOf({ role: "work", pointer: pr, live: l }, null, null, now);
   const t0 = 1_000_000_000;
   assert.deepEqual(chip(live({ queued: true, queued_since: t0 }), t0 + 12 * 60_000 + 5_000), { label: "cloud#16", state: "queued 12m", tone: "accent" });
   assert.equal(chip(live({ queued: true }), t0).state, "queued", "no time, no duration");
@@ -653,4 +653,20 @@ test("a row says which session holds it, unless that session's own open agent is
   assert.equal(heldChip({ attachments: [] }), null);
   assert.equal(heldChip({ held, attachments: [block("working")] }), null, "the claimed chip says it");
   assert.equal(heldChip({ held, attachments: [block("closed")] })?.text, "held by ux", "a closed block holds nothing");
+});
+
+test("a row waiting on a person says who, and a stall doesn't colour it (#764)", () => {
+  const ask = { id: "ask_1", question: "Ship?", options: [], mine: false, raised: false, can_answer: true, who: "acc", who_name: "Sam", asked_by: "an agent on m1" };
+  assert.deepEqual(waitingOf({ ask }), { words: "waiting on Sam", mine: false });
+  assert.deepEqual(waitingOf({ ask: { ...ask, mine: true } }), { words: "waiting for you", mine: true }, "the reader's own ask keeps its words (#903)");
+  assert.equal(waitingOf({ ask: { ...ask, raised: true, id: "", who: "", who_name: "" } }), null, "the board's own ask waits on nobody");
+  assert.equal(waitingOf({}), null);
+  assert.equal(waitingOf({ ask: { ...ask, who_name: "" } }).words, "waiting on someone");
+  // On the agent's chip, ahead of a stall and of the agent's own wait.
+  const block = { role: "work", pointer: { kind: "block", machine: "m", pane: "7" }, block: { state: "idle" } };
+  assert.deepEqual(chipOf(block, "stalled 2h", waitingOf({ ask })), { label: "agent", state: "waiting on Sam", tone: "muted" });
+  assert.deepEqual(chipOf(block, null, waitingOf({ ask: { ...ask, mine: true } })), { label: "agent", state: "waiting for you", tone: "accent" });
+  assert.equal(chipOf({ ...block, block: { state: "needs_input" } }, null, waitingOf({ ask })).state, "waiting on Sam");
+  assert.equal(chipOf({ ...block, released: true }, null, waitingOf({ ask })).state, "idle", "an agent taken off the row doesn't carry it");
+  assert.equal(chipOf(block, "stalled 2h", null).state, "stalled 2h");
 });

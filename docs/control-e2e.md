@@ -2013,7 +2013,8 @@ sleeps, and control pushes and searches them itself.
   quote from a pane (the page reads the pane end to end, and the person
   picks the lines). Nothing else of the pane does: its output, input and
   scrollback stay on the end-to-end channels above. Also what
-  people attach (files and images, bytes included, up to 10 MB each), the
+  people attach (files and images, up to 100 MB each, their bytes in a
+  bucket of control's that only the platform reads: Arugula #125), the
   emoji they react with, a channel's topic and pins, and their sidebar,
   notification settings, keywords, saved messages and when their pages were
   last open: tables below say which is which. None of it is end to end.
@@ -2099,10 +2100,10 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 180 tables in two planes ("Two planes, two trust rules"):
+Control's database has 181 tables in two planes ("Two planes, two trust rules"):
 
 - **The machine plane** (56 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
-- **The platform plane** (124 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
+- **The platform plane** (125 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people or their agents wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
 

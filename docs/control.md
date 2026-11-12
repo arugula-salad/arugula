@@ -88,6 +88,15 @@ arugula cloud preview renew dev 5173      # 7 more days
 arugula cloud preview off dev 5173
 ```
 
+`cloud rebuild` asks the box first, and stops if a new box wouldn't have
+some work (Arugula #932): in any git repo in its homes (where its setup
+clones, and each session user's), files changed or not tracked (ignored
+ones aside), commits on a local branch no remote has or on a detached
+HEAD, and stashes. It names each repo and what's in it. `--download FILE`
+saves those repos to a tarball, at their paths on the box; `--force`
+rebuilds anyway. A box made before the box itself looked this far is
+looked through by the CLI, in a pane it opens there and closes.
+
 Inside a box, `arugula-tools` puts tools where every session user finds
 them (packaging/hosted/tools):
 

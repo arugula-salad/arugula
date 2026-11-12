@@ -370,14 +370,13 @@ pub enum ChatFileKind {
     File,
 }
 
-/// The most one file is, in bytes. Small while the bytes live in the
-/// platform's database (`chat_files`); object storage would let it grow.
-pub const MAX_FILE_BYTES: usize = 10 * 1024 * 1024;
+/// The most one file can be, in bytes: the hosted control's limit, whose
+/// files are in a bucket (Arugula #125). Each control sets its own (10 MiB
+/// when it keeps them in its database) and refuses past it, so a client
+/// checks this only to refuse early.
+pub const MAX_FILE_BYTES: usize = 100 * 1024 * 1024;
 /// The most files one message carries.
 pub const MAX_FILES: usize = 10;
-/// The most file bytes a team's chat (a scope) keeps: as above, a
-/// database's budget, not a bucket's.
-pub const MAX_SCOPE_FILE_BYTES: u64 = 256 << 20;
 
 /// `POST /api/chat/rooms/{id}/files?name=`: the file's bytes are the body.
 /// Answers [`ChatFile`]; it belongs to the uploader until a message is
@@ -1731,14 +1730,51 @@ pub struct AgentRoom {
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct AgentReach {
     /// `project` (its issues and object threads; a team's default
-    /// project, its channels too) or `account` (the owner's DMs).
+    /// project, its channels too), `team` (its channels, Arugula #894)
+    /// or `account` (the owner's DMs). A [`GrantScope`]'s kind.
     pub kind: String,
     pub id: String,
-    /// The project's name, or `your DMs`.
+    /// The project's or team's name, or `your DMs`.
     pub name: String,
     /// `threads.read`, `threads.post`, `issues.write`.
     pub powers: Vec<String>,
 }
+
+/// What a machine's agent grant is over, as `POST /api/grants` takes it
+/// and `GET /api/grants` lists it: `{"kind": "project", "id": …}`. The
+/// wires that carry a scope to a daemon ([`AgentReach`],
+/// [`AgentGrantAsk`](crate::forge::AgentGrantAsk)) keep its kind a
+/// string, so a daemon from before `team` reads one as it reads any.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum GrantScope {
+    /// A project: its issues, Docs, runs, boards and object threads.
+    Project {
+        id: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        name: String,
+    },
+    /// A team (Arugula #894): its channels, for [`TEAM_POWERS`] only. A
+    /// control from before team grants refuses one.
+    Team {
+        id: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        name: String,
+    },
+    /// The owner's account: their DMs, or `cloud.drive`.
+    Account {
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        id: String,
+    },
+    /// A kind from a newer control than this side. Never sent.
+    #[serde(other)]
+    #[cfg_attr(feature = "schema", schemars(skip))]
+    Other,
+}
+
+/// The powers a grant over a team gives: its channels' threads.
+pub const TEAM_POWERS: [&str; 2] = ["threads.read", "threads.post"];
 
 /// The sessions of a machine in a room that an agent may mention (`GET`,
 /// [`MachineAgentsQuery`], answered [`MachineAgents`], #577).
@@ -1838,4 +1874,33 @@ pub struct AgentMessages {
     /// With `thread`: the message that starts it.
     #[serde(default)]
     pub parent: Option<ChatMessage>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::GrantScope;
+    use serde_json::json;
+
+    /// A team scope goes and comes back as it went; the scopes before it
+    /// parse as they always came, and a kind from a newer control is
+    /// [`GrantScope::Other`], not an error.
+    #[test]
+    fn a_team_scope_round_trips_and_older_scopes_still_parse() {
+        let team = GrantScope::Team { id: "tm_1".into(), name: "Acme".into() };
+        let v = serde_json::to_value(&team).unwrap();
+        assert_eq!(v, json!({ "kind": "team", "id": "tm_1", "name": "Acme" }));
+        assert_eq!(serde_json::from_value::<GrantScope>(v).unwrap(), team);
+        let bare: GrantScope = serde_json::from_value(json!({ "kind": "team", "id": "tm_1" })).unwrap();
+        assert_eq!(bare, GrantScope::Team { id: "tm_1".into(), name: String::new() });
+
+        let project: GrantScope =
+            serde_json::from_value(json!({ "kind": "project", "id": "prj_2", "name": "Acme" })).unwrap();
+        assert_eq!(project, GrantScope::Project { id: "prj_2".into(), name: "Acme".into() });
+        let dms: GrantScope = serde_json::from_value(json!({ "kind": "account" })).unwrap();
+        assert_eq!(serde_json::to_value(&dms).unwrap(), json!({ "kind": "account" }), "as the CLI sends it");
+        let listed: GrantScope = serde_json::from_value(json!({ "kind": "account", "id": "a1" })).unwrap();
+        assert_eq!(listed, GrantScope::Account { id: "a1".into() });
+        let newer: GrantScope = serde_json::from_value(json!({ "kind": "org", "id": "o1" })).unwrap();
+        assert_eq!(newer, GrantScope::Other);
+    }
 }

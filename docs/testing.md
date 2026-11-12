@@ -148,22 +148,54 @@ remove the label and add it back. Nothing requires it: the merge queue
 runs check.yml before a pull request lands (development.md, "Merging
 through the queue").
 
-Every pull request also runs `.github/workflows/pull-request.yml` (#306),
-on GitHub's `ubuntu-24.04` runners only: **pr-plan** picks what the change
-is likely to reach, then **pr-build** (the debug binaries, as check.yml's
-build: `.github/actions/build-debug`) and **pr-e2e (N)** run those specs
-(`.github/actions/e2e-shard`, which check.yml's e2e runs too), with **pr-gate**
-as the verdict. A change to docs alone runs neither. Otherwise it takes the
-journeys and a few others, any spec it changes, and any spec whose name shares
-a word with a changed path; `web/scripts/e2e-select.mjs` has the lists, and what
-every spec reads (`helpers.ts`, Playwright's config) runs them all. So a green
-pr-gate doesn't mean every spec passes: the merge queue runs them all before
-anything lands. The `full-check` label runs check.yml on the branch for an
-earlier answer. pr-plan needs no secret: with sccache's password (a branch
-of this repository) the build goes through sccache, and a fork's compiles
-cold. A new push cancels the run before. It's advisory: no ruleset requires
-pr-gate, and its summary says so. Its jobs are named
-`pr-*` so no `ci.green` phase matches them.
+Every pull request also runs `.github/workflows/pull-request.yml` (#306,
+#917), on GitHub's `ubuntu-24.04` runners only, and it has to pass before
+the pull request can be queued: the ruleset requires its **pr-gate**
+(development.md, "Merging through the queue"). It was added because a
+third of the queue's runs failed on what a pull request could have shown
+on its own: of 40 failed groups (Nov 10-12), 26 were Rust tests, 10
+clippy, and 5 a spec that imported a file nobody committed.
+
+- **pr-plan** picks what the change reaches: the specs
+  (`scripts/pr-plan`, below) and the Rust crates (`scripts/pr-crates`):
+  the crates whose directory it changes, and those whose source names a
+  changed file by a relative path (`../../docs/mcp-permissions.json`), as
+  a nextest filterset of them and every crate that depends on them
+  (`rdeps()`). A change to the workspace's config (`Cargo.toml`,
+  `Cargo.lock`, `.cargo/`, `rust-toolchain.toml`, `.config/`, `vendor/`,
+  the testkit) or to this workflow takes every test; one that reaches no
+  crate (the web client, docs) takes none, and skips the two jobs below.
+- **pr-clippy**: check.yml's clippy over the root workspace
+  (`--all-targets -- -D warnings`) and `just workspace-guard`; not
+  `check-macos`, the desktop app or the native core, which the queue runs.
+- **pr-test (1)** and **(2)**: the whole workspace's tests built as
+  check.yml's test builds them, and the ones pr-crates picked run in two
+  halves under CI's nextest profile (the quarantine left out), with a
+  systemd user manager (`ARUGULA_REQUIRE_SYSTEMD=1`). The tests on the
+  Docker test stack (`ssh::`, `reboot::`: they need the box's static
+  binaries), the doctests and e2e-interop are left to the queue.
+- **pr-specs**: `playwright test --list` over `E2E_SET=rest`, both
+  projects, so a spec that can't load fails in seconds whatever pr-plan
+  picked. It needs web's packages and nothing built.
+- **pr-build** (the debug binaries, as check.yml's build:
+  `.github/actions/build-debug`) and **pr-e2e (N)** run the specs pr-plan
+  picked (`.github/actions/e2e-shard`, which check.yml's e2e runs too). A
+  change to docs alone runs neither. Otherwise it takes the journeys and a
+  few others, any spec it changes, and any spec whose name shares a word
+  with a changed path; `web/scripts/e2e-select.mjs` has the lists, and what
+  every spec reads (`helpers.ts`, Playwright's config) runs them all.
+- **pr-gate**: the verdict, failing when any job above failed.
+
+So a green pr-gate doesn't mean the group will pass: the merge queue runs
+every spec, every test, macOS and Windows before anything lands. The
+`full-check` label runs check.yml on the branch for an earlier answer.
+Nothing here needs a secret: with sccache's password (a branch of this
+repository) the builds go through sccache, and a fork's compile cold. A
+new push cancels the run before. The workflow also runs on `merge_group`,
+where only pr-gate runs, and passes, since the ruleset requires it there
+too. Its jobs are named `pr-*` so no `ci.green` phase matches them; their
+ids are check.yml's (`build`, `clippy`, `test`) so they restore the build
+caches main's jobs saved.
 
 A commit on main whose required checks all passed gets a `ci/green/<sha>`
 tag, and one that passed and then failed a re-run gets `ci/revoked/<sha>`

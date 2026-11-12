@@ -273,15 +273,20 @@ says what is stored.
   (recent, then common, first); the picker has search and categories, and
   remembers recent picks on the device. A message of up to three emoji draws
   large. The table is loaded only when a message or the composer needs it.
-- **Files and images:** paste, drop or 📎. Up to 10 files of 10 MB each on a
-  message, 256 MB per team, 30 uploads a minute. A file is uploaded first
-  and waits, its uploader's alone, for an hour until a message names it.
-  Pictures show inline and open in a viewer; video and audio play in the
-  browser (and seek); anything else is a card to download. The bytes are in
-  control's database (`chat_files`), and only readers of the room get them
-  (404 to anyone else). The type is read from the bytes, not the name or the
-  upload: SVG and HTML are text and download, never run, and every response
-  is `nosniff` and sandboxed. Search finds file names.
+- **Files and images:** paste, drop or 📎. Up to 10 files of 100 MB each on
+  a message, 2 GB per team, 30 uploads a minute (a control with no bucket
+  for chat's files keeps them in its database, at 10 MB each and 256 MB per
+  team; `ARUGULA_CHAT_FILE_MAX_MIB` and `ARUGULA_CHAT_FILES_TEAM_MAX_MIB` set
+  either). A file is uploaded first and waits, its uploader's alone, for an
+  hour until a message names it. Pictures show inline and open in a viewer;
+  video and audio play in the browser (and seek); anything else is a card to
+  download. The bytes are in control's bucket for them (Arugula #125; files
+  from before it move there in the background), read only through control,
+  and only readers of the room get them (404 to anyone else): there's no
+  public or signed link. The type is read from the bytes, not the name or
+  the upload: SVG and HTML are text and download, never run, and every
+  response is `nosniff` and sandboxed. Deleting a message deletes its files
+  from the bucket too. Search finds file names.
 - **Link previews:** a link becomes a card, drawn when the message is read.
   A link to one of our own objects (an issue, run, deploy or hosted
   workspace on control's hosts) shows its title and state, read as the
@@ -380,8 +385,8 @@ nothing else of the above. What they get:
   `read_thread` shows each message's reactions. Theirs are the owner's,
   labelled with the machine, and apart from the owner's own.
 - Files: `post_thread`'s `files` (paths the agent may read, at most 10 of
-  10 MB), and `read_thread` lists each message's attachments with name,
-  type, size and control's address.
+  100 MB, or less if control's limit is lower), and `read_thread` lists each
+  message's attachments with name, type, size and control's address.
 - Pins: `post_thread`'s `pin_seq` (and `remove`). `read_thread` begins with
   the room's topic, description and pins, marks pinned messages, and shows
   system lines as `* alice set the topic: …` (the platform's own as

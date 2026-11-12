@@ -2082,11 +2082,43 @@ pub struct HostedSetup {
     /// The hash of the spec it ran.
     #[serde(default)]
     pub spec_hash: String,
+    /// The repos it cloned, then any other repo in the box's homes with
+    /// work a rebuild would lose (Arugula #932).
     #[serde(default)]
     pub repos: Vec<HostedRepo>,
+    /// Where it looked for work a rebuild would lose. None from a daemon
+    /// before Arugula #932, which looked only at the cloned repos'
+    /// checked-out branches and their files.
+    #[serde(default)]
+    pub check: Option<HostedCheck>,
 }
 
-/// A repo a hosted machine's setup cloned, and what isn't pushed from it.
+/// Where a hosted machine looked for work a rebuild would lose (Arugula
+/// #932): every git repo in its homes, each local branch and stash.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct HostedCheck {
+    /// The homes it looked through: the box's user's and each session
+    /// user's.
+    #[serde(default)]
+    pub homes: Vec<String>,
+    /// What it couldn't look at, and why: work there may be lost.
+    #[serde(default)]
+    pub missed: Vec<HostedMissed>,
+}
+
+/// A home or repo a hosted machine couldn't look at.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct HostedMissed {
+    pub dir: String,
+    pub why: String,
+}
+
+/// A repo on a hosted machine (one its setup cloned, or one found in its
+/// homes), and what isn't pushed from it. A repo's linked worktree is one
+/// of these too, with its own files; its branches and stashes are on the
+/// repo's.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct HostedRepo {
@@ -2099,17 +2131,33 @@ pub struct HostedRepo {
     /// Files changed or not tracked (ignored ones aside).
     #[serde(default)]
     pub changed: u32,
-    /// Commits on no remote branch.
+    /// Commits on no remote branch: on any local branch (only the
+    /// checked-out one before Arugula #932), or a detached HEAD.
     #[serde(default)]
     pub unpushed: u32,
+    /// Each local branch with commits on no remote branch (Arugula #932),
+    /// and a detached HEAD's as `HEAD`.
+    #[serde(default)]
+    pub branches: Vec<HostedBranch>,
+    /// Its `git stash` entries.
+    #[serde(default)]
+    pub stashes: u32,
     /// Why it couldn't be read (not cloned, not a repo).
     pub error: Option<String>,
+}
+
+/// A local branch with commits on no remote branch.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct HostedBranch {
+    pub name: String,
+    pub commits: u32,
 }
 
 impl HostedRepo {
     /// It holds work a rebuild would lose.
     pub fn dirty(&self) -> bool {
-        self.changed > 0 || self.unpushed > 0
+        self.changed > 0 || self.unpushed > 0 || self.stashes > 0
     }
 }
 

@@ -19,6 +19,10 @@
       "why": "The Trash of team Docs is on the web for now (Arugula #866)"
     },
     {
+      "match": "/docs/\\{id\\}/public(/|$)",
+      "why": "A team Doc's public link is made, updated and stopped on the web for now: the page seals it and puts the parts through the platform (Arugula #871)"
+    },
+    {
       "match": "/docs/\\{id\\}/restore$",
       "why": "Restoring a trashed Doc is on the web for now (Arugula #866)"
     },
@@ -562,6 +566,16 @@
       "untyped": [
         "query and response: local to the handler"
       ]
+    },
+    "POST /api/projects": {
+      "handler": "crates/platform/src/projects.rs#create",
+      "request": "ProjectCreate",
+      "response": "Project"
+    },
+    "PATCH /api/projects/{project}": {
+      "handler": "crates/platform/src/projects.rs#patch",
+      "request": "ProjectPatch",
+      "response": "Project"
     },
     "GET /api/projects": {
       "handler": "crates/platform/src/projects.rs#list",

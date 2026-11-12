@@ -33,8 +33,18 @@ export function grantQuestion(n: Notice): string {
   const room = (n.room_name ?? n.room ?? "the room").replace(/^#/, "");
   const g = n.grant;
   if (g?.scope_kind === "account") return `Let ${machine}'s agents read all your DMs (including #${room})?`;
+  if (g?.scope_kind === "team") return `Let ${machine}'s agents read ${g.scope_name || "the team"}'s channels (including #${room})?`;
   if (g?.scope_name) return `Let ${machine}'s agents read ${g.scope_name}'s channels and issues (including #${room})?`;
   return `Let ${machine}'s agents read #${room}?`;
+}
+
+/** The scope a card's grant is over, as `POST /api/grants` takes it: an
+ * account's DMs, a team's channels (Arugula #894) or a project's rooms.
+ * A kind this page doesn't know grants nothing, rather than the wrong thing. */
+export function grantScope(kind: string, id: string): { kind: string; id?: string } | null {
+  if (kind === "account") return { kind: "account" };
+  if (kind === "team" || kind === "project") return { kind, id };
+  return null;
 }
 
 /** What a grant card says under its title (#578): "Never" can be undone. */

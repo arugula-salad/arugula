@@ -392,7 +392,8 @@ pub struct AgentGrantAsk {
     pub machine: String,
     pub machine_name: String,
     /// What a grant of `threads.read` is over, as `POST /api/grants` says it:
-    /// `project` and the project's id, or `account`.
+    /// `project` and the project's id, `team` and the team's (Arugula
+    /// #894), or `account`.
     pub scope_kind: String,
     #[serde(default)]
     pub scope_id: String,

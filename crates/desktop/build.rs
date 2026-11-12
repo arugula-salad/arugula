@@ -18,6 +18,8 @@ fn main() {
         // Control's page and the platform page, for a step that finishes in
         // the person's browser (#364).
         "open_outside",
+        // Every page with chat, for its unread on the badge (#498).
+        "chat_badge",
     ])))
     .expect("tauri-build");
 }

@@ -208,8 +208,9 @@ pub struct ThreadsReach {
 /// A scope a machine's agent grants reach.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ThreadScope {
-    /// `project` (its channels, issues and their threads) or `account`
-    /// (the owner's DMs).
+    /// `project` (its issues and their threads; a team's default project,
+    /// its channels too), `team` (its channels) or `account` (the
+    /// owner's DMs).
     pub kind: String,
     pub id: String,
     pub name: String,

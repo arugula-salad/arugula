@@ -93,11 +93,11 @@
           "type": "string"
         },
         "kind": {
-          "description": "`project` (its issues and object threads; a team's default\nproject, its channels too) or `account` (the owner's DMs).",
+          "description": "`project` (its issues and object threads; a team's default\nproject, its channels too), `team` (its channels, Arugula #894)\nor `account` (the owner's DMs). A [`GrantScope`]'s kind.",
           "type": "string"
         },
         "name": {
-          "description": "The project's name, or `your DMs`.",
+          "description": "The project's or team's name, or `your DMs`.",
           "type": "string"
         },
         "powers": {
@@ -2788,6 +2788,67 @@
           "const": "exited",
           "description": "The session's process ended in the middle of its turn.",
           "type": "string"
+        }
+      ]
+    },
+    "GrantScope": {
+      "description": "What a machine's agent grant is over, as `POST /api/grants` takes it\nand `GET /api/grants` lists it: `{\"kind\": \"project\", \"id\": …}`. The\nwires that carry a scope to a daemon ([`AgentReach`],\n[`AgentGrantAsk`](crate::forge::AgentGrantAsk)) keep its kind a\nstring, so a daemon from before `team` reads one as it reads any.",
+      "oneOf": [
+        {
+          "description": "A project: its issues, Docs, runs, boards and object threads.",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "project",
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A team (Arugula #894): its channels, for [`TEAM_POWERS`] only. A\ncontrol from before team grants refuses one.",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "team",
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The owner's account: their DMs, or `cloud.drive`.",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "account",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
         }
       ]
     },
