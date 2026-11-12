@@ -2362,7 +2362,7 @@ impl ToolCall<'_, '_> {
                         Some(me) => self.app.mux.api(|r| Api::GuestBehind(me, r)).await.flatten().is_none(),
                         None => true,
                     };
-                    arugulad_base::board_block::captured(&self.app, board, owner).await
+                    arugulad_base::board_block::captured(self.app, board, owner).await
                 }
                 _ => b.text(),
             }
