@@ -178,7 +178,7 @@ struct MachineView: View {
                     Caps("\(session.panes.count) panes")
                 }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 12)], spacing: 12) {
-                    ForEach(session.panes) { pane in
+                    ForEach(session.panes.sorted { ($0.order, -($0.last_ms ?? 0)) < ($1.order, -($1.last_ms ?? 0)) }) { pane in
                         Button { opened = pane } label: { PaneCard(pane: pane, machine: session.machine.name) }
                             .buttonStyle(.plain)
                     }
@@ -212,23 +212,62 @@ struct MachineView: View {
     }
 }
 
-/// A pane as the swarm's rail shows one: its identity in mono ("%62 · tab 3 ·
-/// geek"), what runs in it in the display face, and where. Running panes take
-/// the ok tone and glow.
+/// A pane as the swarm's rail shows one: whether it wants you, in that state's
+/// tone, what it's called (an agent's conversation), why it wants you, and its
+/// identity in mono ("%62 · claude · arugula ⎇ main"). Panes that want you or
+/// are working glow.
 struct PaneCard: View {
     let pane: PaneRow
     let machine: String
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(verbatim: "%\(pane.id) · \(pane.tab_name ?? "tab \(pane.tab)") · \(machine)")
-                .font(Face.mono(11)).foregroundStyle(Palette.dim).lineLimit(1)
-            Text((pane.command ?? "shell").uppercased())
-                .font(Face.display(22)).foregroundStyle(pane.running ? Palette.ok : Palette.subtle).lineLimit(1)
-            if let cwd = pane.cwd {
-                Text(cwd).font(Face.mono(12)).foregroundStyle(Palette.subtle).lineLimit(1).truncationMode(.head)
-            }
+    private var state: (String, Tone) {
+        if !pane.running { return ("Stopped", .muted) }
+        switch pane.attention {
+        case "needs_input": return (pane.reason?.kind == "failed" ? "Failed" : "Wants you", pane.reason?.kind == "failed" ? .danger : .accent)
+        case "working": return ("Working", .info)
+        case "done": return ("Done", .ok)
+        default: return ("Idle", .muted)
         }
-        .card(pane.running ? .ok : .muted, glow: pane.running)
+    }
+
+    var body: some View {
+        let (word, tone) = state
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text(word.uppercased()).font(Face.mono(10, "Bold")).tracking(0.8).foregroundStyle(tone.color)
+                Spacer(minLength: 0)
+                if let ms = pane.last_ms, ms > 0 {
+                    Text(Self.ago(ms)).font(Face.mono(10)).foregroundStyle(Palette.dim)
+                }
+            }
+            Text(pane.name).font(Face.ui(16, "SemiBold")).foregroundStyle(Palette.fg).lineLimit(2)
+            if let r = pane.reason, !r.headline.isEmpty {
+                Text(r.headline).font(Face.ui(13)).foregroundStyle(Palette.subtle).lineLimit(2)
+            }
+            Text(meta).font(Face.mono(11)).foregroundStyle(Palette.dim).lineLimit(1).truncationMode(.middle)
+        }
+        .frame(maxWidth: .infinity, minHeight: 96, alignment: .topLeading)
+        .card(tone, glow: pane.attention == "needs_input")
+    }
+
+    private var meta: String {
+        var bits = ["%\(pane.id)"]
+        if let p = pane.program { bits.append(p) }
+        if let project = pane.project {
+            bits.append(pane.branch.map { "\(project) ⎇ \($0)" } ?? project)
+        } else if let cwd = pane.cwd {
+            bits.append(cwd.split(separator: "/").last.map(String.init) ?? cwd)
+        }
+        return bits.joined(separator: " · ")
+    }
+
+    static func ago(_ ms: Int) -> String {
+        let s = max(0, Int(Date().timeIntervalSince1970) - ms / 1000)
+        switch s {
+        case ..<60: return "now"
+        case ..<3600: return "\(s / 60)m"
+        case ..<86400: return "\(s / 3600)h"
+        default: return "\(s / 86400)d"
+        }
     }
 }

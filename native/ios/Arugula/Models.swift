@@ -144,12 +144,48 @@ struct Machine: Decodable, Identifiable, Hashable {
 struct Directory: Decodable { var daemons: [Machine] }
 
 struct PaneRow: Decodable, Identifiable, Hashable {
+    struct Reason: Decodable, Hashable { var kind: String; var headline: String }
     var id: UInt32
     var tab: UInt32
     var tab_name: String?
     var command: String?
     var cwd: String?
     var running: Bool
+    /// idle, working, needs_input or done.
+    var attention: String?
+    var reason: Reason?
+    /// What its program calls it (OSC 0/2): Claude Code's is its conversation.
+    var title: String?
+    var work: String?
+    /// What a restart resumes: "Claude Code conversation <title>".
+    var resumes: String?
+    var project: String?
+    var branch: String?
+    var last_ms: Int?
+
+    /// The program, without its arguments: "claude", "vim".
+    var program: String? {
+        command?.split(separator: " ").first.map { String($0.split(separator: "/").last ?? $0) }
+    }
+
+    /// What to call it: its program's title (without a spinner in front),
+    /// else the conversation it resumes, else its program.
+    var name: String {
+        let cleaned = (title ?? "").drop { !$0.isLetter && !$0.isNumber }.trimmingCharacters(in: .whitespaces)
+        if !cleaned.isEmpty, cleaned != program, cleaned.lowercased() != "claude code" { return cleaned }
+        if let r = resumes, !r.isEmpty { return r.replacingOccurrences(of: "Claude Code conversation ", with: "") }
+        return program ?? "shell"
+    }
+
+    /// Wants you first, then working, done and idle; inside each, latest first.
+    var order: Int {
+        switch attention {
+        case "needs_input": 0
+        case "working": 1
+        case "done": 2
+        default: 3
+        }
+    }
 }
 
 struct PaneList: Decodable { var panes: [PaneRow] }

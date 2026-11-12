@@ -256,6 +256,16 @@ fn summary(s: &State) -> String {
                     "command": info.command,
                     "cwd": info.cwd,
                     "running": info.running,
+                    // What tells panes apart: whether it wants you and why,
+                    // what its program calls it, what it's busy with, where.
+                    "attention": info.attention,
+                    "reason": info.reason.as_ref().map(|r| json!({ "kind": r.kind, "headline": r.headline })),
+                    "title": info.title,
+                    "work": info.work,
+                    "resumes": info.resumes,
+                    "project": info.project.as_ref().map(|p| &p.name),
+                    "branch": info.branch,
+                    "last_ms": info.activity.as_ref().map(|a| a.last_ms),
                 }))
             })
         })
@@ -323,7 +333,8 @@ pub unsafe extern "C" fn aru_link_feed(l: *mut AruLink, term: *mut AruTerm, pane
     flags
 }
 
-/// The newest panes: `{"panes": [{id, tab, tab_name, command, cwd, running}]}`,
+/// The newest panes: `{"panes": [{id, tab, tab_name, command, cwd, running,
+/// attention, reason, title, work, resumes, project, branch, last_ms}]}`,
 /// or NULL before the machine's first word.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aru_link_panes(l: *const AruLink) -> *mut c_char {
