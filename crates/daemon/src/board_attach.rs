@@ -97,15 +97,17 @@ impl From<String> for NotKept {
 /// with the block (for its chip). `home`: the project of whoever started it,
 /// when known. `take`: take a row another machine's block holds, folding that
 /// block under `earlier`. The boards (none when no board has a row for the
-/// issue), or why it wasn't tried or was refused.
+/// issue), or why it wasn't tried or was refused. `session`: the starter's
+/// name, which holds the row from now (Arugula #765).
 pub async fn keep(
     app: &App,
     home: Option<String>,
     issue: &str,
     pane: PaneId,
     take: bool,
+    session: Option<String>,
 ) -> Result<Vec<WorkBoard>, NotKept> {
-    let boards = attach(app, home, issue, pane, take).await?;
+    let boards = attach(app, home, issue, pane, take, session).await?;
     if !boards.is_empty()
         && let Some(b) = app.mux.api(|r| Api::Block(pane, r)).await.flatten()
     {
@@ -119,7 +121,7 @@ pub async fn keep(
 /// refused (a row another machine's block holds, no grant) says nothing. The
 /// boards, none when it isn't on one.
 pub async fn keep_inferred(app: &App, home: Option<String>, issue: &str, pane: PaneId) -> Vec<WorkBoard> {
-    let boards = match attach(app, home, issue, pane, false).await {
+    let boards = match attach(app, home, issue, pane, false, None).await {
         Ok(b) => b,
         Err(why) => {
             debug!(pane, issue, "a branch's issue isn't attached: {why}");
@@ -182,7 +184,7 @@ pub async fn issue_project(app: &App, issue: &str, cwd: Option<&str>) -> Result<
 /// (`arugula agent --issue`): nobody waits for its answer.
 pub fn keep_later(app: Arc<App>, issue: String, take: bool, pane: PaneId) {
     crate::task::spawn(async move {
-        match keep(&app, None, &issue, pane, take).await {
+        match keep(&app, None, &issue, pane, take, None).await {
             Ok(boards) => debug!(pane, issue, boards = boards.len(), "a block is on its issue's rows"),
             Err(why) => debug!(pane, issue, "a block started on an issue isn't on a row: {why}"),
         }
@@ -190,13 +192,16 @@ pub fn keep_later(app: Arc<App>, issue: String, take: bool, pane: PaneId) {
 }
 
 /// Before a pane is opened on `issue`: who holds its row, if another machine's
-/// block does (Arugula #404). A machine that can't ask (not
+/// block does (Arugula #404) or another session does, on this machine or
+/// another (Arugula #765; `session` is the asker's name, whose own hold is no
+/// claim). A machine that can't ask (not
 /// joined, no grant, control down) is told nothing: the attach says why the
 /// row isn't taken, as it always did, and refuses a race with its 409.
-pub async fn held(app: &App, home: Option<String>, issue: &str) -> Option<String> {
+pub async fn held(app: &App, home: Option<String>, issue: &str, session: Option<String>) -> Option<String> {
     let enrolled = app.control.enrolled()?;
     let project = write_project(app, home).await.ok()?;
-    let body = serde_json::to_value(CheckClaim { issue: issue.to_owned(), machine: enrolled.keys.id() }).ok()?;
+    let body =
+        serde_json::to_value(CheckClaim { issue: issue.to_owned(), machine: enrolled.keys.id(), session }).ok()?;
     let v = app.control.cloud(Method::POST, &agent_project_claim_check(&project.id), Some(&body)).await.ok()?;
     serde_json::from_value::<ClaimChecked>(v).ok()?.held
 }
@@ -207,6 +212,7 @@ async fn attach(
     issue: &str,
     pane: PaneId,
     take: bool,
+    session: Option<String>,
 ) -> Result<Vec<WorkBoard>, NotKept> {
     let Some(enrolled) = app.control.enrolled() else {
         return Err("this machine hasn't joined Arugula control, so the row wasn't attached".into());
@@ -217,6 +223,7 @@ async fn attach(
         machine: enrolled.keys.id(),
         pane: pane.to_string(),
         take,
+        session,
     })
     .map_err(|e| e.to_string())?;
     let v =

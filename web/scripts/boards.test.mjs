@@ -3,7 +3,7 @@
 // the board routes' paths. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { closedWithLine, holdsRow, stalledFor, settledFacts, LANE_GLYPH, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, waitingOf, notFinishedLine, readyCount, relationLine, UNSEEN_BLOCKER, needsDot, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip, onIssueChip, boardGroup, clusterOrder, NO_BOARD, sourceLine, sourceLinked, leftOutLine, docWords, docHref, onBoardWords, pointerText, doneRefusal, laneOfZone, laneSetLine, closeName, rowMatches, findLine, boardMatches, rowHasLabel, rowHasPerson, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, topAndMore, initialsOf } from "../src/shared/boards/text.ts";
+import { closedWithLine, heldChip, holdsRow, stalledFor, settledFacts, LANE_GLYPH, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, waitingOf, notFinishedLine, readyCount, relationLine, UNSEEN_BLOCKER, needsDot, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip, onIssueChip, boardGroup, clusterOrder, NO_BOARD, sourceLine, sourceLinked, leftOutLine, docWords, docHref, onBoardWords, pointerText, doneRefusal, laneOfZone, laneSetLine, closeName, rowMatches, findLine, boardMatches, rowHasLabel, rowHasPerson, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, topAndMore, initialsOf } from "../src/shared/boards/text.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
@@ -641,6 +641,18 @@ test("a host is this page's machine when its address is the client's, and one th
   assert.equal(isThisMachine("e2e:dmn_a", () => "e2e:dmn_b"), false);
   assert.equal(isThisMachine("", () => ""), true);
   assert.equal(isThisMachine("", () => { throw new Error("gone"); }), false);
+});
+
+test("a row says which session holds it, unless that session's own open agent is attached", () => {
+  const held = { machine: "m1", machine_name: "geek", session: "ux", at: 5 };
+  const block = (state) => ({ role: "work", released: false, block: { state } });
+  const chip = heldChip({ held, attachments: [] });
+  assert.equal(chip.text, "held by ux");
+  assert.match(chip.title, /on geek/);
+  assert.match(heldChip({ held: { ...held, machine_name: "" }, attachments: [] }).title, /on m1/);
+  assert.equal(heldChip({ attachments: [] }), null);
+  assert.equal(heldChip({ held, attachments: [block("working")] }), null, "the claimed chip says it");
+  assert.equal(heldChip({ held, attachments: [block("closed")] })?.text, "held by ux", "a closed block holds nothing");
 });
 
 test("a row waiting on a person says who, and a stall doesn't colour it (#764)", () => {

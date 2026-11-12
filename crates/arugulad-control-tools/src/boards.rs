@@ -55,7 +55,8 @@ use arugula_control_wire::boards::{
     IssueRef, LeadBoard, Live, MoveEntry, NewAsk, NewBoard, Pointer, PutEntry, ResolveItems, Resolved, Row,
     agent_board, agent_board_attachment, agent_board_attachments, agent_board_close, agent_board_doc, agent_board_docs,
     agent_board_entries, agent_board_entry, agent_board_entry_move, agent_board_lead, agent_board_reopen,
-    agent_board_resolve, agent_board_row_ask, agent_board_row_hold, agent_project_boards,
+    agent_board_resolve, agent_board_row_ask, agent_board_row_hold, agent_board_row_session_hold_release,
+    agent_project_boards,
 };
 use arugula_control_wire::issues::{NewIssue, agent_project_issues};
 use reqwest::Method;
@@ -76,7 +77,7 @@ pub(crate) const WRITE_TOOL: &str = "board_write";
 
 pub(crate) const READ_DESCRIPTION: &str = "Read a project's board in Arugula control (an epic when it has a goal; with this machine's boards.read grant over its project). One row is one piece of work: an issue (or a PR with no issue), or a note, with a one-line note and what is attached to it (work: PRs, agent blocks, runs; proof: runs, links). The lanes follow the work and nobody sets them. Lane by the row's primary item: Next (Plane triage, backlog or unstarted; a note), Doing (a Plane started state; or an agent block that isn't closed, or a run running), Review (a PR is open; or a Plane started state with 'review' in its name), Done (the issue is completed or canceled, or the PR merged or closed). A canceled item (a Plane project's cancelled state, or a native issue closed as not planned or a duplicate) is Done, marked cancelled and never proven; any other Done row is proven by CI or by evidence, or not proven yet. Groups are the plan's phases or waves. Returns the board as 72-column text, each row by its item (#N, IDENT-N), its Docs (the research and prototypes linked to it, with the ids unlink_doc takes), and its progress; a Steps block after the lanes puts open rows in order by what they wait on (blocks edges, stacked PRs; Doing and Review rows are step 1), with the longest open chain; with verbose: true, also the JSON with ids, revs and each row's step. With board (brd_…): that board, or only its matching rows with q (an item's number #541, a Plane key ARUGU-12, or words in the title or note), lane (next, doing, review or done) and group (its title or zon_…), under a line that says how many of the rows are shown. Without: the project's boards (project, else the one this clone's GitHub repo is linked to, else your person's personal project), to pick one from.";
 
-pub(crate) const WRITE_DESCRIPTION: &str = "Write to a project's board in Arugula control, labelled as your person's agent on this machine, never as them. One row is one piece of work, addressed by its item (#N, owner/repo#N, IDENT-N or an iss_/fi_ id: a bare #N is the project's native issue when it has one, else the one linked repo's item, and a repo's PR or issue is owner/repo#N; IDENT-N, such as ALL-2212, is a Plane item, and forge_read items with provider plane gives its fi_ id), never by a row id. The lanes follow the work, as board_read describes: there are no statuses, and you can't set a lane. Add issues with add. A PR or an agent block is not a row of its own: attach it to the row of its issue. A merged PR closes a native issue it names as Closes #N or Arugula #N, or (#N) in its title; other #Ns only link. hold marks an issue not finished, so a merged PR doesn't close it; release clears it, closing the issue if its PR already merged. When a PR is only part of an issue (part of Arugula #N), hold the issue with what's left. When you need a person's decision, ask (who, the question, up to four options, a recommendation, why); they answer on the board: read it in board_read, never wait. Groups are your phases or waves: add_group, rename_group, move_group, delete_group, and group puts a row in one. note sets a row's one-line note (rev refuses a stale write), drop removes a row you added, detach takes off an attachment you made. What comes before or blocks what is the link tool's. Link a Doc to a board with link_doc (a pdc_ Doc, or one from doc list): in the board's Docs strip, or with row on one row as its spike or research (no lane, no proof); unlink_doc takes one off. You may also make a board (an epic, with a goal; capabilities has epics_as_boards), set its title and goal, reopen it, or close it with a note on what a person can now do. A named session that makes a board leads it; lead_board takes the lead, release: true lets it go (only the lead's machine or a person can). A write answers briefly; verbose: true gives the whole board. If one item of a batch fails, the rest still land.";
+pub(crate) const WRITE_DESCRIPTION: &str = "Write to a project's board in Arugula control, labelled as your person's agent on this machine, never as them. One row is one piece of work, addressed by its item (#N, owner/repo#N, IDENT-N or an iss_/fi_ id: a bare #N is the project's native issue when it has one, else the one linked repo's item, and a repo's PR or issue is owner/repo#N; IDENT-N, such as ALL-2212, is a Plane item, and forge_read items with provider plane gives its fi_ id), never by a row id. Lanes follow the work (board_read says how); you can't set one. Add issues with add. A PR or an agent block is not a row of its own: attach it to the row of its issue. A merged PR closes a native issue it names as Closes #N or Arugula #N, or (#N) in its title; other #Ns only link. hold marks an issue not finished, so a merged PR doesn't close it; release clears it, closing the issue if its PR already merged. When a PR is only part of an issue (part of Arugula #N), hold the issue with what's left. ask puts a decision to a person (who, the question, up to four options, a recommendation, why); read the answer in board_read, never wait. Groups are phases or waves: add_group, rename_group, move_group, delete_group; group puts a row in one. note sets a row's one-line note (rev refuses a stale write), drop removes a row you added, detach takes off an attachment you made. Order and blockers are the link tool's. Link a Doc to a board with link_doc (a pdc_ Doc, or one from doc list): in the board's Docs strip, or with row on one row as its spike or research (no lane, no proof); unlink_doc takes one off. You may also make a board (an epic, with a goal; capabilities has epics_as_boards), set its title and goal, reopen it, or close it with a note on what a person can now do. A named session that makes a board leads it; lead_board takes the lead, release: true lets it go (only the lead's machine or a person can). verbose: true answers with the whole board. One failed item of a batch doesn't stop the rest.";
 
 /// The most a batch takes.
 const BATCH_MAX: usize = wire::RESOLVE_MAX;
@@ -389,6 +390,16 @@ pub struct HoldArgs {
 }
 
 #[derive(Deserialize, JsonSchema)]
+pub struct ReleaseRowArgs {
+    /// The board.
+    pub board: String,
+    /// The row, by its item.
+    pub item: String,
+    #[serde(default)]
+    pub verbose: bool,
+}
+
+#[derive(Deserialize, JsonSchema)]
 pub struct ReleaseArgs {
     /// The board.
     pub board: String,
@@ -537,6 +548,12 @@ pub(crate) const WRITE: &[Kind] = &[
         name: "hold",
         description: "Mark a row's issue (native or Plane) not finished, with what's left (one line, 200 characters).",
         schema: schema_for_type::<HoldArgs>,
+        flag: None,
+    },
+    Kind {
+        name: "release_row",
+        description: "Let go of a row your session holds. Not release.",
+        schema: schema_for_type::<ReleaseRowArgs>,
         flag: None,
     },
     Kind {
@@ -1633,6 +1650,18 @@ pub(crate) async fn board_write(c: &Call<'_>, kind: &str, a: Value) -> Out {
             let v = boards_call(c, Method::DELETE, &agent_board_row_hold(&a.board, &row.id), None).await?;
             one_row(&view_of(v)?, &format!("Took the not finished mark off {}.", row.item_label()), &row.id, a.verbose)
         }
+        "release_row" => {
+            let a: ReleaseRowArgs = args(a)?;
+            let Some(session) = own_session(c).await else {
+                return Err("This session has no name, and only the session that holds a row lets it go.".into());
+            };
+            let view = read_view(c, &a.board).await?;
+            let row = find_row(&view, &a.item)?;
+            let body = given(wire::ReleaseSessionHold { session: Some(session) })?;
+            let v = boards_call(c, Method::POST, &agent_board_row_session_hold_release(&a.board, &row.id), Some(body))
+                .await?;
+            one_row(&view_of(v)?, &format!("Let go of {}.", row.item_label()), &row.id, a.verbose)
+        }
         "group" => {
             let a: GroupArgs = args(a)?;
             let Some(group) = a.group else {
@@ -1982,6 +2011,7 @@ mod tests {
                 "ask",
                 "note",
                 "hold",
+                "release_row",
                 "release",
                 "group",
                 "drop",
@@ -2003,6 +2033,20 @@ mod tests {
         let body = |zone| serde_json::to_value(MoveEntry { rev: None, zone, before: None, seen: None }).unwrap();
         assert_eq!(body(Some(None))["zone"], Value::Null, "out of its group goes out as null");
         assert!(body(None).get("zone").is_none(), "no zone: its own");
+    }
+
+    /// release_row takes the row alone, and says who lets go by the session's
+    /// own name, never an argument (Arugula #765).
+    #[test]
+    fn release_row_takes_no_session_argument() {
+        let a: ReleaseRowArgs = serde_json::from_value(json!({ "board": "b", "item": "#1" })).unwrap();
+        assert_eq!((a.item.as_str(), a.verbose), ("#1", false));
+        let body = given(wire::ReleaseSessionHold { session: Some("ux".into()) }).unwrap();
+        assert_eq!(body, json!({ "session": "ux" }));
+        assert_eq!(
+            agent_board_row_session_hold_release("brd_1", "row_2"),
+            "/api/daemon/boards/brd_1/rows/row_2/session-hold/release"
+        );
     }
 
     /// hold takes what is left, and release only the row (#841).

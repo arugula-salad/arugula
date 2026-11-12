@@ -783,6 +783,11 @@ relations?: Array<BoardRowRelation>,
  */
 sessions?: Array<BoardRowSession>, 
 /**
+ * The session that holds the row's issue (Arugula #765), if one does.
+ * Never set on a row whose issue is closed.
+ */
+held?: SessionHold, 
+/**
  * Where the row falls in the board's order (Arugula #762): 1 plus the
  * highest step of the open rows that come before it, worked out on
  * every read and never stored. Absent for a row with no issue or PR,
@@ -5388,6 +5393,26 @@ work: SessionIssueLink | null, };
  * it failed, the last of its output. A failed one isn't pushed.
  */
 export type SessionFinish = { ok: boolean, command: string, output_tail: string, };
+
+/**
+ * The session that holds an issue's row (Arugula #765): the one that last
+ * started an agent on it, or took it. It is the issue's, so a row on two
+ * boards shows the same holder, and it lasts until the issue closes or the
+ * session lets it go. The same shape as [`BoardLead`].
+ */
+export type SessionHold = { machine: string, 
+/**
+ * The machine's name now; empty while it can't be told.
+ */
+machine_name: string, 
+/**
+ * The session's name, as its machine's daemon matches it.
+ */
+session: string, 
+/**
+ * When the session took the row.
+ */
+at: number, };
 
 /**
  * The issue a session works on.

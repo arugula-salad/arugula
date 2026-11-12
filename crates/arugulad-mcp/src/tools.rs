@@ -413,7 +413,7 @@ pub struct StartAgentArgs {
     /// The issue it works on: `#N`, `owner/repo#N`, `IDENT-N` or a native issue's `iss_…` id. The block keeps it, and its header says it (`#N · board`). With this machine's boards.write grant over the issue's project, the block is attached to that issue's row on every board of the project, which moves the row to Doing; without it the answer says so. The project is the one that holds `#N` (of those this machine's boards grants reach; the one linked to cwd's repo if several do), else the one linked to cwd's repo, else the caller's. It is the agent's current project: its `#N`, issue_write, board_read and link calls go there. A worktree's branch, when you give none, starts with the issue's number (`feat/357-…`). Without issue, a worktree branch named `feat/N-…` (or fix, docs, chore, perf, refactor) is on `#N` when a board has a row for it. Not for a chat.
     #[serde(default)]
     pub issue: Option<String>,
-    /// With issue: take the row over when another machine's agent already works it. Without it, an issue another machine's agent holds refuses the start, naming who holds it; with it, that agent is folded under "earlier agents" and this one holds the row.
+    /// With issue: take the row over when another machine's agent works it, or another session holds it (the one that last started an agent on it, until the issue closes or it lets go with board_write release_row). Without it, the start is refused, naming who holds it; with it, that agent is folded under "earlier agents", this session holds the row, and the session that held it is told.
     #[serde(default)]
     pub take: bool,
 }
@@ -3319,10 +3319,16 @@ impl ToolCall<'_, '_> {
             host: if a.vm { None } else { host },
             local: false,
         };
-        // A row another machine's agent holds refuses the start before a pane
-        // opens; the 409 at attach still catches a race.
+        // The caller's name: its session holds the row from now (Arugula
+        // #765), and its own hold is no claim.
+        let session = match self.own_pane() {
+            Some(p) if issue.is_some() => arugulad_base::agent_mentions::session_name(self.app, p).await,
+            _ => None,
+        };
+        // A row another machine's agent or another session holds refuses the
+        // start before a pane opens; the 409 at attach still catches a race.
         if let (Some(i), false) = (&issue, a.take)
-            && let Some(held) = arugulad_base::board_attach::held(self.app, home.clone(), i).await
+            && let Some(held) = arugulad_base::board_attach::held(self.app, home.clone(), i, session.clone()).await
         {
             return Err(format!("{held}; no agent was started"));
         }
@@ -3340,7 +3346,7 @@ impl ToolCall<'_, '_> {
         let mut tail =
             owned.as_ref().map(|w| format!(", in worktree {} (branch {})", w.path, w.branch)).unwrap_or_default();
         let on = match (&issue, &inferred) {
-            (Some(i), _) => match self.on_issue(i, block, a.take, home).await {
+            (Some(i), _) => match self.on_issue(i, block, a.take, home, session).await {
                 Ok(on) => Some(on),
                 Err(held) => {
                     // The row is held: this agent isn't started.
@@ -3432,9 +3438,10 @@ impl ToolCall<'_, '_> {
         block: arugula_proto::PaneId,
         take: bool,
         home: Option<String>,
+        session: Option<String>,
     ) -> Result<results::StartedOn, String> {
         use arugulad_base::board_attach::NotKept;
-        Ok(match arugulad_base::board_attach::keep(self.app, home, issue, block, take).await {
+        Ok(match arugulad_base::board_attach::keep(self.app, home, issue, block, take, session).await {
             Ok(boards) if boards.is_empty() => results::StartedOn {
                 issue: issue.to_owned(),
                 boards: vec![],

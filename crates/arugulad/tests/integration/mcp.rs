@@ -3345,6 +3345,7 @@ async fn an_agent_reads_and_writes_a_board() {
             "ask",
             "note",
             "hold",
+            "release_row",
             "release",
             "group",
             "drop",
@@ -3775,6 +3776,9 @@ async fn a_start_on_an_issue_another_agent_holds_is_refused_without_a_pane() {
         tokio::time::sleep(Duration::from_millis(300)).await;
     }
     assert!(!control.checked.lock().unwrap().is_empty(), "it asked before it opened a pane");
+    // A caller with no session name says none, and is checked as before
+    // (Arugula #765).
+    assert!(control.checked.lock().unwrap().iter().all(|b| b.get("session").is_none()));
 
     // Another machine's block holds the row: refused, naming it, no pane.
     let said = "#12 is being worked by Parser lane on geek-box, since 14:02 UTC: pass take: true to take it over";

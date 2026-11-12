@@ -166,6 +166,13 @@ export function holdsRow(a: Pick<BoardAttachment, "role" | "block" | "released">
   return a.role === "work" && !a.released && !!a.block && a.block.state !== "closed";
 }
 
+/** Who holds a row's issue (Arugula #765): the chip's words, and its title, which says which machine. Not said while the holder's own agent block is attached and open: that block's chip is the claim. */
+export function heldChip(r: Pick<BoardRow, "held" | "attachments">): { text: string; title: string } | null {
+  const h = r.held;
+  if (!h || r.attachments.some(holdsRow)) return null;
+  return { text: `held by ${h.session}`, title: `Held by the session ${h.session} on ${h.machine_name || h.machine}: another session's agent start on this issue is refused unless it takes over` };
+}
+
 /** What a row says of a blocker the reader may not read. */
 export const UNSEEN_BLOCKER = "blocked by something you can't see";
 

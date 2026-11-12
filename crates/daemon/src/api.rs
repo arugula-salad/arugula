@@ -859,7 +859,7 @@ async fn open_block(
         _ => None,
     };
     if let Some((issue, false)) = &issue
-        && let Some(held) = crate::board_attach::held(&app, None, issue).await
+        && let Some(held) = crate::board_attach::held(&app, None, issue, None).await
     {
         return Err(ApiError(StatusCode::CONFLICT, format!("{held}; no agent was started")));
     }
