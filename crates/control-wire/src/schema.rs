@@ -75,7 +75,7 @@ fn files() -> Vec<(&'static str, &'static [&'static str], fn(&mut SchemaGenerato
             hosted::PublicPorts, hosted::PublicPort, hosted::EnrollAsk, hosted::EnrollGiven, hosted::Enrolled, hosted::EnrollRequest, hosted::Enrollment, hosted::DelegationPost, hosted::RevokePost, hosted::WakeAnswer, hosted::WakeCode, hosted::SetupPlan, hosted::SetupRepo, hosted::SetupStatus, hosted::SetupReport,
         ],
         "issues" => [
-            issues::AgentIssueHomeQuery, issues::IssueGithub, issues::Issue, issues::IssueQuery, issues::IssueList, issues::NewIssue, issues::IssueListEdit, issues::IssuePatch, issues::IssueEvent, issues::IssuePatched, issues::IssueEvents, issues::IssueHome, issues::IssueHomeChange, issues::IssueExportQuery, issues::IssueComment, issues::ExportedIssue, issues::ExportedPerson, issues::IssueExport,
+            issues::AgentIssueHomeQuery, issues::IssueGithub, issues::Issue, issues::IssueQuery, issues::IssueList, issues::NewIssue, issues::IssueListEdit, issues::IssuePatch, issues::IssueEvent, issues::IssuePatched, issues::IssueEvents, issues::IssueHome, issues::ProjectOwner, issues::IssueHomeChange, issues::IssueExportQuery, issues::IssueComment, issues::ExportedIssue, issues::ExportedPerson, issues::IssueExport,
         ],
         "join" => [
             join::JoinRequest, join::CliJoinRequest, join::JoinProof, join::JoinStarted, join::JoinPoll, join::PollQuery, join::JoinTeam,
