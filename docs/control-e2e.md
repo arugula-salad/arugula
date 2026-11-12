@@ -2013,7 +2013,8 @@ sleeps, and control pushes and searches them itself.
   quote from a pane (the page reads the pane end to end, and the person
   picks the lines). Nothing else of the pane does: its output, input and
   scrollback stay on the end-to-end channels above. Also what
-  people attach (files and images, bytes included, up to 10 MB each), the
+  people attach (files and images, up to 100 MB each, their bytes in a
+  bucket of control's that only the platform reads: Arugula #125), the
   emoji they react with, a channel's topic and pins, and their sidebar,
   notification settings, keywords, saved messages and when their pages were
   last open: tables below say which is which. None of it is end to end.
@@ -2099,10 +2100,10 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 180 tables in two planes ("Two planes, two trust rules"):
+Control's database has 181 tables in two planes ("Two planes, two trust rules"):
 
 - **The machine plane** (56 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
-- **The platform plane** (124 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
+- **The platform plane** (125 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people or their agents wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
 
@@ -2189,7 +2190,8 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `chat_mention_status` | metadata | Where each @machine mention in chat got to: the session it went to, waiting, offline, or answered by which reply (#502). | A mention's status shown, with every machine asleep. | yes: the status of every mention in the messages it wrote. Names a machine, a session and a message number, never its text. |  |
 | `chat_avatars` | metadata | A GitHub login's public picture as control fetched it, so readers never load it from GitHub themselves (#112). | Pictures in chat, with every machine asleep. | kept: by GitHub login, not account: a public picture, fetched again after a day. |  |
 | `chat_presence` | metadata | When a person's pages were last heard from and last used, whether they chose away or offline (#110). Its `live` column (live presence, #341) is from before live presence was removed: nothing reads or writes it. | Who's around, with every machine asleep. | yes |  |
-| `chat_files` | **plaintext** | Files and images posted in chat, bytes included, with their sniffed type and the message they belong to (#107). | A room's files, served to its readers, with every machine asleep. | yes: the account's uploads, and the files on the messages it wrote. |  |
+| `chat_files` | **plaintext** | Files and images posted in chat, with their sniffed type and the message they belong to (#107). Their bytes are in control's bucket for them (Arugula #125); a file from before that, or on a control with no such bucket, has them in its row. | A room's files, served to its readers, with every machine asleep. | yes: the account's uploads, and the files on the messages it wrote; their bytes in the bucket go after. |  |
+| `chat_file_trash` | metadata | Chat files' bytes waiting to be deleted from their bucket (Arugula #125): each one's key there (or a disbanded team's whole prefix), when it's tried next, and how often it failed and why. | A file deleted in chat leaves the bucket with every machine asleep. | kept: a deleted account's files' keys wait here until the bucket has deleted them: minutes, unless the bucket keeps failing. |  |
 | `chat_topics` | **plaintext** | A channel's topic and description, as its members wrote them (#119). | The room's header, with every machine asleep. | nothing of one: by room: gone with the room. |  |
 | `chat_pins` | metadata | Which messages are pinned in a room, by whom and when (#119). | The room's pins, with every machine asleep. | partly: pins of the account's own messages go with them; pins it made of others' messages stay, as the room's. |  |
 | `chat_system` | metadata | Which messages are system lines (a topic set, a message pinned) and what they're about (#119). | The room's history, drawn right, with every machine asleep. | nothing of one: by room and message number: gone with the message. |  |
@@ -2299,7 +2301,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 
 ### Who else sees it
 
-- **Litestream's bucket:** Litestream copies the whole database to a bucket (Cloudflare R2, for the hosted control), so every table is there too, for as long as control's backups are kept. On Postgres, the platform's tables go there in its nightly dump instead: encrypted, kept 30 days. Secrets are there sealed, and their key isn't.
+- **Litestream's bucket:** Litestream copies the whole database to a bucket (Cloudflare R2, for the hosted control), so every table is there too, for as long as control's backups are kept. On Postgres, the platform's tables go there in its nightly dump instead: encrypted, kept 30 days. Secrets are there sealed, and their key isn't. The hosted control keeps chat's files in the same bucket too (Arugula #125), under a prefix of their own and not encrypted, for as long as their messages are: only the platform reads them, for the room's readers, and it deletes each with its message, room or team.
 - **The run-log bucket:** Runs on hosted workspaces (and only those) send their logs, the whole of their pane's output, and the files they leave as artifacts to a bucket in Cloudflare R2 (M213), through URLs the platform signs for one run at a time. The platform reads them and serves them to the project's members, with every machine asleep. The bucket deletes them after 30 days, and the platform forgets their rows then. A person's own machines never send any.
 - **E2B:** E2B runs hosted workspaces' boxes, so it processes their contents: it holds each box's disk and memory (the repos, files, terminals and agent conversations in it) while the box lives, paused too, the env and metadata each is made with (the workspace, project, release and template ids), its egress rules (which hold projects' own inference keys, and name the platform's), and the platform's inference keys in its secrets broker. It records each box's runs (when, how long, its size), which it bills by and the platform reads back to check its own usage.
 - **Anthropic:** The inference broker (M231) forwards Claude calls to Anthropic for a project's members and for registered clients (studio's lobby): Anthropic gets each call's prompt and answer (they pass through the platform, which keeps neither), and the key that pays (a project's or an account's own, or the platform's), and bills that key's owner.
