@@ -432,16 +432,57 @@
 
 /* An epic: the goal, progress and closing under a board's title, and the
    same on a list's items. */
-.board-rename {
-  cursor: pointer;
-}
-
-.board-rename:hover {
-  text-decoration: underline;
-}
-
 .board-epic {
   margin: 0 0 12px;
+}
+
+/* The header (#929), as a Doc's: its title in the display face, the dates under it, the goal with the Docs beside it, and the progress as its bottom rule. */
+.page-head.board-head {
+  position: relative;
+  padding-bottom: 20px;
+  border-bottom: 0;
+}
+
+.page-head.board-head h1.named {
+  font: 800 var(--text-doc)/1.02 var(--f-display);
+  letter-spacing: var(--track-display);
+  text-wrap: balance;
+}
+
+@container (max-width: 519px) {
+  .page-head.board-head h1.named {
+    font-size: var(--text-2xl);
+  }
+}
+
+.board-head .page-title {
+  flex-wrap: nowrap;
+  align-items: flex-start;
+}
+
+.board-head .page-title h1 {
+  flex: 1 1 auto;
+}
+
+.board-head .page-actions {
+  margin-top: 6px;
+}
+
+.board-meta {
+  margin: 10px 0 0;
+}
+
+.board-head-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 12px 32px;
+  margin-top: 12px;
+}
+
+@container (max-width: 719px) {
+  .board-head-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .board-goal {
@@ -450,13 +491,140 @@
   overflow-wrap: anywhere;
 }
 
-/* The Docs strip under the goal (#517): chips that open the Doc, + Doc, and the picker. */
+/* A writer's goal is plain text until hovered or focused: then its box and a pencil show, and a click opens the form in its place. */
+.board-goal.editable {
+  position: relative;
+  display: block;
+  max-width: 72ch;
+  margin: 0 -10px;
+  padding: 8px 34px 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--btn-radius, 6px);
+  text-align: start;
+  cursor: text;
+}
+
+.board-goal.editable:hover,
+.board-goal.editable:focus-visible {
+  border-color: var(--line);
+  background: color-mix(in srgb, var(--fg) 3%, transparent);
+  outline: 0;
+}
+
+.board-goal.editable:focus-visible {
+  border-color: var(--accent);
+}
+
+.board-goal.empty {
+  color: var(--dim);
+}
+
+.board-goal-pencil {
+  position: absolute;
+  top: 9px;
+  right: 10px;
+  display: inline-flex;
+  color: var(--dim);
+  opacity: 0;
+}
+
+.board-goal.editable:hover .board-goal-pencil,
+.board-goal.editable:focus-visible .board-goal-pencil {
+  opacity: 1;
+}
+
+/* The Docs: titles on a line each, in a column at the goal's right. */
 .board-docs {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  min-width: 0;
+  padding-left: 16px;
+  border-left: 1px solid var(--line);
+}
+
+@container (max-width: 719px) {
+  .board-docs {
+    padding-left: 0;
+    border-left: 0;
+  }
+}
+
+.board-docs-head {
+  margin: 0 0 4px;
+  font: 600 var(--text-xs)/1.4 var(--f-mono);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.board-doc-row {
+  display: flex;
   align-items: center;
-  gap: 6px 8px;
-  margin: 6px 0;
+  gap: 8px;
+  min-width: 0;
+  margin: 0 -6px;
+  padding: 3px 6px;
+  border-radius: var(--btn-radius, 6px);
+}
+
+.board-doc-row:hover,
+.board-doc-row:focus-within {
+  background: var(--raised);
+}
+
+.board-doc-row .board-ptr {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg);
+  font: var(--text-xs)/1.5 var(--f-mono);
+  text-decoration: none;
+}
+
+.board-doc-row .board-doc-remove {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  min-width: 0;
+  min-height: 0;
+  margin: -2px 0;
+  opacity: 0;
+}
+
+.board-doc-row:hover .board-doc-remove,
+.board-doc-row:focus-within .board-doc-remove {
+  opacity: 1;
+}
+
+/* No hover on a touch screen: the × stays. */
+@media (hover: none) {
+  .board-doc-row .board-doc-remove {
+    opacity: 1;
+  }
+}
+
+.board-doc-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.board-doc-link:hover {
+  text-decoration: underline;
 }
 
 .board-doc-remove {
@@ -516,16 +684,15 @@
   box-sizing: border-box;
 }
 
-.board-progress {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 6px 0;
-}
-
-.board-progress .board-bar {
-  flex: 1;
-  min-width: 0;
+/* The progress is the header's bottom rule: 3px, coloured by lane, with its words only in its label. */
+.board-head > .board-bar {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--line);
 }
 
 .board-done {

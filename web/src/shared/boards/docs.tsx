@@ -29,8 +29,8 @@ export interface DocShown {
   copy?: string;
 }
 
-/** A Doc as a chip: its title as a link where it opens, and `3/5` written or the machine it's on. A project Doc that was deleted is plain text. `remove` is the ×, for those who may write. */
-export function DocLink({ d, project, platform, remove }: { d: DocShown; project: string; platform: (path: string) => string | undefined; remove?: () => void }) {
+/** A Doc as a chip: its title as a link where it opens, and `3/5` written or the machine it's on. A project Doc that was deleted is plain text. `remove` is the ×, for those who may write. `list`: a line of a list instead, the title alone with what the chip would add as its tooltip, and the × on hover (the board header's Docs). */
+export function DocLink({ d, project, platform, remove, list }: { d: DocShown; project: string; platform: (path: string) => string | undefined; remove?: () => void; list?: boolean }) {
   const api = usePlatformApi();
   const p = d.pointer;
   const words = docWords(d);
@@ -77,19 +77,29 @@ export function DocLink({ d, project, platform, remove }: { d: DocShown; project
   } else {
     name = <span class="board-ptr dim">{d.title}</span>;
   }
+  const hooks = {
+    "data-board-doc": p.kind === "doc" || p.kind === "machine_doc" ? (p.kind === "doc" ? p.id : p.doc) : undefined,
+    "data-board-doc-kind": p.kind,
+    "data-board-doc-missing": d.missing ? "" : undefined,
+  };
+  const x = remove && (
+    <IconButton label={`Take ${d.title} off`} class="bar-btn sq board-more board-doc-remove" data-board-doc-remove onClick={remove}>
+      <CloseIcon size="xs" />
+    </IconButton>
+  );
+  if (list) {
+    return (
+      <span class="board-doc-row" title={tail || undefined} {...hooks}>
+        {name}
+        {x}
+      </span>
+    );
+  }
   return (
-    <ObjectChip
-      data-board-doc={p.kind === "doc" || p.kind === "machine_doc" ? (p.kind === "doc" ? p.id : p.doc) : undefined}
-      data-board-doc-kind={p.kind}
-      data-board-doc-missing={d.missing ? "" : undefined}
-    >
+    <ObjectChip {...hooks}>
       {name}
       {tail && <span class="dim board-doc-words"> {tail}</span>}
-      {remove && (
-        <IconButton label={`Take ${d.title} off`} class="bar-btn sq board-more board-doc-remove" data-board-doc-remove onClick={remove}>
-          <CloseIcon size="xs" />
-        </IconButton>
-      )}
+      {x}
     </ObjectChip>
   );
 }
