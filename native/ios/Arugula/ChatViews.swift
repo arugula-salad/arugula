@@ -2,21 +2,29 @@
 // personal project), and one room, read the way a team chat reads:
 // an avatar beside each run of messages, the name and time on one line, the
 // text tight under it, and a long message folded. Issues', panes' and
-// sessions' threads aren't listed here. No live stream yet, so an open room
-// looks again every few seconds.
+// sessions' threads aren't listed here. Chat's live stream (`LiveChat`) says
+// when to look again, as the web's does.
 
 import SwiftUI
 
 struct ChatRoomsView: View {
     let control: Control
     @EnvironmentObject private var scope: Scope
+    @StateObject private var live: LiveChat
     @State private var picked: ChatRoom?
     @State private var columns = NavigationSplitViewVisibility.all
+    @Environment(\.scenePhase) private var phase
+
+    init(control: Control) {
+        self.control = control
+        _live = StateObject(wrappedValue: LiveChat(control: control))
+    }
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columns) {
-            // Beside an open room, the list keeps its counts current.
-            Loaded(load: { try await control.get("/api/chat", as: ChatRooms.self) }, every: .seconds(10)) { r in
+            // The stream says when the list's counts move; a slow look again
+            // covers a stream that's down.
+            Loaded(load: { try await control.get("/api/chat", as: ChatRooms.self) }, every: .seconds(60), trigger: live.rooms) { r in
                 let rooms = r.rooms.filter { $0.isConversation && !$0.archived && scope.showsRoom($0) }.sorted { ($0.unread > 0 ? 1 : 0, $0.last) > ($1.unread > 0 ? 1 : 0, $1.last) }
                 let channels = rooms.filter { $0.kind == "channel" }
                 let dms = rooms.filter { $0.kind == "dm" }
@@ -36,7 +44,7 @@ struct ChatRoomsView: View {
         } detail: {
             NavigationStack {
                 if let picked {
-                    ChatRoomView(control: control, room: picked)
+                    ChatRoomView(control: control, room: picked, live: live)
                 } else {
                     Empty(text: "Pick a room", symbol: "bubble.left.and.bubble.right")
                 }
@@ -45,6 +53,10 @@ struct ChatRoomsView: View {
         }
         .navigationSplitViewStyle(.balanced)
         .onChange(of: scope.current?.id) { _, _ in picked = nil }
+        .task { live.start() }
+        .onChange(of: phase) { _, now in
+            if now == .active { live.start() }
+        }
     }
 }
 
@@ -86,6 +98,7 @@ struct RoomRow: View {
 struct ChatRoomView: View {
     let control: Control
     let room: ChatRoom
+    @ObservedObject var live: LiveChat
     @State private var messages: [ChatMessage] = []
     @State private var draft = ""
     @State private var problem: String?
@@ -146,12 +159,18 @@ struct ChatRoomView: View {
         }
         .background(Palette.bg)
         .detailTitle(room.title)
+        // The stream says when this room changed; a slow look again covers a
+        // stream that's down.
         .task {
             while !Task.isCancelled {
                 await load()
-                try? await Task.sleep(for: .seconds(4))
+                try? await Task.sleep(for: .seconds(live.connected ? 60 : 5))
             }
         }
+        .onChange(of: live.changed[room.id]) { _, _ in Task { await load() } }
+        .onChange(of: live.epoch) { _, _ in Task { await load() } }
+        .onAppear { live.open(room: room.id) }
+        .onDisappear { live.open(room: nil) }
     }
 
     private var empty: Bool { draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -435,5 +454,120 @@ struct CodeBlock: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Palette.void, in: RoundedRectangle(cornerRadius: 8))
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Palette.raised, lineWidth: 1))
+    }
+}
+
+/// Chat's live stream (`GET /api/chat/live`, the core's `chat_live`): what to
+/// fetch again as it happens. `rooms` moves when the room list's counts or
+/// rooms do, `changed[room]` when a room's messages do, and `epoch` when a
+/// new stream starts (its `hello`: anything could have been missed). A
+/// dropped stream is opened again; the room on screen is told to control, so
+/// nobody is pushed for what they're reading.
+@MainActor
+final class LiveChat: ObservableObject {
+    @Published private(set) var rooms = 0
+    @Published private(set) var changed: [String: Int] = [:]
+    @Published private(set) var epoch = 0
+    @Published private(set) var connected = false
+    private let control: Control
+    nonisolated(unsafe) private var live: OpaquePointer?
+    private var opening = false
+    private var failures = 0
+    private var stream: String?
+    private var shown: String?
+
+    init(control: Control) { self.control = control }
+
+    deinit { if let live { aru_chat_live_free(live) } }
+
+    /// Handed to the core's callback, which can fire once more after the
+    /// stream is freed: not tied to this object's life.
+    private final class Notifier { weak var live: LiveChat? }
+
+    /// Open the stream, unless it's open or opening.
+    func start() {
+        guard live == nil, !opening else { return }
+        opening = true
+        let notifier = Notifier()
+        notifier.live = self
+        let ctx = UInt(bitPattern: Unmanaged.passRetained(notifier).toOpaque())
+        let c = UInt(bitPattern: control.ptr)
+        Task {
+            let p: UInt? = await Task.detached(priority: .utility) {
+                var err: UnsafeMutablePointer<CChar>?
+                let got = aru_chat_live_open(OpaquePointer(bitPattern: c), { ctx in
+                    guard let ctx else { return }
+                    let n = Unmanaged<Notifier>.fromOpaque(ctx).takeUnretainedValue()
+                    DispatchQueue.main.async { MainActor.assumeIsolated { n.live?.pump() } }
+                }, UnsafeMutableRawPointer(bitPattern: ctx), &err)
+                if let err { aru_string_free(err) }
+                return got.map { UInt(bitPattern: $0) }
+            }.value
+            opening = false
+            if let p {
+                live = OpaquePointer(bitPattern: p)
+                pump()
+            } else {
+                retry()
+            }
+        }
+    }
+
+    /// The room on screen, or none.
+    func open(room: String?) {
+        shown = room
+        tell()
+    }
+
+    private func tell() {
+        guard let stream else { return }
+        let room: Any = shown.map { $0 as Any } ?? NSNull()
+        let body: [String: Any] = ["stream": stream, "room": room, "people": [Any](), "machines_online": [Any]()]
+        Task { _ = try? await control.call("POST", "/api/chat/live/open", body: body) }
+    }
+
+    /// Take what's queued.
+    func pump() {
+        guard let l = live else { return }
+        while let s = takeString(aru_chat_live_next(l)) {
+            guard let ev = try? JSONSerialization.jsonObject(with: Data(s.utf8)) as? [String: Any],
+                let type = ev["type"] as? String
+            else { continue }
+            let room = ev["room"] as? String
+            switch type {
+            case "hello":
+                stream = ev["stream"] as? String
+                connected = true
+                failures = 0
+                epoch += 1
+                rooms += 1
+                tell()
+            case "message", "changed", "reacted", "pinned", "reply":
+                if let room { changed[room, default: 0] += 1 }
+                if type == "message" { rooms += 1 }
+            case "room", "read":
+                rooms += 1
+            case "closed":
+                aru_chat_live_free(l)
+                live = nil
+                stream = nil
+                connected = false
+                retry()
+                return
+            default:
+                break
+            }
+        }
+    }
+
+    /// Open it again: in 3 seconds, then longer each time it fails, up to a
+    /// minute.
+    private func retry() {
+        failures += 1
+        let wait = min(60, 3 * (1 << min(failures - 1, 5)))
+        Task {
+            try? await Task.sleep(for: .seconds(wait))
+            start()
+        }
     }
 }

@@ -3,6 +3,7 @@
 //! terminal that draws it (aru-132). Screens don't belong here.
 //!
 //! - [`control`]: pairing by code, and requests to control, signed.
+//! - [`chat_live`]: chat's live stream, what to fetch again as it happens.
 //! - [`link`]: a Noise channel to a machine through control's relay, its
 //!   requests and its panes.
 //! - [`Pane`]: one pane's terminal.
@@ -10,6 +11,7 @@
 //! A client's keys stay in the platform's keychain, so nothing here reads or
 //! writes a key file: [`device`] takes them as bytes (aru-131).
 
+pub mod chat_live;
 pub mod control;
 pub mod ffi;
 pub mod link;
