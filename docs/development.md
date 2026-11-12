@@ -667,6 +667,15 @@ must be GitHub. `scripts/release check-green TAG [LANE]` checks one
 lane's tags from GitHub (an `app-v*` tag's is the app's, any other the
 daemon's); the release workflows leave that check to chant's cut.
 
+The tick tags with `CI_GREEN_TOKEN`, since the `ci/` tags are protected.
+It's a secret of the `ci-green` environment, which only `main` reaches
+(and of `app-release`, for app-release.yml's `app-latest` tag), not of the
+repository, so every job that uses it names its environment. `chant ci
+workflow` doesn't write `environment: ci-green` into `chant-ci-green.yml`:
+keep that line when regenerating the file, or the tick gets no token and
+tags nothing. The merge queue's `chant-verdict` uses only the run's own
+token.
+
 A daemon release needs more than `ci/green` (#305). test-postgres, core,
 testnet, stack and the WebKit specs run in
 `.github/workflows/rare-nightly.yml`, every night on main's head and on a
