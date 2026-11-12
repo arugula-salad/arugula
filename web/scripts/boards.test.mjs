@@ -134,6 +134,33 @@ test("the chip in trouble carries the problem: failed checks, waiting for you, s
   assert.equal(chipOf({ ...idle, block: { state: "closed" } }, "stalled 2h").state, "closed");
 });
 
+test("a PR's chip says it's queued, for how long, or that it left the queue and why (#766)", () => {
+  const pr = { kind: "forge_item", id: "fi_1" };
+  const live = (extra) => ({ state: "open", kind: "pr", repo: "acme/cloud", number: 16, title: "x", ...extra });
+  const chip = (l, now) => chipOf({ role: "work", pointer: pr, live: l }, null, now);
+  const t0 = 1_000_000_000;
+  assert.deepEqual(chip(live({ queued: true, queued_since: t0 }), t0 + 12 * 60_000 + 5_000), { label: "cloud#16", state: "queued 12m", tone: "accent" });
+  assert.equal(chip(live({ queued: true }), t0).state, "queued", "no time, no duration");
+  assert.deepEqual(chip(live({ left_queue: { reason: "CHECKS_TIMED_OUT", at: t0 } }), t0), { label: "cloud#16", state: "left queue: checks timed out", tone: "danger" });
+  assert.equal(chip(live({ state: "closed", left_queue: { reason: "MERGE_CONFLICT", at: t0 } }), t0).state, "left queue: merge conflict", "a closed PR still says why");
+  assert.equal(chip(live({ left_queue: { reason: "SOMETHING_NEW", at: t0 } }), t0).state, "left queue: something new", "a reason GitHub adds reads the same way");
+  // A repo with no queue, and a PR that landed, say nothing new.
+  assert.deepEqual(chip(live({}), t0), { label: "cloud#16", state: "open", tone: "accent" });
+  assert.equal(chip(live({ state: "merged", queued: true, queued_since: t0 }), t0).state, "merged");
+  assert.equal(chip({ state: "open", kind: "issue", repo: "acme/cloud", number: 3, title: "x", queued: true }, t0).state, "open");
+});
+
+test("a PR that left its merge queue needs the reader while it's open, as failed checks do (#766)", () => {
+  const row = (live, attachments) => ({ live, attachments });
+  const pr = (state, extra) => ({ state, kind: "pr", repo: "acme/cloud", number: 16, title: "x", ...extra });
+  const left = { reason: "CHECKS_FAILED", at: 1 };
+  assert.equal(needsDot(row(pr("open", { left_queue: left }))), true);
+  assert.equal(needsDot(row(undefined, [{ role: "work", pointer: { kind: "forge_item", id: "fi_1" }, live: pr("checks_running", { left_queue: left }) }])), true);
+  assert.equal(needsDot(row(pr("closed", { left_queue: left }))), false, "only an open PR");
+  assert.equal(needsDot(row(pr("open", { queued: true, queued_since: 1 }))), false, "queued is going well");
+  assert.equal(needsDot(row(pr("open"))), false);
+});
+
 test("a row needs the reader when a question, failed checks, a waiting agent or a stall says so, and counts once (#903)", () => {
   const ask = { id: "ask_1", question: "Ship?", options: [], mine: true, raised: false, can_answer: true, who: "a", who_name: "Sam", asked_by: "x" };
   const block = (state, over) => ({ id: "att_1", role: "work", pointer: { kind: "block", machine: "m", pane: "1" }, block: { state }, ...over });

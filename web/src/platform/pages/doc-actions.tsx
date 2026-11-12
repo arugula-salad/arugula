@@ -18,6 +18,7 @@ import { DocActions, openTab } from "../../shared/docs/doc-actions";
 import { moveDocsToTeam, resultWords } from "../../shared/docs/move-docs";
 import { EditedDialog, ShareWith, type Edited } from "../../shared/docs/share-with";
 import { DocError, projectDocs } from "../../shared/docs/store";
+import { revokePublic, sharePublic } from "../../shared/docs/public-link";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { IconButton, MoreIcon } from "../../shared/ui/icons";
 import { Modal } from "../../shared/ui/modal";
@@ -51,9 +52,20 @@ function useDocActions(p: PlatformProject, doc: ProjectDoc, eager: boolean, relo
   const [asking, setAsking] = useState<Edited | null>(null);
   const [picking, setPicking] = useState(false);
   const busy = useRef(false);
+  // Arugula #871: a team Doc's owners and editors share it with a public link (a copy from a
+  // machine is its machine's to share). The list's rows don't say whether it has one, so the
+  // menu reads the Doc when it opens, and offers Share or Stop by what it finds.
+  const publicly = !!p.team && mayWrite(p) && !doc.machine;
+  const shared = useRef(false);
 
   /** The team Docs made from this one, read again; a Doc written here has none. */
   const load = async (): Promise<ProjectDocCopy[]> => {
+    if (publicly) {
+      try {
+        const v = await projectDocs.get(p.id, doc.id);
+        shared.current = !!v.public && v.public.ver > 0;
+      } catch {}
+    }
     if (!mine || !doc.machine) return [];
     let list: ProjectDocCopy[] = [];
     try {
@@ -124,6 +136,30 @@ function useDocActions(p: PlatformProject, doc: ProjectDoc, eager: boolean, relo
   };
   const open = () => openTab(linkOf(p, doc));
 
+  /** Arugula #871, from the list: make (or update) the Doc's public link and copy it. */
+  const sharePublicly = async () => {
+    try {
+      const link = await sharePublic(p.id, doc.id);
+      if (!link.url) return toast("This control keeps no shared Docs");
+      await navigator.clipboard.writeText(link.url).catch(() => {});
+      toast("Public link copied");
+      reload?.();
+    } catch (e) {
+      toast((e as Error).message);
+    }
+  };
+  const stopPublic = async () => {
+    try {
+      const v = await projectDocs.get(p.id, doc.id);
+      if (!v.public) return toast("It has no public link");
+      await revokePublic(p.id, doc.id, v.public);
+      toast("The link no longer opens");
+      reload?.();
+    } catch (e) {
+      toast((e as Error).message);
+    }
+  };
+
   /** The ⋯ menu: the same actions, and the dialog for a Doc with several teams to say. */
   const items = (from: HTMLElement, made: ProjectDocCopy[] = copies): MenuItem[] => {
     const s = shareOf(made);
@@ -131,6 +167,16 @@ function useDocActions(p: PlatformProject, doc: ProjectDoc, eager: boolean, relo
       { label: "Copy link", run: () => void copy().then((ok) => ok && toast("Link copied")) },
       ...(s ? [{ label: s.word, run: () => s.run(from) }] : []),
       ...(s && doc.machine && s.word !== "Share with…" ? [{ label: "Share with…", run: () => setPicking(true) }] : []),
+      ...(publicly
+        ? [
+            ...(shared.current
+              ? [
+                  { label: "Update public link", run: () => void sharePublicly() },
+                  { label: "Stop public link", run: () => void stopPublic() },
+                ]
+              : [{ label: "Share public link", run: () => void sharePublicly() }]),
+          ]
+        : []),
       { label: "Open in browser", run: open },
     ];
   };

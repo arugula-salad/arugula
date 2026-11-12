@@ -9745,6 +9745,17 @@
               "null"
             ]
           },
+          "public": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PublicLink"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Doc's public link, when it has one (Arugula #871). Left out for\nan agent session, which is never given the key."
+          },
           "sections": {
             "items": {
               "$ref": "#/components/schemas/Section"
@@ -10086,6 +10097,17 @@
             },
             "type": "array"
           },
+          "left_queue": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LeftQueue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why it last left the merge queue unmerged: GitHub's `dequeued`.\nCleared by the next `enqueued` and by a merge; it stays after a\nclose, so the row still says why."
+          },
           "merge_state": {
             "type": [
               "string",
@@ -10114,6 +10136,15 @@
           "queued": {
             "description": "An open PR in its branch's merge queue: from GitHub's `enqueued`,\nuntil `dequeued` or it closes (Arugula #878). An older platform\ndoesn't say, so false.",
             "type": "boolean"
+          },
+          "queued_since": {
+            "description": "When it last entered the merge queue, in milliseconds: GitHub's\n`enqueued`, as the platform heard it (Arugula #766). Kept after it\nleaves, so a reader tells how long it was queued from `left_queue`.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "repo": {
             "default": null,
@@ -11060,6 +11091,26 @@
         ],
         "type": "object"
       },
+      "LeftQueue": {
+        "description": "A PR's last unmerged exit from its merge queue (Arugula #766).",
+        "properties": {
+          "at": {
+            "description": "When the platform heard it, in milliseconds.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "reason": {
+            "description": "GitHub's `reason` as it came, in upper case: `CHECKS_TIMED_OUT`,\n`CHECKS_FAILED`, `MERGE_CONFLICT`, `MANUAL`, `BRANCH_PROTECTIONS`,\n`GIT_TREE_INVALID`, `INVALID_MERGE_COMMIT`, `UNKNOWN_REMOVAL_REASON`.\nOne GitHub adds later is kept as it is.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason",
+          "at"
+        ],
+        "type": "object"
+      },
       "Live": {
         "description": "The item a row points at, as it is now: what the page draws beside the\nrow's own status, and the label of its link.",
         "properties": {
@@ -11113,6 +11164,17 @@
             },
             "type": "array"
           },
+          "left_queue": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LeftQueue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A PR that left the queue unmerged, and why (`ForgeItem::left_queue`)."
+          },
           "number": {
             "description": "A run has none: 0.",
             "format": "uint64",
@@ -11123,6 +11185,19 @@
             "description": "`plane` for a tracker's item; absent for GitHub, native issues and runs.",
             "type": [
               "string",
+              "null"
+            ]
+          },
+          "queued": {
+            "description": "A PR in its branch's merge queue now (Arugula #766). A repo with no\nqueue, a platform from before it and every other kind say false.",
+            "type": "boolean"
+          },
+          "queued_since": {
+            "description": "With `queued`: when it entered the queue, in milliseconds.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
               "null"
             ]
           },
@@ -12005,6 +12080,48 @@
             "type": "string"
           }
         ]
+      },
+      "PublicLink": {
+        "description": "A team Doc's public link (Arugula #871). The platform keeps its key with\nthe Doc, and gives it only to those who read the Doc; control holds the\nciphertext and never the key. The URL is `<viewer>/<id>#k=<key>`, the\nviewer being `/control.json`'s `doc_viewer`.",
+        "properties": {
+          "behind": {
+            "description": "The Doc changed since the served version was sealed.",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "The link's id at control: 32 lower-case hex digits.",
+            "type": "string"
+          },
+          "key": {
+            "description": "The link's key, base64url without padding: 32 bytes.",
+            "type": "string"
+          },
+          "updated_at": {
+            "description": "When the served version was made (ms); 0 while there is none.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "url": {
+            "default": "",
+            "description": "The address anyone can open, `<viewer>/<id>#k=<key>`; empty when this\ncontrol keeps no shared Docs, or from an older platform. The platform\npage can't read `/control.json` (the platform's host answers none of\nthe hub's), so the platform says where the viewer is.",
+            "type": "string"
+          },
+          "ver": {
+            "description": "The version control serves; 0 while the first one isn't uploaded.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "ver",
+          "updated_at",
+          "behind"
+        ],
+        "type": "object"
       },
       "PutEntry": {
         "description": "[`BOARD_ENTRIES`]' body. Without `id` it adds a row, last (`entry` is\n`row` or absent), or, with `entry: zone`, a group with a `title`, last;\nwith `id` it changes that row or group: what is absent is left as it is,\nand a change to `pointer`, `note` or a group's `title` names `rev`. A\nnew row's `zone` is the group it goes in. `kind`, and a `zone` that is a\nlane, are refused, and so is every `status` (aru-125: lanes follow the work;\na question for a person is an ask, #367). The row's\n`pointer` is an issue or a PR (or a link, for a note).",

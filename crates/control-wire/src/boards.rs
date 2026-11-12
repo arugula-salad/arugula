@@ -1147,6 +1147,31 @@ pub struct Live {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub closed_by: Option<String>,
+    /// A PR in its branch's merge queue now (Arugula #766). A repo with no
+    /// queue, a platform from before it and every other kind say false.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    pub queued: bool,
+    /// With `queued`: when it entered the queue, in milliseconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub queued_since: Option<u64>,
+    /// A PR that left the queue unmerged, and why (`ForgeItem::left_queue`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub left_queue: Option<crate::projects::LeftQueue>,
+}
+
+impl Live {
+    /// What a PR says of its merge queue, at `now`: `queued 12m` while it's
+    /// in, `left queue: checks timed out` once it left unmerged, nothing for
+    /// a repo with no queue (Arugula #766).
+    pub fn queue_line(&self, now: u64) -> Option<String> {
+        if self.queued && !matches!(self.state, LiveState::Merged | LiveState::Closed) {
+            return Some(self.queued_since.map_or("queued".to_owned(), |t| format!("queued {}", ago(t, now))));
+        }
+        self.left_queue.as_ref().map(|l| format!("left queue: {}", l.words()))
+    }
 }
 
 /// What an agent block is doing (aru-116's second ruling).
@@ -2355,6 +2380,9 @@ fn lane_text<'a>(out: &mut String, title: &str, rows: impl Iterator<Item = &'a R
         if !marks.is_empty() {
             *out += &format!("      {}\n", fit(&marks, TEXT_WIDTH - 6));
         }
+        if let Some(q) = r.live.as_ref().and_then(|l| l.queue_line(now_ms())) {
+            *out += &format!("      {}\n", fit(&q, TEXT_WIDTH - 6));
+        }
         if let Some(l) = &r.live
             && let Some(pr) = &l.closed_with
         {
@@ -2729,6 +2757,9 @@ mod tests {
                 category: None,
                 closed_with: None,
                 closed_by: None,
+                queued: false,
+                queued_since: None,
+                left_queue: None,
             });
             r
         };
@@ -2857,6 +2888,9 @@ mod tests {
             category: None,
             closed_with: None,
             closed_by: None,
+            queued: false,
+            queued_since: None,
+            left_queue: None,
         };
         let mut r = row(Pointer::Issue { id: "iss_1".into() }, Lane::Doing, "x");
         r.live = Some(live.clone());
@@ -3029,6 +3063,9 @@ Done: People can sign up.
                 category: None,
                 closed_with: None,
                 closed_by: None,
+                queued: false,
+                queued_since: None,
+                left_queue: None,
             });
             r
         };
@@ -3066,6 +3103,9 @@ Done: People can sign up.
             category: None,
             closed_with: None,
             closed_by: None,
+            queued: false,
+            queued_since: None,
+            left_queue: None,
         });
         let text = render(&view(lanes(vec![(Lane::Next, vec![r.clone()])])));
         assert!(text.contains("Fix login [boards, ui] (@Ana_Diaz)\n"), "{text}");
@@ -3095,6 +3135,9 @@ Done: People can sign up.
                 category: None,
                 closed_with: with.map(str::to_owned),
                 closed_by: by.map(str::to_owned),
+                queued: false,
+                queued_since: None,
+                left_queue: None,
             });
             render(&view(lanes(vec![(Lane::Done, vec![r])])))
         };
@@ -3103,6 +3146,59 @@ Done: People can sign up.
         assert!(line(text.clone(), "      closed with acme/site#70, by \"(#4)\" in the title"), "{text}");
         assert!(line(done(Some("acme/site#70"), None), "      closed with acme/site#70"));
         assert!(!done(None, None).contains("closed with"));
+    }
+
+    /// A PR in its merge queue says how long; one that left it says why,
+    /// with GitHub's reason in lower case words, kept as it came when new
+    /// (Arugula #766). A repo with no queue says nothing.
+    #[test]
+    fn a_row_says_where_its_pr_is_in_the_merge_queue() {
+        let pr = |state: LiveState, queued: bool, since: Option<u64>, left: Option<(&str, u64)>| {
+            let mut r = row(Pointer::ForgeItem { id: "fi_1".into() }, Lane::Review, "Fix login");
+            r.live = Some(Live {
+                state,
+                kind: "pr".into(),
+                repo: Some("acme/app".into()),
+                number: 9,
+                title: "Fix login".into(),
+                assignees: vec![],
+                labels: vec![],
+                provider: None,
+                identifier: None,
+                state_name: None,
+                url: None,
+                category: None,
+                closed_with: None,
+                closed_by: None,
+                queued,
+                queued_since: since,
+                left_queue: left.map(|(reason, at)| crate::projects::LeftQueue { reason: reason.into(), at }),
+            });
+            r
+        };
+        let live = |r: &Row| r.live.clone().unwrap();
+        let t0 = 1_000_000_000;
+        let queued = pr(LiveState::Open, true, Some(t0), None);
+        assert_eq!(live(&queued).queue_line(t0 + 12 * 60_000 + 5_000).as_deref(), Some("queued 12m"));
+        assert_eq!(pr(LiveState::Open, true, None, None).live.unwrap().queue_line(t0).as_deref(), Some("queued"));
+        let left = pr(LiveState::ChecksRunning, false, Some(t0), Some(("CHECKS_TIMED_OUT", t0 + 1)));
+        assert_eq!(live(&left).queue_line(t0 + 9).as_deref(), Some("left queue: checks timed out"));
+        let new = pr(LiveState::Open, false, None, Some(("SOMETHING_NEW", t0)));
+        assert_eq!(live(&new).queue_line(t0).as_deref(), Some("left queue: something new"));
+        assert_eq!(live(&pr(LiveState::Open, false, None, None)).queue_line(t0), None);
+        // Closed, it still says why it left; a stale `queued` isn't said.
+        let closed = pr(LiveState::Closed, true, Some(t0), Some(("MERGE_CONFLICT", t0)));
+        assert_eq!(live(&closed).queue_line(t0).as_deref(), Some("left queue: merge conflict"));
+
+        let text = |r: Row| render(&view(lanes(vec![(Lane::Review, vec![r])])));
+        let line = |text: &str, want: &str| text.lines().any(|l| l == want);
+        let ago12 = now_ms() - 12 * 60_000 - 5_000;
+        let said = text(pr(LiveState::Open, true, Some(ago12), None));
+        assert!(line(&said, "      queued 12m"), "{said}");
+        let said = text(left);
+        assert!(line(&said, "      left queue: checks timed out"), "{said}");
+        let none = text(pr(LiveState::Open, false, None, None));
+        assert!(!none.contains("queue"), "{none}");
     }
 
     /// A row with a session on its issue names the newest one under it
@@ -3147,6 +3243,9 @@ Done: People can sign up.
             category: None,
             closed_with: None,
             closed_by: None,
+            queued: false,
+            queued_since: None,
+            left_queue: None,
         };
         let titled = |note: &str, title: &str, labels: Vec<String>| {
             let mut r = row(Pointer::Issue { id: "iss_1a2b3c4d5e6f7a8b".into() }, Lane::Next, note);
@@ -3425,6 +3524,9 @@ Done: People can sign up.
             category: None,
             closed_with: None,
             closed_by: None,
+            queued: false,
+            queued_since: None,
+            left_queue: None,
         });
         let mut v = view(lanes(vec![(Lane::Next, vec![blocked, free])]));
         v.ready = vec!["row_f".into()];
@@ -3466,6 +3568,9 @@ Done: People can sign up.
                 category: None,
                 closed_with: None,
                 closed_by: None,
+                queued: false,
+                queued_since: None,
+                left_queue: None,
             });
             r
         };
