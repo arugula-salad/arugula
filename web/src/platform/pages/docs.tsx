@@ -11,7 +11,7 @@
 import { Card } from "../../shared/ui/card";
 import { BlockLoading, EmptyLine, EmptyState } from "../../shared/ui/block-states";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { BoardOfDoc, ProjectDoc, ProjectDocSection, ProjectDocView } from "../../shared/proto";
+import type { BoardOfDoc, ProjectDoc, ProjectDocSection, ProjectDocTrashed, ProjectDocView } from "../../shared/proto";
 import { chat } from "../../shared/chat-store";
 import { DocError, projectDocs } from "../../shared/docs/store";
 import { boards } from "../../shared/boards/store";
@@ -33,6 +33,9 @@ import { SectionHead } from "../../shared/ui/section-head";
 import { session, type PlatformProject } from "../session";
 import { toast } from "../toast";
 import { mayWrite } from "./issues";
+import { currentProject, onCurrentProject } from "../current-project";
+import { scopeOf } from "../scope";
+import { ScopeToggle } from "../scope-toggle";
 import { Missing } from "./project";
 import { PlatformDocActions, RowMenu } from "./doc-actions";
 import { PublicLinkBar } from "./doc-public";
@@ -169,11 +172,16 @@ function useRows(ps: PlatformProject[]): { rows: Row[] | null; sections: Map<str
   return { rows, sections: read, reload: () => setAgain((n) => n + 1) };
 }
 
-export function DocsPage({ project }: { project?: string }) {
+export function DocsPage({ project, all }: { project?: string; all?: boolean }) {
   useSubscribe((fn) => session.subscribe(fn));
+  useSubscribe((fn) => onCurrentProject(fn));
   const one = project ? session.project(project) : undefined;
   if (project && !one) return <Missing what="That project isn't one of yours (or it's gone)." />;
-  return <DocList ps={one ? [one] : session.projects} narrowed={!!one} />;
+  // Team Docs are the current project's, unless All; Mine is the machine's library either way.
+  // Personal has no team to narrow to.
+  const at = project ? undefined : scopeOf({ page: "docs", all: all || undefined }, currentProject(), (id) => !!session.project(id));
+  const scope = at && session.project(at)?.team ? at : undefined;
+  return <DocList ps={one ? [one] : session.projects} narrowed={!!one} scope={scope} widened={!project && !!all && !!currentProject()} />;
 }
 
 function groupsOf(shown: Row[], narrowed: boolean, single: boolean, sort: DocSort): ListGroup<Row>[] {
@@ -191,6 +199,9 @@ function groupsOf(shown: Row[], narrowed: boolean, single: boolean, sort: DocSor
 
 /** A project Doc's times, as the Docs' sort and line say them. */
 const timesOf = (d: ProjectDoc) => ({ made: d.created_at, updated: d.updated_at });
+
+/** How long a deleted team Doc waits in the Trash (the wire's `TRASH_DAYS`; the list says its own). */
+const TRASH_DAYS = 30;
 
 type DocFilter = "team" | "mine";
 const FILTER_KEY = "platform-docs-filter";
@@ -210,13 +221,17 @@ function saveFilter(f: DocFilter) {
   } catch {}
 }
 
-function DocList({ ps, narrowed }: { ps: PlatformProject[]; narrowed: boolean }) {
+function DocList({ ps, narrowed, scope, widened }: { ps: PlatformProject[]; narrowed: boolean; scope?: string; widened?: boolean }) {
   const { rows, sections, reload } = useRows(ps);
   const [filter, setFilter] = useState<DocFilter>(savedFilter);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useDocSort();
   const [making, setMaking] = useState(false);
-  const all = rows ?? [];
+  const [trashOpen, setTrashOpen] = useState(false);
+  // Team Docs of the current project alone, while scoped.
+  const all = (rows ?? []).filter((r) => r.mine || !scope || r.p.id === scope);
+  // The Trash is one project's: the page's own, or the one it is scoped to.
+  const trashOf = narrowed ? ps[0] : scope ? ps.find((p) => p.id === scope) : undefined;
   const q = query.trim().toLowerCase();
   const shown = all.filter(
     (r) =>
@@ -262,15 +277,28 @@ function DocList({ ps, narrowed }: { ps: PlatformProject[]; narrowed: boolean })
               title="Docs"
               sub={sub}
               actions={
-                writable.length > 0 && (
-                  <button type="button" class="secondary small" aria-expanded={making} data-doc-new-open onClick={() => setMaking(!making)}>
-                    New Doc
-                  </button>
-                )
+                <>
+                  <ScopeToggle r={{ page: "docs" }} scoped={!!scope} all={!!widened} />
+                  {writable.length > 0 && (
+                    <button type="button" class="secondary small" aria-expanded={making} data-doc-new-open onClick={() => setMaking(!making)}>
+                      New Doc
+                    </button>
+                  )}
+                </>
               }
-              stats={all.length > 0 && <ListCounts counts={counts} on={narrowed ? "all" : filter} pick={narrowed ? () => {} : pick} />}
+              stats={
+                <>
+                  {all.length > 0 && <ListCounts counts={counts} on={narrowed ? "all" : filter} pick={narrowed ? () => {} : pick} />}
+                  {trashOf && (
+                    <button type="button" class="link docs-trash-open" aria-expanded={trashOpen} data-docs-trash-open onClick={() => setTrashOpen(!trashOpen)}>
+                      Trash
+                    </button>
+                  )}
+                </>
+              }
             />
             {making && <NewDoc ps={writable} done={() => setMaking(false)} />}
+            {trashOf && trashOpen && <Trash p={trashOf} restored={reload} />}
           </>
         }
         searchLabel="Search titles and headings"
@@ -306,6 +334,57 @@ function DocList({ ps, narrowed }: { ps: PlatformProject[]; narrowed: boolean })
         preview={(r) => <Preview key={r.doc.id} row={r} reload={reload} />}
       />
     </div>
+  );
+}
+
+/** The project's Trash (Arugula #866): each deleted Doc's title, who deleted it, when, the days it has left, and Restore for those who may. */
+function Trash({ p, restored }: { p: PlatformProject; restored: () => void }) {
+  const [trash, setTrash] = useState<{ docs: ProjectDocTrashed[]; days: number } | null>(null);
+  const [busy, setBusy] = useState("");
+  const who = nameOf(p);
+  const load = () =>
+    projectDocs.trash(p.id).then(
+      (t) => setTrash({ docs: t.docs, days: t.days }),
+      () => setTrash({ docs: [], days: TRASH_DAYS }),
+    );
+  useEffect(() => {
+    setTrash(null);
+    void load();
+  }, [p.id]);
+  const restore = async (d: ProjectDocTrashed) => {
+    setBusy(d.doc.id);
+    try {
+      await projectDocs.restore(p.id, d.doc.id);
+      restored();
+      await load();
+    } catch (err) {
+      toast(`Couldn't restore it: ${(err as Error).message}`);
+    } finally {
+      setBusy("");
+    }
+  };
+  if (trash === null) return <BlockLoading inline what="the Trash" />;
+  if (trash.docs.length === 0) return <EmptyLine data-docs-trash-empty>The Trash is empty. A deleted Doc waits here for {trash.days} days.</EmptyLine>;
+  return (
+    <ul class="platform-list card-list" data-docs-trash>
+      {trash.docs.map((d) => {
+        const left = Math.max(0, Math.ceil(trash.days - (Date.now() - d.trashed_at) / 86_400_000));
+        return (
+          <Card as="li" dense key={d.doc.id} data-trashed-doc={d.doc.id}>
+            <span data-doc-title>{d.doc.title}</span>
+            <span class="dim project-doc-row">
+              {" "}
+              deleted by {d.trashed_by ? (who(d.trashed_by) ?? "a member") : "someone who left"} · <Time at={d.trashed_at} /> · {left} {left === 1 ? "day" : "days"} left
+            </span>
+            {d.restorable && (
+              <button type="button" class="secondary small" disabled={busy === d.doc.id} data-doc-restore onClick={() => void restore(d)}>
+                Restore
+              </button>
+            )}
+          </Card>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -694,7 +773,9 @@ function DocWriter({ project, view, wrote }: { project: string; view: ProjectDoc
     </form>
     {gone && (
       <ConfirmRemove title={`Delete “${view.doc.title}”?`} label="Delete" go={() => void remove()} cancel={() => setGone(false)}>
-        <p data-doc-confirm>It goes for everyone in the project.</p>
+        <p data-doc-confirm>
+          It goes to the Trash for {TRASH_DAYS} days, out of sight of everyone in the project. An owner, an editor or its maker can restore it from the Docs page's Trash.
+        </p>
       </ConfirmRemove>
     )}
     </>

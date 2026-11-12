@@ -27,6 +27,7 @@ import { pick, store } from "../upload";
 import { Chip, ObjectChip } from "../../shared/ui/state-chip";
 import { Bar } from "../../shared/ui/bar";
 import { CloseIcon, IconButton } from "../../shared/ui/icons";
+import { Modal } from "../../shared/ui/modal";
 
 export interface Tool {
   type: "tool";
@@ -407,35 +408,54 @@ function PermCard({ client, id, p, cwd, owner }: { client: Client; id: PaneId; p
   );
 }
 
-/** Images the block keeps (M71), fetched once each per host: a URL to
- * show. */
-const kept = new Map<string, Promise<string | null>>();
+/** The types a kept image can be (the daemon's `images::mime`): raster
+ * pictures only, never SVG or HTML. The page opens nothing else it's sent
+ * as one. */
+const KEPT_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 
-/** The kinds of picture a block keeps (the daemon's `agent::images`); the
- * page opens nothing else it's sent as one. */
-const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+/** Images the blocks keep (M71), fetched once per host, block and name:
+ * each the data: URL it is shown from. A data: URL and not a blob: URL
+ * because control serves this client with `img-src 'self' data: https:`
+ * (no blob:), so a blob URL shows nothing for someone who comes in through
+ * control (Arugula #85); the Doc block's pictures do the same (#965). Each
+ * block's own are dropped when the block is closed (`forgetKept`). */
+const kept = new Map<string, Map<string, Promise<string | null>>>();
+
+/** Whose images `kept` files them under: the host's and the block's. */
+const keptKey = (client: Client, id: PaneId) => `${client.base} ${id}`;
 
 function keptImage(client: Client, id: PaneId, name: string): Promise<string | null> {
-  const key = `${client.base} ${id}/${name}`;
-  let p = kept.get(key);
+  const key = keptKey(client, id);
+  const mine = kept.get(key) ?? new Map<string, Promise<string | null>>();
+  kept.set(key, mine);
+  let p = mine.get(name);
   if (!p) {
     p = client
       .request("POST", `/api/blocks/${id}/call/image`, { name })
       .then(async (res) => {
         if (!res.ok) return null;
         const { mime, data } = await res.json<{ mime: string; data: string }>();
-        if (!IMAGE_TYPES.includes(mime)) return null;
-        const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
-        return URL.createObjectURL(new Blob([bytes], { type: mime }));
+        // The bytes go into a URL: only a picture's type, and base64 alone.
+        if (!KEPT_TYPES.has(mime) || !/^[A-Za-z0-9+/]*={0,2}$/.test(data)) return null;
+        return `data:${mime};base64,${data}`;
       })
       .catch(() => null);
-    kept.set(key, p);
+    const asked = p;
+    // A failed fetch is asked again the next time the image is drawn.
+    void asked.then((u) => u === null && mine.get(name) === asked && mine.delete(name));
+    mine.set(name, p);
   }
   return p;
 }
 
+/** The block `id` on `client`'s host is closed: its images' URLs go. */
+export function forgetKept(client: Client, id: PaneId) {
+  kept.delete(keptKey(client, id));
+}
+
 export function KeptImage({ client, id, name }: { client: Client; id: PaneId; name: string }) {
   const [url, setUrl] = useState<string | null>(null);
+  const [full, setFull] = useState(false);
   useEffect(() => {
     let live = true;
     void keptImage(client, id, name).then((u) => live && setUrl(u));
@@ -444,10 +464,27 @@ export function KeptImage({ client, id, name }: { client: Client; id: PaneId; na
     };
   }, [id, name]);
   if (!url) return <span class="agent-image missing">image</span>;
+  // A click shows it full size over the page: a new tab can't open a data:
+  // URL (browsers refuse to navigate to one).
   return (
-    <a href={url} target="_blank" rel="noopener" class="agent-image">
-      <img src={url} alt="image" />
-    </a>
+    <>
+      <button type="button" class="agent-image" aria-label="Show the image full size" data-kept-image={name} onClick={() => setFull(true)}>
+        <img src={url} alt="image" />
+      </button>
+      {full && (
+        <Modal class="image-viewer" backdropClass="image-viewer-backdrop" backdropProps={{ "data-image-viewer": "" }} label="Image" close={() => setFull(false)} x={false}>
+          <img src={url} alt="image" />
+          <div class="image-viewer-bar">
+            <a href={url} download={name}>
+              Download
+            </a>
+            <IconButton label="Close" data-viewer-close onClick={() => setFull(false)}>
+              <CloseIcon size="sm" />
+            </IconButton>
+          </div>
+        </Modal>
+      )}
+    </>
   );
 }
 
@@ -456,9 +493,15 @@ function Attached({ file, remove }: { file: File; remove: () => void }) {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     if (!file.type.startsWith("image/")) return;
-    const u = URL.createObjectURL(file);
-    setUrl(u);
-    return () => URL.revokeObjectURL(u);
+    // A data: URL, as the kept ones are (control's CSP has no blob:).
+    let live = true;
+    const r = new FileReader();
+    r.onload = () => live && typeof r.result === "string" && setUrl(r.result);
+    r.readAsDataURL(file);
+    return () => {
+      live = false;
+      r.abort();
+    };
   }, [file]);
   return (
     <span class="agent-attached-file" title={file.name}>
@@ -827,6 +870,7 @@ registerBlock("agent", (client, id): BlockView => {
     focus: () => host.querySelector<HTMLElement>(".agent-composer textarea")?.focus(),
     dispose: () => {
       off();
+      forgetKept(client, id);
       render(null, host);
       host.remove();
     },

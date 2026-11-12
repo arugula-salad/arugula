@@ -668,6 +668,61 @@
       ],
       "type": "object"
     },
+    "TrashList": {
+      "description": "`GET` [`PROJECT_DOCS_TRASH`]: a project's trashed Docs, the latest\ndeleted first.",
+      "properties": {
+        "days": {
+          "description": "How many days a Doc waits ([`TRASH_DAYS`]).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "docs": {
+          "items": {
+            "$ref": "#/$defs/Trashed"
+          },
+          "type": "array"
+        },
+        "project": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "docs",
+        "days"
+      ],
+      "type": "object"
+    },
+    "Trashed": {
+      "description": "One trashed Doc: its head, who deleted it and when.",
+      "properties": {
+        "doc": {
+          "$ref": "#/$defs/Doc"
+        },
+        "restorable": {
+          "description": "Whether the reader may restore it.",
+          "type": "boolean"
+        },
+        "trashed_at": {
+          "description": "When it was deleted (ms).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "trashed_by": {
+          "description": "The account that deleted it, or \"\" once that account is deleted.\nThe page names it from the team's members, as it does a Doc's\n`author`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc",
+        "trashed_at",
+        "trashed_by",
+        "restorable"
+      ],
+      "type": "object"
+    },
     "UpdateCopy": {
       "description": "`PUT` [`PROJECT_DOC_COPY`]: Update copy.",
       "properties": {

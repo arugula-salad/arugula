@@ -10122,6 +10122,10 @@
             "description": "`github` or `plane`; an older platform's items are GitHub's.",
             "type": "string"
           },
+          "queued": {
+            "description": "An open PR in its branch's merge queue: from GitHub's `enqueued`,\nuntil `dequeued` or it closes (Arugula #878). An older platform\ndoesn't say, so false.",
+            "type": "boolean"
+          },
           "repo": {
             "default": null,
             "description": "`OWNER/NAME`; none for a Plane item.",

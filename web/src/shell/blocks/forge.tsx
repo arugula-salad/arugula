@@ -722,7 +722,9 @@ function PrBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState 
   const pr = s.pr;
   const it = pr?.item;
   const open = it?.state === "open";
-  const state: ItemState | null = it ? (open && it.draft ? "draft" : it.state) : null;
+  // Queued while it's in the merge queue (#878): still open, so everything
+  // an open PR offers stays.
+  const state: ItemState | null = it ? (open && it.draft ? "draft" : open && it.queued ? "queued" : it.state) : null;
   // Never a want after the end: a merged or closed PR has no strip, and the
   // drafts for it are dropped.
   const waiting = open ? s.drafts.filter((d) => d.status === "waiting") : [];
@@ -914,6 +916,8 @@ function nextStep(
       ),
     };
   }
+  // In the merge queue (#878): it merges when its group passes, so no Merge.
+  if (it.queued) return { tone: "info", text: "In the merge queue: it merges when its group passes" };
   const settled = !it.draft && it.mergeable === true && !it.blocked && !pr.checks.some((c) => [...FAILED, ...RUNNING].includes(c.state));
   if (settled && mayWrite) {
     return {

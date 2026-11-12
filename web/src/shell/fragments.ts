@@ -42,6 +42,7 @@ export const FRAGMENTS: Fragment[] = [
   { route: "#agents", why: "The machine's agents (#403): the shell's.", where: ["shell/ui/agents-route.ts", "shell/ui/agents-page.tsx", "shell/ui/shell/rail.tsx"] },
   { route: "#docs", why: "The Docs this machine keeps (#1494): the shell's.", where: ["shell/ui/docs-route.ts", "shell/ui/docs-page.tsx", "shell/ui/shell/rail.tsx"] },
   { route: "#pane=", why: "A pane to show, from a notification or the swarm.", where: ["shell/main.tsx"] },
+  { route: "#pop=", why: "A pane popped out into a window of its own (#497): the page shows only it.", where: ["shell/main.tsx", "shell/ui/panes/pop-out.tsx"] },
   { route: "#machine=", why: "A machine to show (M184: a hosted workspace's, from the platform page), and with `&agent` Start an agent on it.", where: ["shell/main.tsx"] },
   { route: "#getting-started=", why: "The getting-started guide at a step.", where: ["shell/main.tsx"] },
   { route: "#developer", why: "The developer settings dialog.", where: ["shell/ui/developer.tsx"] },

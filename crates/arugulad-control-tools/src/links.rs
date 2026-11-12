@@ -124,10 +124,7 @@ pub(crate) async fn link(c: &Call<'_>, a: LinkArgs) -> Out {
         return Err(format!("at most {LINKS_MAX} links in one call; you gave {n}"));
     }
     let ends_said: Vec<&str> = add.iter().chain(&remove).flat_map(|l| [l.from.as_str(), l.to.as_str()]).collect();
-    let project = match super::plane_home::home(c, a.project.as_deref(), &ends_said).await? {
-        Some(p) => p,
-        None => c.chosen_project(a.project.as_deref()).await?.id,
-    };
+    let project = super::plane_home::home_or_main(c, a.project.as_deref(), &ends_said).await?;
     let said: Vec<String> = add.iter().chain(&remove).map(Pair::words).collect();
     let batch = LinkBatch {
         add: add.into_iter().map(Pair::ends).collect(),

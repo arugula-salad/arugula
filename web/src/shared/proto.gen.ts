@@ -3227,7 +3227,7 @@ export type InboxMarked = { item: string,
  */
 marked: number, };
 
-export type Intent = { "op": "new_session", name: string | null, from_pane: number | null, } | { "op": "rename_session", session: number, name: string, } | { "op": "close_session", session: number, } | { "op": "new_tab", session: number, from_pane: number | null, cwd?: string, } | { "op": "rename_tab", tab: number, name: string | null, } | { "op": "close_tab", tab: number, } | { "op": "move_tab", tab: number, session: number, index: number, } | { "op": "split", pane: number, edge: Edge, local?: boolean, cwd?: string, } | { "op": "close_pane", pane: number, } | { "op": "move_pane", pane: number, target: number, edge: Edge, } | { "op": "break_pane", pane: number, session: number, index: number | null, } | { "op": "dock_tab", tab: number, target: number, edge: Edge, } | { "op": "resize_split", split: number, weights: Array<number>, } | { "op": "arrange", tab: number, preset: Preset, main?: number, } | { "op": "focus", tab: number, pane: number | null, } | { "op": "set_option", scope: OptionScope, name: string, value: string | null, };
+export type Intent = { "op": "new_session", name: string | null, from_pane: number | null, } | { "op": "rename_session", session: number, name: string, } | { "op": "close_session", session: number, } | { "op": "new_tab", session: number, from_pane: number | null, cwd?: string, } | { "op": "rename_tab", tab: number, name: string | null, } | { "op": "close_tab", tab: number, } | { "op": "move_tab", tab: number, session: number, index: number, } | { "op": "split", pane: number, edge: Edge, local?: boolean, cwd?: string, } | { "op": "close_pane", pane: number, } | { "op": "move_pane", pane: number, target: number, edge: Edge, } | { "op": "break_pane", pane: number, session: number, index: number | null, } | { "op": "dock_tab", tab: number, target: number, edge: Edge, } | { "op": "resize_split", split: number, weights: Array<number>, } | { "op": "arrange", tab: number, preset: Preset, main?: number, } | { "op": "focus", tab: number, pane: number | null, } | { "op": "pop_out", pane: number, out: boolean, } | { "op": "set_option", scope: OptionScope, name: string, value: string | null, };
 
 /**
  * How an invite's push went: `sent` once a subscription took it,
@@ -3523,7 +3523,11 @@ blocked: boolean,
  * Review requests still pending (Forgejo's `requested_reviewers` also
  * keeps whoever already reviewed: see `forge::forgejo`).
  */
-requested: Array<Reviewer>, comments: number, updated_at: number, merged_at: number | null, merged_by: string | null, };
+requested: Array<Reviewer>, comments: number, updated_at: number, merged_at: number | null, merged_by: string | null, 
+/**
+ * An open PR in its branch's merge queue (GitHub only; Arugula #878).
+ */
+queued?: boolean, };
 
 export type ItemKind = "pr" | "issue";
 
@@ -4659,6 +4663,35 @@ body: string | null,
 rev: number, };
 
 /**
+ * `GET` [`PROJECT_DOCS_TRASH`]: a project's trashed Docs, the latest
+ * deleted first.
+ */
+export type ProjectDocTrash = { project: string, docs: Array<ProjectDocTrashed>, 
+/**
+ * How many days a Doc waits ([`TRASH_DAYS`]).
+ */
+days: number, };
+
+/**
+ * One trashed Doc: its head, who deleted it and when.
+ */
+export type ProjectDocTrashed = { doc: ProjectDoc, 
+/**
+ * When it was deleted (ms).
+ */
+trashed_at: number, 
+/**
+ * The account that deleted it, or "" once that account is deleted.
+ * The page names it from the team's members, as it does a Doc's
+ * `author`.
+ */
+trashed_by: string, 
+/**
+ * Whether the reader may restore it.
+ */
+restorable: boolean, };
+
+/**
  * `GET` [`PROJECT_DOC`]: a Doc with its sections, in order.
  */
 export type ProjectDocView = { doc: ProjectDoc, sections: Array<ProjectDocSection>, 
@@ -5761,7 +5794,12 @@ export type TabView = { id: number, name: string | null, root: Node, cols: numbe
  * view, ended by another client's claim of the tab (#439). `layout`
  * already shows it.
  */
-focus: number | null, layout: Layout, };
+focus: number | null, 
+/**
+ * Panes shown in a window of their own (Arugula #497): their place in
+ * `layout` holds a placeholder.
+ */
+popped?: Array<number>, layout: Layout, };
 
 /**
  * `GET` and `POST /api/team-pins`: the teams pinned here, and those whose

@@ -13,7 +13,7 @@
 //   /p/:project/chat/:room         a room in it (`?msg=N`: at that message)
 //   /p/:project/chat/activity      Activity
 //   /p/:project/chat/saved         Saved
-//   /p/:project/chat/search?q=…    search
+//   /p/:project/chat/search?q=…    search (`&all=1`: every team's)
 //   /p/:project/dm/:room           a direct message, in its team's project
 //                                  (UI audit #169)
 //   /p/:project/issues             its issues (M201): `?state=closed`,
@@ -84,13 +84,13 @@ export type Route =
   | { page: "triage"; project: string }
   | { page: "boards"; project: string }
   | { page: "board"; project: string; board: string }
-  | { page: "docs"; project?: string }
+  | { page: "docs"; project?: string; all?: true }
   | { page: "doc"; project: string; doc: string }
   | { page: "runs"; project: string; state?: string; trigger?: string; spec?: string }
   | { page: "run"; project: string; run: string; msg?: number }
   | { page: "sessions"; project: string; label?: string; tracker?: number; asker?: string; going?: boolean }
   | { page: "session"; project: string; session: string }
-  | { page: "chat"; project: string; room?: string; msg?: number; thread?: number; view?: "activity" | "saved" | "search" | "threads"; q?: string }
+  | { page: "chat"; project: string; room?: string; msg?: number; thread?: number; view?: "activity" | "saved" | "search" | "threads"; q?: string; all?: boolean }
   | { page: "dm"; project: string; room: string; msg?: number; thread?: number }
   | { page: "workspaces"; project: string }
   | { page: "workspace"; project: string; workspace: string }
@@ -98,13 +98,13 @@ export type Route =
   | { page: "deploys"; project: string }
   | { page: "new-deploy"; project: string; env?: string }
   | { page: "installed"; project?: string; repo?: string }
-  | { page: "inbox" }
-  | { page: "all-boards" }
+  | { page: "inbox"; all?: true }
+  | { page: "all-boards"; all?: true }
   | { page: "settings" }
   | { page: "design" }
   | { page: "deploy"; deploy: string }
   /** An id-only address, to be put where it belongs (`resolve`). */
-  | { page: "find"; what: "chat"; room?: string; msg?: number; thread?: number; view?: "activity" | "saved" | "search" | "threads"; q?: string }
+  | { page: "find"; what: "chat"; room?: string; msg?: number; thread?: number; view?: "activity" | "saved" | "search" | "threads"; q?: string; all?: boolean }
   | { page: "find"; what: "issue"; issue: string; msg?: number }
   | { page: "find"; what: "run"; run: string; msg?: number }
   | { page: "missing"; path: string };
@@ -185,16 +185,18 @@ export function parse(path: string, search = ""): Route {
     const to = q.get("to");
     return to === "projects" || to === "docs" || to === "boards" || to === "chat" ? { page: "home", to } : { page: "home" };
   }
-  if (parts.length === 1 && parts[0] === "inbox") return { page: "inbox" };
-  if (parts.length === 1 && parts[0] === "boards") return { page: "all-boards" };
-  if (parts.length === 1 && parts[0] === "docs") return { page: "docs" };
+  // `?all=1` opens these across every project, not the current one's (Arugula #881).
+  const all = q.get("all") === "1" ? { all: true as const } : {};
+  if (parts.length === 1 && parts[0] === "inbox") return { page: "inbox", ...all };
+  if (parts.length === 1 && parts[0] === "boards") return { page: "all-boards", ...all };
+  if (parts.length === 1 && parts[0] === "docs") return { page: "docs", ...all };
   if (parts.length === 1 && parts[0] === "settings") return { page: "settings" };
   if (parts.length === 1 && parts[0] === "design") return { page: "design" };
   if (parts[0] === "chat" && parts.length <= 2) {
     if (parts.length === 1) return { page: "find", what: "chat" };
     if (parts[1] === "activity" || parts[1] === "saved") return { page: "find", what: "chat", view: parts[1] };
     if (parts[1] === "threads") return { page: "find", what: "chat", view: "threads" };
-    if (parts[1] === "search") return { page: "find", what: "chat", view: "search", q: q.get("q") ?? "" };
+    if (parts[1] === "search") return { page: "find", what: "chat", view: "search", q: q.get("q") ?? "", ...(q.get("all") === "1" && { all: true }) };
     const room = idOf(parts[1]);
     return room ? { page: "find", what: "chat", room, ...msg, ...thread } : missing;
   }
@@ -235,7 +237,7 @@ export function parse(path: string, search = ""): Route {
     if (parts.length === 3) return { page: "chat", project };
     if (parts.length === 4 && (parts[3] === "activity" || parts[3] === "saved")) return { page: "chat", project, view: parts[3] };
     if (parts.length === 4 && parts[3] === "threads") return { page: "chat", project, view: "threads" };
-    if (parts.length === 4 && parts[3] === "search") return { page: "chat", project, view: "search", q: q.get("q") ?? "" };
+    if (parts.length === 4 && parts[3] === "search") return { page: "chat", project, view: "search", q: q.get("q") ?? "", ...(q.get("all") === "1" && { all: true }) };
     const room = parts.length === 4 ? idOf(parts[3]) : null;
     return room ? { page: "chat", project, room, ...msg, ...thread } : missing;
   }
@@ -310,6 +312,19 @@ function issueRoute(project: string, rest: string[], q: URLSearchParams, msg: { 
  * its slug. */
 export type Names = (id: string) => string | null | undefined;
 
+/** An id-only chat view's route in a project: its view, and search's query
+ * and `all` with it (Arugula #908). */
+export function chatViewIn(r: Extract<Route, { page: "find"; what: "chat" }>, project: string): Route {
+  if (!r.view) return { page: "chat", project };
+  return { page: "chat", project, view: r.view, q: r.q, ...(r.all && { all: true }) };
+}
+
+/** Search's query string: what was looked for, and `all` for every team's. */
+function searchQuery(r: { q?: string; all?: boolean }): string {
+  const parts = [r.q ? `q=${encodeURIComponent(r.q)}` : "", r.all ? "all=1" : ""].filter(Boolean);
+  return parts.length ? `?${parts.join("&")}` : "";
+}
+
 /** A room's `?msg=N&thread=P`: the message to show, and the thread beside it (#106). */
 function at(r: { msg?: number; thread?: number }): string {
   const q = [r.msg !== undefined ? `msg=${r.msg}` : "", r.thread !== undefined ? `thread=${r.thread}` : ""].filter(Boolean);
@@ -327,7 +342,7 @@ export function pathOf(r: Route, names: Names = () => null): string {
     case "chat": {
       const base = `/p/${s(r.project)}/chat`;
       if (r.view === "activity" || r.view === "saved" || r.view === "threads") return `${base}/${r.view}`;
-      if (r.view === "search") return `${base}/search${r.q ? `?q=${encodeURIComponent(r.q)}` : ""}`;
+      if (r.view === "search") return `${base}/search${searchQuery(r)}`;
       return r.room ? `${base}/${s(r.room)}${at(r)}` : base;
     }
     case "issues": {
@@ -348,7 +363,7 @@ export function pathOf(r: Route, names: Names = () => null): string {
     case "board":
       return `/p/${s(r.project)}/boards/${s(r.board)}`;
     case "docs":
-      return r.project ? `/p/${s(r.project)}/docs` : "/docs";
+      return r.project ? `/p/${s(r.project)}/docs` : r.all ? "/docs?all=1" : "/docs";
     case "doc":
       return `/p/${s(r.project)}/docs/${s(r.doc)}`;
     case "runs": {
@@ -384,9 +399,9 @@ export function pathOf(r: Route, names: Names = () => null): string {
     case "installed":
       return r.project && r.repo ? `/installed?state=${encodeURIComponent(`${r.project}:${r.repo}`)}` : "/installed";
     case "inbox":
-      return "/inbox";
+      return r.all ? "/inbox?all=1" : "/inbox";
     case "all-boards":
-      return "/boards";
+      return r.all ? "/boards?all=1" : "/boards";
     case "settings":
       return "/settings";
     case "design":
@@ -396,7 +411,7 @@ export function pathOf(r: Route, names: Names = () => null): string {
     case "find":
       if (r.what === "chat") {
         if (r.view === "activity" || r.view === "saved" || r.view === "threads") return `/chat/${r.view}`;
-        if (r.view === "search") return `/chat/search${r.q ? `?q=${encodeURIComponent(r.q)}` : ""}`;
+        if (r.view === "search") return `/chat/search${searchQuery(r)}`;
         return r.room ? `/chat/${s(r.room)}${at(r)}` : "/chat";
       }
       if (r.what === "issue") return `/issues/${s(r.issue)}${r.msg !== undefined ? `?msg=${r.msg}` : ""}`;

@@ -36,7 +36,7 @@ export interface ChatNav {
    * beside it (#106), and `msg` a reply in it to show. */
   openRoom(room: string, msg?: number, thread?: number): void;
   /** Activity, the threads I follow, or search results for `q`. */
-  openChatView(view: "activity" | "saved" | "search" | "threads", q?: string): void;
+  openChatView(view: "activity" | "saved" | "search" | "threads", q?: string, all?: boolean): void;
   /** A phone's swipe between levels (#816); a host that omits them has none.
    * `up`: where a swipe right goes (null: nowhere). `down`: where a swipe
    * left goes (null: nowhere, the drag rubber-bands). `goTo` commits one. */

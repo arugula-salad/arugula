@@ -9,7 +9,7 @@ import type { PlatformMe, PlatformProject, PlatformProjects } from "../shared/pr
 import { chat } from "../shared/chat-store";
 import { platformFetch, refusalOf } from "../shared/maintenance";
 import { setProtoOrigin } from "../shared/ui/prototype-frame";
-import { currentProject, forgetCurrentProject } from "./current-project";
+import { currentProject, forgetCurrentProject, onCurrentProject, rememberTeamProject } from "./current-project";
 import { finishSignIn, signIn, triedJustNow } from "./signin";
 
 export type { PlatformProject };
@@ -77,7 +77,9 @@ export const session = {
       // The current project is gone, or no longer the reader's (Arugula #880).
       const cur = currentProject();
       if (cur && !v.projects.some((p) => p.id === cur)) forgetCurrentProject();
+      rememberTeamProject(v.projects);
       if (first) {
+        onCurrentProject(() => rememberTeamProject(this.projects));
         const roster = v.projects.flatMap((p) => p.team?.members.filter((m) => m.account === v.me.account).map((m) => m.name) ?? []);
         chat.start(v.me.account, [v.me.login, v.me.name, ...roster]);
       }

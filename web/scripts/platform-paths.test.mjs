@@ -3,7 +3,7 @@
 // else is nothing's address. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { TOP, idOf, parse, pathOf, slugOf, withSlug } from "../src/platform/paths.ts";
+import { TOP, chatViewIn, idOf, parse, pathOf, slugOf, withSlug } from "../src/platform/paths.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
 const names = (id) => ({ [P]: "Arugula Team", ch_0123456789abcdef: "general" })[id];
@@ -34,6 +34,11 @@ test("each route parses", () => {
   assert.deepEqual(parse(`/p/${P}/chat/saved`), { page: "chat", project: P, view: "saved" });
   assert.equal(pathOf({ page: "chat", project: P, view: "saved" }), `/p/${P}/chat/saved`);
   assert.deepEqual(parse(`/p/${P}/chat/search`, "?q=from%3A%40sam"), { page: "chat", project: P, view: "search", q: "from:@sam" });
+  // Search's "All teams" rides in the URL (#883).
+  assert.deepEqual(parse(`/p/${P}/chat/search`, "?q=deploy&all=1"), { page: "chat", project: P, view: "search", q: "deploy", all: true });
+  assert.equal(pathOf({ page: "chat", project: P, view: "search", q: "deploy", all: true }), `/p/${P}/chat/search?q=deploy&all=1`);
+  assert.equal(pathOf({ page: "chat", project: P, view: "search", all: true }), `/p/${P}/chat/search?all=1`);
+  assert.equal(pathOf({ page: "chat", project: P, view: "search", q: "deploy", all: false }), `/p/${P}/chat/search?q=deploy`);
   // A DM is its team's project's (UI audit #169); an id-only one finds it.
   assert.deepEqual(parse(`/p/${P}/dm/dm_00aa11bb22cc33dd-sam`), { page: "dm", project: P, room: "dm_00aa11bb22cc33dd" });
   assert.deepEqual(parse("/dm/dm_00aa11bb22cc33dd-sam", "?msg=3"), { page: "find", what: "chat", room: "dm_00aa11bb22cc33dd", msg: 3 });
@@ -64,6 +69,7 @@ test("links carry the current slug, and read back as the same route", () => {
     { page: "project", project: P },
     { page: "chat", project: P, room: "ch_0123456789abcdef", msg: 4 },
     { page: "chat", project: P, view: "search", q: "has:quote deploy" },
+    { page: "chat", project: P, view: "search", q: "deploy", all: true },
     { page: "dm", project: P, room: "dm_00aa11bb22cc33dd" },
     { page: "workspace", project: P, workspace: "hw_0123456789abcdef0123456789abcdef" },
     { page: "project-settings", project: P, link: "acme/app" },
@@ -151,6 +157,15 @@ test("id-only addresses, for links that don't know the project", () => {
     const [p, q] = pathOf(r).split("?");
     assert.deepEqual(parse(p, q ? `?${q}` : ""), r);
   }
+});
+
+test("an id-only search keeps All teams when it's put in a project (Arugula #908)", () => {
+  const found = parse("/chat/search", "?q=deploy&all=1");
+  assert.deepEqual(found, { page: "find", what: "chat", view: "search", q: "deploy", all: true });
+  assert.equal(pathOf(chatViewIn(found, P)), `/p/${P}/chat/search?q=deploy&all=1`);
+  assert.equal(pathOf(chatViewIn(parse("/chat/search", "?q=deploy"), P)), `/p/${P}/chat/search?q=deploy`);
+  assert.equal(pathOf(chatViewIn(parse("/chat/saved"), P)), `/p/${P}/chat/saved`);
+  assert.equal(pathOf(chatViewIn(parse("/chat"), P)), `/p/${P}/chat`);
 });
 
 test("an agent session (M257)", () => {

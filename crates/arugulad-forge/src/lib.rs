@@ -336,6 +336,12 @@ pub trait Adapter: Send + Sync {
         let _ = repo;
         Box::pin(async { Ok(None) })
     }
+    /// Whether an open PR is in its branch's merge queue: `None` when the
+    /// branch has no queue or the forge doesn't say (Arugula #878: GitHub).
+    fn merge_queued<'a>(&'a self, repo: &'a str, number: u64) -> BoxFuture<'a, Result<Option<bool>, Error>> {
+        let _ = (repo, number);
+        Box::pin(async { Ok(None) })
+    }
     /// Why it can only read (GitLab with no glab login), if it can't write.
     fn read_only(&self) -> Option<String> {
         None
@@ -470,6 +476,9 @@ pub struct ForgeBlock {
     adapter: Mutex<Option<Arc<dyn Adapter>>>,
     you: Mutex<Option<Me>>,
     fingerprint: Mutex<Option<String>>,
+    /// The forge said the PR's branch has no merge queue: not asked again
+    /// (Arugula #878).
+    no_queue: std::sync::atomic::AtomicBool,
     /// The reason raised now: its kind and headline.
     raised: Mutex<Option<(ReasonKind, String)>>,
     /// The draft on the card now, and its ask's token.
@@ -557,6 +566,7 @@ impl ForgeBlock {
             adapter: Mutex::new(None),
             you: Mutex::new(None),
             fingerprint: Mutex::new(None),
+            no_queue: Default::default(),
             // As a workspace's: the first raise clears what a restart left.
             raised: Mutex::new(Some((ReasonKind::Input, String::new()))),
             asking: Mutex::new(None),
@@ -841,9 +851,30 @@ impl ForgeBlock {
         } else {
             None
         };
+        // Arugula #878: whether it's in the merge queue, which REST doesn't
+        // say and which needn't move the fingerprint: asked on each poll of
+        // an open PR that isn't a draft, until the forge says its branch has
+        // no queue. A failed ask keeps what the block last had.
+        use std::sync::atomic::Ordering::Relaxed;
+        let queued = if polled.item.state == ItemState::Open && !polled.item.draft && !self.no_queue.load(Relaxed) {
+            match a.merge_queued(&repo, number).await {
+                Ok(Some(q)) => q,
+                Ok(None) => {
+                    self.no_queue.store(true, Relaxed);
+                    false
+                }
+                Err(e) => {
+                    warn!(pane = self.ctx.id, error = %e, "is it in the merge queue");
+                    had.as_ref().is_some_and(|h| h.item.queued)
+                }
+            }
+        } else {
+            false
+        };
         *self.fingerprint.lock().unwrap() = Some(polled.fingerprint);
         let mut item = polled.item;
         item.requested = requested;
+        item.queued = queued;
         let rollup = model::rollup(&polled.checks);
         let pr = Pr { item, reviews, checks: polled.checks, rollup, events };
         self.log_events(&pr.events);

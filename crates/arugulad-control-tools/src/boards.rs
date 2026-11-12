@@ -836,24 +836,81 @@ fn board_titled(boards: &[wire::Board], project: &str, title: &str) -> Result<St
     }
 }
 
+/// The open boards a title names among a project's boards.
+fn open_titled<'a>(boards: &'a [wire::Board], title: &str) -> Vec<&'a wire::Board> {
+    let title = title.trim();
+    boards.iter().filter(|b| b.closed_at.is_none() && b.title.trim().eq_ignore_ascii_case(title)).collect()
+}
+
+/// The id of the open board a title names: in the chosen project; and, when
+/// the caller named no project and nothing there has the title, in the other
+/// projects this machine's boards grants reach. `fetch` lists a project's
+/// boards by its id.
+async fn board_by_title<F, Fut>(
+    chosen: &Chosen,
+    named: bool,
+    title: &str,
+    reach: &[BoardsProject],
+    fetch: F,
+) -> Result<String, String>
+where
+    F: Fn(String) -> Fut,
+    Fut: std::future::Future<Output = Result<Vec<wire::Board>, String>>,
+{
+    let here = fetch(chosen.id.clone()).await?;
+    let miss = match board_titled(&here, &chosen.name, title) {
+        Ok(id) => return Ok(id),
+        Err(e) if named || !open_titled(&here, title).is_empty() => return Err(e),
+        Err(e) => e,
+    };
+    let mut found: Vec<(String, String, String)> = vec![];
+    for p in reach.iter().filter(|p| p.id != chosen.id && p.boards > 0) {
+        // A project whose boards can't be listed is no match.
+        let Ok(boards) = fetch(p.id.clone()).await else { continue };
+        for b in open_titled(&boards, title) {
+            found.push((b.id.clone(), b.title.clone(), format!("{}, {}", p.name, p.id)));
+        }
+    }
+    match found.as_slice() {
+        [(id, ..)] => Ok(id.clone()),
+        [] => Err(format!("{miss}. {}", with_other_boards(chosen, reach))),
+        many => Err(format!(
+            "{} open boards in projects you reach are titled {:?}: {}; pass project or write the brd_ id of the one you mean",
+            many.len(),
+            title.trim(),
+            many.iter().map(|(_, t, p)| format!("{t} ({p})")).collect::<Vec<_>>().join(" and ")
+        )),
+    }
+}
+
 /// A board as given: its `brd_…` id as it is, else its title, matched among
-/// the default project's open boards.
-async fn board_named(c: &Call<'_>, board: &str) -> Result<String, String> {
+/// the open boards of the project the call means (`project`, by the issues'
+/// rule), then of the others this machine reaches.
+async fn board_named(c: &Call<'_>, board: &str, project: Option<&str>) -> Result<String, String> {
     let board = board.trim();
     if board.is_empty() || board.starts_with("brd_") {
         return Ok(board.to_owned());
     }
-    let chosen = c.chosen_project(None).await?;
-    let v = boards_call(c, Method::GET, &agent_project_boards(&chosen.id), None).await?;
-    let list: BoardList =
-        serde_json::from_value(v).map_err(|e| format!("Arugula control sent boards I can't read: {e}"))?;
-    board_titled(&list.boards, &chosen.name, board)
+    let named = project.map(str::trim).is_some_and(|p| !p.is_empty());
+    let chosen = c.chosen_project(project).await?;
+    let reach = match named {
+        true => vec![],
+        false => crate::mcp::registry::boards_reach(c.app()).await.projects,
+    };
+    board_by_title(&chosen, named, board, &reach, |id| async move {
+        let v = boards_call(c, Method::GET, &agent_project_boards(&id), None).await?;
+        let list: BoardList =
+            serde_json::from_value(v).map_err(|e| format!("Arugula control sent boards I can't read: {e}"))?;
+        Ok(list.boards)
+    })
+    .await
 }
 
 /// `a` with its `board` named by an id.
 async fn with_board_id(c: &Call<'_>, mut a: Value) -> Result<Value, String> {
     if let Some(b) = a["board"].as_str() {
-        a["board"] = Value::String(board_named(c, b).await?);
+        let id = board_named(c, b, a["project"].as_str()).await?;
+        a["board"] = Value::String(id);
     }
     Ok(a)
 }
@@ -1390,7 +1447,7 @@ fn narrowed(v: &BoardView, a: &ReadBoardArgs) -> Result<Option<(BoardView, Strin
 pub(crate) async fn board_read(c: &Call<'_>, a: ReadBoardArgs) -> Out {
     owners_boards(c, READ_TOOL).await?;
     if let Some(named) = a.board.as_deref().map(str::trim).filter(|b| !b.is_empty()) {
-        let id = board_named(c, named).await?;
+        let id = board_named(c, named, a.project.as_deref()).await?;
         let view = read_view(c, &id).await?;
         let docs = docs_line(&view).map(|l| format!("\n{l}")).unwrap_or_default();
         let head = progress(&view);
@@ -2120,6 +2177,52 @@ mod tests {
         let none = board_titled(&boards, "Acme", "Plan").unwrap_err();
         assert!(none.contains("Launch, Launch, Docs, Old") && none.contains("Acme"), "{none}");
         assert!(board_titled(&[], "Acme", "Plan").unwrap_err().contains("no open boards"));
+    }
+
+    /// A title is looked up in the chosen project; a project that wasn't named
+    /// then falls back to the reach (one match is used, several are refused,
+    /// none says where else to look); a named one never falls through.
+    #[tokio::test]
+    async fn a_title_is_found_in_the_chosen_project_then_the_reach() {
+        let project = |id: &str, name: &str| BoardsProject {
+            id: id.into(),
+            name: name.into(),
+            powers: vec!["boards.read".into()],
+            boards: 1,
+        };
+        let reach = [project("prj_me", "Me"), project("prj_a", "Acme"), project("prj_b", "Beta")];
+        let fetch = |id: String| async move {
+            let mut boards = match id.as_str() {
+                "prj_me" => vec![titled("brd_me", "Notes", false)],
+                "prj_a" => vec![titled("brd_a1", "Launch", false), titled("brd_a2", "Shared", false)],
+                "prj_b" => vec![titled("brd_b1", "Shared", false), titled("brd_b2", "Gone", true)],
+                _ => vec![],
+            };
+            for b in &mut boards {
+                b.project = id.clone();
+            }
+            Ok(boards)
+        };
+        let at = |id: &str, name: &str, rule| Chosen { id: id.into(), name: name.into(), team: false, rule };
+        let me = at("prj_me", "Me", Rule::Personal);
+        // (a) The chosen project is where a title is looked up, named or not.
+        let acme = at("prj_a", "Acme", Rule::Asked);
+        assert_eq!(board_by_title(&acme, true, "launch", &reach, fetch).await, Ok("brd_a1".into()));
+        assert_eq!(board_by_title(&acme, false, "Launch", &reach, fetch).await, Ok("brd_a1".into()));
+        // A title in the chosen project wins over the same one elsewhere.
+        assert_eq!(board_by_title(&acme, false, "Shared", &reach, fetch).await, Ok("brd_a2".into()));
+        // (b) A miss searches the reach: one match is used.
+        assert_eq!(board_by_title(&me, false, "Launch", &reach, fetch).await, Ok("brd_a1".into()));
+        // (c) Several matches are refused, each named with its project.
+        let both = board_by_title(&me, false, "shared", &reach, fetch).await.unwrap_err();
+        assert!(both.contains("Shared (Acme, prj_a) and Shared (Beta, prj_b)"), "{both}");
+        assert!(both.contains("pass project") && both.contains("brd_ id"), "{both}");
+        // No match anywhere: the chosen project's error, naming the others.
+        let none = board_by_title(&me, false, "Gone", &reach, fetch).await.unwrap_err();
+        assert!(none.contains("no open board in project Me") && none.contains("Acme (prj_a)"), "{none}");
+        // (d) A named project doesn't fall through, even to a unique match.
+        let miss = board_by_title(&me, true, "Launch", &reach, fetch).await.unwrap_err();
+        assert!(miss.contains("no open board in project Me") && !miss.contains("prj_a"), "{miss}");
     }
 
     /// A card is the item, its lane, rev and note, its marks and its ask; the

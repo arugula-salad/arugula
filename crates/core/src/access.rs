@@ -87,7 +87,10 @@ pub fn need(mux: &Mux, intent: &Intent) -> Result<Need, Error> {
             mux.session(*session)?;
             Need::on(Editor, vec![of_tab(*tab)?, *session])
         }
-        Intent::Split { pane, .. } | Intent::ClosePane { pane } => Need::on(Editor, vec![of_pane(*pane)?]),
+        // A pop-out (#497) changes every screen's tab, as Focus does.
+        Intent::Split { pane, .. } | Intent::ClosePane { pane } | Intent::PopOut { pane, .. } => {
+            Need::on(Editor, vec![of_pane(*pane)?])
+        }
         Intent::MovePane { pane, target, .. } => Need::on(Editor, vec![of_pane(*pane)?, of_pane(*target)?]),
         Intent::BreakPane { pane, session, .. } => {
             mux.session(*session)?;

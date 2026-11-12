@@ -555,9 +555,11 @@ pub(crate) async fn forge_ops(c: &Call<'_>, tool: &str, kind: &str, a: Value) ->
     }
     if (tool, kind) == ("forge_read", "issue")
         && let Some(item) = a["item"].as_str()
-        && let Some(p) = super::plane_home::home(c, a["project"].as_str(), &[item]).await?
+        && a["project"].as_str().is_none_or(|p| p.trim().is_empty())
+        && !super::plane_home::idents([item]).is_empty()
     {
-        a["project"] = p.into();
+        // The Plane home, else the main rule's: never control's personal project.
+        a["project"] = super::plane_home::home_or_main(c, None, &[item]).await?.into();
     }
     let o = op(tool, kind, a, &c.by())?;
     let r = c.forge_op(o.clone(), said).await?;

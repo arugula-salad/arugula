@@ -695,6 +695,48 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   filter: brightness(1.1);
 }
 
+/* A pane popped out into a window of its own (#497,
+   shell/ui/panes/pop-out.tsx): what's left in its place, and the window
+   it's alone in. */
+.pane.popped {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+}
+
+.popped-out {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px;
+  text-align: center;
+}
+
+.popped-out-title {
+  font-weight: 600;
+}
+
+.pop-out-page,
+.pop-out-slot {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+}
+
+.pop-out-slot > * {
+  width: 100%;
+  height: 100%;
+}
+
+.pop-out-note {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+
 /* What names each pane, when a tab has more than one (ui/app.tsx
    PaneHeader): one cell row above it. A label, not a control: the divider
    under it keeps its drag. */
@@ -2508,6 +2550,14 @@ button.att {
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 6px;
+}
+
+button.agent-image {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
 }
 
 .agent-image img {

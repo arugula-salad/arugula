@@ -3,7 +3,7 @@
 // ./paths.
 
 import { useEffect, useState } from "preact/hooks";
-import { forgetCurrentProject, setCurrentProject } from "./current-project";
+import { currentProject, forgetCurrentProject, noteRoute, setCurrentProject } from "./current-project";
 import { parse, type Route } from "./paths";
 
 export * from "./paths";
@@ -16,10 +16,14 @@ const LAST = "arugula.platform-last-page";
 /** Where this browser last was on this page, for the shell's Projects to
  * come back to (Arugula #638). Its path, never a fragment: secrets stay in
  * those. */
-function remember() {
+function remember(popped = false) {
   const route = current();
+  const was = currentProject();
   // Any page under a project makes it the current one; the picker goes through here too.
-  if ("project" in route && route.project) setCurrentProject(route.project);
+  const project = "project" in route && route.project ? route.project : undefined;
+  if (project) setCurrentProject(project);
+  const chat = route.page === "chat" || route.page === "dm";
+  noteRoute(was, { project, chat, room: chat && !!route.room }, popped);
   // Chat and account settings are the rail's own places, not the projects';
   // the design reference is no place to come back to.
   const { page } = route;
@@ -58,11 +62,20 @@ if (location.pathname === "/" && new URLSearchParams(location.search).has("back"
 remember();
 
 const listeners = new Set<() => void>();
-const changed = () => {
-  remember();
+// The route this page was at before its last step forward, while Back hasn't
+// moved it since (then it isn't known): the entry under this one is ours.
+let before: Route | null = null;
+/** The page this one was opened from, if it's one of ours. */
+export const cameFrom = (): Route | null => before;
+
+const changed = (popped = false) => {
+  remember(popped);
   listeners.forEach((fn) => fn());
 };
-addEventListener("popstate", changed);
+addEventListener("popstate", () => {
+  before = null;
+  changed(true);
+});
 
 /** Hear every change of route (the page's own and Back's). */
 export function onRoute(fn: () => void): () => void {
@@ -75,7 +88,10 @@ export function onRoute(fn: () => void): () => void {
 export function go(path: string, replace = false, state: unknown = null) {
   if (path === location.pathname + location.search) return changed();
   if (replace) history.replaceState(state, "", path);
-  else history.pushState(state, "", path);
+  else {
+    before = current();
+    history.pushState(state, "", path);
+  }
   changed();
 }
 
