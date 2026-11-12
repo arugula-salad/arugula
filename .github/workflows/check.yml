@@ -86,9 +86,16 @@ env:
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
   CARGO_PROFILE_TEST_DEBUG: line-tables-only
 
+# Every job has a timeout-minutes (Arugula #951), so a hang fails and frees
+# its runner instead of holding it for hours (2026-11-12: e2e shards stuck
+# for 2-6 h on an Ubuntu mirror download). Set from green runs' times
+# (p50/max in minutes, 2026-11-12): e2e 3/7, test and test-2 8/16 with
+# static's wait, clippy 6/13, desktop-xvfb 9/16. About 2-3x the slowest,
+# with room for a cold cache; raise one if a cold build needs it.
 jobs:
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -109,6 +116,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.suite == 'true'
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
@@ -131,6 +139,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.suite == 'true' || needs.changes.outputs.app == 'true'
     runs-on: arugula-amd64
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
@@ -163,6 +172,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.suite == 'true' || needs.changes.outputs.app == 'true'
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
@@ -218,6 +228,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.suite == 'true'
     runs-on: arugula-amd64
+    timeout-minutes: 45
     permissions:
       # scripts/ci-wait-job reads the run's jobs; the rest is the default's.
       actions: read
@@ -268,6 +279,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.suite == 'true'
     runs-on: arugula-amd64
+    timeout-minutes: 45
     permissions:
       actions: read
       contents: read
@@ -315,6 +327,7 @@ jobs:
   e2e:
     needs: build
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -343,6 +356,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.suite == 'true' || needs.changes.outputs.app == 'true'
     runs-on: ubuntu-24.04
+    timeout-minutes: 35
     permissions:
       # scripts/ci-wait-job reads the run's jobs.
       actions: read
@@ -380,6 +394,7 @@ jobs:
   # branch's only when it changes that).
   changes:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       # scripts/queue-tested reads this commit's merge_group runs.
       actions: read
@@ -422,6 +437,7 @@ jobs:
     # 5 cores, 6 GiB, from a golden image with Rust, mise, just, Node 24 and
     # pnpm 12), set up by .github/actions/macos-setup.
     runs-on: [self-hosted, macos-arm64]
+    timeout-minutes: 30
     env:
       ARUGULA_SKIP_DOCKER: "1"
       # mise's GitHub downloads (nextest): unauthenticated, they share the

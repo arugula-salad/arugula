@@ -53,6 +53,9 @@ runs:
         Binary::apt::APT::Keep-Downloaded-Packages "true";
         APT::Keep-Downloaded-Packages "true";
         APT::Sandbox::User "root";
+        Acquire::Retries "3";
+        Acquire::http::Timeout "30";
+        Acquire::https::Timeout "30";
         EOF
         echo "dir=$dir" >> "$GITHUB_OUTPUT"
         # The runner's image, from its environment: a composite action's env
