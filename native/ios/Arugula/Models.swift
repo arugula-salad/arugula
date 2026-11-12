@@ -51,6 +51,7 @@ struct BoardDetail: Decodable {
         var group: String?
         var live: Live?
         var pointer: Pointer?
+        var updated_at: Int?
     }
     struct Lane: Decodable, Identifiable { var id: String; var title: String; var rows: [Row] }
     struct Group: Decodable, Identifiable { var id: String; var title: String }
