@@ -1018,3 +1018,23 @@ async fn a_focus_report_doesnt_make_a_finished_pane_work() {
     assert_eq!(attention_of(&d), "idle", "a focus-in on a finished pane");
     d.signal(nix::sys::signal::Signal::SIGTERM);
 }
+
+/// A session's project set by hand from its menu, and cleared: the session
+/// says it, and so does each of its panes.
+#[tokio::test]
+async fn a_sessions_project_is_set_and_cleared() {
+    let d = start().await;
+    let (mut ws, s) = connect_state(&d).await;
+    let session = s.sessions[0].id;
+    assert_eq!(s.sessions[0].project, None);
+    let project = arugula_proto::ProjectRef { id: "prj_0123abcd".into(), name: "Acme".into() };
+    let set = Intent::SetSessionProject { session, project: Some(project.clone()) };
+    send(&mut ws, ClientMsg::Intent { id: None, intent: set }).await;
+    let s = state_where(&mut ws, |s| s.sessions[0].project.is_some()).await;
+    assert_eq!(s.sessions[0].project.as_ref(), Some(&project));
+    assert!(s.panes.iter().all(|p| p.session_project.as_ref() == Some(&project)), "{:?}", s.panes);
+
+    send(&mut ws, ClientMsg::Intent { id: None, intent: Intent::SetSessionProject { session, project: None } }).await;
+    let s = state_where(&mut ws, |s| s.sessions[0].project.is_none()).await;
+    assert!(s.panes.iter().all(|p| p.session_project.is_none()));
+}

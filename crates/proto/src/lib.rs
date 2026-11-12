@@ -12,8 +12,8 @@ use serde::{Deserialize, Serialize};
 /// What keeps illogical's name after the rename to Arugula (#504).
 pub use arugula_core::rename;
 pub use arugula_core::{
-    ClientId, Dir, Edge, Intent, Layout, Node, NodeId, OptionMap, OptionScope, Options, PaneId, Preset, Rect, Session,
-    SessionId, SplitRect, TabId,
+    ClientId, Dir, Edge, Intent, Layout, Node, NodeId, OptionMap, OptionScope, Options, PaneId, Preset, ProjectRef,
+    Rect, Session, SessionId, SplitRect, TabId,
 };
 
 pub mod api;
@@ -865,7 +865,8 @@ pub enum WorkKind {
     Managoat,
 }
 
-/// The git repository a pane's working directory is in (M23).
+/// The git repo a pane's working directory is in (M23); not an Arugula
+/// project, which is a [`ProjectRef`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Project {
@@ -1229,9 +1230,14 @@ pub struct PaneInfo {
     /// it, as "Claude Code conversation <title>", when its policy says to.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resumes: Option<String>,
-    /// The git repository it works in, if any (M23).
+    /// The git repo it works in, if any (M23). Named `project` on the
+    /// wire from before projects; the Arugula project is `session_project`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project: Option<Project>,
+    /// The Arugula project its session is in ([`Session::project`]), if
+    /// it's in one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_project: Option<ProjectRef>,
     /// Its repository's checked-out branch, or a short commit when HEAD is
     /// detached (M109).
     #[serde(default, skip_serializing_if = "Option::is_none")]

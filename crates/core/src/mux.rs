@@ -20,6 +20,24 @@ pub struct Session {
     pub id: SessionId,
     pub name: String,
     pub tabs: Vec<TabId>,
+    /// The project it's in (Arugula projects RFC): inferred once, from the
+    /// repo of the first pane whose clone is linked to one
+    /// ([`Mux::infer_project`]), or set by hand
+    /// ([`Intent::SetSessionProject`]). Never moved after that by a repo's
+    /// link. A layout from before has none, and an older daemon drops it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub project: Option<ProjectRef>,
+}
+
+/// A project in Arugula control, as a session keeps it: its id, and its
+/// name when it was set, to show without asking control.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ProjectRef {
+    /// `prj_…`.
+    pub id: String,
+    pub name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -158,6 +176,12 @@ pub enum Intent {
     RenameSession {
         session: SessionId,
         name: String,
+    },
+    /// Put a session in a project, or in none (`None`), by hand: it
+    /// replaces an inferred one, and nothing infers one after.
+    SetSessionProject {
+        session: SessionId,
+        project: Option<ProjectRef>,
     },
     CloseSession {
         session: SessionId,
@@ -412,6 +436,18 @@ impl Mux {
         Ok(())
     }
 
+    /// A session's project from its pane's linked repo: set only while it
+    /// has none, so it stays put once it has one. Whether it was set.
+    pub fn infer_project(&mut self, session: SessionId, project: ProjectRef) -> Result<bool, Error> {
+        let s = self.session_mut(session)?;
+        if s.project.is_some() {
+            return Ok(false);
+        }
+        s.project = Some(project);
+        self.rev += 1;
+        Ok(true)
+    }
+
     pub fn apply(&mut self, intent: Intent) -> Result<Vec<Effect>, Error> {
         let effects = self.apply_inner(intent)?;
         self.fit_tabs();
@@ -427,13 +463,22 @@ impl Mux {
             NewSession { name, from_pane } => {
                 self.next_session += 1;
                 let id = self.next_session;
-                self.sessions.push(Session { id, name: name.unwrap_or_else(|| id.to_string()), tabs: vec![] });
+                self.sessions.push(Session {
+                    id,
+                    name: name.unwrap_or_else(|| id.to_string()),
+                    tabs: vec![],
+                    project: None,
+                });
                 let pane = self.new_pane();
                 self.add_tab(id, Node::pane(pane), None)?;
                 Ok(vec![Effect::Spawn { pane, cwd_from: from_pane, cwd: None }])
             }
             RenameSession { session, name } => {
                 self.session_mut(session)?.name = name;
+                Ok(vec![])
+            }
+            SetSessionProject { session, project } => {
+                self.session_mut(session)?.project = project;
                 Ok(vec![])
             }
             CloseSession { session } => {

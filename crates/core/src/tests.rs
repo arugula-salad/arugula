@@ -459,3 +459,47 @@ fn layout_changes_clear_focus() {
     assert_eq!(m.validate(), Ok(()));
     assert_eq!(m.tab(1).unwrap().focus, None, "swapped away");
 }
+
+fn project(id: &str) -> crate::ProjectRef {
+    crate::ProjectRef { id: id.into(), name: format!("{id}'s name") }
+}
+
+#[test]
+fn a_session_keeps_its_project_through_a_save_and_a_layout_from_before_has_none() {
+    let mut m = mux_with_session();
+    let bare = serde_json::to_value(&m).unwrap();
+    assert!(bare["sessions"][0].get("project").is_none(), "{bare}");
+    let back: Mux = serde_json::from_value(bare).unwrap();
+    assert_eq!(back.sessions[0].project, None);
+
+    m.apply(Intent::SetSessionProject { session: 1, project: Some(project("prj_a")) }).unwrap();
+    let saved = serde_json::to_value(&m).unwrap();
+    assert_eq!(saved["sessions"][0]["project"], serde_json::json!({"id": "prj_a", "name": "prj_a's name"}));
+    let back: Mux = serde_json::from_value(saved).unwrap();
+    assert_eq!(back, m);
+}
+
+#[test]
+fn an_inferred_project_is_set_once_and_never_moved() {
+    let mut m = mux_with_session();
+    assert_eq!(m.infer_project(1, project("prj_a")), Ok(true));
+    let rev = m.rev;
+    // A later pane in another repo, or the repo linked elsewhere since.
+    assert_eq!(m.infer_project(1, project("prj_b")), Ok(false));
+    assert_eq!(m.sessions[0].project, Some(project("prj_a")));
+    assert_eq!(m.rev, rev);
+    assert_eq!(m.infer_project(9, project("prj_a")), Err(crate::Error::NoSession(9)));
+}
+
+#[test]
+fn a_project_set_by_hand_replaces_an_inferred_one_and_clears() {
+    let mut m = mux_with_session();
+    m.infer_project(1, project("prj_a")).unwrap();
+    m.apply(Intent::SetSessionProject { session: 1, project: Some(project("prj_b")) }).unwrap();
+    assert_eq!(m.sessions[0].project, Some(project("prj_b")));
+    m.apply(Intent::SetSessionProject { session: 1, project: None }).unwrap();
+    assert_eq!(m.sessions[0].project, None);
+    let intent: Intent = serde_json::from_str(r#"{"op":"set_session_project","session":1,"project":null}"#).unwrap();
+    assert_eq!(intent, Intent::SetSessionProject { session: 1, project: None });
+    assert!(m.apply(Intent::SetSessionProject { session: 9, project: None }).is_err());
+}

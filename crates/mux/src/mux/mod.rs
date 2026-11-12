@@ -180,6 +180,9 @@ impl Scope {
 /// Requests from the HTTP API and the CLI.
 pub enum Api {
     Panes(oneshot::Sender<Vec<PaneSummary>>),
+    /// A session's project, from its pane's linked repo: set only while it
+    /// has none ([`arugula_core::Mux::infer_project`]). Whether it was set.
+    InferProject(SessionId, arugula_core::ProjectRef, oneshot::Sender<bool>),
     Run(RunRequest, oneshot::Sender<Result<PaneId, String>>),
     Pane(PaneId, oneshot::Sender<Option<PaneHandle>>),
     /// The Claude Code conversation running in a terminal now, by its id,
