@@ -12,7 +12,11 @@ final class MachineSession: ObservableObject {
     @Published var panes: [PaneRow] = []
     @Published var problem: String?
     @Published var connected = false
+    /// The Claude Code conversation running in each pane, by its title: the
+    /// machine's index of them (`GET /api/conversations?live=1`).
+    @Published var conversations: [UInt32: String] = [:]
     private var link: OpaquePointer?
+    private var conversationsAt = Date.distantPast
     /// The terminal on screen, which takes that pane's bytes.
     weak var screen: TerminalUIView?
 
@@ -70,6 +74,11 @@ final class MachineSession: ObservableObject {
         if flags & 2 != 0, let s = takeString(aru_link_panes(l)),
             let list = try? JSONDecoder().decode(PaneList.self, from: Data(s.utf8)) {
             panes = list.panes
+            // A pane's conversation changes rarely: look again at most every 20 seconds.
+            if Date().timeIntervalSince(conversationsAt) > 20 {
+                conversationsAt = Date()
+                Task { await loadConversations() }
+            }
         }
         if flags & 1 != 0 { screen?.render() }
         if flags & 8 != 0, let said = takeString(aru_link_said(l)) { problem = said }
@@ -78,6 +87,40 @@ final class MachineSession: ObservableObject {
             disconnect()
             if why != "closed" { problem = why }
         }
+    }
+
+    /// The titles of the conversations running in this machine's panes.
+    func loadConversations() async {
+        guard let l = link else { return }
+        let p = UInt(bitPattern: l)
+        let s: String? = await Task.detached(priority: .utility) {
+            var err: UnsafeMutablePointer<CChar>?
+            let got = aru_link_request(OpaquePointer(bitPattern: p), "GET", "/api/conversations?live=1", nil, &err)
+            if let err { aru_string_free(err) }
+            return takeString(got)
+        }.value
+        guard let s, let v = try? JSONDecoder().decode(Answer.self, from: Data(s.utf8)) else { return }
+        var titles: [UInt32: String] = [:]
+        for c in v.body.conversations {
+            guard let pane = c.live?.pane ?? c.block else { continue }
+            if let t = [c.title, c.last_prompt, c.first_prompt].compactMap({ $0 }).first(where: PaneRow.readable) {
+                titles[pane] = t
+            }
+        }
+        conversations = titles
+    }
+
+    private struct Answer: Decodable {
+        struct Body: Decodable { var conversations: [Row] }
+        struct Row: Decodable {
+            struct Live: Decodable { var pane: UInt32? }
+            var title: String?
+            var first_prompt: String?
+            var last_prompt: String?
+            var live: Live?
+            var block: UInt32?
+        }
+        var body: Body
     }
 
     /// A new shell on the machine: its pane.
@@ -179,7 +222,9 @@ struct MachineView: View {
                 }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 12)], spacing: 12) {
                     ForEach(session.panes.sorted { ($0.order, -($0.last_ms ?? 0)) < ($1.order, -($1.last_ms ?? 0)) }) { pane in
-                        Button { opened = pane } label: { PaneCard(pane: pane, machine: session.machine.name) }
+                        Button { opened = pane } label: {
+                            PaneCard(pane: pane, machine: session.machine.name, conversation: session.conversations[pane.id])
+                        }
                             .buttonStyle(.plain)
                     }
                 }
@@ -219,6 +264,8 @@ struct MachineView: View {
 struct PaneCard: View {
     let pane: PaneRow
     let machine: String
+    /// The title of the Claude Code conversation running in it, if any.
+    var conversation: String?
 
     private var state: (String, Tone) {
         if !pane.running { return ("Stopped", .muted) }
@@ -240,7 +287,7 @@ struct PaneCard: View {
                     Text(Self.ago(ms)).font(Face.mono(10)).foregroundStyle(Palette.dim)
                 }
             }
-            Text(pane.name).font(Face.ui(16, "SemiBold")).foregroundStyle(Palette.fg).lineLimit(2)
+            Text(conversation ?? pane.name).font(Face.ui(16, "SemiBold")).foregroundStyle(Palette.fg).lineLimit(2)
             if let r = pane.reason, !r.headline.isEmpty {
                 Text(r.headline).font(Face.ui(13)).foregroundStyle(Palette.subtle).lineLimit(2)
             }
