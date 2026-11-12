@@ -76,6 +76,8 @@ struct ChatRoom: Decodable, Identifiable, Hashable {
     var mentions: Int
     var archived: Bool
     var writable: Bool
+    /// The team a channel or DM is in.
+    var team: String?
     var with: Person?
     var others: [Person]?
     struct Person: Decodable { var name: String }
