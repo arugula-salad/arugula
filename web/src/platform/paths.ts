@@ -313,6 +313,13 @@ function issueRoute(project: string, rest: string[], q: URLSearchParams, msg: { 
 export type Names = (id: string) => string | null | undefined;
 
 /** A room's `?msg=N&thread=P`: the message to show, and the thread beside it (#106). */
+/** An id-only chat view's route in a project: its view, and search's query
+ * and `all` with it (Arugula #908). */
+export function chatViewIn(r: Extract<Route, { page: "find"; what: "chat" }>, project: string): Route {
+  if (!r.view) return { page: "chat", project };
+  return { page: "chat", project, view: r.view, q: r.q, ...(r.all && { all: true }) };
+}
+
 /** Search's query string: what was looked for, and `all` for every team's. */
 function searchQuery(r: { q?: string; all?: boolean }): string {
   const parts = [r.q ? `q=${encodeURIComponent(r.q)}` : "", r.all ? "all=1" : ""].filter(Boolean);
