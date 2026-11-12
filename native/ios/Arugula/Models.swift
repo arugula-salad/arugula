@@ -180,7 +180,12 @@ struct PaneRow: Decodable, Identifiable, Hashable {
         if Self.readable(cleaned), !shellTitle, cleaned != program, cleaned.lowercased() != "claude code" { return cleaned }
         if let r = resumes?.replacingOccurrences(of: "Claude Code conversation ", with: ""), Self.readable(r) { return r }
         if let project { return "\(program ?? "shell") in \(project)" }
-        if let folder = cwd?.split(separator: "/").last { return "\(program ?? "shell") in \(folder)" }
+        if let cwd {
+            // A home folder is "~", as the web writes it.
+            let home = cwd.range(of: #"^/(home|Users)/[^/]+/?$"#, options: .regularExpression) != nil
+            let folder = home ? "~" : (cwd.split(separator: "/").last.map(String.init) ?? "/")
+            return "\(program ?? "shell") in \(folder)"
+        }
         return program ?? "shell"
     }
 
