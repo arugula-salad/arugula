@@ -42,7 +42,7 @@ let proj = "";
 /** The file the tests open: a Rust source about the size of a real one,
  * made here. It was a copy of control's auth.rs until control moved to its
  * own repository (Arugula #928); nothing here is about what it says. */
-const AUTH = "src/auth.rs";
+const AUTH = "crates/sign-in/src/auth.rs";
 /** Line AT says Redirect; line LATER is STATE_COOKIE's. */
 const AT = 31;
 const LATER = 40;
@@ -106,7 +106,7 @@ test.beforeAll(async () => {
   state = join(dir, "state");
   proj = join(dir, "arugula");
   mkdirSync(join(proj, ".git"), { recursive: true });
-  mkdirSync(join(proj, "src"), { recursive: true });
+  mkdirSync(join(proj, "crates/sign-in/src"), { recursive: true });
   writeFileSync(join(proj, AUTH), source());
   await start();
 });
