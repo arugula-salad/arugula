@@ -41,6 +41,13 @@ export function askWaitingLine(a: Pick<BoardAsk, "who_name" | "asked_by">): stri
   return `Waiting for ${a.who_name}, asked by ${a.asked_by}.`;
 }
 
+/** What a row says while it waits on a person's answer (Arugula #764): `waiting for you` when the open ask is the reader's (#903), else `waiting on Sam`. Only an ask a person or an agent made counts; the board's own raised ask comes from a stall and waits on nobody. Null when the row waits on no one. */
+export function waitingOf(r: Pick<BoardRow, "ask">): { words: string; mine: boolean } | null {
+  const a = r.ask;
+  if (!a || a.raised) return null;
+  return a.mine ? { words: "waiting for you", mine: true } : { words: `waiting on ${a.who_name || "someone"}`, mine: false };
+}
+
 /** Whether a typed answer to a free-text ask can be sent. */
 export function answerReady(text: string): boolean {
   return text.trim().length > 0;
@@ -255,14 +262,16 @@ function prLabel(live: BoardLive): string {
   return `${live.repo!.split("/").pop()}#${live.number}`;
 }
 
-/** An attachment's chip: what it points at, its state when the reader may see it (an item they can't read says nothing but what it is), and the tone of that state. The chip in trouble carries the problem (#903): a PR's `checks failed` in danger, an agent's `waiting for you` in accent, and with `stalled` (the row's words, `stalled 2h`) the agent holding the row in warn. */
-export function chipOf(a: Pick<BoardAttachment, "pointer" | "live" | "block" | "role"> & Partial<Pick<BoardAttachment, "released">>, stalled?: string | null): { label: string; state: string | null; tone: Tone | null } {
+/** An attachment's chip: what it points at, its state when the reader may see it (an item they can't read says nothing but what it is), and the tone of that state. The chip in trouble carries the problem (#903): a PR's `checks failed` in danger, an agent's `waiting for you` in accent, and with `stalled` (the row's words, `stalled 2h`) the agent holding the row in warn. A row that waits on a person says so on that agent's chip instead (`waiting` is [`waitingOf`]'s words, #764), and a stall isn't said. */
+export function chipOf(a: Pick<BoardAttachment, "pointer" | "live" | "block" | "role"> & Partial<Pick<BoardAttachment, "released">>, stalled?: string | null, waiting?: { words: string; mine: boolean } | null): { label: string; state: string | null; tone: Tone | null } {
   const label = a.live?.kind === "pr" && a.live.repo && a.pointer.kind === "forge_item" ? prLabel(a.live) : pointerLabel(a.pointer, a.live);
   // The block's own name, when its starter gave it one (#372).
   // "working" is what the Doing lane already says; the other states stay.
   if (a.block) {
     const name = a.block.title?.trim() || label;
-    if (stalled && holdsRow({ role: a.role, block: a.block, released: a.released })) return { label: name, state: stalled, tone: "warn" };
+    const holds = holdsRow({ role: a.role, block: a.block, released: a.released });
+    if (waiting && holds) return { label: name, state: waiting.words, tone: waiting.mine ? "accent" : "muted" };
+    if (stalled && holds) return { label: name, state: stalled, tone: "warn" };
     if (a.block.state === "needs_input") return { label: name, state: "waiting for you", tone: "accent" };
     return { label: name, state: a.block.state === "working" ? null : BLOCK_LABEL[a.block.state], tone: "muted" };
   }
@@ -472,7 +481,7 @@ export function pointerHref(r: Pick<BoardRow, "pointer" | "live">, platform: (pa
   return undefined;
 }
 
-/** A card's tone, which is its lane's and the progress bar's: Next muted, Doing warn, Review accent, Done ok. A stalled row is danger (warn is Doing's); a row that waits on the reader keeps its lane's tone and shows it with a dot before its title (`needsDot`). */
+/** A card's tone, which is its lane's and the progress bar's: Next muted, Doing warn, Review accent, Done ok. A stalled row is danger (warn is Doing's) (a row that waits on a person's answer isn't stalled, #764); a row that waits on the reader keeps its lane's tone and shows it with a dot before its title (`needsDot`). */
 export function cardTone(r: Pick<BoardRow, "lane"> & Partial<Pick<BoardRow, "marks">>): Tone {
   if (r.marks?.some((m) => m.kind === "stalled")) return "danger";
   return r.lane === "next" ? "muted" : r.lane === "doing" ? "warn" : r.lane === "review" ? "accent" : "ok";

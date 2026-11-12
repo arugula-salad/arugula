@@ -15,7 +15,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { BoardRow, BoardView } from "../proto";
 import { usePhone } from "../ui/hooks";
-import { isCard, pointerLabel, rowGlyph } from "./text";
+import { isCard, pointerLabel, rowGlyph, waitingOf } from "./text";
 import { MOVED_FIRST, TITLE_DEFAULT, clampTitle, columns, lastPlace, linksOf, loadTitle, moreLine, phases, reorder, stepOf, rowsOf, saveTitle, shown, groupOrder, titleRange, withoutDone, type Link, type Reorder } from "./steps";
 import "./steps.css";
 
@@ -445,6 +445,11 @@ function Line({
         <span class="step-title" data-step-title>
           {title}
         </span>
+        {waitingOf(r) && (
+          <span class="step-waiting dim" data-step-waiting>
+            {waitingOf(r)!.words}
+          </span>
+        )}
         {said && (
           <span class="step-said" role="status" data-step-moved-first>
             {MOVED_FIRST}
