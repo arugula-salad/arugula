@@ -7,7 +7,7 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { deflateSync } from "node:zlib";
-import { expect, type Page } from "@playwright/test";
+import { expect, type Frame, type Page } from "@playwright/test";
 import type { PaneId, SessionId } from "../src/shared/proto";
 import { example } from "./doc-examples";
 
@@ -397,7 +397,8 @@ export async function prototypeRan(page: Page, a: Attacker, scheme: "light" | "d
   await iframe.scrollIntoViewIfNeeded();
   await expect(iframe).toHaveAttribute("sandbox", "allow-scripts");
   await expect(iframe).toHaveAttribute("allow", "");
-  await expect(iframe).toHaveAttribute("loading", "lazy");
+  // Loaded at once, not lazily (Arugula #947): see `framesLoadOnce`.
+  expect(await iframe.getAttribute("loading")).toBeNull();
   await expect(iframe).toHaveAttribute("referrerpolicy", "no-referrer");
   await expect(page.locator("[data-prototype-label]")).toHaveText("Prototype · sandboxed");
   await expect(iframe).toHaveAttribute("title", "Probe");
@@ -476,6 +477,7 @@ export async function measure(page: Page, within = "") {
 export async function protoOpenBeforeLoad(page: Page, post: Post, term: PaneId, a: Attacker) {
   const doc = await newDoc(post, term);
   await fill(post, doc, "s1", prototype(a));
+  const once = framesLoadOnce(page);
   await loadOn(page, term);
   const outcome = () =>
     expect
@@ -499,7 +501,27 @@ export async function protoOpenBeforeLoad(page: Page, post: Post, term: PaneId, 
   }
   await page.waitForTimeout(1500);
   await expect(page.locator("[data-prototype-left]"), "nor after switching away and back").toHaveCount(0);
+  once();
   return doc;
+}
+
+/** Arugula #947: each frame the page makes loads its page once. WebKit loaded
+ * a `loading="lazy"` frame that was put in off the page (parked) and then
+ * moved into view twice in the same window, and a second load after the
+ * handover read as the prototype leaving. Counted from now; call what this
+ * returns to check. (The runner's `document.open()` isn't a navigation.) */
+function framesLoadOnce(page: Page) {
+  const loads = new Map<Frame, string[]>();
+  const on = (f: Frame) => {
+    if (f === page.mainFrame() || f.url() === "about:blank") return;
+    loads.set(f, [...(loads.get(f) ?? []), f.url()]);
+  };
+  page.on("framenavigated", on);
+  return () => {
+    page.off("framenavigated", on);
+    expect(loads.size, "the prototype's frames loaded").toBeGreaterThan(0);
+    expect([...loads.values()].filter((urls) => urls.length > 1), "a frame that loaded twice").toEqual([]);
+  };
 }
 
 /** And a prototype that does leave is still caught after its frame was moved,
