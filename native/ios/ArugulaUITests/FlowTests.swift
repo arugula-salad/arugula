@@ -51,6 +51,11 @@ final class FlowTests: XCTestCase {
         let room = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'room-'")).firstMatch
         XCTAssertTrue(room.waitForExistence(timeout: 30), "no chat room")
         room.tap()
+        // The room is live: chat's stream is open.
+        let liveMark = app.staticTexts["chat-live"]
+        let liveBy = Date().addingTimeInterval(30)
+        while !(liveMark.exists && liveMark.label == "LIVE") && Date() < liveBy { sleep(1) }
+        XCTAssertEqual(liveMark.exists ? liveMark.label : "missing", "LIVE", "chat's stream never opened")
         let draft = app.textFields["chat-draft"]
         XCTAssertTrue(draft.waitForExistence(timeout: 15))
         draft.tap()

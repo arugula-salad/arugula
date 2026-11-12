@@ -169,6 +169,19 @@ struct ChatRoomView: View {
         }
         .onChange(of: live.changed[room.id]) { _, _ in Task { await load() } }
         .onChange(of: live.epoch) { _, _ in Task { await load() } }
+        .toolbar {
+            // Whether the room is live: the stream is up, or it's coming back.
+            ToolbarItem(placement: .topBarTrailing) {
+                HStack(spacing: 5) {
+                    Circle().fill(live.connected ? Palette.ok : Palette.warn).frame(width: 6, height: 6)
+                        .shadow(color: live.connected ? Palette.ok.opacity(0.8) : .clear, radius: 3)
+                    Text(live.connected ? "LIVE" : "RECONNECTING")
+                        .font(Face.mono(10, "Bold")).tracking(0.8)
+                        .foregroundStyle(live.connected ? Palette.ok : Palette.warn)
+                        .accessibilityIdentifier("chat-live")
+                }
+            }
+        }
         .onAppear { live.open(room: room.id) }
         .onDisappear { live.open(room: nil) }
     }
