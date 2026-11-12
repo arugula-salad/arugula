@@ -186,6 +186,11 @@ pub const FINISH_STEP: &str = "the finish step";
 /// block closes anyway.
 const CANCEL_MAX: Duration = Duration::from_secs(5);
 
+/// How long a slot's sweep of the shared temporary directories may take
+/// ([`fresh_home`]): the slot waits for it, so one that hangs (a user
+/// lookup that doesn't answer) is given up on, not waited for forever.
+const SWEEP_MAX: Duration = Duration::from_secs(30);
+
 /// The daemon, for what asks with no handle on it
 /// ([`turn_allowed`]). Set when the work starts.
 pub static APP: std::sync::OnceLock<Arc<App>> = std::sync::OnceLock::new();
@@ -2141,13 +2146,14 @@ if [ -d /etc/skel ]; then cp -R /etc/skel/. "$home"/ 2>/dev/null || true; fi
     let keep = if keep_caches { "1" } else { "0" };
     as_user(u, &["sh", "-c", SCRIPT, "sh", &u.home, keep]).await.map(|_| ())?;
     // Its files in the shared temporary directories, by its own name: none
-    // where there's no such user.
-    if AsUser::plain(&u.user) {
-        let _ = as_user(
-            u,
-            &["find", "/tmp", "/var/tmp", "/dev/shm", "-xdev", "-mindepth", "1", "-user", &u.user, "-delete"],
-        )
-        .await;
+    // where there's no such user, or where the slots are a test's stand-ins
+    // (they run as the test's user, whose files those aren't; and the
+    // sweep, which the slot waits for, held a test's next session up).
+    if AsUser::plain(&u.user) && slots().is_some_and(|s| s.real) {
+        let argv = ["find", "/tmp", "/var/tmp", "/dev/shm", "-xdev", "-mindepth", "1", "-user", &u.user, "-delete"];
+        if tokio::time::timeout(SWEEP_MAX, as_user(u, &argv)).await.is_err() {
+            warn!(user = u.user, "hosted: a slot's sweep of the temporary directories ran out of time");
+        }
     }
     Ok(())
 }
