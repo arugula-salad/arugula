@@ -896,9 +896,21 @@ mod tests {
         /// Answered instead of the route's, for each call, while set.
         refuse: Mutex<Option<Refused>>,
         n: AtomicUsize,
+        /// The Doc's rev sealed into the served public link, as the platform
+        /// keeps it: a read says the link is behind when the Doc moved past it.
+        served_rev: Mutex<u64>,
     }
 
     impl Fake {
+        /// What the platform says of the link in every view it gives: behind
+        /// once the Doc's rev is past the one sealed into the served version.
+        fn catch_up(&self, view: &mut DocView) {
+            let sealed = *self.served_rev.lock().unwrap();
+            if let Some(p) = view.public.as_mut() {
+                p.behind = p.ver > 0 && view.doc.rev > sealed;
+            }
+        }
+
         fn calls(&self) -> Vec<(String, String)> {
             self.calls.lock().unwrap().clone()
         }
@@ -972,6 +984,7 @@ mod tests {
                         ("POST", Body::Json(v)) => {
                             let s: PublicServed = serde_json::from_value(v).unwrap();
                             let rev = view.doc.rev;
+                            *self.served_rev.lock().unwrap() = s.rev.min(rev);
                             let p = view.public.as_mut().unwrap();
                             (p.ver, p.updated_at, p.behind) = (s.ver, 99, rev > s.rev);
                             Ok(serde_json::to_value(p).unwrap())
@@ -992,7 +1005,11 @@ mod tests {
                         *held = Some(view.clone());
                         Ok(serde_json::to_value(view).unwrap())
                     }
-                    ("GET", _) => Ok(serde_json::to_value(held.clone().unwrap()).unwrap()),
+                    ("GET", _) => {
+                        let view = held.as_mut().unwrap();
+                        self.catch_up(view);
+                        Ok(serde_json::to_value(view.clone()).unwrap())
+                    }
                     ("PUT", Body::Json(v)) => {
                         let w: DocWrite = serde_json::from_value(v).unwrap();
                         let view = held.as_mut().unwrap();
@@ -1000,6 +1017,7 @@ mod tests {
                         s.body = w.markdown;
                         s.rev += 1;
                         view.doc.rev += 1;
+                        self.catch_up(view);
                         Ok(serde_json::to_value(view.clone()).unwrap())
                     }
                     ("PUT", Body::Bytes(b)) => {
