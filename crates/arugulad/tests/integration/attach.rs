@@ -1037,4 +1037,6 @@ async fn a_sessions_project_is_set_and_cleared() {
     send(&mut ws, ClientMsg::Intent { id: None, intent: Intent::SetSessionProject { session, project: None } }).await;
     let s = state_where(&mut ws, |s| s.sessions[0].project.is_none()).await;
     assert!(s.panes.iter().all(|p| p.session_project.is_none()));
+    // Taken away by hand: nothing infers one again.
+    assert!(s.sessions[0].project_by_hand && !s.sessions[0].inferable());
 }

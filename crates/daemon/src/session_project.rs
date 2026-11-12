@@ -5,7 +5,8 @@
 //! elsewhere, never moves it (the mux sets it only while it has none,
 //! `Mux::infer_project`). Without an answer (no link, control unreachable)
 //! it waits for the session's next pane. Set by hand from the session's
-//! menu: `Intent::SetSessionProject`.
+//! menu, or taken away there (`Intent::SetSessionProject`): then nothing
+//! infers one again, and control isn't asked.
 
 use std::sync::Arc;
 
@@ -36,8 +37,12 @@ pub fn start(mux: MuxHandle, control: Arc<Control>) {
                 continue;
             }
             let Some(cwd) = p.info.cwd else { continue };
-            let Some(project) = crate::mcp::issues::linked_project(&control, &cwd).await else { continue };
             let session = p.session;
+            // Set or taken away by hand: control isn't asked.
+            if mux.api(|r| Api::Inferable(session, r)).await != Some(true) {
+                continue;
+            }
+            let Some(project) = crate::mcp::issues::linked_project(&control, &cwd).await else { continue };
             if mux.api(|r| Api::InferProject(session, project.clone(), r)).await == Some(true) {
                 debug!(session, project = project.id, pane, "a session's project, from its pane's linked repo");
             }

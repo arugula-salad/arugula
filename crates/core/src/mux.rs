@@ -28,6 +28,19 @@ pub struct Session {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub project: Option<ProjectRef>,
+    /// Its project was set by hand, or taken away ([`Intent::SetSessionProject`]):
+    /// nothing infers one after, even while it has none.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    pub project_by_hand: bool,
+}
+
+impl Session {
+    /// Whether a pane's linked repo may still give it a project: it has
+    /// none, and none was set or taken away by hand.
+    pub fn inferable(&self) -> bool {
+        self.project.is_none() && !self.project_by_hand
+    }
 }
 
 /// A project in Arugula control, as a session keeps it: its id, and its
@@ -437,10 +450,11 @@ impl Mux {
     }
 
     /// A session's project from its pane's linked repo: set only while it
-    /// has none, so it stays put once it has one. Whether it was set.
+    /// has none and none was set or taken away by hand
+    /// ([`Session::inferable`]), so it stays put. Whether it was set.
     pub fn infer_project(&mut self, session: SessionId, project: ProjectRef) -> Result<bool, Error> {
         let s = self.session_mut(session)?;
-        if s.project.is_some() {
+        if !s.inferable() {
             return Ok(false);
         }
         s.project = Some(project);
@@ -468,6 +482,7 @@ impl Mux {
                     name: name.unwrap_or_else(|| id.to_string()),
                     tabs: vec![],
                     project: None,
+                    project_by_hand: false,
                 });
                 let pane = self.new_pane();
                 self.add_tab(id, Node::pane(pane), None)?;
@@ -478,7 +493,9 @@ impl Mux {
                 Ok(vec![])
             }
             SetSessionProject { session, project } => {
-                self.session_mut(session)?.project = project;
+                let s = self.session_mut(session)?;
+                s.project = project;
+                s.project_by_hand = true;
                 Ok(vec![])
             }
             CloseSession { session } => {
