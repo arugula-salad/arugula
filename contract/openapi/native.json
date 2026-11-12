@@ -11808,12 +11808,34 @@
       },
       "Project": {
         "properties": {
+          "archived": {
+            "description": "Its owner archived it. Its issues, Docs and boards stay.",
+            "type": "boolean"
+          },
           "id": {
             "description": "`prj_` and 32 hex characters.",
             "type": "string"
           },
           "name": {
             "type": "string"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectOwner"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whose it is: a team's or a person's own. An older control sends\nnone, and a reader goes by `team` then."
+          },
+          "slug": {
+            "description": "Its short name in links, unique among its owner's projects. An older\ncontrol sends none.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "team": {
             "anyOf": [
@@ -11852,6 +11874,49 @@
           "role"
         ],
         "type": "object"
+      },
+      "ProjectOwner": {
+        "description": "Whose a project is. The web client has another `Owner` (a pane's), so\nthis one is named for what it owns.",
+        "oneOf": [
+          {
+            "description": "A team's: its id and name.",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "const": "team",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "name"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "A person's own: their account.",
+            "properties": {
+              "account": {
+                "type": "string"
+              },
+              "kind": {
+                "const": "personal",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "account"
+            ],
+            "type": "object"
+          }
+        ]
       },
       "ProjectTeam": {
         "properties": {
