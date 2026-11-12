@@ -77,17 +77,18 @@ struct ChatRoomView: View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 10) {
-                        ForEach(messages.filter { $0.deleted == nil }) { m in
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(m.name).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                                Text(m.text).textSelection(.enabled)
-                            }
-                            .id(m.seq)
+                    let shown = messages.filter { $0.deleted == nil }
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(shown.enumerated()), id: \.element.seq) { i, m in
+                            MessageView(message: m, continues: i > 0 && continues(shown[i - 1], m))
+                                .id(m.seq)
                         }
                     }
+                    // A readable line on an iPad's width.
+                    .frame(maxWidth: 760, alignment: .leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding()
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
                 }
                 .onChange(of: messages.last?.seq) { _, last in
                     if let last { withAnimation { proxy.scrollTo(last, anchor: .bottom) } }
@@ -119,6 +120,12 @@ struct ChatRoomView: View {
         }
     }
 
+    /// The same person (or agent) again within five minutes: no name and
+    /// time over it, as in the web's room.
+    private func continues(_ a: ChatMessage, _ b: ChatMessage) -> Bool {
+        a.from == b.from && a.author == b.author && b.at - a.at < 5 * 60 * 1000
+    }
+
     private func load() async {
         do {
             let page = try await control.get("/api/chat/rooms/\(room.id)/messages", as: ChatMessages.self)
@@ -143,5 +150,144 @@ struct ChatRoomView: View {
         } catch {
             problem = describe(error)
         }
+    }
+}
+
+/// One message: who and when over the first of a run, then its text with the
+/// chat's Markdown, a quote from a pane, files and reactions.
+struct MessageView: View {
+    let message: ChatMessage
+    let continues: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if !continues {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(message.from).font(.subheadline.weight(.semibold))
+                    Text(stamp(message.date)).font(.caption).foregroundStyle(.secondary)
+                }
+                .padding(.top, 12)
+            }
+            if let quote = message.quote, !quote.isEmpty {
+                CodeBlock(text: quote)
+            }
+            if !message.text.isEmpty {
+                ChatText(text: message.text)
+            }
+            if message.edited != nil {
+                Text("edited").font(.caption2).foregroundStyle(.tertiary)
+            }
+            if let files = message.files, !files.isEmpty {
+                ForEach(Array(files.enumerated()), id: \.offset) { _, f in
+                    Label(f.name, systemImage: "paperclip").font(.footnote).foregroundStyle(.secondary)
+                }
+            }
+            if let reactions = message.reactions, !reactions.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(Array(reactions.enumerated()), id: \.offset) { _, r in
+                        Text("\(r.emoji) \(r.count)")
+                            .font(.caption)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(r.mine ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.15), in: Capsule())
+                    }
+                }
+            }
+        }
+        .padding(.top, continues ? 2 : 0)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func stamp(_ d: Date) -> String {
+        Calendar.current.isDateInToday(d)
+            ? d.formatted(date: .omitted, time: .shortened)
+            : d.formatted(.dateTime.month(.abbreviated).day().hour().minute())
+    }
+}
+
+/// A message's text with the chat's small Markdown, as the web shows it:
+/// fenced code as a block, `code`, **bold**, *italic*, links; headings and
+/// bullets as bold lines and dots. Nothing in a code block is formatted.
+struct ChatText: View {
+    let text: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(Array(ChatText.parts(text).enumerated()), id: \.offset) { _, part in
+                switch part {
+                case .code(let s): CodeBlock(text: s)
+                case .prose(let s): Text(ChatText.inline(s)).textSelection(.enabled)
+                }
+            }
+        }
+    }
+
+    enum Part { case prose(String), code(String) }
+
+    static func parts(_ text: String) -> [Part] {
+        var out: [Part] = []
+        var prose: [Substring] = []
+        var code: [Substring]?
+        func flushProse() {
+            let s = prose.joined(separator: "\n").trimmingCharacters(in: .newlines)
+            if !s.isEmpty { out.append(.prose(s)) }
+            prose = []
+        }
+        for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            if line.trimmingCharacters(in: .whitespaces).hasPrefix("```") {
+                if let c = code {
+                    out.append(.code(c.joined(separator: "\n")))
+                    code = nil
+                } else {
+                    flushProse()
+                    code = []
+                }
+            } else if code != nil {
+                code!.append(line)
+            } else {
+                prose.append(line)
+            }
+        }
+        if let c = code { out.append(.code(c.joined(separator: "\n"))) }  // never closed
+        flushProse()
+        return out
+    }
+
+    /// Inline Markdown, keeping the lines; a heading becomes a bold line and
+    /// a bullet a dot.
+    static func inline(_ s: String) -> AttributedString {
+        let lines = s.split(separator: "\n", omittingEmptySubsequences: false).map { raw -> String in
+            let line = String(raw)
+            let t = line.drop { $0 == " " }
+            if t.hasPrefix("#") {
+                let title = t.drop { $0 == "#" }.trimmingCharacters(in: .whitespaces)
+                return title.isEmpty ? line : "**\(title)**"
+            }
+            for bullet in ["- ", "* ", "+ "] where t.hasPrefix(bullet) {
+                let indent = String(repeating: " ", count: line.count - t.count)
+                return indent + "• " + t.dropFirst(2)
+            }
+            return line
+        }
+        let joined = lines.joined(separator: "\n")
+        return (try? AttributedString(markdown: joined, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+            ?? AttributedString(joined)
+    }
+}
+
+/// Lines shown as they are: monospaced, scrolling sideways when long.
+struct CodeBlock: View {
+    let text: String
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            Text(text)
+                .font(.system(.footnote, design: .monospaced))
+                .textSelection(.enabled)
+                .fixedSize(horizontal: true, vertical: false)
+                .padding(8)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
     }
 }

@@ -102,12 +102,31 @@ struct ChatRoom: Decodable, Identifiable, Hashable {
 struct ChatRooms: Decodable { var rooms: [ChatRoom] }
 
 struct ChatMessage: Decodable, Identifiable {
+    struct Agent: Decodable { var machine_name: String }
+    struct Reaction: Decodable { var emoji: String; var count: Int; var mine: Bool }
+    struct File: Decodable { var name: String }
     var seq: Int
+    /// When it was posted, in milliseconds.
     var at: Int
+    var author: String?
     var name: String
     var text: String
+    var quote: String?
     var deleted: Int?
+    var edited: Int?
+    var agent: Agent?
+    var via: String?
+    var reactions: [Reaction]?
+    var files: [File]?
     var id: Int { seq }
+
+    /// Who it's from, as the web says it.
+    var from: String {
+        if let agent { return "\(name)'s agent on \(agent.machine_name)" }
+        if let via, !via.isEmpty, !name.isEmpty { return "\(name) via \(via)" }
+        return name.isEmpty ? "Arugula" : name
+    }
+    var date: Date { Date(timeIntervalSince1970: Double(at) / 1000) }
 }
 
 struct ChatMessages: Decodable { var messages: [ChatMessage] }
