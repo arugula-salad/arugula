@@ -88,7 +88,8 @@
 //!   its own pushes the session's branch, and only it, from a bundle its
 //!   user writes, through a repo of the daemon's own, with a token control
 //!   mints for that one push. A push that fails is the session's error,
-//!   and the turn says it didn't push.
+//!   and the turn says it didn't push; the box tries again on its own
+//!   ([`retry`], Arugula #859).
 //! - **Its harness** (M264): Claude Code, or Codex when control asks for
 //!   it and the box has it ([`has_harness`]); else Claude Code, and the
 //!   first report says which ran (`harness`). A Try 3's three sessions are
@@ -1462,29 +1463,17 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
                 if may_push && push::clean_if_ended(&dir, &l).await {
                     return false;
                 }
+                // This turn's end decides the push: a retry still waiting on
+                // an older failure is done, and a failure of its own starts
+                // the next.
+                retry::cancel(id);
+                let failed = pushed.is_err();
                 let reply = reply_of(r.as_ref());
                 let branch = l.branch.clone();
                 let (k, m, base, again) = (keys.clone(), me.clone(), s.turns, fix.clone());
                 say(Box::new(move |now| {
                     now.turns_seen = Some(base);
-                    let pushed = match pushed {
-                        Ok(Some(head)) => {
-                            now.pushed_head = Some(head);
-                            true
-                        }
-                        Ok(None) => false,
-                        Err(why) => {
-                            let error = Some(format!("couldn't push {}: {why}", now.branch));
-                            now.push(
-                                &k,
-                                &m,
-                                Kind::Error,
-                                State::Working,
-                                SessionDetail { error, ..Default::default() },
-                            );
-                            false
-                        }
-                    };
+                    let pushed = pushed_now(now, &k, &m, pushed);
                     let w = r.and_then(|r| r.work);
                     let d = SessionDetail {
                         branch: Some(w.as_ref().map_or(branch, |w| w.branch.clone())),
@@ -1516,6 +1505,9 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
                         }
                     }
                 }));
+                if failed {
+                    retry::start(app, id, keys.clone(), me.clone());
+                }
                 match fix {
                     Some(text) => give_fix(app, &b, id, text, &keys, &me).await,
                     None => {
@@ -1634,6 +1626,29 @@ async fn step(app: &Arc<App>, id: &str, missing: &mut Option<std::time::Instant>
     }
     send(app, id).await;
     true
+}
+
+/// What a turn's push came to, for its report: whether the branch is on
+/// GitHub. A push that failed is the session's error, reported with its
+/// reason ([`retry`] tries again).
+fn pushed_now(
+    now: &mut AgentSessionLedger,
+    keys: &arugula_e2e::DeviceKeys,
+    me: &str,
+    pushed: Result<Option<String>, String>,
+) -> bool {
+    match pushed {
+        Ok(Some(head)) => {
+            now.pushed_head = Some(head);
+            true
+        }
+        Ok(None) => false,
+        Err(why) => {
+            let error = Some(format!("couldn't push {}: {why}", now.branch));
+            now.push(keys, me, Kind::Error, State::Working, SessionDetail { error, ..Default::default() });
+            false
+        }
+    }
 }
 
 /// Park done session `l` (Arugula #215): its transcript archived first,
@@ -2215,6 +2230,9 @@ async fn send_all(app: &Arc<App>) {
 
 #[path = "sessions_push.rs"]
 pub mod push;
+
+#[path = "sessions_retry.rs"]
+pub mod retry;
 
 #[cfg(test)]
 #[path = "sessions_tests.rs"]
