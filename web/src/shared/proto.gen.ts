@@ -581,7 +581,20 @@ closed_with?: string,
  * `attached to its board row as work`. Absent for a close from before
  * they were kept.
  */
-closed_by?: string, };
+closed_by?: string, 
+/**
+ * A PR in its branch's merge queue now (Arugula #766). A repo with no
+ * queue, a platform from before it and every other kind say false.
+ */
+queued?: boolean, 
+/**
+ * With `queued`: when it entered the queue, in milliseconds.
+ */
+queued_since?: number, 
+/**
+ * A PR that left the queue unmerged, and why (`ForgeItem::left_queue`).
+ */
+left_queue?: LeftQueue, };
 
 /**
  * What a pointer to an item, an issue or a run is now, from data control
@@ -3567,6 +3580,22 @@ token: string | null,
  * (or, running, its agent session is the holder).
  */
 pane: number | null, };
+
+/**
+ * A PR's last unmerged exit from its merge queue (Arugula #766).
+ */
+export type LeftQueue = { 
+/**
+ * GitHub's `reason` as it came, in upper case: `CHECKS_TIMED_OUT`,
+ * `CHECKS_FAILED`, `MERGE_CONFLICT`, `MANUAL`, `BRANCH_PROTECTIONS`,
+ * `GIT_TREE_INVALID`, `INVALID_MERGE_COMMIT`, `UNKNOWN_REMOVAL_REASON`.
+ * One GitHub adds later is kept as it is.
+ */
+reason: string, 
+/**
+ * When the platform heard it, in milliseconds.
+ */
+at: number, };
 
 /**
  * `POST /api/projects/{project}/repos`: link `OWNER/NAME`. A project
