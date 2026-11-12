@@ -112,6 +112,8 @@ struct ProjectsView: View {
     let control: Control
     @State private var picked: Projects.Project?
     @State private var columns = NavigationSplitViewVisibility.all
+    /// Every project, for the open one's switcher.
+    @State private var projects: [Projects.Project] = []
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columns) {
@@ -129,13 +131,14 @@ struct ProjectsView: View {
                     .accessibilityIdentifier("project-\(project.name)")
                 }
                 .voidList()
+                .task(id: p.projects.map(\.id)) { projects = p.projects }
             }
             .navigationTitle("PROJECTS")
             .background(Palette.void)
         } detail: {
             NavigationStack {
                 if let picked {
-                    ProjectView(control: control, project: picked)
+                    ProjectView(control: control, project: picked, projects: projects) { self.picked = $0 }
                 } else {
                     Empty(text: "Pick a project", symbol: "folder")
                 }
@@ -169,6 +172,8 @@ struct Empty: View {
 struct ProjectView: View {
     let control: Control
     let project: Projects.Project
+    var projects: [Projects.Project] = []
+    var pick: (Projects.Project) -> Void = { _ in }
     @State private var section = 0
 
     var body: some View {
@@ -205,11 +210,55 @@ struct ProjectView: View {
             }
         }
         .background(Palette.void)
-        .detailTitle(project.name)
+        .modifier(ProjectTitle(project: project, projects: projects, pick: pick))
         .navigationDestination(for: Issue.self) { IssueView(issue: $0) }
         .navigationDestination(for: Board.self) { BoardScreen(control: control, board: $0) }
         .navigationDestination(for: IssueRef.self) { ref in
             Loaded(load: { try await control.get("/api/issues/\(ref.id)", as: Issue.self) }) { IssueView(issue: $0) }
+        }
+    }
+}
+
+/// The open project's name as a switcher, always on screen: on an iPad the
+/// heading under the bar is a pull-down menu of every project; on an iPhone
+/// the bar's title is (a title menu).
+struct ProjectTitle: ViewModifier {
+    let project: Projects.Project
+    let projects: [Projects.Project]
+    let pick: (Projects.Project) -> Void
+    @Environment(\.horizontalSizeClass) private var width
+
+    @ViewBuilder private var choices: some View {
+        ForEach(projects) { p in
+            Button { pick(p) } label: {
+                if p == project { Label(p.name, systemImage: "checkmark") } else { Text(p.name) }
+            }
+        }
+    }
+
+    func body(content: Content) -> some View {
+        if width == .regular {
+            content
+                .navigationTitle("")
+                .navigationBarTitleDisplayMode(.inline)
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    Menu { choices } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Text(project.name.uppercased()).font(Face.display(34)).foregroundStyle(Palette.fg).lineLimit(1)
+                            Image(systemName: "chevron.down").font(.system(size: 15, weight: .bold)).foregroundStyle(Palette.accent)
+                        }
+                    }
+                    .accessibilityIdentifier("project-switcher")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+                    .padding(.bottom, 8)
+                    .background(Palette.void)
+                }
+        } else {
+            content
+                .navigationTitle(project.name)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbarTitleMenu { choices }
         }
     }
 }
