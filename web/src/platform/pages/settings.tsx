@@ -1,67 +1,47 @@
-// `/settings`: the account's platform settings (M150): plan and usage
-// (`/api/billing`, the platform's), and which machines' agents read and
-// post in conversations (M197), agents with no machine (M230), the
-// products linked to the account (M229), and which apps may use Claude through
-// Arugula for the account, with what was spent on its own key (M231), and
-// this device's Appearance…, the shell's dialog. Sign-in, passkeys, devices and teams are
-// trust, signed by a device, so they stay on control's page and this links
-// there. Each part is a section (shared/ui/settings-section): a heading, one
-// line, the rest behind More; on a wide screen an index of them sits
-// beside the column (../settings.css).
+// `/settings`: the account's platform settings (M150), only what's about
+// you (Arugula #897): which machines' agents read and post in conversations
+// (M197), agents with no machine (M230), the products linked to the
+// account (M229), and which apps may use Claude through Arugula for the
+// account, with what was spent on its own key (M231), and this device's
+// Appearance…, the shell's dialog. Plan and billing are each owner's, on
+// its settings (./owner-settings): Personal's and each team's. Sign-in,
+// passkeys, devices and teams are trust, signed by a device, so they stay
+// on control's page and this links there. Each part is a section
+// (shared/ui/settings-section): a heading, one line, the rest behind More;
+// on a wide screen an index of them sits beside the column
+// (../settings.css).
 
-import { useEffect, useRef, useState } from "preact/hooks";
-import { desktopApp } from "../../shared/desktop";
-import { platformFetch } from "../../shared/maintenance";
-import { BrowserStep } from "../../shared/ui/browser-step";
+import { useRef } from "preact/hooks";
 import { openAppearance } from "../../shared/ui/appearance";
+import { useSubscribe } from "../../shared/ui/hooks";
 import { PageHeader } from "../../shared/ui/page-header";
-import { Plan, planWords, type Billing } from "../settings/plan";
 import { AgentGrants } from "../settings/agents";
 import { AgentTokens } from "../settings/agent-tokens";
 import { LinkedProducts } from "../settings/linked";
 import { ChatAlerts } from "../settings/chat-alerts";
 import { ClaudeSettings } from "../settings/claude";
 import { NotificationSettings } from "../settings/notifications";
+import { ownerOf } from "../settings/overrides";
 import { SHELL_SECTIONS } from "../../shared/settings-map";
 import { ElsewhereLinks, Section, SectionIndex, type Elsewhere } from "../../shared/ui/settings-section";
+import { names } from "../links";
+import { follow, pathOf } from "../router";
 import { controlOrigin, session } from "../session";
 
-async function call<T>(path: string, body?: unknown): Promise<T> {
-  const r = await platformFetch(path, {
-    method: body === undefined ? "GET" : "POST",
-    credentials: "same-origin",
-    headers: body === undefined ? {} : { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const v = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error((v as { error?: string }).error ?? `Request failed (${r.status})`);
-  return v as T;
-}
-
 export function SettingsPage() {
-  const [billing, setBilling] = useState<Billing | null>(null);
-  const [plan, setPlan] = useState(false);
-  useEffect(() => {
-    call<Billing>("/api/billing").then(setBilling, () => setBilling(null));
-  }, []);
-  // The desktop app opens checkout in the browser and waits here for the
-  // plan to change (#236); `words` is the plan it started from.
-  const [finishing, setFinishing] = useState<{ team?: string; words: string } | null>(null);
-  const [now, setNow] = useState("");
-  const upgrade = async (team?: string) => {
-    if (desktopApp() && billing) {
-      setNow("");
-      setFinishing({ team, words: planWords(billing, team) });
-      return;
-    }
-    location.href = (await call<{ url: string }>("/api/billing/checkout", { team })).url;
-  };
+  useSubscribe((fn) => session.subscribe(fn));
   const body = useRef<HTMLDivElement>(null);
   // The rest of Settings is on your machines page (Arugula #695).
   const elsewhere: Elsewhere = {
     title: "On your machines page",
     links: SHELL_SECTIONS.map((s) => ({ title: s.title, href: `${controlOrigin()}/#settings=${s.id}` })),
   };
+  // Each owner's settings: Personal's, then each team's.
+  const teams = new Map(session.projects.map(ownerOf).filter((o) => o.owner !== "personal").map((o) => [o.owner, o.name]));
+  const owners = [{ owner: "personal", name: "Personal" }, ...[...teams].map(([owner, name]) => ({ owner, name }))].map((o) => ({
+    ...o,
+    href: pathOf({ page: "owner-settings", owner: o.owner }, names),
+  }));
   return (
     <section class="platform-section sw-page settings-page" data-platform-settings>
       <div class="settings-layout">
@@ -75,20 +55,24 @@ export function SettingsPage() {
                   <span class="settings-open-name">Appearance…</span>
                 </button>
               </li>
-              {billing?.billing && (
-                <li>
-                  <button class="settings-open" data-open-plan onClick={() => setPlan(true)}>
-                    <span class="settings-open-name">Plan and usage{billing.relay.warning ? " (over the free relay)" : ""}</span>
-                    <span class="dim">Your plan, and what you used this month.</span>
-                  </button>
-                </li>
-              )}
               <li>
                 <a class="settings-open" href={`${controlOrigin()}/#settings=account`} data-settings-control>
                   <span class="settings-open-name">Sign-in, passkeys, devices, teams and usage reports</span>
                 </a>
               </li>
             </ul>
+            <p class="dim" data-plan-moved>
+              Plan and billing are in each owner's settings:{" "}
+              {owners.map((o, i) => (
+                <span key={o.owner}>
+                  {i > 0 && " · "}
+                  <a href={o.href} data-owner-settings-link={o.owner} onClick={(e) => follow(e, o.href)}>
+                    {o.name}
+                  </a>
+                </span>
+              ))}
+              .
+            </p>
           </Section>
           <NotificationSettings />
           <LinkedProducts />
@@ -99,32 +83,6 @@ export function SettingsPage() {
           <ElsewhereLinks elsewhere={elsewhere} />
         </div>
       </div>
-      {plan && (
-        <Plan
-          billing={billing}
-          upgrade={upgrade}
-          close={() => setPlan(false)}
-          finishing={
-            finishing ? (
-              <BrowserStep
-                url={() => call<{ url: string }>("/api/billing/checkout", { team: finishing.team }).then((v) => v.url)}
-                label="Continue to checkout"
-                cancel={() => setFinishing(null)}
-                check={async () => {
-                  const b = await call<Billing>("/api/billing");
-                  if (planWords(b, finishing.team) === finishing.words) return false;
-                  setBilling(b);
-                  setNow(planWords(b, finishing.team));
-                  return true;
-                }}
-                onDone={() => setFinishing(null)}
-              />
-            ) : now ? (
-              <p data-plan-now>You're on {now}.</p>
-            ) : null
-          }
-        />
-      )}
     </section>
   );
 }

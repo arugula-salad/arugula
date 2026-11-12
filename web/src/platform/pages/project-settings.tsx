@@ -11,11 +11,12 @@
 // sessions (M261),
 // for its owners the agent tokens over it
 // and its own secrets (M230), what its Claude calls cost (M231), and the
-// apps products keep in it (M236), and for a team's owners its chat's
-// owners-only switches (UI audit #168), and first, for every member, who
+// apps products keep in it (M236), and first, for every member, who
 // can do what here (Access, Arugula #682, ../settings/access). Each part is a section
 // (shared/ui/settings-section), as /settings's are: a heading, one line, the rest
 // behind More, and on a wide screen an index of them beside the column.
+// After the repos, its Overrides (Arugula #897, ../settings/project-overrides):
+// which of its owner's defaults it follows, and which it sets itself.
 // The repos are a table, a row each with its switch. After them, the Plane
 // projects connected to it (#356, ../settings/plane), with boards on, and
 // after where its issues go, its CI alerts (native #774, ../settings/ci-alerts).
@@ -42,13 +43,13 @@ import { Environments } from "../settings/environments";
 import { ProjectAgents } from "../settings/project-agents";
 import { ClaudeSpend } from "../settings/spend";
 import { ClientApps } from "../settings/client-apps";
-import { TeamChat } from "../settings/chat-alerts";
 import { PlaneConnections } from "../settings/plane";
 import { CiAlertsSetting } from "../settings/ci-alerts";
 import { BoardSettings } from "../settings/board-settings";
 import { Section, SectionIndex } from "../../shared/ui/settings-section";
 import { Access } from "../settings/access";
 import { General } from "../settings/general";
+import { Overrides } from "../settings/project-overrides";
 import { Chip } from "../../shared/ui/state-chip";
 
 /** A call to the platform: its JSON, or the platform's `{error}` thrown
@@ -282,6 +283,7 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
               </ConfirmRemove>
             )}
           </Section>
+          <Overrides p={p} />
           {boards !== null && <PlaneConnections p={p} />}
           {boards !== null && <BoardSettings p={p} />}
           <IssueHomeSetting key={linked} p={p} />
@@ -294,7 +296,6 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
           <ProjectAgents p={p} />
           <ClaudeSpend p={p} />
           <ClientApps p={p} />
-          <TeamChat team={p.team} />
         </div>
       </div>
     </section>

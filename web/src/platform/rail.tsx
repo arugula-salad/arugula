@@ -84,7 +84,7 @@ export function PlatformRail() {
   const bottom: RailItem[] = [
     {
       label: "Settings",
-      tip: "Settings: your plan, agents and chat here; this device and machine on your machines page",
+      tip: "Settings: your agents and chat here, and each owner's plan and defaults; this device and machine on your machines page",
       // A project's settings are the bar's.
       here: r.page === "settings",
       hook: "data-open-settings",

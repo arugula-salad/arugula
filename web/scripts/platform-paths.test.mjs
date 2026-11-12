@@ -24,6 +24,12 @@ test("each route parses", () => {
   assert.deepEqual(parse("/docs"), { page: "docs" });
   assert.equal(pathOf({ page: "docs" }), "/docs");
   assert.deepEqual(parse("/settings"), { page: "settings" });
+  // An owner's settings (Arugula #897): a team's, and Personal's.
+  // A team's settings are its team page's Settings tab (Arugula #895).
+  assert.deepEqual(parse("/t/team_1/settings"), { page: "team", team: "team_1", tab: "settings" });
+  assert.deepEqual(parse("/settings/personal"), { page: "owner-settings", owner: "personal" });
+  assert.equal(pathOf({ page: "owner-settings", owner: "personal" }), "/settings/personal");
+  assert.equal(pathOf({ page: "owner-settings", owner: "team_1" }), "/t/team_1/settings");
   assert.deepEqual(parse("/design"), { page: "design" });
   assert.equal(pathOf({ page: "design" }), "/design");
   assert.deepEqual(parse("/design/x"), { page: "missing", path: "/design/x" });
@@ -57,7 +63,7 @@ test("each route parses", () => {
 });
 
 test("anything else is missing, never a guess", () => {
-  for (const p of ["/p", "/p/arugula", `/p/${P}/nope`, "/dm/sam", `/p/${P}/workspaces/app`, `/p/${P}/workspaces/cw_0123abcd`, `/p/${P}/workspaces/hw_0123456789abcdef0123456789abcdef/tab`, `/p/${P}/past/run_00ff11ee`, "/settings/x", "/chats", `/p/${P}/deploys/old`, `/p/${P}/deploys/new/x`]) {
+  for (const p of ["/p", "/p/arugula", `/p/${P}/nope`, "/dm/sam", `/p/${P}/workspaces/app`, `/p/${P}/workspaces/cw_0123abcd`, `/p/${P}/workspaces/hw_0123456789abcdef0123456789abcdef/tab`, `/p/${P}/past/run_00ff11ee`, "/settings/x", "/t/team_1", "/t/team_1/nope", "/chats", `/p/${P}/deploys/old`, `/p/${P}/deploys/new/x`]) {
     assert.equal(parse(p).page, "missing", p);
   }
   assert.equal(parse(`/p/${P}/chat/ch_0123456789abcdef`, "?msg=x").msg, undefined);
@@ -98,6 +104,7 @@ test("every route starts with a segment in TOP, the server's 404 list (UI audit 
     { page: "all-boards" },
     { page: "docs" },
     { page: "settings" },
+    { page: "owner-settings", owner: "personal" },
     { page: "design" },
     { page: "deploy", deploy: `dep_${"0a".repeat(16)}` },
     { page: "team", team: "a1b2c3d4e5f60718", tab: "chat" },

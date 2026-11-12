@@ -31,6 +31,7 @@ import { Missing, ProjectHome } from "./pages/project";
 import { Installed, ProjectSettings } from "./pages/project-settings";
 import { DesignPage } from "./pages/design";
 import { SettingsPage } from "./pages/settings";
+import { OwnerSettings } from "./pages/owner-settings";
 import { HostedWorkspacePage, HostedWorkspaces } from "./pages/hosted-workspace";
 import { RunPage, RunsPage } from "./pages/runs";
 import { SessionsPage } from "./pages/sessions";
@@ -121,6 +122,8 @@ function body(r: Route, lost: string | null) {
       return <AllBoardsPage all={r.all} />;
     case "settings":
       return <SettingsPage />;
+    case "owner-settings":
+      return <OwnerSettings owner={r.owner} />;
     case "deploy":
       return <DeployPage id={r.deploy} />;
     case "team":
