@@ -10,20 +10,103 @@ import UIKit
 
 struct HomeView: View {
     let control: Control
+    @StateObject private var scope = Scope()
 
     var body: some View {
-        TabView {
-            // Tabs and titles in the theme (Theme.swift); each tab's lists sit
-            // on the void.
-            ProjectsView(control: control)
-                .tabItem { Label("Projects", systemImage: "folder") }
-            ChatRoomsView(control: control)
-                .tabItem { Label("Chat", systemImage: "bubble.left.and.bubble.right") }
-            MachinesView(control: control)
-                .tabItem { Label("Machines", systemImage: "terminal") }
-            YouView(control: control)
-                .tabItem { Label("You", systemImage: "person.crop.circle") }
+        VStack(spacing: 0) {
+            ProjectBar()
+            TabView {
+                // What's in the current project, then the account's machines and
+                // the account itself. Tabs and titles in the theme (Theme.swift).
+                IssuesView(control: control)
+                    .tabItem { Label("Issues", systemImage: "smallcircle.filled.circle") }
+                BoardsView(control: control)
+                    .tabItem { Label("Boards", systemImage: "rectangle.split.3x1") }
+                ChatRoomsView(control: control)
+                    .tabItem { Label("Chat", systemImage: "bubble.left.and.bubble.right") }
+                MachinesView(control: control)
+                    .tabItem { Label("Machines", systemImage: "terminal") }
+                YouView(control: control)
+                    .tabItem { Label("You", systemImage: "person.crop.circle") }
+            }
         }
+        .background(Palette.void)
+        .environmentObject(scope)
+        .task { await scope.load(control) }
+    }
+}
+
+/// The project the app is in, as the web's current project (Arugula #880):
+/// Issues, Boards and Chat show what's in it. Kept on this device; the
+/// reader's personal project until they pick another.
+@MainActor
+final class Scope: ObservableObject {
+    @Published var projects: [Projects.Project] = []
+    @Published var current: Projects.Project?
+    @Published var problem: String?
+    private static let key = "arugula.current-project"
+
+    func load(_ control: Control) async {
+        do {
+            let p = try await control.get("/api/projects", as: Projects.self)
+            projects = p.projects
+            let kept = UserDefaults.standard.string(forKey: Self.key)
+            current = p.projects.first { $0.id == kept } ?? p.projects.first { $0.team == nil } ?? p.projects.first
+            problem = nil
+        } catch {
+            problem = describe(error)
+        }
+    }
+
+    func pick(_ p: Projects.Project) {
+        current = p
+        UserDefaults.standard.set(p.id, forKey: Self.key)
+    }
+
+    /// Chat's rooms: the project's team's, or every room in the personal
+    /// project, which has no team (as the web's chat-scope.ts).
+    func showsRoom(_ room: ChatRoom) -> Bool {
+        guard let team = current?.team else { return true }
+        return room.team == team.id
+    }
+}
+
+/// The current project, always on screen above the tabs: its name as a
+/// pull-down menu of every project, and whose it is.
+struct ProjectBar: View {
+    @EnvironmentObject private var scope: Scope
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Menu {
+                ForEach(scope.projects) { p in
+                    Button { scope.pick(p) } label: {
+                        if p == scope.current { Label(p.name, systemImage: "checkmark") } else { Text(p.name) }
+                    }
+                }
+            } label: {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text((scope.current?.name ?? "Arugula").uppercased())
+                        .font(Face.display(26)).foregroundStyle(Palette.fg).lineLimit(1)
+                    Image(systemName: "chevron.down").font(.system(size: 12, weight: .bold)).foregroundStyle(Palette.accent)
+                }
+            }
+            .accessibilityIdentifier("project-switcher")
+            if let team = scope.current?.team {
+                Caps("\(team.name) · \(team.role)")
+            } else if scope.current != nil {
+                Caps("personal")
+            }
+            Spacer(minLength: 0)
+            if let problem = scope.problem {
+                Text(problem).font(Face.mono(11)).foregroundStyle(Palette.danger).lineLimit(1)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 4)
+        .padding(.bottom, 8)
+        .background(Palette.void)
+        .overlay(alignment: .bottom) { Rectangle().fill(Palette.raised).frame(height: 1) }
     }
 }
 
@@ -106,53 +189,7 @@ struct Loaded<T, Content: View>: View {
     }
 }
 
-// ---- projects
-
-struct ProjectsView: View {
-    let control: Control
-    @State private var picked: Projects.Project?
-    @State private var columns = NavigationSplitViewVisibility.all
-    /// Every project, for the open one's switcher.
-    @State private var projects: [Projects.Project] = []
-
-    var body: some View {
-        NavigationSplitView(columnVisibility: $columns) {
-            Loaded(load: { try await control.get("/api/projects", as: Projects.self) }) { p in
-                List(p.projects, selection: $picked) { project in
-                    NavigationLink(value: project) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(project.name).font(Face.ui(16, "SemiBold"))
-                            Text(project.team.map { "\($0.name) · \($0.role)" } ?? "personal")
-                                .font(Face.mono(11)).foregroundStyle(Palette.dim)
-                        }
-                        .padding(.vertical, 4)
-                    }
-                    .voidRow()
-                    .accessibilityIdentifier("project-\(project.name)")
-                }
-                .voidList()
-                .task(id: p.projects.map(\.id)) { projects = p.projects }
-            }
-            .navigationTitle("PROJECTS")
-            .background(Palette.void)
-        } detail: {
-            NavigationStack {
-                if let picked {
-                    ProjectView(control: control, project: picked, projects: projects) { self.picked = $0 }
-                } else {
-                    Empty(text: "Pick a project", symbol: "folder")
-                }
-            }
-            .id(picked?.id)
-        }
-        .navigationSplitViewStyle(.balanced)
-        // A project takes the whole width once it's picked (a board's lanes
-        // want it); the sidebar button brings the list back.
-        .onChange(of: picked) { _, now in
-            if now != nil { withAnimation { columns = .detailOnly } }
-        }
-    }
-}
+// ---- the current project's issues and boards
 
 /// What a detail shows before anything is picked.
 struct Empty: View {
@@ -169,97 +206,80 @@ struct Empty: View {
     }
 }
 
-struct ProjectView: View {
+/// The current project's open issues, beside the one that's open.
+struct IssuesView: View {
     let control: Control
-    let project: Projects.Project
-    var projects: [Projects.Project] = []
-    var pick: (Projects.Project) -> Void = { _ in }
-    @State private var section = 0
+    @EnvironmentObject private var scope: Scope
+    @State private var picked: Issue?
+    @State private var columns = NavigationSplitViewVisibility.all
 
     var body: some View {
-        VStack(spacing: 0) {
-            Picker("Show", selection: $section) {
-                Text("Issues").tag(0)
-                Text("Boards").tag(1)
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal)
-            .padding(.vertical, 8)
-            if section == 0 {
-                Loaded(load: { try await control.get("/api/projects/\(project.id)/issues", as: IssueList.self) }) { l in
-                    List(l.issues) { issue in
-                        NavigationLink(value: issue) { IssueRow(issue: issue) }.voidRow()
-                    }
-                    .voidList()
-                    .overlay { if l.issues.isEmpty { Caps("No open issues") } }
-                }
-            } else {
-                Loaded(load: { try await control.get("/api/projects/\(project.id)/boards", as: BoardList.self) }) { l in
-                    ScrollView {
-                        LazyVStack(spacing: 12) {
-                            ForEach(l.boards) { b in
-                                NavigationLink(value: b) { BoardCard(board: b) }
-                                    .buttonStyle(.plain)
-                                    .accessibilityIdentifier("board-\(b.title)")
-                            }
+        NavigationSplitView(columnVisibility: $columns) {
+            Group {
+                if let project = scope.current {
+                    Loaded(load: { try await control.get("/api/projects/\(project.id)/issues", as: IssueList.self) }) { l in
+                        List(l.issues, selection: $picked) { issue in
+                            NavigationLink(value: issue) { IssueRow(issue: issue) }.voidRow()
                         }
-                        .padding()
+                        .voidList()
+                        .overlay { if l.issues.isEmpty { Caps("No open issues") } }
                     }
-                    .overlay { if l.boards.isEmpty { Caps("No boards") } }
+                } else {
+                    ProgressView().tint(Palette.accent)
                 }
             }
+            .navigationTitle("ISSUES")
+            .background(Palette.void)
+        } detail: {
+            NavigationStack {
+                if let picked {
+                    IssueView(issue: picked)
+                } else {
+                    Empty(text: "Pick an issue", symbol: "smallcircle.filled.circle")
+                }
+            }
+            .id(picked?.id)
         }
-        .background(Palette.void)
-        .modifier(ProjectTitle(project: project, projects: projects, pick: pick))
-        .navigationDestination(for: Issue.self) { IssueView(issue: $0) }
-        .navigationDestination(for: Board.self) { BoardScreen(control: control, board: $0) }
-        .navigationDestination(for: IssueRef.self) { ref in
-            Loaded(load: { try await control.get("/api/issues/\(ref.id)", as: Issue.self) }) { IssueView(issue: $0) }
-        }
+        .navigationSplitViewStyle(.balanced)
+        .id(scope.current?.id)
     }
 }
 
-/// The open project's name as a switcher, always on screen: on an iPad the
-/// heading under the bar is a pull-down menu of every project; on an iPhone
-/// the bar's title is (a title menu).
-struct ProjectTitle: ViewModifier {
-    let project: Projects.Project
-    let projects: [Projects.Project]
-    let pick: (Projects.Project) -> Void
-    @Environment(\.horizontalSizeClass) private var width
+/// The current project's boards as cards; a board opens to its lanes.
+struct BoardsView: View {
+    let control: Control
+    @EnvironmentObject private var scope: Scope
 
-    @ViewBuilder private var choices: some View {
-        ForEach(projects) { p in
-            Button { pick(p) } label: {
-                if p == project { Label(p.name, systemImage: "checkmark") } else { Text(p.name) }
+    var body: some View {
+        NavigationStack {
+            Group {
+                if let project = scope.current {
+                    Loaded(load: { try await control.get("/api/projects/\(project.id)/boards", as: BoardList.self) }) { l in
+                        ScrollView {
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 320), spacing: 14)], spacing: 14) {
+                                ForEach(l.boards) { b in
+                                    NavigationLink(value: b) { BoardCard(board: b) }
+                                        .buttonStyle(.plain)
+                                        .accessibilityIdentifier("board-\(b.title)")
+                                }
+                            }
+                            .padding()
+                        }
+                        .overlay { if l.boards.isEmpty { Caps("No boards") } }
+                    }
+                } else {
+                    ProgressView().tint(Palette.accent)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Palette.void)
+            .navigationTitle("BOARDS")
+            .navigationDestination(for: Board.self) { BoardScreen(control: control, board: $0) }
+            .navigationDestination(for: IssueRef.self) { ref in
+                Loaded(load: { try await control.get("/api/issues/\(ref.id)", as: Issue.self) }) { IssueView(issue: $0) }
             }
         }
-    }
-
-    func body(content: Content) -> some View {
-        if width == .regular {
-            content
-                .navigationTitle("")
-                .navigationBarTitleDisplayMode(.inline)
-                .safeAreaInset(edge: .top, spacing: 0) {
-                    Menu { choices } label: {
-                        HStack(alignment: .firstTextBaseline, spacing: 10) {
-                            Text(project.name.uppercased()).font(Face.display(34)).foregroundStyle(Palette.fg).lineLimit(1)
-                            Image(systemName: "chevron.down").font(.system(size: 15, weight: .bold)).foregroundStyle(Palette.accent)
-                        }
-                    }
-                    .accessibilityIdentifier("project-switcher")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal)
-                    .padding(.bottom, 8)
-                    .background(Palette.void)
-                }
-        } else {
-            content
-                .navigationTitle(project.name)
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbarTitleMenu { choices }
-        }
+        .id(scope.current?.id)
     }
 }
 

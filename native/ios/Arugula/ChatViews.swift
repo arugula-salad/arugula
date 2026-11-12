@@ -1,4 +1,5 @@
-// Chat: the channels and DMs, and one room, read the way a team chat reads:
+// Chat: the current project's team's channels and DMs (every room in the
+// personal project), and one room, read the way a team chat reads:
 // an avatar beside each run of messages, the name and time on one line, the
 // text tight under it, and a long message folded. Issues', panes' and
 // sessions' threads aren't listed here. No live stream yet, so an open room
@@ -8,6 +9,7 @@ import SwiftUI
 
 struct ChatRoomsView: View {
     let control: Control
+    @EnvironmentObject private var scope: Scope
     @State private var picked: ChatRoom?
     @State private var columns = NavigationSplitViewVisibility.all
 
@@ -15,7 +17,7 @@ struct ChatRoomsView: View {
         NavigationSplitView(columnVisibility: $columns) {
             // Beside an open room, the list keeps its counts current.
             Loaded(load: { try await control.get("/api/chat", as: ChatRooms.self) }, every: .seconds(10)) { r in
-                let rooms = r.rooms.filter { $0.isConversation && !$0.archived }.sorted { ($0.unread > 0 ? 1 : 0, $0.last) > ($1.unread > 0 ? 1 : 0, $1.last) }
+                let rooms = r.rooms.filter { $0.isConversation && !$0.archived && scope.showsRoom($0) }.sorted { ($0.unread > 0 ? 1 : 0, $0.last) > ($1.unread > 0 ? 1 : 0, $1.last) }
                 let channels = rooms.filter { $0.kind == "channel" }
                 let dms = rooms.filter { $0.kind == "dm" }
                 List(selection: $picked) {
@@ -42,6 +44,7 @@ struct ChatRoomsView: View {
             .id(picked?.id)
         }
         .navigationSplitViewStyle(.balanced)
+        .id(scope.current?.id)
     }
 }
 

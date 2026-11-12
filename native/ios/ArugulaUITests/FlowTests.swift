@@ -36,12 +36,14 @@ final class FlowTests: XCTestCase {
         try FileManager.default.createDirectory(at: handoff, withIntermediateDirectories: true)
         try code.label.write(to: handoff.appendingPathComponent("code"), atomically: true, encoding: .utf8)
 
-        // Projects, as the signed-in account.
-        let paired = app.buttons["Projects"].firstMatch.waitForExistence(timeout: 120)
+        // In a project, as the signed-in account: the personal one at first.
+        let paired = app.buttons["project-switcher"].waitForExistence(timeout: 120)
         if !paired { shot(app, "1-never-paired") }
         XCTAssertTrue(paired, "never paired: \(app.staticTexts["pair-problem"].exists ? app.staticTexts["pair-problem"].label : "still waiting")")
-        let personal = app.buttons["project-Personal"]
-        XCTAssertTrue(personal.waitForExistence(timeout: 30), "no Personal project")
+        let switcher = app.buttons["project-switcher"]
+        let deadline0 = Date().addingTimeInterval(30)
+        while !switcher.label.lowercased().contains("personal") && Date() < deadline0 { sleep(1) }
+        XCTAssertTrue(switcher.label.lowercased().contains("personal"), "not in the Personal project: \(switcher.label)")
         shot(app, "2-projects")
 
         // Chat: post to the room the script made, and see it come back.
