@@ -92,6 +92,12 @@ final class FlowTests: XCTestCase {
         }
         shot(app, "5-terminal")
         XCTAssertTrue(seen.contains("SIM-42"), "the terminal showed: \(seen)")
+
+        // Back from driving it: the machine's screen (on an iPad, its tab whole).
+        app.buttons["terminal-done"].tap()
+        sleep(3)
+        shot(app, "6-machine")
+        XCTAssertTrue(app.buttons["new-terminal"].waitForExistence(timeout: 10), "not back on the machine")
     }
 }
 
