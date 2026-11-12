@@ -15,11 +15,8 @@ inputs:
     description: Ghostty's cache's key, when jobs share one (they build Ghostty for the same targets); the cache-key otherwise
     default: ""
   ghostty:
-    description: Ghostty's cache (false for jobs that build no Ghostty, such as the server workspace's alone)
+    description: Ghostty's cache (false for jobs that build no Ghostty)
     default: "true"
-  cache-workspace:
-    description: The workspace whose dependencies the build cache keeps (server for jobs that build only server/Cargo.toml's)
-    default: "."
   fetch:
     description: This run's binaries to fetch into $CI_RUN (scripts/ci-env), by artifact - any of run-debug, run-static
     default: ""
@@ -232,18 +229,12 @@ runs:
         path: ~/.cache/libghostty-vt-sys
         key: ghostty-${{ runner.os }}-${{ inputs.ghostty-key || inputs.cache-key }}-${{ hashFiles('vendor/libghostty-vt-sys/**', '.mise.toml') }}
     # In place of the build directories geek kept (scripts/ci-cap-target).
-    # Saved from main only, so branches don't evict main's. The root
-    # workspace's dependencies only: the server's (server/Cargo.toml) builds
-    # into the same target dir, and rust-cache cleans a target dir once per
-    # workspace it's given, each pass keeping only that workspace's
-    # dependencies, so listing both would keep neither's. sccache covers
-    # the server's own. A job that builds only the server's names it
-    # (cache-workspace: server), and keeps its dependencies instead.
+    # Saved from main only, so branches don't evict main's.
     - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       if: inputs.rust == 'true'
       with:
         key: ${{ inputs.cache-key }}
-        workspaces: ${{ inputs.cache-workspace == '.' && '. -> target' || format('{0} -> ../target', inputs.cache-workspace) }}
+        workspaces: . -> target
         save-if: ${{ github.ref == 'refs/heads/main' }}
     - name: This run's debug binaries and web client
       if: contains(inputs.fetch, 'run-debug')
