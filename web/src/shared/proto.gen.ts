@@ -4371,7 +4371,21 @@ id: string, name: string,
 /**
  * The team it's the default project of; `None` for the person's own.
  */
-team: ProjectTeam | null, };
+team: ProjectTeam | null, 
+/**
+ * Whose it is: a team's or a person's own. An older control sends
+ * none, and a reader goes by `team` then.
+ */
+owner?: ProjectOwner, 
+/**
+ * Its short name in links, unique among its owner's projects. An older
+ * control sends none.
+ */
+slug?: string, 
+/**
+ * Its owner archived it. Its issues, Docs and boards stay.
+ */
+archived?: boolean, };
 
 export type PlatformProjects = { me: PlatformMe, projects: Array<PlatformProject>, 
 /**
