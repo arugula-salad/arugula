@@ -200,4 +200,27 @@ struct PaneRow: Decodable, Identifiable, Hashable {
     }
 }
 
-struct PaneList: Decodable { var panes: [PaneRow] }
+struct PaneList: Decodable {
+    var panes: [PaneRow]
+    var tabs: [TabLayout]?
+}
+
+/// A tab as the machine lays it out: its grid, and each pane's rectangle in it
+/// (blocks too, `kind` other than `terminal`).
+struct TabLayout: Decodable, Identifiable, Equatable {
+    struct Cell: Decodable, Equatable {
+        var pane: UInt32
+        var kind: String?
+        var x: UInt16
+        var y: UInt16
+        var cols: UInt16
+        var rows: UInt16
+    }
+    var id: UInt32
+    var name: String?
+    var cols: UInt16
+    var rows: UInt16
+    var cells: [Cell]
+
+    var terminals: [UInt32] { cells.filter { ($0.kind ?? "terminal") == "terminal" }.map(\.pane) }
+}

@@ -70,7 +70,10 @@ final class TerminalUIView: UIView, UIKeyInput, UITextInputTraits {
     private let cellW: CGFloat
     private let cellH: CGFloat
     private let descent: CGFloat
-    private let pad: CGFloat = 4
+    private let pad: CGFloat
+    /// Watching, not driving: the pane's own grid, drawn as it is, with no
+    /// keyboard and no say in its size (a tab's overview). `nil`: driving.
+    let fixed: (UInt16, UInt16)?
     private var grid: (UInt16, UInt16) = (0, 0)
     private var attached = false
     private var rowLayers: [CALayer] = []
@@ -81,14 +84,16 @@ final class TerminalUIView: UIView, UIKeyInput, UITextInputTraits {
     private var ctrlButton: UIButton?
     private var scrollCarry: CGFloat = 0
 
-    @MainActor init(session: MachineSession, tab: UInt32, pane: UInt32) {
+    @MainActor init(session: MachineSession, tab: UInt32, pane: UInt32, fontSize: CGFloat = 12, fixed: (UInt16, UInt16)? = nil) {
         self.session = session
         self.tab = tab
         self.pane = pane
-        term = aru_term_new(80, 24)
-        font = CTFontCreateWithName("Menlo" as CFString, 12, nil)
-        bold = CTFontCreateCopyWithSymbolicTraits(font, 12, nil, .traitBold, .traitBold) ?? font
-        italic = CTFontCreateCopyWithSymbolicTraits(font, 12, nil, .traitItalic, .traitItalic) ?? font
+        self.fixed = fixed
+        pad = fixed == nil ? 4 : 0
+        term = aru_term_new(fixed?.0 ?? 80, fixed?.1 ?? 24)
+        font = CTFontCreateWithName("Menlo" as CFString, fontSize, nil)
+        bold = CTFontCreateCopyWithSymbolicTraits(font, fontSize, nil, .traitBold, .traitBold) ?? font
+        italic = CTFontCreateCopyWithSymbolicTraits(font, fontSize, nil, .traitItalic, .traitItalic) ?? font
         var glyph = CGGlyph(0)
         var ch = UniChar(77)  // M
         CTFontGetGlyphsForCharacters(font, &ch, &glyph, 1)
@@ -106,17 +111,32 @@ final class TerminalUIView: UIView, UIKeyInput, UITextInputTraits {
         accessibilityIdentifier = "terminal-view"
         accessibilityLabel = "Terminal"
         accessibilityTraits = .allowsDirectInteraction
-        addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapped)))
-        addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(panned)))
+        if fixed == nil {
+            addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapped)))
+            addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(panned)))
+        } else {
+            isUserInteractionEnabled = false
+        }
+    }
+
+    /// One cell's size in Menlo at `size` points, as a terminal view lays it out.
+    static func cell(size: CGFloat) -> CGSize {
+        let f = CTFontCreateWithName("Menlo" as CFString, size, nil)
+        var glyph = CGGlyph(0)
+        var ch = UniChar(77)  // M
+        CTFontGetGlyphsForCharacters(f, &ch, &glyph, 1)
+        var adv = CGSize.zero
+        CTFontGetAdvancesForGlyphs(f, .horizontal, &glyph, &adv, 1)
+        return CGSize(width: adv.width, height: ceil(CTFontGetAscent(f) + CTFontGetDescent(f) + CTFontGetLeading(f)))
     }
 
     required init?(coder: NSCoder) { fatalError("made in code") }
     deinit { aru_term_free(term) }
 
-    override var canBecomeFirstResponder: Bool { true }
+    override var canBecomeFirstResponder: Bool { fixed == nil }
     override func didMoveToWindow() {
         super.didMoveToWindow()
-        if window != nil { _ = becomeFirstResponder() }
+        if window != nil, fixed == nil { _ = becomeFirstResponder() }
     }
 
     @objc private func tapped() { _ = becomeFirstResponder() }
@@ -137,6 +157,14 @@ final class TerminalUIView: UIView, UIKeyInput, UITextInputTraits {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        if let f = fixed {
+            // Watching: the pane's grid is the machine's, whatever the view's size.
+            guard f != grid else { return }
+            grid = f
+            aru_term_resize(term, f.0, f.1, UInt32(cellW), UInt32(cellH))
+            render()
+            return
+        }
         guard bounds.width > 40, bounds.height > 40 else { return }
         let cols = UInt16(max(10, Int((bounds.width - 2 * pad) / cellW)))
         let rows = UInt16(max(4, Int((bounds.height - 2 * pad) / cellH)))
