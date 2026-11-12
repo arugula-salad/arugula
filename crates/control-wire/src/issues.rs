@@ -10,6 +10,10 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Whose a project is: [`crate::projects`]' now, kept here for the code
+/// that names it from before.
+pub use crate::projects::ProjectOwner;
+
 /// The agent that wrote something for its owner (M197), labelled
 /// "<owner>'s agent on <machine>": chat's.
 pub use crate::chat::ChatAgent;
@@ -312,25 +316,6 @@ impl IssueHome {
     /// A team's project: `owner` when control sent one, else `team`.
     pub fn is_team(&self) -> bool {
         self.owner.as_ref().map_or(self.team, ProjectOwner::is_team)
-    }
-}
-
-/// Whose a project is. The web client has another `Owner` (a pane's), so
-/// this one is named for what it owns.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum ProjectOwner {
-    /// A team's: its id and name.
-    Team { id: String, name: String },
-    /// A person's own: their account.
-    Personal { account: String },
-}
-
-impl ProjectOwner {
-    pub fn is_team(&self) -> bool {
-        matches!(self, Self::Team { .. })
     }
 }
 
