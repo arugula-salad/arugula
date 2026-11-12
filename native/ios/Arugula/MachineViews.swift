@@ -15,8 +15,9 @@ final class MachineSession: ObservableObject {
     /// The Claude Code conversation running in each pane, by its title: the
     /// machine's index of them (`GET /api/conversations?live=1`).
     @Published var conversations: [UInt32: String] = [:]
-    /// The machine's tabs as it lays them out.
+    /// The machine's tabs as it lays them out, and its sessions, which hold them.
     @Published var tabs: [TabLayout] = []
+    @Published var sessions: [MuxSession] = []
     private var link: OpaquePointer?
     private var conversationsAt = Date.distantPast
     /// The terminal being driven, full screen, which takes that pane's bytes.
@@ -97,6 +98,7 @@ final class MachineSession: ObservableObject {
             let list = try? JSONDecoder().decode(PaneList.self, from: Data(s.utf8)) {
             panes = list.panes
             tabs = list.tabs ?? []
+            sessions = list.sessions ?? []
             // A pane's conversation changes rarely: look again at most every 20 seconds.
             if Date().timeIntervalSince(conversationsAt) > 20 {
                 conversationsAt = Date()
@@ -127,6 +129,20 @@ final class MachineSession: ObservableObject {
         watchedTab = tab
         let panes = tab.terminals
         panes.withUnsafeBufferPointer { aru_link_watch(l, tab.id, $0.baseAddress, panes.count, tab.cols, tab.rows) }
+    }
+
+    /// A tab's panes, the one that most wants you first.
+    func panes(in tab: TabLayout) -> [PaneRow] {
+        panes.filter { $0.tab == tab.id }.sorted { ($0.order, -($0.last_ms ?? 0)) < ($1.order, -($1.last_ms ?? 0)) }
+    }
+
+    /// What to call a tab, as the web does: its own name, else the conversation
+    /// running in it, else what its pane shows or where it is.
+    func name(of tab: TabLayout) -> String {
+        if let n = tab.name?.trimmingCharacters(in: .whitespaces), !n.isEmpty { return n }
+        let mine = panes(in: tab)
+        if let c = mine.lazy.compactMap({ self.conversations[$0.id] }).first { return c }
+        return mine.first?.name ?? "Empty tab"
     }
 
     /// Watch the last tab again: after a pane was driven, or a new channel.
@@ -346,31 +362,33 @@ struct MachineView: View {
         }
     }
 
-    /// One tab whole, live, every pane where the machine puts it; tap a pane to
-    /// drive it full screen. The tabs are a strip above it.
+    /// The machine's sessions as a rail (each with its tabs, and each tab with
+    /// its panes and what they're doing), beside the tab picked, drawn whole
+    /// and live, every pane where the machine puts it. Tap a pane to drive it
+    /// full screen.
     private var tabView: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if let p = session.problem ?? problem {
-                Text(p).font(Face.mono(12)).foregroundStyle(Palette.danger).accessibilityIdentifier("machine-problem")
-                    .padding(.horizontal)
-            }
-            HStack(spacing: 10) {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(session.tabs) { t in
-                            TabChip(tab: t, panes: session.panes, on: t.id == shownTab?.id) { tabID = t.id }
-                        }
+        HStack(spacing: 0) {
+            SessionRail(session: session, shown: shownTab?.id) { tabID = $0 }
+                .frame(width: 300)
+            Rectangle().fill(Palette.raised).frame(width: 1)
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    if let t = shownTab {
+                        Text(session.name(of: t)).font(Face.ui(17, "SemiBold")).lineLimit(1)
                     }
+                    Spacer()
+                    newTerminal
                 }
-                newTerminal
+                if let p = session.problem ?? problem {
+                    Text(p).font(Face.mono(12)).foregroundStyle(Palette.danger).accessibilityIdentifier("machine-problem")
+                }
+                if let t = shownTab {
+                    TabCanvas(session: session, tab: t, conversations: session.conversations) { opened = $0 }
+                } else if session.connected {
+                    Empty(text: "No tabs", symbol: "rectangle.split.2x2")
+                }
             }
-            .padding(.horizontal)
-            if let t = shownTab {
-                TabCanvas(session: session, tab: t, conversations: session.conversations) { opened = $0 }
-                    .padding([.horizontal, .bottom])
-            } else if session.connected {
-                Empty(text: "No tabs", symbol: "rectangle.split.2x2")
-            }
+            .padding()
         }
     }
 
@@ -389,31 +407,95 @@ struct MachineView: View {
     }
 }
 
-/// A tab in the strip: its name, and a dot in the tone of its most urgent pane.
-struct TabChip: View {
-    let tab: TabLayout
-    let panes: [PaneRow]
-    let on: Bool
-    let pick: () -> Void
+/// A machine's sessions, in order, each with its tabs: a tab by its name, a
+/// dot in the tone of its most urgent pane, and its panes, each with what
+/// it's doing and what it's called (its conversation, for an agent).
+struct SessionRail: View {
+    @ObservedObject var session: MachineSession
+    let shown: UInt32?
+    let pick: (UInt32) -> Void
 
     var body: some View {
-        let mine = panes.filter { $0.tab == tab.id }
-        let urgent = mine.map(\.order).min() ?? 3
-        let tone: Tone = urgent == 0 ? .accent : urgent == 1 ? .info : urgent == 2 ? .ok : .muted
-        Button(action: pick) {
-            HStack(spacing: 6) {
-                Circle().fill(tone.color).frame(width: 7, height: 7)
-                    .shadow(color: urgent == 0 ? tone.color : .clear, radius: 4)
-                Text(tab.name ?? "tab \(tab.id)").font(Face.mono(12, on ? "Bold" : "Regular")).lineLimit(1)
-                Text(verbatim: "\(tab.cells.count)").font(Face.mono(10)).foregroundStyle(Palette.dim)
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 18) {
+                ForEach(groups, id: \.0) { _, name, project, tabs in
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(name.uppercased()).font(Face.display(18)).foregroundStyle(Palette.fg).lineLimit(1)
+                            if let project { Caps(project) }
+                        }
+                        ForEach(tabs) { t in tabRow(t) }
+                    }
+                }
             }
-            .foregroundStyle(on ? Palette.fg : Palette.subtle)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(on ? Palette.accent.opacity(0.16) : Palette.surface, in: Capsule())
-            .overlay(Capsule().strokeBorder(on ? Palette.accent.opacity(0.7) : Palette.raised, lineWidth: 1))
+            .padding(12)
+        }
+        .background(Palette.surface.opacity(0.5))
+    }
+
+    /// The sessions with their tabs, and any tab no session lists, last.
+    private var groups: [(UInt32, String, String?, [TabLayout])] {
+        let byID = Dictionary(session.tabs.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        var out = session.sessions.map { s in (s.id, s.name, s.project, s.tabs.compactMap { byID[$0] }) }
+        let listed = Set(session.sessions.flatMap(\.tabs))
+        let rest = session.tabs.filter { !listed.contains($0.id) }
+        if !rest.isEmpty { out.append((UInt32.max, "Other tabs", nil, rest)) }
+        return out.filter { !$0.3.isEmpty }
+    }
+
+    private func tabRow(_ t: TabLayout) -> some View {
+        let panes = session.panes(in: t)
+        let urgent = panes.first?.order ?? 3
+        let tone: Tone = urgent == 0 ? .accent : urgent == 1 ? .info : urgent == 2 ? .ok : .muted
+        let on = t.id == shown
+        return Button { pick(t.id) } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 7) {
+                    Circle().fill(tone.color).frame(width: 7, height: 7)
+                        .shadow(color: urgent == 0 ? tone.color : .clear, radius: 4)
+                    Text(session.name(of: t)).font(Face.ui(14, "SemiBold")).foregroundStyle(on ? Palette.fg : Palette.subtle).lineLimit(1)
+                    Spacer(minLength: 0)
+                    Text(verbatim: "\(t.cells.count)").font(Face.mono(10)).foregroundStyle(Palette.dim)
+                }
+                if panes.count > 1 || urgent <= 1 {
+                    ForEach(panes) { p in
+                        HStack(spacing: 6) {
+                            Text(word(p)).font(Face.mono(9, "Bold")).tracking(0.5).foregroundStyle(toneOf(p).color)
+                                .frame(width: 58, alignment: .leading)
+                            Text(session.conversations[p.id] ?? p.name).font(Face.ui(12)).foregroundStyle(Palette.dim).lineLimit(1)
+                        }
+                        .padding(.leading, 14)
+                    }
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 7)
+            .background(on ? Palette.accent.opacity(0.14) : .clear, in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(on ? Palette.accent.opacity(0.6) : .clear, lineWidth: 1))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("tab-\(t.id)")
+    }
+
+    private func word(_ p: PaneRow) -> String {
+        guard p.running else { return "STOPPED" }
+        switch p.attention {
+        case "needs_input": return p.reason?.kind == "failed" ? "FAILED" : "WANTS YOU"
+        case "working": return "WORKING"
+        case "done": return "DONE"
+        default: return "IDLE"
+        }
+    }
+
+    private func toneOf(_ p: PaneRow) -> Tone {
+        guard p.running else { return .muted }
+        switch p.attention {
+        case "needs_input": return p.reason?.kind == "failed" ? .danger : .accent
+        case "working": return .info
+        case "done": return .ok
+        default: return .muted
+        }
     }
 }
 

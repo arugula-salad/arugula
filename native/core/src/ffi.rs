@@ -240,9 +240,10 @@ struct LinkState {
     closed: Option<String>,
 }
 
-/// What the app shows of a machine: its terminals (`panes`), and its tabs as
+/// What the app shows of a machine: its terminals (`panes`), its tabs as
 /// they're laid out (`tabs`: each one's grid and every pane's rectangle in it,
-/// blocks too, so a client can draw the whole tab).
+/// blocks too, so a client can draw the whole tab), and its sessions, which
+/// hold the tabs, in order.
 fn summary(s: &State) -> String {
     let panes: Vec<Value> = s
         .tabs
@@ -290,7 +291,12 @@ fn summary(s: &State) -> String {
             json!({ "id": t.id, "name": t.name, "cols": t.cols, "rows": t.rows, "cells": cells })
         })
         .collect();
-    json!({ "panes": panes, "tabs": tabs }).to_string()
+    let sessions: Vec<Value> = s
+        .sessions
+        .iter()
+        .map(|x| json!({ "id": x.id, "name": x.name, "project": x.project.as_ref().map(|p| &p.name), "tabs": x.tabs }))
+        .collect();
+    json!({ "panes": panes, "tabs": tabs, "sessions": sessions }).to_string()
 }
 
 /// `notify` is called from the socket's thread when there's something to look
@@ -355,7 +361,8 @@ pub unsafe extern "C" fn aru_link_feed(l: *mut AruLink, term: *mut AruTerm, pane
 
 /// The newest panes: `{"panes": [{id, tab, tab_name, command, cwd, running,
 /// attention, reason, title, work, resumes, project, branch, last_ms, rect}],
-/// "tabs": [{id, name, cols, rows, cells: [{pane, kind, x, y, cols, rows}]}]}`,
+/// "tabs": [{id, name, cols, rows, cells: [{pane, kind, x, y, cols, rows}]}],
+/// "sessions": [{id, name, project, tabs}]}`,
 /// or NULL before the machine's first word.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aru_link_panes(l: *const AruLink) -> *mut c_char {
