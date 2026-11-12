@@ -174,6 +174,19 @@ impl Link {
         self.send(&ClientMsg::View { tab, cols, rows, zoom: Some(pane), claim: true, typed: false, asked: false })
     }
 
+    /// Watch `tab` whole, at the size it is (`cols`x`rows`, its own): a view
+    /// that claims nothing, so nobody's panes resize, and `panes` attached.
+    pub fn watch(&self, tab: u32, panes: Vec<u32>, cols: u16, rows: u16) -> Result<()> {
+        self.send(&ClientMsg::View { tab, cols, rows, zoom: None, claim: false, typed: false, asked: false })?;
+        let panes = panes.into_iter().map(|p| AttachPane::new(p, None)).collect();
+        self.send(&ClientMsg::Attach { panes, zstd: false, acks: false, kitty_keys: false })
+    }
+
+    /// Stop receiving `panes`.
+    pub fn detach(&self, panes: Vec<u32>) -> Result<()> {
+        self.send(&ClientMsg::Detach { panes })
+    }
+
     pub fn input(&self, pane: u32, data: &[u8]) -> Result<()> {
         let f = Frame { kind: FrameKind::Input, pane, offset: 0, data: data.to_vec() };
         self.put(Out::Send(Msg::Binary(f.encode())))
