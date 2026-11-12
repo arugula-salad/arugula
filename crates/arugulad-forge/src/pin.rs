@@ -416,6 +416,8 @@ mod tests {
                 created_at: 1,
                 updated_at: 9,
                 queued: false,
+                queued_since: None,
+                left_queue: None,
             },
             checks: vec![
                 ForgeCheck {

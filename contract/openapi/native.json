@@ -10086,6 +10086,17 @@
             },
             "type": "array"
           },
+          "left_queue": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LeftQueue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why it last left the merge queue unmerged: GitHub's `dequeued`.\nCleared by the next `enqueued` and by a merge; it stays after a\nclose, so the row still says why."
+          },
           "merge_state": {
             "type": [
               "string",
@@ -10114,6 +10125,15 @@
           "queued": {
             "description": "An open PR in its branch's merge queue: from GitHub's `enqueued`,\nuntil `dequeued` or it closes (Arugula #878). An older platform\ndoesn't say, so false.",
             "type": "boolean"
+          },
+          "queued_since": {
+            "description": "When it last entered the merge queue, in milliseconds: GitHub's\n`enqueued`, as the platform heard it (Arugula #766). Kept after it\nleaves, so a reader tells how long it was queued from `left_queue`.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "repo": {
             "default": null,
@@ -11060,6 +11080,26 @@
         ],
         "type": "object"
       },
+      "LeftQueue": {
+        "description": "A PR's last unmerged exit from its merge queue (Arugula #766).",
+        "properties": {
+          "at": {
+            "description": "When the platform heard it, in milliseconds.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "reason": {
+            "description": "GitHub's `reason` as it came, in upper case: `CHECKS_TIMED_OUT`,\n`CHECKS_FAILED`, `MERGE_CONFLICT`, `MANUAL`, `BRANCH_PROTECTIONS`,\n`GIT_TREE_INVALID`, `INVALID_MERGE_COMMIT`, `UNKNOWN_REMOVAL_REASON`.\nOne GitHub adds later is kept as it is.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason",
+          "at"
+        ],
+        "type": "object"
+      },
       "Live": {
         "description": "The item a row points at, as it is now: what the page draws beside the\nrow's own status, and the label of its link.",
         "properties": {
@@ -11113,6 +11153,17 @@
             },
             "type": "array"
           },
+          "left_queue": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LeftQueue"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A PR that left the queue unmerged, and why (`ForgeItem::left_queue`)."
+          },
           "number": {
             "description": "A run has none: 0.",
             "format": "uint64",
@@ -11123,6 +11174,19 @@
             "description": "`plane` for a tracker's item; absent for GitHub, native issues and runs.",
             "type": [
               "string",
+              "null"
+            ]
+          },
+          "queued": {
+            "description": "A PR in its branch's merge queue now (Arugula #766). A repo with no\nqueue, a platform from before it and every other kind say false.",
+            "type": "boolean"
+          },
+          "queued_since": {
+            "description": "With `queued`: when it entered the queue, in milliseconds.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
               "null"
             ]
           },
