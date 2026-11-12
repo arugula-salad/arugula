@@ -100,6 +100,7 @@ test("every route starts with a segment in TOP, the server's 404 list (UI audit 
     { page: "settings" },
     { page: "design" },
     { page: "deploy", deploy: `dep_${"0a".repeat(16)}` },
+    { page: "team", team: "a1b2c3d4e5f60718", tab: "chat" },
     { page: "find", what: "chat" },
     { page: "find", what: "chat", room: "dm_00aa11bb22cc33dd" },
     { page: "find", what: "issue", issue: "iss_0123456789abcdef" },
@@ -111,6 +112,21 @@ test("every route starts with a segment in TOP, the server's 404 list (UI audit 
     assert.notEqual(parse(pathOf(r).split("?")[0]).page, "missing", pathOf(r));
   }
   for (const first of TOP) assert.ok(/^[a-z]+$/.test(first), first);
+});
+
+test("a team's pages (Arugula #895): its id, then its slug, then the tab", () => {
+  const T = "a1b2c3d4e5f60718";
+  const teamNames = (id) => (id === T ? "Acme Inc." : undefined);
+  for (const tab of ["chat", "settings", "members"]) {
+    assert.deepEqual(parse(`/t/${T}/${tab}`), { page: "team", team: T, tab });
+    assert.equal(pathOf({ page: "team", team: T, tab }, teamNames), `/t/${T}-acme-inc/${tab}`);
+    assert.deepEqual(parse(pathOf({ page: "team", team: T, tab }, teamNames)), { page: "team", team: T, tab }, "the slug is only for people");
+  }
+  assert.deepEqual(parse(`/t/${T}-an-old-name/members`), { page: "team", team: T, tab: "members" });
+  assert.equal(parse(`/t/${T}`).page, "missing", "a tab is named");
+  assert.equal(parse(`/t/${T}/boards`).page, "missing");
+  assert.equal(parse(`/t/${T}/chat/more`).page, "missing");
+  assert.equal(parse("/t/%20/chat").page, "missing");
 });
 
 test("slugs", () => {

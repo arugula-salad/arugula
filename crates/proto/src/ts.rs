@@ -158,6 +158,9 @@ fn generate() -> String {
     }
     // The platform page's projects (M150).
     c.visit::<arugula_control_wire::projects::Projects>();
+    // Making a project, and renaming, archiving and moving one (Arugula #892).
+    c.visit::<arugula_control_wire::projects::ProjectCreate>();
+    c.visit::<arugula_control_wire::projects::ProjectPatch>();
     // A project's linked repos (M163).
     c.visit::<arugula_control_wire::projects::LinkedRepos>();
     c.visit::<arugula_control_wire::projects::LinkRepo>();

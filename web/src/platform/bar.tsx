@@ -6,8 +6,8 @@
 
 import type { ComponentChildren } from "preact";
 import { usePhone, useSubscribe } from "../shared/ui/hooks";
-import { useRef } from "preact/hooks";
-import { openMenu, useMenuFrom, type MenuItem } from "../shared/ui/menu";
+import { useRef, useState } from "preact/hooks";
+import { openMenu, pressedShut, useMenuFrom, type MenuItem } from "../shared/ui/menu";
 import { WindowButtons } from "../shared/ui/window-buttons";
 import { chatTeam } from "./chat-scope";
 import { currentProject, entryPath } from "./current-project";
@@ -23,6 +23,8 @@ import { barProject, where } from "./where";
 import { scopable, scopeOf } from "./scope";
 import { InboxCount } from "./inbox-count";
 import { Caret } from "../shared/ui/icons";
+import { ownerKey, ownerNamed } from "./owners";
+import { Switcher } from "./switcher";
 
 /** The bar's place a route is under (UI audit #159): a project's cloud
  * workspaces and its deploys (Deploy… and a deploy) have places of their
@@ -103,16 +105,11 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
   const here = unknown ? null : sectionOf(r);
   // Off a project (Inbox, All projects), Chat is still the current one's (Arugula #880).
   const chatTo = project ? chatPath(project) : entryPath("chat", session.project(currentProject()), names);
-  const pick = (e: MouseEvent) => {
-    const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const items: MenuItem[] = [
-      // The way back to /, where there's no rail's Projects (a phone).
-      { label: "All projects", checked: !project, run: () => go("/") },
-      { header: "Projects" },
-      ...session.projects.map((x) => ({ label: x.name, checked: x.id === project, run: () => go(pathOf({ page: "project", project: x.id }, names)) })),
-    ];
-    openMenu({ clientX: at.left, clientY: at.bottom + 4, preventDefault: () => e.preventDefault() }, items, e.currentTarget as HTMLElement);
-  };
+  // The switcher (Arugula #895) opens on the current project's owner, or a
+  // team page's team.
+  const [picking, setPicking] = useState(false);
+  const team = r.page === "team" ? ownerNamed(session.projects, r.team) : undefined;
+  const openOn = team?.key ?? (p ? ownerKey(p) : undefined);
   const me = session.me;
   const account = (e: MouseEvent) => {
     const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -132,10 +129,9 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
   // Both are menu buttons (UI audit #185): they say so, and whether theirs is open.
   const switcher = useRef<HTMLButtonElement>(null);
   const accountButton = useRef<HTMLButtonElement>(null);
-  const switcherOpen = useMenuFrom(switcher);
   const accountOpen = useMenuFrom(accountButton);
   // An id that's none of the reader's says so, not a name.
-  const projectName = project ? (p?.name ?? (session.state === "ready" ? "Unknown project" : "…")) : "All projects";
+  const projectName = project ? (p?.name ?? (session.state === "ready" ? "Unknown project" : "…")) : (team?.name ?? "All projects");
   return (
     <header class="ws-head platform-bar" data-tauri-drag-region data-platform-bar>
       {/* As the shell's "Arugula / Control": which page this is, and the
@@ -159,12 +155,14 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
         data-project-switcher
         title="Your projects"
         aria-label={`Project: ${projectName}`}
-        aria-haspopup="menu"
-        aria-expanded={switcherOpen}
-        onClick={pick}
+        aria-haspopup="dialog"
+        aria-expanded={picking}
+        // A press on it shut the switcher: this click is the same tap.
+        onClick={() => pressedShut(switcher.current) || setPicking(!picking)}
       >
         <span class="platform-project-name">{projectName}</span> <Caret />
       </button>
+      {picking && <Switcher from={switcher} project={project} owner={openOn} close={() => setPicking(false)} />}
       <nav class="places" aria-label="Places">
         {/* All projects is a scope like a project (Arugula #636): these are its places. */}
         {!project && (

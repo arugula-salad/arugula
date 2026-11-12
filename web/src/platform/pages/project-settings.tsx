@@ -1,4 +1,5 @@
-// `/p/:project/settings`: a project's settings (M163). For now its linked
+// `/p/:project/settings`: a project's settings (M163). First its name, whose
+// it is and archiving it (General, Arugula #895, ../settings/general). Its linked
 // GitHub repos: who links one is a member who maintains it on GitHub, and
 // the platform checks that. Where the GitHub App isn't installed, linking
 // sends the person to GitHub to install it, and GitHub sends them back to
@@ -47,6 +48,7 @@ import { CiAlertsSetting } from "../settings/ci-alerts";
 import { BoardSettings } from "../settings/board-settings";
 import { Section, SectionIndex } from "../../shared/ui/settings-section";
 import { Access } from "../settings/access";
+import { General } from "../settings/general";
 import { Chip } from "../../shared/ui/state-chip";
 
 /** A call to the platform: its JSON, or the platform's `{error}` thrown
@@ -131,6 +133,7 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
         <SectionIndex body={body} />
         <div class="settings-body" ref={body}>
           <PageHeader title="Project settings" back={{ href: home, label: p.name, onClick: (e) => follow(e, home) }} />
+          <General p={p} />
           <Access p={p} />
           <Section
             id="repos"
@@ -291,7 +294,7 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
           <ProjectAgents p={p} />
           <ClaudeSpend p={p} />
           <ClientApps p={p} />
-          <TeamChat p={p} />
+          <TeamChat team={p.team} />
         </div>
       </div>
     </section>

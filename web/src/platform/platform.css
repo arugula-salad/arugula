@@ -1481,3 +1481,83 @@ span.untri-title {
   font-size: var(--text-sm);
   white-space: nowrap;
 }
+
+/* The bar's switcher (Arugula #895, ./switcher): the owners in a column on
+   the left, the chosen one's projects on the right. On a phone the sheet
+   shows one of them at a time. */
+.menu.popover:not(.sheet):has(.switcher) {
+  width: min(520px, calc(100vw - 16px));
+}
+
+.switcher {
+  display: flex;
+  min-height: 0;
+}
+
+.switcher-owners,
+.switcher-projects {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 4px;
+}
+
+.switcher-owners {
+  flex: none;
+  width: 180px;
+  border-right: 1px solid var(--line);
+}
+
+.switcher-projects {
+  flex: 1;
+}
+
+.switcher.phone .switcher-owners,
+.switcher.phone .switcher-projects {
+  width: auto;
+  flex: 1;
+  border-right: 0;
+}
+
+.switcher .menu-item {
+  display: block;
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.switcher-owner[aria-pressed="true"] {
+  background: var(--selected);
+  box-shadow: var(--selected-mark);
+}
+
+.switcher-project[aria-current="page"] {
+  font-weight: 600;
+}
+
+.switcher-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding-right: 10px;
+}
+
+.switcher-links {
+  display: flex;
+  gap: 10px;
+  margin-left: auto;
+  font-size: var(--text-sm);
+}
+
+.switcher-links a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.switcher-links a:hover {
+  text-decoration: underline;
+}
+
+/* A team's page (Arugula #895): its tabs under the header. */
+.team-page .team-tabs {
+  margin-bottom: 16px;
+}

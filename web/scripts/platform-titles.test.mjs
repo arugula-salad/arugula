@@ -12,6 +12,7 @@ const known = {
   issue: (id) => (id === "iss_bbbb" ? { number: 142, title: "M265 the bar" } : undefined),
   run: (id) => (id === "run_cccc" ? "ci.test" : undefined),
   room: (id) => ({ ch_dddd: "#general", dm_eeee: "sam" })[id],
+  team: (id) => ({ tm_ffff: "Acme Inc." })[id],
 };
 const t = (path, k = known) => {
   const [p, q = ""] = path.split("?");
@@ -36,6 +37,8 @@ test("each route has a title of its own", () => {
   assert.equal(t("/inbox"), "Inbox · Arugula");
   assert.equal(t("/settings"), "Account settings · Arugula");
   assert.equal(t("/design"), "Design reference · Arugula");
+  assert.equal(t("/t/tm_ffff/members"), "Members · Acme Inc. · Arugula");
+  assert.equal(t("/t/tm_gggg/chat"), "Chat · Arugula", "a team not known yet is left out");
   assert.equal(t("/nowhere/at/all"), "Not found · Arugula");
 });
 

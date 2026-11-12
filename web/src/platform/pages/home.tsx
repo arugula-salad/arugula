@@ -13,8 +13,6 @@ import { Count } from "../../shared/ui/state-chip";
 
 export function Home() {
   useSubscribe((fn) => session.subscribe(fn));
-  // A team's project is its default one, so this counts the teams too.
-  const teams = session.projects.filter((p) => p.team).length;
   return (
     <section class="platform-section sw-page" data-platform-home>
       <PageHeader
@@ -23,9 +21,6 @@ export function Home() {
           <div class="sw-stats">
             <span>
               <b>{session.projects.length}</b> {session.projects.length === 1 ? "project" : "projects"}
-            </span>
-            <span>
-              <b>{teams}</b> {teams === 1 ? "team" : "teams"}
             </span>
           </div>
         }

@@ -9,7 +9,6 @@ import { chat } from "../../shared/chat-store";
 import type { ChatTeamSettings } from "../../shared/proto";
 import { keywords, setKeywords, setTeamSettings, teamSettings } from "../../shared/chat/alerts";
 import { useSubscribe } from "../../shared/ui/hooks";
-import type { PlatformProject } from "../session";
 import { Section } from "../../shared/ui/settings-section";
 
 function Words({ words, setWords }: { words: string[]; setWords: (w: string[]) => void }) {
@@ -130,20 +129,21 @@ function Alerts() {
   );
 }
 
-/** A team project's settings, for its owners while chat is on: who in the
- * team may notify a whole room, and set a channel's topic. */
-export function TeamChat({ p }: { p: PlatformProject }) {
+/** A team's settings (../pages/owner-settings) and its projects', for its
+ * owners while chat is on: who in the team may notify a whole room, and set
+ * a channel's topic. */
+export function TeamChat({ team }: { team: { id: string; name: string; role: string } | null | undefined }) {
   useSubscribe((fn) => chat.subscribe(fn));
-  if (chat.on !== true || p.team?.role !== "owner") return null;
+  if (chat.on !== true || team?.role !== "owner") return null;
   return (
     <Section
       id="team-chat"
       title="Team chat"
-      lede={`Who in ${p.team.name || "this team"} may notify a whole room, and set a channel's topic.`}
+      lede={`Who in ${team.name || "this team"} may notify a whole room, and set a channel's topic.`}
       more={<p>Everyone in the team may, until you turn these on. @channel notifies everyone in a room; @here, those active now.</p>}
-      hooks={{ "data-team-chat": p.team.id }}
+      hooks={{ "data-team-chat": team.id }}
     >
-      <OwnersOnly team={p.team.id} name={p.team.name || "the team"} />
+      <OwnersOnly team={team.id} name={team.name || "the team"} />
     </Section>
   );
 }

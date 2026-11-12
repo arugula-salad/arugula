@@ -54,6 +54,9 @@
 //                                  sections); no project, no data
 //   /deploys/:deploy               a deploy (M218): its card, approvals
 //                                  and log; a push for one opens here
+//   /t/:team/chat                  a team's own page (Arugula #895): its
+//   /t/:team/settings              channels, its settings, its members;
+//   /t/:team/members               the team's id, with its slug
 //
 // And addresses that name only an id, for links from places that don't
 // know its project (the shell, an old link, a push): the page finds the
@@ -72,7 +75,7 @@
  * #193): its copy is `PAGES` in crates/platform-api/src/page.rs, which a test
  * there checks against this list and `parse`. A new top-level route goes
  * in both. */
-export const TOP = ["p", "chat", "dm", "issues", "runs", "installed", "inbox", "settings", "deploys", "boards", "docs", "design"] as const;
+export const TOP = ["p", "chat", "dm", "issues", "runs", "installed", "inbox", "settings", "deploys", "boards", "docs", "design", "t"] as const;
 
 export type Route =
   /** `to`: a shell button's place, to open in the current project (./current-project). */
@@ -103,11 +106,20 @@ export type Route =
   | { page: "settings" }
   | { page: "design" }
   | { page: "deploy"; deploy: string }
+  | { page: "team"; team: string; tab: TeamTab }
   /** An id-only address, to be put where it belongs (`resolve`). */
   | { page: "find"; what: "chat"; room?: string; msg?: number; thread?: number; view?: "activity" | "saved" | "search" | "threads"; q?: string; all?: boolean }
   | { page: "find"; what: "issue"; issue: string; msg?: number }
   | { page: "find"; what: "run"; run: string; msg?: number }
   | { page: "missing"; path: string };
+
+/** A team page's tabs. */
+export const TEAM_TABS = ["chat", "settings", "members"] as const;
+export type TeamTab = (typeof TEAM_TABS)[number];
+
+/** A team's id at the front of a path segment, before its slug: a team's
+ * id has no prefix (docs/data-model.md). */
+const TEAM = /^([A-Za-z0-9_]{1,64})(?:-.*)?$/;
 
 /** What narrows a wave, as its address says it. */
 export interface WaveFilter {
@@ -219,6 +231,11 @@ export function parse(path: string, search = ""): Route {
     // An id-only DM (UI audit #169): its team's project says where.
     const room = idOf(parts[1]);
     return room ? { page: "find", what: "chat", room, ...msg, ...thread } : missing;
+  }
+  if (parts[0] === "t" && parts.length === 3) {
+    const team = TEAM.exec(parts[1])?.[1];
+    const tab = TEAM_TABS.find((t) => t === parts[2]);
+    return team && tab ? { page: "team", team, tab } : missing;
   }
   if (parts[0] !== "p" || parts.length < 2) return missing;
   const project = idOf(parts[1]);
@@ -408,6 +425,8 @@ export function pathOf(r: Route, names: Names = () => null): string {
       return "/design";
     case "deploy":
       return `/deploys/${r.deploy}`;
+    case "team":
+      return `/t/${s(r.team)}/${r.tab}`;
     case "find":
       if (r.what === "chat") {
         if (r.view === "activity" || r.view === "saved" || r.view === "threads") return `/chat/${r.view}`;

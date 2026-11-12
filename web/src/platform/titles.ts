@@ -18,6 +18,8 @@ export interface Known {
   room(id: string): string | null | undefined;
   /** A project Doc's title (aru-118). */
   doc?(id: string): string | null | undefined;
+  /** A team's name. */
+  team?(id: string): string | null | undefined;
   /** The project the bar shows for a route that names none (a deploy's). */
   shown?: string;
 }
@@ -87,6 +89,8 @@ export function titleOf(r: Route, k: Known): string {
       return parts("Boards");
     case "settings":
       return parts("Account settings");
+    case "team":
+      return parts({ chat: "Chat", settings: "Settings", members: "Members" }[r.tab], k.team?.(r.team));
     case "design":
       return parts("Design reference");
     case "missing":
