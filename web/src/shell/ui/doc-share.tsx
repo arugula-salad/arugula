@@ -18,7 +18,7 @@
 
 import { useEffect, useState } from "preact/hooks";
 import { docHooks, type DocState } from "../blocks/doc";
-import type { Client } from "../client";
+import type { ApiResponse, Client } from "../client";
 import { opPath, OPS } from "../ops";
 import type { DocLinkUrl, DocShareRequest, PaneId } from "../../shared/proto";
 import { ConfirmRemove } from "../../shared/ui/confirm";
@@ -163,14 +163,18 @@ export function shareClosedDoc(
   done: (why?: string) => void,
 ) {
   const fail = (v: { error?: string } | null, res: { status: number }) => done(v?.error ?? `HTTP ${res.status}`);
+  /** A request and its JSON, for copySoon to start on before either arrives. */
+  const ask = (res: Promise<ApiResponse>) =>
+    res.then(async (res) => ({ res, v: await res.json<Partial<DocLinkUrl> & { error?: string }>().catch(() => null) }));
   const go = async (update: boolean) => {
     try {
       const body = { update } satisfies DocShareRequest;
-      const res = await client.request(OPS["doc.share"].method, opPath("doc.share", { id: doc.id }), body);
-      const v = await res.json<Partial<DocLinkUrl> & { error?: string }>().catch(() => null);
+      const asked = ask(client.request(OPS["doc.share"].method, opPath("doc.share", { id: doc.id }), body));
+      const copied = update ? null : copySoon(asked.then(({ res, v }) => (res.ok ? v?.url : null)));
+      const { res, v } = await asked;
       if (!res.ok || !v?.url) return fail(v, res);
       if (update) client.toast("The link now shows this Doc as it is");
-      else if (await copy(v.url)) client.toast("Link copied");
+      else if (await copied) client.toast("Link copied");
       done();
     } catch (e) {
       done((e as Error).message);
@@ -178,10 +182,11 @@ export function shareClosedDoc(
   };
   const copyCurrent = async () => {
     try {
-      const res = await client.request(OPS["doc_link.get"].method, opPath("doc_link.get", { id: doc.shared!.link }));
-      const v = await res.json<Partial<DocLinkUrl> & { error?: string }>().catch(() => null);
+      const asked = ask(client.request(OPS["doc_link.get"].method, opPath("doc_link.get", { id: doc.shared!.link })));
+      const copied = copySoon(asked.then(({ res, v }) => (res.ok ? v?.url : null)));
+      const { res, v } = await asked;
       if (!res.ok || !v?.url) return fail(v, res);
-      if (await copy(v.url)) client.toast("Link copied");
+      if (await copied) client.toast("Link copied");
       else return done(`Couldn't copy the link: ${v.url}`);
       done();
     } catch (e) {
@@ -309,13 +314,17 @@ function ShareDialog({ client, id, close }: { client: Client; id: PaneId; close:
   const shared = !!s?.shared || made !== null;
   const confirm = async () => {
     setBusy(true);
-    await run(client, id, "doc_share", async (b) => {
-      if (!b.url) return;
+    // Start the copy inside the click (copySoon), then say what happened.
+    const asked = call(client, id, "doc_share");
+    const copied = copySoon(asked.then(({ ok, body: b }) => (ok ? b.url : null)));
+    const { ok, body: b } = await asked;
+    if (!ok) client.toast(b.error ?? "that didn't work");
+    else if (b.url) {
       setMade(b.url);
       links.set(id, b.url);
       linkWatchers.forEach((fn) => fn());
-      if (await copy(b.url)) client.toast("Link copied");
-    });
+      if (await copied) client.toast("Link copied");
+    }
     setBusy(false);
   };
   const team = !!(s?.platform && copyAt?.copy);
@@ -441,6 +450,31 @@ async function copy(url: string): Promise<boolean> {
   }
 }
 
+/** Copy a link that a request is still fetching (Arugula #877). WebKit (the
+ * desktop app, Safari, the phone) lets a click write the clipboard only
+ * while the click is still going: a `writeText` after an awaited request is
+ * refused, and Copy link said it couldn't copy. A ClipboardItem takes a
+ * promise, so the write starts here, in the click, and the text follows.
+ * Call it before any await. Where ClipboardItem isn't there, it waits and
+ * writes, as before. */
+async function copySoon(url: Promise<string | null | undefined>): Promise<boolean> {
+  if (typeof ClipboardItem === "function" && typeof navigator.clipboard?.write === "function") {
+    const blob = url.then((u) => {
+      if (!u) throw new Error("no link");
+      return new Blob([u], { type: "text/plain" });
+    });
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ "text/plain": blob })]);
+      return true;
+    } catch {
+      // Refused, or no link: say so below from what the request said.
+      if (!(await url.catch(() => null))) return false;
+    }
+  }
+  const u = await url.catch(() => null);
+  return u ? copy(u) : false;
+}
+
 /** Say a call's refusal, or run `then` with its answer. */
 async function run(client: Client, id: PaneId, method: string, then: (b: Shares) => void | Promise<void>) {
   const { ok, body } = await call(client, id, method);
@@ -455,12 +489,15 @@ export { NO_LINK, ONLY_YOU };
  * (only its owner can, until #418 E). `done` hears whether
  * only its owner can open what was copied ("Copied ✓" in place). */
 async function copyLink(client: Client, id: PaneId, done: (private_: boolean) => void) {
-  await run(client, id, "doc_shares", async (b) => {
-    const url = b.url ?? b.platform;
-    if (!url) return client.toast(NO_LINK);
-    if (await copy(url)) done(url === b.platform && !b.url);
-    else client.toast(`Couldn't copy the link: ${url}`);
-  });
+  // Ask and start the copy in the same tick, inside the click (copySoon).
+  const asked = call(client, id, "doc_shares");
+  const copied = copySoon(asked.then(({ ok, body: b }) => (ok ? (b.url ?? b.platform) : null)));
+  const { ok, body: b } = await asked;
+  if (!ok) return client.toast(b.error ?? "that didn't work");
+  const url = b.url ?? b.platform;
+  if (!url) return client.toast(NO_LINK);
+  if (await copied) done(url === b.platform && !b.url);
+  else client.toast(`Couldn't copy the link: ${url}`);
 }
 
 /** Open the Doc's link, the one Copy link copies, in a new tab. As last
