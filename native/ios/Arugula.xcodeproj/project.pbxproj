@@ -131,6 +131,7 @@
 			name = Release;
 		};
 		A00000000000000000000014 /* Debug */ = { isa = XCBuildConfiguration; buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = NO;
 				INFOPLIST_KEY_CFBundleDisplayName = Arugula;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -145,6 +146,7 @@
 				SWIFT_OBJC_BRIDGING_HEADER = "Arugula/Arugula-Bridging-Header.h";
 			}; name = Debug; };
 		A00000000000000000000015 /* Release */ = { isa = XCBuildConfiguration; buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = NO;
 				INFOPLIST_KEY_CFBundleDisplayName = Arugula;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

@@ -14,22 +14,15 @@ struct ChatRoomsView: View {
             // Beside an open room, the list keeps its counts current.
             Loaded(load: { try await control.get("/api/chat", as: ChatRooms.self) }, every: .seconds(10)) { r in
                 let rooms = r.rooms.filter { $0.isConversation && !$0.archived }.sorted { ($0.unread > 0 ? 1 : 0, $0.last) > ($1.unread > 0 ? 1 : 0, $1.last) }
-                List(rooms, selection: $picked) { room in
-                    NavigationLink(value: room) {
-                        HStack {
-                            Text(room.title).lineLimit(1)
-                            Spacer()
-                            if room.unread > 0 && room != picked {
-                                Text("\(room.unread)")
-                                    .font(.caption2.weight(.semibold))
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(room.mentions > 0 ? Color.red : Color.secondary, in: Capsule())
-                                    .foregroundStyle(.white)
-                            }
-                        }
+                let channels = rooms.filter { $0.kind == "channel" }
+                let dms = rooms.filter { $0.kind == "dm" }
+                List(selection: $picked) {
+                    if !channels.isEmpty {
+                        Section("Channels") { ForEach(channels) { RoomRow(room: $0, open: $0 == picked) } }
                     }
-                    .accessibilityIdentifier("room-\(room.name)")
+                    if !dms.isEmpty {
+                        Section("Direct messages") { ForEach(dms) { RoomRow(room: $0, open: $0 == picked) } }
+                    }
                 }
                 .overlay { if rooms.isEmpty { Text("No rooms yet").foregroundStyle(.secondary) } }
             }
@@ -45,6 +38,30 @@ struct ChatRoomsView: View {
             .id(picked?.id)
         }
         .navigationSplitViewStyle(.balanced)
+    }
+}
+
+/// A room in the list: its name, and how many messages wait in it.
+struct RoomRow: View {
+    let room: ChatRoom
+    let open: Bool
+
+    var body: some View {
+        NavigationLink(value: room) {
+            HStack {
+                Text(room.title).lineLimit(1)
+                Spacer()
+                if room.unread > 0 && !open {
+                    Text("\(room.unread)")
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(room.mentions > 0 ? Color.red : Color.secondary, in: Capsule())
+                        .foregroundStyle(.white)
+                }
+            }
+        }
+        .accessibilityIdentifier("room-\(room.name)")
     }
 }
 
