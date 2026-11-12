@@ -657,3 +657,159 @@ fn a_slot_keeps_its_caches_only_for_the_same_asker() {
     assert!(!same_asker(&dir, "ses2", &next, "acct1"));
     assert!(same_asker(&dir, "ses2", &next, "acct2"));
 }
+
+/// A session's ledger as a turn leaves it, in `dir`, for the push tests.
+#[cfg(unix)]
+fn pushing_ledger(dir: &Path, c: char) -> AgentSessionLedger {
+    let l = AgentSessionLedger {
+        session: format!("ses_{}", c.to_string().repeat(32)),
+        project: "prj_1".into(),
+        workspace: "hw_1".into(),
+        asker: "acct1".into(),
+        repo: Some("o/r".into()),
+        branch: format!("arugula/{}-fix", c.to_string().repeat(8)),
+        user: AsUser { user: "ses1".into(), home: "/home/ses1".into() },
+        checkout: "/home/ses1/work/x".into(),
+        block: Some(3),
+        taken_at: 1,
+        grant: None,
+        cleanup_owed: false,
+        n: 0,
+        state: "working".into(),
+        ended: None,
+        handed: vec![],
+        turn: None,
+        notes: None,
+        acted: vec![],
+        unnamed: vec![],
+        error: None,
+        last_at: 0,
+        events: vec![],
+        pushed_head: None,
+        turns_seen: Some(1),
+        harness: None,
+        review: false,
+        model: None,
+        model_now: None,
+        model_said: None,
+        parked: None,
+        reopened: false,
+    };
+    assert!(claim(dir, &l));
+    l
+}
+
+/// What a session's report says, kind by kind, with its error and its
+/// `pushed`.
+#[cfg(unix)]
+fn said(dir: &Path, id: &str) -> Vec<(String, Option<String>, Option<bool>)> {
+    let l = read(dir, id).unwrap().unwrap();
+    l.events
+        .iter()
+        .map(|k| {
+            let d: SessionDetail = serde_json::from_str(&k.report.detail).unwrap();
+            (k.report.kind.clone(), d.error, d.pushed)
+        })
+        .collect()
+}
+
+/// A turn whose push fails (a full disk, #842) says why, as the session's
+/// error, and is not pushed (#859). The turn's report that follows carries
+/// `pushed: false`; the retry's test below shows what clears it.
+#[cfg(unix)]
+#[test]
+fn a_turn_whose_push_fails_is_unpushed_with_its_reason() {
+    let dir = crate::hosted::scratch("session-push-fails");
+    let l = pushing_ledger(&dir, 'e');
+    let keys = arugula_e2e::DeviceKeys::generate();
+    let me = keys.id();
+    let why = "git couldn't take the session's commits: fatal: write error: No space left on device";
+    let (now, pushed) = update(&dir, &l.session, |now| pushed_now(now, &keys, &me, Err(why.into()))).unwrap();
+    assert!(!pushed);
+    assert_eq!(now.pushed_head, None);
+    assert_eq!(
+        said(&dir, &l.session),
+        [("error".to_owned(), Some(format!("couldn't push {}: {why}", l.branch)), None)]
+    );
+}
+
+/// The retry of a failed push (#859): each failure says its newest reason,
+/// and the push that gets there clears it, as a turn's report does:
+/// `pushed`, and the ledger knows the head.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_failed_push_is_tried_again_until_it_gets_there() {
+    let dir = crate::hosted::scratch("session-push-retry");
+    let l = pushing_ledger(&dir, 'f');
+    let keys = arugula_e2e::DeviceKeys::generate();
+    let me = keys.id();
+    retry::own(&l.session, 7);
+    let tried = std::sync::atomic::AtomicUsize::new(0);
+    let push = |_: AgentSessionLedger| async {
+        match tried.fetch_add(1, std::sync::atomic::Ordering::SeqCst) {
+            0 => Err("No space left on device".to_owned()),
+            1 => Err("Out of diskspace".to_owned()),
+            _ => Ok(Some("abcdef0123456789".to_owned())),
+        }
+    };
+    let waits = [Duration::from_millis(1), Duration::from_millis(2)];
+    retry::retry(&dir, &l.session, 7, &waits, &keys, &me, push).await;
+    assert_eq!(tried.load(std::sync::atomic::Ordering::SeqCst), 3);
+    let b = &l.branch;
+    assert_eq!(
+        said(&dir, &l.session),
+        [
+            ("error".to_owned(), Some(format!("couldn't push {b}: No space left on device")), None),
+            ("error".to_owned(), Some(format!("couldn't push {b}: Out of diskspace")), None),
+            ("turn".to_owned(), None, Some(true)),
+        ]
+    );
+    let now = read(&dir, &l.session).unwrap().unwrap();
+    assert_eq!(now.pushed_head.as_deref(), Some("abcdef0123456789"));
+    let turn: SessionDetail = serde_json::from_str(&now.events[2].report.detail).unwrap();
+    assert_eq!((turn.branch.as_deref(), turn.head.as_deref()), (Some(b.as_str()), Some("abcdef0")));
+    // It's done: nothing keeps it going, and another loop could start.
+    assert!(!retry::is_running(&l.session));
+}
+
+/// A turn starting stops the retry: its own finish step pushes. So does
+/// the session ending, and a newer loop taking its place; none of them
+/// pushes.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_retry_stops_when_a_turn_starts() {
+    let dir = crate::hosted::scratch("session-push-retry-stops");
+    let keys = arugula_e2e::DeviceKeys::generate();
+    let me = keys.id();
+    let waits = [Duration::from_millis(1)];
+    let tried = std::sync::atomic::AtomicUsize::new(0);
+    let push = |_: AgentSessionLedger| async {
+        tried.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Err::<Option<String>, String>("No space left on device".into())
+    };
+
+    // A turn under way.
+    let l = pushing_ledger(&dir, 'a');
+    retry::own(&l.session, 1);
+    update(&dir, &l.session, |now| {
+        now.turn = Some(Turn { prompts: vec![], base: 1, sent: true, at: 1, fix: None, cancelled: false })
+    })
+    .unwrap();
+    retry::retry(&dir, &l.session, 1, &waits, &keys, &me, &push).await;
+    // Ended.
+    let l = pushing_ledger(&dir, 'b');
+    retry::own(&l.session, 2);
+    update(&dir, &l.session, |now| now.ended = Some("stopped".into())).unwrap();
+    retry::retry(&dir, &l.session, 2, &waits, &keys, &me, &push).await;
+    // Replaced by a newer loop (or cancelled by a turn's end).
+    let l = pushing_ledger(&dir, 'c');
+    retry::own(&l.session, 4);
+    retry::retry(&dir, &l.session, 3, &waits, &keys, &me, &push).await;
+    retry::cancel(&l.session);
+    retry::retry(&dir, &l.session, 4, &waits, &keys, &me, &push).await;
+
+    assert_eq!(tried.load(std::sync::atomic::Ordering::SeqCst), 0, "none of them pushed");
+    for c in ['a', 'b', 'c'] {
+        assert!(said(&dir, &format!("ses_{}", c.to_string().repeat(32))).is_empty());
+    }
+}
