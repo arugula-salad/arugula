@@ -56,13 +56,19 @@ function useMode(): Mode {
   return mode;
 }
 
-/** Loads of the frame after the page is handed over that are the runner's
- * own: the one `document.close()` fires when it has written the prototype. A
- * second is the prototype navigating itself. What comes before the handover
- * isn't counted: the runner's own load (it says it's ready once it has
- * loaded), a lazy frame's `about:blank` first, or the runner loading again
- * when the frame is moved, which says it's ready again and is handed the page
- * again. */
+/** Loads of a frame's window after its page is handed over that are the
+ * runner's own: the one `document.close()` fires when it has written the
+ * prototype. A second is the prototype navigating itself.
+ *
+ * Counted per window (Arugula #869). Moving the iframe in the DOM (a phone
+ * parks a hidden block off the page and moves it back in when it's shown)
+ * drops its window and loads the runner again in a new one, which is handed
+ * the page again; a navigation keeps the window, so its load is counted. A
+ * window is handed the page once both have reached here: its load and its
+ * runner saying it's ready, in either order (they come on different task
+ * sources: Chrome's load comes first). Its loads before that aren't counted.
+ * And a window is handed it once: a later "ready" from it is the prototype's,
+ * not the runner's. */
 export const OWN_LOADS = 1;
 
 /** Full window rides on the top layer (#507): the box itself is a manual
@@ -83,8 +89,13 @@ export function Prototype({ html, alt }: { html: string; alt: string }) {
   const { origin, click } = useMode();
   const scheme = useScheme();
   const frame = useRef<HTMLIFrameElement>(null);
+  /** The frame's window that has the page, and its loads since. */
+  const handed = useRef<Window | null>(null);
   const loads = useRef(0);
-  const handed = useRef(false);
+  /** A window's load, and its runner's ready, before the handover. */
+  const loaded = useRef<Window | null>(null);
+  const ready = useRef<Window | null>(null);
+  const handOver = useRef<(win: Window) => void>(() => {});
   const schemeNow = useRef(scheme);
   schemeNow.current = scheme;
   const scope = useContext(ProtoScope);
@@ -107,15 +118,22 @@ export function Prototype({ html, alt }: { html: string; alt: string }) {
   // which the runner says it is ready.
   useLayoutEffect(() => {
     if (!live) return;
-    handed.current = false;
+    handed.current = loaded.current = ready.current = null;
     loads.current = 0;
-    // Each time the frame says it is ready: the runner, loaded (again).
-    const on = (e: MessageEvent) => {
-      if (!readyFrom(e, frame.current?.contentWindow)) return;
-      handed.current = true;
+    handOver.current = (win) => {
+      handed.current = win;
       loads.current = 0;
+      loaded.current = ready.current = null;
       // An opaque origin has no name to target: "*", for this one message.
-      frame.current!.contentWindow!.postMessage(htmlMessage(html, schemeNow.current), "*");
+      win.postMessage(htmlMessage(html, schemeNow.current), "*");
+    };
+    // The runner says it's ready in each window it loads in (a new one each
+    // time the frame is moved): handed the page once that window's load is here too.
+    const on = (e: MessageEvent) => {
+      const win = frame.current?.contentWindow;
+      if (!win || !readyFrom(e, win) || win === handed.current) return;
+      if (loaded.current === win) handOver.current(win);
+      else ready.current = win;
     };
     addEventListener("message", on);
     return () => removeEventListener("message", on);
@@ -127,7 +145,7 @@ export function Prototype({ html, alt }: { html: string; alt: string }) {
       first.current = false;
       return;
     }
-    if (handed.current) frame.current?.contentWindow?.postMessage(schemeMessage(scheme), "*");
+    handed.current?.postMessage(schemeMessage(scheme), "*");
   }, [scheme]);
   // The top layer follows `full`; Esc closes it, from the page or from the frame.
   useEffect(() => {
@@ -220,11 +238,20 @@ export function Prototype({ html, alt }: { html: string; alt: string }) {
         referrerpolicy="no-referrer"
         style={full || fill ? undefined : { height: `${height}px` }}
         onLoad={() => {
-          if (!handed.current) return;
-          if (++loads.current > OWN_LOADS) {
-            setFull(false);
-            setLeft(true);
+          const win = frame.current?.contentWindow;
+          if (!win) return;
+          if (win === handed.current) {
+            if (++loads.current > OWN_LOADS) {
+              setFull(false);
+              setLeft(true);
+            }
+            return;
           }
+          // A window that hasn't had the page: the runner's first, or the
+          // frame was moved and the runner loaded again in a new one.
+          handed.current = null;
+          loaded.current = win;
+          if (ready.current === win) handOver.current(win);
         }}
         {...(origin ? { src: `${origin}/` } : { srcdoc: runner })}
       />

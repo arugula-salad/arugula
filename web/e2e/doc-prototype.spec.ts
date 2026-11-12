@@ -12,8 +12,8 @@
 // The checks are on effects: nothing reached the server the page names.
 
 import { readFileSync } from "node:fs";
-import { expect, test, type Page } from "@playwright/test";
-import { attacker, fill, newDoc, prototype, prototypeRan, type Post } from "./doc-steps";
+import { expect, test, type BrowserContext, type Page } from "@playwright/test";
+import { attacker, fill, newDoc, protoLeavesAfterMove, protoOpenBeforeLoad, prototype, prototypeRan, type Post } from "./doc-steps";
 import { panes, reset } from "./helpers";
 import { pixel7 } from "./phones";
 
@@ -159,8 +159,37 @@ test("the runner takes its page from its parent only, and only once", async ({ p
   await expect(frame.locator("#first")).toHaveCount(1);
 });
 
+// Arugula #869: a Doc with its prototype there before the page loads, switched to.
+// The Doc is made from a page of its own (`fresh`), and the page under test loads once.
+async function openBeforeLoad(context: BrowserContext) {
+  const a = await attacker();
+  const fresh = async () => {
+    const p = await context.newPage();
+    await reset(p);
+    const [term] = await panes(p);
+    // Closed before the page under test opens: it checks it's the only one.
+    await p.close();
+    return term;
+  };
+  try {
+    let term = await fresh();
+    let page = await context.newPage();
+    await protoOpenBeforeLoad(page, post(page), term, a);
+    await page.close();
+    term = await fresh();
+    page = await context.newPage();
+    await protoLeavesAfterMove(page, post(page), term);
+  } finally {
+    a.close();
+  }
+}
+
+test("a prototype open before the page loads runs when switched to, and one that leaves is still caught", async ({ context }) => openBeforeLoad(context));
+
 test.describe("on a Pixel 7", () => {
   test.use(pixel7);
+  test("a prototype open before the page loads runs when switched to, and one that leaves is still caught", async ({ context }) => openBeforeLoad(context));
+
   test("the prototype runs there too, and fits the phone", async ({ page }) => {
     const a = await attacker();
     try {

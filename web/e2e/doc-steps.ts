@@ -464,3 +464,67 @@ export async function measure(page: Page, within = "") {
     return Math.round(((parseFloat(getComputedStyle(el).maxWidth) - 32) / ch) * 10) / 10;
   }, within);
 }
+
+/** Arugula #869: a Doc whose prototype is there before the page loads, shown
+ * only when the person switches to it. On a phone the Doc waits off the page
+ * and is moved into view, which loads its frame again: that's the runner
+ * again, not the prototype leaving. Switching away and back moves it twice
+ * more. A desktop shows both panes, and the same steps move nothing.
+ *
+ * `page` hasn't been anywhere yet: the Doc is made beside `term` first, and
+ * this is the page's first load. */
+export async function protoOpenBeforeLoad(page: Page, post: Post, term: PaneId, a: Attacker) {
+  const doc = await newDoc(post, term);
+  await fill(post, doc, "s1", prototype(a));
+  await loadOn(page, term);
+  const outcome = () =>
+    expect
+      .poll(
+        async () =>
+          (await page.locator("[data-prototype-left]").count())
+            ? "said it left"
+            : (await page.frameLocator("[data-prototype-frame]").locator("body[data-done]").count())
+              ? "ran"
+              : null,
+        { timeout: 15_000 },
+      )
+      .toBe("ran");
+  await bring(page, doc);
+  await outcome();
+  await prototypeRan(page, a, "dark");
+  for (let i = 0; i < 2; i++) {
+    await page.evaluate((t) => window.__arugula.client.setActive(t), term);
+    await bring(page, doc);
+    await outcome();
+  }
+  await page.waitForTimeout(1500);
+  await expect(page.locator("[data-prototype-left]"), "nor after switching away and back").toHaveCount(0);
+  return doc;
+}
+
+/** And a prototype that does leave is still caught after its frame was moved,
+ * also when it says it's ready itself first: a frame is handed its page once,
+ * and a load after that one is the prototype's own. `page` as above. */
+export async function protoLeavesAfterMove(page: Page, post: Post, term: PaneId) {
+  const doc = await newDoc(post, term, "Wanderer");
+  await fill(
+    post,
+    doc,
+    "s1",
+    "```prototype Wanderer\n<p id=here>here</p><script>setTimeout(() => parent.postMessage({ type: 'arugula.ready' }, '*'), 500); setTimeout(() => { location.href = 'about:blank'; }, 3000)</script>\n```",
+  );
+  await loadOn(page, term);
+  await bring(page, doc);
+  await expect(page.frameLocator("[data-prototype-frame]").locator("#here")).toHaveText("here", { timeout: 15_000 });
+  await expect(page.locator("[data-prototype-left]")).toHaveText(/This prototype tried to leave the page\. Reload it\./, { timeout: 15_000 });
+  return doc;
+}
+
+/** The page's first load, with `term` the pane in front: on a phone, the Doc
+ * beside it is parked off the page until it's brought. */
+async function loadOn(page: Page, term: PaneId) {
+  await page.goto("/");
+  await expect.poll(() => page.evaluate(() => window.__arugula?.client.connected)).toBe(true);
+  await page.waitForFunction((t) => !!window.__arugula.client.info(t), term);
+  await page.evaluate((t) => window.__arugula.client.setActive(t), term);
+}
