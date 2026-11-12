@@ -1810,8 +1810,10 @@ mod tests {
 case "$DEPLOY_PHASE" in
 plan-fetch) [ "$GITHUB_TOKEN" = reads ] || exit 11; printf '{{"ledger_prefix":""}}' >&3; echo fetched;;
 plan) env > "$HOME/plan-env"; [ -z "$GITHUB_TOKEN" ] || exit 12
-  if [ -e "$HOME/../survive" ]; then perl -e 'use POSIX; setsid(); exec "sleep", "30"' </dev/null >/dev/null 2>&1 3>&- & else (exec sleep 30 </dev/null >/dev/null 2>&1 3>&-) & fi
-  echo $! > "$HOME/left"
+  if [ -e "$HOME/../survive" ]; then
+    perl -e 'use POSIX; setsid() or die; open my $f, ">", "$ENV{{HOME}}/left.new" or die; print $f $$; close $f; rename "$ENV{{HOME}}/left.new", "$ENV{{HOME}}/left"; exec "sleep", "30"' </dev/null >/dev/null 2>&1 3>&- &
+    i=0; until [ -e "$HOME/left" ]; do [ $i -lt 1000 ] || exit 9; i=$((i+1)); sleep 0.01; done
+  else (exec sleep 30 </dev/null >/dev/null 2>&1 3>&-) & echo $! > "$HOME/left"; fi
   [ -e "$HOME/../fail" ] && exit 3
   git init -q "$HOME/l" && cd "$HOME/l" && git checkout -q --orphan chant/lifecycle && mkdir _gates
   echo '{pending}' > _gates/release.jsonl && git add -A && git commit -q -m pending
@@ -1886,6 +1888,8 @@ esac"#
         };
         let (code, said) =
             plan_steps("run_1", &d, &argv, None, &dir, &origin, &mut out, ask, || gone("run_1")).await.unwrap();
+        // A tokio file's last write can still be in flight until flushed.
+        out.flush().await.unwrap();
         let shown = std::fs::read_to_string(dir.join("pane")).unwrap();
         assert_eq!(code, 0, "{shown}");
         assert!(
@@ -1912,13 +1916,17 @@ esac"#
         }
 
         // A survivor that left the step's group: the plan fails there, and
-        // the token that writes is never asked for.
+        // the token that writes is never asked for. The step waits until
+        // the survivor has left (it writes its pid after `setsid`), or the
+        // group's kill at the step's end could take it first on a loaded
+        // box.
         std::fs::write(dir.join(DIR).join("survive"), "").unwrap();
         asked.lock().unwrap().clear();
         let r = plan_steps("run_2", &d, &argv, None, &dir, &origin, &mut out, ask, || gone("run_2")).await;
         let survivor = left_of("run_2").unwrap();
         let _ = nix::sys::signal::kill(nix::unistd::Pid::from_raw(survivor), nix::sys::signal::SIGKILL);
-        assert!(r.unwrap_err().contains("is left"));
+        let e = r.unwrap_err();
+        assert!(e.contains("is left"), "{e}");
         assert_eq!(*asked.lock().unwrap(), [PlanStep::Fetch], "no push token");
         std::fs::remove_file(dir.join(DIR).join("survive")).unwrap();
 

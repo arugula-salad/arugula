@@ -228,14 +228,6 @@
       "lanes": {
         "daemon": { "require": ["lint", "build", "test", "e2e", "claims", "macos", "windows", "windows-desktop"] },
         "app": { "require": ["lint", "build", "e2e", "claims", "windows-desktop"] }
-      },
-      "quarantine": {
-        "maxDays": 14,
-        "phases": {
-          "test": [
-            { "test": "deploy::tests::a_plans_ledger_is_pushed_by_the_daemon_once_its_code_is_gone", "issue": "949", "until": "2026-11-26", "why": "Fails on both tries on unrelated PRs (arugula#2447, run 43274889351, twice); ejects PRs from the gate and the queue with retries at 0 (#918)." }
-          ]
-        }
       }
     }
   },
