@@ -380,8 +380,8 @@ nothing else of the above. What they get:
   `read_thread` shows each message's reactions. Theirs are the owner's,
   labelled with the machine, and apart from the owner's own.
 - Files: `post_thread`'s `files` (paths the agent may read, at most 10 of
-  10 MB), and `read_thread` lists each message's attachments with name,
-  type, size and control's address.
+  100 MB, or less if control's limit is lower), and `read_thread` lists each
+  message's attachments with name, type, size and control's address.
 - Pins: `post_thread`'s `pin_seq` (and `remove`). `read_thread` begins with
   the room's topic, description and pins, marks pinned messages, and shows
   system lines as `* alice set the topic: …` (the platform's own as

@@ -370,14 +370,13 @@ pub enum ChatFileKind {
     File,
 }
 
-/// The most one file is, in bytes. Small while the bytes live in the
-/// platform's database (`chat_files`); object storage would let it grow.
-pub const MAX_FILE_BYTES: usize = 10 * 1024 * 1024;
+/// The most one file can be, in bytes: the hosted control's limit, whose
+/// files are in a bucket (Arugula #125). Each control sets its own (10 MiB
+/// when it keeps them in its database) and refuses past it, so a client
+/// checks this only to refuse early.
+pub const MAX_FILE_BYTES: usize = 100 * 1024 * 1024;
 /// The most files one message carries.
 pub const MAX_FILES: usize = 10;
-/// The most file bytes a team's chat (a scope) keeps: as above, a
-/// database's budget, not a bucket's.
-pub const MAX_SCOPE_FILE_BYTES: u64 = 256 << 20;
 
 /// `POST /api/chat/rooms/{id}/files?name=`: the file's bytes are the body.
 /// Answers [`ChatFile`]; it belongs to the uploader until a message is
