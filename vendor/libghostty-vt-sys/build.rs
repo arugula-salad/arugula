@@ -249,6 +249,21 @@ fn build_vendored(link_mode: LinkMode, target: &str) {
         build.arg(format!("-Dtarget={zig_target}"));
     }
 
+    // Zig's packages first, on their own and tried again, so a dropped
+    // connection to deps.files.ghostty.org fails a try instead of the build.
+    // Zig 0.16 keeps them in the checkout's zig-pkg/, so a kept cache
+    // directory has them. With --system there is nothing to fetch.
+    if env::var_os("GHOSTTY_ZIG_SYSTEM_DIR").is_none() {
+        run_tries("zig build --fetch", || {
+            let mut fetch = Command::new(build.get_program());
+            fetch
+                .args(build.get_args())
+                .arg("--fetch")
+                .current_dir(&ghostty_dir);
+            fetch
+        });
+    }
+
     run(build, "zig build");
 
     // The emit also installs host-native flat artifacts; replace them with the
@@ -469,25 +484,26 @@ fn fetch_ghostty(out_dir: &Path) -> PathBuf {
         return src_dir;
     }
 
-    // Clean and clone fresh.
-    if src_dir.exists() {
-        std::fs::remove_dir_all(&src_dir)
-            .unwrap_or_else(|e| panic!("failed to remove {}: {e}", src_dir.display()));
-    }
-
     eprintln!("Fetching ghostty {GHOSTTY_COMMIT} ...");
 
-    let mut clone = Command::new("git");
-    clone
-        .arg("clone")
-        // As committed: Git for Windows defaults to CRLF checkouts, which
-        // our patches don't apply to (S29).
-        .args(["-c", "core.autocrlf=false"])
-        .arg("--filter=blob:none")
-        .arg("--no-checkout")
-        .arg(GHOSTTY_REPO)
-        .arg(&src_dir);
-    run(clone, "git clone ghostty");
+    run_tries("git clone ghostty", || {
+        // Clean and clone fresh: an old checkout, or what a failed try left.
+        if src_dir.exists() {
+            std::fs::remove_dir_all(&src_dir)
+                .unwrap_or_else(|e| panic!("failed to remove {}: {e}", src_dir.display()));
+        }
+        let mut clone = Command::new("git");
+        clone
+            .arg("clone")
+            // As committed: Git for Windows defaults to CRLF checkouts, which
+            // our patches don't apply to (S29).
+            .args(["-c", "core.autocrlf=false"])
+            .arg("--filter=blob:none")
+            .arg("--no-checkout")
+            .arg(GHOSTTY_REPO)
+            .arg(&src_dir);
+        clone
+    });
 
     let mut checkout = Command::new("git");
     checkout
@@ -516,6 +532,27 @@ fn run(mut command: Command, context: &str) {
         .status()
         .unwrap_or_else(|error| panic!("failed to execute {context}: {error}"));
     assert!(status.success(), "{context} failed with status {status}");
+}
+
+/// Runs a step that downloads, up to three times. github.com and
+/// deps.files.ghostty.org close a connection now and then, and a CI job or a
+/// cloud workspace that builds from scratch fetches everything each time.
+fn run_tries(context: &str, mut command: impl FnMut() -> Command) {
+    const TRIES: u64 = 3;
+    for n in 1..=TRIES {
+        let status = command()
+            .status()
+            .unwrap_or_else(|error| panic!("failed to execute {context}: {error}"));
+        if status.success() {
+            return;
+        }
+        assert!(
+            n < TRIES,
+            "{context} failed with status {status}, {TRIES} tries"
+        );
+        println!("cargo:warning=try {n} of {TRIES} failed: {context} ({status})");
+        std::thread::sleep(std::time::Duration::from_secs(5 * n));
+    }
 }
 
 /// Returns directories to search for the built library artifact.
