@@ -20,7 +20,7 @@ export interface Grant {
   id: string;
   subject: { kind: string; id: string; name: string | null };
   power: string;
-  scope: { kind: "project" | "account"; id: string; name?: string | null };
+  scope: { kind: "project" | "team" | "account"; id: string; name?: string | null };
   live: boolean;
 }
 

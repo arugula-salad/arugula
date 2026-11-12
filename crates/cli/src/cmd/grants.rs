@@ -3,7 +3,8 @@
 //! workspaces; every machine you join gets it, and you revoke it from one,
 //! and give it back, here. And (M197) what its agents may do in
 //! conversations: `threads.read` and `threads.post` in a project's threads
-//! (a team's channels are its project's) or your DMs, `issues.write` on
+//! (a team's default project's reach its channels), a team's channels
+//! (Arugula #894) or your DMs, `issues.write` on
 //! a project's issues, and (M218) `deploys.plan`: plan a project's deploys
 //! and ask an owner to approve them, never approve one. And (M216) its
 //! agents and a project's runs: `runs.read` reads them, `runs.start`
@@ -44,6 +45,8 @@ const AGENT_POWERS: [&str; 13] = [
 /// The wire's list, the platform's own.
 use arugula_control_wire::projects::VIEWER_REFUSED;
 
+use arugula_control_wire::chat::{GrantScope, TEAM_POWERS};
+
 /// Those over a project only.
 const PROJECT_ONLY: [&str; 11] = [
     "issues.write",
@@ -59,13 +62,17 @@ const PROJECT_ONLY: [&str; 11] = [
     "sessions.reply",
 ];
 
-/// Where an agent power reaches: one of the two.
+/// Where an agent power reaches: one of the three.
 #[derive(clap::Args, Debug, Clone, Default)]
 #[group(multiple = false)]
 pub struct Scope {
-    /// A project, by its name or id (a team's channels are its project's).
+    /// A project, by its name or id.
     #[arg(long)]
     project: Option<String>,
+    /// A team, by its name or id: its channels, for threads.read and
+    /// threads.post only.
+    #[arg(long)]
+    team: Option<String>,
     /// Your DMs.
     #[arg(long)]
     dms: bool,
@@ -92,10 +99,12 @@ pub enum GrantsCmd {
         #[arg(long)]
         project: Option<String>,
     },
-    /// Give a machine's agents a power over a project or your DMs.
+    /// Give a machine's agents a power over a project, a team or your DMs.
     ///
     /// The powers are threads.read, threads.post or issues.write over a
-    /// project (`--project`) or your DMs (`--dms`), docs.write (make and write
+    /// project (`--project`) or your DMs (`--dms`), threads.read or
+    /// threads.post over a team (`--team`: it reaches the team's
+    /// channels), docs.write (make and write
     /// a project's Docs) over a project, deploys.plan over a
     /// project (plan deploys and ask for approval, never approve),
     /// runs.read, runs.start (its run specs) or runs.command (its own
@@ -201,15 +210,15 @@ fn run_with(e: &Enrolled, cmd: Option<GrantsCmd>, json_out: bool) -> anyhow::Res
                 );
             }
             for body in &bodies {
-                show(&e.api("POST", "/api/grants", Some(body))?);
+                show(&e.api("POST", "/api/grants", Some(body)).map_err(|err| refused_team(err, scope.as_ref()))?);
             }
         }
         GrantsCmd::Revoke { machine, power, scope } if machine.starts_with("grt_") => {
             // One grant by its id: as its giver, or as an owner of the
             // project it's over (Arugula #683), so it needn't be in the
             // list above.
-            if power.is_some() || scope.project.is_some() || scope.dms {
-                bail!("a grant's id names one grant: no power, --project or --dms with it");
+            if power.is_some() || scope.project.is_some() || scope.team.is_some() || scope.dms {
+                bail!("a grant's id names one grant: no power, --project, --team or --dms with it");
             }
             let r = e.api("POST", &format!("/api/grants/{machine}/revoke"), None).map_err(|err| {
                 if err.to_string().contains("no such grant") {
@@ -427,9 +436,12 @@ fn in_(ms: u64) -> String {
 fn give(daemon: &str, power: &str, scope: Option<&Value>) -> anyhow::Result<Value> {
     match (power, scope) {
         ("cloud.drive", None) => Ok(json!({ "daemon": daemon, "power": power })),
-        ("cloud.drive", Some(_)) => bail!("cloud.drive is over your account: no --project or --dms"),
+        ("cloud.drive", Some(_)) => bail!("cloud.drive is over your account: no --project, --team or --dms"),
         (p, Some(s)) if PROJECT_ONLY.contains(&p) && s["kind"] == "account" => {
             bail!("{p} is over a project, not your DMs: --project NAME")
+        }
+        (p, Some(s)) if AGENT_POWERS.contains(&p) && !TEAM_POWERS.contains(&p) && s["kind"] == "team" => {
+            bail!("{p} is over a project, not a team (a team's are threads.read and threads.post): --project NAME")
         }
         (p, Some(s)) if AGENT_POWERS.contains(&p) => Ok(json!({ "daemon": daemon, "power": power, "scope": s })),
         (p, None) if AGENT_POWERS.contains(&p) => {
@@ -442,12 +454,30 @@ fn give(daemon: &str, power: &str, scope: Option<&Value>) -> anyhow::Result<Valu
     }
 }
 
-/// The scope asked for, as `POST /api/grants` takes it: a project named by
-/// its name or id among yours (`GET /api/projects`), with its name and
-/// your role there beside it, or your DMs.
+/// A control from before team grants refuses one: say so, rather than
+/// leave its word alone.
+fn refused_team(err: anyhow::Error, scope: Option<&Value>) -> anyhow::Error {
+    match scope {
+        Some(s) if s["kind"] == "team" => err.context(
+            "control refused a grant over a team: one from before team grants refuses them all. Update it, or give \
+             the grant over the team's project with --project",
+        ),
+        _ => err,
+    }
+}
+
+/// The scope asked for, as `POST /api/grants` takes it ([`GrantScope`]): a
+/// project named by its name or id among yours (`GET /api/projects`), with
+/// its name and your role there beside it, a team of those projects', or
+/// your DMs.
 fn scope_of(e: &Enrolled, s: &Scope) -> anyhow::Result<(Option<Value>, Option<String>)> {
     if s.dms {
-        return Ok((Some(json!({ "kind": "account" })), None));
+        return Ok((Some(json!(GrantScope::Account { id: String::new() })), None));
+    }
+    if let Some(want) = &s.team {
+        let projects = e.api("GET", "/api/projects", None)?;
+        let (id, name, role) = team_of(&projects, want)?;
+        return Ok((Some(json!(GrantScope::Team { id, name })), role));
     }
     let Some(want) = &s.project else { return Ok((None, None)) };
     let projects = e.api("GET", "/api/projects", None)?;
@@ -455,7 +485,34 @@ fn scope_of(e: &Enrolled, s: &Scope) -> anyhow::Result<(Option<Value>, Option<St
     let p = projects["projects"].as_array().and_then(|all| all.iter().find(|p| p["id"] == id.as_str()));
     let name = p.and_then(|p| p["name"].as_str()).unwrap_or(&id).to_owned();
     let role = p.and_then(|p| p["team"]["role"].as_str().map(str::to_owned));
-    Ok((Some(json!({ "kind": "project", "id": id, "name": name })), role))
+    Ok((Some(json!(GrantScope::Project { id, name })), role))
+}
+
+/// A team named on the command line, by its id or name (any case), among
+/// your projects' teams: its id, its name and your role in it.
+fn team_of(projects: &Value, want: &str) -> anyhow::Result<(String, String, Option<String>)> {
+    let mut teams: Vec<(String, String, Option<String>)> = projects["projects"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|p| &p["team"])
+        .filter(|t| t["id"] == want || t["name"].as_str().is_some_and(|n| n.eq_ignore_ascii_case(want)))
+        .filter_map(|t| {
+            let id = t["id"].as_str()?.to_owned();
+            let name = t["name"].as_str().filter(|n| !n.is_empty()).unwrap_or(&id).to_owned();
+            Some((id, name, t["role"].as_str().map(str::to_owned)))
+        })
+        .collect();
+    teams.sort();
+    teams.dedup_by(|a, b| a.0 == b.0);
+    match teams.as_slice() {
+        [t] => Ok(t.clone()),
+        [] => bail!("you're in no team called {want} (the platform page lists yours)"),
+        _ => bail!(
+            "more than one team is called {want}: name one by its id ({})",
+            teams.iter().map(|t| t.0.as_str()).collect::<Vec<_>>().join(", ")
+        ),
+    }
 }
 
 /// The powers among `powers` the platform refuses to a viewer's machine
@@ -487,11 +544,12 @@ fn project_id(projects: &Value, want: &str) -> anyhow::Result<String> {
 fn over(g: &Value, scope: &Value) -> bool {
     match scope["kind"].as_str() {
         Some("account") => g["scope"]["kind"] == "account" && g["power"] != "cloud.drive",
-        _ => g["scope"]["kind"] == "project" && g["scope"]["id"] == scope["id"],
+        kind => g["scope"]["kind"] == kind.unwrap_or("project") && g["scope"]["id"] == scope["id"],
     }
 }
 
-/// `geek  threads.post  project acme  live  grt_…`, or `revoked` and when
+/// `geek  threads.post  project acme  live  grt_…` (or `team acme`, by
+/// its name if it has one, else its id), or `revoked` and when
 /// (and by whom, when someone other than its giver did), or a live one's
 /// limit while you only view the project (Arugula #683: `idle`, `reads
 /// only`; `--json` says why).
@@ -516,8 +574,9 @@ fn line(g: &Value) -> String {
         None => g["limited"]["label"].as_str().unwrap_or("live").to_owned(),
     };
     let scope = match (g["scope"]["kind"].as_str(), g["power"].as_str()) {
-        (Some("project"), _) => {
-            format!("project {}", g["scope"]["name"].as_str().or(g["scope"]["id"].as_str()).unwrap_or_default())
+        (Some(kind @ ("project" | "team")), _) => {
+            let name = g["scope"]["name"].as_str().filter(|n| !n.is_empty()).or(g["scope"]["id"].as_str());
+            format!("{kind} {}", name.unwrap_or_default())
         }
         (_, Some("cloud.drive")) => "your account".into(),
         _ => "your DMs".into(),
@@ -761,7 +820,7 @@ mod tests {
         let add = |powers: &[&str]| GrantsCmd::Add {
             machine: "geek".into(),
             powers: powers.iter().map(|p| (*p).to_owned()).collect(),
-            scope: Scope { project: Some("acme".into()), dms: false },
+            scope: Scope { project: Some("acme".into()), ..Default::default() },
         };
         let (e, seen) = control(grants.clone(), projects("viewer"));
         let err = run_with(&e, Some(add(&["threads.read", "issues.write", "runs.start"])), true).unwrap_err();
@@ -820,5 +879,66 @@ mod tests {
             "scope": { "kind": "project", "id": "prj_2", "name": "Acme" }, "id": "grt_1" }))
             .contains("project Acme")
         );
+    }
+
+    /// `--team` (Arugula #894): one scope among the three, threads.read
+    /// and threads.post only, named by the team's name or id; the list
+    /// says a team's grant by its name, else its id.
+    #[test]
+    fn a_threads_power_is_given_over_a_team() {
+        let parse = |args: &[&str]| crate::Cli::try_parse_from([&["arugula", "grants"], args].concat());
+        assert!(parse(&["add", "geek", "threads.read", "threads.post", "--team", "acme"]).is_ok());
+        assert!(parse(&["add", "geek", "threads.read", "--team", "acme", "--project", "acme"]).is_err(), "one scope");
+        assert!(parse(&["add", "geek", "threads.read", "--team", "acme", "--dms"]).is_err(), "one scope");
+        assert!(parse(&["revoke", "geek", "threads.read", "--team", "acme"]).is_ok());
+
+        let team = json!({ "kind": "team", "id": "tm_1", "name": "Acme" });
+        assert_eq!(give("d1", "threads.post", Some(&team)).unwrap()["scope"], team);
+        let err = give("d1", "issues.write", Some(&team)).unwrap_err().to_string();
+        assert!(err.contains("not a team") && err.contains("--project NAME"), "{err}");
+        assert!(give("d1", "cloud.drive", Some(&team)).is_err());
+
+        let projects = json!({ "projects": [
+            { "id": "prj_1", "name": "Personal", "team": null },
+            { "id": "prj_2", "name": "Acme", "team": { "id": "tm_1", "name": "Acme", "role": "editor" } },
+            { "id": "prj_3", "name": "Site", "team": { "id": "tm_1", "name": "Acme", "role": "editor" } },
+            { "id": "prj_4", "name": "Ops", "team": { "id": "tm_2", "name": "", "role": "owner" } },
+            { "id": "prj_5", "name": "Ops", "team": { "id": "tm_3", "name": "ops", "role": "viewer" } },
+        ] });
+        assert_eq!(team_of(&projects, "acme").unwrap(), ("tm_1".into(), "Acme".into(), Some("editor".into())));
+        assert_eq!(team_of(&projects, "tm_2").unwrap().1, "tm_2", "no name: its id");
+        assert_eq!(team_of(&projects, "OPS").unwrap().0, "tm_3");
+        assert!(team_of(&projects, "personal").is_err(), "a personal project has no team");
+
+        let g = |scope: Value| json!({ "subject": { "name": "geek" }, "power": "threads.read", "scope": scope, "id": "grt_1" });
+        assert!(line(&g(team.clone())).contains("team Acme"));
+        assert!(line(&g(json!({ "kind": "team", "id": "tm_2", "name": "" }))).contains("team tm_2"));
+        assert!(line(&g(json!({ "kind": "team", "id": "tm_2" }))).contains("team tm_2"));
+        assert!(over(&g(team.clone()), &json!({ "kind": "team", "id": "tm_1" })));
+        assert!(!over(&g(team.clone()), &json!({ "kind": "project", "id": "tm_1" })), "a team isn't a project");
+    }
+
+    /// `add --team` sends the team's scope; a control that refuses it is
+    /// said to be from before team grants.
+    #[test]
+    fn add_over_a_team_sends_its_scope() {
+        let grants = json!({ "grants": [{ "id": "grt_0", "subject": { "kind": "daemon", "id": "d1", "name": "geek" },
+            "power": "cloud.drive", "scope": { "kind": "account", "id": "a" }, "live": true }] });
+        let projects = json!({ "projects": [{ "id": "prj_2", "name": "Site", "team": { "id": "tm_1", "name": "Acme", "role": "viewer" } }] });
+        let (e, seen) = control(grants, projects);
+        let add = GrantsCmd::Add {
+            machine: "geek".into(),
+            powers: vec!["threads.read".into()],
+            scope: Scope { team: Some("acme".into()), ..Default::default() },
+        };
+        assert_eq!(run_with(&e, Some(add), true).unwrap(), 0);
+        let post = seen.try_iter().find(|(m, _, _)| m == "POST").unwrap();
+        let body: Value = serde_json::from_str(&post.2).unwrap();
+        assert_eq!(body["scope"], json!({ "kind": "team", "id": "tm_1", "name": "Acme" }));
+
+        let err = refused_team(anyhow::anyhow!("bad scope"), Some(&body["scope"]));
+        assert!(format!("{err:#}").contains("from before team grants"), "{err:#}");
+        let err = refused_team(anyhow::anyhow!("bad scope"), Some(&json!({ "kind": "project", "id": "prj_2" })));
+        assert_eq!(format!("{err:#}"), "bad scope");
     }
 }

@@ -29,7 +29,7 @@
           "type": "string"
         },
         "scope_kind": {
-          "description": "What a grant of `threads.read` is over, as `POST /api/grants` says it:\n`project` and the project's id, or `account`.",
+          "description": "What a grant of `threads.read` is over, as `POST /api/grants` says it:\n`project` and the project's id, `team` and the team's (Arugula\n#894), or `account`.",
           "type": "string"
         },
         "scope_name": {
