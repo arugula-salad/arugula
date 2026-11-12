@@ -152,7 +152,7 @@ function useDocActions(p: PlatformProject, doc: ProjectDoc, eager: boolean, relo
     try {
       const v = await projectDocs.get(p.id, doc.id);
       if (!v.public) return toast("It has no public link");
-      await revokePublic(p.id, doc.id, v.public);
+      await revokePublic(p.id, doc.id);
       toast("The link no longer opens");
       reload?.();
     } catch (e) {
