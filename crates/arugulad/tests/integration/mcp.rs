@@ -3345,6 +3345,7 @@ async fn an_agent_reads_and_writes_a_board() {
             "ask",
             "note",
             "hold",
+            "release_row",
             "release",
             "group",
             "drop",
