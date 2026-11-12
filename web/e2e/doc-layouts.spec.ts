@@ -211,8 +211,13 @@ test("a prototype Doc is its title, its one line and a frame that fills the view
   const size = page.viewportSize()!;
   // Only the height changes, so the title and its line don't move: the frame follows the container.
   await page.setViewportSize({ width: size.width, height: size.height - 200 });
-  await expect.poll(async () => (await gap()).frame).toBeLessThan(before.frame - 100);
-  expect((await gap()).bottom).toBeLessThan(4);
+  // Both at once: the frame can shrink past it for a moment before the Doc settles (Arugula #955).
+  await expect
+    .poll(async () => {
+      const g = await gap();
+      return g.frame < before.frame - 100 && g.bottom < 4;
+    })
+    .toBe(true);
   await page.setViewportSize(size);
   await expect.poll(async () => (await gap()).frame).toBeGreaterThan(before.frame - 4);
 
