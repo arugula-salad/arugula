@@ -24,9 +24,10 @@
 
 use arugula_control_wire::{
     chat::agent_messages,
-    issues::{AGENT_ISSUE_HOME, agent_issue, agent_issue_events, agent_project_issue},
+    issues::{AGENT_ISSUE_HOME, ProjectOwner, agent_issue, agent_issue_events, agent_project_issue},
 };
 use reqwest::Method;
+use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::tools::Call;
@@ -265,6 +266,15 @@ pub fn text(issue: &Value, events: &[Value], comments: &[Value]) -> String {
     out
 }
 
+/// Whether an issue home is a team's project: its `owner` when control
+/// sent one, else `team`, which an older control sends alone.
+fn is_team(home: &Value) -> bool {
+    match ProjectOwner::deserialize(&home["owner"]) {
+        Ok(owner) => owner.is_team(),
+        Err(_) => home["team"] == true,
+    }
+}
+
 pub fn query(pairs: &[(&str, String)]) -> String {
     let mut q = url::form_urlencoded::Serializer::new(String::new());
     for (k, v) in pairs {
@@ -340,7 +350,7 @@ impl Call<'_> {
         let path = if q.is_empty() { AGENT_ISSUE_HOME.to_owned() } else { format!("{AGENT_ISSUE_HOME}?{}", query(&q)) };
         let v = self.issues_call(Method::GET, &path, None).await?;
         let id = v["project"].as_str().ok_or("Arugula control named no project")?;
-        let (name, team) = (v["name"].as_str().unwrap_or_default().to_owned(), v["team"] == true);
+        let (name, team) = (v["name"].as_str().unwrap_or_default().to_owned(), is_team(&v));
         Ok(Chosen { id: id.to_owned(), name, team, rule })
     }
 
@@ -350,7 +360,7 @@ impl Call<'_> {
     pub async fn default_project(&self) -> Result<Chosen, String> {
         let v = self.issues_call(Method::GET, AGENT_ISSUE_HOME, None).await?;
         let id = v["project"].as_str().ok_or("Arugula control named no project")?;
-        let (name, team) = (v["name"].as_str().unwrap_or_default().to_owned(), v["team"] == true);
+        let (name, team) = (v["name"].as_str().unwrap_or_default().to_owned(), is_team(&v));
         Ok(Chosen { id: id.to_owned(), name, team, rule: Rule::Default })
     }
 
@@ -472,6 +482,18 @@ mod tests {
         assert_eq!(chosen(Rule::Started("#9".into())).says(), "Project Arugula (you were started on its issue #9)");
         let nameless = Chosen { id: "prj_1".into(), name: String::new(), team: false, rule: Rule::Asked };
         assert_eq!(nameless.says(), "Project prj_1 (the one you named)");
+    }
+
+    /// An issue home's `owner` says whether it's a team's; without one,
+    /// `team` does, as from an older control.
+    #[test]
+    fn a_team_is_its_owner_else_its_flag() {
+        let home = |team: bool, owner: Value| json!({ "project": "prj_t", "team": team, "owner": owner });
+        assert!(is_team(&home(false, json!({ "kind": "team", "id": "tm_1", "name": "Acme" }))));
+        assert!(!is_team(&home(true, json!({ "kind": "personal", "account": "acc_1" }))));
+        assert!(is_team(&home(true, Value::Null)));
+        assert!(!is_team(&home(false, Value::Null)));
+        assert!(is_team(&json!({ "project": "prj_t", "team": true })), "an older control's");
     }
 
     /// Arugula #771: a missing `#N` says where it looked and how to look

@@ -3425,7 +3425,14 @@ labels: Array<string>,
  * live (Arugula #862). An older control sends none, which a machine
  * reads as not a team's.
  */
-team: boolean, };
+team: boolean, 
+/**
+ * Whose project it is: a team's or a person's own. It replaces `team`
+ * as the test of a team's project; an older control sends none, and a
+ * machine reads `team` then. `team` stays for a release, for older
+ * machines.
+ */
+owner?: ProjectOwner, };
 
 /**
  * `PUT /api/projects/{project}/issue-home`: `native`, `github` (only with
@@ -4705,6 +4712,12 @@ export type ProjectMember = { account: string,
  * What the roster calls them.
  */
 name: string, role: string, };
+
+/**
+ * Whose a project is. The web client has another `Owner` (a pane's), so
+ * this one is named for what it owns.
+ */
+export type ProjectOwner = { "kind": "team", id: string, name: string, } | { "kind": "personal", account: string, };
 
 /**
  * A project in Arugula control, as a session keeps it: its id, and its
