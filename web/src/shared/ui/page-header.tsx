@@ -56,7 +56,7 @@ export function PageHeader({
   state?: ComponentChildren;
   /** At the title's right: the page's own buttons, two labelled ones at most. */
   actions?: ComponentChildren;
-  /** Copy link (a `CopyLinkButton`), after the actions. */
+  /** Copy link (a Doc's `DocActions`), after the actions. */
   link?: ComponentChildren;
   /** Share, after copy link. */
   share?: ComponentChildren;

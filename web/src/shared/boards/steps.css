@@ -315,24 +315,6 @@
   }
 }
 
-/* The view switch's row: Close epic is quiet at its right end, red only on hover or keyboard focus (#860). */
-.board-switch-gap {
-  flex: 1;
-}
-
-.secondary.board-close {
-  border-color: transparent;
-  background: none;
-  color: var(--dim);
-}
-
-.secondary.board-close:hover:not(:disabled),
-.secondary.board-close:focus-visible {
-  border-color: transparent;
-  background: color-mix(in srgb, var(--danger) 12%, transparent);
-  color: var(--danger);
-}
-
 /* Done and Links, right above the chart. */
 .steps-toggles {
   display: flex;

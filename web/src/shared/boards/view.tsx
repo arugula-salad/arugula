@@ -27,12 +27,13 @@ import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
 import { Card } from "../ui/card";
 import { Markdown } from "../ui/markdown";
-import { ArrowIcon, CheckCircleIcon, ChevronIcon, CloseIcon, ExternalIcon, IconButton, LinksIcon, MoreIcon, PlusIcon } from "../ui/icons";
+import { ArrowIcon, CheckCircleIcon, ChevronIcon, CloseIcon, EditIcon, ExternalIcon, IconButton, LinksIcon, MoreIcon, PlusIcon } from "../ui/icons";
 import { ConfirmRemove } from "../ui/confirm";
 import { SideSheet } from "../ui/side-sheet";
 import { StateChip, Chip, ObjectChip } from "../ui/state-chip";
 import { usePhone, useSubscribe } from "../ui/hooks";
-import { CopyLinkButton } from "../ui/copy-link";
+import { DocActions, openTab } from "../docs/doc-actions";
+import { DocTimes } from "../docs/doc-times";
 import { BlockError, BlockLoading, EmptyLine, EmptyState } from "../ui/block-states";
 import { PageHeader } from "../ui/page-header";
 import { SectionHead } from "../ui/section-head";
@@ -74,7 +75,6 @@ export function BoardPanel({
   platform,
   back,
   write = true,
-  menu,
   keepInUrl = false,
 }: {
   id: string;
@@ -86,8 +86,6 @@ export function BoardPanel({
   back?: preact.ComponentChildren;
   /** Whether to offer the board's own edits (title, goal, closing). False for a viewer; a block can't tell, so it offers them and the platform's 403 comes back as a toast. */
   write?: boolean;
-  /** The Copy link button's ▾ items, given the board's team link (the block adds "Open in browser ↗"). */
-  menu?: (link: string) => MenuItem[];
   /** Keep the find text and the Label and Person menus in the URL's hash (#547), so a link keeps them. The shell's block keeps them in memory. */
   keepInUrl?: boolean;
 }) {
@@ -325,21 +323,16 @@ export function BoardPanel({
 
   return (
     <div class="board" data-board={id}>
-      <PageHeader
-        named
+      <BoardHead
+        view={view}
         back={back}
-        title={
-          <span data-board-heading>
-            {write ? (
-              <span role="button" tabIndex={0} class="board-rename" title="Rename the board" data-board-rename onClick={() => void rename()} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), void rename())}>
-                {view.board.title}
-              </span>
-            ) : (
-              view.board.title
-            )}
-          </span>
-        }
-        link={<CopyLinkButton link={shareLink} menu={shareLink ? menu?.(shareLink) : undefined} />}
+        write={write}
+        shareLink={shareLink}
+        rename={() => void rename()}
+        close={write && view.board.closed_at == null && !epicClosing ? () => (setEpicNote(""), setEpicClosing(true)) : undefined}
+        act={act}
+        id={id}
+        platform={platform}
       />
       <div class="board-switch">
         <div class="seg small board-views" role="group" aria-label="View" data-board-views>
@@ -349,12 +342,6 @@ export function BoardPanel({
             </button>
           ))}
         </div>
-        <span class="board-switch-gap" />
-        {write && view.board.closed_at == null && !epicClosing && (
-          <button type="button" class="secondary small board-close" data-board-close onClick={() => (setEpicNote(""), setEpicClosing(true))}>
-            Close epic…
-          </button>
-        )}
       </div>
       <div class="board-find" role="search" data-board-find>
         <input
@@ -385,7 +372,7 @@ export function BoardPanel({
           </button>
         )}
       </div>
-      <Epic b={view.board} closing={epicClosing} setClosing={setEpicClosing} note={epicNote} setNote={setEpicNote} act={act} id={id} write={write} view={view} platform={platform} />
+      <Epic b={view.board} closing={epicClosing} setClosing={setEpicClosing} note={epicNote} setNote={setEpicNote} act={act} id={id} write={write} view={view} />
       {stale && (
         <p class="board-stale" role="status" data-board-stale>
           {STALE_SAID}
@@ -545,15 +532,126 @@ export function BoardPanel({
   );
 }
 
-/** A board's goal, progress and closing, under its title. The panel doesn't know whether the person may write (the pin block has no project), so without `write` the controls still show and the platform's refusal comes back as `act`'s toast. */
-function Epic({ b, closing, setClosing, note, setNote, act, id, write, view, platform }: { b: ProjectBoard; closing: boolean; setClosing: (on: boolean) => void; note: string; setNote: (note: string) => void; act: Act; id: string; write: boolean; view: BoardView; platform: (path: string) => string | undefined }) {
+/** The board's header, as a Doc's (#929): the title and, at its right, Copy link, Open in browser and ⋯; when it was made and last edited; the goal with the Docs beside it; and the progress as its bottom rule. The panel doesn't know whether the person may write (the pin block has no project), so without `write` the controls still show and the platform's refusal comes back as `act`'s toast. */
+function BoardHead({ view, back, write, shareLink, rename, close, act, id, platform }: { view: BoardView; back?: preact.ComponentChildren; write: boolean; shareLink: string | null; rename: () => void; close?: () => void; act: Act; id: string; platform: (path: string) => string | undefined }) {
+  const b = view.board;
+  const { toast } = usePlatformApi();
   const [goalOpen, setGoalOpen] = useState(false);
   const [goal, setGoal] = useState("");
   const e = epicLine(b.progress);
-  const waiting = needsYou(view);
+  const editGoal = () => (setGoal(b.goal), setGoalOpen(true));
   const saveGoal = async () => {
     if (await act(() => boards.edit(id, { goal: goal.trim() }))) setGoalOpen(false);
   };
+  const copy = async (): Promise<"ok" | false> => {
+    try {
+      await navigator.clipboard.writeText(shareLink ?? "");
+      return "ok";
+    } catch {
+      toast("Couldn't copy the link");
+      return false;
+    }
+  };
+  const items: MenuItem[] = [
+    ...(write ? [{ label: "Rename…", run: rename }, { label: "Edit goal…", run: editGoal }] : []),
+    ...(close ? [{ label: "Close epic…", run: close }] : []),
+  ];
+  // The goal's button takes the focus back when its form shuts.
+  const goalButton = useRef<HTMLParagraphElement>(null);
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (wasOpen.current && !goalOpen) goalButton.current?.focus({ preventScroll: true });
+    wasOpen.current = goalOpen;
+  }, [goalOpen]);
+  const press = (ev: KeyboardEvent) => (ev.key === "Enter" || ev.key === " ") && (ev.preventDefault(), editGoal());
+  const pencil = (
+    <span class="board-goal-pencil" aria-hidden="true">
+      <EditIcon size="xs" />
+    </span>
+  );
+  return (
+    <PageHeader
+      named
+      class="board-head"
+      back={back}
+      title={<span data-board-heading>{b.title}</span>}
+      link={
+        <DocActions
+          none={!shareLink}
+          copy={copy}
+          open={() => shareLink && openTab(shareLink)}
+          hooks={{ copy: { "data-doc-copy-link": "", "data-copy-link": "", "data-link": shareLink ?? undefined } }}
+        >
+          {items.length > 0 && (
+            <IconButton label="More" class="bar-btn sq" aria-haspopup="menu" data-board-more data-page-more onClick={(ev) => openMenu(ev, items, { from: ev.currentTarget, end: true })}>
+              <MoreIcon size="sm" />
+            </IconButton>
+          )}
+        </DocActions>
+      }
+    >
+      <p class="doc-meta board-meta" data-board-meta>
+        <DocTimes doc={{ made: b.created_at, updated: b.updated_at }} />
+      </p>
+      {(write || b.goal || (view.docs ?? []).length > 0) && (
+        <div class="board-head-body">
+          <div class="board-goal-col">
+            {goalOpen ? (
+              <div class="board-form" data-board-goal-form>
+                <textarea
+                  value={goal}
+                  rows={4}
+                  maxLength={GOAL_MAX}
+                  aria-label="Goal"
+                  data-board-goal-input
+                  autoFocus
+                  onInput={(ev) => setGoal(ev.currentTarget.value)}
+                  onKeyDown={(ev) => {
+                    if (ev.key === "Escape") (ev.preventDefault(), ev.stopPropagation(), setGoalOpen(false));
+                    else if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) (ev.preventDefault(), void saveGoal());
+                  }}
+                />
+                <span class="board-form-buttons">
+                  <button type="button" class="primary small" data-board-goal-save onClick={() => void saveGoal()}>
+                    Save
+                  </button>
+                  <button type="button" class="secondary small" onClick={() => setGoalOpen(false)}>
+                    Cancel
+                  </button>
+                </span>
+              </div>
+            ) : write ? (
+              <p ref={goalButton} class={b.goal ? "board-goal editable" : "board-goal editable empty"} role="button" tabIndex={0} title="Edit goal" data-board-goal={b.goal ? "" : undefined} data-board-goal-edit onClick={editGoal} onKeyDown={press}>
+                {b.goal || "Add a goal…"}
+                {pencil}
+              </p>
+            ) : (
+              b.goal && (
+                <p class="board-goal" data-board-goal>
+                  {b.goal}
+                </p>
+              )
+          )}
+        </div>
+        <DocsStrip view={view} act={act} id={id} write={write} platform={platform} />
+      </div>
+      )}
+      {b.progress.total > 0 ? (
+        <div class="board-bar" role="progressbar" aria-valuemin={0} aria-valuemax={b.progress.total} aria-valuenow={b.progress.done} aria-label={e.words} data-board-progress>
+          {e.segments.map((s) => (
+            <i key={s.lane} data-lane={s.lane} style={{ width: `${s.pct}%` }} />
+          ))}
+        </div>
+      ) : (
+        <div class="board-bar" aria-hidden="true" data-board-progress />
+      )}
+    </PageHeader>
+  );
+}
+
+/** A board's source, who needs you, and closing, under its header. */
+function Epic({ b, closing, setClosing, note, setNote, act, id, write, view }: { b: ProjectBoard; closing: boolean; setClosing: (on: boolean) => void; note: string; setNote: (note: string) => void; act: Act; id: string; write: boolean; view: BoardView }) {
+  const waiting = needsYou(view);
   const close = async () => {
     if (await act(() => boards.close(id, note.trim()))) setClosing(false);
   };
@@ -571,35 +669,6 @@ function Epic({ b, closing, setClosing, note, setNote, act, id, write, view, pla
           {b.source.left_out > 0 && <span data-board-left-out> · {leftOutLine(b.source.left_out)}</span>}
         </p>
       )}
-      {goalOpen ? (
-        <div class="board-form" data-board-goal-form>
-          <textarea value={goal} rows={4} maxLength={GOAL_MAX} aria-label="Goal" data-board-goal-input autoFocus onInput={(ev) => setGoal(ev.currentTarget.value)} />
-          <span class="board-form-buttons">
-            <button type="button" class="primary small" data-board-goal-save onClick={() => void saveGoal()}>
-              Save
-            </button>
-            <button type="button" class="secondary small" onClick={() => setGoalOpen(false)}>
-              Cancel
-            </button>
-          </span>
-        </div>
-      ) : (
-        <>
-          {b.goal && (
-            <p class="board-goal" data-board-goal>
-              {b.goal}
-            </p>
-          )}
-          {write && (
-            <p class="board-epic-actions">
-              <button type="button" data-board-goal-edit onClick={() => (setGoal(b.goal), setGoalOpen(true))}>
-                {b.goal ? "Edit goal" : "Add a goal"}
-              </button>
-            </p>
-          )}
-        </>
-      )}
-      <DocsStrip view={view} act={act} id={id} write={write} platform={platform} />
       {waiting.length > 0 && (
         <div class="sw-stats board-stats" data-board-stats>
           <button type="button" class="needs board-needs-you-button" data-board-needs-you={waiting.length} onClick={() => document.querySelector(`[data-board-row="${waiting[0].id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" })}>
@@ -607,16 +676,6 @@ function Epic({ b, closing, setClosing, note, setNote, act, id, write, view, pla
           </button>
         </div>
       )}
-      <div class="board-progress" data-board-progress>
-        {b.progress.total > 0 && (
-          <div class="board-bar" role="progressbar" aria-valuemin={0} aria-valuemax={b.progress.total} aria-valuenow={b.progress.done} aria-label={e.words}>
-            {e.segments.map((s) => (
-              <i key={s.lane} data-lane={s.lane} style={{ width: `${s.pct}%` }} />
-            ))}
-          </div>
-        )}
-        <span class="dim">{e.short}</span>
-      </div>
       {b.closed_at != null ? (
         <div class="board-done" data-board-done>
           <p>
@@ -655,25 +714,26 @@ function Epic({ b, closing, setClosing, note, setNote, act, id, write, view, pla
 
 type Act = (write: () => Promise<BoardView>) => Promise<boolean>;
 
-/** The board's Docs, under its goal: research and prototypes that open from here. A reader who can't write sees the chips; with no Docs and no right to link one, nothing. */
+/** The board's Docs, in a column beside its goal (under it on a narrow board): each Doc's title on a line, and Link a Doc for a writer. A reader who can't write sees the titles; with no Docs and no right to link one, nothing. */
 function DocsStrip({ view, act, id, write, platform }: { view: BoardView; act: Act; id: string; write: boolean; platform: (path: string) => string | undefined }) {
   const [picking, setPicking] = useState(false);
   const docs = view.docs ?? [];
   if (!docs.length && !write) return null;
   const taken = new Set(docs.flatMap((d) => (d.pointer.kind === "doc" ? [d.pointer.id] : [])));
   return (
-    <div class="board-docs" data-board-docs>
+    <nav class="board-docs" aria-label="Docs" data-board-docs>
+      <h2 class="board-docs-head">Docs</h2>
       {docs.map((d) => (
-        <DocLink key={d.id} d={d} project={view.board.project} platform={platform} remove={write ? () => void act(() => boards.removeDoc(id, d.id)) : undefined} />
+        <DocLink key={d.id} list d={d} project={view.board.project} platform={platform} remove={write ? () => void act(() => boards.removeDoc(id, d.id)) : undefined} />
       ))}
       {write && !picking && (
-        <button type="button" class="secondary small" data-board-doc-add onClick={() => setPicking(true)}>
+        <button type="button" class="board-doc-link" data-board-doc-add onClick={() => setPicking(true)}>
           <PlusIcon size="xs" />
-          Doc
+          Link a Doc
         </button>
       )}
       {picking && <DocPicker project={view.board.project} taken={taken} pick={(p) => act(() => boards.addDoc(id, p))} close={() => setPicking(false)} />}
-    </div>
+    </nav>
   );
 }
 
