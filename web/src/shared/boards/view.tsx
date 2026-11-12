@@ -553,8 +553,13 @@ function BoardHead({ view, back, write, shareLink, rename, close, act, id, platf
     }
   };
   const items: MenuItem[] = [
-    ...(write ? [{ label: "Rename…", run: rename }, { label: "Edit goal…", run: editGoal }] : []),
-    ...(close ? [{ label: "Close epic…", run: close }] : []),
+    ...(write
+      ? [
+          { label: "Rename…", run: rename, attrs: { "data-board-rename": "" } },
+          { label: "Edit goal…", run: editGoal, attrs: { "data-board-goal-menu": "" } },
+        ]
+      : []),
+    ...(close ? [{ label: "Close epic…", run: close, attrs: { "data-board-close": "" } }] : []),
   ];
   // The goal's button takes the focus back when its form shuts.
   const goalButton = useRef<HTMLParagraphElement>(null);
