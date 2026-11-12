@@ -295,6 +295,8 @@ final class TerminalUIView: UIView, UIKeyInput, UITextInputTraits {
     override var inputAccessoryView: UIView? {
         if let bar { return bar }
         let v = UIInputView(frame: CGRect(x: 0, y: 0, width: 0, height: 44), inputViewStyle: .keyboard)
+        // The keys in the theme's accent and mono face (Theme.swift).
+        v.tintColor = UIColor(Palette.accent)
         let scroll = UIScrollView()
         scroll.showsHorizontalScrollIndicator = false
         scroll.translatesAutoresizingMaskIntoConstraints = false
@@ -304,7 +306,7 @@ final class TerminalUIView: UIView, UIKeyInput, UITextInputTraits {
         stack.translatesAutoresizingMaskIntoConstraints = false
         func button(_ title: String, _ id: String, _ act: @escaping () -> Void) -> UIButton {
             var c = UIButton.Configuration.gray()
-            c.title = title
+            c.attributedTitle = AttributedString(title, attributes: AttributeContainer([.font: Face.uiFont("JetBrainsMono-Regular", 14, fallback: .regular)]))
             c.contentInsets = .init(top: 6, leading: 10, bottom: 6, trailing: 10)
             let b = UIButton(configuration: c, primaryAction: UIAction { _ in act() })
             b.accessibilityIdentifier = "key-\(id)"
