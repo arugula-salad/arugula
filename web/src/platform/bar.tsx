@@ -65,6 +65,7 @@ export function sectionOf(r: Route): Section | null {
     case "inbox":
       return "inbox";
     case "settings":
+    case "owner-settings":
     case "project-settings":
     case "installed":
       return "settings";

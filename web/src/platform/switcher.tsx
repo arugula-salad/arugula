@@ -17,10 +17,10 @@ import { makers, owners, PERSONAL, type Owner } from "./owners";
 import { follow, go, pathOf } from "./router";
 import { session } from "./session";
 
-/** Where an owner's links go: a team's pages; Personal's settings are the
- * account's. */
+/** Where an owner's links go: a team's pages; Personal's, its
+ * own settings page (Arugula #897). */
 function ownerLinks(o: Owner): { label: string; to: string; data: string }[] {
-  if (o.kind === "personal") return [{ label: "Settings", to: "/settings", data: "settings" }];
+  if (o.kind === "personal") return [{ label: "Settings", to: pathOf({ page: "owner-settings", owner: PERSONAL }, names), data: "settings" }];
   return [
     { label: "Chat", to: pathOf({ page: "team", team: o.key, tab: "chat" }, names), data: "chat" },
     { label: "Settings", to: pathOf({ page: "team", team: o.key, tab: "settings" }, names), data: "settings" },

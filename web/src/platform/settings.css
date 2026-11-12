@@ -862,3 +862,102 @@
   display: flex;
   justify-content: flex-end;
 }
+
+/* -- An owner's Project defaults (Arugula #897): a row per key, the
+      default, then a column per project. Wide, it scrolls sideways with
+      the key and the default kept in place. A project's own value is
+      raised and bold; a change not yet saved has a warn edge. */
+
+.platform .defaults-bar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
+  background: var(--surface);
+  font-weight: 600;
+}
+
+.platform .defaults-bar > span {
+  margin-right: auto;
+}
+
+.platform .defaults-scroll {
+  overflow-x: auto;
+  margin-top: var(--space-2);
+}
+
+.platform .defaults-table {
+  width: max-content;
+  min-width: 100%;
+}
+
+.platform .defaults-table th,
+.platform .defaults-table td {
+  min-width: 150px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.platform .defaults-table thead th {
+  text-align: left;
+}
+
+.platform .defaults-table thead th:nth-child(-n + 2),
+.platform .defaults-table tbody > tr > :nth-child(-n + 2) {
+  position: sticky;
+  z-index: 1;
+  background: var(--bg);
+}
+
+.platform .defaults-table thead th:first-child,
+.platform .defaults-table tbody > tr > :first-child {
+  left: 0;
+  width: 160px;
+  min-width: 160px;
+}
+
+.platform .defaults-table thead th:nth-child(2),
+.platform .defaults-table tbody > tr > :nth-child(2) {
+  left: 160px;
+  border-right: 1px solid var(--line);
+}
+
+.platform .defaults-table select {
+  max-width: 220px;
+}
+
+.platform .defaults-table .defaults-own,
+.platform .defaults-table .defaults-own select {
+  background: var(--raised);
+  font-weight: 600;
+}
+
+.platform .defaults-staged {
+  box-shadow: inset 2px 0 0 var(--warn);
+}
+
+.platform .overrides-rows > li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.platform .overrides-rows > li > b {
+  width: 160px;
+  flex: none;
+}
+
+.platform .overrides-rows > li > [data-override-line] {
+  flex: 1;
+}
+
+/* Hover's tint is see-through: the pinned columns stay opaque over it. */
+.platform .defaults-table tbody tr:hover > :nth-child(-n + 2) {
+  background: var(--bg);
+}

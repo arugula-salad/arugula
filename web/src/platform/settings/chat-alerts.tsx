@@ -1,8 +1,8 @@
 // Chat's alerts (#114): the words that notify you in chat as if you were
 // mentioned, on /settings; and, for a team you own, whether `@channel` and
 // `@here` and a channel's topic are for owners only, which is the team's,
-// so it's in its project's settings, as Team chat (UI audit #168). Control
-// keeps both (`/api/chat/keywords`, `/api/chat/teams/{team}/settings`).
+// so it's in the team's settings, as Chat (UI audit #168, Arugula #897).
+// Control keeps both (`/api/chat/keywords`, `/api/chat/teams/{team}/settings`).
 
 import { useEffect, useState } from "preact/hooks";
 import { chat } from "../../shared/chat-store";
@@ -129,21 +129,20 @@ function Alerts() {
   );
 }
 
-/** A team's settings (../pages/owner-settings) and its projects', for its
- * owners while chat is on: who in the team may notify a whole room, and set
- * a channel's topic. */
-export function TeamChat({ team }: { team: { id: string; name: string; role: string } | null | undefined }) {
+/** A team's settings, for its owners while chat is on: who in the team
+ * may notify a whole room, and set a channel's topic. */
+export function TeamChat({ team, name, role }: { team: string; name: string; role: string | undefined }) {
   useSubscribe((fn) => chat.subscribe(fn));
-  if (chat.on !== true || team?.role !== "owner") return null;
+  if (chat.on !== true || role !== "owner") return null;
   return (
     <Section
       id="team-chat"
-      title="Team chat"
-      lede={`Who in ${team.name || "this team"} may notify a whole room, and set a channel's topic.`}
+      title="Chat"
+      lede={`Who in ${name || "this team"} may notify a whole room, and set a channel's topic.`}
       more={<p>Everyone in the team may, until you turn these on. @channel notifies everyone in a room; @here, those active now.</p>}
-      hooks={{ "data-team-chat": team.id }}
+      hooks={{ "data-team-chat": team }}
     >
-      <OwnersOnly team={team.id} name={team.name || "the team"} />
+      <OwnersOnly team={team} name={name || "the team"} />
     </Section>
   );
 }

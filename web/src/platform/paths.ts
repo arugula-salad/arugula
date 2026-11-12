@@ -104,6 +104,8 @@ export type Route =
   | { page: "inbox"; all?: true }
   | { page: "all-boards"; all?: true }
   | { page: "settings" }
+  /** An owner's settings (Arugula #897): a team's id, or `personal`. */
+  | { page: "owner-settings"; owner: string }
   | { page: "design" }
   | { page: "deploy"; deploy: string }
   | { page: "team"; team: string; tab: TeamTab }
@@ -203,6 +205,7 @@ export function parse(path: string, search = ""): Route {
   if (parts.length === 1 && parts[0] === "boards") return { page: "all-boards", ...all };
   if (parts.length === 1 && parts[0] === "docs") return { page: "docs", ...all };
   if (parts.length === 1 && parts[0] === "settings") return { page: "settings" };
+  if (parts.length === 2 && parts[0] === "settings" && parts[1] === "personal") return { page: "owner-settings", owner: "personal" };
   if (parts.length === 1 && parts[0] === "design") return { page: "design" };
   if (parts[0] === "chat" && parts.length <= 2) {
     if (parts.length === 1) return { page: "find", what: "chat" };
@@ -421,6 +424,8 @@ export function pathOf(r: Route, names: Names = () => null): string {
       return r.all ? "/boards?all=1" : "/boards";
     case "settings":
       return "/settings";
+    case "owner-settings":
+      return r.owner === "personal" ? "/settings/personal" : `/t/${s(r.owner)}/settings`;
     case "design":
       return "/design";
     case "deploy":

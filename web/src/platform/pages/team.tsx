@@ -44,7 +44,7 @@ export function TeamPage({ team, tab }: { team: string; tab: TeamTab }) {
         ))}
       </div>
       {tab === "chat" && <Channels owner={owner} />}
-      {tab === "settings" && <OwnerSettings owner={owner} />}
+      {tab === "settings" && <OwnerSettings owner={owner.key} inTeam />}
       {tab === "members" && <Members owner={owner} />}
     </section>
   );

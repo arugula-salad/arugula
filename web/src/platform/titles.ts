@@ -91,6 +91,8 @@ export function titleOf(r: Route, k: Known): string {
       return parts("Account settings");
     case "team":
       return parts({ chat: "Chat", settings: "Settings", members: "Members" }[r.tab], k.team?.(r.team));
+    case "owner-settings":
+      return parts(r.owner === "personal" ? "Personal settings" : "Team settings");
     case "design":
       return parts("Design reference");
     case "missing":
