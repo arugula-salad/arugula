@@ -233,6 +233,11 @@ struct MachinesView: View {
             .id(picked?.id)
         }
         .navigationSplitViewStyle(.balanced)
+        // A machine takes the whole width once it's picked (a tab's panes want
+        // it); the sidebar button brings the list back.
+        .onChange(of: picked) { _, now in
+            if now != nil { withAnimation { columns = .detailOnly } }
+        }
     }
 }
 
@@ -285,8 +290,9 @@ struct MachineView: View {
             if now == .active { Task { await session.connect() } }
         }
         .onChange(of: opened) { _, now in
-            // Back from driving a pane: watch its tab again, at the tab's size.
-            if now == nil { session.rewatch() }
+            // Driving a pane: its tab is the one to come back to. Back from
+            // it: watch that tab again, at the tab's size.
+            if let now { tabID = now.tab } else { session.rewatch() }
         }
         .onDisappear { if opened == nil { session.disconnect() } }
         .fullScreenCover(item: $opened) { pane in
