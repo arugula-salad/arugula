@@ -3450,13 +3450,24 @@ team: boolean,
  * machine reads `team` then. `team` stays for a release, for older
  * machines.
  */
-owner?: ProjectOwner, };
+owner?: ProjectOwner, 
+/**
+ * Which step chose the project, for [`AGENT_ISSUE_HOME`]. An older
+ * control sends none; the machine then says its own.
+ */
+rule?: IssueHomeRule, };
 
 /**
  * `PUT /api/projects/{project}/issue-home`: `native`, `github` (only with
  * a linked repo), or `None` for the default again.
  */
 export type IssueHomeChange = { home: string | null, };
+
+/**
+ * The steps that choose an agent's project, in order: the first that has
+ * one answers.
+ */
+export type IssueHomeRule = "explicit" | "block" | "session" | "repo" | "default";
 
 export type IssueList = { 
 /**
