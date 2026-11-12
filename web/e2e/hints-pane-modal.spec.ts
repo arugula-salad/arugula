@@ -32,7 +32,9 @@ const FRIEND = "friend@example.com";
 let APP = "";
 let state = "";
 let daemon: ChildProcess | undefined;
-/** The page the browser block shows: it counts the clicks and keys that reach it. */
+/** The page the browser block shows: it counts the clicks and keys that
+ * reach it. Its script writes "clicks 0 keys 0" once it's listening, so
+ * waiting for that text waits for the listeners, not the page's HTML. */
 let site: Server;
 let sitePort = 0;
 
@@ -113,9 +115,9 @@ test.beforeAll(async () => {
   state = mkdtempSync(join(tmpdir(), "ilg-e2e-pane-modal-"));
   site = createServer((_, res) => {
     res.setHeader("content-type", "text/html");
-    res.end(`<!doctype html><body style="margin:0;height:100vh"><p id="n">clicks 0 keys 0</p>
+    res.end(`<!doctype html><body style="margin:0;height:100vh"><p id="n">loading</p>
 <script>let c = 0, k = 0; const say = () => (document.getElementById("n").textContent = "clicks " + c + " keys " + k);
-addEventListener("pointerdown", () => { c++; say(); }); addEventListener("keydown", () => { k++; say(); });</script></body>`);
+addEventListener("pointerdown", () => { c++; say(); }); addEventListener("keydown", () => { k++; say(); }); say();</script></body>`);
   });
   await new Promise<void>((r) => site.listen(0, "127.0.0.1", () => r()));
   sitePort = (site.address() as AddressInfo).port;
@@ -247,7 +249,8 @@ test("over an agent block: it takes the composer's focus and gives it back; × c
   await expect(composer).toHaveValue("hi");
 });
 
-/** A browser block on the spec's own page beside `term`: its id and its frame. */
+/** A browser block on the spec's own page beside `term`, listening and
+ * painted: its id and its frame. */
 async function browserBlock(page: Page, term: PaneId) {
   const id = await page.evaluate(
     ({ port, term }) => window.__arugula.client.openBlock({ type: "browser", config: { port }, split: term, local: true } as never),
@@ -256,6 +259,9 @@ async function browserBlock(page: Page, term: PaneId) {
   expect(id).not.toBeNull();
   const frame = page.frameLocator(`[data-pane="${id}"] iframe`);
   await expect(frame.locator("#n")).toHaveText("clicks 0 keys 0", { timeout: 30_000 });
+  // The frame is a process of its own (the block's origin): until it has
+  // drawn, Chrome can send a click at it to the app's page instead.
+  await frame.locator("body").evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
   return { id: id!, frame };
 }
 
