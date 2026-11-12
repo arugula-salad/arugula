@@ -12,7 +12,13 @@ the test stack's `control` profile, the platform on Postgres, the specs
 that start a control, and the Mac checks that sign in to one: real Safari,
 the iOS Simulator, the app in cloud mode and J2a), left this repository for
 the cloud's own. Sections below that still describe them are history: they
-run there now, against this repository at a pinned commit.
+run there now, against this repository at a pinned commit. There, the
+`control` profile goes over this repository's test stack (its boxes,
+`testnet/`) with `just testnet`, and guest_ssh.rs's jump host test became
+its `guest-hop` claim; real Safari is `just macos-safari`, on this
+repository's VM harness. The iOS Simulator (parked, #257), the app in cloud
+mode and J2a's Mac half weren't brought over: they're in this repository's
+history, before the commit that moved control out.
 
 ```sh
 just test        # Rust tests, the web typecheck, e2e-interop
@@ -1042,11 +1048,11 @@ Three tests cover M49, from fastest to most faithful:
   they're still running (#254: a streamed answer, in parts), and `attach`
   with a pipe for stdin types a command, sees its answer and detaches on
   Ctrl-]. `arugula-control`'s own `routing_wire` test checks the join
-  and the signed requests (`scripts/server-cargo test -p arugula-control-base the_cli_joins`).
+  and the signed requests (in the cloud's repository: `the_cli_joins`).
 - `web/e2e/host-menu-control.spec.ts` (`just e2e`): a daemon joined by
   code (approved by the device) has *All your machines…* in its host menu,
   opening control's page; one that isn't joined doesn't.
-- The testnet's `cli` claim (`just testnet test control cli`; Docker):
+- The testnet's `cli` claim (the cloud's `just testnet test cli`; Docker):
   the CLI on the bastion, with no daemon, logs in and reaches box-bare
   directly and box-systemd through the relay; on box-systemd it also
   follows events and a pane's output, and drives `attach` in a
@@ -1060,8 +1066,9 @@ Three tests cover M49, from fastest to most faithful:
   [SSH track's table](#the-ssh-tracks-tests) and
   [testnet/README.md](../testnet/README.md#claims). Beside another
   worktree's stack: `COMPOSE_PROJECT_NAME=illo-j
-  ARUGULA_TESTNET_INNER_NET=10.229.85 ARUGULA_TESTNET_SSH_PORT=22955
-  ARUGULA_TESTNET_CONTROL_PORT=22985 ARUGULA_TESTNET_FAKES_PORT=22986`.
+  ARUGULA_TESTNET_INNER_NET=10.229.85 ARUGULA_TESTNET_SSH_PORT=22955`
+  (and, for the cloud's control profile, `ARUGULA_TESTNET_CONTROL_PORT`,
+  `ARUGULA_TESTNET_FAKES_PORT` and `ARUGULA_TESTNET_GUEST_SSH_PORT`).
 
 ## Phones
 
@@ -1154,7 +1161,7 @@ stack recreate the boxes they use, so give each worktree its own stack
 
 | Test | Also needs | Run |
 |---|---|---|
-| the testnet's claims | `ssh`: nothing more. `control`: node, and the static binaries (`just static aarch64` on Apple silicon, `just static` on x86_64) | `just testnet up ssh` (or `control`), `just testnet test ssh`, `just testnet break ssh`, `just testnet down`. On `control`'s stack the ssh claims run too: CI runs `up control`, then `test` for `ssh` and `control` (rare-nightly.yml, every night and on a release candidate), and `break` for both every night (`testnet-break.yml`) |
+| the testnet's claims | nothing more | `just testnet up ssh`, `just testnet test ssh`, `just testnet break ssh`, `just testnet down`. CI runs `up ssh` and `test ssh` (rare-nightly.yml, every night and on a release candidate), and `break ssh` every night (`testnet-break.yml`). The `control` profile's claims are the cloud repository's, over this stack |
 | `crates/arugulad/tests/integration/ssh.rs`, `reboot.rs` (in `just test`) | the box's static binaries (or `ARUGULA_SSH_BINARIES`); `reboot.rs` also node and Playwright's Chromium in `web/` (`cd web && pnpm install`) | `cargo test -p arugulad --test integration ssh::` (or `reboot::`); they bring the `ssh` profile up themselves when it isn't ready (healthy), and `just test-run` brings it up before the suite (`testnet/suite-up.sh`) |
 | `testnet/measure-tailnet.sh` (S28) | the static binaries | `just testnet measure tailnet`; it brings the `tailnet` profile up itself |
 | `team-swarm-phones.spec.ts`, "a machine on another network, behind netem" (in `just e2e`) | `just static <arch>`; it builds a small Debian image with `tc` and `socat`, names its container and network after `COMPOSE_PROJECT_NAME`, and removes them after | `just e2e` |
@@ -1286,7 +1293,8 @@ a machine in those promises:
 - `git`: a forge's ssh git server, bare repositories behind `git-shell`.
   It knows only the client's key, and the boxes have no key of their own,
   so a push from a box can only have used a forwarded agent.
-- `control` and `fakes` (the `control` profile): `arugula-control` with
+- `control` and `fakes` (the `control` profile, the cloud repository's
+  testnet/compose.yaml over this one's): `arugula-control` with
   its relay, at a private address on the inner network that the boxes
   reach by dialing out, and fake GitHub, Stripe and Web Push.
   `web/fixtures/device-cli.ts` on the host is the person's phone or
@@ -1363,12 +1371,11 @@ command has to bring it, so a wrong token failing at once with no prompt
 - `arugula share --guest` prints a command that works, and `arugula
   guests` lists and revokes.
 
-The relay path, through control's jump host, is tested in control's own
-repository.
+The relay path, through control's jump host, is the cloud repository's
+`guest-hop` testnet claim.
 
 Run them with `cargo test -p arugulad --test integration guest_ssh::`. They skip,
-saying so, if there's no `ssh` on PATH; the relay test fails without
-Docker unless ARUGULA_SKIP_DOCKER=1. `web/e2e/guest-ssh.spec.ts`
+saying so, if there's no `ssh` on PATH. `web/e2e/guest-ssh.spec.ts`
 covers *Invite over ssh…* in the pane menu (under *Share*), on desktop and phone viewports,
 with the same system ssh (`pnpm exec playwright test e2e/guest-ssh.spec.ts`
 in `web/`, after `cargo build -p arugulad` and `pnpm run build`).
@@ -1397,12 +1404,9 @@ just macos up | ssh CMD | down   # the VM by hand
 
 `just macos <test>` builds the debug binaries first, then runs
 `testnet/macos/test.sh <test>`. Each test clones a fresh VM, runs, and
-deletes the clone (`KEEP=1` leaves it running for a look). `tools` boots
-one VM for `safari` and `launchd`, in that order: launchd goes
-last because its `reboot` restarts the VM, it leaves a sudoers drop-in,
-and its user must never have had a GUI session. Safari runs as
-`admin` and installs no service, and what it leaves running is stopped
-before launchd starts, so it can't change its results.
+deletes the clone (`KEEP=1` leaves it running for a look). `tools` is
+launchd's claims in one VM (Safari's, which started a control, are the
+cloud repository's `just macos-safari` now, on this harness).
 
 `launchd` and `app` have a `BREAK=1` form that breaks what each
 check is about, and every check must then fail, as in the testnet's

@@ -45,9 +45,6 @@ case "${1:-}" in
     {
       echo "COMPOSE_PROJECT_NAME=illo-ci-$n"
       echo "ARUGULA_TESTNET_SSH_PORT=$((25000 + n * 10))"
-      echo "ARUGULA_TESTNET_CONTROL_PORT=$((25001 + n * 10))"
-      echo "ARUGULA_TESTNET_FAKES_PORT=$((25002 + n * 10))"
-      echo "ARUGULA_TESTNET_GUEST_SSH_PORT=$((25003 + n * 10))"
       echo "ARUGULA_TESTNET_INNER_NET=10.229.$((100 + n))"
     } >> "$GITHUB_ENV"
     echo "test stack illo-ci-$n"

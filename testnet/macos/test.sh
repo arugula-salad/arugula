@@ -13,7 +13,8 @@
 #   KEEP=1 ...                                 leave the clone running
 #
 # Safari's checks (web/safari), the iOS Simulator's, the app in cloud mode
-# and J2a start a control: they left with it for its own repository.
+# and J2a start a control: they left with it for its own repository, where
+# Safari's run on this harness (vm.sh, need-tart.sh).
 #
 # launchd (S28 #153, M52 #155): a user made with sysadminctl who has never
 # logged in to the GUI, reached only over ssh, installs the daemon with
