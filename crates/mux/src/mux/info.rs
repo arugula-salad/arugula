@@ -180,6 +180,12 @@ impl Daemon {
         seen
     }
 
+    /// The project a pane's session is in.
+    fn session_project(&self, pane: PaneId) -> Option<arugula_core::ProjectRef> {
+        let session = self.session_of(pane)?;
+        self.mux.session(session).ok()?.project.clone()
+    }
+
     pub(super) fn pane_info(&self, p: &PaneHandle) -> PaneInfo {
         let meta = self.meta.get(&p.id).cloned().unwrap_or_default();
         let running = p.running();
@@ -229,6 +235,7 @@ impl Daemon {
             branch: head.as_ref().map(|h| h.branch.clone()),
             head: head.and_then(|h| h.commit),
             project,
+            session_project: self.session_project(p.id),
             cwd,
             command,
             work: Some(work),
@@ -288,6 +295,7 @@ impl Daemon {
             branch: s.project.as_ref().and_then(|p| crate::classify::branch(&p.root)),
             head: None,
             project: s.project,
+            session_project: self.session_project(id),
             cwd: s.cwd,
             file: s.file,
             command: None,
