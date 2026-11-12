@@ -150,13 +150,16 @@ struct ProjectView: View {
             } else {
                 Loaded(load: { try await control.get("/api/projects/\(project.id)/boards", as: BoardList.self) }) { l in
                     List(l.boards) { b in
-                        VStack(alignment: .leading) {
-                            Text(b.title)
-                            if let p = b.progress, let total = p.total, total > 0 {
-                                ProgressView(value: Double(p.done ?? 0), total: Double(total))
-                                Text("\(p.done ?? 0) of \(total) done").font(.caption).foregroundStyle(.secondary)
+                        NavigationLink(value: b) {
+                            VStack(alignment: .leading) {
+                                Text(b.title)
+                                if let p = b.progress, let total = p.total, total > 0 {
+                                    ProgressView(value: Double(p.done ?? 0), total: Double(total))
+                                    Text("\(p.done ?? 0) of \(total) done").font(.caption).foregroundStyle(.secondary)
+                                }
                             }
                         }
+                        .accessibilityIdentifier("board-\(b.title)")
                     }
                     .overlay { if l.boards.isEmpty { Text("No boards").foregroundStyle(.secondary) } }
                 }
@@ -164,6 +167,61 @@ struct ProjectView: View {
         }
         .detailTitle(project.name)
         .navigationDestination(for: Issue.self) { IssueView(issue: $0) }
+        .navigationDestination(for: Board.self) { BoardScreen(control: control, board: $0) }
+        .navigationDestination(for: IssueRef.self) { ref in
+            Loaded(load: { try await control.get("/api/issues/\(ref.id)", as: Issue.self) }) { IssueView(issue: $0) }
+        }
+    }
+}
+
+/// A board: its lanes in order, each with its rows. A row with a native issue
+/// opens it.
+struct BoardScreen: View {
+    let control: Control
+    let board: Board
+
+    var body: some View {
+        Loaded(load: { try await control.get("/api/boards/\(board.id)", as: BoardDetail.self) }) { b in
+            List {
+                if let goal = b.board.goal, !goal.isEmpty {
+                    Section { Text(goal).font(.callout).foregroundStyle(.secondary) }
+                }
+                ForEach(b.zones) { lane in
+                    Section("\(lane.title) · \(lane.rows.count)") {
+                        ForEach(lane.rows) { row in
+                            if row.pointer?.kind == "issue", let id = row.pointer?.id {
+                                NavigationLink(value: IssueRef(id: id)) { BoardRowLabel(row: row, group: b.groupTitle(row.group)) }
+                            } else {
+                                BoardRowLabel(row: row, group: b.groupTitle(row.group))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .detailTitle(board.title)
+    }
+}
+
+struct BoardRowLabel: View {
+    let row: BoardDetail.Row
+    let group: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            if let live = row.live, let title = live.title {
+                Text(live.number.map { "#\($0) \(title)" } ?? title).lineLimit(2)
+                if let note = row.note, !note.isEmpty {
+                    Text(note).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                }
+            } else {
+                Text(row.note.flatMap { $0.isEmpty ? nil : $0 } ?? row.pointer?.url ?? "A note").lineLimit(3)
+            }
+            let tags = [group, row.live?.state].compactMap { $0 }
+            if !tags.isEmpty {
+                Text(tags.joined(separator: " · ")).font(.caption2).foregroundStyle(.tertiary)
+            }
+        }
     }
 }
 

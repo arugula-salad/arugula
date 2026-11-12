@@ -1,4 +1,5 @@
-// Chat: the rooms, and one room. No live stream yet, so an open room looks
+// Chat: the channels and DMs, and one room. Issues', panes' and sessions'
+// threads aren't listed here. No live stream yet, so an open room looks
 // again every few seconds.
 
 import SwiftUI
@@ -12,11 +13,11 @@ struct ChatRoomsView: View {
         NavigationSplitView(columnVisibility: $columns) {
             // Beside an open room, the list keeps its counts current.
             Loaded(load: { try await control.get("/api/chat", as: ChatRooms.self) }, every: .seconds(10)) { r in
-                let rooms = r.rooms.filter { !$0.archived }.sorted { ($0.unread > 0 ? 1 : 0, $0.last) > ($1.unread > 0 ? 1 : 0, $1.last) }
+                let rooms = r.rooms.filter { $0.isConversation && !$0.archived }.sorted { ($0.unread > 0 ? 1 : 0, $0.last) > ($1.unread > 0 ? 1 : 0, $1.last) }
                 List(rooms, selection: $picked) { room in
                     NavigationLink(value: room) {
                         HStack {
-                            Text(room.kind == "channel" ? "# \(room.name)" : room.name).lineLimit(1)
+                            Text(room.title).lineLimit(1)
                             Spacer()
                             if room.unread > 0 && room != picked {
                                 Text("\(room.unread)")
@@ -92,7 +93,7 @@ struct ChatRoomView: View {
                 .background(.bar)
             }
         }
-        .detailTitle(room.kind == "channel" ? "# \(room.name)" : room.name)
+        .detailTitle(room.title)
         .task {
             while !Task.isCancelled {
                 await load()
