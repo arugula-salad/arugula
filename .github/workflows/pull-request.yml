@@ -242,12 +242,42 @@ jobs:
         run: sccache --show-stats
 
   # check.yml's e2e shards, on this run's binaries: as many as the chosen specs fill.
+  # The e2e shards' image on GHCR (scripts/ci-e2e-image, #953): there
+  # already, or built and pushed when the Dockerfile or Playwright changed.
+  e2e-image:
+    name: pr-e2e-image
+    needs: plan
+    if: needs.plan.outputs.e2e == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.image.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: image
+        uses: ./.github/actions/e2e-image
+
   e2e:
     name: pr-e2e (${{ matrix.shard }})
-    needs: [plan, build]
+    needs: [plan, build, e2e-image]
     if: needs.plan.outputs.e2e == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    # Our image (Playwright's plus what setup fetches: #953), so a shard
+    # downloads nothing from the runners' Ubuntu mirror. An empty image (a
+    # fork's PR when the tag is new) runs on the runner as before.
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ${{ needs.e2e-image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
+      options: --user 1001 --init --ipc=host
     strategy:
       fail-fast: false
       matrix:
@@ -271,7 +301,7 @@ jobs:
   # skipped and this passes: the group's verdict is chant-merge-queue.yml's.
   gate:
     name: pr-gate
-    needs: [plan, specs, clippy, test, build, e2e]
+    needs: [plan, specs, clippy, test, build, e2e-image, e2e]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 10

@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# The image the e2e shards run in (packaging/ci-e2e/Dockerfile:
+# Playwright's, with what .github/actions/setup would fetch), on GHCR, so a
+# shard downloads nothing from the runners' Ubuntu mirror
+# (https://app.arugula.io/issues/iss_db99400ba2c2d962bd012371678e2cb7).
+# Tagged by what it's built from: web's @playwright/test (from
+# web/pnpm-lock.yaml) and a hash of the Dockerfile with it, so a new
+# Playwright or a changed Dockerfile is a new tag, built once by the first
+# run that wants it (docs/testing.md, "CI's images").
+#   ci-e2e-image ref     the image's reference, REPO:PLAYWRIGHT-HASH
+#   ci-e2e-image ensure  the same, once GHCR has it: built and pushed when
+#                        it hasn't (docker, logged in to ghcr.io with
+#                        packages: write) if ARUGULA_E2E_IMAGE_PUSH=1. Sets
+#                        `image` in $GITHUB_OUTPUT: empty when GHCR hasn't
+#                        it and this run can't push (a fork's pull request),
+#                        and the shards run on the runner as before.
+# ARUGULA_E2E_IMAGE_REPO moves it (default ghcr.io/arugula-salad/arugula-ci-e2e).
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+repo=${ARUGULA_E2E_IMAGE_REPO:-ghcr.io/arugula-salad/arugula-ci-e2e}
+dockerfile=packaging/ci-e2e/Dockerfile
+
+# The lockfile names a package's version as '@playwright/test@1.63.0': once
+# under packages and once under snapshots.
+versions=$(sed -n "s|^  '@playwright/test@\([0-9][^'(]*\)':.*|\1|p" web/pnpm-lock.yaml | sort -u)
+if [ "$(printf '%s\n' "$versions" | grep -c .)" != 1 ]; then
+  echo "ci-e2e-image: want one @playwright/test in web/pnpm-lock.yaml, found: ${versions:-none}" >&2
+  exit 1
+fi
+playwright=$versions
+hash=$({ cat "$dockerfile"; echo "playwright $playwright"; } | sha256sum | cut -c1-12)
+ref=$repo:$playwright-$hash
+
+output() { [ -z "${GITHUB_OUTPUT:-}" ] || echo "image=$1" >> "$GITHUB_OUTPUT"; }
+summary() { [ -z "${GITHUB_STEP_SUMMARY:-}" ] || echo "$1" >> "$GITHUB_STEP_SUMMARY"; }
+
+case "${1:-}" in
+  ref)
+    echo "$ref"
+    ;;
+  ensure)
+    if docker manifest inspect "$ref" >/dev/null 2>&1; then
+      echo "the e2e image: $ref"
+      summary "The e2e shards' image: \`$ref\`"
+    elif [ "${ARUGULA_E2E_IMAGE_PUSH:-}" != 1 ]; then
+      echo "::warning::no $ref on GHCR yet, and this run can't push it: the e2e shards run on the runner, with apt"
+      summary "No e2e image (\`$ref\` isn't on GHCR, and this run can't push it): the shards run on the runner"
+      output ""
+      exit 0
+    else
+      echo "no $ref yet: building it (Playwright $playwright)"
+      docker build --pull --build-arg PLAYWRIGHT="$playwright" -t "$ref" -f "$dockerfile" packaging/ci-e2e
+      # A run beside this one may push the same tag: the same image (the
+      # Dockerfile COPYs no file), built a moment apart.
+      docker push -q "$ref"
+      summary "The e2e shards' image: \`$ref\`, built and pushed by this run"
+    fi
+    # The jobs pull it with this run's token, but a package that isn't
+    # public takes a setting to reach other repositories' runs and forks.
+    path=${ref#ghcr.io/}
+    [ "$path" != "$ref" ] || { output "$ref"; exit 0; }
+    token=$(curl -fsS 2>/dev/null "https://ghcr.io/token?scope=repository:${path%%:*}:pull" | jq -r .token) || token=
+    code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $token" \
+      -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json' \
+      "https://ghcr.io/v2/${path%%:*}/manifests/${path#*:}") || true
+    if [ "$code" != 200 ]; then
+      echo "::warning::$ref isn't public (an anonymous pull got $code): make the package public in the org's package settings (docs/testing.md, \"CI's images\")"
+    fi
+    output "$ref"
+    ;;
+  *) echo "usage: ci-e2e-image ref | ensure" >&2; exit 2 ;;
+esac
