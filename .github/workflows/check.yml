@@ -134,11 +134,14 @@ jobs:
         if: always() && env.RUSTC_WRAPPER == 'sccache'
         run: sccache --show-stats
 
-  # The box's binaries: for the ssh tests and desktop-xvfb.
+  # The box's binaries: for the ssh tests and desktop-xvfb. On GitHub's
+  # runners, not the arugula-amd64 pool: there it waited up to 14 min for
+  # a pod (shared with the cloud repo's checks) to build for ~1 min, and
+  # desktop-xvfb and the ssh tests waited on it (Arugula #957).
   static:
     needs: changes
     if: needs.changes.outputs.suite == 'true' || needs.changes.outputs.app == 'true'
-    runs-on: arugula-amd64
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
