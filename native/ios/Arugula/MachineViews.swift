@@ -124,7 +124,10 @@ final class MachineSession: ObservableObject {
             watchedTab = tab
             return
         }
-        let gone = (watchedTab?.terminals ?? []).filter { !tab.terminals.contains($0) }
+        // Detach everything first, the tab's own panes too: attached again, each
+        // comes with a fresh snapshot for the views drawing it now (a pane
+        // still attached from being driven would only send what's new).
+        let gone = Array(Set((watchedTab?.terminals ?? []) + tab.terminals))
         if !gone.isEmpty { gone.withUnsafeBufferPointer { aru_link_detach(l, $0.baseAddress, gone.count) } }
         watchedTab = tab
         let panes = tab.terminals
