@@ -94,8 +94,6 @@ struct ProjectBar: View {
             .accessibilityIdentifier("project-switcher")
             if let team = scope.current?.team {
                 Caps("\(team.name) · \(team.role)")
-            } else if scope.current != nil {
-                Caps("personal")
             }
             Spacer(minLength: 0)
             if let problem = scope.problem {
