@@ -27,16 +27,35 @@ struct HomeView: View {
     }
 }
 
-/// A detail's title: large, at the leading edge, on an iPad, where iPadOS puts
-/// the tabs in a bar across the top and an inline title would sit under it.
+/// A detail's title. On an iPhone it's the bar's inline title. On an iPad,
+/// where iPadOS floats the tabs across the top of the bar (and a large title
+/// shrinks back under them as the page scrolls), the bar keeps only its back
+/// button and the title is a heading under it, in the display face.
 struct DetailTitle: ViewModifier {
     let title: String
     @Environment(\.horizontalSizeClass) private var width
 
     func body(content: Content) -> some View {
-        content
-            .navigationTitle(width == .regular ? title.uppercased() : title)
-            .navigationBarTitleDisplayMode(width == .regular ? .large : .inline)
+        if width == .regular {
+            content
+                .navigationTitle("")
+                .navigationBarTitleDisplayMode(.inline)
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    Text(title.uppercased())
+                        .font(Face.display(34))
+                        .foregroundStyle(Palette.fg)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal)
+                        .padding(.bottom, 8)
+                        .background(Palette.void)
+                }
+        } else {
+            content
+                .navigationTitle(title)
+                .navigationBarTitleDisplayMode(.inline)
+        }
     }
 }
 
@@ -195,7 +214,7 @@ struct IssueRow: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text("#\(issue.number)").font(Face.mono(12, "Medium")).foregroundStyle(Palette.dim)
+            Text(verbatim: "#\(issue.number)").font(Face.mono(12, "Medium")).foregroundStyle(Palette.dim)
                 .frame(minWidth: 44, alignment: .leading)
             Text(issue.title).font(Face.ui(15, "Medium")).lineLimit(2)
             Spacer(minLength: 0)
@@ -297,7 +316,7 @@ struct Count: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 4) {
-            Text(of.map { "\(n)/\($0)" } ?? "\(n)").font(Face.display(20)).foregroundStyle(tone.color)
+            Text(verbatim: of.map { "\(n)/\($0)" } ?? "\(n)").font(Face.display(20)).foregroundStyle(tone.color)
             Caps(label)
         }
     }
@@ -348,7 +367,7 @@ struct BoardScreen: View {
             HStack(alignment: .bottom, spacing: 22) {
                 ForEach(b.zones) { lane in
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("\(lane.rows.count)").font(Face.display(40, "Black"))
+                        Text(verbatim: "\(lane.rows.count)").font(Face.display(40, "Black"))
                             .foregroundStyle((LaneKind(rawValue: lane.id)?.tone ?? .muted).color)
                         Caps(lane.title)
                     }
@@ -366,7 +385,7 @@ struct BoardScreen: View {
         return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(lane.title.uppercased()).font(Face.display(22)).foregroundStyle(tone.color)
-                Text("\(lane.rows.count)").font(Face.mono(12, "Bold")).foregroundStyle(Palette.dim)
+                Text(verbatim: "\(lane.rows.count)").font(Face.mono(12, "Bold")).foregroundStyle(Palette.dim)
             }
             Rectangle().fill(tone.color.opacity(0.6)).frame(height: 1)
             if lane.rows.isEmpty {
@@ -396,7 +415,7 @@ struct BoardRowCard: View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 6) {
                 if let live = row.live, let n = live.number {
-                    Text("#\(n)").font(Face.mono(12, "Bold")).foregroundStyle(tone.color)
+                    Text(verbatim: "#\(n)").font(Face.mono(12, "Bold")).foregroundStyle(tone.color)
                     if let kind = live.kind { Caps(kind == "native" ? "issue" : kind) }
                 } else {
                     Caps("note")
@@ -407,7 +426,7 @@ struct BoardRowCard: View {
             if let title = row.live?.title {
                 Text(title).font(Face.ui(15, "SemiBold")).foregroundStyle(Palette.fg).lineLimit(3)
             }
-            if let note = row.note, !note.isEmpty {
+            if let note = row.note, !note.isEmpty, !Self.repeats(note, row.live?.title) {
                 Text(note).font(Face.ui(13)).foregroundStyle(Palette.subtle).lineLimit(row.live == nil ? 5 : 2)
             } else if row.live == nil, let url = row.pointer?.url {
                 Text(url).font(Face.mono(11)).foregroundStyle(Palette.subtle).lineLimit(2)
@@ -415,6 +434,13 @@ struct BoardRowCard: View {
             if let group { Caps(group) }
         }
         .card(tone, glow: live)
+    }
+
+    /// A note that only says the title again (rows brought in from GitHub
+    /// were noted with their title).
+    static func repeats(_ note: String, _ title: String?) -> Bool {
+        guard let title, !title.isEmpty else { return false }
+        return note.lowercased().hasPrefix(title.lowercased())
     }
 }
 
@@ -425,7 +451,7 @@ struct IssueView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 8) {
-                    Text("#\(issue.number)").font(Face.mono(13, "Bold")).foregroundStyle(Palette.accent)
+                    Text(verbatim: "#\(issue.number)").font(Face.mono(13, "Bold")).foregroundStyle(Palette.accent)
                     StateChip(state: issue.state)
                     ForEach(issue.labels, id: \.self) { Caps($0) }
                 }
