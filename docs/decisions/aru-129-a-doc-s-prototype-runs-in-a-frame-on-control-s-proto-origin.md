@@ -33,6 +33,8 @@ supersedes: []
 evidence:
   - title: "#506"
     url: "https://github.com/arugula-salad/arugula/issues/506"
+  - title: "Arugula #947"
+    url: "https://app.arugula.io/issues/iss_87400768f0f2398ca8306a06865ad545"
 decided_by: "alecraso"
 decided_on: "2026-11-01"
 reviews: []
@@ -52,8 +54,21 @@ scripts and styles, drawn in `<iframe sandbox="allow-scripts">`. An
 `allow-top-navigation*`, `allow-popups`, `allow-forms` or `allow-modals`,
 so the frame's origin is opaque: no cookies or storage, no reaching the
 page above, the machine or the account, and no moving the window. The
-iframe also has `referrerpolicy="no-referrer"`, `allow=""` and
-`loading="lazy"`, and a "Prototype · sandboxed" label on its edge.
+iframe also has `referrerpolicy="no-referrer"` and `allow=""`, and a
+"Prototype · sandboxed" label on its edge.
+
+- **The frame loads at once, not lazily (Arugula #947).** It was
+  `loading="lazy"` until WebKit loaded such a frame twice in the same
+  window: put in off the page (a phone parks a hidden block in
+  `#parking`) and then moved into view, it loads at once and then again
+  when the deferred lazy load fires. A second load after the runner has
+  handed the page over reads as the prototype navigating itself, so a
+  Doc on an iPhone said "This prototype tried to leave the page". In a
+  page of its own (a frame put in `#parking`, shown, parked and shown
+  again three times, 20 trials), a window loaded twice in 19 trials in
+  WebKit with `lazy`, in none with `eager`, and in none in Chromium with
+  `lazy`. The cost: a Doc's prototypes load when the Doc does, also one
+  in a hidden pane, rather than when they near the view.
 
 - **One runner page, two ways to load it.** `runner.html` is static. It
   posts `arugula.ready` to its parent, waits for one `arugula.html`

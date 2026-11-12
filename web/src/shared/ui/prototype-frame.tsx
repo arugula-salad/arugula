@@ -234,7 +234,10 @@ export function Prototype({ html, alt }: { html: string; alt: string }) {
         title={title || "prototype"}
         sandbox={SANDBOX}
         allow=""
-        loading="lazy"
+        // Not `loading="lazy"` (Arugula #947): WebKit loads a lazy frame that
+        // was put in off the page (a phone's parked block) and then moved into
+        // view twice in the same window, and the second load, after the
+        // handover, would count as the prototype leaving.
         referrerpolicy="no-referrer"
         style={full || fill ? undefined : { height: `${height}px` }}
         onLoad={() => {
