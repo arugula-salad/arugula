@@ -9,8 +9,8 @@
 //!   `#N`, `owner/repo#N`, `IDENT-N` and `iss_`/`fi_` ids itself.
 //! - **Each link on its own.** One that is refused (a cycle, an item that
 //!   isn't the project's, a link a person made) leaves the rest to land.
-//! - **Which project** is the issues' rule: `project`, else the one this
-//!   clone's GitHub repo is linked to, else the owner's personal project.
+//! - **Which project** is the issues' rule (`Call::chosen_project`), after
+//!   the project its `IDENT-N` items are connected in (`plane_home`).
 
 use arugula_control_wire::boards::{
     LINKS_MAX, LinkBatch, LinkEnds, LinkOutcome, LinksDone, RelationKind, agent_project_relations_batch,
@@ -24,7 +24,7 @@ use crate::mcp::tools::{Call, Out, done};
 
 pub(crate) const TOOL: &str = "link";
 
-pub(crate) const DESCRIPTION: &str = "Say which work comes before which, in Arugula control, at once, as your person's agent on this machine: add or remove links between a project's items. A link is `from` before `to` (the default kind), or blocks, relates, duplicate_of or discovered_from. An item is #N, owner/repo#N, IDENT-N or an iss_/fi_ id. `to` may be a list, one link to each. Up to 50 links in one call; each lands on its own, and the answer is one line per link (added, already there, removed, not there, or refused and why). A cycle of before and blocks links is refused. Only blocks keeps a row out of a board's Ready line. You remove only links your machine made. Needs your person's issues.write grant over the project. Example: {\"add\":[{\"from\":\"#506\",\"to\":\"#507\"}]}.";
+pub(crate) const DESCRIPTION: &str = "Say which work comes before which, in Arugula control, at once, as your person's agent on this machine: add or remove links between a project's items. A link is `from` before `to` (the default kind), or blocks, relates, duplicate_of or discovered_from. An item is #N, owner/repo#N, IDENT-N or an iss_/fi_ id. `to` may be a list, one link to each. Up to 50 links in one call; each lands on its own, and the answer is one line per link (added, already there, removed, not there, or refused and why). A cycle of before and blocks links is refused. Only blocks keeps a row out of a board's Ready line. You remove only links your machine made. Needs your person's issues.write grant over the project: with no project, the one its IDENT-N items are connected in, else the current project, the project you pass, else the one your block was started on (start_agent's issue), else your session's, else the one this clone's GitHub repo is linked to, else your person's default project. Example: {\"add\":[{\"from\":\"#506\",\"to\":\"#507\"}]}.";
 
 #[derive(Deserialize, JsonSchema)]
 pub struct LinkArgs {

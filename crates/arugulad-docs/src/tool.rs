@@ -141,7 +141,7 @@ Every fence is checked before anything is written: a bad chart, tile, drawing or
 pub static DOC: &[Kind] = &[
     Kind {
         name: "new",
-        description: "Make a Doc and its outline (each section's heading and intent). Returns the block and section ids to fill in order. Layout: tabs for many prototypes or long parts; prototype for a whole-screen one. In a team's context (a repo or issue of a team project, or a team machine) a new Doc is the team's, in its project on Arugula; otherwise it stays on this machine.",
+        description: "Make a Doc and its outline (each section's heading and intent). Returns the block and section ids to fill in order. Layout: tabs for many prototypes or long parts; prototype for a whole-screen one. When the current project (your block's, else your session's, else your clone's repo's, else the default) is a team's, a new Doc goes in it on Arugula; else it stays here.",
         schema: schema_for_type::<DocNewArgs>,
         flag: None,
     },
@@ -678,7 +678,7 @@ mod tests {
     #[test]
     fn the_tool_text_says_where_docs_go_and_fits() {
         let new = DOC.iter().find(|k| k.name == "new").unwrap().description;
-        assert!(new.contains("In a team's context (a repo or issue of a team project, or a team machine) a new Doc is the team's, in its project on Arugula; otherwise it stays on this machine."));
+        assert!(new.contains("When the current project (your block's, else your session's, else your clone's repo's, else the default) is a team's, a new Doc goes in it on Arugula; else it stays here."));
         for k in DOC {
             assert!(k.description.chars().count() <= 2048, "{}", k.name);
         }
