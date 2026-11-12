@@ -323,35 +323,65 @@ struct Count: View {
 }
 
 /// A board: its goal, the four lanes' counts, and the lanes with their rows as
-/// cards in each lane's tone. On an iPad the lanes stand side by side and
-/// scroll sideways; on an iPhone they stack. A row with a native issue opens it.
+/// cards in each lane's tone. On an iPad the lanes stand side by side under a
+/// fixed header, each scrolling on its own, so a long lane doesn't make the
+/// page long; on an iPhone they stack. Done shows its latest rows as single
+/// lines until it's opened. A row with a native issue opens it.
 struct BoardScreen: View {
     let control: Control
     let board: Board
     @Environment(\.horizontalSizeClass) private var width
+    @State private var allDone = false
+    @State private var fullGoal = false
+
+    /// How many of Done's rows show before "Show all".
+    private static let doneShown = 8
 
     var body: some View {
         Loaded(load: { try await control.get("/api/boards/\(board.id)", as: BoardDetail.self) }) { b in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
+            if width == .regular {
+                VStack(alignment: .leading, spacing: 14) {
                     header(b)
-                    if width == .regular {
+                    GeometryReader { g in
+                        let gap: CGFloat = 14
+                        let lanes = CGFloat(max(b.zones.count, 1))
+                        let w = max(240, (g.size.width - 32 - gap * (lanes - 1)) / lanes)
                         ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(alignment: .top, spacing: 14) {
-                                ForEach(b.zones) { lane in column(lane, b).frame(width: 290) }
+                            HStack(alignment: .top, spacing: gap) {
+                                ForEach(b.zones) { lane in
+                                    VStack(alignment: .leading, spacing: 10) {
+                                        laneHead(lane)
+                                        ScrollView(showsIndicators: false) {
+                                            LazyVStack(alignment: .leading, spacing: 10) { rows(lane, b) }
+                                                .padding(.bottom, 24)
+                                        }
+                                    }
+                                    .frame(width: w)
+                                }
+                            }
+                            .padding(.horizontal)
+                            .frame(height: g.size.height)
+                        }
+                    }
+                }
+                .padding(.top, 4)
+                .background(Palette.void)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 22) {
+                        header(b)
+                        ForEach(b.zones) { lane in
+                            VStack(alignment: .leading, spacing: 10) {
+                                laneHead(lane)
+                                rows(lane, b)
                             }
                             .padding(.horizontal)
                         }
-                    } else {
-                        VStack(alignment: .leading, spacing: 22) {
-                            ForEach(b.zones) { lane in column(lane, b) }
-                        }
-                        .padding(.horizontal)
                     }
+                    .padding(.vertical)
                 }
-                .padding(.vertical)
+                .background(Palette.void)
             }
-            .background(Palette.void)
         }
         .background(Palette.void)
         .detailTitle(board.title)
@@ -362,7 +392,11 @@ struct BoardScreen: View {
         let n = { (k: LaneKind) in b.zones.first { $0.id == k.rawValue }?.rows.count ?? 0 }
         return VStack(alignment: .leading, spacing: 12) {
             if let goal = b.board.goal, !goal.isEmpty {
-                Text(goal).font(Face.ui(15)).foregroundStyle(Palette.subtle).frame(maxWidth: 720, alignment: .leading)
+                Text(goal).font(Face.ui(14)).foregroundStyle(Palette.subtle)
+                    .lineLimit(fullGoal ? nil : 3)
+                    .frame(maxWidth: 760, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture { fullGoal.toggle() }
             }
             HStack(alignment: .bottom, spacing: 22) {
                 ForEach(b.zones) { lane in
@@ -374,32 +408,78 @@ struct BoardScreen: View {
                 }
             }
             LaneBar(done: n(.done), review: n(.review), doing: n(.doing), total: total)
-                .frame(maxWidth: 720)
+                .frame(maxWidth: 760)
         }
         .padding(.horizontal)
     }
 
-    private func column(_ lane: BoardDetail.Lane, _ b: BoardDetail) -> some View {
-        let kind = LaneKind(rawValue: lane.id)
-        let tone = kind?.tone ?? .muted
-        return VStack(alignment: .leading, spacing: 10) {
+    private func laneHead(_ lane: BoardDetail.Lane) -> some View {
+        let tone = LaneKind(rawValue: lane.id)?.tone ?? .muted
+        return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(lane.title.uppercased()).font(Face.display(22)).foregroundStyle(tone.color)
                 Text(verbatim: "\(lane.rows.count)").font(Face.mono(12, "Bold")).foregroundStyle(Palette.dim)
             }
             Rectangle().fill(tone.color.opacity(0.6)).frame(height: 1)
-            if lane.rows.isEmpty {
-                Caps("Nothing here").padding(.vertical, 6)
-            }
-            ForEach(lane.rows) { row in
-                let card = BoardRowCard(row: row, group: b.groupTitle(row.group), tone: tone, live: kind == .doing)
-                if row.pointer?.kind == "issue", let id = row.pointer?.id {
-                    NavigationLink(value: IssueRef(id: id)) { card }.buttonStyle(.plain)
-                } else {
-                    card
+        }
+    }
+
+    @ViewBuilder
+    private func rows(_ lane: BoardDetail.Lane, _ b: BoardDetail) -> some View {
+        let kind = LaneKind(rawValue: lane.id)
+        let tone = kind?.tone ?? .muted
+        if lane.rows.isEmpty {
+            Caps("Nothing here").padding(.vertical, 6)
+        } else if kind == .done {
+            // Done is the record, not the work: its latest rows, one line each.
+            let latest = lane.rows.sorted { ($0.updated_at ?? 0) > ($1.updated_at ?? 0) }
+            let shown = allDone ? latest : Array(latest.prefix(Self.doneShown))
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(shown) { row in
+                    link(row) { DoneRow(row: row) }
+                    Rectangle().fill(Palette.raised.opacity(0.6)).frame(height: 1)
                 }
             }
+            if lane.rows.count > Self.doneShown {
+                Button(allDone ? "Show the latest \(Self.doneShown)" : "Show all \(lane.rows.count)") { allDone.toggle() }
+                    .font(Face.mono(12, "Bold"))
+                    .foregroundStyle(Palette.ok)
+                    .buttonStyle(.plain)
+            }
+        } else {
+            ForEach(lane.rows) { row in
+                link(row) { BoardRowCard(row: row, group: b.groupTitle(row.group), tone: tone, live: kind == .doing) }
+            }
         }
+    }
+
+    /// A row that opens its native issue; any other row stays put.
+    @ViewBuilder
+    private func link<V: View>(_ row: BoardDetail.Row, @ViewBuilder _ label: () -> V) -> some View {
+        if row.pointer?.kind == "issue", let id = row.pointer?.id {
+            NavigationLink(value: IssueRef(id: id)) { label() }.buttonStyle(.plain)
+        } else {
+            label()
+        }
+    }
+}
+
+/// A done row on one line: a check, its number and its title.
+struct DoneRow: View {
+    let row: BoardDetail.Row
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundStyle(Palette.ok)
+            if let n = row.live?.number {
+                Text(verbatim: "#\(n)").font(Face.mono(11, "Bold")).foregroundStyle(Palette.dim)
+            }
+            Text(row.live?.title ?? row.note ?? "A note")
+                .font(Face.ui(13)).foregroundStyle(Palette.subtle).lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 7)
+        .contentShape(Rectangle())
     }
 }
 
