@@ -1,7 +1,12 @@
 // One navigation: projects, chat and machines are tabs of one app, whichever
-// process behind control answers them.
+// process behind control answers them. Each tab is a list beside what's picked
+// in it on an iPad, and one screen at a time on an iPhone.
 
 import SwiftUI
+import UIKit
+
+/// "iPhone" or "iPad", for what the app says about the device it's on.
+@MainActor var device: String { UIDevice.current.model }
 
 struct HomeView: View {
     let control: Control
@@ -24,6 +29,8 @@ struct HomeView: View {
 
 struct Loaded<T, Content: View>: View {
     var load: () async throws -> T
+    /// Look again this often, for a list that sits beside what it opens.
+    var every: Duration?
     @ViewBuilder var content: (T) -> Content
     @State private var value: T?
     @State private var problem: String?
@@ -38,7 +45,15 @@ struct Loaded<T, Content: View>: View {
                 ProgressView()
             }
         }
-        .task { await refresh() }
+        .task {
+            await refresh()
+            guard let every else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: every)
+                if Task.isCancelled { break }
+                await refresh()
+            }
+        }
         .refreshable { await refresh() }
     }
 
@@ -57,11 +72,13 @@ struct Loaded<T, Content: View>: View {
 
 struct ProjectsView: View {
     let control: Control
+    @State private var picked: Projects.Project?
+    @State private var columns = NavigationSplitViewVisibility.all
 
     var body: some View {
-        NavigationStack {
+        NavigationSplitView(columnVisibility: $columns) {
             Loaded(load: { try await control.get("/api/projects", as: Projects.self) }) { p in
-                List(p.projects) { project in
+                List(p.projects, selection: $picked) { project in
                     NavigationLink(value: project) {
                         VStack(alignment: .leading) {
                             Text(project.name)
@@ -74,8 +91,17 @@ struct ProjectsView: View {
                 }
             }
             .navigationTitle("Projects")
-            .navigationDestination(for: Projects.Project.self) { ProjectView(control: control, project: $0) }
+        } detail: {
+            NavigationStack {
+                if let picked {
+                    ProjectView(control: control, project: picked)
+                } else {
+                    ContentUnavailableView("Pick a project", systemImage: "folder")
+                }
+            }
+            .id(picked?.id)
         }
+        .navigationSplitViewStyle(.balanced)
     }
 }
 
@@ -158,9 +184,9 @@ struct YouView: View {
                         Text(p.me.login).foregroundStyle(.secondary)
                     }
                     Section {
-                        Button("Forget this iPhone", role: .destructive) { model.forget() }
+                        Button("Forget this \(device)", role: .destructive) { model.forget() }
                     } footer: {
-                        Text("Deletes this iPhone's keys. Remove it from your devices in a browser too, and it can't come back with them.")
+                        Text("Deletes this \(device)'s keys. Remove it from your devices in a browser too, and it can't come back with them.")
                     }
                 }
             }

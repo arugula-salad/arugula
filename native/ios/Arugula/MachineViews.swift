@@ -98,11 +98,13 @@ final class MachineSession: ObservableObject {
 
 struct MachinesView: View {
     let control: Control
+    @State private var picked: Machine?
+    @State private var columns = NavigationSplitViewVisibility.all
 
     var body: some View {
-        NavigationStack {
+        NavigationSplitView(columnVisibility: $columns) {
             Loaded(load: { try await control.get("/api/directory", as: Directory.self) }) { d in
-                List(d.daemons) { m in
+                List(d.daemons, selection: $picked) { m in
                     NavigationLink(value: m) {
                         HStack {
                             Circle().fill(m.online == true ? Color.green : Color.secondary).frame(width: 8, height: 8)
@@ -114,8 +116,17 @@ struct MachinesView: View {
                 .overlay { if d.daemons.isEmpty { Text("No machines yet").foregroundStyle(.secondary) } }
             }
             .navigationTitle("Machines")
-            .navigationDestination(for: Machine.self) { MachineView(control: control, machine: $0) }
+        } detail: {
+            NavigationStack {
+                if let picked {
+                    MachineView(control: control, machine: picked)
+                } else {
+                    ContentUnavailableView("Pick a machine", systemImage: "terminal")
+                }
+            }
+            .id(picked?.id)
         }
+        .navigationSplitViewStyle(.balanced)
     }
 }
 
