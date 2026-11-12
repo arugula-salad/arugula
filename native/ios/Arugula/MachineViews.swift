@@ -170,8 +170,7 @@ struct MachineView: View {
             }
         }
         .overlay { if !session.connected && session.problem == nil { ProgressView("Connecting…") } }
-        .navigationTitle(session.machine.name)
-        .navigationBarTitleDisplayMode(.inline)
+        .detailTitle(session.machine.name)
         .task { await session.connect() }
         .onChange(of: session.panes) { _, _ in openPending() }
         .onChange(of: phase) { _, now in
