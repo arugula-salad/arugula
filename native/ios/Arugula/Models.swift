@@ -28,13 +28,41 @@ struct Issue: Decodable, Identifiable, Hashable {
 
 struct IssueList: Decodable { var issues: [Issue] }
 
-struct Board: Decodable, Identifiable {
+struct Board: Decodable, Identifiable, Hashable {
     struct Progress: Decodable { var done: Int?; var total: Int? }
     var id: String
     var title: String
     var goal: String?
     var progress: Progress?
+    static func == (a: Board, b: Board) -> Bool { a.id == b.id }
+    func hash(into h: inout Hasher) { h.combine(id) }
 }
+
+/// One board: its lanes (Next, Doing, Review, Done) with their rows, and its
+/// groups. Only what the board screen shows.
+struct BoardDetail: Decodable {
+    struct Info: Decodable { var title: String; var goal: String? }
+    /// The issue's or PR's state as the board read it.
+    struct Live: Decodable { var kind: String?; var number: Int?; var title: String?; var state: String? }
+    struct Pointer: Decodable { var kind: String; var id: String?; var url: String? }
+    struct Row: Decodable, Identifiable {
+        var id: String
+        var note: String?
+        var group: String?
+        var live: Live?
+        var pointer: Pointer?
+    }
+    struct Lane: Decodable, Identifiable { var id: String; var title: String; var rows: [Row] }
+    struct Group: Decodable, Identifiable { var id: String; var title: String }
+    var board: Info
+    var zones: [Lane]
+    var groups: [Group]?
+
+    func groupTitle(_ id: String?) -> String? { id.flatMap { g in groups?.first { $0.id == g }?.title } }
+}
+
+/// A native issue to load by its id, as a board's row names it.
+struct IssueRef: Hashable { var id: String }
 
 struct BoardList: Decodable { var boards: [Board] }
 
@@ -47,7 +75,27 @@ struct ChatRoom: Decodable, Identifiable, Hashable {
     var mentions: Int
     var archived: Bool
     var writable: Bool
+    var with: Person?
+    var others: [Person]?
+    struct Person: Decodable { var name: String }
     static func == (a: ChatRoom, b: ChatRoom) -> Bool { a.id == b.id }
+
+    /// A channel or a DM: what the chat list shows. An issue's, a pane's or a
+    /// session's thread belongs with its thing.
+    var isConversation: Bool { kind == "channel" || kind == "dm" }
+
+    /// What the list and the room call it: a channel by its name, a DM by
+    /// its name if it was given one, else by the people in it.
+    var title: String {
+        switch kind {
+        case "channel": return "# \(name)"
+        case "dm":
+            if !name.isEmpty { return name }
+            let people = (others ?? []).map(\.name).joined(separator: ", ")
+            return people.isEmpty ? (with?.name ?? "Direct message") : people
+        default: return name
+        }
+    }
     func hash(into h: inout Hasher) { h.combine(id) }
 }
 
