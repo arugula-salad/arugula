@@ -82,7 +82,7 @@ final class MachineSession: ObservableObject {
         // The driven pane first: it takes its bytes even while a watcher has it too.
         var ids: [UInt32] = []
         var terms: [OpaquePointer?] = []
-        if let screen {
+        if let screen, screen.window != nil {
             ids.append(screen.pane)
             terms.append(screen.term)
         }
@@ -311,7 +311,14 @@ struct MachineView: View {
         .onChange(of: opened) { _, now in
             // Driving a pane: its tab is the one to come back to. Back from
             // it: watch that tab again, at the tab's size.
-            if let now { tabID = now.tab } else { session.rewatch() }
+            if let now {
+                tabID = now.tab
+            } else {
+                // The full-screen terminal goes after this: let go of it now,
+                // or it would take the pane's fresh snapshot.
+                session.screen = nil
+                session.rewatch()
+            }
         }
         .onDisappear { if opened == nil { session.disconnect() } }
         .fullScreenCover(item: $opened) { pane in
