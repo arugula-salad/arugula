@@ -4481,6 +4481,54 @@
       }
     },
     "/api/projects": {
+      "post": {
+        "operationId": "POST_api_projects",
+        "x-arugula-clients": [
+          "page",
+          "cli",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectCreate"
+              }
+            }
+          }
+        }
+      },
       "get": {
         "operationId": "GET_api_projects",
         "x-arugula-clients": [
@@ -4514,6 +4562,66 @@
                 "schema": {
                   "$ref": "#/components/schemas/Projects"
                 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{project}": {
+      "patch": {
+        "operationId": "PATCH_api_projects_project",
+        "x-arugula-clients": [
+          "page",
+          "cli",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectPatch"
               }
             }
           }
@@ -11930,6 +12038,29 @@
         ],
         "type": "object"
       },
+      "ProjectCreate": {
+        "description": "`POST /api/projects` (Arugula #892): a new project. Only a team's owners\nmake one for the team; anyone makes their own. Who may read and write it\nis its owner's: a team's roles, or only its person.",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "owner": {
+            "$ref": "#/components/schemas/ProjectOwnerRef"
+          },
+          "slug": {
+            "description": "Its short name in links; when not given, control makes one from the\nname. Refused if the owner has a project with it already.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "owner"
+        ],
+        "type": "object"
+      },
       "ProjectMember": {
         "properties": {
           "account": {
@@ -11992,6 +12123,71 @@
             "type": "object"
           }
         ]
+      },
+      "ProjectOwnerRef": {
+        "description": "An owner named by what it is, without its name: a team by its id, or\nthe reader's own account.",
+        "oneOf": [
+          {
+            "description": "A team the reader owns.",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "const": "team",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "The reader's own account.",
+            "properties": {
+              "kind": {
+                "const": "personal",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "ProjectPatch": {
+        "description": "`PATCH /api/projects/{project}` (Arugula #892): what changes, the rest\nas it was. Anyone who may write the project renames it. Only its owner\narchives it or moves it: a team's owners, or its person for their own;\na move needs the same of the new owner. Access stays the owner's, so a\nmove gives it to the new one's people. Its issues keep their numbers,\nand its Docs, boards, linked repos and workspaces go with it.",
+        "properties": {
+          "archived": {
+            "description": "Archive it, or bring it back.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectOwnerRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Move it to this owner."
+          }
+        },
+        "type": "object"
       },
       "ProjectTeam": {
         "properties": {
