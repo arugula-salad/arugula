@@ -4664,6 +4664,41 @@ project: string, id: string,
 machine_name: string | null, };
 
 /**
+ * A team Doc's public link (Arugula #871). The platform keeps its key with
+ * the Doc, and gives it only to those who read the Doc; control holds the
+ * ciphertext and never the key. The URL is `<viewer>/<id>#k=<key>`, the
+ * viewer being `/control.json`'s `doc_viewer`.
+ */
+export type ProjectDocPublic = { 
+/**
+ * The link's id at control: 32 lower-case hex digits.
+ */
+id: string, 
+/**
+ * The link's key, base64url without padding: 32 bytes.
+ */
+key: string, 
+/**
+ * The version control serves; 0 while the first one isn't uploaded.
+ */
+ver: number, 
+/**
+ * When the served version was made (ms); 0 while there is none.
+ */
+updated_at: number, 
+/**
+ * The Doc changed since the served version was sealed.
+ */
+behind: boolean, 
+/**
+ * The address anyone can open, `<viewer>/<id>#k=<key>`; empty when this
+ * control keeps no shared Docs, or from an older platform. The platform
+ * page can't read `/control.json` (the platform's host answers none of
+ * the hub's), so the platform says where the viewer is.
+ */
+url: string, };
+
+/**
  * One section: pending (`body` null) until it's written.
  */
 export type ProjectDocSection = { 
@@ -4735,7 +4770,12 @@ deleter: boolean,
  * The Doc's page on the platform's page, which the team opens. An older
  * platform sends none.
  */
-link: string | null, };
+link: string | null, 
+/**
+ * The Doc's public link, when it has one (Arugula #871). Left out for
+ * an agent session, which is never given the key.
+ */
+public?: ProjectDocPublic, };
 
 /**
  * `PUT` [`PROJECT_DOC`]: what changes. `title` renames it, `layout` lays it out. With `section`,
