@@ -27,7 +27,7 @@ async function snapshotOf(project: string, v: ProjectDocView): Promise<{ manifes
   return { manifest, blobs };
 }
 
-async function control(method: string, path: string, body?: BodyInit, json = false): Promise<void> {
+async function send(method: string, path: string, body?: BodyInit, json = false): Promise<void> {
   const res = await platformFetch(path, {
     method,
     headers: json ? { "Content-Type": "application/json" } : {},
@@ -47,24 +47,18 @@ async function control(method: string, path: string, body?: BodyInit, json = fal
 export async function sharePublic(project: string, id: string): Promise<ProjectDocPublic> {
   const v = await projectDocs.get(project, id);
   const link = await projectDocs.makePublic(project, id);
+  // The platform passes the parts on to control: the page's host reaches nothing of the hub's.
+  const doc = `/api/projects/${encodeURIComponent(project)}/docs/${encodeURIComponent(id)}`;
   const { manifest, blobs } = await snapshotOf(project, v);
   const ver = link.ver + 1;
   const parts = await sealParts(fromBase64Url(link.key), link.id, ver, snapshotBytes(manifest, blobs));
   for (let i = 0; i < parts.length; i++) {
-    await control("PUT", `/api/doc-links/${link.id}/v/${ver}/parts/${i}`, parts[i] as BodyInit);
+    await send("PUT", `${doc}/public/v/${ver}/parts/${i}`, parts[i] as BodyInit);
   }
   const size = parts.reduce((n, p) => n + p.length, 0);
-  await control("POST", `/api/doc-links/${link.id}/v/${ver}/commit`, JSON.stringify({ parts: parts.length, size }), true);
+  await send("POST", `${doc}/public/v/${ver}/commit`, JSON.stringify({ parts: parts.length, size }), true);
   return projectDocs.servedPublic(project, id, ver, v.doc.rev);
 }
 
-/** Take the link down: control first (a 404 is as good), then the platform's
- * record, so a failure between them leaves a link that can be revoked again. */
-export async function revokePublic(project: string, id: string, p: ProjectDocPublic): Promise<void> {
-  try {
-    await control("DELETE", `/api/doc-links/${p.id}`);
-  } catch (e) {
-    if (!(e instanceof DocError && e.status === 404)) throw e;
-  }
-  await projectDocs.forgetPublic(project, id);
-}
+/** Take the link down: the platform has control delete it, then forgets the key. */
+export const revokePublic = (project: string, id: string): Promise<unknown> => projectDocs.forgetPublic(project, id);

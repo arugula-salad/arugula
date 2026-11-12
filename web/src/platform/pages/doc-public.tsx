@@ -57,7 +57,7 @@ export function PublicLinkBar({ project, view, reload }: { project: string; view
             </>
           )}
           {view.writer && (
-            <button type="button" class="secondary small danger" disabled={busy} onClick={() => void run(() => revokePublic(project, view.doc.id, link), "The link no longer opens")} data-doc-public-stop>
+            <button type="button" class="secondary small danger" disabled={busy} onClick={() => void run(() => revokePublic(project, view.doc.id), "The link no longer opens")} data-doc-public-stop>
               Stop sharing
             </button>
           )}

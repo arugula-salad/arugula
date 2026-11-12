@@ -84,6 +84,15 @@ pub const PROJECT_DOC_COPY: &str = "/api/projects/{project}/docs/{id}/copies/{to
 /// session never makes or revokes one. Any member who reads the Doc sees the
 /// link in its [`DocView`].
 pub const PROJECT_DOC_PUBLIC: &str = "/api/projects/{project}/docs/{id}/public";
+/// `PUT` the raw bytes of one sealed part (at most 1 MiB) of version `ver`
+/// of a team Doc's public link, for the page: it can't reach the hub's own
+/// `/api/doc-links/…` (the platform's host answers none of the hub's), so the
+/// platform checks that the person writes the Doc and passes it on. The
+/// answers are the hub's: 200 `{stored}`, or its refusal with a `reason`.
+pub const PROJECT_DOC_PUBLIC_PART: &str = "/api/projects/{project}/docs/{id}/public/v/{ver}/parts/{n}";
+/// `POST` `{parts, size}`: commit version `ver` once its parts are put, as
+/// [`PROJECT_DOC_PUBLIC_PART`]; then `POST` [`PROJECT_DOC_PUBLIC`] says it.
+pub const PROJECT_DOC_PUBLIC_COMMIT: &str = "/api/projects/{project}/docs/{id}/public/v/{ver}/commit";
 /// The same for a machine's agents, signed by the machine: `docs.write`
 /// over the project, and the owner an owner or editor.
 pub const AGENT_PROJECT_DOC_PUBLIC: &str = "/api/daemon/projects/{project}/docs/{doc}/public";
