@@ -67,6 +67,16 @@ type HostSays = Pick<HostInfo, "name" | "tailnet_url" | "tailnet_seen" | "contro
 };
 
 /** `GET /api/setup`. */
+/** #906: Arugula's hooks are only partly in Claude Code's settings
+ * (`arugula --json hooks status`'s `partial`, as the daemon passes it on). */
+export interface HooksPartial {
+  missing: string[];
+  outdated: string[];
+  /** Some of the read-only permission rules, not all. */
+  rules: boolean;
+  says: string;
+}
+
 interface Setup {
   tailscale: {
     state: "missing" | "stopped" | "needs-login" | "running";
@@ -96,8 +106,10 @@ interface Setup {
   };
   /** `hooks`: Arugula's hooks are in Claude Code's settings (`arugula
    * hooks status`; absent from an older daemon). */
-  /** `hooks_blocked` (#395): what stops Claude Code running them, said for a person. */
-  claude: { installed: boolean; tools: boolean; hooks?: boolean; hooks_blocked?: string };
+  /** `hooks_blocked` (#395): what stops Claude Code running them, said for a person.
+   * `hooks_partial` (#906): only some of them (or of the read-only rules) are
+   * there: which, and `says`, the sentence with the command that finishes it. */
+  claude: { installed: boolean; tools: boolean; hooks?: boolean; hooks_blocked?: string; hooks_partial?: HooksPartial };
   /** #335: each adapter, with `found` (its agent's CLI is here). Absent
    * from an older daemon. */
   adapters?: Adapter[];
@@ -412,7 +424,7 @@ function GettingStarted({ client, section, close }: { client: Client | null; sec
  * the hooks'.) */
 function claudeReady(setup: AgentsSetup | null): boolean {
   const a = setup?.adapters?.find((x) => x.kind === "claude");
-  return !!setup?.claude.tools && setup.claude.hooks !== false && (!a || adapterReady(a));
+  return !!setup?.claude.tools && setup.claude.hooks !== false && !setup.claude.hooks_partial && (!a || adapterReady(a));
 }
 
 function Welcome({ name, client, setup, manual, refresh }: { name: string; client: Client | null; setup: AgentsSetup | null; manual: boolean; refresh: () => Promise<void> }) {
@@ -833,6 +845,17 @@ function UseClaude({ setup, refresh }: { setup: AgentsSetup | null; refresh: () 
   );
 }
 
+/** A sentence the CLI wrote, its `commands` as code. */
+export function withCode(text: string): preact.ComponentChildren {
+  return text.split("`").map((t, i) => (i % 2 ? <code key={i}>{t}</code> : t));
+}
+
+/** #906: the events a partial install lacks, for the check's line: " (SessionStart missing)". */
+function partialWhat(p: HooksPartial): string {
+  const what = [p.missing.length ? `${p.missing.join(", ")} missing` : "", p.outdated.length ? `${p.outdated.join(", ")} out of date` : ""].filter(Boolean);
+  return what.length ? ` (${what.join("; ")})` : "";
+}
+
 function adapterCheck(a: Adapter): "done" | "wait" | "fail" | "todo" {
   if (adapterReady(a)) return "done";
   return a.state === "no_node" ? "fail" : a.outdated ? "wait" : "todo";
@@ -916,13 +939,15 @@ function Agents({ client, setup, manual, refresh, close }: { client: Client | nu
                     </span>
                   </Check>
                   {cl?.hooks !== undefined && (
-                    <Check state={cl.hooks_blocked ? "fail" : cl.hooks ? "done" : "todo"}>
+                    <Check state={cl.hooks_blocked ? "fail" : cl.hooks_partial ? "wait" : cl.hooks ? "done" : "todo"}>
                       <span data-start-hooks>
                         {cl.hooks_blocked
                           ? "Questions on cards: Claude Code won't run Arugula's hooks here"
-                          : cl.hooks
-                            ? "Questions on cards: Claude Code has Arugula's hooks"
-                            : "Questions on cards: Arugula's hooks aren't in Claude Code's settings yet"}
+                          : cl.hooks_partial
+                            ? `Questions on cards: Arugula's hooks are only partly installed${partialWhat(cl.hooks_partial)}`
+                            : cl.hooks
+                              ? "Questions on cards: Claude Code has Arugula's hooks"
+                              : "Questions on cards: Arugula's hooks aren't in Claude Code's settings yet"}
                       </span>
                     </Check>
                   )}
@@ -932,6 +957,13 @@ function Agents({ client, setup, manual, refresh, close }: { client: Client | nu
                   <p class="start-dim" data-start-hooks-blocked>
                     {cl.hooks_blocked}
                   </p>
+                ) : null}
+                {/* #906: some there, some not: which, and the one command (the button below runs it too). */}
+                {!cl?.hooks_blocked && cl?.hooks_partial ? (
+                  <div data-start-hooks-partial>
+                    <p class="start-dim">{withCode(cl.hooks_partial.says)}</p>
+                    <CopyText text="arugula hooks install" />
+                  </div>
                 ) : null}
                 <UseClaude setup={setup} refresh={refresh} />
                 {/* Where the hooks are offered, the plugin too (Discovery 10). */}
