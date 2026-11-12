@@ -4,7 +4,6 @@ name: chant-merge-queue
 # The merge queue's verdict: passes when every phase ci.green requires passed
 # on the group's commit, judged as chant ci tick judges. Require its job,
 # chant-verdict, in the branch's ruleset.
-# A failed job's workflow run is re-run up to 1 time first (ci.green.mergeQueue.retries).
 on:
   merge_group:
     types:
@@ -13,7 +12,6 @@ on:
 permissions:
   contents: read
   checks: read
-  actions: write
 
 jobs:
   chant-verdict:
