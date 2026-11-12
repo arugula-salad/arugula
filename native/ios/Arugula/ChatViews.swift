@@ -44,7 +44,7 @@ struct ChatRoomsView: View {
             .id(picked?.id)
         }
         .navigationSplitViewStyle(.balanced)
-        .id(scope.current?.id)
+        .onChange(of: scope.current?.id) { _, _ in picked = nil }
     }
 }
 
