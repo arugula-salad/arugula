@@ -168,6 +168,11 @@ pub const AGENT_BOARD_ROW_ASK: &str = "/api/daemon/boards/{id}/rows/{row}/ask";
 /// (`boards.write`); the mark says an agent made it.
 pub const AGENT_BOARD_ROW_HOLD: &str = "/api/daemon/boards/{id}/rows/{row}/hold";
 
+/// `POST` [`ReleaseSessionHold`]: the session that holds an issue's row
+/// (Arugula #765) lets it go. The hold is the issue's, so every board that
+/// has the issue shows it gone.
+pub const AGENT_BOARD_ROW_SESSION_HOLD_RELEASE: &str = "/api/daemon/boards/{id}/rows/{row}/session-hold/release";
+
 /// `POST` [`ResolveItems`]: an agent asks which issues and PRs of the board's
 /// project its references (`#N`, `owner/repo#N`, `IDENT-N`) name, before it
 /// adds or attaches them (`boards.write`). Nothing changes.
@@ -276,6 +281,11 @@ pub fn agent_board_row_ask(id: &str, row: &str) -> String {
 /// [`AGENT_BOARD_ROW_HOLD`] for `row` of `id`.
 pub fn agent_board_row_hold(id: &str, row: &str) -> String {
     format!("/api/daemon/boards/{id}/rows/{row}/hold")
+}
+
+/// [`AGENT_BOARD_ROW_SESSION_HOLD_RELEASE`] for `row` of `id`.
+pub fn agent_board_row_session_hold_release(id: &str, row: &str) -> String {
+    format!("/api/daemon/boards/{id}/rows/{row}/session-hold/release")
 }
 
 /// [`AGENT_BOARD_RESOLVE`] for `id`.
@@ -860,6 +870,49 @@ pub struct BoardLead {
     pub session: String,
     /// When the session took the lead.
     pub at: u64,
+}
+
+/// The session that holds an issue's row (Arugula #765): the one that last
+/// started an agent on it, or took it. It is the issue's, so a row on two
+/// boards shows the same holder, and it lasts until the issue closes or the
+/// session lets it go. The same shape as [`BoardLead`].
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct SessionHold {
+    pub machine: String,
+    /// The machine's name now; empty while it can't be told.
+    #[serde(default)]
+    pub machine_name: String,
+    /// The session's name, as its machine's daemon matches it.
+    pub session: String,
+    /// When the session took the row.
+    pub at: u64,
+}
+
+impl SessionHold {
+    /// The machine as people read it: its name, else its id.
+    pub fn machine_label(&self) -> &str {
+        if self.machine_name.is_empty() { &self.machine } else { &self.machine_name }
+    }
+
+    /// Whether `machine`'s session of this name is the holder (names match
+    /// without case, as a mention's do).
+    pub fn is(&self, machine: &str, session: &str) -> bool {
+        self.machine == machine && self.session.eq_ignore_ascii_case(session)
+    }
+}
+
+/// [`AGENT_BOARD_ROW_SESSION_HOLD_RELEASE`]'s body: the calling session, by
+/// its name. Only the holding session may let go: another's is refused.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardReleaseSessionHold"))]
+#[serde(deny_unknown_fields)]
+pub struct ReleaseSessionHold {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub session: Option<String>,
 }
 
 /// The epic a board follows: its children are the board's rows, and the
@@ -1686,6 +1739,12 @@ pub struct AttachBlock {
     /// under `earlier`; without it the attach is refused, 409 `claimed`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub take: bool,
+    /// The starting session's name (Arugula #765): it holds the issue's row
+    /// from now (with `take`, moved from whoever held it, who is told).
+    /// Absent for a caller with no name: no hold is made.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub session: Option<String>,
 }
 
 /// [`AGENT_PROJECT_CLAIM_CHECK`]'s body: the issue as the starter wrote it
@@ -1697,6 +1756,11 @@ pub struct AttachBlock {
 pub struct CheckClaim {
     pub issue: String,
     pub machine: String,
+    /// The asking session's name (Arugula #765): another session's hold on
+    /// the row, on this machine or another, is a claim; its own is not.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub session: Option<String>,
 }
 
 /// [`AGENT_PROJECT_CLAIM_CHECK`]'s answer: `held` says who holds the row
@@ -1841,6 +1905,11 @@ pub struct Row {
     /// (Arugula #843). A live one puts the row in Doing.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sessions: Vec<RowSession>,
+    /// The session that holds the row's issue (Arugula #765), if one does.
+    /// Never set on a row whose issue is closed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub held: Option<SessionHold>,
     /// Where the row falls in the board's order (Arugula #762): 1 plus the
     /// highest step of the open rows that come before it, worked out on
     /// every read and never stored. Absent for a row with no issue or PR,
@@ -2296,6 +2365,10 @@ fn lane_text<'a>(out: &mut String, title: &str, rows: impl Iterator<Item = &'a R
             let who = b.title.as_deref().unwrap_or("an agent");
             *out += &format!("      {}\n", fit(&format!("claimed by {who}"), TEXT_WIDTH - 6));
         }
+        if let Some(h) = &r.held {
+            *out +=
+                &format!("      {}\n", fit(&format!("held by {} on {}", h.session, h.machine_label()), TEXT_WIDTH - 6));
+        }
         if !r.attachments.is_empty() {
             let with: Vec<String> = r
                 .attachments
@@ -2684,6 +2757,7 @@ mod tests {
             asked: vec![],
             relations: vec![],
             sessions: vec![],
+            held: None,
             step: None,
             place: None,
             live: None,
@@ -2867,6 +2941,22 @@ mod tests {
         );
         assert_eq!(text, want);
         assert!(text.lines().all(|l| l.chars().count() <= TEXT_WIDTH), "{text}");
+    }
+
+    /// The session that holds a row is named under it, by its machine's name
+    /// (its id while that is unknown), and the same session is the holder
+    /// whatever case its name is written in (Arugula #765).
+    #[test]
+    fn the_text_says_which_session_holds_a_row() {
+        let mut held = row(Pointer::Issue { id: "iss_bb11".into() }, Lane::Next, "Parser");
+        held.held =
+            Some(SessionHold { machine: "m1".into(), machine_name: "geek".into(), session: "ux".into(), at: 5 });
+        let text = render(&view(lanes(vec![(Lane::Next, vec![held.clone()])])));
+        assert!(text.contains("iss_bb11           Parser\n      held by ux on geek\n"), "{text}");
+        held.held.as_mut().unwrap().machine_name.clear();
+        assert!(render(&view(lanes(vec![(Lane::Next, vec![held.clone()])]))).contains("held by ux on m1\n"));
+        let h = held.held.unwrap();
+        assert!(h.is("m1", "UX") && !h.is("m2", "ux") && !h.is("m1", "ui"));
     }
 
     /// The session that leads a board is named under its goal, by its

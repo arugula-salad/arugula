@@ -217,6 +217,13 @@
         "pane": {
           "type": "string"
         },
+        "session": {
+          "description": "The starting session's name (Arugula #765): it holds the issue's row\nfrom now (with `take`, moved from whoever held it, who is told).\nAbsent for a caller with no name: no hold is made.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "take": {
           "description": "Take a row that another machine's block holds, folding that block\nunder `earlier`; without it the attach is refused, 409 `claimed`.",
           "type": "boolean"
@@ -966,6 +973,13 @@
         },
         "machine": {
           "type": "string"
+        },
+        "session": {
+          "description": "The asking session's name (Arugula #765): another session's hold on\nthe row, on this machine or another, is a claim; its own is not.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -2268,6 +2282,19 @@
       ],
       "type": "string"
     },
+    "ReleaseSessionHold": {
+      "additionalProperties": false,
+      "description": "[`AGENT_BOARD_ROW_SESSION_HOLD_RELEASE`]'s body: the calling session, by\nits name. Only the holding session may let go: another's is refused.",
+      "properties": {
+        "session": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "Resolution": {
       "description": "One reference, resolved: the `pointer` it names, or `why` it names none\n(nothing by that number, or several linked repos have it and the project\nhas no native issue of it: the answer names them).",
       "properties": {
@@ -2396,6 +2423,17 @@
             "string",
             "null"
           ]
+        },
+        "held": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SessionHold"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The session that holds the row's issue (Arugula #765), if one does.\nNever set on a row whose issue is closed."
         },
         "id": {
           "type": "string"
@@ -2673,6 +2711,35 @@
         "state",
         "live",
         "branch"
+      ],
+      "type": "object"
+    },
+    "SessionHold": {
+      "description": "The session that holds an issue's row (Arugula #765): the one that last\nstarted an agent on it, or took it. It is the issue's, so a row on two\nboards shows the same holder, and it lasts until the issue closes or the\nsession lets it go. The same shape as [`BoardLead`].",
+      "properties": {
+        "at": {
+          "description": "When the session took the row.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "machine": {
+          "type": "string"
+        },
+        "machine_name": {
+          "default": "",
+          "description": "The machine's name now; empty while it can't be told.",
+          "type": "string"
+        },
+        "session": {
+          "description": "The session's name, as its machine's daemon matches it.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "machine",
+        "session",
+        "at"
       ],
       "type": "object"
     },

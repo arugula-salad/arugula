@@ -47,7 +47,7 @@ import { DocLink, DocPicker } from "./docs";
 import "./bar.css";
 import "./boards.css";
 import { groupFold, groupLaneFold, isFolded, laneFold, loadFolds, saveFolds, type Folds } from "./folds";
-import { MOVE_LANES, closeName, closedWithLine, doneRefusal, laneOfZone, laneSetLine, PICK_DELAY_MS, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, PICK_LIMIT, assigneesLine, GOAL_MAX, answerReady, askWaitingLine, blockFacts, BLOCK_LABEL, chipOf, settledFacts, debounced, earlierLine, epicLine, holdsRow, groupLine, isCard, laneCount, liveWord, marksOf, notFinishedLine, type NotFinished, needsDot, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, relationLine, RELATION_KINDS, sections, sourceLine, sourceLinked, leftOutLine, stepActive, workLabel, findLine, type BoardFilter, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, topAndMore, initialsOf } from "./text";
+import { MOVE_LANES, closeName, closedWithLine, doneRefusal, laneOfZone, laneSetLine, PICK_DELAY_MS, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, PICK_LIMIT, assigneesLine, GOAL_MAX, answerReady, askWaitingLine, blockFacts, BLOCK_LABEL, chipOf, settledFacts, debounced, earlierLine, epicLine, holdsRow, heldChip, groupLine, isCard, laneCount, liveWord, marksOf, notFinishedLine, type NotFinished, needsDot, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, relationLine, RELATION_KINDS, sections, sourceLine, sourceLinked, leftOutLine, stepActive, workLabel, findLine, type BoardFilter, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, topAndMore, initialsOf } from "./text";
 
 const STALE_SAID = "That changed while you were editing, so the board is read again. Make your change again if it still applies.";
 
@@ -1073,6 +1073,7 @@ function Row({
   const stalledWords = marks.stalled?.words;
   const earlier = r.attachments.filter((a) => marks.earlier.has(a.id));
   const current = r.attachments.filter((a) => !marks.earlier.has(a.id));
+  const held = heldChip(r);
   const tone = cardTone(r);
   // Proof attached to the row is its "Proof" link (`AttachmentChip`); the tag stands for proof that has none (a merged PR, CI), and for none.
   const proofLink = mark && (!mark.proven || !r.attachments.some((a) => a.role === "proof")) && (
@@ -1193,11 +1194,16 @@ function Row({
               {closedWithLine(r.live)}
             </div>
           )}
-          {(current.length > 0 || (r.sessions ?? []).length > 0) && (
+          {(current.length > 0 || (r.sessions ?? []).length > 0 || held) && (
             <div class="board-line board-chips" data-board-attachments>
               {current.map((a) => (
                 <AttachmentChip key={a.id} a={a} platform={platform} stalled={stalledWords} />
               ))}
+              {held && (
+                <Chip class="dim" title={held.title} data-board-held={r.held?.session}>
+                  {held.text}
+                </Chip>
+              )}
               {(r.sessions ?? []).map((x) => (
                 <SessionChip key={x.session} s={x} project={project} />
               ))}

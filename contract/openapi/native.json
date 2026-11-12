@@ -12250,6 +12250,17 @@
               "null"
             ]
           },
+          "held": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionHold"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The session that holds the row's issue (Arugula #765), if one does.\nNever set on a row whose issue is closed."
+          },
           "id": {
             "type": "string"
           },
@@ -13310,6 +13321,35 @@
           "ok",
           "command",
           "output_tail"
+        ],
+        "type": "object"
+      },
+      "SessionHold": {
+        "description": "The session that holds an issue's row (Arugula #765): the one that last\nstarted an agent on it, or took it. It is the issue's, so a row on two\nboards shows the same holder, and it lasts until the issue closes or the\nsession lets it go. The same shape as [`BoardLead`].",
+        "properties": {
+          "at": {
+            "description": "When the session took the row.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "machine": {
+            "type": "string"
+          },
+          "machine_name": {
+            "default": "",
+            "description": "The machine's name now; empty while it can't be told.",
+            "type": "string"
+          },
+          "session": {
+            "description": "The session's name, as its machine's daemon matches it.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine",
+          "session",
+          "at"
         ],
         "type": "object"
       },
