@@ -65,10 +65,12 @@ fn status_says_what_is_left_of_a_partial_install() {
     assert_eq!(v["partial"]["outdated"], serde_json::json!([]), "{v}");
     assert_eq!(v["partial"]["rules"], true, "{v}");
     let says = v["partial"]["says"].as_str().unwrap();
+    // `~/` and then the path as this OS writes it (a backslash on Windows).
+    let file = format!("~/{}", Path::new(".claude").join("settings.json").display());
     assert_eq!(
         says,
         format!(
-            "Arugula's hooks are only partly installed in ~/.claude/settings.json: SessionStart is missing and some read-only permission rules are missing. {FINISH}"
+            "Arugula's hooks are only partly installed in {file}: SessionStart is missing and some read-only permission rules are missing. {FINISH}"
         )
     );
     let (_, text) = arugula(&home, &managed, &["hooks", "status"]);
