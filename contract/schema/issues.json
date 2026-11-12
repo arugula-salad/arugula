@@ -16,6 +16,14 @@
             "string",
             "null"
           ]
+        },
+        "session_project": {
+          "default": null,
+          "description": "The project the agent's session is in. An older control ignores it\nand answers by `repo`, which the machine sends beside it.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "type": "object"
@@ -460,6 +468,17 @@
           },
           "type": "array"
         },
+        "rule": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/IssueHomeRule"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Which step chose the project, for [`AGENT_ISSUE_HOME`]. An older\ncontrol sends none; the machine then says its own."
+        },
         "team": {
           "default": false,
           "description": "A team's project, not its owner's personal one: where a team's Docs\nlive (Arugula #862). An older control sends none, which a machine\nreads as not a team's.",
@@ -487,6 +506,36 @@
         }
       },
       "type": "object"
+    },
+    "IssueHomeRule": {
+      "description": "The steps that choose an agent's project, in order: the first that has\none answers.",
+      "oneOf": [
+        {
+          "const": "explicit",
+          "description": "The call named it.",
+          "type": "string"
+        },
+        {
+          "const": "block",
+          "description": "The agent's block was started on one of its issues (`work.project`).",
+          "type": "string"
+        },
+        {
+          "const": "session",
+          "description": "The agent's session is in it.",
+          "type": "string"
+        },
+        {
+          "const": "repo",
+          "description": "The clone's GitHub repo is linked to it.",
+          "type": "string"
+        },
+        {
+          "const": "default",
+          "description": "None of those: the owner's default project.",
+          "type": "string"
+        }
+      ]
     },
     "IssueList": {
       "properties": {

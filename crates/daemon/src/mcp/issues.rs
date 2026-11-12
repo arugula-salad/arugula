@@ -5,14 +5,22 @@
 //! writes and `forge_read` are `arugulad-control-tools`' (#232).
 //!
 //! **Which issue:** `#12` is a number in the current project, `iss_…` an
-//! issue anywhere the owner reads. **The current project** is the one the
-//! call names (`project`: an id, or `personal`), else the issue's project
-//! when the caller is an agent `start_agent` started on one (its block's
-//! `work.project`, Arugula #771), else the one the caller's clone's GitHub
-//! repo is linked to, else control's default: the owner's personal project,
-//! or a team machine's team project. A clone of a GitHub repo that no
-//! project of the owner's links is refused, not guessed (as `arugula
-//! issue`'s `#N` there is GitHub's).
+//! issue anywhere the owner reads. **The current project** is chosen once,
+//! here, for every tool that picks one (issues, boards, links, Plane,
+//! sessions, `start_agent` and Docs), by the first of these that has one:
+//!
+//! 1. the one the call names (`project`: an id, or `personal`);
+//! 2. the issue's project when the caller is an agent `start_agent` started
+//!    on one (its block's `work.project`, Arugula #771);
+//! 3. the project the caller's session is in (`Session::project`);
+//! 4. the one the caller's clone's GitHub repo is linked to;
+//! 5. control's default: the owner's personal project, or a team machine's
+//!    team project.
+//!
+//! A clone of a GitHub repo that no project of the owner's links is
+//! refused, not guessed (as `arugula issue`'s `#N` there is GitHub's).
+//! Control says which step answered (`IssueHome::rule`); an older one says
+//! none, and ignores the session's project, so the machine says its own.
 //!
 //! **GitHub's issues stay drafts** a person sends (aru-041, aru-085):
 //! `draft` and `forge_draft` refuse a native issue and say to use
@@ -24,7 +32,7 @@
 
 use arugula_control_wire::{
     chat::agent_messages,
-    issues::{AGENT_ISSUE_HOME, ProjectOwner, agent_issue, agent_issue_events, agent_project_issue},
+    issues::{AGENT_ISSUE_HOME, IssueHomeRule, ProjectOwner, agent_issue, agent_issue_events, agent_project_issue},
 };
 use reqwest::Method;
 use serde::Deserialize;
@@ -52,6 +60,8 @@ pub enum Rule {
     Asked,
     /// The caller's block was started on this issue (`#N`), in it.
     Started(String),
+    /// The caller's session is in it.
+    Session,
     /// The clone's GitHub repo (`owner/name`) is linked to it.
     Linked(String),
     /// Neither: control's default for this machine, the owner's personal
@@ -62,19 +72,17 @@ pub enum Rule {
     Default,
 }
 
-impl Rule {
-    /// The rule that chooses with `asked` (the call's `project`), the
-    /// issue the caller's block was started on and the clone's GitHub repo,
-    /// if it has them: a named project wins, then the issue's, then the
-    /// repo's link.
-    fn of(asked: Option<&str>, started: Option<&Started>, repo: Option<&str>) -> Self {
-        match (asked, started, repo) {
-            (Some(_), _, _) => Rule::Asked,
-            (None, Some(s), _) => Rule::Started(s.issue.clone()),
-            (None, None, Some(repo)) => Rule::Linked(repo.to_owned()),
-            (None, None, None) => Rule::Personal,
-        }
-    }
+/// What each step has to go on, for one call (module docs).
+#[derive(Debug, Default, PartialEq, Eq)]
+struct Steps {
+    /// The call's `project`.
+    asked: Option<String>,
+    /// The issue the caller's block was started on.
+    started: Option<Started>,
+    /// The project the caller's session is in.
+    session: Option<String>,
+    /// The clone's GitHub repo.
+    repo: Option<String>,
 }
 
 /// The issue the caller's block was started on, and its project.
@@ -85,14 +93,46 @@ struct Started {
 }
 
 impl Rule {
+    /// The first step that has a project.
+    fn of(s: &Steps) -> Self {
+        match s {
+            Steps { asked: Some(_), .. } => Rule::Asked,
+            Steps { started: Some(st), .. } => Rule::Started(st.issue.clone()),
+            Steps { session: Some(_), .. } => Rule::Session,
+            Steps { repo: Some(repo), .. } => Rule::Linked(repo.clone()),
+            _ => Rule::Personal,
+        }
+    }
+
     /// What `issue-home` is asked, for this rule: the project named or
-    /// started in, or the repo to find one by (nothing: personal).
-    fn query(&self, asked: Option<&str>, started: Option<&Started>) -> Vec<(&'static str, String)> {
-        match (self, asked, started) {
-            (Rule::Asked, Some(p), _) => vec![("project", p.to_owned())],
-            (Rule::Started(_), _, Some(s)) => vec![("project", s.project.clone())],
-            (Rule::Linked(repo), _, _) => vec![("repo", repo.clone())],
-            _ => vec![],
+    /// started in, the session's (with the repo, for an older control,
+    /// which ignores it), or the repo to find one by (nothing: personal).
+    fn query(&self, s: &Steps) -> Vec<(&'static str, String)> {
+        let mut q = vec![];
+        match (self, s) {
+            (Rule::Asked, Steps { asked: Some(p), .. }) => q.push(("project", p.clone())),
+            (Rule::Started(_), Steps { started: Some(st), .. }) => q.push(("project", st.project.clone())),
+            (Rule::Session, Steps { session: Some(p), .. }) => {
+                q.push(("session_project", p.clone()));
+                q.extend(s.repo.clone().map(|r| ("repo", r)));
+            }
+            (Rule::Linked(repo), _) => q.push(("repo", repo.clone())),
+            _ => {}
+        }
+        q
+    }
+
+    /// The rule that answered: the step control says, else this one. An
+    /// older control says none and ignores the session's project, so it
+    /// answered by the repo sent beside it, else by its default. Only the
+    /// machine knows whether a project it sent was named or its block's.
+    fn answered(self, said: Option<IssueHomeRule>, s: &Steps) -> Self {
+        let by_repo = || s.repo.clone().map_or(Rule::Personal, Rule::Linked);
+        match (said, self) {
+            (Some(IssueHomeRule::Session), _) => Rule::Session,
+            (Some(IssueHomeRule::Repo), _) | (None, Rule::Session) => by_repo(),
+            (Some(IssueHomeRule::Default), _) => Rule::Personal,
+            (_, ours) => ours,
         }
     }
 
@@ -101,6 +141,7 @@ impl Rule {
         match self {
             Rule::Asked => "the one you named".into(),
             Rule::Started(issue) => format!("you were started on its issue {issue}"),
+            Rule::Session => "your session is in it".into(),
             Rule::Linked(repo) => format!("this clone's repo {repo} is linked to it"),
             Rule::Personal => "you named no project, and no GitHub repo of this clone says another".into(),
             Rule::Default => "this clone's repo is linked to no project yet, so control's default".into(),
@@ -298,15 +339,25 @@ impl Call<'_> {
         self.app().control.cloud(method, path, body.as_ref()).await.map_err(said)
     }
 
-    /// The GitHub repo (`owner/name`) of the caller's own clone, if its
-    /// pane is on this host in a clone of one.
-    async fn my_github_repo(&self) -> Option<String> {
-        let pane = self.own_pane()?;
-        let info = self.readable(pane).await.ok()?.info;
-        if info.host.is_some() {
-            return None;
-        }
-        github_repo_of(&info.cwd?).await
+    /// The project the caller's session is in, and the GitHub repo
+    /// (`owner/name`) of the clone at `dir`, else of the caller's own, if
+    /// its pane is on this host in a clone of one.
+    async fn my_session_and_repo(&self, dir: Option<&str>) -> (Option<String>, Option<String>) {
+        let info = match self.own_pane() {
+            Some(pane) => self.readable(pane).await.ok().map(|p| p.info),
+            None => None,
+        };
+        let session = info.as_ref().and_then(|i| i.session_project.as_ref()).map(|p| p.id.clone());
+        let dir = match (dir, info) {
+            (Some(d), _) => Some(d.to_owned()),
+            (None, Some(i)) if i.host.is_none() => i.cwd,
+            _ => None,
+        };
+        let repo = match dir {
+            Some(d) => github_repo_of(&d).await,
+            None => None,
+        };
+        (session, repo)
     }
 
     /// M203: the project whose own issue `#N` in `dir` is, when the clone's
@@ -334,23 +385,30 @@ impl Call<'_> {
         Some(Started { issue: work["issue"].as_str().unwrap_or_default().to_owned(), project: project.to_owned() })
     }
 
-    /// The current project, and the rule that chose it (module docs).
+    /// The current project, and the rule that chose it (module docs): the
+    /// one resolver every tool that picks a project calls.
     pub async fn chosen_project(&self, project: Option<&str>) -> Result<Chosen, String> {
-        let asked = project.map(str::trim).filter(|p| !p.is_empty());
-        let started = match asked {
-            Some(_) => None,
-            None => self.my_started_issue().await,
-        };
-        let repo = match (asked, &started) {
-            (None, None) => self.my_github_repo().await,
-            _ => None,
-        };
-        let rule = Rule::of(asked, started.as_ref(), repo.as_deref());
-        let q = rule.query(asked, started.as_ref());
+        self.chosen_project_in(project, None).await
+    }
+
+    /// [`Call::chosen_project`], with the clone at `dir` for the repo's
+    /// step instead of the caller's own (`start_agent`'s `cwd`).
+    pub async fn chosen_project_in(&self, project: Option<&str>, dir: Option<&str>) -> Result<Chosen, String> {
+        let mut steps =
+            Steps { asked: project.map(str::trim).filter(|p| !p.is_empty()).map(str::to_owned), ..Default::default() };
+        if steps.asked.is_none() {
+            steps.started = self.my_started_issue().await;
+        }
+        if steps.asked.is_none() && steps.started.is_none() {
+            (steps.session, steps.repo) = self.my_session_and_repo(dir).await;
+        }
+        let rule = Rule::of(&steps);
+        let q = rule.query(&steps);
         let path = if q.is_empty() { AGENT_ISSUE_HOME.to_owned() } else { format!("{AGENT_ISSUE_HOME}?{}", query(&q)) };
         let v = self.issues_call(Method::GET, &path, None).await?;
         let id = v["project"].as_str().ok_or("Arugula control named no project")?;
         let (name, team) = (v["name"].as_str().unwrap_or_default().to_owned(), is_team(&v));
+        let rule = rule.answered(IssueHomeRule::deserialize(&v["rule"]).ok(), &steps);
         Ok(Chosen { id: id.to_owned(), name, team, rule })
     }
 
@@ -416,7 +474,7 @@ impl Call<'_> {
 /// (`session_project.rs`).
 pub async fn linked_project(control: &crate::control::Control, dir: &str) -> Option<arugula_core::ProjectRef> {
     let repo = github_repo_of(dir).await?;
-    let q = Rule::Linked(repo).query(None, None);
+    let q = Rule::Linked(repo.clone()).query(&Steps { repo: Some(repo), ..Default::default() });
     let v = control.cloud_now(Method::GET, &format!("{AGENT_ISSUE_HOME}?{}", query(&q)), None).await.ok()?;
     let id = v["project"].as_str().filter(|p| !p.is_empty())?;
     Some(arugula_core::ProjectRef { id: id.to_owned(), name: v["name"].as_str().unwrap_or_default().to_owned() })
@@ -452,17 +510,54 @@ async fn github_repo_of(dir: &str) -> Option<String> {
 mod tests {
     use super::*;
 
+    /// The order: each step wins over every one after it, and asks
+    /// control for its own project.
     #[test]
-    fn a_named_project_wins_then_the_started_issues_then_the_repos_link() {
-        let started = Started { issue: "#771".into(), project: "prj_2".into() };
-        assert_eq!(Rule::of(Some("prj_1"), Some(&started), Some("acme/app")), Rule::Asked);
-        assert_eq!(Rule::of(None, Some(&started), Some("acme/app")), Rule::Started("#771".into()));
-        assert_eq!(Rule::of(None, None, Some("acme/app")), Rule::Linked("acme/app".into()));
-        assert_eq!(Rule::of(None, None, None), Rule::Personal);
-        assert_eq!(Rule::Asked.query(Some("prj_1"), None), [("project", "prj_1".to_owned())]);
-        assert_eq!(Rule::Started("#771".into()).query(None, Some(&started)), [("project", "prj_2".to_owned())]);
-        assert_eq!(Rule::Linked("acme/app".into()).query(None, None), [("repo", "acme/app".to_owned())]);
-        assert!(Rule::Personal.query(None, None).is_empty());
+    fn each_step_wins_over_the_ones_after_it() {
+        let started = || Some(Started { issue: "#771".into(), project: "prj_2".into() });
+        let steps = |asked: bool, block: bool, session: bool, repo: bool| Steps {
+            asked: asked.then(|| "prj_1".into()),
+            started: if block { started() } else { None },
+            session: session.then(|| "prj_3".into()),
+            repo: repo.then(|| "acme/app".into()),
+        };
+        let p = |k: &'static str, v: &str| (k, v.to_owned());
+        #[rustfmt::skip]
+        let table = [
+            (steps(true, true, true, true), Rule::Asked, vec![p("project", "prj_1")]),
+            (steps(false, true, true, true), Rule::Started("#771".into()), vec![p("project", "prj_2")]),
+            (steps(false, false, true, true), Rule::Session, vec![p("session_project", "prj_3"), p("repo", "acme/app")]),
+            (steps(false, false, true, false), Rule::Session, vec![p("session_project", "prj_3")]),
+            (steps(false, false, false, true), Rule::Linked("acme/app".into()), vec![p("repo", "acme/app")]),
+            (steps(false, false, false, false), Rule::Personal, vec![]),
+        ];
+        for (s, rule, q) in table {
+            assert_eq!(Rule::of(&s), rule, "{s:?}");
+            assert_eq!(rule.query(&s), q, "{s:?}");
+        }
+    }
+
+    /// Control's `rule` says which step answered; without one (an older
+    /// control) the machine says its own, and the session's project was
+    /// ignored for the repo sent beside it, else control's default.
+    #[test]
+    fn controls_rule_wins_else_the_machine_says_its_own() {
+        let with_repo = Steps { session: Some("prj_3".into()), repo: Some("acme/app".into()), ..Default::default() };
+        let without = Steps { session: Some("prj_3".into()), ..Default::default() };
+        let linked = || Rule::Linked("acme/app".into());
+        assert_eq!(Rule::Session.answered(Some(IssueHomeRule::Session), &with_repo), Rule::Session);
+        assert_eq!(Rule::Session.answered(Some(IssueHomeRule::Repo), &with_repo), linked(), "its project is gone");
+        assert_eq!(Rule::Session.answered(Some(IssueHomeRule::Default), &with_repo), Rule::Personal);
+        assert_eq!(Rule::Session.answered(None, &with_repo), linked(), "an older control");
+        assert_eq!(Rule::Session.answered(None, &without), Rule::Personal, "an older control");
+        let started =
+            Steps { started: Some(Started { issue: "#9".into(), project: "prj_2".into() }), ..Default::default() };
+        for said in [None, Some(IssueHomeRule::Explicit), Some(IssueHomeRule::Block)] {
+            assert_eq!(Rule::Started("#9".into()).answered(said, &started), Rule::Started("#9".into()), "{said:?}");
+            assert_eq!(Rule::Asked.answered(said, &Steps::default()), Rule::Asked, "{said:?}");
+        }
+        assert_eq!(linked().answered(None, &with_repo), linked());
+        assert_eq!(Rule::Personal.answered(Some(IssueHomeRule::Default), &Steps::default()), Rule::Personal);
     }
 
     #[test]
@@ -480,6 +575,7 @@ mod tests {
         assert!(said.starts_with("Your team's default project Acme (you named no project"), "{said}");
         assert!(!said.to_lowercase().contains("personal"), "{said}");
         assert_eq!(chosen(Rule::Started("#9".into())).says(), "Project Arugula (you were started on its issue #9)");
+        assert_eq!(chosen(Rule::Session).says(), "Project Arugula (your session is in it)");
         let nameless = Chosen { id: "prj_1".into(), name: String::new(), team: false, rule: Rule::Asked };
         assert_eq!(nameless.says(), "Project prj_1 (the one you named)");
     }

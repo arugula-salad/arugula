@@ -2500,6 +2500,71 @@ async fn an_agent_files_comments_on_and_closes_a_native_issue() {
     s0.cancel().await.unwrap();
 }
 
+/// Arugula projects RFC: every tool that picks a project asks the one
+/// resolver, so each sends control its session's project (set from the
+/// session's menu here) with the clone's repo beside it, for an older
+/// control. What each does after that answer isn't this test's.
+#[tokio::test(flavor = "multi_thread")]
+async fn every_tool_that_picks_a_project_sends_the_sessions() {
+    use futures_util::SinkExt;
+    let d = Daemon::child_with(&[]);
+    let keys = arugula_e2e::DeviceKeys::load_or_create(&d.state.join("daemon.key")).unwrap();
+    let fake = FakeNative::default();
+    let url = fake_native(fake.clone()).await;
+    let cert = arugula_e2e::Cert::new(&keys, "a1", arugula_e2e::Kind::Daemon, "test");
+    let saved = json!({ "url": url, "trust": { "account": "a1", "root": keys.id() }, "cert": cert });
+    std::fs::write(d.state.join("control.json"), saved.to_string()).unwrap();
+
+    // A pane in a clone of acme/app, in a session the owner put in prj_2.
+    let dir = d.sessions.join("app");
+    std::fs::create_dir_all(&dir).unwrap();
+    for args in [&["init", "-q"][..], &["remote", "add", "origin", "git@github.com:acme/app.git"]] {
+        assert!(Command::new("git").arg("-C").arg(&dir).args(args).status().unwrap().success());
+    }
+    let s0 = bridge(&d, Client::named("claude-code")).await;
+    let pane = call(&s0, "run", json!({ "cwd": dir })).await["pane"].as_u64().unwrap();
+    let session = d.get("/api/panes").as_array().unwrap().iter().find(|p| p["id"] == pane).unwrap()["session"].clone();
+    let (mut ws, _) = tokio_tungstenite::connect_async(d.ws("/ws")).await.unwrap();
+    let set = json!({ "op": "set_session_project", "session": session, "project": { "id": "prj_2", "name": "Two" } });
+    let msg = json!({ "type": "intent", "id": 1, "intent": set });
+    ws.send(tokio_tungstenite::tungstenite::Message::Text(msg.to_string().into())).await.unwrap();
+    let in_it = || {
+        d.get("/api/panes").as_array().unwrap().iter().any(|p| p["id"] == pane && p["session_project"]["id"] == "prj_2")
+    };
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    while !in_it() {
+        assert!(std::time::Instant::now() < deadline, "the session never went in prj_2");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let s = bridge_in(&d, Client::named("claude-code"), Some(pane)).await;
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    while call(&s, "capabilities", json!({})).await["control"]["threads"]["live"] != true {
+        assert!(std::time::Instant::now() < deadline, "never joined");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    let sent = "GET /api/daemon/issue-home?session_project=prj_2&repo=acme%2Fapp";
+    let asked = |from: usize| fake.calls.lock().unwrap()[from..].iter().any(|(at, _, _)| at == sent);
+
+    let agent =
+        json!({ "agent": "acp", "command": format!("python3 {}", agentd::fake()), "prompt": "hi", "issue": "#1" });
+    for (tool, args) in [
+        ("forge_read", json!({ "kind": "native_issues" })),
+        ("forge_read", json!({ "kind": "items" })),
+        ("issue_write", json!({ "kind": "create", "title": "t" })),
+        ("session_start", json!({ "issue": "#1" })),
+        ("tracker_write", json!({ "kind": "comment", "item": "ARUGU-7", "text": "done" })),
+        ("link", json!({ "add": [{ "from": "#1", "to": "#2" }] })),
+        ("doc", json!({ "kind": "new", "title": "Plan", "sections": [{ "heading": "Why", "intent": "why" }] })),
+        ("start_agent", agent),
+    ] {
+        let from = fake.calls.lock().unwrap().len();
+        let _ = call_raw(&s, tool, args.clone()).await;
+        assert!(asked(from), "{tool} {args}: {:?}", &fake.calls.lock().unwrap()[from..]);
+    }
+    s.cancel().await.unwrap();
+    s0.cancel().await.unwrap();
+}
+
 /// A fake control's platform for M216's runs: project `prj_1` with one
 /// hosted box (`hw_1`, machine `dev_1`), the machine's run grants (off
 /// until `granted`), and the runs started, each of which runs on its own

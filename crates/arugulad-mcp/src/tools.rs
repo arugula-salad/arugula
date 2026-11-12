@@ -410,7 +410,7 @@ pub struct StartAgentArgs {
     /// Work in a git worktree of its own that Arugula makes on a new branch, in the repo that holds cwd (`.claude/worktrees/BRANCH` where the repo keeps its worktrees, else `.arugula/worktrees/BRANCH`). Refused if the branch or worktree exists. The agent runs there; closing the block removes the worktree and branch only when nothing is uncommitted or unpushed and the branch is merged into its base, else keeps them and says why (close never forces).
     #[serde(default)]
     pub worktree: Option<WorktreeArgs>,
-    /// The issue it works on: `#N`, `owner/repo#N`, `IDENT-N` or a native issue's `iss_…` id. The block keeps it, and its header says it (`#N · board`). With this machine's boards.write grant over the issue's project, the block is attached to that issue's row on every board of the project, which moves the row to Doing; without it the answer says so. The project is the one that holds `#N` (of those this machine's boards grants reach; the one linked to cwd's repo if several do), else the one linked to cwd's repo, else the caller's. It is the agent's current project: its `#N`, issue_write, board_read and link calls go there. A worktree's branch, when you give none, starts with the issue's number (`feat/357-…`). Without issue, a worktree branch named `feat/N-…` (or fix, docs, chore, perf, refactor) is on `#N` when a board has a row for it. Not for a chat.
+    /// The issue it works on: `#N`, `owner/repo#N`, `IDENT-N` or a native issue's `iss_…` id. The block keeps it, and its header says it (`#N · board`). With this machine's boards.write grant over the issue's project, the block is attached to that issue's row on every board of the project, which moves the row to Doing; without it the answer says so. The project is the one that holds `#N` (of those this machine's boards grants reach; the current project if several do), else the current project: the one your block was started on, else your session's, else the one cwd's GitHub repo is linked to, else your person's default project. It is the agent's current project: its `#N`, issue_write, board_read and link calls go there. A worktree's branch, when you give none, starts with the issue's number (`feat/357-…`). Without issue, a worktree branch named `feat/N-…` (or fix, docs, chore, perf, refactor) is on `#N` when a board has a row for it. Not for a chat.
     #[serde(default)]
     pub issue: Option<String>,
     /// With issue: take the row over when another machine's agent works it, or another session holds it (the one that last started an agent on it, until the issue closes or it lets go with board_write release_row). Without it, the start is refused, naming who holds it; with it, that agent is folded under "earlier agents", this session holds the row, and the session that held it is told.
@@ -610,9 +610,7 @@ pub struct ReadForgeArgs {
     /// control: "#N" (in the current project) or "iss_…".
     pub block: PaneArg,
     /// A native issue's project for "#N": its id (prj_…) or personal.
-    /// Default: the project of the issue you were started on, else the one
-    /// this clone's GitHub repo is linked to, else the user's personal
-    /// project.
+    /// Default: the current project.
     #[serde(default)]
     pub project: Option<String>,
 }
@@ -3472,10 +3470,11 @@ impl ToolCall<'_, '_> {
     }
 
     /// `start_agent`'s issue, resolved (#430): `iss_…` becomes `#N`; the
-    /// project that holds it, if one does, else the one linked to the
-    /// agent's repo (its `cwd`), which also holds the project of the issue a
-    /// worktree's branch names, when there is no `issue` and a project holds
-    /// that issue.
+    /// project that holds it, if one does, else the current project (the
+    /// one resolver's, `Call::chosen_project`, with the agent's `cwd` for
+    /// its repo) unless only control's default chose it, which also holds
+    /// the project of the issue a worktree's branch names, when there is no
+    /// `issue` and a project holds that issue.
     async fn issue_of_start(
         &self,
         a: &StartAgentArgs,
@@ -3489,17 +3488,17 @@ impl ToolCall<'_, '_> {
             (None, Some(p)) => self.readable(p).await.ok().and_then(|p| p.info.cwd),
             (None, None) => None,
         };
-        let repo_project = match &dir {
-            Some(d) => self.native_home_of(d).await,
-            None => None,
-        };
-        let by = async |issue: &str| {
-            arugulad_base::board_attach::issue_project(self.app, issue, repo_project.as_deref()).await
-        };
+        let chosen = self.chosen_project_in(None, dir.as_deref()).await.ok();
+        let current = chosen.as_ref().map(|c| c.id.clone());
+        // Control's default isn't kept as the agent's project: its own
+        // session and repo choose for it.
+        let kept = chosen.filter(|c| !c.is_personal_by_default()).map(|c| c.id);
+        let by =
+            async |issue: &str| arugulad_base::board_attach::issue_project(self.app, issue, current.as_deref()).await;
         match issue {
             Some(i) => match by(&i).await? {
                 Some((p, n)) => Ok((Some(n), Some(p), None)),
-                None => Ok((Some(i), repo_project, None)),
+                None => Ok((Some(i), kept, None)),
             },
             None => {
                 let branch = a.worktree.as_ref().map(|w| w.branch.trim()).unwrap_or_default();
