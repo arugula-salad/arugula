@@ -12,6 +12,14 @@ final class FlowTests: XCTestCase {
         try? app.screenshot().pngRepresentation.write(to: handoff.appendingPathComponent("\(name).png"))
     }
 
+    /// A tab: in the tab bar on an iPhone, and wherever iPadOS puts it on an iPad.
+    private func tab(_ app: XCUIApplication, _ name: String) -> XCUIElement {
+        let bar = app.tabBars.buttons[name]
+        return bar.exists ? bar : app.buttons[name].firstMatch
+    }
+
+    private var iPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
+
     func testPairProjectsChatAndATerminal() throws {
         continueAfterFailure = false
         let env = ProcessInfo.processInfo.environment
@@ -29,7 +37,7 @@ final class FlowTests: XCTestCase {
         try code.label.write(to: handoff.appendingPathComponent("code"), atomically: true, encoding: .utf8)
 
         // Projects, as the signed-in account.
-        let paired = app.tabBars.buttons["Projects"].waitForExistence(timeout: 120)
+        let paired = app.buttons["Projects"].firstMatch.waitForExistence(timeout: 120)
         if !paired { shot(app, "1-never-paired") }
         XCTAssertTrue(paired, "never paired: \(app.staticTexts["pair-problem"].exists ? app.staticTexts["pair-problem"].label : "still waiting")")
         let personal = app.buttons["project-Personal"]
@@ -37,7 +45,7 @@ final class FlowTests: XCTestCase {
         shot(app, "2-projects")
 
         // Chat: post to the room the script made, and see it come back.
-        app.tabBars.buttons["Chat"].tap()
+        tab(app, "Chat").tap()
         let room = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'room-'")).firstMatch
         XCTAssertTrue(room.waitForExistence(timeout: 30), "no chat room")
         room.tap()
@@ -50,10 +58,11 @@ final class FlowTests: XCTestCase {
         XCTAssertTrue(app.staticTexts[marker].waitForExistence(timeout: 20), "the message didn't come back")
         shot(app, "3-chat")
 
-        // A terminal on a machine, through the relay. Back out of the room first:
-        // its keyboard covers the tab bar.
-        app.navigationBars.buttons.firstMatch.tap()
-        app.tabBars.buttons["Machines"].tap()
+        // A terminal on a machine, through the relay. On an iPhone, back out of the
+        // room first: its keyboard covers the tab bar. On an iPad the room sits
+        // beside the list, so the tabs stay in reach.
+        if !iPad { app.navigationBars.buttons.firstMatch.tap() }
+        tab(app, "Machines").tap()
         let machine = app.buttons[env["ARUGULA_MACHINE"].map { "machine-\($0)" } ?? "machine-box-systemd"]
         XCTAssertTrue(machine.waitForExistence(timeout: 30), "machine not listed")
         machine.tap()

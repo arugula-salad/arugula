@@ -5,17 +5,20 @@ import SwiftUI
 
 struct ChatRoomsView: View {
     let control: Control
+    @State private var picked: ChatRoom?
+    @State private var columns = NavigationSplitViewVisibility.all
 
     var body: some View {
-        NavigationStack {
-            Loaded(load: { try await control.get("/api/chat", as: ChatRooms.self) }) { r in
+        NavigationSplitView(columnVisibility: $columns) {
+            // Beside an open room, the list keeps its counts current.
+            Loaded(load: { try await control.get("/api/chat", as: ChatRooms.self) }, every: .seconds(10)) { r in
                 let rooms = r.rooms.filter { !$0.archived }.sorted { ($0.unread > 0 ? 1 : 0, $0.last) > ($1.unread > 0 ? 1 : 0, $1.last) }
-                List(rooms) { room in
+                List(rooms, selection: $picked) { room in
                     NavigationLink(value: room) {
                         HStack {
                             Text(room.kind == "channel" ? "# \(room.name)" : room.name).lineLimit(1)
                             Spacer()
-                            if room.unread > 0 {
+                            if room.unread > 0 && room != picked {
                                 Text("\(room.unread)")
                                     .font(.caption2.weight(.semibold))
                                     .padding(.horizontal, 6)
@@ -30,8 +33,17 @@ struct ChatRoomsView: View {
                 .overlay { if rooms.isEmpty { Text("No rooms yet").foregroundStyle(.secondary) } }
             }
             .navigationTitle("Chat")
-            .navigationDestination(for: ChatRoom.self) { ChatRoomView(control: control, room: $0) }
+        } detail: {
+            NavigationStack {
+                if let picked {
+                    ChatRoomView(control: control, room: picked)
+                } else {
+                    ContentUnavailableView("Pick a room", systemImage: "bubble.left.and.bubble.right")
+                }
+            }
+            .id(picked?.id)
         }
+        .navigationSplitViewStyle(.balanced)
     }
 }
 

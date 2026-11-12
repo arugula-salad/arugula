@@ -268,6 +268,15 @@ final class TerminalUIView: UIView, UIKeyInput, UITextInputTraits {
 
     func deleteBackward() { key(4) }
 
+    /// Command-V from a hardware keyboard, as on an iPad.
+    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        action == #selector(paste(_:)) ? UIPasteboard.general.hasStrings : super.canPerformAction(action, withSender: sender)
+    }
+
+    override func paste(_ sender: Any?) {
+        if let s = UIPasteboard.general.string { send(Array(s.utf8)) }
+    }
+
     var autocorrectionType: UITextAutocorrectionType { get { .no } set {} }
     var autocapitalizationType: UITextAutocapitalizationType { get { .none } set {} }
     var spellCheckingType: UITextSpellCheckingType { get { .no } set {} }
@@ -282,7 +291,7 @@ final class TerminalUIView: UIView, UIKeyInput, UITextInputTraits {
         ctrlButton?.configuration?.baseForegroundColor = on ? .systemGreen : .label
     }
 
-    /// The keys an iPhone's keyboard hasn't got.
+    /// The keys an iPhone's or iPad's on-screen keyboard hasn't got.
     override var inputAccessoryView: UIView? {
         if let bar { return bar }
         let v = UIInputView(frame: CGRect(x: 0, y: 0, width: 0, height: 44), inputViewStyle: .keyboard)
