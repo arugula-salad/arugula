@@ -29,7 +29,7 @@ struct Issue: Decodable, Identifiable, Hashable {
 struct IssueList: Decodable { var issues: [Issue] }
 
 struct Board: Decodable, Identifiable, Hashable {
-    struct Progress: Decodable { var done: Int?; var total: Int? }
+    struct Progress: Decodable { var done: Int?; var review: Int?; var doing: Int?; var total: Int? }
     var id: String
     var title: String
     var goal: String?
