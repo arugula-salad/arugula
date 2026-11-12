@@ -140,11 +140,11 @@ pub async fn keep_inferred(app: &App, home: Option<String>, issue: &str, pane: P
 
 /// The project that holds `issue` (#430), and the issue as `#N` in it. `#N`
 /// is looked up in each project this machine's boards grants reach; if more
-/// than one has it, the one linked to the agent's repo (`cwd`) wins, else it
-/// is refused, naming them. `iss_…` names its project. `None` for the other
-/// forms (`owner/repo#N`, `IDENT-N`) and when no project has it: the caller
-/// falls back to the repo's project, then its own.
-pub async fn issue_project(app: &App, issue: &str, cwd: Option<&str>) -> Result<Option<(String, String)>, String> {
+/// than one has it, the `current` project wins (`Call::chosen_project`'s,
+/// with the agent's `cwd`), else it is refused, naming them. `iss_…` names
+/// its project. `None` for the other forms (`owner/repo#N`, `IDENT-N`) and
+/// when no project has it: the caller falls back to the current project.
+pub async fn issue_project(app: &App, issue: &str, current: Option<&str>) -> Result<Option<(String, String)>, String> {
     if issue.starts_with("iss_") {
         let v = app
             .control
@@ -167,7 +167,7 @@ pub async fn issue_project(app: &App, issue: &str, cwd: Option<&str>) -> Result<
     match holders.as_slice() {
         [] => Ok(None),
         [only] => Ok(Some((only.id.clone(), format!("#{n}")))),
-        many => match many.iter().find(|p| Some(p.id.as_str()) == cwd) {
+        many => match many.iter().find(|p| Some(p.id.as_str()) == current) {
             Some(p) => Ok(Some((p.id.clone(), format!("#{n}")))),
             None => {
                 let names: Vec<_> = many.iter().map(|p| format!("{} ({})", p.name, p.id)).collect();

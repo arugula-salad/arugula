@@ -44,18 +44,15 @@ pub struct IssueItemArgs {
     /// or a Plane item, IDENT-N (such as ALL-2212).
     pub item: String,
     /// A native issue's project for "#N", or a Plane item's for IDENT-N: its
-    /// id (prj_…) or personal.
-    /// Default: the project of the issue you were started on (start_agent's
-    /// issue), else the one this clone's GitHub repo is linked to, else the
-    /// user's personal project.
+    /// id (prj_…) or personal. Default: the current project.
     #[serde(default)]
     pub project: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]
 pub struct ItemsArgs {
-    /// The project's id (prj_…). Default: the repo's project, else the
-    /// user's personal one.
+    /// The project's id (prj_…). Default: repo's project when repo is
+    /// given, else the current project.
     #[serde(default)]
     pub project: Option<String>,
     /// One linked repo, OWNER/NAME.
@@ -90,8 +87,8 @@ pub struct ItemsArgs {
 /// Kind `tracker_fields`'s.
 #[derive(Deserialize, JsonSchema)]
 pub struct TrackerFieldsArgs {
-    /// The project's id (prj_…). Default: the repo's project, else the
-    /// user's personal one.
+    /// The project's id (prj_…). Default: the one connection names, else
+    /// the one tracker is connected in, else the current project.
     #[serde(default)]
     pub project: Option<String>,
     /// A Plane connection's key, such as ARUGU. Not needed when the project
@@ -175,8 +172,7 @@ pub struct OpenOnGithubArgs {
     /// The native issue: "#N" (in the current project) or "iss_…".
     pub issue: String,
     /// Its project for "#N": its id (prj_…) or personal. Default: the
-    /// project of the issue you were started on, else the one this clone's
-    /// GitHub repo is linked to, else the user's personal project.
+    /// current project.
     #[serde(default)]
     #[allow(dead_code)] // `forge_ops` reads it, finding the issue's id.
     pub project: Option<String>,
@@ -560,6 +556,19 @@ pub(crate) async fn forge_ops(c: &Call<'_>, tool: &str, kind: &str, a: Value) ->
     {
         // The Plane home, else the main rule's: never control's personal project.
         a["project"] = super::plane_home::home_or_main(c, None, &[item]).await?.into();
+    }
+    let unnamed = |k: &str| a[k].as_str().is_none_or(|p| p.trim().is_empty());
+    let named_elsewhere = match kind {
+        "items" => !unnamed("repo"),
+        "tracker_fields" => !unnamed("connection"),
+        _ => true,
+    };
+    if tool == "forge_read" && unnamed("project") && !named_elsewhere {
+        // The current project, else control would read the personal one. A
+        // Plane key is looked for as its items are (`plane_home`).
+        let key: Vec<String> = a["tracker"].as_str().map(|t| format!("{}-1", t.trim())).into_iter().collect();
+        let items: Vec<&str> = key.iter().map(String::as_str).collect();
+        a["project"] = super::plane_home::home_or_main(c, None, &items).await?.into();
     }
     let o = op(tool, kind, a, &c.by())?;
     let r = c.forge_op(o.clone(), said).await?;

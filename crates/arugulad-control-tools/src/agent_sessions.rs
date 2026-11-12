@@ -58,7 +58,7 @@ pub(crate) const LIST: crate::mcp::tools::Kind = crate::mcp::tools::Kind {
     flag: None,
 };
 
-pub(crate) const START_DESCRIPTION: &str = "Start an agent session in Arugula control as your person: @arugula on a native issue (issue: #N in the current project, or iss_…) or in a project's channel (room, and thread: a message's seq to ask in its thread). It runs on the project's cloud workspace, as your person (the asker, who pays for it), and its card says it was started by their agent on this machine. Needs their sessions.start grant over the project. prompt is what to ask (it may name the repo, owner/name, and a model); on an issue it defaults to working on it. Returns the session (ses_…), or what the platform said instead: why not, or which repo it asks (ask again there with the repo, owner/name, in prompt). session_reply answers it or prompts it after.";
+pub(crate) const START_DESCRIPTION: &str = "Start an agent session in Arugula control as your person: @arugula on a native issue (issue: #N in the current project, or iss_…) or in a project's channel (room, and thread: a message's seq to ask in its thread). The current project is the project you pass, else the one your block was started on (start_agent's issue), else your session's, else the one this clone's GitHub repo is linked to, else your person's default project. It runs on the project's cloud workspace, as your person (the asker, who pays for it), and its card says it was started by their agent on this machine. Needs their sessions.start grant over the project. prompt is what to ask (it may name the repo, owner/name, and a model); on an issue it defaults to working on it. Returns the session (ses_…), or what the platform said instead: why not, or which repo it asks (ask again there with the repo, owner/name, in prompt). session_reply answers it or prompts it after.";
 
 pub(crate) const READ_DESCRIPTION: &str = "Read an agent session in Arugula control (ses_…): its state, Cloud workspace, branch, HEAD and last push (and its workspace's latest error since, such as a failed push), what its latest turn left (commits, diffstat, its finish step), what it asks while it waits on a person, and its last answer whole, as its machine sent it (the thread's copy keeps only its end). Needs your person's sessions.start, sessions.reply or threads.read grant over its project. wait with agent_session waits for its turn to finish.";
 
@@ -80,8 +80,8 @@ pub struct SessionStartArgs {
     /// (owner/name) and a model. On an issue, by default, to work on it.
     #[serde(default)]
     pub prompt: Option<String>,
-    /// "#N"'s project: its id (prj_…) or personal. Default: the one this
-    /// clone's GitHub repo is linked to, else your person's personal one.
+    /// "#N"'s project: its id (prj_…) or personal. Default: the current
+    /// project.
     #[serde(default)]
     pub project: Option<String>,
 }
@@ -109,8 +109,8 @@ pub struct SessionStopArgs {
 
 #[derive(Deserialize, JsonSchema, Default)]
 pub struct ListSessionsArgs {
-    /// The project: its id (prj_…) or personal. Default: the one this
-    /// clone's GitHub repo is linked to, else your person's personal one.
+    /// The project: its id (prj_…) or personal. Default: the current
+    /// project.
     #[serde(default)]
     pub project: Option<String>,
     /// Only sessions on an issue with this label.
