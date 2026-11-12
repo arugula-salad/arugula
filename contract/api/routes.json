@@ -93,6 +93,8 @@
     {"method":"GET","path":"/api/me","auth":"session","clients":["page","native"]},
     {"method":"GET","path":"/api/people","auth":"session","clients":["page","native"]},
     {"method":"GET","path":"/api/projects","auth":"session","clients":["page","cli","native"]},
+    {"method":"POST","path":"/api/projects","auth":"session","clients":["page","cli","native"]},
+    {"method":"PATCH","path":"/api/projects/{project}","auth":"session","clients":["page","cli","native"]},
     {"method":"GET","path":"/api/projects/{project}/agent-tokens","auth":"session","clients":["page","cli"]},
     {"method":"POST","path":"/api/projects/{project}/agent-tokens/{id}/revoke","auth":"session","clients":["page","cli"]},
     {"method":"GET","path":"/api/projects/{project}/board-settings","auth":"session","clients":["page"]},
