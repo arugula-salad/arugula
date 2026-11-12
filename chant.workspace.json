@@ -213,7 +213,7 @@
     "green": {
       "branch": "main",
       "window": "24h",
-      "mergeQueue": { "retries": 1 },
+      "mergeQueue": { "retries": 0 },
       "phases": {
         "lint": { "runs": ["lint", "changes", "suite-changed"], "build": "newest" },
         "build": { "runs": ["build", "static", "clippy"], "skipped": "pass", "build": "newest" },

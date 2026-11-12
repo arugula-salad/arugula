@@ -47,7 +47,7 @@ import { DocLink, DocPicker } from "./docs";
 import "./bar.css";
 import "./boards.css";
 import { groupFold, groupLaneFold, isFolded, laneFold, loadFolds, saveFolds, type Folds } from "./folds";
-import { MOVE_LANES, closeName, closedWithLine, doneRefusal, laneOfZone, laneSetLine, PICK_DELAY_MS, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, PICK_LIMIT, assigneesLine, GOAL_MAX, answerReady, askWaitingLine, blockFacts, BLOCK_LABEL, chipOf, settledFacts, debounced, earlierLine, epicLine, holdsRow, groupLine, isCard, laneCount, liveWord, marksOf, waitingOf, notFinishedLine, type NotFinished, needsDot, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, relationLine, RELATION_KINDS, sections, sourceLine, sourceLinked, leftOutLine, stepActive, workLabel, findLine, type BoardFilter, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, topAndMore, initialsOf } from "./text";
+import { MOVE_LANES, closeName, closedWithLine, doneRefusal, laneOfZone, laneSetLine, PICK_DELAY_MS, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, PICK_LIMIT, assigneesLine, GOAL_MAX, answerReady, askWaitingLine, blockFacts, BLOCK_LABEL, chipOf, settledFacts, debounced, earlierLine, epicLine, holdsRow, groupLine, isCard, laneCount, liveWord, queueChip, marksOf, waitingOf, notFinishedLine, type NotFinished, needsDot, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, relationLine, RELATION_KINDS, sections, sourceLine, sourceLinked, leftOutLine, stepActive, workLabel, findLine, type BoardFilter, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, topAndMore, initialsOf } from "./text";
 
 const STALE_SAID = "That changed while you were editing, so the board is read again. Make your change again if it still applies.";
 
@@ -1430,7 +1430,7 @@ function Drawer({ steps, r, platform, close, project, others, write, act, id, mo
         </div>
       )}
       <div class="board-line" title={r.live?.state === "closed" && r.lane === "done" ? liveWord(r.live) : undefined}>
-        {r.live && !(r.live.state === "closed" && r.lane === "done") && <StateChip tone={liveTone(r.live.state)}>{liveWord(r.live)}</StateChip>}
+        {r.live && !(r.live.state === "closed" && r.lane === "done") && <StateChip tone={queueChip(r.live)?.tone ?? liveTone(r.live.state)}>{queueChip(r.live)?.word ?? liveWord(r.live)}</StateChip>}
         {href && (
           <a class="board-ptr" href={href} target={external ? "_blank" : undefined} rel="noopener noreferrer" data-board-drawer-link>
             {pointerLabel(r.pointer, r.live)} <ExternalIcon size="xs" />

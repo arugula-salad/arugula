@@ -409,6 +409,40 @@ pub struct ForgeItem {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
     pub queued: bool,
+    /// When it last entered the merge queue, in milliseconds: GitHub's
+    /// `enqueued`, as the platform heard it (Arugula #766). Kept after it
+    /// leaves, so a reader tells how long it was queued from `left_queue`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub queued_since: Option<u64>,
+    /// Why it last left the merge queue unmerged: GitHub's `dequeued`.
+    /// Cleared by the next `enqueued` and by a merge; it stays after a
+    /// close, so the row still says why.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub left_queue: Option<LeftQueue>,
+}
+
+impl LeftQueue {
+    /// The reason in a reader's words, lower case with spaces:
+    /// `checks timed out`. One GitHub adds later reads the same way.
+    pub fn words(&self) -> String {
+        self.reason.to_lowercase().replace('_', " ")
+    }
+}
+
+/// A PR's last unmerged exit from its merge queue (Arugula #766).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct LeftQueue {
+    /// GitHub's `reason` as it came, in upper case: `CHECKS_TIMED_OUT`,
+    /// `CHECKS_FAILED`, `MERGE_CONFLICT`, `MANUAL`, `BRANCH_PROTECTIONS`,
+    /// `GIT_TREE_INVALID`, `INVALID_MERGE_COMMIT`, `UNKNOWN_REMOVAL_REASON`.
+    /// One GitHub adds later is kept as it is.
+    pub reason: String,
+    /// When the platform heard it, in milliseconds.
+    pub at: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

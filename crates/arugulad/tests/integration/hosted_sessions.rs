@@ -1310,8 +1310,14 @@ fn a_finish_step_runs_after_each_turn() {
     f.stop(&x);
     let checkout = home.join("work").join(&x);
     wait(&marks, &f, "x's slot cleaned", || !checkout.exists() && !claude.exists() && !pushed.exists());
-    for f in planted.iter().chain(&[".config", ".codex", ".local"]) {
+    for f in planted.iter().chain(&[".config/locked"]) {
         assert!(!home.join(f).exists(), "{f} went with the session");
+    }
+    // The directories it made go too, unless the machine's /etc/skel, which
+    // a clean home is given again, has them (a CI image's does).
+    for d in [".config", ".codex", ".local"] {
+        let skel = Path::new("/etc/skel").join(d).exists();
+        assert!(skel || !home.join(d).exists(), "{d} went with the session");
     }
     for f in [".cache/sccache/a", ".cargo/registry/index/b"] {
         assert!(home.join(f).exists(), "{f}: a build cache stays for the slot's next session of the same asker");

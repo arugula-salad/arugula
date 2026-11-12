@@ -539,9 +539,15 @@ async fn doc_share(call: &Call<'_>, a: DocShareArgs) -> Out {
     let out = b.call_by("doc_share_ask", json!({}), Some(&call.by())).await?;
     let status = out["status"].as_str().unwrap_or("waiting").to_owned();
     let summary = match status.as_str() {
-        "shared" => format!("Doc %{block} is shared: {}", out["url"].as_str().unwrap_or_default()),
+        "shared" => match out["page"].as_str() {
+            Some(page) => format!(
+                "Doc %{block} is shared: {} (the team's page is {page})",
+                out["url"].as_str().unwrap_or_default()
+            ),
+            None => format!("Doc %{block} is shared: {}", out["url"].as_str().unwrap_or_default()),
+        },
         "team" => format!(
-            "Doc %{block} is the team's: its page is {}; a public link for a team Doc isn't offered yet",
+            "Doc %{block} is the team's: its page is {}; this control keeps no public links",
             out["url"].as_str().unwrap_or("not read yet")
         ),
         "waiting" => format!("Asked the user to share Doc %{block}; call share again to see what they chose"),
