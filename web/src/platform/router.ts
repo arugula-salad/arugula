@@ -27,7 +27,7 @@ function remember(popped = false) {
   // Chat and account settings are the rail's own places, not the projects';
   // the design reference is no place to come back to.
   const { page } = route;
-  if (page === "chat" || page === "dm" || page === "settings" || page === "design") return;
+  if (page === "chat" || page === "dm" || page === "settings" || page === "owner-settings" || page === "design") return;
   // A shell button's hand-off passes through; where it lands is the place.
   if (route.page === "home" && route.to) return;
   try {
@@ -69,13 +69,42 @@ let before: Route | null = null;
 export const cameFrom = (): Route | null => before;
 
 const changed = (popped = false) => {
+  here = location.pathname + location.search;
   remember(popped);
   listeners.forEach((fn) => fn());
 };
+/** Where the page is now, to come back to when leaving is refused. */
+let here = location.pathname + location.search;
+
 addEventListener("popstate", () => {
+  // Back, with changes not saved and kept: the address goes back to them.
+  if (holding && !holding()) {
+    history.pushState(null, "", here);
+    return;
+  }
   before = null;
   changed(true);
 });
+
+/** What a page with changes not saved asks before it's left (Arugula
+ * #897): whether to go. */
+let holding: (() => boolean) | null = null;
+
+/** While `dirty`, leaving the page asks first: a link, Back, closing the
+ * tab or reloading it. */
+export function useHoldLeaving(dirty: boolean, ask = "Leave without saving your changes?") {
+  useEffect(() => {
+    if (!dirty) return;
+    const mine = () => confirm(ask);
+    holding = mine;
+    const unload = (e: BeforeUnloadEvent) => e.preventDefault();
+    addEventListener("beforeunload", unload);
+    return () => {
+      if (holding === mine) holding = null;
+      removeEventListener("beforeunload", unload);
+    };
+  }, [dirty, ask]);
+}
 
 /** Hear every change of route (the page's own and Back's). */
 export function onRoute(fn: () => void): () => void {
@@ -87,6 +116,8 @@ export function onRoute(fn: () => void): () => void {
  * search, or putting the slug right). `state` marks the entry (./chat-nav). */
 export function go(path: string, replace = false, state: unknown = null) {
   if (path === location.pathname + location.search) return changed();
+  // A slug put right stays on the page; anywhere else asks first.
+  if (!replace && holding && !holding()) return;
   if (replace) history.replaceState(state, "", path);
   else {
     before = current();

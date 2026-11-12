@@ -72,7 +72,7 @@
  * #193): its copy is `PAGES` in crates/platform-api/src/page.rs, which a test
  * there checks against this list and `parse`. A new top-level route goes
  * in both. */
-export const TOP = ["p", "chat", "dm", "issues", "runs", "installed", "inbox", "settings", "deploys", "boards", "docs", "design"] as const;
+export const TOP = ["p", "t", "chat", "dm", "issues", "runs", "installed", "inbox", "settings", "deploys", "boards", "docs", "design"] as const;
 
 export type Route =
   /** `to`: a shell button's place, to open in the current project (./current-project). */
@@ -101,6 +101,8 @@ export type Route =
   | { page: "inbox"; all?: true }
   | { page: "all-boards"; all?: true }
   | { page: "settings" }
+  /** An owner's settings (Arugula #897): a team's id, or `personal`. */
+  | { page: "owner-settings"; owner: string }
   | { page: "design" }
   | { page: "deploy"; deploy: string }
   /** An id-only address, to be put where it belongs (`resolve`). */
@@ -130,6 +132,9 @@ export function waveQuery(f: WaveFilter): string {
 /** An id at the front of a path segment, before its slug: `prj_8f2k`,
  * `ch_…`, `dm_…`, `hw_…`, `iss_…`, `run_…`. */
 const ID = /^([a-z]{2,3}_[0-9a-f]{4,64})(?:-.*)?$/;
+
+/** A team's id in a path. */
+const TEAM = /^[A-Za-z0-9_-]{1,80}$/;
 
 /** `OWNER/NAME` on GitHub. */
 export const REPO = /^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,99}\/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,99}$/;
@@ -191,6 +196,8 @@ export function parse(path: string, search = ""): Route {
   if (parts.length === 1 && parts[0] === "boards") return { page: "all-boards", ...all };
   if (parts.length === 1 && parts[0] === "docs") return { page: "docs", ...all };
   if (parts.length === 1 && parts[0] === "settings") return { page: "settings" };
+  if (parts.length === 2 && parts[0] === "settings" && parts[1] === "personal") return { page: "owner-settings", owner: "personal" };
+  if (parts.length === 3 && parts[0] === "t" && parts[2] === "settings" && TEAM.test(parts[1]) && parts[1] !== "personal") return { page: "owner-settings", owner: parts[1] };
   if (parts.length === 1 && parts[0] === "design") return { page: "design" };
   if (parts[0] === "chat" && parts.length <= 2) {
     if (parts.length === 1) return { page: "find", what: "chat" };
@@ -404,6 +411,8 @@ export function pathOf(r: Route, names: Names = () => null): string {
       return r.all ? "/boards?all=1" : "/boards";
     case "settings":
       return "/settings";
+    case "owner-settings":
+      return r.owner === "personal" ? "/settings/personal" : `/t/${encodeURIComponent(r.owner)}/settings`;
     case "design":
       return "/design";
     case "deploy":

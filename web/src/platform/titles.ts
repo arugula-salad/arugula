@@ -87,6 +87,8 @@ export function titleOf(r: Route, k: Known): string {
       return parts("Boards");
     case "settings":
       return parts("Account settings");
+    case "owner-settings":
+      return parts(r.owner === "personal" ? "Personal settings" : "Team settings");
     case "design":
       return parts("Design reference");
     case "missing":
