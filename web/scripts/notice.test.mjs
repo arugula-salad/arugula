@@ -3,7 +3,7 @@
 // oldest first. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { grantQuestion, noticeOpenLabel, noticeRoom, noticeTitle, sortNotices } from "../src/shared/notice.ts";
+import { grantQuestion, grantScope, noticeOpenLabel, noticeRoom, noticeTitle, sortNotices } from "../src/shared/notice.ts";
 
 const mention = (over = {}) => ({
   key: "mention:ch_x",
@@ -67,4 +67,19 @@ test("a grant over just the room says only the room; over DMs, all of them", () 
     grantQuestion(ask({}, { scope_kind: "account", scope_name: "your DMs" })),
     "Let geek's agents read all your DMs (including #agents)?",
   );
+});
+
+test("a grant over a team asks for its channels, not its issues (Arugula #894)", () => {
+  assert.equal(
+    grantQuestion(ask({}, { scope_kind: "team", scope_name: "Acme" })),
+    "Let geek's agents read Acme's channels (including #agents)?",
+  );
+  assert.equal(grantQuestion(ask({}, { scope_kind: "team", scope_name: "" })), "Let geek's agents read the team's channels (including #agents)?");
+});
+
+test("a card's grant goes over its own scope, and an unknown one grants nothing (Arugula #894)", () => {
+  assert.deepEqual(grantScope("account", "acc_1"), { kind: "account" });
+  assert.deepEqual(grantScope("project", "prj_1"), { kind: "project", id: "prj_1" });
+  assert.deepEqual(grantScope("team", "tm_1"), { kind: "team", id: "tm_1" });
+  assert.equal(grantScope("galaxy", "x"), null);
 });

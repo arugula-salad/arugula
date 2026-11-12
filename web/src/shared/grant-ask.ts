@@ -2,6 +2,7 @@
 // over their session: the machine that raised the card never grants itself.
 
 import { platformFetch } from "./maintenance";
+import { grantScope } from "./notice";
 import type { Notice } from "./proto";
 
 async function owners(path: string, body: unknown): Promise<void> {
@@ -23,7 +24,8 @@ async function owners(path: string, body: unknown): Promise<void> {
 export function grantRead(n: Notice): Promise<void> {
   const g = n.grant;
   if (!g) return Promise.reject(new Error("no grant to make"));
-  const scope = g.scope_kind === "account" ? { kind: "account" } : { kind: "project", id: g.scope_id };
+  const scope = grantScope(g.scope_kind, g.scope_id);
+  if (!scope) return Promise.reject(new Error(`can't grant over a ${g.scope_kind}`));
   return owners("/api/grants", { daemon: g.machine, power: "threads.read", scope });
 }
 
