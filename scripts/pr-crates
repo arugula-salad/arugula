@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# Which Rust tests a pull request's own run takes (pull-request.yml's pr-test,
+# #917): the crates the change touches and every crate that depends on them,
+# as a nextest filterset. Before #917 a pull request ran no Rust test at all,
+# and most of the merge queue's failed groups were Rust tests and clippy that
+# the pull request could have shown red on its own.
+#
+#   scripts/pr-crates [BASE [HEAD]] >> "$GITHUB_OUTPUT"
+#
+# BASE and HEAD default to the merge commit Actions checks out (HEAD^1 and
+# HEAD), as scripts/pr-plan reads it. Prints rust=true|false (whether clippy
+# and the tests run at all) and tests=FILTERSET, e.g.
+# `rdeps(=arugula-proto) | rdeps(=arugulad-base)`, or `all()` for the whole
+# workspace. Whatever goes wrong, it says the whole workspace: a run that
+# can't tell does more, not less.
+#
+# A changed path counts for a crate when it's in the crate's directory, or
+# when the crate's Rust source names it by a relative path (`../../docs/
+# mcp-permissions.json`, `../arugulad-labs/src`): tests read files outside
+# their crate, and that's how they find them. The workspace's own config
+# (Cargo.toml, Cargo.lock, .cargo/, rust-toolchain.toml, nextest's config,
+# the vendored crates, the testkit every crate's tests use) and this run's
+# own definition take the whole workspace. Anything else (web/ but what a
+# crate names, docs, other workflows) takes none: the merge queue still runs
+# every test before anything lands.
+set -uo pipefail
+here=$(cd "$(dirname "$0")/.." && pwd)
+all='rust=true
+tests=all()'
+files=$(git -C "$here" diff --name-only "${1:-HEAD^1}" "${2:-HEAD}" 2>/dev/null) || { echo "$all"; exit 0; }
+cd "$here" || { echo "$all"; exit 0; }
+
+whole='^(Cargo\.toml|Cargo\.lock|rust-toolchain\.toml|\.mise\.toml|justfile|chant\.workspace\.json)$|^(\.cargo|\.config|vendor|crates/testkit)/|^scripts/pr-crates$|^\.github/workflows/pull-request\.yml$|^\.github/actions/setup/'
+if grep -qE "$whole" <<<"$files"; then
+  echo "$all"
+  exit 0
+fi
+
+# The workspace's crates: crates/* (Cargo.toml's members) less what its
+# `exclude` names (the desktop app, a workspace of its own).
+excluded=$(sed -n '/^exclude *= *\[/,/\]/p' Cargo.toml)
+names=()
+dirs=()
+for manifest in crates/*/Cargo.toml; do
+  dir=${manifest%/Cargo.toml}
+  grep -qF "\"$dir\"" <<<"$excluded" && continue
+  name=$(sed -n '/^\[package\]/,/^\[/s/^name *= *"\([^"]*\)".*/\1/p' "$manifest" | head -n 1)
+  [ -n "$name" ] || { echo "$all"; exit 0; }
+  dirs+=("$dir")
+  names+=("$name")
+done
+[ ${#dirs[@]} -gt 0 ] || { echo "$all"; exit 0; }
+
+# Does the crate in DIR take path P? Its own files, or a path its source
+# names (REFS: those paths with the leading ../ taken off, so relative to
+# the repository's root or to crates/).
+takes() {
+  local dir=$1 p=$2 ref
+  case $p in "$dir"/*) return 0 ;; esac
+  while IFS= read -r ref; do
+    ref=${ref%/}
+    [ -n "$ref" ] || continue
+    case $p in "$ref" | "$ref"/* | "crates/$ref" | "crates/$ref"/*) return 0 ;; esac
+  done <<<"$refs"
+  return 1
+}
+
+picked=()
+for i in "${!dirs[@]}"; do
+  refs=$(grep -rhoE --include='*.rs' '"(\.\./)+[A-Za-z0-9_.-][A-Za-z0-9_./-]*' "${dirs[$i]}" 2>/dev/null |
+    sed -E 's#^"(\.\./)+##' | sort -u)
+  while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    if takes "${dirs[$i]}" "$p"; then
+      picked+=("${names[$i]}")
+      break
+    fi
+  done <<<"$files"
+done
+
+if [ ${#picked[@]} -eq 0 ]; then
+  echo 'rust=false'
+  echo 'tests=none()'
+  exit 0
+fi
+# rdeps() takes the crate's own tests too; package() says so in the filter.
+filter=''
+for n in "${picked[@]}"; do
+  filter="${filter:+$filter | }package(=$n) | rdeps(=$n)"
+done
+echo 'rust=true'
+echo "tests=$filter"

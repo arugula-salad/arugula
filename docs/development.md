@@ -270,7 +270,14 @@ pull request out, and a 5xx, a 429 or a dropped request from GitHub's API
 makes it look again rather than fail. The job has `actions: write` for the
 re-run, and the verdict gives up after 115 minutes, inside the job's 120.
 On a pull request, binaries.yml's job of the same name stands in for
-it, once `binaries` and `quick` have passed. binaries.yml has no
+it, once `binaries` and `quick` have passed, and pull-request.yml's
+`pr-gate` is required beside it (#917): the Rust tests and clippy of the
+crates the change reaches, every spec listed, and the specs it's likely
+to reach (testing.md). So a pull request whose own tests fail can't be
+queued, and doesn't fail a group and rebuild the ones behind it.
+pull-request.yml runs on `merge_group` too, where only `pr-gate` runs and
+passes at once: a required check that never reports would hold every
+group. binaries.yml has no
 `merge_group` trigger, because its `chant-verdict`, skipped on a group,
 would count as passed. On a pull request that changes the desktop app,
 binaries.yml also runs `just desktop-xvfb`, and `chant-verdict` waits for it.
@@ -300,12 +307,12 @@ behind it had run and failed too, since each contains it, which stalled the queu
 for 20 minutes on its first night. A flake doesn't need it off:
 the verdict re-runs a failed job before it decides. *Status check timeout* 120
 minutes, the verdict job's own timeout, which leaves room for a re-run. *Require status checks to pass*
-requires `chant-verdict`, from GitHub Actions. The repository's *Allow
+requires `chant-verdict` and `pr-gate`, both from GitHub Actions. The repository's *Allow
 auto-merge* is on, because `gh pr merge` needs it while checks no ruleset
 requires are still running, which a pull request's own run usually is.
 
 **To turn it off**, take the merge queue rule out of that ruleset and require
-`binaries` again in place of `chant-verdict`. Pull requests then merge
+`binaries` again in place of `chant-verdict` (and keep `pr-gate`). Pull requests then merge
 directly, and main's pushes run everything again, since no `merge_group` run
 passes on their commits. The ruleset's bypass (admins, and the `arugula-io`
 App) lets `scripts/release` push the fixtures commit straight to main.
