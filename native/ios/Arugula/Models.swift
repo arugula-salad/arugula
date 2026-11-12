@@ -169,12 +169,22 @@ struct PaneRow: Decodable, Identifiable, Hashable {
     }
 
     /// What to call it: its program's title (without a spinner in front),
-    /// else the conversation it resumes, else its program.
+    /// else the conversation it resumes, else its program. A title that's
+    /// only an id (a conversation's hash) isn't a name.
     var name: String {
         let cleaned = (title ?? "").drop { !$0.isLetter && !$0.isNumber }.trimmingCharacters(in: .whitespaces)
-        if !cleaned.isEmpty, cleaned != program, cleaned.lowercased() != "claude code" { return cleaned }
-        if let r = resumes, !r.isEmpty { return r.replacingOccurrences(of: "Claude Code conversation ", with: "") }
+        if Self.readable(cleaned), cleaned != program, cleaned.lowercased() != "claude code" { return cleaned }
+        if let r = resumes?.replacingOccurrences(of: "Claude Code conversation ", with: ""), Self.readable(r) { return r }
+        if let project { return "\(program ?? "shell") in \(project)" }
         return program ?? "shell"
+    }
+
+    /// Words a person can read: not empty, and not a hex id.
+    static func readable(_ s: String) -> Bool {
+        let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return false }
+        let hex = t.unicodeScalars.allSatisfy { CharacterSet(charactersIn: "0123456789abcdefABCDEF-").contains($0) }
+        return !(hex && t.count >= 6)
     }
 
     /// Wants you first, then working, done and idle; inside each, latest first.
