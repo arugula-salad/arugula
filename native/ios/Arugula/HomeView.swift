@@ -224,6 +224,7 @@ struct IssuesView: View {
                         .voidList()
                         .overlay { if l.issues.isEmpty { Caps("No open issues") } }
                     }
+                    .id(project.id)
                 } else {
                     ProgressView().tint(Palette.accent)
                 }
@@ -241,7 +242,9 @@ struct IssuesView: View {
             .id(picked?.id)
         }
         .navigationSplitViewStyle(.balanced)
-        .id(scope.current?.id)
+        // Another project: nothing of the last one stays open. (Not an `id` on
+        // the split view: rebuilding it under a laying-out bar aborts UIKit.)
+        .onChange(of: scope.current?.id) { _, _ in picked = nil }
     }
 }
 
@@ -249,9 +252,10 @@ struct IssuesView: View {
 struct BoardsView: View {
     let control: Control
     @EnvironmentObject private var scope: Scope
+    @State private var path = NavigationPath()
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             Group {
                 if let project = scope.current {
                     Loaded(load: { try await control.get("/api/projects/\(project.id)/boards", as: BoardList.self) }) { l in
@@ -267,6 +271,7 @@ struct BoardsView: View {
                         }
                         .overlay { if l.boards.isEmpty { Caps("No boards") } }
                     }
+                    .id(project.id)
                 } else {
                     ProgressView().tint(Palette.accent)
                 }
@@ -279,7 +284,7 @@ struct BoardsView: View {
                 Loaded(load: { try await control.get("/api/issues/\(ref.id)", as: Issue.self) }) { IssueView(issue: $0) }
             }
         }
-        .id(scope.current?.id)
+        .onChange(of: scope.current?.id) { _, _ in path = NavigationPath() }
     }
 }
 
