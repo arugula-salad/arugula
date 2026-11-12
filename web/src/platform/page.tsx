@@ -38,6 +38,7 @@ import { AllBoardsPage, BoardPage, BoardsPage } from "./pages/boards";
 import { DocPage, DocsPage } from "./pages/docs";
 import { projectDocs } from "../shared/docs/store";
 import { SessionPage } from "./pages/session";
+import { TeamPage } from "./pages/team";
 import { runs } from "./runs";
 import { runTitle } from "./runs-text";
 import { titleOf } from "./titles";
@@ -122,6 +123,8 @@ function body(r: Route, lost: string | null) {
       return <SettingsPage />;
     case "deploy":
       return <DeployPage id={r.deploy} />;
+    case "team":
+      return <TeamPage team={r.team} tab={r.tab} />;
     default:
       return <Missing what="Nothing's at this address." />;
   }
@@ -222,6 +225,7 @@ function useTitle(r: Route) {
       if (x.kind === "dm") return x.name || x.others.map((o) => o.name).join(", ") || x.with?.name;
       return x.name;
     },
+    team: names,
     shown: barProject(r),
   });
   useEffect(() => void (document.title = title), [title]);

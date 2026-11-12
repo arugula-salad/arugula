@@ -4552,6 +4552,18 @@ source?: BoardSource,
 lead?: BoardLead, };
 
 /**
+ * `POST /api/projects` (Arugula #892): a new project. Only a team's owners
+ * make one for the team; anyone makes their own. Who may read and write it
+ * is its owner's: a team's roles, or only its person.
+ */
+export type ProjectCreate = { name: string, owner: ProjectOwnerRef, 
+/**
+ * Its short name in links; when not given, control makes one from the
+ * name. Refused if the owner has a project with it already.
+ */
+slug?: string, };
+
+/**
  * A Doc, without its sections: a list's row, and a view's head.
  */
 export type ProjectDoc = { 
@@ -4806,6 +4818,30 @@ name: string, role: string, };
  * this one is named for what it owns.
  */
 export type ProjectOwner = { "kind": "team", id: string, name: string, } | { "kind": "personal", account: string, };
+
+/**
+ * An owner named by what it is, without its name: a team by its id, or
+ * the reader's own account.
+ */
+export type ProjectOwnerRef = { "kind": "team", id: string, } | { "kind": "personal" };
+
+/**
+ * `PATCH /api/projects/{project}` (Arugula #892): what changes, the rest
+ * as it was. Anyone who may write the project renames it. Only its owner
+ * archives it or moves it: a team's owners, or its person for their own;
+ * a move needs the same of the new owner. Access stays the owner's, so a
+ * move gives it to the new one's people. Its issues keep their numbers,
+ * and its Docs, boards, linked repos and workspaces go with it.
+ */
+export type ProjectPatch = { name?: string, 
+/**
+ * Archive it, or bring it back.
+ */
+archived?: boolean, 
+/**
+ * Move it to this owner.
+ */
+owner?: ProjectOwnerRef, };
 
 /**
  * A project in Arugula control, as a session keeps it: its id, and its
