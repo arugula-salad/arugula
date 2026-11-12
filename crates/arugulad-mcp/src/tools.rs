@@ -2356,7 +2356,16 @@ impl ToolCall<'_, '_> {
         } else {
             let b =
                 self.app.mux.api(|r| Api::Block(pane, r)).await.flatten().ok_or_else(|| format!("no block %{pane}"))?;
-            b.text()
+            match (b.kind(), b.config()["board"].as_str()) {
+                (BlockType::Board, Some(board)) => {
+                    let owner = match self.me() {
+                        Some(me) => self.app.mux.api(|r| Api::GuestBehind(me, r)).await.flatten().is_none(),
+                        None => true,
+                    };
+                    arugulad_base::board_block::captured(self.app, board, owner).await
+                }
+                _ => b.text(),
+            }
         };
         let text = cap_tail(text.trim_end(), PAGE_MAX);
         done(format!("%{pane}'s screen ({} lines)", text.lines().count()), results::Screen { pane, text })

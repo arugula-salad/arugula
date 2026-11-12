@@ -247,6 +247,9 @@ fn an_agent_opens_a_doc_beside_its_pane_and_clients_watch_it_fill() {
     // The text is the Doc as Markdown.
     let text = d.raw("GET", &format!("/api/panes/{doc}/capture"), None).1;
     assert!(text.contains("# Report") && text.contains("## Part 2") && text.contains("Text of s2."), "{text}");
+    // ...and `read_output` with screen over MCP says the same (Arugula #778).
+    let seen = m.call("read_output", json!({ "pane": doc, "screen": true })).unwrap();
+    assert_eq!(seen["text"].as_str().unwrap(), text.trim_end(), "{seen}");
     drop(m);
 }
 

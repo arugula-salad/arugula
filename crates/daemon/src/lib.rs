@@ -73,7 +73,7 @@ mod public_preview;
 use arugula_mux::procinfo;
 use arugula_mux::provider;
 pub mod board_attach;
-mod board_block;
+pub mod board_block;
 mod board_state;
 pub mod push;
 pub mod relay_ws;
