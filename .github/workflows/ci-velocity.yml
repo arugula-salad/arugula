@@ -1,0 +1,23 @@
+# The merge queue's numbers each morning (Arugula #925): its failure rate,
+# run times and time to merge over the last 7 days (scripts/ci-velocity),
+# in the run's summary. The CI velocity board judges changes by these.
+name: ci-velocity
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch: {}
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+  issues: read
+jobs:
+  report:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: The merge queue, last 7 days
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/ci-velocity >> "$GITHUB_STEP_SUMMARY"
