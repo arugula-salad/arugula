@@ -167,6 +167,8 @@ struct Loaded<T, Content: View>: View {
     var load: () async throws -> T
     /// Look again this often, for a list that sits beside what it opens.
     var every: Duration?
+    /// Look again whenever this changes: a live stream's cue.
+    var trigger: Int = 0
     @ViewBuilder var content: (T) -> Content
     @State private var value: T?
     @State private var problem: String?
@@ -191,6 +193,7 @@ struct Loaded<T, Content: View>: View {
             }
         }
         .refreshable { await refresh() }
+        .onChange(of: trigger) { _, _ in Task { await refresh() } }
     }
 
     private func refresh() async {

@@ -1,6 +1,7 @@
 //! A socket to control, with TLS for `https://`, and just enough HTTP/1.1 for
-//! one request on one connection: what the requests in `control` need, and the
-//! socket `link` opens its WebSocket on.
+//! one request on one connection: what the requests in `control` need, a
+//! stream that has no end (`chat_live`'s), and the socket `link` opens its
+//! WebSocket on.
 
 use std::{
     io::{self, BufRead, BufReader, Read, Write},
@@ -15,6 +16,9 @@ use rustls_platform_verifier::BuilderVerifierExt;
 
 const CONNECT: Duration = Duration::from_secs(10);
 const ANSWER: Duration = Duration::from_secs(30);
+/// How long a stream may say nothing, keep-alives included, before it counts
+/// as gone.
+const QUIET: Duration = Duration::from_secs(90);
 
 /// Where control is.
 #[derive(Clone, Debug)]
@@ -77,6 +81,63 @@ impl Site {
         s.flush()?;
         read_answer(BufReader::new(s))
     }
+
+    /// A GET whose answer is a stream (server-sent events): its status, its
+    /// body as it comes (dechunked), and a handle on the socket that shuts it.
+    pub fn stream(&self, path: &str, headers: &[(&str, &str)]) -> Result<(u16, Box<dyn BufRead + Send>, TcpStream)> {
+        let mut s = self.connect()?;
+        let shut = s.tcp().try_clone()?;
+        let mut head = format!("GET {path} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n", self.authority);
+        for (k, v) in headers {
+            head.push_str(&format!("{k}: {v}\r\n"));
+        }
+        head.push_str("\r\n");
+        s.write_all(head.as_bytes())?;
+        s.flush()?;
+        let mut r = BufReader::new(s);
+        let (status, _, chunked) = read_head(&mut r)?;
+        shut.set_read_timeout(Some(QUIET))?;
+        let body: Box<dyn BufRead + Send> =
+            if chunked { Box::new(BufReader::new(Dechunk { r, left: 0, done: false })) } else { Box::new(r) };
+        Ok((status, body, shut))
+    }
+}
+
+/// A chunked body read as it comes, for a stream: the chunks' framing goes,
+/// their bytes stay.
+struct Dechunk<R> {
+    r: R,
+    left: usize,
+    done: bool,
+}
+
+impl<R: BufRead> Read for Dechunk<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if self.done || buf.is_empty() {
+            return Ok(0);
+        }
+        if self.left == 0 {
+            let mut line = String::new();
+            // The CRLF that ends the last chunk's bytes, then the next one's size.
+            while line.trim().is_empty() {
+                line.clear();
+                if self.r.read_line(&mut line)? == 0 {
+                    return Ok(0);
+                }
+            }
+            let n = usize::from_str_radix(line.trim().split(';').next().unwrap_or(""), 16)
+                .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "a chunk's size"))?;
+            if n == 0 {
+                self.done = true;
+                return Ok(0);
+            }
+            self.left = n;
+        }
+        let want = buf.len().min(self.left);
+        let n = self.r.read(&mut buf[..want])?;
+        self.left -= n;
+        Ok(n)
+    }
 }
 
 /// The platform's verifier: on an iPhone, the system's trust store.
@@ -89,7 +150,9 @@ fn tls() -> Result<Arc<rustls::ClientConfig>> {
     Ok(CONFIG.get_or_init(|| Arc::new(c)).clone())
 }
 
-fn read_answer(mut r: impl BufRead) -> Result<(u16, Vec<u8>)> {
+/// An answer's status line and headers: its status, its length if it says
+/// one, and whether it's chunked.
+fn read_head(r: &mut impl BufRead) -> Result<(u16, Option<usize>, bool)> {
     let mut line = String::new();
     r.read_line(&mut line).context("reading control's answer")?;
     let status: u16 = line.split_whitespace().nth(1).and_then(|s| s.parse().ok()).context("not an HTTP answer")?;
@@ -112,6 +175,12 @@ fn read_answer(mut r: impl BufRead) -> Result<(u16, Vec<u8>)> {
             }
         }
     }
+    Ok((status, length, chunked))
+}
+
+fn read_answer(mut r: impl BufRead) -> Result<(u16, Vec<u8>)> {
+    let (status, length, chunked) = read_head(&mut r)?;
+    let mut line = String::new();
     let mut body = Vec::new();
     if chunked {
         loop {
@@ -197,6 +266,14 @@ mod tests {
         assert_eq!(read_answer(chunks).unwrap(), (201, b"hiyou".to_vec()));
         let until_closed = b"HTTP/1.1 404 Not Found\r\n\r\nno".as_slice();
         assert_eq!(read_answer(until_closed).unwrap(), (404, b"no".to_vec()));
+    }
+
+    #[test]
+    fn a_stream_is_read_as_it_comes_without_its_chunks() {
+        let chunks = b"5\r\nhello\r\n1\r\n \r\n6\r\nstream\r\n0\r\n\r\n".as_slice();
+        let mut got = String::new();
+        Dechunk { r: chunks, left: 0, done: false }.read_to_string(&mut got).unwrap();
+        assert_eq!(got, "hello stream");
     }
 
     #[test]

@@ -29,6 +29,7 @@ use serde_json::{Value, json};
 
 use crate::{
     DeviceKeys, Pane,
+    chat_live::{ChatLive, Event as ChatEvent},
     control::{Control, Pairing, Refused},
     device,
     link::{Event, Link},
@@ -389,6 +390,53 @@ pub unsafe extern "C" fn aru_link_request(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aru_link_free(l: *mut AruLink) {
+    if !l.is_null() {
+        drop(unsafe { Box::from_raw(l) });
+    }
+}
+
+// ---- chat's live stream
+
+pub struct AruChatLive(ChatLive);
+
+/// Chat's live stream. `notify` is called from its thread when an event is
+/// queued: `aru_chat_live_next` on the main thread then takes it. NULL, with
+/// `err`, when control refuses it.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aru_chat_live_open(
+    c: *const Control,
+    notify: AruNotify,
+    ctx: *mut c_void,
+    err: *mut *mut c_char,
+) -> *mut AruChatLive {
+    let ctx = Ctx(ctx);
+    let tell = move || {
+        let c = &ctx;
+        notify(c.0);
+    };
+    match ChatLive::open(unsafe { &*c }, tell) {
+        Ok(live) => Box::into_raw(Box::new(AruChatLive(live))),
+        Err(e) => {
+            unsafe { set_err(err, &e) };
+            ptr::null_mut()
+        }
+    }
+}
+
+/// The next event: control's JSON (`{"type": "message", ...}`), or
+/// `{"type":"closed","why":...}` once the stream has ended. NULL when none is
+/// queued.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aru_chat_live_next(l: *const AruChatLive) -> *mut c_char {
+    match unsafe { &*l }.0.next() {
+        Some(ChatEvent::Data(s)) => to_c(s),
+        Some(ChatEvent::Closed(why)) => to_c(json!({ "type": "closed", "why": why }).to_string()),
+        None => ptr::null_mut(),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aru_chat_live_free(l: *mut AruChatLive) {
     if !l.is_null() {
         drop(unsafe { Box::from_raw(l) });
     }
