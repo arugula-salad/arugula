@@ -485,7 +485,7 @@ shellcheck:
     [ "$v" = 0.11.0 ] || echo "shellcheck $v here, 0.11.0 in CI: it may report other things" >&2
     shellcheck -s sh scripts/install.sh scripts/glibc-floor
     shellcheck -s bash scripts/tests/*.sh scripts/dist-pack
-    shellcheck -x scripts/ci-* scripts/chant scripts/free-port testnet/*.sh testnet/forges/*.sh testnet/editors/*.sh testnet/macos/*.sh
+    shellcheck -x scripts/ci-* scripts/chant scripts/free-port scripts/pr-crates testnet/*.sh testnet/forges/*.sh testnet/editors/*.sh testnet/macos/*.sh
     shellcheck -s sh testnet/editors/box/entrypoint.sh testnet/sshd/entrypoint.sh testnet/sshd-systemd/keys.sh testnet/git/entrypoint.sh testnet/tailnet/entrypoint.sh
 
 # Tag the newest commit on main with a ci/green tag (--app: ci/green-app,
@@ -815,6 +815,7 @@ test-scripts:
     scripts/tests/ci-red.sh
     scripts/tests/changed.sh
     scripts/tests/pr-plan.sh
+    scripts/tests/pr-crates.sh
     scripts/tests/ci-nightly-red.sh
     scripts/tests/ci-auto-revert.sh
     scripts/tests/capabilities.sh
