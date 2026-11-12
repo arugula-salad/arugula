@@ -143,6 +143,11 @@ struct ProjectsView: View {
             .id(picked?.id)
         }
         .navigationSplitViewStyle(.balanced)
+        // A project takes the whole width once it's picked (a board's lanes
+        // want it); the sidebar button brings the list back.
+        .onChange(of: picked) { _, now in
+            if now != nil { withAnimation { columns = .detailOnly } }
+        }
     }
 }
 
