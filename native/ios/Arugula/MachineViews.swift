@@ -221,7 +221,7 @@ struct PaneCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("%\(pane.id) · \(pane.tab_name ?? "tab \(pane.tab)") · \(machine)")
+            Text(verbatim: "%\(pane.id) · \(pane.tab_name ?? "tab \(pane.tab)") · \(machine)")
                 .font(Face.mono(11)).foregroundStyle(Palette.dim).lineLimit(1)
             Text((pane.command ?? "shell").uppercased())
                 .font(Face.display(22)).foregroundStyle(pane.running ? Palette.ok : Palette.subtle).lineLimit(1)

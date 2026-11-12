@@ -65,7 +65,7 @@ struct RoomRow: View {
                     .lineLimit(1)
                 Spacer()
                 if room.unread > 0 && !open {
-                    Text("\(room.unread)")
+                    Text(verbatim: "\(room.unread)")
                         .font(Face.mono(11, "Bold"))
                         .padding(.horizontal, 6)
                         .padding(.vertical, 1)
@@ -298,7 +298,7 @@ struct MessageView: View {
                 if let reactions = message.reactions, !reactions.isEmpty {
                     HStack(spacing: 6) {
                         ForEach(Array(reactions.enumerated()), id: \.offset) { _, r in
-                            Text("\(r.emoji) \(r.count)")
+                            Text(verbatim: "\(r.emoji) \(r.count)")
                                 .font(Face.mono(12))
                                 .padding(.horizontal, 7)
                                 .padding(.vertical, 2)
