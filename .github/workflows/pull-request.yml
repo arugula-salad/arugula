@@ -84,6 +84,7 @@ jobs:
     name: pr-plan
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     outputs:
       e2e: ${{ steps.plan.outputs.e2e }}
       shards: ${{ steps.plan.outputs.shards }}
@@ -246,6 +247,7 @@ jobs:
     needs: [plan, build]
     if: needs.plan.outputs.e2e == 'true'
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -272,6 +274,7 @@ jobs:
     needs: [plan, specs, clippy, test, build, e2e]
     if: always()
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - name: Every job passed
         if: github.event_name == 'pull_request'
