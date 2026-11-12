@@ -3,7 +3,7 @@
 // else is nothing's address. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { TOP, idOf, parse, pathOf, slugOf, withSlug } from "../src/platform/paths.ts";
+import { TOP, chatViewIn, idOf, parse, pathOf, slugOf, withSlug } from "../src/platform/paths.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
 const names = (id) => ({ [P]: "Arugula Team", ch_0123456789abcdef: "general" })[id];
@@ -157,6 +157,15 @@ test("id-only addresses, for links that don't know the project", () => {
     const [p, q] = pathOf(r).split("?");
     assert.deepEqual(parse(p, q ? `?${q}` : ""), r);
   }
+});
+
+test("an id-only search keeps All teams when it's put in a project (Arugula #908)", () => {
+  const found = parse("/chat/search", "?q=deploy&all=1");
+  assert.deepEqual(found, { page: "find", what: "chat", view: "search", q: "deploy", all: true });
+  assert.equal(pathOf(chatViewIn(found, P)), `/p/${P}/chat/search?q=deploy&all=1`);
+  assert.equal(pathOf(chatViewIn(parse("/chat/search", "?q=deploy"), P)), `/p/${P}/chat/search?q=deploy`);
+  assert.equal(pathOf(chatViewIn(parse("/chat/saved"), P)), `/p/${P}/chat/saved`);
+  assert.equal(pathOf(chatViewIn(parse("/chat"), P)), `/p/${P}/chat`);
 });
 
 test("an agent session (M257)", () => {

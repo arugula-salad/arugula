@@ -8,7 +8,7 @@ import { listedInChat } from "../shared/chat/unread";
 import { issues } from "../shared/issues/store";
 import { chatProject, currentProject, lastTeamProject } from "./current-project";
 import { runs } from "./runs";
-import { current, pathOf, type Route } from "./router";
+import { chatViewIn, current, pathOf, type Route } from "./router";
 import { session } from "./session";
 
 /** The project a room belongs to: its team's; an object thread's, its
@@ -79,7 +79,7 @@ export function resolve(r: Extract<Route, { page: "find" }>): string | null {
     }
     // The current project's team, else the last one's, else the first (Arugula #882).
     const team = chatProject(session.projects, currentProject(), lastTeamProject());
-    return pathOf({ page: "chat", project: team ?? own, ...(r.view ? { view: r.view, q: r.q } : {}) }, names);
+    return pathOf(chatViewIn(r, team ?? own), names);
   }
   if (r.what === "issue") {
     // Its project, once the page has read it (the page asks).
