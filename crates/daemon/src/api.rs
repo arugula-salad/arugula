@@ -762,10 +762,24 @@ struct CaptureQuery {
 /// The HTML capture's policy: a sandboxed document with nothing to load.
 const HTML_CAPTURE_CSP: &str = "sandbox; default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'";
 
-async fn capture(State(app): AppState, Path(id): Path<PaneId>, Query(q): Query<CaptureQuery>) -> Res<Response> {
-    // Any block has a text rendering; terminals have more.
+async fn capture(
+    State(app): AppState,
+    who: Option<axum::Extension<crate::acl::Principal>>,
+    Path(id): Path<PaneId>,
+    Query(q): Query<CaptureQuery>,
+) -> Res<Response> {
+    // Any block has a text rendering; terminals have more. A board's is
+    // control's to say, so it's read here, as `board_read` does (the format
+    // and scope don't apply to a block).
     if let Some(b) = app.mux.api(|r| Api::Block(id, r)).await.flatten() {
-        return Ok(([(header::CONTENT_TYPE, "text/plain; charset=utf-8")], b.text()).into_response());
+        let text = match (b.kind(), b.config()["board"].as_str()) {
+            (arugula_proto::BlockType::Board, Some(board)) => {
+                let owner = who.is_none_or(|axum::Extension(w)| w.is_owner());
+                crate::board_block::captured(&app, board, owner).await
+            }
+            _ => b.text(),
+        };
+        return Ok(([(header::CONTENT_TYPE, "text/plain; charset=utf-8")], text).into_response());
     }
     let p = pane(&app, id).await?;
     let format = match q.format.as_deref().unwrap_or("text") {

@@ -14,9 +14,11 @@
 //!   the spec takes from its secrets. They go in a file only the daemon's
 //!   user reads, in memory (`$XDG_RUNTIME_DIR`, else `/dev/shm`), which the
 //!   setup reads and removes first thing. Git gets a credential in its
-//!   environment for its clone alone (`http.extraHeader`), so nothing is
-//!   written to a repo's config or the disk, and the remote stays a plain
-//!   URL. An installation token is revoked as soon as the setup is past
+//!   environment for its clone alone, for the repo's host alone
+//!   (`http.https://<host>/.extraHeader`), so nothing is written to a
+//!   repo's config or the disk, and the remote stays a plain URL. The env
+//!   is set only once the clones are done, for the packages and the setup
+//!   script. An installation token is revoked as soon as the setup is past
 //!   its clones (`revoke_clones`), or when it can't start; a daemon that
 //!   restarted mid-setup has lost it, and it lasts an hour at most.
 //! - **Once per box.** What it did is in `<state>/hosted-setup.json`, one of
@@ -457,15 +459,40 @@ fn quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', r"'\''"))
 }
 
-/// The credentials and env the setup reads first: a line each.
+/// Where a clone's credential may go: `https://<host>[:port]/`, so git
+/// sends it only to that host (`http.<url>.extraHeader`, which git matches
+/// against the host it connects to, as git reads the URL). None for a URL
+/// that doesn't name its host plainly (printable ASCII, no backslash,
+/// nothing but a host and a port before the path): it's cloned with
+/// nothing.
+fn auth_scope(url: &str) -> Option<String> {
+    let rest = url.get(..8).filter(|s| s.eq_ignore_ascii_case("https://")).map(|_| &url[8..])?;
+    let authority = &rest[..rest.find('/').unwrap_or(rest.len())];
+    let (host, port) = authority.split_once(':').map_or((authority, None), |(h, p)| (h, Some(p)));
+    let plain = url.bytes().all(|b| b.is_ascii_graphic() && b != b'\\')
+        && !host.is_empty()
+        && host.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-')
+        && port.is_none_or(|p| (1..=5).contains(&p.len()) && p.bytes().all(|b| b.is_ascii_digit()));
+    plain.then(|| format!("https://{}/", authority.to_ascii_lowercase()))
+}
+
+/// The function the setup's env is in, called once the clones are done.
+const ENV_FN: &str = "arugula_setup_env";
+
+/// The credentials and env the setup reads first: a line each. The env
+/// the spec takes from its secrets is for the packages and the setup
+/// script, so it's kept in a function the script calls after the clones:
+/// nothing in it steers how a repo is fetched, or where its credential
+/// goes.
 fn env_file(plan: &SetupPlan) -> String {
     let mut out = String::new();
     for (i, r) in plan.repos.iter().enumerate() {
-        if let (Some(u), Some(p)) = (&r.username, &r.password) {
+        if let (Some(u), Some(p), Some(_)) = (&r.username, &r.password, auth_scope(&r.url)) {
             let basic = base64::engine::general_purpose::STANDARD.encode(format!("{u}:{p}"));
             out.push_str(&format!("ARUGULA_GIT_AUTH_{i}={}\n", quote(&format!("Authorization: Basic {basic}"))));
         }
     }
+    out.push_str(&format!("{ENV_FN}() {{\n:\n"));
     for (k, v) in &plan.env {
         // Names were checked by the platform; checked again, as they're
         // shell words here.
@@ -473,6 +500,7 @@ fn env_file(plan: &SetupPlan) -> String {
             out.push_str(&format!("export {k}={}\n", quote(v)));
         }
     }
+    out.push_str("}\n");
     out
 }
 
@@ -516,12 +544,17 @@ cd {home} || exit 1
     for (i, (r, c)) in plan.repos.iter().zip(repos).enumerate() {
         let name = c.dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         let to = quote(&c.dir.to_string_lossy());
-        let auth = if r.password.is_some() {
-            format!(
-                "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraHeader GIT_CONFIG_VALUE_0=\"$ARUGULA_GIT_AUTH_{i}\" "
-            )
-        } else {
-            String::new()
+        let scope = r.password.as_ref().and_then(|_| auth_scope(&r.url));
+        let auth = match &scope {
+            Some(scope) => format!(
+                "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0={} GIT_CONFIG_VALUE_0=\"$ARUGULA_GIT_AUTH_{i}\" ",
+                quote(&format!("http.{scope}.extraHeader"))
+            ),
+            None => String::new(),
+        };
+        let with = match (&r.password, &scope) {
+            (Some(_), None) => "with no credentials: its URL names no plain host",
+            _ => how(&r.via),
         };
         s.push_str(&format!(
             r#"step {step}
@@ -535,10 +568,12 @@ unset ARUGULA_GIT_AUTH_{i}
 "#,
             step = quote(&format!("clone {name}")),
             there = quote(&format!("{name} is there already")),
-            says = quote(&format!("{} into {} ({})", r.url, c.dir.display(), how(&r.via))),
+            says = quote(&format!("{} into {} ({with})", r.url, c.dir.display())),
             url = quote(&r.url),
         ));
     }
+    // The spec's env, now the clones are done.
+    s.push_str(&format!("if declare -F {ENV_FN} >/dev/null; then {ENV_FN}; unset -f {ENV_FN}; fi\n"));
     if !plan.packages.is_empty() {
         let packages: Vec<String> = plan.packages.iter().map(|p| quote(p)).collect();
         s.push_str(&format!(
@@ -872,6 +907,7 @@ mod tests {
         let s = script(Path::new("/st/hosted-setup"), Path::new("/home/u"), &p, &repos);
         assert!(!s.contains("secret'") && !s.contains(&basic), "no credentials in the script: {s}");
         assert!(s.contains("GIT_CONFIG_VALUE_0=\"$ARUGULA_GIT_AUTH_0\" git clone -- 'https://git.example/acme/app.git' '/home/u/app'"), "{s}");
+        assert!(s.contains("GIT_CONFIG_KEY_0='http.https://git.example/.extraHeader'"), "{s}");
         assert!(
             s.contains("GIT_TERMINAL_PROMPT=0 git clone -- 'https://git.example/other/app' '/home/u/app-2'"),
             "{s}"
@@ -880,6 +916,87 @@ mod tests {
         assert!(s.contains("apt-get install -y -q -- 'jq'"), "{s}");
         assert!(s.contains("cd '/home/u/app' || exit $?\nbash -e \"$here/script.sh\""), "{s}");
         assert!(s.contains("Not set, so not in its env: OTHER"), "{s}");
+    }
+
+    /// A clone's credential is for its repo's host alone, as git reads the
+    /// URL: git is told to send it only there, and a URL that doesn't name
+    /// its host plainly gets none.
+    // Hosted boxes are Linux: its paths and shell.
+    #[cfg(unix)]
+    #[test]
+    fn a_clone_credential_goes_only_to_its_repos_host() {
+        assert_eq!(auth_scope("https://Git.Example/a.git").as_deref(), Some("https://git.example/"));
+        assert_eq!(auth_scope("https://git.example:8443/a/b").as_deref(), Some("https://git.example:8443/"));
+        assert_eq!(auth_scope("https://git.example").as_deref(), Some("https://git.example/"));
+        for url in [
+            r"https://git.example\@other.example/a.git",
+            r"https://git.example\other.example/a.git",
+            "https://u@git.example/a.git",
+            "https://git.example?@other.example/a.git",
+            "https://git.example#@other.example/a.git",
+            "https://git.example\t@other.example/a.git",
+            "https://git.example:/a.git",
+            "https://[::1]/a.git",
+            "http://git.example/a.git",
+            "/srv/git/a.git",
+        ] {
+            assert_eq!(auth_scope(url), None, "{url:?}");
+        }
+
+        let mut p = plan();
+        p.repos[0].url = r"https://git.example\@other.example/acme/app.git".into();
+        let env = env_file(&p);
+        assert!(!env.contains("ARUGULA_GIT_AUTH_"), "{env}");
+        let repos = places(Path::new("/home/u"), &p.repos.iter().map(|r| r.url.clone()).collect::<Vec<_>>());
+        let s = script(Path::new("/st/hosted-setup"), Path::new("/home/u"), &p, &repos);
+        assert!(!s.contains("extraHeader") && !s.contains("ARUGULA_GIT_AUTH_0\""), "{s}");
+        assert!(s.contains("its URL names no plain host"), "{s}");
+    }
+
+    /// The env the spec takes from its secrets is set once the clones are
+    /// done: the packages and the setup script have it, the clones don't,
+    /// so nothing in it changes what a repo is fetched from.
+    // Hosted boxes are Linux: its paths and shell.
+    #[cfg(unix)]
+    #[test]
+    fn the_setup_env_is_set_after_the_clones() {
+        if std::process::Command::new("git").arg("--version").output().is_err() {
+            eprintln!("no git here: skipped");
+            return;
+        }
+        let root = super::super::scratch("setup-env-after");
+        let (home, st) = (root.join("home"), root.join("st"));
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::create_dir_all(&st).unwrap();
+        let mut urls = vec![];
+        for name in ["one", "other"] {
+            let r = root.join("remotes").join(name);
+            std::fs::create_dir_all(&r).unwrap();
+            let run = |args: &[&str]| {
+                assert!(std::process::Command::new("git").current_dir(&r).args(args).output().unwrap().status.success())
+            };
+            run(&["init", "-q", "-b", "main"]);
+            std::fs::write(r.join("README"), name).unwrap();
+            run(&["add", "README"]);
+            run(&["-c", "user.name=t", "-c", "user.email=t@e", "commit", "-q", "-m", "first"]);
+            urls.push(r.to_string_lossy().into_owned());
+        }
+        let rewrite = format!("'url.{}.insteadOf'='{}'", urls[1], urls[0]);
+        let p = SetupPlan {
+            repos: vec![SetupRepo { url: urls[0].clone(), via: "none".into(), ..Default::default() }],
+            setup: "printf %s \"$GIT_CONFIG_PARAMETERS\" > seen\n".into(),
+            env: [("GIT_CONFIG_PARAMETERS".to_owned(), rewrite.clone())].into(),
+            ..Default::default()
+        };
+        let repos = places(&home, &p.repos.iter().map(|r| r.url.clone()).collect::<Vec<_>>());
+        std::fs::write(st.join("script.sh"), &p.setup).unwrap();
+        std::fs::write(st.join("setup.sh"), script(&st, &home, &p, &repos)).unwrap();
+        let env = root.join("env");
+        std::fs::write(&env, env_file(&p)).unwrap();
+        let out = std::process::Command::new("bash").arg(st.join("setup.sh")).arg(&env).output().unwrap();
+        assert_eq!(std::fs::read_to_string(st.join("done")).unwrap(), "0", "{}", String::from_utf8_lossy(&out.stderr));
+        assert_eq!(std::fs::read_to_string(home.join("one/README")).unwrap(), "one", "cloned from where it names");
+        assert_eq!(std::fs::read_to_string(home.join("one/seen")).unwrap(), rewrite, "the setup script has its env");
     }
 
     /// The script runs: it reads and removes its env file, clones each

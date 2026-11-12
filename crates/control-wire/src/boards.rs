@@ -2410,6 +2410,12 @@ fn machine_label(l: &BoardLead) -> &str {
     if l.machine_name.is_empty() { &l.machine } else { &l.machine_name }
 }
 
+/// A board as text, as `board_read` prints it and a board block's capture
+/// returns it: its title, then [`render`].
+pub fn text(view: &BoardView) -> String {
+    format!("{}\n{}", view.board.title, render(view))
+}
+
 /// A board as plain text, no wider than [`TEXT_WIDTH`] columns: before the
 /// lanes, `Goal:` with the goal's first line, `Led by` the session that leads
 /// it when one does, `Issues` with the board's

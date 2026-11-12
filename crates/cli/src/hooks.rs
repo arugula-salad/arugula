@@ -224,7 +224,10 @@ pub fn run(cmd: HooksCmd, json_out: bool) -> anyhow::Result<i32> {
         HooksCmd::Install { project, dry_run, allow_acting } => {
             install_for(&settings_path(project)?, dry_run, allow_acting, plugin_for_user(), json_out)
         }
-        HooksCmd::Status { project } => status_for(&settings_path(project)?, json_out, plugin_for_user()),
+        HooksCmd::Status { project } => {
+            let install = install_command(project.as_deref());
+            status_for(&settings_path(project)?, &install, json_out, plugin_for_user())
+        }
     }
     .map(|()| 0)
 }
@@ -639,6 +642,89 @@ fn tiers(settings: &Value) -> (Tier, Tier) {
     (tier(&default), tier(ACTING_RULES))
 }
 
+/// #906: what's left to install when Arugula's hooks are only partly
+/// there: an older `install` (before SessionStart's `arugula hook`, say)
+/// or a hand edit. `status`, `arugula status` and Getting started say it,
+/// with the one command that finishes the job. Not there at all is an
+/// offer, not this; the acting rules are a choice, so they never count.
+#[derive(Debug, Clone, PartialEq)]
+struct Partly {
+    /// Events with none of Arugula's entries.
+    missing: Vec<String>,
+    /// Events with some of Arugula's entries but not all.
+    outdated: Vec<String>,
+    /// Some of the default tier's permission rules, not all.
+    rules: bool,
+}
+
+/// Whether `settings` (with the plugin bringing the hooks: `plugin`) has
+/// Arugula's hooks only in part. `None` when they're all there, and when
+/// none are (nothing installed is an offer, said elsewhere).
+fn partly(settings: &Value, plugin: bool) -> Option<Partly> {
+    let mut any = plugin;
+    let (mut missing, mut outdated) = (vec![], vec![]);
+    for (event, wanted) in snippet() {
+        let groups = settings["hooks"][event.as_str()].as_array().map(Vec::as_slice).unwrap_or_default();
+        let wanted = wanted.as_array().cloned().unwrap_or_default();
+        let has = wanted.iter().filter(|w| has_group(groups, w)).count();
+        any |= has > 0;
+        if plugin || has == wanted.len() {
+            continue;
+        }
+        (if has == 0 { &mut missing } else { &mut outdated }).push(event);
+    }
+    let rules = tiers(settings).0 == Tier::Partial;
+    (any && (!missing.is_empty() || !outdated.is_empty() || rules)).then_some(Partly { missing, outdated, rules })
+}
+
+/// "A", "A and B", "A, B and C".
+fn and_list(items: &[String]) -> String {
+    match items {
+        [] => String::new(),
+        [one] => one.clone(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    }
+}
+
+impl Partly {
+    /// One sentence for a person: what's missing from `file`, and `install`
+    /// (the command that adds it).
+    fn says(&self, file: &str, install: &str) -> String {
+        let mut what = vec![];
+        let are = |n: usize| if n == 1 { "is" } else { "are" };
+        if !self.missing.is_empty() {
+            what.push(format!("{} {} missing", and_list(&self.missing), are(self.missing.len())));
+        }
+        if !self.outdated.is_empty() {
+            what.push(format!("{} {} out of date", and_list(&self.outdated), are(self.outdated.len())));
+        }
+        if self.rules {
+            what.push("some read-only permission rules are missing".into());
+        }
+        format!(
+            "Arugula's hooks are only partly installed in {file}: {}. `{install}` adds the rest and changes nothing else.",
+            and_list(&what)
+        )
+    }
+}
+
+/// `path` with the home directory as `~`, as a person reads it.
+fn tilde(path: &Path) -> String {
+    match home().ok().and_then(|h| path.strip_prefix(&h).ok().map(Path::to_owned)) {
+        Some(rest) => format!("~/{}", rest.display()),
+        None => path.display().to_string(),
+    }
+}
+
+/// The command that installs into `path`: the user's settings, or a
+/// project's (`DIR/.claude/settings.json`).
+fn install_command(project: Option<&Path>) -> String {
+    match project {
+        Some(dir) => format!("arugula hooks install --project {}", dir.display()),
+        None => "arugula hooks install".into(),
+    }
+}
+
 /// A `.claude.json` with an MCP server named `arugula` that isn't the
 /// plugin's own command (`arugula mcp`, which Claude Code counts as the same
 /// server): beside the plugin, Claude Code runs both and lists every tool
@@ -656,26 +742,34 @@ fn manual_mcp_beside_plugin() -> Option<PathBuf> {
 
 /// `status`, where the user's settings may enable the plugin (`plugin`, its
 /// `enabledPlugins` key).
-fn status_for(path: &Path, json_out: bool, plugin: Option<String>) -> anyhow::Result<()> {
+/// `install`: the command that installs into `path`, for what's said.
+fn status_for(path: &Path, install: &str, json_out: bool, plugin: Option<String>) -> anyhow::Result<()> {
     let settings = read_settings(path)?;
     let plugin = plugin_enabled(&settings).or(plugin);
     let events = present(&settings);
     let (read, acting) = tiers(&settings);
     let installed = plugin.is_some() || events.iter().all(|(_, h)| *h != Has::Missing);
     let live = plugin.as_deref().map(|p| live_on(&settings, p) || live_for_user(p));
+    let block = blocked(path);
+    // #906: blocked by a policy, installing the rest wouldn't help: that's said instead.
+    let partial = partly(&settings, plugin.is_some()).filter(|_| block.is_none());
+    let partial_says = partial.as_ref().map(|p| p.says(&tilde(path), install));
     if json_out {
         let map: Map<String, Value> =
             events.iter().map(|(e, h)| (e.clone(), Value::Bool(*h != Has::Missing))).collect();
         let permissions = json!({ "read": read.says(), "acting": acting.says() });
+        let partial = partial
+            .as_ref()
+            .map(|p| json!({ "missing": p.missing, "outdated": p.outdated, "rules": p.rules, "says": partial_says }));
         let v = json!({
             "settings": path, "installed": installed, "events": map, "permissions": permissions,
-            "plugin": plugin, "live": live, "blocked": blocked_json(path),
+            "plugin": plugin, "live": live, "blocked": blocked_json(path), "partial": partial,
         });
         println!("{}", serde_json::to_string_pretty(&v).unwrap_or_default());
         return Ok(());
     }
     println!("{}", path.display());
-    if let Some(b) = blocked(path) {
+    if let Some(b) = &block {
         println!("  blocked: {}", b.says());
     }
     for (event, h) in &events {
@@ -694,15 +788,19 @@ fn status_for(path: &Path, json_out: bool, plugin: Option<String>) -> anyhow::Re
     println!("permissions.allow");
     println!("  {:<20} {}", "read", read.says());
     println!("  {:<20} {}", "acting", acting.says());
-    if !installed {
-        println!("`arugula hooks install` adds the missing ones (or install the Claude Code plugin).");
-    }
-    if read != Tier::Present {
-        println!("`arugula hooks install` adds the read-only permission rules.");
+    if let Some(says) = &partial_says {
+        println!("{says}");
+    } else if block.is_none() {
+        if !installed {
+            println!("`{install}` adds the missing ones (or install the Claude Code plugin).");
+        }
+        if read != Tier::Present {
+            println!("`{install}` adds the read-only permission rules.");
+        }
     }
     if acting != Tier::Present {
         println!(
-            "`arugula hooks install --allow-acting` adds the acting ones (an agent can then start agents and type into panes without asking)."
+            "`{install} --allow-acting` adds the acting ones (an agent can then start agents and type into panes without asking)."
         );
     }
     if let (Some(p), Some(false)) = (&plugin, live)
@@ -1114,6 +1212,53 @@ mod tests {
             assert!(merge(&mut v, true).is_err(), "{bad}");
             assert_eq!(v, before, "{bad}: left whole");
         }
+    }
+
+    /// #906: some hooks there and some not (or some read rules) is partial,
+    /// and says which; all, or none, isn't; the acting rules never count.
+    #[test]
+    fn partly_installed_says_what_is_left() {
+        let (full, _) = merged(MINE);
+        assert_eq!(partly(&full, false), None, "all there");
+        assert_eq!(partly(&serde_json::from_str(MINE).unwrap(), false), None, "none: an offer, said elsewhere");
+        assert_eq!(partly(&json!({}), false), None);
+
+        // Jake's: every hook but SessionStart, and a read rule short.
+        let mut v = full.clone();
+        v["hooks"].as_object_mut().unwrap().remove("SessionStart");
+        v["permissions"]["allow"].as_array_mut().unwrap().retain(|r| r != READ_RULES[2]);
+        let p = partly(&v, false).unwrap();
+        assert_eq!(p, Partly { missing: vec!["SessionStart".into()], outdated: vec![], rules: true });
+        assert_eq!(
+            p.says("~/.claude/settings.json", "arugula hooks install"),
+            "Arugula's hooks are only partly installed in ~/.claude/settings.json: SessionStart is missing and some read-only permission rules are missing. `arugula hooks install` adds the rest and changes nothing else."
+        );
+
+        // An older install: SessionStart had only `arugula inbox`, and Notification is gone.
+        let mut v = full.clone();
+        v["hooks"]["SessionStart"].as_array_mut().unwrap().retain(|g| g["hooks"][0]["command"] != "arugula hook");
+        v["hooks"].as_object_mut().unwrap().remove("Notification");
+        v["hooks"].as_object_mut().unwrap().remove("PostToolUse");
+        let p = partly(&v, false).unwrap();
+        assert_eq!((p.outdated.clone(), p.rules), (vec!["SessionStart".to_owned()], false));
+        assert_eq!(p.missing, ["Notification", "PostToolUse"]);
+        let says = p.says("/x/settings.json", "arugula hooks install --project /x");
+        assert!(
+            says.contains(": Notification and PostToolUse are missing and SessionStart is out of date. `arugula hooks install --project /x` adds"),
+            "{says}"
+        );
+
+        // Only the read rules short: still partial. Acting rules missing: a choice, not partial.
+        let mut v = full.clone();
+        v["permissions"]["allow"].as_array_mut().unwrap().retain(|r| r != READ_RULES[0]);
+        assert_eq!(partly(&v, false).map(|p| p.rules), Some(true));
+        assert_eq!(tiers(&full).1, Tier::Missing);
+
+        // The plugin brings the hooks: only the rules can be partial.
+        let rules_only = json!({ "permissions": { "allow": [READ_RULES[0]] } });
+        assert_eq!(partly(&rules_only, false), None, "no hook at all: not installed");
+        assert_eq!(partly(&rules_only, true).map(|p| (p.missing.len(), p.rules)), Some((0, true)));
+        assert_eq!(partly(&json!({ "permissions": full["permissions"] }), true), None);
     }
 
     #[test]

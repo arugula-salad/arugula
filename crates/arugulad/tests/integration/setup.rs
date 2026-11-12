@@ -2,7 +2,8 @@
 //! /api/setup/agents/claude`): with stand-ins for Claude Code, Node and npm,
 //! in a home of the test's own, it adds Arugula's hooks to Claude Code's
 //! settings.json and says so, naming the file; the Agents step's check
-//! (`GET /api/setup?part=agents`, `claude.hooks`) follows.
+//! (`GET /api/setup?part=agents`, `claude.hooks`) follows, and a partial
+//! install (`claude.hooks_partial`, #906) is said and finished.
 
 use std::{path::Path, process::Command};
 
@@ -59,6 +60,29 @@ fn use_claude_code_installs_the_hooks_and_says_where() {
     let o = d.post("/api/setup/agents/claude", json!({}));
     assert_eq!(o["ok"], true, "{o}");
     assert!(!o["done"].to_string().contains("hooks to"), "{o}");
+    assert_eq!(agents().get("hooks_partial"), None, "{}", agents());
+
+    // #906: an older install, without SessionStart: partly, which, and
+    // the command; the same click finishes it.
+    let mut v: Value = serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
+    v["hooks"].as_object_mut().unwrap().remove("SessionStart");
+    std::fs::write(&settings, v.to_string()).unwrap();
+    let partial = agents()["hooks_partial"].clone();
+    assert_eq!(
+        (partial["missing"].clone(), partial["rules"].clone()),
+        (json!(["SessionStart"]), json!(false)),
+        "{partial}"
+    );
+    assert!(
+        partial["says"]
+            .as_str()
+            .unwrap()
+            .contains("~/.claude/settings.json: SessionStart is missing. `arugula hooks install`"),
+        "{partial}"
+    );
+    let o = d.post("/api/setup/agents/claude", json!({}));
+    assert_eq!(o["ok"], true, "{o}");
+    assert_eq!((agents()["hooks"].clone(), agents().get("hooks_partial").cloned()), (json!(true), None));
 }
 
 /// #520: Node installed after the daemon started (with nvm, say: the

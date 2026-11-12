@@ -650,7 +650,7 @@ fn said(e: CloudRefused) -> String {
 
 /// A board as text: its title, then [`wire::render`].
 fn text(v: &BoardView) -> String {
-    format!("{}\n{}", v.board.title, wire::render(v))
+    wire::text(v)
 }
 
 /// `Title (brd_…): 3/11 done, 2 proven, 2 group(s)`; for a board with no
