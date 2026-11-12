@@ -269,6 +269,26 @@ The monitor needs main's full Git history to check ancestry (ci-red.yml
 already checks it out).
 `scripts/tests/ci-nightly-red.sh` runs it with a fake gh.
 
+`scripts/ci-velocity` says how the merge queue is doing, so a change to CI
+can be judged by its numbers (Arugula issue
+https://app.arugula.io/issues/iss_9c80206ca3fd4fc3a53122efb137311a). Over a
+window (the last 7 days by default; `--since 2026-11-10`, `--since 14d`,
+`--until 2026-11-12`) it reads, with `gh api` and `GH_TOKEN`:
+
+- check.yml's merge_group runs: how many, passed, failed and cancelled, the
+  failure rate (failed over passed and failed: a cancelled group was dropped
+  for a failure ahead of it), and the median and p90 wall time;
+- time to merge: each pull request merged in the window, from its first
+  `added_to_merge_queue` timeline event to its merge, median and p90 (one
+  merged without the queue is counted apart);
+- each failed group's first failing job (the one that finished first, a
+  matrix's shards as one name), as a share of the failures.
+
+It prints a markdown table, or `--json`. `--repo` and `--workflow` point it
+at another repository's queue, the cloud's for one. Percentiles are nearest
+rank. `scripts/tests/ci-velocity.sh` (`just test-scripts`) runs it against
+recorded API answers (`scripts/tests/ci-velocity/`) through a fake gh.
+
 The Rust tests run under cargo-nextest (`.config/nextest.toml`): each in
 its own process and all at once, `ssh.rs` and `reboot.rs` one at a time
 (the test stack). CI's profile (`NEXTEST_PROFILE=ci`) retries a failure
