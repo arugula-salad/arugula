@@ -324,10 +324,39 @@ jobs:
   # census); each hosted job is a VM of its own, free for a public repo.
   # Ubuntu 24.04, not ubuntu-latest: build's binaries need glibc 2.39, the
   # pods' image's, which 24.04 has; a newer pod image needs a newer runner.
+  # The e2e shards' image on GHCR (scripts/ci-e2e-image, #953): there
+  # already, or built and pushed when the Dockerfile or Playwright changed.
+  e2e-image:
+    needs: changes
+    if: needs.changes.outputs.suite == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.image.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: image
+        uses: ./.github/actions/e2e-image
+
   e2e:
-    needs: build
+    needs: [build, e2e-image]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    # Our image (Playwright's plus what setup fetches: #953), so a shard
+    # downloads nothing from the runners' Ubuntu mirror. An empty image (a
+    # fork's PR when the tag is new) runs on the runner as before.
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ${{ needs.e2e-image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
+      options: --user 1001 --init --ipc=host
     strategy:
       fail-fast: false
       matrix:
