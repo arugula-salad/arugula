@@ -2013,7 +2013,8 @@ sleeps, and control pushes and searches them itself.
   quote from a pane (the page reads the pane end to end, and the person
   picks the lines). Nothing else of the pane does: its output, input and
   scrollback stay on the end-to-end channels above. Also what
-  people attach (files and images, bytes included, up to 10 MB each), the
+  people attach (files and images, up to 100 MB each, their bytes in a
+  bucket of control's that only the platform reads: Arugula #125), the
   emoji they react with, a channel's topic and pins, and their sidebar,
   notification settings, keywords, saved messages and when their pages were
   last open: tables below say which is which. None of it is end to end.
