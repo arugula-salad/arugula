@@ -27,6 +27,7 @@ pub mod flags;
 pub mod follow;
 pub mod forge;
 pub mod fs;
+pub mod hosted_check;
 pub mod hosts;
 pub mod keys;
 pub mod op;
