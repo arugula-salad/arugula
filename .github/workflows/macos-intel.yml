@@ -43,7 +43,13 @@ jobs:
         run: rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" --profile minimal -c rustfmt,clippy
       - name: mise (it brings the Zig libghostty needs, from .mise.toml)
         run: |
-          curl -fsSL https://mise.run | sh
+          # mise.run's installer downloads from GitHub itself, without retrying,
+          # so the install as a whole is tried again (#797).
+          if ! command -v mise >/dev/null; then
+            curl -fsSL --retry 4 --retry-delay 5 --retry-all-errors -o "$RUNNER_TEMP/mise-install.sh" https://mise.run
+            for i in 1 2 3; do sh "$RUNNER_TEMP/mise-install.sh" && break; sleep 10; done
+            "$HOME/.local/bin/mise" --version
+          fi
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
