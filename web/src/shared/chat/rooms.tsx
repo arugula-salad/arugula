@@ -6,11 +6,12 @@
 // machine to be up: a pane's thread reads and posts with its machine
 // asleep, and only its chip waits for it.
 //
-// Routes: `#chat` (the newest unread room, or the newest), `#chat=<room>`
+// Routes: `#chat` (the room last open, else the newest unread, else the
+// newest), `#chat=<room>`
 // and `#chat=<room>&msg=<n>`, `#chat=activity`, `#chat=search/<words>`.
 
 import { EmptyState } from "../ui/block-states";
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { chat, type ChatStore } from "../chat-store";
 import { bold, counted, listedInChat } from "./unread";
 import { bellFor, openBell } from "./bell";
@@ -176,15 +177,91 @@ function groupsOf(store: ChatStore, api: PlatformApi, dragging: boolean, scope?:
   return out;
 }
 
-/** The room shown: the route's, else (on a computer) the newest unread,
- * else the newest. */
+/** Where this device last left chat, for this account and page (#965): a
+ * room (and its thread), or on a phone the list. Kept per account, since
+ * two accounts can share a browser. */
+type Last = { room: string; thread?: number } | "list";
+
+const lastKey = (store: ChatStore, scope?: ChatScope) => `chat.last.${store.me}.${scope ? (scope.team ?? "personal") : "all"}`;
+
+function lastOf(store: ChatStore, scope?: ChatScope): Last | null {
+  if (!store.me) return null;
+  const v = remembered<unknown>(lastKey(store, scope), null);
+  if (v === "list") return v;
+  const x = v as { room?: unknown; thread?: unknown } | null;
+  if (!x || typeof x.room !== "string") return null;
+  return typeof x.thread === "number" ? { room: x.room, thread: x.thread } : { room: x.room };
+}
+
+/** The room `last` names, if the person still has it, listed and in scope. */
+function keptRoom(store: ChatStore, last: Last | null, scope?: ChatScope): ChatRoom | null {
+  if (!last || last === "list") return null;
+  const r = store.room(last.room);
+  return r && listedInChat(r) && inScope(r, scope) ? r : null;
+}
+
+/** The room shown: the route's, else (on a computer) the room last open,
+ * else the newest unread, else the newest. Unread elsewhere doesn't move
+ * the person (#965): the sidebar shows it. */
 function pickRoom(store: ChatStore, route: ChatRoute, phone: boolean, scope?: ChatScope): ChatRoom | null {
   if (route.room) return store.room(route.room) ?? null;
   if (phone || route.view) return null;
+  const kept = keptRoom(store, lastOf(store, scope), scope);
+  if (kept) return kept;
   // Object threads (M196) aren't listed here: one opens from its object,
   // and its unread counts there (./unread).
   const live = store.rooms.filter((r) => r.kind !== "archive" && listedInChat(r) && inScope(r, scope));
   return live.filter((r) => r.unread).sort(byNewest)[0] ?? live.filter((r) => r.last).sort(byNewest)[0] ?? live[0] ?? null;
+}
+
+/** Keep where the person is (#965), and open chat where they were. A room
+ * in the route is kept as the last one; on a phone, going back to the list
+ * keeps "list". Chat opened with no room in the route (the rail's Chat, a
+ * reload of the list) goes to the kept room, with the list beneath it on a
+ * phone so Back climbs; a computer shows it without moving the address,
+ * unless a thread was open. Only once per opening: the list reached later
+ * is the list. */
+function useLast(store: ChatStore, route: ChatRoute, phone: boolean, scope: ChatScope | undefined, picked: ChatRoom | null, off: boolean) {
+  const { nav } = usePlatformApi();
+  const before = useRef<ChatRoute | null>(null);
+  const opened = useRef(false);
+  const wrote = useRef("");
+  // As the page is committed, not after it paints: a room left within a
+  // frame is still the one kept.
+  useLayoutEffect(() => {
+    const prev = before.current;
+    before.current = route;
+    if (off || !store.me) return;
+    const key = lastKey(store, scope);
+    const keep = (v: Last) => {
+      const text = JSON.stringify(v);
+      if (wrote.current === key + text) return;
+      wrote.current = key + text;
+      remember(key, v);
+    };
+    if (route.view) {
+      opened.current = true;
+      return;
+    }
+    if (route.room) {
+      opened.current = true;
+      if (store.room(route.room)) keep(route.thread !== undefined ? { room: route.room, thread: route.thread } : { room: route.room });
+      return;
+    }
+    if (phone && prev?.room) {
+      opened.current = true;
+      return keep("list");
+    }
+    if (!opened.current) {
+      const last = lastOf(store, scope);
+      // Rooms not loaded yet: ask again when they are.
+      if (!store.rooms.length) return;
+      opened.current = true;
+      const kept = keptRoom(store, last, scope);
+      if (kept && last !== "list" && last && (phone || last.thread !== undefined)) return nav.resume?.(kept.id, last.thread);
+    }
+    if (picked) keep({ room: picked.id });
+  });
 }
 
 /** How a host fits chat in its box (#123). The platform page fills the
@@ -218,6 +295,7 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
   const picked = pickRoom(store, route, phone, scope);
+  useLast(store, route, phone, scope, picked, !!fit.pinned);
   const groups = groupsOf(store, api, dragging !== null, scope);
   // Mark all as read is this page's rooms'.
   const readAll = () => void store.readAll((r) => inScope(r, scope));
