@@ -182,6 +182,11 @@ pub const AGENT_BOARD_RESOLVE: &str = "/api/daemon/boards/{id}/resolve";
 /// own agent blocks, for the rows that point at it. The machine is the one
 /// that signed the request, never a field of the body.
 pub const AGENT_BLOCK_STATE: &str = "/api/daemon/block-state";
+/// `PUT` [`MachineSessionsReport`]: a machine tells control every session it
+/// has, with the project and card each is on, so a project can list its
+/// sessions across machines. The list replaces the machine's last one; the
+/// machine is the one that signed the request, never a field of the body.
+pub const AGENT_MACHINE_SESSIONS: &str = "/api/daemon/machine-sessions";
 /// `POST` [`AttachBlock`]: a machine's agent block was started on an issue
 /// (`start_agent`'s `issue`): attach it, as work, to that issue's row on
 /// every board of the project; answered [`BlockAttached`]. Needs the
@@ -1292,6 +1297,10 @@ impl From<DiffstatReport> for Diffstat {
 /// fields, but a body with another one is refused, so no message text, file
 /// name or prompt can ride along. It is only ever parsed by control, from a
 /// daemon; [`BlockState`] is what everyone reads.
+///
+/// `project` and `work_item` are ids, the block's project and card. Control
+/// has to take them before a daemon sends them, since an older control
+/// refuses the body: a daemon leaves them out until then.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardBlockStateReport"))]
@@ -1310,6 +1319,12 @@ pub struct BlockStateReport {
     pub uncommitted: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub diffstat: Option<DiffstatReport>,
+    /// The project the block works in: a `prj_…` id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+    /// The card it works on: a native issue's id, or `#N`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_item: Option<String>,
 }
 
 impl From<BlockState> for BlockStateReport {
@@ -1322,6 +1337,8 @@ impl From<BlockState> for BlockStateReport {
             pushed: b.pushed,
             uncommitted: b.uncommitted,
             diffstat: b.diffstat.map(Into::into),
+            project: None,
+            work_item: None,
         }
     }
 }
@@ -1374,6 +1391,54 @@ pub const BLOCK_STATE_EVERY_MS: u64 = 5 * 60_000;
 /// the row, and a machine that is gone frees it within twenty minutes. A
 /// closed report never goes stale.
 pub const BLOCK_STATE_STALE_MS: u64 = 4 * BLOCK_STATE_EVERY_MS;
+
+/// [`AGENT_MACHINE_SESSIONS`]'s body: every session on the machine that
+/// signs it, the whole list each time. Ids and names only (aru-116): no
+/// terminal text, no title a person typed, no file names, no transcripts.
+/// Like [`BlockStateReport`], it is `deny_unknown_fields`, at every level,
+/// so nothing else can ride along; control takes a new field before a
+/// daemon sends it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(deny_unknown_fields)]
+pub struct MachineSessionsReport {
+    pub sessions: Vec<MachineSession>,
+}
+
+/// One session in a [`MachineSessionsReport`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(deny_unknown_fields)]
+pub struct MachineSession {
+    /// The session's id on the machine.
+    pub session: String,
+    /// Its name, as the machine's session list shows it.
+    pub name: String,
+    /// The project it works in: a `prj_…` id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+    /// The card it works on: a native issue's id, or `#N`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_item: Option<String>,
+    #[serde(default)]
+    pub panes: Vec<MachineSessionPane>,
+}
+
+/// A pane of a [`MachineSession`]: its id and kind, never what it shows.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(deny_unknown_fields)]
+pub struct MachineSessionPane {
+    pub pane: u32,
+    /// The block kind: `terminal`, `agent`, ….
+    pub kind: String,
+    /// The card this pane works on, when it isn't its session's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_item: Option<String>,
+}
 
 /// A question on a row that a person answers on the board (Arugula #367):
 /// asked by a person or an agent, or raised by the board itself from the
@@ -2940,6 +3005,48 @@ mod tests {
             }
             o["message"] = "all done".into();
             assert!(serde_json::from_value::<PutBlockState>(v).is_err(), "{at:?}");
+        }
+    }
+
+    /// A daemon from before the project and card still reports a block
+    /// state control takes, and one that names them reads them back.
+    #[test]
+    fn a_block_state_report_takes_its_project_and_card_or_neither() {
+        let old = serde_json::json!({ "state": "idle", "branch": "b" });
+        let r: BlockStateReport = serde_json::from_value(old.clone()).unwrap();
+        assert_eq!((&r.project, &r.work_item), (&None, &None));
+        assert_eq!(serde_json::to_value(&r).unwrap(), old);
+        let new = serde_json::json!({ "state": "idle", "project": "prj_1", "work_item": "#7" });
+        let r: BlockStateReport = serde_json::from_value(new).unwrap();
+        assert_eq!((r.project.as_deref(), r.work_item.as_deref()), (Some("prj_1"), Some("#7")));
+        let mut extra = old;
+        extra["message"] = "all done".into();
+        assert!(serde_json::from_value::<BlockStateReport>(extra).is_err());
+    }
+
+    /// A machine's sessions report takes ids and names, and refuses a field
+    /// it doesn't list at any level.
+    #[test]
+    fn a_machine_sessions_report_refuses_a_field_it_does_not_list() {
+        let ok = serde_json::json!({ "sessions": [
+            { "session": "s1", "name": "work", "project": "prj_1", "work_item": "iss_1",
+              "panes": [{ "pane": 3, "kind": "agent", "work_item": "#7" }] },
+            { "session": "s2", "name": "scratch" },
+        ] });
+        let r: MachineSessionsReport = serde_json::from_value(ok.clone()).unwrap();
+        assert_eq!(r.sessions[0].panes[0].work_item.as_deref(), Some("#7"));
+        assert!(r.sessions[1].panes.is_empty() && r.sessions[1].project.is_none());
+        for at in [vec![], vec!["sessions", "0"], vec!["sessions", "0", "panes", "0"]] {
+            let mut v = ok.clone();
+            let mut o = &mut v;
+            for k in &at {
+                o = match k.parse::<usize>() {
+                    Ok(i) => &mut o[i],
+                    Err(_) => &mut o[*k],
+                };
+            }
+            o["title"] = "fix the parser".into();
+            assert!(serde_json::from_value::<MachineSessionsReport>(v).is_err(), "{at:?}");
         }
     }
 
