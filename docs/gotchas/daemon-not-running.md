@@ -26,9 +26,10 @@ a named pipe) in the daemon's state directory
   the service stopped.
 - **It runs with another state directory.** A daemon started with
   `ARUGULA_STATE_DIR` puts its socket there. Inside its panes the CLI is
-  told where (`ARUGULA_SOCK`), but in a shell of your own the CLI only
-  reads `ARUGULA_SOCK`, else the default place
-  (`crates/cli/src/main.rs`, `default_socket`), so it looks in the wrong
+  told where (`ARUGULA_SOCK`), but in a shell of your own the CLI reads
+  `ARUGULA_SOCK`, else the socket in `ARUGULA_STATE_DIR`, else in the
+  default place (`crates/cli/src/main.rs`, `default_socket`). With the
+  daemon's `ARUGULA_STATE_DIR` unset there, it looks in the wrong
   directory.
 
 ## Do
@@ -38,5 +39,6 @@ a named pipe) in the daemon's state directory
   desktop app's *Daemon > Start* for a stopped service, and
   `` `arugulad install` sets it up as a service and starts it `` when
   there's none.
-- If you moved the state directory, point the CLI at the socket:
-  `ARUGULA_SOCK=$ARUGULA_STATE_DIR/sock arugula …`, or `--socket PATH`.
+- If you moved the state directory, set the same `ARUGULA_STATE_DIR` for
+  the CLI, or point it at the socket: `ARUGULA_SOCK=PATH arugula …`, or
+  `--socket PATH`.
