@@ -6,53 +6,20 @@
 //
 // The check is the anchor message's place on every frame across the change,
 // not where it ends: a bounce that settles would pass the end alone.
-import { fileURLToPath } from "node:url";
 import { expect, test, type Page } from "@playwright/test";
-import { build } from "vite";
+import { fixturePage } from "./fixture-page";
 
-const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const ENTRY = fileURLToPath(new URL("./chat-scroll-page.tsx", import.meta.url));
 /** How far a message may move on any frame. */
 const SLACK = 4;
 const A = "ch_aaaa0001";
 const B = "ch_aaaa0002";
 const UNREAD = "ch_aaaa0003";
 
-type Out = { type: string; fileName: string; code?: string; source?: string | Uint8Array };
-let html: Promise<string> | null = null;
-/** The fixture page's HTML, script and style inline, built once per worker. */
-function fixturePage(): Promise<string> {
-  html ??= (async () => {
-    const out = (await build({
-      root: ROOT,
-      configFile: false,
-      oxc: { jsx: { runtime: "automatic", importSource: "preact" } },
-      logLevel: "silent",
-      build: {
-        write: false,
-        target: "es2022",
-        lib: { entry: ENTRY, formats: ["es"], fileName: "page" },
-        cssCodeSplit: false,
-        // The emoji table is a dynamic import: one script has it too.
-        rollupOptions: { output: { inlineDynamicImports: true } },
-      },
-    })) as { output: Out[] } | { output: Out[] }[];
-    const files = Array.isArray(out) ? out.flatMap((o) => o.output) : out.output;
-    const js = files.find((f) => f.type === "chunk")?.code ?? "";
-    const css = files
-      .filter((f) => f.fileName.endsWith(".css"))
-      .map((f) => String(f.source))
-      .join("\n");
-    return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head><body><div id="root"></div><script type="module">${js.replaceAll("</script", "<\\/script")}</script></body></html>`;
-  })();
-  return html;
-}
-
 /** A 1x1 PNG, stretched by the page to a picture that takes room once loaded. */
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
 
 async function open(page: Page, room: string = A, query = "") {
-  const body = await fixturePage();
+  const body = await fixturePage("./chat-scroll-page.tsx");
   await page.route("**/chat-scroll.html*", (r) => r.fulfill({ contentType: "text/html", body }));
   await page.route("**/fx/pic.png", async (r) => {
     await new Promise((done) => setTimeout(done, 150));

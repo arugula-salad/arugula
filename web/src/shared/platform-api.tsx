@@ -43,6 +43,10 @@ export interface ChatNav {
   up?(): string | null;
   down?(): string | null;
   goTo?(path: string): void;
+  /** Open chat where the person left it (#965): the room (and thread), with
+   * the levels above it beneath, so Back climbs. A host that omits it
+   * opens the list. */
+  resume?(room: string, thread?: number): void;
   /** A message's link, to copy; a reply's names its thread. */
   roomLink(room: string, seq: number, thread?: number): string;
   /** A room's address, for its row's `href` (UI audit #185). */
