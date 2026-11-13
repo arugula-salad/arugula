@@ -2,7 +2,7 @@
 schema: 1
 id: "aru-135"
 title: "A machine's Doc is the truth; its platform copy is read-only"
-state: "decided"
+state: "superseded"
 area: "Federation and control"
 source:
   via: "cli"
