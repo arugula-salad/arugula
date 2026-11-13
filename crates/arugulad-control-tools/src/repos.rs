@@ -34,7 +34,7 @@ pub struct RepoArgs {
 
 pub(crate) const LIST_LINKED: Kind = Kind {
     name: "linked_repos",
-    description: "The GitHub repos linked to one of the user's projects in Arugula control (default the current one): each one's name, whether it's private, and, for one unlinked, when its rows are purged.",
+    description: "The GitHub repos linked to one of the user's projects in Arugula cloud (default the current one): each one's name, whether it's private, and, for one unlinked, when its rows are purged.",
     schema: schema_for_type::<ProjectArgs>,
     flag: None,
 };

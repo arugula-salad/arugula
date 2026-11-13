@@ -10,7 +10,7 @@ use crate::util::print_json;
 
 #[derive(clap::Subcommand)]
 pub enum MachineCmd {
-    /// Give a machine a new name on Arugula control.
+    /// Give a machine a new name on Arugula cloud.
     ///
     /// The name is what the machines list, the switcher, chat and `@machine`
     /// mentions call it: 1 to 40 characters, and not another of your
@@ -29,7 +29,7 @@ pub enum MachineCmd {
 
 pub fn run(cmd: MachineCmd, json_out: bool) -> anyhow::Result<i32> {
     let Some(mut e) = Enrolled::load()? else {
-        bail!("this CLI isn't logged in to Arugula control: `arugula login` first");
+        bail!("this CLI isn't logged in to Arugula cloud: `arugula login` first");
     };
     match cmd {
         MachineCmd::Rename { name, machine } => {

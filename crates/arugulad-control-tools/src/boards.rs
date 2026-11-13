@@ -75,9 +75,9 @@ use crate::{control::CloudRefused, mux::Api};
 pub(crate) const READ_TOOL: &str = "board_read";
 pub(crate) const WRITE_TOOL: &str = "board_write";
 
-pub(crate) const READ_DESCRIPTION: &str = "Read a project's board in Arugula control (an epic when it has a goal; with this machine's boards.read grant over its project). One row is one piece of work: an issue (or a PR with no issue), or a note, with a one-line note and what is attached to it (work: PRs, agent blocks, runs; proof: runs, links). The lanes follow the work and nobody sets them. Lane by the row's primary item: Next (Plane triage, backlog or unstarted; a note), Doing (a Plane started state; or an agent block that isn't closed, or a run running), Review (a PR is open; or a Plane started state with 'review' in its name), Done (the issue is completed or canceled, or the PR merged or closed). A canceled item (a Plane project's cancelled state, or a native issue closed as not planned or a duplicate) is Done, marked cancelled and never proven; any other Done row is proven by CI or by evidence, or not proven yet. Groups are the plan's phases or waves. Returns the board as 72-column text, each row by its item (#N, IDENT-N), its Docs (the research and prototypes linked to it, with the ids unlink_doc takes), and its progress; a Steps block after the lanes puts open rows in order by what they wait on (blocks edges, stacked PRs; Doing and Review rows are step 1), with the longest open chain; with verbose: true, also the JSON with ids, revs and each row's step. With board (brd_…): that board, or only its matching rows with q (an item's number #541, a Plane key ARUGU-12, or words in the title or note), lane (next, doing, review or done) and group (its title or zon_…), under a line that says how many of the rows are shown. Without: the project's boards (the current project: the project you pass, else the one your block was started on (start_agent's issue), else your session's, else the one this clone's GitHub repo is linked to, else your person's default project), to pick one from.";
+pub(crate) const READ_DESCRIPTION: &str = "Read a project's board in Arugula cloud (an epic when it has a goal; with this machine's boards.read grant over its project). One row is one piece of work: an issue (or a PR with no issue), or a note, with a one-line note and what is attached to it (work: PRs, agent blocks, runs; proof: runs, links). The lanes follow the work and nobody sets them. Lane by the row's primary item: Next (Plane triage, backlog or unstarted; a note), Doing (a Plane started state; or an agent block that isn't closed, or a run running), Review (a PR is open; or a Plane started state with 'review' in its name), Done (the issue is completed or canceled, or the PR merged or closed). A canceled item (a Plane project's cancelled state, or a native issue closed as not planned or a duplicate) is Done, marked cancelled and never proven; any other Done row is proven by CI or by evidence, or not proven yet. Groups are the plan's phases or waves. Returns the board as 72-column text, each row by its item (#N, IDENT-N), its Docs (the research and prototypes linked to it, with the ids unlink_doc takes), and its progress; a Steps block after the lanes puts open rows in order by what they wait on (blocks edges, stacked PRs; Doing and Review rows are step 1), with the longest open chain; with verbose: true, also the JSON with ids, revs and each row's step. With board (brd_…): that board, or only its matching rows with q (an item's number #541, a Plane key ARUGU-12, or words in the title or note), lane (next, doing, review or done) and group (its title or zon_…), under a line that says how many of the rows are shown. Without: the project's boards (the current project: the project you pass, else the one your block was started on (start_agent's issue), else your session's, else the one this clone's GitHub repo is linked to, else your person's default project), to pick one from.";
 
-pub(crate) const WRITE_DESCRIPTION: &str = "Write to a project's board in Arugula control, labelled as your person's agent on this machine, never as them. One row is one piece of work, addressed by its item (#N, owner/repo#N, IDENT-N or an iss_/fi_ id: a bare #N is the project's native issue when it has one, else the one linked repo's item, and a repo's PR or issue is owner/repo#N; IDENT-N, such as ALL-2212, is a Plane item, and forge_read items with provider plane gives its fi_ id), never by a row id. Lanes follow the work (board_read says how); you can't set one. Add issues with add. A PR or an agent block is not a row of its own: attach it to the row of its issue. A merged PR closes a native issue it names as Closes #N or Arugula #N, or (#N) in its title; other #Ns only link. hold marks an issue not finished, so a merged PR doesn't close it; release clears it, closing the issue if its PR already merged. When a PR is only part of an issue (part of Arugula #N), hold the issue with what's left. ask puts a decision to a person (who, the question, up to four options, a recommendation, why); read the answer in board_read, never wait. Groups are phases or waves: add_group, rename_group, move_group, delete_group; group puts a row in one. note sets a row's one-line note (rev refuses a stale write), drop removes a row you added, detach takes off an attachment you made. Order and blockers are the link tool's. Link a Doc to a board with link_doc (a pdc_ Doc, or one from doc list): in the board's Docs strip, or with row on one row as its spike or research (no lane, no proof); unlink_doc takes one off. You may also make a board (an epic, with a goal; capabilities has epics_as_boards), set its title and goal, reopen it, or close it with a note on what a person can now do. A named session that makes a board leads it; lead_board takes the lead, release: true lets it go (only the lead's machine or a person can). verbose: true answers with the whole board. One failed item of a batch doesn't stop the rest.";
+pub(crate) const WRITE_DESCRIPTION: &str = "Write to a project's board in Arugula cloud, labelled as your person's agent on this machine, never as them. One row is one piece of work, addressed by its item (#N, owner/repo#N, IDENT-N or an iss_/fi_ id: a bare #N is the project's native issue when it has one, else the one linked repo's item, and a repo's PR or issue is owner/repo#N; IDENT-N, such as ALL-2212, is a Plane item, and forge_read items with provider plane gives its fi_ id), never by a row id. Lanes follow the work (board_read says how); you can't set one. Add issues with add. A PR or an agent block is not a row of its own: attach it to the row of its issue. A merged PR closes a native issue it names as Closes #N or Arugula #N, or (#N) in its title; other #Ns only link. hold marks an issue not finished, so a merged PR doesn't close it; release clears it, closing the issue if its PR already merged. When a PR is only part of an issue (part of Arugula #N), hold the issue with what's left. ask puts a decision to a person (who, the question, up to four options, a recommendation, why); read the answer in board_read, never wait. Groups are phases or waves: add_group, rename_group, move_group, delete_group; group puts a row in one. note sets a row's one-line note (rev refuses a stale write), drop removes a row you added, detach takes off an attachment you made. Order and blockers are the link tool's. Link a Doc to a board with link_doc (a pdc_ Doc, or one from doc list): in the board's Docs strip, or with row on one row as its spike or research (no lane, no proof); unlink_doc takes one off. You may also make a board (an epic, with a goal; capabilities has epics_as_boards), set its title and goal, reopen it, or close it with a note on what a person can now do. A named session that makes a board leads it; lead_board takes the lead, release: true lets it go (only the lead's machine or a person can). verbose: true answers with the whole board. One failed item of a batch doesn't stop the rest.";
 
 /// The most a batch takes.
 const BATCH_MAX: usize = wire::RESOLVE_MAX;
@@ -637,9 +637,9 @@ fn args<T: serde::de::DeserializeOwned>(a: Value) -> Result<T, String> {
 /// What a refusal says to an agent.
 fn said(e: CloudRefused) -> String {
     match e {
-        CloudRefused::NotJoined => "this machine hasn't joined Arugula control, where boards live: ask your person to join it (Getting started on the web page, or `arugulad join`)".into(),
+        CloudRefused::NotJoined => "this machine hasn't joined Arugula cloud, where boards live: ask your person to join it (Getting started on the web page, or `arugulad join`)".into(),
         CloudRefused::OldControl | CloudRefused::Said { status: 405, .. } => {
-            "this Arugula control doesn't let agents use boards yet".into()
+            "Arugula cloud doesn't let agents use boards yet".into()
         }
         CloudRefused::Said { status: 409, said, .. } => format!(
             "that row has changed since you read it ({said}): board_read again, then retry with the rev it shows now"
@@ -702,7 +702,7 @@ async fn boards_call(c: &Call<'_>, method: Method, path: &str, body: Option<Valu
 
 /// A board as the platform sends it.
 fn view_of(v: Value) -> Result<BoardView, String> {
-    serde_json::from_value(v).map_err(|e| format!("Arugula control sent a board I can't read: {e}"))
+    serde_json::from_value(v).map_err(|e| format!("Arugula cloud sent a board I can't read: {e}"))
 }
 
 async fn read_view(c: &Call<'_>, board: &str) -> Result<BoardView, String> {
@@ -917,7 +917,7 @@ async fn board_named(c: &Call<'_>, board: &str, project: Option<&str>) -> Result
     board_by_title(&chosen, named, board, &reach, |id| async move {
         let v = boards_call(c, Method::GET, &agent_project_boards(&id), None).await?;
         let list: BoardList =
-            serde_json::from_value(v).map_err(|e| format!("Arugula control sent boards I can't read: {e}"))?;
+            serde_json::from_value(v).map_err(|e| format!("Arugula cloud sent boards I can't read: {e}"))?;
         Ok(list.boards)
     })
     .await
@@ -1011,7 +1011,7 @@ impl Tally {
 async fn resolve(c: &Call<'_>, board: &str, items: &[String]) -> Result<Resolved, String> {
     let body = serde_json::to_value(ResolveItems { items: items.to_vec() }).map_err(|e| e.to_string())?;
     let v = boards_call(c, Method::POST, &agent_board_resolve(board), Some(body)).await?;
-    serde_json::from_value(v).map_err(|e| format!("Arugula control sent references I can't read: {e}"))
+    serde_json::from_value(v).map_err(|e| format!("Arugula cloud sent references I can't read: {e}"))
 }
 
 /// What an `attach` target is: the pointer and the role it is attached as by
@@ -1041,7 +1041,7 @@ fn block_target(to: &str, own: Option<&str>) -> Result<Target, String> {
             "{to:?}: an agent block is block:MACHINE/PANE, MACHINE being this machine's id (or local) and PANE the pane's number: block:local/N, block:%N or %N"
         ));
     }
-    let own = own.ok_or("this machine hasn't joined Arugula control, where boards live: ask your person to join it")?;
+    let own = own.ok_or("this machine hasn't joined Arugula cloud, where boards live: ask your person to join it")?;
     let machine = match machine {
         None | Some("local") => own,
         Some(m) => m,
@@ -1365,7 +1365,7 @@ async fn link_doc(c: &Call<'_>, a: LinkDocArgs) -> Out {
             .control
             .enrolled()
             .map(|e| e.saved.cert.device.clone())
-            .ok_or("this machine hasn't joined Arugula control, where boards live")?;
+            .ok_or("this machine hasn't joined Arugula cloud, where boards live")?;
         Pointer::MachineDoc { machine, doc: doc.to_owned(), title }
     };
     let Some(item) = a.row.as_deref().map(str::trim).filter(|r| !r.is_empty()) else {
@@ -1478,7 +1478,7 @@ pub(crate) async fn board_read(c: &Call<'_>, a: ReadBoardArgs) -> Out {
     let chosen = c.chosen_project(a.project.as_deref()).await?;
     let v = boards_call(c, Method::GET, &agent_project_boards(&chosen.id), None).await?;
     let list: BoardList =
-        serde_json::from_value(v).map_err(|e| format!("Arugula control sent boards I can't read: {e}"))?;
+        serde_json::from_value(v).map_err(|e| format!("Arugula cloud sent boards I can't read: {e}"))?;
     let which = chosen_line(c, &chosen).await;
     let s = format!(
         "{which}. {}",
@@ -1747,9 +1747,7 @@ pub(crate) async fn boards_reach(app: &crate::server::App) -> BoardsReach {
             answered: true,
         },
         Ok(Err(e)) => BoardsReach { projects: vec![], note: said(e), answered: false },
-        Err(_) => {
-            BoardsReach { projects: vec![], note: "Arugula control didn't answer in time".into(), answered: false }
-        }
+        Err(_) => BoardsReach { projects: vec![], note: "Arugula cloud didn't answer in time".into(), answered: false },
     }
 }
 

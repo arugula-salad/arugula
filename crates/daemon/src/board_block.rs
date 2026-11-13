@@ -46,7 +46,7 @@ pub async fn captured(app: &App, board: &str, owner: bool) -> String {
     }
     let read = app.control.cloud(reqwest::Method::GET, &agent_board(board), None).await;
     let view = read.map_err(|e| e.to_string()).and_then(|v| {
-        serde_json::from_value::<BoardView>(v).map_err(|e| format!("Arugula control sent a board I can't read: {e}"))
+        serde_json::from_value::<BoardView>(v).map_err(|e| format!("Arugula cloud sent a board I can't read: {e}"))
     });
     match view {
         Ok(v) => board_text(&v),

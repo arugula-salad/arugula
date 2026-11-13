@@ -192,7 +192,7 @@ pub fn entries(s: &Status, busy: Option<&str>) -> Vec<Entry> {
             None => match s.host.as_ref().and_then(|h| h.control.as_ref()) {
                 Some(u) => out.push(entry("daemon-control", format!("Joined to {u}"), false)),
                 None => {
-                    out.push(entry("daemon-control", "Not joined to Arugula control", false));
+                    out.push(entry("daemon-control", "Not joined to Arugula cloud", false));
                     out.push(entry("daemon-join", "Join…", true));
                 }
             },
@@ -328,7 +328,7 @@ fn dropped(app: &AppHandle, c: &ControlState) {
         Some(code) => format!("{}. It asks to join again: approve {code} on a device you use.", c.line()),
         None => format!("{}. Click to join again.", c.line()),
     };
-    crate::notify(app, crate::Click::JoinAgain, "This machine is no longer in Arugula control".into(), what);
+    crate::notify(app, crate::Click::JoinAgain, "This machine is no longer in Arugula cloud".into(), what);
 }
 
 /// #335: the daemon's `/api/setup?part=agents`, and a notification for

@@ -42,7 +42,7 @@ pub enum AgentTokensCmd {
 
 pub fn run(cmd: Option<AgentTokensCmd>, json_out: bool) -> anyhow::Result<i32> {
     let Some(e) = Enrolled::load()? else {
-        bail!("this CLI isn't logged in to Arugula control: `arugula login` first");
+        bail!("this CLI isn't logged in to Arugula cloud: `arugula login` first");
     };
     match cmd.unwrap_or(AgentTokensCmd::Ls) {
         AgentTokensCmd::Ls => {
@@ -53,7 +53,7 @@ pub fn run(cmd: Option<AgentTokensCmd>, json_out: bool) -> anyhow::Result<i32> {
             }
             let tokens = listed["tokens"].as_array().cloned().unwrap_or_default();
             if tokens.is_empty() {
-                println!("No agent tokens. Make one on the platform page: Settings, Agents with no machine.");
+                println!("No agent tokens. Make one on your machines page: Settings, Agents with no machine.");
             }
             for t in &tokens {
                 println!("{}", line(t));

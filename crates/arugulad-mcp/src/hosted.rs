@@ -37,7 +37,7 @@ pub const TOOLS: &[&str] = &[
 ];
 
 const WORKSPACE_ARG: &str = "A cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): \
-do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass \
+do this on its machine instead of here, through Arugula cloud. Its panes and blocks are that machine's: pass \
 cloud_workspace again to reach them.";
 
 /// The argument that names one.

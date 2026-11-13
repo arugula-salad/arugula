@@ -213,7 +213,7 @@ pub fn native(s: &str) -> Result<Native, String> {
 /// What `draft` and `forge_draft` say to a native issue.
 pub fn not_drafted(s: &str) -> String {
     format!(
-        "{} is a native issue in Arugula control: those aren't drafted, issue_write writes to them at once (kind comment, edit, label, assign, close or reopen). Drafts are for GitHub, where a person sends them: forge_draft kind open_on_github drafts opening it there.",
+        "{} is a native issue in Arugula cloud: those aren't drafted, issue_write writes to them at once (kind comment, edit, label, assign, close or reopen). Drafts are for GitHub, where a person sends them: forge_draft kind open_on_github drafts opening it there.",
         s.trim()
     )
 }
@@ -221,9 +221,9 @@ pub fn not_drafted(s: &str) -> String {
 /// What a refusal says to an agent.
 pub fn said(e: CloudRefused) -> String {
     match e {
-        CloudRefused::NotJoined => "this machine hasn't joined Arugula control, where native issues live: ask your person to join it (Getting started on the web page, or `arugulad join`)".into(),
+        CloudRefused::NotJoined => "this machine hasn't joined Arugula cloud, where native issues live: ask your person to join it (Getting started on the web page, or `arugulad join`)".into(),
         CloudRefused::OldControl | CloudRefused::Said { status: 405, .. } => {
-            "this Arugula control doesn't let agents use native issues yet".into()
+            "Arugula cloud doesn't let agents use native issues yet".into()
         }
         e => e.to_string(),
     }
@@ -406,7 +406,7 @@ impl Call<'_> {
         let q = rule.query(&steps);
         let path = if q.is_empty() { AGENT_ISSUE_HOME.to_owned() } else { format!("{AGENT_ISSUE_HOME}?{}", query(&q)) };
         let v = self.issues_call(Method::GET, &path, None).await?;
-        let id = v["project"].as_str().ok_or("Arugula control named no project")?;
+        let id = v["project"].as_str().ok_or("Arugula cloud named no project")?;
         let (name, team) = (v["name"].as_str().unwrap_or_default().to_owned(), is_team(&v));
         let rule = rule.answered(IssueHomeRule::deserialize(&v["rule"]).ok(), &steps);
         Ok(Chosen { id: id.to_owned(), name, team, rule })
@@ -417,7 +417,7 @@ impl Call<'_> {
     /// links a repo from a clone whose own repo no project links yet.
     pub async fn default_project(&self) -> Result<Chosen, String> {
         let v = self.issues_call(Method::GET, AGENT_ISSUE_HOME, None).await?;
-        let id = v["project"].as_str().ok_or("Arugula control named no project")?;
+        let id = v["project"].as_str().ok_or("Arugula cloud named no project")?;
         let (name, team) = (v["name"].as_str().unwrap_or_default().to_owned(), is_team(&v));
         Ok(Chosen { id: id.to_owned(), name, team, rule: Rule::Default })
     }

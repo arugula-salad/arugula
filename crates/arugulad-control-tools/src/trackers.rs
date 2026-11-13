@@ -38,7 +38,7 @@ pub(crate) const WRITE_TOOL: &str = "tracker_write";
 /// The platform's route for what a machine reaches.
 const REACH: &str = arugula_control_wire::projects::AGENT_TRACKER_REACH;
 
-pub(crate) const WRITE_DESCRIPTION: &str = "Write to the Plane project connected to a project in Arugula control: create a work item, comment on one, close it (completed or cancelled), reopen it (into the project's default state), or edit it. Your person's trackers.write grant over the project says you may, never more than their role. A write may wait: the connection decides which kinds (create, comment, edit, state change, field change) wait for a person to approve, edit or drop in the project's Triage, and the answer says which applied. A waiting write says \"waiting for a person to approve it\" with its id; nothing has reached Plane yet, and you can't approve it yourself. What is sent may end with a \"via Arugula\" line, as the connection says. Create and edit also take state, module, type and labels by name (any case) or id, and parent as IDENT-N: an unknown name is refused with the project's real ones, and forge_read tracker_fields lists them. Items are named by their fi_ id (forge_read lists them) or IDENT-N, like ARUGU-7. Assignees are not supported. With no project, an IDENT-N's is the one its connection is in, else the current project: the project you pass, else the one your block was started on (start_agent's issue), else your session's, else the one this clone's GitHub repo is linked to, else your person's default project. Examples and what waits: https://docs.arugula.io/plane-agents/";
+pub(crate) const WRITE_DESCRIPTION: &str = "Write to the Plane project connected to a project in Arugula cloud: create a work item, comment on one, close it (completed or cancelled), reopen it (into the project's default state), or edit it. Your person's trackers.write grant over the project says you may, never more than their role. A write may wait: the connection decides which kinds (create, comment, edit, state change, field change) wait for a person to approve, edit or drop in the project's Triage, and the answer says which applied. A waiting write says \"waiting for a person to approve it\" with its id; nothing has reached Plane yet, and you can't approve it yourself. What is sent may end with a \"via Arugula\" line, as the connection says. Create and edit also take state, module, type and labels by name (any case) or id, and parent as IDENT-N: an unknown name is refused with the project's real ones, and forge_read tracker_fields lists them. Items are named by their fi_ id (forge_read lists them) or IDENT-N, like ARUGU-7. Assignees are not supported. With no project, an IDENT-N's is the one its connection is in, else the current project: the project you pass, else the one your block was started on (start_agent's issue), else your session's, else the one this clone's GitHub repo is linked to, else your person's default project. Examples and what waits: https://docs.arugula.io/plane-agents/";
 
 #[derive(Deserialize, JsonSchema)]
 pub struct CreateArgs {
@@ -177,9 +177,9 @@ fn args<T: serde::de::DeserializeOwned>(a: Value) -> Result<T, String> {
 /// What a refusal says to an agent.
 fn said(e: CloudRefused) -> String {
     match e {
-        CloudRefused::NotJoined => "this machine hasn't joined Arugula control, where Plane connections live: ask your person to join it (Getting started on the web page, or `arugulad join`)".into(),
+        CloudRefused::NotJoined => "this machine hasn't joined Arugula cloud, where Plane connections live: ask your person to join it (Getting started on the web page, or `arugulad join`)".into(),
         CloudRefused::OldControl | CloudRefused::Said { status: 405, .. } => {
-            "this Arugula control doesn't let agents write to Plane yet".into()
+            "Arugula cloud doesn't let agents write to Plane yet".into()
         }
         e => e.to_string(),
     }
@@ -268,7 +268,7 @@ pub(crate) async fn tracker_write(c: &Call<'_>, kind: &str, a: Value) -> Out {
     let body = serde_json::to_value(&write).map_err(|e| e.to_string())?;
     let v = c.app().control.cloud(Method::POST, &agent_tracker_writes(&project), Some(&body)).await.map_err(said)?;
     let r: TrackerWriteDone =
-        serde_json::from_value(v).map_err(|e| format!("Arugula control sent an answer I can't read: {e}"))?;
+        serde_json::from_value(v).map_err(|e| format!("Arugula cloud sent an answer I can't read: {e}"))?;
     let text = match r.state.as_str() {
         "waiting" => format!(
             "{}. Nothing has reached Plane yet; a person approves, edits or drops it in the project's Triage.",
@@ -290,16 +290,12 @@ pub(super) async fn trackers_reach(app: &crate::server::App) -> TrackersReach {
             return TrackersReach {
                 live: false,
                 projects: vec![],
-                note: "This Arugula control has no Plane connections: it needs updating".into(),
+                note: "Arugula cloud has no Plane connections: it needs updating".into(),
             };
         }
         Ok(Err(e)) => return TrackersReach { live: false, projects: vec![], note: said(e) },
         Err(_) => {
-            return TrackersReach {
-                live: false,
-                projects: vec![],
-                note: "Arugula control didn't answer in time".into(),
-            };
+            return TrackersReach { live: false, projects: vec![], note: "Arugula cloud didn't answer in time".into() };
         }
     };
     let projects: Vec<TrackerReachProject> = serde_json::from_value(v["projects"].clone()).unwrap_or_default();
@@ -307,7 +303,7 @@ pub(super) async fn trackers_reach(app: &crate::server::App) -> TrackersReach {
     let note = if live {
         "tracker_write creates, comments on, closes, reopens and edits a Plane project's work items over these projects. A write may wait for a person to approve it, as the connection says; what is sent may say it was via Arugula, as the connection says. Each project lists its connections (id, identifier, write_policy: which kinds go at once; close_on_merge: whether a merged PR moves the items it names to Done): create takes connection or tracker, or neither when there is one. epics_as_boards: true means each open Plane epic has a board that follows its children (new ones appear on it), so don't build an epic's board by hand; false means epics aren't followed (a person switches it in the project's Plane settings). After a daemon update, a session may need to reload its tool list to see tools new in this version.".into()
     } else {
-        "This machine's owner hasn't given its agents trackers.write: `arugula grants add <machine> trackers.write --project <name>`, or Settings, Agents, Plane writes, on the platform page.".into()
+        "This machine's owner hasn't given its agents trackers.write: `arugula grants add <machine> trackers.write --project <name>`, or Settings, Agents, Plane writes, on your machines page.".into()
     };
     TrackersReach { live, projects, note }
 }

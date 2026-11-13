@@ -53,16 +53,16 @@ pub(crate) const READ_TOOL: &str = "read_session";
 /// `list`'s kind.
 pub(crate) const LIST: crate::mcp::tools::Kind = crate::mcp::tools::Kind {
     name: "agent_sessions",
-    description: "A project's agent sessions in Arugula control, a wave of them, newest first: each one's id, state, issue, Cloud workspace, branch and HEAD, when it last pushed, who started it, and what waits on your person (its question, a permission, CI that failed again, its PR to send). Narrow it with label (its issue's), tracker (an issue's number: the issues its body names as #N, and those naming it), asker (an account, or me), mine (only those this machine's agents started) and going. Needs your person's sessions.start, sessions.reply or threads.read grant over the project. wait with agent_session waits for them; read_session reads one whole.",
+    description: "A project's agent sessions in Arugula cloud, a wave of them, newest first: each one's id, state, issue, Cloud workspace, branch and HEAD, when it last pushed, who started it, and what waits on your person (its question, a permission, CI that failed again, its PR to send). Narrow it with label (its issue's), tracker (an issue's number: the issues its body names as #N, and those naming it), asker (an account, or me), mine (only those this machine's agents started) and going. Needs your person's sessions.start, sessions.reply or threads.read grant over the project. wait with agent_session waits for them; read_session reads one whole.",
     schema: rmcp::handler::server::common::schema_for_type::<ListSessionsArgs>,
     flag: None,
 };
 
-pub(crate) const START_DESCRIPTION: &str = "Start an agent session in Arugula control as your person: @arugula on a native issue (issue: #N in the current project, or iss_…) or in a project's channel (room, and thread: a message's seq to ask in its thread). The current project is the project you pass, else the one your block was started on (start_agent's issue), else your session's, else the one this clone's GitHub repo is linked to, else your person's default project. It runs on the project's cloud workspace, as your person (the asker, who pays for it), and its card says it was started by their agent on this machine. Needs their sessions.start grant over the project. prompt is what to ask (it may name the repo, owner/name, and a model); on an issue it defaults to working on it. Returns the session (ses_…), or what the platform said instead: why not, or which repo it asks (ask again there with the repo, owner/name, in prompt). session_reply answers it or prompts it after.";
+pub(crate) const START_DESCRIPTION: &str = "Start an agent session in Arugula cloud as your person: @arugula on a native issue (issue: #N in the current project, or iss_…) or in a project's channel (room, and thread: a message's seq to ask in its thread). The current project is the project you pass, else the one your block was started on (start_agent's issue), else your session's, else the one this clone's GitHub repo is linked to, else your person's default project. It runs on the project's cloud workspace, as your person (the asker, who pays for it), and its card says it was started by their agent on this machine. Needs their sessions.start grant over the project. prompt is what to ask (it may name the repo, owner/name, and a model); on an issue it defaults to working on it. Returns the session (ses_…), or what the platform said instead: why not, or which repo it asks (ask again there with the repo, owner/name, in prompt). session_reply answers it or prompts it after.";
 
-pub(crate) const READ_DESCRIPTION: &str = "Read an agent session in Arugula control (ses_…): its state, Cloud workspace, branch, HEAD and last push (and its workspace's latest error since, such as a failed push), what its latest turn left (commits, diffstat, its finish step), what it asks while it waits on a person, and its last answer whole, as its machine sent it (the thread's copy keeps only its end). Needs your person's sessions.start, sessions.reply or threads.read grant over its project. wait with agent_session waits for its turn to finish.";
+pub(crate) const READ_DESCRIPTION: &str = "Read an agent session in Arugula cloud (ses_…): its state, Cloud workspace, branch, HEAD and last push (and its workspace's latest error since, such as a failed push), what its latest turn left (commits, diffstat, its finish step), what it asks while it waits on a person, and its last answer whole, as its machine sent it (the thread's copy keeps only its end). Needs your person's sessions.start, sessions.reply or threads.read grant over its project. wait with agent_session waits for its turn to finish.";
 
-pub(crate) const REPLY_DESCRIPTION: &str = "Reply to an agent session in Arugula control as your person (ses_…, from session_start or the thread's card), in its thread: when it waits on a question, your text answers it; otherwise it's the session's next prompt (queued while a turn runs). Never an approval: a permission waits on a person, and your text is queued for after it. Needs your person's sessions.reply grant over its project. Says which it did.";
+pub(crate) const REPLY_DESCRIPTION: &str = "Reply to an agent session in Arugula cloud as your person (ses_…, from session_start or the thread's card), in its thread: when it waits on a question, your text answers it; otherwise it's the session's next prompt (queued while a turn runs). Never an approval: a permission waits on a person, and your text is queued for after it. Needs your person's sessions.reply grant over its project. Says which it did.";
 
 #[derive(Deserialize, JsonSchema)]
 pub struct SessionStartArgs {
@@ -95,7 +95,7 @@ pub struct SessionReplyArgs {
     pub text: String,
 }
 
-pub(crate) const STOP_DESCRIPTION: &str = "Stop an agent session in Arugula control (ses_…) now: it cancels the turn under way and ends the session, as the Stop button on its card does, and says so in its thread (\"Stopped by <your person>'s agent on <machine>: <reason>\"). Only a session your person asked for (you started it, or they did), with their sessions.start or sessions.reply grant over its project. Stopping is always safe and never needs a person. A session that has ended already is left as it is.";
+pub(crate) const STOP_DESCRIPTION: &str = "Stop an agent session in Arugula cloud (ses_…) now: it cancels the turn under way and ends the session, as the Stop button on its card does, and says so in its thread (\"Stopped by <your person>'s agent on <machine>: <reason>\"). Only a session your person asked for (you started it, or they did), with their sessions.start or sessions.reply grant over its project. Stopping is always safe and never needs a person. A session that has ended already is left as it is.";
 
 #[derive(Deserialize, JsonSchema)]
 pub struct SessionStopArgs {
@@ -241,9 +241,9 @@ pub(crate) fn read_text(v: &Value) -> String {
 /// What a refusal says to an agent.
 fn said(e: CloudRefused) -> String {
     match e {
-        CloudRefused::NotJoined => "this machine hasn't joined Arugula control, where sessions live: ask your person to join it (Getting started on the web page, or `arugulad join`)".into(),
+        CloudRefused::NotJoined => "this machine hasn't joined Arugula cloud, where sessions live: ask your person to join it (Getting started on the web page, or `arugulad join`)".into(),
         CloudRefused::OldControl | CloudRefused::Said { status: 405, .. } => {
-            "this Arugula control can't start sessions for agents yet".into()
+            "Arugula cloud can't start sessions for agents yet".into()
         }
         e => e.to_string(),
     }

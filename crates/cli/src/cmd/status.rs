@@ -327,7 +327,7 @@ mod tests {
         );
 
         let none = ControlState { state: "not_joined".into(), ..Default::default() };
-        assert_eq!(control_line(&none).says, "Not joined to Arugula control");
+        assert_eq!(control_line(&none).says, "Not joined to Arugula cloud");
     }
 
     #[test]

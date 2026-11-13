@@ -579,7 +579,7 @@ fn control_down_is_an_error_not_github() {
         &["issue", "list"],
     ] {
         let err = rig.fails(false, args);
-        assert!(err.contains("asking Arugula control") && !err.contains("can't reach arugulad"), "{args:?}: {err}");
+        assert!(err.contains("asking Arugula cloud") && !err.contains("can't reach arugulad"), "{args:?}: {err}");
     }
     // Asked for GitHub's by name, it's GitHub's.
     assert!(rig.fails(false, &["issue", "comment", "%5", "x"]).contains("can't reach arugulad"));

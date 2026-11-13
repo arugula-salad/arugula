@@ -52,7 +52,7 @@ pub fn run(cmd: Option<GrantCmd>, which: Which, json_out: bool) -> anyhow::Resul
         bail!("{SIGN_ELSEWHERE}");
     }
     let Some(e) = Enrolled::load()? else {
-        bail!("this CLI isn't logged in to Arugula control: `arugula login` first");
+        bail!("this CLI isn't logged in to Arugula cloud: `arugula login` first");
     };
     let project = match &which.project {
         Some(p) if p.starts_with("prj_") => p.clone(),

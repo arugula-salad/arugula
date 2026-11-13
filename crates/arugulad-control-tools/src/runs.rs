@@ -51,13 +51,13 @@ pub(crate) const START_TOOL: &str = "start_run";
 const BACK_OFF: Duration = Duration::from_secs(5);
 pub(crate) const READ_TOOL: &str = "read_run";
 
-pub(crate) const START_DESCRIPTION: &str = "Start a project run on one of its Cloud workspaces in Arugula control (not a command in a pane here: that's run): a run spec of the project by name, a command, or an instruction to an agent (Claude Code, headless). It runs there, not here, in a pane the project's people watch, under the project's standing grant (without one it waits for an owner to approve it). Your person's grants say where you may, over the project: runs.start for a run spec, runs.command for a command or an instruction of your own. Never more than their role: it's recorded as theirs, started by their agent on this machine. Returns the run (run_…) at once, pending; wait with run follows it, read_run reads its timeline and log.";
+pub(crate) const START_DESCRIPTION: &str = "Start a project run on one of its Cloud workspaces in Arugula cloud (not a command in a pane here: that's run): a run spec of the project by name, a command, or an instruction to an agent (Claude Code, headless). It runs there, not here, in a pane the project's people watch, under the project's standing grant (without one it waits for an owner to approve it). Your person's grants say where you may, over the project: runs.start for a run spec, runs.command for a command or an instruction of your own. Never more than their role: it's recorded as theirs, started by their agent on this machine. Returns the run (run_…) at once, pending; wait with run follows it, read_run reads its timeline and log.";
 
-pub(crate) const READ_DESCRIPTION: &str = "Read a run in Arugula control (with this machine's runs.read grant over its project): its state, exit code, timeline, and a page of its log by byte offset (pass next_offset back as offset for more). Without run: a project's latest runs. wait with run waits for one to end.";
+pub(crate) const READ_DESCRIPTION: &str = "Read a run in Arugula cloud (with this machine's runs.read grant over its project): its state, exit code, timeline, and a page of its log by byte offset (pass next_offset back as offset for more). Without run: a project's latest runs. wait with run waits for one to end.";
 
 #[derive(Deserialize, JsonSchema)]
 pub struct StartRunArgs {
-    /// The project in Arugula control: its id (prj_…), or personal.
+    /// The project in Arugula cloud: its id (prj_…), or personal.
     pub project: String,
     /// A run spec of the project, by its name or id: what it runs and on
     /// which Cloud workspace.
@@ -106,9 +106,9 @@ pub struct ReadRunArgs {
 /// What a refusal says to an agent.
 fn said(e: CloudRefused) -> String {
     match e {
-        CloudRefused::NotJoined => "this machine hasn't joined Arugula control, where runs live: ask your person to join it (Getting started on the web page, or `arugulad join`)".into(),
+        CloudRefused::NotJoined => "this machine hasn't joined Arugula cloud, where runs live: ask your person to join it (Getting started on the web page, or `arugulad join`)".into(),
         CloudRefused::OldControl | CloudRefused::Said { status: 405, .. } => {
-            "this Arugula control doesn't let agents start or read runs yet".into()
+            "Arugula cloud doesn't let agents start or read runs yet".into()
         }
         e => e.to_string(),
     }
@@ -348,7 +348,7 @@ pub(super) async fn runs_reach(app: &crate::server::App) -> RunsReach {
             return RunsReach {
                 live: false,
                 projects: vec![],
-                note: "Arugula control didn't answer in time".into(),
+                note: "Arugula cloud didn't answer in time".into(),
                 answered: false,
             };
         }
@@ -358,7 +358,7 @@ pub(super) async fn runs_reach(app: &crate::server::App) -> RunsReach {
     let note = if live {
         "start_run starts run specs where runs.start reaches, and commands or instructions of your own where runs.command does; read_run and wait with run read them where runs.read does. A start is labelled as your person's agent on this machine; it never approves anything.".into()
     } else {
-        "This machine's owner hasn't given its agents a run grant: `arugula grants add <machine> runs.read runs.start --project <name>` (and runs.command for commands of your own), or Settings, Agents and runs, on the platform page.".into()
+        "This machine's owner hasn't given its agents a run grant: `arugula grants add <machine> runs.read runs.start --project <name>` (and runs.command for commands of your own), or Settings, Agents and runs, on your machines page.".into()
     };
     RunsReach { live, projects, note, answered: true }
 }

@@ -250,7 +250,7 @@ enum Home {
 
 /// Said when a team machine can't reach control to choose its project.
 const TEAM_UNREACHABLE: &str =
-    "Arugula control can't be reached, and a team machine's Docs live in the team's project: try again when it's back.";
+    "Arugula cloud can't be reached, and a team machine's Docs live in the team's project: try again when it's back.";
 
 /// The home a project choice means: a team's project is the team's, a
 /// personal one is never a Doc's home (the machine is), and no answer is
@@ -659,7 +659,7 @@ mod tests {
         let Home::Refused(why) = home_of(Err("can't reach control".into()), true) else { panic!("fell back") };
         assert_eq!(
             why,
-            "Arugula control can't be reached, and a team machine's Docs live in the team's project: try again when it's back."
+            "Arugula cloud can't be reached, and a team machine's Docs live in the team's project: try again when it's back."
         );
     }
 

@@ -74,7 +74,7 @@ pub(crate) async fn home(c: &Call<'_>, asked: Option<&str>, items: &[&str]) -> R
     let path = format!("{AGENT_TRACKER_HOMES}?also={}", current.id);
     let v = c.app().control.cloud(Method::GET, &path, None).await.map_err(|e| e.to_string())?;
     let homes: TrackerHomes =
-        serde_json::from_value(v).map_err(|e| format!("Arugula control sent an answer I can't read: {e}"))?;
+        serde_json::from_value(v).map_err(|e| format!("Arugula cloud sent an answer I can't read: {e}"))?;
     let name = if current.name.is_empty() { current.id.as_str() } else { current.name.as_str() };
     let mut chosen: Option<String> = None;
     for ident in &want {

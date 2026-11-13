@@ -423,7 +423,7 @@ fn a_pins_text_comes_from_content_and_its_failure_leaves_the_metadata() {
     let issue = open("issue", "https://github.com/acme/app/issues/3");
     d.wait_for("the issue's text", || text(&d, issue).contains("the first comment says hello"));
     let t = text(&d, issue);
-    assert!(t.contains("the issue's description") && t.contains("read through Arugula control"), "{t}");
+    assert!(t.contains("the issue's description") && t.contains("read through Arugula cloud"), "{t}");
     let s = state(&d, issue);
     assert_eq!(s["issue"]["item"]["body"], "the issue's description");
     assert_eq!(s["issue"]["item"]["comments"], 1);

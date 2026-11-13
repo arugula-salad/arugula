@@ -274,7 +274,7 @@ async fn forges(app: &App, _on: On) -> Vec<ForgeSignIn> {
         note: match gh {
             Ok(()) => "gh".into(),
             Err(e) if joined => {
-                format!("{e}. Until then blocks read through Arugula control's GitHub App, and nothing is sent")
+                format!("{e}. Until then blocks read through Arugula cloud's GitHub App, and nothing is sent")
             }
             Err(e) => e,
         },
@@ -394,7 +394,7 @@ mod tests {
     #[test]
     fn a_grant_control_didnt_answer_for_is_unreachable_not_missing() {
         let offered = names(&["board_read", "board_write", "post_thread"]);
-        let late = "Arugula control didn't answer in time";
+        let late = "Arugula cloud didn't answer in time";
         let unread = [("boards.read", late), ("boards.write", late)];
         let s = status_of(&offered, Some(&offered), false, true, &[], &unread);
         let of = |t: &str| s.iter().find(|x| x.tool == t).unwrap_or_else(|| panic!("{t}: {s:?}"));

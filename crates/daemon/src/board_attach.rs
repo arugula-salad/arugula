@@ -153,7 +153,7 @@ pub async fn issue_project(app: &App, issue: &str, current: Option<&str>) -> Res
             .map_err(|e| format!("issue {issue}: {e}"))?;
         return match (v["project"].as_str(), v["number"].as_u64()) {
             (Some(p), Some(n)) => Ok(Some((p.to_owned(), format!("#{n}")))),
-            _ => Err(format!("issue {issue}: Arugula control named no project or number")),
+            _ => Err(format!("issue {issue}: Arugula cloud named no project or number")),
         };
     }
     let Some(IssueRef::Number(n)) = IssueRef::parse(issue) else { return Ok(None) };
@@ -215,7 +215,7 @@ async fn attach(
     session: Option<String>,
 ) -> Result<Vec<WorkBoard>, NotKept> {
     let Some(enrolled) = app.control.enrolled() else {
-        return Err("this machine hasn't joined Arugula control, so the row wasn't attached".into());
+        return Err("this machine hasn't joined Arugula cloud, so the row wasn't attached".into());
     };
     let project = write_project(app, home).await?;
     let body = serde_json::to_value(AttachBlock {
@@ -237,7 +237,7 @@ async fn attach(
             }
         })?;
     let attached: BlockAttached =
-        serde_json::from_value(v).map_err(|e| format!("Arugula control sent an answer I can't read: {e}"))?;
+        serde_json::from_value(v).map_err(|e| format!("Arugula cloud sent an answer I can't read: {e}"))?;
     Ok(attached
         .on
         .into_iter()

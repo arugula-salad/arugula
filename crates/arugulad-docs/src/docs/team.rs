@@ -279,7 +279,7 @@ impl Team {
     fn cloud(&self) -> Result<&Arc<dyn Cloud>, String> {
         self.cloud
             .as_ref()
-            .ok_or_else(|| Refused::Offline("this machine hasn't joined Arugula control".into()).sentence())
+            .ok_or_else(|| Refused::Offline("this machine hasn't joined Arugula cloud".into()).sentence())
     }
 
     /// Take a Doc control gave: the newer one wins (a read that started
@@ -1138,15 +1138,15 @@ mod tests {
         let (team, changed) = block(&fake, None);
         team.refresh().await.unwrap();
         team.fill("s1", "One").await.unwrap();
-        *fake.refuse.lock().unwrap() = Some(Refused::Offline("can't reach Arugula control: down".into()));
+        *fake.refuse.lock().unwrap() = Some(Refused::Offline("can't reach Arugula cloud: down".into()));
         let was = changed.load(Ordering::Relaxed);
         assert!(team.refresh().await.is_err());
         assert!(changed.load(Ordering::Relaxed) > was, "clients are told");
         let s = team.state();
-        assert_eq!(s["team"]["offline"], "can't reach Arugula control: down");
+        assert_eq!(s["team"]["offline"], "can't reach Arugula cloud: down");
         assert_eq!(s["entries"][0]["body"], "One", "the last state read");
         let e = team.fill("s2", "Two").await.unwrap_err();
-        assert!(e.starts_with("Offline: read-only") && e.contains("can't reach Arugula control"), "{e}");
+        assert!(e.starts_with("Offline: read-only") && e.contains("can't reach Arugula cloud"), "{e}");
         assert_eq!(team.state()["entries"][1]["body"], serde_json::Value::Null, "nothing was written here");
         *fake.refuse.lock().unwrap() = None;
         team.refresh().await.unwrap();

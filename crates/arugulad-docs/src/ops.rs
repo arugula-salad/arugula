@@ -355,7 +355,7 @@ impl Handle<Docs> for DocMove {
         let machine = cx.app.control.enrolled().map(|e| e.saved.cert.device.clone()).ok_or_else(|| {
             OpError::Status(
                 StatusCode::SERVICE_UNAVAILABLE,
-                "this machine hasn't joined Arugula control: a team's Docs are there".into(),
+                "this machine hasn't joined Arugula cloud: a team's Docs are there".into(),
             )
         })?;
         let cloud: Arc<dyn Cloud> = cx.app.control.clone();

@@ -638,7 +638,7 @@ impl ForgeBlock {
         let (p, host, repo, _) = self.live_key();
         if p == Provider::Github {
             return Err(Error::Http(
-                "GitHub's live updates come through Arugula control's GitHub App: join control (`arugulad join`), sign in there with GitHub and install the App; there's no webhook to make here".into(),
+                "GitHub's live updates come through Arugula cloud's GitHub App: join control (`arugulad join`), sign in there with GitHub and install the App; there's no webhook to make here".into(),
             ));
         }
         let had = live::hook_of(p, &host, &repo);
@@ -1616,7 +1616,7 @@ impl ForgeBlock {
         let link = match platform::link(&repo).await {
             Ok(Some(l)) => l,
             Ok(None) => {
-                self.unpin("its repo isn't linked for you in Arugula control");
+                self.unpin("its repo isn't linked for you in Arugula cloud");
                 return false;
             }
             Err(why) => return self.platform_down(why),
@@ -1649,7 +1649,7 @@ impl ForgeBlock {
             }
             Err(platform::Failed::NotLinked) => {
                 platform::forget(&repo);
-                self.unpin("Arugula control doesn't have it for you any more");
+                self.unpin("Arugula cloud doesn't have it for you any more");
                 false
             }
             Err(platform::Failed::Later(why)) => self.platform_down(why),
@@ -2155,7 +2155,7 @@ impl Block for ForgeBlock {
         };
         out.push_str(&issue::text(&st));
         if let Some(p) = &st.pin {
-            out.push_str(&format!("read through Arugula control ({}), not from GitHub\n", p.global_id));
+            out.push_str(&format!("read through Arugula cloud ({}), not from GitHub\n", p.global_id));
             if let Some(why) = &p.stale {
                 out.push_str(&format!("as it said last: {why}\n"));
             }

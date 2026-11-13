@@ -553,7 +553,7 @@ mod tests {
             check_apply(&a, &op, "dep_1", &pinned, Some(&sign(k, &a, origin)), None, 1_000)
         };
         assert_eq!(check(&first, &k1, "https://control.test"), Ok(()));
-        assert_eq!(check(&first, &k2, "https://app.test"), Ok(()), "the platform page's origin, pinned");
+        assert_eq!(check(&first, &k2, "https://app.test"), Ok(()), "your machines page's origin, pinned");
         assert_eq!(check(&first, &pk(9), "https://control.test"), Err(ApplyRefusal::Passkey(Some(Refusal::NotLive))));
         assert_eq!(
             check(&first, &k1, "https://evil.test"),

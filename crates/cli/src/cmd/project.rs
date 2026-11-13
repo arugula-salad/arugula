@@ -84,7 +84,7 @@ pub struct Which {
 
 pub fn run(cmd: ProjectCmd, json_out: bool) -> anyhow::Result<i32> {
     let Some(e) = Enrolled::load()? else {
-        bail!("this CLI isn't logged in to Arugula control: `arugula login` first");
+        bail!("this CLI isn't logged in to Arugula cloud: `arugula login` first");
     };
     let project = |w: &Which| -> anyhow::Result<String> {
         match &w.project {

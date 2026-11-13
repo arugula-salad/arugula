@@ -31,7 +31,7 @@ pub enum IssueCmd {
     ///
     /// `#N`, `N` or `iss_…`: a native issue's (its thread). `%N` (or `N` on
     /// a GitHub home): an issue block's. `OWNER/REPO#N` on a linked repo:
-    /// through Arugula control, no block. `-`: read it from stdin. Run by
+    /// through Arugula cloud, no block. `-`: read it from stdin. Run by
     /// an agent, or with `--draft`, a GitHub comment is a draft that waits
     /// for a person to send it.
     Comment {
@@ -42,7 +42,7 @@ pub enum IssueCmd {
         #[command(flatten)]
         home: native::Home,
     },
-    /// Open an issue on a linked repo through Arugula control: no block.
+    /// Open an issue on a linked repo through Arugula cloud: no block.
     ///
     /// Run by an agent, or with `--draft`, it's a draft that waits for a
     /// person to send it.
@@ -56,7 +56,7 @@ pub enum IssueCmd {
         #[arg(long)]
         draft: bool,
     },
-    /// Show a linked repo's issue, from Arugula control.
+    /// Show a linked repo's issue, from Arugula cloud.
     ///
     /// `OWNER/REPO#N`, or its link. No block opens.
     View { target: String },
@@ -80,7 +80,7 @@ pub enum IssueCmd {
         #[command(flatten)]
         home: native::Home,
     },
-    /// A project's own issues on Arugula control: show, list,
+    /// A project's own issues on Arugula cloud: show, list,
     /// close, reopen, edit, export, open-on-github.
     #[command(flatten)]
     Native(native::Cmd),
@@ -173,7 +173,7 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
     };
     match args {
         Args { cmd: Some(IssueCmd::Native(_) | IssueCmd::Create { .. } | IssueCmd::View { .. }), .. } => {
-            unreachable!("Arugula control's (on_control, on_platform)")
+            unreachable!("Arugula cloud's (on_control, on_platform)")
         }
         Args { cmd: Some(IssueCmd::Comment { target, body, .. }), .. } => {
             let block: Pane = target.parse().map_err(|e| anyhow::anyhow!("{e}, #N, iss_… or OWNER/REPO#N"))?;

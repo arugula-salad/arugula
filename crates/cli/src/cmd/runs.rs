@@ -268,7 +268,7 @@ pub fn run(cmd: RunsCmd, json_out: bool) -> anyhow::Result<i32> {
         other => other,
     };
     let Some(e) = Enrolled::load()? else {
-        bail!("this CLI isn't logged in to Arugula control: `arugula login` first");
+        bail!("this CLI isn't logged in to Arugula cloud: `arugula login` first");
     };
     let cmd = match cmd {
         RunsCmd::List { state, limit, project: p } => return list(&e, p, state, limit, json_out),

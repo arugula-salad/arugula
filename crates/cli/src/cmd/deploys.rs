@@ -30,7 +30,7 @@ use crate::util::print_json;
 pub enum DeploysCmd {
     /// A project's environments: their drivers, settings and secrets' names.
     ///
-    /// Never a secret's value: those are set on the platform page and never
+    /// Never a secret's value: those are set on your machines page and never
     /// read back.
     #[command(visible_alias = "environments")]
     Envs {
@@ -159,7 +159,7 @@ fn plan_body(env: &str, commit: &str, repo: &str, roll_back: bool) -> anyhow::Re
 
 pub fn run(cmd: DeploysCmd, json_out: bool) -> anyhow::Result<i32> {
     let Some(e) = Enrolled::load()? else {
-        bail!("this CLI isn't logged in to Arugula control: `arugula login` first");
+        bail!("this CLI isn't logged in to Arugula cloud: `arugula login` first");
     };
     if matches!(cmd, DeploysCmd::Plan { .. } | DeploysCmd::Request { .. }) && http::agent() {
         bail!(
@@ -177,7 +177,7 @@ pub fn run(cmd: DeploysCmd, json_out: bool) -> anyhow::Result<i32> {
             }
             let envs = listed["environments"].as_array().cloned().unwrap_or_default();
             if envs.is_empty() {
-                println!("No environments: an owner makes one on the platform page, in the project's settings.");
+                println!("No environments: an owner makes one on your machines page, in the project's settings.");
             }
             for env in &envs {
                 println!("{}", env_lines(env));
