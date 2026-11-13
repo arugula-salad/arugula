@@ -690,6 +690,9 @@ impl Team {
                 intent: s.intent.clone(),
                 body: s.body.clone(),
                 rev: s.rev,
+                // A team's Doc holds no checklist yet: checklist calls on it
+                // are refused, so its sections carry none.
+                tasks: vec![],
             })
             .collect()
     }
