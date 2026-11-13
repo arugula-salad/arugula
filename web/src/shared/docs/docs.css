@@ -197,3 +197,9 @@
     display: none;
   }
 }
+
+/* A team machine's line to the library Docs it still keeps (Arugula #864). */
+.docs-kept {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-sm);
+}

@@ -61,3 +61,9 @@ export function saveTab(tab: DocsTab, store: Store | null = local()) {
     /* It's only remembered while storage works. */
   }
 }
+
+/** On a team's machine, the line over Team Docs that leads to the library
+ * Docs it still keeps (from before #862): null when there are none. */
+export function keptLine(n: number): string | null {
+  return n > 0 ? `${n} ${n === 1 ? "Doc" : "Docs"} kept only on this machine` : null;
+}

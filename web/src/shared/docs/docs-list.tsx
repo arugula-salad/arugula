@@ -19,7 +19,7 @@ import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
 import { EmptyLine } from "../ui/block-states";
 import { ListPage, type ListGroup, type ListRowParts, type ListTicked } from "../ui/list-page";
-import { PageHeader } from "../ui/page-header";
+import { PageHeader, type BackLink } from "../ui/page-header";
 import { DocRowTime, DOC_SORTS, sortTime, useDocSort } from "./doc-sort";
 import type { DocTimesOf } from "./doc-times";
 import { LayoutMark } from "./layout-mark";
@@ -127,6 +127,9 @@ export interface DocsListProps<T> {
   splitKey: string;
   /** Under the title. */
   sub?: ComponentChildren;
+  /** In place of the mode's title ("My Docs", "Docs"), and the way back to another view. */
+  title?: string;
+  back?: BackLink;
   /** At the title's right: New Doc. */
   actions?: ComponentChildren;
   /** The counts, of the Docs the tab has (none, while they load). */
@@ -149,7 +152,7 @@ export interface DocsListProps<T> {
   selection?: (ticked: ListTicked<T>) => ComponentChildren;
 }
 
-export function DocsList<T>({ mode, docs, item, splitKey, sub, actions, stats, narrow, under, empty, loading, notice, row, preview, onOpen, selectable, selection }: DocsListProps<T>) {
+export function DocsList<T>({ mode, docs, item, splitKey, sub, title, back, actions, stats, narrow, under, empty, loading, notice, row, preview, onOpen, selectable, selection }: DocsListProps<T>) {
   const [saved, setTab] = useTab();
   const tab = mode.kind === "team" ? saved : null;
   const [query, setQuery] = useState("");
@@ -216,7 +219,7 @@ export function DocsList<T>({ mode, docs, item, splitKey, sub, actions, stats, n
       splitKey={splitKey}
       header={
         <>
-          <PageHeader title={tab === null ? "My Docs" : "Docs"} sub={sub} actions={actions} stats={stats?.(tabbed)}>
+          <PageHeader title={title ?? (tab === null ? "My Docs" : "Docs")} back={back} sub={sub} actions={actions} stats={stats?.(tabbed)}>
             {tabs}
           </PageHeader>
           {under}

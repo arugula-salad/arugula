@@ -33,7 +33,9 @@ import { ListCounts, ListPreview, type ListCount } from "../../shared/ui/list-pa
 import { openMenu } from "../../shared/ui/menu";
 import { IconButton, LinkIcon, MoreIcon } from "../../shared/ui/icons";
 import { DocsList, goToSection, Outline } from "../../shared/docs/docs-list";
-import { machineMode, PERSONAL, type DocsMode } from "../../shared/docs/docs-mode";
+import { keptLine, machineMode, PERSONAL, type DocsMode } from "../../shared/docs/docs-mode";
+import type { BackLink } from "../../shared/ui/page-header";
+import type { ComponentChildren } from "preact";
 import { noImages, projectItem, shapeOf, stateOf as projectState, useProjectDoc, useProjectDocs } from "../../shared/docs/project-docs";
 import { platformFetch } from "../../shared/maintenance";
 import { AppBar } from "./app-bar";
@@ -118,7 +120,7 @@ function Page({ client, inWorkspace }: { client: Client; inWorkspace?: boolean }
           <BlockLoading inline data-docs-loading what="this machine's Docs" />
         </div>
       ) : got.mode.kind === "team" ? (
-        <TeamDocs client={client} mode={got.mode} me={got.me} />
+        <TeamMachine client={client} mode={got.mode} me={got.me} />
       ) : (
         <Library client={client} />
       )}
@@ -126,8 +128,66 @@ function Page({ client, inWorkspace }: { client: Client; inWorkspace?: boolean }
   );
 }
 
-/** A personal machine's Docs: its library. */
-function Library({ client }: { client: Client }) {
+/** A team's machine: Team Docs, and, apart from them, the library Docs it
+ * still keeps (written before its Docs were the team's, #862), so they can be
+ * read and moved. The two are never one list: the library is a view of its
+ * own, reached from a line over Team Docs, with the way back. */
+function TeamMachine({ client, mode, me }: { client: Client; mode: Extract<DocsMode, { kind: "team" }>; me: string | null }) {
+  const [library, setLibrary] = useState(false);
+  const [kept, setKept] = useState(0);
+  useEffect(() => {
+    if (library) return;
+    let live = true;
+    void (async () => {
+      try {
+        const res = await client.request(OPS["docs.list"].method, opPath("docs.list"));
+        const v = res.ok ? await res.json<DocRow[]>().catch(() => null) : null;
+        if (live) setKept(Array.isArray(v) ? v.length : 0);
+      } catch {
+        // No line, then.
+      }
+    })();
+    return () => void (live = false);
+  }, [client, library]);
+  if (library)
+    return (
+      <Library
+        client={client}
+        title="On this machine"
+        back={{
+          href: "#docs",
+          label: "Team Docs",
+          data: "docs-back-team",
+          onClick: (e) => {
+            e.preventDefault();
+            setLibrary(false);
+          },
+        }}
+      />
+    );
+  const line = keptLine(kept);
+  return (
+    <TeamDocs
+      client={client}
+      mode={mode}
+      me={me}
+      under={
+        line && (
+          <p class="docs-kept dim" data-docs-kept={kept}>
+            {line} ·{" "}
+            <button type="button" class="link" data-docs-kept-show onClick={() => setLibrary(true)}>
+              Show
+            </button>
+          </p>
+        )
+      }
+    />
+  );
+}
+
+/** A personal machine's Docs: its library. On a team's machine, the Docs it
+ * kept from before, under `title`, with `back` to Team Docs. */
+function Library({ client, title, back }: { client: Client; title?: string; back?: BackLink }) {
   const [rows, setRows] = useState<DocRow[] | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -198,6 +258,8 @@ function Library({ client }: { client: Client }) {
         docs={rows}
         item={(r) => ({ id: r.id, title: r.title, layout: r.layout, made: r.made, updated: r.updated, by: r.by, sections: r.sections, summary: r.summary, mine: true })}
         splitKey="docs"
+        title={title}
+        back={back}
         stats={(all) => all.length > 0 && <ListCounts counts={counts(all)} on={filter} pick={(k) => setFilter(k === filter ? "all" : k)} />}
         narrow={filter === "all" ? undefined : { test: (r) => (filter === "open" ? isOpen(r) : !!r.shared), none: filter === "open" ? "No Doc is open in a pane." : "No Doc is shared." }}
         loading={!error && <BlockLoading inline data-docs-loading what="this machine's Docs" />}
@@ -267,7 +329,7 @@ function Library({ client }: { client: Client }) {
 }
 
 /** A team's machine's Docs: the team project's, My Docs and Team Docs. */
-function TeamDocs({ client, mode, me }: { client: Client; mode: Extract<DocsMode, { kind: "team" }>; me: string | null }) {
+function TeamDocs({ client, mode, me, under }: { client: Client; mode: Extract<DocsMode, { kind: "team" }>; me: string | null; under?: ComponentChildren }) {
   const { docs } = useProjectDocs(mode.project);
   const [error, setError] = useState("");
   // Open beside: the team Doc block, as `doc open` makes it, reading and writing through control.
@@ -287,6 +349,7 @@ function TeamDocs({ client, mode, me }: { client: Client; mode: Extract<DocsMode
       item={(d) => projectItem(d, me)}
       splitKey="docs"
       sub={`${mode.name}'s Docs: this is the team's machine`}
+      under={under}
       stats={(all) => docs !== null && <ListCounts counts={[{ key: "all", n: all.length, label: all.length === 1 ? "Doc" : "Docs" }]} on="all" pick={() => {}} />}
       loading={<BlockLoading inline data-docs-loading what={`${mode.name}'s Docs`} />}
       empty={<EmptyState where="page" data-docs-empty title="No Docs yet." why={`Docs this machine's agents write go to ${mode.name}, and show up here.`} />}

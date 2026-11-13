@@ -2,7 +2,7 @@
 // Docs holds, and the tab a browser remembers. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { inTab, machineMode, madeBy, modeOf, PERSONAL, savedTab, saveTab } from "../src/shared/docs/docs-mode.ts";
+import { inTab, keptLine, machineMode, madeBy, modeOf, PERSONAL, savedTab, saveTab } from "../src/shared/docs/docs-mode.ts";
 
 const personal = { id: "prj_me", name: "Mine", team: null, owner: { kind: "personal", account: "acc_me" } };
 const teamDefault = { id: "prj_t", name: "Acme", team: { id: "team_1", name: "Acme", role: "editor", members: [] }, owner: { kind: "team", id: "team_1", name: "Acme" } };
@@ -66,4 +66,10 @@ test("the tab used last is remembered; My Docs until then, or when storage fails
   assert.doesNotThrow(() => saveTab("team", broken));
   assert.equal(savedTab(broken), "mine");
   assert.equal(savedTab(null), "mine");
+});
+
+test("a team machine's line counts the library Docs it still keeps, and is gone with none", () => {
+  assert.equal(keptLine(0), null);
+  assert.equal(keptLine(1), "1 Doc kept only on this machine");
+  assert.equal(keptLine(34), "34 Docs kept only on this machine");
 });
