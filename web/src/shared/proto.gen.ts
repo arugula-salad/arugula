@@ -443,13 +443,6 @@ missing?: boolean,
  */
 machine_name?: string, 
 /**
- * A machine Doc's copy on the platform (`pdc_…`), when it sits in this
- * board's project (native #673): the title and counts are then the
- * copy's, and the chip opens it while the machine is away. Older
- * platforms don't send it.
- */
-copy?: string, 
-/**
  * The account that linked it (the owner, for an agent).
  */
 added_by: string, 
@@ -2384,12 +2377,6 @@ project: string, name: string,
 id: string, link?: string | null, };
 
 /**
- * Where a Doc's copy on the platform is: the project it sits in now, its
- * `pdc_` id there, and its page.
- */
-export type DocOnPlatform = { project: string, id: string, link: string, };
-
-/**
  * `POST /api/docs/open` (#1493): a Doc from the library in a block. Exactly
  * one of `id` and `link` names it.
  */
@@ -2437,15 +2424,7 @@ sections: Array<DocSectionShape>,
  * How it is laid out; `doc` for a Doc that never said, and from a
  * daemon from before layouts.
  */
-layout: DocLayout, 
-/**
- * Its copy on the platform (#418), once this machine has copied it up:
- * readable there with this machine asleep. Null until then, and again
- * once the machine has left control; a daemon from before native #673
- * sends none, and a team's other owner isn't sent it (the copy is in
- * the owner's personal project, which they can't read).
- */
-platform?: DocOnPlatform, };
+layout: DocLayout, };
 
 /**
  * One section of a Doc, as the Docs list shows it (#588). A fenced block is
@@ -4651,21 +4630,6 @@ sections: number, written: number,
  */
 rev: number, created_at: number, updated_at: number, 
 /**
- * The machine this Doc is a copy from, or null for one made here. A
- * copy is read-only here: the machine's Doc is the truth (#678).
- */
-machine: string | null, 
-/**
- * That machine's name, when control knows it: null for a Doc made
- * here, or once the machine left. Older pages don't read it.
- */
-machine_name: string | null, 
-/**
- * For a team Doc made from a Doc of its owner's (Share with…): where
- * from. Null for any other Doc, and from an older platform.
- */
-made_from: ProjectDocMadeFrom | null, 
-/**
  * How the Doc is laid out: `doc`, `tabs` or `prototype`. Sent only when
  * it isn't `doc`: absent, or a name the reader doesn't know, is `doc`,
  * and an older page ignores it and draws the column.
@@ -4695,33 +4659,6 @@ mime: string, size: number,
 rev: number, };
 
 /**
- * `GET` [`PROJECT_DOC_COPIES`]: the team Docs made from a Doc, earliest
- * first, in the projects its owner still reads.
- */
-export type ProjectDocCopies = { copies: Array<ProjectDocCopy>, };
-
-/**
- * A team Doc made from a Doc of its owner's, as its owner sees it.
- */
-export type ProjectDocCopy = { project: string, project_name: string, 
-/**
- * The team Doc's id, and its page on the platform's page.
- */
-id: string, link: string, 
-/**
- * When it was made, and when it last changed (ms since the epoch).
- */
-made: number, updated: number, 
-/**
- * The source changed since: its rev is above the one recorded.
- */
-stale: boolean, 
-/**
- * The team changed it since: its rev is above the one recorded.
- */
-edited: boolean, };
-
-/**
  * `GET` [`PROJECT_DOCS`]: a project's Docs, the latest changed first.
  */
 export type ProjectDocList = { project: string, docs: Array<ProjectDoc>, 
@@ -4729,21 +4666,6 @@ export type ProjectDocList = { project: string, docs: Array<ProjectDoc>,
  * Whether the reader may make one.
  */
 writer: boolean, };
-
-/**
- * The Doc a team Doc was made from: a machine's copy, or one written here.
- */
-export type ProjectDocMadeFrom = { 
-/**
- * The source Doc's project (its owner's personal one) and its id.
- */
-project: string, id: string, 
-/**
- * The name of the machine the source is a copy from, when control knows
- * it; null for a source written here. Only what the platform could
- * tell; the source itself is its owner's to read.
- */
-machine_name: string | null, };
 
 /**
  * Where a Doc a machine moved to a team was (Arugula #863).
@@ -4857,8 +4779,7 @@ assets: Array<ProjectDocAsset>,
 writer: boolean, 
 /**
  * Whether the reader may delete it: a person who writes in the
- * project, a copy included (native #673). An older platform sends
- * none; the page then takes `writer`.
+ * project. An older platform sends none; the page then takes `writer`.
  */
 deleter: boolean, 
 /**
