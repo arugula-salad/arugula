@@ -30,8 +30,9 @@ The schemas describe what a reader accepts (schemars' deserialize
 contract), which is the contract's leniency written down:
 
 - A field read with `#[serde(default)]` isn't in `required`.
-- No schema sets `additionalProperties: false`: nothing in control-wire is
-  `deny_unknown_fields`, and a reader ignores a field it doesn't know.
+- A reader ignores a field it doesn't know, and its schema doesn't set
+  `additionalProperties: false`, except for the bodies control parses from
+  a daemon and must refuse anything else in (below).
 - An enum with `#[serde(other)]` (`ChangeKind`'s `Unknown`) takes any
   string, as the Rust reader does.
 
@@ -131,10 +132,14 @@ on how each sender built the object.
 expected encoding. Its schema says what's allowed, and these files say
 what's actually sent.
 
-**Exceptions the schema shows:** three `boards` types (`Diffstat`,
-`BlockState`, `PutBlockState`) are `deny_unknown_fields`, against
-control-wire's rule, so their schemas are closed (`additionalProperties:
-false`). An externally tagged enum's wrapper object (`TokenAnswer`'s
+**Exceptions the schema shows:** what a daemon reports of its blocks and
+sessions is `deny_unknown_fields` on purpose (aru-116), so no message text,
+file name or prompt can ride along: `boards`' `BlockStateReport` (with its
+`DiffstatReport` and the `PutBlockState` around it) and
+`MachineSessionsReport` (with its `MachineSession` and
+`MachineSessionPane`). Their schemas are closed (`additionalProperties:
+false`). An older control refuses a field these don't list yet, so a new
+one ships in control and deploys before any daemon sends it. An externally tagged enum's wrapper object (`TokenAnswer`'s
 `{"token": ...}`) takes no other key, because serde's reader doesn't.
 
 **A new example:** write the payload on one line, as it's sent, in the
