@@ -13,7 +13,8 @@
 // A Doc in the person's own project also has Download in ⋯ (Arugula #865):
 // the Doc as Markdown, built here (shared/docs/download.ts). Delete is last
 // in ⋯ for those who may (Arugula #864): a Doc goes to the project's Trash
-// (#866).
+// (#866). Rename is first in ⋯ for owners and editors (#979): a row's asks for
+// the new title in a dialog, the Doc page's edits the title where it stands.
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
@@ -22,10 +23,12 @@ import { DocActions, openTab } from "../../shared/docs/doc-actions";
 import { moveDocsToTeam, resultWords } from "../../shared/docs/move-docs";
 import { saveDoc } from "../../shared/docs/download";
 import { projectDocs } from "../../shared/docs/store";
+import { TITLE_MAX, titleRefusal } from "../../shared/docs/doc-title.ts";
 import { revokePublic, sharePublic } from "../../shared/docs/public-link";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { IconButton, MoreIcon } from "../../shared/ui/icons";
 import { ConfirmRemove } from "../../shared/ui/confirm";
+import { Modal } from "../../shared/ui/modal";
 import { menuBelow, openMenu, type MenuItem } from "../../shared/ui/menu";
 import { names } from "../links";
 import { pathOf } from "../router";
@@ -55,11 +58,19 @@ interface Remove {
   gone?: () => void;
 }
 
-function useDocActions(p: PlatformProject, doc: ProjectDoc, eager: boolean, reload?: () => void, remove: Remove = {}) {
+/** Who may rename it (#979): owners and editors. `edit` is the page's own way to
+ * ask for the title, in place; without it the menu asks in a dialog. */
+interface Rename {
+  writer?: boolean;
+  edit?: () => void;
+}
+
+function useDocActions(p: PlatformProject, doc: ProjectDoc, eager: boolean, reload?: () => void, remove: Remove = {}, rename: Rename = {}) {
   useSubscribe((fn) => session.subscribe(fn));
   const mine = !p.team;
   const teams = session.projects.filter((t) => t.team && mayWrite(t));
   const [deleting, setDeleting] = useState(false);
+  const [renaming, setRenaming] = useState(false);
   /** The team Move to… asks about. */
   const [moving, setMoving] = useState<PlatformProject | null>(null);
   const busy = useRef(false);
@@ -155,6 +166,7 @@ function useDocActions(p: PlatformProject, doc: ProjectDoc, eager: boolean, relo
   const items = (from: HTMLElement): MenuItem[] => {
     const s = share;
     return [
+      ...(rename.writer ? [{ label: "Rename", attrs: { "data-doc-rename": true }, run: () => (rename.edit ? rename.edit() : setRenaming(true)) }] : []),
       { label: "Copy link", run: () => void copy().then((ok) => ok && toast("Link copied")) },
       ...(s ? [{ label: s.word, run: () => s.run(from) }] : []),
       ...(mine ? [{ label: "Download", hint: "As Markdown, without its pictures", attrs: { "data-doc-download": true }, run: () => void download() }] : []),
@@ -181,7 +193,17 @@ function useDocActions(p: PlatformProject, doc: ProjectDoc, eager: boolean, relo
       toast(`Couldn't delete it: ${(err as Error).message}`);
     }
   };
-  const dialogs: ComponentChildren = moving ? (
+  const dialogs: ComponentChildren = renaming ? (
+    <RenameDialog
+      p={p}
+      doc={doc}
+      done={() => setRenaming(false)}
+      renamed={() => {
+        setRenaming(false);
+        reload?.();
+      }}
+    />
+  ) : moving ? (
     <MoveConfirm
       title={doc.title}
       team={moving.name}
@@ -202,8 +224,8 @@ function useDocActions(p: PlatformProject, doc: ProjectDoc, eager: boolean, relo
 }
 
 /** The three actions, for the preview and the page's header. `menu` adds the ⋯ after them. */
-export function PlatformDocActions({ p, doc, reload, menu, deleter, gone }: { p: PlatformProject; doc: ProjectDoc; reload?: () => void; menu?: boolean } & Remove) {
-  const a = useDocActions(p, doc, true, reload, { deleter, gone });
+export function PlatformDocActions({ p, doc, reload, menu, deleter, gone, writer, edit }: { p: PlatformProject; doc: ProjectDoc; reload?: () => void; menu?: boolean } & Remove & Rename) {
+  const a = useDocActions(p, doc, true, reload, { deleter, gone }, { writer, edit });
   return (
     <>
       <DocActions
@@ -223,12 +245,51 @@ export function PlatformDocActions({ p, doc, reload, menu, deleter, gone }: { p:
 
 /** A row's ⋯: the same actions as a menu. It reads whether the Doc has a public link when it's pressed, not for every row. */
 export function RowMenu({ p, doc, reload }: { p: PlatformProject; doc: ProjectDoc; reload?: () => void }) {
-  const a = useDocActions(p, doc, false, reload, { deleter: mayWrite(p), gone: reload });
+  const a = useDocActions(p, doc, false, reload, { deleter: mayWrite(p), gone: reload }, { writer: mayWrite(p) });
   return (
     <>
       <MoreButton doc={doc} items={a.items} load={a.load} row />
       {a.dialogs}
     </>
+  );
+}
+
+/** Rename from a menu that has no title in front of it (#979): the new title, then the Doc's own. */
+function RenameDialog({ p, doc, done, renamed }: { p: PlatformProject; doc: ProjectDoc; done: () => void; renamed: () => void }) {
+  const [title, setTitle] = useState(doc.title);
+  const [busy, setBusy] = useState(false);
+  const why = titleRefusal(title);
+  const save = async (e: Event) => {
+    e.preventDefault();
+    if (why || busy) return;
+    setBusy(true);
+    try {
+      await projectDocs.rename(p.id, doc.id, title);
+      renamed();
+    } catch (err) {
+      toast(`Couldn't rename it: ${(err as Error).message}`);
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal
+      title="Rename Doc"
+      close={done}
+      onSubmit={(e) => void save(e)}
+      root={{ "data-doc-rename-dialog": true }}
+      buttons={
+        <>
+          <button type="button" class="secondary" onClick={done}>
+            Cancel
+          </button>
+          <button type="submit" class="primary" data-doc-rename-save disabled={busy || !!why}>
+            Rename
+          </button>
+        </>
+      }
+    >
+      <input class="field" type="text" value={title} maxLength={TITLE_MAX} aria-label="The Doc's title" data-doc-rename-title autoFocus onFocus={(e) => e.currentTarget.select()} onInput={(e) => setTitle(e.currentTarget.value.replace(/[\r\n]/g, " "))} />
+    </Modal>
   );
 }
 

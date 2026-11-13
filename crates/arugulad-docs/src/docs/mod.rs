@@ -325,6 +325,32 @@ impl Doc {
         let _ = crate::task::spawn_blocking(move || library::touch(&dir, title.as_deref())).await;
     }
 
+    /// `doc_rename`: the title, in `doc.json` (what the block reads back) and
+    /// `meta.json` (what the list shows) (#979).
+    async fn rename(&self, title: &str) -> Result<Value, String> {
+        team::title_ok(title)?;
+        let title = title.trim().to_owned();
+        let _io = self.io.lock().await;
+        // It moved while this waited: the team Doc takes it.
+        if let Some(team) = self.moved_to() {
+            drop(_io);
+            return team.call("doc_rename", json!({ "title": title })).await;
+        }
+        if let Some(e) = &self.state.lock().unwrap().error {
+            return Err(e.clone());
+        }
+        let dir = self.dir.clone();
+        let t = title.clone();
+        crate::task::spawn_blocking(move || rename_in(&dir, &t)).await.map_err(|e| e.to_string())??;
+        {
+            let mut st = self.state.lock().unwrap();
+            st.title = title.clone();
+            st.rev += 1;
+        }
+        (self.changed)();
+        Ok(json!({ "title": title }))
+    }
+
     /// The Doc's layout is `layout` now: kept in its `meta.json`, and the
     /// block, its share's next update and its copy follow. Only tests call
     /// it: `doc_outline` sets the layout a Doc is made with.
@@ -724,6 +750,24 @@ pub async fn read_asset(state_dir: PathBuf, id: String, name: String) -> Result<
 }
 
 /// Write `name` in the Doc's folder, off the async threads.
+/// A Doc in the library named `title` (#979): its outline's title, when it
+/// has one, and its `meta.json`. A Doc no block shows is renamed here too.
+pub fn rename_in(dir: &Path, title: &str) -> Result<(), String> {
+    team::title_ok(title)?;
+    let title = title.trim();
+    let file = dir.join(OUTLINE);
+    if file.exists() {
+        let text = std::fs::read_to_string(&file).map_err(|e| format!("can't read {}: {e}", file.display()))?;
+        let mut outline: Outline = serde_json::from_str(&text)
+            .map_err(|e| format!("{} doesn't parse ({e}); it is left as it is: tell the person", file.display()))?;
+        outline.title = title.to_owned();
+        let bytes = serde_json::to_vec_pretty(&outline).map_err(|e| e.to_string())?;
+        write_atomic(&file, &bytes).map_err(|e| format!("can't write {OUTLINE}: {e}"))?;
+    }
+    library::touch(dir, Some(title));
+    Ok(())
+}
+
 async fn write(dir: PathBuf, name: &str, bytes: Vec<u8>) -> Result<(), String> {
     let name = name.to_owned();
     crate::task::spawn_blocking(move || {
@@ -890,6 +934,13 @@ impl Block for Doc {
                     me.fill(&section, &markdown).await
                 })
             }
+            "doc_rename" => {
+                let title = args["title"].as_str().map(str::to_owned);
+                Box::pin(async move {
+                    let me = me.ok_or("closed")?;
+                    me.rename(&title.ok_or("doc_rename needs {title}")?).await
+                })
+            }
             "doc_asset_put" => {
                 let name = args["name"].as_str().map(str::to_owned);
                 let data = args["data"].as_str().map(str::to_owned);
@@ -994,6 +1045,29 @@ mod tests {
 
     fn entries(d: &Doc) -> Vec<Value> {
         d.state()["entries"].as_array().unwrap().clone()
+    }
+
+    /// #979: a rename shows now, and survives the block coming back from the
+    /// folder (its `doc.json` is what a restart reads the title from).
+    #[tokio::test]
+    async fn a_renamed_doc_keeps_its_title_after_a_restart() {
+        let dir = temp("rename");
+        let (d, pushes) = doc(&dir, false);
+        outline(&d, 2).await.unwrap();
+        fill(&d, "s1", "one").await.unwrap();
+        let before = pushes.load(Ordering::SeqCst);
+        let got = d.call("doc_rename", json!({ "title": "  Better plan " })).await.unwrap();
+        assert_eq!(got["title"], "Better plan");
+        assert_eq!(d.state()["title"], "Better plan");
+        assert_eq!(pushes.load(Ordering::SeqCst), before + 1, "clients are told once");
+        let (again, _) = doc(&dir, true);
+        assert_eq!(again.state()["title"], "Better plan");
+        assert_eq!(again.state()["entries"][0]["body"], "one", "its sections stay");
+        for bad in ["", "   ", "two\nlines", &"x".repeat(201)] {
+            assert!(d.call("doc_rename", json!({ "title": bad })).await.is_err(), "{bad:?}");
+        }
+        assert_eq!(d.state()["title"], "Better plan");
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[tokio::test]

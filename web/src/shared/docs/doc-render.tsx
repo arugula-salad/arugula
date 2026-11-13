@@ -126,6 +126,7 @@ export function DocBlock({
   byline,
   foot,
   share,
+  titleView,
   docKey,
   link,
 }: {
@@ -139,6 +140,9 @@ export function DocBlock({
   foot?: ComponentChildren;
   /** At the header's right: the Copy link button (#411). */
   share?: ComponentChildren;
+  /** What the title heading holds instead of the title: the page's editor
+   * for the people who may rename the Doc (#979). */
+  titleView?: ComponentChildren;
   /** What names this Doc to a prototype's kept settings (#508): the block's
    * id by default, a project Doc's id or a share link's id where `id` is 0. */
   docKey?: string;
@@ -162,7 +166,7 @@ export function DocBlock({
   const key = docKey ?? s.doc ?? String(id);
   const layout = docLayout(s.layout);
   const proto = layout === "prototype" ? protoOnly(s) : null;
-  if (proto) return <PrototypeDoc id={id} s={s} proto={proto} share={share} docKey={key} foot={foot} />;
+  if (proto) return <PrototypeDoc id={id} s={s} proto={proto} share={share} titleView={titleView} docKey={key} foot={foot} />;
   const tabs = layout === "tabs" && s.entries.length > 0;
   const done = s.entries.filter((e) => e.body !== null).length;
   const times = madeAt(s) || s.updated ? <DocTimes doc={s} /> : null;
@@ -186,11 +190,11 @@ export function DocBlock({
         <header class="doc-head">
           {share ? (
             <div class="doc-head-row">
-              <h1 class="doc-title">{s.title || "Untitled"}</h1>
+              <h1 class="doc-title">{titleView ?? (s.title || "Untitled")}</h1>
               {share}
             </div>
           ) : (
-            <h1 class="doc-title">{s.title || "Untitled"}</h1>
+            <h1 class="doc-title">{titleView ?? (s.title || "Untitled")}</h1>
           )}
           {(byline || times || s.entries.length === 0 || done < s.entries.length) && (
             <p class="doc-meta">
@@ -340,7 +344,7 @@ const FILL_MIN = 360;
  * filling the rest of the view, full bleed like an artifact. The frame is
  * sized from the view's own box, by an observer on it and not on the window,
  * because a Doc sits in a pane, a preview or a page. */
-function PrototypeDoc({ id, s, proto, share, docKey, foot }: { id: PaneId; s: DocState; proto: ProtoOnly; share?: ComponentChildren; docKey: string; foot?: ComponentChildren }) {
+function PrototypeDoc({ id, s, proto, share, titleView, docKey, foot }: { id: PaneId; s: DocState; proto: ProtoOnly; share?: ComponentChildren; titleView?: ComponentChildren; docKey: string; foot?: ComponentChildren }) {
   const root = useRef<HTMLDivElement>(null);
   const head = useRef<HTMLElement>(null);
   const fill = useRef<HTMLDivElement>(null);
@@ -366,7 +370,7 @@ function PrototypeDoc({ id, s, proto, share, docKey, foot }: { id: PaneId; s: Do
       <div class="doc-page doc-page-fill">
         <header class="doc-head doc-head-fill" ref={head}>
           <div class="doc-head-row">
-            <h1 class="doc-title">{s.title || "Untitled"}</h1>
+            <h1 class="doc-title">{titleView ?? (s.title || "Untitled")}</h1>
             {share}
           </div>
           {proto.line && (
