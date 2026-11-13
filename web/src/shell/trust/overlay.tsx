@@ -191,6 +191,6 @@ export function accountItems(s: ControlSession): MenuItem[] {
     { label: "Shared Docs…", run: openPanel("shared-docs") },
     { label: "Add a phone or browser…", run: openPanel("add-device") },
     { label: "Sign-in and account…", run: openPanel("account") },
-    ...(platformOrigin() && s.billing?.billing ? [{ label: s.billing.relay.warning ? "Plan and usage… (over the free relay)" : "Plan and usage…", run: () => openPlatform("/settings") }] : []),
+    ...(platformOrigin() && s.billing?.billing ? [{ label: s.billing.relay.warning ? "Plan and usage… (over the free relay)" : "Plan and usage…", run: () => openPlatform("/settings/personal") }] : []),
   ];
 }
