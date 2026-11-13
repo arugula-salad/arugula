@@ -81,12 +81,6 @@ export function plan(s: Source, p: Picks, here: string | null, targets: Project[
   const empty = !repos.length && !boards.length && !issues.length && !docs.length;
 
   const notes: Note[] = [];
-  if (repos.length && repos.length < s.repos.length) {
-    const staying = s.repos.filter((r) => !p.repos.has(r.id));
-    const names = staying.slice(0, 5).map((r) => r.name);
-    const more = staying.length - names.length;
-    notes.push({ key: "stays", text: `These stay in ${s.project.name}: ${names.join(", ")}${more ? ` and ${more} more repos` : ""}.` });
-  }
   const crossing = s.boards.filter((b) => !boardMoves(s, p, b.id) && s.issues.some((i) => i.board === b.id && issues.some((r) => r.issue.id === i.id)));
   for (const b of crossing) notes.push({ key: `row-${b.id}`, text: `${b.name} stays, and keeps its rows for the issues that move. They open in ${to}.` });
   const mine = docs.filter((d) => d.machine);
