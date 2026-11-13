@@ -285,8 +285,14 @@ window (the last 7 days by default; `--since 2026-11-10`, `--since 14d`,
   matrix's shards as one name), as a share of the failures.
 
 It prints a markdown table, or `--json`. `--repo` and `--workflow` point it
-at another repository's queue, the cloud's for one. Percentiles are nearest
-rank. `scripts/tests/ci-velocity.sh` (`just test-scripts`) runs it against
+at another repository. `--event pull_request` is for one with no merge queue,
+such as arugula-salad/cloud, which squash-merges a pull request once
+check.yml's `green` passes (Arugula issue
+https://app.arugula.io/issues/iss_ca45835d47a2a200b1120a4340f98b05): the
+same numbers from check.yml's pull_request runs, and time to merge from a
+pull request's last ready-for-review (its creation if it was never a draft)
+to its merge. The table's heading names the repo and the event, and its rows
+read as the queue's do. Percentiles are nearest rank. `scripts/tests/ci-velocity.sh` (`just test-scripts`) runs it against
 recorded API answers (`scripts/tests/ci-velocity/`) through a fake gh.
 
 The Rust tests run under cargo-nextest (`.config/nextest.toml`): each in
