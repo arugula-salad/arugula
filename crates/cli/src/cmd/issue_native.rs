@@ -11,9 +11,10 @@
 //! (an issue block) is GitHub's.
 //!
 //! **The current project:** `--project NAME|ID` (or `$ARUGULA_PROJECT`;
-//! `personal` is yours), else the project this directory's GitHub repo is
-//! linked to, else your personal one. A GitHub clone that none of your
-//! projects links keeps GitHub's issues, as before.
+//! `personal` is yours), else the project of the session this runs in,
+//! else the project this directory's GitHub repo is linked to, else your
+//! personal one: MCP's order ([`chosen`]). A GitHub clone that none of
+//! your projects links keeps GitHub's issues, as before.
 //! `arugula open iss_…|#N` (M203) finds its issue by the same rule
 //! ([`open_config`]).
 //!
@@ -37,7 +38,7 @@ use arugula_control_wire::{
         Issue, IssueEvent, IssueEvents, IssueHome, IssueList, IssueListEdit, IssuePatch, IssuePatched, IssueQuery,
         NewIssue,
     },
-    projects::{DraftCreated, FORGE_DRAFTS, NewDraft, Projects},
+    projects::{DraftCreated, FORGE_DRAFTS, NewDraft, Project, Projects},
 };
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -52,8 +53,9 @@ const NO_COMMENTS: &str = "Its comments are in chat, which is off for you.";
 /// Where an issue command goes. The rule's in `arugula issue --help`.
 #[derive(clap::Args, Clone, Debug, Default)]
 pub struct Home {
-    /// The project: its name or id, or `personal`. Default: the project
-    /// this directory's GitHub repo is linked to, else your personal one.
+    /// The project: its name or id, or `personal`. Default: this
+    /// session's, else the one this directory's GitHub repo is linked to,
+    /// else your personal one.
     #[arg(long, env = "ARUGULA_PROJECT")]
     pub project: Option<String>,
     /// The project's native issues, whatever its issue home.
@@ -299,58 +301,98 @@ fn ask(e: Enrolled, home: &Home, r: Option<&Ref>) -> anyhow::Result<Decided> {
     if let Some(Ref::Id(_)) = r {
         return Ok(Decided::Native(Box::new(Here { e, projects, project: String::new() })));
     }
-    let (project, issue_home) = match &home.project {
-        Some(p) => {
-            let id = project_id(&projects, p)?;
-            if from_env(p) {
-                let name = projects.projects.iter().find(|x| x.id == id).map_or(p.as_str(), |x| x.name.as_str());
-                eprintln!("arugula: project {name}, from $ARUGULA_PROJECT");
-            }
-            let h = home_of(&e, &id)?;
-            (id, h)
-        }
-        None => match here_repo() {
-            Dir::Unmapped(remotes) => bail!(
-                "this clone's remotes ({}) aren't GitHub repos Arugula can match to a project: \
-                 name the project with --project NAME, or --github for the forge's issues",
-                remotes.join(", ")
-            ),
-            Dir::GitHub(repo) => {
-                let mut linked = Vec::new();
-                for p in &projects.projects {
-                    let h = home_of(&e, &p.id)?;
-                    if h.repos.iter().any(|r| r.eq_ignore_ascii_case(&repo)) {
-                        linked.push(h);
-                    }
-                }
-                match linked.len() {
-                    1 => {
-                        let h = linked.remove(0);
-                        (h.project.clone(), h)
-                    }
-                    0 if !home.native => return Ok(Decided::GitHub { repo: None }),
-                    0 => {
-                        let id = project_id(&projects, "personal")?;
-                        let h = home_of(&e, &id)?;
-                        (id, h)
-                    }
-                    _ => bail!(
-                        "more than one of your projects links {repo}: name one with --project ({})",
-                        linked.iter().map(|h| h.project.as_str()).collect::<Vec<_>>().join(", ")
-                    ),
-                }
-            }
-            Dir::Plain => {
-                let id = project_id(&projects, "personal")?;
-                let h = home_of(&e, &id)?;
-                (id, h)
-            }
-        },
+    let steps = Steps { asked: home.project.as_deref(), session: &this_sessions_project, dir: &here_repo };
+    let Some((project, rule)) = chosen(&projects, &|p| home_of(&e, p), &steps, !home.native)? else {
+        return Ok(Decided::GitHub { repo: None });
     };
+    if rule == Rule::Asked && home.project.as_deref().is_some_and(from_env) {
+        let name = projects.projects.iter().find(|x| x.id == project).map_or(project.as_str(), |x| x.name.as_str());
+        eprintln!("arugula: project {name}, from $ARUGULA_PROJECT");
+    }
+    let issue_home = home_of(&e, &project)?;
     match home_says(home.native, &issue_home) {
         None => Ok(Decided::Native(Box::new(Here { e, projects, project }))),
         Some(repo) => Ok(Decided::GitHub { repo }),
     }
+}
+
+/// Which step of the order chose the current project.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Rule {
+    /// `--project` or `$ARUGULA_PROJECT`.
+    Asked,
+    /// The session this runs in.
+    Session,
+    /// The project this clone's GitHub repo is linked to.
+    Linked(String),
+    /// Your personal one.
+    Default,
+}
+
+/// What the order reads. Each step is read only when the ones before it
+/// gave nothing.
+pub struct Steps<'a> {
+    pub asked: Option<&'a str>,
+    /// The session's project id.
+    pub session: &'a dyn Fn() -> Option<String>,
+    pub dir: &'a dyn Fn() -> Dir,
+}
+
+/// The current project and the step that chose it. The order is MCP's one
+/// resolver's (`Call::chosen_project` in the daemon's `mcp/issues.rs`):
+/// asked, then the session's project, then the clone's linked repo, then
+/// the default. The CLI asks control as its person, not as the machine, so
+/// it can't call that resolver: this mirrors its order. A block's started
+/// issue, MCP's second step, is an agent's: the CLI has none.
+///
+/// `None`: a GitHub clone none of your projects links, when `github_ok`
+/// (its issues stay GitHub's). Else that's the default.
+pub fn chosen(
+    projects: &Projects,
+    home_of: &dyn Fn(&str) -> anyhow::Result<IssueHome>,
+    steps: &Steps,
+    github_ok: bool,
+) -> anyhow::Result<Option<(String, Rule)>> {
+    if let Some(p) = steps.asked {
+        return Ok(Some((project_id(projects, p)?, Rule::Asked)));
+    }
+    // A session's project that's gone, or no longer yours, is skipped, as
+    // control skips it for MCP.
+    if let Some(id) = (steps.session)().filter(|id| projects.projects.iter().any(|p| &p.id == id)) {
+        return Ok(Some((id, Rule::Session)));
+    }
+    match (steps.dir)() {
+        Dir::Unmapped(remotes) => bail!(
+            "this clone's remotes ({}) aren't GitHub repos Arugula can match to a project: \
+             name the project with --project NAME, or --github for the forge's issues",
+            remotes.join(", ")
+        ),
+        Dir::GitHub(repo) => {
+            let mut linked = Vec::new();
+            for p in &projects.projects {
+                let h = home_of(&p.id)?;
+                if h.repos.iter().any(|r| r.eq_ignore_ascii_case(&repo)) {
+                    linked.push(h.project);
+                }
+            }
+            match linked.as_slice() {
+                [id] => return Ok(Some((id.clone(), Rule::Linked(repo)))),
+                [] if github_ok => return Ok(None),
+                [] => {}
+                _ => bail!(
+                    "more than one of your projects links {repo}: name one with --project ({})",
+                    linked.join(", ")
+                ),
+            }
+        }
+        Dir::Plain => {}
+    }
+    Ok(Some((project_id(projects, "personal")?, Rule::Default)))
+}
+
+/// The project of the session this runs in, from this machine's daemon.
+fn this_sessions_project() -> Option<String> {
+    crate::cmd::project::this_session()?.project.map(|p| p.id)
 }
 
 /// `None`: native. `Some(repo)`: GitHub's, and the project's one linked
@@ -369,25 +411,36 @@ fn home_of(e: &Enrolled, project: &str) -> anyhow::Result<IssueHome> {
 }
 
 /// A project named on the command line: its id, its name (any case), or
-/// `personal`.
-fn project_id(projects: &Projects, want: &str) -> anyhow::Result<String> {
+/// `personal`. An archived one is named only by its id.
+pub(crate) fn project_id(projects: &Projects, want: &str) -> anyhow::Result<String> {
     let ps = &projects.projects;
-    let ids: Vec<&str> = if want.eq_ignore_ascii_case("personal") {
-        ps.iter().filter(|p| p.team.is_none()).map(|p| p.id.as_str()).collect()
+    let ids: Vec<&str> = if let Some(p) = ps.iter().find(|p| p.id == want) {
+        vec![p.id.as_str()]
+    } else if want.eq_ignore_ascii_case("personal") {
+        ps.iter().filter(|p| !p.archived && is_personal(p)).map(|p| p.id.as_str()).collect()
     } else {
-        ps.iter().filter(|p| p.id == want || p.name.eq_ignore_ascii_case(want)).map(|p| p.id.as_str()).collect()
+        ps.iter().filter(|p| !p.archived && p.name.eq_ignore_ascii_case(want)).map(|p| p.id.as_str()).collect()
     };
     match ids.as_slice() {
         [id] => Ok((*id).to_owned()),
         [] if want.eq_ignore_ascii_case("personal") => bail!("you have no personal project on Arugula control"),
-        [] => bail!("you have no project called {want} (the platform page lists yours)"),
+        [] => bail!("you have no project called {want} (`arugula project list` lists yours)"),
         _ => bail!("more than one project is called {want}: name one by its id ({})", ids.join(", ")),
     }
 }
 
+/// Personal's, not a team's: by its `owner`, or, from an older control,
+/// by its `team` (as the web's switcher, `platform/owners.ts`).
+pub(crate) fn is_personal(p: &Project) -> bool {
+    match &p.owner {
+        Some(o) => !o.is_team(),
+        None => p.team.is_none(),
+    }
+}
+
 /// What this directory is, for finding its project.
-#[derive(Debug, PartialEq, Eq)]
-enum Dir {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Dir {
     /// Not in a git clone, or in one with no remotes.
     Plain,
     /// A clone of this GitHub repo (`owner/name`).
@@ -400,7 +453,7 @@ enum Dir {
 
 /// This directory's clone: its `origin`'s GitHub repo, else its first
 /// remote's that's on GitHub.
-fn here_repo() -> Dir {
+pub fn here_repo() -> Dir {
     let git = |args: &[&str]| {
         let out = std::process::Command::new("git").args(args).stderr(std::process::Stdio::null()).output().ok()?;
         out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
@@ -1199,7 +1252,7 @@ fn prompt(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arugula_control_wire::projects::{Me, Project, ProjectMember, ProjectTeam};
+    use arugula_control_wire::projects::{Me, Project, ProjectMember, ProjectOwner, ProjectTeam};
     use clap::Parser;
 
     #[test]
@@ -1360,6 +1413,58 @@ mod tests {
         assert_eq!(home_says(false, &home("github", &["acme/app"])), Some(Some("acme/app".into())));
         assert_eq!(home_says(false, &home("github", &["a/b", "a/c"])), Some(None));
         assert_eq!(home_says(true, &home("github", &["acme/app"])), None);
+    }
+
+    /// MCP's order: asked, then the session's, then the clone's linked
+    /// repo, then the default. Each step wins over the ones after it.
+    #[test]
+    fn the_order() {
+        let mut p = projects();
+        p.projects.pop();
+        let home_of = |id: &str| {
+            let repos = if id == "prj_2" { vec!["acme/app".to_owned()] } else { vec![] };
+            Ok(IssueHome {
+                project: id.into(),
+                name: String::new(),
+                home: "native".into(),
+                chosen: false,
+                repos,
+                native_issues: 0,
+                both: false,
+                labels: vec![],
+                team: false,
+                owner: None,
+                rule: None,
+            })
+        };
+        let order = |asked: Option<&str>, session: Option<&str>, dir: Dir, github_ok: bool| {
+            let session = session.map(str::to_owned);
+            let steps = Steps { asked, session: &move || session.clone(), dir: &move || dir.clone() };
+            chosen(&p, &home_of, &steps, github_ok)
+        };
+        let app = || Dir::GitHub("acme/app".into());
+        let some = |id: &str, rule: Rule| Some((id.to_owned(), rule));
+        assert_eq!(order(Some("jake"), Some("prj_2"), app(), true).unwrap(), some("prj_1", Rule::Asked));
+        assert_eq!(order(None, Some("prj_1"), app(), true).unwrap(), some("prj_1", Rule::Session));
+        assert_eq!(order(None, None, app(), true).unwrap(), some("prj_2", Rule::Linked("acme/app".into())));
+        assert_eq!(order(None, None, Dir::Plain, true).unwrap(), some("prj_1", Rule::Default));
+        // A session's project that's gone is skipped.
+        assert_eq!(order(None, Some("prj_9"), Dir::Plain, true).unwrap(), some("prj_1", Rule::Default));
+        // A GitHub clone none links: GitHub's, else the default.
+        let other = || Dir::GitHub("acme/other".into());
+        assert_eq!(order(None, None, other(), true).unwrap(), None);
+        assert_eq!(order(None, None, other(), false).unwrap(), some("prj_1", Rule::Default));
+        assert!(order(None, None, Dir::Unmapped(vec!["x".into()]), true).is_err());
+        assert!(order(Some("nope"), None, Dir::Plain, true).is_err());
+
+        // `personal` is the owner's, not only a project with no team: a
+        // team's second project has none.
+        let mut p = projects();
+        p.projects[2].owner = Some(ProjectOwner::Team { id: "tm_1".into(), name: "Acme".into() });
+        assert_eq!(project_id(&p, "personal").unwrap(), "prj_1");
+        p.projects[0].archived = true;
+        assert!(project_id(&p, "personal").is_err(), "an archived one isn't named");
+        assert_eq!(project_id(&p, "prj_1").unwrap(), "prj_1", "but its id is");
     }
 
     #[test]
