@@ -21,3 +21,39 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: scripts/ci-velocity >> "$GITHUB_STEP_SUMMARY"
+  # The cloud repo is private, so github.token can't read it: a GitHub App
+  # installed on it (read-only Actions, Pull requests, Metadata) lends a
+  # token (Arugula #964). Its key is a secret of the ci-velocity environment.
+  # Skipped until the app is set up.
+  cloud:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: ci-velocity
+    steps:
+      - uses: actions/checkout@v4
+      - name: Is the cloud's app set up?
+        id: cloud
+        env:
+          APP_ID: ${{ vars.CI_VELOCITY_APP_ID }}
+          APP_KEY: ${{ secrets.CI_VELOCITY_APP_KEY }}
+        run: |
+          if [ -z "$APP_ID" ] || [ -z "$APP_KEY" ]; then
+            echo "::notice::Skipping arugula-salad/cloud: set the variable CI_VELOCITY_APP_ID and the secret CI_VELOCITY_APP_KEY"
+            echo ready=0 >> "$GITHUB_OUTPUT"
+          else
+            echo ready=1 >> "$GITHUB_OUTPUT"
+          fi
+      - name: A token for arugula-salad/cloud
+        id: token
+        if: steps.cloud.outputs.ready == '1'
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ vars.CI_VELOCITY_APP_ID }}
+          private-key: ${{ secrets.CI_VELOCITY_APP_KEY }}
+          owner: arugula-salad
+          repositories: cloud
+      - name: The cloud's pull requests, last 7 days
+        if: steps.cloud.outputs.ready == '1'
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: scripts/ci-velocity --repo arugula-salad/cloud --event pull_request >> "$GITHUB_STEP_SUMMARY"
