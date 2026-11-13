@@ -12,9 +12,11 @@
 //! 1. the one the call names (`project`: an id, or `personal`);
 //! 2. the issue's project when the caller is an agent `start_agent` started
 //!    on one (its block's `work.project`, Arugula #771);
-//! 3. the project the caller's session is in (`Session::project`);
-//! 4. the one the caller's clone's GitHub repo is linked to;
-//! 5. control's default: the owner's personal project, or a team machine's
+//! 3. the project of the card the caller's session is on (`Session::work`,
+//!    as its pane's `on_issue`);
+//! 4. the project the caller's session is in (`Session::project`);
+//! 5. the one the caller's clone's GitHub repo is linked to;
+//! 6. control's default: the owner's personal project, or a team machine's
 //!    team project.
 //!
 //! A clone of a GitHub repo that no project of the owner's links is
@@ -60,6 +62,8 @@ pub enum Rule {
     Asked,
     /// The caller's block was started on this issue (`#N`), in it.
     Started(String),
+    /// The caller's session is on this card (`#N`), in it.
+    Card(String),
     /// The caller's session is in it.
     Session,
     /// The clone's GitHub repo (`owner/name`) is linked to it.
@@ -79,13 +83,16 @@ struct Steps {
     asked: Option<String>,
     /// The issue the caller's block was started on.
     started: Option<Started>,
+    /// The card the caller's session is on.
+    card: Option<Started>,
     /// The project the caller's session is in.
     session: Option<String>,
     /// The clone's GitHub repo.
     repo: Option<String>,
 }
 
-/// The issue the caller's block was started on, and its project.
+/// The issue the caller's block was started on, or its session's card, and
+/// its project.
 #[derive(Debug, PartialEq, Eq)]
 struct Started {
     issue: String,
@@ -98,6 +105,7 @@ impl Rule {
         match s {
             Steps { asked: Some(_), .. } => Rule::Asked,
             Steps { started: Some(st), .. } => Rule::Started(st.issue.clone()),
+            Steps { card: Some(c), .. } => Rule::Card(c.issue.clone()),
             Steps { session: Some(_), .. } => Rule::Session,
             Steps { repo: Some(repo), .. } => Rule::Linked(repo.clone()),
             _ => Rule::Personal,
@@ -112,6 +120,7 @@ impl Rule {
         match (self, s) {
             (Rule::Asked, Steps { asked: Some(p), .. }) => q.push(("project", p.clone())),
             (Rule::Started(_), Steps { started: Some(st), .. }) => q.push(("project", st.project.clone())),
+            (Rule::Card(_), Steps { card: Some(c), .. }) => q.push(("project", c.project.clone())),
             (Rule::Session, Steps { session: Some(p), .. }) => {
                 q.push(("session_project", p.clone()));
                 q.extend(s.repo.clone().map(|r| ("repo", r)));
@@ -125,7 +134,8 @@ impl Rule {
     /// The rule that answered: the step control says, else this one. An
     /// older control says none and ignores the session's project, so it
     /// answered by the repo sent beside it, else by its default. Only the
-    /// machine knows whether a project it sent was named or its block's.
+    /// machine knows whether a project it sent was named, its block's or
+    /// its session's card's.
     fn answered(self, said: Option<IssueHomeRule>, s: &Steps) -> Self {
         let by_repo = || s.repo.clone().map_or(Rule::Personal, Rule::Linked);
         match (said, self) {
@@ -140,7 +150,9 @@ impl Rule {
     fn why(&self) -> String {
         match self {
             Rule::Asked => "the one you named".into(),
+            Rule::Started(issue) if issue.is_empty() => "you were started in it".into(),
             Rule::Started(issue) => format!("you were started on its issue {issue}"),
+            Rule::Card(issue) => format!("your session is on its card {issue}"),
             Rule::Session => "your session is in it".into(),
             Rule::Linked(repo) => format!("this clone's repo {repo} is linked to it"),
             Rule::Personal => "you named no project, and no GitHub repo of this clone says another".into(),
@@ -339,14 +351,18 @@ impl Call<'_> {
         self.app().control.cloud(method, path, body.as_ref()).await.map_err(said)
     }
 
-    /// The project the caller's session is in, and the GitHub repo
-    /// (`owner/name`) of the clone at `dir`, else of the caller's own, if
-    /// its pane is on this host in a clone of one.
-    async fn my_session_and_repo(&self, dir: Option<&str>) -> (Option<String>, Option<String>) {
+    /// The card the caller's pane is on (its session's, unless its block
+    /// has its own) with its project, the project the caller's session is
+    /// in, and the GitHub repo (`owner/name`) of the clone at `dir`, else
+    /// of the caller's own, if its pane is on this host in a clone of one.
+    async fn my_session_and_repo(&self, dir: Option<&str>) -> (Option<Started>, Option<String>, Option<String>) {
         let info = match self.own_pane() {
             Some(pane) => self.readable(pane).await.ok().map(|p| p.info),
             None => None,
         };
+        let card = info.as_ref().and_then(|i| i.on_issue.as_ref()).and_then(|o| {
+            Some(Started { issue: o.issue.clone(), project: o.project.clone().filter(|p| !p.is_empty())? })
+        });
         let session = info.as_ref().and_then(|i| i.session_project.as_ref()).map(|p| p.id.clone());
         let dir = match (dir, info) {
             (Some(d), _) => Some(d.to_owned()),
@@ -357,7 +373,7 @@ impl Call<'_> {
             Some(d) => github_repo_of(&d).await,
             None => None,
         };
-        (session, repo)
+        (card, session, repo)
     }
 
     /// M203: the project whose own issue `#N` in `dir` is, when the clone's
@@ -382,6 +398,7 @@ impl Call<'_> {
         let block = self.app().mux.api(|r| Api::Block(pane, r)).await.flatten()?;
         let work = &block.config()["work"];
         let project = work["project"].as_str().filter(|p| !p.is_empty())?;
+        // A project alone is the block's too: started in it.
         Some(Started { issue: work["issue"].as_str().unwrap_or_default().to_owned(), project: project.to_owned() })
     }
 
@@ -400,7 +417,7 @@ impl Call<'_> {
             steps.started = self.my_started_issue().await;
         }
         if steps.asked.is_none() && steps.started.is_none() {
-            (steps.session, steps.repo) = self.my_session_and_repo(dir).await;
+            (steps.card, steps.session, steps.repo) = self.my_session_and_repo(dir).await;
         }
         let rule = Rule::of(&steps);
         let q = rule.query(&steps);
@@ -515,21 +532,24 @@ mod tests {
     #[test]
     fn each_step_wins_over_the_ones_after_it() {
         let started = || Some(Started { issue: "#771".into(), project: "prj_2".into() });
-        let steps = |asked: bool, block: bool, session: bool, repo: bool| Steps {
+        let card = || Some(Started { issue: "#982".into(), project: "prj_4".into() });
+        let steps = |asked: bool, block: bool, on_card: bool, session: bool, repo: bool| Steps {
             asked: asked.then(|| "prj_1".into()),
             started: if block { started() } else { None },
+            card: if on_card { card() } else { None },
             session: session.then(|| "prj_3".into()),
             repo: repo.then(|| "acme/app".into()),
         };
         let p = |k: &'static str, v: &str| (k, v.to_owned());
         #[rustfmt::skip]
         let table = [
-            (steps(true, true, true, true), Rule::Asked, vec![p("project", "prj_1")]),
-            (steps(false, true, true, true), Rule::Started("#771".into()), vec![p("project", "prj_2")]),
-            (steps(false, false, true, true), Rule::Session, vec![p("session_project", "prj_3"), p("repo", "acme/app")]),
-            (steps(false, false, true, false), Rule::Session, vec![p("session_project", "prj_3")]),
-            (steps(false, false, false, true), Rule::Linked("acme/app".into()), vec![p("repo", "acme/app")]),
-            (steps(false, false, false, false), Rule::Personal, vec![]),
+            (steps(true, true, true, true, true), Rule::Asked, vec![p("project", "prj_1")]),
+            (steps(false, true, true, true, true), Rule::Started("#771".into()), vec![p("project", "prj_2")]),
+            (steps(false, false, true, true, true), Rule::Card("#982".into()), vec![p("project", "prj_4")]),
+            (steps(false, false, false, true, true), Rule::Session, vec![p("session_project", "prj_3"), p("repo", "acme/app")]),
+            (steps(false, false, false, true, false), Rule::Session, vec![p("session_project", "prj_3")]),
+            (steps(false, false, false, false, true), Rule::Linked("acme/app".into()), vec![p("repo", "acme/app")]),
+            (steps(false, false, false, false, false), Rule::Personal, vec![]),
         ];
         for (s, rule, q) in table {
             assert_eq!(Rule::of(&s), rule, "{s:?}");
@@ -576,6 +596,8 @@ mod tests {
         assert!(!said.to_lowercase().contains("personal"), "{said}");
         assert_eq!(chosen(Rule::Started("#9".into())).says(), "Project Arugula (you were started on its issue #9)");
         assert_eq!(chosen(Rule::Session).says(), "Project Arugula (your session is in it)");
+        assert_eq!(chosen(Rule::Card("#9".into())).says(), "Project Arugula (your session is on its card #9)");
+        assert_eq!(chosen(Rule::Started(String::new())).says(), "Project Arugula (you were started in it)");
         let nameless = Chosen { id: "prj_1".into(), name: String::new(), team: false, rule: Rule::Asked };
         assert_eq!(nameless.says(), "Project prj_1 (the one you named)");
     }

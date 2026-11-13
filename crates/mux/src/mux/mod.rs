@@ -186,6 +186,16 @@ pub enum Api {
     /// A session's project, from its pane's linked repo: set only while it
     /// may be ([`arugula_core::Mux::infer_project`]). Whether it was set.
     InferProject(SessionId, arugula_core::ProjectRef, oneshot::Sender<bool>),
+    /// Whether a session may still get its card from a pane's branch
+    /// ([`arugula_core::Session::work_inferable`]): asked before control is.
+    WorkInferable(SessionId, oneshot::Sender<bool>),
+    /// A session's card, from its pane's branch, and its project's name:
+    /// set only while it may be ([`arugula_core::Mux::infer_work`]).
+    /// Whether it was set.
+    InferWork(SessionId, arugula_core::WorkRef, Option<String>, oneshot::Sender<bool>),
+    /// A session's work set by hand ([`Intent::SetSessionWork`]), and its
+    /// project's name: why not, if it was refused.
+    SetSessionWork(SessionId, Option<arugula_core::WorkRef>, Option<String>, oneshot::Sender<Result<(), String>>),
     Run(RunRequest, oneshot::Sender<Result<PaneId, String>>),
     Pane(PaneId, oneshot::Sender<Option<PaneHandle>>),
     /// The Claude Code conversation running in a terminal now, by its id,

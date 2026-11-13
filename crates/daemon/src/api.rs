@@ -854,6 +854,7 @@ async fn open_block(
     }
     // An agent started on an issue (`arugula agent --issue`, #372): its
     // row, once it's open.
+    req.work_into_config();
     let issue = match req.kind {
         arugula_proto::BlockType::Agent => crate::board_attach::issue_of(&req.config).map_err(bad)?,
         _ => None,

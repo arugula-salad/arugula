@@ -253,6 +253,8 @@ fn request_bodies_are_what_the_json_was() {
             cwd: None,
             policy: Some(Policy::Rerun { confirm: true }),
             from_pane: Some(1),
+            project: None,
+            issue: None,
         },
         json!({ "command": "ls", "vm": false, "vm_tab": true, "image": null, "sandbox": null, "session": "s",
                 "split": 2, "join": false, "cwd": null, "policy": { "kind": "rerun", "confirm": true },

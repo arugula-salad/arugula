@@ -215,6 +215,41 @@ pub struct OpenRequest {
     #[serde(default)]
     #[cfg_attr(feature = "ts", ts(as = "Option<bool>"))]
     pub local: bool,
+    /// The project it works in (`prj_…`): an agent's own, else its
+    /// session's ([`crate::Session::work`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+    /// The card it works on (`#N` in `project`, or `iss_…`): an agent's
+    /// own (`config.work`'s `issue`), else its session's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub issue: Option<String>,
+}
+
+impl OpenRequest {
+    /// An agent's (or a chat's) typed `issue` and `project` as its
+    /// `config.work`, where the block keeps them (a project alone is the
+    /// one it works in); they win over what the config says. Another
+    /// block's are its session's, and stay.
+    pub fn work_into_config(&mut self) {
+        if !matches!(self.kind, crate::BlockType::Agent | crate::BlockType::Chat) {
+            return;
+        }
+        if self.issue.is_none() && self.project.is_none() {
+            return;
+        }
+        if !self.config.is_object() {
+            self.config = serde_json::json!({});
+        }
+        if !self.config["work"].is_object() {
+            self.config["work"] = serde_json::json!({});
+        }
+        if let Some(i) = self.issue.take() {
+            self.config["work"]["issue"] = i.into();
+        }
+        if let Some(p) = self.project.take() {
+            self.config["work"]["project"] = p.into();
+        }
+    }
 }
 
 /// What opening a block answers.
@@ -270,6 +305,13 @@ pub struct RunRequest {
     /// and working directory.
     #[serde(default)]
     pub from_pane: Option<PaneId>,
+    /// The project its session works in (`prj_…`; [`crate::Session::work`]).
+    /// With `issue` and none, the session's own project.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+    /// The card its session works on: `#N` in `project`, or `iss_…`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub issue: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2964,5 +3006,32 @@ mod wire {
         assert_eq!(row(json!({ "layout": "prototype" })).layout, DocLayout::Prototype);
         assert_eq!(row(json!({ "layout": "gallery" })).layout, DocLayout::Doc);
         assert_eq!(serde_json::to_value(DocLayout::Prototype).unwrap(), json!("prototype"));
+    }
+}
+
+#[cfg(test)]
+mod work_tests {
+    use super::*;
+    use serde_json::json;
+
+    /// An agent's typed issue and project are its `config.work`; another
+    /// block's stay for its session.
+    #[test]
+    fn an_agents_typed_work_is_its_config() {
+        let typed = |kind| OpenRequest {
+            kind,
+            config: json!({ "agent": "claude", "work": { "issue": "#1", "take": true } }),
+            project: Some("prj_1".into()),
+            issue: Some("#2".into()),
+            ..Default::default()
+        };
+        let mut agent = typed(crate::BlockType::Agent);
+        agent.work_into_config();
+        assert_eq!(agent.config["work"], json!({ "issue": "#2", "project": "prj_1", "take": true }));
+        assert_eq!((agent.project, agent.issue), (None, None));
+        let mut browser = typed(crate::BlockType::Browser);
+        browser.work_into_config();
+        assert_eq!(browser.config["work"]["issue"], "#1");
+        assert_eq!(browser.issue.as_deref(), Some("#2"));
     }
 }

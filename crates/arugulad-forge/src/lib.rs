@@ -1858,6 +1858,8 @@ impl ForgeBlock {
             image: None,
             host: None,
             local: self.ctx.sprite.is_none(),
+            project: None,
+            issue: None,
         };
         let block = self.ctx.open(req).await?;
         to_value(Diffed { block, worktree: wt, rev_a: mb, rev_b: format!("refs/arugula/pr/{number}") })

@@ -44,6 +44,8 @@ pub async fn open_app(call: &Call<'_>, a: OpenAppArgs) -> Out {
         image: None,
         host: None,
         local: true,
+        project: None,
+        issue: None,
     };
     let block = call.open(req).await?;
     done(format!("Opened app {name} in block %{block}"), results::AppOpened { block, app: name })

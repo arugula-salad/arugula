@@ -24,6 +24,7 @@ impl Daemon {
     /// `arugula run`: a new tab (or a split) running a command.
     pub(super) fn run_command(&mut self, req: RunRequest) -> Result<PaneId, String> {
         let from = req.from_pane.filter(|p| self.panes.contains_key(p));
+        let work = self.typed_work(&req.project, &req.issue, req.split, req.session.as_deref(), from)?;
         let cwd = req
             .cwd
             .clone()
@@ -90,7 +91,53 @@ impl Daemon {
             let m = self.meta.entry(pane).or_default();
             (m.policy, m.policy_set) = (policy, true);
         }
+        self.set_work_of(pane, work)?;
         Ok(pane)
+    }
+
+    /// The work a `run` or a block's open names for its session (`project`
+    /// and `issue`), checked before anything opens: an issue alone is in
+    /// the session's project, and a session whose project was set by hand
+    /// takes no other's.
+    fn typed_work(
+        &self,
+        project: &Option<String>,
+        issue: &Option<String>,
+        split: Option<PaneId>,
+        session: Option<&str>,
+        from: Option<PaneId>,
+    ) -> Result<Option<arugula_core::WorkRef>, String> {
+        let nonempty = |s: &Option<String>| s.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned);
+        let (project, item) = (nonempty(project), nonempty(issue));
+        if project.is_none() && item.is_none() {
+            return Ok(None);
+        }
+        // A split is in its pane's session.
+        let existing = match split.and_then(|p| self.session_of(p)) {
+            Some(s) => self.mux.session(s).ok(),
+            None => match self.resolve_session(session, from) {
+                Session::Existing(s) => self.mux.session(s).ok(),
+                _ => None,
+            },
+        };
+        let project = match (project, existing.and_then(|s| s.project.as_ref())) {
+            (Some(p), _) => p,
+            (None, Some(p)) => p.id.clone(),
+            (None, None) => return Err("issue is in a project: name it (project, a prj_ id)".into()),
+        };
+        if let Some(s) = existing.filter(|s| s.project_by_hand)
+            && s.project.as_ref().is_none_or(|p| p.id != project)
+        {
+            return Err(format!("session {} was put in another project by hand: change it first", s.name));
+        }
+        Ok(Some(arugula_core::WorkRef { project, item }))
+    }
+
+    /// Put `pane`'s session on `work`, by hand.
+    fn set_work_of(&mut self, pane: PaneId, work: Option<arugula_core::WorkRef>) -> Result<(), String> {
+        let Some(work) = work else { return Ok(()) };
+        let session = self.session_of(pane).ok_or("its session closed")?;
+        self.intent(None, Intent::SetSessionWork { session, work: Some(work), project_name: None })
     }
 
     /// Where a pane joining `pane`'s host runs (`run --split --join`).
@@ -162,6 +209,13 @@ impl Daemon {
             return Err("terminals are opened with run".into());
         }
         let from = req.from_pane.filter(|p| self.panes.contains_key(p) || self.blocks.contains_key(p));
+        // An agent's work is its own (`config.work`); another block's is
+        // its session's.
+        req.work_into_config();
+        let session_work = match req.kind {
+            BlockType::Agent | BlockType::Chat => None,
+            _ => self.typed_work(&req.project, &req.issue, req.split, req.session.as_deref(), from)?,
+        };
         match req.kind {
             BlockType::Editor => self.editor_defaults(&mut req, from),
             BlockType::Diff | BlockType::File => self.view_defaults(&mut req, from),
@@ -216,6 +270,7 @@ impl Daemon {
         if !self.blocks.contains_key(&id) {
             return Err(self.last_block_error.take().unwrap_or_else(|| "the block couldn't start".into()));
         }
+        self.set_work_of(id, session_work)?;
         Ok(id)
     }
 

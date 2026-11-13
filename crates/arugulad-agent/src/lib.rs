@@ -3560,7 +3560,8 @@ impl Agent {
     /// Keep the boards this block is on (`start_agent` with an `issue`): its
     /// chip. The issue is the block's from its start; only the boards come
     /// later, with control's answer. An `issue` makes the block's own: for one
-    /// found from its branch, once a row is.
+    /// found from its branch, once a row is, or one attached by hand
+    /// (`board_write attach`); `project` is the one it's in.
     fn set_work(&self, args: &Value) -> Result<Value, String> {
         let boards: Vec<board_attach::WorkBoard> =
             serde_json::from_value(args["boards"].clone()).map_err(|e| format!("set_work takes boards: {e}"))?;
@@ -3568,7 +3569,11 @@ impl Agent {
         if let Some(issue) = args["issue"].as_str() {
             g.cfg.work.get_or_insert_with(Default::default).issue = issue.to_owned();
         }
-        let work = g.cfg.work.as_mut().ok_or("this block wasn't started on an issue")?;
+        let work =
+            g.cfg.work.as_mut().filter(|w| !w.issue.is_empty()).ok_or("this block wasn't started on an issue")?;
+        if let Some(p) = args["project"].as_str().filter(|p| !p.is_empty()) {
+            work.project = Some(p.to_owned());
+        }
         work.boards = boards;
         drop(g);
         self.changed();
@@ -3610,8 +3615,10 @@ impl Block for Agent {
         let g = self.inner.lock().unwrap();
         // A stopped agent isn't running (UI audit #154).
         let stopped = matches!(g.status, Status::Exited | Status::Stopped);
-        let on_issue = g.cfg.work.as_ref().map(|w| arugula_proto::OnIssue {
+        // A project alone is no card: its session's is shown.
+        let on_issue = g.cfg.work.as_ref().filter(|w| !w.issue.is_empty()).map(|w| arugula_proto::OnIssue {
             issue: w.issue.clone(),
+            project: w.project.clone(),
             boards: w
                 .boards
                 .iter()
