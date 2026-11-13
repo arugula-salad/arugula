@@ -173,3 +173,5 @@ Where: `crates/platform/src/approvals.rs`, `crates/e2e/src/deploy.rs`,
 `crates/e2e/src/cert.rs`, `crates/control/src/passkey.rs`.
 From: the Docs "Deploy approvals" (15c8d24bb14a1963) and "Device keys"
 (6ea44bfc557de4c6), Arugula native #382 to #390.
+
+**Amended by aru-141, "Machines trust control: the hub's tokens replace device keys"** (Jake, 2026-11-13). The device-key half goes: who reaches a machine is decided by the hub's machine tokens, not by device keys and their chain. The passkey half stands unchanged: a deploy's approval, a standing run grant and an owner change each take a user-verified passkey assertion, and agents never approve.

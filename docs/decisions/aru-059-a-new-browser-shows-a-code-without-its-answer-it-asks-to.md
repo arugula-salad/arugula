@@ -2,7 +2,7 @@
 schema: 1
 id: "aru-059"
 title: "A new browser shows a code; without its answer it asks to check the account"
-state: "decided"
+state: "superseded"
 area: "Federation and control"
 source:
   via: "cli"
@@ -34,6 +34,8 @@ constrains:
 ---
 
 # A new browser shows a code; without its answer it asks to check the account
+
+**Superseded by aru-141, "Machines trust control: the hub's tokens replace device keys"** (Jake, 2026-11-13). Kept for its history; the code it describes goes as that record's order says.
 
 A browser, phone or app window waiting to be approved shows a code
 (`LOOKUP.SECRET`, as text and as a QR code of a `#device=` link) instead of

@@ -2,7 +2,7 @@
 schema: 1
 id: "aru-056"
 title: "Trust is a chain of device approvals"
-state: "decided"
+state: "superseded"
 area: "Federation and control"
 source:
   via: "cli"
@@ -37,6 +37,8 @@ constrains:
 ---
 
 # Trust is a chain of device approvals
+
+**Superseded by aru-141, "Machines trust control: the hub's tokens replace device keys"** (Jake, 2026-11-13). Kept for its history; the code it describes goes as that record's order says.
 
 A new device must be approved by a device the account already trusts (the
 first is trusted on enrollment). Daemons verify the chain themselves back to

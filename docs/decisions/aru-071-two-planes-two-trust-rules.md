@@ -86,3 +86,5 @@ and grants. `tables.toml` says both for each table: `plane` for the trust
 rule and `process` for who holds it.
 Where: `crates/control/tables.toml`, `crates/control/src/db.rs`, `crates/control/src/db/`, `docs/control-e2e.md`.
 From: #1122 (platform roadmap, step 1), M127 (#1123), M128 (#1124).
+
+**Amended by aru-141, "Machines trust control: the hub's tokens replace device keys"** (Jake, 2026-11-13). The machine plane's rule changes: control can read terminal bytes in memory as it relays them, over TLS, and still stores none of them. Machine keys no longer decide who reaches a machine. What `tables.toml` lists is unchanged.

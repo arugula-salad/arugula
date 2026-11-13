@@ -2,7 +2,7 @@
 schema: 1
 id: "aru-075"
 title: "Control is two processes: a hub and a platform"
-state: "decided"
+state: "superseded"
 area: "Federation and control"
 source:
   via: "cli"
@@ -54,6 +54,8 @@ constrains:
 ---
 
 # Control is two processes: a hub and a platform
+
+**Superseded by aru-142, "Control is one process again"** (Jake, 2026-11-13). Kept for its history; the code it describes goes as that record's order says.
 
 Control runs as two processes (Jake, 2026-10-20, #1150):
 - **The hub** keeps identity (sessions, passkeys, GitHub sign-in), devices,

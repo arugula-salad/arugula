@@ -87,7 +87,7 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-031](docs/decisions/aru-031-the-desktop-app-is-a-window-and-a-supervisor-the-daemon.md): The desktop app is a window and a supervisor; the daemon stays a service
 - [aru-032](docs/decisions/aru-032-clients-run-ssh-daemons-don-t.md): Clients run ssh; daemons don't
 - [aru-033](docs/decisions/aru-033-on-a-computer-one-workspace-a-phone-keeps-its-own.md): On a computer, one workspace; a phone keeps its own
-- [aru-079](docs/decisions/aru-079-the-platform-page-is-on-app-arugula-io-not-on-th.md): The platform page is on app.arugula.io, not on the keys' origin
+- [aru-079](docs/decisions/aru-079-the-platform-page-is-on-app-arugula-io-not-on-th.md): The platform page is on app.arugula.io, not on the keys' origin (superseded)
 - [aru-081](docs/decisions/aru-081-push-stays-on-the-hub-s-app-a-push-opens-the-pla.md): Push stays on the hub's app; a push opens the platform page
 - [aru-082](docs/decisions/aru-082-platform-urls-are-ids-with-cosmetic-slugs.md): Platform URLs are ids with cosmetic slugs
 - [aru-083](docs/decisions/aru-083-secrets-stay-in-fragments.md): Secrets stay in fragments
@@ -134,18 +134,18 @@ Not here: what each milestone built (the archive), how to build and test
 ## Federation and control
 
 - [aru-054](docs/decisions/aru-054-every-daemon-is-a-peer-control-is-the-only-front-door.md): Every daemon is a peer; control is the only front door
-- [aru-055](docs/decisions/aru-055-control-can-refuse-service-but-can-t-read.md): Control can refuse service but can't read
-- [aru-056](docs/decisions/aru-056-trust-is-a-chain-of-device-approvals.md): Trust is a chain of device approvals
-- [aru-057](docs/decisions/aru-057-a-refused-approval-names-the-check-and-isn-t-a-turn-down.md): A refused approval names the check, and isn't a turn-down
-- [aru-058](docs/decisions/aru-058-a-machine-s-join-link-carries-a-secret-the-account-isn-t.md): A machine's join link carries a secret; the account isn't compared
-- [aru-059](docs/decisions/aru-059-a-new-browser-shows-a-code-without-its-answer-it-asks-to.md): A new browser shows a code; without its answer it asks to check the account
-- [aru-060](docs/decisions/aru-060-every-team-invite-link-carries-a-one-time-key-admitting.md): Every team invite link carries a one-time key; admitting someone compares nothing
-- [aru-061](docs/decisions/aru-061-a-passkey-with-prf-is-a-device-one-wherever-it-syncs.md): A passkey with PRF is a device: one wherever it syncs
+- [aru-055](docs/decisions/aru-055-control-can-refuse-service-but-can-t-read.md): Control can refuse service but can't read (superseded)
+- [aru-056](docs/decisions/aru-056-trust-is-a-chain-of-device-approvals.md): Trust is a chain of device approvals (superseded)
+- [aru-057](docs/decisions/aru-057-a-refused-approval-names-the-check-and-isn-t-a-turn-down.md): A refused approval names the check, and isn't a turn-down (superseded)
+- [aru-058](docs/decisions/aru-058-a-machine-s-join-link-carries-a-secret-the-account-isn-t.md): A machine's join link carries a secret; the account isn't compared (superseded)
+- [aru-059](docs/decisions/aru-059-a-new-browser-shows-a-code-without-its-answer-it-asks-to.md): A new browser shows a code; without its answer it asks to check the account (superseded)
+- [aru-060](docs/decisions/aru-060-every-team-invite-link-carries-a-one-time-key-admitting.md): Every team invite link carries a one-time key; admitting someone compares nothing (superseded)
+- [aru-061](docs/decisions/aru-061-a-passkey-with-prf-is-a-device-one-wherever-it-syncs.md): A passkey with PRF is a device: one wherever it syncs (superseded)
 - [aru-062](docs/decisions/aru-062-control-s-code-is-open-only-the-hosted-control-is-supported.md): Control's code is open, only the hosted control is supported; the tailnet stays first class
 - [aru-071](docs/decisions/aru-071-two-planes-two-trust-rules.md): Two planes, two trust rules
 - [aru-072](docs/decisions/aru-072-the-project-is-the-unit-of-platform-sharing.md): The project is the unit of platform sharing
 - [aru-074](docs/decisions/aru-074-one-vocabulary-project-with-prj-ids.md): One vocabulary: Project, with prj_ ids
-- [aru-075](docs/decisions/aru-075-control-is-two-processes-a-hub-and-a-platform.md): Control is two processes: a hub and a platform
+- [aru-075](docs/decisions/aru-075-control-is-two-processes-a-hub-and-a-platform.md): Control is two processes: a hub and a platform (superseded)
 - [aru-076](docs/decisions/aru-076-platform-paths-stay-on-control-arugula-io-forever.md): Platform paths stay on control.arugula.io forever, behind the hub's gateway
 - [aru-077](docs/decisions/aru-077-the-platform-s-database-is-fly-managed-postgres.md): The platform's database is Fly Managed Postgres, moved in announced windows
 - [aru-084](docs/decisions/aru-084-the-platform-mirrors-linked-github-repos-metadat.md): The platform mirrors linked GitHub repos: metadata, with content opt-in
@@ -175,6 +175,8 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-136](docs/decisions/aru-136-a-machine-s-kind-is-one-type-control-json-keeps-its-flat-shape.md): A machine's kind is one type; control.json keeps its flat shape
 - [aru-139](docs/decisions/aru-139-a-doc-s-home-follows-the-context-with-no-copies.md): A Doc's home follows the context, with no copies
 - [aru-140](docs/decisions/aru-140-an-owner-has-many-projects-channels-belong-to-the-team.md): An owner has many projects; channels belong to the team; the default project is a setting
+- [aru-141](docs/decisions/aru-141-machines-trust-control-the-hub-s-tokens-replace-device-keys.md): Machines trust control: the hub's tokens replace device keys
+- [aru-142](docs/decisions/aru-142-control-is-one-process-again.md): Control is one process again
 
 ## Build and release
 

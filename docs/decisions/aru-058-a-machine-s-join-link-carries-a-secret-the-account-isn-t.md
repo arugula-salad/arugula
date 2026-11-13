@@ -2,7 +2,7 @@
 schema: 1
 id: "aru-058"
 title: "A machine's join link carries a secret; the account isn't compared"
-state: "decided"
+state: "superseded"
 area: "Federation and control"
 source:
   via: "cli"
@@ -34,6 +34,8 @@ constrains:
 ---
 
 # A machine's join link carries a secret; the account isn't compared
+
+**Superseded by aru-141, "Machines trust control: the hub's tokens replace device keys"** (Jake, 2026-11-13). Kept for its history; the code it describes goes as that record's order says.
 
 `arugulad join`, Getting started and `arugula login` put a secret of their own
 after the code in the approval link (`#join=CODE.SECRET`), which control never

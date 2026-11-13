@@ -70,3 +70,5 @@ Arugula native #601).
 
 Where: `native/core`, `justfile` (`native-check`, `native-ios`).
 From: Arugula native #601, the Native iPhone app board.
+
+**Amended by aru-141, "Machines trust control: the hub's tokens replace device keys"** (Jake, 2026-11-13). The core's channel to a daemon is TLS to the relay with a machine token, not a Noise channel; signing requests with a device key goes.

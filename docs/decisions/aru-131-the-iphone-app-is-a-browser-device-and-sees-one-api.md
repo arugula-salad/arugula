@@ -91,3 +91,5 @@ The first native app is the iPhone's, and it joins as a `browser`-kind device
 
 Where: `crates/e2e/src/cert.rs`, `crates/control/src/auth.rs`, `crates/control/src/clients.rs`, `crates/control/routes.toml`.
 From: Arugula native #597, #600, the Native iPhone app board.
+
+**Amended by aru-141, "Machines trust control: the hub's tokens replace device keys"** (Jake, 2026-11-13). With no device kinds, the iPhone app is a signed-in client like the web page: it asks the hub for machine tokens and keeps no device keys.
