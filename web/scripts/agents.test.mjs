@@ -3,7 +3,7 @@
 // switches read of the grants. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { agentLines, agentOwners, authorLabel, chipLabel, ciName, githubLogin, isSystemLine, machineHandle, machineMentions, sessionSlug } from "../src/shared/chat/agents.ts";
+import { agentLines, agentOwners, authorLabel, chipLabel, ciName, githubLogin, isSystemLine, machineHandle, machineMentions, sessionSlug, webhookName } from "../src/shared/chat/agents.ts";
 import {
   blindLine,
   blindMachines,
@@ -64,6 +64,18 @@ test("what CI wrote is CI's, and only with no author (native #774)", () => {
   assert.equal(ciName(msg({ via: "ci:chant" })), null);
   assert.equal(authorLabel(msg({ via: "ci:chant" })), "Jake");
   assert.equal(ciName(msg({ author: "", name: "", via: "ci:" })), null);
+});
+
+test("what a channel's webhook posted is the hook's name, never a deleted account's", () => {
+  const hook = msg({ author: "", via: "webhook:wh_1a2b", name: "Merge queue" });
+  assert.equal(webhookName(hook), "Merge queue");
+  assert.equal(authorLabel(hook), "Merge queue");
+  // With no name sent, still the webhook's.
+  assert.equal(authorLabel(msg({ author: "", name: "", via: "webhook:wh_1a2b" })), "a webhook");
+  // A person's message posted via a product named like it isn't the hook's.
+  assert.equal(webhookName(msg({ via: "webhook:wh_1a2b", name: "Merge queue" })), null);
+  assert.equal(authorLabel(msg({ via: "webhook:wh_1a2b" })), "Jake");
+  assert.equal(isSystemLine(hook), false);
 });
 
 test("a room says whose agents reach it, and what they may do", () => {
