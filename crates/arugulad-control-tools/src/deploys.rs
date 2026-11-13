@@ -39,13 +39,13 @@ use crate::{control::CloudRefused, mux::Api};
 pub(crate) const PLAN_TOOL: &str = "plan_deploy";
 pub(crate) const READ_TOOL: &str = "read_deploy";
 
-pub(crate) const PLAN_DESCRIPTION: &str = "Plan a deploy of a commit to one of a project's environments in Arugula control, and ask the project's owners to approve it. Agents plan and ask; they never approve: an owner approves (or denies) it on their phone or in a browser, with a passkey, and only then is it applied. The platform makes the plan from the environment's driver and returns its text, which is what the owner reads. Needs this machine's deploys.plan grant over the project, given by your person (an owner or editor there); without it the platform refuses and says how to give it. Returns the deploy (dep_…), waiting for approval; read_deploy follows it.";
+pub(crate) const PLAN_DESCRIPTION: &str = "Plan a deploy of a commit to one of a project's environments in Arugula cloud, and ask the project's owners to approve it. Agents plan and ask; they never approve: an owner approves (or denies) it on their phone or in a browser, with a passkey, and only then is it applied. The platform makes the plan from the environment's driver and returns its text, which is what the owner reads. Needs this machine's deploys.plan grant over the project, given by your person (an owner or editor there); without it the platform refuses and says how to give it. Returns the deploy (dep_…), waiting for approval; read_deploy follows it.";
 
-pub(crate) const READ_DESCRIPTION: &str = "Read a deploy in Arugula control (with this machine's deploys.plan grant over its project): where it goes, what it deploys, its plan's text, its state (planned, pending: waiting for an owner's approval, approved, running, succeeded, failed, denied, stale) and its log. With until: \"decided\", wait while it's pending until an owner approves or denies it (or it stops waiting otherwise), up to timeout seconds (default 100, at most 600); then it returns still waiting: call again rather than polling. Reading never approves: an owner approves on their phone or in a browser.";
+pub(crate) const READ_DESCRIPTION: &str = "Read a deploy in Arugula cloud (with this machine's deploys.plan grant over its project): where it goes, what it deploys, its plan's text, its state (planned, pending: waiting for an owner's approval, approved, running, succeeded, failed, denied, stale) and its log. With until: \"decided\", wait while it's pending until an owner approves or denies it (or it stops waiting otherwise), up to timeout seconds (default 100, at most 600); then it returns still waiting: call again rather than polling. Reading never approves: an owner approves on their phone or in a browser.";
 
 #[derive(Deserialize, JsonSchema)]
 pub struct PlanDeployArgs {
-    /// The project in Arugula control: its id (prj_…).
+    /// The project in Arugula cloud: its id (prj_…).
     pub project: String,
     /// The environment: its name in the project (production), or its id
     /// (env_…).
@@ -90,9 +90,9 @@ const DECIDED_EVERY: Duration = Duration::from_secs(30);
 /// What a refusal says to an agent.
 fn said(e: CloudRefused) -> String {
     match e {
-        CloudRefused::NotJoined => "this machine hasn't joined Arugula control, where deploys live: ask your person to join it (Getting started on the web page, or `arugulad join`)".into(),
+        CloudRefused::NotJoined => "this machine hasn't joined Arugula cloud, where deploys live: ask your person to join it (Getting started on the web page, or `arugulad join`)".into(),
         CloudRefused::OldControl | CloudRefused::Said { status: 405, .. } => {
-            "this Arugula control doesn't let agents plan deploys yet".into()
+            "Arugula cloud doesn't let agents plan deploys yet".into()
         }
         CloudRefused::Said { status: 403, said, reason } => {
             let why = match reason.as_deref() {

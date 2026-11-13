@@ -1750,7 +1750,7 @@ async fn an_agent_drives_cloud_workspaces_through_control() {
     let s = bridge(&d, Client::named("claude-code")).await;
 
     let said = refused(&s, "list", json!({ "kind": "cloud_workspaces" })).await;
-    assert!(said.contains("hasn't joined Arugula control"), "{said}");
+    assert!(said.contains("hasn't joined Arugula cloud"), "{said}");
     let c = call(&s, "capabilities", json!({})).await;
     assert_eq!(c["control"]["cloud"]["reachable"], false, "{c}");
 
@@ -1864,7 +1864,7 @@ async fn fake_forge(f: FakeForge) -> String {
             },
             op => (
                 StatusCode::NOT_IMPLEMENTED,
-                Json(json!({ "error": format!("{op}: sending from Arugula control isn't available yet; a draft waits for it"),
+                Json(json!({ "error": format!("{op}: sending from Arugula cloud isn't available yet; a draft waits for it"),
                              "reason": "not_yet" })),
             )
                 .into_response(),
@@ -1916,7 +1916,7 @@ async fn an_agent_drafts_on_a_linked_pr_with_no_block_and_a_person_sees_it() {
     assert!(tools.iter().all(|t| !t.name.contains("send") || t.name == "send_input"), "a send tool");
 
     let said = refused(&s, "forge_read", json!({ "kind": "pr", "item": "acme/app#1" })).await;
-    assert!(said.contains("hasn't joined Arugula control"), "{said}");
+    assert!(said.contains("hasn't joined Arugula cloud"), "{said}");
     let keys = arugula_e2e::DeviceKeys::load_or_create(&d.state.join("daemon.key")).unwrap();
     let cert = arugula_e2e::Cert::new(&keys, "a1", arugula_e2e::Kind::Daemon, "test");
     let saved = json!({ "url": url, "trust": { "account": "a1", "root": keys.id() }, "cert": cert });
@@ -1957,7 +1957,7 @@ async fn an_agent_drafts_on_a_linked_pr_with_no_block_and_a_person_sees_it() {
     let old = call(&s, "read_forge", json!({ "block": block })).await;
     assert_eq!(old["platform"]["item"]["id"], "fi_1", "{old}");
     assert_eq!(old["platform"]["drafts"][0]["id"], id.as_str(), "{old}");
-    assert!(old["summary"].as_str().unwrap().contains("linked in Arugula control: fi_1"), "{old}");
+    assert!(old["summary"].as_str().unwrap().contains("linked in Arugula cloud: fi_1"), "{old}");
     {
         let calls = fake.calls.lock().unwrap();
         let (auth, b) = calls.iter().find(|(_, b)| b["op"] == "draft.create").unwrap();
@@ -2152,7 +2152,7 @@ async fn an_agent_reads_and_posts_in_conversations_through_control() {
     let d = Daemon::child_with(&[]);
     let s = bridge(&d, Client::named("claude-code")).await;
     let said = refused(&s, "read_thread", json!({ "room": "ch_general" })).await;
-    assert!(said.contains("hasn't joined Arugula control"), "{said}");
+    assert!(said.contains("hasn't joined Arugula cloud"), "{said}");
     let c = call(&s, "capabilities", json!({})).await;
     assert_eq!(c["control"]["threads"]["live"], false, "{c}");
 
@@ -2269,7 +2269,7 @@ async fn fake_native(f: FakeNative) -> String {
             .into_response(),
             ("POST", ["api", "daemon", "projects", "prj_1", "issues"]) => {
                 if !f.granted.load(Ordering::SeqCst) {
-                    let why = "geek has no issues.write grant over acme: its owner gives it with `arugula grants add geek issues.write --project prj_1`, or turns on geek for acme under Settings, Agents in conversations, on the platform page";
+                    let why = "geek has no issues.write grant over acme: its owner gives it with `arugula grants add geek issues.write --project prj_1`, or turns on geek for acme under Settings, Agents in conversations, on your machines page";
                     return (StatusCode::FORBIDDEN, Json(json!({ "error": why, "reason": "agent_ungranted" })))
                         .into_response();
                 }
@@ -2605,7 +2605,7 @@ async fn fake_runs(f: FakeRuns) -> String {
         let segs: Vec<&str> = path.trim_start_matches('/').split('/').collect();
         let ungranted = |power: &str| {
             let why = format!(
-                "geek-box has no {power} grant over acme: its owner gives it with `arugula grants add geek-box {power} --project prj_1`, or turns on geek-box for acme under Settings, Agents and runs, on the platform page"
+                "geek-box has no {power} grant over acme: its owner gives it with `arugula grants add geek-box {power} --project prj_1`, or turns on geek-box for acme under Settings, Agents and runs, on your machines page"
             );
             (StatusCode::FORBIDDEN, Json(json!({ "error": why, "reason": "agent_ungranted" }))).into_response()
         };
@@ -2928,7 +2928,7 @@ async fn an_agent_plans_a_deploy_and_asks_and_never_approves() {
     let args =
         json!({ "project": "prj_0a", "environment": "production", "commit": "AB".repeat(20), "repo": "acme/app" });
     let said = refused(&s, "plan_deploy", args.clone()).await;
-    assert!(said.contains("hasn't joined Arugula control"), "{said}");
+    assert!(said.contains("hasn't joined Arugula cloud"), "{said}");
     let said = refused(
         &s,
         "plan_deploy",

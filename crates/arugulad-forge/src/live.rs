@@ -220,7 +220,7 @@ pub fn standing(provider: Provider, host: &str, repo: &str) -> Standing {
             let control = hub().and_then(|h| h.control.as_ref()?.upgrade()).is_some_and(|c| c.enrolled().is_some());
             let said = hub().and_then(|h| h.github.lock().unwrap().get(&repo.to_ascii_lowercase()).cloned());
             let why = match (control, said) {
-                (false, _) => Some("not joined to Arugula control, whose GitHub App relays webhooks".to_owned()),
+                (false, _) => Some("not joined to Arugula cloud, whose GitHub App relays webhooks".to_owned()),
                 (true, None) => Some("control hasn't said yet".to_owned()),
                 (true, Some(w)) => w,
             };
@@ -313,7 +313,7 @@ pub async fn app_token(repo: &str, fresh: bool) -> Result<(String, String), Stri
     }
     let control = hub()
         .and_then(|h| h.control.as_ref()?.upgrade())
-        .ok_or("not joined to Arugula control, whose GitHub App could read it")?;
+        .ok_or("not joined to Arugula cloud, whose GitHub App could read it")?;
     let v = control.github_token(repo).await?;
     let token = Some(v.token).filter(|t| !t.is_empty()).ok_or("control sent no token")?;
     let login = v.login;

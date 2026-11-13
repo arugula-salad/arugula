@@ -261,7 +261,7 @@ const WAIT: Duration = Duration::from_secs(30 * 60);
 
 pub fn run(cmd: CloudCmd, json_out: bool) -> anyhow::Result<i32> {
     let Some(e) = Enrolled::load()? else {
-        bail!("this CLI isn't logged in to Arugula control: `arugula login` first");
+        bail!("this CLI isn't logged in to Arugula cloud: `arugula login` first");
     };
     let show = |w: &Value| if json_out { print_json(w) } else { println!("{}", line(w)) };
     match cmd {

@@ -306,11 +306,11 @@ impl From<CloudRefused> for Got {
             CloudRefused::Unreachable(_) | CloudRefused::Maintenance => Got::Later(e.to_string()),
             CloudRefused::Said { status: 429, said, .. } => Got::Later(said),
             CloudRefused::Said { status, said, .. } if status >= 500 => {
-                Got::Later(format!("Arugula control's platform didn't answer: {said}"))
+                Got::Later(format!("Arugula cloud didn't answer: {said}"))
             }
             CloudRefused::Said { said, .. } => Got::Refused(said),
             CloudRefused::NotJoined => {
-                Got::Refused("this machine hasn't joined Arugula control, where the project's issues are".into())
+                Got::Refused("this machine hasn't joined Arugula cloud, where the project's issues are".into())
             }
             e => Got::Refused(e.to_string()),
         }
@@ -336,7 +336,7 @@ impl Block for NativeIssue {
         let mut out = format!("{}\n", self.line());
         let st = self.state.lock().unwrap();
         if let Some(s) = &st.pin.stale {
-            out.push_str(&format!("(as Arugula control said it last: {s})\n"));
+            out.push_str(&format!("(as Arugula cloud said it last: {s})\n"));
         }
         if let Some(e) = &st.error {
             out.push_str(&format!("error: {e}\n"));
@@ -359,7 +359,7 @@ impl Block for NativeIssue {
             "native_issue" => Box::pin(async move { Ok(me.owners()) }),
             m => {
                 let e = format!(
-                    "{}: a project's own issue changes on the platform page, with `arugula issue`, or through MCP",
+                    "{}: a project's own issue changes on your machines page, with `arugula issue`, or through MCP",
                     no_method(BlockType::Forge, m)
                 );
                 Box::pin(async move { Err(e) })

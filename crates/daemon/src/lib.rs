@@ -1154,7 +1154,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     // parses, and says so.
     if args.managoat_account_stream {
         tracing::warn!(
-            "--managoat-account-stream does nothing: daemon-side Managoat was removed (cloud agents run through Arugula control)"
+            "--managoat-account-stream does nothing: daemon-side Managoat was removed (cloud agents run through Arugula cloud)"
         );
     }
     control.start(app.clone());

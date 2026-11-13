@@ -188,7 +188,7 @@ pub async fn list(link: &Link, repo: &str, number: u64) -> Result<Vec<ForgeDraft
 
 /// Discard a platform draft: a person dropped it here.
 pub async fn discard(id: &str) -> Result<(), String> {
-    let control = super::live::control().ok_or("not in Arugula control any more")?;
+    let control = super::live::control().ok_or("not in Arugula cloud any more")?;
     control
         .cloud_now(Method::POST, &format!("/api/forge/drafts/{id}/discard"), None)
         .await
@@ -200,7 +200,7 @@ pub async fn discard(id: &str) -> Result<(), String> {
 /// block's card (M168): `start` holds it, then `sent` (with its URL) or
 /// `failed` (with why). `Err`: why not, for the card.
 pub async fn sending(id: &str, step: &str, url: Option<&str>, error: Option<&str>) -> Result<(), String> {
-    let control = super::live::control().ok_or("not in Arugula control any more")?;
+    let control = super::live::control().ok_or("not in Arugula cloud any more")?;
     let body = serde_json::to_value(MachineSending {
         step: step.into(),
         url: url.map(Into::into),

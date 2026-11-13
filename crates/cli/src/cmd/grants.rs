@@ -159,7 +159,7 @@ pub enum GrantsCmd {
 
 pub fn run(cmd: Option<GrantsCmd>, json_out: bool) -> anyhow::Result<i32> {
     let Some(e) = Enrolled::load()? else {
-        bail!("this CLI isn't logged in to Arugula control: `arugula login` first");
+        bail!("this CLI isn't logged in to Arugula cloud: `arugula login` first");
     };
     run_with(&e, cmd, json_out)
 }
@@ -504,7 +504,7 @@ fn team_of(projects: &Value, want: &str) -> anyhow::Result<(String, String, Opti
     teams.dedup_by(|a, b| a.0 == b.0);
     match teams.as_slice() {
         [t] => Ok(t.clone()),
-        [] => bail!("you're in no team called {want} (the platform page lists yours)"),
+        [] => bail!("you're in no team called {want} (your machines page lists yours)"),
         _ => bail!(
             "more than one team is called {want}: name one by its id ({})",
             teams.iter().map(|t| t.0.as_str()).collect::<Vec<_>>().join(", ")
@@ -532,7 +532,7 @@ fn project_id(projects: &Value, want: &str) -> anyhow::Result<String> {
         .collect();
     match ids.as_slice() {
         [id] => Ok(id.clone()),
-        [] => bail!("you have no project called {want} (the platform page lists yours)"),
+        [] => bail!("you have no project called {want} (your machines page lists yours)"),
         _ => bail!("more than one project is called {want}: name one by its id ({})", ids.join(", ")),
     }
 }

@@ -237,7 +237,7 @@ impl Server {
             .control
             .post_signed(WORK_SESSION_ISSUES, &ask)
             .await
-            .map_err(|e| format!("asking Arugula control: {e:#}"))?;
+            .map_err(|e| format!("asking Arugula cloud: {e:#}"))?;
         match got {
             SessionIssuesGiven::Refused { why } => Err(why),
             g => Ok(g),

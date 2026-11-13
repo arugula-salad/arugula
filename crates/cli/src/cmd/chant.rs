@@ -33,7 +33,7 @@ pub enum ChantCmd {
 
 pub fn run(cmd: ChantCmd, _json_out: bool) -> anyhow::Result<i32> {
     let Some(e) = Enrolled::load()? else {
-        bail!("this CLI isn't logged in to Arugula control: `arugula login` first");
+        bail!("this CLI isn't logged in to Arugula cloud: `arugula login` first");
     };
     match cmd {
         ChantCmd::TrustEntry => trust_entry(&e),

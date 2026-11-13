@@ -32,7 +32,7 @@ use crate::mcp::{
 
 pub(crate) const WRITE_TOOL: &str = "issue_write";
 
-pub(crate) const WRITE_DESCRIPTION: &str = "Write to Arugula's own (native) issues in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. An issue is #N (in the current project: the project you pass, else the one your block was started on (start_agent's issue), else your session's, else the one this clone's GitHub repo is linked to, else your person's default project) or iss_…. Their grants say what you may do (issues.write to file and change, threads.post to comment; changing reads it first, with threads.read), and never more than their role. GitHub's PRs and issues aren't written here: draft and forge_draft make drafts that wait for a person to send them.";
+pub(crate) const WRITE_DESCRIPTION: &str = "Write to Arugula's own (native) issues in Arugula cloud, at once: what you write lands now, labelled as your person's agent on this machine, never as them. An issue is #N (in the current project: the project you pass, else the one your block was started on (start_agent's issue), else your session's, else the one this clone's GitHub repo is linked to, else your person's default project) or iss_…. Their grants say what you may do (issues.write to file and change, threads.post to comment; changing reads it first, with threads.read), and never more than their role. GitHub's PRs and issues aren't written here: draft and forge_draft make drafts that wait for a person to send them.";
 
 #[derive(Deserialize, JsonSchema)]
 pub struct CreateArgs {
@@ -186,7 +186,7 @@ pub(crate) const WRITE: &[Kind] = &[
 /// `forge_read`'s kind for a project's native issues.
 pub(crate) const LIST: Kind = Kind {
     name: "native_issues",
-    description: "Arugula's own (native) issues of a project in Arugula control (the current one unless project names it), newest first; state, labels, assignee, author and q (search words) narrow it. issue_write writes to them at once.",
+    description: "Arugula's own (native) issues of a project in Arugula cloud (the current one unless project names it), newest first; state, labels, assignee, author and q (search words) narrow it. issue_write writes to them at once.",
     schema: schema_for_type::<NativeListArgs>,
     flag: None,
 };

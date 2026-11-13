@@ -50,7 +50,7 @@ pub enum Command {
     /// background agent or the --system LaunchDaemon, which needs sudo; on
     /// Linux the systemd user service). The binaries and panes' state stay.
     Uninstall,
-    /// Add this machine to your account on an Arugula control
+    /// Add this machine to your account on Arugula cloud
     /// (`https://control.example.com`): prints a link to approve from a
     /// device that's signed in, and finishes once that device approves (an
     /// older control: then the account's fingerprint to check against that

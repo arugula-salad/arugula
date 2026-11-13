@@ -21,7 +21,7 @@ gh has no login for github.com: `gh auth login --hostname github.com`
 or it opens with a banner:
 
 ```
-read-only: no gh login here, so it reads through Arugula control's GitHub App; writes go out as you, so they need your own login (`gh auth login`, then refresh)
+read-only: no gh login here, so it reads through Arugula cloud's GitHub App; writes go out as you, so they need your own login (`gh auth login`, then refresh)
 ```
 
 ## Why

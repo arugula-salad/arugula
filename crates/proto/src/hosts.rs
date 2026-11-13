@@ -197,7 +197,7 @@ impl ControlState {
     }
 
     /// One line: "In the team arugula on control.example: connected",
-    /// "Not joined to Arugula control", "Dropped by control: …". What the
+    /// "Not joined to Arugula cloud", "Dropped by control: …". What the
     /// tray's control line and `arugula status` say.
     pub fn line(&self) -> String {
         match self.state.as_str() {
@@ -211,7 +211,7 @@ impl ControlState {
                 self.place(),
                 self.said.as_deref().unwrap_or("it doesn't know this machine")
             ),
-            _ => "Not joined to Arugula control".into(),
+            _ => "Not joined to Arugula cloud".into(),
         }
     }
 
@@ -246,7 +246,7 @@ mod control_state_tests {
         assert_eq!(s.place(), "an account on control.example");
         let d = ControlState { state: "dropped".into(), said: Some("left".into()), ..s };
         assert_eq!(d.line(), "Dropped by control: no longer in an account on control.example (control says: left)");
-        assert_eq!(ControlState::default().line(), "Not joined to Arugula control");
+        assert_eq!(ControlState::default().line(), "Not joined to Arugula cloud");
         let v = serde_json::json!({ "name": "a", "version": "1", CONTROL_STATE_KEY: d });
         assert_eq!(ControlState::of_host(&v), Some(d));
         assert_eq!(ControlState::of_host(&serde_json::json!({ "name": "a" })), None);

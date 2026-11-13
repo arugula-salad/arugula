@@ -226,7 +226,7 @@ pub enum Until {
     Idle,
     /// It asks for you: an agent's approval or question.
     NeedsInput,
-    /// An agent session in Arugula control (session) finished its turn,
+    /// An agent session in Arugula cloud (session) finished its turn,
     /// waits on a person, or ended.
     Done,
     /// A pull request (pr): none of its checks is queued or running.
@@ -271,11 +271,11 @@ pub struct WaitArgs {
     /// cloud_agents), to wait until idle or needs_input.
     #[serde(default, alias = "tab")]
     pub agent_block: Option<String>,
-    /// Or a run in Arugula control (run_…, from start_run), not pane: until
+    /// Or a run in Arugula cloud (run_…, from start_run), not pane: until
     /// it ends (until command_end).
     #[serde(default)]
     pub run: Option<String>,
-    /// Or agent sessions in Arugula control (ses_…, several separated by
+    /// Or agent sessions in Arugula cloud (ses_…, several separated by
     /// spaces), not pane: until done, when any of them finishes its turn.
     #[serde(default, alias = "session")]
     pub agent_session: Option<String>,
@@ -585,12 +585,12 @@ pub struct OpenPrArgs {
 #[derive(Deserialize, JsonSchema)]
 pub struct OpenIssueArgs {
     /// The issue: its link (GitHub's or Forgejo's), OWNER/REPO#N, or N (in
-    /// dir's repository). A project's own issue on Arugula control: iss_…,
+    /// dir's repository). A project's own issue on Arugula cloud: iss_…,
     /// or #N with project, in a clone of a repo linked to a project whose
     /// issues are native, or outside any clone (the user's personal
     /// project's).
     pub issue: String,
-    /// A project on Arugula control (its id, or personal): #N is its own
+    /// A project on Arugula cloud (its id, or personal): #N is its own
     /// issue N.
     #[serde(default)]
     pub project: Option<String>,
@@ -770,13 +770,13 @@ const SHOW: &[Kind] = &[
     },
     Kind {
         name: "chat",
-        description: "Team chat as a block beside a pane: the user's channels, direct messages, threads and Activity, with everything the chat page has. Pinned to a room (room, pinned) it is that room alone. It reads as the user, through Arugula control, so it shows nothing on a machine that has not joined it. Read and post in rooms with read_thread and post_thread.",
+        description: "Team chat as a block beside a pane: the user's channels, direct messages, threads and Activity, with everything the chat page has. Pinned to a room (room, pinned) it is that room alone. It reads as the user, through Arugula cloud, so it shows nothing on a machine that has not joined it. Read and post in rooms with read_thread and post_thread.",
         schema: schema_for_type::<ShowChatArgs>,
         flag: None,
     },
     Kind {
         name: "board",
-        description: "A project's board as a block beside a pane: its lanes and rows (issues, PRs, runs, agent blocks), live, read and changed as the user through Arugula control, so it shows nothing on a machine that has not joined it. Read and write it with board_read and board_write.",
+        description: "A project's board as a block beside a pane: its lanes and rows (issues, PRs, runs, agent blocks), live, read and changed as the user through Arugula cloud, so it shows nothing on a machine that has not joined it. Read and write it with board_read and board_write.",
         schema: schema_for_type::<ShowBoardArgs>,
         flag: None,
     },
@@ -1127,7 +1127,7 @@ fn all_defs() -> Vec<Def> {
         Def {
             name: "wait",
             title: "Wait for a pane",
-            description: "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). An agent block that's idle comes back with turn: its last message and the work it left (branch, pushed, uncommitted files, commits since the turn began) and what it has spent. Or, instead of pane, one of a Cloud workspace's agent blocks (cloud_workspace and agent_block, its pane number there) until idle or needs_input. Or a run in Arugula control (run) until it ends. Or agent sessions in Arugula control (agent_session: ses_… ids) until done: when any of them finishes its turn (or waits on a person, or ends), with each finished one's branch, HEAD and whole last answer; call it again with the rest. Or pull requests on GitHub (pr: OWNER/REPO#N, its link or a PR block, one or several; until checks_done, checks_failed, ready (checks green and mergeable clean) or merged or closed): when any of them gets there, with one verdict each: checks counted by state, the failing ones' names, mergeable, whether it's in the merge queue, and who merged it; read from GitHub itself with the user's login, and a PR they can't see answers as one that doesn't exist. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
+            description: "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). An agent block that's idle comes back with turn: its last message and the work it left (branch, pushed, uncommitted files, commits since the turn began) and what it has spent. Or, instead of pane, one of a Cloud workspace's agent blocks (cloud_workspace and agent_block, its pane number there) until idle or needs_input. Or a run in Arugula cloud (run) until it ends. Or agent sessions in Arugula cloud (agent_session: ses_… ids) until done: when any of them finishes its turn (or waits on a person, or ends), with each finished one's branch, HEAD and whole last answer; call it again with the rest. Or pull requests on GitHub (pr: OWNER/REPO#N, its link or a PR block, one or several; until checks_done, checks_failed, ready (checks green and mergeable clean) or merged or closed): when any of them gets there, with one verdict each: checks counted by state, the failing ones' names, mergeable, whether it's in the merge queue, and who merged it; read from GitHub itself with the user's login, and a PR they can't see answers as one that doesn't exist. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
             args: Args::One(schema_for_type::<WaitArgs>),
             read_only: true,
             destructive: false,
@@ -1174,7 +1174,7 @@ fn all_defs() -> Vec<Def> {
         Def {
             name: "capabilities",
             title: "What Arugula offers here",
-            description: "What this machine's Arugula offers you, to plan your work around: the blocks you can show the user (and the call that opens each), your tools, the Labs flags on, which forges the user is signed in to here (PR and issue blocks, and the drafts they send), whether Claude Code's hooks are live in your pane (your questions and permission prompts as cards on the phone and the swarm, follow-ups through arugula inbox), and whether this machine has joined Arugula control and which teams it knows.",
+            description: "What this machine's Arugula offers you, to plan your work around: the blocks you can show the user (and the call that opens each), your tools, the Labs flags on, which forges the user is signed in to here (PR and issue blocks, and the drafts they send), whether Claude Code's hooks are live in your pane (your questions and permission prompts as cards on the phone and the swarm, follow-ups through arugula inbox), and whether this machine has joined Arugula cloud and which teams it knows.",
             args: Args::One(schema_for_type::<NoArgs>),
             read_only: true,
             destructive: false,
@@ -1265,7 +1265,7 @@ fn all_defs() -> Vec<Def> {
         Def {
             name: "read_forge",
             title: "Read a PR or issue block",
-            description: "A PR or issue block's pull request or issue as text (header, body, checks, reviews, linked pull requests, timeline), what it waits on the user for, an issue's agent and its PR, and your drafts: each waiting, sent (with its link and who sent it) or dropped (and by whom). Or a native issue in Arugula control (block \"#N\" in the current project, or \"iss_…\"): it, its timeline and its newest comments.",
+            description: "A PR or issue block's pull request or issue as text (header, body, checks, reviews, linked pull requests, timeline), what it waits on the user for, an issue's agent and its PR, and your drafts: each waiting, sent (with its link and who sent it) or dropped (and by whom). Or a native issue in Arugula cloud (block \"#N\" in the current project, or \"iss_…\"): it, its timeline and its newest comments.",
             args: Args::One(schema_for_type::<ReadForgeArgs>),
             read_only: true,
             destructive: false,
@@ -1278,7 +1278,7 @@ fn all_defs() -> Vec<Def> {
         Def {
             name: "draft",
             title: "Draft a forge write",
-            description: "Draft a write to a pull request or issue on a forge (GitHub, Forgejo, GitLab), by kind. Nothing reaches the forge in an agent's name: the draft waits on its block as a card the user (or an editor) edits and sends, or drops. Returns its draft id (a new issue: its block) at once; read_forge shows what became of it. Native issues in Arugula control aren't drafted: issue_write writes to them at once.",
+            description: "Draft a write to a pull request or issue on a forge (GitHub, Forgejo, GitLab), by kind. Nothing reaches the forge in an agent's name: the draft waits on its block as a card the user (or an editor) edits and sends, or drops. Returns its draft id (a new issue: its block) at once; read_forge shows what became of it. Native issues in Arugula cloud aren't drafted: issue_write writes to them at once.",
             args: Args::Kinds { kinds: table(DRAFT), default: None },
             read_only: false,
             destructive: true,
@@ -3104,7 +3104,7 @@ impl ToolCall<'_, '_> {
                 _ => arugula_control_wire::forge_ops::Op::PrGet(at),
             };
             if let Ok(v) = self.forge_op(op, |e| e.to_string()).await {
-                summary += &format!(" (linked in Arugula control: {})", v["item"]["id"].as_str().unwrap_or("?"));
+                summary += &format!(" (linked in Arugula cloud: {})", v["item"]["id"].as_str().unwrap_or("?"));
                 platform = Some(v);
             }
         }
@@ -3394,7 +3394,7 @@ impl ToolCall<'_, '_> {
     async fn grants_held(&self) -> (Vec<String>, Option<String>) {
         use std::collections::{BTreeMap, BTreeSet};
         if self.app.control.enrolled().is_none() {
-            return (vec![], Some("This machine isn't joined to Arugula control, so it holds no grants".into()));
+            return (vec![], Some("This machine isn't joined to Arugula cloud, so it holds no grants".into()));
         }
         let (boards, (_, threads, runs, trackers)) =
             tokio::join!(crate::mcp::registry::boards_reach(self.app), crate::mcp::registry::reach(self.app));

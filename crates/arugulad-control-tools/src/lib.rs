@@ -206,7 +206,7 @@ fn forge_read_def() -> Def {
     Def {
         name: "forge_read",
         title: "Read a linked repo's PRs and issues",
-        description: "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead. Also Arugula's own (native) issues: kind issue with item \"#N\" (in the current project) or \"iss_…\", and kind native_issues (with this machine's threads.read grant).",
+        description: "Read PRs and issues on GitHub repos linked to the user's projects in Arugula cloud (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead. Also Arugula's own (native) issues: kind issue with item \"#N\" (in the current project) or \"iss_…\", and kind native_issues (with this machine's threads.read grant).",
         args: Args::Kinds { kinds: table(forge_ops::READ), default: None },
         read_only: true,
         destructive: false,
@@ -222,7 +222,7 @@ fn forge_draft_def() -> Def {
     Def {
         name: "forge_draft",
         title: "Draft on a linked repo",
-        description: "Draft a comment, a review or a new issue on a GitHub repo linked to the user's projects in Arugula control, with no block open, or discard a draft. Nothing reaches GitHub in an agent's name: the draft waits for a person to send (from the web page, their phone or the arugula CLI) or discard. Returns the draft at once; forge_read kind draft shows what became of it. Native issues in Arugula control aren't drafted (issue_write writes to them at once), except opening one on GitHub (kind open_on_github), which its person sends.",
+        description: "Draft a comment, a review or a new issue on a GitHub repo linked to the user's projects in Arugula cloud, with no block open, or discard a draft. Nothing reaches GitHub in an agent's name: the draft waits for a person to send (from the web page, their phone or the arugula CLI) or discard. Returns the draft at once; forge_read kind draft shows what became of it. Native issues in Arugula cloud aren't drafted (issue_write writes to them at once), except opening one on GitHub (kind open_on_github), which its person sends.",
         args: Args::Kinds { kinds: table(forge_ops::DRAFT), default: None },
         read_only: false,
         destructive: true,
@@ -242,7 +242,7 @@ fn read_cloud_def() -> Def {
     Def {
         name: "read_cloud",
         title: "Read a Cloud workspace",
-        description: "Read one of the user's Cloud workspaces in Arugula control (list kind cloud_workspaces lists them, cloud_agents their agent blocks): an agent block's transcript or what it asks, or its machine's files, diff or git status. A Cloud workspace (hw_…) is a machine of a project: its agents are the agent blocks on it, each named by its pane number (agent_block), and reading one wakes it.",
+        description: "Read one of the user's Cloud workspaces in Arugula cloud (list kind cloud_workspaces lists them, cloud_agents their agent blocks): an agent block's transcript or what it asks, or its machine's files, diff or git status. A Cloud workspace (hw_…) is a machine of a project: its agents are the agent blocks on it, each named by its pane number (agent_block), and reading one wakes it.",
         args: Args::Kinds { kinds: table(cloud::READ), default: None },
         read_only: true,
         destructive: false,
@@ -258,7 +258,7 @@ fn cloud_def() -> Def {
     Def {
         name: "cloud",
         title: "Drive a Cloud workspace",
-        description: "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one in a project, open an agent block on its machine (open_agent), prompt it and wait for its turn, interrupt it, answer what it asks, close it (close_agent), rebuild the machine. A Cloud workspace (hw_…) is a machine of its project; its agent blocks (claude or codex), named by pane number (agent_block), are the project's people's too; the machine tools reach it with cloud_workspace. Changing its settings or deleting it is the user's, on Control.",
+        description: "Drive the user's Cloud workspaces in Arugula cloud, as the user (the owner of this machine): make one in a project, open an agent block on its machine (open_agent), prompt it and wait for its turn, interrupt it, answer what it asks, close it (close_agent), rebuild the machine. A Cloud workspace (hw_…) is a machine of its project; its agent blocks (claude or codex), named by pane number (agent_block), are the project's people's too; the machine tools reach it with cloud_workspace. Changing its settings or deleting it is the user's, on Control.",
         args: Args::Kinds { kinds: table(cloud::DRIVE), default: None },
         read_only: false,
         destructive: true,
@@ -278,7 +278,7 @@ fn link_repo_def() -> Def {
     Def {
         name: "link_repo",
         title: "Link a GitHub repo to a project",
-        description: "Link a GitHub repo to one of the user's projects in Arugula control, or unlink it, as the user (the owner of this machine). Linking takes admin or maintain on the repo on GitHub; unlinking purges its rows within a day. list kind linked_repos lists them.",
+        description: "Link a GitHub repo to one of the user's projects in Arugula cloud, or unlink it, as the user (the owner of this machine). Linking takes admin or maintain on the repo on GitHub; unlinking purges its rows within a day. list kind linked_repos lists them.",
         args: Args::Kinds { kinds: table(repos::LINK), default: None },
         read_only: false,
         destructive: true,

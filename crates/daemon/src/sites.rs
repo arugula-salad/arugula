@@ -245,7 +245,7 @@ pub fn shown() -> Option<Arc<Sites>> {
 
 /// What a page says when it can't open a port or editor block: neither a
 /// listener of its own nor a control with a block domain.
-pub const OFF: &str = "blocks on ports and editors are off here: join this machine to Arugula control, or start arugulad with --block-listen";
+pub const OFF: &str = "blocks on ports and editors are off here: join this machine to Arugula cloud, or start arugulad with --block-listen";
 
 /// Turn block sites on (once per process); `serve` then serves them.
 pub fn install(settings: Settings) -> Arc<Sites> {

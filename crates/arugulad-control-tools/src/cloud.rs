@@ -220,7 +220,7 @@ pub struct CloudAnswerArgs {
 /// `list`'s Cloud workspace kinds.
 pub(crate) const LIST_WORKSPACES: Kind = Kind {
     name: "cloud_workspaces",
-    description: "The Cloud workspaces of the user's projects in Arugula control (machines in the cloud with their repositories checked out): each one's id, name, project, state (starting, running, paused, failed) and machine. They're the machine owner's: control acts as them for any agent here.",
+    description: "The Cloud workspaces of the user's projects in Arugula cloud (machines in the cloud with their repositories checked out): each one's id, name, project, state (starting, running, paused, failed) and machine. They're the machine owner's: control acts as them for any agent here.",
     schema: schema_for_type::<NoArgs>,
     flag: None,
 };
@@ -332,7 +332,7 @@ pub(super) async fn cloud_reach(app: &crate::server::App) -> crate::mcp::results
             note: "You can drive the user's Cloud workspaces as them: list kind cloud_workspaces, read_cloud, cloud, and wait with agent_block (one of its agent blocks, by pane number)".into(),
         },
         Ok(Err(e)) => CloudReach { reachable: false, note: e.to_string() },
-        Err(_) => CloudReach { reachable: false, note: "Arugula control didn't answer in time".into() },
+        Err(_) => CloudReach { reachable: false, note: "Arugula cloud didn't answer in time".into() },
     }
 }
 

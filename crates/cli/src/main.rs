@@ -93,7 +93,7 @@ enum Command {
     /// Open a browser block on a port or a web page, or a project's issue.
     ///
     /// `:PORT[/path]` is a port on its machine, `https://…` a web page.
-    /// `iss_…` or `#N` is a project's own issue on Arugula control, as an
+    /// `iss_…` or `#N` is a project's own issue on Arugula cloud, as an
     /// issue block that reads it there.
     Open(cmd::open::Args),
     /// Open VS Code on a folder or a file; prints its block.
@@ -117,7 +117,7 @@ enum Command {
     /// Your teams' channels, direct messages, threads and Activity, as on the
     /// chat page, in a block beside this terminal: split, tabbed, zoomed like
     /// any other. `ROOM` opens on that room; with `--pin` the block is that
-    /// room alone. It reads as you through Arugula control, so this machine
+    /// room alone. It reads as you through Arugula cloud, so this machine
     /// has to have joined it. Prints the block.
     Chat(cmd::chat::Args),
     /// Show a chant workspace as a block.
@@ -145,7 +145,7 @@ enum Command {
     /// Prints the block, then the PR as text. `pr comment|review|merge|rerun %N`
     /// write to it; run by an agent (CLAUDECODE or AI_AGENT set), a write is a
     /// draft that waits for a person to send it. On a repo linked to a project
-    /// on Arugula control, with no block: `pr view|checks OWNER/REPO#N`, `pr
+    /// on Arugula cloud, with no block: `pr view|checks OWNER/REPO#N`, `pr
     /// list`, and `pr comment|review OWNER/REPO#N` (`--draft` to keep it a
     /// draft).
     #[command(args_conflicts_with_subcommands = true)]
@@ -157,11 +157,11 @@ enum Command {
     /// `N` in this directory's repository. `issue new` opens one (run by an
     /// agent, it's a draft a person sends); `issue comment %N` comments; `issue
     /// agent %N` starts an agent on it in a worktree and branch of its own, in a
-    /// tab with the issue. On a repo linked on Arugula control, with no block:
+    /// tab with the issue. On a repo linked on Arugula cloud, with no block:
     /// `issue view|comment OWNER/REPO#N`, `issue list OWNER/REPO` and `issue
     /// create OWNER/REPO`.
     ///
-    /// A project's own issues on Arugula control (no block, no daemon; needs
+    /// A project's own issues on Arugula cloud (no block, no daemon; needs
     /// `arugula login`): `issue new|list|show|comment|close|reopen|edit|export`,
     /// and `issue agent`. `#N` or `N` is a number in the current project,
     /// `iss_…` any issue you can read. The current project is `--project
@@ -171,7 +171,7 @@ enum Command {
     /// projects links keeps GitHub's issues.
     /// Its issue home says whether they're native or GitHub's; `--native` and
     /// `--github` override it. `issue list` on a GitHub home lists the linked
-    /// repo's issues from Arugula control.
+    /// repo's issues from Arugula cloud.
     #[command(args_conflicts_with_subcommands = true)]
     Issue(cmd::issue::Args),
     /// Type a pane's failed command again.
@@ -370,7 +370,7 @@ enum Command {
     ///
     /// Shares it with them (as a viewer unless --role says otherwise) and
     /// notifies them alone, opening at a pane. WHO is a tailnet login, someone already shared with, or (when
-    /// joined to Arugula control) a member of your teams, by name.
+    /// joined to Arugula cloud) a member of your teams, by name.
     /// Prints whether the notification reached them: sent, pending (they
     /// haven't accepted this machine yet) or unreachable, and why.
     Invite(cmd::invite::Args),
@@ -399,14 +399,14 @@ enum Command {
     ///
     /// `arugulad install` with these arguments.
     Install(cmd::install::Args),
-    /// Add a machine to your account on Arugula control.
+    /// Add a machine to your account on Arugula cloud.
     ///
     /// So the web, the phone and other machines reach it through control. With
     /// `--ssh user@box`: that box, set up over ssh first (Arugula installed, its
     /// daemon kept running after you log out); its code shows here, to approve from
     /// a signed-in device. Without: this machine.
     Join(cmd::join::Args),
-    /// Make this CLI one of your devices on Arugula control.
+    /// Make this CLI one of your devices on Arugula cloud.
     ///
     /// So `--host NAME` reaches every machine on your account, directly or through
     /// control's relay. Shows a code to approve on a signed-in device.
@@ -414,7 +414,7 @@ enum Command {
     /// Forget this CLI's key for control (`arugula login` makes a new one).
     Logout,
     /// The powers your machines' agents hold: what they may do in a project on
-    /// Arugula control.
+    /// Arugula cloud.
     ///
     /// Every machine you join gets `cloud.drive`: the agents on it drive your
     /// Cloud workspaces. `add` lets them read and post in a project's threads
@@ -426,7 +426,7 @@ enum Command {
         #[command(subcommand)]
         cmd: Option<cmd::grants::GrantsCmd>,
     },
-    /// A machine's name on Arugula control.
+    /// A machine's name on Arugula cloud.
     ///
     /// `rename` changes what the machines list, chat and `@machine` mentions
     /// call it. Needs `arugula login`.
@@ -434,9 +434,9 @@ enum Command {
         #[command(subcommand)]
         cmd: cmd::machine::MachineCmd,
     },
-    /// Tokens for agents with no machine, on Arugula control's MCP endpoint.
+    /// Tokens for agents with no machine, on Arugula cloud's MCP endpoint.
     ///
-    /// They're made on the platform page (Settings, Agents with no machine),
+    /// They're made on your machines page (Settings, Agents with no machine),
     /// never from a CLI: its agent acts as yours over their projects,
     /// labelled with its name, never past your role, and never approves
     /// anything. `ls` (the default) lists them, `calls` what one's agent
@@ -445,7 +445,7 @@ enum Command {
         #[command(subcommand)]
         cmd: Option<cmd::agent_tokens::AgentTokensCmd>,
     },
-    /// A project's cloud workspaces on Arugula control.
+    /// A project's cloud workspaces on Arugula cloud.
     ///
     /// `create NAME` makes one (owner or editor on the project; `--repo`,
     /// `--package`, `--setup` and `--env` say what it's built from), `ls`
@@ -464,7 +464,7 @@ enum Command {
         #[command(subcommand)]
         cmd: cmd::cloud::CloudCmd,
     },
-    /// Runs on a project's cloud workspaces, on Arugula control.
+    /// Runs on a project's cloud workspaces, on Arugula cloud.
     ///
     /// `list`, `show RUN` and `logs RUN [--follow]` read them (logs: the
     /// platform's log of a run, or its pane while it runs). `start` runs a
@@ -483,7 +483,7 @@ enum Command {
         #[command(subcommand)]
         cmd: cmd::runs::RunsCmd,
     },
-    /// A project's deploys on Arugula control.
+    /// A project's deploys on Arugula cloud.
     ///
     /// `envs` lists its environments, `ls [--env NAME]` its deploys, newest
     /// first, `plan --env NAME --commit SHA --repo OWNER/NAME
@@ -491,7 +491,7 @@ enum Command {
     /// `request DEP` asks the project's owners to approve it, `show DEP`
     /// reads it (its plan, state and log). An owner approves on their phone
     /// or in a browser, with a passkey, never here; environments and their
-    /// secrets are made on the platform page. `--project` names a project
+    /// secrets are made on your machines page. `--project` names a project
     /// by id or name; the default is your personal one. Needs `arugula
     /// login`.
     Deploys {
@@ -509,7 +509,7 @@ enum Command {
         #[command(subcommand)]
         cmd: cmd::chant::ChantCmd,
     },
-    /// Your projects on Arugula control, and their linked GitHub repos.
+    /// Your projects on Arugula cloud, and their linked GitHub repos.
     ///
     /// `list` lists your projects, `new NAME` makes one, and `use PROJECT`
     /// puts this session in one. `link OWNER/REPO` links a repo (you need
@@ -520,7 +520,7 @@ enum Command {
         #[command(subcommand)]
         cmd: cmd::project::ProjectCmd,
     },
-    /// Drafts on your linked repos' PRs and issues, on Arugula control.
+    /// Drafts on your linked repos' PRs and issues, on Arugula cloud.
     ///
     /// Comments, reviews and new issues that you (`--draft`) or your agents
     /// wrote, waiting for a person to send them: `ls` lists them (on
@@ -531,7 +531,7 @@ enum Command {
         #[command(subcommand)]
         cmd: cmd::forge_ops::DraftCmd,
     },
-    /// Your inbox of PRs and issues on linked repos, on Arugula control.
+    /// Your inbox of PRs and issues on linked repos, on Arugula cloud.
     ///
     /// What wants you there (a review requested, your checks failed,
     /// changes requested, a mention, assigned, merged or ready, a draft
@@ -544,7 +544,7 @@ enum Command {
     /// How Arugula is doing on this machine.
     ///
     /// The daemon (its version, the service that runs it, its binary and
-    /// log), whether and where it's joined to Arugula control
+    /// log), whether and where it's joined to Arugula cloud
     /// (connected, or dropped by control), each agent's adapter and
     /// whether Claude Code has Arugula's MCP server. Exits 1 when the
     /// daemon doesn't answer or control dropped it.

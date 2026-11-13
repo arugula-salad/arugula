@@ -10,19 +10,19 @@ use anyhow::{Context, bail};
 use arugula_proto::{BlockType, api::OpenRequest};
 use serde_json::json;
 
-/// Writes to a PR block, and a linked repo's PRs on Arugula control.
+/// Writes to a PR block, and a linked repo's PRs on Arugula cloud.
 #[derive(clap::Subcommand)]
 pub enum PrCmd {
-    /// Show a linked repo's PR, from Arugula control.
+    /// Show a linked repo's PR, from Arugula cloud.
     ///
     /// `OWNER/REPO#N`, or its link. No block opens.
     View { target: String },
-    /// A linked repo's PRs on Arugula control, or a project's.
+    /// A linked repo's PRs on Arugula cloud, or a project's.
     List {
         #[command(flatten)]
         list: ListArgs,
     },
-    /// A linked repo's PR's checks, from Arugula control.
+    /// A linked repo's PR's checks, from Arugula cloud.
     Checks { target: String },
     /// Comment on it.
     ///
@@ -107,7 +107,7 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
                 PrCmd::Merge { block, style } => (block, "merge", json!({ "style": style })),
                 PrCmd::Rerun { block } => (block, "rerun_checks", json!({})),
                 PrCmd::View { .. } | PrCmd::List { .. } | PrCmd::Checks { .. } => {
-                    unreachable!("Arugula control's (on_control)")
+                    unreachable!("Arugula cloud's (on_control)")
                 }
             };
             if http::agent() {

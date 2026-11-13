@@ -112,7 +112,7 @@ pub fn item(target: &str) -> Option<ItemRef> {
 /// One operation on control: its result.
 pub fn call(op: Op) -> anyhow::Result<Value> {
     let Some(e) = Enrolled::load()? else {
-        bail!("this CLI isn't logged in to Arugula control: `arugula login` first");
+        bail!("this CLI isn't logged in to Arugula cloud: `arugula login` first");
     };
     // A send that isn't a draft's can be one instead.
     let may_draft = op.sends() && !matches!(op, Op::DraftSend(_));

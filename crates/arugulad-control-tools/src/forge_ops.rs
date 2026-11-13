@@ -40,7 +40,7 @@ pub struct ItemArgs {
 #[derive(Deserialize, JsonSchema)]
 pub struct IssueItemArgs {
     /// The issue: OWNER/NAME#N, or its link on github.com; or a native
-    /// issue in Arugula control, "#N" (in the current project) or "iss_…";
+    /// issue in Arugula cloud, "#N" (in the current project) or "iss_…";
     /// or a Plane item, IDENT-N (such as ALL-2212).
     pub item: String,
     /// A native issue's project for "#N", or a Plane item's for IDENT-N: its
@@ -376,9 +376,9 @@ pub(crate) fn op(tool: &str, kind: &str, a: Value, by: &str) -> Result<Op, Strin
 /// What a refusal says to an agent.
 fn said(e: CloudRefused) -> String {
     match e {
-        CloudRefused::NotJoined => "this machine hasn't joined Arugula control, where linked repos' PRs and issues live: ask your person to join it (Getting started on the web page, or `arugulad join`); show (kind pr or issue) opens one as a block instead".into(),
+        CloudRefused::NotJoined => "this machine hasn't joined Arugula cloud, where linked repos' PRs and issues live: ask your person to join it (Getting started on the web page, or `arugulad join`); show (kind pr or issue) opens one as a block instead".into(),
         CloudRefused::OldControl | CloudRefused::Said { status: 405, .. } => {
-            "this Arugula control doesn't have forge operations yet: show (kind pr or issue) opens one as a block instead".into()
+            "Arugula cloud doesn't have forge operations yet: show (kind pr or issue) opens one as a block instead".into()
         }
         e => e.to_string(),
     }

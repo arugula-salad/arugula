@@ -2759,7 +2759,7 @@ impl Control {
     /// control's GitHub App (for a box with no `gh` login), and the
     /// account's GitHub login. Never logged.
     pub async fn github_token(&self, repo: &str) -> Result<wire::forge::GithubToken, String> {
-        let e = self.enrolled().ok_or("not joined to Arugula control")?;
+        let e = self.enrolled().ok_or("not joined to Arugula cloud")?;
         let res = self
             .post_json(&e, wire::forge::GITHUB_TOKEN, &wire::forge::GithubTokenRequest { repo: repo.to_owned() })
             .send()
@@ -3257,12 +3257,12 @@ impl std::fmt::Display for CloudRefused {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             CloudRefused::NotJoined => f.write_str(
-                "this machine hasn't joined Arugula control, where Cloud workspaces live: ask your person to join it (Getting started on the web page, or `arugulad join`)",
+                "this machine hasn't joined Arugula cloud, where Cloud workspaces live: ask your person to join it (Getting started on the web page, or `arugulad join`)",
             ),
-            CloudRefused::Unreachable(e) => write!(f, "can't reach Arugula control: {e}"),
-            CloudRefused::Off => f.write_str("this Arugula control has no Cloud workspaces (it isn't set up for them)"),
+            CloudRefused::Unreachable(e) => write!(f, "can't reach Arugula cloud: {e}"),
+            CloudRefused::Off => f.write_str("Arugula cloud has no Cloud workspaces (it isn't set up for them)"),
             CloudRefused::OldControl => f.write_str(
-                "this Arugula control doesn't let machines drive Cloud workspaces yet (it's older than this machine's Arugula); use control's web page",
+                "Arugula cloud doesn't let machines drive Cloud workspaces yet (it's older than this machine's Arugula); use control's web page",
             ),
             CloudRefused::Said { said, .. } => write!(f, "control says: {said}"),
             CloudRefused::Maintenance => f.write_str(maintenance::MAINTENANCE_SAID),
@@ -6156,7 +6156,7 @@ pub(crate) mod tests {
         let saved = saved_for("https://control.example", "lex00");
         let none = state_of(None, &Link::default(), false);
         assert_eq!(none.state, "not_joined");
-        assert_eq!(none.line(), "Not joined to Arugula control");
+        assert_eq!(none.line(), "Not joined to Arugula cloud");
 
         let mut link = Link::default();
         let s = state_of(Some(&saved), &link, false);

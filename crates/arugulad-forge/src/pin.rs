@@ -99,7 +99,7 @@ impl Kept {
 /// when it doesn't (not linked for the owner, not mirrored yet, or a PR
 /// where an issue was asked for), or why the platform couldn't say.
 pub async fn resolve(repo: &str, number: u64, kind: ItemKind) -> Result<Option<String>, String> {
-    let control = super::live::control().ok_or("not in Arugula control")?;
+    let control = super::live::control().ok_or("not in Arugula cloud")?;
     let at = ItemRef { repo: repo.to_owned(), number };
     let op = match kind {
         ItemKind::Pr => Op::PrGet(at),
@@ -376,7 +376,7 @@ pub fn rerun(pr: &Pr) -> Option<Rerun> {
     Some(Rerun {
         api: false,
         url,
-        note: "This block reads through Arugula control: rerun them on the run's page".into(),
+        note: "This block reads through Arugula cloud: rerun them on the run's page".into(),
         runs: None,
         pipeline: None,
     })

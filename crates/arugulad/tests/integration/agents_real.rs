@@ -364,7 +364,7 @@ for line in sys.stdin:
     i, how = m.get("id"), m.get("method")
     def rep(r): print(json.dumps({"jsonrpc": "2.0", "id": i, "result": r}), flush=True)
     if how == "initialize": rep({"protocolVersion": m["params"]["protocolVersion"], "capabilities": {"tools": {}}, "serverInfo": {"name": "arugula", "version": "1"}})
-    elif how == "tools/list": rep({"tools": [{"name": "post_thread", "description": "Post in a conversation in Arugula control.", "inputSchema": {"type": "object", "properties": {"room": {"type": "string"}, "text": {"type": "string"}}, "required": ["room", "text"]}}]})
+    elif how == "tools/list": rep({"tools": [{"name": "post_thread", "description": "Post in a conversation in Arugula cloud.", "inputSchema": {"type": "object", "properties": {"room": {"type": "string"}, "text": {"type": "string"}}, "required": ["room", "text"]}}]})
     elif how == "tools/call":
         open(os.environ["POSTS"], "a").write(json.dumps(m["params"]["arguments"]) + "\n")
         rep({"content": [{"type": "text", "text": "posted"}]})

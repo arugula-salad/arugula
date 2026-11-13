@@ -45,7 +45,7 @@ use serde_json::{Value, json};
 
 use crate::{control::Enrolled, http, util::print_json};
 
-const LOGIN: &str = "this CLI isn't logged in to Arugula control: `arugula login` first";
+const LOGIN: &str = "this CLI isn't logged in to Arugula cloud: `arugula login` first";
 /// Said in place of an issue's comments when chat is off for the reader:
 /// the issue is theirs to read (Arugula #746), its thread is chat's.
 const NO_COMMENTS: &str = "Its comments are in chat, which is off for you.";
@@ -151,7 +151,7 @@ pub enum Cmd {
 
 #[derive(clap::Args, Clone, Debug, Default)]
 pub struct ListArgs {
-    /// `OWNER/REPO`: a linked repo's issues on GitHub, from Arugula control.
+    /// `OWNER/REPO`: a linked repo's issues on GitHub, from Arugula cloud.
     pub repo: Option<String>,
     /// open (the default), closed or all.
     #[arg(long)]
@@ -293,7 +293,7 @@ fn decide_for(home: &Home, r: Option<&Ref>, platform_only: bool) -> anyhow::Resu
     // Only a definite answer (a repo no project links, a GitHub home) is
     // GitHub's. Control unreachable or failing is an error: `N`
     // there would be the block %N, which may be public.
-    ask(e, home, r).context("asking Arugula control where this project's issues are")
+    ask(e, home, r).context("asking Arugula cloud where this project's issues are")
 }
 
 fn ask(e: Enrolled, home: &Home, r: Option<&Ref>) -> anyhow::Result<Decided> {
@@ -423,7 +423,7 @@ pub(crate) fn project_id(projects: &Projects, want: &str) -> anyhow::Result<Stri
     };
     match ids.as_slice() {
         [id] => Ok((*id).to_owned()),
-        [] if want.eq_ignore_ascii_case("personal") => bail!("you have no personal project on Arugula control"),
+        [] if want.eq_ignore_ascii_case("personal") => bail!("you have no personal project on Arugula cloud"),
         [] => bail!("you have no project called {want} (`arugula project list` lists yours)"),
         _ => bail!("more than one project is called {want}: name one by its id ({})", ids.join(", ")),
     }
