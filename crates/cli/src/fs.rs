@@ -132,23 +132,27 @@ pub fn run(sock: &Target, cmd: FsCmd, json_out: bool, remote: bool) -> anyhow::R
         FsCmd::Cat { path, offset, len } => {
             let (on, path) = place(&path, remote)?;
             let mut out = std::io::stdout().lock();
-            let (mut at, end) = (offset, len.map(|l| offset + l));
-            loop {
-                let want = end.map_or(1 << 20, |e| e.saturating_sub(at).min(1 << 20));
-                if want == 0 {
-                    break;
-                }
-                let extra = [format!("offset={at}"), format!("len={want}")];
-                let res = request(sock, "GET", &format!("/api/fs/read?{}", query(&on, &path, &extra)), None)?.ok()?;
-                let size: u64 = res.header("x-arugula-size").and_then(|s| s.parse().ok()).unwrap_or(0);
-                let bytes = res.bytes()?;
-                out.write_all(&bytes)?;
-                at += bytes.len() as u64;
-                if bytes.is_empty() || at >= size {
-                    break;
-                }
+            let (start, end) = (offset, len.map(|l| offset + l));
+            let mut at = start;
+            let pages = cat_pages(
+                end,
+                &mut at,
+                |at, want| {
+                    let extra = [format!("offset={at}"), format!("len={want}")];
+                    let res =
+                        request(sock, "GET", &format!("/api/fs/read?{}", query(&on, &path, &extra)), None)?.ok()?;
+                    // Not every route says it (control's older daemons don't).
+                    let size = res.header("x-arugula-size").and_then(|s| s.parse().ok());
+                    Ok((res.bytes()?, size))
+                },
+                |bytes| out.write_all(bytes),
+            );
+            let flushed = out.flush();
+            if let Err(e) = pages.and(flushed.map_err(Into::into)) {
+                // Never a short copy that looks whole (#933).
+                eprintln!("arugula: {e:#}; wrote {} bytes, resume with --offset {at}", at - start);
+                return Ok(1);
             }
-            out.flush()?;
         }
         FsCmd::Watch { path } => {
             let (on, path) = place(&path, remote)?;
@@ -177,6 +181,31 @@ pub fn run(sock: &Target, cmd: FsCmd, json_out: bool, remote: bool) -> anyhow::R
     Ok(0)
 }
 
+/// The pages of a `cat`: `read(at, want)` gives a page and the file's size
+/// when the route says it, `write` takes each page, and `at` is how far it
+/// got. It stops at `end`, at the size, or at a page shorter than asked, and
+/// a missing size is never zero (#933).
+fn cat_pages(
+    end: Option<u64>,
+    at: &mut u64,
+    mut read: impl FnMut(u64, u64) -> anyhow::Result<(Vec<u8>, Option<u64>)>,
+    mut write: impl FnMut(&[u8]) -> std::io::Result<()>,
+) -> anyhow::Result<()> {
+    const PAGE: u64 = 1 << 20;
+    loop {
+        let want = end.map_or(PAGE, |e| e.saturating_sub(*at).min(PAGE));
+        if want == 0 {
+            return Ok(());
+        }
+        let (bytes, size) = read(*at, want)?;
+        write(&bytes)?;
+        *at += bytes.len() as u64;
+        if (bytes.len() as u64) < want || size.is_some_and(|s| *at >= s) {
+            return Ok(());
+        }
+    }
+}
+
 /// `arugula cd %N DIR`: typed into pane N's shell if it's idle at its
 /// prompt; refused (with why) otherwise.
 pub fn cd(sock: &Target, pane: u32, path: &str) -> anyhow::Result<i32> {
@@ -198,6 +227,39 @@ mod tests {
         let (on, path) = super::place("m2:/etc", false).unwrap();
         let old = format!("/api/fs/stat?{}", super::query(&on, &path, &[]));
         assert_eq!(crate::http::route::<FsStatGet>(&(), &super::fs_query(&on, Some(&path))).unwrap(), old);
+    }
+
+    /// A route that doesn't send the size is read to a short page, not
+    /// stopped after the first (#933); one that fails says how far it got.
+    #[test]
+    fn cat_reads_on_without_a_size() {
+        const PAGE: usize = 1 << 20;
+        let file = vec![7u8; 3 * PAGE];
+        let (mut got, mut at) = (0usize, 0u64);
+        let page = |at: u64, want: u64| {
+            let from = (at as usize).min(file.len());
+            Ok((file[from..(from + want as usize).min(file.len())].to_vec(), None))
+        };
+        super::cat_pages(None, &mut at, page, |b| {
+            got += b.len();
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!((got, at), (3 * PAGE, 3 * PAGE as u64));
+        // The second page fails: the first is written, and `at` is the resume point.
+        let mut at = 0u64;
+        let mut n = 0;
+        let r = super::cat_pages(
+            None,
+            &mut at,
+            |_, want| {
+                n += 1;
+                if n == 2 { anyhow::bail!("the channel closed") } else { Ok((vec![0; want as usize], None)) }
+            },
+            |_| Ok(()),
+        );
+        assert!(r.is_err());
+        assert_eq!(at, PAGE as u64);
     }
 
     #[test]

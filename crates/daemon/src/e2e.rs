@@ -346,6 +346,10 @@ impl Caller {
 /// The request headers a channel carries besides `Content-Type` (#400).
 const PASSED_HEADERS: [&str; 2] = ["A2A-Version", "A2A-Extensions"];
 
+/// The response headers a channel carries besides `Content-Type` (#933): a
+/// file read's size and offset.
+const PASSED_BACK: [&str; 2] = ["x-arugula-size", "x-arugula-offset"];
+
 /// Whether `path` is one an agent-calling daemon may ask for: under
 /// `/api/a2a/`, as the router will see it (decoded, no `..`).
 fn agents_only(path: &str) -> bool {
@@ -388,7 +392,7 @@ async fn serve_machine(
                     }
                     Ok(Some(Msg::Request { id, .. })) => {
                         let body = serde_json::to_vec(&serde_json::json!({ "error": "a machine reaches only the agents here (/api/a2a/)" })).unwrap();
-                        let m = Msg::Response { id, head: ResponseHead { status: 403, content_type: Some("application/json".to_owned()), more: false }, body };
+                        let m = Msg::Response { id, head: ResponseHead { status: 403, content_type: Some("application/json".to_owned()), more: false, headers: Default::default() }, body };
                         if let Err(e) = out.put(&m).await { break Err(e) }
                     }
                     Ok(Some(_)) => break Err(anyhow::anyhow!("a machine's channel carries requests only")),
@@ -521,19 +525,25 @@ async fn answer(
     who: crate::acl::Principal,
     caller: Caller,
 ) {
-    let say = |status, content_type, more, body| Msg::Response {
-        id,
-        head: ResponseHead { status, content_type, more },
-        body,
-    };
     let stream = head.stream;
-    let (status, content_type, body) = match call(router, head, body, who, caller).await {
+    let (status, content_type, headers, body) = match call(router, head, body, who, caller).await {
         Ok(r) => r,
         Err(e) => {
             let body = serde_json::to_vec(&serde_json::json!({ "error": e.to_string() })).unwrap();
-            let _ = out.put(&say(400, Some("application/json".to_owned()), false, body)).await;
+            let head = ResponseHead {
+                status: 400,
+                content_type: Some("application/json".to_owned()),
+                more: false,
+                headers: Default::default(),
+            };
+            let _ = out.put(&Msg::Response { id, head, body }).await;
             return;
         }
+    };
+    let say = |status, content_type, more, body| Msg::Response {
+        id,
+        head: ResponseHead { status, content_type, more, headers: headers.clone() },
+        body,
     };
     // A body of no fixed length (a follow) goes in parts when the client
     // can take them; otherwise whole, as before.
@@ -568,7 +578,7 @@ async fn call(
     body: Vec<u8>,
     who: crate::acl::Principal,
     caller: Caller,
-) -> anyhow::Result<(u16, Option<String>, Body)> {
+) -> anyhow::Result<(u16, Option<String>, std::collections::BTreeMap<String, String>, Body)> {
     anyhow::ensure!(head.path.starts_with("/api/"), "only the API is reachable this way");
     let mut req = Request::builder().method(head.method.as_str()).uri(head.path.as_str());
     if let Some(ct) = &head.content_type {
@@ -591,7 +601,40 @@ async fn call(
     let res = router.oneshot(req).await?;
     let status = res.status().as_u16();
     let ct = res.headers().get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).map(str::to_owned);
-    Ok((status, ct, res.into_body()))
+    // The answer's headers a client pages by (#933), nothing else.
+    let headers = PASSED_BACK
+        .iter()
+        .filter_map(|h| Some(((*h).to_owned(), res.headers().get(*h)?.to_str().ok()?.to_owned())))
+        .collect();
+    Ok((status, ct, headers, res.into_body()))
+}
+
+#[cfg(test)]
+mod passed_back_tests {
+    use super::*;
+
+    /// A file read's size and offset cross the channel with its bytes, and
+    /// nothing else the router sets does (#933).
+    #[tokio::test]
+    async fn a_reads_size_and_offset_cross_the_channel() {
+        let router = Router::new().route(
+            "/api/x",
+            axum::routing::get(|| async {
+                ([("x-arugula-size", "3145728"), ("x-arugula-offset", "0"), ("set-cookie", "a=b")], "bytes")
+            }),
+        );
+        let head = RequestHead {
+            method: "GET".into(),
+            path: "/api/x".into(),
+            content_type: None,
+            stream: false,
+            headers: Default::default(),
+        };
+        let caller = Caller { account: String::new(), device: String::new(), name: String::new() };
+        let (_, _, headers, _) = call(router, head, Vec::new(), crate::acl::Principal::Owner, caller).await.unwrap();
+        let sent: Vec<_> = headers.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        assert_eq!(sent, [("x-arugula-offset", "0"), ("x-arugula-size", "3145728")]);
+    }
 }
 
 #[cfg(test)]

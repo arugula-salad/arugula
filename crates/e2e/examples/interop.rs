@@ -182,6 +182,7 @@ async fn main() -> anyhow::Result<()> {
                                     status: 201,
                                     content_type: Some("application/json".into()),
                                     more: false,
+                                    headers: Default::default(),
                                 },
                                 body: serde_json::to_vec(&serde_json::json!({
                                     "method": head.method, "path": head.path, "len": body.len(),

@@ -713,7 +713,7 @@ fn private_host(host: &str) -> bool {
 // ---------------------------------------------------------------- the channel
 
 /// One part of an answer: (status, content type, body, more to come).
-type Part = (u16, Option<String>, Vec<u8>, bool);
+type Part = (u16, Option<String>, Vec<u8>, bool, std::collections::BTreeMap<String, String>);
 type Reply = mpsc::Sender<Part>;
 
 /// What the socket's thread is given.
@@ -893,7 +893,7 @@ fn serve_one(link: &Link, s: UnixStream) -> anyhow::Result<()> {
             Some(key) if path == "/ws" => serve_ws(link, w, early, &key),
             _ => {
                 let e = json!({"error": "only /ws goes through control as a WebSocket"}).to_string();
-                write_head(&mut w, 404, Some("application/json"), Some(e.len()))?;
+                write_head(&mut w, 404, Some("application/json"), &Default::default(), Some(e.len()))?;
                 w.write_all(e.as_bytes())?;
                 Ok(())
             }
@@ -903,7 +903,7 @@ fn serve_one(link: &Link, s: UnixStream) -> anyhow::Result<()> {
     r.read_exact(&mut body)?;
     let failed = |w: &mut UnixStream, e: String| -> anyhow::Result<()> {
         let e = json!({"error": e}).to_string();
-        write_head(w, 502, Some("application/json"), Some(e.len()))?;
+        write_head(w, 502, Some("application/json"), &Default::default(), Some(e.len()))?;
         w.write_all(e.as_bytes())?;
         Ok(())
     };
@@ -911,17 +911,17 @@ fn serve_one(link: &Link, s: UnixStream) -> anyhow::Result<()> {
         Ok(p) => p,
         Err(e) => return failed(&mut w, format!("{e:#}")),
     };
-    let Ok((status, ct, body, more)) = parts.recv() else {
+    let Ok((status, ct, body, more, headers)) = parts.recv() else {
         return failed(&mut w, "the channel to the machine closed".into());
     };
     if !more {
-        write_head(&mut w, status, ct.as_deref(), Some(body.len()))?;
+        write_head(&mut w, status, ct.as_deref(), &headers, Some(body.len()))?;
         w.write_all(&body)?;
         w.flush()?;
         return Ok(());
     }
     // In parts as they come, chunked; a closed channel ends it unfinished.
-    write_head(&mut w, status, ct.as_deref(), None)?;
+    write_head(&mut w, status, ct.as_deref(), &headers, None)?;
     let chunk = |w: &mut UnixStream, b: &[u8]| -> std::io::Result<()> {
         if !b.is_empty() {
             write!(w, "{:x}\r\n", b.len())?;
@@ -932,7 +932,7 @@ fn serve_one(link: &Link, s: UnixStream) -> anyhow::Result<()> {
         Ok(())
     };
     chunk(&mut w, &body)?;
-    while let Ok((_, _, body, more)) = parts.recv() {
+    while let Ok((_, _, body, more, _)) = parts.recv() {
         chunk(&mut w, &body)?;
         if !more {
             w.write_all(b"0\r\n\r\n")?;
@@ -944,7 +944,13 @@ fn serve_one(link: &Link, s: UnixStream) -> anyhow::Result<()> {
 }
 
 /// A response head; chunked without a length.
-fn write_head(w: &mut UnixStream, status: u16, ct: Option<&str>, len: Option<usize>) -> std::io::Result<()> {
+fn write_head(
+    w: &mut UnixStream,
+    status: u16,
+    ct: Option<&str>,
+    headers: &std::collections::BTreeMap<String, String>,
+    len: Option<usize>,
+) -> std::io::Result<()> {
     let mut head = format!("HTTP/1.1 {status} X\r\nConnection: close\r\n");
     match len {
         Some(n) => head.push_str(&format!("Content-Length: {n}\r\n")),
@@ -952,6 +958,10 @@ fn write_head(w: &mut UnixStream, status: u16, ct: Option<&str>, len: Option<usi
     }
     if let Some(ct) = ct {
         head.push_str(&format!("Content-Type: {ct}\r\n"));
+    }
+    // The machine's words, so nothing that would end a line.
+    for (k, v) in headers.iter().filter(|(k, v)| !k.contains(['\r', '\n', ':']) && !v.contains(['\r', '\n'])) {
+        head.push_str(&format!("{k}: {v}\r\n"));
     }
     head.push_str("\r\n");
     w.write_all(head.as_bytes())
@@ -1098,7 +1108,7 @@ fn io(mut ws: WebSocket<Box<dyn Stream>>, ch: Channel, rx: mpsc::Receiver<Out>, 
                     Ok(Some(Msg::Response { id, head, body })) => {
                         let more = head.more;
                         let gone = match waiting.get(&id) {
-                            Some(r) => r.send((head.status, head.content_type, body, more)).is_err(),
+                            Some(r) => r.send((head.status, head.content_type, body, more, head.headers)).is_err(),
                             None => false,
                         };
                         if !more || gone {

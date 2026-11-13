@@ -132,6 +132,11 @@ pub struct ResponseHead {
     /// More parts of this answer follow.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub more: bool,
+    /// More response headers (#933: a file read's `x-arugula-size`, which a
+    /// client pages by). The daemon sends only those it allows; an older
+    /// client ignores them.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub headers: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -358,7 +363,7 @@ mod tests {
         }
         let r = Msg::Response {
             id: 9,
-            head: ResponseHead { status: 200, content_type: None, more: false },
+            head: ResponseHead { status: 200, content_type: None, more: false, headers: Default::default() },
             body: vec![1; 100_000],
         };
         assert_eq!(deliver(&s, &c, &r), r);
