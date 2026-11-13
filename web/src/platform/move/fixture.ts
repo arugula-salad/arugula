@@ -28,6 +28,8 @@ export interface Repo {
   name: string;
   /** Its GitHub issues and PRs mirrored here: they follow the repo. */
   github: number;
+  /** Sessions labelled with this project because they run in the repo. */
+  sessions: number;
 }
 
 export interface Board {
@@ -80,16 +82,16 @@ export const OWNERS: Owner[] = [
 /** Existing projects the reader can write to, other than the source. */
 export const TARGETS: Project[] = [{ id: "prj_arugula", name: "Arugula", owner: "Arugula", next: 975 }];
 
-const repo = (name: string, github = 0): Repo => ({ id: `repo_${name.split("/")[1]}`, name, github });
+const repo = (name: string, github = 0, sessions = 0): Repo => ({ id: `repo_${name.split("/")[1]}`, name, github, sessions });
 
 const REPOS: Repo[] = [
-  repo("alecraso/bradbury", 19),
-  repo("alecraso/factorio-companion-bridge"),
+  repo("alecraso/bradbury", 19, 4),
+  repo("alecraso/factorio-companion-bridge", 0, 1),
   repo("alecraso/factorio-companion-mod"),
-  repo("alecraso/factorio-mcp-server"),
+  repo("alecraso/factorio-mcp-server", 0, 2),
   repo("alecraso/freight-gantries"),
   repo("alecraso/mogrify"),
-  repo("alecraso/rhythm"),
+  repo("alecraso/rhythm", 0, 6),
 ];
 
 const BOARDS: Board[] = [
@@ -218,7 +220,7 @@ function scaled(times: number): Source {
     const w = words[k % words.length];
     for (const r of REPOS) {
       const name = `${r.name}-${w}`;
-      repos.push({ id: `repo_${name.split("/")[1]}`, name, github: r.github + ((k * 7) % 13) });
+      repos.push({ id: `repo_${name.split("/")[1]}`, name, github: r.github + ((k * 7) % 13), sessions: r.sessions + (k % 3) });
     }
     const tied = repos[repos.length - 7];
     boards.push({ id: `brd_${w}_ship`, name: `${w[0].toUpperCase()}${w.slice(1)} → ship it`, repo: tied.id, rows: 15 + k });

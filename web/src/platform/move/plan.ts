@@ -30,7 +30,7 @@ export interface Renumbered {
   to: number;
 }
 
-/** Something to know before moving, in plain words. */
+/** Something the person has to deal with before moving, in plain words. */
 export interface Note {
   key: string;
   text: string;
@@ -44,6 +44,8 @@ export interface Plan {
   issues: Renumbered[];
   /** GitHub's issues and PRs on the moving repos: they follow, unchanged. */
   github: number;
+  /** Sessions whose project label follows a moving repo. */
+  sessions: number;
   docs: Doc[];
   notes: Note[];
   /** Nothing picked yet. */
@@ -78,21 +80,18 @@ export function plan(s: Source, p: Picks, here: string | null, targets: Project[
     .map((issue, k) => ({ issue, to: start + k }));
   const docs = s.docs.filter((d) => pickable(d, here) && (p.docs.has(d.id) || (d.board !== undefined && boardMoves(s, p, d.board))));
   const github = repos.reduce((n, r) => n + r.github, 0);
+  const sessions = repos.reduce((n, r) => n + r.sessions, 0);
   const empty = !repos.length && !boards.length && !issues.length && !docs.length;
 
+  // Only what the person has to deal with: who will now see it.
   const notes: Note[] = [];
-  const crossing = s.boards.filter((b) => !boardMoves(s, p, b.id) && s.issues.some((i) => i.board === b.id && issues.some((r) => r.issue.id === i.id)));
-  for (const b of crossing) notes.push({ key: `row-${b.id}`, text: `${b.name} stays, and keeps its rows for the issues that move. They open in ${to}.` });
-  const mine = docs.filter((d) => d.machine);
-  if (mine.length) notes.push({ key: "mac", text: `${here} moves ${mine.length === 1 ? "this Doc" : `these ${mine.length} Docs`} itself. Keep it on until the move is done.` });
   const owner = existing ? existing.owner : owners.find((o) => o.key === p.owner)?.name;
   if (!empty && owner !== s.project.owner) {
     const people = owners.find((o) => o.name === owner)?.people ?? `everyone in ${owner}`;
     notes.push({ key: "people", text: `${people[0].toUpperCase()}${people.slice(1)} will see what moves.` });
   }
-  if (repos.length) notes.push({ key: "sessions", text: `Sessions running in ${repos.length === 1 ? "this repo" : "these repos"} finish where they are. The next one starts in ${to}.` });
 
-  return { to, repos, boards, issues, github, docs, notes, empty };
+  return { to, repos, boards, issues, github, sessions, docs, notes, empty };
 }
 
 /** Case-blind: does `title` hold `q`? */
