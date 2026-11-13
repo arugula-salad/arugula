@@ -417,7 +417,7 @@
     },
     "BlockStateReport": {
       "additionalProperties": false,
-      "description": "[`BlockState`] as a daemon reports it (aru-116's second ruling): the same\nfields, but a body with another one is refused, so no message text, file\nname or prompt can ride along. It is only ever parsed by control, from a\ndaemon; [`BlockState`] is what everyone reads.",
+      "description": "[`BlockState`] as a daemon reports it (aru-116's second ruling): the same\nfields, but a body with another one is refused, so no message text, file\nname or prompt can ride along. It is only ever parsed by control, from a\ndaemon; [`BlockState`] is what everyone reads.\n\n`project` and `work_item` are ids, the block's project and card. Control\nhas to take them before a daemon sends them, since an older control\nrefuses the body: a daemon leaves them out until then.",
       "properties": {
         "branch": {
           "type": [
@@ -436,6 +436,13 @@
           ]
         },
         "head": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "project": {
+          "description": "The project the block works in: a `prj_…` id.",
           "type": [
             "string",
             "null"
@@ -461,6 +468,13 @@
           "minimum": 0,
           "type": [
             "integer",
+            "null"
+          ]
+        },
+        "work_item": {
+          "description": "The card it works on: a native issue's id, or `#N`.",
+          "type": [
+            "string",
             "null"
           ]
         }
@@ -1583,6 +1597,89 @@
           "type": "string"
         }
       ]
+    },
+    "MachineSession": {
+      "additionalProperties": false,
+      "description": "One session in a [`MachineSessionsReport`].",
+      "properties": {
+        "name": {
+          "description": "Its name, as the machine's session list shows it.",
+          "type": "string"
+        },
+        "panes": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/MachineSessionPane"
+          },
+          "type": "array"
+        },
+        "project": {
+          "description": "The project it works in: a `prj_…` id.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "session": {
+          "description": "The session's id on the machine.",
+          "type": "string"
+        },
+        "work_item": {
+          "description": "The card it works on: a native issue's id, or `#N`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "session",
+        "name"
+      ],
+      "type": "object"
+    },
+    "MachineSessionPane": {
+      "additionalProperties": false,
+      "description": "A pane of a [`MachineSession`]: its id and kind, never what it shows.",
+      "properties": {
+        "kind": {
+          "description": "The block kind: `terminal`, `agent`, ….",
+          "type": "string"
+        },
+        "pane": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "work_item": {
+          "description": "The card this pane works on, when it isn't its session's.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "pane",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "MachineSessionsReport": {
+      "additionalProperties": false,
+      "description": "[`AGENT_MACHINE_SESSIONS`]'s body: every session on the machine that\nsigns it, the whole list each time. Ids and names only (aru-116): no\nterminal text, no title a person typed, no file names, no transcripts.\nLike [`BlockStateReport`], it is `deny_unknown_fields`, at every level,\nso nothing else can ride along; control takes a new field before a\ndaemon sends it.",
+      "properties": {
+        "sessions": {
+          "items": {
+            "$ref": "#/$defs/MachineSession"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "sessions"
+      ],
+      "type": "object"
     },
     "Mark": {
       "description": "A note on a row that its lane doesn't say, worked out on every read and\nnever stored (aru-125, decisions 7 to 9).",
