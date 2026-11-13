@@ -104,9 +104,9 @@ pub struct DocFillArgs {
 pub struct DocChecklistArgs {
     /// The Doc block (from doc new).
     pub block: PaneArg,
-    /// The section that groups these tests (s1, s2, ...).
+    /// The section that groups these tests (s1, s2, …). doc fill can add context to it without replacing results.
     pub section: String,
-    /// Tests, each with a stable id, test text, and an owner (role label and agent block id).
+    /// The tests (at most 100 a Doc; bodies and checklists share a section's 64 KB). The person ticks passes or reports failures with notes and screenshots; each failure goes to the item's owner's prompt queue, at least once (a repeated report id is the same report). Calling again keeps results and can reassign future reports; a sent report keeps its recipient, and the person reports again to reach a new owner. An item with feedback can't be removed or have its id or text changed: use a new section. read_output on the Doc reads the results.
     pub items: Vec<crate::docs::checklist::Planned>,
 }
 
@@ -170,19 +170,19 @@ pub static DOC: &[Kind] = &[
     },
     Kind {
         name: "fences",
-        description: "The format of callouts and the ```stats, ```chart, ```svg and ```prototype fences: read it first.",
+        description: "The format of callouts and fences: read it first.",
         schema: schema_for_type::<NoArgs>,
         flag: None,
     },
     Kind {
         name: "asset",
-        description: r##"Put a picture in a Doc: PNG, JPEG, GIF or WebP, up to 2 MB. path is absolute; an agent on a machine of its own sends base64 data. The name ends in the file's real extension; SVG is refused (use a ```svg fence). Put it before the fill that names it."##,
+        description: r##"Put a picture in a Doc: PNG, JPEG, GIF or WebP, up to 2 MB. path is absolute; an agent on a machine of its own sends base64 data. The name ends in the file's real extension; SVG is refused. Put it before the fill that names it."##,
         schema: schema_for_type::<DocAssetArgs>,
         flag: None,
     },
     Kind {
         name: "checklist",
-        description: "Put an interactive test checklist in a Doc section. Each item has id, text and owner: {role, pane}, where pane is an agent block on this machine. The person can tick passes or report failures with notes and screenshots; failed reports go automatically to that owner's durable prompt queue. Group tests with the Doc's sections; doc fill can add context without replacing results. At most 100 items per Doc; section bodies and checklists share the 64 KB limit. Read results back with read_output on the Doc. Calling again preserves results and can reassign future reports. Existing reports keep the recipient the person saw when reporting; the person reports again to send to a replacement owner. An item with feedback cannot be removed or have its id or text changed; use a new section for a different test. Delivery is at least once: a repeated report id is the same feedback, not a new task. Role labels belong to this checklist, not a workspace-wide role registry.",
+        description: "Tests in a section; failures go to each item's owner.",
         schema: schema_for_type::<DocChecklistArgs>,
         flag: None,
     },

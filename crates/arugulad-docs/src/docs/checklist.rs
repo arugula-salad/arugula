@@ -18,9 +18,9 @@ const NOTE_MAX: usize = 4000;
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, schemars::JsonSchema)]
 pub struct Owner {
-    /// A role label, for example frontend or backend.
+    /// A role label for this checklist only, for example frontend or backend.
     pub role: String,
-    /// The agent block responsible for this item, on this machine.
+    /// The agent block on this machine that gets this item's failure reports. You must be able to drive it.
     pub pane: PaneId,
 }
 
