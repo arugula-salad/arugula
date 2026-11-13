@@ -99,8 +99,13 @@ impl Handle<Docs> for DocShare {
         let meta = library::dir(dir, &id)
             .map_err(|e| OpError::Status(StatusCode::BAD_REQUEST, e))
             .map(|d| library::read_meta(&d))?;
-        if meta.is_none() {
+        let Some(meta) = meta else {
             return Err(OpError::Status(StatusCode::NOT_FOUND, format!("no Doc {id} in the library")));
+        };
+        // A moved Doc's link stays as it was (Arugula #863): the team Doc
+        // has links of its own.
+        if let Some(to) = &meta.moved {
+            return Err(OpError::Status(StatusCode::GONE, crate::doc_ops::moved_words(to)));
         }
         // One at a time, so two shares of a closed Doc can't both find no
         // link and make two.

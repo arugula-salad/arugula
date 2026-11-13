@@ -4,7 +4,8 @@
 // again in the current session (an open one comes forward), with its content
 // and, if it was shared with a link, its share menu. Delete removes it for
 // good, and a shared one unshares first; with control out of reach the machine
-// refuses, and the reason is shown here. With none yet, it offers Start an
+// refuses, and the reason is shown here. Move to <team> (Arugula #863), when
+// the machine knows a team, gives it to the team: it leaves this list. With none yet, it offers Start an
 // agent, with the Doc line of *What your agent can do here* and its example.
 //
 // The preview side is the reader (#608): picking a row reads the whole Doc
@@ -25,7 +26,7 @@ import { DocBlock, type DocState } from "../../shared/docs/doc-render";
 import { LayoutMark } from "../../shared/docs/layout-mark";
 import { shareClosedDoc } from "./doc-share";
 import { DocActions, openTab } from "../../shared/docs/doc-actions";
-import type { DocAsset, DocContent, DocLinkUrl, DocRow, DocSectionShape } from "../../shared/proto.gen";
+import type { DocAsset, DocContent, DocLinkUrl, DocMoveRequest, DocRow, DocSectionShape, DocTeam, DocTeams } from "../../shared/proto.gen";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { ListCounts, ListPage, ListPreview, type ListCount, type ListGroup } from "../../shared/ui/list-page";
 import { openMenu } from "../../shared/ui/menu";
@@ -114,6 +115,9 @@ function Page({ client, inWorkspace }: { client: Client; inWorkspace?: boolean }
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState<DocRow | null>(null);
+  const [moving, setMoving] = useState<DocRow | null>(null);
+  /** The team a Doc here moves to, if the machine knows one. */
+  const [team, setTeam] = useState<DocTeam | null>(null);
   const [filter, setFilter] = useState("all");
   const [query, setQuery] = useState("");
   const [sort, setSort] = useDocSort();
@@ -133,6 +137,13 @@ function Page({ client, inWorkspace }: { client: Client; inWorkspace?: boolean }
     }
   };
   useEffect(() => void load(), []);
+  useEffect(() => {
+    void client
+      .request(OPS["docs.team"].method, opPath("docs.team"))
+      .then((res) => (res.ok ? res.json<DocTeams>() : null))
+      .then((v) => setTeam(v?.team ?? null))
+      .catch(() => {});
+  }, []);
   // This list hears of nothing on its own: back in the window, it asks.
   useEffect(() => {
     window.addEventListener("focus", load);
@@ -164,6 +175,21 @@ function Page({ client, inWorkspace }: { client: Client; inWorkspace?: boolean }
       await load();
     } catch (e) {
       // A shared Doc that control couldn't unshare says so, and stays.
+      setError((e as Error).message);
+    }
+    setBusy(false);
+  };
+
+  const move = async (r: DocRow) => {
+    setMoving(null);
+    setBusy(true);
+    try {
+      const body = { project: team?.project ?? null } satisfies DocMoveRequest;
+      const res = await client.request(OPS["doc.move"].method, opPath("doc.move", { id: r.id }), body);
+      if (!res.ok) throw new Error(((await res.json<{ error?: string }>().catch(() => null))?.error) ?? `HTTP ${res.status}`);
+      setError("");
+      await load();
+    } catch (e) {
       setError((e as Error).message);
     }
     setBusy(false);
@@ -289,7 +315,7 @@ function Page({ client, inWorkspace }: { client: Client; inWorkspace?: boolean }
           mark: <Shape sections={r.sections} />,
           attrs: { "data-doc": r.id, "data-shared": String(!!r.shared), "data-open": r.open?.toString() ?? "" },
         })}
-        preview={(r) => <Preview key={r.id} client={client} doc={r} busy={busy} reads={reads.current} open={() => void open(r)} share={() => share(r)} ask={() => setDeleting(r)} fail={setError} />}
+        preview={(r) => <Preview key={r.id} client={client} doc={r} busy={busy} reads={reads.current} open={() => void open(r)} share={() => share(r)} ask={() => setDeleting(r)} team={team?.name} moveTo={() => setMoving(r)} fail={setError} />}
       />
       {deleting && (
         <ConfirmRemove title={`Delete “${deleting.title}”?`} label="Delete" cancel={() => setDeleting(null)} go={() => void remove(deleting)}>
@@ -297,12 +323,18 @@ function Page({ client, inWorkspace }: { client: Client; inWorkspace?: boolean }
           {deleting.shared && <p data-delete-shared>Its link stops working.</p>}
         </ConfirmRemove>
       )}
+      {moving && team && (
+        <ConfirmRemove title={`Move “${moving.title}” to ${team.name}?`} label="Move" cancel={() => setMoving(null)} go={() => void move(moving)}>
+          <p>{team.name} will own it: it leaves this machine's Docs, and a pane or agent showing it goes on with the team's Doc.</p>
+          {moving.shared && <p data-move-shared>Its link keeps working, as it is now.</p>}
+        </ConfirmRemove>
+      )}
     </div>
   );
 }
 
 /** The selected Doc: what it is, the page's one primary button, and the Doc itself, read in place. */
-function Preview({ client, doc, busy, reads, open, share, ask, fail }: { client: Client; doc: DocRow; busy: boolean; reads: Map<string, Read>; open: () => void; share: () => void; ask: () => void; fail: (why: string) => void }) {
+function Preview({ client, doc, busy, reads, open, share, ask, team, moveTo, fail }: { client: Client; doc: DocRow; busy: boolean; reads: Map<string, Read>; open: () => void; share: () => void; ask: () => void; team?: string; moveTo: () => void; fail: (why: string) => void }) {
   const kept = useMemo(() => {
     let r = reads.get(doc.id);
     if (!r) reads.set(doc.id, (r = { state: null, images: new Map() }));
@@ -433,7 +465,8 @@ function Preview({ client, doc, busy, reads, open, share, ask, fail }: { client:
             disabled={busy}
             onClick={(e) => {
               const b = (e.currentTarget as HTMLElement).getBoundingClientRect();
-              openMenu({ clientX: b.left, clientY: b.bottom + 4, preventDefault: () => e.preventDefault() }, [{ label: "Delete…", danger: true, hint: "Delete it for good", run: ask }], e.currentTarget as HTMLElement);
+              const moves = team ? [{ label: `Move to ${team}…`, hint: "The team owns it from then on", run: moveTo }] : [];
+              openMenu({ clientX: b.left, clientY: b.bottom + 4, preventDefault: () => e.preventDefault() }, [...moves, { label: "Delete…", danger: true, hint: "Delete it for good", run: ask }], e.currentTarget as HTMLElement);
             }}
           >
             <MoreIcon size="sm" />

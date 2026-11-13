@@ -56,6 +56,12 @@
 //! config also names a `project`, and the Doc is that project's on the
 //! platform, read and filled through control; none of it is in the library.
 //!
+//! **A Doc moved to a team** (Arugula #863, [`moving`]) leaves a pointer in
+//! the library. A block that showed it shows the team Doc from then on (it
+//! holds a [`team`] block and passes everything to it, its config included,
+//! so a restart opens the team block), and one opened on the old id is the
+//! team block.
+//!
 //! Docs left Labs (native #204): no flag gates them, and sharing is still
 //! only ever the owner's tap or the card an agent's `share` raises.
 
@@ -65,6 +71,7 @@ pub(crate) mod copies;
 pub(crate) mod embeds;
 pub mod library;
 pub mod link;
+pub(crate) mod moving;
 pub mod shape;
 pub(crate) mod team;
 
@@ -109,6 +116,12 @@ impl BlockKind for DocKind {
             let id = config.doc.clone().filter(|d| !d.is_empty()).ok_or("a team Doc's config names its Doc")?;
             let name = config.project_name.clone().unwrap_or_default();
             return Ok(team::open(ctx, project, name, id, config.title));
+        }
+        // A Doc moved to a team opens as the team's (Arugula #863).
+        if let Some(id) = &config.doc
+            && let Some(to) = library::moved_to(&ctx.state_dir, id)
+        {
+            return Ok(team::open(ctx, to.project, to.name, to.id, config.title));
         }
         let id = match config.doc {
             Some(id) => id,
@@ -248,6 +261,13 @@ pub(crate) fn moved(id: &str, on: bool) {
     }
 }
 
+/// The blocks showing the library Doc `id` now.
+fn showing(id: &str) -> Vec<Arc<Doc>> {
+    let mut live = LIVE.lock().unwrap();
+    live.retain(|d| d.strong_count() > 0);
+    live.iter().filter_map(Weak::upgrade).filter(|d| d.link.doc == id).collect()
+}
+
 pub struct Doc {
     me: Weak<Doc>,
     dir: PathBuf,
@@ -264,6 +284,9 @@ pub struct Doc {
     shares: tokio::sync::Mutex<()>,
     /// An agent's ask to share, and its card (#1067).
     card: ask::Card,
+    /// The team Doc it shows since the Doc moved (Arugula #863): every call
+    /// goes there.
+    moved: Mutex<Option<Arc<team::Team>>>,
 }
 
 impl Doc {
@@ -297,7 +320,29 @@ impl Doc {
             link,
             shares: tokio::sync::Mutex::new(()),
             card: Default::default(),
+            moved: Mutex::new(None),
         })
+    }
+
+    /// The team block it passes everything to, once its Doc moved.
+    fn moved_to(&self) -> Option<Arc<team::Team>> {
+        self.moved.lock().unwrap().clone()
+    }
+
+    /// The Doc moved to `to`, and is `view` there: this block shows that from
+    /// now on. Called with its write lock held, so a fill waiting for it
+    /// lands in the team Doc.
+    fn follow(
+        &self,
+        cloud: Option<Arc<dyn team::Cloud>>,
+        to: &moving::Target,
+        view: arugula_control_wire::project_docs::DocView,
+    ) {
+        let ctx = self.card.ctx.get();
+        let team = team::moved(ctx, cloud, self.changed.clone(), to.project.clone(), to.name.clone(), view);
+        self.drop_card();
+        *self.moved.lock().unwrap() = Some(team);
+        (self.changed)();
     }
 
     /// The Doc changed on disk: its `meta.json` says when (and its title).
@@ -327,6 +372,10 @@ impl Doc {
     /// `doc_outline`: the sections, once.
     async fn outline(&self, title: &str, sections: Vec<Planned>, layout: DocLayout) -> Result<Value, String> {
         let _io = self.io.lock().await;
+        if let Some(team) = self.moved_to() {
+            drop(_io);
+            return team.call("doc_outline", json!({})).await;
+        }
         let title = title.trim();
         if title.is_empty() {
             return Err("a Doc needs a title".into());
@@ -394,6 +443,11 @@ impl Doc {
     /// `doc_fill`: one section's body.
     async fn fill(&self, section: &str, md: &str) -> Result<Value, String> {
         let _io = self.io.lock().await;
+        // It moved while this waited: the team Doc takes it.
+        if let Some(team) = self.moved_to() {
+            drop(_io);
+            return team.call("doc_fill", json!({ "section": section, "markdown": md })).await;
+        }
         {
             let st = self.state.lock().unwrap();
             if let Some(e) = &st.error {
@@ -464,6 +518,10 @@ impl Doc {
         }
         let mime = assets::kind_of(name, &bytes)?;
         let _io = self.io.lock().await;
+        if let Some(team) = self.moved_to() {
+            drop(_io);
+            return team.call("doc_asset_put", json!({ "name": name, "data": data })).await;
+        }
         {
             let st = self.state.lock().unwrap();
             if let Some(e) = &st.error {
@@ -810,6 +868,10 @@ impl Block for Doc {
     }
 
     fn config(&self) -> Value {
+        // A restart opens the team block it shows now.
+        if let Some(team) = self.moved_to() {
+            return team.config();
+        }
         let mut v = json!({ "title": self.state.lock().unwrap().title });
         // A Doc made without the library (a test's) has no id.
         if !self.link.doc.is_empty() {
@@ -822,13 +884,19 @@ impl Block for Doc {
     }
 
     fn state(&self) -> Value {
-        self.state_json()
+        match self.moved_to() {
+            Some(team) => team.state(),
+            None => self.state_json(),
+        }
     }
 
     /// The first entry whose fingerprint differs from what clients were
     /// last sent (the Doc's sections are all its `entries`, `entries_from`
     /// 0): a patch is that entry and every one after it.
     fn state_and_changed(&self) -> Option<(Value, u64)> {
+        if let Some(team) = self.moved_to() {
+            return team.state_and_changed();
+        }
         let state = self.state_json();
         let hashes: Vec<u64> =
             state["entries"].as_array().map(|es| es.iter().map(|e| hash(&e.to_string())).collect()).unwrap_or_default();
@@ -839,6 +907,9 @@ impl Block for Doc {
     }
 
     fn text(&self) -> String {
+        if let Some(team) = self.moved_to() {
+            return team.text();
+        }
         let st = self.state.lock().unwrap();
         match &st.error {
             Some(e) => format!("{e}\n"),
@@ -851,6 +922,9 @@ impl Block for Doc {
     }
 
     fn call_by(&self, method: &str, args: Value, by: Option<&str>) -> BoxFuture<'static, Result<Value, String>> {
+        if let Some(team) = self.moved_to() {
+            return team.call_by(method, args, by);
+        }
         let me = self.me.upgrade();
         match method {
             // #1067: an agent's ask. Not in `link::METHODS`: it raises a
@@ -916,11 +990,23 @@ impl Block for Doc {
         }
     }
 
+    fn drawn(&self, on: bool) {
+        if let Some(team) = self.moved_to() {
+            team.drawn(on);
+        }
+    }
+
     fn close(&self) {
         self.drop_card();
+        if let Some(team) = self.moved_to() {
+            team.close();
+        }
     }
 
     fn summary(&self) -> Summary {
+        if let Some(team) = self.moved_to() {
+            return team.summary();
+        }
         let title = self.state.lock().unwrap().title.clone();
         Summary { title: Some(title).filter(|t| !t.is_empty()), ..Summary::default() }
     }

@@ -41,6 +41,15 @@
 //! It records where it came from ([`MadeFrom`]); the copy stays the machine's
 //! truth, and **Update copy** ([`PROJECT_DOC_COPY`]) replaces the team Doc
 //! from the copy again, when its owner asks. Nothing is live.
+//!
+//! **A move** (Arugula #863) gives a Doc to a team, leaving one home and no
+//! copy. A machine's Doc is moved by its machine: it makes the team Doc
+//! through [`AGENT_PROJECT_DOCS`] with [`NewDoc::moved_from`], fills it and
+//! puts its pictures, then keeps only a pointer to it; the team Doc says
+//! where it came from ([`Doc::moved_from`]). A Doc written on the platform
+//! moves in place ([`PROJECT_DOC_MOVE`]): its project changes, and it keeps
+//! its id, thread and pictures. A machine's copy isn't moved from the
+//! platform: its machine moves the Doc.
 
 use serde::{Deserialize, Serialize};
 
@@ -60,6 +69,13 @@ pub const PROJECT_DOCS_TRASH: &str = "/api/projects/{project}/docs/trash";
 /// `POST`: bring a trashed Doc back whole, answered [`DocView`] (owners,
 /// editors and the Doc's maker).
 pub const PROJECT_DOC_RESTORE: &str = "/api/projects/{project}/docs/{id}/restore";
+/// `POST` [`DocMove`]: a Doc written on the platform moves to the team
+/// project `to` in place, keeping its id, thread and pictures, answered
+/// [`DocView`] (Arugula #863). 409 [`Shared`] when it is in a team's project
+/// already, with its id there. Refused for a machine's copy (its machine
+/// moves the Doc) and in a project the person doesn't write Docs in. The
+/// Doc's owner, or an owner or editor of `from` who writes in `to`.
+pub const PROJECT_DOC_MOVE: &str = "/api/projects/{project}/docs/{id}/move";
 /// How long a deleted team Doc waits in the trash before it goes for good.
 pub const TRASH_DAYS: u64 = 30;
 
@@ -116,7 +132,10 @@ pub const MACHINE_DOC_ASSET: &str = "/api/daemon/docs/{machine_doc}/assets/{name
 pub const AGENT_PROJECT_DOCS: &str = "/api/daemon/projects/{project}/docs";
 /// `GET`: a Doc with its sections, [`DocView`]; `PUT` [`DocWrite`]: as
 /// [`PROJECT_DOC`]'s, answered [`DocView`]. A Doc that is a machine's copy
-/// is read-only, as for a person.
+/// is read-only, as for a person. `DELETE` (Arugula #863): only a Doc this
+/// machine made by a move ([`Doc::moved_from`] names it), when the move
+/// failed partway and is undone; it goes for good, not to the trash, and
+/// anything else is refused (403).
 pub const AGENT_PROJECT_DOC: &str = "/api/daemon/projects/{project}/docs/{doc}";
 /// `PUT` the picture's bytes (the body): a picture of the Doc, answered
 /// [`Asset`], with the limits of a machine's copies' ([`MACHINE_DOC_ASSET`]).
@@ -182,6 +201,23 @@ pub struct Doc {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub layout: Option<String>,
+    /// For a team Doc a machine moved here (Arugula #863): the machine and
+    /// its Doc's id there. Absent for any other Doc, and from an older
+    /// platform.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub moved_from: Option<MovedFrom>,
+}
+
+/// Where a Doc a machine moved to a team was (Arugula #863).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "ProjectDocMovedFrom"))]
+pub struct MovedFrom {
+    /// The machine's id in control: the one that signs the call.
+    pub machine: String,
+    /// The Doc's id in that machine's library (16 hex digits).
+    pub doc: String,
 }
 
 /// The Doc a team Doc was made from: a machine's copy, or one written here.
@@ -376,6 +412,21 @@ pub struct NewDoc {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub layout: Option<String>,
+    /// A machine moving one of its Docs here (Arugula #863), over
+    /// [`AGENT_PROJECT_DOCS`]: kept as the Doc's [`Doc::moved_from`]. Its
+    /// `machine` must be the one signing; a person never sends it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub moved_from: Option<MovedFrom>,
+}
+
+/// `POST` [`PROJECT_DOC_MOVE`]: move a Doc written on the platform to `to`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "MoveProjectDoc"))]
+pub struct DocMove {
+    /// The team project (`prj_…`) it moves to.
+    pub to: String,
 }
 
 /// `PUT` [`PROJECT_DOC`]: what changes. `title` renames it, `layout` lays it out. With `section`,
@@ -530,6 +581,11 @@ pub fn project_doc_asset(project: &str, id: &str, name: &str) -> String {
     format!("/api/projects/{project}/docs/{id}/assets/{name}")
 }
 
+/// [`PROJECT_DOC_MOVE`] for `id` in `project`.
+pub fn project_doc_move(project: &str, id: &str) -> String {
+    format!("/api/projects/{project}/docs/{id}/move")
+}
+
 /// [`PROJECT_DOC_COPIES`] for the copy `id` in `project`.
 pub fn project_doc_copies(project: &str, id: &str) -> String {
     format!("/api/projects/{project}/docs/{id}/copies")
@@ -627,7 +683,8 @@ mod tests {
         assert_eq!(serde_json::from_value::<OldDoc>(serde_json::to_value(&tabs).unwrap()).unwrap().title, "T");
         // The writes are omitted when none, so an older platform takes them.
         assert!(serde_json::to_value(DocWrite::default()).unwrap().get("layout").is_none());
-        let n = NewDoc { title: "T".into(), sections: vec![], layout: None };
-        assert!(serde_json::to_value(n).unwrap().get("layout").is_none());
+        let n = NewDoc { title: "T".into(), sections: vec![], layout: None, moved_from: None };
+        let n = serde_json::to_value(n).unwrap();
+        assert!(n.get("layout").is_none() && n.get("moved_from").is_none());
     }
 }

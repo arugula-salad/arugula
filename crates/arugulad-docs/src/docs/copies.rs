@@ -44,6 +44,10 @@
 //! checks are the block's, so it shouldn't happen) is left until it changes
 //! again.
 //!
+//! **Moved to a team, its copy goes too** (Arugula #863): the team Doc is
+//! its one home, so the pointer it leaves writes the same tombstone, and is
+//! never copied.
+//!
 //! **Deleted here, its copy goes too** (native #673: the Doc is the truth
 //! and the copy has none without it). The library writes a tombstone
 //! (`docs/.gone/<id>`) before it removes the folder, and marks the Doc
@@ -185,7 +189,9 @@ fn read_gone(state_dir: &Path) -> Vec<String> {
         .filter_map(|e| e.file_name().into_string().ok())
         .filter(|id| library::is_id(id))
         .filter(|id| {
-            let lives = library::dir(state_dir, id).is_ok_and(|d| library::read_meta(&d).is_some());
+            // A moved Doc's pointer reads, and its copy still comes down.
+            let lives =
+                library::dir(state_dir, id).is_ok_and(|d| library::read_meta(&d).is_some_and(|m| m.moved.is_none()));
             if lives {
                 forget_gone(state_dir, id);
             }
@@ -492,6 +498,10 @@ type Whole = (library::Meta, MachineDoc, Vec<assets::Asset>);
 
 fn whole(dir: &Path) -> Result<Option<Whole>, Fail> {
     let Some(meta) = library::read_meta_or_gone(dir).map_err(Fail::Later)? else { return Ok(None) };
+    // A moved Doc's pointer has nothing to copy (Arugula #863).
+    if meta.moved.is_some() {
+        return Ok(None);
+    }
     let (title, sections) = if dir.join(super::OUTLINE).exists() {
         let loaded = super::load(dir).map_err(Fail::Never)?;
         let sections = loaded

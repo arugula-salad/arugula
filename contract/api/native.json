@@ -35,6 +35,10 @@
       "why": "Share with… is on the web for now"
     },
     {
+      "match": "/docs/\\{id\\}/move$",
+      "why": "Moving a Doc to a team is on the web for now (Arugula #863)"
+    },
+    {
       "match": "/secrets",
       "why": "Project secrets stay on the web"
     },
