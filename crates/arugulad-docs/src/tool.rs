@@ -332,6 +332,8 @@ async fn doc_new(call: &Call<'_>, a: DocNewArgs) -> Out {
         image: None,
         host,
         local: host.is_none(),
+        project: None,
+        issue: None,
     };
     // Through `open`, which records who started it: an agent block may
     // drive only what it started, so it could not fill its own Doc
@@ -403,6 +405,8 @@ async fn doc_new_team(
         image: None,
         host,
         local: host.is_none(),
+        project: None,
+        issue: None,
     };
     // An agent never deletes a team's Doc: if its block can't open, it is
     // there, and `doc open` shows it.
@@ -527,6 +531,8 @@ async fn open_team(
         image: None,
         host,
         local: host.is_none(),
+        project: None,
+        issue: None,
     };
     Ok((call.open(req).await?, true))
 }

@@ -29,6 +29,8 @@ use crate::{control::CloudRefused, mux::Api, server::App};
 /// block's config.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Work {
+    /// Empty for a block started in a project on no issue.
+    #[serde(default)]
     pub issue: String,
     /// The project the issue is in (Arugula #771): the agent's current
     /// project, for its MCP calls (`mcp::issues`) and, as [`PROJECT_ENV`],
@@ -57,6 +59,10 @@ pub struct WorkBoard {
 /// the opener's mistake.
 pub fn issue_of(config: &serde_json::Value) -> Result<Option<(String, bool)>, String> {
     let Some(w) = config.get("work").filter(|w| !w.is_null()) else { return Ok(None) };
+    // A project alone: no row to attach.
+    if w.get("issue").is_none_or(|i| i.is_null()) && w["project"].is_string() {
+        return Ok(None);
+    }
     let issue = w["issue"].as_str().unwrap_or_default().trim();
     match IssueRef::parse(issue) {
         Some(_) => Ok(Some((issue.to_owned(), w["take"].as_bool().unwrap_or(false)))),
@@ -111,7 +117,7 @@ pub async fn keep(
     if !boards.is_empty()
         && let Some(b) = app.mux.api(|r| Api::Block(pane, r)).await.flatten()
     {
-        b.call("set_work", serde_json::json!({ "boards": boards })).await?;
+        b.call("set_work", serde_json::json!({ "project": boards[0].project, "boards": boards })).await?;
     }
     Ok(boards)
 }
@@ -130,12 +136,50 @@ pub async fn keep_inferred(app: &App, home: Option<String>, issue: &str, pane: P
     };
     if !boards.is_empty()
         && let Some(b) = app.mux.api(|r| Api::Block(pane, r)).await.flatten()
-        && let Err(why) = b.call("set_work", serde_json::json!({ "issue": issue, "boards": boards })).await
+        && let Err(why) = b
+            .call("set_work", serde_json::json!({ "issue": issue, "project": boards[0].project, "boards": boards }))
+            .await
     {
         debug!(pane, issue, "a branch's issue isn't kept: {why}");
         return vec![];
     }
     boards
+}
+
+/// The issue a branch name says it is on (#430): `feat/357-…`, with `feat`,
+/// `fix`, `docs`, `chore`, `perf` or `refactor` before the number.
+pub fn issue_of_branch(branch: &str) -> Option<u64> {
+    let (kind, rest) = branch.split_once('/')?;
+    ["feat", "fix", "docs", "chore", "perf", "refactor"].contains(&kind).then_some(())?;
+    let (n, _) = rest.split_once('-')?;
+    (!n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())).then(|| n.parse().ok()).flatten().filter(|n| *n > 0)
+}
+
+/// A session's card from a pane's branch (`feat/N-…`), while it has none
+/// and none was set or taken away by hand: `#N`, when a board of the
+/// session's project (`home`, else the one this machine writes) has a row
+/// for it, the [`keep_inferred`] rule, which attaches the pane to that row.
+/// Whether it was set.
+pub async fn infer_card(
+    app: &App,
+    session: arugula_proto::SessionId,
+    home: Option<String>,
+    branch: &str,
+    pane: PaneId,
+) -> bool {
+    let Some(n) = issue_of_branch(branch) else { return false };
+    if app.mux.api(|r| Api::WorkInferable(session, r)).await != Some(true) {
+        return false;
+    }
+    let issue = format!("#{n}");
+    let boards = keep_inferred(app, home, &issue, pane).await;
+    let Some(project) = boards.first().map(|b| b.project.clone()) else { return false };
+    let work = arugula_core::WorkRef { project, item: Some(issue) };
+    let set = app.mux.api(|r| Api::InferWork(session, work, None, r)).await == Some(true);
+    if set {
+        debug!(session, pane, branch, "a session's card, from its pane's branch");
+    }
+    set
 }
 
 /// The project that holds `issue` (#430), and the issue as `#N` in it. `#N`
@@ -275,5 +319,21 @@ async fn write_project(app: &App, home: Option<String>) -> Result<Project, Strin
         (Err(_), []) if reach.note.is_empty() => Err(no_grant("a project")),
         (Err(_), []) => Err(format!("the row wasn't attached: {}", reach.note)),
         (Err(_), _) => Err("the row wasn't attached: this machine writes the boards of several projects, and the caller's own isn't one of them".into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// An agent opened in a project alone has no row to attach; one on an
+    /// issue does, and an issue that isn't one is refused.
+    #[test]
+    fn a_project_alone_is_no_issue() {
+        assert_eq!(issue_of(&json!({ "work": { "project": "prj_1" } })), Ok(None));
+        assert_eq!(issue_of(&json!({ "work": { "issue": "#3", "project": "prj_1" } })), Ok(Some(("#3".into(), false))));
+        assert!(issue_of(&json!({ "work": { "issue": "three" } })).is_err());
+        assert!(issue_of(&json!({ "work": {} })).is_err());
     }
 }

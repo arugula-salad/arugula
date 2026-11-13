@@ -98,6 +98,21 @@ impl Daemon {
                 }
                 let _ = reply.send(set);
             }
+            Api::WorkInferable(session, reply) => {
+                let _ = reply.send(self.mux.session(session).is_ok_and(|s| s.work_inferable()));
+            }
+            Api::InferWork(session, work, name, reply) => {
+                let item = work.item.clone();
+                let set = self.mux.infer_work(session, work, name).unwrap_or(false);
+                if set {
+                    info!(session, item, "session's card inferred");
+                    self.changed();
+                }
+                let _ = reply.send(set);
+            }
+            Api::SetSessionWork(session, work, project_name, reply) => {
+                let _ = reply.send(self.intent(None, Intent::SetSessionWork { session, work, project_name }));
+            }
             Api::Conversation(pane, reply) => {
                 let id = self.meta.get(&pane).and_then(|m| m.session.as_ref());
                 let _ = reply.send(id.filter(|s| s.running && s.agent == "claude").map(|s| s.id.clone()));

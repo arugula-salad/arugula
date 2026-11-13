@@ -7,6 +7,10 @@
 //! it waits for the session's next pane. Set by hand from the session's
 //! menu, or taken away there (`Intent::SetSessionProject`): then nothing
 //! infers one again, and control isn't asked.
+//!
+//! Its card too, the same way: a terminal on a `feat/N-…` branch puts its
+//! session on `#N` when a board has a row for it
+//! (`board_attach::infer_card`), and never over one set by hand.
 
 use std::sync::Arc;
 
@@ -14,14 +18,13 @@ use arugula_proto::EventKind;
 use tokio::sync::broadcast::error::RecvError;
 use tracing::debug;
 
-use crate::{
-    control::Control,
-    mux::{Api, MuxHandle},
-};
+use crate::{mux::Api, server::App};
 
-/// Infer each new pane's session's project, while it has none.
-pub fn start(mux: MuxHandle, control: Arc<Control>) {
+/// Infer each new pane's session's project, while it has none, and its
+/// card.
+pub fn start(app: Arc<App>) {
     crate::task::spawn(async move {
+        let (mux, control) = (&app.mux, &app.control);
         let mut events = mux.events();
         loop {
             let pane = match events.recv().await {
@@ -33,18 +36,27 @@ pub fn start(mux: MuxHandle, control: Arc<Control>) {
             let Some(panes) = mux.api(Api::Panes).await else { return };
             let Some(p) = panes.into_iter().find(|p| p.info.id == pane) else { continue };
             // Another machine's clone isn't read from here.
-            if p.info.session_project.is_some() || p.info.host.is_some() {
+            if p.info.host.is_some() {
                 continue;
             }
-            let Some(cwd) = p.info.cwd else { continue };
             let session = p.session;
+            let mut project = p.info.session_project.map(|p| p.id);
             // Set or taken away by hand: control isn't asked.
-            if mux.api(|r| Api::Inferable(session, r)).await != Some(true) {
-                continue;
+            if project.is_none()
+                && let Some(cwd) = p.info.cwd
+                && mux.api(|r| Api::Inferable(session, r)).await == Some(true)
+                && let Some(linked) = crate::mcp::issues::linked_project(control, &cwd).await
+                && mux.api(|r| Api::InferProject(session, linked.clone(), r)).await == Some(true)
+            {
+                debug!(session, project = linked.id, pane, "a session's project, from its pane's linked repo");
+                project = Some(linked.id);
             }
-            let Some(project) = crate::mcp::issues::linked_project(&control, &cwd).await else { continue };
-            if mux.api(|r| Api::InferProject(session, project.clone(), r)).await == Some(true) {
-                debug!(session, project = project.id, pane, "a session's project, from its pane's linked repo");
+            // A terminal's branch names its session's card; an agent's is
+            // its own (`start_agent`).
+            if p.info.kind == arugula_proto::BlockType::Terminal
+                && let Some(branch) = p.info.branch
+            {
+                crate::board_attach::infer_card(&app, session, project, &branch, pane).await;
             }
         }
     });

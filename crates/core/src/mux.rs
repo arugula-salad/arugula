@@ -33,6 +33,18 @@ pub struct Session {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
     pub project_by_hand: bool,
+    /// What it's working on (Arugula inversion): a project and, maybe, a
+    /// card in it. Its panes' card unless a block has its own. Inferred
+    /// from a pane's branch ([`Mux::infer_work`]), or set by hand
+    /// ([`Intent::SetSessionWork`]). Its project is the session's
+    /// `project` too.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub work: Option<WorkRef>,
+    /// Its work was set by hand, or taken away: nothing infers it after.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    pub work_by_hand: bool,
 }
 
 impl Session {
@@ -41,6 +53,43 @@ impl Session {
     pub fn inferable(&self) -> bool {
         self.project.is_none() && !self.project_by_hand
     }
+
+    /// Whether a pane's branch may still give it a card: it has none, and
+    /// none was set or taken away by hand.
+    pub fn work_inferable(&self) -> bool {
+        self.work.is_none() && !self.work_by_hand
+    }
+
+    /// Why `work` can't be its work: its project was set by hand, to
+    /// another one or to none.
+    fn refuses(&self, work: &WorkRef) -> Result<(), Error> {
+        match &self.project {
+            _ if !self.project_by_hand => Ok(()),
+            Some(p) if p.id == work.project => Ok(()),
+            _ => Err(Error::Invalid("the session's project was set by hand to another: change it first")),
+        }
+    }
+
+    /// Take `work`, and its project as the session's (named `name` when
+    /// it's a new one). [`Session::refuses`] first.
+    fn take_work(&mut self, work: WorkRef, name: Option<String>) {
+        if self.project.as_ref().is_none_or(|p| p.id != work.project) {
+            self.project = Some(ProjectRef { id: work.project.clone(), name: name.unwrap_or_default() });
+        }
+        self.work = Some(work);
+    }
+}
+
+/// What a session works on: a project and, maybe, its card.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct WorkRef {
+    /// `prj_…`.
+    pub project: String,
+    /// The card: a native issue, `#N` in the project or `iss_…`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub item: Option<String>,
 }
 
 /// A project in Arugula control, as a session keeps it: its id, and its
@@ -195,6 +244,17 @@ pub enum Intent {
     SetSessionProject {
         session: SessionId,
         project: Option<ProjectRef>,
+    },
+    /// Put a session on a project and card, or on none (`None`), by hand:
+    /// it replaces an inferred one, and nothing infers one after. Its
+    /// project becomes the session's (`project_name` names a new one),
+    /// refused when the session's project was set by hand to another.
+    SetSessionWork {
+        session: SessionId,
+        work: Option<WorkRef>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts", ts(optional))]
+        project_name: Option<String>,
     },
     CloseSession {
         session: SessionId,
@@ -462,6 +522,20 @@ impl Mux {
         Ok(true)
     }
 
+    /// A session's card from its pane's branch: set only while it has none
+    /// and none was set or taken away by hand ([`Session::work_inferable`]),
+    /// and only in the session's project, if it has one. Whether it was set.
+    pub fn infer_work(&mut self, session: SessionId, work: WorkRef, name: Option<String>) -> Result<bool, Error> {
+        let s = self.session_mut(session)?;
+        if !s.work_inferable() || s.project.as_ref().is_some_and(|p| p.id != work.project) || s.refuses(&work).is_err()
+        {
+            return Ok(false);
+        }
+        s.take_work(work, name);
+        self.rev += 1;
+        Ok(true)
+    }
+
     pub fn apply(&mut self, intent: Intent) -> Result<Vec<Effect>, Error> {
         let effects = self.apply_inner(intent)?;
         self.fit_tabs();
@@ -483,6 +557,8 @@ impl Mux {
                     tabs: vec![],
                     project: None,
                     project_by_hand: false,
+                    work: None,
+                    work_by_hand: false,
                 });
                 let pane = self.new_pane();
                 self.add_tab(id, Node::pane(pane), None)?;
@@ -494,8 +570,24 @@ impl Mux {
             }
             SetSessionProject { session, project } => {
                 let s = self.session_mut(session)?;
+                // Its work is in its project, or it has none.
+                if s.work.as_ref().is_some_and(|w| project.as_ref().is_none_or(|p| p.id != w.project)) {
+                    s.work = None;
+                }
                 s.project = project;
                 s.project_by_hand = true;
+                Ok(vec![])
+            }
+            SetSessionWork { session, work, project_name } => {
+                let s = self.session_mut(session)?;
+                match work {
+                    Some(w) => {
+                        s.refuses(&w)?;
+                        s.take_work(w, project_name);
+                    }
+                    None => s.work = None,
+                }
+                s.work_by_hand = true;
                 Ok(vec![])
             }
             CloseSession { session } => {

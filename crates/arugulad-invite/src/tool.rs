@@ -188,6 +188,8 @@ async fn invite_person(call: &Call<'_>, a: InvitePersonArgs) -> Out {
                 image: None,
                 host: None,
                 local: true,
+                project: None,
+                issue: None,
             };
             let id = match call.app.mux.api(|r| Api::Open(req, None, r)).await {
                 Some(r) => r?,

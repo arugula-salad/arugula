@@ -186,6 +186,13 @@ impl Daemon {
         self.mux.session(session).ok()?.project.clone()
     }
 
+    /// The card a pane's session is on ([`arugula_core::Session::work`]),
+    /// read now: a pane that opened before it was set has it too.
+    fn session_card(&self, pane: PaneId) -> Option<arugula_proto::OnIssue> {
+        let work = self.mux.session(self.session_of(pane)?).ok()?.work.clone()?;
+        Some(arugula_proto::OnIssue { issue: work.item?, project: Some(work.project), boards: vec![] })
+    }
+
     pub(super) fn pane_info(&self, p: &PaneHandle) -> PaneInfo {
         let meta = self.meta.get(&p.id).cloned().unwrap_or_default();
         let running = p.running();
@@ -247,7 +254,7 @@ impl Daemon {
             claude_ide: self.cards.as_ref().is_some_and(|c| c.linked(p.id)),
             started_by: meta.started_by.clone(),
             app: meta.app.clone(),
-            on_issue: None,
+            on_issue: self.session_card(p.id),
             worktree: None,
             running,
             policy: meta.policy,
@@ -335,7 +342,7 @@ impl Daemon {
             started_by: meta.started_by.clone(),
             app: None,
             editor: s.editor,
-            on_issue: s.on_issue,
+            on_issue: s.on_issue.or_else(|| self.session_card(id)),
             worktree: s.worktree,
             diff: None,
             claude_ide: false,

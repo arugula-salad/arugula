@@ -392,6 +392,8 @@ async fn open_conversation_as(
                 image: None,
                 host: None,
                 local: true,
+                project: None,
+                issue: None,
             };
             match app.mux.api(|r| Api::Open(open, who, r)).await {
                 Some(Ok(b)) => (b, true),

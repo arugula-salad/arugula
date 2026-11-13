@@ -620,6 +620,12 @@ pub fn entry(p: &PaneSummary) -> results::PaneEntry {
         last: i.last.as_ref().map(|c| results::LastCommand { command: c.text.clone(), exit: c.exit }),
         started_by: i.started_by.as_ref().map(|s| s.by.clone()),
         worktree: i.worktree.clone(),
+        project: i
+            .on_issue
+            .as_ref()
+            .and_then(|o| o.project.clone())
+            .or_else(|| i.session_project.as_ref().map(|p| p.id.clone())),
+        card: i.on_issue.as_ref().map(|o| o.issue.clone()),
         you: None,
     }
 }
