@@ -8,6 +8,9 @@ here rebuilds this crate and the binary, not the daemon:
   (`embeds.rs`), sharing a link (`link.rs`), an agent's ask to share
   (`ask.rs`), a team's Doc (`team.rs`) and moving a Doc to a team, leaving a
   pointer (`moving.rs`).
+- `src/docs/checklist.rs`: test definitions, saved verdicts and notes,
+  and a durable outbox to the assigned agent's prompt queue. See
+  [test checklists](../../docs/checklists.md) for the tool and UI.
 - `src/ops.rs` and `src/links.rs`: the operations (`docs.list`, `doc.open`,
   `doc.delete`, `doc.preview`, `doc.read`, `doc.asset`, `doc.move`, `docs.team`, `doc_link.get`, `doc_link.delete`), as `Handle<Docs>`.
 - `src/tool.rs`: the `doc` MCP tool, listed after `show`.

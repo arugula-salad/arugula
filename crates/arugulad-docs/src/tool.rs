@@ -101,6 +101,16 @@ pub struct DocFillArgs {
 }
 
 #[derive(Deserialize, JsonSchema)]
+pub struct DocChecklistArgs {
+    /// The Doc block (from doc new).
+    pub block: PaneArg,
+    /// The section that groups these tests (s1, s2, …). doc fill can add context to it without replacing results.
+    pub section: String,
+    /// The tests (at most 100 a Doc; bodies and checklists share a section's 64 KB). The person ticks passes or reports failures with notes and screenshots; each failure goes to the item's owner's prompt queue, at least once (a repeated report id is the same report). Calling again keeps results and can reassign future reports; a sent report keeps its recipient, and the person reports again to reach a new owner. An item with feedback can't be removed or have its id or text changed: use a new section. read_output on the Doc reads the results.
+    pub items: Vec<crate::docs::checklist::Planned>,
+}
+
+#[derive(Deserialize, JsonSchema)]
 pub struct DocAssetArgs {
     /// The Doc block (from doc new).
     pub block: PaneArg,
@@ -160,14 +170,20 @@ pub static DOC: &[Kind] = &[
     },
     Kind {
         name: "fences",
-        description: "The format of callouts and the ```stats, ```chart, ```svg and ```prototype fences: read it first.",
+        description: "The format of callouts and fences: read it first.",
         schema: schema_for_type::<NoArgs>,
         flag: None,
     },
     Kind {
         name: "asset",
-        description: r##"Put a picture in a Doc: PNG, JPEG, GIF or WebP, up to 2 MB. path is absolute; an agent on a machine of its own sends base64 data. The name ends in the file's real extension; SVG is refused (use a ```svg fence). Put it before the fill that names it."##,
+        description: r##"Put a picture in a Doc: PNG, JPEG, GIF or WebP, up to 2 MB. path is absolute; an agent on a machine of its own sends base64 data. The name ends in the file's real extension; SVG is refused. Put it before the fill that names it."##,
         schema: schema_for_type::<DocAssetArgs>,
+        flag: None,
+    },
+    Kind {
+        name: "checklist",
+        description: "Tests in a section; failures go to each item's owner.",
+        schema: schema_for_type::<DocChecklistArgs>,
         flag: None,
     },
     Kind {
@@ -218,6 +234,10 @@ fn run<'a>(call: &'a Call<'a>, kind: Option<&'static str>, args: Value) -> BoxFu
                 Err(e) => Err(e),
             },
             Some("fences") => done(FENCES, json!({})),
+            Some("checklist") => match parse(args) {
+                Ok(a) => doc_checklist(call, a).await,
+                Err(e) => Err(e),
+            },
             Some("asset") => match parse(args) {
                 Ok(a) => doc_asset(call, a).await,
                 Err(e) => Err(e),
@@ -532,6 +552,22 @@ async fn doc_fill(call: &Call<'_>, a: DocFillArgs) -> Out {
         format!("Filled {} of Doc %{block} ({} bytes)", a.section, out["bytes"]),
         json!({ "block": block, "section": a.section, "bytes": out["bytes"] }),
     )
+}
+
+async fn doc_checklist(call: &Call<'_>, a: DocChecklistArgs) -> Out {
+    let block = a.block.id()?;
+    let p = call.drivable(block).await?;
+    if p.info.kind != BlockType::Doc {
+        return Err(format!("%{block} isn't a Doc"));
+    }
+    // Assigning a recipient creates a future route into its prompt queue.
+    // Being allowed to edit the Doc alone does not grant that authority.
+    for item in &a.items {
+        call.drivable(item.owner.pane).await?;
+    }
+    let b = call.app().mux.api(|r| Api::Block(block, r)).await.flatten().ok_or_else(|| format!("no block %{block}"))?;
+    let out = b.call_by("doc_checklist", json!({ "section": a.section, "items": a.items }), Some(&call.by())).await?;
+    done(format!("Checklist saved in {} of Doc %{block}; read_output reads the person's results", a.section), out)
 }
 
 /// `doc share`: ask the owner to share a Doc this caller may drive, or

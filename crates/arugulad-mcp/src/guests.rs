@@ -73,6 +73,7 @@ pub const OWNERS: &[Entry] = &[
     ("show", Some("board")),
     ("doc", Some("list")),
     ("doc", Some("open")),
+    ("doc", Some("checklist")),
     // Gives the owner's Doc to a team (Arugula #863).
     ("doc", Some("move")),
     // With the owner's forge logins, private repos too.

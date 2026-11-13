@@ -104,6 +104,7 @@ impl Doc {
     /// restart; the card is raised again if it is still within its day.
     pub(super) fn attach(&self, ctx: BlockCtx, asked: Option<Asked>) {
         let _ = self.card.ctx.set(ctx);
+        self.start_checklist_delivery();
         let Some(asked) = asked else { return };
         let waiting = asked.outcome == Outcome::Waiting;
         let at = asked.at_ms;
@@ -116,7 +117,7 @@ impl Doc {
         }
     }
 
-    fn ctx(&self) -> Option<&BlockCtx> {
+    pub(super) fn ctx(&self) -> Option<&BlockCtx> {
         self.card.ctx.get()
     }
 
@@ -124,7 +125,7 @@ impl Doc {
         (self.changed)();
     }
 
-    fn closed(&self) -> bool {
+    pub(super) fn closed(&self) -> bool {
         self.card.closed.load(Ordering::SeqCst)
     }
 

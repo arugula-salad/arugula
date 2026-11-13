@@ -17,6 +17,7 @@ import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
 import { DocBlock, markdown, type DocState } from "../../shared/docs/doc-render";
 import { registerBlock, type BlockView } from "./view";
+import type { Feedback } from "../../shared/docs/checklist";
 import { Bar } from "../../shared/ui/bar";
 
 // The renderer is shared/docs/doc-render.tsx's; the share page and the
@@ -113,6 +114,28 @@ registerBlock("doc", (client: Client, id): BlockView => {
   /** The rev each section had when it was filled while this page watched. */
   const fresh = new Map<string, number>();
   const images = makeImages(client, id);
+  const call = async (method: string, args: unknown) => {
+    const res = await client.request("POST", `/api/blocks/${id}/call/${method}`, args);
+    const body = await res.json<{ error?: string }>();
+    if (!res.ok) throw new Error(body.error || "Couldn't save the test result. Try again.");
+  };
+  const feedback = async (section: string, result: Feedback, file?: File) => {
+    let image: string | undefined;
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) throw new Error("The screenshot must be 2 MB or smaller.");
+      const ext = ({ "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp" } as Record<string, string>)[file.type];
+      if (!ext) throw new Error("Choose a PNG, JPEG, GIF or WebP screenshot.");
+      image = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result).split(",")[1]);
+        reader.onerror = () => reject(new Error("Couldn't read the screenshot."));
+        reader.readAsDataURL(file);
+      });
+    }
+    // One request lets the daemon reject a stale result before storing its
+    // image, and commit both together without consuming the Doc asset budget.
+    await call("doc_feedback", { section, ...result, image });
+  };
   open.set(id, images);
   /** Whether its pane has been on screen: until then there's nothing to
    * draw, and no picture to fetch, for a Doc in a tab nobody has opened. */
@@ -122,7 +145,7 @@ registerBlock("doc", (client: Client, id): BlockView => {
     render(
       <div class="review">
         <DocBar client={client} id={id} s={state} />
-        <DocBlock id={id} s={state} fresh={fresh} load={images.load} cached={images.cache} />
+        <DocBlock id={id} s={state} fresh={fresh} load={images.load} cached={images.cache} feedback={!client.state?.roles ? feedback : undefined} />
       </div>,
       host,
     );

@@ -16,6 +16,8 @@ import { Markdown } from "../ui/markdown";
 import { ProtoScope } from "../ui/prototype-bridge";
 import { Prototype, ProtoFill } from "../ui/prototype-frame";
 import { BlockError, BlockLoading } from "../ui/block-states";
+import { Checklist, checklistMarkdown, type ChecklistItem, type Feedback } from "./checklist";
+import "./docs.css";
 import { DocTimes, madeAt } from "./doc-times";
 import { docLayout, protoOnly, type Link, type ProtoOnly } from "./layout";
 
@@ -27,6 +29,7 @@ export interface Section {
   body: string | null;
   /** Bumped when the body is written, a refill too. */
   rev: number;
+  tasks?: ChecklistItem[];
 }
 
 /** A picture the Doc keeps; the bytes are never in the state. */
@@ -78,8 +81,9 @@ export type ImageLoader = (name: string, rev: number) => Promise<string | null>;
 export function markdown(s: DocState): string {
   const parts = [`# ${s.title}\n`];
   for (const e of s.entries) {
-    const body = e.body !== null ? `${plain(e.body).trimEnd()}\n` : `_(coming${e.intent ? `: ${e.intent}` : ""})_\n`;
+    const body = e.body !== null ? `${plain(e.body).trimEnd()}\n` : e.tasks?.length ? "" : `_(coming${e.intent ? `: ${e.intent}` : ""})_\n`;
     parts.push(`\n## ${e.heading}\n\n${body}`);
+    if (e.tasks?.length) parts.push(`\n${checklistMarkdown(e.tasks)}`);
   }
   return parts.join("");
 }
@@ -126,6 +130,7 @@ export function DocBlock({
   byline,
   foot,
   share,
+  feedback,
   docKey,
   link,
 }: {
@@ -139,6 +144,8 @@ export function DocBlock({
   foot?: ComponentChildren;
   /** At the header's right: the Copy link button (#411). */
   share?: ComponentChildren;
+  /** Only the owner's live Doc view supplies a write callback. */
+  feedback?: (section: string, result: Feedback, screenshot?: File) => Promise<void>;
   /** What names this Doc to a prototype's kept settings (#508): the block's
    * id by default, a project Doc's id or a share link's id where `id` is 0. */
   docKey?: string;
@@ -164,22 +171,33 @@ export function DocBlock({
   const proto = layout === "prototype" ? protoOnly(s) : null;
   if (proto) return <PrototypeDoc id={id} s={s} proto={proto} share={share} docKey={key} foot={foot} />;
   const tabs = layout === "tabs" && s.entries.length > 0;
-  const done = s.entries.filter((e) => e.body !== null).length;
+  // A section that holds only a checklist counts as written.
+  const done = s.entries.filter((e) => e.body !== null || e.tasks?.length).length;
   const times = madeAt(s) || s.updated ? <DocTimes doc={s} /> : null;
-  const body = (e: Section) =>
-    e.body !== null ? (
-      // A refill is a new element, so its highlight plays again.
-      <div key={e.rev} class={fresh.get(e.id) === e.rev ? "doc-body doc-fresh" : "doc-body"}>
-        <ProtoScope.Provider value={{ doc: key, section: e.id }}>
-          <Markdown text={e.body} refs={null} embeds image={image} />
-        </ProtoScope.Provider>
-      </div>
-    ) : (
-      <div class="doc-pending">
-        <span class="doc-coming">Coming…</span>
-        {e.intent && <span class="doc-intent"> {e.intent}</span>}
-      </div>
-    );
+  const body = (e: Section) => (
+    <>
+      {e.body !== null ? (
+        // A refill is a new element, so its highlight plays again.
+        <div key={e.rev} class={fresh.get(e.id) === e.rev ? "doc-body doc-fresh" : "doc-body"}>
+          <ProtoScope.Provider value={{ doc: key, section: e.id }}>
+            <Markdown text={e.body} refs={null} embeds image={image} />
+          </ProtoScope.Provider>
+        </div>
+      ) : !e.tasks?.length ? (
+        <div class="doc-pending">
+          <span class="doc-coming">Coming…</span>
+          {e.intent && <span class="doc-intent"> {e.intent}</span>}
+        </div>
+      ) : null}
+      {!!e.tasks?.length && (
+        <Checklist
+          items={e.tasks}
+          report={feedback ? (result, file) => feedback(e.id, result, file) : undefined}
+          image={(name) => image(`assets/${name}`, "Test screenshot", 0)}
+        />
+      )}
+    </>
+  );
   return (
     <div class="doc" data-doc-block={id} data-layout={tabs ? "tabs" : undefined}>
       <div class="doc-page">

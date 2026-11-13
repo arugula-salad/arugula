@@ -1732,7 +1732,7 @@
         "readOnlyHint": false,
         "title": "Build a document for the user"
       },
-      "description": "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user watches fill in. Make the outline with new, then fill each section in order, saying one sentence about it in the pane. Never write its files by hand.\n- new {title, beside?, layout?, sections?}: Make a Doc and its outline (each section's heading and intent). Returns the block and section ids to fill in order. Layout: tabs for many prototypes or long parts; prototype for a whole-screen one. When the current project (your block's, else your session's, else your clone's repo's, else the default) is a team's, a new Doc goes in it on Arugula; else it stays here.\n- list: The kept Docs, newest first: id, title, made, updated, author, open (its block), shared.\n- open {doc, beside?}: Open a Doc from list in a block beside your pane; fill it as after new. A Doc already open is that block.\n- fill {block, markdown, section}: Write one section in Markdown (no HTML). ![alt](assets/<name>) shows a picture put there by asset first. At most 64 KB a section, 40 sections, 1 MiB a Doc; filling again replaces. Callouts, ```stats, ```chart, ```svg and ```prototype (an interactive page with arugula.copy and arugula.store) draw as more than code: call doc fences for their format before writing one.\n- fences: The format of callouts and the ```stats, ```chart, ```svg and ```prototype fences: read it first.\n- asset {block, name, data?, path?}: Put a picture in a Doc: PNG, JPEG, GIF or WebP, up to 2 MB. path is absolute; an agent on a machine of its own sends base64 data. The name ends in the file's real extension; SVG is refused (use a ```svg fence). Put it before the fill that names it.\n- share {block}: Ask the user to share a finished Doc by link. They decide on a card; this returns {status: \"waiting\"} at once. Call share again for the outcome: shared (with the url), declined, lapsed or failed (with why). Ask once.\n- move {doc, project?}: Give a Doc to a team's project: the team owns it; it leaves this list.",
+      "description": "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user watches fill in. Make the outline with new, then fill each section in order, saying one sentence about it in the pane. Never write its files by hand.\n- new {title, beside?, layout?, sections?}: Make a Doc and its outline (each section's heading and intent). Returns the block and section ids to fill in order. Layout: tabs for many prototypes or long parts; prototype for a whole-screen one. When the current project (your block's, else your session's, else your clone's repo's, else the default) is a team's, a new Doc goes in it on Arugula; else it stays here.\n- list: The kept Docs, newest first: id, title, made, updated, author, open (its block), shared.\n- open {doc, beside?}: Open a Doc from list in a block beside your pane; fill it as after new. A Doc already open is that block.\n- fill {block, markdown, section}: Write one section in Markdown (no HTML). ![alt](assets/<name>) shows a picture put there by asset first. At most 64 KB a section, 40 sections, 1 MiB a Doc; filling again replaces. Callouts, ```stats, ```chart, ```svg and ```prototype (an interactive page with arugula.copy and arugula.store) draw as more than code: call doc fences for their format before writing one.\n- fences: The format of callouts and fences: read it first.\n- asset {block, name, data?, path?}: Put a picture in a Doc: PNG, JPEG, GIF or WebP, up to 2 MB. path is absolute; an agent on a machine of its own sends base64 data. The name ends in the file's real extension; SVG is refused. Put it before the fill that names it.\n- checklist {block, items, section}: Tests in a section; failures go to each item's owner.\n- share {block}: Ask the user to share a finished Doc by link. They decide on a card; this returns {status: \"waiting\"} at once. Call share again for the outcome: shared (with the url), declined, lapsed or failed (with why). Ask once.\n- move {doc, project?}: Give a Doc to a team's project: the team owns it; it leaves this list.",
       "inputSchema": {
         "$defs": {
           "DocLayoutArg": {
@@ -1762,6 +1762,25 @@
             ],
             "type": "object"
           },
+          "Owner": {
+            "properties": {
+              "pane": {
+                "description": "The agent block on this machine that gets this item's failure reports. You must be able to drive it.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "role": {
+                "description": "A role label for this checklist only, for example frontend or backend.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "role",
+              "pane"
+            ],
+            "type": "object"
+          },
           "PaneArg": {
             "anyOf": [
               {
@@ -1774,6 +1793,27 @@
               }
             ],
             "description": "A pane or block: `7` or `\"%7\"`."
+          },
+          "Planned": {
+            "properties": {
+              "id": {
+                "description": "Stable within this section: letters, digits, underscores and hyphens.",
+                "type": "string"
+              },
+              "owner": {
+                "$ref": "#/$defs/Owner"
+              },
+              "text": {
+                "description": "What the person should test.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "text",
+              "owner"
+            ],
+            "type": "object"
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1791,7 +1831,7 @@
           },
           "block": {
             "$ref": "#/$defs/PaneArg",
-            "description": "fill, asset, share: The Doc block (from doc new)."
+            "description": "fill, asset, checklist, share: The Doc block (from doc new)."
           },
           "data": {
             "default": null,
@@ -1805,6 +1845,13 @@
             "description": "open: The Doc's id (doc list has them). move: The Doc's id (doc list has them). Move one only when the user asks: its block, doc fill on it and doc open of this id go on with the team's Doc.",
             "type": "string"
           },
+          "items": {
+            "description": "checklist: The tests (at most 100 a Doc; bodies and checklists share a section's 64 KB). The person ticks passes or reports failures with notes and screenshots; each failure goes to the item's owner's prompt queue, at least once (a repeated report id is the same report). Calling again keeps results and can reassign future reports; a sent report keeps its recipient, and the person reports again to reach a new owner. An item with feedback can't be removed or have its id or text changed: use a new section. read_output on the Doc reads the results.",
+            "items": {
+              "$ref": "#/$defs/Planned"
+            },
+            "type": "array"
+          },
           "kind": {
             "description": "Which one (see the tool's description).",
             "enum": [
@@ -1814,6 +1861,7 @@
               "fill",
               "fences",
               "asset",
+              "checklist",
               "share",
               "move"
             ],
@@ -1848,7 +1896,7 @@
             ]
           },
           "section": {
-            "description": "fill: The section's id (s1, s2, … from doc new).",
+            "description": "fill: The section's id (s1, s2, … from doc new). checklist: The section that groups these tests (s1, s2, …). doc fill can add context to it without replacing results.",
             "type": "string"
           },
           "sections": {
@@ -6918,7 +6966,7 @@
         "readOnlyHint": false,
         "title": "Build a document for the user"
       },
-      "description": "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user watches fill in. Make the outline with new, then fill each section in order, saying one sentence about it in the pane. Never write its files by hand.\n- new {title, beside?, layout?, sections?}: Make a Doc and its outline (each section's heading and intent). Returns the block and section ids to fill in order. Layout: tabs for many prototypes or long parts; prototype for a whole-screen one. When the current project (your block's, else your session's, else your clone's repo's, else the default) is a team's, a new Doc goes in it on Arugula; else it stays here.\n- list: The kept Docs, newest first: id, title, made, updated, author, open (its block), shared.\n- open {doc, beside?}: Open a Doc from list in a block beside your pane; fill it as after new. A Doc already open is that block.\n- fill {block, markdown, section}: Write one section in Markdown (no HTML). ![alt](assets/<name>) shows a picture put there by asset first. At most 64 KB a section, 40 sections, 1 MiB a Doc; filling again replaces. Callouts, ```stats, ```chart, ```svg and ```prototype (an interactive page with arugula.copy and arugula.store) draw as more than code: call doc fences for their format before writing one.\n- fences: The format of callouts and the ```stats, ```chart, ```svg and ```prototype fences: read it first.\n- asset {block, name, data?, path?}: Put a picture in a Doc: PNG, JPEG, GIF or WebP, up to 2 MB. path is absolute; an agent on a machine of its own sends base64 data. The name ends in the file's real extension; SVG is refused (use a ```svg fence). Put it before the fill that names it.\n- share {block}: Ask the user to share a finished Doc by link. They decide on a card; this returns {status: \"waiting\"} at once. Call share again for the outcome: shared (with the url), declined, lapsed or failed (with why). Ask once.\n- move {doc, project?}: Give a Doc to a team's project: the team owns it; it leaves this list.",
+      "description": "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user watches fill in. Make the outline with new, then fill each section in order, saying one sentence about it in the pane. Never write its files by hand.\n- new {title, beside?, layout?, sections?}: Make a Doc and its outline (each section's heading and intent). Returns the block and section ids to fill in order. Layout: tabs for many prototypes or long parts; prototype for a whole-screen one. When the current project (your block's, else your session's, else your clone's repo's, else the default) is a team's, a new Doc goes in it on Arugula; else it stays here.\n- list: The kept Docs, newest first: id, title, made, updated, author, open (its block), shared.\n- open {doc, beside?}: Open a Doc from list in a block beside your pane; fill it as after new. A Doc already open is that block.\n- fill {block, markdown, section}: Write one section in Markdown (no HTML). ![alt](assets/<name>) shows a picture put there by asset first. At most 64 KB a section, 40 sections, 1 MiB a Doc; filling again replaces. Callouts, ```stats, ```chart, ```svg and ```prototype (an interactive page with arugula.copy and arugula.store) draw as more than code: call doc fences for their format before writing one.\n- fences: The format of callouts and fences: read it first.\n- asset {block, name, data?, path?}: Put a picture in a Doc: PNG, JPEG, GIF or WebP, up to 2 MB. path is absolute; an agent on a machine of its own sends base64 data. The name ends in the file's real extension; SVG is refused. Put it before the fill that names it.\n- checklist {block, items, section}: Tests in a section; failures go to each item's owner.\n- share {block}: Ask the user to share a finished Doc by link. They decide on a card; this returns {status: \"waiting\"} at once. Call share again for the outcome: shared (with the url), declined, lapsed or failed (with why). Ask once.\n- move {doc, project?}: Give a Doc to a team's project: the team owns it; it leaves this list.",
       "inputSchema": {
         "$defs": {
           "DocLayoutArg": {
@@ -6948,6 +6996,25 @@
             ],
             "type": "object"
           },
+          "Owner": {
+            "properties": {
+              "pane": {
+                "description": "The agent block on this machine that gets this item's failure reports. You must be able to drive it.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "role": {
+                "description": "A role label for this checklist only, for example frontend or backend.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "role",
+              "pane"
+            ],
+            "type": "object"
+          },
           "PaneArg": {
             "anyOf": [
               {
@@ -6960,6 +7027,27 @@
               }
             ],
             "description": "A pane or block: `7` or `\"%7\"`."
+          },
+          "Planned": {
+            "properties": {
+              "id": {
+                "description": "Stable within this section: letters, digits, underscores and hyphens.",
+                "type": "string"
+              },
+              "owner": {
+                "$ref": "#/$defs/Owner"
+              },
+              "text": {
+                "description": "What the person should test.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "text",
+              "owner"
+            ],
+            "type": "object"
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -6977,7 +7065,7 @@
           },
           "block": {
             "$ref": "#/$defs/PaneArg",
-            "description": "fill, asset, share: The Doc block (from doc new)."
+            "description": "fill, asset, checklist, share: The Doc block (from doc new)."
           },
           "data": {
             "default": null,
@@ -6991,6 +7079,13 @@
             "description": "open: The Doc's id (doc list has them). move: The Doc's id (doc list has them). Move one only when the user asks: its block, doc fill on it and doc open of this id go on with the team's Doc.",
             "type": "string"
           },
+          "items": {
+            "description": "checklist: The tests (at most 100 a Doc; bodies and checklists share a section's 64 KB). The person ticks passes or reports failures with notes and screenshots; each failure goes to the item's owner's prompt queue, at least once (a repeated report id is the same report). Calling again keeps results and can reassign future reports; a sent report keeps its recipient, and the person reports again to reach a new owner. An item with feedback can't be removed or have its id or text changed: use a new section. read_output on the Doc reads the results.",
+            "items": {
+              "$ref": "#/$defs/Planned"
+            },
+            "type": "array"
+          },
           "kind": {
             "description": "Which one (see the tool's description).",
             "enum": [
@@ -7000,6 +7095,7 @@
               "fill",
               "fences",
               "asset",
+              "checklist",
               "share",
               "move"
             ],
@@ -7034,7 +7130,7 @@
             ]
           },
           "section": {
-            "description": "fill: The section's id (s1, s2, … from doc new).",
+            "description": "fill: The section's id (s1, s2, … from doc new). checklist: The section that groups these tests (s1, s2, …). doc fill can add context to it without replacing results.",
             "type": "string"
           },
           "sections": {
@@ -11967,7 +12063,7 @@
         "readOnlyHint": false,
         "title": "Build a document for the user"
       },
-      "description": "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user watches fill in. Make the outline with new, then fill each section in order, saying one sentence about it in the pane. Never write its files by hand.\n- new {title, beside?, layout?, sections?}: Make a Doc and its outline (each section's heading and intent). Returns the block and section ids to fill in order. Layout: tabs for many prototypes or long parts; prototype for a whole-screen one. When the current project (your block's, else your session's, else your clone's repo's, else the default) is a team's, a new Doc goes in it on Arugula; else it stays here.\n- list: The kept Docs, newest first: id, title, made, updated, author, open (its block), shared.\n- open {doc, beside?}: Open a Doc from list in a block beside your pane; fill it as after new. A Doc already open is that block.\n- fill {block, markdown, section}: Write one section in Markdown (no HTML). ![alt](assets/<name>) shows a picture put there by asset first. At most 64 KB a section, 40 sections, 1 MiB a Doc; filling again replaces. Callouts, ```stats, ```chart, ```svg and ```prototype (an interactive page with arugula.copy and arugula.store) draw as more than code: call doc fences for their format before writing one.\n- fences: The format of callouts and the ```stats, ```chart, ```svg and ```prototype fences: read it first.\n- asset {block, name, data?, path?}: Put a picture in a Doc: PNG, JPEG, GIF or WebP, up to 2 MB. path is absolute; an agent on a machine of its own sends base64 data. The name ends in the file's real extension; SVG is refused (use a ```svg fence). Put it before the fill that names it.\n- share {block}: Ask the user to share a finished Doc by link. They decide on a card; this returns {status: \"waiting\"} at once. Call share again for the outcome: shared (with the url), declined, lapsed or failed (with why). Ask once.\n- move {doc, project?}: Give a Doc to a team's project: the team owns it; it leaves this list.",
+      "description": "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user watches fill in. Make the outline with new, then fill each section in order, saying one sentence about it in the pane. Never write its files by hand.\n- new {title, beside?, layout?, sections?}: Make a Doc and its outline (each section's heading and intent). Returns the block and section ids to fill in order. Layout: tabs for many prototypes or long parts; prototype for a whole-screen one. When the current project (your block's, else your session's, else your clone's repo's, else the default) is a team's, a new Doc goes in it on Arugula; else it stays here.\n- list: The kept Docs, newest first: id, title, made, updated, author, open (its block), shared.\n- open {doc, beside?}: Open a Doc from list in a block beside your pane; fill it as after new. A Doc already open is that block.\n- fill {block, markdown, section}: Write one section in Markdown (no HTML). ![alt](assets/<name>) shows a picture put there by asset first. At most 64 KB a section, 40 sections, 1 MiB a Doc; filling again replaces. Callouts, ```stats, ```chart, ```svg and ```prototype (an interactive page with arugula.copy and arugula.store) draw as more than code: call doc fences for their format before writing one.\n- fences: The format of callouts and fences: read it first.\n- asset {block, name, data?, path?}: Put a picture in a Doc: PNG, JPEG, GIF or WebP, up to 2 MB. path is absolute; an agent on a machine of its own sends base64 data. The name ends in the file's real extension; SVG is refused. Put it before the fill that names it.\n- checklist {block, items, section}: Tests in a section; failures go to each item's owner.\n- share {block}: Ask the user to share a finished Doc by link. They decide on a card; this returns {status: \"waiting\"} at once. Call share again for the outcome: shared (with the url), declined, lapsed or failed (with why). Ask once.\n- move {doc, project?}: Give a Doc to a team's project: the team owns it; it leaves this list.",
       "inputSchema": {
         "$defs": {
           "DocLayoutArg": {
@@ -11997,6 +12093,25 @@
             ],
             "type": "object"
           },
+          "Owner": {
+            "properties": {
+              "pane": {
+                "description": "The agent block on this machine that gets this item's failure reports. You must be able to drive it.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "role": {
+                "description": "A role label for this checklist only, for example frontend or backend.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "role",
+              "pane"
+            ],
+            "type": "object"
+          },
           "PaneArg": {
             "anyOf": [
               {
@@ -12009,6 +12124,27 @@
               }
             ],
             "description": "A pane or block: `7` or `\"%7\"`."
+          },
+          "Planned": {
+            "properties": {
+              "id": {
+                "description": "Stable within this section: letters, digits, underscores and hyphens.",
+                "type": "string"
+              },
+              "owner": {
+                "$ref": "#/$defs/Owner"
+              },
+              "text": {
+                "description": "What the person should test.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "text",
+              "owner"
+            ],
+            "type": "object"
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -12026,7 +12162,7 @@
           },
           "block": {
             "$ref": "#/$defs/PaneArg",
-            "description": "fill, asset, share: The Doc block (from doc new)."
+            "description": "fill, asset, checklist, share: The Doc block (from doc new)."
           },
           "data": {
             "default": null,
@@ -12040,6 +12176,13 @@
             "description": "open: The Doc's id (doc list has them). move: The Doc's id (doc list has them). Move one only when the user asks: its block, doc fill on it and doc open of this id go on with the team's Doc.",
             "type": "string"
           },
+          "items": {
+            "description": "checklist: The tests (at most 100 a Doc; bodies and checklists share a section's 64 KB). The person ticks passes or reports failures with notes and screenshots; each failure goes to the item's owner's prompt queue, at least once (a repeated report id is the same report). Calling again keeps results and can reassign future reports; a sent report keeps its recipient, and the person reports again to reach a new owner. An item with feedback can't be removed or have its id or text changed: use a new section. read_output on the Doc reads the results.",
+            "items": {
+              "$ref": "#/$defs/Planned"
+            },
+            "type": "array"
+          },
           "kind": {
             "description": "Which one (see the tool's description).",
             "enum": [
@@ -12049,6 +12192,7 @@
               "fill",
               "fences",
               "asset",
+              "checklist",
               "share",
               "move"
             ],
@@ -12083,7 +12227,7 @@
             ]
           },
           "section": {
-            "description": "fill: The section's id (s1, s2, … from doc new).",
+            "description": "fill: The section's id (s1, s2, … from doc new). checklist: The section that groups these tests (s1, s2, …). doc fill can add context to it without replacing results.",
             "type": "string"
           },
           "sections": {
@@ -17153,7 +17297,7 @@
         "readOnlyHint": false,
         "title": "Build a document for the user"
       },
-      "description": "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user watches fill in. Make the outline with new, then fill each section in order, saying one sentence about it in the pane. Never write its files by hand.\n- new {title, beside?, layout?, sections?}: Make a Doc and its outline (each section's heading and intent). Returns the block and section ids to fill in order. Layout: tabs for many prototypes or long parts; prototype for a whole-screen one. When the current project (your block's, else your session's, else your clone's repo's, else the default) is a team's, a new Doc goes in it on Arugula; else it stays here.\n- list: The kept Docs, newest first: id, title, made, updated, author, open (its block), shared.\n- open {doc, beside?}: Open a Doc from list in a block beside your pane; fill it as after new. A Doc already open is that block.\n- fill {block, markdown, section}: Write one section in Markdown (no HTML). ![alt](assets/<name>) shows a picture put there by asset first. At most 64 KB a section, 40 sections, 1 MiB a Doc; filling again replaces. Callouts, ```stats, ```chart, ```svg and ```prototype (an interactive page with arugula.copy and arugula.store) draw as more than code: call doc fences for their format before writing one.\n- fences: The format of callouts and the ```stats, ```chart, ```svg and ```prototype fences: read it first.\n- asset {block, name, data?, path?}: Put a picture in a Doc: PNG, JPEG, GIF or WebP, up to 2 MB. path is absolute; an agent on a machine of its own sends base64 data. The name ends in the file's real extension; SVG is refused (use a ```svg fence). Put it before the fill that names it.\n- share {block}: Ask the user to share a finished Doc by link. They decide on a card; this returns {status: \"waiting\"} at once. Call share again for the outcome: shared (with the url), declined, lapsed or failed (with why). Ask once.\n- move {doc, project?}: Give a Doc to a team's project: the team owns it; it leaves this list.",
+      "description": "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user watches fill in. Make the outline with new, then fill each section in order, saying one sentence about it in the pane. Never write its files by hand.\n- new {title, beside?, layout?, sections?}: Make a Doc and its outline (each section's heading and intent). Returns the block and section ids to fill in order. Layout: tabs for many prototypes or long parts; prototype for a whole-screen one. When the current project (your block's, else your session's, else your clone's repo's, else the default) is a team's, a new Doc goes in it on Arugula; else it stays here.\n- list: The kept Docs, newest first: id, title, made, updated, author, open (its block), shared.\n- open {doc, beside?}: Open a Doc from list in a block beside your pane; fill it as after new. A Doc already open is that block.\n- fill {block, markdown, section}: Write one section in Markdown (no HTML). ![alt](assets/<name>) shows a picture put there by asset first. At most 64 KB a section, 40 sections, 1 MiB a Doc; filling again replaces. Callouts, ```stats, ```chart, ```svg and ```prototype (an interactive page with arugula.copy and arugula.store) draw as more than code: call doc fences for their format before writing one.\n- fences: The format of callouts and fences: read it first.\n- asset {block, name, data?, path?}: Put a picture in a Doc: PNG, JPEG, GIF or WebP, up to 2 MB. path is absolute; an agent on a machine of its own sends base64 data. The name ends in the file's real extension; SVG is refused. Put it before the fill that names it.\n- checklist {block, items, section}: Tests in a section; failures go to each item's owner.\n- share {block}: Ask the user to share a finished Doc by link. They decide on a card; this returns {status: \"waiting\"} at once. Call share again for the outcome: shared (with the url), declined, lapsed or failed (with why). Ask once.\n- move {doc, project?}: Give a Doc to a team's project: the team owns it; it leaves this list.",
       "inputSchema": {
         "$defs": {
           "DocLayoutArg": {
@@ -17183,6 +17327,25 @@
             ],
             "type": "object"
           },
+          "Owner": {
+            "properties": {
+              "pane": {
+                "description": "The agent block on this machine that gets this item's failure reports. You must be able to drive it.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "role": {
+                "description": "A role label for this checklist only, for example frontend or backend.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "role",
+              "pane"
+            ],
+            "type": "object"
+          },
           "PaneArg": {
             "anyOf": [
               {
@@ -17195,6 +17358,27 @@
               }
             ],
             "description": "A pane or block: `7` or `\"%7\"`."
+          },
+          "Planned": {
+            "properties": {
+              "id": {
+                "description": "Stable within this section: letters, digits, underscores and hyphens.",
+                "type": "string"
+              },
+              "owner": {
+                "$ref": "#/$defs/Owner"
+              },
+              "text": {
+                "description": "What the person should test.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "text",
+              "owner"
+            ],
+            "type": "object"
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -17212,7 +17396,7 @@
           },
           "block": {
             "$ref": "#/$defs/PaneArg",
-            "description": "fill, asset, share: The Doc block (from doc new)."
+            "description": "fill, asset, checklist, share: The Doc block (from doc new)."
           },
           "data": {
             "default": null,
@@ -17226,6 +17410,13 @@
             "description": "open: The Doc's id (doc list has them). move: The Doc's id (doc list has them). Move one only when the user asks: its block, doc fill on it and doc open of this id go on with the team's Doc.",
             "type": "string"
           },
+          "items": {
+            "description": "checklist: The tests (at most 100 a Doc; bodies and checklists share a section's 64 KB). The person ticks passes or reports failures with notes and screenshots; each failure goes to the item's owner's prompt queue, at least once (a repeated report id is the same report). Calling again keeps results and can reassign future reports; a sent report keeps its recipient, and the person reports again to reach a new owner. An item with feedback can't be removed or have its id or text changed: use a new section. read_output on the Doc reads the results.",
+            "items": {
+              "$ref": "#/$defs/Planned"
+            },
+            "type": "array"
+          },
           "kind": {
             "description": "Which one (see the tool's description).",
             "enum": [
@@ -17235,6 +17426,7 @@
               "fill",
               "fences",
               "asset",
+              "checklist",
               "share",
               "move"
             ],
@@ -17269,7 +17461,7 @@
             ]
           },
           "section": {
-            "description": "fill: The section's id (s1, s2, … from doc new).",
+            "description": "fill: The section's id (s1, s2, … from doc new). checklist: The section that groups these tests (s1, s2, …). doc fill can add context to it without replacing results.",
             "type": "string"
           },
           "sections": {

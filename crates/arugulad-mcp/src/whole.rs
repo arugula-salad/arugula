@@ -255,7 +255,7 @@ pub fn doc_is_listed_with_no_flag() {
     };
     assert_eq!(
         kinds.iter().map(|k| k.name).collect::<Vec<_>>(),
-        ["new", "list", "open", "fill", "fences", "asset", "share", "move"]
+        ["new", "list", "open", "fill", "fences", "asset", "checklist", "share", "move"]
     );
     let offers = block_offers(On::none());
     let offer = offers.iter().find(|o| o.kind == "doc").expect("capabilities offers a doc");
