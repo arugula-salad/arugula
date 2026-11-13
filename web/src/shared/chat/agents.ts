@@ -24,6 +24,13 @@ export function ciName(m: ChatMessage): string | null {
   return !m.author && m.via?.startsWith("ci:") && m.via.length > 3 ? `${m.via.slice(3)} CI` : null;
 }
 
+/** What a channel's webhook posted (Arugula iss_ac4da877095b74a5a21af8f9fbd70acb):
+ * no author, `via` `webhook:<id>`, and the name it was posted under in
+ * `name`, or "a webhook" with none; null for any other message. */
+export function webhookName(m: ChatMessage): string | null {
+  return !m.author && m.via?.startsWith("webhook:") ? m.name || "a webhook" : null;
+}
+
 /** Who wrote a message, as it's shown: its author's name, or "<owner>'s
  * agent on <machine>" for one an agent wrote (M197), everywhere it shows. */
 export function authorLabel(m: ChatMessage): string {
@@ -32,6 +39,8 @@ export function authorLabel(m: ChatMessage): string {
   if (gh) return gh;
   const ci = ciName(m);
   if (ci) return ci;
+  const hook = webhookName(m);
+  if (hook) return hook;
   // What an agent session said in its thread (Arugula #215): the session's.
   if (!m.author && m.via?.startsWith("said:ses_")) return `Agent session ${m.via.slice("said:ses_".length, "said:ses_".length + 8)}`;
   const name = m.author ? m.name || "someone" : "a deleted account";
