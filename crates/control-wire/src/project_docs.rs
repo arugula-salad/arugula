@@ -134,8 +134,10 @@ pub const AGENT_PROJECT_DOCS: &str = "/api/daemon/projects/{project}/docs";
 /// [`PROJECT_DOC`]'s, answered [`DocView`]. A Doc that is a machine's copy
 /// is read-only, as for a person. `DELETE` (Arugula #863): only a Doc this
 /// machine made by a move ([`Doc::moved_from`] names it), when the move
-/// failed partway and is undone; it goes for good, not to the trash, and
-/// anything else is refused (403).
+/// failed partway and is undone, at once or after a crash (the machine's
+/// next move of the Doc, or its next start); it goes for good, not to the
+/// trash, and anything else is refused (403). A Doc that isn't there is a
+/// 404, which the machine takes as done.
 pub const AGENT_PROJECT_DOC: &str = "/api/daemon/projects/{project}/docs/{doc}";
 /// `PUT` the picture's bytes (the body): a picture of the Doc, answered
 /// [`Asset`], with the limits of a machine's copies' ([`MACHINE_DOC_ASSET`]).

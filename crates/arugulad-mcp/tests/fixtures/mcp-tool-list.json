@@ -1732,7 +1732,7 @@
         "readOnlyHint": false,
         "title": "Build a document for the user"
       },
-      "description": "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user watches fill in. Make the outline with new, then fill each section in order, saying one sentence about it in the pane. Never write its files by hand.\n- new {title, beside?, layout?, sections?}: Make a Doc and its outline (each section's heading and intent). Returns the block and section ids to fill in order. Layout: tabs for many prototypes or long parts; prototype for a whole-screen one. When the current project (your block's, else your session's, else your clone's repo's, else the default) is a team's, a new Doc goes in it on Arugula; else it stays here.\n- list: The kept Docs, newest first: id, title, made, updated, author, the block showing it (open), shared, platform (its copy's link).\n- open {doc, beside?}: Open a Doc from list in a block beside your pane; fill it as after new. A Doc already open is that block, not a second one.\n- fill {block, markdown, section}: Write one section in Markdown (headings, lists, `code`, links, tables; no HTML). ![alt](assets/<name>) shows a picture put there by asset first. At most 64 KB a section, 40 sections, 1 MiB a Doc; filling again replaces. Callouts, ```stats, ```chart, ```svg and ```prototype (an interactive page with arugula.copy and arugula.store) draw as more than code: call doc fences for their format before writing one.\n- fences: The format of callouts and the ```stats, ```chart, ```svg and ```prototype fences: read it first.\n- asset {block, name, data?, path?}: Put a picture in a Doc: PNG, JPEG, GIF or WebP, up to 2 MB. path is an absolute path; an agent on a machine of its own sends base64 data. The name ends in the file's real extension; SVG is refused (use a ```svg fence). Put it before the fill that names it.\n- share {block}: Ask the user to share a finished Doc by link. They decide on a card; this returns {status: \"waiting\"} at once. Call share again for the outcome: shared (with the url), declined, lapsed (a day unanswered) or failed (with why). Ask once.",
+      "description": "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user watches fill in. Make the outline with new, then fill each section in order, saying one sentence about it in the pane. Never write its files by hand.\n- new {title, beside?, layout?, sections?}: Make a Doc and its outline (each section's heading and intent). Returns the block and section ids to fill in order. Layout: tabs for many prototypes or long parts; prototype for a whole-screen one. When the current project (your block's, else your session's, else your clone's repo's, else the default) is a team's, a new Doc goes in it on Arugula; else it stays here.\n- list: The kept Docs, newest first: id, title, made, updated, author, open (its block), shared, platform (its copy's link).\n- open {doc, beside?}: Open a Doc from list in a block beside your pane; fill it as after new. A Doc already open is that block.\n- fill {block, markdown, section}: Write one section in Markdown (no HTML). ![alt](assets/<name>) shows a picture put there by asset first. At most 64 KB a section, 40 sections, 1 MiB a Doc; filling again replaces. Callouts, ```stats, ```chart, ```svg and ```prototype (an interactive page with arugula.copy and arugula.store) draw as more than code: call doc fences for their format before writing one.\n- fences: The format of callouts and the ```stats, ```chart, ```svg and ```prototype fences: read it first.\n- asset {block, name, data?, path?}: Put a picture in a Doc: PNG, JPEG, GIF or WebP, up to 2 MB. path is absolute; an agent on a machine of its own sends base64 data. The name ends in the file's real extension; SVG is refused (use a ```svg fence). Put it before the fill that names it.\n- share {block}: Ask the user to share a finished Doc by link. They decide on a card; this returns {status: \"waiting\"} at once. Call share again for the outcome: shared (with the url), declined, lapsed or failed (with why). Ask once.\n- move {doc, project?}: Give a Doc to a team's project: the team owns it; it leaves this list.",
       "inputSchema": {
         "$defs": {
           "DocLayoutArg": {
@@ -1802,7 +1802,7 @@
             ]
           },
           "doc": {
-            "description": "open: The Doc's id (doc list has them).",
+            "description": "open: The Doc's id (doc list has them). move: The Doc's id (doc list has them). Move one only when the user asks: its block, doc fill on it and doc open of this id go on with the team's Doc.",
             "type": "string"
           },
           "kind": {
@@ -1814,7 +1814,8 @@
               "fill",
               "fences",
               "asset",
-              "share"
+              "share",
+              "move"
             ],
             "type": "string"
           },
@@ -1833,6 +1834,14 @@
           "path": {
             "default": null,
             "description": "asset: A PNG, JPEG, GIF or WebP file you can read, as an absolute path (at most 2 MB). An agent on a machine of its own sends data instead.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "move: The team's project (a prj_ id). Default: the current project, refused when that's a personal one.",
             "type": [
               "string",
               "null"
@@ -6909,7 +6918,7 @@
         "readOnlyHint": false,
         "title": "Build a document for the user"
       },
-      "description": "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user watches fill in. Make the outline with new, then fill each section in order, saying one sentence about it in the pane. Never write its files by hand.\n- new {title, beside?, layout?, sections?}: Make a Doc and its outline (each section's heading and intent). Returns the block and section ids to fill in order. Layout: tabs for many prototypes or long parts; prototype for a whole-screen one. When the current project (your block's, else your session's, else your clone's repo's, else the default) is a team's, a new Doc goes in it on Arugula; else it stays here.\n- list: The kept Docs, newest first: id, title, made, updated, author, the block showing it (open), shared, platform (its copy's link).\n- open {doc, beside?}: Open a Doc from list in a block beside your pane; fill it as after new. A Doc already open is that block, not a second one.\n- fill {block, markdown, section}: Write one section in Markdown (headings, lists, `code`, links, tables; no HTML). ![alt](assets/<name>) shows a picture put there by asset first. At most 64 KB a section, 40 sections, 1 MiB a Doc; filling again replaces. Callouts, ```stats, ```chart, ```svg and ```prototype (an interactive page with arugula.copy and arugula.store) draw as more than code: call doc fences for their format before writing one.\n- fences: The format of callouts and the ```stats, ```chart, ```svg and ```prototype fences: read it first.\n- asset {block, name, data?, path?}: Put a picture in a Doc: PNG, JPEG, GIF or WebP, up to 2 MB. path is an absolute path; an agent on a machine of its own sends base64 data. The name ends in the file's real extension; SVG is refused (use a ```svg fence). Put it before the fill that names it.\n- share {block}: Ask the user to share a finished Doc by link. They decide on a card; this returns {status: \"waiting\"} at once. Call share again for the outcome: shared (with the url), declined, lapsed (a day unanswered) or failed (with why). Ask once.",
+      "description": "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user watches fill in. Make the outline with new, then fill each section in order, saying one sentence about it in the pane. Never write its files by hand.\n- new {title, beside?, layout?, sections?}: Make a Doc and its outline (each section's heading and intent). Returns the block and section ids to fill in order. Layout: tabs for many prototypes or long parts; prototype for a whole-screen one. When the current project (your block's, else your session's, else your clone's repo's, else the default) is a team's, a new Doc goes in it on Arugula; else it stays here.\n- list: The kept Docs, newest first: id, title, made, updated, author, open (its block), shared, platform (its copy's link).\n- open {doc, beside?}: Open a Doc from list in a block beside your pane; fill it as after new. A Doc already open is that block.\n- fill {block, markdown, section}: Write one section in Markdown (no HTML). ![alt](assets/<name>) shows a picture put there by asset first. At most 64 KB a section, 40 sections, 1 MiB a Doc; filling again replaces. Callouts, ```stats, ```chart, ```svg and ```prototype (an interactive page with arugula.copy and arugula.store) draw as more than code: call doc fences for their format before writing one.\n- fences: The format of callouts and the ```stats, ```chart, ```svg and ```prototype fences: read it first.\n- asset {block, name, data?, path?}: Put a picture in a Doc: PNG, JPEG, GIF or WebP, up to 2 MB. path is absolute; an agent on a machine of its own sends base64 data. The name ends in the file's real extension; SVG is refused (use a ```svg fence). Put it before the fill that names it.\n- share {block}: Ask the user to share a finished Doc by link. They decide on a card; this returns {status: \"waiting\"} at once. Call share again for the outcome: shared (with the url), declined, lapsed or failed (with why). Ask once.\n- move {doc, project?}: Give a Doc to a team's project: the team owns it; it leaves this list.",
       "inputSchema": {
         "$defs": {
           "DocLayoutArg": {
@@ -6979,7 +6988,7 @@
             ]
           },
           "doc": {
-            "description": "open: The Doc's id (doc list has them).",
+            "description": "open: The Doc's id (doc list has them). move: The Doc's id (doc list has them). Move one only when the user asks: its block, doc fill on it and doc open of this id go on with the team's Doc.",
             "type": "string"
           },
           "kind": {
@@ -6991,7 +7000,8 @@
               "fill",
               "fences",
               "asset",
-              "share"
+              "share",
+              "move"
             ],
             "type": "string"
           },
@@ -7010,6 +7020,14 @@
           "path": {
             "default": null,
             "description": "asset: A PNG, JPEG, GIF or WebP file you can read, as an absolute path (at most 2 MB). An agent on a machine of its own sends data instead.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "move: The team's project (a prj_ id). Default: the current project, refused when that's a personal one.",
             "type": [
               "string",
               "null"
@@ -11949,7 +11967,7 @@
         "readOnlyHint": false,
         "title": "Build a document for the user"
       },
-      "description": "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user watches fill in. Make the outline with new, then fill each section in order, saying one sentence about it in the pane. Never write its files by hand.\n- new {title, beside?, layout?, sections?}: Make a Doc and its outline (each section's heading and intent). Returns the block and section ids to fill in order. Layout: tabs for many prototypes or long parts; prototype for a whole-screen one. When the current project (your block's, else your session's, else your clone's repo's, else the default) is a team's, a new Doc goes in it on Arugula; else it stays here.\n- list: The kept Docs, newest first: id, title, made, updated, author, the block showing it (open), shared, platform (its copy's link).\n- open {doc, beside?}: Open a Doc from list in a block beside your pane; fill it as after new. A Doc already open is that block, not a second one.\n- fill {block, markdown, section}: Write one section in Markdown (headings, lists, `code`, links, tables; no HTML). ![alt](assets/<name>) shows a picture put there by asset first. At most 64 KB a section, 40 sections, 1 MiB a Doc; filling again replaces. Callouts, ```stats, ```chart, ```svg and ```prototype (an interactive page with arugula.copy and arugula.store) draw as more than code: call doc fences for their format before writing one.\n- fences: The format of callouts and the ```stats, ```chart, ```svg and ```prototype fences: read it first.\n- asset {block, name, data?, path?}: Put a picture in a Doc: PNG, JPEG, GIF or WebP, up to 2 MB. path is an absolute path; an agent on a machine of its own sends base64 data. The name ends in the file's real extension; SVG is refused (use a ```svg fence). Put it before the fill that names it.\n- share {block}: Ask the user to share a finished Doc by link. They decide on a card; this returns {status: \"waiting\"} at once. Call share again for the outcome: shared (with the url), declined, lapsed (a day unanswered) or failed (with why). Ask once.",
+      "description": "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user watches fill in. Make the outline with new, then fill each section in order, saying one sentence about it in the pane. Never write its files by hand.\n- new {title, beside?, layout?, sections?}: Make a Doc and its outline (each section's heading and intent). Returns the block and section ids to fill in order. Layout: tabs for many prototypes or long parts; prototype for a whole-screen one. When the current project (your block's, else your session's, else your clone's repo's, else the default) is a team's, a new Doc goes in it on Arugula; else it stays here.\n- list: The kept Docs, newest first: id, title, made, updated, author, open (its block), shared, platform (its copy's link).\n- open {doc, beside?}: Open a Doc from list in a block beside your pane; fill it as after new. A Doc already open is that block.\n- fill {block, markdown, section}: Write one section in Markdown (no HTML). ![alt](assets/<name>) shows a picture put there by asset first. At most 64 KB a section, 40 sections, 1 MiB a Doc; filling again replaces. Callouts, ```stats, ```chart, ```svg and ```prototype (an interactive page with arugula.copy and arugula.store) draw as more than code: call doc fences for their format before writing one.\n- fences: The format of callouts and the ```stats, ```chart, ```svg and ```prototype fences: read it first.\n- asset {block, name, data?, path?}: Put a picture in a Doc: PNG, JPEG, GIF or WebP, up to 2 MB. path is absolute; an agent on a machine of its own sends base64 data. The name ends in the file's real extension; SVG is refused (use a ```svg fence). Put it before the fill that names it.\n- share {block}: Ask the user to share a finished Doc by link. They decide on a card; this returns {status: \"waiting\"} at once. Call share again for the outcome: shared (with the url), declined, lapsed or failed (with why). Ask once.\n- move {doc, project?}: Give a Doc to a team's project: the team owns it; it leaves this list.",
       "inputSchema": {
         "$defs": {
           "DocLayoutArg": {
@@ -12019,7 +12037,7 @@
             ]
           },
           "doc": {
-            "description": "open: The Doc's id (doc list has them).",
+            "description": "open: The Doc's id (doc list has them). move: The Doc's id (doc list has them). Move one only when the user asks: its block, doc fill on it and doc open of this id go on with the team's Doc.",
             "type": "string"
           },
           "kind": {
@@ -12031,7 +12049,8 @@
               "fill",
               "fences",
               "asset",
-              "share"
+              "share",
+              "move"
             ],
             "type": "string"
           },
@@ -12050,6 +12069,14 @@
           "path": {
             "default": null,
             "description": "asset: A PNG, JPEG, GIF or WebP file you can read, as an absolute path (at most 2 MB). An agent on a machine of its own sends data instead.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "move: The team's project (a prj_ id). Default: the current project, refused when that's a personal one.",
             "type": [
               "string",
               "null"
@@ -17126,7 +17153,7 @@
         "readOnlyHint": false,
         "title": "Build a document for the user"
       },
-      "description": "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user watches fill in. Make the outline with new, then fill each section in order, saying one sentence about it in the pane. Never write its files by hand.\n- new {title, beside?, layout?, sections?}: Make a Doc and its outline (each section's heading and intent). Returns the block and section ids to fill in order. Layout: tabs for many prototypes or long parts; prototype for a whole-screen one. When the current project (your block's, else your session's, else your clone's repo's, else the default) is a team's, a new Doc goes in it on Arugula; else it stays here.\n- list: The kept Docs, newest first: id, title, made, updated, author, the block showing it (open), shared, platform (its copy's link).\n- open {doc, beside?}: Open a Doc from list in a block beside your pane; fill it as after new. A Doc already open is that block, not a second one.\n- fill {block, markdown, section}: Write one section in Markdown (headings, lists, `code`, links, tables; no HTML). ![alt](assets/<name>) shows a picture put there by asset first. At most 64 KB a section, 40 sections, 1 MiB a Doc; filling again replaces. Callouts, ```stats, ```chart, ```svg and ```prototype (an interactive page with arugula.copy and arugula.store) draw as more than code: call doc fences for their format before writing one.\n- fences: The format of callouts and the ```stats, ```chart, ```svg and ```prototype fences: read it first.\n- asset {block, name, data?, path?}: Put a picture in a Doc: PNG, JPEG, GIF or WebP, up to 2 MB. path is an absolute path; an agent on a machine of its own sends base64 data. The name ends in the file's real extension; SVG is refused (use a ```svg fence). Put it before the fill that names it.\n- share {block}: Ask the user to share a finished Doc by link. They decide on a card; this returns {status: \"waiting\"} at once. Call share again for the outcome: shared (with the url), declined, lapsed (a day unanswered) or failed (with why). Ask once.",
+      "description": "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user watches fill in. Make the outline with new, then fill each section in order, saying one sentence about it in the pane. Never write its files by hand.\n- new {title, beside?, layout?, sections?}: Make a Doc and its outline (each section's heading and intent). Returns the block and section ids to fill in order. Layout: tabs for many prototypes or long parts; prototype for a whole-screen one. When the current project (your block's, else your session's, else your clone's repo's, else the default) is a team's, a new Doc goes in it on Arugula; else it stays here.\n- list: The kept Docs, newest first: id, title, made, updated, author, open (its block), shared, platform (its copy's link).\n- open {doc, beside?}: Open a Doc from list in a block beside your pane; fill it as after new. A Doc already open is that block.\n- fill {block, markdown, section}: Write one section in Markdown (no HTML). ![alt](assets/<name>) shows a picture put there by asset first. At most 64 KB a section, 40 sections, 1 MiB a Doc; filling again replaces. Callouts, ```stats, ```chart, ```svg and ```prototype (an interactive page with arugula.copy and arugula.store) draw as more than code: call doc fences for their format before writing one.\n- fences: The format of callouts and the ```stats, ```chart, ```svg and ```prototype fences: read it first.\n- asset {block, name, data?, path?}: Put a picture in a Doc: PNG, JPEG, GIF or WebP, up to 2 MB. path is absolute; an agent on a machine of its own sends base64 data. The name ends in the file's real extension; SVG is refused (use a ```svg fence). Put it before the fill that names it.\n- share {block}: Ask the user to share a finished Doc by link. They decide on a card; this returns {status: \"waiting\"} at once. Call share again for the outcome: shared (with the url), declined, lapsed or failed (with why). Ask once.\n- move {doc, project?}: Give a Doc to a team's project: the team owns it; it leaves this list.",
       "inputSchema": {
         "$defs": {
           "DocLayoutArg": {
@@ -17196,7 +17223,7 @@
             ]
           },
           "doc": {
-            "description": "open: The Doc's id (doc list has them).",
+            "description": "open: The Doc's id (doc list has them). move: The Doc's id (doc list has them). Move one only when the user asks: its block, doc fill on it and doc open of this id go on with the team's Doc.",
             "type": "string"
           },
           "kind": {
@@ -17208,7 +17235,8 @@
               "fill",
               "fences",
               "asset",
-              "share"
+              "share",
+              "move"
             ],
             "type": "string"
           },
@@ -17227,6 +17255,14 @@
           "path": {
             "default": null,
             "description": "asset: A PNG, JPEG, GIF or WebP file you can read, as an absolute path (at most 2 MB). An agent on a machine of its own sends data instead.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "move: The team's project (a prj_ id). Default: the current project, refused when that's a personal one.",
             "type": [
               "string",
               "null"

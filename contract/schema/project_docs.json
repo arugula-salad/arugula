@@ -132,6 +132,17 @@
           "default": null,
           "description": "For a team Doc made from a Doc of its owner's (Share with…): where\nfrom. Null for any other Doc, and from an older platform."
         },
+        "moved_from": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MovedFrom"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "For a team Doc a machine moved here (Arugula #863): the machine and\nits Doc's id there. Absent for any other Doc, and from an older\nplatform."
+        },
         "project": {
           "type": "string"
         },
@@ -258,6 +269,19 @@
         "project",
         "docs",
         "writer"
+      ],
+      "type": "object"
+    },
+    "DocMove": {
+      "description": "`POST` [`PROJECT_DOC_MOVE`]: move a Doc written on the platform to `to`.",
+      "properties": {
+        "to": {
+          "description": "The team project (`prj_…`) it moves to.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "to"
       ],
       "type": "object"
     },
@@ -487,6 +511,24 @@
       ],
       "type": "object"
     },
+    "MovedFrom": {
+      "description": "Where a Doc a machine moved to a team was (Arugula #863).",
+      "properties": {
+        "doc": {
+          "description": "The Doc's id in that machine's library (16 hex digits).",
+          "type": "string"
+        },
+        "machine": {
+          "description": "The machine's id in control: the one that signs the call.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "machine",
+        "doc"
+      ],
+      "type": "object"
+    },
     "NewDoc": {
       "description": "`POST` [`PROJECT_DOCS`]: make a Doc.",
       "properties": {
@@ -496,6 +538,17 @@
             "string",
             "null"
           ]
+        },
+        "moved_from": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MovedFrom"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A machine moving one of its Docs here (Arugula #863), over\n[`AGENT_PROJECT_DOCS`]: kept as the Doc's [`Doc::moved_from`]. Its\n`machine` must be the one signing; a person never sends it."
         },
         "sections": {
           "default": [],

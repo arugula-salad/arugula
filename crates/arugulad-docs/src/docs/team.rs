@@ -78,6 +78,9 @@ pub enum Refused {
     Offline(String),
     /// What control said (its own sentence, as it is).
     Said(String),
+    /// What control said of a Doc it hasn't got (a 404): a move's undo
+    /// takes that as done (Arugula #863).
+    Gone(String),
 }
 
 impl Refused {
@@ -85,7 +88,7 @@ impl Refused {
     pub fn sentence(&self) -> String {
         match self {
             Refused::Offline(why) => format!("{OFFLINE}: {why}"),
-            Refused::Said(said) => said.clone(),
+            Refused::Said(said) | Refused::Gone(said) => said.clone(),
         }
     }
 }
@@ -118,6 +121,7 @@ impl Cloud for crate::control::Control {
             };
             got.map_err(|e| match e {
                 C::NotJoined | C::Unreachable(_) | C::Maintenance => Refused::Offline(e.to_string()),
+                C::Said { status: 404, said, .. } => Refused::Gone(said),
                 C::Said { said, .. } => Refused::Said(said),
                 other => Refused::Said(other.to_string()),
             })
@@ -330,7 +334,7 @@ impl Team {
                 self.offline(&why);
                 Err(Refused::Offline(why).sentence())
             }
-            Err(Refused::Said(said)) => {
+            Err(Refused::Said(said) | Refused::Gone(said)) => {
                 let mut st = self.state.lock().unwrap();
                 st.error = Some(said.clone());
                 st.rev += 1;

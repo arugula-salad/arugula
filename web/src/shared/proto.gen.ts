@@ -2363,6 +2363,27 @@ export type DocLayout = "doc" | "tabs" | "prototype";
 export type DocLinkUrl = { url: string, };
 
 /**
+ * `POST /api/docs/ID/move` (Arugula #863): give a Doc to a team. The team
+ * Doc is made from it, and the library keeps only a pointer to it. With no
+ * `project`, the current one (the one rule MCP's tools choose by), which
+ * must be a team's.
+ */
+export type DocMoveRequest = { project?: string | null, };
+
+/**
+ * Where a Doc went: the team's project and the team Doc there.
+ */
+export type DocMoved = { 
+/**
+ * The project's id (`prj_…`) and name.
+ */
+project: string, name: string, 
+/**
+ * The team Doc's id (`pdc_…`), and its page on the platform.
+ */
+id: string, link?: string | null, };
+
+/**
  * Where a Doc's copy on the platform is: the project it sits in now, its
  * `pdc_` id there, and its page.
  */
@@ -2447,6 +2468,18 @@ export type DocShared = { made: number, updated: number,
  * key): that list titles its rows from it (UI audit #174).
  */
 link: string, };
+
+/**
+ * A team's project a Doc can move to.
+ */
+export type DocTeam = { project: string, name: string, };
+
+/**
+ * `GET /api/docs/team` (Arugula #863): the team a Doc here would move to
+ * with no project named, so the Docs page can offer Move to <team>. Null
+ * when the current project is a personal one, or control can't say (`why`).
+ */
+export type DocTeams = { team?: DocTeam | null, why?: string | null, };
 
 /**
  * An agent's write, waiting for a person.
@@ -3747,6 +3780,15 @@ runs_note: string | null,
  */
 ms: number | null, };
 
+/**
+ * `POST` [`PROJECT_DOC_MOVE`]: move a Doc written on the platform to `to`.
+ */
+export type MoveProjectDoc = { 
+/**
+ * The team project (`prj_…`) it moves to.
+ */
+to: string, };
+
 export type NativeIssue = { 
 /**
  * `iss_` and 32 hex characters.
@@ -3839,7 +3881,13 @@ export type NewProjectDoc = { title: string, sections: Array<NewProjectDocSectio
 /**
  * `doc`, `tabs` or `prototype`; missing is `doc`.
  */
-layout?: string, };
+layout?: string, 
+/**
+ * A machine moving one of its Docs here (Arugula #863), over
+ * [`AGENT_PROJECT_DOCS`]: kept as the Doc's [`Doc::moved_from`]. Its
+ * `machine` must be the one signing; a person never sends it.
+ */
+moved_from?: ProjectDocMovedFrom, };
 
 /**
  * A new Doc's section: a heading, and its Markdown now or an intent for
@@ -4622,7 +4670,13 @@ made_from: ProjectDocMadeFrom | null,
  * it isn't `doc`: absent, or a name the reader doesn't know, is `doc`,
  * and an older page ignores it and draws the column.
  */
-layout?: string, };
+layout?: string, 
+/**
+ * For a team Doc a machine moved here (Arugula #863): the machine and
+ * its Doc's id there. Absent for any other Doc, and from an older
+ * platform.
+ */
+moved_from?: ProjectDocMovedFrom, };
 
 /**
  * One picture of a Doc, without its bytes: the shape a machine Doc's
@@ -4690,6 +4744,19 @@ project: string, id: string,
  * tell; the source itself is its owner's to read.
  */
 machine_name: string | null, };
+
+/**
+ * Where a Doc a machine moved to a team was (Arugula #863).
+ */
+export type ProjectDocMovedFrom = { 
+/**
+ * The machine's id in control: the one that signs the call.
+ */
+machine: string, 
+/**
+ * The Doc's id in that machine's library (16 hex digits).
+ */
+doc: string, };
 
 /**
  * A team Doc's public link (Arugula #871). The platform keeps its key with
@@ -6404,6 +6471,7 @@ export const OPS = {
   "conversations.list": { method: "GET", path: "/api/conversations" },
   "doc.asset": { method: "GET", path: "/api/docs/{id}/assets/{name}" },
   "doc.delete": { method: "DELETE", path: "/api/docs/{id}" },
+  "doc.move": { method: "POST", path: "/api/docs/{id}/move" },
   "doc.open": { method: "POST", path: "/api/docs/open" },
   "doc.preview": { method: "GET", path: "/api/docs/{id}/preview" },
   "doc.read": { method: "GET", path: "/api/docs/{id}/content" },
@@ -6411,6 +6479,7 @@ export const OPS = {
   "doc_link.delete": { method: "DELETE", path: "/api/doc-links/{id}" },
   "doc_link.get": { method: "GET", path: "/api/doc-links/{id}" },
   "docs.list": { method: "GET", path: "/api/docs" },
+  "docs.team": { method: "GET", path: "/api/docs/team" },
   "flag.set": { method: "PUT", path: "/api/flags/{name}" },
   "flags.list": { method: "GET", path: "/api/flags" },
   "fs.list": { method: "GET", path: "/api/fs/list" },

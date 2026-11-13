@@ -20,6 +20,11 @@
 //! nothing writes to it, but `doc open`, a block that showed it and an old
 //! link follow it to the team Doc ([`moved_to`]).
 //!
+//! **A move under way** writes `moving: {project, id, at}` once the team
+//! Doc exists and before it's filled ([`set_moving`]), so a move cut off by a
+//! crash leaves the half-made team Doc's name: the next move, or the next
+//! start, deletes it and clears `moving` ([`super::moving`]).
+//!
 //! Nothing here prunes: a Doc stays until the owner deletes it, and its
 //! copy on the platform goes with it ([`remove`], a tombstone in
 //! [`GONE`] until it's down).
@@ -78,6 +83,17 @@ pub struct Meta {
     /// pointer, and not a Doc.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub moved: Option<MovedTo>,
+    /// A move under way, or cut off: the team Doc it made, not yet whole.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub moving: Option<Moving>,
+}
+
+/// The team Doc a move has made and is filling (Arugula #863).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Moving {
+    pub project: String,
+    pub id: String,
+    pub at: u64,
 }
 
 /// Where a moved Doc is now (Arugula #863): the team's project, by id and
@@ -157,6 +173,7 @@ pub fn make(state_dir: &Path, title: &str, by: &str) -> Result<Meta, String> {
             platform: None,
             layout: DocLayout::Doc,
             moved: None,
+            moving: None,
         };
         if let Err(e) = write_meta(&dir, &meta) {
             let _ = std::fs::remove_dir_all(&dir);
@@ -316,6 +333,28 @@ pub fn moved_to(state_dir: &Path, id: &str) -> Option<MovedTo> {
     read_meta(&dir(state_dir, id).ok()?)?.moved
 }
 
+/// Note the team Doc a move is filling (`Some`), or that none is (`None`).
+pub fn set_moving(dir: &Path, moving: Option<Moving>) -> Result<(), String> {
+    let _held = META_LOCK.lock().unwrap();
+    let mut meta = read_meta(dir).ok_or("the Doc's meta.json can't be read")?;
+    if meta.moving == moving {
+        return Ok(());
+    }
+    meta.moving = moving;
+    write_meta(dir, &meta)
+}
+
+/// The library Docs with a move cut off: `moving` and no `moved`.
+pub fn unfinished(state_dir: &Path) -> Vec<(String, Moving)> {
+    let Ok(entries) = std::fs::read_dir(root(state_dir)) else { return vec![] };
+    entries
+        .flatten()
+        .filter_map(|e| read_meta(&e.path()))
+        .filter(|m| m.moved.is_none())
+        .filter_map(|m| Some((m.id, m.moving?)))
+        .collect()
+}
+
 /// Make the Doc in `dir` a pointer to `to` (Arugula #863): `meta.json`
 /// first, so it's no longer a Doc even if a file below can't go, then
 /// every other file in the folder. Its copy on the platform comes down
@@ -327,6 +366,7 @@ pub fn point(state_dir: &Path, dir: &Path, to: MovedTo) -> Result<(), String> {
         let mut meta = read_meta(dir).ok_or("the Doc's meta.json can't be read")?;
         let had_copy = meta.platform.take().is_some();
         meta.moved = Some(to);
+        meta.moving = None;
         meta.shape = None;
         write_meta(dir, &meta)?;
         had_copy
@@ -570,6 +610,7 @@ fn copy_in(state_dir: &Path, old: &Old, layout_title: Option<&str>, copy: Copy) 
             platform: None,
             layout: DocLayout::Doc,
             moved: None,
+            moving: None,
         },
     )?;
     Ok(id)
@@ -677,6 +718,7 @@ mod tests {
             platform: None,
             layout: DocLayout::Doc,
             moved: None,
+            moving: None,
         }
     }
 
