@@ -171,20 +171,40 @@ it. Say "reply thread" for a message and its replies.
 
 ## What a project holds
 
-A **project** (`prj_`) is what platform objects belong to, owned by one team or one
-account. Each has one default project, and that's all that exists for now: nothing
-creates a second one. Membership comes from the team's roster.
+A **project** (`prj_`) is what platform objects belong to. It belongs to one
+owner: a team, or Personal, a person's own account. An owner has one or more
+projects ([aru-140](decisions/aru-140-an-owner-has-many-projects-channels-belong-to-the-team.md)).
+Membership comes from the owner: a team's roster, or Personal's one person.
 
-Nothing makes a second project yet, so what happens then is a decision, not
-code (Jake, 2026-11-05, Doc c2508fcdab6cf131): when a team gets one, the
-work it already has and its channels stay in the default project, and only
-new work goes in the new one. Nothing moves objects between projects.
+A project can be renamed, archived and moved to another owner
+(`ProjectPatch` in
+[crates/control-wire/src/projects.rs](../crates/control-wire/src/projects.rs)).
+Anyone who may write it renames it; only its owner archives or moves it. A
+move takes its issues, numbers, Docs, boards, linked repos and workspaces
+with it, and revokes every grant over it, machines' and agent tokens'.
+Objects still don't move between projects.
 
-Decided in [aru-140](decisions/aru-140-an-owner-has-many-projects-channels-belong-to-the-team.md)
-(not built yet): an owner has many projects, team channels belong to the
-team rather than its default project, the default project becomes an
-owner's `default_project` setting, a repo links to exactly one project, and
-a whole project can move to another owner.
+Settings come in layers: a project's override, else its owner's default,
+else the built-in default. The platform keeps them in `scoped_settings`, one
+row per layer and key. The keys are `issue_home`, `agents_model`,
+`stall_minutes`, `agents_workspace` (a project's only) and
+`default_project` (an owner's only).
+
+Channels belong to their team (`chat_rooms.team_id`), not to a project, and a
+`threads.*` grant can be over a team, which reaches its channels
+(`GrantScope::Team` in
+[crates/control-wire/src/chat.rs](../crates/control-wire/src/chat.rs)).
+Object threads stay in their project, and Personal has no channels.
+
+A session (a group of tabs) carries a project too, in `layout.json` (above).
+
+One resolver picks the current project for issues, boards and Docs. In
+order: the one named (`explicit`), the block's issue's (`block`), the
+session's (`session`), the clone's linked repo's (`repo`), then the owner's
+`default_project` (`default`). Its answer says which `rule` decided
+(`IssueHome` in
+[crates/control-wire/src/issues.rs](../crates/control-wire/src/issues.rs)).
+Docs never get a resolver of their own.
 
 | Noun | What it is | Truth | ID |
 |---|---|---|---|
@@ -335,3 +355,6 @@ purpose, and the records say why:
 | `acl.json`'s row is `Grant` in Rust, and `arugula access grant` is the verb that makes a share | Not tracked: CLI verbs stay (#668) |
 | A board's wire says zone: a read's `zones` are the four lanes, and a write's `zone` names a group. Writes take `group` too | Not tracked: wire names stay for older daemons (#750) |
 | An issue's comments and the live updates of issues and Docs travel in chat, so a member with chat off reads an issue without its comments and sees a change when the page loads again | Not tracked yet |
+| The platform still writes the old project columns (`is_default`, `issue_home`, `agents_model`, `agents_workspace`, `board_settings`), though `scoped_settings` is read instead | [Cleanup](https://app.arugula.io/issues/iss_7cbd2223818266e8e4e3f37cb5fcaa06) drops them in a two-step deploy |
+| `Project.team` and the other wire fields the new ones replaced are still sent | [Cleanup](https://app.arugula.io/issues/iss_7cbd2223818266e8e4e3f37cb5fcaa06) drops them once no supported daemon reads them |
+| An agent token's powers are given over a project or the DMs, never over a team | Not tracked yet |
