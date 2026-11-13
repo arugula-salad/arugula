@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { moveDocsToTeam, resultWords } from "../src/shared/docs/move-docs.ts";
 
-const doc = (id, title, machine = null, machine_name = null) => ({ id, title, machine, machine_name });
+const doc = (id, title) => ({ id, title });
 const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 
 /** A platform answering by "METHOD path"; the calls it got are in `calls`. */
@@ -37,16 +37,6 @@ test("a Doc written on the platform moves in place; a 409 with its id is already
   assert.deepEqual(calls.map((c) => c.key), ["POST /api/projects/prj_me/docs/a/move", "POST /api/projects/prj_me/docs/b/move", "POST /api/projects/prj_me/docs/c/move"], "in order, one route each");
   assert.deepEqual(calls[0].body, { to: "prj_team" });
   assert.equal(resultWords(out[0], "Acme"), "Moved to Acme");
-});
-
-test("a machine's copy isn't moved from the platform: refused, naming its machine, and nothing is asked", async () => {
-  const calls = platform({});
-  const out = await moveDocsToTeam("prj_me", "prj_team", [doc("m", "M", "dev_1", "geek"), doc("n", "N", "dev_2")]);
-  assert.deepEqual(out, [
-    { id: "m", title: "M", outcome: "refused", why: "Move it from geek's Docs" },
-    { id: "n", title: "N", outcome: "refused", why: "Move it from its machine's Docs" },
-  ]);
-  assert.equal(calls.length, 0);
 });
 
 test("a Doc that can't be read, or a platform that can't be reached, refuses that Doc and the rest still go", async () => {

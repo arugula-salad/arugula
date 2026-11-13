@@ -324,10 +324,7 @@ fn access_text(v: &Value) -> String {
     out.push_str(&format!("\nOther powers over it, by {}:\n", s(&v["powers"]["says"])));
     let grants = v["powers"]["grants"].as_array().cloned().unwrap_or_default();
     if grants.is_empty() {
-        out.push_str(
-            "  none given: no machine's or agent token's agents hold one here (an owner's or editor's machine still \
-             keeps its own Doc copies here)\n",
-        );
+        out.push_str("  none given: no machine's or agent token's agents hold one here\n");
     }
     for g in &grants {
         // A former member's machine or token isn't named: "a former

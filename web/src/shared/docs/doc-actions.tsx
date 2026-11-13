@@ -13,8 +13,7 @@ import { useRef, useState } from "preact/hooks";
 import { CheckIcon, ExternalIcon, LinkIcon, ShareIcon } from "../ui/icons";
 import "./doc-actions.css";
 
-export const NO_LINK = "Not on the platform yet: sign in to Arugula control to get a link";
-export const ONLY_YOU = "only you can open it until it's shared";
+export const NO_LINK = "No link yet: share it to get one";
 
 type Hooks = Record<`data-${string}`, string | undefined>;
 
@@ -28,11 +27,10 @@ export function DocActions({
   hooks,
   children,
 }: {
-  /** It has no link to copy or open: not on the platform, not shared. */
+  /** It has no link to copy or open: not shared, and no page on the platform. */
   none: boolean;
-  /** Copy the link: "private" when only its owner can open what was copied,
-   * false when nothing was copied. */
-  copy: () => Promise<"ok" | "private" | false>;
+  /** Copy the link: false when nothing was copied. */
+  copy: () => Promise<"ok" | false>;
   open: () => void;
   /** Share, or Update when `older`. Left out, there is no Share: a viewer
    * with a role doesn't own the Doc, and a team's Doc has nowhere to go. */
@@ -47,14 +45,14 @@ export function DocActions({
   /** After the three, inside the same group: the platform's ⋯. */
   children?: ComponentChildren;
 }) {
-  const [copied, setCopied] = useState<"ok" | "private" | null>(null);
+  const [copied, setCopied] = useState(false);
   const timer = useRef<number | undefined>(undefined);
   const click = async () => {
     const how = await copy();
     if (!how) return;
-    setCopied(how);
+    setCopied(true);
     clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => setCopied(null), 1500);
+    timer.current = window.setTimeout(() => setCopied(false), 1500);
   };
   const shareTitle = older ? (labels?.update ?? "Update the shared copy: it's older than this Doc") : (labels?.share ?? "Share with a link");
   return (
@@ -62,9 +60,9 @@ export function DocActions({
       <button
         type="button"
         class="doc-action bar-btn sq"
-        data-copied={copied ?? undefined}
+        data-copied={copied ? "ok" : undefined}
         disabled={none}
-        title={none ? NO_LINK : copied === "private" ? `Copied: ${ONLY_YOU}` : "Copy link"}
+        title={none ? NO_LINK : "Copy link"}
         aria-label="Copy link"
         onClick={() => void click()}
         {...hooks?.copy}

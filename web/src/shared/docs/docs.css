@@ -24,14 +24,12 @@
   border-radius: 10px;
 }
 
-/* A copy of a machine's Doc (#678): read-only here, and said so above it. */
-.project-doc-copy {
-  max-width: var(--lead-measure);
-  width: 100%;
-  margin: 0 auto 8px;
-  padding: 0 16px;
-  box-sizing: border-box;
-  font-size: var(--text-md);
+/* Over a personal project's Docs on the platform (Arugula #865): where
+   they're kept, and what to do with them. */
+.docs-cloud-line {
+  margin: 0;
+  padding: var(--space-2) var(--space-5);
+  font-size: var(--text-sm);
 }
 
 /* A line around the Doc on its page (its public link, its boards, the

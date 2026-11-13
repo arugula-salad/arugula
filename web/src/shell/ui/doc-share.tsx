@@ -4,14 +4,13 @@
 // Unshare). The daemon does it (`doc_share`
 // and the rest, the owner's, never an agent's); this is the buttons, the one
 // share dialog, and the confirms. Copy link copies at once (Arugula #708):
-// the Doc's copy on the platform, which only its owner can open until it's
-// shared, else its public link if it has one, else it's disabled. Nothing
-// here makes a public link except the share dialog's confirm: the share
-// button opens it. Share with a team (Arugula #418) is a section of the
-// dialog for a Doc with a copy on the platform: a team Doc made from it.
+// its public link if it has one, else a team Doc's page on the platform,
+// else it's disabled. Nothing here makes a public link except the share
+// dialog's confirm: the share button opens it.
 //
 // What the menu knows without asking is in the Doc's state: `shared`
-// ({made, updated}, no link) and `platform` (it has a copy). The links, and
+// ({made, updated}, no link) and `platform` (a team Doc, with a page on the
+// platform). The links, and
 // whether it can be shared at all (this machine has joined a control that
 // keeps Docs), are `doc_shares`' answer, asked when the block's state
 // arrives and kept here for the menu to read.
@@ -28,10 +27,8 @@ import { Modal } from "../../shared/ui/modal";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { ago, when } from "../../shared/time";
 import { OpenOutside } from "../blocks/block-states";
-import { SectionHead } from "../../shared/ui/section-head";
 import { Count } from "../../shared/ui/state-chip";
-import { DocActions, NO_LINK, ONLY_YOU, openTab } from "../../shared/docs/doc-actions";
-import { EditedDialog, ShareWith, type Edited } from "../../shared/docs/share-with";
+import { DocActions, NO_LINK, openTab } from "../../shared/docs/doc-actions";
 
 /** What `doc_shares` said for a Doc that isn't shared. */
 interface Can {
@@ -44,8 +41,8 @@ const can = new Map<PaneId, Can>();
 /** A shared Doc's link, for its bar's ↗ (UI audit #196), as `doc_shares`
  * last said it; and who to tell when it changes. */
 const links = new Map<PaneId, string>();
-/** Its copy on the platform, as `doc_shares` last said it: what Open in
- * browser opens before it's shared. */
+/** A team Doc's page on the platform, as `doc_shares` last said it: what
+ * Open in browser opens before it's shared. */
 const platforms = new Map<PaneId, string>();
 const linkWatchers = new Set<() => void>();
 const onLinks = (fn: () => void) => {
@@ -55,10 +52,8 @@ const onLinks = (fn: () => void) => {
 
 interface Shares {
   url?: string;
-  /** Its copy on the platform: the page, which opens for the Doc's owner. */
+  /** A team Doc's page on the platform. */
   platform?: string | null;
-  /** The same copy's project and Doc, which Share with… names it by. */
-  copy?: { project: string; id: string } | null;
   made?: number;
   updated?: number;
   shared?: null;
@@ -95,7 +90,7 @@ async function refresh(client: Client, id: PaneId) {
 
 /** In the Doc's bar (UI audit #196, Arugula #650, #782): its three actions,
  * at the right. Copy link copies the Doc's link at once ("Copied ✓" in
- * place, Arugula #708): its public link, else its copy on the platform; with
+ * place, Arugula #708): its public link, else a team Doc's page; with
  * neither it's disabled. Share opens the share dialog, which says what
  * sharing means and makes the public link only on its confirm; it reads
  * Update, with a dot, while the shared copy is older than the Doc. Open in
@@ -106,8 +101,8 @@ function ShareState({ client, id, s }: { client: Client; id: PaneId; s: DocState
   const blocked = !s.shared && c?.can === false;
   const share = () => (blocked ? client.toast(c?.why ?? "this Doc can't be shared") : show({ kind: "share", client, id }));
   const copy = () =>
-    new Promise<"ok" | "private" | false>((done) => {
-      void copyLink(client, id, (private_) => done(private_ ? "private" : "ok")).then(() => done(false));
+    new Promise<"ok" | false>((done) => {
+      void copyLink(client, id, () => done("ok")).then(() => done(false));
     });
   return (
     <DocActions
@@ -124,10 +119,10 @@ function ShareState({ client, id, s }: { client: Client; id: PaneId; s: DocState
 docHooks.bar = (client, id, s) => <ShareState client={client} id={id} s={s} />;
 
 docHooks.state = (client, id, s: DocState) => {
-  // When it arrives, and each time it becomes shared or isn't, or its copy
+  // When it arrives, and each time it becomes shared or isn't, or its link
   // goes older or is updated: the bars and the dialog redraw then, not on every fill.
   const was = seen.get(id);
-  const now = `${s.shared ? "shared" : "not"}${s.platform ? "+copy" : ""}${s.shared_older ? "-older" : ""}`;
+  const now = `${s.shared ? "shared" : "not"}${s.platform ? "+page" : ""}${s.shared_older ? "-older" : ""}`;
   if (was === now) return;
   seen.set(id, now);
   if (was?.split("-")[0] !== now.split("-")[0]) void refresh(client, id);
@@ -141,8 +136,7 @@ type Open =
   | { kind: "share"; client: Client; id: PaneId }
   | { kind: "closed"; run: () => void }
   | { kind: "update"; run: () => void }
-  | { kind: "unshare"; run: () => void }
-  | { kind: "edited"; edited: Edited };
+  | { kind: "unshare"; run: () => void };
 
 let shown: Open | null = null;
 const listeners = new Set<() => void>();
@@ -226,7 +220,6 @@ export function DocShareLayer() {
       </ConfirmRemove>
     );
   }
-  if (o.kind === "edited") return <EditedDialog edited={o.edited} cancel={close} />;
   if (o.kind === "closed") {
     return (
       <Modal
@@ -294,18 +287,12 @@ export function DocShareLayer() {
 
 /** The share dialog (Arugula #650): what sharing means and its confirm, for
  * a Doc that isn't shared; for one that is, its link and Update shared
- * copy, Unshare and the "shared copy is older" signal. A Doc with a copy
- * on the platform also has "Share with a team" (Arugula #418). */
+ * copy, Unshare and the "shared copy is older" signal. */
 function ShareDialog({ client, id, close }: { client: Client; id: PaneId; close: () => void }) {
   useSubscribe(onLinks);
   const [made, setMade] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  /** Where its copy is, as `doc_shares` says; asked when the dialog opens. */
-  const [copyAt, setCopyAt] = useState<Shares | null>(null);
   const s = client.blocks.get(id)?.state as DocState | null | undefined;
-  useEffect(() => {
-    if (s?.platform) void call(client, id, "doc_shares").then((r) => r.ok && setCopyAt(r.body));
-  }, [!!s?.platform]);
   useEffect(() => {
     // A Doc that is shared already: fetch its link for the dialog.
     if (s?.shared && !links.has(id)) void refresh(client, id);
@@ -327,11 +314,9 @@ function ShareDialog({ client, id, close }: { client: Client; id: PaneId; close:
     }
     setBusy(false);
   };
-  const team = !!(s?.platform && copyAt?.copy);
   const unshare = () => show({ kind: "unshare", run: () => void run(client, id, "doc_unshare", () => client.toast("Unshared")) });
   const update = () => show({ kind: "update", run: () => void run(client, id, "doc_share_update", () => client.toast("The link now shows this Doc as it is")) });
-  /** The link's own buttons: in the footer, or with a team section, in the
-   * link's section, where they say what they act on. */
+  /** The link's own buttons, in the footer. */
   const linkButtons = shared ? (
     <>
       <button class="secondary danger" type="button" data-doc-share-unshare onClick={unshare}>
@@ -368,48 +353,6 @@ function ShareDialog({ client, id, close }: { client: Client; id: PaneId; close:
     </>
   );
   const root = { "data-doc-link-dialog": true, "data-doc-share-dialog": shared ? "shared" : "unshared" };
-  if (team && copyAt?.copy) {
-    // One Share dialog, two sections, the team's first (Arugula #418).
-    return (
-      <Modal
-        x={false}
-        title="Share this Doc"
-        close={close}
-        root={{ ...root, "data-doc-share-team-dialog": true }}
-        buttons={
-          <button class="secondary" type="button" onClick={close}>
-            Done
-          </button>
-        }
-      >
-        <section data-doc-share-team>
-          <SectionHead title="With a team" />
-          <ShareWith
-            project={copyAt.copy.project}
-            id={copyAt.copy.id}
-            ask={(edited) => show({ kind: "edited", edited })}
-            say={(m) => client.toast(m)}
-            unreachable={
-              <p class="dim" data-doc-share-team-off>
-                {copyAt.platform ? (
-                  <a class="link" href={copyAt.platform} target="_blank" rel="noopener">
-                    Open it on the platform to share it with a team
-                  </a>
-                ) : (
-                  "Open it on the platform to share it with a team"
-                )}
-              </p>
-            }
-          />
-        </section>
-        <section data-doc-share-link>
-          <SectionHead title="With a link" />
-          {linkBody}
-          <div class="share-with-actions">{linkButtons}</div>
-        </section>
-      </Modal>
-    );
-  }
   return (
     <Modal
       x={false}
@@ -482,13 +425,12 @@ async function run(client: Client, id: PaneId, method: string, then: (b: Shares)
   await then(body);
 }
 
-export { NO_LINK, ONLY_YOU };
+export { NO_LINK };
 
 /** Copy the Doc's link, with no dialog and no public link made: the public
- * link it already has (anyone can open it), else its copy on the platform
- * (only its owner can, until #418 E). `done` hears whether
- * only its owner can open what was copied ("Copied ✓" in place). */
-async function copyLink(client: Client, id: PaneId, done: (private_: boolean) => void) {
+ * link it already has (anyone can open it), else a team Doc's page. `done`
+ * hears that it was copied ("Copied ✓" in place). */
+async function copyLink(client: Client, id: PaneId, done: () => void) {
   // Ask and start the copy in the same tick, inside the click (copySoon).
   const asked = call(client, id, "doc_shares");
   const copied = copySoon(asked.then(({ ok, body: b }) => (ok ? (b.url ?? b.platform) : null)));
@@ -496,7 +438,7 @@ async function copyLink(client: Client, id: PaneId, done: (private_: boolean) =>
   if (!ok) return client.toast(b.error ?? "that didn't work");
   const url = b.url ?? b.platform;
   if (!url) return client.toast(NO_LINK);
-  if (await copied) done(url === b.platform && !b.url);
+  if (await copied) done();
   else client.toast(`Couldn't copy the link: ${url}`);
 }
 
@@ -521,7 +463,7 @@ export function docShareItems(client: Client, id: PaneId): MenuItem[] {
     label: "Copy link",
     disabled: none,
     hint: none ? NO_LINK : undefined,
-    run: () => void copyLink(client, id, (private_) => client.toast(private_ ? `Link copied: ${ONLY_YOU}` : "Link copied")),
+    run: () => void copyLink(client, id, () => client.toast("Link copied")),
   };
   if (s?.shared) {
     return [

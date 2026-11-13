@@ -9,6 +9,10 @@
 // or Delete); an agent session on a Cloud workspace makes them too, as
 // itself. A write anywhere reaches an open page live, through the Doc's
 // thread (as a board's does).
+//
+// A personal project's Docs are kept in the reader's cloud, not on a
+// machine (Arugula #865): a line above the list says so, and offers Move to
+// a team (the selection, and each row's ⋯) or Download (the row's ⋯).
 
 import { Card } from "../../shared/ui/card";
 import { BlockLoading, EmptyLine, EmptyState } from "../../shared/ui/block-states";
@@ -46,12 +50,6 @@ function nameOf(p: PlatformProject) {
   return (account: string) => (account === session.me?.account ? "you" : (p.team?.members.find((m) => m.account === account)?.name ?? null));
 }
 
-/** The machine a Doc is a copy from, by name (or that it left), or null
- * for one made here. */
-export function copyFrom(d: ProjectDoc): string | null {
-  return d.machine ? d.machine_name || "a machine that left" : null;
-}
-
 /** The project's Docs, `null` while they load. */
 function useDocs(project: string): ProjectDoc[] | null {
   const [list, setList] = useState<ProjectDoc[] | null>(null);
@@ -72,7 +70,6 @@ function DocRows({ p, list }: { p: PlatformProject; list: ProjectDoc[] }) {
     <ul class="platform-list card-list" data-docs>
       {list.map((d) => {
         const to = pathOf({ page: "doc", project: p.id, doc: d.id }, names);
-        const copy = copyFrom(d);
         return (
           <Card as="li" dense key={d.id}>
             <a href={to} data-doc-link={d.id} onClick={(e) => follow(e, to)}>
@@ -80,7 +77,7 @@ function DocRows({ p, list }: { p: PlatformProject; list: ProjectDoc[] }) {
             </a>
             <span class="dim">
               {" "}
-              {copy ? `a copy from ${copy}` : whoLabel(d.author, d.agent, who)} · <Time at={d.updated_at} />
+              {whoLabel(d.author, d.agent, who)} · <Time at={d.updated_at} />
             </span>
           </Card>
         );
@@ -114,6 +111,8 @@ function DocList({ p }: { p: PlatformProject }) {
   const writable = mayWrite(p);
   // A personal project's Docs can be put in a team (Arugula #818); a team's are there already.
   const teams = session.projects.filter((t) => t.team && mayWrite(t));
+  // Said only when there's somewhere to move them: with no team, Download is all there is.
+  const cloud = mode.kind === "personal" && teams.length > 0 && !!docs?.length;
   return (
     <div class="docs-list docs-page" data-docs-page data-docs-mode={mode.kind}>
       <DocsList<ProjectDoc>
@@ -139,6 +138,11 @@ function DocList({ p }: { p: PlatformProject }) {
         )}
         under={
           <>
+            {cloud && (
+              <p class="dim docs-cloud-line" data-docs-cloud-line>
+                These Docs are kept in your cloud. Move them to a team, or download them.
+              </p>
+            )}
             {making && <NewDoc p={p} done={() => setMaking(false)} />}
             {trashOpen && <Trash p={p} restored={reload} />}
           </>
@@ -149,7 +153,6 @@ function DocList({ p }: { p: PlatformProject }) {
         selection={(ticked) => <ShareBar p={p} ticked={ticked} teams={teams} reload={reload} />}
         onOpen={(d) => go(docPath(p, d))}
         row={(d) => ({
-          detail: mode.kind === "personal" && copyFrom(d) ? <span data-doc-machine>On {copyFrom(d)}</span> : undefined,
           actions: <RowMenu p={p} doc={d} reload={reload} />,
           attrs: { "data-private": String(mode.kind === "personal") },
         })}
@@ -332,13 +335,11 @@ function Preview({ p, doc, reload }: { p: PlatformProject; doc: ProjectDoc; relo
   const view = useProjectDoc(p.id, doc.id);
   const state = useMemo(() => (view ? stateOf(view) : null), [view]);
   const reader = useRef<HTMLDivElement>(null);
-  const copy = copyFrom(doc);
   const team = modeOf(p).kind === "team";
   return (
     <ListPreview
       data-doc-preview={doc.id}
-      facts={copy && <span data-doc-copy-fact>a copy from {copy}</span>}
-      factsTip={`${team ? p.name : "Yours, private"} · ${doc.written} of ${doc.sections} written${copy ? "" : ` · made by ${whoLabel(doc.author, doc.agent, nameOf(p))}`}`}
+      factsTip={`${team ? p.name : "Yours, private"} · ${doc.written} of ${doc.sections} written · made by ${whoLabel(doc.author, doc.agent, nameOf(p))}`}
       actions={
         <>
           <button type="button" class="primary small" data-open-doc onClick={() => go(docPath(p, doc))}>
@@ -405,19 +406,12 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
 
   const state = useMemo(() => (view ? stateOf(view) : null), [view]);
   if (!p) return <Missing what="That project isn't one of yours (or it's gone)." />;
-  const copy = view ? copyFrom(view.doc) : null;
-  // A copy has no writer, whatever an older platform says (#678).
-  const writer = !!view?.writer && !copy;
-  // A copy is the project's to delete (native #673); an older platform
-  // sends no `deleter`, and then its `writer` says. Delete is in ⋯.
+  const writer = !!view?.writer;
+  // An older platform sends no `deleter`, and then its `writer` says.
+  // Delete is in ⋯.
   const deleter = !!view && (view.deleter ?? view.writer);
   return (
     <section class="platform-section project-doc" data-doc-page={doc} data-writer={view ? String(writer) : undefined}>
-      {view && copy && (
-        <p class="dim project-doc-copy" data-doc-copy={view.doc.machine}>
-          Copy from {copy} · <Time at={view.doc.updated_at} />
-        </p>
-      )}
       {missing && !view && (
         <p class="dim" data-doc-missing>
           That Doc can't be read: {missing}.
@@ -433,9 +427,7 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
           link="page"
           share={view && <PlatformDocActions p={p} doc={view.doc} menu deleter={deleter} gone={() => go(pathOf({ page: "docs", project }, names))} />}
           byline={
-            // A copy's line above the Doc already says where it's from and when.
-            view &&
-            !copy && (
+            view && (
               <>
                 <span data-doc-maker>{whoLabel(view.doc.author, view.doc.agent, nameOf(p))}</span>
               </>
@@ -443,7 +435,7 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
           }
         />
       ) : null}
-      {view && !copy && <PublicLinkBar project={project} view={view} reload={again} />}
+      {view && <PublicLinkBar project={project} view={view} reload={again} />}
       {onBoards.length > 0 && (
         <p class="dim doc-lead" data-doc-boards>
           On boards:{" "}

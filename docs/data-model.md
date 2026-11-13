@@ -204,8 +204,6 @@ chat setting doesn't enter into it, and nor does it for an agent acting for
 them, which also needs its own power over the project. The `chat` setting
 stays in the hub, because machines need it, and it still decides chat
 itself: an issue's comments are its object thread, so they come with chat.
-The account's `doc-copies` word for its machines' copies is apart from this
-(below).
 
 ### Forge items: two read paths
 
@@ -290,11 +288,11 @@ with the team are stored on Arugula's cloud." Moving a personal Doc in, by
 onboarding's checklist or Move to team, takes it off the machine and leaves a
 hidden pointer, so old links and panes follow it. There are no copies.
 
-Copies are being removed (#865). Until it lands, the code still has them: a
-library Doc's read-only copy in its owner's personal project (aru-135), put
-again on every change; Share with… as a snapshot, with Update copy (#418);
-the account's `doc-copies` word; and the `platform` entry in a Doc's
-`meta.json`. aru-139 replaces that design, and none of it is to be built on.
+Copies went with #865: a machine copies no Doc up, and there is no Share
+with… or Update copy. A `meta.json` from before may still say `platform`,
+which is ignored. Docs written on the platform in a personal project are
+kept in that person's cloud: they can move them to a team, or download them
+as Markdown.
 
 ## Don't say
 
@@ -328,7 +326,6 @@ purpose, and the records say why:
 | Where the code differs | Tracked in |
 |---|---|
 | What Claude Code says about its conversation is `SessionSignal` in Rust, after the `session-signal` verb and route | Not tracked: CLI verbs stay (#668) |
-| Copies of machine Docs, Share with… as a snapshot and Update copy are still in the code | #865 removes them (aru-139) |
 | `arugula machines` lists only Labs VMs, which have no daemon inside | #670 keeps it, under the `sandbox-providers` flag |
 | Nobody can see in one place who can reach a machine, or whose agents hold powers over a project | #681, #682 |
 | A write power on a viewer's machine is accepted and lists as live, and a project owner can't revoke a teammate's machine's power over the project | #683 |

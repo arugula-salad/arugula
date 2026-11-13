@@ -334,11 +334,6 @@ function Library({ client, title, back }: { client: Client; title?: string; back
                   <LinkIcon /> shared
                 </Chip>
               )}
-              {r.platform && (
-                <Chip kind="tag" data-doc-platform title="Its copy on the platform reads with this machine asleep">
-                  on the platform
-                </Chip>
-              )}
             </>
           ),
           attrs: { "data-shared": String(!!r.shared), "data-open": r.open?.toString() ?? "" },
@@ -499,24 +494,20 @@ function Preview({ client, doc, busy, reads, open, share, ask, team, moveTo, fai
   }, [doc.id]);
 
   // The one link Copy link copies and Open in browser opens (Arugula #708):
-  // the public link it has (anyone can open it), else its copy on the
-  // platform (only its owner can). Null, with the reason said, if it fails.
+  // the public link it has, which anyone can open. Null, with the reason
+  // said, if it fails.
   const linkOf = async (): Promise<string | null> => {
     try {
-      let url = doc.shared?.link ? undefined : doc.platform?.link;
-      if (!url) {
-        const res = await client.request(OPS["doc_link.get"].method, opPath("doc_link.get", { id: doc.shared!.link }));
-        const v = await res.json<Partial<DocLinkUrl> & { error?: string }>().catch(() => null);
-        if (!res.ok || !v?.url) throw new Error(v?.error ?? `HTTP ${res.status}`);
-        url = v.url;
-      }
-      return url;
+      const res = await client.request(OPS["doc_link.get"].method, opPath("doc_link.get", { id: doc.shared!.link }));
+      const v = await res.json<Partial<DocLinkUrl> & { error?: string }>().catch(() => null);
+      if (!res.ok || !v?.url) throw new Error(v?.error ?? `HTTP ${res.status}`);
+      return v.url;
     } catch (e) {
       fail((e as Error).message);
       return null;
     }
   };
-  const copyLink = async (): Promise<"ok" | "private" | false> => {
+  const copyLink = async (): Promise<"ok" | false> => {
     const url = await linkOf();
     if (!url) return false;
     try {
@@ -525,12 +516,12 @@ function Preview({ client, doc, busy, reads, open, share, ask, team, moveTo, fai
       fail((e as Error).message);
       return false;
     }
-    return doc.platform && !doc.shared ? "private" : "ok";
+    return "ok";
   };
 
   const words = wordsOf(doc);
   const figures = figuresOf(doc);
-  const none = !doc.platform && !doc.shared?.link;
+  const none = !doc.shared?.link;
   return (
     <ListPreview
       data-doc-preview={doc.id}
@@ -553,7 +544,7 @@ function Preview({ client, doc, busy, reads, open, share, ask, team, moveTo, fai
             open={() => void linkOf().then((url) => url && openTab(url))}
             share={share}
             older={!!doc.shared && doc.updated > doc.shared.updated}
-            hooks={{ copy: { "data-doc-copy-link": "" }, open: { "data-doc-platform-link": doc.platform?.link } }}
+            hooks={{ copy: { "data-doc-copy-link": "" } }}
           />
           <IconButton
             label={`More for ${doc.title}`}

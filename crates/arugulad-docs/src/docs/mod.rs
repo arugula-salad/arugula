@@ -43,15 +43,6 @@
 //! a URL. The state gains `shared: {made, updated} | null` and nothing more:
 //! the key is in `<state>/doc-links.json`, never here.
 //!
-//! **A copy on the platform** (#418, [`copies`]): while the machine is in
-//! control, each Doc is copied up to its owner's personal project there,
-//! a few seconds after it changes. The state says so with `platform: true`
-//! (when the copy lands and when the machine leaves control, [`moved`]); the
-//! page it opens at is `doc_shares`' `platform`, the owner's to ask for, as
-//! the share link is (Arugula #708), with `copy`, the copy's project and id,
-//! which Share with… (the dialog's, from the page as the person) names it
-//! by. The machine itself never writes to a team's project.
-//!
 //! **A team's Doc** (Arugula #862, [`team`]): in a team's context the block's
 //! config also names a `project`, and the Doc is that project's on the
 //! platform, read and filled through control; none of it is in the library.
@@ -67,7 +58,6 @@
 
 mod ask;
 mod assets;
-pub(crate) mod copies;
 pub(crate) mod embeds;
 pub mod library;
 pub mod link;
@@ -218,8 +208,6 @@ struct State {
     rev: u64,
     /// When it was shared with a link and last updated; the link is not here.
     shared: Option<SharedAt>,
-    /// The Doc has a copy on the platform (the page is `doc_shares`').
-    platform: bool,
     /// How it is laid out, as its `meta.json` has it (#827).
     layout: DocLayout,
     /// When a section was last written (ms), to tell a shared copy is older
@@ -247,19 +235,6 @@ type Changed = Arc<dyn Fn() + Send + Sync>;
 
 /// The Docs blocks show now, for [`moved`] to find.
 static LIVE: Mutex<Vec<Weak<Doc>>> = Mutex::new(Vec::new());
-
-/// The Doc `id`'s copy on the platform arrived (or is forgotten): the
-/// blocks showing it say so.
-pub(crate) fn moved(id: &str, on: bool) {
-    let docs: Vec<Arc<Doc>> = {
-        let mut live = LIVE.lock().unwrap();
-        live.retain(|d| d.strong_count() > 0);
-        live.iter().filter_map(Weak::upgrade).filter(|d| d.link.doc == id).collect()
-    };
-    for d in docs {
-        d.set_platform(on);
-    }
-}
 
 /// The blocks showing the library Doc `id` now.
 fn showing(id: &str) -> Vec<Arc<Doc>> {
@@ -308,7 +283,6 @@ impl Doc {
             state.assets = assets::load(&dir.join(assets::FOLDER));
             state.shared = link.current().map(|(_, e)| SharedAt { made: e.made, updated: e.updated });
             state.filled = newest_section(&dir, &state.entries);
-            state.platform = library::read_meta(&dir).is_some_and(|m| m.platform.is_some());
         }
         Arc::new_cyclic(|me| Doc {
             me: me.clone(),
@@ -627,31 +601,6 @@ impl Doc {
         (self.changed)();
     }
 
-    /// Say the Doc has a copy on the platform (or hasn't), and tell clients.
-    fn set_platform(&self, on: bool) {
-        {
-            let mut st = self.state.lock().unwrap();
-            if st.platform == on {
-                return;
-            }
-            st.platform = on;
-            st.rev += 1;
-        }
-        (self.changed)();
-    }
-
-    /// Where the Doc's copy on the platform is, for `doc_shares`.
-    fn platform_link(&self) -> Option<String> {
-        library::read_meta(&self.dir).and_then(|m| m.platform).map(|p| p.link)
-    }
-
-    /// The copy's project and id, for `doc_shares`: what Share with… names
-    /// it by.
-    fn platform_copy(&self) -> Option<Value> {
-        let on = library::read_meta(&self.dir).and_then(|m| m.platform)?;
-        Some(json!({ "project": on.project, "id": on.id }))
-    }
-
     /// `doc_share` and `doc_share_update`: the URL.
     async fn share(&self, update: bool) -> Result<Value, String> {
         let _one = self.shares.lock().await;
@@ -682,23 +631,15 @@ impl Doc {
         let got = match self.link.shares().await {
             Ok(Some(s)) => {
                 self.set_shared(Some(SharedAt { made: s.made, updated: s.updated }));
-                return Ok(json!({
-                    "url": s.url, "made": s.made, "updated": s.updated,
-                    "platform": self.platform_link(), "copy": self.platform_copy(),
-                }));
+                return Ok(json!({ "url": s.url, "made": s.made, "updated": s.updated }));
             }
             Ok(None) | Err(Fail::Gone) => self.link.available().await,
             Err(Fail::Said(e)) => return Err(e),
         };
         self.set_shared(None);
         Ok(match got {
-            Ok(()) => json!({
-                "shared": null, "can": true, "platform": self.platform_link(), "copy": self.platform_copy(),
-            }),
-            Err(why) => json!({
-                "shared": null, "can": false, "why": why, "platform": self.platform_link(),
-                "copy": self.platform_copy(),
-            }),
+            Ok(()) => json!({ "shared": null, "can": true }),
+            Err(why) => json!({ "shared": null, "can": false, "why": why }),
         })
     }
 
@@ -730,9 +671,6 @@ impl Doc {
             v["made"] = json!(m.made_time());
             v["updated"] = json!(m.updated);
             v["by"] = json!(m.by);
-        }
-        if st.platform {
-            v["platform"] = json!(true);
         }
         if !st.layout.is_doc() {
             v["layout"] = json!(st.layout);
@@ -1822,57 +1760,6 @@ mod share_tests {
         let e = s.doc.call("doc_share", json!({})).await.unwrap_err();
         assert!(e.contains("Update") && !e.contains('\n'), "{e}");
         assert_eq!(s.fake.served.lock().unwrap().len(), 1);
-    }
-
-    /// A Doc's copy arriving on the platform (and the machine leaving) reaches the
-    /// block showing it: the state says `platform` and the link is `doc_shares`'
-    /// to give, never the state's.
-    #[tokio::test]
-    async fn a_copy_arriving_on_the_platform_reaches_the_block_showing_it() {
-        let root = temp("platform");
-        let state_dir = root.join("state");
-        std::fs::create_dir_all(&state_dir).unwrap();
-        let id = library::make(&state_dir, "Plan", "test").unwrap().id;
-        use std::sync::atomic::Ordering;
-        let told = Arc::new(AtomicUsize::new(0));
-        let n = told.clone();
-        let doc = Doc::with_link(
-            library::dir(&state_dir, &id).unwrap(),
-            "Plan".into(),
-            true,
-            Link::none(state_dir.clone(), id.clone()),
-            Arc::new(move || {
-                n.fetch_add(1, Ordering::SeqCst);
-            }),
-        );
-        LIVE.lock().unwrap().push(Arc::downgrade(&doc));
-        assert!(doc.state().get("platform").is_none(), "no copy yet");
-        assert_eq!(doc.platform_link(), None);
-
-        let on = library::OnPlatform {
-            project: "prj_1".into(),
-            id: "pdc_1".into(),
-            link: "https://app.example/p/prj_1/docs/pdc_1".into(),
-            rev: 1,
-            assets: Default::default(),
-        };
-        library::set_platform(&library::dir(&state_dir, &id).unwrap(), on.clone());
-        assert_eq!(doc.state()["platform"], true);
-        assert_eq!(told.load(Ordering::SeqCst), 1, "clients are told once");
-        assert!(!doc.state().to_string().contains("pdc_1"), "the state holds no link");
-        assert_eq!(doc.platform_link().as_deref(), Some(on.link.as_str()));
-        let said = doc.call("doc_shares", json!({})).await.unwrap();
-        assert_eq!(said["copy"], json!({ "project": "prj_1", "id": "pdc_1" }), "{said}");
-        // The same copy again says nothing.
-        library::set_platform(&library::dir(&state_dir, &id).unwrap(), on);
-        assert_eq!(told.load(Ordering::SeqCst), 1);
-
-        library::forget_platform(&state_dir);
-        assert!(doc.state().get("platform").is_none(), "the machine left control");
-        assert_eq!(doc.platform_link(), None);
-        assert_eq!(doc.call("doc_shares", json!({})).await.unwrap()["copy"], Value::Null, "no copy, no section");
-        assert_eq!(told.load(Ordering::SeqCst), 2);
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[tokio::test]

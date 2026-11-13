@@ -1085,24 +1085,6 @@ pub struct DocRow {
     /// daemon from before layouts.
     #[serde(default)]
     pub layout: DocLayout,
-    /// Its copy on the platform (#418), once this machine has copied it up:
-    /// readable there with this machine asleep. Null until then, and again
-    /// once the machine has left control; a daemon from before native #673
-    /// sends none, and a team's other owner isn't sent it (the copy is in
-    /// the owner's personal project, which they can't read).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
-    pub platform: Option<DocOnPlatform>,
-}
-
-/// Where a Doc's copy on the platform is: the project it sits in now, its
-/// `pdc_` id there, and its page.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct DocOnPlatform {
-    pub project: String,
-    pub id: String,
-    pub link: String,
 }
 
 /// One section of a Doc, as the Docs list shows it (#588). A fenced block is
