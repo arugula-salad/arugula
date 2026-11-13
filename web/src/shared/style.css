@@ -7692,6 +7692,9 @@ html[data-scheme="light"] .doc {
 .thread-list {
   flex: 1;
   overflow-y: auto;
+  /* The list keeps its place itself (chat/use-anchor, #965): the browser's
+     own anchoring would correct it a second time. */
+  overflow-anchor: none;
   padding: 8px 12px 12px;
 }
 

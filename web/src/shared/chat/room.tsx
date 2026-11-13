@@ -48,7 +48,7 @@ import { AskMessage, askOfMessage } from "./ask-card";
 import { answerVia, SaidAvatar, SaidHead, saidOf, SessionCardMessage, sessionOf } from "./session-card";
 import { dmLabel } from "./members";
 import { handled } from "./escape";
-import { useStickToBottom } from "./stick";
+import { savedAnchor, useAnchor } from "./use-anchor";
 import { ArrowIcon, BookmarkIcon, CloseIcon, IconButton, MachineIcon, MoreIcon, QuotePaneIcon, ReactIcon, SendIcon, ThreadIcon } from "../ui/icons";
 import { presence } from "./presence";
 import { BlockLoading, EmptyState } from "../ui/block-states";
@@ -189,9 +189,6 @@ function whenShort(at: number): string {
   return when(at).replace(/\s?[AP]\.?M\.?$/i, "");
 }
 
-/** How near the bottom still counts as at it, for following new messages. */
-const NEAR_BOTTOM = 80;
-
 function draftOf(key: string): string {
   try {
     return sessionStorage.getItem(key) ?? "";
@@ -312,7 +309,6 @@ export function RoomBody({
   // Whether the view is at the newest message, and the last one it was at
   // when it was: the "new messages" button counts what came after.
   const [atBottom, setAtBottom] = useState(true);
-  const stuck = useRef(true);
   const [seenTo, setSeenTo] = useState(0);
   const loaded = chat.messages(room.id);
   const msgs = loaded?.list ?? null;
@@ -339,65 +335,57 @@ export function RoomBody({
     // Fresh each time it opens: who reads it, and whose agents (M197).
     chat.detailOf(room.id, true).catch(() => {});
     setEditing(null);
-    stuck.current = true;
-    setAtBottom(true);
     setSeenTo(0);
   }, [room.id]);
 
-  // What's shown is read; the newest stays in view (or the message a link
-  // names, once).
+  // What's shown is read; the view keeps its place (#965): at the newest, or
+  // at the message it was on, whatever loads or resizes (use-anchor).
   const last = msgs?.at(-1)?.seq;
   const focused = useRef<number | null>(null);
-  useStickToBottom(list, () => stuck.current && focused.current === null);
-  const topBefore = useRef<{ h: number; first?: number } | null>(null);
+  const anchor = useAnchor(list, `chat.scroll.${room.id}`, setAtBottom);
+  const prevLast = useRef<{ room: string; seq?: number }>({ room: room.id });
   useLayoutEffect(() => {
     const el = list.current;
     if (!el || !msgs) return;
-    // Older messages came in above: keep the view where it was.
-    const kept = topBefore.current;
-    if (kept && kept.first !== msgs[0]?.seq) {
-      el.scrollTop += el.scrollHeight - kept.h;
-      topBefore.current = null;
-      return;
-    }
     if (focus !== undefined && focused.current !== focus) {
       const m = el.querySelector<HTMLElement>(`[data-msg="${focus}"]`);
       if (m) {
         focused.current = focus;
+        anchor.open(null);
         m.scrollIntoView({ block: "center" });
+        anchor.capture();
         m.classList.add("flash");
         setTimeout(() => m.classList.remove("flash"), 1600);
         return;
       }
       // Further back than what's loaded: fetch older until it's there.
-      if (loaded?.older && msgs.length && focus < msgs[0].seq) void chat.older(room.id);
+      if (loaded?.older && msgs.length && focus < msgs[0].seq) {
+        void chat.older(room.id);
+        return;
+      }
     }
-    // Follow new messages only from the bottom (or my own): someone reading
-    // further up isn't pulled away.
     const lastMsg = msgs.at(-1);
-    if (focused.current === null && (stuck.current || (lastMsg && chat.mine(lastMsg)))) {
-      el.scrollTop = el.scrollHeight;
-      stuck.current = true;
-      setAtBottom(true);
+    if (!anchor.ready()) {
+      // A room with something unread opens at the bottom, where its "New"
+      // line is; else where it was left.
+      const kept = room.unread > 0 || chat.heldAt(room.id) !== undefined ? null : savedAnchor(`chat.scroll.${room.id}`);
+      if (kept && "seq" in kept && !msgs.some((m) => m.seq === kept.seq)) {
+        // Further back than what's loaded: fetch older until it's there.
+        if (loaded?.older && kept.seq < msgs[0].seq) return void chat.older(room.id);
+        anchor.open(null);
+      } else {
+        anchor.open(kept);
+      }
+    } else if (prevLast.current.room === room.id && prevLast.current.seq !== undefined && last !== undefined && last > prevLast.current.seq && lastMsg && chat.mine(lastMsg)) {
+      // Mine: to the bottom, once, with no scroll animation.
+      anchor.toBottom();
     }
-  }, [last, msgs?.[0]?.seq, focus, !!msgs]);
+    prevLast.current = { room: room.id, seq: last };
+  }, [last, msgs?.[0]?.seq, focus, !!msgs, room.id]);
   useEffect(() => {
     if (atBottom && last !== undefined) setSeenTo(last);
   }, [atBottom, last]);
-  const onScroll = () => {
-    const el = list.current;
-    if (!el) return;
-    const near = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM;
-    if (near !== stuck.current) {
-      stuck.current = near;
-      setAtBottom(near);
-    }
-  };
-  const toNewest = () => {
-    const el = list.current;
-    if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
-  };
+  const toNewest = () => anchor.toBottom();
   const current = chat.room(room.id) ?? room;
   useEffect(() => {
     // Scrolled up, what's below isn't read yet: the button says so.
@@ -415,7 +403,7 @@ export function RoomBody({
       if (document.querySelector("[data-react-menu], [data-msg-menu], [data-emoji-picker], .mention-pick, .menu, .prompt")) return;
       if ((e.target as Element | null)?.closest(".msg-edit")) return;
       const c = chat.room(room.id);
-      if (!c || (c.unread === 0 && c.read >= last && stuck.current)) return;
+      if (!c || (c.unread === 0 && c.read >= last && anchor.bottom())) return;
       void chat.read(room.id, last).catch(() => {});
       toNewest();
     };
@@ -427,8 +415,7 @@ export function RoomBody({
   const lastOwn = msgs?.findLast((m) => m.deleted === null && !m.imported && !!m.author && m.author === chat.me);
 
   const more = () => {
-    const el = list.current;
-    topBefore.current = { h: el?.scrollHeight ?? 0, first: msgs?.[0]?.seq };
+    anchor.capture();
     void chat.older(room.id);
   };
 
@@ -439,7 +426,7 @@ export function RoomBody({
         class={`thread-list${dropping ? " dropping" : ""}`}
         ref={list}
         data-room={room.id}
-        onScroll={onScroll}
+        onScroll={() => anchor.onScroll()}
         {...(current.writable ? dropTarget(setDropping) : {})}
       >
         {loaded?.older && (

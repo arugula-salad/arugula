@@ -14,12 +14,10 @@ import { RoomCompose, RoomMessage, roomLabel, threadComposeRef, useRoomTokens } 
 import { usePlatformApi } from "../platform-api";
 import { newFrom, repliesOf } from "./threads";
 import { Bar, BarTitle, BarWhere } from "../ui/bar";
-import { useStickToBottom } from "./stick";
+import { savedAnchor, useAnchor } from "./use-anchor";
 import { SeenMarks, ThreadAgents, useThreadAgents } from "./thread-agents";
 import { ArrowIcon, ChevronIcon, CloseIcon, IconButton } from "../ui/icons";
 
-/** How near the bottom still counts as at it, for following new replies. */
-const NEAR_BOTTOM = 80;
 /** The head's width under which Follow goes into ⋯ (Close stays). Measured:
  * the title (52px), Follow (75), Close (25), the gaps and padding fit in
  * 200px, and 300 leaves about 100px for the room's name beside them. */
@@ -35,7 +33,6 @@ export function ThreadPanel({ store, room, parent, phone, focus, close }: { stor
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<number | null>(null);
   const list = useRef<HTMLDivElement>(null);
-  const stuck = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
   // The red "New" line: the first reply after my mark when the thread
   // opened (not mine), kept while it stays open.
@@ -48,7 +45,6 @@ export function ThreadPanel({ store, room, parent, phone, focus, close }: { stor
   useEffect(() => {
     setError(null);
     setEditing(null);
-    stuck.current = true;
     line.current = null;
     store.threads.load(room.id, parent).catch((e: Error) => setError(e.message));
     // On a phone the room isn't drawn behind the thread: this is what's open.
@@ -57,11 +53,13 @@ export function ThreadPanel({ store, room, parent, phone, focus, close }: { stor
     return () => store.setOpenThread(null);
   }, [key]);
 
-  // Follow new replies from the bottom (or my own); a link's `&msg=` is
-  // scrolled to once.
+  // The view keeps its place (#965), as the room's does (use-anchor); a
+  // link's `&msg=` is scrolled to once.
   const last = replies.at(-1)?.seq;
   const focused = useRef<number | null>(null);
-  useStickToBottom(list, () => stuck.current && focused.current === null);
+  const storeKey = `chat.scroll.${room.id}.${parent}`;
+  const anchor = useAnchor(list, storeKey, setAtBottom);
+  const prevLast = useRef<{ key: string; seq?: number }>({ key });
   useLayoutEffect(() => {
     const el = list.current;
     if (!el || !t) return;
@@ -69,28 +67,27 @@ export function ThreadPanel({ store, room, parent, phone, focus, close }: { stor
       const m = el.querySelector<HTMLElement>(`[data-msg="${focus}"]`);
       if (m) {
         focused.current = focus;
+        anchor.open(null);
         m.scrollIntoView({ block: "center" });
+        anchor.capture();
         m.classList.add("flash");
         setTimeout(() => m.classList.remove("flash"), 1600);
         return;
       }
     }
     const lastMsg = replies.at(-1);
-    if (focused.current === null && (stuck.current || (lastMsg && chat.mine(lastMsg)))) {
-      el.scrollTop = el.scrollHeight;
-      stuck.current = true;
-      setAtBottom(true);
+    if (!anchor.ready()) {
+      // A thread with replies I haven't read opens at the bottom, where its
+      // "New" line is; else where it was left.
+      const kept = first?.thread && first.thread.following && first.thread.unread > 0 ? null : savedAnchor(storeKey);
+      const gone = kept && "seq" in kept && kept.seq !== first?.seq && !replies.some((m) => m.seq === kept.seq);
+      if (gone && t.older && kept.seq < (replies[0]?.seq ?? Infinity)) return void store.threads.older(room.id, parent);
+      anchor.open(gone ? null : kept);
+    } else if (prevLast.current.key === key && prevLast.current.seq !== undefined && last !== undefined && last > prevLast.current.seq && lastMsg && chat.mine(lastMsg)) {
+      anchor.toBottom();
     }
-  }, [last, !!t, focus]);
-  const onScroll = () => {
-    const el = list.current;
-    if (!el) return;
-    const near = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM;
-    if (near !== stuck.current) {
-      stuck.current = near;
-      setAtBottom(near);
-    }
-  };
+    prevLast.current = { key, seq: last };
+  }, [last, replies[0]?.seq, !!t, focus, key]);
   // What's in view is read, by the thread's own mark.
   const mark = first?.thread?.read ?? 0;
   useEffect(() => {
@@ -105,7 +102,7 @@ export function ThreadPanel({ store, room, parent, phone, focus, close }: { stor
   const newest = last ?? first?.seq;
   const agents = useThreadAgents(room.id, parent, newest);
   const follow = () => store.threads.follow(room.id, parent, !following).catch((e: Error) => setError(e.message));
-  const toNewest = () => list.current?.scrollTo({ top: list.current.scrollHeight });
+  const toNewest = () => anchor.toBottom();
   return (
     <aside
       class="chat-details chat-thread-panel"
@@ -160,11 +157,14 @@ export function ThreadPanel({ store, room, parent, phone, focus, close }: { stor
         }
       />
       <ThreadAgents agents={agents} newest={newest} phone={phone} />
-      <div class="thread-list thread-replies" ref={list} onScroll={onScroll}>
+      <div class="thread-list thread-replies" ref={list} onScroll={() => anchor.onScroll()}>
         {t === undefined && !error && <BlockLoading inline what="the thread" />}
         {error && <p class="thread-error">{error}</p>}
         {t?.older && (
-          <button class="chat-older" data-thread-older onClick={() => void store.threads.older(room.id, parent)}>
+          <button class="chat-older" data-thread-older onClick={() => {
+              anchor.capture();
+              void store.threads.older(room.id, parent);
+            }}>
             Earlier replies
           </button>
         )}
