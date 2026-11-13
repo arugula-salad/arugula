@@ -216,9 +216,10 @@ function pickRoom(store: ChatStore, route: ChatRoute, phone: boolean, scope?: Ch
 
 /** Keep where the person is (#965), and open chat where they were. A room
  * in the route is kept as the last one; on a phone, going back to the list
- * keeps "list". Chat opened with no room in the route (the rail's Chat, a
- * reload of the list) goes to the kept room, with the list beneath it on a
- * phone so Back climbs; a computer shows it without moving the address,
+ * keeps "list". Chat opened from the app with no room in the route (the
+ * rail's Chat) goes to the kept room, with the list beneath it on a phone
+ * so Back climbs; a page load of the list is the list there, as the
+ * address says. A computer shows the kept room without moving the address,
  * unless a thread was open. Only once per opening: the list reached later
  * is the list. */
 function useLast(store: ChatStore, route: ChatRoute, phone: boolean, scope: ChatScope | undefined, picked: ChatRoom | null, off: boolean) {
@@ -257,8 +258,10 @@ function useLast(store: ChatStore, route: ChatRoute, phone: boolean, scope: Chat
       // Rooms not loaded yet: ask again when they are.
       if (!store.rooms.length) return;
       opened.current = true;
+      // Asked even where it isn't needed, so it's spent by this opening.
+      const inApp = nav.openedInApp?.() ?? true;
       const kept = keptRoom(store, last, scope);
-      if (kept && last !== "list" && last && (phone || last.thread !== undefined)) return nav.resume?.(kept.id, last.thread);
+      if (kept && last !== "list" && last && ((phone && inApp) || (!phone && last.thread !== undefined))) return nav.resume?.(kept.id, last.thread);
     }
     if (picked) keep({ room: picked.id });
   });

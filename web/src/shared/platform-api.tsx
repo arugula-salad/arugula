@@ -47,6 +47,10 @@ export interface ChatNav {
    * the levels above it beneath, so Back climbs. A host that omits it
    * opens the list. */
   resume?(room: string, thread?: number): void;
+  /** Whether chat was opened from inside the app (the rail's Chat, the Chat
+   * tab) rather than by its address; says so once per opening. On a phone
+   * only these resume: a page load of the list is the list. */
+  openedInApp?(): boolean;
   /** A message's link, to copy; a reply's names its thread. */
   roomLink(room: string, seq: number, thread?: number): string;
   /** A room's address, for its row's `href` (UI audit #185). */

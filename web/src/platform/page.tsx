@@ -13,7 +13,7 @@ import { WithRail } from "./rail";
 import { names, resolve, roomElsewhere } from "./links";
 import { currentProject, entryPath, type Entry } from "./current-project";
 import { slugIn } from "./paths";
-import { arrive } from "./chat-nav";
+import { arrive, openingChat } from "./chat-nav";
 import { go, pathOf, useRoute, type Route } from "./router";
 import { controlOrigin, session } from "./session";
 import { signIn } from "./signin";
@@ -139,7 +139,10 @@ function Entering({ to }: { to: Entry }) {
   useSubscribe((fn) => session.subscribe(fn));
   const ready = session.state === "ready";
   useEffect(() => {
-    if (ready) go(entryPath(to, session.project(currentProject()), names), true);
+    if (!ready) return;
+    // The shell's Chat button hands over by a page load: still opened from the app.
+    if (to === "chat") openingChat();
+    go(entryPath(to, session.project(currentProject()), names), true);
   }, [ready]);
   return <p class="platform-section dim">Finding it…</p>;
 }
