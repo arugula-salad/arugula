@@ -63,6 +63,10 @@ impl arugulad_base::features::Feature for Docs {
         docs::team::init(control.clone());
         // ...and are copied up to the platform (#418).
         docs::copies::start(control.clone());
+        // A move to a team that a crash cut off leaves no team Doc behind
+        // (Arugula #863).
+        let (state, cloud) = (control.state_dir().to_owned(), control.clone());
+        task::spawn(async move { docs::moving::clear_unfinished(&state, cloud).await });
     }
 
     fn left_control(&self, state_dir: &Path) {

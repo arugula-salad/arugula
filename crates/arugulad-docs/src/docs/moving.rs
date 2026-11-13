@@ -12,7 +12,11 @@
 //!    Doc's tombstone.
 //!
 //! If making the team Doc fails at any step, the half-made team Doc is
-//! deleted and the Doc here is left as it was: never both half there.
+//! deleted and the Doc here is left as it was: never both half there. Once
+//! the team Doc exists, and before it's filled, the Doc's `meta.json` names
+//! it (`moving`, [`library::set_moving`]), so a move cut off by a crash isn't
+//! lost: the next move of the Doc deletes that team Doc first, and so does
+//! the daemon's next start ([`clear_unfinished`]), which moves nothing.
 //!
 //! **A Doc being filled as it moves:** each block showing it holds its write
 //! lock through the move, so a fill waits; then the block shows the team Doc
@@ -31,8 +35,8 @@ use tracing::{info, warn};
 
 use super::{
     Entry, assets,
-    library::{self, MovedTo},
-    team::{self, Body, Cloud},
+    library::{self, MovedTo, Moving},
+    team::{self, Body, Cloud, Refused},
 };
 use crate::store::now_ms;
 
@@ -52,9 +56,14 @@ struct Content {
     pictures: Vec<(String, Vec<u8>)>,
 }
 
+/// One move at a time, so two moves of one Doc make one team Doc, and a
+/// start's clearing never meets a move.
+static ONE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 /// Move the library Doc `id` to `to`, as the machine `machine`. Where it is
 /// now; a Doc moved already answers where it went. On an error the Doc
-/// here is as it was, and no team Doc is left.
+/// here is as it was, and no team Doc is left (or, with control out of
+/// reach, one is named in `moving` to delete on the next try).
 pub async fn move_doc(
     state_dir: &Path,
     cloud: Arc<dyn Cloud>,
@@ -62,8 +71,6 @@ pub async fn move_doc(
     id: &str,
     to: &Target,
 ) -> Result<MovedTo, String> {
-    // One at a time, so two moves of one Doc make one team Doc.
-    static ONE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
     let _one = ONE.lock().await;
     let dir = library::dir(state_dir, id)?;
     let meta = {
@@ -73,6 +80,12 @@ pub async fn move_doc(
     let meta = meta.ok_or_else(|| format!("no Doc {id} in the library (docs list has them)"))?;
     if let Some(there) = meta.moved {
         return Ok(there);
+    }
+    // A move cut off before: its team Doc goes first.
+    if let Some(was) = &meta.moving {
+        forget(&*cloud, &dir, was).await.map_err(|e| {
+            format!("can't delete the team Doc {} a move cut off left: {e}; the Doc is as it was", was.id)
+        })?;
     }
     // The blocks showing it write nothing while it moves.
     let blocks = super::showing(id);
@@ -84,7 +97,25 @@ pub async fn move_doc(
         let dir = dir.clone();
         crate::task::spawn_blocking(move || read(&dir)).await.map_err(|e| e.to_string())??
     };
-    let view = make(&*cloud, machine, id, to, &content).await.map_err(|e| format!("{e}; the Doc is as it was"))?;
+    let got = make(&*cloud, machine, id, to, &content).await.map_err(|e| format!("{e}; the Doc is as it was"))?;
+    let made = got["doc"]["id"].as_str().unwrap_or_default().to_owned();
+    if made.is_empty() {
+        return Err("control's answer names no Doc; the Doc is as it was".into());
+    }
+    // Before anything is put to it: a crash from here on leaves its name.
+    let moving = Moving { project: to.project.clone(), id: made.clone(), at: now_ms() };
+    let noted = {
+        let (dir, moving) = (dir.clone(), moving.clone());
+        crate::task::spawn_blocking(move || library::set_moving(&dir, Some(moving))).await.map_err(|e| e.to_string())
+    };
+    if let Err(e) = noted.and_then(|r| r) {
+        let _ = cloud.call("DELETE", agent_project_doc(&to.project, &made), Body::None).await;
+        return Err(format!("can't note the move here ({e}); the Doc is as it was"));
+    }
+    let view = match fill(&*cloud, to, &content, got).await {
+        Ok(view) => view,
+        Err(e) => return Err(format!("{e}{}; the Doc is as it was", undo(&*cloud, &dir, &moving).await)),
+    };
     let at = MovedTo {
         project: to.project.clone(),
         name: to.name.clone(),
@@ -97,7 +128,7 @@ pub async fn move_doc(
         crate::task::spawn_blocking(move || library::point(&state_dir, &dir, at)).await.map_err(|e| e.to_string())
     };
     if let Err(e) = pointed.and_then(|r| r) {
-        let undone = undo(&*cloud, &to.project, &view.doc.id).await;
+        let undone = undo(&*cloud, &dir, &moving).await;
         return Err(format!("can't keep the Doc's pointer here ({e}){undone}; the Doc is as it was"));
     }
     for b in &blocks {
@@ -106,6 +137,22 @@ pub async fn move_doc(
     drop(held);
     info!(doc = id, project = to.project, team_doc = at.id, "moved a Doc to a team");
     Ok(at)
+}
+
+/// At start: each move a crash cut off has its half-made team Doc deleted
+/// and its `moving` cleared. The Doc stays here, unmoved; one control can't
+/// be asked about now waits for its next move.
+pub async fn clear_unfinished(state_dir: &Path, cloud: Arc<dyn Cloud>) {
+    let _one = ONE.lock().await;
+    let state = state_dir.to_owned();
+    let cut = crate::task::spawn_blocking(move || library::unfinished(&state)).await.unwrap_or_default();
+    for (id, was) in cut {
+        let Ok(dir) = library::dir(state_dir, &id) else { continue };
+        match forget(&*cloud, &dir, &was).await {
+            Ok(()) => info!(doc = id, team_doc = was.id, "deleted the team Doc of a move cut off"),
+            Err(e) => warn!(doc = id, team_doc = was.id, error = e, "can't delete the team Doc of a move cut off yet"),
+        }
+    }
 }
 
 /// The Doc's outline, sections and pictures, from its files.
@@ -126,9 +173,9 @@ fn read(dir: &Path) -> Result<Content, String> {
     Ok(Content { title, layout: meta.layout, entries, pictures })
 }
 
-/// The team Doc, made and filled: the Doc it is once its last write is
-/// answered. Deleted again if any step fails.
-async fn make(cloud: &dyn Cloud, machine: &str, id: &str, to: &Target, c: &Content) -> Result<DocView, String> {
+/// The team Doc, made with its outline and where it's from: control's
+/// answer.
+async fn make(cloud: &dyn Cloud, machine: &str, id: &str, to: &Target, c: &Content) -> Result<Value, String> {
     let new = NewDoc {
         title: c.title.clone(),
         sections: c
@@ -140,13 +187,7 @@ async fn make(cloud: &dyn Cloud, machine: &str, id: &str, to: &Target, c: &Conte
         moved_from: Some(MovedFrom { machine: machine.to_owned(), doc: id.to_owned() }),
     };
     let body = serde_json::to_value(new).map_err(|e| e.to_string())?;
-    let got = cloud.call("POST", agent_project_docs(&to.project), Body::Json(body)).await.map_err(|e| e.sentence())?;
-    let made = got["doc"]["id"].as_str().unwrap_or_default().to_owned();
-    match fill(cloud, to, c, got).await {
-        Ok(view) => Ok(view),
-        Err(e) if made.is_empty() => Err(e),
-        Err(e) => Err(format!("{e}{}", undo(cloud, &to.project, &made).await)),
-    }
+    cloud.call("POST", agent_project_docs(&to.project), Body::Json(body)).await.map_err(|e| e.sentence())
 }
 
 /// Its pictures, then each written section.
@@ -182,16 +223,27 @@ async fn fill(cloud: &dyn Cloud, to: &Target, c: &Content, got: Value) -> Result
     Ok(view)
 }
 
-/// The half-made team Doc, deleted: nothing, or what the person is told to
-/// do about one that stays.
-async fn undo(cloud: &dyn Cloud, project: &str, doc: &str) -> String {
-    match cloud.call("DELETE", agent_project_doc(project, doc), Body::None).await {
-        Ok(_) => String::new(),
+/// The half-made team Doc, deleted, and `moving` cleared: nothing, or what
+/// the person is told when control couldn't delete it (the next try does).
+async fn undo(cloud: &dyn Cloud, dir: &Path, moving: &Moving) -> String {
+    match forget(cloud, dir, moving).await {
+        Ok(()) => String::new(),
         Err(e) => {
-            warn!(team_doc = doc, error = e.sentence(), "can't delete a half-made team Doc");
-            format!(" (and the half-made team Doc {doc} couldn't be deleted: delete it in its project)")
+            warn!(team_doc = moving.id, error = e, "can't delete a half-made team Doc");
+            format!(" (the half-made team Doc {} couldn't be deleted yet: the next move deletes it)", moving.id)
         }
     }
+}
+
+/// Delete the team Doc `moving` names (one control hasn't got is as good),
+/// then clear `moving`.
+async fn forget(cloud: &dyn Cloud, dir: &Path, moving: &Moving) -> Result<(), String> {
+    match cloud.call("DELETE", agent_project_doc(&moving.project, &moving.id), Body::None).await {
+        Ok(_) | Err(Refused::Gone(_)) => {}
+        Err(e) => return Err(e.sentence()),
+    }
+    let dir = dir.to_owned();
+    crate::task::spawn_blocking(move || library::set_moving(&dir, None)).await.map_err(|e| e.to_string())?
 }
 
 #[cfg(test)]
@@ -233,6 +285,10 @@ mod tests {
         /// It got as far as the POST.
         posted: Notify,
         deleted: AtomicBool,
+        /// Each PUT waits forever while set: a move cut off there.
+        hang: AtomicBool,
+        /// The team Docs made, so each gets its own id.
+        made: std::sync::atomic::AtomicUsize,
     }
 
     impl Fake {
@@ -255,6 +311,9 @@ mod tests {
                 {
                     return Err(Refused::Said("the project is full".into()));
                 }
+                if method == "PUT" && self.hang.load(Ordering::Relaxed) {
+                    std::future::pending::<()>().await;
+                }
                 if method == "POST" {
                     self.posted.notify_one();
                     let gate = self.gate.lock().unwrap().clone();
@@ -266,9 +325,10 @@ mod tests {
                 match (method, body) {
                     ("POST", Body::Json(v)) => {
                         let new: NewDoc = serde_json::from_value(v).unwrap();
+                        let n = self.made.fetch_add(1, Ordering::Relaxed);
                         let view = DocView {
                             doc: Head {
-                                id: "pdc_9".into(),
+                                id: if n == 0 { "pdc_9".into() } else { format!("pdc_9{n}") },
                                 project: "prj_t".into(),
                                 title: new.title.clone(),
                                 author: "a".into(),
@@ -327,6 +387,10 @@ mod tests {
                     }
                     ("GET", _) => Ok(serde_json::to_value(held.clone().unwrap()).unwrap()),
                     ("DELETE", _) => {
+                        // Only the Doc it holds; another is gone already.
+                        if held.as_ref().is_none_or(|v| !path.ends_with(&format!("/{}", v.doc.id))) {
+                            return Err(Refused::Gone("no such Doc".into()));
+                        }
                         *held = None;
                         self.deleted.store(true, Ordering::Relaxed);
                         Ok(json!({}))
@@ -488,6 +552,64 @@ mod tests {
         move_doc(&state, Arc::new(Fake::default()), "dev_m", &id, &acme()).await.unwrap();
         assert!(library::gone_dir(&state).join(&id).is_file(), "its copy comes down");
         assert!(library::read_meta(&dir).unwrap().platform.is_none());
+        std::fs::remove_dir_all(state).unwrap();
+    }
+
+    /// A move cut off after the POST (the daemon stopped there) leaves the
+    /// team Doc's name in `meta.json`. A start deletes that team Doc and moves
+    /// nothing; and a move tried again after a cut deletes it first, so one
+    /// team Doc is left.
+    #[tokio::test]
+    async fn a_move_cut_off_after_the_post_then_tried_again_leaves_one_team_doc() {
+        let state = temp("cut");
+        let (id, doc) = shown(&state).await;
+        let dir = library::dir(&state, &id).unwrap();
+        let fake = Arc::new(Fake::default());
+        let cut = |fake: &Arc<Fake>| {
+            fake.hang.store(true, Ordering::Relaxed);
+            let (state, fake, id) = (state.clone(), fake.clone(), id.clone());
+            tokio::spawn(async move { move_doc(&state, fake, "dev_m", &id, &acme()).await })
+        };
+
+        // Cut off, then a start: the team Doc goes, and the Doc stays here.
+        let moving = cut(&fake);
+        fake.posted.notified().await;
+        while library::read_meta(&dir).unwrap().moving.is_none() {
+            tokio::task::yield_now().await;
+        }
+        moving.abort();
+        let _ = moving.await;
+        assert_eq!(library::read_meta(&dir).unwrap().moving.map(|m| m.id), Some("pdc_9".into()));
+        fake.hang.store(false, Ordering::Relaxed);
+        clear_unfinished(&state, fake.clone()).await;
+        assert!(fake.view.lock().unwrap().is_none(), "the half-made team Doc is deleted");
+        let meta = library::read_meta(&dir).unwrap();
+        assert!(meta.moving.is_none() && meta.moved.is_none(), "cleared, and not moved");
+        assert_eq!(library::list(&state).len(), 1);
+        assert_eq!(doc.config()["doc"], id.as_str());
+
+        // Cut off again, then moved again: the first try's team Doc is
+        // deleted before the second is made.
+        let moving = cut(&fake);
+        fake.posted.notified().await;
+        while library::read_meta(&dir).unwrap().moving.is_none() {
+            tokio::task::yield_now().await;
+        }
+        moving.abort();
+        let _ = moving.await;
+        let first = library::read_meta(&dir).unwrap().moving.unwrap().id;
+        fake.hang.store(false, Ordering::Relaxed);
+        let at = move_doc(&state, fake.clone(), "dev_m", &id, &acme()).await.unwrap();
+        assert_ne!(at.id, first);
+        let deletes: Vec<_> = fake.calls().into_iter().filter(|(m, _)| m == "DELETE").map(|(_, p)| p).collect();
+        assert_eq!(
+            deletes.last().map(String::as_str),
+            Some(format!("/api/daemon/projects/prj_t/docs/{first}").as_str())
+        );
+        assert_eq!(fake.view.lock().unwrap().as_ref().map(|v| v.doc.id.clone()), Some(at.id.clone()), "one team Doc");
+        assert_eq!(fake.body(0).as_deref(), Some("First ![a dot](assets/dot.png)"));
+        let meta = library::read_meta(&dir).unwrap();
+        assert!(meta.moving.is_none() && meta.moved.is_some());
         std::fs::remove_dir_all(state).unwrap();
     }
 }

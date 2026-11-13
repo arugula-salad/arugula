@@ -1,33 +1,45 @@
 // A Doc's actions on the platform (Arugula #820): the same Copy link, Share
 // and Open in browser the machine's Doc bar has (shared/docs/doc-actions.tsx),
 // in the Docs list's preview, in a row's ⋯ menu and in the Doc page's header,
-// each without opening the Doc first. Share here is "with <team>", the
-// opposite of the machine's "with a link", so the words say so:
+// each without opening the Doc first. Here it's Move to <team>, the
+// opposite of the machine's Share with a link, so the words say so:
 //
-// - On a Doc in the person's own project (Mine), Share puts it in the team
-//   they write Docs in (`moveDocsToTeam`, as the list's selection does, so a
-//   Doc written here works too), or asks which when there are several.
+// - On a Doc in the person's own project (Mine), Move to <team>… gives it to
+//   the team they write Docs in (`moveDocsToTeam`, as the list's selection
+//   does), or asks which when there are several, and confirms first
+//   (`MoveConfirm`, Arugula #863): the team owns it, and nobody keeps a copy.
+//   A machine's copy is moved from its machine, which the action says.
 // - Once a team Doc made from it is older than it, Share reads Update and
 //   runs Update copy, asking first if the team edited theirs.
 // - A team's Doc has nowhere to go: no Share.
+//
+// Delete is last in ⋯ for those who may (Arugula #864): a Doc goes to the
+// project's Trash (#866), and a machine's copy leaves the project.
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import type { ProjectDoc, ProjectDocCopy } from "../../shared/proto";
 import { DocActions, openTab } from "../../shared/docs/doc-actions";
-import { moveDocsToTeam, resultWords } from "../../shared/docs/move-docs";
+import { moveDocsToTeam, moveFromMachine, resultWords } from "../../shared/docs/move-docs";
 import { EditedDialog, ShareWith, type Edited } from "../../shared/docs/share-with";
 import { DocError, projectDocs } from "../../shared/docs/store";
 import { revokePublic, sharePublic } from "../../shared/docs/public-link";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { IconButton, MoreIcon } from "../../shared/ui/icons";
 import { Modal } from "../../shared/ui/modal";
+import { ConfirmRemove } from "../../shared/ui/confirm";
 import { menuBelow, openMenu, type MenuItem } from "../../shared/ui/menu";
 import { names } from "../links";
 import { go, pathOf } from "../router";
 import { session, type PlatformProject } from "../session";
 import { toast } from "../toast";
 import { mayWrite } from "./issues";
+
+/** How long a deleted team Doc waits in the Trash (the wire's `TRASH_DAYS`; the list says its own). */
+export const TRASH_DAYS = 30;
+
+/** The machine a Doc is a copy from, by name, or null for one made here. */
+const copyOf = (d: ProjectDoc): string | null => (d.machine ? d.machine_name || "a machine that left" : null);
 
 /** The Doc's page, whole, as a link. */
 const linkOf = (p: PlatformProject, doc: ProjectDoc) => new URL(pathOf({ page: "doc", project: p.id, doc: doc.id }, names), location.href).href;
@@ -44,13 +56,22 @@ interface Share {
   run: (from: HTMLElement) => void;
 }
 
-function useDocActions(p: PlatformProject, doc: ProjectDoc, eager: boolean, reload?: () => void) {
+/** Who may delete it, and what follows a delete. */
+interface Remove {
+  deleter?: boolean;
+  gone?: () => void;
+}
+
+function useDocActions(p: PlatformProject, doc: ProjectDoc, eager: boolean, reload?: () => void, remove: Remove = {}) {
   useSubscribe((fn) => session.subscribe(fn));
   const mine = !p.team;
   const teams = session.projects.filter((t) => t.team && mayWrite(t));
   const [copies, setCopies] = useState<ProjectDocCopy[]>([]);
   const [asking, setAsking] = useState<Edited | null>(null);
   const [picking, setPicking] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  /** The team Move to… asks about. */
+  const [moving, setMoving] = useState<PlatformProject | null>(null);
   const busy = useRef(false);
   // Arugula #871: a team Doc's owners and editors share it with a public link (a copy from a
   // machine is its machine's to share). The list's rows don't say whether it has one, so the
@@ -90,6 +111,8 @@ function useDocActions(p: PlatformProject, doc: ProjectDoc, eager: boolean, relo
     toast(`${r.title}: ${resultWords(r, team.name)}`);
     await after();
   };
+  /** Move to `team`, once confirmed; a machine's copy says where it moves from. */
+  const ask = (team: PlatformProject) => (doc.machine ? toast(`${doc.title}: ${moveFromMachine(doc)}`) : setMoving(team));
   const update = async (c: ProjectDocCopy, replace: boolean): Promise<void> => {
     if (busy.current) return;
     busy.current = true;
@@ -115,12 +138,12 @@ function useDocActions(p: PlatformProject, doc: ProjectDoc, eager: boolean, relo
     if (stale.length > 1) return { title: "Update the teams' copies: they're older than this Doc", word: "Update…", older: true, run: () => setPicking(true) };
     if (teams.length === 1) {
       const only = teams[0];
-      return { title: `Share with ${only.name}`, word: `Share with ${only.name}`, older: false, run: () => void move(only) };
+      return { title: `Move to ${only.name}`, word: `Move to ${only.name}…`, older: false, run: () => ask(only) };
     }
-    const word = "Share with…";
-    // A copy of a machine's Doc has the dialog, with each team's state; a Doc written here, a pick of team.
+    const word = "Move to…";
+    // A pick of team; a machine's copy says where it moves from.
     const run = (from: HTMLElement) =>
-      doc.machine ? setPicking(true) : openMenu(menuBelow(from), teams.map((t) => ({ label: t.name, run: () => void move(t) })), { from, label: word });
+      doc.machine ? ask(teams[0]) : openMenu(menuBelow(from), teams.map((t) => ({ label: t.name, run: () => ask(t) })), { from, label: word });
     return { title: word, word, older: false, run };
   };
   const share = shareOf(copies);
@@ -166,7 +189,7 @@ function useDocActions(p: PlatformProject, doc: ProjectDoc, eager: boolean, relo
     return [
       { label: "Copy link", run: () => void copy().then((ok) => ok && toast("Link copied")) },
       ...(s ? [{ label: s.word, run: () => s.run(from) }] : []),
-      ...(s && doc.machine && s.word !== "Share with…" ? [{ label: "Share with…", run: () => setPicking(true) }] : []),
+      ...(s && doc.machine ? [{ label: "Share with…", run: () => setPicking(true) }] : []),
       ...(publicly
         ? [
             ...(shared.current
@@ -178,10 +201,39 @@ function useDocActions(p: PlatformProject, doc: ProjectDoc, eager: boolean, relo
           ]
         : []),
       { label: "Open in browser", run: open },
+      ...(remove.deleter ? ["separator" as const, { label: "Delete…", danger: true, attrs: { "data-doc-delete": true }, run: () => setDeleting(true) }] : []),
     ];
   };
+  const drop = async () => {
+    setDeleting(false);
+    try {
+      await projectDocs.remove(p.id, doc.id);
+      remove.gone?.();
+    } catch (err) {
+      toast(`Couldn't delete it: ${(err as Error).message}`);
+    }
+  };
+  const machine = copyOf(doc);
 
-  const dialogs: ComponentChildren = asking ? (
+  const dialogs: ComponentChildren = moving ? (
+    <MoveConfirm
+      title={doc.title}
+      team={moving.name}
+      cancel={() => setMoving(null)}
+      go={() => {
+        setMoving(null);
+        void move(moving);
+      }}
+    />
+  ) : deleting ? (
+    <ConfirmRemove title={`Delete “${doc.title}”?`} label="Delete" go={() => void drop()} cancel={() => setDeleting(false)}>
+      <p data-doc-confirm>
+        {machine
+          ? `It leaves the project. ${doc.author === session.me?.account ? `${machine} is your machine: its` : `${machine}'s`} next change to the Doc brings a new copy here.`
+          : `It goes to the Trash for ${TRASH_DAYS} days, out of sight of everyone in the project. An owner, an editor or its maker can restore it from the Docs page's Trash.`}
+      </p>
+    </ConfirmRemove>
+  ) : asking ? (
     <EditedDialog edited={asking} cancel={() => setAsking(null)} />
   ) : picking ? (
     <ShareWithModal
@@ -197,8 +249,8 @@ function useDocActions(p: PlatformProject, doc: ProjectDoc, eager: boolean, relo
 }
 
 /** The three actions, for the preview and the page's header. `menu` adds the ⋯ after them. */
-export function PlatformDocActions({ p, doc, reload, menu }: { p: PlatformProject; doc: ProjectDoc; reload?: () => void; menu?: boolean }) {
-  const a = useDocActions(p, doc, true, reload);
+export function PlatformDocActions({ p, doc, reload, menu, deleter, gone }: { p: PlatformProject; doc: ProjectDoc; reload?: () => void; menu?: boolean } & Remove) {
+  const a = useDocActions(p, doc, true, reload, { deleter, gone });
   return (
     <>
       <DocActions
@@ -219,7 +271,7 @@ export function PlatformDocActions({ p, doc, reload, menu }: { p: PlatformProjec
 
 /** A row's ⋯: the same actions as a menu. It reads the team's copies when it's pressed, not for every row. */
 export function RowMenu({ p, doc, reload }: { p: PlatformProject; doc: ProjectDoc; reload?: () => void }) {
-  const a = useDocActions(p, doc, false, reload);
+  const a = useDocActions(p, doc, false, reload, { deleter: mayWrite(p), gone: reload });
   return (
     <>
       <MoreButton doc={doc} items={a.items} load={a.load} row />
@@ -284,5 +336,18 @@ function ShareWithModal({ project, id, done }: { project: string; id: string; do
         unreachable={<p class="dim">Couldn't reach the platform.</p>}
       />
     </Modal>
+  );
+}
+
+/** Move to <team>…, asked first (Arugula #863): the team owns it, its link
+ * keeps working, and nobody keeps a copy. `title` is one Doc's, or how many. */
+export function MoveConfirm({ title, team, n = 1, go, cancel }: { title: string; team: string; n?: number; go: () => void; cancel: () => void }) {
+  const what = n === 1 ? "it" : "them";
+  return (
+    <ConfirmRemove title={n === 1 ? `Move “${title}” to ${team}?` : `Move ${n} Docs to ${team}?`} label="Move" go={go} cancel={cancel}>
+      <p data-move-confirm>
+        {team} will own {what}, and nobody keeps a copy: {n === 1 ? "it leaves" : "they leave"} your Docs. {n === 1 ? "Its link keeps" : "Their links keep"} working.
+      </p>
+    </ConfirmRemove>
   );
 }

@@ -12,6 +12,7 @@ conversation.session_signal POST /api/conversations/session-signal Owner drives=
 conversations.list GET /api/conversations Owner drives=false credential=false
 doc.asset GET /api/docs/{id}/assets/{name} Owner drives=false credential=false
 doc.delete DELETE /api/docs/{id} Owner drives=false credential=false
+doc.move POST /api/docs/{id}/move Owner drives=false credential=false
 doc.open POST /api/docs/open Owner drives=false credential=false
 doc.preview GET /api/docs/{id}/preview Owner drives=false credential=false
 doc.read GET /api/docs/{id}/content Owner drives=false credential=false
@@ -19,6 +20,7 @@ doc.share POST /api/docs/{id}/share Owner drives=false credential=true
 doc_link.delete DELETE /api/doc-links/{id} Owner drives=false credential=false
 doc_link.get GET /api/doc-links/{id} Owner drives=false credential=true
 docs.list GET /api/docs Owner drives=false credential=false
+docs.team GET /api/docs/team Owner drives=false credential=false
 flag.set PUT /api/flags/{name} Owner drives=false credential=false
 flags.list GET /api/flags Owner drives=false credential=false
 fs.list GET /api/fs/list Owner drives=false credential=false
