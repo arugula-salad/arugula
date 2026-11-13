@@ -111,7 +111,13 @@ runs:
         if nvim --version 2>/dev/null | head -1 | grep -qx "NVIM v$v"; then exit 0; fi
         dir=$RUNNER_TEMP/nvim-$v
         if [ ! -x "$dir/bin/nvim" ]; then
-          curl -fsSL -o "$RUNNER_TEMP/nvim.tar.gz" "https://github.com/neovim/neovim/releases/download/v$v/nvim-linux-$a.tar.gz"
+          f=nvim-linux-$a.tar.gz
+          # github.com has answered one asset 504 every time while the API
+          # served the same file (#797): retry, then fetch it from the API.
+          if ! curl -fsSL --retry 4 --retry-delay 5 --retry-all-errors -o "$RUNNER_TEMP/nvim.tar.gz" "https://github.com/neovim/neovim/releases/download/v$v/$f"; then
+            url=$(curl -fsSL --retry 4 --retry-delay 5 --retry-all-errors "https://api.github.com/repos/neovim/neovim/releases/tags/v$v" | jq -r --arg f "$f" '.assets[] | select(.name == $f) | .url')
+            curl -fsSL --retry 4 --retry-delay 5 --retry-all-errors -H "Accept: application/octet-stream" -o "$RUNNER_TEMP/nvim.tar.gz" "$url"
+          fi
           echo "$sum  $RUNNER_TEMP/nvim.tar.gz" | sha256sum -c --quiet
           mkdir -p "$dir" && tar -xzf "$RUNNER_TEMP/nvim.tar.gz" -C "$dir" --strip-components 1
         fi
@@ -121,7 +127,7 @@ runs:
       if: inputs.rust == 'true'
       shell: bash
       run: |
-        command -v rustup >/dev/null || curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none --no-modify-path
+        command -v rustup >/dev/null || curl -fsSL --retry 4 --retry-delay 5 --retry-all-errors https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none --no-modify-path
         "$HOME/.cargo/bin/rustup" toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" --profile minimal -c rustfmt,clippy
     # Compiles through sccache (#868), whose cache is shared by every job and
     # run: home-cloud's ci-cache, rclone's WebDAV at a public name (the pods
@@ -188,7 +194,13 @@ runs:
     - name: mise (Zig for libghostty, nextest)
       shell: bash
       run: |
-        command -v mise >/dev/null || curl -fsSL https://mise.run | sh
+        # mise.run's installer downloads from GitHub itself, without retrying,
+        # so the install as a whole is tried again (#797).
+        if ! command -v mise >/dev/null; then
+          curl -fsSL --retry 4 --retry-delay 5 --retry-all-errors -o "$RUNNER_TEMP/mise-install.sh" https://mise.run
+          for i in 1 2 3; do sh "$RUNNER_TEMP/mise-install.sh" && break; sleep 10; done
+          "$HOME/.local/bin/mise" --version
+        fi
         echo "$HOME/.local/bin" >> "$GITHUB_PATH"
     # mise's Zig and nextest: Zig's community mirror answered 429 once and
     # failed a job (#524).

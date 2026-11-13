@@ -1190,3 +1190,36 @@ fn an_agent_block_on_an_issue_says_so_in_the_panes_summary() {
     }
     assert_eq!(now, Some(json!({ "issue": "#12", "boards": boards })));
 }
+
+/// #930: `wait --idle` on a block mid-turn blocks until the turn ends, on
+/// its first turn and on a later one (the one before ended `end_turn`).
+#[test]
+fn wait_idle_blocks_while_a_turn_is_running() {
+    let d = Daemon::child();
+    let working = |id: u64| {
+        let v = d.get(&format!("/api/panes/{id}/wait?until=idle&timeout=1.5"));
+        let s = d.state(id);
+        assert_eq!(v["result"], "timeout", "wait --idle returned {v} mid-turn: {s}");
+        assert_eq!(s["attention"], "working", "{s}");
+    };
+    // The first turn, as the block starts.
+    let id = d.open("slow");
+    working(id);
+    d.call(id, "cancel", json!({}));
+    assert_eq!(d.wait(id, "idle"), "idle");
+    // ...and as claude-agent-acp, which has paths of its own.
+    let c = open_claude(&d, "slow");
+    working(c);
+    d.call(c, "cancel", json!({}));
+    assert_eq!(d.wait(c, "idle"), "idle");
+    // A later turn, after one that ended `end_turn`.
+    d.call(id, "send", json!({ "text": "hello" }));
+    assert_eq!(d.wait(id, "idle"), "done");
+    d.call(id, "send", json!({ "text": "slow" }));
+    d.wait_for("streaming", || {
+        entries(&d.state(id)).iter().any(|e| e["text"].as_str().is_some_and(|t| t.contains("tick 1")))
+    });
+    working(id);
+    d.call(id, "cancel", json!({}));
+    assert_eq!(d.wait(id, "idle"), "idle");
+}

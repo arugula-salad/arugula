@@ -1,0 +1,6 @@
+{"total_count":4,"incomplete_results":false,"items":[
+{"number":11,"title":"PR 11","state":"closed","created_at":"2026-11-10T09:00:00Z","pull_request":{"url":"https://api.github.com/repos/arugula-salad/cloud/pulls/11","merged_at":"2026-11-10T10:30:00Z"}},
+{"number":12,"title":"PR 12","state":"closed","created_at":"2026-11-09T08:00:00Z","pull_request":{"url":"https://api.github.com/repos/arugula-salad/cloud/pulls/12","merged_at":"2026-11-11T11:00:00Z"}},
+{"number":13,"title":"PR 13","state":"closed","created_at":"2026-11-12T08:00:00Z","pull_request":{"url":"https://api.github.com/repos/arugula-salad/cloud/pulls/13","merged_at":"2026-11-12T08:20:00Z"}},
+{"number":14,"title":"PR 14","state":"closed","created_at":"2026-11-12T20:00:00Z","pull_request":{"url":"https://api.github.com/repos/arugula-salad/cloud/pulls/14","merged_at":"2026-11-13T08:00:00Z"}}
+]}

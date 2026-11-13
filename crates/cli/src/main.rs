@@ -165,9 +165,10 @@ enum Command {
     /// `arugula login`): `issue new|list|show|comment|close|reopen|edit|export`,
     /// and `issue agent`. `#N` or `N` is a number in the current project,
     /// `iss_…` any issue you can read. The current project is `--project
-    /// NAME|ID` (or `$ARUGULA_PROJECT`; `personal` is yours), else the project
-    /// this directory's GitHub repo is linked to, else your personal one; a
-    /// GitHub clone that none of your projects links keeps GitHub's issues.
+    /// NAME|ID` (or `$ARUGULA_PROJECT`; `personal` is yours), else this
+    /// session's project, else the one this directory's GitHub repo is
+    /// linked to, else your personal one; a GitHub clone that none of your
+    /// projects links keeps GitHub's issues.
     /// Its issue home says whether they're native or GitHub's; `--native` and
     /// `--github` override it. `issue list` on a GitHub home lists the linked
     /// repo's issues from Arugula control.
@@ -508,12 +509,13 @@ enum Command {
         #[command(subcommand)]
         cmd: cmd::chant::ChantCmd,
     },
-    /// A project's linked GitHub repos on Arugula control.
+    /// Your projects on Arugula control, and their linked GitHub repos.
     ///
-    /// `link OWNER/REPO` links one (you need admin or maintain on it on
-    /// GitHub), `unlink` takes it out, `ls` lists them. `--project` names a
-    /// project by id or name; the default is your personal one. Needs
-    /// `arugula login`.
+    /// `list` lists your projects, `new NAME` makes one, and `use PROJECT`
+    /// puts this session in one. `link OWNER/REPO` links a repo (you need
+    /// admin or maintain on it on GitHub), `unlink` takes it out, `repos`
+    /// lists them. `--project` names a project by id or name; the default
+    /// is your personal one. Needs `arugula login`.
     Project {
         #[command(subcommand)]
         cmd: cmd::project::ProjectCmd,
@@ -814,12 +816,22 @@ fn socket(cli: &Cli) -> PathBuf {
 }
 
 fn default_socket() -> PathBuf {
-    if let Some(s) = std::env::var_os("ARUGULA_SOCK") {
+    socket_from(|k| std::env::var_os(k), arugula_proto::dirs::default_state_dir())
+}
+
+/// `ARUGULA_SOCK`, else the socket in the state directory: the daemon's,
+/// so `ARUGULA_STATE_DIR` first (#490).
+fn socket_from(env: impl Fn(&str) -> Option<std::ffi::OsString>, default_state: Option<PathBuf>) -> PathBuf {
+    if let Some(s) = env("ARUGULA_SOCK") {
         return PathBuf::from(s);
     }
     // The daemon records its socket beside its state: Windows' named pipe,
     // or one put elsewhere because the directory is too deep for a socket.
-    let state = arugula_proto::dirs::default_state_dir().unwrap_or_else(|| PathBuf::from(".local/state/arugula"));
+    let state = env("ARUGULA_STATE_DIR")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .or(default_state)
+        .unwrap_or_else(|| PathBuf::from(".local/state/arugula"));
     match std::fs::read_to_string(state.join("sock.path")) {
         Ok(p) if !p.trim().is_empty() => PathBuf::from(p.trim()),
         _ => state.join("sock"),
@@ -872,6 +884,9 @@ fn main() {
 
 fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
     ask_about_telemetry(&cli);
+    // The session this runs in is this machine's daemon's, whatever
+    // `--host` names.
+    let _ = cmd::project::SOCKET.set(socket(&cli));
     if let Command::Join(args) = &cli.cmd {
         return cmd::join::run(args, &cli);
     }
@@ -1092,6 +1107,26 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn socket_follows_the_state_dir_outside_a_pane() {
+        use super::socket_from;
+        use std::path::PathBuf;
+        let dir = std::env::temp_dir().join(format!("arugula-cli-sock-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let state = dir.clone().into_os_string();
+        let outside = |k: &str| (k == "ARUGULA_STATE_DIR").then(|| state.clone());
+        let default = Some(PathBuf::from("/default/state"));
+        assert_eq!(socket_from(outside, default.clone()), dir.join("sock"));
+        std::fs::write(dir.join("sock.path"), "/tmp/elsewhere.sock\n").unwrap();
+        assert_eq!(socket_from(outside, default.clone()), PathBuf::from("/tmp/elsewhere.sock"));
+        // No state dir in the environment: the default place.
+        assert_eq!(socket_from(|_| None, default), PathBuf::from("/default/state/sock"));
+        // Inside a pane ARUGULA_SOCK wins.
+        let pane = |k: &str| Some(if k == "ARUGULA_SOCK" { "/pane.sock".into() } else { state.clone() });
+        assert_eq!(socket_from(pane, None), PathBuf::from("/pane.sock"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     /// The command line with every Labs flag on, or none.
     fn labs_command(labs: bool) -> clap::Command {
         use arugula_proto::flags::On;
