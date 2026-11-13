@@ -212,6 +212,8 @@ function useFind(r: Route): string | null {
 /** The tab's title for the route (UI audit #159), as names arrive. */
 function useTitle(r: Route) {
   useSubscribe((fn) => where.subscribe(fn));
+  // A Doc renamed here or by someone else reaches its tab (#979).
+  useSubscribe((fn) => projectDocs.subscribe(fn));
   const title = titleOf(r, {
     project: (id) => session.project(id)?.name,
     issue: (id) => issues.known(id),

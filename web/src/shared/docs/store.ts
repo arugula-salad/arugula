@@ -7,6 +7,7 @@
 import type { NewProjectDoc, ProjectDocList, ProjectDocPublic, ProjectDocTrash, ProjectDocView, ProjectDocWrite } from "../proto";
 import { chat } from "../chat-store";
 import { platformFetch, refusalOf } from "../maintenance";
+import { titleRefusal } from "./doc-title.ts";
 
 /** A refusal from the Doc routes, with its status and what else it said
  * (a 409 names the Doc that is there). */
@@ -37,31 +38,50 @@ const docPath = (project: string, id: string) => `/api/projects/${enc(project)}/
 
 /** The Docs' titles the page has read, for their links' slugs and tabs. */
 const titles = new Map<string, string>();
+const heard = new Set<() => void>();
+
+/** Keep a Doc's title; the tab's title and the address follow a change (#979). */
+function keep(id: string, title: string) {
+  if (titles.get(id) === title) return;
+  titles.set(id, title);
+  for (const fn of [...heard]) fn();
+}
 
 
 export const projectDocs = {
   title: (id: string): string | undefined => titles.get(id),
+  /** A Doc's title changed (read, renamed here or listed). Returns the way to stop. */
+  subscribe(fn: () => void): () => void {
+    heard.add(fn);
+    return () => void heard.delete(fn);
+  },
   async list(project: string): Promise<ProjectDocList> {
     const l = await call<ProjectDocList>("GET", `/api/projects/${enc(project)}/docs`);
-    for (const d of l.docs) titles.set(d.id, d.title);
+    for (const d of l.docs) keep(d.id, d.title);
     return l;
   },
   async create(project: string, make: NewProjectDoc): Promise<ProjectDocView> {
     const v = await call<ProjectDocView>("POST", `/api/projects/${enc(project)}/docs`, make);
-    titles.set(v.doc.id, v.doc.title);
+    keep(v.doc.id, v.doc.title);
     return v;
   },
   async get(project: string, id: string): Promise<ProjectDocView> {
     const v = await call<ProjectDocView>("GET", docPath(project, id));
-    titles.set(id, v.doc.title);
+    keep(id, v.doc.title);
     return v;
   },
   /** Rename it, write a section, or add one (what isn't given stays). */
   async write(project: string, id: string, w: Partial<ProjectDocWrite>): Promise<ProjectDocView> {
     const full: ProjectDocWrite = { title: null, section: null, heading: null, intent: null, markdown: null, ...w };
     const v = await call<ProjectDocView>("PUT", docPath(project, id), full);
-    titles.set(id, v.doc.title);
+    keep(id, v.doc.title);
     return v;
+  },
+  /** Rename it (#979): the title alone, checked as the platform does. */
+  rename(project: string, id: string, title: string): Promise<ProjectDocView> {
+    const why = titleRefusal(title);
+    if (why) return Promise.reject(new DocError(400, why));
+    return projectDocs.write(project, id, { title: title.trim() });
   },
   /** Arugula #871: make the Doc's public link (or read the one it has): the
    * platform's id and key, at version 0 until a client has put a version. */

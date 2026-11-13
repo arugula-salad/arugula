@@ -166,6 +166,16 @@ pub async fn make(
     serde_json::from_value(got).map_err(|e| format!("control's answer isn't a Doc: {e}"))
 }
 
+/// A team Doc renamed, as the owner's agent (#979). Control's own sentence
+/// on a refusal.
+pub async fn rename(cloud: &dyn Cloud, project: &str, id: &str, title: &str) -> Result<DocView, String> {
+    title_ok(title)?;
+    let body = serde_json::to_value(DocWrite { title: Some(title.trim().to_owned()), ..Default::default() })
+        .map_err(|e| e.to_string())?;
+    let got = cloud.call("PUT", agent_project_doc(project, id), Body::Json(body)).await.map_err(|e| e.sentence())?;
+    serde_json::from_value(got).map_err(|e| format!("control's answer isn't a Doc: {e}"))
+}
+
 /// A team Doc, read: for `doc open` of a `pdc_` id.
 pub async fn read(cloud: &dyn Cloud, project: &str, id: &str) -> Result<DocView, String> {
     let got = cloud.call("GET", agent_project_doc(project, id), Body::None).await.map_err(|e| e.sentence())?;
@@ -377,6 +387,16 @@ impl Team {
             .map(|s| json!({ "id": s.id, "heading": s.heading }))
             .collect();
         Ok(json!({ "sections": sections }))
+    }
+
+    /// `doc_rename`: the title alone, as one PUT (#979). The block shows
+    /// control's answer.
+    async fn rename(&self, title: &str) -> Result<Value, String> {
+        title_ok(title)?;
+        let _io = self.io.lock().await;
+        let w = DocWrite { title: Some(title.trim().to_owned()), ..Default::default() };
+        let view = self.put(w).await?;
+        Ok(json!({ "title": view.doc.title }))
     }
 
     /// `doc_fill`: one section's body. The same checks as a library Doc's,
@@ -785,6 +805,13 @@ impl Block for Team {
                     me.fill(&section, &markdown).await
                 })
             }
+            "doc_rename" => {
+                let title = args["title"].as_str().map(str::to_owned);
+                Box::pin(async move {
+                    let me = me.ok_or("closed")?;
+                    me.rename(&title.ok_or("doc_rename needs {title}")?).await
+                })
+            }
             "doc_asset_put" => {
                 let name = args["name"].as_str().map(str::to_owned);
                 let data = args["data"].as_str().map(str::to_owned);
@@ -891,10 +918,14 @@ pub(super) fn moved(
     team
 }
 
-/// The longest title: control's, so `doc new` can say it before asking.
+/// The longest title: control's, so `doc new` and `doc rename` can say it
+/// before asking.
 pub fn title_ok(title: &str) -> Result<(), String> {
     if title.trim().is_empty() {
         return Err("a Doc needs a title".into());
+    }
+    if title.trim().contains(['\n', '\r']) {
+        return Err("a title is one line".into());
     }
     if title.trim().chars().count() > HEADING_MAX {
         return Err(format!("the title is over {HEADING_MAX} characters: shorten it"));
@@ -1038,9 +1069,14 @@ mod tests {
                     ("PUT", Body::Json(v)) => {
                         let w: DocWrite = serde_json::from_value(v).unwrap();
                         let view = held.as_mut().unwrap();
-                        let s = view.sections.iter_mut().find(|s| Some(&s.id) == w.section.as_ref()).unwrap();
-                        s.body = w.markdown;
-                        s.rev += 1;
+                        if let Some(t) = w.title {
+                            view.doc.title = t;
+                        }
+                        if w.section.is_some() {
+                            let s = view.sections.iter_mut().find(|s| Some(&s.id) == w.section.as_ref()).unwrap();
+                            s.body = w.markdown;
+                            s.rev += 1;
+                        }
                         view.doc.rev += 1;
                         self.catch_up(view);
                         Ok(serde_json::to_value(view.clone()).unwrap())
@@ -1087,6 +1123,29 @@ mod tests {
         *fake.view.lock().unwrap() =
             Some(doc_view("prj_t", "pdc_1", 1, &[("Goal", None), ("Risks", None), ("Plan", None)]));
         fake
+    }
+
+    /// #979: a rename is one PUT of the title alone; the block shows control's
+    /// answer and tells its clients, and a bad title never leaves the daemon.
+    #[tokio::test]
+    async fn a_rename_is_one_put_of_the_title_and_the_block_follows() {
+        let fake = seeded();
+        let (team, changed) = block(&fake, None);
+        team.refresh().await.unwrap();
+        let (puts, was) = (fake.count("PUT"), changed.load(Ordering::Relaxed));
+        let got = team.call("doc_rename", json!({ "title": " Renamed " })).await.unwrap();
+        assert_eq!(got["title"], "Renamed");
+        assert_eq!(fake.count("PUT"), puts + 1);
+        assert_eq!(team.state()["title"], "Renamed");
+        assert_eq!(changed.load(Ordering::Relaxed), was + 1);
+        assert!(team.state()["entries"].as_array().unwrap().len() == 3, "its sections stay");
+        for bad in ["", "a\nb", &"x".repeat(201)] {
+            assert!(team.call("doc_rename", json!({ "title": bad })).await.is_err(), "{bad:?}");
+        }
+        assert_eq!(fake.count("PUT"), puts + 1, "nothing was sent for a bad title");
+        // By id, with no block: the same one PUT.
+        let view = rename(&*fake, "prj_t", "pdc_1", "By id").await.unwrap();
+        assert_eq!((view.doc.title.as_str(), fake.count("PUT")), ("By id", puts + 2));
     }
 
     /// Thirty fills are thirty PUTs and nothing else: the block holds the

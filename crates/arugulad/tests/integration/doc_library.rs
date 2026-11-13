@@ -306,6 +306,40 @@ fn an_agent_lists_opens_and_fills_but_cant_delete() {
     assert_eq!(open_doc(d, &id), block);
 }
 
+/// #979: an agent renames a Doc that is open (one it didn't open), and one
+/// no block shows; the block, the list and the folder all say the new title,
+/// and a bad one changes nothing.
+#[test]
+fn an_agent_renames_an_open_doc_and_a_closed_one() {
+    let w = World::new(&[]);
+    let (d, agent, doc) = (&w.d, w.agent, w.doc);
+    let id = id_of(d, doc);
+    let said = agent_mcp(d, agent, "doc", json!({ "kind": "rename", "doc": format!("%{doc}"), "title": " Q4 plan " }))
+        .unwrap();
+    assert_eq!(said["title"], "Q4 plan", "{said}");
+    assert_eq!(d.state(doc)["title"], "Q4 plan", "the open block shows it");
+    assert_eq!(row_of(d, doc)["title"], "Q4 plan", "the list does");
+    assert_eq!(bodies(&d.state(doc))[1], None, "its sections stay");
+    for bad in ["", "a\nb", &"x".repeat(201)] {
+        let e = agent_mcp(d, agent, "doc", json!({ "kind": "rename", "doc": id, "title": bad })).unwrap_err();
+        assert!(e.contains("title"), "{bad:?}: {e}");
+    }
+    assert_eq!(d.state(doc)["title"], "Q4 plan");
+    // Closed: renamed where it's kept, and it comes back with the title.
+    close(d, doc);
+    agent_mcp(d, agent, "doc", json!({ "kind": "rename", "doc": id, "title": "Q5 plan" })).unwrap();
+    let listed = agent_mcp(d, agent, "doc", json!({ "kind": "list" })).unwrap();
+    assert!(
+        listed["docs"].as_array().unwrap().iter().any(|r| r["id"] == id.as_str() && r["title"] == "Q5 plan"),
+        "{listed}"
+    );
+    let block = open_doc(d, &id);
+    assert_eq!(d.state(block)["title"], "Q5 plan");
+    let e =
+        agent_mcp(d, agent, "doc", json!({ "kind": "rename", "doc": "0123456789abcdef", "title": "X" })).unwrap_err();
+    assert!(e.contains("no Doc"), "{e}");
+}
+
 /// The owner deletes a shared Doc: unshared at control first, its block
 /// closed, its folder and its link entry gone.
 #[test]

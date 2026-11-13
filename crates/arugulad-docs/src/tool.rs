@@ -101,6 +101,14 @@ pub struct DocFillArgs {
 }
 
 #[derive(Deserialize, JsonSchema)]
+pub struct DocRenameArgs {
+    /// The Doc's new title: one line, at most 200 characters.
+    pub title: String,
+    /// The Doc to rename: a Doc block as %N (any you can see, not only one you opened), or a Doc's id (a team Doc's pdc_ id, or a library Doc's).
+    pub doc: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
 pub struct DocAssetArgs {
     /// The Doc block (from doc new).
     pub block: PaneArg,
@@ -148,7 +156,7 @@ pub static DOC: &[Kind] = &[
     kind_of::<DocsList, Docs>(),
     Kind {
         name: "open",
-        description: "Open a Doc from list in a block beside your pane; fill it as after new. A Doc already open is that block.",
+        description: "Open a Doc from list in a block beside your pane. A Doc already open is that block.",
         schema: schema_for_type::<DocOpenArgs>,
         flag: None,
     },
@@ -158,6 +166,7 @@ pub static DOC: &[Kind] = &[
         schema: schema_for_type::<DocFillArgs>,
         flag: None,
     },
+    Kind { name: "rename", description: "Retitle a Doc.", schema: schema_for_type::<DocRenameArgs>, flag: None },
     Kind {
         name: "fences",
         description: "The format of callouts and the ```stats, ```chart, ```svg and ```prototype fences: read it first.",
@@ -215,6 +224,10 @@ fn run<'a>(call: &'a Call<'a>, kind: Option<&'static str>, args: Value) -> BoxFu
             },
             Some("fill") => match parse(args) {
                 Ok(a) => doc_fill(call, a).await,
+                Err(e) => Err(e),
+            },
+            Some("rename") => match parse(args) {
+                Ok(a) => doc_rename(call, a).await,
                 Err(e) => Err(e),
             },
             Some("fences") => done(FENCES, json!({})),
@@ -532,6 +545,60 @@ async fn doc_fill(call: &Call<'_>, a: DocFillArgs) -> Out {
         format!("Filled {} of Doc %{block} ({} bytes)", a.section, out["bytes"]),
         json!({ "block": block, "section": a.section, "bytes": out["bytes"] }),
     )
+}
+
+/// `doc rename` (#979): a Doc's title, for the block that shows it or by
+/// its id. Renaming isn't filling: any Doc block the caller may see, not
+/// only one it opened. A team Doc goes through control, a library Doc's
+/// folder is rewritten; an open block follows either way.
+async fn doc_rename(call: &Call<'_>, a: DocRenameArgs) -> Out {
+    team::title_ok(&a.title)?;
+    let title = a.title.trim().to_owned();
+    let named = a.doc.trim();
+    // A block is %N (or a bare number: a Doc's id is 16 hex digits or pdc_…).
+    let block = if named.starts_with('%') || (named.bytes().all(|b| b.is_ascii_digit()) && named.len() < 16) {
+        Some(PaneArg::Name(named.to_owned()).id()?)
+    } else {
+        crate::doc_ops::open_blocks(call.app()).await.get(named).copied()
+    };
+    if let Some(block) = block {
+        let p = call.readable(block).await?;
+        if p.info.kind != BlockType::Doc {
+            return Err(format!("%{block} isn't a Doc: doc new makes one"));
+        }
+        let b =
+            call.app().mux.api(|r| Api::Block(block, r)).await.flatten().ok_or_else(|| format!("no block %{block}"))?;
+        b.call_by("doc_rename", json!({ "title": title }), Some(&call.by())).await?;
+        return done(format!("Renamed Doc %{block} to {title:?}"), json!({ "block": block, "title": title }));
+    }
+    // Nothing shows it: the Doc is renamed where it's kept.
+    let doc = named.to_owned();
+    if doc.starts_with("pdc_") {
+        call.owners_own("a team's Doc").await?;
+        let chosen = call.chosen_project(None).await?;
+        if !chosen.team {
+            return Err(format!(
+                "no Doc {doc} in the library: a team Doc renames in its team's context (a repo or issue of a team project, or a team machine)"
+            ));
+        }
+        let cloud: Arc<dyn Cloud> = call.app().control.clone();
+        let view = team::rename(&*cloud, &chosen.id, &doc, &title).await?;
+        return done(
+            format!("Renamed Doc {doc} to {:?}", view.doc.title),
+            json!({ "doc": doc, "title": view.doc.title }),
+        );
+    }
+    let state = call.app().control.state_dir().to_owned();
+    if let Some(to) = crate::docs::library::moved_to(&state, &doc) {
+        return Err(format!("Doc {doc} moved to the team's project: rename {} instead", to.id));
+    }
+    let dir = crate::docs::library::dir(&state, &doc)?;
+    if crate::docs::library::read_meta(&dir).is_none() {
+        return Err(format!("no Doc {doc} in the library (doc list has them)"));
+    }
+    let t = title.clone();
+    crate::task::spawn_blocking(move || crate::docs::rename_in(&dir, &t)).await.map_err(|e| e.to_string())??;
+    done(format!("Renamed Doc {doc} to {title:?}"), json!({ "doc": doc, "title": title }))
 }
 
 /// `doc share`: ask the owner to share a Doc this caller may drive, or

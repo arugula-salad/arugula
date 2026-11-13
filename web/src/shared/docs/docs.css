@@ -201,3 +201,38 @@
   margin: var(--space-2) 0 0;
   font-size: var(--text-sm);
 }
+
+/* The Doc page's title for those who may rename it (#979): the heading's own
+   look as a button, and an input of the same size once it's being edited. */
+.doc-title-edit {
+  display: block;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: inherit;
+  text-wrap: inherit;
+  overflow-wrap: anywhere;
+  cursor: text;
+}
+
+.doc-title-edit:hover {
+  text-decoration: underline dotted;
+  text-underline-offset: 6px;
+}
+
+.doc-title-input {
+  width: 100%;
+  font: inherit;
+  letter-spacing: inherit;
+}
+
+.doc-title-why {
+  display: block;
+  margin-top: 4px;
+  font: var(--text-md) var(--f-body, inherit);
+  letter-spacing: normal;
+}

@@ -20,6 +20,7 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { BoardOfDoc, ProjectDoc, ProjectDocTrashed, ProjectDocView } from "../../shared/proto";
 import { chat } from "../../shared/chat-store";
 import { DocError, projectDocs } from "../../shared/docs/store";
+import { TITLE_MAX, titleRefusal } from "../../shared/docs/doc-title.ts";
 import { boards } from "../../shared/boards/store";
 import { onBoardWords } from "../../shared/boards/text";
 import { whoLabel } from "../../shared/issues/text";
@@ -345,7 +346,7 @@ function Preview({ p, doc, reload }: { p: PlatformProject; doc: ProjectDoc; relo
           <button type="button" class="primary small" data-open-doc onClick={() => go(docPath(p, doc))}>
             Open
           </button>
-          <PlatformDocActions p={p} doc={doc} reload={reload} menu deleter={mayWrite(p)} gone={reload} />
+          <PlatformDocActions p={p} doc={doc} reload={reload} menu deleter={mayWrite(p)} gone={reload} writer={mayWrite(p)} />
         </>
       }
       aside={view && shapeOf(view.sections).length > 0 && <Outline sections={shapeOf(view.sections)} go={(i) => goToSection(reader.current, i)} />}
@@ -370,6 +371,8 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
   const last = useRef<ProjectDocView | null>(null);
   /** The boards that list this Doc (#517). */
   const [onBoards, setOnBoards] = useState<BoardOfDoc[]>([]);
+  /** The title is being edited in place (#979). */
+  const [editing, setEditing] = useState(false);
 
   const show = (v: ProjectDocView) => {
     // A section written since the page last had it is highlighted, as in the block.
@@ -425,7 +428,8 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
           fresh={fresh}
           load={noImages}
           link="page"
-          share={view && <PlatformDocActions p={p} doc={view.doc} menu deleter={deleter} gone={() => go(pathOf({ page: "docs", project }, names))} />}
+          titleView={view && writer ? <TitleEdit project={project} view={view} editing={editing} setEditing={setEditing} wrote={show} /> : undefined}
+          share={view && <PlatformDocActions p={p} doc={view.doc} menu deleter={deleter} gone={() => go(pathOf({ page: "docs", project }, names))} writer={writer} edit={() => setEditing(true)} />}
           byline={
             view && (
               <>
@@ -455,6 +459,84 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
       )}
       {view && writer && <DocWriter project={project} view={view} wrote={show} />}
     </section>
+  );
+}
+
+/** For owners and editors: the title, as a button that edits it in place (#979).
+ * Enter saves, Escape cancels and leaving the field saves; a title the platform
+ * refuses stays in the field with its reason. */
+function TitleEdit({ project, view, editing, setEditing, wrote }: { project: string; view: ProjectDocView; editing: boolean; setEditing: (on: boolean) => void; wrote: (v: ProjectDocView) => void }) {
+  const [draft, setDraft] = useState(view.doc.title);
+  const [why, setWhy] = useState<string | null>(null);
+  const input = useRef<HTMLInputElement>(null);
+  // Set when Escape or a save has settled it, so the blur that follows doesn't save again.
+  const settled = useRef(false);
+  useEffect(() => {
+    if (!editing) return;
+    settled.current = false;
+    setDraft(view.doc.title);
+    setWhy(null);
+    queueMicrotask(() => input.current?.select());
+  }, [editing]);
+  const stop = () => {
+    settled.current = true;
+    setEditing(false);
+  };
+  const save = async () => {
+    if (settled.current) return;
+    const t = draft.trim();
+    if (t === view.doc.title) return stop();
+    const bad = titleRefusal(draft);
+    if (bad) return setWhy(bad);
+    settled.current = true;
+    try {
+      wrote(await projectDocs.rename(project, view.doc.id, t));
+      setEditing(false);
+    } catch (err) {
+      settled.current = false;
+      setWhy((err as Error).message);
+      input.current?.focus();
+    }
+  };
+  if (!editing)
+    return (
+      <button type="button" class="doc-title-edit" title="Rename" data-doc-title-edit onClick={() => setEditing(true)}>
+        {view.doc.title || "Untitled"}
+      </button>
+    );
+  return (
+    <>
+      <input
+        ref={input}
+        class="field doc-title-input"
+        type="text"
+        value={draft}
+        maxLength={TITLE_MAX}
+        aria-label="The Doc's title"
+        aria-invalid={why ? "true" : undefined}
+        data-doc-title-input
+        onInput={(e) => {
+          setDraft(e.currentTarget.value.replace(/[\r\n]/g, " "));
+          setWhy(null);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            void save();
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            e.stopPropagation();
+            stop();
+          }
+        }}
+        onBlur={() => void save()}
+      />
+      {why && (
+        <span class="dim doc-title-why" role="alert" data-doc-title-why>
+          {why}
+        </span>
+      )}
+    </>
   );
 }
 
