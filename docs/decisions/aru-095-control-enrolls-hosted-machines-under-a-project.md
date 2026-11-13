@@ -147,3 +147,5 @@ certificate, and what clients accept), `crates/control/src/hosted.rs`
 (delegating, enrolling, routing), `web/src/shell/e2e/hosted.ts`,
 `docs/control-e2e.md` ("Hosted machines: a project's delegation") (M178).
 From: #1235 (platform roadmap, step 5), M175 (#1236), M178 (#1239), M179 (#1240), M180 (#1241).
+
+**Amended by aru-141, "Machines trust control: the hub's tokens replace device keys"** (Jake, 2026-11-13). Every machine now joins with a join token, and the platform makes one for a hosted box, so the project delegation and project-scoped certificates go once the key code is deleted. "Hosted: the operator can read" stops being a hosted machine's exception: it's true of every machine.

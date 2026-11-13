@@ -2,7 +2,7 @@
 schema: 1
 id: "aru-079"
 title: "The platform page is on app.arugula.io, not on the keys' origin"
-state: "decided"
+state: "superseded"
 area: "Clients"
 source:
   via: "cli"
@@ -51,6 +51,8 @@ constrains:
 ---
 
 # The platform page is on app.arugula.io, not on the keys' origin
+
+**Superseded by aru-141, "Machines trust control: the hub's tokens replace device keys"** (Jake, 2026-11-13). Kept for its history; the code it describes goes as that record's order says.
 
 The page that holds the team's work is a separate origin from the page that
 holds the device keys (Jake, 2026-10-20, #1171):

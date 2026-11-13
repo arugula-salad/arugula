@@ -2,7 +2,7 @@
 schema: 1
 id: "aru-061"
 title: "A passkey with PRF is a device: one wherever it syncs"
-state: "decided"
+state: "superseded"
 area: "Federation and control"
 source:
   via: "cli"
@@ -34,6 +34,8 @@ constrains:
 ---
 
 # A passkey with PRF is a device: one wherever it syncs
+
+**Superseded by aru-141, "Machines trust control: the hub's tokens replace device keys"** (Jake, 2026-11-13). Kept for its history; the code it describes goes as that record's order says.
 
 Where a passkey gives PRF output, the browser's device keys come from it
 (two fixed salts, then HKDF), so clearing site data and signing in again,

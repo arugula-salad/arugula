@@ -99,3 +99,5 @@ Decided (Jake, 2026-11-03):
   with what that code decided from it beside it (`<name>.who.json`,
   `<name>.accept.json`), and the README there says how they were made; a
   test loads each, writes it back the same, and decides the same.
+
+**Amended by aru-141, "Machines trust control: the hub's tokens replace device keys"** (Jake, 2026-11-13). What a machine pins changes: no root, roster, members' certificates or hosted certificate, only the hub's public keys and its own identity. `MachineKind` keeps Personal, Team and Hosted for what a machine is; the trust it carried goes with the key code.

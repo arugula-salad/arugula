@@ -2,7 +2,7 @@
 schema: 1
 id: "aru-060"
 title: "Every team invite link carries a one-time key; admitting someone compares nothing"
-state: "decided"
+state: "superseded"
 area: "Federation and control"
 source:
   via: "cli"
@@ -34,6 +34,8 @@ constrains:
 ---
 
 # Every team invite link carries a one-time key; admitting someone compares nothing
+
+**Superseded by aru-141, "Machines trust control: the hub's tokens replace device keys"** (Jake, 2026-11-13). Kept for its history; the code it describes goes as that record's order says.
 
 An *Ask me first* link carries a one-time key in its fragment, as a presigned
 link does, and the owner's device signs it (`arugula team ask invite v1`,

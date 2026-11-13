@@ -71,3 +71,5 @@ platform by `Host`. The platform still has no public address, and every
 platform path on `control.arugula.io` keeps working for old daemons and apps.
 Where: `crates/control/src/auth.rs` (`check_daemon`, `daemon_auth_message_v2`), `crates/control/routes.toml`, `crates/control/src/lib.rs`.
 From: #1150, #1128 (census), M134 (#1151), M135 (#1152), M140 (#1157).
+
+**Amended by aru-142, "Control is one process again"** (Jake, 2026-11-13). The hub and the platform become one process, so the gateway's principal header becomes an in-process call. The rule that matters stays: no route an old daemon or app calls moves.
