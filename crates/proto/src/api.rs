@@ -45,6 +45,8 @@
 //! | POST | `/api/docs/open` | `DocOpenRequest`: a Doc `id` or a shared `link`'s id | `DocOpened`: the Doc's block, the one that has it open or a new one |
 //! | POST | `/api/docs/ID/share` | `DocShareRequest`: `update` for a Doc that has a link | `DocLinkUrl`: the Doc's link, made or updated, whether or not a block shows it (the owner's, never an agent's) |
 //! | DELETE | `/api/docs/ID` | | `Empty`: unshared first, then removed (the owner's, never an agent's) |
+//! | POST | `/api/docs/ID/move` | `DocMoveRequest`: the team `project`, else the current one | `DocMoved`: the team Doc it is now; the library keeps a hidden pointer (the owner's) |
+//! | GET | `/api/docs/team` | | `DocTeams`: the team a Doc here would move to, if any (the owner's) |
 //! | GET | `/api/agent-can` | | `[AgentCan]`: what an agent here can do for the person, in their words (the owner's) |
 //! | GET | `/api/fs/…`, POST `/api/panes/N/cd` | | files on a host: see [`crate::fs`] |
 //! | GET | `/api/host` | | `HostInfo`: this daemon's name and version, its tailnet URL, whether the tailnet has reached it, the control it joined |
@@ -1218,6 +1220,53 @@ pub struct DocShareRequest {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct DocOpened {
     pub pane: PaneId,
+}
+
+/// `POST /api/docs/ID/move` (Arugula #863): give a Doc to a team. The team
+/// Doc is made from it, and the library keeps only a pointer to it. With no
+/// `project`, the current one (the one rule MCP's tools choose by), which
+/// must be a team's.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(optional_fields = nullable))]
+pub struct DocMoveRequest {
+    #[serde(default)]
+    pub project: Option<String>,
+}
+
+/// Where a Doc went: the team's project and the team Doc there.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(optional_fields = nullable))]
+pub struct DocMoved {
+    /// The project's id (`prj_…`) and name.
+    pub project: String,
+    pub name: String,
+    /// The team Doc's id (`pdc_…`), and its page on the platform.
+    pub id: String,
+    #[serde(default)]
+    pub link: Option<String>,
+}
+
+/// A team's project a Doc can move to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct DocTeam {
+    pub project: String,
+    pub name: String,
+}
+
+/// `GET /api/docs/team` (Arugula #863): the team a Doc here would move to
+/// with no project named, so the Docs page can offer Move to <team>. Null
+/// when the current project is a personal one, or control can't say (`why`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(optional_fields = nullable))]
+pub struct DocTeams {
+    #[serde(default)]
+    pub team: Option<DocTeam>,
+    #[serde(default)]
+    pub why: Option<String>,
 }
 
 /// What a route answers when it has nothing to say: `{}`.

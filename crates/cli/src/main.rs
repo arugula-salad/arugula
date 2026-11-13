@@ -217,6 +217,14 @@ enum Command {
     /// Its port, and which IDE gets Claude Code's diffs (`--diffs arugula`, or
     /// another IDE's name as it registered, e.g. "Visual Studio Code").
     Ide(cmd::ide::Args),
+    /// Docs on this machine: `doc move` gives them to a team.
+    ///
+    /// The team owns a moved Doc, and this machine keeps only a pointer to it,
+    /// which a block showing it and `doc open` follow.
+    Doc {
+        #[command(subcommand)]
+        cmd: cmd::doc::DocCmd,
+    },
     /// Standing permission rules for agent blocks.
     ///
     /// What agent blocks on this daemon allow without asking, made by "Always" for
@@ -666,7 +674,21 @@ const GROUPS: &[(&str, &[&str])] = &[
     ),
     (
         "Blocks",
-        &["describe", "call", "open", "edit", "diff", "view", "chat", "pr", "issue", "editors", "workspace", "app"],
+        &[
+            "describe",
+            "call",
+            "open",
+            "edit",
+            "diff",
+            "view",
+            "doc",
+            "chat",
+            "pr",
+            "issue",
+            "editors",
+            "workspace",
+            "app",
+        ],
     ),
     ("Agents", &["agent", "claude", "attention", "rules", "ide", "shell-env", "agents"]),
     ("Sharing", &["share", "shares", "links", "invite", "access", "guests"]),
@@ -1032,6 +1054,7 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
         Command::Studio { cmd } => cmd::studio::run(cmd, ctx),
         Command::App(args) => cmd::app::run(args, ctx),
         Command::Editors { cmd } => cmd::editors::run(cmd, ctx),
+        Command::Doc { cmd } => cmd::doc::run(cmd, ctx),
         Command::Rules(args) => cmd::rules::run(args, ctx),
         Command::Ide(args) => cmd::ide::run(args, ctx),
         Command::ShellEnv(args) => cmd::shell_env::run(args, ctx),

@@ -1,15 +1,14 @@
-// Put Docs from a person's own project into a team (Arugula #818): no UI, so
+// Put Docs from a person's own project into a team (Arugula #818, #863): no UI, so
 // the Docs list's selection and onboarding's pick of what goes into the team
 // call the same move. One Doc at a time, in order, each with its own outcome:
 //
-// Every Doc is Share with… (`POST …/copies`), a machine's copy or one
-// written on the platform (Arugula #821): the team Doc with its sections and
-// pictures, and the source recorded. A 409 carries the team Doc that's
-// already there, and for the person that's a success, so moving a Doc twice
-// makes one team Doc.
-//
-// It never deletes or changes the original: whether the Mine copy is retired
-// afterwards is the caller's call.
+// - A Doc written on the platform moves in place (`POST …/move`): its project
+//   changes, and it keeps its id, thread and pictures. A 409 carries its id in
+//   the team project it's in already, and for the person that's a success, so
+//   moving a Doc twice is one move.
+// - A machine's copy isn't moved from here: its machine moves the Doc (its
+//   Docs page, `arugula doc move` or an agent's `doc move`), which leaves one
+//   team Doc and takes the copy down. Its outcome is refused, saying where.
 
 import type { ProjectDoc, ProjectDocView } from "../proto";
 import { platformFetch, refusalOf } from "../maintenance.ts";
@@ -19,7 +18,7 @@ export interface MoveResult {
   /** The Doc in `from`. */
   id: string;
   title: string;
-  /** `made` a team Doc; one was `there` already (`teamDoc`); or it was `refused` (`why`). */
+  /** `made`: it moved; `there`: it had moved already (`teamDoc`); or it was `refused` (`why`). */
   outcome: "made" | "there" | "refused";
   /** The team's Doc, for made and there. */
   teamDoc?: string;
@@ -28,7 +27,10 @@ export interface MoveResult {
 
 /** What a result says, as the Docs list's bar and a single Doc's Share both
  * put it. `team` is the team's name. */
-export const resultWords = (r: MoveResult, team: string) => (r.outcome === "made" ? "Made" : r.outcome === "there" ? `Already in ${team}` : `Refused: ${r.why}`);
+export const resultWords = (r: MoveResult, team: string) => (r.outcome === "made" ? `Moved to ${team}` : r.outcome === "there" ? `Already in ${team}` : `Refused: ${r.why}`);
+
+/** Why a machine's copy doesn't move from here. */
+export const moveFromMachine = (d: ProjectDoc) => `Move it from ${d.machine_name ?? "its machine"}'s Docs`;
 
 const enc = encodeURIComponent;
 
@@ -46,8 +48,9 @@ async function call(method: string, path: string, body?: unknown) {
 
 async function moveOne(from: string, team: string, d: ProjectDoc): Promise<MoveResult> {
   const result = { id: d.id, title: d.title };
+  if (d.machine) return { ...result, outcome: "refused", why: moveFromMachine(d) };
   try {
-    const r = await call("POST", `/api/projects/${enc(from)}/docs/${enc(d.id)}/copies`, { to: team });
+    const r = await call("POST", `/api/projects/${enc(from)}/docs/${enc(d.id)}/move`, { to: team });
     if (r.ok) return { ...result, outcome: "made", teamDoc: (r.json as ProjectDocView).doc.id };
     if (r.status === 409 && typeof r.json.id === "string") return { ...result, outcome: "there", teamDoc: r.json.id };
     return { ...result, outcome: "refused", why: r.why };

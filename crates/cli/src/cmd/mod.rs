@@ -17,6 +17,7 @@ pub mod cloud;
 pub mod deploys;
 pub mod describe;
 pub mod diff;
+pub mod doc;
 pub mod edit;
 pub mod editors;
 pub mod events;

@@ -1,6 +1,7 @@
 //! arugulad-docs: Docs (#963, #1493, #1066). The Doc block (`docs/`), its
 //! library and its links, their operations (`ops.rs`: `docs.list`,
-//! `doc.open`, `doc.delete`, `doc.preview`, `doc.read`, `doc.asset`;
+//! `doc.open`, `doc.delete`, `doc.preview`, `doc.read`, `doc.asset`,
+//! `doc.move`, `docs.team`;
 //! `links.rs`: `doc_link.get`, `doc_link.delete`)
 //! and the `doc` MCP tool (`tool.rs`). The binary calls [`register`]; the
 //! daemon (`arugulad-base`) reaches it only through its `features` hooks and
@@ -19,7 +20,10 @@ use std::{path::Path, sync::Arc};
 use arugula_proto::{
     BlockType,
     api::SearchHit,
-    op::ops::{DocAssetGet, DocDelete, DocLinkDelete, DocLinkGet, DocOpen, DocPreviewGet, DocRead, DocShare, DocsList},
+    op::ops::{
+        DocAssetGet, DocDelete, DocLinkDelete, DocLinkGet, DocMove, DocOpen, DocPreviewGet, DocRead, DocShare,
+        DocsList, DocsTeam,
+    },
 };
 use axum::Router;
 use futures_util::future::BoxFuture;
@@ -80,6 +84,8 @@ impl arugulad_base::features::Feature for Docs {
             .op_of::<DocAssetGet, Docs>()
             .op_of::<DocLinkDelete, Docs>()
             .op_of::<DocShare, Docs>()
+            .op_of::<DocMove, Docs>()
+            .op_of::<DocsTeam, Docs>()
     }
 
     fn search(

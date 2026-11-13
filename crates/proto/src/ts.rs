@@ -63,6 +63,9 @@ fn generate() -> String {
     c.visit::<crate::api::DocOpenRequest>();
     c.visit::<crate::api::DocOpened>();
     c.visit::<crate::api::DocShareRequest>();
+    c.visit::<crate::api::DocMoveRequest>();
+    c.visit::<crate::api::DocMoved>();
+    c.visit::<crate::api::DocTeams>();
     c.visit::<crate::api::DocPreview>();
     c.visit::<crate::api::DocContent>();
     c.visit::<crate::api::DocAsset>();
@@ -263,6 +266,7 @@ fn generate() -> String {
         c.visit::<DocWrite>();
         c.visit::<DocCopies>();
         c.visit::<DocCopy>();
+        c.visit::<DocMove>();
     }
     c.decls.sort();
     let mut out = String::from(

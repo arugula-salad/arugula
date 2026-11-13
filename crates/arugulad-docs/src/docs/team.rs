@@ -155,6 +155,7 @@ pub async fn make(
             .map(|(heading, intent)| NewSection { heading: heading.clone(), intent: intent.clone(), markdown: None })
             .collect(),
         layout: Some(layout.to_owned()).filter(|l| l != "doc"),
+        moved_from: None,
     };
     let body = serde_json::to_value(new).map_err(|e| e.to_string())?;
     let got = cloud.call("POST", agent_project_docs(project), Body::Json(body)).await.map_err(|e| e.sentence())?;
@@ -864,6 +865,28 @@ pub(super) fn open(ctx: BlockCtx, project: String, name: String, id: String, tit
     team
 }
 
+/// The block a library Doc's block becomes once the Doc moved to a team
+/// (Arugula #863): the same block, now showing the team Doc. It holds the
+/// Doc the move made from the start, so an agent's next fill lands at once
+/// without waiting for a read. `ctx` is the block's, when it has one.
+pub(super) fn moved(
+    ctx: Option<&BlockCtx>,
+    cloud: Option<Arc<dyn Cloud>>,
+    changed: Changed,
+    project: String,
+    name: String,
+    view: DocView,
+) -> Arc<Team> {
+    let (id, title) = (view.doc.id.clone(), view.doc.title.clone());
+    let team = Team::new(project, name, id, title, cloud, changed, ctx.map(|c| c.dir.join(CACHE)));
+    team.adopt(view);
+    if let Some(ctx) = ctx {
+        let _ = team.card.ctx.set(ctx.clone());
+        team.start(&ctx.rt);
+    }
+    team
+}
+
 /// The longest title: control's, so `doc new` can say it before asking.
 pub fn title_ok(title: &str) -> Result<(), String> {
     if title.trim().is_empty() {
@@ -937,6 +960,7 @@ mod tests {
                 machine_name: None,
                 made_from: None,
                 layout: None,
+                moved_from: None,
             },
             sections: sections
                 .iter()
