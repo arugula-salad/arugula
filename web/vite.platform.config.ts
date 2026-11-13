@@ -46,8 +46,24 @@ function platformBuild(): Plugin {
   };
 }
 
+/** On the dev server, a page's address is app.html, as the platform serves
+ * it: Vite's own fallback is index.html, the shell's. */
+function platformServe(): Plugin {
+  return {
+    name: "arugula-platform-serve",
+    apply: "serve",
+    configureServer(server) {
+      server.middlewares.use((req, _res, next) => {
+        const path = req.url?.split("?")[0] ?? "";
+        if (req.method === "GET" && req.headers.accept?.includes("text/html") && !path.startsWith("/api") && !/\.[a-z0-9]+$/i.test(path)) req.url = "/app.html";
+        next();
+      });
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [platformBuild()],
+  plugins: [platformBuild(), platformServe()],
   publicDir: false,
   define: { "import.meta.env.VITE_CONTROL_ORIGIN": JSON.stringify(process.env.VITE_CONTROL_ORIGIN ?? "") },
   // The page serves every route itself: an address Vite doesn't know is app.html.
