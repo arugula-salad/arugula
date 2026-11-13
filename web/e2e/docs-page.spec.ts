@@ -9,6 +9,9 @@
 // Shared Docs are in doc-share.spec.ts, which has a control to share with.
 // The page is a list page (Arugula #587): a Doc's buttons are in the preview of
 // the row that's selected, and the list's own keys and split are tested below.
+// It's the one Docs list (Arugula #864): a machine that isn't a team's has
+// My Docs, its library, with no tabs; a team machine's Docs need a control,
+// and its modes are unit-tested (scripts/docs-mode.test.mjs).
 
 import type { ChildProcess } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -110,6 +113,10 @@ test("with no Doc the page says where they come from", async ({ page }) => {
   await reset(page);
   await goToDocs(page);
   await expect(page.locator("[data-machine-docs]")).toHaveAttribute("aria-current", "page");
+  // A personal machine's Docs are My Docs, with no tabs.
+  await expect(page.locator("[data-docs-page]")).toHaveAttribute("data-docs-mode", "personal");
+  await expect(page.locator("[data-docs-page] [data-page-head] h1")).toHaveText("My Docs");
+  await expect(page.locator("[data-docs-tab]")).toHaveCount(0);
   await expect(page.locator("[data-docs-empty]")).toContainText("No Docs yet.");
   await expect(page.locator("[data-doc]")).toHaveCount(0);
 });
@@ -645,6 +652,14 @@ test.describe("the page drawn", () => {
           expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
           // The list isn't focused on a touch screen: no ring on its first row.
           await expect(page.locator("[data-list-rows]")).not.toBeFocused();
+          // The list stands alone, and its sort is a menu.
+          await expect(page.locator("[data-list-sort]")).toHaveCount(0);
+          await page.locator("[data-list-sort-menu]").tap();
+          await page.getByRole("menuitemradio", { name: "Created" }).tap();
+          await expect(page.locator("[data-list-sort-menu]")).toHaveAttribute("data-list-sort-menu", "created");
+          await page.locator("[data-list-sort-menu]").tap();
+          await page.getByRole("menuitemradio", { name: "Updated" }).tap();
+          await expect(page.locator("[data-list-sort-menu]")).toHaveAttribute("data-list-sort-menu", "updated");
           // A tap opens the preview in the list's place, and back returns.
           await page.locator("[data-doc]").first().tap();
           await expect(page.locator("[data-list-back]")).toBeVisible();

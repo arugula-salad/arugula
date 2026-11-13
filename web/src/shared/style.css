@@ -5791,7 +5791,7 @@ html[data-scheme="light"] .doc {
 }
 
 .project-doc-copy,
-.project-doc-form {
+.doc-lead {
   --lead-measure: calc(68ch * 15 / 13 + 64px);
 }
 
@@ -5801,7 +5801,7 @@ html[data-scheme="light"] .doc {
   }
 
   .project-doc-copy,
-  .project-doc-form {
+  .doc-lead {
     --lead-measure: calc(88ch * 15 / 13 + 64px);
   }
 }
@@ -5812,7 +5812,7 @@ html[data-scheme="light"] .doc {
   }
 
   .project-doc-copy,
-  .project-doc-form {
+  .doc-lead {
     --lead-measure: calc(100ch * 15 / 13 + 64px);
   }
 }

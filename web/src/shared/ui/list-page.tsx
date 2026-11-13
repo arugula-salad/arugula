@@ -9,20 +9,24 @@
 //   what's destructive is behind ⋯ there.
 // - The counts are the filters, `/` searches, ↑↓ and j/k move, Enter opens.
 // - A list can opt in to `selectable` (Arugula #818): a box on each row, for
-//   acting on several at once. Its own bar (`selection`) says what to do.
+//   acting on several at once. Its own bar (`selection`) says what to do. A
+//   finger has no hover to show the box: a long press ticks a row, and
+//   while any is ticked a tap ticks or unticks (Arugula #864).
 // - What must be answered without selecting anything (a request waiting for
 //   you) has buttons of its own, so it isn't a row of the list: it's a
 //   section above it. Sections below it hold what's beside the list's point.
 //
 // The split goes by the room the page has (container queries, ./list-page.css),
 // never the window's width: a page can be narrow on a wide screen. Too narrow
-// for both, the list stands alone and a row opens its preview in its place.
+// for both, the list stands alone and a row opens its preview in its place,
+// and the sort is a menu rather than a select beside the search.
 
 import { Card } from "./card";
 import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { Bar } from "./bar";
 import { ChevronIcon } from "./icons";
+import { menuBelow, openMenu } from "./menu";
 import "./list-page.css";
 
 /** Under this, the list stands alone (as in ./list-page.css). */
@@ -33,6 +37,10 @@ const PREVIEW_MIN = 380;
 const HOVER_MS = 140;
 /** Rows moved by the keyboard pass under a still pointer: that's not hovering. */
 const KEYS_HOLD_MS = 400;
+/** A finger held on a row this long ticks it. */
+const LONG_PRESS_MS = 500;
+/** A finger that moves this far is scrolling, not pressing. */
+const PRESS_SLOP = 10;
 
 export type ListTone = "live" | "bad" | "warn";
 
@@ -238,6 +246,17 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, sort,
   const [ticked, setTicked] = useState<ReadonlySet<string>>(new Set());
   /** The box a shift-click's range starts from. */
   const anchor = useRef<string | null>(null);
+  /** A finger on a row, until it's held long enough to tick it. */
+  const press = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number } | null>(null);
+  /** A long press just ticked a row: the click (or context menu) the same finger ends in is its own. */
+  const pressed = useRef(-Infinity);
+  /** What the last press on a row was: a click from a finger ticks while ticking. */
+  const by = useRef("mouse");
+  const unpress = () => {
+    if (press.current) clearTimeout(press.current.timer);
+    press.current = null;
+  };
+  useEffect(() => unpress, []);
 
   const flat = groups.flatMap((g) => g.items);
   // Only what's on the screen stays ticked: a hidden row can't be acted on.
@@ -430,18 +449,42 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, sort,
         dense={r.dense}
         {...r.attrs}
         onClick={() => {
+          if (performance.now() - pressed.current < 800) return;
+          // Ticking with a finger: a tap ticks, as the box would.
+          if (selectable && ticked.size > 0 && by.current !== "mouse") return tickAt(key, !ticked.has(key), false);
           setPicked(key);
           if (narrow) setDetail(true);
         }}
         onDblClick={() => !narrow && onOpen(item)}
         onContextMenu={(e) => {
+          if (performance.now() - pressed.current < 800) return e.preventDefault();
           const more = (e.currentTarget as HTMLElement).querySelector<HTMLElement>("[data-row-more]");
           if (!more) return;
           e.preventDefault();
           more.click();
         }}
-        onPointerMove={(e) => hovered(key, e)}
-        onPointerLeave={() => clearTimeout(hover.current)}
+        onPointerDown={(e) => {
+          by.current = e.pointerType;
+          if (!selectable || e.pointerType === "mouse") return;
+          unpress();
+          const timer = setTimeout(() => {
+            press.current = null;
+            pressed.current = performance.now();
+            tickAt(key, true, false);
+          }, LONG_PRESS_MS);
+          press.current = { timer, x: e.clientX, y: e.clientY };
+        }}
+        onPointerUp={unpress}
+        onPointerCancel={unpress}
+        onPointerMove={(e) => {
+          const p = press.current;
+          if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > PRESS_SLOP) unpress();
+          hovered(key, e);
+        }}
+        onPointerLeave={() => {
+          clearTimeout(hover.current);
+          unpress();
+        }}
       >
         {selectable && (
           <span
@@ -493,7 +536,21 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, sort,
               />
               <kbd aria-hidden="true">/</kbd>
             </label>
-            {sort && (
+            {sort && narrow && (
+              <button
+                type="button"
+                class="secondary small"
+                aria-haspopup="menu"
+                data-list-sort-menu={sort.value}
+                onClick={(e) => {
+                  const from = e.currentTarget as HTMLElement;
+                  openMenu(menuBelow(from, true), sort.options.map((o) => ({ label: o.label, checked: o.key === sort.value, run: () => sort.onSort(o.key) })), { from, end: true, label: "Sort by" });
+                }}
+              >
+                {sort.options.find((o) => o.key === sort.value)?.label ?? "Sort"}
+              </button>
+            )}
+            {sort && !narrow && (
               <select class="list-sort" aria-label="Sort by" value={sort.value} data-list-sort onChange={(e) => sort.onSort(e.currentTarget.value)}>
                 {sort.options.map((o) => (
                   <option key={o.key} value={o.key}>

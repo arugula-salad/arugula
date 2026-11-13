@@ -1,30 +1,32 @@
-// `/docs`, `/p/:project/docs` and `/p/:project/docs/:doc` (aru-118, #418): every
-// Doc the reader can read (their private ones first), a project's, and one.
-// The lists are on the shared list page, the preview draws the whole Doc. A project Doc is the platform's (crates/platform/src/
-// project_docs.rs): a title and sections of Markdown, in the machine Doc's
-// shape, so it's drawn with the Doc block's renderer (charts and drawings
-// included). Its members read it; owners and editors make, write and
-// delete Docs (a viewer's page has no form); an agent session on a Cloud
-// workspace makes them too, as itself. A write anywhere reaches an open
-// page live, through the Doc's thread (as a board's does).
+// `/docs`, `/p/:project/docs` and `/p/:project/docs/:doc` (aru-118, #418): a
+// project's Docs, on the one Docs list (Arugula #864, shared/docs/docs-list.tsx),
+// and one Doc. A personal project's list is My Docs; a team's has My Docs and
+// Team Docs. `/docs` is the current project's. A project Doc is the
+// platform's (crates/platform/src/project_docs.rs): a title and sections of
+// Markdown, in the machine Doc's shape, so it's drawn with the Doc block's
+// renderer (charts and drawings included). Its members read it; owners and
+// editors make, write and delete Docs (a viewer's page has no New Doc, writer
+// or Delete); an agent session on a Cloud workspace makes them too, as
+// itself. A write anywhere reaches an open page live, through the Doc's
+// thread (as a board's does).
 
 import { Card } from "../../shared/ui/card";
 import { BlockLoading, EmptyLine, EmptyState } from "../../shared/ui/block-states";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { BoardOfDoc, ProjectDoc, ProjectDocSection, ProjectDocTrashed, ProjectDocView } from "../../shared/proto";
+import type { BoardOfDoc, ProjectDoc, ProjectDocTrashed, ProjectDocView } from "../../shared/proto";
 import { chat } from "../../shared/chat-store";
 import { DocError, projectDocs } from "../../shared/docs/store";
 import { boards } from "../../shared/boards/store";
 import { onBoardWords } from "../../shared/boards/text";
 import { whoLabel } from "../../shared/issues/text";
 import { useSubscribe } from "../../shared/ui/hooks";
-import { ConfirmRemove } from "../../shared/ui/confirm";
-import { ListCounts, ListPage, ListPreview, type ListCount, type ListGroup, type ListTicked } from "../../shared/ui/list-page";
-import { PageHeader } from "../../shared/ui/page-header";
+import { ListCounts, ListPreview, type ListTicked } from "../../shared/ui/list-page";
+import { Modal } from "../../shared/ui/modal";
 import { Time } from "../../shared/ui/time";
-import { DocRowTime, DOC_SORTS, sortTime, useDocSort, type DocSort } from "../../shared/docs/doc-sort";
-import { DocBlock, type DocState } from "../../shared/docs/doc-render";
-import { LayoutMark } from "../../shared/docs/layout-mark";
+import { DocBlock } from "../../shared/docs/doc-render";
+import { DocsList, goToSection, Outline } from "../../shared/docs/docs-list";
+import { modeOf } from "../../shared/docs/docs-mode";
+import { noImages, projectItem, shapeOf, stateOf, useProjectDoc, useProjectDocs } from "../../shared/docs/project-docs";
 import { moveDocsToTeam, resultWords, type MoveResult } from "../../shared/docs/move-docs";
 import "../../shared/docs/docs.css";
 import { names } from "../links";
@@ -35,9 +37,8 @@ import { toast } from "../toast";
 import { mayWrite } from "./issues";
 import { currentProject, onCurrentProject } from "../current-project";
 import { scopeOf } from "../scope";
-import { ScopeToggle } from "../scope-toggle";
 import { Missing } from "./project";
-import { PlatformDocActions, RowMenu } from "./doc-actions";
+import { PlatformDocActions, RowMenu, TRASH_DAYS } from "./doc-actions";
 import { PublicLinkBar } from "./doc-public";
 
 /** Who's who in `p`, for a Doc's maker. */
@@ -77,7 +78,7 @@ function DocRows({ p, list }: { p: PlatformProject; list: ProjectDoc[] }) {
             <a href={to} data-doc-link={d.id} onClick={(e) => follow(e, to)}>
               {d.title}
             </a>
-            <span class="dim project-doc-row">
+            <span class="dim">
               {" "}
               {copy ? `a copy from ${copy}` : whoLabel(d.author, d.agent, who)} · <Time at={d.updated_at} />
             </span>
@@ -88,250 +89,71 @@ function DocRows({ p, list }: { p: PlatformProject; list: ProjectDoc[] }) {
   );
 }
 
-/** The Doc's shape (as the machine's page draws it, shell/ui/docs-page.tsx):
- * a segment a section, as long as the section is, brighter where it has a figure. */
-const LONG_DOC = 20_000;
-const MARK_W = 130;
-const wordsIn = (s: ProjectDocSection) => (s.body?.match(/\S+/g) ?? []).length;
-const figuresIn = (s: ProjectDocSection) => (s.body?.match(/^(```(chart|svg|prototype)|!\[)/gm) ?? []).length;
-
-function Shape({ sections }: { sections: ProjectDocSection[] }) {
-  const written = sections.filter((s) => s.body !== null);
-  if (!written.length) return null;
-  const words = written.reduce((n, s) => n + wordsIn(s), 0);
-  const width = Math.max(26, Math.sqrt(Math.min(words, LONG_DOC) / LONG_DOC) * MARK_W);
-  return (
-    <span class="doc-shape" style={{ width: `${Math.round(width)}px` }} aria-hidden="true" data-doc-shape>
-      {written.map((s) => (
-        <i key={s.id} class={figuresIn(s) ? "fig" : undefined} style={{ flex: `${Math.max(wordsIn(s), words * 0.012, 1)} 0 0` }} />
-      ))}
-    </span>
-  );
-}
-
-/** The Docs the page has read whole, by Doc and its rev: their shape and headings. */
-const read = new Map<string, ProjectDocSection[]>();
-const readKey = (d: ProjectDoc) => `${d.id}:${d.rev}`;
-
-interface Row {
-  doc: ProjectDoc;
-  p: PlatformProject;
-  /** In the reader's own project: nobody else reads it. */
-  mine: boolean;
-}
-
-/** The projects' Docs, each with the project it's in; `null` while they load. A
- * project that can't be read has none. Read again when the tab comes back
- * or a listed Doc's thread says it changed. */
-function useRows(ps: PlatformProject[]): { rows: Row[] | null; sections: Map<string, ProjectDocSection[]>; reload: () => void } {
-  const [lists, setLists] = useState<Map<string, ProjectDoc[]> | null>(null);
-  const [, bump] = useState(0);
-  const [again, setAgain] = useState(0);
-  const key = ps.map((p) => p.id).join(",");
-  const had = useRef("");
-  useEffect(() => {
-    let live = true;
-    // Read again (after a move) shows what's there while it does; other projects, the loading.
-    if (had.current !== key) setLists(null);
-    had.current = key;
-    const fetched = () =>
-      Promise.all(ps.map((p) => projectDocs.list(p.id).then((l): [string, ProjectDoc[]] => [p.id, l.docs], (): [string, ProjectDoc[]] => [p.id, []]))).then((all) => {
-        if (!live) return;
-        setLists(new Map(all));
-      });
-    void fetched();
-    const back = () => document.visibilityState === "visible" && void fetched();
-    document.addEventListener("visibilitychange", back);
-    return () => {
-      live = false;
-      document.removeEventListener("visibilitychange", back);
-    };
-  }, [key, again]);
-  // Each Doc is read whole, a few at a time, for its headings and shape.
-  useEffect(() => {
-    if (!lists) return;
-    let live = true;
-    const todo = ps.flatMap((p) => (lists.get(p.id) ?? []).filter((d) => !read.has(readKey(d))).map((d) => [p.id, d] as const));
-    const worker = async () => {
-      for (let next = todo.shift(); next && live; next = todo.shift()) {
-        const [pid, d] = next;
-        try {
-          read.set(readKey(d), (await projectDocs.get(pid, d.id)).sections);
-          if (live) bump((n) => n + 1);
-        } catch {
-          read.set(readKey(d), []);
-        }
-      }
-    };
-    void Promise.all([worker(), worker(), worker()]);
-    return () => void (live = false);
-  }, [lists]);
-  const rows = lists
-    ? ps.flatMap((p) => (lists.get(p.id) ?? []).map((doc) => ({ doc, p, mine: !p.team })))
-    : null;
-  return { rows, sections: read, reload: () => setAgain((n) => n + 1) };
-}
-
-export function DocsPage({ project, all }: { project?: string; all?: boolean }) {
+/** `/docs` is the current project's Docs, else the reader's own: one
+ * project's, as `/p/:project/docs` is (Arugula #864). A team's project has
+ * My Docs and Team Docs; a personal one, My Docs alone. */
+export function DocsPage({ project }: { project?: string; all?: boolean }) {
   useSubscribe((fn) => session.subscribe(fn));
   useSubscribe((fn) => onCurrentProject(fn));
   const one = project ? session.project(project) : undefined;
   if (project && !one) return <Missing what="That project isn't one of yours (or it's gone)." />;
-  // Team Docs are the current project's, unless All; Mine is the machine's library either way.
-  // Personal has no team to narrow to.
-  const at = project ? undefined : scopeOf({ page: "docs", all: all || undefined }, currentProject(), (id) => !!session.project(id));
-  const scope = at && session.project(at)?.team ? at : undefined;
-  return <DocList ps={one ? [one] : session.projects} narrowed={!!one} scope={scope} widened={!project && !!all && !!currentProject()} />;
+  const at = project ? undefined : scopeOf({ page: "docs" }, currentProject(), (id) => !!session.project(id));
+  const p = one ?? (at ? session.project(at) : undefined) ?? session.projects.find((x) => modeOf(x).kind === "personal") ?? session.projects[0];
+  if (!p) return <EmptyState where="page" data-docs-none title="No Docs yet." why="Ask any agent for a Doc (a write-up, a plan, a comparison) and it keeps it here." />;
+  return <DocList key={p.id} p={p} />;
 }
 
-function groupsOf(shown: Row[], narrowed: boolean, single: boolean, sort: DocSort): ListGroup<Row>[] {
-  const by = new Map<string, ListGroup<Row> & { mine: boolean }>();
-  for (const r of shown) {
-    const g = by.get(r.p.id) ?? { title: r.mine ? (narrowed ? "Yours, private" : "Mine") : narrowed || single ? undefined : r.p.name, items: [], mine: r.mine };
-    g.items.push(r);
-    by.set(r.p.id, g);
-  }
-  const out = [...by.values()];
-  for (const g of out) g.items.sort((a, b) => sortTime(timesOf(b.doc), sort) - sortTime(timesOf(a.doc), sort));
-  // Their own project's first; the others as the session lists them.
-  return out.sort((a, b) => Number(b.mine) - Number(a.mine));
-}
+const docPath = (p: PlatformProject, d: ProjectDoc) => pathOf({ page: "doc", project: p.id, doc: d.id }, names);
 
-/** A project Doc's times, as the Docs' sort and line say them. */
-const timesOf = (d: ProjectDoc) => ({ made: d.created_at, updated: d.updated_at });
-
-/** How long a deleted team Doc waits in the Trash (the wire's `TRASH_DAYS`; the list says its own). */
-const TRASH_DAYS = 30;
-
-type DocFilter = "team" | "mine";
-const FILTER_KEY = "platform-docs-filter";
-
-/** The filter this browser left on: Team until someone lives in Mine. */
-function savedFilter(): DocFilter {
-  try {
-    return localStorage.getItem(FILTER_KEY) === "mine" ? "mine" : "team";
-  } catch {
-    return "team";
-  }
-}
-
-function saveFilter(f: DocFilter) {
-  try {
-    localStorage.setItem(FILTER_KEY, f);
-  } catch {}
-}
-
-function DocList({ ps, narrowed, scope, widened }: { ps: PlatformProject[]; narrowed: boolean; scope?: string; widened?: boolean }) {
-  const { rows, sections, reload } = useRows(ps);
-  const [filter, setFilter] = useState<DocFilter>(savedFilter);
-  const [query, setQuery] = useState("");
-  const [sort, setSort] = useDocSort();
+function DocList({ p }: { p: PlatformProject }) {
+  const mode = modeOf(p);
+  const me = session.me?.account;
+  const { docs, reload } = useProjectDocs(p.id);
   const [making, setMaking] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
-  // Team Docs of the current project alone, while scoped.
-  const all = (rows ?? []).filter((r) => r.mine || !scope || r.p.id === scope);
-  // The Trash is one project's: the page's own, or the one it is scoped to.
-  const trashOf = narrowed ? ps[0] : scope ? ps.find((p) => p.id === scope) : undefined;
-  const q = query.trim().toLowerCase();
-  const shown = all.filter(
-    (r) =>
-      (narrowed || (filter === "mine") === r.mine) &&
-      (!q || r.doc.title.toLowerCase().includes(q) || (sections.get(readKey(r.doc)) ?? []).some((s) => s.heading.toLowerCase().includes(q))),
-  );
-  const writable = ps.filter(mayWrite);
-  const teams = writable.filter((p) => p.team);
-  const counts: ListCount[] = [
-    ...(narrowed ? [{ key: "all", n: all.length, label: all.length === 1 ? "Doc" : "Docs" }] : []),
-    ...(narrowed ? [] : [{ key: "team", n: all.filter((r) => !r.mine).length, label: "Team" }, { key: "mine", n: all.filter((r) => r.mine).length, label: "Mine" }]),
-  ];
-  const pick = (k: string) => {
-    if (k === filter || (k !== "team" && k !== "mine")) return;
-    setFilter(k);
-    saveFilter(k);
-  };
-  const status =
-    rows === null ? (
-      <BlockLoading inline data-docs-loading what="the Docs" />
-    ) : all.length === 0 ? (
-      <EmptyState where="page" data-docs-none title="No Docs yet." why="Ask any agent for a Doc (a write-up, a plan, a comparison) and it keeps it here." />
-    ) : shown.length === 0 ? (
-      <EmptyLine data-docs-none>
-        {q
-          ? "No Doc's title or headings match."
-          : narrowed
-            ? "No Doc is here."
-            : filter === "mine"
-              ? "None of your agents' Docs is here yet."
-              : `No team Docs yet. Share one of yours from Mine${writable.length > 0 ? ", or make one with New Doc" : ""}.`}
-      </EmptyLine>
-    ) : undefined;
-  const sub = narrowed ? `${ps[0].name}'s reports, plans and write-ups, by its people and its agent sessions` : undefined;
+  const writable = mayWrite(p);
+  // A personal project's Docs can be put in a team (Arugula #818); a team's are there already.
+  const teams = session.projects.filter((t) => t.team && mayWrite(t));
   return (
-    <div class="docs-list" data-docs-page>
-      <ListPage<Row>
-        label="Docs"
+    <div class="docs-list docs-page" data-docs-page data-docs-mode={mode.kind}>
+      <DocsList<ProjectDoc>
+        mode={mode}
+        docs={docs}
+        item={(d) => projectItem(d, me)}
         splitKey="platform-docs"
-        header={
+        sub={mode.kind === "team" ? `${p.name}'s reports, plans and write-ups, by its people and its agent sessions` : undefined}
+        actions={
+          writable && (
+            <button type="button" class="secondary small" data-doc-new-open onClick={() => setMaking(true)}>
+              New Doc
+            </button>
+          )
+        }
+        stats={(shown) => (
           <>
-            <PageHeader
-              title="Docs"
-              sub={sub}
-              actions={
-                <>
-                  <ScopeToggle r={{ page: "docs" }} scoped={!!scope} all={!!widened} />
-                  {writable.length > 0 && (
-                    <button type="button" class="secondary small" aria-expanded={making} data-doc-new-open onClick={() => setMaking(!making)}>
-                      New Doc
-                    </button>
-                  )}
-                </>
-              }
-              stats={
-                <>
-                  {all.length > 0 && <ListCounts counts={counts} on={narrowed ? "all" : filter} pick={narrowed ? () => {} : pick} />}
-                  {trashOf && (
-                    <button type="button" class="link docs-trash-open" aria-expanded={trashOpen} data-docs-trash-open onClick={() => setTrashOpen(!trashOpen)}>
-                      Trash
-                    </button>
-                  )}
-                </>
-              }
-            />
-            {making && <NewDoc ps={writable} done={() => setMaking(false)} />}
-            {trashOf && trashOpen && <Trash p={trashOf} restored={reload} />}
+            {docs !== null && <ListCounts counts={[{ key: "all", n: shown.length, label: shown.length === 1 ? "Doc" : "Docs" }]} on="all" pick={() => {}} />}
+            <button type="button" class="link docs-trash-open" aria-expanded={trashOpen} data-docs-trash-open onClick={() => setTrashOpen(!trashOpen)}>
+              Trash
+            </button>
+          </>
+        )}
+        under={
+          <>
+            {making && <NewDoc p={p} done={() => setMaking(false)} />}
+            {trashOpen && <Trash p={p} restored={reload} />}
           </>
         }
-        searchLabel="Search titles and headings"
-        query={query}
-        setQuery={setQuery}
-        sort={{ options: DOC_SORTS, value: sort, onSort: setSort }}
-        groups={groupsOf(shown, narrowed, ps.length === 1, sort)}
-        keyOf={(r) => r.doc.id}
-        // Mine's Docs can be put in a team; Team's are already there. Leaving Mine forgets the ticks.
-        selectable={!narrowed && filter === "mine" && teams.length > 0}
-        selection={(ticked) => <ShareBar ticked={ticked} teams={teams} reload={reload} />}
-        previewOn="click"
-        onOpen={(r) => go(docPath(r))}
-        status={status && <div class="list-status">{status}</div>}
-        row={(r) => {
-          const s = sections.get(readKey(r.doc));
-          return {
-            dense: true,
-            name: r.doc.title,
-            title: (
-              <>
-                <LayoutMark layout={r.doc.layout} />
-                <span data-doc-title>{r.doc.title}</span>
-              </>
-            ),
-            detail: r.mine && copyFrom(r.doc) ? <span data-doc-machine>On {copyFrom(r.doc)}</span> : undefined,
-            age: <DocRowTime doc={timesOf(r.doc)} by={sort} />,
-            mark: s ? <Shape sections={s} /> : undefined,
-            actions: <RowMenu p={r.p} doc={r.doc} reload={reload} />,
-            attrs: { "data-doc": r.doc.id, "data-private": String(r.mine) },
-          };
-        }}
-        preview={(r) => <Preview key={r.doc.id} row={r} reload={reload} />}
+        loading={<BlockLoading inline data-docs-loading what="the Docs" />}
+        empty={<EmptyState where="page" data-docs-none title="No Docs yet." why="Ask any agent for a Doc (a write-up, a plan, a comparison) and it keeps it here." />}
+        selectable={() => mode.kind === "personal" && teams.length > 0}
+        selection={(ticked) => <ShareBar p={p} ticked={ticked} teams={teams} reload={reload} />}
+        onOpen={(d) => go(docPath(p, d))}
+        row={(d) => ({
+          detail: mode.kind === "personal" && copyFrom(d) ? <span data-doc-machine>On {copyFrom(d)}</span> : undefined,
+          actions: <RowMenu p={p} doc={d} reload={reload} />,
+          attrs: { "data-private": String(mode.kind === "personal") },
+        })}
+        preview={(d) => <Preview key={d.id} p={p} doc={d} reload={reload} />}
       />
     </div>
   );
@@ -372,7 +194,7 @@ function Trash({ p, restored }: { p: PlatformProject; restored: () => void }) {
         return (
           <Card as="li" dense key={d.doc.id} data-trashed-doc={d.doc.id}>
             <span data-doc-title>{d.doc.title}</span>
-            <span class="dim project-doc-row">
+            <span class="dim">
               {" "}
               deleted by {d.trashed_by ? (who(d.trashed_by) ?? "a member") : "someone who left"} · <Time at={d.trashed_at} /> · {left} {left === 1 ? "day" : "days"} left
             </span>
@@ -388,20 +210,19 @@ function Trash({ p, restored }: { p: PlatformProject; restored: () => void }) {
   );
 }
 
-/** The bar over Mine's rows while any is ticked: put them in a team, and what became of each. */
-function ShareBar({ ticked, teams, reload }: { ticked: ListTicked<Row>; teams: PlatformProject[]; reload: () => void }) {
+/** The bar over a personal project's rows while any is ticked: put them in a team, and what became of each. */
+function ShareBar({ p, ticked, teams, reload }: { p: PlatformProject; ticked: ListTicked<ProjectDoc>; teams: PlatformProject[]; reload: () => void }) {
   const [team, setTeam] = useState(teams[0]?.id ?? "");
   const [run, setRun] = useState<{ done: number; of: number } | null>(null);
   const [results, setResults] = useState<{ team: PlatformProject; list: MoveResult[] } | null>(null);
   const to = teams.find((t) => t.id === team) ?? teams[0];
   const n = ticked.items.length;
-  const go = async () => {
+  const share = async () => {
     if (run) return;
-    const docs = ticked.items.map((r) => r.doc);
-    const from = ticked.items[0].p.id;
+    const docs = ticked.items;
     setResults(null);
     setRun({ done: 0, of: docs.length });
-    const list = await moveDocsToTeam(from, to.id, docs, (_, done, of) => setRun({ done, of }));
+    const list = await moveDocsToTeam(p.id, to.id, docs, (_, done, of) => setRun({ done, of }));
     setRun(null);
     setResults({ team: to, list });
     ticked.clear();
@@ -419,7 +240,7 @@ function ShareBar({ ticked, teams, reload }: { ticked: ListTicked<Row>; teams: P
           <>
             <b data-docs-selected>{n} selected</b>
             {teams.length > 1 && (
-              <select value={to.id} aria-label="Share with which team" data-docs-share-team onChange={(e) => setTeam(e.currentTarget.value)}>
+              <select class="field small" value={to.id} aria-label="Share with which team" data-docs-share-team onChange={(e) => setTeam(e.currentTarget.value)}>
                 {teams.map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.name}
@@ -427,7 +248,7 @@ function ShareBar({ ticked, teams, reload }: { ticked: ListTicked<Row>; teams: P
                 ))}
               </select>
             )}
-            <button type="button" class="primary small" data-docs-share onClick={() => void go()}>
+            <button type="button" class="primary small" data-docs-share onClick={() => void share()}>
               {teams.length === 1 ? `Share with ${to.name}` : "Share with…"}
             </button>
             <button type="button" class="link" data-docs-clear onClick={ticked.clear}>
@@ -464,105 +285,74 @@ function ShareBar({ ticked, teams, reload }: { ticked: ListTicked<Row>; teams: P
   );
 }
 
-const docPath = (r: Row) => pathOf({ page: "doc", project: r.p.id, doc: r.doc.id }, names);
-
-/** Make a Doc (a title) in one of the projects the reader may write, their own first. */
-function NewDoc({ ps, done }: { ps: PlatformProject[]; done: () => void }) {
+/** New Doc: a title, in the page's project, then its page to write it. */
+function NewDoc({ p, done }: { p: PlatformProject; done: () => void }) {
   const [title, setTitle] = useState("");
-  const [project, setProject] = useState(ps[0].id);
+  const [busy, setBusy] = useState(false);
   const make = async (e: Event) => {
     e.preventDefault();
-    if (!title.trim()) return;
+    if (!title.trim() || busy) return;
+    setBusy(true);
     try {
-      const v = await projectDocs.create(project, { title: title.trim(), sections: [] });
-      go(pathOf({ page: "doc", project, doc: v.doc.id }, names));
+      const v = await projectDocs.create(p.id, { title: title.trim(), sections: [] });
+      done();
+      go(pathOf({ page: "doc", project: p.id, doc: v.doc.id }, names));
     } catch (err) {
       toast(`Couldn't make the Doc: ${(err as Error).message}`);
+      setBusy(false);
     }
   };
   return (
-    <form class="project-doc-form" onSubmit={(e) => void make(e)}>
-      <input type="text" value={title} maxLength={200} placeholder="a new Doc's title" aria-label="New Doc's title" data-doc-new-title onInput={(e) => setTitle(e.currentTarget.value)} />
-      {ps.length > 1 && (
-        <select value={project} aria-label="In which project" data-doc-new-project onChange={(e) => setProject(e.currentTarget.value)}>
-          {ps.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.team ? p.name : "Yours, private"}
-            </option>
-          ))}
-        </select>
-      )}
-      <button type="submit" class="primary" data-doc-new disabled={!title.trim()}>
-        Make a Doc
-      </button>
-      <button type="button" class="secondary" onClick={done}>
-        Cancel
-      </button>
-    </form>
-  );
-}
-
-/** The selected Doc, whole, kept live through its thread; Open and the three actions above it. */
-function Preview({ row, reload }: { row: Row; reload: () => void }) {
-  useSubscribe((fn) => chat.subscribe(fn));
-  const { doc, p } = row;
-  const [view, setView] = useState<ProjectDocView | null>(null);
-  const seen = useRef(0);
-  useEffect(() => {
-    const again = () => {
-      const n = ++seen.current;
-      projectDocs.get(p.id, doc.id).then(
-        (v) => n === seen.current && setView(v),
-        () => {},
-      );
-    };
-    again();
-    projectDocs.thread(doc.id).catch(() => {});
-    const off = chat.onObject(doc.id, again);
-    return off;
-  }, [doc.id]);
-  const state = useMemo(() => (view ? stateOf(view) : null), [view]);
-  const to = docPath(row);
-  const copy = copyFrom(doc);
-  return (
-    <ListPreview
-      data-doc-preview={doc.id}
-      facts={
-        copy && (
-          <span data-doc-copy-fact>a copy from {copy}</span>
-        )
-      }
-      factsTip={`${row.mine ? "Yours, private" : p.name} · ${doc.written} of ${doc.sections} written${copy ? "" : ` · made by ${whoLabel(doc.author, doc.agent, nameOf(p))}`}`}
-      actions={
+    <Modal
+      title="New Doc"
+      close={done}
+      onSubmit={(e) => void make(e)}
+      root={{ "data-doc-new-dialog": true }}
+      buttons={
         <>
-          <button type="button" class="primary small" data-open-doc onClick={() => go(to)}>
-            Open
+          <button type="button" class="secondary" onClick={done}>
+            Cancel
           </button>
-          <PlatformDocActions p={p} doc={doc} reload={reload} />
+          <button type="submit" class="primary" data-doc-new disabled={busy || !title.trim()}>
+            Make a Doc
+          </button>
         </>
       }
     >
-      <div class="project-doc docs-preview">
+      <input class="field" type="text" value={title} maxLength={200} placeholder="Its title" aria-label="New Doc's title" data-doc-new-title autoFocus onInput={(e) => setTitle(e.currentTarget.value)} />
+    </Modal>
+  );
+}
+
+/** The selected Doc, whole, kept live through its thread: Open and the actions above it, its outline beside it. */
+function Preview({ p, doc, reload }: { p: PlatformProject; doc: ProjectDoc; reload: () => void }) {
+  const view = useProjectDoc(p.id, doc.id);
+  const state = useMemo(() => (view ? stateOf(view) : null), [view]);
+  const reader = useRef<HTMLDivElement>(null);
+  const copy = copyFrom(doc);
+  const team = modeOf(p).kind === "team";
+  return (
+    <ListPreview
+      data-doc-preview={doc.id}
+      facts={copy && <span data-doc-copy-fact>a copy from {copy}</span>}
+      factsTip={`${team ? p.name : "Yours, private"} · ${doc.written} of ${doc.sections} written${copy ? "" : ` · made by ${whoLabel(doc.author, doc.agent, nameOf(p))}`}`}
+      actions={
+        <>
+          <button type="button" class="primary small" data-open-doc onClick={() => go(docPath(p, doc))}>
+            Open
+          </button>
+          <PlatformDocActions p={p} doc={doc} reload={reload} menu deleter={mayWrite(p)} gone={reload} />
+        </>
+      }
+      aside={view && shapeOf(view.sections).length > 0 && <Outline sections={shapeOf(view.sections)} go={(i) => goToSection(reader.current, i)} />}
+    >
+      <div ref={reader} class="docs-reader" data-doc-reader>
         <DocBlock id={0} docKey={doc.id} s={state} fresh={NO_FRESH} load={noImages} />
       </div>
     </ListPreview>
   );
 }
 const NO_FRESH = new Map<string, number>();
-
-/** The Doc's view as the Doc block's renderer takes it. */
-function stateOf(v: ProjectDocView): DocState {
-  return {
-    title: v.doc.title,
-    rev: v.doc.rev,
-    layout: v.doc.layout,
-    ...timesOf(v.doc),
-    entries: v.sections.map((s) => ({ id: s.id, heading: s.heading, intent: s.intent, body: s.body, rev: s.rev })),
-  };
-}
-
-/** A project Doc has no pictures of its own: an `assets/` image shows its alt text. */
-const noImages = async () => null;
 
 export function DocPage({ project, doc }: { project: string; doc: string }) {
   useSubscribe((fn) => session.subscribe(fn));
@@ -616,7 +406,7 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
   // A copy has no writer, whatever an older platform says (#678).
   const writer = !!view?.writer && !copy;
   // A copy is the project's to delete (native #673); an older platform
-  // sends no `deleter`, and then its `writer` says.
+  // sends no `deleter`, and then its `writer` says. Delete is in ⋯.
   const deleter = !!view && (view.deleter ?? view.writer);
   return (
     <section class="platform-section project-doc" data-doc-page={doc} data-writer={view ? String(writer) : undefined}>
@@ -638,7 +428,7 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
           fresh={fresh}
           load={noImages}
           link="page"
-          share={view && <PlatformDocActions p={p} doc={view.doc} menu />}
+          share={view && <PlatformDocActions p={p} doc={view.doc} menu deleter={deleter} gone={() => go(pathOf({ page: "docs", project }, names))} />}
           byline={
             // A copy's line above the Doc already says where it's from and when.
             view &&
@@ -652,7 +442,7 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
       ) : null}
       {view && !copy && <PublicLinkBar project={project} view={view} reload={again} />}
       {onBoards.length > 0 && (
-        <p class="dim project-doc-boards" data-doc-boards>
+        <p class="dim doc-lead" data-doc-boards>
           On boards:{" "}
           {onBoards.map((b, i) => {
             const to = pathOf({ page: "board", project, board: b.board }, names);
@@ -669,42 +459,11 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
         </p>
       )}
       {view && writer && <DocWriter project={project} view={view} wrote={show} />}
-      {view && copy && deleter && <CopyDeleter project={project} view={view} machine={copy} mine={view.doc.author === session.me?.account} />}
     </section>
   );
 }
 
-/** For owners and editors: delete a copy from the project (native #673).
- * The machine's next change to the Doc brings a new copy: the warning
- * says so, and that the machine is theirs when it is. */
-function CopyDeleter({ project, view, machine, mine }: { project: string; view: ProjectDocView; machine: string; mine: boolean }) {
-  const [gone, setGone] = useState(false);
-  const remove = async () => {
-    try {
-      await projectDocs.remove(project, view.doc.id);
-      go(pathOf({ page: "docs", project }, names));
-    } catch (err) {
-      toast(`Couldn't delete it: ${(err as Error).message}`);
-    }
-  };
-  return (
-    <div class="project-doc-form project-doc-copy-delete" data-doc-copy-delete>
-      <button type="button" class="secondary danger" onClick={() => setGone(true)} data-doc-delete>
-        Delete the copy
-      </button>
-      {gone && (
-        <ConfirmRemove title={`Delete “${view.doc.title}”?`} label="Delete" go={() => void remove()} cancel={() => setGone(false)}>
-          <p data-doc-confirm>
-            It leaves the project. {mine ? `${machine} is your machine: its` : `${machine}'s`} next change to the Doc brings a new copy here.
-          </p>
-        </ConfirmRemove>
-      )}
-    </div>
-  );
-}
-
-/** For owners and editors: write a section (its Markdown replaced), add
- * one, or delete the Doc. */
+/** For owners and editors: write a section (its Markdown replaced), or add one. */
 function DocWriter({ project, view, wrote }: { project: string; view: ProjectDocView; wrote: (v: ProjectDocView) => void }) {
   const NEW = "";
   const firstPending = view.sections.find((s) => s.body === null)?.id ?? NEW;
@@ -735,50 +494,24 @@ function DocWriter({ project, view, wrote }: { project: string; view: ProjectDoc
       setBusy(false);
     }
   };
-  const [gone, setGone] = useState(false);
-  const remove = async () => {
-    try {
-      await projectDocs.remove(project, view.doc.id);
-      go(pathOf({ page: "docs", project }, names));
-    } catch (err) {
-      toast(`Couldn't delete it: ${(err as Error).message}`);
-    }
-  };
   const ready = section === NEW ? !!heading.trim() : markdown !== (current?.body ?? "");
   return (
-    <>
-    <form class="project-doc-form project-doc-writer" onSubmit={(e) => void save(e)} data-doc-writer>
-      <label>
-        Write{" "}
-        <select value={section} onChange={(e) => pick(e.currentTarget.value)} data-doc-section-pick>
-          {view.sections.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.heading}
-              {s.body === null ? " (pending)" : ""}
-            </option>
-          ))}
-          <option value={NEW}>A new section at the end…</option>
-        </select>
-      </label>
-      {section === NEW && <input type="text" value={heading} maxLength={200} placeholder="its heading" aria-label="The new section's heading" data-doc-heading-input onInput={(e) => setHeading(e.currentTarget.value)} />}
-      <textarea rows={8} value={markdown} placeholder="Markdown: lists, tables, ```chart and ```svg fences" aria-label="The section's Markdown" data-doc-markdown-input onInput={(e) => setMarkdown(e.currentTarget.value)} />
-      <span class="project-doc-buttons">
-        <button type="submit" class="primary" disabled={busy || !ready} data-doc-save>
-          {section === NEW ? "Add the section" : "Save the section"}
-        </button>
-        <button type="button" class="secondary danger" onClick={() => setGone(true)} data-doc-delete>
-          Delete the Doc
-        </button>
-      </span>
+    <form class="doc-lead doc-writer" onSubmit={(e) => void save(e)} data-doc-writer>
+      <select class="field" value={section} aria-label="Which section to write" onChange={(e) => pick(e.currentTarget.value)} data-doc-section-pick>
+        {view.sections.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.heading}
+            {s.body === null ? " (pending)" : ""}
+          </option>
+        ))}
+        <option value={NEW}>A new section at the end…</option>
+      </select>
+      {section === NEW && <input class="field" type="text" value={heading} maxLength={200} placeholder="Its heading" aria-label="The new section's heading" data-doc-heading-input onInput={(e) => setHeading(e.currentTarget.value)} />}
+      <textarea class="field" rows={8} value={markdown} placeholder="Markdown: lists, tables, ```chart and ```svg fences" aria-label="The section's Markdown" data-doc-markdown-input onInput={(e) => setMarkdown(e.currentTarget.value)} />
+      <button type="submit" class="primary" disabled={busy || !ready} data-doc-save>
+        {section === NEW ? "Add the section" : "Save the section"}
+      </button>
     </form>
-    {gone && (
-      <ConfirmRemove title={`Delete “${view.doc.title}”?`} label="Delete" go={() => void remove()} cancel={() => setGone(false)}>
-        <p data-doc-confirm>
-          It goes to the Trash for {TRASH_DAYS} days, out of sight of everyone in the project. An owner, an editor or its maker can restore it from the Docs page's Trash.
-        </p>
-      </ConfirmRemove>
-    )}
-    </>
   );
 }
 

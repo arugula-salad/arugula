@@ -1,37 +1,43 @@
-// The Docs page (#1494, on the list page since Arugula #589): every Doc this
-// machine keeps, the ones an agent wrote and left (#1493), newest first. A
-// Doc outlives its pane, so closing the pane isn't losing it: Open shows it
-// again in the current session (an open one comes forward), with its content
-// and, if it was shared with a link, its share menu. Delete removes it for
-// good, and a shared one unshares first; with control out of reach the machine
-// refuses, and the reason is shown here. With none yet, it offers Start an
-// agent, with the Doc line of *What your agent can do here* and its example.
+// The Docs page (#1494, on the list page since Arugula #589, the one Docs
+// list since Arugula #864, shared/docs/docs-list.tsx). On a personal
+// machine it's My Docs: every Doc this machine keeps, the ones an agent wrote
+// and left (#1493). On a team's machine, the machine's Docs are the team's
+// (the rule `doc new` goes by, #862), so it's the team project's, in two
+// tabs: My Docs and Team Docs.
+//
+// A library Doc outlives its pane, so closing the pane isn't losing it: Open
+// shows it again in the current session (an open one comes forward), with its
+// content and, if it was shared with a link, its share menu. Delete removes it
+// for good, and a shared one unshares first; with control out of reach the
+// machine refuses, and the reason is shown here. With none yet, it offers
+// Start an agent, with the Doc line of *What your agent can do here* and its
+// example. A team's Doc opens beside as the team Doc block does, through
+// control; sharing and deleting it are on its page on the platform.
 //
 // The preview side is the reader (#608): picking a row reads the whole Doc
 // there, drawn as the Doc block draws it, from `doc.read` and `doc.asset`,
 // which open no block. Open beside is for editing or watching an agent
 // fill it. The list reloads when the window is back, and a Doc whose
 // `updated` moved is read again in place.
-//
-// A row's mark is the Doc's shape: a segment a section, as long as the section
-// is, brighter where it has a figure, and the whole as long as the Doc is. So a
-// note and a long plan look different without opening either.
 
-import { BlockLoading, EmptyLine, EmptyState } from "../../shared/ui/block-states";
+import { BlockLoading, EmptyState } from "../../shared/ui/block-states";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
 import { opPath, OPS } from "../ops";
 import { DocBlock, type DocState } from "../../shared/docs/doc-render";
-import { LayoutMark } from "../../shared/docs/layout-mark";
 import { shareClosedDoc } from "./doc-share";
 import { DocActions, openTab } from "../../shared/docs/doc-actions";
-import type { DocAsset, DocContent, DocLinkUrl, DocRow, DocSectionShape } from "../../shared/proto.gen";
+import type { AccessView, DocAsset, DocContent, DocLinkUrl, DocRow, PlatformProjects, ProjectDoc } from "../../shared/proto.gen";
 import { ConfirmRemove } from "../../shared/ui/confirm";
-import { ListCounts, ListPage, ListPreview, type ListCount, type ListGroup } from "../../shared/ui/list-page";
+import { ListCounts, ListPreview, type ListCount } from "../../shared/ui/list-page";
 import { openMenu } from "../../shared/ui/menu";
 import { IconButton, LinkIcon, MoreIcon } from "../../shared/ui/icons";
-import { PageHeader } from "../../shared/ui/page-header";
-import { DocRowTime, DOC_SORTS, sortTime, useDocSort } from "../../shared/docs/doc-sort";
+import { DocsList, goToSection, Outline } from "../../shared/docs/docs-list";
+import { keptLine, machineMode, PERSONAL, type DocsMode } from "../../shared/docs/docs-mode";
+import type { BackLink } from "../../shared/ui/page-header";
+import type { ComponentChildren } from "preact";
+import { noImages, projectItem, shapeOf, stateOf as projectState, useProjectDoc, useProjectDocs } from "../../shared/docs/project-docs";
+import { platformFetch } from "../../shared/maintenance";
 import { AppBar } from "./app-bar";
 import { closeDocsPage, docsRoute, openDoc } from "./docs-route";
 import { startAgent } from "./agent-dialog";
@@ -77,46 +83,116 @@ const wordsOf = (r: DocRow) => r.sections.reduce((n, s) => n + s.words, 0);
 const figuresOf = (r: DocRow) => r.sections.reduce((n, s) => n + s.figures, 0);
 const isOpen = (r: DocRow) => r.open !== null && r.open !== undefined;
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
-/** A Doc as long as this is as long as a mark gets. */
-const LONG_DOC = 20_000;
-const MARK_W = 130;
 const READ_WPM = 230;
 
-/** The Doc's shape: see the top of this file. */
-function Shape({ sections }: { sections: DocSectionShape[] }) {
-  if (!sections.length) return null;
-  const words = sections.reduce((n, s) => n + s.words, 0);
-  const width = Math.max(26, Math.sqrt(Math.min(words, LONG_DOC) / LONG_DOC) * MARK_W);
-  return (
-    <span class="doc-shape" style={{ width: `${Math.round(width)}px` }} aria-hidden="true" data-doc-shape>
-      {sections.map((s, i) => (
-        <i key={i} class={s.figures ? "fig" : undefined} style={{ flex: `${Math.max(s.words, words * 0.012, 1)} 0 0` }} />
-      ))}
-    </span>
-  );
-}
-
-/** Which of the page's groups a Doc falls in, by the day of the time it's sorted by. */
-function ageGroup(updated: number, now: number): string {
-  const day = new Date(now);
-  day.setHours(0, 0, 0, 0);
-  const today = day.getTime();
-  if (updated >= today) return "Today";
-  day.setDate(day.getDate() - 1);
-  if (updated >= day.getTime()) return "Yesterday";
-  day.setDate(day.getDate() - 5);
-  if (updated >= day.getTime()) return "This week";
-  return "Earlier";
+/** Whose Docs the machine's are, and who reads them: its team's project
+ * when it's a team's machine (`GET /api/access` says its team) and the
+ * platform lists that project for the reader; else its library. Null while
+ * it asks. A page with no platform behind it (a daemon's own) has the library. */
+function useMode(client: Client): { mode: DocsMode; me: string | null } | null {
+  const [got, setGot] = useState<{ mode: DocsMode; me: string | null } | null>(null);
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      try {
+        const res = await client.request(OPS["access.get"].method, opPath("access.get"));
+        const team = res.ok ? (await res.json<AccessView>().catch(() => null))?.team?.id : null;
+        if (!team) return live && setGot({ mode: PERSONAL, me: null });
+        const r = await platformFetch("/api/projects", { credentials: "same-origin" });
+        const l = r.ok ? ((await r.json().catch(() => null)) as PlatformProjects | null) : null;
+        if (live) setGot(l && Array.isArray(l.projects) ? { mode: machineMode(team, l.projects), me: l.me?.account ?? null } : { mode: PERSONAL, me: null });
+      } catch {
+        if (live) setGot({ mode: PERSONAL, me: null });
+      }
+    })();
+    return () => void (live = false);
+  }, [client]);
+  return got;
 }
 
 function Page({ client, inWorkspace }: { client: Client; inWorkspace?: boolean }) {
+  const got = useMode(client);
+  return (
+    <div class={inWorkspace ? "chat agents-page docs-page ws-page" : "chat agents-page docs-page"} data-docs-page data-docs-mode={got?.mode.kind}>
+      {!inWorkspace && <AppBar client={client} at="docs" />}
+      {got === null ? (
+        <div class="list-status">
+          <BlockLoading inline data-docs-loading what="this machine's Docs" />
+        </div>
+      ) : got.mode.kind === "team" ? (
+        <TeamMachine client={client} mode={got.mode} me={got.me} />
+      ) : (
+        <Library client={client} />
+      )}
+    </div>
+  );
+}
+
+/** A team's machine: Team Docs, and, apart from them, the library Docs it
+ * still keeps (written before its Docs were the team's, #862), so they can be
+ * read and moved. The two are never one list: the library is a view of its
+ * own, reached from a line over Team Docs, with the way back. */
+function TeamMachine({ client, mode, me }: { client: Client; mode: Extract<DocsMode, { kind: "team" }>; me: string | null }) {
+  const [library, setLibrary] = useState(false);
+  const [kept, setKept] = useState(0);
+  useEffect(() => {
+    if (library) return;
+    let live = true;
+    void (async () => {
+      try {
+        const res = await client.request(OPS["docs.list"].method, opPath("docs.list"));
+        const v = res.ok ? await res.json<DocRow[]>().catch(() => null) : null;
+        if (live) setKept(Array.isArray(v) ? v.length : 0);
+      } catch {
+        // No line, then.
+      }
+    })();
+    return () => void (live = false);
+  }, [client, library]);
+  if (library)
+    return (
+      <Library
+        client={client}
+        title="On this machine"
+        back={{
+          href: "#docs",
+          label: "Team Docs",
+          data: "docs-back-team",
+          onClick: (e) => {
+            e.preventDefault();
+            setLibrary(false);
+          },
+        }}
+      />
+    );
+  const line = keptLine(kept);
+  return (
+    <TeamDocs
+      client={client}
+      mode={mode}
+      me={me}
+      under={
+        line && (
+          <p class="docs-kept dim" data-docs-kept={kept}>
+            {line} ·{" "}
+            <button type="button" class="link" data-docs-kept-show onClick={() => setLibrary(true)}>
+              Show
+            </button>
+          </p>
+        )
+      }
+    />
+  );
+}
+
+/** A personal machine's Docs: its library. On a team's machine, the Docs it
+ * kept from before, under `title`, with `back` to Team Docs. */
+function Library({ client, title, back }: { client: Client; title?: string; back?: BackLink }) {
   const [rows, setRows] = useState<DocRow[] | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState<DocRow | null>(null);
   const [filter, setFilter] = useState("all");
-  const [query, setQuery] = useState("");
-  const [sort, setSort] = useDocSort();
   /** The Docs read so far, by id. */
   const reads = useRef(new Map<string, Read>());
 
@@ -169,86 +245,46 @@ function Page({ client, inWorkspace }: { client: Client; inWorkspace?: boolean }
     setBusy(false);
   };
 
-  const all = rows ?? [];
-  const q = query.trim().toLowerCase();
-  const shown = useMemo(
-    () =>
-      all.filter(
-        (r) =>
-          (filter === "all" || (filter === "open" && isOpen(r)) || (filter === "shared" && !!r.shared)) &&
-          (!q || r.title.toLowerCase().includes(q) || r.summary.toLowerCase().includes(q) || r.sections.some((s) => s.heading.toLowerCase().includes(q))),
-      ),
-    [rows, filter, q],
-  );
-  const groups = useMemo(() => {
-    const now = Date.now();
-    const out: ListGroup<DocRow>[] = [];
-    for (const r of [...shown].sort((a, b) => sortTime(b, sort) - sortTime(a, sort))) {
-      const title = ageGroup(sortTime(r, sort), now);
-      const last = out[out.length - 1];
-      if (last?.title === title) last.items.push(r);
-      else out.push({ title, items: [r] });
-    }
-    return out;
-  }, [shown, sort]);
-
-  const counts: ListCount[] = [
+  const counts = (all: DocRow[]): ListCount[] => [
     { key: "all", n: all.length, label: all.length === 1 ? "Doc" : "Docs" },
     { key: "open", n: all.filter(isOpen).length, label: "open now", tone: "live" },
     { key: "shared", n: all.filter((r) => !!r.shared).length, label: "shared" },
   ];
-  const narrowed = filter !== "all" || !!q;
-
-  const status =
-    rows === null && !error ? (
-      <BlockLoading inline data-docs-loading what="this machine's Docs" />
-    ) : rows?.length === 0 ? (
-      <EmptyState
-        where="page"
-        data-docs-empty
-        title="No Docs yet."
-        why="Docs your agents write show up here. Ask any agent for a Doc (a write-up, a plan, a comparison) and it keeps it here."
-        action={
-          <button
-            class="primary"
-            data-docs-start-agent
-            onClick={() => {
-              closeDocsPage();
-              startAgent(client, { session: client.session ?? undefined });
-            }}
-          >
-            Start an agent
-          </button>
-        }
-      >
-        <AgentCanCard client={client} only="doc" />
-      </EmptyState>
-    ) : rows && shown.length === 0 && narrowed ? (
-      <EmptyLine data-docs-none>
-        {q ? "No Doc's title, opening or headings match." : filter === "open" ? "No Doc is open in a pane." : "No Doc is shared."}
-      </EmptyLine>
-    ) : undefined;
 
   return (
-    <div class={inWorkspace ? "chat agents-page docs-page ws-page" : "chat agents-page docs-page"} data-docs-page>
-      {!inWorkspace && <AppBar client={client} at="docs" />}
-      <ListPage<DocRow>
-        label="Docs"
+    <>
+      <DocsList<DocRow>
+        mode={PERSONAL}
+        docs={rows}
+        item={(r) => ({ id: r.id, title: r.title, layout: r.layout, made: r.made, updated: r.updated, by: r.by, sections: r.sections, summary: r.summary, mine: true })}
         splitKey="docs"
-        header={
-          <PageHeader
-            title="Docs"
-            stats={all.length > 0 && <ListCounts counts={counts} on={filter} pick={(k) => setFilter(k === filter ? "all" : k)} />}
-          />
+        title={title}
+        back={back}
+        stats={(all) => all.length > 0 && <ListCounts counts={counts(all)} on={filter} pick={(k) => setFilter(k === filter ? "all" : k)} />}
+        narrow={filter === "all" ? undefined : { test: (r) => (filter === "open" ? isOpen(r) : !!r.shared), none: filter === "open" ? "No Doc is open in a pane." : "No Doc is shared." }}
+        loading={!error && <BlockLoading inline data-docs-loading what="this machine's Docs" />}
+        empty={
+          <EmptyState
+            where="page"
+            data-docs-empty
+            title="No Docs yet."
+            why="Docs your agents write show up here. Ask any agent for a Doc (a write-up, a plan, a comparison) and it keeps it here."
+            action={
+              <button
+                class="primary"
+                data-docs-start-agent
+                onClick={() => {
+                  closeDocsPage();
+                  startAgent(client, { session: client.session ?? undefined });
+                }}
+              >
+                Start an agent
+              </button>
+            }
+          >
+            <AgentCanCard client={client} only="doc" />
+          </EmptyState>
         }
-        searchLabel="Search titles and headings"
-        query={query}
-        setQuery={setQuery}
-        sort={{ options: DOC_SORTS, value: sort, onSort: setSort }}
-        groups={groups}
-        keyOf={(r) => r.id}
-        previewOn="click"
-        onOpen={(r) => void open(r)}
         notice={
           error && (
             <p class="control-error agents-error" role="alert" data-docs-error>
@@ -256,16 +292,9 @@ function Page({ client, inWorkspace }: { client: Client; inWorkspace?: boolean }
             </p>
           )
         }
-        status={status && <div class="list-status">{status}</div>}
+        onOpen={(r) => void open(r)}
         row={(r) => ({
           tone: isOpen(r) ? "live" : undefined,
-          dense: true,
-          title: (
-            <>
-              <LayoutMark layout={r.layout} />
-              <span data-doc-title>{r.title}</span>
-            </>
-          ),
           tags: (
             <>
               {isOpen(r) && (
@@ -285,9 +314,7 @@ function Page({ client, inWorkspace }: { client: Client; inWorkspace?: boolean }
               )}
             </>
           ),
-          age: <DocRowTime doc={r} by={sort} />,
-          mark: <Shape sections={r.sections} />,
-          attrs: { "data-doc": r.id, "data-shared": String(!!r.shared), "data-open": r.open?.toString() ?? "" },
+          attrs: { "data-shared": String(!!r.shared), "data-open": r.open?.toString() ?? "" },
         })}
         preview={(r) => <Preview key={r.id} client={client} doc={r} busy={busy} reads={reads.current} open={() => void open(r)} share={() => share(r)} ask={() => setDeleting(r)} fail={setError} />}
       />
@@ -297,7 +324,81 @@ function Page({ client, inWorkspace }: { client: Client; inWorkspace?: boolean }
           {deleting.shared && <p data-delete-shared>Its link stops working.</p>}
         </ConfirmRemove>
       )}
-    </div>
+    </>
+  );
+}
+
+/** A team's machine's Docs: the team project's, My Docs and Team Docs. */
+function TeamDocs({ client, mode, me, under }: { client: Client; mode: Extract<DocsMode, { kind: "team" }>; me: string | null; under?: ComponentChildren }) {
+  const { docs } = useProjectDocs(mode.project);
+  const [error, setError] = useState("");
+  // Open beside: the team Doc block, as `doc open` makes it, reading and writing through control.
+  const open = async (d: ProjectDoc) => {
+    const pane = await client.openBlock(
+      { type: "doc", config: { doc: d.id, project: mode.project, project_name: mode.name, title: d.title }, session: client.session?.toString() ?? null, local: true },
+      "couldn't open the Doc",
+    );
+    if (pane === null) return;
+    if (docsRoute()) closeDocsPage();
+    client.showWhenKnown(pane);
+  };
+  return (
+    <DocsList<ProjectDoc>
+      mode={mode}
+      docs={docs}
+      item={(d) => projectItem(d, me)}
+      splitKey="docs"
+      sub={`${mode.name}'s Docs: this is the team's machine`}
+      under={under}
+      stats={(all) => docs !== null && <ListCounts counts={[{ key: "all", n: all.length, label: all.length === 1 ? "Doc" : "Docs" }]} on="all" pick={() => {}} />}
+      loading={<BlockLoading inline data-docs-loading what={`${mode.name}'s Docs`} />}
+      empty={<EmptyState where="page" data-docs-empty title="No Docs yet." why={`Docs this machine's agents write go to ${mode.name}, and show up here.`} />}
+      notice={
+        error && (
+          <p class="control-error agents-error" role="alert" data-docs-error>
+            {error}
+          </p>
+        )
+      }
+      onOpen={(d) => void open(d)}
+      preview={(d) => <TeamPreview key={d.id} project={mode.project} doc={d} open={() => void open(d)} fail={setError} />}
+    />
+  );
+}
+
+/** A team Doc, whole, kept live through its thread: Open beside, and its link to copy or open. */
+function TeamPreview({ project, doc, open, fail }: { project: string; doc: ProjectDoc; open: () => void; fail: (why: string) => void }) {
+  const view = useProjectDoc(project, doc.id);
+  const state = useMemo(() => (view ? projectState(view) : null), [view]);
+  const reader = useRef<HTMLDivElement>(null);
+  const link = view?.link ?? null;
+  const copy = async (): Promise<"ok" | false> => {
+    try {
+      await navigator.clipboard.writeText(link!);
+      return "ok";
+    } catch (e) {
+      fail((e as Error).message);
+      return false;
+    }
+  };
+  return (
+    <ListPreview
+      data-doc-preview={doc.id}
+      factsTip={`${doc.written} of ${doc.sections} written`}
+      actions={
+        <>
+          <button class="primary small" data-open-doc title="Show it in this session" onClick={open}>
+            Open beside
+          </button>
+          <DocActions none={!link} copy={copy} open={() => link && openTab(link)} hooks={{ copy: { "data-doc-copy-link": "" } }} />
+        </>
+      }
+      aside={view && shapeOf(view.sections).length > 0 && <Outline sections={shapeOf(view.sections)} go={(i) => goToSection(reader.current, i)} />}
+    >
+      <div ref={reader} class="docs-reader" data-doc-reader>
+        <DocBlock id={0} docKey={doc.id} s={state} fresh={NO_FRESH} load={noImages} />
+      </div>
+    </ListPreview>
   );
 }
 
@@ -364,8 +465,6 @@ function Preview({ client, doc, busy, reads, open, share, ask, fail }: { client:
     };
   }, [doc.id]);
 
-  const goTo = (i: number) => reader.current?.querySelectorAll("[data-section]")[i]?.scrollIntoView({ block: "start" });
-
   // The one link Copy link copies and Open in browser opens (Arugula #708):
   // the public link it has (anyone can open it), else its copy on the
   // platform (only its owner can). Null, with the reason said, if it fails.
@@ -398,7 +497,6 @@ function Preview({ client, doc, busy, reads, open, share, ask, fail }: { client:
 
   const words = wordsOf(doc);
   const figures = figuresOf(doc);
-  const biggest = Math.max(1, ...doc.sections.map((s) => s.words));
   const none = !doc.platform && !doc.shared?.link;
   return (
     <ListPreview
@@ -440,23 +538,7 @@ function Preview({ client, doc, busy, reads, open, share, ask, fail }: { client:
           </IconButton>
         </>
       }
-      aside={
-        doc.sections.length > 0 && (
-          <>
-            <h3>Outline</h3>
-            <ol class="doc-outline" data-doc-outline>
-              {doc.sections.map((s, i) => (
-                <li key={i}>
-                  <button type="button" class="link doc-outline-go" title={s.heading} data-doc-outline-go onClick={() => goTo(i)}>
-                    {s.heading}
-                  </button>
-                  <i class={s.figures ? "fig" : undefined} style={{ width: `${Math.max(6, (s.words / biggest) * 100)}%` }} />
-                </li>
-              ))}
-            </ol>
-          </>
-        )
-      }
+      aside={doc.sections.length > 0 && <Outline sections={doc.sections} go={(i) => goToSection(reader.current, i)} />}
     >
       <div ref={reader} class="docs-reader" data-doc-reader>
         <DocBlock id={0} docKey={doc.id} s={state} fresh={NO_FRESH} load={load} cached={kept.images} />

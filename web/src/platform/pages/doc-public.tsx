@@ -35,11 +35,11 @@ export function PublicLinkBar({ project, view, reload }: { project: string; view
     }
   };
   return (
-    <div class="project-doc-form doc-public" data-doc-public data-doc-public-shared={link ? "true" : "false"}>
+    <div class="doc-lead doc-public" data-doc-public data-doc-public-shared={link ? "true" : "false"}>
       {link ? (
         <>
           <span class="dim">Anyone with the link can read this Doc:</span>{" "}
-          <input type="text" readOnly value={link.url} data-doc-public-url onFocus={(e) => (e.currentTarget as HTMLInputElement).select()} />{" "}
+          <input class="field small" type="text" readOnly value={link.url} data-doc-public-url onFocus={(e) => (e.currentTarget as HTMLInputElement).select()} />{" "}
           <button type="button" class="secondary small" onClick={() => void copy()} data-doc-public-copy>
             Copy link
           </button>

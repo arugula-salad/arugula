@@ -277,7 +277,8 @@ button.list-count:hover {
 }
 
 /* A box on a row (Arugula #818), in the margin at the row's left: seen on
-   hover or on the keys' row, and always once any is ticked (and on a screen with no hover). */
+   hover or on the keys' row, and always once any is ticked. A screen with no
+   hover starts ticking with a long press (Arugula #864). */
 .list-row-check {
   position: absolute;
   left: calc(-1 * var(--space-5) + 2px);
@@ -330,9 +331,11 @@ button.list-count:hover {
   opacity: 1;
 }
 
+/* A long press is the list's, not the browser's text selection or callout. */
 @media (hover: none) {
-  .list-row-check {
-    opacity: 1;
+  .list-rows[aria-multiselectable="true"] .list-row {
+    -webkit-touch-callout: none;
+    user-select: none;
   }
 }
 
