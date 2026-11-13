@@ -5,7 +5,7 @@
 // WebKit doesn't hold a page to that rule, and its clipboard can't be read,
 // so the page gets a clipboard that does: a write started after the click's
 // task is refused, and what was written is kept for the test to read.
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChildProcess } from "node:child_process";
@@ -14,8 +14,8 @@ import { newDoc, type Post } from "./doc-steps";
 import { closeContexts, menuItem, open } from "./helpers";
 import { daemon } from "./phones";
 
-// A daemon of its own, so the test can write its Doc's state. The copy on
-// the platform is only the link in the Doc's meta: no control is asked.
+// A daemon of its own, so the test can write its Doc's state. Its public
+// link is only the entry the machine keeps for it: no control is asked.
 let dir = "";
 let url = "";
 let proc: ChildProcess | undefined;
@@ -70,12 +70,13 @@ test.describe("Copy link in WebKit", () => {
     const d = await newDoc(post, term, "Copy me");
     await expect(page.locator(`[data-doc-block="${d}"] .doc-title`)).toBeVisible({ timeout: 20_000 });
     const lib = await page.evaluate((id) => (window.__arugula.client.blocks.get(id)?.state as { doc?: string }).doc!, d);
-    // A copy on the platform, so there's a link to copy (as doc-share.spec.ts's #708 test).
-    const link = "http://127.0.0.1:1/p/prj_0123/docs/pdc_00000000000000000000000000000000";
-    const file = join(dir, "state", "docs", lib, "meta.json");
-    const meta = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
-    meta.platform = { project: "prj_0123", id: "pdc_0", link, rev: 1, assets: {} };
-    writeFileSync(file, JSON.stringify(meta));
+    // Shared with a link, so there's one to copy (as docs-page.spec.ts's #708 test).
+    const id = "0123456789abcdef0123456789abcdef";
+    const key = "k".repeat(43);
+    const at = Date.now();
+    const entry = { key, ver: 1, doc: lib, title: "Copy me", made: at, updated: at, size: 2048, viewer: "http://127.0.0.1:1/d" };
+    writeFileSync(join(dir, "state", "doc-links.json"), JSON.stringify({ [id]: entry }));
+    const link = `http://127.0.0.1:1/d/${id}#k=${key}`;
     const again = (await post("/api/blocks", { type: "doc", config: { doc: lib }, split: term, local: true })).block!;
     const button = page.locator(`[data-doc-bar="${again}"] [data-doc-bar-link]`);
     await expect(button).toBeEnabled({ timeout: 20_000 });

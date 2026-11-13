@@ -1,11 +1,9 @@
 // A board's Docs (#517), wherever the board is drawn: the strip under its
 // goal, and the Docs section of a row's drawer. A project Doc opens its page
 // on the platform page; a machine's Doc opens in the shell when the shell is
-// on that machine (`PlatformApi.machineDoc`), else its copy on the platform
-// when the copy sits in the board's project (`copy`, native #673), and
-// elsewhere says which machine has it, when the reader is told (the
-// platform blanks the machine otherwise: then the chip is plain, or opens
-// the copy). Writers link a project Doc from the picker and take one off;
+// on that machine (`PlatformApi.machineDoc`), and elsewhere opens its
+// machine or says which machine has it, when the reader is told (the
+// platform blanks the machine otherwise: then the chip is plain). Writers link a project Doc from the picker and take one off;
 // machine Docs come in through agents (`board_write` `link_doc`), or a
 // person from a machine they reach.
 
@@ -25,8 +23,6 @@ export interface DocShown {
   written?: number;
   missing?: boolean;
   machine_name?: string;
-  /** A machine Doc's copy in the project (`pdc_`); an older platform sends none. */
-  copy?: string;
 }
 
 /** A Doc as a chip: its title as a link where it opens, and `3/5` written or the machine it's on. A project Doc that was deleted is plain text. `remove` is the ×, for those who may write. `list`: a line of a list instead, the title alone with what the chip would add as its tooltip, and the × on hover (the board header's Docs). */
@@ -49,17 +45,9 @@ export function DocLink({ d, project, platform, remove, list }: { d: DocShown; p
     const machine = p.machine;
     const here = machine ? api.machineDoc?.here(machine) : undefined;
     const control = machine ? api.controlHref?.(`machine=${machine}`) : undefined;
-    const copy = d.copy ? docHref(project, d.copy, platform) : undefined;
     if (here) {
       name = (
         <a class="board-ptr" href="#" data-board-doc-open onClick={(e) => (e.preventDefault(), api.machineDoc!.open(machine, p.doc))}>
-          {d.title}
-        </a>
-      );
-    } else if (copy) {
-      // The machine's copy on the platform, as the machine last put it.
-      name = (
-        <a class="board-ptr" href={copy} data-board-doc-open data-board-doc-copy={d.copy}>
           {d.title}
         </a>
       );

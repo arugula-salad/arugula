@@ -43,11 +43,11 @@ decided_by: "alecraso"
 decided_on: "2026-11-10"
 reviews: []
 constrains:
-  - "path:crates/arugulad-docs/src/docs/copies.rs"
+  - "path:crates/arugulad-docs/src/docs/moving.rs"
   - "path:crates/platform/src/project_docs.rs"
   - "path:crates/platform/src/project_docs_machine.rs"
   - "path:web/src/shared/docs/move-docs.ts"
-  - "path:web/src/shared/docs/share-with.tsx"
+  - "path:web/src/platform/pages/doc-actions.tsx"
 ---
 
 # A Doc's home follows the context, with no copies
@@ -69,12 +69,14 @@ two lists for one library, and a Doc could exist in two versions. Decided
   by onboarding's checklist or Move to team, takes it off the machine. It
   leaves a hidden pointer, so old links and open panes follow the Doc.
 - **A Doc has one home, with no copies.** The personal cloud copy, Mine
-  copies, Share with… as a snapshot and Update copy go (#865), and aru-135
-  with them: it is superseded. Until #865 lands, the code still has them.
+  copies, Share with… as a snapshot and Update copy went with #865, and
+  aru-135 with them: it is superseded. A personal project's Docs on the
+  platform are offered Move to a team, or Download.
 
 Anyone who refuses cloud Docs in a team is handled if they show up.
 
-Where it changes, today: `crates/arugulad-docs/src/docs/copies.rs`,
+Where it changes, today: `crates/arugulad-docs/src/docs/moving.rs`,
 `crates/platform/src/project_docs.rs`,
 `crates/platform/src/project_docs_machine.rs`,
-`web/src/shared/docs/move-docs.ts` and `web/src/shared/docs/share-with.tsx`.
+`web/src/shared/docs/move-docs.ts` and
+`web/src/platform/pages/doc-actions.tsx`.

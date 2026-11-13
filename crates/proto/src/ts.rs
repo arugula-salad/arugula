@@ -57,7 +57,6 @@ fn generate() -> String {
     c.visit::<FlagInfo>();
     c.visit::<crate::api::DocLinkUrl>();
     c.visit::<crate::api::DocRow>();
-    c.visit::<crate::api::DocOnPlatform>();
     c.visit::<crate::api::AgentCan>();
     c.visit::<crate::api::AccessView>();
     c.visit::<crate::api::DocOpenRequest>();
@@ -264,8 +263,6 @@ fn generate() -> String {
         c.visit::<DocView>();
         c.visit::<NewDoc>();
         c.visit::<DocWrite>();
-        c.visit::<DocCopies>();
-        c.visit::<DocCopy>();
         c.visit::<DocMove>();
     }
     c.decls.sort();

@@ -5790,7 +5790,6 @@ html[data-scheme="light"] .doc {
   --measure: calc(68ch + 32px);
 }
 
-.project-doc-copy,
 .doc-lead {
   --lead-measure: calc(68ch * 15 / 13 + 64px);
 }
@@ -5800,7 +5799,6 @@ html[data-scheme="light"] .doc {
     --measure: calc(88ch + 32px);
   }
 
-  .project-doc-copy,
   .doc-lead {
     --lead-measure: calc(88ch * 15 / 13 + 64px);
   }
@@ -5811,7 +5809,6 @@ html[data-scheme="light"] .doc {
     --measure: calc(100ch + 32px);
   }
 
-  .project-doc-copy,
   .doc-lead {
     --lead-measure: calc(100ch * 15 / 13 + 64px);
   }

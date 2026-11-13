@@ -1,6 +1,6 @@
 //! A Doc moved to a team (Arugula #863, spike #832's model: one home, no
 //! copies, a hidden pointer left behind). The machine makes the move, not
-//! the platform, in three steps:
+//! the platform, in two steps:
 //!
 //! 1. **The team Doc is made** from the Doc as it is now, through the team
 //!    block's routes ([`super::team`]): its title, outline and layout with
@@ -8,8 +8,6 @@
 //!    each section that was written.
 //! 2. **The Doc becomes a pointer** ([`library::point`]): `meta.json` keeps
 //!    its `id` and `title` and gains `moved`, and its other files go.
-//! 3. **Its copy on the platform comes down**, if it had one, by a deleted
-//!    Doc's tombstone.
 //!
 //! If making the team Doc fails at any step, the half-made team Doc is
 //! deleted and the Doc here is left as it was: never both half there. Once
@@ -124,8 +122,8 @@ pub async fn move_doc(
         at: now_ms(),
     };
     let pointed = {
-        let (state_dir, dir, at) = (state_dir.to_owned(), dir.clone(), at.clone());
-        crate::task::spawn_blocking(move || library::point(&state_dir, &dir, at)).await.map_err(|e| e.to_string())
+        let (dir, at) = (dir.clone(), at.clone());
+        crate::task::spawn_blocking(move || library::point(&dir, at)).await.map_err(|e| e.to_string())
     };
     if let Err(e) = pointed.and_then(|r| r) {
         let undone = undo(&*cloud, &dir, &moving).await;
@@ -342,9 +340,6 @@ mod tests {
                                 rev: 1,
                                 created_at: 1,
                                 updated_at: 1,
-                                machine: None,
-                                machine_name: None,
-                                made_from: None,
                                 layout: new.layout.clone(),
                                 moved_from: new.moved_from.clone(),
                             },
@@ -533,26 +528,6 @@ mod tests {
             assert_eq!(std::fs::read_to_string(dir.join("s2.md")).unwrap(), "Here");
             std::fs::remove_dir_all(state).unwrap();
         }
-    }
-
-    /// A Doc with a copy on the platform: the move takes the copy down, by the
-    /// tombstone a deleted Doc's copy goes by.
-    #[tokio::test]
-    async fn a_moved_docs_copy_comes_down() {
-        let state = temp("copy");
-        let (id, _doc) = shown(&state).await;
-        let dir = library::dir(&state, &id).unwrap();
-        let on = library::OnPlatform {
-            project: "prj_me".into(),
-            id: "pdc_c".into(),
-            link: "l".into(),
-            ..Default::default()
-        };
-        library::set_platform(&dir, on);
-        move_doc(&state, Arc::new(Fake::default()), "dev_m", &id, &acme()).await.unwrap();
-        assert!(library::gone_dir(&state).join(&id).is_file(), "its copy comes down");
-        assert!(library::read_meta(&dir).unwrap().platform.is_none());
-        std::fs::remove_dir_all(state).unwrap();
     }
 
     /// A move cut off after the POST (the daemon stopped there) leaves the

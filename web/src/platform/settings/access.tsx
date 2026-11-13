@@ -203,7 +203,7 @@ export function Access({ p }: { p: PlatformProject }) {
             </table>
           ) : (
             <p class="dim" data-access-powers-none>
-              None given: no machine's or agent token's agents hold one here. An owner's or editor's machine still keeps its own Doc copies here.
+              None given: no machine's or agent token's agents hold one here.
             </p>
           )}
 

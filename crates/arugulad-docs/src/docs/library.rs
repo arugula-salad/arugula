@@ -7,10 +7,7 @@
 //!   agent or the person's driver name that made it, or `migrated`. `updated`
 //!   moves on an outline, a fill and an asset, and `shape` ([`super::shape`],
 //!   what its row in the list shows) is worked out again then. A Doc from
-//!   before `shape` gets one the first time it's listed. `platform`, once
-//!   the Doc was copied up (#418, [`super::copies`]): where its copy is,
-//!   forgotten when the machine leaves control ([`forget_platform`]).
-//!   `moved`, once the Doc was given to a team (Arugula #863,
+//!   before `shape` gets one the first time it's listed. `moved`, once the Doc was given to a team (Arugula #863,
 //!   [`super::moving`]): then the folder is a pointer and not a Doc.
 //! - `doc.json`, `sN.md` and `assets/`: the Doc's files, as [`super`] says.
 //!
@@ -25,9 +22,12 @@
 //! crash leaves the half-made team Doc's name: the next move, or the next
 //! start, deletes it and clears `moving` ([`super::moving`]).
 //!
-//! Nothing here prunes: a Doc stays until the owner deletes it, and its
-//! copy on the platform goes with it ([`remove`], a tombstone in
-//! [`GONE`] until it's down).
+//! Nothing here prunes: a Doc stays until the owner deletes it ([`remove`]).
+//!
+//! **No copies** (Arugula #865): a Doc was once copied up to the platform.
+//! A `meta.json` from then still says `platform`, which is ignored and
+//! dropped at its next write, and [`forget_copies`] removes what the copies
+//! kept beside the Docs.
 //!
 //! **The migration** ([`migrate`]) moves the Docs of the old layout, where a
 //! Doc's files were in its block's folder (`blocks/<id>/doc/`, or
@@ -40,7 +40,7 @@
 //! marker `docs/.migrated-1` says it is done.
 
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::HashMap,
     path::{Path, PathBuf},
     sync::Mutex,
 };
@@ -74,8 +74,6 @@ pub struct Meta {
     pub by: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shape: Option<Shape>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub platform: Option<OnPlatform>,
     /// How the Doc is laid out; a `meta.json` without it is `doc`.
     #[serde(default, skip_serializing_if = "DocLayout::is_doc")]
     pub layout: DocLayout,
@@ -118,20 +116,8 @@ impl Meta {
     }
 }
 
-/// Where a Doc's copy on the platform is (#418), as its last put was
-/// answered, and the pictures it has: each one's `rev` here when it was put.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct OnPlatform {
-    pub project: String,
-    pub id: String,
-    pub link: String,
-    pub rev: u64,
-    #[serde(default)]
-    pub assets: BTreeMap<String, u64>,
-}
-
-/// Held while `meta.json` is read and written again: a change and a copy's
-/// answer each write their part of it.
+/// Held while `meta.json` is read and written again: a change and a move
+/// each write their part of it.
 static META_LOCK: Mutex<()> = Mutex::new(());
 
 /// Whether `id` is what a Doc is called: 16 lower-case hex digits.
@@ -170,7 +156,6 @@ pub fn make(state_dir: &Path, title: &str, by: &str) -> Result<Meta, String> {
             updated: now,
             by: by.to_owned(),
             shape: Some(Shape::default()),
-            platform: None,
             layout: DocLayout::Doc,
             moved: None,
             moving: None,
@@ -179,7 +164,6 @@ pub fn make(state_dir: &Path, title: &str, by: &str) -> Result<Meta, String> {
             let _ = std::fs::remove_dir_all(&dir);
             return Err(e);
         }
-        super::copies::changed(&meta.id);
         return Ok(meta);
     }
     Err("can't find a free Doc id".into())
@@ -209,11 +193,10 @@ pub fn touch(dir: &Path, title: Option<&str>) {
     if let Err(e) = write_meta(dir, &meta) {
         warn!(doc = meta.id, error = e, "can't update a Doc's meta.json");
     }
-    super::copies::changed(&meta.id);
 }
 
-/// The Doc's layout is now `layout`: `updated` moves, and its copy and
-/// share follow. A folder with no `meta.json` is left alone. Whether it
+/// The Doc's layout is now `layout`: `updated` moves, and its share
+/// follows. A folder with no `meta.json` is left alone. Whether it
 /// changed.
 pub fn set_layout(dir: &Path, layout: DocLayout) -> bool {
     let _held = META_LOCK.lock().unwrap();
@@ -227,39 +210,7 @@ pub fn set_layout(dir: &Path, layout: DocLayout) -> bool {
         warn!(doc = meta.id, error = e, "can't keep a Doc's layout");
         return false;
     }
-    super::copies::changed(&meta.id);
     true
-}
-
-/// Where the Doc's copy on the platform is now.
-pub fn set_platform(dir: &Path, on: OnPlatform) {
-    let _held = META_LOCK.lock().unwrap();
-    // A pointer has no copy: the move took it down.
-    let Some(mut meta) = read_meta(dir).filter(|m| m.moved.is_none()) else { return };
-    if meta.platform.as_ref() == Some(&on) {
-        return;
-    }
-    meta.platform = Some(on);
-    if let Err(e) = write_meta(dir, &meta) {
-        warn!(doc = meta.id, error = e, "can't keep where a Doc's copy is");
-    }
-    super::moved(&meta.id, true);
-}
-
-/// This machine left control: where each Doc's copy was no longer holds
-/// (the next control it joins puts them again, and notes where).
-pub fn forget_platform(state_dir: &Path) {
-    let _held = META_LOCK.lock().unwrap();
-    let Ok(entries) = std::fs::read_dir(root(state_dir)) else { return };
-    for dir in entries.flatten().map(|e| e.path()) {
-        let Some(mut meta) = read_meta(&dir) else { continue };
-        if meta.platform.take().is_some()
-            && let Err(e) = write_meta(&dir, &meta)
-        {
-            warn!(doc = meta.id, error = e, "can't forget where a Doc's copy was");
-        }
-        super::moved(&meta.id, false);
-    }
 }
 
 /// The Doc's `meta.json`, with a shape: one from before `shape` gets it now.
@@ -294,37 +245,24 @@ pub fn list(state_dir: &Path) -> Vec<Meta> {
     out
 }
 
-/// In the library: a file per deleted Doc, by id, until its copy on the
-/// platform is down ([`super::copies`]); its content counts the refusals.
-pub const GONE: &str = ".gone";
+/// In the library, from when Docs were copied up: the copies' queue, the
+/// account they were queued for, and the tombstones of deleted Docs.
+const COPIES_LEFT: [&str; 3] = [".copies.json", ".copied-1", ".gone"];
 
-/// Where the tombstones are.
-pub fn gone_dir(state_dir: &Path) -> PathBuf {
-    root(state_dir).join(GONE)
+/// Remove what copying Docs up kept in the library (Arugula #865). Nothing
+/// there is missed if it can't go.
+pub fn forget_copies(state_dir: &Path) {
+    let root = root(state_dir);
+    for name in COPIES_LEFT {
+        let path = root.join(name);
+        let _ = if path.is_dir() { std::fs::remove_dir_all(&path) } else { std::fs::remove_file(&path) };
+    }
 }
 
-/// The Doc, gone from disk: its tombstone first, so a removal that fails
-/// partway still takes the copy down, then its folder, and its copy on the
-/// platform follows ([`super::copies::removed`]). A removal that fails
-/// before the Doc's files went takes the tombstone back: the Doc lives,
-/// and keeps its copy.
+/// The Doc, gone from disk.
 pub fn remove(state_dir: &Path, id: &str) -> Result<(), String> {
     let dir = dir(state_dir, id)?;
-    let gone = gone_dir(state_dir);
-    tombstone(state_dir, id).map_err(|e| format!("can't note the Doc {id} as deleted: {e}"))?;
-    let removed = std::fs::remove_dir_all(&dir).map_err(|e| format!("can't remove the Doc {id}: {e}"));
-    if removed.is_err() && read_meta(&dir).is_some() {
-        let _ = std::fs::remove_file(gone.join(id));
-        return removed;
-    }
-    super::copies::removed(id);
-    removed
-}
-
-/// The tombstone that takes the Doc's copy down ([`super::copies`]).
-fn tombstone(state_dir: &Path, id: &str) -> std::io::Result<()> {
-    let gone = gone_dir(state_dir);
-    private_dir(&gone).and_then(|()| write_atomic(&gone.join(id), b"0"))
+    std::fs::remove_dir_all(&dir).map_err(|e| format!("can't remove the Doc {id}: {e}"))
 }
 
 /// Where the Doc `id` went, if it was moved to a team: what follows its
@@ -357,20 +295,17 @@ pub fn unfinished(state_dir: &Path) -> Vec<(String, Moving)> {
 
 /// Make the Doc in `dir` a pointer to `to` (Arugula #863): `meta.json`
 /// first, so it's no longer a Doc even if a file below can't go, then
-/// every other file in the folder. Its copy on the platform comes down
-/// with a tombstone, as a deleted Doc's does. An error here means the Doc
-/// is untouched.
-pub fn point(state_dir: &Path, dir: &Path, to: MovedTo) -> Result<(), String> {
-    let had_copy = {
+/// every other file in the folder. An error here means the Doc is
+/// untouched.
+pub fn point(dir: &Path, to: MovedTo) -> Result<(), String> {
+    {
         let _held = META_LOCK.lock().unwrap();
         let mut meta = read_meta(dir).ok_or("the Doc's meta.json can't be read")?;
-        let had_copy = meta.platform.take().is_some();
         meta.moved = Some(to);
         meta.moving = None;
         meta.shape = None;
         write_meta(dir, &meta)?;
-        had_copy
-    };
+    }
     let Ok(entries) = std::fs::read_dir(dir) else { return Ok(()) };
     for e in entries.flatten() {
         if e.file_name() == META {
@@ -382,27 +317,7 @@ pub fn point(state_dir: &Path, dir: &Path, to: MovedTo) -> Result<(), String> {
             warn!(file = %path.display(), error = %e, "a moved Doc's file can't be removed; it's never read again");
         }
     }
-    let id = dir.file_name().and_then(|n| n.to_str()).unwrap_or_default();
-    if had_copy {
-        match tombstone(state_dir, id) {
-            Ok(()) => super::copies::removed(id),
-            Err(e) => warn!(doc = id, error = %e, "can't note a moved Doc's copy to take down; it stays"),
-        }
-    }
     Ok(())
-}
-
-/// The Doc's `meta.json`, or `None` when it's gone for sure (no such
-/// file); one that can't be read or doesn't parse is an error, never an
-/// absence.
-pub fn read_meta_or_gone(dir: &Path) -> Result<Option<Meta>, String> {
-    let bytes = match std::fs::read(dir.join(META)) {
-        Ok(b) => b,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(format!("can't read the Doc's meta.json: {e}")),
-    };
-    let meta: Meta = serde_json::from_slice(&bytes).map_err(|e| format!("the Doc's meta.json doesn't parse: {e}"))?;
-    Ok(Some(meta))
 }
 
 /// Lines of every Doc in the library matching `re` (a Doc that no block shows
@@ -607,7 +522,6 @@ fn copy_in(state_dir: &Path, old: &Old, layout_title: Option<&str>, copy: Copy) 
             updated,
             by: "migrated".into(),
             shape: Some(shape::of(&to)),
-            platform: None,
             layout: DocLayout::Doc,
             moved: None,
             moving: None,
@@ -695,6 +609,28 @@ mod tests {
         dir
     }
 
+    /// What copying Docs up kept beside the Docs goes at start, and the
+    /// Docs stay as they were.
+    #[test]
+    fn what_the_copies_kept_goes_and_the_docs_stay() {
+        let state = temp("copies");
+        let id = make(&state, "Plan", "test").unwrap().id;
+        let root = root(&state);
+        std::fs::write(root.join(".copies.json"), "[]").unwrap();
+        std::fs::write(root.join(".copied-1"), "a1").unwrap();
+        std::fs::create_dir_all(root.join(".gone")).unwrap();
+        std::fs::write(root.join(".gone").join("0123456789abcdef"), "0").unwrap();
+        forget_copies(&state);
+        for name in COPIES_LEFT {
+            assert!(!root.join(name).exists(), "{name} stayed");
+        }
+        assert_eq!(list(&state).iter().map(|m| m.id.clone()).collect::<Vec<_>>(), [id]);
+        // Again, with nothing to remove, changes nothing.
+        forget_copies(&state);
+        assert_eq!(list(&state).len(), 1);
+        std::fs::remove_dir_all(state).unwrap();
+    }
+
     /// A Doc as the old layout kept it, in a block's folder: an outline, a
     /// filled section and a picture.
     fn old_doc(block: &Path, title: &str) {
@@ -715,7 +651,6 @@ mod tests {
             updated: 20,
             by: by.into(),
             shape: None,
-            platform: None,
             layout: DocLayout::Doc,
             moved: None,
             moving: None,

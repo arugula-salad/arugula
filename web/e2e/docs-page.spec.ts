@@ -82,8 +82,8 @@ async function doc(page: Page, title: string): Promise<number> {
 }
 
 /** Link entries for Docs that were shared, as the machine keeps them: the
- * list reads them, and nothing is asked of control. */
-function shared(docId: string, title: string) {
+ * list reads them, and nothing is asked of control. The link's URL. */
+function shared(docId: string, title: string): string {
   const link = "0123456789abcdef0123456789abcdef";
   writeFileSync(
     join(state, "doc-links.json"),
@@ -94,10 +94,11 @@ function shared(docId: string, title: string) {
       },
     }),
   );
+  return `http://127.0.0.1:1/d/${link}#k=${"k".repeat(43)}`;
 }
 
-/** Where a Doc's copy on the platform is, as the machine notes it in the
- * Doc's `meta.json` after a put (#418): the list shows it (native #673). */
+/** Where a Doc's copy on the platform was, as a daemon from before Arugula
+ * #865 noted it in the Doc's `meta.json` after a put (#418). */
 function onPlatform(docId: string) {
   const file = join(state, "docs", docId, "meta.json");
   const meta = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
@@ -260,51 +261,56 @@ test.describe("the list", () => {
     await expect(page.locator(".block-doc [data-doc-block]")).toHaveCount(1);
   });
 
-  test("a Doc copied up to the platform says so, and its preview opens the copy", async ({ page }) => {
+  test("a Doc an older daemon copied up shows no copy, and has no link until it's shared (Arugula #865)", async ({ page }) => {
     await seed(page);
-    const link = onPlatform(await docId("Short note"));
+    const id = await docId("Short note");
+    onPlatform(id);
     await page.reload();
     await goToDocs(page);
-    await expect(row(page, "Short note").locator("[data-doc-platform]")).toHaveText("on the platform");
-    await expect(row(page, "Long plan").locator("[data-doc-platform]")).toHaveCount(0);
-    const p = await preview(page, "Short note");
-    await expect(p.locator("[data-doc-platform-link]")).toHaveAttribute("data-doc-platform-link", link);
-    await expect((await preview(page, "Long plan")).locator("[data-doc-platform-link]")).toHaveCount(0);
+    await expect(row(page, "Short note")).toBeVisible();
+    await expect(page.locator("[data-doc-platform]")).toHaveCount(0);
+    const rows = (await (await fetch(`${url}/api/docs`)).json()) as Record<string, unknown>[];
+    expect(rows.find((r) => r.id === id)?.platform).toBeUndefined();
+    const copy = (await preview(page, "Short note")).locator("[data-doc-copy-link]");
+    await expect(copy).toBeDisabled();
+    await expect(copy).toHaveAttribute("title", "No link yet: share it to get one");
   });
 
-  test("Copy link in the preview copies at once: the copy on the platform, and is off with none (Arugula #708)", async ({ page }) => {
+  test("Copy link in the preview copies the public link at once, and is off with none (Arugula #708)", async ({ page }) => {
     await seed(page);
-    const link = onPlatform(await docId("Short note"));
+    const link = shared(await docId("Short note"), "Short note");
     await page.reload();
     await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: url });
     await goToDocs(page);
     const made: string[] = [];
-    page.on("request", (req) => /doc_share|doc_link/.test(req.url()) && made.push(req.url()));
+    page.on("request", (req) => /doc_share|\/share$/.test(req.url()) && made.push(req.url()));
     const on = (await preview(page, "Short note")).locator("[data-doc-copy-link]");
     await expect(on).toBeEnabled();
     await on.click();
     await expect(on).toHaveText("Copied");
-    await expect(on).toHaveAttribute("title", /only you can open it until it's shared/);
+    await expect(on).toHaveAttribute("title", "Copy link");
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(link);
-    expect(made, "nothing is asked of control and no link is made").toEqual([]);
+    expect(made, "no link is made").toEqual([]);
     const none = (await preview(page, "Long plan")).locator("[data-doc-copy-link]");
     await expect(none).toBeDisabled();
-    await expect(none).toHaveAttribute("title", "Not on the platform yet: sign in to Arugula control to get a link");
+    await expect(none).toHaveAttribute("title", "No link yet: share it to get one");
   });
 
   test("the preview's three actions: Copy link, Share and Open in browser, between Open beside and ⋯ (Arugula #782)", async ({ page }) => {
-    await seed(page);
-    const link = onPlatform(await docId("Short note"));
+    const { big } = await seed(page);
+    const link = shared(await docId("Short note"), "Short note");
+    // Long plan's pane is still open from seed: closed, its first button is Open beside.
+    await post(`/api/panes/${big}/close`, {});
     await page.reload();
     await goToDocs(page);
-    const p = await preview(page, "Short note");
-    const bar = p.locator(".list-preview-bar");
-    await expect(bar.locator("button")).toHaveCount(5);
-    const order = await bar.locator("button").evaluateAll((bs) => bs.map((b) => b.getAttribute("aria-label") ?? b.textContent));
-    expect(order.map((s) => s?.replace(/\s+/g, " "))).toEqual(["Open beside", "Copy link", "Share with a link", "Open in browser", "More for Short note"]);
+    const plain = (await preview(page, "Long plan")).locator(".list-preview-bar");
+    await expect(plain.locator("button")).toHaveCount(5);
+    const order = await plain.locator("button").evaluateAll((bs) => bs.map((b) => b.getAttribute("aria-label") ?? b.textContent));
+    expect(order.map((s) => s?.replace(/\s+/g, " "))).toEqual(["Open beside", "Copy link", "Share with a link", "Open in browser", "More for Long plan"]);
 
     // Open in browser opens what Copy link copies, in a new tab.
-    await page.context().route(link, (route) => route.fulfill({ body: "the copy" }));
+    const bar = (await preview(page, "Short note")).locator(".list-preview-bar");
+    await page.context().route(link.split("#")[0], (route) => route.fulfill({ body: "the link" }));
     const popup = page.waitForEvent("popup");
     await bar.locator("[data-doc-open-browser]").click();
     expect((await popup).url()).toBe(link);
@@ -312,12 +318,12 @@ test.describe("the list", () => {
     // With no link it's off and says why.
     const none = (await preview(page, "Long plan")).locator("[data-doc-open-browser]");
     await expect(none).toBeDisabled();
-    await expect(none).toHaveAttribute("title", "Not on the platform yet: sign in to Arugula control to get a link");
+    await expect(none).toHaveAttribute("title", "No link yet: share it to get one");
 
     // Share goes by the Doc's id (Arugula #819): its dialog, and no pane opens.
     const panes = async () => ((await (await page.request.get("/api/panes")).json()) as unknown[]).length;
     const before = await panes();
-    await (await preview(page, "Short note")).locator("button[aria-label='Share with a link']").click();
+    await (await preview(page, "Long plan")).locator("button[aria-label='Share with a link']").click();
     await expect(page.locator("[data-doc-share-dialog]")).toBeVisible();
     await expect(page.locator("[data-docs-page]")).toBeVisible();
     expect(await panes()).toBe(before);
