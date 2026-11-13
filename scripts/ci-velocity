@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+# How the merge queue is doing over a window (Arugula issue
+# https://app.arugula.io/issues/iss_9c80206ca3fd4fc3a53122efb137311a):
+#
+#   the queue's group runs     check.yml's merge_group runs created in the
+#                              window and finished: how many, how many
+#                              failed, the failure rate (failed over
+#                              passed and failed: a cancelled group was
+#                              dropped for one ahead of it, and says
+#                              nothing), and the median and p90 wall time
+#                              (run started to its last update)
+#   time to merge              each pull request merged in the window, from
+#                              its first entry to the queue (the timeline's
+#                              added_to_merge_queue) to its merge: median
+#                              and p90; one merged without ever entering
+#                              the queue is counted apart
+#   failures by job            each failed group's first failing job (the
+#                              one that finished first), a matrix's shards
+#                              as one name, as a share of the failures
+#
+#   scripts/ci-velocity [--since DATE|Nd] [--until DATE] [--repo OWNER/NAME]
+#                       [--workflow FILE] [--json]
+#
+# --since is a day (2026-11-10, from its midnight UTC), a time in ISO 8601,
+# or days back from now (14d); 7d by default. --until (now by default) takes
+# a day (to the end of it) or a time. Prints a markdown table, or with --json
+# the same numbers as one object. Times are minutes; percentiles are nearest
+# rank. Reads with `gh api` (GH_TOKEN: actions: read, pull requests and
+# issues: read); GITHUB_REPOSITORY, or arugula-salad/arugula, is the repo.
+# scripts/tests/ci-velocity.sh runs it against a fake gh.
+set -euo pipefail
+
+repo=${GITHUB_REPOSITORY:-arugula-salad/arugula}
+workflow=check.yml
+since=7d
+until=''
+json=0
+usage() { sed -n '/^#   scripts\/ci-velocity/,/^#                       \[--workflow/p' "$0" | sed 's/^#   //; s/^#//' >&2; exit 2; }
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --since) since=${2:?--since needs a value}; shift 2 ;;
+    --until) until=${2:?--until needs a value}; shift 2 ;;
+    --repo) repo=${2:?--repo needs a value}; shift 2 ;;
+    --workflow) workflow=${2:?--workflow needs a value}; shift 2 ;;
+    --json) json=1; shift ;;
+    -h|--help) usage ;;
+    *) echo "ci-velocity: unknown argument $1" >&2; usage ;;
+  esac
+done
+
+# Dates in jq, so it's the same on macOS's date and GNU's.
+stamp() { # VALUE END: an ISO 8601 UTC time; a bare day is its start, or with END its end
+  jq -nr --arg v "$1" --arg end "$2" '
+    if $v | test("^[0-9]+d$") then now - ($v | rtrimstr("d") | tonumber) * 86400 | floor | todate
+    elif $v | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}$") then
+      if $end == "1" then $v + "T23:59:59Z" else $v + "T00:00:00Z" end
+    elif $v | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T") then $v | sub("\\.[0-9]+"; "") | fromdate | todate
+    else error("not a day, a time or Nd: \($v)") end'
+}
+from=$(stamp "$since" 0)
+to=$(if [ -n "$until" ]; then stamp "$until" 1; else jq -nr 'now | floor | todate'; fi)
+
+# gh api with a few tries: GitHub's runs listing answers 502 under load.
+api() {
+  local n out
+  for n in 1 2 3 4; do
+    if out=$(gh api "$@"); then printf '%s\n' "$out"; return 0; fi
+    sleep $((n * 3))
+  done
+  echo "ci-velocity: gh api $* failed 4 times" >&2
+  return 1
+}
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+# The group runs. --paginate prints each page's object; jq -s joins them.
+api --paginate "repos/$repo/actions/workflows/$workflow/runs?event=merge_group&status=completed&created=$from..$to&per_page=100" |
+  jq -s '[.[].workflow_runs[] | {id, conclusion, started: (.run_started_at // .created_at), updated: .updated_at}]' >"$tmp/runs"
+
+# Each failed run's first failing job: "RUN JOB".
+# Eight at a time: a week has hundreds of runs and PRs, each a call.
+first_of() {
+  api --paginate "repos/$repo/actions/runs/$1/jobs?filter=latest&per_page=100" |
+    jq -s --arg id "$1" '[.[].jobs[] | select(.conclusion == "failure" or .conclusion == "timed_out")]
+      | sort_by(.completed_at) | first
+      | {run: ($id | tonumber), job: ((.name // "(no failed job)") | sub(" \\([0-9, /]+\\)$"; ""))}' >"$tmp/first.$1"
+}
+queued_of() {
+  api --paginate "repos/$repo/issues/$1/timeline?per_page=100" |
+    jq -s --arg n "$1" '{number: ($n | tonumber),
+      queued: ([.[][] | select(.event == "added_to_merge_queue") | .created_at] | sort | first)}' >"$tmp/queued.$1"
+}
+export -f api first_of queued_of
+export repo tmp
+jq -r '.[] | select(.conclusion == "failure" or .conclusion == "timed_out") | .id' "$tmp/runs" |
+  xargs -r -P 8 -I{} bash -c 'first_of {}'
+cat "$tmp"/first.* 2>/dev/null >"$tmp/first" || : >"$tmp/first"
+
+# The pull requests merged in the window, then each one's first queue entry.
+# The search can't take seconds, so the bounds are refined after.
+day_from=${from%%T*} day_to=${to%%T*}
+api --paginate -X GET search/issues -f "q=repo:$repo is:pr is:merged merged:$day_from..$day_to" -f per_page=100 |
+  jq -s --arg from "$from" --arg to "$to" '[.[].items[] | {number, merged: .pull_request.merged_at}
+    | select(.merged != null and .merged >= $from and .merged <= $to)]' >"$tmp/prs"
+jq -r '.[].number' "$tmp/prs" | xargs -r -P 8 -I{} bash -c 'queued_of {}'
+cat "$tmp"/queued.* 2>/dev/null >"$tmp/queued" || : >"$tmp/queued"
+
+jq -n --arg repo "$repo" --arg workflow "$workflow" --arg from "$from" --arg to "$to" \
+  --slurpfile runs "$tmp/runs" --slurpfile first "$tmp/first" \
+  --slurpfile prs "$tmp/prs" --slurpfile queued "$tmp/queued" '
+  def pct($p): sort | if length == 0 then null else .[(($p * length) | ceil) - 1] end;
+  def minutes: . / 60 | . * 10 | round / 10;
+  def secs: sub("\\.[0-9]+"; "") | fromdate;
+  $runs[0] as $runs | $prs[0] as $prs
+  | ([$queued[] | {key: (.number | tostring), value: .queued}] | from_entries) as $q
+  | [$prs[] | select($q[.number | tostring] != null)
+      | (.merged | secs) - ($q[.number | tostring] | secs)] as $ttm
+  | ($runs | map(select(.conclusion == "success")) | length) as $passed
+  | ($runs | map(select(.conclusion == "failure" or .conclusion == "timed_out")) | length) as $failed
+  | [$runs[] | select(.conclusion == "success" or .conclusion == "failure" or .conclusion == "timed_out")
+      | (.updated | secs) - (.started | secs)] as $wall
+  | {repo: $repo, workflow: $workflow, since: $from, until: $to,
+     queue: {runs: ($runs | length), passed: $passed, failed: $failed,
+       cancelled: ($runs | map(select(.conclusion == "cancelled")) | length),
+       failure_rate: (if $passed + $failed == 0 then null else ($failed / ($passed + $failed) * 1000 | round / 1000) end),
+       wall_p50_min: ($wall | pct(0.5) | if . then minutes else . end),
+       wall_p90_min: ($wall | pct(0.9) | if . then minutes else . end)},
+     time_to_merge: {merged: ($prs | length), queued: ($ttm | length),
+       not_queued: (($prs | length) - ($ttm | length)),
+       p50_min: ($ttm | pct(0.5) | if . then minutes else . end),
+       p90_min: ($ttm | pct(0.9) | if . then minutes else . end)},
+     failures_by_job: ($first | group_by(.job)
+       | map({job: .[0].job, failures: length, share: (length / ($first | length) * 1000 | round / 1000)})
+       | sort_by(-.failures, .job))}' >"$tmp/out"
+
+if [ "$json" = 1 ]; then cat "$tmp/out"; exit 0; fi
+jq -r '
+  def n: if . == null then "–" else tostring end;
+  def pc: if . == null then "–" else (. * 1000 | round / 10 | tostring) + "%" end;
+  "## Merge queue: \(.repo), \(.since | .[0:16] | sub("T"; " ")) to \(.until | .[0:16] | sub("T"; " ")) UTC",
+  "",
+  "| | |", "|---|---|",
+  "| Group runs (\(.workflow)) | \(.queue.runs) |",
+  "| Passed / failed / cancelled | \(.queue.passed) / \(.queue.failed) / \(.queue.cancelled) |",
+  "| Failure rate | \(.queue.failure_rate | pc) |",
+  "| Run wall time p50 / p90 | \(.queue.wall_p50_min | n) / \(.queue.wall_p90_min | n) min |",
+  "| PRs merged (through the queue) | \(.time_to_merge.merged) (\(.time_to_merge.queued)) |",
+  "| Time to merge p50 / p90 | \(.time_to_merge.p50_min | n) / \(.time_to_merge.p90_min | n) min |",
+  "",
+  (if (.failures_by_job | length) == 0 then "No failed group runs." else
+    "| First failing job | Failures | Share |", "|---|---:|---:|",
+    (.failures_by_job[] | "| \(.job) | \(.failures) | \(.share | pc) |") end)' "$tmp/out"

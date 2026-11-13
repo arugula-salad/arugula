@@ -1,0 +1,6 @@
+{"total_count":4,"jobs":[
+{"id":4,"run_id":105,"name":"e2e (7, 12)","status":"completed","conclusion":"failure","started_at":"2026-11-11T14:10:00Z","completed_at":"2026-11-11T14:35:00Z"},
+{"id":5,"run_id":105,"name":"e2e (1, 12)","status":"completed","conclusion":"failure","started_at":"2026-11-11T14:10:00Z","completed_at":"2026-11-11T14:30:00Z"},
+{"id":6,"run_id":105,"name":"macos (test)","status":"completed","conclusion":"success","started_at":"2026-11-11T14:00:00Z","completed_at":"2026-11-11T14:38:00Z"},
+{"id":7,"run_id":105,"name":"required","status":"completed","conclusion":"failure","started_at":"2026-11-11T14:39:00Z","completed_at":"2026-11-11T14:40:00Z"}
+]}

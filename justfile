@@ -808,6 +808,7 @@ macos cmd="tools" *args:
 # binaries.yml's gate on pull requests that change CI (#304); that release,
 # signing and deploy secrets are read only through environments, what ships
 # compiles without the shared cache, and actions are pinned;
+# scripts/ci-velocity's merge queue numbers;
 # and last the flaky tests' quarantine (`just quarantine`), which fails
 # when an entry is past its `until`. Also the nvim key tips' `:help` tags,
 # against a real nvim when there is one (`just nvim-tips-check`).
@@ -818,6 +819,7 @@ test-scripts:
     scripts/tests/pr-crates.sh
     scripts/tests/ci-nightly-red.sh
     scripts/tests/ci-auto-revert.sh
+    scripts/tests/ci-velocity.sh
     scripts/tests/capabilities.sh
     scripts/tests/data-model-check.sh
     scripts/tests/install.sh
