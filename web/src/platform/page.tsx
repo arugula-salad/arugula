@@ -3,6 +3,7 @@
 // frame (./pages/chat, UI audit #169). Before anyone
 // is signed in here it says where to sign in.
 
+import type { FunctionComponent } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { chat } from "../shared/chat-store";
 import { useSubscribe } from "../shared/ui/hooks";
@@ -53,7 +54,17 @@ import { barProject, where } from "./where";
 export function PlatformPage() {
   // The design reference needs no one signed in and no project, so nothing of
   // the session is loaded for it (#693).
-  return useRoute().page === "design" ? <DesignPage /> : <Routed />;
+  const r = useRoute();
+  // The "Move to project…" spike (Arugula #971), on a dev server only: fixture data, no session.
+  if (import.meta.env.DEV && r.page === "missing" && r.path === "/design/move") return <MoveSpike />;
+  return r.page === "design" ? <DesignPage /> : <Routed />;
+}
+
+/** Loaded on demand, so a build never holds it. */
+function MoveSpike() {
+  const [Page, setPage] = useState<FunctionComponent | null>(null);
+  useEffect(() => void import("./move/move-page").then((m) => setPage(() => m.MovePage)), []);
+  return Page ? <Page /> : null;
 }
 
 function Routed() {
