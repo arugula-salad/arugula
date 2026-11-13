@@ -87,7 +87,7 @@ pub enum Command {
         state_dir: Option<PathBuf>,
     },
     /// List what can be switched on here, or switch one: `arugulad flags
-    /// chat on` shows chat, which a new install doesn't. It writes
+    /// studio on` shows Studio apps, which a new install doesn't. It writes
     /// flags.json in the state directory, so it works with the daemon
     /// stopped, and a running one follows at once.
     Flags {
