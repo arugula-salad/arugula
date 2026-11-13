@@ -184,6 +184,8 @@ impl Request for crate::api::DocOpenRequest {}
 
 impl Request for crate::api::DocShareRequest {}
 
+impl Request for crate::api::DocMoveRequest {}
+
 impl Request for crate::api::Subscription {}
 
 impl Request for crate::api::NotifyRequest {}
@@ -290,6 +292,8 @@ macro_rules! every_op {
         $m!($crate::op::ops::DocOpen);
         $m!($crate::op::ops::DocShare);
         $m!($crate::op::ops::DocDelete);
+        $m!($crate::op::ops::DocMove);
+        $m!($crate::op::ops::DocsTeam);
         $m!($crate::op::ops::DocPreviewGet);
         $m!($crate::op::ops::DocRead);
         $m!($crate::op::ops::DocAssetGet);
@@ -391,17 +395,18 @@ pub mod ops {
         Machine, PaneId,
         api::{
             AccessView, AclSetRequest, Adapters, AgentCan, AgentsInventory, AskAnswer, AskRequest, AttentionRequest,
-            ConversationList, ConversationsQuery, DetectionAnswer, DocAsset, DocContent, DocLinkUrl, DocOpenRequest,
-            DocOpened, DocPreview, DocRow, DocShareRequest, DriverEntry, Empty, FollowUpRequest, FollowedUp,
-            FollowerLinkRequest, GuestInvite, GuestInviteRequest, IdeDiffs, IdeDiffsRequest, IdeInfo,
-            IdeMentionRequest, IdeMentioned, InboxAnswer, InstallAdapterRequest, InviteRequest, Invited, KeysRequest,
-            LinkRequest, LinksQuery, McpTokenRequest, MentionsRequest, MouseRequest, NotifyPref, NotifyRequest,
-            NvimBlockOpened, NvimBlockRequest, NvimHelpRequest, NvimOpenRequest, NvimOpened, NvimPluginCopies,
-            NvimPluginInstalled, NvimPluginRemoved, NvimTheme, NvimThemed, OpenConversationRequest,
-            OpenConversationResponse, PaneDiff, PaneSummary, PermitAnswer, PermitRequest, Ports, PortsQuery, Process,
-            PromptRequest, PromptResult, PushKey, PushSubscriptions, Rules, RunResponse, SendRequest, SessionLink,
-            Share, ShareRequest, ShellEnv, SigninLink, StudioApps, StudioLoggedIn, StudioLoginRequest, StudioStatus,
-            Subscription, TeamPins, TeamPinsRequest, TokenInfo, WaitRequest, WaitResult, WithdrawRequest,
+            ConversationList, ConversationsQuery, DetectionAnswer, DocAsset, DocContent, DocLinkUrl, DocMoveRequest,
+            DocMoved, DocOpenRequest, DocOpened, DocPreview, DocRow, DocShareRequest, DocTeams, DriverEntry, Empty,
+            FollowUpRequest, FollowedUp, FollowerLinkRequest, GuestInvite, GuestInviteRequest, IdeDiffs,
+            IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned, InboxAnswer, InstallAdapterRequest,
+            InviteRequest, Invited, KeysRequest, LinkRequest, LinksQuery, McpTokenRequest, MentionsRequest,
+            MouseRequest, NotifyPref, NotifyRequest, NvimBlockOpened, NvimBlockRequest, NvimHelpRequest,
+            NvimOpenRequest, NvimOpened, NvimPluginCopies, NvimPluginInstalled, NvimPluginRemoved, NvimTheme,
+            NvimThemed, OpenConversationRequest, OpenConversationResponse, PaneDiff, PaneSummary, PermitAnswer,
+            PermitRequest, Ports, PortsQuery, Process, PromptRequest, PromptResult, PushKey, PushSubscriptions, Rules,
+            RunResponse, SendRequest, SessionLink, Share, ShareRequest, ShellEnv, SigninLink, StudioApps,
+            StudioLoggedIn, StudioLoginRequest, StudioStatus, Subscription, TeamPins, TeamPinsRequest, TokenInfo,
+            WaitRequest, WaitResult, WithdrawRequest,
         },
         flags::{FlagInfo, FlagSetRequest},
         hosts::SandboxList,
@@ -737,6 +742,35 @@ pub mod ops {
         type Path = String;
         type Req = Empty;
         type Res = Empty;
+    }
+
+    /// `POST /api/docs/ID/move` (Arugula #863): give a Doc to a team's
+    /// project. The team Doc is made from it, its copy on the platform comes
+    /// down, and the library keeps a hidden pointer that open blocks, `doc
+    /// open` and old links follow. The owner's, and their own agents'.
+    pub struct DocMove;
+
+    impl Op for DocMove {
+        const NAME: &'static str = "doc.move";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/docs/{id}/move";
+        const ACCESS: Access = Access::Owner;
+        type Path = String;
+        type Req = DocMoveRequest;
+        type Res = DocMoved;
+    }
+
+    /// `GET /api/docs/team` (Arugula #863): the team a Doc would move to.
+    pub struct DocsTeam;
+
+    impl Op for DocsTeam {
+        const NAME: &'static str = "docs.team";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/docs/team";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = Empty;
+        type Res = DocTeams;
     }
 
     /// `GET /api/agent-can`: the card *What your agent can do here*, a line

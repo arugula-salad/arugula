@@ -38,7 +38,7 @@ import { mayWrite } from "./issues";
 import { currentProject, onCurrentProject } from "../current-project";
 import { scopeOf } from "../scope";
 import { Missing } from "./project";
-import { PlatformDocActions, RowMenu, TRASH_DAYS } from "./doc-actions";
+import { MoveConfirm, PlatformDocActions, RowMenu, TRASH_DAYS } from "./doc-actions";
 import { PublicLinkBar } from "./doc-public";
 
 /** Who's who in `p`, for a Doc's maker. */
@@ -210,14 +210,16 @@ function Trash({ p, restored }: { p: PlatformProject; restored: () => void }) {
   );
 }
 
-/** The bar over a personal project's rows while any is ticked: put them in a team, and what became of each. */
+/** The bar over a personal project's rows while any is ticked: move them to a team, once asked, and what became of each. */
 function ShareBar({ p, ticked, teams, reload }: { p: PlatformProject; ticked: ListTicked<ProjectDoc>; teams: PlatformProject[]; reload: () => void }) {
   const [team, setTeam] = useState(teams[0]?.id ?? "");
   const [run, setRun] = useState<{ done: number; of: number } | null>(null);
   const [results, setResults] = useState<{ team: PlatformProject; list: MoveResult[] } | null>(null);
   const to = teams.find((t) => t.id === team) ?? teams[0];
   const n = ticked.items.length;
+  const [asking, setAsking] = useState(false);
   const share = async () => {
+    setAsking(false);
     if (run) return;
     const docs = ticked.items;
     setResults(null);
@@ -233,14 +235,14 @@ function ShareBar({ p, ticked, teams, reload }: { p: PlatformProject; ticked: Li
     <div class="docs-share-bar" data-docs-share-bar>
       {run ? (
         <span data-docs-share-progress role="status">
-          Sharing {run.done} of {run.of}…
+          Moving {run.done} of {run.of}…
         </span>
       ) : (
         n > 0 && (
           <>
             <b data-docs-selected>{n} selected</b>
             {teams.length > 1 && (
-              <select class="field small" value={to.id} aria-label="Share with which team" data-docs-share-team onChange={(e) => setTeam(e.currentTarget.value)}>
+              <select class="field small" value={to.id} aria-label="Move to which team" data-docs-share-team onChange={(e) => setTeam(e.currentTarget.value)}>
                 {teams.map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.name}
@@ -248,8 +250,8 @@ function ShareBar({ p, ticked, teams, reload }: { p: PlatformProject; ticked: Li
                 ))}
               </select>
             )}
-            <button type="button" class="primary small" data-docs-share onClick={() => void share()}>
-              {teams.length === 1 ? `Share with ${to.name}` : "Share with…"}
+            <button type="button" class="primary small" data-docs-share onClick={() => setAsking(true)}>
+              {`Move to ${to.name}…`}
             </button>
             <button type="button" class="link" data-docs-clear onClick={ticked.clear}>
               Clear
@@ -257,6 +259,7 @@ function ShareBar({ p, ticked, teams, reload }: { p: PlatformProject; ticked: Li
           </>
         )
       )}
+      {asking && <MoveConfirm title={ticked.items[0]?.title ?? ""} team={to.name} n={n} go={() => void share()} cancel={() => setAsking(false)} />}
       {results && !run && (
         <ul class="docs-share-results" data-docs-share-results>
           {results.list.map((r) => {

@@ -5,7 +5,7 @@
 use arugula_proto::{
     BlockType,
     api::{DocOpenRequest, OpenRequest},
-    op::ops::DocsList,
+    op::ops::{DocMove, DocsList},
 };
 use arugulad_base::mcp::{
     ops::{call_of, kind_of},
@@ -148,13 +148,13 @@ pub static DOC: &[Kind] = &[
     kind_of::<DocsList, Docs>(),
     Kind {
         name: "open",
-        description: "Open a Doc from list in a block beside your pane; fill it as after new. A Doc already open is that block, not a second one.",
+        description: "Open a Doc from list in a block beside your pane; fill it as after new. A Doc already open is that block.",
         schema: schema_for_type::<DocOpenArgs>,
         flag: None,
     },
     Kind {
         name: "fill",
-        description: r##"Write one section in Markdown (headings, lists, `code`, links, tables; no HTML). ![alt](assets/<name>) shows a picture put there by asset first. At most 64 KB a section, 40 sections, 1 MiB a Doc; filling again replaces. Callouts, ```stats, ```chart, ```svg and ```prototype (an interactive page with arugula.copy and arugula.store) draw as more than code: call doc fences for their format before writing one."##,
+        description: r##"Write one section in Markdown (no HTML). ![alt](assets/<name>) shows a picture put there by asset first. At most 64 KB a section, 40 sections, 1 MiB a Doc; filling again replaces. Callouts, ```stats, ```chart, ```svg and ```prototype (an interactive page with arugula.copy and arugula.store) draw as more than code: call doc fences for their format before writing one."##,
         schema: schema_for_type::<DocFillArgs>,
         flag: None,
     },
@@ -166,16 +166,17 @@ pub static DOC: &[Kind] = &[
     },
     Kind {
         name: "asset",
-        description: r##"Put a picture in a Doc: PNG, JPEG, GIF or WebP, up to 2 MB. path is an absolute path; an agent on a machine of its own sends base64 data. The name ends in the file's real extension; SVG is refused (use a ```svg fence). Put it before the fill that names it."##,
+        description: r##"Put a picture in a Doc: PNG, JPEG, GIF or WebP, up to 2 MB. path is absolute; an agent on a machine of its own sends base64 data. The name ends in the file's real extension; SVG is refused (use a ```svg fence). Put it before the fill that names it."##,
         schema: schema_for_type::<DocAssetArgs>,
         flag: None,
     },
     Kind {
         name: "share",
-        description: r##"Ask the user to share a finished Doc by link. They decide on a card; this returns {status: "waiting"} at once. Call share again for the outcome: shared (with the url), declined, lapsed (a day unanswered) or failed (with why). Ask once."##,
+        description: r##"Ask the user to share a finished Doc by link. They decide on a card; this returns {status: "waiting"} at once. Call share again for the outcome: shared (with the url), declined, lapsed or failed (with why). Ask once."##,
         schema: schema_for_type::<DocShareArgs>,
         flag: None,
     },
+    kind_of::<DocMove, Docs>(),
 ];
 
 /// The `doc` tool's row.
@@ -225,6 +226,7 @@ fn run<'a>(call: &'a Call<'a>, kind: Option<&'static str>, args: Value) -> BoxFu
                 Ok(a) => doc_share(call, a).await,
                 Err(e) => Err(e),
             },
+            Some("move") => call_of::<DocMove, Docs>(call, args).await,
             _ => Err(format!("doc kind {} isn't wired up", kind.unwrap_or("?"))),
         }
     })
@@ -456,6 +458,11 @@ async fn doc_open(call: &Call<'_>, a: DocOpenArgs) -> Out {
     let (block, made) = if a.doc.starts_with("pdc_") {
         open_team(call, &a.doc, beside, host).await?
     } else {
+        // A Doc moved to a team opens as the team's, as the owner.
+        let state = call.app().control.state_dir();
+        if crate::docs::library::moved_to(state, &a.doc).is_some() {
+            call.owners_own("a team's Doc").await?;
+        }
         let req = DocOpenRequest { id: Some(a.doc.clone()), link: None, session: None, split: beside };
         crate::doc_ops::open_doc(call.app(), None, req).await.map_err(crate::ops::OpError::sentence)?
     };

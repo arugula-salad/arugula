@@ -10,7 +10,20 @@
 //!   before `shape` gets one the first time it's listed. `platform`, once
 //!   the Doc was copied up (#418, [`super::copies`]): where its copy is,
 //!   forgotten when the machine leaves control ([`forget_platform`]).
+//!   `moved`, once the Doc was given to a team (Arugula #863,
+//!   [`super::moving`]): then the folder is a pointer and not a Doc.
 //! - `doc.json`, `sN.md` and `assets/`: the Doc's files, as [`super`] says.
+//!
+//! **A pointer** is what a Doc moved to a team leaves: `meta.json` alone,
+//! with its `id` and `title` and `moved: {project, name, id, link, at}`
+//! ([`MovedTo`]). It isn't a Doc: [`list`] and search leave it out, and
+//! nothing writes to it, but `doc open`, a block that showed it and an old
+//! link follow it to the team Doc ([`moved_to`]).
+//!
+//! **A move under way** writes `moving: {project, id, at}` once the team
+//! Doc exists and before it's filled ([`set_moving`]), so a move cut off by a
+//! crash leaves the half-made team Doc's name: the next move, or the next
+//! start, deletes it and clears `moving` ([`super::moving`]).
 //!
 //! Nothing here prunes: a Doc stays until the owner deletes it, and its
 //! copy on the platform goes with it ([`remove`], a tombstone in
@@ -66,6 +79,34 @@ pub struct Meta {
     /// How the Doc is laid out; a `meta.json` without it is `doc`.
     #[serde(default, skip_serializing_if = "DocLayout::is_doc")]
     pub layout: DocLayout,
+    /// Where it went, once it was moved to a team: the folder is then a
+    /// pointer, and not a Doc.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub moved: Option<MovedTo>,
+    /// A move under way, or cut off: the team Doc it made, not yet whole.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub moving: Option<Moving>,
+}
+
+/// The team Doc a move has made and is filling (Arugula #863).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Moving {
+    pub project: String,
+    pub id: String,
+    pub at: u64,
+}
+
+/// Where a moved Doc is now (Arugula #863): the team's project, by id and
+/// name, the team Doc's id and page, and when it moved (ms).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MovedTo {
+    pub project: String,
+    #[serde(default)]
+    pub name: String,
+    pub id: String,
+    #[serde(default)]
+    pub link: Option<String>,
+    pub at: u64,
 }
 
 impl Meta {
@@ -131,6 +172,8 @@ pub fn make(state_dir: &Path, title: &str, by: &str) -> Result<Meta, String> {
             shape: Some(Shape::default()),
             platform: None,
             layout: DocLayout::Doc,
+            moved: None,
+            moving: None,
         };
         if let Err(e) = write_meta(&dir, &meta) {
             let _ = std::fs::remove_dir_all(&dir);
@@ -157,7 +200,7 @@ pub fn read_meta(dir: &Path) -> Option<Meta> {
 /// with no `meta.json` is left alone.
 pub fn touch(dir: &Path, title: Option<&str>) {
     let _held = META_LOCK.lock().unwrap();
-    let Some(mut meta) = read_meta(dir) else { return };
+    let Some(mut meta) = read_meta(dir).filter(|m| m.moved.is_none()) else { return };
     meta.updated = now_ms().max(meta.updated);
     if let Some(t) = title {
         meta.title = t.trim().to_owned();
@@ -174,7 +217,7 @@ pub fn touch(dir: &Path, title: Option<&str>) {
 /// changed.
 pub fn set_layout(dir: &Path, layout: DocLayout) -> bool {
     let _held = META_LOCK.lock().unwrap();
-    let Some(mut meta) = read_meta(dir) else { return false };
+    let Some(mut meta) = read_meta(dir).filter(|m| m.moved.is_none()) else { return false };
     if meta.layout == layout {
         return false;
     }
@@ -191,7 +234,8 @@ pub fn set_layout(dir: &Path, layout: DocLayout) -> bool {
 /// Where the Doc's copy on the platform is now.
 pub fn set_platform(dir: &Path, on: OnPlatform) {
     let _held = META_LOCK.lock().unwrap();
-    let Some(mut meta) = read_meta(dir) else { return };
+    // A pointer has no copy: the move took it down.
+    let Some(mut meta) = read_meta(dir).filter(|m| m.moved.is_none()) else { return };
     if meta.platform.as_ref() == Some(&on) {
         return;
     }
@@ -237,10 +281,15 @@ fn read_shaped(dir: &Path) -> Option<Meta> {
 }
 
 /// Every Doc in the library, newest `updated` first. A folder without a
-/// `meta.json` of its own is left out (and left alone).
+/// `meta.json` of its own is left out (and left alone), and so is a moved
+/// Doc's pointer.
 pub fn list(state_dir: &Path) -> Vec<Meta> {
     let Ok(entries) = std::fs::read_dir(root(state_dir)) else { return vec![] };
-    let mut out: Vec<Meta> = entries.flatten().filter_map(|e| read_shaped(&e.path())).collect();
+    let mut out: Vec<Meta> = entries
+        .flatten()
+        .filter(|e| read_meta(&e.path()).is_some_and(|m| m.moved.is_none()))
+        .filter_map(|e| read_shaped(&e.path()))
+        .collect();
     out.sort_by(|a, b| b.updated.cmp(&a.updated).then(b.made.cmp(&a.made)).then(a.id.cmp(&b.id)));
     out
 }
@@ -262,9 +311,7 @@ pub fn gone_dir(state_dir: &Path) -> PathBuf {
 pub fn remove(state_dir: &Path, id: &str) -> Result<(), String> {
     let dir = dir(state_dir, id)?;
     let gone = gone_dir(state_dir);
-    private_dir(&gone)
-        .and_then(|()| write_atomic(&gone.join(id), b"0"))
-        .map_err(|e| format!("can't note the Doc {id} as deleted: {e}"))?;
+    tombstone(state_dir, id).map_err(|e| format!("can't note the Doc {id} as deleted: {e}"))?;
     let removed = std::fs::remove_dir_all(&dir).map_err(|e| format!("can't remove the Doc {id}: {e}"));
     if removed.is_err() && read_meta(&dir).is_some() {
         let _ = std::fs::remove_file(gone.join(id));
@@ -272,6 +319,77 @@ pub fn remove(state_dir: &Path, id: &str) -> Result<(), String> {
     }
     super::copies::removed(id);
     removed
+}
+
+/// The tombstone that takes the Doc's copy down ([`super::copies`]).
+fn tombstone(state_dir: &Path, id: &str) -> std::io::Result<()> {
+    let gone = gone_dir(state_dir);
+    private_dir(&gone).and_then(|()| write_atomic(&gone.join(id), b"0"))
+}
+
+/// Where the Doc `id` went, if it was moved to a team: what follows its
+/// pointer reads this.
+pub fn moved_to(state_dir: &Path, id: &str) -> Option<MovedTo> {
+    read_meta(&dir(state_dir, id).ok()?)?.moved
+}
+
+/// Note the team Doc a move is filling (`Some`), or that none is (`None`).
+pub fn set_moving(dir: &Path, moving: Option<Moving>) -> Result<(), String> {
+    let _held = META_LOCK.lock().unwrap();
+    let mut meta = read_meta(dir).ok_or("the Doc's meta.json can't be read")?;
+    if meta.moving == moving {
+        return Ok(());
+    }
+    meta.moving = moving;
+    write_meta(dir, &meta)
+}
+
+/// The library Docs with a move cut off: `moving` and no `moved`.
+pub fn unfinished(state_dir: &Path) -> Vec<(String, Moving)> {
+    let Ok(entries) = std::fs::read_dir(root(state_dir)) else { return vec![] };
+    entries
+        .flatten()
+        .filter_map(|e| read_meta(&e.path()))
+        .filter(|m| m.moved.is_none())
+        .filter_map(|m| Some((m.id, m.moving?)))
+        .collect()
+}
+
+/// Make the Doc in `dir` a pointer to `to` (Arugula #863): `meta.json`
+/// first, so it's no longer a Doc even if a file below can't go, then
+/// every other file in the folder. Its copy on the platform comes down
+/// with a tombstone, as a deleted Doc's does. An error here means the Doc
+/// is untouched.
+pub fn point(state_dir: &Path, dir: &Path, to: MovedTo) -> Result<(), String> {
+    let had_copy = {
+        let _held = META_LOCK.lock().unwrap();
+        let mut meta = read_meta(dir).ok_or("the Doc's meta.json can't be read")?;
+        let had_copy = meta.platform.take().is_some();
+        meta.moved = Some(to);
+        meta.moving = None;
+        meta.shape = None;
+        write_meta(dir, &meta)?;
+        had_copy
+    };
+    let Ok(entries) = std::fs::read_dir(dir) else { return Ok(()) };
+    for e in entries.flatten() {
+        if e.file_name() == META {
+            continue;
+        }
+        let path = e.path();
+        let gone = if path.is_dir() { std::fs::remove_dir_all(&path) } else { std::fs::remove_file(&path) };
+        if let Err(e) = gone {
+            warn!(file = %path.display(), error = %e, "a moved Doc's file can't be removed; it's never read again");
+        }
+    }
+    let id = dir.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+    if had_copy {
+        match tombstone(state_dir, id) {
+            Ok(()) => super::copies::removed(id),
+            Err(e) => warn!(doc = id, error = %e, "can't note a moved Doc's copy to take down; it stays"),
+        }
+    }
+    Ok(())
 }
 
 /// The Doc's `meta.json`, or `None` when it's gone for sure (no such
@@ -491,6 +609,8 @@ fn copy_in(state_dir: &Path, old: &Old, layout_title: Option<&str>, copy: Copy) 
             shape: Some(shape::of(&to)),
             platform: None,
             layout: DocLayout::Doc,
+            moved: None,
+            moving: None,
         },
     )?;
     Ok(id)
@@ -597,6 +717,8 @@ mod tests {
             shape: None,
             platform: None,
             layout: DocLayout::Doc,
+            moved: None,
+            moving: None,
         }
     }
 
