@@ -32,7 +32,6 @@ mod control_state;
 mod conversations;
 mod crash;
 mod doc;
-mod doc_copies;
 mod doc_library;
 mod doc_share_ask;
 #[cfg(feature = "editor")]

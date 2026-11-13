@@ -348,13 +348,6 @@ pub fn control_says(state_dir: &Path, name: &str) -> Option<bool> {
     pushed.account.get(name).or_else(|| pushed.team.get(name)).copied()
 }
 
-/// What control last said of `name` for this machine on its account's
-/// word alone, never a team's: an account's own setting (native #673's
-/// Doc copies).
-pub fn control_account_says(state_dir: &Path, name: &str) -> Option<bool> {
-    read_control(state_dir).account.get(name).copied()
-}
-
 /// Keeps what control says for this machine (#347); `true` if it changed.
 /// Nothing pushed removes the file, so a machine control says nothing to
 /// is as it was before it joined.

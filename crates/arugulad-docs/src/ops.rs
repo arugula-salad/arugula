@@ -23,8 +23,8 @@ use arugula_core::PaneId;
 use arugula_proto::{
     BlockType,
     api::{
-        DocAsset, DocContent, DocMoveRequest, DocMoved, DocOnPlatform, DocOpenRequest, DocOpened, DocPreview, DocRow,
-        DocShared, DocTeam, DocTeams, Empty, OpenRequest,
+        DocAsset, DocContent, DocMoveRequest, DocMoved, DocOpenRequest, DocOpened, DocPreview, DocRow, DocShared,
+        DocTeam, DocTeams, Empty, OpenRequest,
     },
     op::ops::{DocAssetGet, DocDelete, DocMove, DocOpen, DocPreviewGet, DocRead, DocsList, DocsTeam},
 };
@@ -121,9 +121,6 @@ impl Handle<Docs> for DocsList {
         let (metas, links) = crate::task::spawn_blocking(move || (library::list(&state), link::by_doc(&state)))
             .await
             .map_err(|e| OpError::Failed(e.to_string()))?;
-        // A copy is in the owner's personal project: a team's other owner
-        // (#935) can't read it there, so they aren't pointed at it.
-        let co_owner = cx.co_owner();
         Ok(metas
             .into_iter()
             .map(|m| {
@@ -143,11 +140,6 @@ impl Handle<Docs> for DocsList {
                     summary: shape.summary,
                     sections: shape.sections,
                     layout: m.layout,
-                    platform: m.platform.filter(|_| !co_owner).map(|p| DocOnPlatform {
-                        project: p.project,
-                        id: p.id,
-                        link: p.link,
-                    }),
                 }
             })
             .collect())
@@ -158,7 +150,7 @@ impl McpOp<Docs> for DocsList {
     const SURFACE: Surface = Surface::Kind {
         tool: "doc",
         kind: "list",
-        description: "The kept Docs, newest first: id, title, made, updated, author, open (its block), shared, platform (its copy's link).",
+        description: "The kept Docs, newest first: id, title, made, updated, author, open (its block), shared.",
     };
     type Args = ListArgs;
     type Answer = serde_json::Value;

@@ -54,6 +54,8 @@ impl arugulad_base::features::Feature for Docs {
     fn prepare(&self, state_dir: &Path) {
         // The Docs of the old layout move into the library.
         docs::library::migrate(state_dir);
+        // What copying Docs up kept there goes (Arugula #865).
+        docs::library::forget_copies(state_dir);
     }
 
     fn with_control(&self, control: &Arc<control::Control>) {
@@ -61,17 +63,10 @@ impl arugulad_base::features::Feature for Docs {
         docs::link::init(control.clone());
         // ...and team Docs are read and written there (Arugula #862).
         docs::team::init(control.clone());
-        // ...and are copied up to the platform (#418).
-        docs::copies::start(control.clone());
         // A move to a team that a crash cut off leaves no team Doc behind
         // (Arugula #863).
         let (state, cloud) = (control.state_dir().to_owned(), control.clone());
         task::spawn(async move { docs::moving::clear_unfinished(&state, cloud).await });
-    }
-
-    fn left_control(&self, state_dir: &Path) {
-        // Where each Doc's copy was is control's to know (native #673).
-        docs::library::forget_platform(state_dir);
     }
 
     fn kinds(&self, kinds: &mut block::BlockKinds, _cx: &arugulad_base::features::KindsCx) {

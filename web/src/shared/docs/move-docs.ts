@@ -6,9 +6,6 @@
 //   changes, and it keeps its id, thread and pictures. A 409 carries its id in
 //   the team project it's in already, and for the person that's a success, so
 //   moving a Doc twice is one move.
-// - A machine's copy isn't moved from here: its machine moves the Doc (its
-//   Docs page, `arugula doc move` or an agent's `doc move`), which leaves one
-//   team Doc and takes the copy down. Its outcome is refused, saying where.
 
 import type { ProjectDoc, ProjectDocView } from "../proto";
 import { platformFetch, refusalOf } from "../maintenance.ts";
@@ -29,9 +26,6 @@ export interface MoveResult {
  * put it. `team` is the team's name. */
 export const resultWords = (r: MoveResult, team: string) => (r.outcome === "made" ? `Moved to ${team}` : r.outcome === "there" ? `Already in ${team}` : `Refused: ${r.why}`);
 
-/** Why a machine's copy doesn't move from here. */
-export const moveFromMachine = (d: ProjectDoc) => `Move it from ${d.machine_name ?? "its machine"}'s Docs`;
-
 const enc = encodeURIComponent;
 
 /** One call as the person; `body` is `{}` when the answer isn't JSON. */
@@ -48,7 +42,6 @@ async function call(method: string, path: string, body?: unknown) {
 
 async function moveOne(from: string, team: string, d: ProjectDoc): Promise<MoveResult> {
   const result = { id: d.id, title: d.title };
-  if (d.machine) return { ...result, outcome: "refused", why: moveFromMachine(d) };
   try {
     const r = await call("POST", `/api/projects/${enc(from)}/docs/${enc(d.id)}/move`, { to: team });
     if (r.ok) return { ...result, outcome: "made", teamDoc: (r.json as ProjectDocView).doc.id };
