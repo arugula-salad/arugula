@@ -165,9 +165,10 @@ enum Command {
     /// `arugula login`): `issue new|list|show|comment|close|reopen|edit|export`,
     /// and `issue agent`. `#N` or `N` is a number in the current project,
     /// `iss_…` any issue you can read. The current project is `--project
-    /// NAME|ID` (or `$ARUGULA_PROJECT`; `personal` is yours), else the project
-    /// this directory's GitHub repo is linked to, else your personal one; a
-    /// GitHub clone that none of your projects links keeps GitHub's issues.
+    /// NAME|ID` (or `$ARUGULA_PROJECT`; `personal` is yours), else this
+    /// session's project, else the one this directory's GitHub repo is
+    /// linked to, else your personal one; a GitHub clone that none of your
+    /// projects links keeps GitHub's issues.
     /// Its issue home says whether they're native or GitHub's; `--native` and
     /// `--github` override it. `issue list` on a GitHub home lists the linked
     /// repo's issues from Arugula control.
@@ -500,12 +501,13 @@ enum Command {
         #[command(subcommand)]
         cmd: cmd::chant::ChantCmd,
     },
-    /// A project's linked GitHub repos on Arugula control.
+    /// Your projects on Arugula control, and their linked GitHub repos.
     ///
-    /// `link OWNER/REPO` links one (you need admin or maintain on it on
-    /// GitHub), `unlink` takes it out, `ls` lists them. `--project` names a
-    /// project by id or name; the default is your personal one. Needs
-    /// `arugula login`.
+    /// `list` lists your projects, `new NAME` makes one, and `use PROJECT`
+    /// puts this session in one. `link OWNER/REPO` links a repo (you need
+    /// admin or maintain on it on GitHub), `unlink` takes it out, `repos`
+    /// lists them. `--project` names a project by id or name; the default
+    /// is your personal one. Needs `arugula login`.
     Project {
         #[command(subcommand)]
         cmd: cmd::project::ProjectCmd,
@@ -850,6 +852,9 @@ fn main() {
 
 fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
     ask_about_telemetry(&cli);
+    // The session this runs in is this machine's daemon's, whatever
+    // `--host` names.
+    let _ = cmd::project::SOCKET.set(socket(&cli));
     if let Command::Join(args) = &cli.cmd {
         return cmd::join::run(args, &cli);
     }

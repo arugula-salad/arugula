@@ -43,7 +43,10 @@ runs (`crates/arugulad-mcp/src/guests.rs`).
 ## Projects and linked repos
 
 ```
-arugula project ls                        # your personal project's linked repos
+arugula project list                      # your projects, by owner; --archived too
+arugula project new "Web app"             # --team <id or name> for a team's
+arugula project use "Web app"             # this session's project: an id, personal or a name
+arugula project repos                     # your personal project's linked repos
 arugula project link acme/app             # --project <id or name> for another
 arugula project unlink acme/app
 ```
