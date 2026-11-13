@@ -10,6 +10,9 @@
 // - Once a team Doc made from it is older than it, Share reads Update and
 //   runs Update copy, asking first if the team edited theirs.
 // - A team's Doc has nowhere to go: no Share.
+//
+// Delete is last in ⋯ for those who may (Arugula #864): a Doc goes to the
+// project's Trash (#866), and a machine's copy leaves the project.
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
@@ -22,12 +25,19 @@ import { revokePublic, sharePublic } from "../../shared/docs/public-link";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { IconButton, MoreIcon } from "../../shared/ui/icons";
 import { Modal } from "../../shared/ui/modal";
+import { ConfirmRemove } from "../../shared/ui/confirm";
 import { menuBelow, openMenu, type MenuItem } from "../../shared/ui/menu";
 import { names } from "../links";
 import { go, pathOf } from "../router";
 import { session, type PlatformProject } from "../session";
 import { toast } from "../toast";
 import { mayWrite } from "./issues";
+
+/** How long a deleted team Doc waits in the Trash (the wire's `TRASH_DAYS`; the list says its own). */
+export const TRASH_DAYS = 30;
+
+/** The machine a Doc is a copy from, by name, or null for one made here. */
+const copyOf = (d: ProjectDoc): string | null => (d.machine ? d.machine_name || "a machine that left" : null);
 
 /** The Doc's page, whole, as a link. */
 const linkOf = (p: PlatformProject, doc: ProjectDoc) => new URL(pathOf({ page: "doc", project: p.id, doc: doc.id }, names), location.href).href;
@@ -44,13 +54,20 @@ interface Share {
   run: (from: HTMLElement) => void;
 }
 
-function useDocActions(p: PlatformProject, doc: ProjectDoc, eager: boolean, reload?: () => void) {
+/** Who may delete it, and what follows a delete. */
+interface Remove {
+  deleter?: boolean;
+  gone?: () => void;
+}
+
+function useDocActions(p: PlatformProject, doc: ProjectDoc, eager: boolean, reload?: () => void, remove: Remove = {}) {
   useSubscribe((fn) => session.subscribe(fn));
   const mine = !p.team;
   const teams = session.projects.filter((t) => t.team && mayWrite(t));
   const [copies, setCopies] = useState<ProjectDocCopy[]>([]);
   const [asking, setAsking] = useState<Edited | null>(null);
   const [picking, setPicking] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const busy = useRef(false);
   // Arugula #871: a team Doc's owners and editors share it with a public link (a copy from a
   // machine is its machine's to share). The list's rows don't say whether it has one, so the
@@ -178,10 +195,29 @@ function useDocActions(p: PlatformProject, doc: ProjectDoc, eager: boolean, relo
           ]
         : []),
       { label: "Open in browser", run: open },
+      ...(remove.deleter ? ["separator" as const, { label: "Delete…", danger: true, attrs: { "data-doc-delete": true }, run: () => setDeleting(true) }] : []),
     ];
   };
+  const drop = async () => {
+    setDeleting(false);
+    try {
+      await projectDocs.remove(p.id, doc.id);
+      remove.gone?.();
+    } catch (err) {
+      toast(`Couldn't delete it: ${(err as Error).message}`);
+    }
+  };
+  const machine = copyOf(doc);
 
-  const dialogs: ComponentChildren = asking ? (
+  const dialogs: ComponentChildren = deleting ? (
+    <ConfirmRemove title={`Delete “${doc.title}”?`} label="Delete" go={() => void drop()} cancel={() => setDeleting(false)}>
+      <p data-doc-confirm>
+        {machine
+          ? `It leaves the project. ${doc.author === session.me?.account ? `${machine} is your machine: its` : `${machine}'s`} next change to the Doc brings a new copy here.`
+          : `It goes to the Trash for ${TRASH_DAYS} days, out of sight of everyone in the project. An owner, an editor or its maker can restore it from the Docs page's Trash.`}
+      </p>
+    </ConfirmRemove>
+  ) : asking ? (
     <EditedDialog edited={asking} cancel={() => setAsking(null)} />
   ) : picking ? (
     <ShareWithModal
@@ -197,8 +233,8 @@ function useDocActions(p: PlatformProject, doc: ProjectDoc, eager: boolean, relo
 }
 
 /** The three actions, for the preview and the page's header. `menu` adds the ⋯ after them. */
-export function PlatformDocActions({ p, doc, reload, menu }: { p: PlatformProject; doc: ProjectDoc; reload?: () => void; menu?: boolean }) {
-  const a = useDocActions(p, doc, true, reload);
+export function PlatformDocActions({ p, doc, reload, menu, deleter, gone }: { p: PlatformProject; doc: ProjectDoc; reload?: () => void; menu?: boolean } & Remove) {
+  const a = useDocActions(p, doc, true, reload, { deleter, gone });
   return (
     <>
       <DocActions
@@ -219,7 +255,7 @@ export function PlatformDocActions({ p, doc, reload, menu }: { p: PlatformProjec
 
 /** A row's ⋯: the same actions as a menu. It reads the team's copies when it's pressed, not for every row. */
 export function RowMenu({ p, doc, reload }: { p: PlatformProject; doc: ProjectDoc; reload?: () => void }) {
-  const a = useDocActions(p, doc, false, reload);
+  const a = useDocActions(p, doc, false, reload, { deleter: mayWrite(p), gone: reload });
   return (
     <>
       <MoreButton doc={doc} items={a.items} load={a.load} row />
