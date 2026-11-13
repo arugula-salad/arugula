@@ -297,8 +297,10 @@ test.describe("the list", () => {
   });
 
   test("the preview's three actions: Copy link, Share and Open in browser, between Open beside and ⋯ (Arugula #782)", async ({ page }) => {
-    await seed(page);
+    const { big } = await seed(page);
     const link = shared(await docId("Short note"), "Short note");
+    // Long plan's pane is still open from seed: closed, its first button is Open beside.
+    await post(`/api/panes/${big}/close`, {});
     await page.reload();
     await goToDocs(page);
     const plain = (await preview(page, "Long plan")).locator(".list-preview-bar");
