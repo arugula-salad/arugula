@@ -3,7 +3,8 @@
 // no move behind it. Its target is a new project (a name and an owner) or one
 // that exists; on the left, what moves (repos first, then boards, Docs and
 // loose issues); on the right, what to know before moving, then what comes
-// along, as counts that open. No options: each case does one thing (./plan).
+// along, as counts that open. Before you move shows only what the person
+// has to deal with, and nothing when there's nothing. No options: each case does one thing (./plan).
 //
 // Only a dev server draws it, at /design/move (../page.tsx). The strip at
 // the top is the spike's, not the screen's: the Doc's two jobs in one click,
@@ -122,7 +123,7 @@ export function MovePage() {
           <PageHeader
             title="Move to project"
             back={{ href: "#", label: `${s.project.name} settings`, onClick: (e) => e.preventDefault() }}
-            sub={`From ${s.project.name}. Work goes with its repo: a repo brings its boards, issues, sessions and runs.`}
+            sub={`From ${s.project.name}.`}
           />
           <div class="move-cols">
             <div class="move-col" data-move-left>
@@ -159,7 +160,7 @@ export function MovePage() {
                   )}
                 </div>
               </Section>
-              <Section id="move-what" title="What moves" lede="Repos first: each brings its boards, its issues and the Docs on its boards.">
+              <Section id="move-what" title="What moves" lede="A repo brings its boards, issues and sessions.">
                 <h3 class="move-sub">Repos</h3>
                 <PickList
                   label="Repos"
@@ -203,8 +204,8 @@ export function MovePage() {
               </Section>
             </div>
             <div class="move-col" data-move-right>
-              <Section id="move-check" title="Before you move">
-                {out.notes.length ? (
+              {out.notes.length > 0 && (
+                <Section id="move-check" title="Before you move">
                   <div class="move-notes">
                     {out.notes.map((n) => (
                       <Card key={n.key} tone="warn" data-move-note={n.key}>
@@ -212,10 +213,8 @@ export function MovePage() {
                       </Card>
                     ))}
                   </div>
-                ) : (
-                  <p class="dim">{out.empty ? "Pick a repo, a board or Docs." : "Nothing to check."}</p>
-                )}
-              </Section>
+                </Section>
+              )}
               <Section id="move-along" title="Comes along">
                 {out.empty ? (
                   <p class="dim">Nothing yet.</p>
@@ -226,7 +225,7 @@ export function MovePage() {
                     <CountList
                       n={out.issues.length}
                       label={plural(out.issues.length, "issue")}
-                      note={out.issues.length ? `They get new numbers in ${out.to}. Links to the old ones keep working.` : null}
+                      note="Old links still work."
                       rows={out.issues.map((r) => ({ key: r.issue.id, title: r.issue.closed ? `${r.issue.title} (closed)` : r.issue.title, meta: (
                           <>
                             #{r.issue.n} <ArrowIcon size="xs" /> #{r.to}
@@ -234,10 +233,10 @@ export function MovePage() {
                         ) }))}
                     />
                     {out.repos.length > 0 && (
-                      <CountList n={out.github} label="issues and pull requests on GitHub" note="They follow their repos as they are." rows={out.repos.filter((r) => r.github).map((r) => ({ key: r.id, title: r.name, meta: String(r.github) }))} />
+                      <CountList n={out.github} label="GitHub issues and pull requests" rows={out.repos.filter((r) => r.github).map((r) => ({ key: r.id, title: r.name, meta: String(r.github) }))} />
                     )}
-                    <CountList n={out.docs.length} label={plural(out.docs.length, "Doc")} rows={out.docs.map((d) => ({ key: d.id, title: d.title, meta: d.machine && d.machine !== here ? `on ${d.machine}` : undefined }))} />
-                    {out.repos.length > 0 && <p class="dim move-also">Sessions, runs and deploys in these repos come along too.</p>}
+                    <CountList n={out.docs.length} label={plural(out.docs.length, "Doc")} rows={out.docs.map((d) => ({ key: d.id, title: d.title }))} />
+                    <CountList n={out.sessions} label={plural(out.sessions, "session")} />
                   </div>
                 )}
                 <div class="move-go">
@@ -248,10 +247,10 @@ export function MovePage() {
                 {moved && (
                   <Card tone="ok" data-move-done>
                     <p>
-                      Moved to <b>{moved}</b>: {plural(out.repos.length, "repo", true)}, {plural(out.boards.length, "board", true)}, {plural(out.issues.length, "issue", true)} and {plural(out.docs.length, "Doc", true)}.
-                    </p>
-                    <p class="dim">
-                      {s.project.name} and {moved} both say what moved, with Undo for 7 days. (The spike moves nothing.)
+                      Moved to <b>{moved}</b>.{" "}
+                      <button type="button" class="link" onClick={() => setMoved(null)}>
+                        Undo
+                      </button>
                     </p>
                   </Card>
                 )}
@@ -277,17 +276,16 @@ function repoPick(s: Source, p: Picks, id: string): Pick {
   const r = s.repos.find((x) => x.id === id)!;
   const boards = s.boards.filter((b) => b.repo === id).length;
   const issues = s.issues.filter((i) => i.repo === id).length;
-  const bits = [boards && plural(boards, "board", true), issues && plural(issues, "issue", true), r.github && `${r.github} on GitHub`].filter(Boolean);
+  const bits = [boards && plural(boards, "board", true), issues && plural(issues, "issue", true), r.github && `${r.github} on GitHub`, r.sessions && plural(r.sessions, "session", true)].filter(Boolean);
   return { key: id, title: r.name, detail: bits.length ? bits.join(" · ") : null, on: p.repos.has(id) };
 }
 
 function boardPick(s: Source, p: Picks, id: string): Pick {
   const b = s.boards.find((x) => x.id === id)!;
-  const repo = s.repos.find((r) => r.id === b.repo);
   return {
     key: id,
     title: b.name,
-    detail: repo && !p.repos.has(repo.id) ? `${b.rows} rows · brings ${repo.name}` : `${b.rows} rows`,
+    detail: `${b.rows} rows`,
     on: p.boards.has(id),
     why: why(s, p, b),
   };
@@ -313,10 +311,10 @@ function docGroups(s: Source, p: Picks, here: string | null, q: string): PickGro
     groups.push({
       key: `machine-${m}`,
       title: mine ? `On this Mac (${m})` : `On ${m}`,
-      note: mine ? "Moved from there: this Mac moves them when you press Move." : "Moved from there.",
+      note: mine ? null : `These move from ${m}.`,
       action: mine ? null : (
         <a class="link" href="#" data-move-open-on={m} onClick={(e) => e.preventDefault()}>
-          {local ? "Open on this Mac" : `Open on ${m}`}
+          {local ? "Open on this Mac" : "Open there"}
         </a>
       ),
       items: items.map((d): Pick => (mine ? docPick(s, p, d) : { key: d.id, title: d.title, on: false, fixed: true })),
@@ -337,9 +335,9 @@ function LooseIssues({ s, p, q, setQ, toggle }: { s: Source; p: Picks; q: string
   const shown = loose.filter((i) => matches(i.title, q));
   return (
     <>
-      <h3 class="move-sub">Issues on no repo or board</h3>
+      <h3 class="move-sub">Other issues</h3>
       <PickList
-        label="Issues on no repo or board"
+        label="Other issues"
         data-move-issues
         groups={[{ key: "issues", items: shown.map((i) => ({ key: i.id, title: `#${i.n} ${i.title}`, detail: i.closed ? "Closed" : null, on: p.issues.has(i.id) })) }]}
         toggle={toggle}
