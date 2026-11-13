@@ -1,0 +1,5 @@
+{"total_count":3,"jobs":[
+{"id":21,"run_id":202,"name":"lint","status":"completed","conclusion":"failure","started_at":"2026-11-10T10:30:00Z","completed_at":"2026-11-10T10:37:00Z"},
+{"id":22,"run_id":202,"name":"test (2/4)","status":"completed","conclusion":"failure","started_at":"2026-11-10T10:30:00Z","completed_at":"2026-11-10T10:35:00Z"},
+{"id":23,"run_id":202,"name":"green","status":"completed","conclusion":"failure","started_at":"2026-11-10T10:37:30Z","completed_at":"2026-11-10T10:38:00Z"}
+]}
