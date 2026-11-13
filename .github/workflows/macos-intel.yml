@@ -43,18 +43,24 @@ jobs:
         run: rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" --profile minimal -c rustfmt,clippy
       - name: mise (it brings the Zig libghostty needs, from .mise.toml)
         run: |
-          curl -fsSL https://mise.run | sh
+          # mise.run's installer downloads from GitHub itself, without retrying,
+          # so the install as a whole is tried again (#797).
+          if ! command -v mise >/dev/null; then
+            curl -fsSL --retry 4 --retry-delay 5 --retry-all-errors -o "$RUNNER_TEMP/mise-install.sh" https://mise.run
+            for i in 1 2 3; do sh "$RUNNER_TEMP/mise-install.sh" && break; sleep 10; done
+            "$HOME/.local/bin/mise" --version
+          fi
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: just
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           version: 10
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: |
             . -> target
@@ -67,7 +73,7 @@ jobs:
       - run: just bootstrap
       - run: just web
       - name: Clippy (Intel's own; check.yml lints Apple silicon's)
-        run: mise exec -- cargo clippy --workspace --all-targets -- -D warnings && mise exec -- scripts/server-cargo clippy --workspace --all-targets -- -D warnings
+        run: mise exec -- cargo clippy --workspace --all-targets -- -D warnings
       - run: just test
       - run: just build
       - run: just dist

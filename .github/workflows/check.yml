@@ -1,28 +1,29 @@
 # Every push to main, as parallel as it goes (#287):
-# - on GitHub's runners: lint, the quick checks, and e2e, the Playwright
-#   specs in twelve shards (build's binaries, from the pods);
-# - on the home cloud's runners (arugula-amd64: a fresh pod per job,
-#   docs/development.md):
-#   - build and static: the debug and the box's (static) binaries, once;
+# - on GitHub's runners:
+#   - lint, the quick checks, and e2e, the Playwright specs in twelve
+#     shards (build's binaries);
+#   - build: the debug binaries, once;
 #   - clippy: Linux, Apple silicon (cross; Intel's is macos-intel.yml's,
-#     weekly), each for both workspaces (the root's and the server's,
-#     server/Cargo.toml), the desktop app (when the push
-#     changes it: scripts/app-changed), the workspaces apart
+#     weekly), the desktop app (when the push
+#     changes it: scripts/app-changed), no cloud crate in the workspace
 #     (`just workspace-guard`), and notices;
-#   - test: `just test` (the Rust tests under nextest), built beside static;
-#     the server's suite runs while static builds, the rest once static's
-#     binaries are in (scripts/ci-wait-job);
-#   - test-postgres: the platform's tests again on Postgres
-#     (`just test-platform-postgres`, M143), beside test;
-#   - core: the daemon and the CLI without Labs (`just check-core`, #452);
-#   - testnet: the test stack's claims (ssh, then control);
-#   - stack: the Playwright specs on the test
-#     stack (the specs that time things run nightly: perf-nightly.yml);
 #   - desktop-xvfb: the Linux desktop app's claims under Xvfb, against
 #     static's binaries, in a test image kept on GHCR;
-# - macos: test and, beside it, the WebKit specs, on our Macs' Tart VMs
-#   (home-cloud's mac_runner; when the push changes what runs there: scripts/macos-changed;
-#   main always).
+# - on the home cloud's runners (arugula-amd64: a fresh pod per job,
+#   docs/development.md):
+#   - static: the box's (static) binaries, once. test, test-2 and desktop-xvfb
+#     wait for them, and on GitHub's runners it took up to 10.7 min after a
+#     change to the crates, against the pods' 2-5 (2026-11-03, #2131);
+#   - test: `just test` (the Rust tests under nextest), built beside static;
+#     the suite runs once static's binaries are in (scripts/ci-wait-job). These stayed: on GitHub's
+#     runners they took 20-32 min against the pods' 9-11 (2026-11-03,
+#     #2131), and would have been the run's longest path;
+# - macos (test): test on our Macs' Tart VMs (home-cloud's mac_runner;
+#   when the push changes what runs there: scripts/macos-changed; main
+#   always).
+# The jobs that rarely failed left on 2026-10-28 (#305): core, testnet, stack and the WebKit specs run in rare-nightly.yml, every
+# night and on a release candidate, and a daemon release needs a passing
+# run of them (scripts/release).
 # A push that changes none of what they read (scripts/suite-changed: the
 # docs' prose, spikes, the desktop app...) runs lint and, for the app, its
 # jobs (static, clippy's app half, desktop-xvfb); chant counts the skipped
@@ -30,18 +31,21 @@
 # Those jobs start from nothing (.github/actions/setup): the toolchain,
 # GitHub's cache in place of kept build directories, and build's and
 # static's binaries as artifacts in place of a shared run directory
-# (scripts/ci-env). Each pod has Docker (a dind sidecar): the test stack
-# (testnet/README.md) and the ssh tests in `just test` fail without it.
-# Each boots systemd with a user manager for the runner (home-cloud's
+# (scripts/ci-env). Every runner has Docker (on a pod, a dind sidecar): the
+# test stack (testnet/README.md) and the ssh tests in `just test` fail
+# without it. Each pod boots systemd with a user manager for the runner (home-cloud's
 # images/gha-runner, target systemd: #735), so the tests that start the
 # daemon as a service run, and ARUGULA_REQUIRE_SYSTEMD fails them in test
 # and core if it's ever missing instead of letting them skip. Only main's pushes (never other branches or pull requests), since
 # most of it runs on our own machines; a branch runs by hand:
 # `gh workflow run check.yml --ref BRANCH`. And the merge queue's groups
-# (merge_group, once the queue is on: docs/development.md, "Merging through
-# the queue"): a pull request with main and whatever is queued ahead of it,
-# everything run (scripts/changed runs it all for any event but a push),
-# with `queue` the one verdict the queue waits for. Only someone who may
+# (merge_group: docs/development.md, "Merging through the queue"): a pull
+# request with main and whatever is queued ahead of it, what that reaches
+# run (scripts/changed), and chant-merge-queue.yml's chant-verdict judges
+# the group from its check runs (ci.green's mergeQueue, chant#4644). The
+# push that lands a group's commit skips what the group passed
+# (scripts/queue-tested); main-full-run.yml runs everything on main each
+# night, which keeps the caches only main saves fresh. Only someone who may
 # merge queues a pull request, so its code reaches our machines no sooner
 # than a merge would bring it.
 name: check
@@ -63,6 +67,7 @@ on:
 # (gh-readonly-queue/main/pr-…), so it's a group of its own too.
 # Written by chant ci workflow from ci.green's build (#4169); edit ci.green and run it again.
 concurrency:
+  # A job skipped by changed paths diffs against `chant ci base --phase build`, not github.event.before, which a newer push may have kept from being built (#4643).
   group: chant-build-lint-build-test-e2e-claims-macos-${{ github.ref }}
   cancel-in-progress: false
 
@@ -81,15 +86,22 @@ env:
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
   CARGO_PROFILE_TEST_DEBUG: line-tables-only
 
+# Every job has a timeout-minutes (Arugula #951), so a hang fails and frees
+# its runner instead of holding it for hours (2026-11-12: e2e shards stuck
+# for 2-6 h on an Ubuntu mirror download). Set from green runs' times
+# (p50/max in minutes, 2026-11-12): e2e 3/7, test and test-2 8/16 with
+# static's wait, clippy 6/13, desktop-xvfb 9/16. About 2-3x the slowest,
+# with room for a cold cache; raise one if a cold build needs it.
 jobs:
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
           # gitleaks reads the history.
           fetch-depth: 0
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: just
       # Pull requests run the same (binaries.yml's quick).
@@ -99,52 +111,48 @@ jobs:
         run: scripts/ci-gitleaks
 
   # The debug binaries, web/dist embedded (debug-embed: the specs run them
-  # from other checkouts), for the specs and the test stack's CLI.
+  # from other checkouts), for the specs.
   build:
     needs: changes
     if: needs.changes.outputs.suite == 'true'
-    runs-on: arugula-amd64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
         with:
           cache-key: build
-          # Ghostty for x86_64-linux-gnu, as build, core and test all build it
+          # Ghostty for x86_64-linux-gnu, as build and test both build it
           # (clippy's adds macOS's, static's musl: their own).
           ghostty-key: gnu
-      - run: just bootstrap
-      - run: just web
-      - run: mise exec -- cargo build -p arugulad -p arugula --features arugulad/debug-embed
-      # Control: the server's own workspace (server/Cargo.toml), into the
-      # same target dir.
-      - run: mise exec -- scripts/server-cargo build -p arugula-control --features arugula-control/debug-embed
-      - run: scripts/ci-env keep debug
-      - name: Hand them to the jobs that need them
-        run: tar -cf "$RUNNER_TEMP/run-debug.tar" -C "$CI_RUN" debug dist
-      - uses: actions/upload-artifact@v4
-        with:
-          name: run-debug
-          path: ${{ runner.temp }}/run-debug.tar
-          retention-days: 1
-          compression-level: 1
+          # It only builds: none of the specs' packages, so no apt.
+          base-packages: "false"
+      # The binaries and the run-debug artifact (pull-request.yml builds
+      # the same on GitHub's runners).
+      - uses: ./.github/actions/build-debug
       - name: sccache's hits
         if: always() && env.RUSTC_WRAPPER == 'sccache'
         run: sccache --show-stats
 
-  # The box's binaries: for the ssh tests, the test stack and
-  # team-swarm-phones' box behind netem.
+  # The box's binaries: for the ssh tests and desktop-xvfb. On GitHub's
+  # runners, not the arugula-amd64 pool: there it waited up to 14 min for
+  # a pod (shared with the cloud repo's checks) to build for ~1 min, and
+  # desktop-xvfb and the ssh tests waited on it (Arugula #957).
   static:
     needs: changes
     if: needs.changes.outputs.suite == 'true' || needs.changes.outputs.app == 'true'
-    runs-on: arugula-amd64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
         with:
           cache-key: static
+          # It only builds: none of the specs' packages, so no apt.
+          base-packages: "false"
       - run: just bootstrap
       # opt-level 1, not release's 3: these only run the tests (the ssh
-      # tests, the test stack, desktop-xvfb), and release.yml builds what
+      # tests, desktop-xvfb), and release.yml builds what
       # ships. Measured on geek: the workspace's crates take 29% less CPU
       # (593 -> 421 CPU-s) (#868).
       - run: just static x86_64
@@ -166,7 +174,8 @@ jobs:
   clippy:
     needs: changes
     if: needs.changes.outputs.suite == 'true' || needs.changes.outputs.app == 'true'
-    runs-on: arugula-amd64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
@@ -175,17 +184,14 @@ jobs:
           # The desktop app's system libraries (packaging/desktop/Containerfile),
           # for `just desktop-check` below.
           packages: libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev libxdo-dev libasound2-dev libopus-dev
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cargo-about@0.9.2
       - run: just bootstrap
       - run: just web
       - if: needs.changes.outputs.suite == 'true'
         run: mise exec -- cargo clippy --workspace --all-targets -- -D warnings
-      # The server's workspace (server/Cargo.toml: control and its platform).
-      - if: needs.changes.outputs.suite == 'true'
-        run: mise exec -- scripts/server-cargo clippy --workspace --all-targets -- -D warnings
-      - name: The root workspace builds no server crate, the server's no daemon crate
+      - name: The workspace builds no cloud crate
         if: needs.changes.outputs.suite == 'true'
         run: just workspace-guard
       - if: needs.changes.outputs.suite == 'true'
@@ -195,38 +201,18 @@ jobs:
       - name: The desktop app
         if: needs.changes.outputs.app == 'true'
         run: just desktop-check
+      # A change to the wire crates that breaks the native clients' core
+      # shows up here, on every suite run. It's a workspace of its own.
+      - name: The native clients' core
+        if: needs.changes.outputs.suite == 'true'
+        run: just native-check
       - name: THIRD_PARTY.md is current
         run: just notices-check
       - name: sccache's hits
         if: always() && env.RUSTC_WRAPPER == 'sccache'
         run: sccache --show-stats
 
-  # The daemon and the CLI built without the `labs` feature (crates/daemon/
-  # src/labs/mod.rs): clippy and the tests. The ssh tests, which need
-  # Docker, run in `test`.
-  core:
-    needs: changes
-    if: needs.changes.outputs.suite == 'true'
-    runs-on: arugula-amd64
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup
-        with:
-          cache-key: core
-          # Ghostty for x86_64-linux-gnu, as build, core and test all build it
-          # (clippy's adds macOS's, static's musl: their own).
-          ghostty-key: gnu
-      - run: just bootstrap
-      - run: just check-core
-        env:
-          ARUGULA_SKIP_DOCKER: "1"
-          ARUGULA_REQUIRE_SYSTEMD: "1"
-      - name: sccache's hits
-        if: always() && env.RUSTC_WRAPPER == 'sccache'
-        run: sccache --show-stats
-
-  # Starts beside static, not after it: it builds the tests first, runs
-  # the server workspace's (which need nothing of static's), and waits for
+  # Starts beside static, not after it: it builds the tests first, and waits for
   # static's binaries (the ssh tests' ARUGULA_SSH_BINARIES, all it takes
   # from static) only before the rest run: they had waited ~1 min for
   # static with nothing running (#259). With `needs: static` it
@@ -237,16 +223,15 @@ jobs:
   # Half the Rust tests each, on a pod each (`just test-run PART`): on one
   # pod the run took 9-10 min, the run's longest path with the e2e shards
   # (2026-10-23). test runs the first half; test-2 the second half,
-  # the doctests and control-smoke (the first half drew the slower tests,
-  # #1680). The platform on Postgres had
-  # run after test-2's half, 2 min on the run's longest path: it's
-  # test-postgres now, a job of its own (#259).
+  # the doctests and e2e-interop (the first half drew the slower tests,
+  # #1680).
   # Two jobs, not a matrix: a skipped matrix job's check run is named
   # without its part, and chant's test phase names both.
   test:
     needs: changes
     if: needs.changes.outputs.suite == 'true'
     runs-on: arugula-amd64
+    timeout-minutes: 45
     permissions:
       # scripts/ci-wait-job reads the run's jobs; the rest is the default's.
       actions: read
@@ -257,7 +242,7 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           cache-key: test
-          # Ghostty for x86_64-linux-gnu, as build, core and test all build it
+          # Ghostty for x86_64-linux-gnu, as build and test both build it
           # (clippy's adds macOS's, static's musl: their own).
           ghostty-key: gnu
           claude-code: "true"
@@ -270,12 +255,6 @@ jobs:
         # Four, not ci-env's six: since platform step 8 three test compiles
         # of ~3.2-3.5 GiB each ran at once and the pod was OOM-killed.
         run: CARGO_BUILD_JOBS=4 just test-build
-      # The server's suite needs nothing of static's: it runs while static
-      # builds (#259).
-      - name: The server's tests, the first half
-        run: just test-run 1 server
-        env:
-          ARUGULA_REQUIRE_SYSTEMD: "1"
       - name: Wait for static
         run: scripts/ci-wait-job static
       - name: static's binaries
@@ -287,7 +266,7 @@ jobs:
         run: mkdir -p "$CI_RUN" && tar -xf "$RUNNER_TEMP/artifacts/run-static.tar" -C "$CI_RUN"
       # The suite, on what test-build built: `just test` would build the web
       # client again first, for nothing.
-      - run: ARUGULA_SSH_BINARIES="$CI_RUN/x86_64-unknown-linux-musl/release" just test-run 1 rest
+      - run: ARUGULA_SSH_BINARIES="$CI_RUN/x86_64-unknown-linux-musl/release" just test-run 1
         env:
           # The service tests run, or fail (testkit's user_manager).
           ARUGULA_REQUIRE_SYSTEMD: "1"
@@ -303,6 +282,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.suite == 'true'
     runs-on: arugula-amd64
+    timeout-minutes: 45
     permissions:
       actions: read
       contents: read
@@ -322,12 +302,6 @@ jobs:
         # Four, not ci-env's six: since platform step 8 three test compiles
         # of ~3.2-3.5 GiB each ran at once and the pod was OOM-killed.
         run: CARGO_BUILD_JOBS=4 just test-build
-      # The server's suite needs nothing of static's: it runs while static
-      # builds (#259).
-      - name: The server's tests, the second half
-        run: just test-run 2 server
-        env:
-          ARUGULA_REQUIRE_SYSTEMD: "1"
       - name: Wait for static
         run: scripts/ci-wait-job static
       - name: static's binaries
@@ -337,103 +311,12 @@ jobs:
           path: ${{ runner.temp }}/artifacts
       - name: Into the run directory
         run: mkdir -p "$CI_RUN" && tar -xf "$RUNNER_TEMP/artifacts/run-static.tar" -C "$CI_RUN"
-      - run: ARUGULA_SSH_BINARIES="$CI_RUN/x86_64-unknown-linux-musl/release" just test-run 2 rest
+      - run: ARUGULA_SSH_BINARIES="$CI_RUN/x86_64-unknown-linux-musl/release" just test-run 2
         env:
           ARUGULA_REQUIRE_SYSTEMD: "1"
       - name: sccache's hits
         if: always() && env.RUSTC_WRAPPER == 'sccache'
         run: sccache --show-stats
-      - name: Take the test stack down
-        if: always()
-        run: just testnet down
-
-  # The platform's suite again, on Postgres (M143): a postgres:17 container
-  # on the pod's Docker (its dind sidecar), reached as the test stack is,
-  # rather than a `services:` container. A job of its own beside test and
-  # test-2 (#259): after test-2's half it was 2 min on the run's longest
-  # path. It builds only the server workspace's tests (no Ghostty, no
-  # daemon), the same units as test-build's, so sccache has them.
-  test-postgres:
-    needs: changes
-    if: needs.changes.outputs.suite == 'true'
-    runs-on: arugula-amd64
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup
-        with:
-          cache-key: test-postgres
-          cache-workspace: server
-          ghostty: "false"
-      - run: just bootstrap
-      # The platform embeds web/dist-platform, and control web/dist.
-      - run: just web
-      - name: The platform on Postgres
-        run: just test-platform-postgres
-        env:
-          # As test's (scripts/ci-env): the platform's tests compile at
-          # ~3.2-3.5 GiB each (four, not six), and six threads.
-          CARGO_BUILD_JOBS: "4"
-          NEXTEST_TEST_THREADS: "6"
-      - name: sccache's hits
-        if: always() && env.RUSTC_WRAPPER == 'sccache'
-        run: sccache --show-stats
-
-  # The test stack's claims on fresh boxes, then, when the claims change,
-  # each under BREAK=1, where it must fail (nightly: testnet-break.yml). One stack, the control profile's: it has every box the
-  # ssh profile has, so the ssh claims run on it first, and building and
-  # starting it once saves a second round.
-  testnet:
-    # Not after static: it sets up and starts the stack's tools while static
-    # builds, and waits for static's musl binaries before it needs them
-    # (#1680). build's skip (no suite change) skips it as static's did.
-    needs: [changes, build]
-    runs-on: arugula-amd64
-    # 8-13 min when it works; a hung claim held a pod for 45 min.
-    timeout-minutes: 30
-    permissions:
-      # scripts/ci-wait-job reads the run's jobs; the rest is the default's.
-      actions: read
-      contents: read
-      packages: read
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup
-        with:
-          rust: "false"
-          fetch: run-debug
-      - run: scripts/ci-env testnet
-      - run: just bootstrap
-      # The relay claim's phones (web/fixtures/m52-phones.ts): a Pixel in
-      # Google Chrome itself, not Playwright's Chromium, and an iPhone in
-      # WebKit. geek had both, with their system libraries.
-      - name: Playwright's browsers
-        run: just browsers
-      - name: Google Chrome
-        run: command -v google-chrome >/dev/null || (cd web && pnpm exec playwright install --with-deps chrome)
-      - name: Wait for static
-        run: scripts/ci-wait-job static
-      - name: static's binaries
-        uses: actions/download-artifact@v4
-        with:
-          name: run-static
-          path: ${{ runner.temp }}/artifacts
-      - name: Into the run directory
-        run: mkdir -p "$CI_RUN" && tar -xf "$RUNNER_TEMP/artifacts/run-static.tar" -C "$CI_RUN"
-      - name: Its binaries, this run's
-        run: |
-          echo "ARUGULA_TESTNET_BINARIES=$CI_RUN/x86_64-unknown-linux-musl/release" >> "$GITHUB_ENV"
-          echo "ARUGULA_SSH_BINARIES=$CI_RUN/x86_64-unknown-linux-musl/release" >> "$GITHUB_ENV"
-          echo "ARUGULA_CLI=$CI_RUN/debug/arugula" >> "$GITHUB_ENV"
-      - name: The control profile's stack
-        run: just testnet down && just testnet up control
-      - name: The claims
-        run: just testnet test ssh && just testnet test control
-      # Only when the claims or the stack change (scripts/testnet-changed):
-      # it checks that each claim can fail, not the product, and was more
-      # than half this job. testnet-break.yml runs it every night (#868).
-      - name: The claims under BREAK=1
-        if: needs.changes.outputs.testnet == 'true'
-        run: just testnet break ssh && just testnet break control
       - name: Take the test stack down
         if: always()
         run: just testnet down
@@ -444,9 +327,39 @@ jobs:
   # census); each hosted job is a VM of its own, free for a public repo.
   # Ubuntu 24.04, not ubuntu-latest: build's binaries need glibc 2.39, the
   # pods' image's, which 24.04 has; a newer pod image needs a newer runner.
-  e2e:
-    needs: build
+  # The e2e shards' image on GHCR (scripts/ci-e2e-image, #953): there
+  # already, or built and pushed when the Dockerfile or Playwright changed.
+  e2e-image:
+    needs: changes
+    if: needs.changes.outputs.suite == 'true'
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.image.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: image
+        uses: ./.github/actions/e2e-image
+
+  e2e:
+    needs: [build, e2e-image]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    # Our image (Playwright's plus what setup fetches: #953), so a shard
+    # downloads nothing from the runners' Ubuntu mirror. An empty image (a
+    # fork's PR when the tag is new) runs on the runner as before.
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ${{ needs.e2e-image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
+      options: --user 1001 --init --ipc=host
     strategy:
       fail-fast: false
       matrix:
@@ -458,85 +371,12 @@ jobs:
           rust: "false"
           fetch: run-debug
           claude-code: "true"
-      - run: scripts/ci-env use
-      - run: just bootstrap
-      - name: Playwright's browsers
-        run: just browsers
-      # Shards by recorded time (web/scripts/e2e-shard.mjs, e2e/durations.json),
-      # not Playwright's --shard by count: six of those ran 155-316 s (#868).
-      # Twelve since #259: on GitHub's runners a shard more costs no pod
-      # time, and seven ran ~5.8 min of specs each while test and macOS end
-      # at ~10. Twelve is about the floor: control.spec.ts alone is ~170 s
-      # of the ~190 s each gets, so more shards wouldn't end any sooner.
-      # The count is the matrix's (strategy.job-total). A stale durations.json
-      # unbalances them (a 125 s spec weighed as 7 s held one 2 min longer):
-      # refresh it when a shard runs well over the rest.
-      # Each keeps its JSON report so `just e2e-durations RUN` can refresh
-      # the times.
-      - name: The Playwright specs, shard ${{ matrix.shard }} of ${{ strategy.job-total }}
-        run: |
-          port=$(scripts/free-port)
-          cd web
-          mapfile -t files < <(node scripts/e2e-shard.mjs ${{ matrix.shard }} ${{ strategy.job-total }})
-          # No files would run every spec in every shard.
-          [ ${#files[@]} -gt 0 ] || { echo "e2e-shard listed nothing" >&2; exit 1; }
-          E2E_PORT=$port pnpm exec playwright test "${files[@]}"
-        env:
-          E2E_CHROMIUM: "1"
-          E2E_SET: rest
-          E2E_TIMINGS: ${{ runner.temp }}/e2e-timings.json
-      - name: The shard's times
-        if: always()
-        uses: actions/upload-artifact@v4
+      # The shard's steps, shared with pull-request.yml's shards (the
+      # shard logic and why twelve: the action's comment).
+      - uses: ./.github/actions/e2e-shard
         with:
-          name: e2e-timings-${{ matrix.shard }}
-          path: ${{ runner.temp }}/e2e-timings.json
-          retention-days: 30
-          if-no-files-found: ignore
-      # A failed spec's screenshot (playwright.config.ts), kept a week.
-      - name: Failed specs' screenshots
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: e2e-failures-${{ matrix.shard }}
-          path: web/test-results/
-          retention-days: 7
-          if-no-files-found: ignore
-
-  # The specs on the test stack (team-swarm-phones' box behind netem).
-  stack:
-    needs: [build, static]
-    runs-on: arugula-amd64
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup
-        with:
-          rust: "false"
-          fetch: run-debug run-static
-          claude-code: "true"
-      - run: scripts/ci-env use
-      - run: scripts/ci-env testnet
-      - run: just bootstrap
-      # team-swarm-phones' phones are WebKit's.
-      - name: Playwright's browsers
-        run: just browsers
-      - name: The Playwright specs on the test stack
-        run: port=$(scripts/free-port) && cd web && E2E_PORT=$port pnpm exec playwright test
-        env:
-          E2E_CHROMIUM: "1"
-          E2E_SET: stack
-      # A failed spec's screenshot (playwright.config.ts), kept a week.
-      - name: Failed specs' screenshots
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: stack-failures
-          path: web/test-results/
-          retention-days: 7
-          if-no-files-found: ignore
-      - name: Take the test stack down
-        if: always()
-        run: just testnet down
+          shard: ${{ matrix.shard }}
+          total: ${{ strategy.job-total }}
 
   # The Linux desktop app under Xvfb, in a container (#317): `just
   # desktop-xvfb`'s join, app (bare, links and nautilus among its claims)
@@ -547,7 +387,8 @@ jobs:
   desktop-xvfb:
     needs: changes
     if: needs.changes.outputs.suite == 'true' || needs.changes.outputs.app == 'true'
-    runs-on: arugula-amd64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
     permissions:
       # scripts/ci-wait-job reads the run's jobs.
       actions: read
@@ -576,73 +417,59 @@ jobs:
         run: ARUGULA_DESKTOP_BINARIES="$CI_RUNS/$GITHUB_RUN_ID/x86_64-unknown-linux-musl/release" just desktop-xvfb
         env:
           ARUGULA_DESKTOP_IMAGE_REPO: ghcr.io/arugula-salad/arugula-desktop-xvfb
-          ARUGULA_DESKTOP_IMAGE_PUSH: ${{ github.ref == 'refs/heads/main' && '1' || '' }}
-
-  # The merge queue's verdict on a group: every job above passed or was
-  # skipped (a skipped job is one the group didn't need). The queue's
-  # ruleset requires this check by name, so a job added above goes into
-  # `needs` too. Only merge groups: main's pushes are judged by chant
-  # (chant.workspace.json), and a pull request reports binaries.yml's job
-  # of this name instead.
-  queue:
-    needs: [lint, changes, build, static, clippy, core, test, test-2, test-postgres, testnet, e2e, stack, desktop-xvfb, macos]
-    if: always() && github.event_name == 'merge_group'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Every job passed or was skipped
-        env:
-          RESULTS: ${{ toJSON(needs.*.result) }}
-          NEEDS: ${{ toJSON(needs) }}
-        run: |
-          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
-          if echo "$RESULTS" | jq -e 'any(.[]; . != "success" and . != "skipped")' >/dev/null; then
-            echo "::error::a job failed or was cancelled: the group doesn't merge"
-            exit 1
-          fi
+          ARUGULA_DESKTOP_IMAGE_PUSH: ${{ (github.ref == 'refs/heads/main' || github.event_name == 'merge_group') && '1' || '' }}
 
   # What changed since main's newest green commit (#868, #1675; on a
   # branch, since it left main): suite, the suites' inputs
   # (scripts/suite-changed); app, the desktop app's (scripts/app-changed);
   # macos, what runs on macOS (scripts/macos-changed: main's always do, a
-  # branch's only when it changes that); testnet, the test stack's claims
-  # (scripts/testnet-changed).
+  # branch's only when it changes that).
   changes:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      # scripts/queue-tested reads this commit's merge_group runs.
+      actions: read
+      contents: read
     outputs:
       suite: ${{ steps.ask.outputs.suite }}
       app: ${{ steps.ask.outputs.app }}
       macos: ${{ steps.ask.outputs.macos }}
-      testnet: ${{ steps.ask.outputs.testnet }}
     steps:
       - uses: actions/checkout@v4
+      # scripts/changed runs chant ci base (chant#4643) through npx: keep its download.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-chant-0.124.64
       - id: ask
         run: |
           before="${{ github.event.before }}"
-          for c in suite app macos testnet; do
+          for c in suite app macos; do
             # Only the answer into the outputs: the scripts say why on stdout.
             if "scripts/$c-changed" "$before"; then a=true; else a=false; fi
             echo "$c=$a" >> "$GITHUB_OUTPUT"
           done
 
+
   # Apple silicon, on our Macs since #868 (GitHub's macos-15 before: when
   # jake-mini had the one runner, every run waited 12-27 min for it; now
   # agent5, jake-mini and agentnan each run one VM at a time, shared with
   # the releases). No Docker there, so the ssh tests skip
-  # (ARUGULA_SKIP_DOCKER=1, loudly); test runs them in the cluster. `just test`
-  # and the WebKit specs on runners of their own: one after the other they
-  # were the run's longest job.
+  # (ARUGULA_SKIP_DOCKER=1, loudly); test runs them in the cluster. The
+  # WebKit specs ran beside it as a matrix leg, macos (webkit), until #305:
+  # they're rare-nightly.yml's webkit now. Named macos (test) as that leg
+  # was, which is the name ci.green requires (a skipped matrix job's check
+  # run lost its part).
   macos:
+    name: macos (test)
     needs: changes
     if: needs.changes.outputs.suite == 'true' && needs.changes.outputs.macos == 'true'
     # Our Macs (home-cloud's mac_runner: each job in a throwaway Tart VM, M4,
     # 5 cores, 6 GiB, from a golden image with Rust, mise, just, Node 24 and
-    # pnpm 12), not GitHub's macos-15 (#868). The steps below skip what the
-    # image has, so they still run on GitHub's if this goes back.
+    # pnpm 12), set up by .github/actions/macos-setup.
     runs-on: [self-hosted, macos-arm64]
-    strategy:
-      fail-fast: false
-      matrix:
-        part: [test, webkit]
+    timeout-minutes: 30
     env:
       ARUGULA_SKIP_DOCKER: "1"
       # mise's GitHub downloads (nextest): unauthenticated, they share the
@@ -650,100 +477,10 @@ jobs:
       GITHUB_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
-      - name: bash 4.4+ (macOS ships 3.2; the shell integration tests need PS0)
-        run: brew list bash >/dev/null 2>&1 || brew install bash
-      - name: Rust (rust-toolchain.toml's)
-        run: rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" --profile minimal -c rustfmt,clippy
-      - name: mise (it brings the Zig libghostty needs, from .mise.toml)
-        run: |
-          command -v mise >/dev/null || curl -fsSL https://mise.run | sh
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      - name: What the image has
-        id: have
-        run: |
-          case "$(node --version 2>/dev/null)" in v24.*) echo node=true ;; *) echo node=false ;; esac >> "$GITHUB_OUTPUT"
-          case "$(pnpm --version 2>/dev/null)" in 12.*) echo pnpm=true ;; *) echo pnpm=false ;; esac >> "$GITHUB_OUTPUT"
-          if command -v just >/dev/null; then echo just=true; else echo just=false; fi >> "$GITHUB_OUTPUT"
-      - uses: taiki-e/install-action@v2
-        if: steps.have.outputs.just != 'true'
+      - uses: ./.github/actions/macos-setup
         with:
-          tool: just
-      # Linux's: Node 24 and pnpm 12 (.github/actions/setup).
-      - uses: actions/setup-node@v4
-        if: steps.have.outputs.node != 'true'
-        with:
-          node-version: 24
-      - uses: pnpm/action-setup@v4
-        if: steps.have.outputs.pnpm != 'true'
-        with:
-          version: 12
-      # The compile cache Linux's jobs share (.github/actions/setup, #868):
-      # a fresh VM starts with no build at all.
-      - uses: taiki-e/install-action@v2
-        if: env.SCCACHE_WEBDAV_PASSWORD != ''
-        with:
-          tool: sccache@0.18.0
-      - name: Compile through sccache
-        if: env.SCCACHE_WEBDAV_PASSWORD != ''
-        run: |
-          # Without it when it's down: sccache won't start (the setup action's).
-          if ! curl -fsS -o /dev/null --max-time 10 -X PROPFIND -H 'Depth: 0' \
-              -u "arugula-ci:$SCCACHE_WEBDAV_PASSWORD" https://ci-cache.inevitable.fyi/; then
-            echo "::warning::ci-cache didn't answer: compiling without sccache"
-            exit 0
-          fi
-          {
-            echo "RUSTC_WRAPPER=sccache"
-            echo "SCCACHE_WEBDAV_ENDPOINT=https://ci-cache.inevitable.fyi"
-            echo "SCCACHE_WEBDAV_USERNAME=arugula-ci"
-            echo "SCCACHE_WEBDAV_KEY_PREFIX=arugula"
-            echo "CARGO_INCREMENTAL=0"
-            echo "SCCACHE_IGNORE_SERVER_IO_ERROR=1"
-          } >> "$GITHUB_ENV"
-      # The two build different things (test: the tests, with the
-      # dev-dependencies' features): a cache each.
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ matrix.part }}
-      # Ghostty's checkout and Zig's caches (.github/actions/setup's, #868).
-      - name: Ghostty's cache
-        run: echo "LIBGHOSTTY_VT_SYS_CACHE_DIR=$HOME/.cache/libghostty-vt-sys" >> "$GITHUB_ENV"
-      - uses: actions/cache@v4
-        with:
-          path: ~/.cache/libghostty-vt-sys
-          key: ghostty-${{ runner.os }}-${{ runner.arch }}-${{ matrix.part }}-${{ hashFiles('vendor/libghostty-vt-sys/**', '.mise.toml') }}
-      # mise's Zig (for libghostty) and nextest, kept between runs: Zig's
-      # community mirror answered 429 once and failed the job (#524).
-      - uses: actions/cache@v4
-        with:
-          path: ~/.local/share/mise/installs
-          key: mise-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.mise.toml') }}
-      # Playwright's browsers: a fresh VM has none.
-      - uses: actions/cache@v4
-        with:
-          path: ~/Library/Caches/ms-playwright
-          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ matrix.part }}-${{ hashFiles('web/pnpm-lock.yaml') }}
-      - run: just bootstrap
+          cache-key: test
       # reboot.rs drives Chromium.
       - name: Playwright's Chromium
-        if: matrix.part == 'test'
         run: just browsers chromium
-      - if: matrix.part == 'test'
-        run: just test
-      - name: Playwright's WebKit
-        if: matrix.part == 'webkit'
-        run: just browsers webkit
-      - name: The WebKit specs (Safari's engine)
-        if: matrix.part == 'webkit'
-        run: just e2e-webkit
-        env:
-          E2E_PORT: "7769"
-      # A failed spec's screenshot (playwright.config.ts), kept a week.
-      - name: Failed specs' screenshots
-        if: failure() && matrix.part == 'webkit'
-        uses: actions/upload-artifact@v4
-        with:
-          name: webkit-failures
-          path: web/test-results/
-          retention-days: 7
-          if-no-files-found: ignore
+      - run: just test

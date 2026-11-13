@@ -60,14 +60,16 @@ check its signatures byte for byte.
   revocations included). Also why a certificate is refused (`refusal`) and
   whether a device is a browser all the way to its root (`browser_chained`).
 - `team/`: who may sign a paper that raises someone (`raise_ok`, the decision
-  table; `raised`), which roster may follow which (`follows`, presigned
+  table; `raised`), which versions change the owners and what an owner's
+  passkey signs for one (`owners`), which roster may follow which (`follows`, presigned
   invites and every way to bend one included), the papers' `bodies`, *Ask me
   first* invites (`ask_invite`), a daemon's team `join`, a machine's `move`,
   and a member's `devices`.
 - `deploy/`: a deploy's `operation` (its bytes and hash) and `approval` (its
-  signed bytes, form and passkey challenge), what a machine checks before it
-  applies one (`check_apply`: every refusal, in order, including CLI, app,
-  laundered, revoked and grandfathered-app devices, and bad passkeys), which
+  bytes, form and passkey challenge, v2 and v1), what a machine checks before
+  it applies one (`check_apply`: every refusal, in order, including keys not
+  in the passkey log or removed from it, logs that don't extend the pinned
+  one, origins not pinned, and bad passkeys), which
   `secrets` a driver takes, and `planter`'s and `apps_platform`'s names and
   sources.
 - `drivers/`: every driver's `settings` and `setting_fields`, the
@@ -85,7 +87,8 @@ check its signatures byte for byte.
   `sign`s (a machine's certificate with control's hosted key, from its
   seed), which client `accept`s a machine (every refusal: form, wrong
   project, not in it, unsigned by an owner's device, a bad signature,
-  revoked by time or by another owner), `live`, and project `owner` names.
+  revoked by time or by another owner, or ended by control's word, with each
+  entry of a list read on its own), `live`, and project `owner` names.
 - `passkey/`: an account's passkey log (DK3, aru-126): each event's `bodies`
   (text, proof line, hash and the challenge a proof signs), and `verify`,
   the one check of a passkey's assertion against a log (the chain, whether

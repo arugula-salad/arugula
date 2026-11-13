@@ -1,0 +1,43 @@
+[package]
+name = "arugula-native-core"
+version = "0.0.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "What Arugula's native clients share: signing, encrypted channels, pane streams and the terminal"
+publish = false
+
+[lib]
+# rlib for the probe and the smoke test; staticlib for the iPhone app, which
+# links it through its arugula_core.h.
+crate-type = ["rlib", "staticlib"]
+
+[dependencies]
+anyhow = "1"
+arugula-e2e = { path = "../../crates/e2e" }
+arugula-control-wire = { path = "../../crates/control-wire" }
+arugula-proto = { path = "../../crates/proto" }
+ed25519-dalek = "3"
+hex = "0.4"
+# The same pin as crates/vt: the daemon and this client parse a pane's bytes
+# with one engine, which a test here checks.
+libghostty-vt = { git = "https://github.com/Uzaaft/libghostty-rs.git", rev = "8953a74" }
+nix = { version = "0.31", features = ["poll"] }
+rustls = "0.23.45"
+rustls-platform-verifier = "0.7.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tungstenite = "0.30.0"
+
+[dev-dependencies]
+# The smoke test runs aws-lc's own code on the target.
+aws-lc-rs = { version = "1.18.1", default-features = false, features = ["aws-lc-sys"] }
+
+# Its own workspace, out of the root's, so it can't slow down or break the
+# other builds. Not under crates/: every crates/*/Cargo.toml and the root's
+# Cargo.toml are hub inputs (ops/src/control.component.ts), and a hub deploy drops
+# every relayed terminal.
+[workspace]
+
+# As the root workspace does: Ghostty patched at build time (M9).
+[patch."https://github.com/Uzaaft/libghostty-rs.git"]
+libghostty-vt-sys = { path = "../../vendor/libghostty-vt-sys" }

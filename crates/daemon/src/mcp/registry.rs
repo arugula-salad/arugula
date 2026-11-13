@@ -24,7 +24,8 @@ use crate::server::App;
 
 /// What the base asks of control's tools: `capabilities` and the card
 /// *What your agent can do here* say whether each reaches control from
-/// here, `wait` with `run` follows a run, and with `session` agent sessions.
+/// here, `wait` with `run` follows a run, and with `agent_session` agent
+/// sessions.
 pub trait ControlTools: Send + Sync + 'static {
     /// Whether agents here drive the owner's Cloud workspaces (#1094).
     fn cloud_reach<'a>(&'a self, app: &'a App) -> BoxFuture<'a, CloudReach>;
@@ -38,7 +39,7 @@ pub trait ControlTools: Send + Sync + 'static {
     fn boards_reach<'a>(&'a self, app: &'a App) -> BoxFuture<'a, BoardsReach>;
     /// `wait` with `run`: until it ends, or `limit`.
     fn wait_run<'a>(&'a self, call: &'a Call<'a>, run: &'a str, limit: Duration) -> BoxFuture<'a, Out>;
-    /// `wait` with `session`: until any of them settles, or `limit`.
+    /// `wait` with `agent_session`: until any of them settles, or `limit`.
     fn wait_sessions<'a>(&'a self, call: &'a Call<'a>, ids: &'a str, limit: Duration) -> BoxFuture<'a, Out>;
 }
 
@@ -61,8 +62,8 @@ pub async fn reach(app: &App) -> (CloudReach, ThreadsReach, RunsReach, TrackersR
         Some(c) => tokio::join!(c.cloud_reach(app), c.threads_reach(app), c.runs_reach(app), c.trackers_reach(app)),
         None => (
             CloudReach { reachable: false, note: NO_CONTROL_TOOLS.into() },
-            ThreadsReach { live: false, scopes: vec![], note: NO_CONTROL_TOOLS.into() },
-            RunsReach { live: false, projects: vec![], note: NO_CONTROL_TOOLS.into() },
+            ThreadsReach { live: false, scopes: vec![], note: NO_CONTROL_TOOLS.into(), answered: false },
+            RunsReach { live: false, projects: vec![], note: NO_CONTROL_TOOLS.into(), answered: false },
             TrackersReach { live: false, projects: vec![], note: NO_CONTROL_TOOLS.into() },
         ),
     }
@@ -73,7 +74,7 @@ pub async fn reach(app: &App) -> (CloudReach, ThreadsReach, RunsReach, TrackersR
 pub async fn boards_reach(app: &App) -> BoardsReach {
     match CONTROL_TOOLS.get() {
         Some(c) => c.boards_reach(app).await,
-        None => BoardsReach { projects: vec![], note: NO_CONTROL_TOOLS.into() },
+        None => BoardsReach { projects: vec![], note: NO_CONTROL_TOOLS.into(), answered: false },
     }
 }
 
@@ -85,7 +86,7 @@ pub async fn wait_run(call: &Call<'_>, run: &str, limit: Duration) -> Out {
     }
 }
 
-/// `wait` with `session` ([`ControlTools::wait_sessions`]).
+/// `wait` with `agent_session` ([`ControlTools::wait_sessions`]).
 pub async fn wait_sessions(call: &Call<'_>, ids: &str, limit: Duration) -> Out {
     match CONTROL_TOOLS.get() {
         Some(c) => c.wait_sessions(call, ids, limit).await,

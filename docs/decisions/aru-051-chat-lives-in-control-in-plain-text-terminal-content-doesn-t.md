@@ -50,7 +50,7 @@ constrains:
   - "path:crates/platform/src/db/chat.rs"
   - "path:crates/control-wire/src/chat.rs"
   - "path:crates/daemon/src/chat_readers.rs"
-  - "path:crates/mux/src/mux/chat_readers.rs"
+  - "path:crates/mux/src/mux/readers.rs"
   - "path:crates/daemon/src/control.rs"
 ---
 
@@ -137,8 +137,28 @@ What came in stays (archives, imported numbers and names); a `threads/`
 folder that never came in stays on its machine, unread. The reader lists
 stay, sent while control has chat on for the machine's account or team
 (control's setting, which rides with the flags it sends; no machine flag).
-Where: `crates/daemon/src/chat_readers.rs`, `crates/mux/src/mux/chat_readers.rs`,
+Where: `crates/daemon/src/chat_readers.rs`, `crates/mux/src/mux/readers.rs`,
 `chat::daemon_readers` in the platform.
+
+Since native #684 (2026-11-04) a reader list names a team's other owners
+too: they get in as the machine's owner, so they read what the owner reads,
+every pane's thread, a private one included, each by their own account
+and from the start. Only whom the machine admits as the owner is added
+(`Enrolled::build` in `crates/daemon/src/control.rs`): the roster's other
+owners, and since native #705 (2026-11-04) a hosted workspace's editors,
+who have full use of it as its owners do (none on a personal machine, a
+deploy's box, or a locked team's hosted workspace, where only its owners
+get in; a hosted workspace's viewers are listed by their role, watching);
+one the roster takes out or demotes goes from the lists, or to their new
+role, with the next refresh. The listing says what they read, not what
+they may do: a hosted editor keeps the owner's full use, and the gates a
+team's other owner meets as a co-owner (the Doc links, a Doc's deletion,
+pushes by account) are as they were. The lists also go when who may read what changes here, not
+only after a refresh: a share given or taken away, a pane made private or
+moved, a roster change, debounced to one send a moment after the change
+and at least ten seconds apart (longer when a send took several posts), so
+a burst of changes stays within control's limit on the route; a send that
+fails is carried by the next, since each carries the whole list.
 
 A conversation (#855, until M125) was a third kind of thread beside them, not
 a pane or session thread moved. It had a global id (`ConvId`, `c-` and 32

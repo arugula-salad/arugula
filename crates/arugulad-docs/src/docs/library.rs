@@ -3,12 +3,31 @@
 //! leaves it, and any block can open it again.
 //!
 //! - `<id>` is 16 lower-case hex digits, random. Nothing else is an id.
-//! - `meta.json`: `{id, title, made, updated, by}`. `by` is the `mcp:` agent
-//!   or the person's driver name that made it, or `migrated`. `updated`
-//!   moves on an outline, a fill and an asset.
+//! - `meta.json`: `{id, title, made, updated, by, shape}`. `by` is the `mcp:`
+//!   agent or the person's driver name that made it, or `migrated`. `updated`
+//!   moves on an outline, a fill and an asset, and `shape` ([`super::shape`],
+//!   what its row in the list shows) is worked out again then. A Doc from
+//!   before `shape` gets one the first time it's listed. `moved`, once the Doc was given to a team (Arugula #863,
+//!   [`super::moving`]): then the folder is a pointer and not a Doc.
 //! - `doc.json`, `sN.md` and `assets/`: the Doc's files, as [`super`] says.
 //!
-//! Nothing here prunes: a Doc stays until the owner deletes it.
+//! **A pointer** is what a Doc moved to a team leaves: `meta.json` alone,
+//! with its `id` and `title` and `moved: {project, name, id, link, at}`
+//! ([`MovedTo`]). It isn't a Doc: [`list`] and search leave it out, and
+//! nothing writes to it, but `doc open`, a block that showed it and an old
+//! link follow it to the team Doc ([`moved_to`]).
+//!
+//! **A move under way** writes `moving: {project, id, at}` once the team
+//! Doc exists and before it's filled ([`set_moving`]), so a move cut off by a
+//! crash leaves the half-made team Doc's name: the next move, or the next
+//! start, deletes it and clears `moving` ([`super::moving`]).
+//!
+//! Nothing here prunes: a Doc stays until the owner deletes it ([`remove`]).
+//!
+//! **No copies** (Arugula #865): a Doc was once copied up to the platform.
+//! A `meta.json` from then still says `platform`, which is ignored and
+//! dropped at its next write, and [`forget_copies`] removes what the copies
+//! kept beside the Docs.
 //!
 //! **The migration** ([`migrate`]) moves the Docs of the old layout, where a
 //! Doc's files were in its block's folder (`blocks/<id>/doc/`, or
@@ -23,14 +42,16 @@
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
+    sync::Mutex,
 };
 
 use arugula_core::PaneId;
-use arugula_proto::api::SearchHit;
+use arugula_proto::api::{DocLayout, SearchHit};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
+use super::shape::{self, Shape};
 use crate::store::{now_ms, private_dir, write_atomic};
 
 /// The library's folder, in the state directory.
@@ -51,7 +72,53 @@ pub struct Meta {
     pub made: u64,
     pub updated: u64,
     pub by: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shape: Option<Shape>,
+    /// How the Doc is laid out; a `meta.json` without it is `doc`.
+    #[serde(default, skip_serializing_if = "DocLayout::is_doc")]
+    pub layout: DocLayout,
+    /// Where it went, once it was moved to a team: the folder is then a
+    /// pointer, and not a Doc.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub moved: Option<MovedTo>,
+    /// A move under way, or cut off: the team Doc it made, not yet whole.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub moving: Option<Moving>,
 }
+
+/// The team Doc a move has made and is filling (Arugula #863).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Moving {
+    pub project: String,
+    pub id: String,
+    pub at: u64,
+}
+
+/// Where a moved Doc is now (Arugula #863): the team's project, by id and
+/// name, the team Doc's id and page, and when it moved (ms).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MovedTo {
+    pub project: String,
+    #[serde(default)]
+    pub name: String,
+    pub id: String,
+    #[serde(default)]
+    pub link: Option<String>,
+    pub at: u64,
+}
+
+impl Meta {
+    /// When it was made, or `None` for a Doc from before Docs were kept
+    /// (`by: "migrated"`): its `made` is the oldest file's time in the old
+    /// folder (or the migration's, with no files), not when it was made.
+    pub fn made_time(&self) -> Option<u64> {
+        (self.by != "migrated").then_some(self.made)
+    }
+}
+
+/// Held while `meta.json` is read and written again: a change and a move
+/// each write their part of it.
+static META_LOCK: Mutex<()> = Mutex::new(());
 
 /// Whether `id` is what a Doc is called: 16 lower-case hex digits.
 pub fn is_id(id: &str) -> bool {
@@ -82,7 +149,17 @@ pub fn make(state_dir: &Path, title: &str, by: &str) -> Result<Meta, String> {
         }
         private_dir(&dir).map_err(|e| format!("can't make the Doc's folder: {e}"))?;
         let now = now_ms();
-        let meta = Meta { id, title: title.trim().to_owned(), made: now, updated: now, by: by.to_owned() };
+        let meta = Meta {
+            id,
+            title: title.trim().to_owned(),
+            made: now,
+            updated: now,
+            by: by.to_owned(),
+            shape: Some(Shape::default()),
+            layout: DocLayout::Doc,
+            moved: None,
+            moving: None,
+        };
         if let Err(e) = write_meta(&dir, &meta) {
             let _ = std::fs::remove_dir_all(&dir);
             return Err(e);
@@ -106,29 +183,141 @@ pub fn read_meta(dir: &Path) -> Option<Meta> {
 /// The Doc changed: `updated` moves (and the title, if it was set). A folder
 /// with no `meta.json` is left alone.
 pub fn touch(dir: &Path, title: Option<&str>) {
-    let Some(mut meta) = read_meta(dir) else { return };
+    let _held = META_LOCK.lock().unwrap();
+    let Some(mut meta) = read_meta(dir).filter(|m| m.moved.is_none()) else { return };
     meta.updated = now_ms().max(meta.updated);
     if let Some(t) = title {
         meta.title = t.trim().to_owned();
     }
+    meta.shape = Some(shape::of(dir));
     if let Err(e) = write_meta(dir, &meta) {
         warn!(doc = meta.id, error = e, "can't update a Doc's meta.json");
     }
 }
 
+/// The Doc's layout is now `layout`: `updated` moves, and its share
+/// follows. A folder with no `meta.json` is left alone. Whether it
+/// changed.
+pub fn set_layout(dir: &Path, layout: DocLayout) -> bool {
+    let _held = META_LOCK.lock().unwrap();
+    let Some(mut meta) = read_meta(dir).filter(|m| m.moved.is_none()) else { return false };
+    if meta.layout == layout {
+        return false;
+    }
+    meta.layout = layout;
+    meta.updated = now_ms().max(meta.updated);
+    if let Err(e) = write_meta(dir, &meta) {
+        warn!(doc = meta.id, error = e, "can't keep a Doc's layout");
+        return false;
+    }
+    true
+}
+
+/// The Doc's `meta.json`, with a shape: one from before `shape` gets it now.
+fn read_shaped(dir: &Path) -> Option<Meta> {
+    let meta = read_meta(dir)?;
+    if meta.shape.is_none() {
+        let _held = META_LOCK.lock().unwrap();
+        let mut meta = read_meta(dir)?;
+        if meta.shape.is_some() {
+            return Some(meta);
+        }
+        meta.shape = Some(shape::of(dir));
+        if let Err(e) = write_meta(dir, &meta) {
+            warn!(doc = meta.id, error = e, "can't keep a Doc's shape");
+        }
+        return Some(meta);
+    }
+    Some(meta)
+}
+
 /// Every Doc in the library, newest `updated` first. A folder without a
-/// `meta.json` of its own is left out (and left alone).
+/// `meta.json` of its own is left out (and left alone), and so is a moved
+/// Doc's pointer.
 pub fn list(state_dir: &Path) -> Vec<Meta> {
     let Ok(entries) = std::fs::read_dir(root(state_dir)) else { return vec![] };
-    let mut out: Vec<Meta> = entries.flatten().filter_map(|e| read_meta(&e.path())).collect();
+    let mut out: Vec<Meta> = entries
+        .flatten()
+        .filter(|e| read_meta(&e.path()).is_some_and(|m| m.moved.is_none()))
+        .filter_map(|e| read_shaped(&e.path()))
+        .collect();
     out.sort_by(|a, b| b.updated.cmp(&a.updated).then(b.made.cmp(&a.made)).then(a.id.cmp(&b.id)));
     out
+}
+
+/// In the library, from when Docs were copied up: the copies' queue, the
+/// account they were queued for, and the tombstones of deleted Docs.
+const COPIES_LEFT: [&str; 3] = [".copies.json", ".copied-1", ".gone"];
+
+/// Remove what copying Docs up kept in the library (Arugula #865). Nothing
+/// there is missed if it can't go.
+pub fn forget_copies(state_dir: &Path) {
+    let root = root(state_dir);
+    for name in COPIES_LEFT {
+        let path = root.join(name);
+        let _ = if path.is_dir() { std::fs::remove_dir_all(&path) } else { std::fs::remove_file(&path) };
+    }
 }
 
 /// The Doc, gone from disk.
 pub fn remove(state_dir: &Path, id: &str) -> Result<(), String> {
     let dir = dir(state_dir, id)?;
     std::fs::remove_dir_all(&dir).map_err(|e| format!("can't remove the Doc {id}: {e}"))
+}
+
+/// Where the Doc `id` went, if it was moved to a team: what follows its
+/// pointer reads this.
+pub fn moved_to(state_dir: &Path, id: &str) -> Option<MovedTo> {
+    read_meta(&dir(state_dir, id).ok()?)?.moved
+}
+
+/// Note the team Doc a move is filling (`Some`), or that none is (`None`).
+pub fn set_moving(dir: &Path, moving: Option<Moving>) -> Result<(), String> {
+    let _held = META_LOCK.lock().unwrap();
+    let mut meta = read_meta(dir).ok_or("the Doc's meta.json can't be read")?;
+    if meta.moving == moving {
+        return Ok(());
+    }
+    meta.moving = moving;
+    write_meta(dir, &meta)
+}
+
+/// The library Docs with a move cut off: `moving` and no `moved`.
+pub fn unfinished(state_dir: &Path) -> Vec<(String, Moving)> {
+    let Ok(entries) = std::fs::read_dir(root(state_dir)) else { return vec![] };
+    entries
+        .flatten()
+        .filter_map(|e| read_meta(&e.path()))
+        .filter(|m| m.moved.is_none())
+        .filter_map(|m| Some((m.id, m.moving?)))
+        .collect()
+}
+
+/// Make the Doc in `dir` a pointer to `to` (Arugula #863): `meta.json`
+/// first, so it's no longer a Doc even if a file below can't go, then
+/// every other file in the folder. An error here means the Doc is
+/// untouched.
+pub fn point(dir: &Path, to: MovedTo) -> Result<(), String> {
+    {
+        let _held = META_LOCK.lock().unwrap();
+        let mut meta = read_meta(dir).ok_or("the Doc's meta.json can't be read")?;
+        meta.moved = Some(to);
+        meta.moving = None;
+        meta.shape = None;
+        write_meta(dir, &meta)?;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else { return Ok(()) };
+    for e in entries.flatten() {
+        if e.file_name() == META {
+            continue;
+        }
+        let path = e.path();
+        let gone = if path.is_dir() { std::fs::remove_dir_all(&path) } else { std::fs::remove_file(&path) };
+        if let Err(e) = gone {
+            warn!(file = %path.display(), error = %e, "a moved Doc's file can't be removed; it's never read again");
+        }
+    }
+    Ok(())
 }
 
 /// Lines of every Doc in the library matching `re` (a Doc that no block shows
@@ -159,7 +348,6 @@ pub fn search(
                 offset: n as u64,
                 line: line.to_owned(),
                 command: None,
-                host: None,
                 doc: Some(meta.id.clone()),
                 at_ms: Some(meta.updated),
             });
@@ -325,7 +513,20 @@ fn copy_in(state_dir: &Path, old: &Old, layout_title: Option<&str>, copy: Copy) 
         .filter(|t| !t.trim().is_empty())
         .or_else(|| layout_title.map(str::to_owned).filter(|t| !t.trim().is_empty()))
         .unwrap_or_else(|| "Untitled".to_owned());
-    write_meta(&to, &Meta { id: id.clone(), title, made, updated, by: "migrated".into() })?;
+    write_meta(
+        &to,
+        &Meta {
+            id: id.clone(),
+            title,
+            made,
+            updated,
+            by: "migrated".into(),
+            shape: Some(shape::of(&to)),
+            layout: DocLayout::Doc,
+            moved: None,
+            moving: None,
+        },
+    )?;
     Ok(id)
 }
 
@@ -408,6 +609,28 @@ mod tests {
         dir
     }
 
+    /// What copying Docs up kept beside the Docs goes at start, and the
+    /// Docs stay as they were.
+    #[test]
+    fn what_the_copies_kept_goes_and_the_docs_stay() {
+        let state = temp("copies");
+        let id = make(&state, "Plan", "test").unwrap().id;
+        let root = root(&state);
+        std::fs::write(root.join(".copies.json"), "[]").unwrap();
+        std::fs::write(root.join(".copied-1"), "a1").unwrap();
+        std::fs::create_dir_all(root.join(".gone")).unwrap();
+        std::fs::write(root.join(".gone").join("0123456789abcdef"), "0").unwrap();
+        forget_copies(&state);
+        for name in COPIES_LEFT {
+            assert!(!root.join(name).exists(), "{name} stayed");
+        }
+        assert_eq!(list(&state).iter().map(|m| m.id.clone()).collect::<Vec<_>>(), [id]);
+        // Again, with nothing to remove, changes nothing.
+        forget_copies(&state);
+        assert_eq!(list(&state).len(), 1);
+        std::fs::remove_dir_all(state).unwrap();
+    }
+
     /// A Doc as the old layout kept it, in a block's folder: an outline, a
     /// filled section and a picture.
     fn old_doc(block: &Path, title: &str) {
@@ -418,6 +641,26 @@ mod tests {
         std::fs::write(doc.join("doc.json"), outline.to_string()).unwrap();
         std::fs::write(doc.join("s1.md"), format!("The words of {title}.")).unwrap();
         std::fs::write(doc.join("assets/dot.png"), b"\x89PNG\r\n\x1a\nbytes").unwrap();
+    }
+
+    fn meta_by(by: &str) -> Meta {
+        Meta {
+            id: "0".repeat(16),
+            title: "t".into(),
+            made: 10,
+            updated: 20,
+            by: by.into(),
+            shape: None,
+            layout: DocLayout::Doc,
+            moved: None,
+            moving: None,
+        }
+    }
+
+    #[test]
+    fn a_migrated_doc_has_no_made_time_to_say() {
+        assert_eq!(meta_by("mcp:claude-code").made_time(), Some(10));
+        assert_eq!(meta_by("migrated").made_time(), None);
     }
 
     fn link(block: PaneId) -> serde_json::Value {
@@ -498,7 +741,25 @@ mod tests {
         assert_eq!(read_meta(&dir(&state, &a.id).unwrap()), Some(a.clone()));
         // `updated` moves; the newest is first.
         std::thread::sleep(std::time::Duration::from_millis(5));
-        touch(&dir(&state, &a.id).unwrap(), Some("Renamed"));
+        let a_dir = dir(&state, &a.id).unwrap();
+        std::fs::write(a_dir.join("doc.json"), r#"{"title":"T","sections":[{"id":"s1","heading":"One"}]}"#).unwrap();
+        std::fs::write(a_dir.join("s1.md"), "Three plain words").unwrap();
+        touch(&a_dir, Some("Renamed"));
+        let shape = read_meta(&a_dir).unwrap().shape.unwrap();
+        assert_eq!(
+            (shape.summary.as_str(), shape.sections[0].words),
+            ("Three plain words", 3),
+            "a fill changes its row"
+        );
+        // A Doc from before `shape` gets one when it's listed, and keeps
+        // when it last changed.
+        let mut old = read_meta(&a_dir).unwrap();
+        old.shape = None;
+        write_meta(&a_dir, &old).unwrap();
+        assert!(!std::fs::read_to_string(a_dir.join("meta.json")).unwrap().contains("shape"));
+        let listed = list(&state).into_iter().find(|m| m.id == a.id).unwrap();
+        assert_eq!((listed.updated, listed.shape.unwrap().summary.as_str()), (old.updated, "Three plain words"));
+        assert!(read_meta(&a_dir).unwrap().shape.is_some(), "and it's kept");
         let ids: Vec<_> = list(&state).into_iter().map(|m| (m.id, m.title)).collect();
         assert_eq!(ids, [(a.id.clone(), "Renamed".into()), (b.id, "A title".into())]);
         // A folder with no meta.json of its own is left out and left alone.
@@ -696,6 +957,33 @@ mod tests {
         // `since` leaves out a Doc not changed since.
         assert!(search(&state, &shown, &re, Some(now_ms() + 60_000), 10).is_empty());
         assert!(search(&state, &shown, &re, None, 0).is_empty());
+        std::fs::remove_dir_all(state).unwrap();
+    }
+
+    #[test]
+    fn a_docs_layout_is_kept_and_a_doc_without_one_reads_as_doc() {
+        let state = temp("layout");
+        let made = make(&state, "Mine", "me").unwrap();
+        let dir = dir(&state, &made.id).unwrap();
+        // A fresh Doc writes none, and a `meta.json` from before layouts reads `doc`.
+        let on_disk: serde_json::Value = serde_json::from_slice(&std::fs::read(dir.join(META)).unwrap()).unwrap();
+        assert!(on_disk.get("layout").is_none());
+        assert_eq!(read_meta(&dir).unwrap().layout, DocLayout::Doc);
+
+        assert!(!set_layout(&dir, DocLayout::Doc), "no change, no write");
+        assert!(set_layout(&dir, DocLayout::Tabs));
+        // As a restart reads it: from the folder, in the list too.
+        assert_eq!(read_meta(&dir).unwrap().layout, DocLayout::Tabs);
+        assert_eq!(list(&state)[0].layout, DocLayout::Tabs);
+        assert!(set_layout(&dir, DocLayout::Prototype));
+        assert_eq!(list(&state)[0].layout, DocLayout::Prototype);
+        // A layout from a newer peer reads as `doc`, and the Doc still lists.
+        let mut meta = on_disk;
+        meta["layout"] = json!("gallery");
+        std::fs::write(dir.join(META), meta.to_string()).unwrap();
+        assert_eq!(list(&state)[0].layout, DocLayout::Doc);
+        // Setting it on a folder with no `meta.json` does nothing.
+        assert!(!set_layout(&state.join("nowhere"), DocLayout::Tabs));
         std::fs::remove_dir_all(state).unwrap();
     }
 }

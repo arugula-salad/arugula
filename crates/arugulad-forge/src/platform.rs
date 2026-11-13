@@ -44,6 +44,10 @@ pub struct Link {
     pub project: String,
     pub repo_id: u64,
     pub login: Option<String>,
+    /// The owner's role in the project (`owner`, `editor`, `viewer`), from
+    /// a control that says it. A viewer's machine makes no drafts there,
+    /// and its cards ask only about the owner's own.
+    pub role: Option<String>,
     /// The repository's merge methods as the platform read them (#427);
     /// none from a control before that, or while it can't say.
     pub merge_styles: Option<Vec<String>>,
@@ -90,7 +94,7 @@ async fn ask_link(repo: &str) -> Result<Option<Link>, String> {
             let r: ForgeRepo = serde_json::from_value(v).map_err(|e| format!("the platform's answer: {e}"))?;
             Ok(match (r.linked, r.project, r.repo_id) {
                 (true, Some(project), Some(repo_id)) => {
-                    Some(Link { project, repo_id, login: r.login, merge_styles: r.merge_styles })
+                    Some(Link { project, repo_id, login: r.login, role: r.role, merge_styles: r.merge_styles })
                 }
                 _ => None,
             })
@@ -112,10 +116,16 @@ pub enum Failed {
     NotLinked,
 }
 
+/// The platform's reason when the owner only views the project.
+const VIEWER_WRITE: &str = "viewer_write";
+
 pub(super) fn failed(e: CloudRefused) -> Failed {
     match e {
         CloudRefused::Said { status: 404, .. } => Failed::NotLinked,
         CloudRefused::Said { status: 400 | 409, said, .. } => Failed::Refused(said),
+        // The owner only views the project: for good, until their role
+        // changes. A revoked cloud.drive grant (403 too) may come back.
+        CloudRefused::Said { status: 403, said, reason: Some(r) } if r == VIEWER_WRITE => Failed::Refused(said),
         e => Failed::Later(e.to_string()),
     }
 }
@@ -151,6 +161,7 @@ pub fn new_draft(repo: &str, number: u64, d: &Draft) -> Option<NewDraft> {
         body,
         agent: Some(d.by.clone()),
         import_key: Some(import_key(repo, number, &d.id)),
+        native_issue: None,
     })
 }
 
@@ -177,7 +188,7 @@ pub async fn list(link: &Link, repo: &str, number: u64) -> Result<Vec<ForgeDraft
 
 /// Discard a platform draft: a person dropped it here.
 pub async fn discard(id: &str) -> Result<(), String> {
-    let control = super::live::control().ok_or("not in Arugula control any more")?;
+    let control = super::live::control().ok_or("not in Arugula cloud any more")?;
     control
         .cloud_now(Method::POST, &format!("/api/forge/drafts/{id}/discard"), None)
         .await
@@ -189,7 +200,7 @@ pub async fn discard(id: &str) -> Result<(), String> {
 /// block's card (M168): `start` holds it, then `sent` (with its URL) or
 /// `failed` (with why). `Err`: why not, for the card.
 pub async fn sending(id: &str, step: &str, url: Option<&str>, error: Option<&str>) -> Result<(), String> {
-    let control = super::live::control().ok_or("not in Arugula control any more")?;
+    let control = super::live::control().ok_or("not in Arugula cloud any more")?;
     let body = serde_json::to_value(MachineSending {
         step: step.into(),
         url: url.map(Into::into),
@@ -306,6 +317,12 @@ mod tests {
     #[test]
     fn refusals() {
         let said = |status| CloudRefused::Said { status, said: "no".into(), reason: None };
+        // The owner only views the project: the draft stays on the block
+        // for good. A revoked grant is tried again later.
+        let viewer =
+            CloudRefused::Said { status: 403, said: "you only view".into(), reason: Some("viewer_write".into()) };
+        assert_eq!(failed(viewer), Failed::Refused("you only view".into()));
+        assert_eq!(failed(said(403)), Failed::Later(said(403).to_string()));
         assert_eq!(failed(said(404)), Failed::NotLinked);
         assert_eq!(failed(said(400)), Failed::Refused("no".into()));
         assert!(matches!(failed(said(429)), Failed::Later(_)));

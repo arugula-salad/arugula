@@ -1,11 +1,84 @@
 {
   "$defs": {
+    "AgentGrantAsk": {
+      "description": "A mention of this machine that its agents can't read the room for (#578).",
+      "properties": {
+        "author": {
+          "description": "Who wrote it, as people read it.",
+          "type": "string"
+        },
+        "line": {
+          "description": "Its first line.",
+          "type": "string"
+        },
+        "machine": {
+          "description": "This machine's id and name, for the card.",
+          "type": "string"
+        },
+        "machine_name": {
+          "type": "string"
+        },
+        "room": {
+          "type": "string"
+        },
+        "room_name": {
+          "type": "string"
+        },
+        "scope_id": {
+          "default": "",
+          "type": "string"
+        },
+        "scope_kind": {
+          "description": "What a grant of `threads.read` is over, as `POST /api/grants` says it:\n`project` and the project's id, `team` and the team's (Arugula\n#894), or `account`.",
+          "type": "string"
+        },
+        "scope_name": {
+          "default": "",
+          "description": "The scope's name as its owner reads it (the team's, or \"your DMs\"),\nfor the card to say what the grant reaches. Empty: just the room.",
+          "type": "string"
+        },
+        "seq": {
+          "description": "The mention's number in the room.",
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "room",
+        "room_name",
+        "seq",
+        "author",
+        "line",
+        "machine",
+        "machine_name",
+        "scope_kind"
+      ],
+      "type": "object"
+    },
     "AgentMention": {
       "description": "A message in a thread for a machine's agents (Arugula #394).",
       "properties": {
         "author": {
           "description": "Who wrote it, as people read it: a person's name, or \"Ada's agent\non geek\".",
           "type": "string"
+        },
+        "from_owner": {
+          "description": "Whether this machine's owner wrote it themselves (#665): a person's\npost, signed in as the account that owns the machine. Never set for an\nagent's post, the owner's own agents' included. The daemon tells the\nsession it's from its person; else from a teammate. An older daemon\nignores it.",
+          "type": "boolean"
+        },
+        "from_session": {
+          "description": "With an agent's post (#575): the name of the session that wrote it.\nThe daemon never gives the message to a session of this name, so an\nagent's mention of its own machine doesn't come back to it. An older\ndaemon ignores it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "others": {
+          "description": "With a reply (#649): the other agents in the thread, as people read\nthem (\"wake (Aaron's, Mac mini)\"), so a session can see who's here\nbefore it starts on something. An older daemon ignores it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "parent": {
           "description": "The message it replies under, when it's in a thread.",
@@ -23,6 +96,13 @@
           "default": "",
           "description": "What the room is called, for the one reading.",
           "type": "string"
+        },
+        "root_line": {
+          "description": "With a reply (#580): the first line of the thread's root message,\nabout 120 characters at most. The daemon names the thread by it when\nreplies come in together; without it, by the root's number. An older\ndaemon ignores it.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "seq": {
           "description": "The message's number in the room.",
@@ -75,6 +155,40 @@
     "ArchiveOpen": {
       "description": "`hosted.archive` (Arugula #209), control to a hosted machine through\nits relay: send every open agent block's transcript now, as closing it\nwould, and answer once each send is done. The platform asks just before\nit rebuilds the box, so a session that moves to the new box starts\nfrom its conversation, not without it.",
       "type": "object"
+    },
+    "Assertion": {
+      "additionalProperties": false,
+      "description": "A passkey's assertion, as the page got it from\n`navigator.credentials.get`: each base64url.",
+      "properties": {
+        "authenticatorData": {
+          "type": "string"
+        },
+        "clientDataJSON": {
+          "type": "string"
+        },
+        "id": {
+          "description": "The credential's id (`rawId`).",
+          "type": "string"
+        },
+        "signature": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "clientDataJSON",
+        "authenticatorData",
+        "signature"
+      ],
+      "type": "object"
+    },
+    "Change": {
+      "description": "What happened to a passkey.",
+      "enum": [
+        "added",
+        "removed"
+      ],
+      "type": "string"
     },
     "DaemonOp": {
       "description": "An op control asks a machine for, by its name (`op`). Only the platform\nasks, through the hub, and only for a person's own action.",
@@ -162,8 +276,121 @@
             "op"
           ],
           "type": "object"
+        },
+        {
+          "$ref": "#/$defs/MachineAgentsAsk",
+          "description": "Which of this machine's sessions a teammate's agent may mention\n(`@<machine>/<session>`, #577). The owner decides what is said\n(`sharing.json`'s `agent_sessions`).",
+          "properties": {
+            "op": {
+              "const": "agents.sessions",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/AgentGrantAsk",
+          "description": "A teammate mentioned this machine in a room its agents can't read\n(#578): the daemon raises a card asking its owner to let them. The\ngrant itself is the owner's own act, made over their control session.",
+          "properties": {
+            "op": {
+              "const": "agents.grant_ask",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
         }
       ]
+    },
+    "Event": {
+      "additionalProperties": false,
+      "description": "One event of an account's log.",
+      "properties": {
+        "aaguid": {
+          "description": "The authenticator's AAGUID, 32 hex, [`NO_AAGUID`] when unknown.",
+          "type": "string"
+        },
+        "account": {
+          "type": "string"
+        },
+        "alg": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "by": {
+          "description": "What let it happen ([`By`]).",
+          "type": "string"
+        },
+        "credential": {
+          "description": "The passkey's credential id, base64url.",
+          "type": "string"
+        },
+        "event": {
+          "$ref": "#/$defs/Change"
+        },
+        "hash": {
+          "description": "SHA-256 of the body and proof line, hex.",
+          "type": "string"
+        },
+        "key": {
+          "description": "Its public key, base64url.",
+          "type": "string"
+        },
+        "keyFormat": {
+          "description": "How `key` is encoded: `sec1` (P-256, uncompressed), `raw` (Ed25519)\nor `spki` (RSA).",
+          "type": "string"
+        },
+        "prev": {
+          "description": "The hash of the event before, or [`ZERO`].",
+          "type": "string"
+        },
+        "proof": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Assertion"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "On a `by passkey` event, the signer's assertion over [`Event::challenge`]."
+        },
+        "rp": {
+          "description": "The RP ID it was made for; for a backfilled event, possibly each of\ncontrol's sites, space-separated.",
+          "type": "string"
+        },
+        "seq": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "account",
+        "seq",
+        "prev",
+        "event",
+        "credential",
+        "rp",
+        "alg",
+        "keyFormat",
+        "key",
+        "aaguid",
+        "at",
+        "by",
+        "hash"
+      ],
+      "type": "object"
     },
     "ForgePoke": {
       "description": "`{\"t\": \"forge.poke\", \"poke\": {…}}`, control to daemon.",
@@ -333,19 +560,36 @@
       "type": "object"
     },
     "GrantRevoke": {
-      "description": "The project's grants taken back, by any owner's device: every grant for\nthe project under `delegation` made at or before `at`. It names no\ngrant, so whoever relays it can't point it at another one; a grant made\nafter it is a new one.",
+      "description": "The project's grants taken back, by any owner: every grant for the\nproject under `delegation` made at or before `at`, v1 or v2. It names\nno grant, so whoever relays it can't point it at another one; a grant\nmade after it is a new one.",
       "properties": {
+        "account": {
+          "description": "[`REVOKE_PASSKEY`]: the revoking owner's account, in the bytes.",
+          "type": "string"
+        },
         "at": {
           "format": "uint64",
           "minimum": 0,
           "type": "integer"
         },
         "by": {
+          "default": "",
+          "description": "[`REVOKE_DEVICE`]: the signing device. Empty in a passkey's.",
           "type": "string"
         },
         "delegation": {
           "description": "The delegation whose grants it takes back.",
           "type": "string"
+        },
+        "passkey": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Assertion"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "[`REVOKE_PASSKEY`]: the passkey's assertion over\n[`GrantRevoke::passkey_challenge`]."
         },
         "project": {
           "type": "string"
@@ -355,15 +599,141 @@
         },
         "sig": {
           "default": "",
+          "description": "[`REVOKE_DEVICE`]: its signature, hex. Empty in a passkey's.",
           "type": "string"
+        },
+        "v": {
+          "description": "Its format, [`REVOKE_DEVICE`] or [`REVOKE_PASSKEY`]: absent is a\ndevice's (every revoke from before DK6).",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
         }
       },
       "required": [
         "project",
         "delegation",
         "running",
-        "at",
-        "by"
+        "at"
+      ],
+      "type": "object"
+    },
+    "Log": {
+      "additionalProperties": false,
+      "description": "An account's log, oldest first.",
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "began": {
+          "description": "When this hub began keeping logs (ms): removals before then are in\nno log. Said by the hub, not hashed; `None` when it doesn't say.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "events": {
+          "items": {
+            "$ref": "#/$defs/Event"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "account",
+        "events"
+      ],
+      "type": "object"
+    },
+    "MachineAgent": {
+      "description": "A session of a machine a teammate's agent may mention (#577).",
+      "properties": {
+        "active_ms_ago": {
+          "description": "How long ago it last printed, in ms; absent when the machine does not\nknow.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "What `@machine/name` matches: the session's name, as a slug.",
+          "type": "string"
+        },
+        "state": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MachineAgentState"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What it's doing now (#645); absent from an older daemon."
+        },
+        "tab": {
+          "description": "The tab it is in, when the tab has a name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tool": {
+          "description": "With the owner's `work`: the name of the tool it last ran (#645),\nnever its arguments or output.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "working_on": {
+          "description": "With the owner's `work`: the issue it was started on (`#540`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "MachineAgentState": {
+      "description": "What a machine's session is doing (#645).",
+      "enum": [
+        "working",
+        "idle",
+        "needs_input"
+      ],
+      "type": "string"
+    },
+    "MachineAgentsAsk": {
+      "description": "An agent asks which sessions of a machine it may mention (#577).",
+      "properties": {
+        "from_session": {
+          "description": "When the asker's session is on this machine (#575): its name, so the\nlist leaves it out, as a mention never reaches the session that\nwrote it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "only": {
+          "description": "For a thread's strip (#645): only the sessions of these names\n([`session_slug`]), silenced or not, and however many. Empty: the list\na mention picks from. An older daemon ignores it and answers that.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "room": {
+          "description": "The room the mention would be in.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "room"
       ],
       "type": "object"
     },
@@ -376,6 +746,17 @@
             "answer": {
               "const": "done",
               "type": "string"
+            },
+            "routed": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Routed"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "An `agents.mention`'s: how the daemon routed it (#502). A daemon\nfrom before it says nothing, and control shows only \"delivered\"."
             },
             "url": {
               "default": null,
@@ -421,6 +802,30 @@
           "required": [
             "answer",
             "why"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "An `agents.sessions`' answer (#577): the sessions the owner shows,\nnewest first. `shared` is false when the owner shows none.",
+          "properties": {
+            "answer": {
+              "const": "sessions",
+              "type": "string"
+            },
+            "sessions": {
+              "default": [],
+              "items": {
+                "$ref": "#/$defs/MachineAgent"
+              },
+              "type": "array"
+            },
+            "shared": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "answer",
+            "shared"
           ],
           "type": "object"
         },
@@ -552,10 +957,15 @@
       "type": "object"
     },
     "ProjectGrant": {
-      "description": "An owner's device saying the platform may start and instruct runs on\n`project`'s hosted workspaces, under `delegation`.",
+      "description": "A project owner saying the platform may start and instruct runs on\n`project`'s hosted workspaces, under `delegation`.",
       "properties": {
+        "account": {
+          "description": "v2: the granting owner's account, in the bytes. Empty in v1.",
+          "type": "string"
+        },
         "by": {
-          "description": "The signing device.",
+          "default": "",
+          "description": "v1: the signing device. Empty in v2, which no device signs.",
           "type": "string"
         },
         "caps": {
@@ -571,7 +981,7 @@
         },
         "expires": {
           "default": null,
-          "description": "When it stops counting (ms); `None`: never.",
+          "description": "When it stops counting (ms); `None`: never (v1 only).",
           "format": "uint64",
           "minimum": 0,
           "type": [
@@ -588,15 +998,34 @@
           "type": "integer"
         },
         "owner": {
-          "description": "`team:<id>` or `account:<id>`, as the signing device saw it.",
+          "description": "`team:<id>` or `account:<id>`, as the granter saw it.",
           "type": "string"
+        },
+        "passkey": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Assertion"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "v2: the passkey's assertion over [`ProjectGrant::passkey_challenge`],\nits signature. Kept beside the bytes, not in them."
         },
         "project": {
           "type": "string"
         },
         "sig": {
           "default": "",
+          "description": "v1: its Ed25519 signature over [`ProjectGrant::body`], hex. Empty\nin v2.",
           "type": "string"
+        },
+        "v": {
+          "description": "Its format, [`V1`] or [`V2`]: absent is v1 (every grant from before\nDK6).",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
         }
       },
       "required": [
@@ -605,10 +1034,75 @@
         "owner",
         "delegation",
         "caps",
-        "made",
-        "by"
+        "made"
       ],
       "type": "object"
+    },
+    "Routed": {
+      "description": "How a daemon routed an `agents.mention` (#502): which of its four steps\ntook it.",
+      "properties": {
+        "asked": {
+          "description": "The session the message named (`@geek/slowness`), when the daemon\nfound no such session (or more than one): the message waits.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "names": {
+          "description": "With `asked`: the names a mention could have used (sessions and\ntabs, at most 10), since no session was called that (#576).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "queued": {
+          "description": "The session's hook wasn't waiting, so the mention only sits in its\nqueue (#571). A daemon from before it says nothing: handed over.",
+          "type": "boolean"
+        },
+        "session": {
+          "description": "The session it went to, by its name, when it went to one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "silenced": {
+          "description": "The session it named is there, but its owner silenced mentions for it\n(#579): the message waits in the inbox. With `asked`.",
+          "type": "boolean"
+        },
+        "step": {
+          "$ref": "#/$defs/RoutedStep"
+        }
+      },
+      "required": [
+        "step"
+      ],
+      "type": "object"
+    },
+    "RoutedStep": {
+      "description": "Which of the daemon's steps took an `agents.mention`.",
+      "oneOf": [
+        {
+          "const": "named",
+          "description": "The session it names.",
+          "type": "string"
+        },
+        {
+          "const": "thread",
+          "description": "The session that posted in its thread.",
+          "type": "string"
+        },
+        {
+          "const": "room",
+          "description": "The session that last posted in its room (a fallback).",
+          "type": "string"
+        },
+        {
+          "const": "inbox",
+          "description": "No session took it: the machine's inbox.",
+          "type": "string"
+        }
+      ]
     },
     "RunRevoke": {
       "description": "A revoke of the project's grants, for every hosted machine of its\nproject.",
@@ -631,6 +1125,17 @@
         },
         "grant": {
           "$ref": "#/$defs/ProjectGrant"
+        },
+        "passkey_log": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Log"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A v2 grant's (DK6): its granter's passkey log, as the platform read\nit from the hub. The machine takes only its removals after the log\nit pinned from control, never a key it adds\n(`arugula_e2e::project_grant::check`). `None` for a v1, from a\nplatform from before DK6, or when the hub didn't answer."
         },
         "project": {
           "type": "string"

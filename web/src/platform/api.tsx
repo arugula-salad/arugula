@@ -5,17 +5,19 @@
 
 import { noMachines, type PlatformApi, type PlatformTeam } from "../shared/platform-api";
 import { PlatformBar } from "./bar";
+import { chatGo, leaveChatTo, swipeDown, swipeGo, swipeUp } from "./chat-nav";
+import { chatProject, currentProject, lastTeamProject } from "./current-project";
 import { names, roomPath } from "./links";
 import { current, go, pathOf, type Route } from "./router";
 import { controlOrigin, session } from "./session";
 import { toast } from "./toast";
 import { barProject } from "./where";
 
-const chatIn = (view?: "activity" | "saved" | "search" | "threads", q?: string): Route | null => {
+const chatIn = (view?: "activity" | "saved" | "search" | "threads", q?: string, all?: boolean): Route | null => {
   // The project the bar is in (each has its own rooms, UI audit #169),
-  // else the first team's.
-  const project = barProject(current()) ?? session.projects.find((p) => p.team)?.id ?? session.personal()?.id;
-  return project ? { page: "chat", project, view, q } : null;
+  // else a team's: the current one's (Arugula #882).
+  const project = barProject(current()) ?? chatProject(session.projects, currentProject(), lastTeamProject()) ?? session.personal()?.id;
+  return project ? { page: "chat", project, view, q, all } : null;
 };
 
 export const platformApi: PlatformApi = {
@@ -30,11 +32,15 @@ export const platformApi: PlatformApi = {
     },
     closeChat() {
       const project = barProject(current());
-      go(project ? pathOf({ page: "project", project }, names) : "/");
+      if (project) leaveChatTo(project);
+      else go("/");
     },
-    openRoom: (room, msg, thread) => go(roomPath(room, msg, thread)),
-    openChatView(view, q = "") {
-      const r = chatIn(view, q);
+    openRoom: (room, msg, thread) => chatGo(roomPath(room, msg, thread)),
+    up: () => swipeUp(),
+    down: () => swipeDown(),
+    goTo: swipeGo,
+    openChatView(view, q = "", all = false) {
+      const r = chatIn(view, q, all);
       if (!r) return;
       // Typing in search replaces the entry, so Back doesn't step through it.
       const now = current();
@@ -46,8 +52,8 @@ export const platformApi: PlatformApi = {
   },
   ...noMachines,
   // A pane's chip opens on control's page, where the machines are.
-  goToPane: () => toast(`Panes open on Control (${new URL(controlOrigin()).host}), where your machines are`),
-  goToSession: () => toast(`Sessions open on Control (${new URL(controlOrigin()).host}), where your machines are`),
+  goToPane: () => toast(`Panes open on your machines (${new URL(controlOrigin()).host})`),
+  goToSession: () => toast(`Sessions open on your machines (${new URL(controlOrigin()).host})`),
   Bar: PlatformBar,
   controlHref: (hash) => `${controlOrigin()}/#${hash}`,
   sessionHref: (project, ses) => pathOf({ page: "session", project, session: ses }, names),

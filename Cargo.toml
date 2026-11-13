@@ -1,23 +1,12 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
-# The hosted server (control, its platform and what they share) is a
-# workspace of its own, server/Cargo.toml, so the daemon's builds never
-# compile it and its builds never compile the daemon or Ghostty. The desktop
-# app is one too (#388).
+# Control's hub and its platform are closed source, in their own repo
+# (arugula-salad/cloud), which uses this repo's shared crates at a pinned
+# commit. The desktop app is a workspace of its own (#388).
 exclude = [
     "vendor/libghostty-vt-sys",
     "crates/desktop",
-    "crates/arugula-control",
-    "crates/arugula-platform",
-    "crates/control",
-    "crates/control-common",
-    "crates/platform",
-    "crates/platform-agents",
-    "crates/platform-all",
-    "crates/platform-chat",
-    "crates/platform-api",
-    "crates/platform-deploys",
 ]
 
 # libghostty-vt-sys with Ghostty patched at build time (M9): see
@@ -26,7 +15,7 @@ exclude = [
 libghostty-vt-sys = { path = "vendor/libghostty-vt-sys" }
 
 [workspace.package]
-version = "0.66.4"
+version = "0.66.13"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/arugula-salad/arugula"
@@ -40,6 +29,7 @@ arugula-core = { path = "crates/core" }
 arugula-e2e = { path = "crates/e2e" }
 arugula-forge-github = { path = "crates/forge-github" }
 arugula-mux = { path = "crates/mux" }
+arugula-prices = { path = "crates/prices" }
 arugula-proto = { path = "crates/proto" }
 arugula-vt = { path = "crates/vt" }
 # The daemon's crates (#232). The binary, crates/arugulad, picks their
@@ -74,7 +64,7 @@ p256 = "0.14.0"
 proptest = "1.11.0"
 regex = "1.13.1"
 reqwest = { version = "0.13.5", default-features = false }
-russh = { version = "0.64.0", default-features = false }
+russh = { version = "0.65.0", default-features = false }
 rust-embed = "8.12.0"
 rustls-platform-verifier = "0.7.1"
 serde = "1.0.229"

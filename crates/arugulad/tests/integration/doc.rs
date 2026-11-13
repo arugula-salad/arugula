@@ -30,7 +30,7 @@ const EDITOR: &str = "pal@example.com";
 /// A daemon with its owner, FRIEND a viewer and EDITOR an editor of its
 /// session, and the first terminal pane.
 fn shared() -> (Daemon, u64, u64) {
-    let args = ["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock", "--wisp-token-file", "/nonexistent"];
+    let args = ["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"];
     let d = Daemon::child_with(&args);
     let p = &d.get("/api/panes")[0];
     let (pane, session) = (p["id"].as_u64().unwrap(), p["session"].as_u64().unwrap());
@@ -247,6 +247,9 @@ fn an_agent_opens_a_doc_beside_its_pane_and_clients_watch_it_fill() {
     // The text is the Doc as Markdown.
     let text = d.raw("GET", &format!("/api/panes/{doc}/capture"), None).1;
     assert!(text.contains("# Report") && text.contains("## Part 2") && text.contains("Text of s2."), "{text}");
+    // ...and `read_output` with screen over MCP says the same (Arugula #778).
+    let seen = m.call("read_output", json!({ "pane": doc, "screen": true })).unwrap();
+    assert_eq!(seen["text"].as_str().unwrap(), text.trim_end(), "{seen}");
     drop(m);
 }
 
@@ -281,6 +284,50 @@ fn a_page_that_doesnt_show_the_doc_is_sent_nothing_of_it() {
     let state = elsewhere.block(doc);
     assert!(state.get("entries_at").is_none(), "{state}");
     assert_eq!(bodies(&state), bodies(&d.state(doc)));
+    drop(m);
+}
+
+#[test]
+fn a_summaries_only_connection_is_sent_no_blocks() {
+    let (d, pane, _) = shared();
+    let m = Mcp::bridge(&d, Some(pane));
+    let doc = m.call("doc", outline(2)).unwrap()["block"].as_u64().unwrap();
+
+    // As the fleet connects: it says so first, then takes patches.
+    let mut summary = Page::connect_plain(&d, None);
+    summary.send(json!({ "type": "subscribe", "summary": true }));
+    summary.send(json!({ "type": "block_patches" }));
+    summary.sync();
+    let mut page = Page::connect(&d, None);
+    page.show(pane);
+    page.settled(doc);
+
+    // Not the one it could have had on connecting, nor what changes after.
+    m.call("doc", fill(doc, "s1", "One.")).unwrap();
+    assert_eq!(bodies(&page.block(doc))[0].as_deref(), Some("One."));
+    let made = d.post("/api/blocks", json!({ "type": "browser", "config": { "url": "http://localhost:1" } }));
+    let other = made["block"].as_u64().expect("a block anyone is sent, shown or not");
+    page.block(other);
+    let quiet = Duration::from_secs(2);
+    let mut blocks = vec![];
+    while let Some(msg) = summary.recv(quiet) {
+        if msg["type"] == "block" {
+            blocks.push(msg);
+        }
+    }
+    assert_eq!(blocks, Vec::<Value>::new(), "a summaries-only connection reads no block");
+
+    // Asking for everything again brings them.
+    summary.send(json!({ "type": "subscribe", "summary": false }));
+    summary.block(doc);
+
+    // A client that says nothing gets them too, and one that says anything
+    // else gets them first.
+    Page::connect_plain(&d, None).block(doc);
+    let mut asks = Page::connect_plain(&d, None);
+    asks.send(json!({ "type": "ping", "id": 1 }));
+    let first = asks.until("a block or the pong", |m| m["type"] == "block" || m["type"] == "pong");
+    assert_eq!(first["type"], "block", "{first}");
     drop(m);
 }
 
@@ -441,7 +488,7 @@ fn an_agent_blocks_approval_lets_doc_through_without_a_card() {
 /// the Doc, filled.
 #[test]
 fn a_doc_needs_no_flag_and_a_restart_keeps_it() {
-    let args = ["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock", "--wisp-token-file", "/nonexistent"];
+    let args = ["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"];
     let mut d = Daemon::child_with(&args);
     std::fs::write(d.state.join("flags.json"), r#"{ "flags": { "docs": false } }"#).unwrap();
     let pane = d.get("/api/panes")[0]["id"].as_u64().unwrap();
@@ -534,6 +581,73 @@ fn a_chart_and_a_drawing_fill_and_a_bad_one_leaves_the_section_as_it_was() {
     // The text has a line for each.
     let text = d.raw("GET", &format!("/api/panes/{doc}/capture"), None).1;
     assert!(text.contains("[chart: Sales by month (bar, 3 rows)]") && text.contains("[drawing]"), "{text}");
+    drop(m);
+}
+
+/// #828: an agent makes each layout over MCP, a prototype Doc is one
+/// section that holds one line and one prototype, and a Doc keeps its layout.
+#[test]
+fn an_agent_makes_each_layout_and_a_prototype_doc_holds_only_a_prototype() {
+    let (d, pane, _) = shared();
+    let m = Mcp::bridge(&d, Some(pane));
+    let layout = |block: u64| d.state(block).get("layout").and_then(Value::as_str).unwrap_or("doc").to_owned();
+
+    // doc is the default; tabs fills as a doc does.
+    let plain = m.call("doc", outline(2)).unwrap()["block"].as_u64().unwrap();
+    assert_eq!(layout(plain), "doc");
+    let mut args = outline(2);
+    args["layout"] = json!("tabs");
+    let tabs = m.call("doc", args).unwrap()["block"].as_u64().unwrap();
+    assert_eq!(layout(tabs), "tabs");
+    m.call("doc", fill(tabs, "s2", "Long part.\n\n## More\n\nWords.")).unwrap();
+
+    // prototype with no sections makes one, headed with the title.
+    let made = m.call("doc", json!({ "kind": "new", "title": "Tuner", "layout": "prototype" })).unwrap();
+    let proto = made["block"].as_u64().unwrap();
+    assert_eq!(layout(proto), "prototype");
+    let state = d.state(proto);
+    assert_eq!(
+        (
+            state["entries"].as_array().unwrap().len(),
+            state["entries"][0]["heading"].as_str(),
+            state["entries"][0]["intent"].as_str()
+        ),
+        (1, Some("Tuner"), Some("the prototype"))
+    );
+    let meta = std::fs::read_to_string(library_dir(&d, proto).join("meta.json")).unwrap();
+    assert!(meta.contains("\"prototype\""), "{meta}");
+
+    // Several sections with prototype are refused, and no Doc is left.
+    let before = d.get("/api/panes").as_array().unwrap().len();
+    let mut args = outline(2);
+    args["layout"] = json!("prototype");
+    let e = m.call("doc", args).unwrap_err();
+    assert!(e.contains("a prototype Doc has one section"), "{e}");
+    assert_eq!(d.get("/api/panes").as_array().unwrap().len(), before);
+
+    // An unknown layout names the three.
+    let mut args = outline(1);
+    args["layout"] = json!("slides");
+    let e = m.call("doc", args).unwrap_err();
+    assert!(e.contains("doc") && e.contains("tabs") && e.contains("prototype"), "{e}");
+
+    // A prototype Doc takes one line and one prototype, and nothing else.
+    let page = "<!doctype html><html><body><p>Hi</p></body></html>";
+    let good = format!("A tuner for the curve.\n\n```prototype Tuner\n{page}\n```");
+    for bad in [
+        "Just words.".to_owned(),
+        page.to_owned(),
+        format!("One.\n\nTwo.\n\n```prototype\n{page}\n```"),
+        format!("```prototype\n{page}\n```\n\nAfter."),
+        format!("```prototype\n{page}\n```\n```prototype\n{page}\n```"),
+        "```chart\n{}\n```".to_owned(),
+    ] {
+        let e = m.call("doc", fill(proto, "s1", &bad)).unwrap_err();
+        assert!(e.contains("a prototype Doc") && e.contains("unchanged") && !e.contains('\n'), "{bad}: {e}");
+    }
+    assert_eq!(bodies(&d.state(proto)), vec![None]);
+    m.call("doc", fill(proto, "s1", &good)).unwrap();
+    assert_eq!(bodies(&d.state(proto)), vec![Some(good)]);
     drop(m);
 }
 

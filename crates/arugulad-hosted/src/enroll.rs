@@ -88,9 +88,21 @@ pub fn claim(ticket: Option<String>, file: &Path) -> Option<Claim> {
 /// which the running daemon picks up. Every answer of control's but a
 /// server error is final (fail closed).
 pub async fn enroll(url: &str, claim: &Claim, state_dir: &Path) -> Result<(), NotEnrolled> {
+    // An enrollment that's there but doesn't load (#672) is kept as it
+    // is, key and all: enrolling over it would drop what it pinned, and
+    // this box's claim is spent either way. The daemon runs as not
+    // joined; the workspace is rebuilt.
+    let joined = match crate::control::read_saved(state_dir) {
+        Ok(s) => s.is_some(),
+        Err(e) => {
+            return Err(NotEnrolled::Refused(format!(
+                "control.json is there but doesn't load ({e:#}); keeping it and this box's key, enrolling nothing"
+            )));
+        }
+    };
     // A key from before this box (the snapshot's) would be every such box's.
     let key = state_dir.join(crate::control::KEY_FILE);
-    if key.exists() && crate::control::joined_in(state_dir).is_none() {
+    if key.exists() && !joined {
         std::fs::remove_file(&key).map_err(|e| NotEnrolled::Failed(e.into()))?;
     }
     let keys = DeviceKeys::load_or_create(&key).map_err(NotEnrolled::Failed)?;
@@ -180,6 +192,28 @@ mod tests {
         let t = request(&Claim::Ticket("t1".into()), &keys, 5);
         assert_eq!((t.ticket.as_deref(), t.sandbox.as_deref()), (Some("t1"), None));
         assert!(!verify_hex(&t.sign, body.as_bytes(), &t.proof));
+    }
+
+    /// #672: a `control.json` that's there but doesn't load stops the
+    /// enrollment before anything is touched: the key stays, the file
+    /// stays as it was, and control isn't asked.
+    #[tokio::test]
+    async fn an_enrollment_that_doesnt_load_is_kept_and_nothing_enrolls() {
+        let dir = super::super::scratch("enroll-unloadable");
+        let key = dir.join(crate::control::KEY_FILE);
+        let before = DeviceKeys::load_or_create(&key).unwrap().id();
+        let file = dir.join(crate::control::FILE);
+        let text = r#"{"url": "http://control", "locked": true}"#;
+        std::fs::write(&file, text).unwrap();
+        // Nothing listens at this URL: a request would fail, not be refused.
+        let got = enroll("http://127.0.0.1:9", &Claim::Ticket("t1".into()), &dir).await;
+        match got {
+            Err(NotEnrolled::Refused(why)) => assert!(why.contains("doesn't load"), "{why}"),
+            Err(NotEnrolled::Failed(e)) => panic!("asked control: {e:#}"),
+            Ok(()) => panic!("enrolled"),
+        }
+        assert_eq!(DeviceKeys::load(&key).unwrap().id(), before, "the key stays");
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), text, "the file stays");
     }
 
     #[tokio::test]

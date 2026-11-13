@@ -1,0 +1,70 @@
+name: auto-revert
+
+# Reverts a commit that turned main red, through the merge queue, when there's
+# one clear culprit (scripts/ci-auto-revert has the rules). After each of
+# chant's ticks, which decide a commit is red after its retry and bisect for the
+# culprit, and on a timer in case a tick's run was missed. The repository
+# variable ARUGULA_AUTO_REVERT=off turns it off.
+on:
+  workflow_run:
+    workflows: [chant-ci-green]
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: "37 * * * *"
+  workflow_dispatch: {}
+
+# One at a time, so two ticks can't both open the revert.
+concurrency:
+  group: auto-revert
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  revert:
+    runs-on: ubuntu-latest
+    # CI_GREEN_TOKEN is the ci-green environment's, which only main reaches.
+    environment: ci-green
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          # All of main, every tag and chant/lifecycle: chant's records and the ci/ tags.
+          fetch-depth: 0
+          # Not the job's own token: a pull request opened with that one runs no
+          # workflows, so it could never pass the check the queue requires.
+          token: ${{ secrets.CI_GREEN_TOKEN }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: "24"
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch -q origin chant/lifecycle:refs/remotes/origin/chant/lifecycle
+      - name: What this token may do, in the log for when a revert can't be opened
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.CI_GREEN_TOKEN }}
+        run: gh api "repos/$GITHUB_REPOSITORY" --jq '.permissions'
+      # A manual run answers whether the token may open a pull request, which only a
+      # real revert otherwise would, by asking for one from a branch that doesn't
+      # exist: 422 means it may, 403 that it may not. Nothing is created.
+      - name: Whether this token may open a pull request
+        if: github.event_name == 'workflow_dispatch'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.CI_GREEN_TOKEN }}
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/pulls" \
+            -d '{"title":"probe","head":"auto-revert-probe-no-such-branch","base":"main"}')
+          echo "opening a pull request answers $code (422: it may; 403: it may not)"
+          echo "CI_GREEN_TOKEN opening a pull request: $code (422: it may; 403: it may not)" >>"$GITHUB_STEP_SUMMARY"
+      - run: scripts/ci-auto-revert
+        env:
+          GH_TOKEN: ${{ secrets.CI_GREEN_TOKEN }}
+          ARUGULA_AUTO_REVERT: ${{ vars.ARUGULA_AUTO_REVERT }}

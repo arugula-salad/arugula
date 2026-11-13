@@ -1,13 +1,19 @@
-/* A project's Docs (aru-118) on the platform page (platform/pages/docs.tsx).
-   The Doc itself is drawn by the Doc block's renderer, with its styles
-   (../style.css's .doc); this is the page around it and the writer's form.
-   It fits a phone. */
+/* Docs: the one Docs list (./docs-list.tsx) and its reader, which the
+   machine's page and the platform's share (Arugula #864), and a project
+   Doc's page on the platform (platform/pages/docs.tsx). The Doc itself is
+   drawn by the Doc block's renderer, with its styles (../style.css's .doc);
+   this is the page around it and the writer's form. It fits a phone. */
 
 .project-doc {
   display: flex;
   flex-direction: column;
   gap: 10px;
   min-width: 0;
+  /* A Doc's page is as wide as the frame, not the section's usual 880px
+     column: the Doc centres its own measure (#783), and the container it is
+     measured in is this, so the wider tiers can be reached. */
+  padding-inline: 24px;
+  container: doc / inline-size;
 }
 
 /* The block fills its pane; on the page it's as tall as what it says, a
@@ -18,67 +24,182 @@
   border-radius: 10px;
 }
 
-.project-doc-head {
-  max-width: 760px;
+/* Over a personal project's Docs on the platform (Arugula #865): where
+   they're kept, and what to do with them. */
+.docs-cloud-line {
+  margin: 0;
+  padding: var(--space-2) var(--space-5);
+  font-size: var(--text-sm);
+}
+
+/* A line around the Doc on its page (its public link, its boards, the
+   writer): on the Doc's measure, centred under it. */
+.doc-lead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
   width: 100%;
-  margin: 0 auto;
+  max-width: var(--lead-measure);
+  min-width: 0;
+  margin: 14px auto 0;
   padding: 0 16px;
   box-sizing: border-box;
+}
+
+.doc-lead input[type="text"] {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The writer: the section, its heading, its Markdown and Save, one under another. */
+.doc-writer {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.doc-writer textarea {
+  font-family: var(--f-mono);
+}
+
+.doc-writer button {
+  align-self: flex-start;
+}
+
+/* The Docs list fills the page's frame, as the machine's page does. */
+.platform-main:has(> .docs-list) {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+.docs-list {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  background: var(--surface);
+}
+
+.docs-list .list-page {
+  height: 100%;
+}
+
+/* The bar over Mine's rows once any is ticked (Arugula #818), and what each Doc's share came to. */
+/* The Trash link by the list's counts (Arugula #866): a 24px target. */
+.docs-trash-open {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  min-width: 24px;
+  padding: 0 4px;
+}
+
+.docs-share-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-5);
+  border-bottom: 1px solid var(--line);
+  background: var(--raised);
+  font-size: var(--text-sm);
+}
+
+.docs-share-results {
+  flex: 1 0 100%;
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.docs-share-results li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+  min-width: 0;
+}
+
+.docs-share-title {
+  font-weight: 600;
   overflow-wrap: anywhere;
 }
 
-.project-doc-row {
-  font-size: 12px;
+/* A team's two tabs (Arugula #864), under the title. */
+.docs-tabs {
+  align-self: flex-start;
+  margin-top: var(--space-2);
 }
 
-.project-doc-form {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  max-width: 760px;
+/* The reader (#608): the preview side holds the whole Doc, drawn as a sheet
+   that is as tall as it says; the preview body scrolls it. The list page's
+   own rules (../ui/list-page.css) are left as they are. */
+.docs-reader {
   min-width: 0;
-  margin-top: 14px;
 }
 
-.project-doc-form input[type="text"] {
-  flex: 1;
-  min-width: 0;
-  box-sizing: border-box;
+.docs-reader .doc {
+  flex: none;
+  overflow: visible;
+  border-radius: 10px;
 }
 
-.project-doc-writer {
-  width: 100%;
-  margin: 0 auto;
-  padding: 12px 16px;
-  box-sizing: border-box;
-  flex-direction: column;
-  border: 1px solid var(--divider);
-  border-radius: 8px;
-  background: var(--surface);
-}
-
-.project-doc-writer textarea {
-  width: 100%;
-  box-sizing: border-box;
-  font-family: var(--mono, monospace);
-}
-
-.project-doc-writer select {
-  max-width: 100%;
-}
-
-.project-doc-buttons {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.project-doc-confirm {
+/* The list's text rules (.list-preview-words p) are for plain paragraphs. */
+.docs-reader .doc-meta {
+  max-width: none;
   margin: 0;
-  padding: 8px 10px;
-  border: 1px solid var(--warn);
-  border-radius: 6px;
-  background: var(--surface);
+  color: var(--doc-ink-faint);
+  font-size: inherit;
+}
+
+.docs-reader .doc p:first-child {
+  color: inherit;
+}
+
+.docs-reader .doc-head {
+  margin-bottom: 24px;
+}
+
+/* The outline stays in view as the Doc scrolls under it. */
+.docs-page .list-preview-aside {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  max-height: calc(100cqh - 40px);
+  overflow-y: auto;
+}
+
+.doc-outline-go {
+  display: block;
+  min-height: 24px;
+  box-sizing: border-box;
+  padding: 4px 0;
+  max-width: 100%;
+  overflow: hidden;
+  color: inherit;
+  font-weight: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.doc-outline-go:hover:not(:disabled) {
+  color: var(--accent);
+}
+
+/* Under a Doc the outline is no use: it folds away. */
+@container list-preview (max-width: 720px) {
+  .docs-page .list-preview-aside {
+    display: none;
+  }
+}
+
+/* A team machine's line to the library Docs it still keeps (Arugula #864). */
+.docs-kept {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-sm);
 }
 
 .doc-checklist {

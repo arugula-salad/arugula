@@ -8,7 +8,7 @@ use arugula_proto::{
     Attention,
     api::*,
     fs::{FsEntry, FsList},
-    hosts::{HostList, HostToken, Invite, SandboxList, Transport},
+    hosts::{HostList, SandboxList, Transport},
 };
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -175,11 +175,9 @@ fn conversations_and_adapters() {
 }
 
 #[test]
-fn machines_synced_hosts_and_act_results_of_an_older_daemon() {
+fn machines_and_act_results_of_an_older_daemon() {
     let m: Vec<arugula_proto::Machine> = old(json!([{ "id": 1, "owner": { "pane": 3 } }]));
     assert_eq!((m[0].provider.as_str(), m[0].sprite.as_str()), ("", ""));
-    let h: Vec<SyncedHost> = old(json!([{}]));
-    assert_eq!((h[0].name.as_str(), h[0].panes.len()), ("", 0));
     let a: ActResponse = old(json!({}));
     assert!(a.results.is_empty());
 }
@@ -188,16 +186,16 @@ fn machines_synced_hosts_and_act_results_of_an_older_daemon() {
 fn hosts_sandboxes_and_tokens_of_an_older_daemon() {
     let l: HostList = old(json!({}));
     assert_eq!((l.this.as_str(), l.hosts.len()), ("", 0));
-    let l: HostList = old(json!({ "this": "home", "hosts": [{ "provider": { "port": 7681 } }] }));
+    // An older daemon's provider host (removed in 0.67) still parses.
+    let l: HostList = old(
+        json!({ "this": "home", "hosts": [{ "transport": "provider", "provider": { "port": 7681 }, "status": "cold" }] }),
+    );
     let h = &l.hosts[0];
-    assert_eq!((h.name.as_str(), h.urls.len(), h.transport), ("", 0, Transport::Tailnet));
-    assert_eq!(h.provider.as_ref().map(|p| p.provider.as_str()), Some(""));
+    assert_eq!((h.name.as_str(), h.urls.len(), h.transport), ("", 0, Transport::Provider));
     let s: SandboxList = old(json!({ "provider": { "resident": false } }));
     assert_eq!((s.provider.name.as_str(), s.provider.exec_replay, s.sandboxes.len()), ("", 0, 0));
-    let s: SandboxList = old(json!({ "provider": { "resident": true }, "sandboxes": [{}] }));
+    let s: SandboxList = old(json!({ "provider": {}, "sandboxes": [{ "host": "res" }] }));
     assert_eq!(s.sandboxes[0].status, "");
-    assert_eq!(old::<Invite>(json!({ "expires_ms": 1 })).token, "");
-    assert_eq!(old::<HostToken>(json!({ "name": "x" })).token, "");
 }
 
 #[test]
@@ -261,7 +259,7 @@ fn request_bodies_are_what_the_json_was() {
                 "from_pane": 1 }),
         &[],
     );
-    // `run --home`'s first request never named `vm_tab`, `join`, `split` or `from_pane`.
+    // An older daemon's `run` request never named `vm_tab`, `join`, `split` or `from_pane`.
     body(
         RunRequest { command: Some("ls".into()), session: Some("me".into()), ..Default::default() },
         json!({ "command": "ls", "vm": false, "image": null, "sandbox": null, "session": "me", "cwd": null,
@@ -374,11 +372,6 @@ fn request_bodies_are_what_the_json_was() {
             ssh: None,
         },
         json!({ "name": "b", "urls": ["https://b"], "transport": "tailnet" }),
-        &[],
-    );
-    body(
-        arugula_proto::hosts::PromoteRequest { host: None, port: Some(7681) },
-        json!({ "host": null, "port": 7681 }),
         &[],
     );
 }

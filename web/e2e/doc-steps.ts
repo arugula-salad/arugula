@@ -4,8 +4,10 @@
 // calls' effect); the page shows the outline with every intent, then each
 // fill as it lands, with no reload.
 
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { deflateSync } from "node:zlib";
-import { expect, type Page } from "@playwright/test";
+import { expect, type Frame, type Page } from "@playwright/test";
 import type { PaneId, SessionId } from "../src/shared/proto";
 import { example } from "./doc-examples";
 
@@ -105,7 +107,7 @@ export async function fillsInPlace(page: Page, post: Post, term: PaneId) {
   await expect(section("s1").locator(".doc-fresh")).toHaveCount(1);
 
   await fill(post, doc, "s3", "Few risks.");
-  await expect(block.locator("[data-doc-progress]")).toHaveText("3 of 3 sections written");
+  await expect(block.locator("[data-doc-progress]")).toHaveCount(0);
   await expect(block.locator("[data-pending]")).toHaveCount(0);
   // Nothing reloaded the page, and the viewer was never scrolled.
   expect(await page.evaluate(() => (window as unknown as { __same?: boolean }).__same)).toBe(true);
@@ -328,4 +330,223 @@ export async function imagesInPlace(page: Page, post: Post, doc: number) {
   expect(await page.evaluate(() => (window as unknown as { __kept?: Map<string, string> }).__kept?.size)).toBe(0);
   expect(await page.evaluate((d) => window.__arugulaDocImages?.(d), doc)).toBeUndefined();
   expect(await blobs(page)).toBe(0);
+}
+
+// #506: a ```prototype section runs its own script in a sandboxed frame, and
+// can't get out. The prototype below writes into its own DOM (proof it ran),
+// then tries every way out; the checks are on the effects (no request
+// reached `Attacker`, the page above didn't change or move), not only on what
+// the script saw.
+
+/** A server the prototype tries to reach: every request it gets is `hits`. */
+export interface Attacker {
+  url: string;
+  hits: string[];
+  close: () => void;
+}
+
+export async function attacker(): Promise<Attacker> {
+  const hits: string[] = [];
+  const srv: Server = createServer((q, r) => {
+    hits.push(q.url ?? "");
+    r.writeHead(200, { "access-control-allow-origin": "*", "content-type": "text/plain" });
+    r.end("hit");
+  });
+  await new Promise<void>((res) => srv.listen(0, "127.0.0.1", res));
+  return { url: `http://127.0.0.1:${(srv.address() as AddressInfo).port}`, hits, close: () => void srv.close() };
+}
+
+/** The html fence: a title and a height on its line, a page that says it ran,
+ * and every way out. `#tries` is what it saw, as JSON, once it is done. */
+export const prototype = (a: Attacker, title = "Probe") => `\`\`\`prototype height=300 ${title}
+<!doctype html>
+<html>
+<body>
+<p id="out">waiting</p>
+<p id="tries"></p>
+<img src="${a.url}/img" alt="">
+<script>
+document.getElementById("out").textContent = "ran";
+window.__kept = "kept";
+const tries = {};
+tries.scheme = getComputedStyle(document.documentElement).colorScheme;
+tries.origin = String(self.origin);
+try { parent.document.body.setAttribute("data-pwned", "1"); tries.parent = "reached"; } catch (e) { tries.parent = "blocked"; }
+try { top.location = "${a.url}/nav"; tries.top = "attempted"; } catch (e) { tries.top = "blocked"; }
+try { tries.cookie = document.cookie === "" ? "empty" : "read"; } catch (e) { tries.cookie = "blocked"; }
+try { tries.storage = String(localStorage.length); } catch (e) { tries.storage = "blocked"; }
+try { window.open("${a.url}/popup"); tries.popup = "attempted"; } catch (e) { tries.popup = "blocked"; }
+fetch("${a.url}/fetch").then(() => (tries.fetch = "reached"), () => (tries.fetch = "blocked")).then(() => {
+  document.getElementById("tries").textContent = JSON.stringify(tries);
+  document.body.dataset.done = "1";
+});
+</script>
+</body>
+</html>
+\`\`\`
+`;
+
+/** Check the prototype in `section` of `page` ran in its frame and got
+ * nowhere: it wrote into its own DOM, in the page's colour scheme, in a frame
+ * with the sandbox and the height the fence line asked for; and none of its
+ * ways out had an effect. `where`: the frame's selector. */
+export async function prototypeRan(page: Page, a: Attacker, scheme: "light" | "dark", where = "[data-prototype-frame]") {
+  const url = page.url();
+  const iframe = page.locator(where);
+  await expect(iframe).toHaveCount(1, { timeout: 15_000 });
+  await iframe.scrollIntoViewIfNeeded();
+  await expect(iframe).toHaveAttribute("sandbox", "allow-scripts");
+  await expect(iframe).toHaveAttribute("allow", "");
+  // Loaded at once, not lazily (Arugula #947): see `framesLoadOnce`.
+  expect(await iframe.getAttribute("loading")).toBeNull();
+  await expect(iframe).toHaveAttribute("referrerpolicy", "no-referrer");
+  await expect(page.locator("[data-prototype-label]")).toHaveText("Prototype · sandboxed");
+  await expect(iframe).toHaveAttribute("title", "Probe");
+  expect(await iframe.evaluate((f) => f.getBoundingClientRect().height)).toBe(300);
+  const inside = page.frameLocator(where);
+  await expect(inside.locator("#out")).toHaveText("ran", { timeout: 15_000 });
+  await expect(inside.locator("body[data-done]")).toHaveCount(1, { timeout: 15_000 });
+  const tries = JSON.parse((await inside.locator("#tries").textContent()) ?? "{}");
+  expect(tries).toMatchObject({ scheme, origin: "null", parent: "blocked", storage: "blocked", fetch: "blocked" });
+  // An opaque origin has no cookies: Chrome throws, WebKit reads an empty string.
+  expect(["blocked", "empty"]).toContain(tries.cookie);
+  // What it tried had no effect: the page above is the one we had, unchanged,
+  // and nothing reached the server it named, not by fetch, image, navigation or popup.
+  await page.waitForTimeout(500);
+  expect(a.hits, "nothing reached the attacker").toEqual([]);
+  await expect(page.locator("[data-pwned]")).toHaveCount(0);
+  expect(page.url(), "the page didn't move").toBe(url);
+  expect(page.context().pages().length, "no popup").toBe(1);
+}
+
+/** A prototype that uses every class of the kit (#699), and one that uses none. */
+export const kitPrototype = (title = "Kit") => `\`\`\`prototype height=640 ${title}
+<!doctype html>
+<html>
+<body id="kit" style="margin:0;padding:16px;background:var(--ar-bg);color:var(--ar-text);font:13px system-ui">
+<div class="ar-header">
+  <h1>Machines</h1>
+  <span class="ar-chip ar-chip-ok">online</span>
+  <div class="ar-toolbar"><button class="ar-btn ar-btn-ghost">Refresh</button><button class="ar-btn ar-btn-primary">Add machine</button></div>
+</div>
+<div class="ar-row"><span>studio-mac</span><span class="ar-chip ar-chip-accent">3 panes</span><span class="ar-row-sub">Last seen just now</span></div>
+<div class="ar-row"><span>build-box</span><span class="ar-chip ar-chip-warn">updating</span><span class="ar-row-sub">Last seen 4 min ago</span></div>
+<div class="ar-row"><span>old-laptop</span><span class="ar-chip ar-chip-danger">offline</span></div>
+<p class="ar-toolbar"><button class="ar-btn">Cancel</button><button class="ar-btn" disabled>Disabled</button><span class="ar-chip">idle</span></p>
+<div class="ar-toolbar" style="align-items:flex-start">
+  <div class="ar-dialog"><h2>Remove machine?</h2><p style="margin:0">Its panes keep running; you just lose the way in.</p>
+    <div class="ar-toolbar"><button class="ar-btn">Keep</button><button class="ar-btn ar-btn-primary">Remove</button></div></div>
+  <div class="ar-menu"><button class="ar-menu-item">Rename</button><button class="ar-menu-item">Share…</button><button class="ar-menu-item" disabled>Disabled</button></div>
+</div>
+<div class="ar-empty"><h2>No machines yet</h2><p>Install Arugula on a computer and it shows up here.</p><button class="ar-btn ar-btn-primary">Add one</button></div>
+</body>
+</html>
+\`\`\`
+`;
+
+/** A prototype that uses no `ar-` class: the kit must leave it alone. */
+export const plainPrototype = () => `\`\`\`prototype height=200 Plain
+<!doctype html>
+<html><body><p id="p">Plain</p><button id="b">Go</button></body></html>
+\`\`\`
+`;
+
+/** The Doc column's measure (#783), in characters: `.doc-page`'s computed
+ * `max-width`, less its 32px of gutter, over the width of one `ch` in it. */
+export async function measure(page: Page, within = "") {
+  return page.evaluate(async (scope) => {
+    await document.fonts.ready;
+    const el = document.querySelector(`${scope} .doc-page`.trim())!;
+    const probe = document.createElement("span");
+    probe.style.cssText = "position:absolute;visibility:hidden;width:100ch";
+    el.append(probe);
+    const ch = probe.getBoundingClientRect().width / 100;
+    probe.remove();
+    return Math.round(((parseFloat(getComputedStyle(el).maxWidth) - 32) / ch) * 10) / 10;
+  }, within);
+}
+
+/** Arugula #869: a Doc whose prototype is there before the page loads, shown
+ * only when the person switches to it. On a phone the Doc waits off the page
+ * and is moved into view, which loads its frame again: that's the runner
+ * again, not the prototype leaving. Switching away and back moves it twice
+ * more. A desktop shows both panes, and the same steps move nothing.
+ *
+ * `page` hasn't been anywhere yet: the Doc is made beside `term` first, and
+ * this is the page's first load. */
+export async function protoOpenBeforeLoad(page: Page, post: Post, term: PaneId, a: Attacker) {
+  const doc = await newDoc(post, term);
+  await fill(post, doc, "s1", prototype(a));
+  const once = framesLoadOnce(page);
+  await loadOn(page, term);
+  const outcome = () =>
+    expect
+      .poll(
+        async () =>
+          (await page.locator("[data-prototype-left]").count())
+            ? "said it left"
+            : (await page.frameLocator("[data-prototype-frame]").locator("body[data-done]").count())
+              ? "ran"
+              : null,
+        { timeout: 15_000 },
+      )
+      .toBe("ran");
+  await bring(page, doc);
+  await outcome();
+  await prototypeRan(page, a, "dark");
+  for (let i = 0; i < 2; i++) {
+    await page.evaluate((t) => window.__arugula.client.setActive(t), term);
+    await bring(page, doc);
+    await outcome();
+  }
+  await page.waitForTimeout(1500);
+  await expect(page.locator("[data-prototype-left]"), "nor after switching away and back").toHaveCount(0);
+  once();
+  return doc;
+}
+
+/** Arugula #947: each frame the page makes loads its page once. WebKit loaded
+ * a `loading="lazy"` frame that was put in off the page (parked) and then
+ * moved into view twice in the same window, and a second load after the
+ * handover read as the prototype leaving. Counted from now; call what this
+ * returns to check. (The runner's `document.open()` isn't a navigation.) */
+function framesLoadOnce(page: Page) {
+  const loads = new Map<Frame, string[]>();
+  const on = (f: Frame) => {
+    if (f === page.mainFrame() || f.url() === "about:blank") return;
+    loads.set(f, [...(loads.get(f) ?? []), f.url()]);
+  };
+  page.on("framenavigated", on);
+  return () => {
+    page.off("framenavigated", on);
+    expect(loads.size, "the prototype's frames loaded").toBeGreaterThan(0);
+    expect([...loads.values()].filter((urls) => urls.length > 1), "a frame that loaded twice").toEqual([]);
+  };
+}
+
+/** And a prototype that does leave is still caught after its frame was moved,
+ * also when it says it's ready itself first: a frame is handed its page once,
+ * and a load after that one is the prototype's own. `page` as above. */
+export async function protoLeavesAfterMove(page: Page, post: Post, term: PaneId) {
+  const doc = await newDoc(post, term, "Wanderer");
+  await fill(
+    post,
+    doc,
+    "s1",
+    "```prototype Wanderer\n<p id=here>here</p><script>setTimeout(() => parent.postMessage({ type: 'arugula.ready' }, '*'), 500); setTimeout(() => { location.href = 'about:blank'; }, 3000)</script>\n```",
+  );
+  await loadOn(page, term);
+  await bring(page, doc);
+  await expect(page.frameLocator("[data-prototype-frame]").locator("#here")).toHaveText("here", { timeout: 15_000 });
+  await expect(page.locator("[data-prototype-left]")).toHaveText(/This prototype tried to leave the page\. Reload it\./, { timeout: 15_000 });
+  return doc;
+}
+
+/** The page's first load, with `term` the pane in front: on a phone, the Doc
+ * beside it is parked off the page until it's brought. */
+async function loadOn(page: Page, term: PaneId) {
+  await page.goto("/");
+  await expect.poll(() => page.evaluate(() => window.__arugula?.client.connected)).toBe(true);
+  await page.waitForFunction((t) => !!window.__arugula.client.info(t), term);
+  await page.evaluate((t) => window.__arugula.client.setActive(t), term);
 }

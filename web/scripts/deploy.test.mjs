@@ -1,18 +1,32 @@
-// A deploy's approval (M218): the page's copy of `arugula_e2e::deploy`
-// reads and signs the same bytes as Rust's (deploy.fixture.json, which
+// A deploy's approval (M218, DK4): the page's copy of `arugula_e2e::deploy`
+// reads and makes the same bytes as Rust's (deploy.fixture.json, which
 // `the_pages_fixture_is_these_bytes` in crates/e2e/src/deploy.rs pins); a
 // push for one opens its card on the platform page, at `/deploys/:id`.
 // Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { actorOf, approvalBody, checkPlan, eventCanonical, parseOperation, sha256Hex, signApproval } from "../src/shell/e2e/deploy.ts";
+import {
+  NotHere,
+  actorOf,
+  approvalBody,
+  approvalChallenge,
+  approvalFor,
+  approvalPosted,
+  chantGateOk,
+  checkDeploy,
+  checkPlan,
+  eventCanonical,
+  parseOperation,
+  refusedHow,
+  sameSite,
+  sha256Hex,
+} from "../src/shared/deploy-approval.ts";
 import { platformTap } from "../src/shell/tap.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
 import { deployTitle, staleNote, waitedText } from "../src/shared/deploys.ts";
 
 const f = JSON.parse(readFileSync(new URL("./deploy.fixture.json", import.meta.url), "utf8"));
-const hexOf = (s) => Uint8Array.from(s.match(/../g).map((b) => parseInt(b, 16)));
 
 test("the operation's bytes are Rust's, read and hashed the same", async () => {
   assert.equal(await sha256Hex(f.operation.body), f.operation.hash);
@@ -50,13 +64,36 @@ test("a planned event hashes as M217's does, and says who planned it", async () 
   assert.equal(actorOf("run run_1"), null);
 });
 
-test("an approval signs Rust's bytes, with Rust's signature", async () => {
-  const { sig, ...a } = f.approval;
-  assert.equal(approvalBody(a), f.approval_body);
-  // PKCS#8 for an Ed25519 seed (RFC 8410), as the page imports one.
-  const pkcs8 = new Uint8Array([...hexOf("302e020100300506032b657004220420"), ...hexOf(f.seed)]);
-  const key = await crypto.subtle.importKey("pkcs8", pkcs8, { name: "Ed25519" }, false, ["sign"]);
-  assert.equal((await signApproval(a, key)).sig, sig);
+test("a v2 approval is Rust's bytes, and its passkey's challenge their SHA-256", async () => {
+  const { by, sig, ...a } = f.approval_v2;
+  assert.equal(by, "");
+  assert.equal(sig, "");
+  assert.equal(approvalBody(a), f.approval_v2_body);
+  const b64u = (b) => btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  assert.equal(b64u(await approvalChallenge(a)), f.approval_v2_challenge);
+});
+
+test("a v3 approval is chant's statement, Rust's bytes, bound to the deploy (#1985)", async () => {
+  const a = f.approval_v3;
+  assert.equal(a.v, 3);
+  assert.equal(approvalBody(a), f.approval_v3_body);
+  assert.ok(f.approval_v3_body.endsWith(`\nbinding arugula deploy ${a.deploy} op ${a.op} expires ${a.expires}`));
+  assert.ok(!f.approval_v3_body.endsWith("\n"));
+  const b64u = (b) => btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  assert.equal(b64u(await approvalChallenge(a)), f.approval_v3_challenge);
+  assert.ok(chantGateOk(a.chant));
+  assert.ok(!chantGateOk({ ...a.chant, chant: "0.124.63" }), "a chant that checks no binding");
+  assert.ok(!chantGateOk({ ...a.chant, plan: "sha256:ab" }));
+  // A page makes one for a chant-fly deploy's once, a v2 for its deny.
+  const d = { id: a.deploy, operation: { hash: a.op }, approval_v: 3, chant: { state: "planned", gate: a.chant, why: null } };
+  const now = Date.parse("2026-11-02T10:05:00.000Z");
+  const made = approvalFor(d, a.account, "once", now, a.expires);
+  assert.equal(approvalBody(made), f.approval_v3_body);
+  assert.deepEqual(approvalPosted(made), { op: a.op, expires: a.expires, at: a.at });
+  assert.equal(approvalFor(d, a.account, "deny", now, a.expires).v, 2);
+  assert.throws(() => approvalFor({ ...d, chant: { state: "planning", gate: null, why: null } }, a.account, "once", now, a.expires));
+  // Never before chant's pending fact.
+  assert.equal(approvalFor(d, a.account, "once", 0, a.expires).at, a.chant.recorded);
 });
 
 test("a deploy's push opens its card on the platform page", () => {
@@ -87,7 +124,7 @@ test("a plan's text is shown only when it's the plan signed", async () => {
   assert.equal((await checkPlan(forward, await sha256Hex(forward))).rollBack, null);
   // Another app, the same digest: not the plan signed.
   assert.equal(await checkPlan(text.replace("acme-web\n", "acme-evil\n"), digest), "its plan's text isn't the plan you'd sign");
-  assert.equal(await checkPlan(null, digest), "the platform didn't show its plan");
+  assert.equal(await checkPlan(null, digest), "Arugula didn't show its plan");
   assert.equal(await checkPlan("x\n", await sha256Hex("x\n")), "its plan's text can't be read");
 });
 
@@ -121,4 +158,81 @@ test("a stale deploy says why, by what overtook it (#334)", () => {
   assert.equal(staleNote({ why: "applied" }, "release"), applied);
   // An old event has no why: it was an apply.
   assert.equal(staleNote({}, "release"), applied);
+});
+
+/** A deploy as the platform answers it, its bytes consistent: the plan's
+ * text, its `planned` event and the operation over both. */
+async function aDeploy() {
+  const ref = "a".repeat(40);
+  const plan_text = `arugula deploy plan v1\ndriver fake\nenvironment production\nsource commit ${ref}\nwhere acme/app\n`;
+  const plan = await sha256Hex(plan_text);
+  const e = {
+    environment: "env_1",
+    seq: 1,
+    deploy: "dep_1",
+    kind: "planned",
+    actor: "person acc_a",
+    at: 1_700_000_000_000,
+    detail: JSON.stringify({ plan, source: { kind: "commit", ref, where: "acme/app" } }),
+    prev_hash: "0".repeat(64),
+    hash: "",
+  };
+  e.hash = await sha256Hex(eventCanonical(e));
+  const body = `arugula deploy op v1\nproject prj_1\nenvironment env_1\nname production\nplan ${plan}\nsource commit ${ref}\nwhere acme/app\nplanned ${e.hash}\n`;
+  return {
+    id: "dep_1",
+    project: { id: "prj_1", name: "Acme" },
+    environment: { id: "env_1", name: "production", driver: "fake" },
+    source: { kind: "commit", ref, where: "acme/app" },
+    plan,
+    plan_text,
+    planned_by: "acc_a",
+    planned_by_name: "Ada",
+    agent: null,
+    operation: { body, hash: await sha256Hex(body) },
+    planned_event: e,
+  };
+}
+
+// DK5: the platform page checks what it signs as control's dialog does, and
+// offers Approve only over bytes that check out.
+test("a deploy is offered for approval only when its bytes check out", async () => {
+  const ok = await checkDeploy(await aDeploy());
+  assert.equal(typeof ok, "object", String(ok));
+  assert.equal(ok.op.name, "production");
+  assert.equal(ok.planner, "Ada");
+  // Bytes that aren't their hash, an operation that names another place, a
+  // planned event that isn't the one named, someone else as the planner.
+  const d = await aDeploy();
+  d.operation.hash = "0".repeat(64);
+  assert.equal(await checkDeploy(d), "its operation's bytes don't match their hash");
+  const other = await aDeploy();
+  other.environment.name = "staging";
+  assert.equal(await checkDeploy(other), "its operation says something other than the deploy");
+  const event = await aDeploy();
+  event.planned_event.at += 1;
+  assert.equal(await checkDeploy(event), "its plan's event doesn't match the operation");
+  const who = await aDeploy();
+  who.planned_by = "acc_b";
+  assert.equal(await checkDeploy(who), "who planned it doesn't match its log");
+  const none = await aDeploy();
+  none.planned_event = null;
+  assert.equal(await checkDeploy(none), "its plan isn't in the log");
+});
+
+// DK5 (S46 q1): where control's passkeys can't be used on this page, the
+// page offers control's dialog instead; a person turning the prompt down is
+// only that.
+test("a refused passkey prompt says whether to go round by Control", () => {
+  assert.ok(refusedHow("SecurityError", 4000, false) instanceof NotHere);
+  assert.ok(refusedHow("NotAllowedError", 200, false) instanceof NotHere, "too fast for a person: a manager without related origins");
+  const person = refusedHow("NotAllowedError", 8000, false);
+  assert.ok(person && !(person instanceof NotHere), "a person said no");
+  assert.ok(!(refusedHow("NotAllowedError", 200, true) instanceof NotHere), "on control's own site there's no way round");
+  assert.equal(refusedHow("AbortError", 10, false), null);
+  // Control's host, or a parent of this page's host: no related origins needed.
+  assert.ok(sameSite("control.arugula.io", "control.arugula.io"));
+  assert.ok(sameSite("localhost", "app.localhost"));
+  assert.ok(!sameSite("control.arugula.io", "app.arugula.io"));
+  assert.ok(!sameSite("arugula.io", "evilarugula.io"));
 });

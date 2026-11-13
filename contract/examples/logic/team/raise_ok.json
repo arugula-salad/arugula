@@ -1,5 +1,5 @@
 {
-  "about": "The decision table for who may sign a paper (a roster, a presigned invite, an Ask me first invite) that raises someone to a role: making no one more than a viewer, any device that approves; an editor, a browser all the way back to its root (browser_chained) or the desktop app's device (from_app: an app certificate, or a browser one the app named); an owner, only such a browser. Never a CLI's key, which an agent on its machine can read. browser_chained is Trust::browser_chained for the signer (cert/browser_chained); this table takes it as given.",
+  "about": "The decision table for who may sign a paper (a roster, a presigned invite, an Ask me first invite) that raises someone to a role: making no one more than a viewer, any device that approves; an editor or an owner, a browser all the way back to its root (browser_chained) or the desktop app's device (from_app: an app certificate, or a browser one the app named), never a CLI's key, which an agent on its machine can read (a roster a machine takes stays taken after that key is revoked). A version that changes who the owners are counts as making an owner (follows; and the hub asks an owner's passkey for it, DK7: see owners). browser_chained is Trust::browser_chained for the signer (cert/browser_chained); this table takes it as given.",
   "cases": [
     {
       "about": "raising to nothing, signed by browser \"Chrome on Mac\", chained as a browser all the way to its root",
@@ -339,7 +339,7 @@
         "signer_kind": "app",
         "signer_name": "Arugula app"
       },
-      "output": {"ok": false}
+      "output": {"ok": true}
     },
     {
       "about": "raising to owner, signed by browser \"Arugula app on jake-air\", chained as a browser all the way to its root",
@@ -359,7 +359,7 @@
         "signer_kind": "browser",
         "signer_name": "Arugula app on jake-air"
       },
-      "output": {"ok": false}
+      "output": {"ok": true}
     },
     {
       "about": "raising to owner, signed by cli \"terminal\", chained as a browser all the way to its root",

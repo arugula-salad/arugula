@@ -93,6 +93,11 @@ curl -fsSL https://arugula.io/install.sh | sh
 On Windows, in PowerShell: `irm https://arugula.io/install.ps1 | iex`. With Homebrew:
 `brew tap arugula-salad/tap && brew trust arugula-salad/tap && brew install arugula && arugulad install`.
 
+The Mac app is signed and notarized. The Windows installer isn't signed yet:
+SmartScreen says *Windows protected your PC*, and *More info*, then *Run anyway*
+gets past it. Every download has a SHA-256 in its release's `SHA256SUMS`, and the
+installers have a minisign signature: [Check a download](https://docs.arugula.io/install/#check-a-download).
+
 [Install](https://docs.arugula.io/install/) has the details, and the [quickstart](https://docs.arugula.io/quickstart/) goes from
 the browser to your phone, scripts, agents and MCP.
 
@@ -111,12 +116,33 @@ installed, so that has to be on your PATH. In Claude Code:
 Already set up the hooks by hand? Each still runs once: the plugin's copy stands
 aside. [plugins/claude-code](plugins/claude-code/README.md) has the details.
 
+The plugin also has **live session signals**, off by default: Claude Code tells
+Arugula its context window's fill and size, its model and effort, its cost and
+each compaction as it happens, and shows them in its status line. Arugula keeps
+them by session: the conversations list shows each session's figures, from a
+terminal, VS Code, the editor block or the desktop app, and a pane shows the
+session running in it. Turn them on at install, or later in `/config` ("Live
+session signals"). They need Claude Code 2.1.286 or later, and on Windows the
+real `arugula.exe` on PATH. They're verified in a terminal, in an agent block,
+with VS Code's Claude Code and in the desktop app on macOS and Windows; the
+plugin's README says where each one shows.
+
 ## Docs
 
 **[docs.arugula.io](https://docs.arugula.io/)** has the docs for using Arugula: [panes](https://docs.arugula.io/panes/),
 [blocks](https://docs.arugula.io/blocks/), [agents](https://docs.arugula.io/agents/), [control](https://docs.arugula.io/control/),
 [teams](https://docs.arugula.io/teams/), [the CLI](https://docs.arugula.io/cli/) and [MCP](https://docs.arugula.io/mcp/). They're built from
 [arugula-salad/site](https://github.com/arugula-salad/site).
+
+When something goes wrong, or before you trust it with your machine:
+
+- [status.arugula.io](https://status.arugula.io): whether hosted Arugula (control, the
+  platform, installs and downloads) is up right now, and any incident we're working on.
+- [docs/gotchas/](docs/gotchas/README.md): sharp edges people have hit, one page each, found
+  by what you see on screen.
+- [docs/what-leaves-your-machine.md](docs/what-leaves-your-machine.md): what the daemon sends to
+  Arugula control, to Cloud workspaces and elsewhere, what it never sends, and the switch for
+  each.
 
 For working on Arugula itself:
 
@@ -127,15 +153,23 @@ For working on Arugula itself:
   your terminals.
 - [DECISIONS.md](DECISIONS.md): the decisions that still hold, an index of the records in
   [docs/decisions/](docs/decisions/).
-- [docs/managoat.md](docs/managoat.md): Managoat, the first backend for Cloud workspaces,
-  and what became of it (removed, on control's side and the daemon's).
-- [docs/platform-features.md](docs/platform-features.md): which agent platform features (ACP, MCP,
-  A2A, skills, scheduled tasks) Arugula brings in, which are planned, and the gaps.
-- [docs/secrets-inventory.md](docs/secrets-inventory.md): every secret store and key across the
-  org, by name and owner only, and where each goes as the org converges on the platform.
 - [docs/plan-archive.md](docs/plan-archive.md): the original plan and every milestone.
+
+## What's open
+
+This repository is the open part of Arugula: the daemon (`arugulad`), the
+CLI, the web client, the desktop app, the iOS app and its Rust core, the
+editor extensions, and the wire contract they and control speak
+([contract/](contract/README.md)).
+
+Arugula control and the platform, the hosted service behind
+control.arugula.io and app.arugula.io, are closed source and live in a
+private repository. Their code was published here under MIT OR Apache-2.0
+until it moved out, and that code stays under those licences: it's in this
+repository's history (`git log -- crates/control crates/platform`).
 
 ## License
 
-MIT OR Apache-2.0, at your option. Terminal emulation by
-[libghostty](https://ghostty.org); see [THIRD_PARTY.md](THIRD_PARTY.md).
+MIT OR Apache-2.0, at your option, for everything in this repository.
+Terminal emulation by [libghostty](https://ghostty.org); see
+[THIRD_PARTY.md](THIRD_PARTY.md).

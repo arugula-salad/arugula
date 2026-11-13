@@ -5,20 +5,27 @@
 use arugula_proto::{
     BlockType,
     api::{DocOpenRequest, OpenRequest},
-    op::ops::DocsList,
+    op::ops::{DocMove, DocsList},
 };
 use arugulad_base::mcp::{
     ops::{call_of, kind_of},
     registry,
-    tools::{Args, Call, Def, Kind, Needs, Out, PaneArg, confine, done, line, parse},
+    tools::{Args, Call, Def, Kind, Needs, NoArgs, Out, PaneArg, confine, done, line, parse},
 };
+use std::sync::Arc;
+
 use futures_util::future::BoxFuture;
 use rmcp::handler::server::common::schema_for_type;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::{Docs, mux::Api};
+use crate::{
+    Docs,
+    docs::team::{self, Cloud},
+    mux::Api,
+};
+use arugulad_base::mcp::issues::Chosen;
 
 #[derive(Deserialize, JsonSchema)]
 pub struct DocShareArgs {
@@ -36,15 +43,42 @@ pub struct DocSection {
     pub intent: String,
 }
 
+/// How a Doc is laid out: doc, tabs or prototype.
+#[derive(Clone, Copy, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DocLayoutArg {
+    Doc,
+    Tabs,
+    Prototype,
+}
+
+impl DocLayoutArg {
+    fn name(self) -> &'static str {
+        match self {
+            DocLayoutArg::Doc => "doc",
+            DocLayoutArg::Tabs => "tabs",
+            DocLayoutArg::Prototype => "prototype",
+        }
+    }
+}
+
 #[derive(Deserialize, JsonSchema)]
 pub struct DocNewArgs {
     /// The Doc's title.
     pub title: String,
-    /// Every section, in order (at most 40), so the user sees the whole outline at once.
+    /// Every section, in order (at most 40), so the user sees the whole outline at once. A prototype Doc has one, made for you if you leave this out.
+    #[serde(default)]
     pub sections: Vec<DocSection>,
+    /// How it is laid out: doc (the default, sections one after another), tabs (sections shown one at a time) or prototype (one section holding one prototype that fills the screen).
+    #[serde(default = "default_layout")]
+    pub layout: DocLayoutArg,
     /// Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in).
     #[serde(default)]
     pub beside: Option<PaneArg>,
+}
+
+fn default_layout() -> DocLayoutArg {
+    DocLayoutArg::Doc
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -62,7 +96,7 @@ pub struct DocFillArgs {
     pub block: PaneArg,
     /// The section's id (s1, s2, … from doc new).
     pub section: String,
-    /// The section's body, in Markdown (at most 64 KB). Filling a section again replaces it.
+    /// The section's body, in Markdown (at most 64 KB). Filling a section again replaces it. In a prototype Doc: one line, then one ```prototype fence.
     pub markdown: String,
 }
 
@@ -90,28 +124,12 @@ pub struct DocAssetArgs {
     pub data: Option<String>,
 }
 
-/// `doc`'s kinds.
-pub static DOC: &[Kind] = &[
-    Kind {
-        name: "new",
-        description: "A Doc: a block beside your pane that holds a report, plan or write-up, with its outline (every section's heading and intent) shown at once. Returns the block and the section ids (s1, s2, …); fill them next, in order.",
-        schema: schema_for_type::<DocNewArgs>,
-        flag: None,
-    },
-    kind_of::<DocsList, Docs>(),
-    Kind {
-        name: "open",
-        description: "Open a Doc from doc list in a block beside your pane, to read or to go on with: returns the block, and you can doc fill it, as after doc new (the sections are the outline's, s1, s2, …; its state has them). A Doc already open in a block is that block, not a second one: the user may have it open beside another pane.",
-        schema: schema_for_type::<DocOpenArgs>,
-        flag: None,
-    },
-    Kind {
-        name: "fill",
-        description: r##"Write one section of a Doc (its block, the section id, its Markdown): headings, paragraphs, lists, **bold**, *italic*, `code`, links and tables. No HTML. A picture is ![alt](assets/<name>) after doc asset has put it there. A section is at most 64 KB, a Doc 40 sections and 1 MiB; filling a section again replaces it.
+/// What `doc fences` returns: the reference for the fences a section can
+/// hold, kept out of `doc`'s description, which an agent sees only the
+/// first 2048 characters of (#606).
+const FENCES: &str = r##"A callout is a quote whose first line is [!NOTE], [!TIP], [!IMPORTANT], [!WARNING] or [!CAUTION], as on GitHub: "> [!TIP]" then "> Run it twice." Keep them for what the reader mustn't miss.
 
-A callout is a quote whose first line is [!NOTE], [!TIP], [!IMPORTANT], [!WARNING] or [!CAUTION], as on GitHub: "> [!TIP]" then "> Run it twice." Keep them for what the reader mustn't miss.
-
-Three kinds of fenced block draw as more than code, in the section that talks about them.
+Four kinds of fenced block draw as more than code, in the section that talks about them.
 Stat tiles: a ```stats fence holding a list of 1 to 6 tiles; label and value are text, delta and its tone (up, down or flat) are optional. For example:
 ```stats
 [{"label": "Sessions", "value": "1,284", "delta": "+12%", "tone": "up"}, {"label": "Errors", "value": "3"}]
@@ -126,13 +144,39 @@ Grey first (stone and ink), one accent per figure. Text stays ink. For example:
 ```svg Idea to app
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 40" font-size="11" text-anchor="middle"><rect x="2" y="8" width="60" height="24" rx="4" fill="stone-soft" stroke="stone"/><text x="32" y="24" fill="ink">Idea</text><path d="M62 20 H98" stroke="ink"/><rect x="98" y="8" width="60" height="24" rx="4" fill="leaf-soft" stroke="leaf"/><text x="128" y="24" fill="ink">App</text></svg>
 ```
-Every fence is checked before anything is written: a bad chart, tile or drawing is refused with one line saying what to fix, and the section stays as it was."##,
+An interactive or tunable prototype goes in a ```prototype fence (a ```html fence stays code). The fence line holds a title and height=N anywhere (120 to 2000 pixels, 480 by default), as in ```prototype Tuner height=480. It is one self-contained HTML page of at most 64 KB that runs in a sandboxed frame: inline <script> and <style>, no external src or href (so no <script src>, <link>, iframe, object, embed, base or meta http-equiv), no network, and fonts only as data: URLs. Pointer and touch work, and the viewer has a Full window button. Two calls reach out of the frame and return promises that reject with an error: arugula.copy(text) copies up to 16 KB, only from a click inside the frame; arugula.store.get(key), .set(key, value) and .all() keep settings per viewer (a key up to 128 characters, a JSON value up to 8 KB, 64 KB a section), in memory only on a shared link. Call store.all() on load to restore what the viewer set. Every prototype has a small kit in its page, so start from it: colors that follow the Doc's light or dark (--ar-bg, --ar-surface, --ar-raised, --ar-text, --ar-muted, --ar-border, --ar-accent, --ar-danger, --ar-ok, --ar-warn), sizes --ar-text-xs to --ar-text-lg, and the classes ar-btn (with ar-btn-primary, ar-btn-ghost), ar-chip (ar-chip-accent, -ok, -warn, -danger), ar-header, ar-row, ar-dialog, ar-menu with ar-menu-item, ar-empty and ar-toolbar. Fill the section again to update it: every open view changes, and a share gets the new version when the person taps Update.
+Every fence is checked before anything is written: a bad chart, tile, drawing or prototype is refused with one line saying what to fix, and the section stays as it was."##;
+
+/// `doc`'s kinds.
+pub static DOC: &[Kind] = &[
+    Kind {
+        name: "new",
+        description: "Make a Doc and its outline (each section's heading and intent). Returns the block and section ids to fill in order. Layout: tabs for many prototypes or long parts; prototype for a whole-screen one. When the current project (your block's, else your session's, else your clone's repo's, else the default) is a team's, a new Doc goes in it on Arugula; else it stays here.",
+        schema: schema_for_type::<DocNewArgs>,
+        flag: None,
+    },
+    kind_of::<DocsList, Docs>(),
+    Kind {
+        name: "open",
+        description: "Open a Doc from list in a block beside your pane; fill it as after new. A Doc already open is that block.",
+        schema: schema_for_type::<DocOpenArgs>,
+        flag: None,
+    },
+    Kind {
+        name: "fill",
+        description: r##"Write one section in Markdown (no HTML). ![alt](assets/<name>) shows a picture put there by asset first. At most 64 KB a section, 40 sections, 1 MiB a Doc; filling again replaces. Callouts, ```stats, ```chart, ```svg and ```prototype (an interactive page with arugula.copy and arugula.store) draw as more than code: call doc fences for their format before writing one."##,
         schema: schema_for_type::<DocFillArgs>,
         flag: None,
     },
     Kind {
+        name: "fences",
+        description: "The format of callouts and the ```stats, ```chart, ```svg and ```prototype fences: read it first.",
+        schema: schema_for_type::<NoArgs>,
+        flag: None,
+    },
+    Kind {
         name: "asset",
-        description: r##"Put a picture in a Doc (its block, a name, and one of path or data): a PNG, JPEG, GIF or WebP, at most 2 MB, at most 20 per Doc. path is an absolute path to a file you saved; an agent on a machine of its own sends data (base64) instead. What the bytes are decides the type, so the name has to end in the right extension (.png, .jpg, .jpeg, .gif, .webp); an SVG file is refused: draw it with a ```svg fence. Returns assets/<name>; show it in a section with ![what it shows](assets/<name>). Put the asset before the doc fill that names it: a fill naming an asset the Doc doesn't have is refused. Only assets/ images show; an http:// or ../ one is refused. A name already used is replaced. For example: {"kind": "asset", "block": 7, "name": "flow.png", "path": "/tmp/flow.png"}."##,
+        description: r##"Put a picture in a Doc: PNG, JPEG, GIF or WebP, up to 2 MB. path is absolute; an agent on a machine of its own sends base64 data. The name ends in the file's real extension; SVG is refused (use a ```svg fence). Put it before the fill that names it."##,
         schema: schema_for_type::<DocAssetArgs>,
         flag: None,
     },
@@ -144,10 +188,11 @@ Every fence is checked before anything is written: a bad chart, tile or drawing 
     },
     Kind {
         name: "share",
-        description: r##"Ask the user to share a finished Doc (its block) with a link anyone can open, without an account. A card asks them on the Doc and nothing is published until they tap Share; this returns {status: "waiting"} at once. Call share again on the same block to learn the outcome: shared (with the url, which you can give the user), declined, lapsed (a card nobody answered in a day) or failed (with why). A Doc already shared answers shared. Asking again after a decline raises a new card. Don't ask more than once for a Doc unless the user wants it."##,
+        description: r##"Ask the user to share a finished Doc by link. They decide on a card; this returns {status: "waiting"} at once. Call share again for the outcome: shared (with the url), declined, lapsed or failed (with why). Ask once."##,
         schema: schema_for_type::<DocShareArgs>,
         flag: None,
     },
+    kind_of::<DocMove, Docs>(),
 ];
 
 /// The `doc` tool's row.
@@ -155,7 +200,7 @@ fn def() -> Def {
     Def {
         name: "doc",
         title: "Build a document for the user",
-        description: "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user (and anyone the session is shared with) watches fill in. Make the outline first with new, so they see every section at once; then fill each section in order and say one sentence about it in the pane. Docs are kept: to go on with an earlier one, doc list and then doc open. Never write the Doc's files by hand.",
+        description: "Build a Doc, a report, plan or write-up longer than a screen, in a block beside your pane that the user watches fill in. Make the outline with new, then fill each section in order, saying one sentence about it in the pane. Never write its files by hand.",
         args: Args::Kinds { kinds: DOC.iter().collect(), default: None },
         read_only: false,
         destructive: false,
@@ -179,7 +224,7 @@ fn run<'a>(call: &'a Call<'a>, kind: Option<&'static str>, args: Value) -> BoxFu
                 Ok(a) => doc_new(call, a).await,
                 Err(e) => Err(e),
             },
-            Some("list") => call_of::<DocsList, Docs>(call, args).await,
+            Some("list") => doc_list(call, args).await,
             Some("open") => match parse(args) {
                 Ok(a) => doc_open(call, a).await,
                 Err(e) => Err(e),
@@ -188,6 +233,7 @@ fn run<'a>(call: &'a Call<'a>, kind: Option<&'static str>, args: Value) -> BoxFu
                 Ok(a) => doc_fill(call, a).await,
                 Err(e) => Err(e),
             },
+            Some("fences") => done(FENCES, json!({})),
             Some("checklist") => match parse(args) {
                 Ok(a) => doc_checklist(call, a).await,
                 Err(e) => Err(e),
@@ -200,6 +246,7 @@ fn run<'a>(call: &'a Call<'a>, kind: Option<&'static str>, args: Value) -> BoxFu
                 Ok(a) => doc_share(call, a).await,
                 Err(e) => Err(e),
             },
+            Some("move") => call_of::<DocMove, Docs>(call, args).await,
             _ => Err(format!("doc kind {} isn't wired up", kind.unwrap_or("?"))),
         }
     })
@@ -210,11 +257,64 @@ pub fn register() {
     registry::tool(registry::Tool { after: Some("show"), def, run });
 }
 
-/// `doc new`: a Doc in the library, its block beside the caller's pane,
-/// then its outline.
+/// Where a new Doc goes (aru-139): the team's project when the call's
+/// context is a team's, else this machine's library. Nobody picks.
+enum Home {
+    Team(Chosen),
+    /// On this machine; the reason is control's, when it couldn't say.
+    Library(Option<String>),
+    /// A team machine that can't tell its project: its Docs are the team's,
+    /// so none is made (the sentence says why).
+    Refused(&'static str),
+}
+
+/// Said when a team machine can't reach control to choose its project.
+const TEAM_UNREACHABLE: &str =
+    "Arugula cloud can't be reached, and a team machine's Docs live in the team's project: try again when it's back.";
+
+/// The home a project choice means: a team's project is the team's, a
+/// personal one is never a Doc's home (the machine is), and no answer is
+/// the machine too, which says why. A team machine (known without the
+/// network) never falls back to the library.
+fn home_of(chosen: Result<Chosen, String>, team_machine: bool) -> Home {
+    match chosen {
+        Ok(c) if c.team => Home::Team(c),
+        Ok(_) => Home::Library(None),
+        Err(_) if team_machine => Home::Refused(TEAM_UNREACHABLE),
+        Err(why) => Home::Library(Some(why)),
+    }
+}
+
+/// `doc new`'s home for this call. Only the owner's own agents act as the
+/// owner in a team's project.
+async fn home(call: &Call<'_>) -> Home {
+    if call.owners_own("a team's Doc").await.is_err() {
+        return Home::Library(None);
+    }
+    home_of(call.chosen_project(None).await, call.app().control.is_team())
+}
+
+/// `doc new`: a Doc in the library, or the team's in its project; its block
+/// beside the caller's pane, then its outline.
 async fn doc_new(call: &Call<'_>, a: DocNewArgs) -> Out {
-    let state = call.app().control.state_dir().to_owned();
+    let layout = a.layout;
+    // A prototype Doc is one section: made here when none is given.
+    let mut sections = a.sections;
+    if layout == DocLayoutArg::Prototype {
+        if sections.len() > 1 {
+            return Err("a prototype Doc has one section".into());
+        }
+        if sections.is_empty() {
+            sections.push(DocSection { heading: a.title.clone(), intent: "the prototype".into() });
+        }
+    }
     let (beside, host) = call.beside(a.beside.as_ref()).await?;
+    let kept = match home(call).await {
+        Home::Team(chosen) => return doc_new_team(call, a.title, sections, layout, beside, host, chosen).await,
+        Home::Library(why) => why,
+        Home::Refused(why) => return Err(why.into()),
+    };
+    let state = call.app().control.state_dir().to_owned();
     // Two doc new make two Docs: each is made here, before its block.
     let by = call.by();
     let title = a.title.clone();
@@ -250,8 +350,8 @@ async fn doc_new(call: &Call<'_>, a: DocNewArgs) -> Out {
             return Err(e);
         }
     };
-    let sections: Vec<Value> = a.sections.iter().map(|s| json!({ "heading": s.heading, "intent": s.intent })).collect();
-    let args = json!({ "title": a.title, "sections": sections });
+    let sections: Vec<Value> = sections.iter().map(|s| json!({ "heading": s.heading, "intent": s.intent })).collect();
+    let args = json!({ "title": a.title, "sections": sections, "layout": layout.name() });
     let outlined = match call.app().mux.api(|r| Api::Block(block, r)).await.flatten() {
         Some(b) => b.call_by("doc_outline", args, Some(&call.by())).await,
         None => Err("the Doc's block closed".into()),
@@ -266,14 +366,106 @@ async fn doc_new(call: &Call<'_>, a: DocNewArgs) -> Out {
     };
     let sections = outline["sections"].clone();
     let ids: Vec<&str> = sections.as_array().into_iter().flatten().filter_map(|s| s["id"].as_str()).collect();
+    let home = match &kept {
+        Some(why) => format!(" It is kept on this machine; control didn't name a team's project ({why})."),
+        None => " It is kept on this machine.".to_owned(),
+    };
     done(
         format!(
-            "Doc block %{block} with {} sections ({}): fill them in order with doc fill",
+            "Doc block %{block} with {} sections ({}): fill them in order with doc fill.{home}",
             ids.len(),
             ids.join(", ")
         ),
-        json!({ "block": block, "doc": meta.id, "sections": sections }),
+        json!({ "block": block, "doc": meta.id, "sections": sections, "home": "machine" }),
     )
+}
+
+/// `doc new` in a team's project: made through control as the owner's agent,
+/// then its block. A refusal (no `docs.write`) is control's own sentence:
+/// the Doc is never kept on this machine instead.
+async fn doc_new_team(
+    call: &Call<'_>,
+    title: String,
+    sections: Vec<DocSection>,
+    layout: DocLayoutArg,
+    beside: Option<arugula_core::PaneId>,
+    host: Option<u32>,
+    chosen: Chosen,
+) -> Out {
+    team::title_ok(&title)?;
+    if sections.is_empty() {
+        return Err("a Doc needs at least one section".into());
+    }
+    let cloud: Arc<dyn Cloud> = call.app().control.clone();
+    let plan: Vec<(String, String)> = sections.into_iter().map(|s| (s.heading, s.intent)).collect();
+    let view = team::make(&*cloud, &chosen.id, &title, &plan, layout.name()).await?;
+    let id = view.doc.id.clone();
+    let req = OpenRequest {
+        kind: BlockType::Doc,
+        config: json!({ "doc": id, "project": chosen.id, "project_name": chosen.name, "title": title }),
+        session: None,
+        split: beside,
+        from_pane: beside,
+        vm: false,
+        image: None,
+        host,
+        local: host.is_none(),
+    };
+    // An agent never deletes a team's Doc: if its block can't open, it is
+    // there, and `doc open` shows it.
+    let kept = |e: String| format!("{e}; the Doc {id} was made in {}: doc open {id} shows it", chosen.name);
+    let block = call.open(req).await.map_err(&kept)?;
+    let outlined = match call.app().mux.api(|r| Api::Block(block, r)).await.flatten() {
+        Some(b) => b.call_by("doc_outline", json!({}), Some(&call.by())).await,
+        None => Err("the Doc's block closed".into()),
+    };
+    let outline = match outlined {
+        Ok(o) => o,
+        Err(e) => {
+            let _ = call.app().mux.api(|r| Api::Close(block, r)).await;
+            return Err(kept(e));
+        }
+    };
+    let sections = outline["sections"].clone();
+    let ids: Vec<&str> = sections.as_array().into_iter().flatten().filter_map(|s| s["id"].as_str()).collect();
+    done(
+        format!(
+            "{}. Doc block %{block} with {} sections ({}): fill them in order with doc fill",
+            chosen.team_doc(),
+            ids.len(),
+            ids.join(", ")
+        ),
+        json!({ "block": block, "doc": id, "sections": sections, "home": "team", "project": chosen.id,
+                "link": view.link }),
+    )
+}
+
+/// `doc list`: the library, and the team Docs open in blocks on this
+/// machine, marked with their project.
+async fn doc_list(call: &Call<'_>, args: Value) -> Out {
+    let mut out = call_of::<DocsList, Docs>(call, args).await?;
+    let mut rows = Vec::new();
+    for p in call.panes().await {
+        if p.info.kind != BlockType::Doc || call.readable(p.info.id).await.is_err() {
+            continue;
+        }
+        let Some(b) = call.app().mux.api(|r| Api::Block(p.info.id, r)).await.flatten() else { continue };
+        let (config, state) = (b.config(), b.state());
+        if config["project"].as_str().is_none_or(str::is_empty) {
+            continue;
+        }
+        rows.push(json!({
+            "id": config["doc"], "title": state["title"], "project": config["project"],
+            "project_name": config["project_name"], "open": p.info.id, "updated": state["updated"],
+            "layout": state["layout"], "link": state["team"]["link"],
+        }));
+    }
+    if !rows.is_empty() {
+        let was = out["summary"].as_str().unwrap_or_default().to_owned();
+        out["summary"] = json!(format!("{was}; {} team Docs open here (team_docs, with their project)", rows.len()));
+        out["team_docs"] = json!(rows);
+    }
+    Ok(out)
 }
 
 /// `doc open`: a Doc from the library in a block beside the caller's
@@ -283,8 +475,17 @@ async fn doc_new(call: &Call<'_>, a: DocNewArgs) -> Out {
 async fn doc_open(call: &Call<'_>, a: DocOpenArgs) -> Out {
     let (beside, host) = call.beside(a.beside.as_ref()).await?;
     confine(call.on_machine().await?, host.is_some())?;
-    let req = DocOpenRequest { id: Some(a.doc.clone()), link: None, session: None, split: beside };
-    let (block, made) = crate::doc_ops::open_doc(call.app(), None, req).await.map_err(crate::ops::OpError::sentence)?;
+    let (block, made) = if a.doc.starts_with("pdc_") {
+        open_team(call, &a.doc, beside, host).await?
+    } else {
+        // A Doc moved to a team opens as the team's, as the owner.
+        let state = call.app().control.state_dir();
+        if crate::docs::library::moved_to(state, &a.doc).is_some() {
+            call.owners_own("a team's Doc").await?;
+        }
+        let req = DocOpenRequest { id: Some(a.doc.clone()), link: None, session: None, split: beside };
+        crate::doc_ops::open_doc(call.app(), None, req).await.map_err(crate::ops::OpError::sentence)?
+    };
     let unclaimed = match call.app().mux.api(Api::Panes).await {
         Some(panes) => panes.iter().find(|p| p.info.id == block).is_some_and(|p| p.info.started_by.is_none()),
         None => false,
@@ -301,6 +502,40 @@ async fn doc_open(call: &Call<'_>, a: DocOpenArgs) -> Out {
         format!("{what} Doc {} in block %{block} ({} sections); doc fill goes on with it", a.doc, sections.len()),
         json!({ "block": block, "doc": a.doc, "title": state["title"], "sections": sections }),
     )
+}
+
+/// A team Doc (`pdc_…`) in a block, or the block that has it: the Doc is in
+/// the call's team project, read through control.
+async fn open_team(
+    call: &Call<'_>,
+    doc: &str,
+    beside: Option<arugula_core::PaneId>,
+    host: Option<u32>,
+) -> Result<(arugula_core::PaneId, bool), String> {
+    if let Some(block) = crate::doc_ops::open_blocks(call.app()).await.get(doc) {
+        return Ok((*block, false));
+    }
+    call.owners_own("a team's Doc").await?;
+    let chosen = call.chosen_project(None).await?;
+    if !chosen.team {
+        return Err(format!(
+            "no Doc {doc} in the library: a team Doc opens in its team's context (a repo or issue of a team project, or a team machine)"
+        ));
+    }
+    let cloud: Arc<dyn Cloud> = call.app().control.clone();
+    let view = team::read(&*cloud, &chosen.id, doc).await?;
+    let req = OpenRequest {
+        kind: BlockType::Doc,
+        config: json!({ "doc": doc, "project": chosen.id, "project_name": chosen.name, "title": view.doc.title }),
+        session: None,
+        split: beside,
+        from_pane: beside,
+        vm: false,
+        image: None,
+        host,
+        local: host.is_none(),
+    };
+    Ok((call.open(req).await?, true))
 }
 
 /// `doc fill`: one section of a Doc this caller may drive.
@@ -347,7 +582,17 @@ async fn doc_share(call: &Call<'_>, a: DocShareArgs) -> Out {
     let out = b.call_by("doc_share_ask", json!({}), Some(&call.by())).await?;
     let status = out["status"].as_str().unwrap_or("waiting").to_owned();
     let summary = match status.as_str() {
-        "shared" => format!("Doc %{block} is shared: {}", out["url"].as_str().unwrap_or_default()),
+        "shared" => match out["page"].as_str() {
+            Some(page) => format!(
+                "Doc %{block} is shared: {} (the team's page is {page})",
+                out["url"].as_str().unwrap_or_default()
+            ),
+            None => format!("Doc %{block} is shared: {}", out["url"].as_str().unwrap_or_default()),
+        },
+        "team" => format!(
+            "Doc %{block} is the team's: its page is {}; this control keeps no public links",
+            out["url"].as_str().unwrap_or("not read yet")
+        ),
         "waiting" => format!("Asked the user to share Doc %{block}; call share again to see what they chose"),
         "failed" => {
             format!("Sharing Doc %{block} failed: {}", out["why"].as_str().unwrap_or("it didn't go through"))
@@ -403,11 +648,11 @@ async fn doc_asset(call: &Call<'_>, a: DocAssetArgs) -> Out {
 mod tests {
     use super::*;
 
-    /// #256: `doc fill`'s guide names the Doc's colours, and its drawing,
-    /// which uses them, passes the check.
+    /// #256: `doc fences` names the Doc's colours, and its drawing, which
+    /// uses them, passes the check.
     #[test]
-    fn doc_fill_teaches_the_named_colours() {
-        let fill = DOC.iter().find(|k| k.name == "fill").unwrap().description;
+    fn doc_fences_teaches_the_named_colours() {
+        let fill = FENCES;
         for name in ["leaf", "pepper", "sky", "plum", "sun", "stone", "ink", "paper", "leaf-soft", "\"colors\""] {
             assert!(fill.contains(name), "{name}");
         }
@@ -415,5 +660,99 @@ mod tests {
         let svg = fill.split("```svg Idea to app\n").nth(1).and_then(|s| s.split("\n```").next()).unwrap();
         assert_eq!(crate::docs::embeds::check_svg(svg), Ok(()));
         assert!(svg.contains("fill=\"leaf-soft\"") && !svg.contains('#'), "{svg}");
+        for name in ["arugula.copy", "arugula.store", "```prototype", "```chart", "```stats"] {
+            assert!(fill.contains(name), "{name}");
+        }
+    }
+
+    fn chosen(team: bool, rule: arugulad_base::mcp::issues::Rule) -> Chosen {
+        Chosen { id: "prj_1".into(), name: "Acme".into(), team, rule }
+    }
+
+    /// aru-139: a team's project is the Doc's home; a personal one never is
+    /// (the machine is), and no answer from control is the machine too.
+    #[test]
+    fn a_team_projects_docs_are_the_teams_and_a_personal_projects_stay_on_the_machine() {
+        use arugulad_base::mcp::issues::Rule;
+        assert!(matches!(home_of(Ok(chosen(true, Rule::Personal)), false), Home::Team(_)));
+        assert!(matches!(home_of(Ok(chosen(true, Rule::Linked("acme/app".into()))), false), Home::Team(_)));
+        assert!(matches!(home_of(Ok(chosen(false, Rule::Personal)), false), Home::Library(None)));
+        assert!(matches!(home_of(Ok(chosen(false, Rule::Linked("acme/app".into()))), false), Home::Library(None)));
+    }
+
+    /// A personal machine that can't reach control keeps its Docs on the
+    /// machine, with the reason.
+    #[test]
+    fn a_personal_machine_without_control_keeps_the_library_and_says_why() {
+        let Home::Library(Some(why)) = home_of(Err("can't reach control".into()), false) else { panic!() };
+        assert_eq!(why, "can't reach control");
+    }
+
+    /// aru-139: a team machine's Docs are always the team's, so with control
+    /// out of reach `new` is refused and nothing goes to the library.
+    #[test]
+    fn a_team_machine_without_control_refuses_new_and_never_uses_the_library() {
+        let Home::Refused(why) = home_of(Err("can't reach control".into()), true) else { panic!("fell back") };
+        assert_eq!(
+            why,
+            "Arugula cloud can't be reached, and a team machine's Docs live in the team's project: try again when it's back."
+        );
+    }
+
+    /// The answer says which, in the rule's own words.
+    #[test]
+    fn the_answer_says_the_team_and_the_rule() {
+        use arugulad_base::mcp::issues::Rule;
+        assert_eq!(
+            chosen(true, Rule::Linked("acme/app".into())).team_doc(),
+            "A team Doc in Acme: this clone's repo acme/app is linked to it"
+        );
+        assert_eq!(
+            chosen(true, Rule::Started("#9".into())).team_doc(),
+            "A team Doc in Acme: you were started on its issue #9"
+        );
+        assert_eq!(
+            chosen(true, Rule::Personal).team_doc(),
+            "A team Doc in Acme: this is the team's machine, and no project was named"
+        );
+    }
+
+    /// The tool says where Docs go, within the limit.
+    #[test]
+    fn the_tool_text_says_where_docs_go_and_fits() {
+        let new = DOC.iter().find(|k| k.name == "new").unwrap().description;
+        assert!(new.contains("When the current project (your block's, else your session's, else your clone's repo's, else the default) is a team's, a new Doc goes in it on Arugula; else it stays here."));
+        for k in DOC {
+            assert!(k.description.chars().count() <= 2048, "{}", k.name);
+        }
+    }
+
+    /// #606: the description is cut at 2048 characters, so the fences' format
+    /// is fetched with `doc fences`: `fill` has to keep naming it.
+    #[test]
+    fn doc_fill_points_to_the_fences() {
+        let fill = DOC.iter().find(|k| k.name == "fill").unwrap().description;
+        for name in ["fences", "prototype", "arugula.copy", "arugula.store"] {
+            assert!(fill.contains(name), "{name}");
+        }
+        assert!(DOC.iter().any(|k| k.name == "fences"));
+    }
+
+    /// #828: `layout` is an enum of the three names in the generated schema,
+    /// not a free string, and `sections` may be left out.
+    #[test]
+    fn doc_new_takes_a_layout_of_three_names() {
+        let new = DOC.iter().find(|k| k.name == "new").unwrap();
+        let schema = serde_json::to_value((new.schema)().as_ref()).unwrap().to_string();
+        assert!(schema.contains(r#""enum":["doc","tabs","prototype"]"#), "{schema}");
+        let a: DocNewArgs = serde_json::from_value(json!({ "title": "T", "layout": "prototype" })).unwrap();
+        assert!(a.sections.is_empty() && a.layout == DocLayoutArg::Prototype);
+        let a: DocNewArgs = serde_json::from_value(json!({ "title": "T", "sections": [] })).unwrap();
+        assert!(a.layout == DocLayoutArg::Doc);
+        let e = serde_json::from_value::<DocNewArgs>(json!({ "title": "T", "layout": "slides" }))
+            .err()
+            .unwrap()
+            .to_string();
+        assert!(e.contains("doc") && e.contains("tabs") && e.contains("prototype"), "{e}");
     }
 }

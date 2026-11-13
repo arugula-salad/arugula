@@ -89,7 +89,21 @@ pub async fn prompt(
     };
     if info.attention == Attention::NeedsInput && !answering {
         let (question, ask) = question(&info);
-        return Ok(PromptResult::Blocked { question, ask });
+        // An agent block waits on someone only with a question or an
+        // approval open (#617): the card a restart leaves, or a stopped
+        // agent, waits for just this prompt, which `send` takes as it would
+        // from the block.
+        let waits = match &block {
+            None => true,
+            Some(b) => {
+                ask.is_some()
+                    || info.reason.as_ref().is_some_and(|r| r.gate.is_some())
+                    || b.state()["pending"].as_array().is_some_and(|p| !p.is_empty())
+            }
+        };
+        if waits {
+            return Ok(PromptResult::Blocked { question, ask });
+        }
     }
     // Listen first, then type.
     let mut events = app.mux.events();

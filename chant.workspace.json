@@ -1,7 +1,7 @@
 {
   "name": "arugula",
   "schema": 1,
-  "minReader": "0.124.33",
+  "minReader": "0.124.70",
   "members": [
     {
       "name": "daemon",
@@ -45,19 +45,6 @@
           "generator": "just proto-ts",
           "sources": ["crates/proto/src"]
         }
-      ]
-    },
-    {
-      "name": "control",
-      "dir": "crates/control",
-      "kind": "other",
-      "because": "the hub's Rust crates, arugula-control-base here with its binary (crates/arugula-control), which runs the platform (crates/platform, crates/arugula-platform) in process: accounts, devices, the directory and the relay, serving the web client",
-      "outputs": ["arugula-control"],
-      "links": [
-        { "member": "web", "output": "dist" },
-        { "member": "core", "output": "crate" },
-        { "member": "control-wire", "output": "crate" },
-        { "member": "e2e", "output": "crate" }
       ]
     },
     {
@@ -169,16 +156,6 @@
       "links": [{ "member": "cli", "output": "arugula" }]
     },
     {
-      "name": "packaging-control",
-      "dir": "packaging/control",
-      "kind": "other",
-      "because": "the hosted control's image and Fly config, from the static binaries",
-      "links": [
-        { "member": "control", "output": "arugula-control" },
-        { "member": "daemon", "output": "arugulad" }
-      ]
-    },
-    {
       "name": "packaging-desktop",
       "dir": "packaging/desktop",
       "kind": "other",
@@ -194,6 +171,23 @@
         { "member": "daemon", "output": "arugulad" },
         { "member": "cli", "output": "arugula" }
       ]
+    },
+    {
+      "name": "daemon-release",
+      "dir": "release/daemon",
+      "kind": "chant",
+      "because": "the daemon's release (v* tags): release.yml cuts it from the tag's commit in the daemon's green lane and publishes the tarballs, the Windows zip, the editor extension and SHA256SUMS to the tag's GitHub release, as latest, the Homebrew formula to the tap and the extension to the VS Code Marketplace and Open VSX, with chant release publish (#1986)",
+      "links": [
+        { "member": "daemon", "output": "arugulad" },
+        { "member": "cli", "output": "arugula" }
+      ]
+    },
+    {
+      "name": "app-release",
+      "dir": "release/app",
+      "kind": "chant",
+      "because": "the desktop app's release (app-v* tags): app-release.yml cuts it from the tag's commit in the app's green lane and publishes the apps to the tag's GitHub release, never latest, and to the rolling app-latest release with the updater's latest.json, with chant release publish (#1986)",
+      "links": [{ "member": "desktop", "output": "app" }]
     },
     {
       "name": "testnet",
@@ -219,23 +213,28 @@
     "green": {
       "branch": "main",
       "window": "24h",
+      "mergeQueue": { "retries": 0 },
       "phases": {
         "lint": { "runs": ["lint", "changes", "suite-changed"], "build": "newest" },
         "build": { "runs": ["build", "static", "clippy"], "skipped": "pass", "build": "newest" },
-        "test": { "runs": ["test", "test-2", "test-postgres", "core"], "skipped": "pass", "build": "newest" },
+        "test": { "runs": ["test", "test-2"], "skipped": "pass", "build": "newest" },
         "e2e": { "runs": ["e2e*"], "skipped": "pass", "build": "newest" },
-        "claims": { "runs": ["testnet", "stack", "desktop-xvfb"], "skipped": "pass", "build": "newest" },
-        "macos": { "runs": ["macos (*)"], "skipped": "pass", "build": "newest" },
-        "windows": { "runs": ["workspace", "workspace-clippy", "desktop"], "skipped": "pass", "build": "newest" }
+        "claims": { "runs": ["desktop-xvfb"], "skipped": "pass", "build": "newest" },
+        "macos": { "runs": ["macos (test)"], "skipped": "pass", "build": "newest" },
+        "windows": { "runs": ["workspace", "workspace-clippy"], "skipped": "pass", "build": "newest" },
+        "windows-desktop": { "runs": ["desktop"], "skipped": "pass", "build": "newest" }
       },
-      "require": ["lint", "build", "test", "e2e", "claims", "macos", "windows"]
+      "require": ["lint", "build", "test", "e2e", "claims", "macos", "windows", "windows-desktop"],
+      "lanes": {
+        "daemon": { "require": ["lint", "build", "test", "e2e", "claims", "macos", "windows", "windows-desktop"] },
+        "app": { "require": ["lint", "build", "e2e", "claims", "windows-desktop"] }
+      }
     }
   },
   "agents": [
     { "name": "daemon", "member": "daemon" },
     { "name": "cli", "member": "cli" },
     { "name": "web", "member": "web" },
-    { "name": "control", "member": "control" },
     { "name": "desktop", "member": "desktop" },
     { "name": "mux", "member": "mux" },
     { "name": "core", "member": "core" },
@@ -248,7 +247,6 @@
     { "name": "nvim", "member": "nvim" },
     { "name": "devcontainer", "member": "devcontainer" },
     { "name": "claude-code-plugin", "member": "claude-code-plugin" },
-    { "name": "packaging-control", "member": "packaging-control" },
     { "name": "packaging-desktop", "member": "packaging-desktop" },
     { "name": "packaging-homebrew", "member": "packaging-homebrew" },
     { "name": "testnet", "member": "testnet" }

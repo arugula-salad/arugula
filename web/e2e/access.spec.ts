@@ -139,7 +139,7 @@ test("a viewer's workspace hides what they can't do, or says why it's off", asyn
     await expect(friend.locator(sel)).toHaveAttribute("title", "Viewers can't change the layout");
   }
   // Docs are the owner's (#1494): a guest has no page.
-  await expect(owner.locator(".ws-rail [data-open-docs]")).toBeVisible();
+  await expect(owner.locator("[data-machine-docs]")).toBeVisible();
   await expect(friend.locator("[data-open-docs]")).toHaveCount(0);
   await friend.evaluate(() => (location.hash = "docs"));
   await friend.waitForTimeout(300);
@@ -148,7 +148,7 @@ test("a viewer's workspace hides what they can't do, or says why it's off", asyn
   // A viewer doesn't size the tab (the daemon letterboxes it): no offer to.
   await expect(friend.locator("[data-sized-elsewhere]")).toHaveCount(0);
   // The session's menu: its thread and notifications, nothing of the owner's.
-  await friend.locator("[data-crumb-menu]").click();
+  await friend.locator(".ws-session-more").first().click();
   await expect(friend.getByRole("menu")).toBeVisible();
   for (const item of ["New session", "Rename session", "Close session", "Share session…"])
     await expect(friend.getByRole("menuitem", { name: item })).toHaveCount(0);

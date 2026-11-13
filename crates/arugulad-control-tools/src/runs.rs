@@ -1,6 +1,8 @@
 //! Runs for agents (M216, platform step 7): `start_run`, `read_run`, and
 //! `wait` with `run`, over a project's runs in Arugula control. A run
-//! executes on one of the project's hosted boxes (M212), never here.
+//! executes on one of the project's Cloud workspaces (M212), never here.
+//! `start_run`'s `cloud_workspace` was `box`, which it still takes
+//! (`arugulad-mcp`'s `ARG_ALIASES`, Arugula #668).
 //!
 //! - **Through the owner's grants.** Each call is a machine-signed route on
 //!   the platform (`/api/daemon/projects/{project}/runs`,
@@ -20,7 +22,7 @@
 //!   again. Once it ends, it reads the log's tail.
 //! - **The log** is the platform's durable copy (M213), paged by byte
 //!   offset. Until the platform keeps one, a read says where the output is:
-//!   the run's pane on its box, which the project's people watch end to
+//!   the run's pane on its machine, which the project's people watch end to
 //!   end, and which `arugula runs logs` reads from a person's CLI. This
 //!   machine's agents can't read that pane: a machine reaches another only
 //!   for its agents (`/api/a2a/`).
@@ -49,16 +51,16 @@ pub(crate) const START_TOOL: &str = "start_run";
 const BACK_OFF: Duration = Duration::from_secs(5);
 pub(crate) const READ_TOOL: &str = "read_run";
 
-pub(crate) const START_DESCRIPTION: &str = "Start a run on one of a project's cloud workspaces in Arugula control: a run spec of the project by name, a command, or an instruction to an agent (Claude Code, headless). It runs there, not here, in a pane the project's people watch, under the project's standing grant (without one it waits for an owner to approve it). Your person's grants say where you may, over the project: runs.start for a run spec, runs.command for a command or an instruction of your own. Never more than their role: it's recorded as theirs, started by their agent on this machine. Returns the run (run_…) at once, pending; wait with run follows it, read_run reads its timeline and log.";
+pub(crate) const START_DESCRIPTION: &str = "Start a project run on one of its Cloud workspaces in Arugula cloud (not a command in a pane here: that's run): a run spec of the project by name, a command, or an instruction to an agent (Claude Code, headless). It runs there, not here, in a pane the project's people watch, under the project's standing grant (without one it waits for an owner to approve it). Your person's grants say where you may, over the project: runs.start for a run spec, runs.command for a command or an instruction of your own. Never more than their role: it's recorded as theirs, started by their agent on this machine. Returns the run (run_…) at once, pending; wait with run follows it, read_run reads its timeline and log.";
 
-pub(crate) const READ_DESCRIPTION: &str = "Read a run in Arugula control (with this machine's runs.read grant over its project): its state, exit code, timeline, and a page of its log by byte offset (pass next_offset back as offset for more). Without run: a project's latest runs. wait with run waits for one to end.";
+pub(crate) const READ_DESCRIPTION: &str = "Read a run in Arugula cloud (with this machine's runs.read grant over its project): its state, exit code, timeline, and a page of its log by byte offset (pass next_offset back as offset for more). Without run: a project's latest runs. wait with run waits for one to end.";
 
 #[derive(Deserialize, JsonSchema)]
 pub struct StartRunArgs {
-    /// The project in Arugula control: its id (prj_…), or personal.
+    /// The project in Arugula cloud: its id (prj_…), or personal.
     pub project: String,
     /// A run spec of the project, by its name or id: what it runs and on
-    /// which box.
+    /// which Cloud workspace.
     #[serde(default)]
     pub spec: Option<String>,
     /// Or a command: the program and its arguments, not through a shell
@@ -71,13 +73,14 @@ pub struct StartRunArgs {
     /// With instruction: the agent recipe to run it as.
     #[serde(default)]
     pub recipe: Option<String>,
-    /// Where it runs: an absolute directory on the box (default its home).
+    /// Where it runs: an absolute directory on its machine (default its
+    /// home).
     #[serde(default)]
     pub directory: Option<String>,
-    /// Which of the project's cloud workspaces: its name or id (hw_…). Needed
-    /// when it has more than one.
-    #[serde(default, rename = "box")]
-    pub on_box: Option<String>,
+    /// Which of the project's Cloud workspaces: its name or id (hw_…).
+    /// Needed when it has more than one.
+    #[serde(default, alias = "box")]
+    pub cloud_workspace: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -103,9 +106,9 @@ pub struct ReadRunArgs {
 /// What a refusal says to an agent.
 fn said(e: CloudRefused) -> String {
     match e {
-        CloudRefused::NotJoined => "this machine hasn't joined Arugula control, where runs live: ask your person to join it (Getting started on the web page, or `arugulad join`)".into(),
+        CloudRefused::NotJoined => "this machine hasn't joined Arugula cloud, where runs live: ask your person to join it (Getting started on the web page, or `arugulad join`)".into(),
         CloudRefused::OldControl | CloudRefused::Said { status: 405, .. } => {
-            "this Arugula control doesn't let agents start or read runs yet".into()
+            "Arugula cloud doesn't let agents start or read runs yet".into()
         }
         e => e.to_string(),
     }
@@ -216,7 +219,7 @@ pub(crate) async fn start_run(c: &Call<'_>, a: StartRunArgs) -> Out {
     }
     let body = AgentRunStart {
         spec: a.spec,
-        workspace: a.on_box,
+        workspace: a.cloud_workspace,
         argv: a.command,
         instruction: a.instruction,
         agent: a.recipe,
@@ -277,6 +280,8 @@ pub(crate) async fn wait_run(c: &Call<'_>, run: &str, limit: Duration) -> Out {
     owners_runs(c, "wait with run").await?;
     let run = run_id(run)?;
     let started = Instant::now();
+    // Why control didn't answer the last ask, if it didn't.
+    let missed = std::sync::Mutex::new(None::<String>);
     let poll = async {
         let mut since = None::<u64>;
         loop {
@@ -291,8 +296,16 @@ pub(crate) async fn wait_run(c: &Call<'_>, run: &str, limit: Duration) -> Out {
                     tokio::time::sleep(BACK_OFF).await;
                     continue;
                 }
+                // One ask control didn't answer is asked again, not the
+                // wait's end (Arugula #621).
+                Err(e @ (CloudRefused::Unreachable(_) | CloudRefused::Maintenance)) => {
+                    *missed.lock().unwrap() = Some(e.to_string());
+                    tokio::time::sleep(BACK_OFF).await;
+                    continue;
+                }
                 Err(e) => return Err(said(e)),
             };
+            *missed.lock().unwrap() = None;
             if ended(&r) {
                 return Ok::<_, String>(r);
             }
@@ -301,11 +314,21 @@ pub(crate) async fn wait_run(c: &Call<'_>, run: &str, limit: Duration) -> Out {
     };
     let Some(r) = c.waiting(&format!("waiting for {run}"), limit, poll).await else {
         let secs = started.elapsed().as_secs();
-        let r = runs_call(c, Method::GET, &agent_run(run), None).await?;
-        return done(
-            format!("{} hasn't ended after {secs}s: call wait with run again", line(&r)),
-            json!({ "state": "still running", "run": r }),
-        );
+        let missed = missed.into_inner().unwrap();
+        return match c.app().control.cloud(Method::GET, &agent_run(run), None).await {
+            Ok(r) => {
+                let mut s = format!("{} hasn't ended after {secs}s: call wait with run again", line(&r));
+                if let Some(m) = missed {
+                    s += &format!(". The last time control was asked it didn't answer ({m})");
+                }
+                done(s, json!({ "state": "still running", "run": r }))
+            }
+            Err(e @ (CloudRefused::Unreachable(_) | CloudRefused::Maintenance)) => done(
+                format!("{run} hadn't ended after {secs}s, as far as control said: call wait with run again. {e}"),
+                json!({ "state": "still running" }),
+            ),
+            Err(e) => Err(said(e)),
+        };
     };
     let r = r?;
     // The end of its log, as kept.
@@ -320,9 +343,14 @@ pub(super) async fn runs_reach(app: &crate::server::App) -> RunsReach {
     let asked = tokio::time::timeout(Duration::from_secs(3), app.control.cloud_now(Method::GET, AGENT_RUN_REACH, None));
     let v = match asked.await {
         Ok(Ok(v)) => v,
-        Ok(Err(e)) => return RunsReach { live: false, projects: vec![], note: said(e) },
+        Ok(Err(e)) => return RunsReach { live: false, projects: vec![], note: said(e), answered: false },
         Err(_) => {
-            return RunsReach { live: false, projects: vec![], note: "Arugula control didn't answer in time".into() };
+            return RunsReach {
+                live: false,
+                projects: vec![],
+                note: "Arugula cloud didn't answer in time".into(),
+                answered: false,
+            };
         }
     };
     let projects: Vec<RunsProject> = serde_json::from_value(v["projects"].clone()).unwrap_or_default();
@@ -330,9 +358,9 @@ pub(super) async fn runs_reach(app: &crate::server::App) -> RunsReach {
     let note = if live {
         "start_run starts run specs where runs.start reaches, and commands or instructions of your own where runs.command does; read_run and wait with run read them where runs.read does. A start is labelled as your person's agent on this machine; it never approves anything.".into()
     } else {
-        "This machine's owner hasn't given its agents a run grant: `arugula grants add <machine> runs.read runs.start --project <name>` (and runs.command for commands of your own), or Settings, Agents and runs, on the platform page.".into()
+        "This machine's owner hasn't given its agents a run grant: `arugula grants add <machine> runs.read runs.start --project <name>` (and runs.command for commands of your own), or Settings, Agents and runs, on your machines page.".into()
     };
-    RunsReach { live, projects, note }
+    RunsReach { live, projects, note, answered: true }
 }
 
 /// A log page as text: what it holds, and where the rest is.
@@ -349,6 +377,19 @@ fn log_text(log: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `start_run` names a Cloud workspace by `cloud_workspace`, and by
+    /// `box`, its old name (Arugula #668).
+    #[test]
+    fn a_start_names_its_workspace_by_the_new_name_or_the_old() {
+        for name in ["cloud_workspace", "box"] {
+            let a: StartRunArgs =
+                serde_json::from_value(json!({ "project": "personal", "spec": "ci", name: "dev" })).unwrap();
+            assert_eq!(a.cloud_workspace.as_deref(), Some("dev"), "{name}");
+        }
+        let a: StartRunArgs = serde_json::from_value(json!({ "project": "personal", "spec": "ci" })).unwrap();
+        assert_eq!(a.cloud_workspace, None);
+    }
 
     #[test]
     fn runs_and_projects_are_named_by_id() {

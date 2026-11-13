@@ -1,0 +1,12 @@
+[package]
+name = "arugula-prices"
+# Not the workspace's version: a release bump would rebuild this crate and
+# everything on it. The binaries carry the release (arugula_core::version).
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Anthropic's list prices for Claude tokens: the one table the platform's broker and the daemon's estimates share"
+
+[dependencies]
+serde_json = { workspace = true }

@@ -15,7 +15,7 @@ use serde_json::Value;
 use tokio_tungstenite::{connect_async, tungstenite::client::IntoClientRequest};
 
 fn start() -> Daemon {
-    arugulad!("lauth").no_wisp().no_tailscale().env_remove("ARUGULA_LOCAL_TOKEN_FILE").start()
+    arugulad!("lauth").no_provider().no_tailscale().env_remove("ARUGULA_LOCAL_TOKEN_FILE").start()
 }
 
 /// One request over TCP with these headers: the response's head
@@ -55,6 +55,9 @@ fn loopback_programs_and_browsers_show_the_local_token() {
     assert!(head.contains("\r\nx-arugula-sign-in: /auth\r\n"), "{head}");
     let (status, _, page) = tcp(&d, "GET", "/", &[("accept", "text/html")]);
     assert!([200, 404].contains(&status), "the page (or 'not built'), not a refusal: {status} {page}");
+    // The page asks, without its key, whether control serves it: a daemon
+    // says it doesn't (web/src/shell/control.ts detectControl).
+    assert_eq!(tcp(&d, "GET", "/control.json", &[]).0, 404);
     // A program: the bearer.
     let bearer = format!("Bearer {token}");
     assert_eq!(tcp(&d, "GET", "/api/panes", &[("authorization", &bearer)]).0, 200);
@@ -129,6 +132,15 @@ fn a_signin_link_gives_the_page_its_key_and_goes_to_the_page() {
     let clear = format!("set-cookie: arugula_{}=; path=/; httponly; samesite=lax; max-age=0", d.port);
     assert!(head.contains(&clear), "{head}");
     assert!(head.contains("cache-control: no-store"), "{head}");
+    // Its one script, and no other, by its hash.
+    let script = page.split_once("<script>").and_then(|(_, r)| r.split_once("</script>")).unwrap().0;
+    let hash = {
+        use base64::Engine;
+        use sha2::Digest;
+        base64::engine::general_purpose::STANDARD.encode(sha2::Sha256::digest(script.as_bytes()))
+    };
+    let csp = format!("content-security-policy: default-src 'none'; script-src 'sha256-{}'", hash.to_ascii_lowercase());
+    assert!(head.contains(&csp), "{head}");
     // Only a path of ours.
     for next in ["//evil.example/", "https://evil.example/", "/%5Cevil.example"] {
         let (status, _, page) = tcp(&d, "GET", &format!("/auth?token={token}&next={next}"), &[]);
@@ -171,8 +183,12 @@ fn after_an_upgrade_an_older_links_cookie_signs_a_browser_in_once() {
     let token = format!("ilt_{}", "ab".repeat(32));
     std::fs::write(state.join("local-token"), &token).unwrap();
     std::fs::set_permissions(state.join("local-token"), std::fs::Permissions::from_mode(0o600)).unwrap();
-    let d =
-        arugulad!("lauth").no_wisp().no_tailscale().env_remove("ARUGULA_LOCAL_TOKEN_FILE").state_dir(&state).start();
+    let d = arugulad!("lauth")
+        .no_provider()
+        .no_tailscale()
+        .env_remove("ARUGULA_LOCAL_TOKEN_FILE")
+        .state_dir(&state)
+        .start();
     assert_eq!(d.token(), token);
     let old = format!("arugula_{}={token}", d.port);
     // Not a credential: the API refuses it.
@@ -197,8 +213,12 @@ fn after_an_upgrade_an_older_links_cookie_signs_a_browser_in_once() {
     std::fs::write(state.join("local-token"), &token).unwrap();
     std::fs::set_permissions(state.join("local-token"), std::fs::Permissions::from_mode(0o600)).unwrap();
     std::fs::write(state.join("legacy-signin-until"), (now - 1).to_string()).unwrap();
-    let d =
-        arugulad!("lauth").no_wisp().no_tailscale().env_remove("ARUGULA_LOCAL_TOKEN_FILE").state_dir(&state).start();
+    let d = arugulad!("lauth")
+        .no_provider()
+        .no_tailscale()
+        .env_remove("ARUGULA_LOCAL_TOKEN_FILE")
+        .state_dir(&state)
+        .start();
     let old = format!("arugula_{}={token}", d.port);
     let (status, _, page) = tcp(&d, "GET", "/auth?next=/y", &[("cookie", &old)]);
     assert_eq!(status, 401);

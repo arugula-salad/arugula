@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, type Browser, type Locator, type Page } from "@playwright/test";
+import { expect, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import type { Client } from "../src/shell/client";
 import type { HostDirectory } from "../src/shell/hosts";
 import type { ControlSession } from "../src/shell/control";
@@ -40,7 +40,16 @@ declare global {
  * machine than they do alone (#258). Every spec that uses `browser` closes
  * what's left when it ends: `test.afterAll(closeContexts)`. */
 export async function closeContexts({ browser }: { browser: Browser }) {
-  await Promise.all(browser.contexts().map((c) => c.close()));
+  await Promise.all(browser.contexts().map(closeContext));
+}
+
+/** The test is over, but its page may not be: a route handler still reading
+ * a response when the context closes throws "Response has been disposed",
+ * which fails the test that just passed. So those are dropped first (a page
+ * that closes meanwhile has none left to drop). */
+async function closeContext(context: BrowserContext) {
+  await Promise.all([context, ...context.pages()].map((r) => r.unrouteAll({ behavior: "ignoreErrors" }).catch(() => {})));
+  await context.close();
 }
 
 export async function open(page: Page) {
@@ -197,6 +206,20 @@ export function seedConversation(claude: string, word: string, title: string, mo
   return { id, cwd };
 }
 
+/** A passkey for the account signed in on `page`, from a virtual
+ *  authenticator that verifies the person and stays on the page: making
+ *  or removing a team's owner takes one (DK7). Control must be on a name
+ *  (`localhost`): WebAuthn refuses an IP address. Chromium only. */
+export async function withPasskey(page: Page) {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("WebAuthn.enable");
+  await cdp.send("WebAuthn.addVirtualAuthenticator", {
+    options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true },
+  });
+  await page.evaluate(() => window.__arugula.control!.addPasskey());
+  await expect.poll(() => page.evaluate(() => window.__arugula.control!.passkeys)).toBeGreaterThan(0);
+}
+
 /** Opens one of the control overlay's panels ("devices", "account",
  * "teams", ...) once the overlay listens for the event: sent before that,
  * it's lost. Checking and sending in one evaluate means the overlay can't
@@ -249,4 +272,23 @@ export async function sheetTab(page: Page, tab: "Here" | "Machines" | "More") {
   const button = page.locator(`[data-sheet-tab="${tab.toLowerCase()}"]`);
   await button.click();
   await expect(button).toHaveAttribute("aria-selected", "true");
+}
+
+/** The Settings page, from the rail (Arugula #695); stays if it's open. */
+export async function openSettingsPage(page: Page) {
+  const settings = page.locator("[data-settings-page]");
+  if (!(await settings.isVisible())) await page.locator(".ws-rail [data-open-settings]").click();
+  await expect(settings).toBeVisible();
+  return settings;
+}
+
+/** A row of the Settings page that opens or does something: `Appearance…`. */
+export async function settingsRow(page: Page, name: string) {
+  await (await openSettingsPage(page)).getByRole("button", { name, exact: true }).click();
+}
+
+/** Back to the panes from the Settings page. */
+export async function closeSettingsPage(page: Page) {
+  await page.locator(".ws-rail [data-open-panes]").click();
+  await expect(page.locator("[data-settings-page]")).toHaveCount(0);
 }

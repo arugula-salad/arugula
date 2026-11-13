@@ -125,6 +125,14 @@ impl ClientRx {
         self.bytes.fetch_sub(item.queued_bytes(), Ordering::Relaxed);
         Some(item)
     }
+
+    /// The next item if one is queued now (#856: a relayed channel takes
+    /// what's waiting together).
+    pub fn try_recv(&mut self) -> Option<ToClient> {
+        let item = self.rx.try_recv().ok()?;
+        self.bytes.fetch_sub(item.queued_bytes(), Ordering::Relaxed);
+        Some(item)
+    }
 }
 
 /// What a client connection receives.
@@ -2201,6 +2209,7 @@ impl State {
             app_cursor: self.engine.dec_mode(1),
             mouse: [1000, 1002, 1003].iter().any(|m| self.engine.dec_mode(*m)),
             sgr_mouse: self.engine.dec_mode(1006),
+            bracketed_paste: self.engine.dec_mode(2004),
         };
         // A title only changes in an OSC 0/1/2, so only look for one then.
         let title = data

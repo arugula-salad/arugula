@@ -13,14 +13,16 @@
 // is all they see.
 
 import { Fragment, type ComponentChildren } from "preact";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { chat, type PaneQuote } from "../chat-store";
-import type { ChatMessage, ChatRoom } from "../proto";
+import type { ChatMessage, ChatRoom, ChatThreadAgent, ChatToGithub } from "../proto";
 import { AgentsChip } from "./agents-chip";
-import { authorLabel, isSystemLine, machineMentions } from "./agents";
+import { authorLabel, ciName, githubLogin, isSystemLine, machineHandle, machineMentions, sessionSlug, webhookName } from "./agents";
+import { targets, ToRow, wakes } from "./thread-agents";
 import { ChatMarkdown } from "./chat-markdown";
 import { mentionToken } from "../ui/markup";
 import { MsgAvatar } from "./avatar";
+import { AuthorName } from "./agent-name";
 import { TypingLine } from "./typing";
 import { asksArugula, warmsIn } from "./warm";
 import { BROADCAST_CONFIRM_OVER, broadcastOptions, usesBroadcast } from "./alerts";
@@ -28,13 +30,15 @@ import { BROADCAST_CONFIRM_OVER, broadcastOptions, usesBroadcast } from "./alert
 import "./saved-hooks";
 import { EmojiPicker } from "./emoji-picker";
 import { MessagePreviews } from "./previews";
-import { hookFor, itemsOf, MsgItems, MsgMenu } from "./msg-actions";
+import { closeMenu, MenuHost, pressedShut, type MenuItem } from "../ui/menu";
+import { hookFor, itemsOf, openMsgMenu } from "./msg-actions";
 import { QUICK } from "./reactions";
 import { AttachButton, attachKey, AttachChips, dragsFiles, filesOf, MessageFiles, useAttachments } from "./files-ui";
 import { PinnedMark, SystemLine } from "./pins-ui";
 // Pins (#119) fill the ⋯ menu's pin hook.
 import "./pins-hooks";
-import { longPress, mayReact, ReactionChips, ReactMenu } from "./reactions-ui";
+import { MentionStatus } from "./mention-status";
+import { longPress, mayReact, ReactionChips, ReactMenu, ReactPicker, ReactRow } from "./reactions-ui";
 import { findEmoji, rememberEmoji, useEmoji } from "./emoji";
 import { useSubscribe } from "../ui/hooks";
 import { useChatShown } from "./shown";
@@ -44,10 +48,12 @@ import { AskMessage, askOfMessage } from "./ask-card";
 import { answerVia, SaidAvatar, SaidHead, saidOf, SessionCardMessage, sessionOf } from "./session-card";
 import { dmLabel } from "./members";
 import { handled } from "./escape";
-import { useStickToBottom } from "./stick";
-import { BookmarkIcon, MachineIcon } from "./icons";
+import { savedAnchor, useAnchor } from "./use-anchor";
+import { ArrowIcon, BookmarkIcon, CloseIcon, IconButton, MachineIcon, MoreIcon, QuotePaneIcon, ReactIcon, SendIcon, ThreadIcon } from "../ui/icons";
 import { presence } from "./presence";
+import { BlockLoading, EmptyState } from "../ui/block-states";
 import { Time } from "../ui/time";
+import { Chip } from "../ui/state-chip";
 
 // ---- machines, by control's id for them
 
@@ -114,6 +120,12 @@ export function roomSigil(r: ChatRoom): string {
 
 /** A message's picture: its author's, or its agent's machine's (M197). */
 export function AuthorAvatar({ m }: { m: ChatMessage }) {
+  const gh = githubLogin(m);
+  if (gh) return <MsgAvatar who={`github:${gh}`} name={gh} dot />;
+  const ci = ciName(m);
+  if (ci) return <MsgAvatar who={m.via ?? "ci:"} name={ci} dot />;
+  const hook = webhookName(m);
+  if (hook) return <MsgAvatar who={m.via ?? "webhook:"} name={hook} dot />;
   return m.agent ? (
     <MsgAvatar who={`agent:${m.agent.machine}`} name={m.agent.machine_name || "agent"} account={m.author || undefined} agent={m.agent.machine} dot />
   ) : (
@@ -133,6 +145,18 @@ function RoomAgents({ room }: { room: string }) {
       <AgentsChip room={room} />
     </div>
   );
+}
+
+/** What a comment on an issue opened on GitHub (M205) says of its copy
+ * there, under the box: being sent (the post answers first, and the end
+ * comes on chat's stream, Arugula #584), sent, or why not and where it
+ * waits. */
+function githubNote(g: ChatToGithub | undefined): string[] {
+  if (!g) return [];
+  if (g.sending) return ["Sending to GitHub, as you…"];
+  if (g.sent) return ["Also on GitHub, as you."];
+  if (g.draft) return [`Not on GitHub yet: ${g.why ?? "it wasn't sent"} It waits in your drafts, to send from there.`];
+  return [`Kept here only: ${g.why ?? "it can't go to GitHub"}`];
 }
 
 // ---- the room
@@ -165,9 +189,6 @@ function whenShort(at: number): string {
   return when(at).replace(/\s?[AP]\.?M\.?$/i, "");
 }
 
-/** How near the bottom still counts as at it, for following new messages. */
-const NEAR_BOTTOM = 80;
-
 function draftOf(key: string): string {
   try {
     return sessionStorage.getItem(key) ?? "";
@@ -186,22 +207,26 @@ function keepDraft(key: string, text: string) {
 }
 
 /** What the room says before anything's in it. */
-function emptyNote(r: ChatRoom): string {
+export type EmptyNote = { title: string; why?: string };
+function emptyNote(r: ChatRoom): EmptyNote {
   switch (r.kind) {
     case "channel":
       return r.private
-        ? `This is the start of the private channel #${r.name}. Only the people in it read it; write @name to notify one of them.`
-        : `This is the start of #${r.name}. Anyone in the team can join it; write @name to notify someone.`;
+        ? { title: `This is the start of #${r.name}.`, why: "Only the people in it read it. Write @name to notify one of them." }
+        : { title: `This is the start of #${r.name}.`, why: "Anyone in the team can join it. Write @name to notify someone." };
     case "dm":
-      return r.others.length > 1 ? `Just you and ${r.others.map((p) => p.name).join(", ")}.` : `Just you and ${r.with?.name ?? "them"}.`;
+      return {
+        title: r.others.length > 1 ? `Just you and ${r.others.map((p) => p.name).join(", ")}.` : `Just you and ${r.with?.name ?? "them"}.`,
+        why: "Write @name to bring someone else in.",
+      };
     case "pane":
-      return "Talk about this pane here. Whoever may read its thread sees it; write @name to notify one of them.";
+      return { title: "Talk about this pane here.", why: "Whoever may read its thread sees it. Write @name to notify one of them." };
     case "session":
-      return "Talk about this session here; write @name to notify someone.";
+      return { title: "Talk about this session here.", why: "Write @name to notify someone." };
     case "object":
-      return "Talk about this here. Its project's members read it; write @name to notify one of them.";
+      return { title: "Talk about this here.", why: "Its project's members read it. Write @name to notify one of them." };
     default:
-      return "Nothing kept here.";
+      return { title: "Nothing kept here." };
   }
 }
 
@@ -259,7 +284,7 @@ export function RoomBody({
    * issue's timeline (M201). */
   between?: Between[];
   /** What the room says before anything's in it, instead of its own. */
-  empty?: string;
+  empty?: EmptyNote;
   /** The host's header shows whose agents reach the room (a chip), so the
    * room doesn't repeat it above its messages. */
   chip?: boolean;
@@ -271,6 +296,7 @@ export function RoomBody({
   useSubscribe((fn) => chat.subscribe(fn));
   // "Reply in thread" opens the thread where this room is shown (#106).
   const { nav } = usePlatformApi();
+  const tokens = useRoomTokens(room.id);
   useEffect(() => {
     setThreadNav(nav);
   }, [nav]);
@@ -283,7 +309,6 @@ export function RoomBody({
   // Whether the view is at the newest message, and the last one it was at
   // when it was: the "new messages" button counts what came after.
   const [atBottom, setAtBottom] = useState(true);
-  const stuck = useRef(true);
   const [seenTo, setSeenTo] = useState(0);
   const loaded = chat.messages(room.id);
   const msgs = loaded?.list ?? null;
@@ -310,65 +335,57 @@ export function RoomBody({
     // Fresh each time it opens: who reads it, and whose agents (M197).
     chat.detailOf(room.id, true).catch(() => {});
     setEditing(null);
-    stuck.current = true;
-    setAtBottom(true);
     setSeenTo(0);
   }, [room.id]);
 
-  // What's shown is read; the newest stays in view (or the message a link
-  // names, once).
+  // What's shown is read; the view keeps its place (#965): at the newest, or
+  // at the message it was on, whatever loads or resizes (use-anchor).
   const last = msgs?.at(-1)?.seq;
   const focused = useRef<number | null>(null);
-  useStickToBottom(list, () => stuck.current && focused.current === null);
-  const topBefore = useRef<{ h: number; first?: number } | null>(null);
+  const anchor = useAnchor(list, `chat.scroll.${room.id}`, setAtBottom);
+  const prevLast = useRef<{ room: string; seq?: number }>({ room: room.id });
   useLayoutEffect(() => {
     const el = list.current;
     if (!el || !msgs) return;
-    // Older messages came in above: keep the view where it was.
-    const kept = topBefore.current;
-    if (kept && kept.first !== msgs[0]?.seq) {
-      el.scrollTop += el.scrollHeight - kept.h;
-      topBefore.current = null;
-      return;
-    }
     if (focus !== undefined && focused.current !== focus) {
       const m = el.querySelector<HTMLElement>(`[data-msg="${focus}"]`);
       if (m) {
         focused.current = focus;
+        anchor.open(null);
         m.scrollIntoView({ block: "center" });
+        anchor.capture();
         m.classList.add("flash");
         setTimeout(() => m.classList.remove("flash"), 1600);
         return;
       }
       // Further back than what's loaded: fetch older until it's there.
-      if (loaded?.older && msgs.length && focus < msgs[0].seq) void chat.older(room.id);
+      if (loaded?.older && msgs.length && focus < msgs[0].seq) {
+        void chat.older(room.id);
+        return;
+      }
     }
-    // Follow new messages only from the bottom (or my own): someone reading
-    // further up isn't pulled away.
     const lastMsg = msgs.at(-1);
-    if (focused.current === null && (stuck.current || (lastMsg && chat.mine(lastMsg)))) {
-      el.scrollTop = el.scrollHeight;
-      stuck.current = true;
-      setAtBottom(true);
+    if (!anchor.ready()) {
+      // A room with something unread opens at the bottom, where its "New"
+      // line is; else where it was left.
+      const kept = room.unread > 0 || chat.heldAt(room.id) !== undefined ? null : savedAnchor(`chat.scroll.${room.id}`);
+      if (kept && "seq" in kept && !msgs.some((m) => m.seq === kept.seq)) {
+        // Further back than what's loaded: fetch older until it's there.
+        if (loaded?.older && kept.seq < msgs[0].seq) return void chat.older(room.id);
+        anchor.open(null);
+      } else {
+        anchor.open(kept);
+      }
+    } else if (prevLast.current.room === room.id && prevLast.current.seq !== undefined && last !== undefined && last > prevLast.current.seq && lastMsg && chat.mine(lastMsg)) {
+      // Mine: to the bottom, once, with no scroll animation.
+      anchor.toBottom();
     }
-  }, [last, msgs?.[0]?.seq, focus, !!msgs]);
+    prevLast.current = { room: room.id, seq: last };
+  }, [last, msgs?.[0]?.seq, focus, !!msgs, room.id]);
   useEffect(() => {
     if (atBottom && last !== undefined) setSeenTo(last);
   }, [atBottom, last]);
-  const onScroll = () => {
-    const el = list.current;
-    if (!el) return;
-    const near = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM;
-    if (near !== stuck.current) {
-      stuck.current = near;
-      setAtBottom(near);
-    }
-  };
-  const toNewest = () => {
-    const el = list.current;
-    if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
-  };
+  const toNewest = () => anchor.toBottom();
   const current = chat.room(room.id) ?? room;
   useEffect(() => {
     // Scrolled up, what's below isn't read yet: the button says so.
@@ -386,7 +403,7 @@ export function RoomBody({
       if (document.querySelector("[data-react-menu], [data-msg-menu], [data-emoji-picker], .mention-pick, .menu, .prompt")) return;
       if ((e.target as Element | null)?.closest(".msg-edit")) return;
       const c = chat.room(room.id);
-      if (!c || (c.unread === 0 && c.read >= last && stuck.current)) return;
+      if (!c || (c.unread === 0 && c.read >= last && anchor.bottom())) return;
       void chat.read(room.id, last).catch(() => {});
       toNewest();
     };
@@ -398,8 +415,7 @@ export function RoomBody({
   const lastOwn = msgs?.findLast((m) => m.deleted === null && !m.imported && !!m.author && m.author === chat.me);
 
   const more = () => {
-    const el = list.current;
-    topBefore.current = { h: el?.scrollHeight ?? 0, first: msgs?.[0]?.seq };
+    anchor.capture();
     void chat.older(room.id);
   };
 
@@ -410,7 +426,7 @@ export function RoomBody({
         class={`thread-list${dropping ? " dropping" : ""}`}
         ref={list}
         data-room={room.id}
-        onScroll={onScroll}
+        onScroll={() => anchor.onScroll()}
         {...(current.writable ? dropTarget(setDropping) : {})}
       >
         {loaded?.older && (
@@ -418,8 +434,8 @@ export function RoomBody({
             Earlier messages
           </button>
         )}
-        {msgs === null && !error && <p class="thread-empty">Loading…</p>}
-        {msgs?.length === 0 && !between?.length && <p class="thread-empty">{empty ?? emptyNote(current)}</p>}
+        {msgs === null && !error && <BlockLoading inline what="the room" />}
+        {msgs?.length === 0 && !between?.length && <EmptyState {...(empty ?? emptyNote(current))} />}
         {msgs &&
           rowsOf(msgs, between).map((row, i, rows) => {
             const at = row.m ? row.m.at : row.x.at;
@@ -464,6 +480,7 @@ export function RoomBody({
                     if (!on) composeRef.current?.focus();
                   }}
                   relative={embedded}
+                  tokens={tokens}
                 />
               </Fragment>
             );
@@ -471,7 +488,7 @@ export function RoomBody({
         {!atBottom && (
           <div class="jump-newest">
             <button type="button" data-jump-newest onClick={toNewest}>
-              {unseen > 0 ? `↓ ${unseen} new ${unseen === 1 ? "message" : "messages"}` : "↓ Jump to newest"}
+              <ArrowIcon dir="down" size="xs" /> {unseen > 0 ? `${unseen} new ${unseen === 1 ? "message" : "messages"}` : "Jump to newest"}
             </button>
           </div>
         )}
@@ -506,6 +523,7 @@ export function RoomMessage({
   setEditing,
   inThread = false,
   relative = false,
+  tokens = NO_TOKENS,
 }: {
   room: ChatRoom;
   m: ChatMessage;
@@ -519,26 +537,41 @@ export function RoomMessage({
   /** On a page about something else (an issue's, a run's): the head says
    * how long ago, as the page's timeline does (UI audit #182). */
   relative?: boolean;
+  /** The room's people by the token that mentions them (`useRoomTokens`),
+   * worked out once by the list, not by each message (#438). */
+  tokens?: Map<string, string>;
 }) {
+  // An agent's name is its tab (#632), so a post from another of its
+  // sessions starts a head of its own rather than reading as the last one's.
   const head =
-    !prev || prev.author !== m.author || prev.agent?.machine !== m.agent?.machine || prev.via !== m.via || m.at - prev.at > 5 * 60_000;
+    !prev ||
+    prev.author !== m.author ||
+    prev.agent?.machine !== m.agent?.machine ||
+    (prev.agent?.session ?? null) !== (m.agent?.session ?? null) ||
+    prev.via !== m.via ||
+    m.at - prev.at > 5 * 60_000;
   const mine = chat.mine(m);
   // Mine or my agent's: I may delete it, not rewrite what an agent said.
   const owned = !!m.author && m.author === chat.me;
   const forMe = m.mentions.includes(chat.me);
+  // A token reached someone if it names me and I'm mentioned, or names one
+  // of the room's people whom control recorded in `mentions` (#438).
+  const reached = m.mentions.length ? [...tokens].filter(([, who]) => m.mentions.includes(who)).map(([t]) => t) : [];
   // The same function while it's for the same people: Markdown parses again for a new one.
-  const landed = useCallback((t: string) => forMe && chat.isMe(t), [forMe]);
-  const [copied, setCopied] = useState(false);
+  const landed = useCallback((t: string) => (chat.isMe(t) ? forMe : reached.includes(t.toLowerCase())), [forMe, reached.join(" ")]);
   // `@geek`, when geek is a machine this message mentions: its icon (#428).
   const heard = m.mentions.filter((x) => x.startsWith("machine:"));
   const machineIcon = useCallback(
     (word: string) =>
-      heard.some((id) => chat.agents(room.id).some((a) => `machine:${a.machine}` === id && a.machine_name.toLowerCase() === word)) ? <MachineIcon size={13} /> : null,
+      heard.some((id) => chat.agents(room.id).some((a) => `machine:${a.machine}` === id && machineHandle(a.machine_name) === word)) ? <MachineIcon size="xs" /> : null,
     [room.id, heard.join(" ")],
   );
-  // Which of its pop-ups is open: the emoji menu, the ⋯ menu, or the sheet
-  // a long-press opens on a phone (the emoji and the menu's items together).
-  const [panel, setPanel] = useState<"react" | "menu" | "sheet" | null>(null);
+  // Which of its pop-ups is open: the emoji menu, the ⋯ menu, the menu a
+  // long-press opens (a sheet on a phone: the emoji row over the items), or
+  // the picker that menu's "more…" opens in its place.
+  const [panel, setPanel] = useState<"react" | "menu" | "sheet" | "picker" | null>(null);
+  const msgRef = useRef<HTMLDivElement>(null);
+  const moreRef = useRef<HTMLButtonElement>(null);
   const may = mayReact(room, m);
   const name = authorLabel(m);
   const link = usePlatformApi().nav.roomLink(room.id, m.seq, m.parent);
@@ -548,16 +581,7 @@ export function RoomMessage({
   const save = hookFor("save", ctx);
   const items = itemsOf(ctx, {
     quote: room.writable ? () => reply(m.text || m.quote || "") : undefined,
-    copied,
-    copy: () => {
-      void navigator.clipboard?.writeText(link).then(
-        () => {
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1200);
-        },
-        () => {},
-      );
-    },
+    copy: () => void navigator.clipboard?.writeText(link).catch(() => {}),
     edit: mine && room.writable ? () => setEditing(true) : undefined,
     remove: owned
       ? () => {
@@ -565,6 +589,13 @@ export function RoomMessage({
         }
       : undefined,
   });
+  // The toolbar has these two as buttons; the long-press menu lists them first.
+  const onToolbar: MenuItem[] = [
+    ...(thread ? [{ label: "Reply in thread", icon: <ThreadIcon />, run: () => thread.run(ctx), attrs: { "data-msg-thread": "" } }] : []),
+    ...(save
+      ? [{ label: save.label?.(ctx) ?? "Save for later", icon: <BookmarkIcon on={save.on?.(ctx)} size="md" />, run: () => save.run(ctx), attrs: { "data-msg-save": "", ...(save.on === undefined ? {} : { "aria-pressed": !!save.on(ctx) }) } }]
+      : []),
+  ];
   if (isSystemLine(m)) {
     return (
       <div class="msg-system" data-msg={m.seq} data-system role="note">
@@ -599,6 +630,7 @@ export function RoomMessage({
       data-author={m.author}
       data-agent={m.agent?.machine}
       data-said={said ?? undefined}
+      ref={msgRef}
       {...longPress(() => setPanel("sheet"))}
     >
       <div class="msg-gutter">
@@ -623,30 +655,31 @@ export function RoomMessage({
       <div class="msg-body">
         {head && (
           <div class="thread-head">
-            {said ? <SaidHead ses={said} project={room.project} /> : <span class="thread-name">{name}</span>}
-            {m.agent?.session && !said && (
-              <span class="thread-session" title={`The session that wrote it, on ${m.agent.machine_name || "its machine"}`}>
-                · {m.agent.session}
-              </span>
-            )}
-            {m.agent && (
-              <span class="msg-badge agent-badge" title={`Written by an agent on ${m.agent.machine_name || "a machine"}, through its owner's grant`}>
-                agent
-              </span>
-            )}
+            {said ? <SaidHead ses={said} project={room.project} /> : <AuthorName m={m} open tag="span" />}
             {m.imported && (
-              <span class="msg-badge" title={`Brought in from its machine's own thread, where it was ${m.imported}'s`}>
+              <Chip kind="tag" title={`Brought in from its machine's own thread, where it was ${m.imported}'s`}>
                 imported
-              </span>
+              </Chip>
             )}
-            {m.via && !said && (
-              <span
-                class="msg-badge via-badge"
-                title={answerVia(m, name)?.title ?? `Posted for ${name} by ${m.via}, where they wrote it`}
-                data-via={m.via}
-              >
+            {githubLogin(m) && (
+              <Chip kind="tag" title={`Written on GitHub by ${githubLogin(m)}, on the issue this one was opened as there`} data-via="github">
+                on GitHub
+              </Chip>
+            )}
+            {ciName(m) && (
+              <Chip kind="tag" title="Written by CI from its signed events, not by a person or an agent" data-via="ci">
+                CI
+              </Chip>
+            )}
+            {webhookName(m) && (
+              <Chip kind="tag" title="Posted through this channel's webhook, not by a person or an agent" data-via="webhook">
+                webhook
+              </Chip>
+            )}
+            {m.via && !said && !githubLogin(m) && !ciName(m) && !webhookName(m) && (
+              <Chip kind="tag" title={answerVia(m, name)?.title ?? `Posted for ${name} by ${m.via}, where they wrote it`} data-via={m.via}>
                 via {answerVia(m, name)?.label ?? m.via}
-              </span>
+              </Chip>
             )}
             {relative ? <Time at={m.at} long /> : <time title={new Date(m.at).toLocaleString()}>{when(m.at)}</time>}
           </div>
@@ -679,6 +712,7 @@ export function RoomMessage({
             <pre>{m.quote}</pre>
           </div>
         )}
+        <MentionStatus room={room} m={m} />
         <ReactionChips room={room} m={m} open={() => setPanel("react")} setError={setError} />
         {!inThread && <ThreadFooter room={room} m={m} />}
       </div>
@@ -688,7 +722,7 @@ export function RoomMessage({
             {QUICK.slice(0, 3).map((e) => (
               <button
                 key={e}
-                class="msg-quick"
+                class="msg-quick bar-btn sq"
                 title={`React with ${e}`}
                 aria-label={`React with ${e}`}
                 aria-pressed={!!m.reactions?.some((c) => c.emoji === e && c.mine)}
@@ -698,18 +732,19 @@ export function RoomMessage({
                 {e}
               </button>
             ))}
-            <button title="Add a reaction" aria-label="Add a reaction" aria-expanded={panel === "react"} data-react-button onClick={() => setPanel(panel === "react" ? null : "react")}>
-              ☺
+            <button class="bar-btn sq" title="Add a reaction" aria-label="Add a reaction" aria-expanded={panel === "react"} data-react-button onClick={() => setPanel(panel === "react" ? null : "react")}>
+              <ReactIcon />
             </button>
           </>
         )}
         {thread && (
-          <button title="Reply in thread" aria-label="Reply in thread" data-msg-thread onClick={() => thread.run(ctx)}>
-            ↩
-          </button>
+          <IconButton label="Reply in thread" class="bar-btn sq" data-msg-thread onClick={() => thread.run(ctx)}>
+            <ThreadIcon />
+          </IconButton>
         )}
         {save && (
           <button
+            class="bar-btn sq"
             title={save.label?.(ctx) ?? "Save for later"}
             aria-label={save.label?.(ctx) ?? "Save for later"}
             aria-pressed={save.on?.(ctx)}
@@ -720,29 +755,24 @@ export function RoomMessage({
             <BookmarkIcon on={save.on?.(ctx)} />
           </button>
         )}
-        <button title="More actions" aria-label="More actions" aria-haspopup="menu" aria-expanded={panel === "menu"} data-msg-more onClick={() => setPanel(panel === "menu" ? null : "menu")}>
-          ⋯
-        </button>
+        <IconButton label="More actions" class="bar-btn sq" aria-haspopup="menu" aria-expanded={panel === "menu"} data-msg-more ref={moreRef} onClick={() => setPanel(panel === "menu" ? null : "menu")}>
+          <MoreIcon size="sm" />
+        </IconButton>
       </div>
-      {panel === "menu" && <MsgMenu items={items} close={close} />}
       {panel === "react" && may && <ReactMenu room={room} m={m} close={close} setError={setError} />}
-      {panel === "sheet" && (
-        <ReactMenu room={room} m={m} close={close} setError={setError} react={may}>
-          {thread && (
-            <button type="button" role="menuitem" class="msg-item" data-msg-thread onClick={() => (close(), thread.run(ctx))}>
-              <span class="msg-item-icon" aria-hidden="true">↩</span>Reply in thread
-            </button>
-          )}
-          {save && (
-            <button type="button" role="menuitem" class="msg-item" aria-pressed={save.on?.(ctx)} data-msg-save onClick={() => (close(), save.run(ctx))}>
-              <span class="msg-item-icon" aria-hidden="true">
-                <BookmarkIcon on={save.on?.(ctx)} />
-              </span>
-              {save.label?.(ctx) ?? "Save for later"}
-            </button>
-          )}
-          <MsgItems items={items} done={close} />
-        </ReactMenu>
+      {panel === "picker" && may && <ReactPicker room={room} m={m} from={msgRef} close={close} setError={setError} />}
+      {(panel === "menu" || panel === "sheet") && (
+        <MenuHost
+          key={panel}
+          show={() => {
+            const at = panel === "menu" ? moreRef.current : msgRef.current;
+            // The ⋯ lists the items; the long-press one the toolbar's too, under the emoji row.
+            const list = panel === "menu" ? items : [...onToolbar, ...(onToolbar.length ? ["separator" as const] : []), ...items];
+            const head = panel === "sheet" && may ? <ReactRow room={room} m={m} close={closeMenu} setError={setError} more={() => { closeMenu(); setPanel("picker"); }} /> : undefined;
+            return !!at && openMsgMenu(list, at, { head, button: panel === "menu", onClose: close });
+          }}
+          close={close}
+        />
       )}
     </div>
   );
@@ -802,7 +832,6 @@ function EditBox({ text: start, done }: { text: string; done: (t: string | null)
           }
         }}
       />
-      <span class="dim">Enter saves, Shift+Enter is a new line, Esc cancels</span>
     </div>
   );
 }
@@ -818,7 +847,7 @@ function PaneChip({ pane, quote }: { pane: NonNullable<ChatMessage["pane"]>; quo
   const asleep = pane.opens && !machineUp(api, pane.machine);
   const from = (
     <span class="thread-quote-from">
-      <span class="chat-pane-chip" data-pane-chip={`${pane.machine}/${pane.pane}`} data-opens={pane.opens ? "1" : "0"} data-asleep={asleep ? "1" : undefined}>
+      <span class="chat-pane-ref" data-pane-chip={`${pane.machine}/${pane.pane}`} data-opens={pane.opens ? "1" : "0"} data-asleep={asleep ? "1" : undefined}>
         ↳ {where}
       </span>
       {!pane.opens && <span class="dim"> · not a pane you can open</span>}
@@ -862,6 +891,18 @@ type Mentionable = {
   session?: boolean;
 };
 
+const NO_TOKENS = new Map<string, string>();
+
+/** The room's people, by the token that mentions each (not me), for the
+ * messages in one list to share. The same map while the people are. */
+export function useRoomTokens(room: string): Map<string, string> {
+  const api = usePlatformApi();
+  useSubscribe((fn) => api.subscribe(fn));
+  const found = mentionables(api, room);
+  const key = found.map((p) => `${p.token}\n${p.who}`).join("\n");
+  return useMemo(() => new Map(found.map((p) => [p.token, p.who])), [key]);
+}
+
 function mentionables(api: PlatformApi, room: string): Mentionable[] {
   const out: Mentionable[] = [];
   const words = new Map<string, string>();
@@ -894,6 +935,7 @@ export function RoomCompose({
   name,
   editLast,
   thread,
+  threadAgents,
   still,
 }: {
   room: ChatRoom;
@@ -907,16 +949,24 @@ export function RoomCompose({
   /** Writes a reply in the thread of this message (#106), with a draft of
    * its own and "Also send to the channel". */
   thread?: { parent: number };
+  /** The agents in that thread: a message chooses who it wakes (#647). */
+  threadAgents?: ChatThreadAgent[];
   /** Doesn't take focus when it opens (`RoomBody`'s `embedded`). */
   still?: boolean;
 }) {
   const key = thread ? `chat.draft:thread:${room.id}:${thread.parent}` : `chat.draft:room:${room.id}`;
   const handle = thread ? threadComposeRef : composeRef;
   const [also, setAlso] = useState(false);
+  // Who it wakes, once chosen: until then the thread's lead (#647).
+  const [chosen, setChosen] = useState<string[] | null>(null);
   const [text, setText] = useState(() => draftOf(key));
   const [sending, setSending] = useState(false);
   const [pick, setPick] = useState(0);
   const [missed, setMissed] = useState<string[]>([]);
+  // My last post's comment on its way to GitHub (M205): what the post said,
+  // until the stream says how its send ended.
+  const [toGithub, setToGithub] = useState<{ seq: number; github: ChatToGithub } | null>(null);
+  const notes = [...missed, ...githubNote(toGithub ? (chat.githubOf(room.id, toGithub.seq) ?? toGithub.github) : undefined)];
   const [picking, setPicking] = useState(false);
   const [emoji, setEmoji] = useState(false);
   const [dropping, setDropping] = useState(false);
@@ -1022,7 +1072,10 @@ export function RoomCompose({
   // has lost focus by the pick, and its selection with it in some browsers),
   // then just after each pick.
   const at = useRef<{ from: number; to: number } | null>(null);
+  const emojiButton = useRef<HTMLButtonElement>(null);
   const openEmoji = () => {
+    // A press on the button just shut the picker: this click is the same tap.
+    if (pressedShut(emojiButton.current)) return;
     // The box blurred on the button's press and kept where it was (onBlur):
     // by the click, a rerender may have moved its caret to the end.
     const el = input.current;
@@ -1053,11 +1106,16 @@ export function RoomCompose({
     setSending(true);
     setError(null);
     setMissed([]);
+    setToGithub(null);
     try {
       const posted = thread
-        ? await chat.reply(room.id, thread.parent, text, also, files.ids)
+        ? await chat.reply(room.id, thread.parent, text, also, files.ids, threadAgents?.length ? targets(wakes(threadAgents, chosen, text, chat.agents(room.id))) : undefined)
         : await chat.post(room.id, text, quote, files.ids, paused && anyway);
-      setMissed(posted.unreached.map((w) => `Nobody here called ${w} can read this room`));
+      // `@wake` names a chip here, though it's no machine or person to control.
+      const reached = new Set((threadAgents ?? []).map((a) => sessionSlug(a.name)));
+      setMissed(posted.unreached.filter((w) => !reached.has(w.toLowerCase())).map((w) => `Nobody here called ${w} can read this room`));
+      setChosen(null);
+      setToGithub(posted.github ? { seq: posted.seq, github: posted.github } : null);
       setText("");
       chat.composed(room.id, thread?.parent);
       setQuote(undefined);
@@ -1083,7 +1141,7 @@ export function RoomCompose({
       }}
     >
       {!thread && <TypingLine room={room.id} />}
-      {missed.map((n) => (
+      {notes.map((n) => (
         <p key={n} class="thread-note unreached">
           {n}
         </p>
@@ -1118,7 +1176,7 @@ export function RoomCompose({
                   <span class="mention-session-gap" aria-hidden="true" />
                 ) : (
                   <span class="avatar-wrap mention-machine-icon">
-                    <MachineIcon size={18} />
+                    <MachineIcon size="lg" />
                     <MachineDot machine={p.machine} />
                   </span>
                 )
@@ -1141,7 +1199,7 @@ export function RoomCompose({
           </button>
         </p>
       )}
-      {emoji && <EmojiPicker pick={insert} close={() => setEmoji(false)} />}
+      {emoji && <EmojiPicker from={emojiButton} pick={insert} close={() => setEmoji(false)} />}
       {emojis.length > 0 && (
         <ul class="mention-pick emoji-pick" role="listbox" aria-label="Emoji">
           {emojis.map((e, i) => (
@@ -1161,6 +1219,7 @@ export function RoomCompose({
           ))}
         </ul>
       )}
+      {threadAgents && <ToRow agents={threadAgents} chosen={chosen} setChosen={setChosen} text={text} room={agents} />}
       <div class={canQuote ? "compose-box with-tools" : "compose-box"}>
         {quote && (
           <div class="thread-quote pending" data-quote-pending>
@@ -1168,9 +1227,9 @@ export function RoomCompose({
               ↳ %{quote.pane} on {machineName(api, quote.machine, "a machine")}
             </span>
             <pre>{quote.text}</pre>
-            <button type="button" title="Don't quote it" aria-label="Don't quote it" onClick={() => setQuote(undefined)}>
-              ✕
-            </button>
+            <IconButton label="Don't quote it" onClick={() => setQuote(undefined)}>
+              <CloseIcon size="sm" />
+            </IconButton>
           </div>
         )}
         <AttachChips items={files.items} remove={files.remove} />
@@ -1192,6 +1251,8 @@ export function RoomCompose({
             files.add(pasted);
           }}
           onInput={(e) => {
+            // What became of the last comment's copy on GitHub stays, as
+            // its end may come while the next is being written.
             setMissed([]);
             const v = (e.target as HTMLTextAreaElement).value;
             setText(v);
@@ -1232,24 +1293,15 @@ export function RoomCompose({
             }
           }}
         />
-        {canQuote && (<button type="button" class="compose-tool" title="Quote lines from a pane" aria-label="Quote a pane" aria-pressed={picking} data-quote-pane onClick={() => setPicking((p) => !p)}>
-          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4">
-            <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
-            <path d="M4 6l2 2-2 2M8 10h4" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
+        {canQuote && (<button type="button" class="compose-tool bar-btn sq" title="Quote lines from a pane" aria-label="Quote a pane" aria-pressed={picking} data-quote-pane onClick={() => setPicking((p) => !p)}>
+          <QuotePaneIcon />
         </button>)}
         <AttachButton add={files.add} />
-        <button type="button" class="compose-tool" title="Emoji" aria-label="Emoji" aria-pressed={emoji} data-emoji-button onClick={openEmoji}>
-          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4">
-            <circle cx="8" cy="8" r="6.2" />
-            <path d="M5.4 9.6c.6 1.1 1.5 1.6 2.6 1.6s2-.5 2.6-1.6" stroke-linecap="round" />
-            <path d="M5.9 6.2v.6M10.1 6.2v.6" stroke-linecap="round" stroke-width="1.8" />
-          </svg>
+        <button type="button" class="compose-tool bar-btn sq" title="Emoji" aria-label="Emoji" aria-pressed={emoji} data-emoji-button ref={emojiButton} onClick={openEmoji}>
+          <ReactIcon size="md" />
         </button>
-        <button class="compose-send" type="submit" title="Send (Enter; Shift+Enter for a new line)" aria-label="Send" disabled={sending || files.busy || (!text.trim() && !quote && !files.items.length)}>
-          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-            <path d="M2 2.5l12 5.5-12 5.5 1.8-5.5L2 2.5zm1.8 5.5h6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
-          </svg>
+        <button class="compose-send primary" type="submit" title="Send (Enter; Shift+Enter for a new line)" aria-label="Send" disabled={sending || files.busy || (!text.trim() && !quote && !files.items.length)}>
+          <SendIcon />
         </button>
       </div>
       {thread && (

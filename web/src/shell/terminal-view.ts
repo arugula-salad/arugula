@@ -13,6 +13,8 @@ export const FONT_FAMILY = '"JetBrains Mono", "Fira Code", ui-monospace, Menlo, 
 export const FONT_SIZE = 14;
 /** Rows of scrollback a pane keeps; snapshots bring no more than this. */
 export const SCROLLBACK = 10000;
+/** About what xterm parses between chances for the page to draw. */
+const WRITE_PIECE = 64 * 1024;
 const enc = new TextEncoder();
 
 /** Touch-first devices draw with the DOM renderer: xterm's WebGL renderer
@@ -126,6 +128,7 @@ export class TerminalView {
   private offAppearance: () => void;
   /** Palette colors programs set (OSC 4), by index. */
   private custom = new Map<number, string>();
+  private paletteDue = false;
   /** Kitty keyboard flags of the primary and alternate screens, which keep
    * separate stacks; the stream (and a snapshot, as `CSI = u`) sets them. */
   private kitty = { normal: new KittyFlags(), alternate: new KittyFlags() };
@@ -164,6 +167,9 @@ export class TerminalView {
     this.term.attachCustomKeyEventHandler((e) => this.keys(e));
     this.takeFiles();
     this.term.open(this.host);
+    // Whoever focuses it (a click puts focus in the textarea itself, and the
+    // shell then leaves it there, #472), it's the one in use.
+    this.term.textarea?.addEventListener("focus", () => this.touchWebgl());
     this.mirrorTextarea();
     this.touchScroll();
     this.offAppearance = onAppearance(() => {
@@ -394,23 +400,39 @@ export class TerminalView {
     p.registerOscHandler(4, (data) => {
       const parts = data.split(";");
       if (parts.length % 2) return true;
+      let changed = false;
       for (let i = 0; i < parts.length; i += 2) {
         const index = Number(parts[i]);
         const spec = parts[i + 1];
         if (spec === "?" || !Number.isInteger(index) || index < 0 || index > 255) continue;
         const color = parseColor(spec);
         if (!color) continue;
-        if (color === ghosttyDefault(index)) this.custom.delete(index);
-        else this.custom.set(index, color);
+        if (color === ghosttyDefault(index)) changed = this.custom.delete(index) || changed;
+        else if (this.custom.get(index) !== color) {
+          this.custom.set(index, color);
+          changed = true;
+        }
       }
-      this.applyTheme();
+      if (changed) this.paletteChanged();
       return true;
     });
     p.registerOscHandler(104, (data) => {
+      const before = this.custom.size;
       if (!data) this.custom.clear();
       else for (const i of data.split(";")) this.custom.delete(Number(i));
-      this.applyTheme();
+      if (this.custom.size !== before) this.paletteChanged();
       return true;
+    });
+  }
+
+  /** Once for all the colors in what's being parsed: setting a theme takes
+   * a fraction of a millisecond, and a snapshot brings 256 colors. */
+  private paletteChanged() {
+    if (this.paletteDue) return;
+    this.paletteDue = true;
+    queueMicrotask(() => {
+      this.paletteDue = false;
+      this.applyTheme();
     });
   }
 
@@ -622,7 +644,7 @@ export class TerminalView {
         this.host.append(this.chipEl);
       }
       const el = this.chipEl;
-      el.className = opts.error ? "term-chip error" : "term-chip";
+      el.className = opts.error ? "term-toast error" : "term-toast";
       el.dataset.chip = "";
       el.replaceChildren(Object.assign(document.createElement("span"), { textContent: text }));
       for (const a of opts.actions ?? []) {
@@ -779,6 +801,14 @@ export class TerminalView {
 
   write(data: Uint8Array, done?: () => void) {
     this.term.write(data, done);
+  }
+
+  /** A long write in pieces. xterm yields to the page between writes, never
+   * inside one, and it takes split escapes and UTF-8 as they come. */
+  writeInPieces(data: Uint8Array, done?: () => void) {
+    let at = 0;
+    for (; data.length - at > WRITE_PIECE; at += WRITE_PIECE) this.term.write(data.subarray(at, at + WRITE_PIECE));
+    this.term.write(data.subarray(at), done);
   }
 
   /** Before a snapshot of the screen alone, after falling behind: keep the

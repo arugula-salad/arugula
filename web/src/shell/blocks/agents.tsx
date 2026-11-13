@@ -16,9 +16,12 @@ import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
 import { getFleet } from "../ui/hosts";
 import { askText } from "../../shared/ui/menu";
-import { BlockEmpty, BlockError, BlockLoading } from "./block-states";
+import { BlockError, BlockLoading, EmptyState } from "./block-states";
 import { Time } from "../../shared/ui/time";
 import type { BlockRenderer, BlockView } from "./view";
+import { Chip } from "../../shared/ui/state-chip";
+import { Bar } from "../../shared/ui/bar";
+import { ReloadIcon } from "../../shared/ui/icons";
 
 interface Card {
   name: string;
@@ -130,7 +133,7 @@ function AgentsBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentsS
   };
   return (
     <div class="review ws agents" data-agents-block={id}>
-      <div class="review-bar">
+      <Bar sub class="review-bar">
         <span class="review-path">
           <b>Team agents</b>
         </span>
@@ -138,10 +141,10 @@ function AgentsBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentsS
           {total} on {s.catalog.machines.length} machine{s.catalog.machines.length === 1 ? "" : "s"}
         </span>
         <span class="dim">{s.loading ? "asking…" : <Time at={s.catalog.refreshed_ms} title="Asked" />}</span>
-        <button title="Ask every machine for its agents again" data-agents-refresh disabled={busy !== null || s.loading} onClick={() => void call("refresh", {}, "couldn't refresh the catalog")}>
-          {busy === "refresh" ? "…" : "↻"}
+        <button title="Ask every machine for its agents again" aria-label="Ask every machine for its agents again" data-agents-refresh disabled={busy !== null || s.loading} onClick={() => void call("refresh", {}, "couldn't refresh the catalog")}>
+          {busy === "refresh" ? "…" : <ReloadIcon size="sm" />}
         </button>
-      </div>
+      </Bar>
       {s.error && (
         <BlockError
           inline
@@ -169,7 +172,7 @@ function AgentsBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentsS
       )}
       {s.catalog.note && <p class="dim offer-said">{s.catalog.note}</p>}
       <div class="review-body">
-        {total === 0 && !s.error && <BlockEmpty data-agents-empty>No machine you reach offers an agent yet.</BlockEmpty>}
+        {total === 0 && !s.error && <EmptyState data-agents-empty title="No agents yet." why="No machine you reach offers an agent." />}
         {shelves.map((m) => (
           <section key={m.machine} class="agents-shelf" data-shelf={m.name} data-online={String(m.online)}>
             <h4 class="agents-shelf-head">
@@ -194,7 +197,7 @@ function AgentsBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentsS
                 <li key={`${m.machine}/${c.name}`} class={`offer-card ${m.online ? "" : "dim"}`} data-agent={c.name} data-on={m.name}>
                   <div class="offer-card-head">
                     <b class="offer-name">{c.name}</b>
-                    {model(c) && <span class="ws-tag">{model(c)}</span>}
+                    {model(c) && <Chip kind="tag">{model(c)}</Chip>}
                   </div>
                   {c.description && <p class="offer-desc">{c.description}</p>}
                   <div class="ws-actions offer-actions">
@@ -287,7 +290,7 @@ export const agentsBlock: BlockRenderer = (client, id): BlockView => {
     },
     title: () => "Team agents",
     text: () => plain(state),
-    focus: () => host.querySelector<HTMLElement>("button")?.focus(),
+    focus: () => host.querySelector<HTMLElement>("button")?.focus({ preventScroll: true }),
     dispose: () => {
       off();
       render(null, host);

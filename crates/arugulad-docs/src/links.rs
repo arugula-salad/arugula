@@ -7,14 +7,17 @@ use std::sync::Arc;
 
 use arugula_proto::{
     BlockType,
-    api::{DocLinkUrl, Empty},
-    op::ops::{DocLinkDelete, DocLinkGet},
+    api::{DocLinkUrl, DocShareRequest, Empty},
+    op::ops::{DocLinkDelete, DocLinkGet, DocShare},
 };
 use axum::http::StatusCode;
 
 use crate::{
     Docs,
-    docs::link::{self, AGENT_ASKS, OWNER_ONLY, Remote},
+    docs::{
+        self, library,
+        link::{self, AGENT_ASKS, OWNER_ONLY, Remote},
+    },
     mux::Api,
     ops::{Cx, Handle, OpError},
 };
@@ -78,5 +81,48 @@ impl Handle<Docs> for DocLinkDelete {
         let remote: Arc<dyn Remote> = cx.app.control.clone();
         link::unshare_id(dir, &remote, &id).await.map_err(why)?;
         Ok(Empty {})
+    }
+}
+
+impl Handle<Docs> for DocShare {
+    /// Share a Doc, or update its link, with no pane opened (Arugula #819).
+    /// A block that shows it does the work, so its `shared` is right at
+    /// once; otherwise the library does, by the same `share`.
+    async fn handle(cx: &Cx<'_>, id: String, req: DocShareRequest) -> Result<DocLinkUrl, OpError> {
+        if cx.agent_or_guest() {
+            return Err(OpError::Forbidden(AGENT_ASKS.into()));
+        }
+        if cx.co_owner() {
+            return Err(OpError::Forbidden(OWNER_ONLY.into()));
+        }
+        let dir = cx.app.control.state_dir();
+        let meta = library::dir(dir, &id)
+            .map_err(|e| OpError::Status(StatusCode::BAD_REQUEST, e))
+            .map(|d| library::read_meta(&d))?;
+        let Some(meta) = meta else {
+            return Err(OpError::Status(StatusCode::NOT_FOUND, format!("no Doc {id} in the library")));
+        };
+        // A moved Doc's link stays as it was (Arugula #863): the team Doc
+        // has links of its own.
+        if let Some(to) = &meta.moved {
+            return Err(OpError::Status(StatusCode::GONE, crate::doc_ops::moved_words(to)));
+        }
+        // One at a time, so two shares of a closed Doc can't both find no
+        // link and make two.
+        static ONE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+        let _one = ONE.lock().await;
+        let why = |e: String| OpError::Status(StatusCode::BAD_GATEWAY, e);
+        let block = crate::doc_ops::open_blocks(cx.app).await.get(&id).copied();
+        let open = match block {
+            Some(b) => cx.app.mux.api(|r| Api::Block(b, r)).await.flatten().filter(|b| b.kind() == BlockType::Doc),
+            None => None,
+        };
+        let got = match open {
+            Some(b) => b.call(if req.update { "doc_share_update" } else { "doc_share" }, serde_json::json!({})).await,
+            None => docs::share_kept(dir.to_owned(), id, req.update).await,
+        };
+        let v = got.map_err(why)?;
+        let url = v["url"].as_str().ok_or_else(|| OpError::Failed("the share gave no link".into()))?;
+        Ok(DocLinkUrl { url: url.to_owned() })
     }
 }

@@ -16,6 +16,7 @@
 // GitHub lets read it, and a native issue's to its project's members.
 // Deploys waiting for the reader's approval (M218) come first, as cards.
 
+import { Card } from "../../shared/ui/card";
 import { useEffect, useState } from "preact/hooks";
 import type { ChatRoom, Inbox, InboxEntry } from "../../shared/proto.gen";
 import { chat, chatStore } from "../../shared/chat-store";
@@ -27,13 +28,16 @@ import { PageHeader } from "../../shared/ui/page-header";
 import { StateChip, type Tone } from "../../shared/ui/state-chip";
 import { DraftList, useMyDrafts } from "../drafts";
 import { isSeen, noteInbox } from "../inbox-count";
+import { currentProject, onCurrentProject } from "../current-project";
+import { inboxPath, scopeOf } from "../scope";
+import { ScopeToggle } from "../scope-toggle";
 import { WaitingDeploys, useWaitingDeploys } from "./deploy";
 import { names, roomPath } from "../links";
 import { follow, pathOf } from "../router";
 import { runs } from "../runs";
 import { STATES as RUN_STATES, runTitle } from "../runs-text";
 import { session } from "../session";
-import { issueTone, reasonTone, roomTone, runTone, toneClass } from "../swarm";
+import { issueTone, reasonTone, roomTone, runTone } from "../swarm";
 import { toast } from "../toast";
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -77,7 +81,7 @@ const STATE: Record<string, string> = { open: "Open", closed: "Closed", merged: 
  * it (UI audit #183): a run's as the run's page says it, a native issue's
  * as its page does; a PR or issue on GitHub open, merged or closed, and
  * an open PR that's "done" is ready (UI audit #167). */
-function EntryState({ e }: { e: InboxEntry }) {
+function entryState(e: InboxEntry): { word: string; tone: Tone } {
   let word: string;
   let tone: Tone;
   if (e.kind === "run") {
@@ -90,6 +94,11 @@ function EntryState({ e }: { e: InboxEntry }) {
     word = STATE[e.state] ?? e.state;
     tone = e.state === "merged" ? "accent" : issueTone(e.state);
   }
+  return { word, tone };
+}
+
+function EntryState({ e }: { e: InboxEntry }) {
+  const { word, tone } = entryState(e);
   return (
     <StateChip tone={tone} data-inbox-state={e.state}>
       {word}
@@ -97,15 +106,23 @@ function EntryState({ e }: { e: InboxEntry }) {
   );
 }
 
-export function InboxPage() {
+/** The groups whose heading already says what the card is and its state
+ * (a PR wanting review, a run that failed), so the card doesn't. */
+const HEADING_SAYS = new Set(["review_requested", "changes_requested", "checks_failed", "run_failed"]);
+
+export function InboxPage({ all }: { all?: boolean }) {
   const [entries, setEntries] = useState<InboxEntry[] | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const mine = useMyDrafts();
   const deploys = useWaitingDeploys();
   useSubscribe((fn) => chat.subscribe(fn));
+  useSubscribe((fn) => session.subscribe(fn));
+  useSubscribe((fn) => onCurrentProject(fn));
+  // The current project's, unless All (Arugula #881): the platform filters.
+  const scope = scopeOf({ page: "inbox", all: all || undefined }, currentProject(), (id) => !!session.project(id));
   const load = () =>
-    call<Inbox>("GET", "/api/inbox").then(
+    call<Inbox>("GET", inboxPath(scope)).then(
       (v) => {
         setEntries(v.entries);
         // The bar's count says the same (UI audit #170).
@@ -114,7 +131,10 @@ export function InboxPage() {
       },
       (e: Error) => setError(e.message),
     );
-  useEffect(() => void load(), []);
+  useEffect(() => {
+    setEntries(null);
+    void load();
+  }, [scope]);
   const mark = async (e: InboxEntry, what: { seen?: boolean; done?: boolean }) => {
     setBusy(`${e.item} ${e.reason}`);
     try {
@@ -138,6 +158,7 @@ export function InboxPage() {
     <section class="platform-section sw-page platform-inbox" data-platform-inbox>
       <PageHeader
         title="Inbox"
+        actions={<ScopeToggle r={{ page: "inbox" }} scoped={!!scope} all={!!all} />}
         stats={
           entries !== null &&
           !empty && (
@@ -175,7 +196,7 @@ export function InboxPage() {
             <h2>
               {heading} <span class="dim">{group.length}</span>
             </h2>
-            <ul class="platform-list platform-inbox-list sw-cards">
+            <ul class="platform-list platform-inbox-list card-list">
               {group.map((e) => {
                 const key = `${e.item} ${e.reason}`;
                 const link = linkOf(e);
@@ -184,32 +205,36 @@ export function InboxPage() {
                   if (!seen) void mark(e, { seen: true });
                   if (link.here) follow(ev, link.href);
                 };
+                const said = HEADING_SAYS.has(e.reason);
                 const away = link.here ? {} : { target: "_blank", rel: "noopener noreferrer" };
                 return (
                   // A card in the swarm's language (../swarm.css): its bar is
                   // why it wants the reader, full while it's unseen (a done
                   // one never is: UI audit #192).
-                  <li key={key} class={`sw-card ${toneClass(reasonTone(e.reason))} ${seen ? "seen" : "unseen"}`} data-inbox-entry={e.item} data-inbox-reason={e.reason}>
+                  <Card as="li" key={key} tone={reasonTone(e.reason)} seen={seen} class={seen ? undefined : "unseen"} data-inbox-entry={e.item} data-inbox-reason={e.reason} aria-label={said ? `${e.kind === "pr" ? "PR" : e.kind === "run" ? "Run" : "Issue"}, ${entryState(e).word}: ${e.title}` : undefined}>
                     <a class="platform-inbox-item" href={link.href} {...away} onClick={open}>
                       <span class="platform-inbox-ref">{e.kind === "run" ? `${e.repo} ·` : `${e.repo}#${e.number}`}</span>{" "}
                       <span class="platform-inbox-title">{e.title}</span>
                     </a>
-                    <div class="dim platform-inbox-meta">
-                      {e.kind === "pr" ? "PR" : e.kind === "run" ? "Run" : "Issue"} · <EntryState e={e} />
-                      {e.reason === "thread_mention" ? " · in its thread" : ""}
-                      {e.author ? ` · ${e.kind === "run" ? "started by" : "by"} ${e.author}` : ""}
-                    </div>
+                    {(!said || e.author) && (
+                      <div class="dim platform-inbox-meta">
+                        {said ? (
+                          `${e.kind === "run" ? "started by" : "by"} ${e.author}`
+                        ) : (
+                          <>
+                            {e.kind === "pr" ? "PR" : e.kind === "run" ? "Run" : "Issue"} · <EntryState e={e} />
+                            {e.reason === "thread_mention" ? " · in its thread" : ""}
+                            {e.author ? ` · ${e.kind === "run" ? "started by" : "by"} ${e.author}` : ""}
+                          </>
+                        )}
+                      </div>
+                    )}
                     <div class="platform-inbox-actions">
-                      {!seen && (
-                        <button class="secondary small" data-inbox-seen={e.item} disabled={busy === key} onClick={() => void mark(e, { seen: true })}>
-                          Seen
-                        </button>
-                      )}
                       <button class="secondary small" data-inbox-done={e.item} disabled={busy === key} onClick={() => void mark(e, { done: true })}>
                         Dismiss
                       </button>
                     </div>
-                  </li>
+                  </Card>
                 );
               })}
             </ul>
@@ -227,15 +252,6 @@ export function InboxPage() {
       )}
     </section>
   );
-}
-
-/** What each kind of object's thread is on, by its id's prefix. */
-function kindOf(r: ChatRoom): string {
-  const t = r.target ?? "";
-  if (t.startsWith("iss_")) return "Issue";
-  if (t.startsWith("run_")) return "Run";
-  if (t.startsWith("hw_")) return "Workspace";
-  return r.name.startsWith("PR ") ? "PR" : "Issue";
 }
 
 /** How many titles the page asks for at once, for threads it hasn't read
@@ -268,7 +284,7 @@ function ThreadGroup({ heading, rooms }: { heading: string; rooms: ChatRoom[] })
       <h2>
         {heading} <span class="dim">{rooms.length}</span>
       </h2>
-      <ul class="platform-list platform-inbox-list sw-cards">
+      <ul class="platform-list platform-inbox-list card-list">
         {rooms.map((r) => {
           const t = r.target ?? "";
           const href = roomPath(r.id);
@@ -282,19 +298,19 @@ function ThreadGroup({ heading, rooms }: { heading: string; rooms: ChatRoom[] })
           const n = counted(r);
           return (
             // As an entry's card: its bar is chat's colour for the room.
-            <li key={r.id} class={`sw-card ${toneClass(roomTone(n, r.mentions))} unseen`} data-inbox-entry={t} data-inbox-reason="thread" data-inbox-thread={r.id}>
+            <Card as="li" key={r.id} tone={roomTone(n, r.mentions)} class="unseen" data-inbox-entry={t} data-inbox-reason="thread" data-inbox-thread={r.id}>
               <a class="platform-inbox-item" href={href} onClick={(ev) => follow(ev, href)}>
                 {ref && <span class="platform-inbox-ref">{ref}</span>} <span class="platform-inbox-title">{title}</span>
               </a>
               <div class="dim platform-inbox-meta">
-                {kindOf(r)} · {n} new in its thread{r.mentions ? ", mentioning you" : ""}
+                {n} new{r.mentions ? " · mentions you" : ""}
               </div>
               <div class="platform-inbox-actions">
                 <button class="secondary small" title="Mark its thread read" data-inbox-thread-done={r.id} onClick={() => void chat.read(r.id, r.last)}>
                   Dismiss
                 </button>
               </div>
-            </li>
+            </Card>
           );
         })}
       </ul>

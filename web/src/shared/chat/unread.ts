@@ -6,7 +6,10 @@
 // in chat: they're on their objects' pages, so their unread is on the
 // Issues and Runs lists and places, and in the inbox's "New in threads".
 // Your own agents' posts count as unread everywhere (M197): control says
-// so in `unread`, and nothing here second-guesses it.
+// so in `unread`, and nothing here second-guesses it. A count is another
+// matter: most of an object's thread is agents reporting to nobody in
+// particular, so on the default level a count there is `wants`, what
+// control says asks something of you. The rest is a dot on its row.
 //
 // No page state: rooms in, counts out, so `scripts/chat-unread.test.mjs`
 // runs it without a browser.
@@ -17,13 +20,15 @@ import type { ChatRoom, InboxEntry } from "../proto.gen";
  * where the person chose less than every message. A channel on "mentions"
  * (the default) counts the mentions and shows its other unread as bold
  * ([`bold`]), as Slack does; a muted ("nothing") room counts its mentions
- * too. A DM, a pane's or session's thread and an object's keep counting
- * their unread: they have no quieter setting than a push's. */
+ * too. A DM and a pane's or session's thread keep counting their unread: they have no quieter setting than a push's. An object's
+ * thread counts what wants the reader (`wants`), unless they asked for
+ * every message there. */
 export function counted(r: ChatRoom): number {
   switch (r.level) {
     case "nothing":
       return r.mentions;
     case "mentions":
+      if (r.kind === "object") return r.wants ?? r.unread;
       return r.kind === "channel" ? r.mentions : r.unread;
     case "all":
       return r.unread;
@@ -72,15 +77,33 @@ export function chatUnread(rooms: readonly ChatRoom[], team?: string | null): { 
   return { n, mention };
 }
 
+/** The desktop app's Dock badge (#498): the Chat button's count across
+ * every project (mentions, DMs, rooms set to every message), and whether
+ * anything chat lists is unread at all, bold in the sidebar, for a dot
+ * when nothing counts. Muted rooms add only their mentions, as there. */
+export function dockBadge(rooms: readonly ChatRoom[]): { count: number; unread: boolean } {
+  let count = 0;
+  let unread = false;
+  for (const r of rooms) {
+    if (!listedInChat(r)) continue;
+    count += counted(r);
+    unread ||= bold(r);
+  }
+  return { count, unread };
+}
+
 /** The thread on an object (`iss_…`, `run_…`), if someone's opened it. */
 export function objectRoom(rooms: readonly ChatRoom[], target: string): ChatRoom | undefined {
   return rooms.find((r) => r.kind === "object" && r.target === target);
 }
 
-/** Unread in the thread on an object, for its row on a list. */
-export function objectUnread(rooms: readonly ChatRoom[], target: string): { n: number; mention: boolean; room?: ChatRoom } {
+/** The thread on an object, for its row on a list: what counts (`n`), and
+ * whether there's anything unread at all (`quiet`, a dot with no number). */
+export function objectUnread(rooms: readonly ChatRoom[], target: string): { n: number; mention: boolean; quiet: number; room?: ChatRoom } {
   const room = objectRoom(rooms, target);
-  return { n: room ? counted(room) : 0, mention: !!room?.mentions, room };
+  const n = room ? counted(room) : 0;
+  const quiet = n || room?.level === "nothing" ? 0 : (room?.unread ?? 0);
+  return { n, mention: !!room?.mentions, quiet, room };
 }
 
 /** Unread in the threads on a project's objects whose ids start with

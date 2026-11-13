@@ -8,6 +8,9 @@ import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
 import { BlockError, BlockLoading } from "./block-states";
 import type { WorkspaceState } from "./workspace";
+import { Bar } from "../../shared/ui/bar";
+import { CloseIcon, IconButton } from "../../shared/ui/icons";
+import { webLink } from "../../shared/web-link";
 
 export type GraphStatus =
   | { is: "off" }
@@ -22,6 +25,7 @@ export type Clicks = "shell" | "changes" | "none";
  * `member` (or the whole estate) and `env` ("" is the source graph), its
  * gate strip reading `gates` (the block's env, whatever the graph shows). */
 function beholdSrc(root: string, member: string | null, env: string, gates: string, host: string): string {
+  if (!webLink(root)) return "about:blank";
   const q = new URLSearchParams();
   if (member) q.set("member", member);
   q.set("env", env);
@@ -82,7 +86,7 @@ export function Graph({ client, id, s, member, close, picked }: {
   }, [origin]);
   return (
     <section class="ws-graph" data-ws-graph>
-      <div class="ws-graph-bar">
+      <Bar sub class="ws-graph-bar">
         <b>Graph</b>
         <span class="dim">{member ?? "whole estate"}</span>
         <label class="dim" title={`Reads ${s.env} live through behold, with this host's credentials`}>
@@ -96,10 +100,10 @@ export function Graph({ client, id, s, member, close, picked }: {
             <option value="none">Nothing</option>
           </select>
         </label>
-        <button title="Close the graph" aria-label="Close the graph" onClick={close}>
-          ✕
-        </button>
-      </div>
+        <IconButton label="Close the graph" onClick={close}>
+          <CloseIcon size="sm" />
+        </IconButton>
+      </Bar>
       {g.is === "running" && loaded.current ? (
         // Its own origin, the block's site, never the app's.
         <iframe

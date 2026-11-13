@@ -75,5 +75,14 @@ the daemon maps a client to its person. Jake and Aaron agreed it in
 by `ClientMsg::View` and `guest_view`), `crates/proto/src/lib.rs`
 (`ClientMsg::View`'s `asked`), and the button in
 `web/src/shell/ui/panes/tab-area.tsx`.
-Where: `crates/core/src/mux.rs` (`Mux::view`, `SizeHold`), `crates/proto/src/lib.rs` (`ClientMsg::View`), `crates/mux/src/mux/clients.rs`.
+Only the button (#473): the rule above for people applies to every connected
+holder, the same person's other window too. Typing, mouse and focus reports,
+showing a tab and zooming never take the size from a connected holder; only
+`asked` does. With no holder (none yet, or its client has gone) the first
+client to show the tab takes it. This replaces the typing claim and its 3 s
+hold (#333, `SIZE_HOLD`), which are gone; `typed` stays on the wire for older
+clients and the daemon ignores it. The holder's own window resize or rotation
+still updates the size. Where: `crates/mux/src/mux/clients.rs` (`may_take`).
+
+Where: `crates/core/src/mux.rs` (`Mux::view`), `crates/proto/src/lib.rs` (`ClientMsg::View`), `crates/mux/src/mux/clients.rs`.
 From: [Size arbitration](docs/plan-archive.md#size-arbitration), [M1](docs/plan-archive.md#m1-multiplexer), [M5](docs/plan-archive.md#m5-tmux-control-mode--cc-front-end), #333.

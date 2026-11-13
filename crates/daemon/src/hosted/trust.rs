@@ -11,9 +11,12 @@ use arugula_e2e::{
     checkpoint::{kept, refresh_account, take_lock},
     hosted::{Owner, Owners},
 };
+use std::collections::BTreeMap;
+
+use arugula_e2e::passkey::{Log, Origins, check_chain, extends};
 use tracing::warn;
 
-use crate::control::{HostedPin, Saved, retire_members, take_members};
+use crate::control::{HostedPin, InTeam, MachineKind, Purpose, Saved, retire_members, take_members};
 
 /// What a hosted machine keeps of control's [`hosted::Enrollment`], checked:
 /// its certificate is for its own keys and signed with the key the
@@ -33,6 +36,7 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
         cert,
         delegation,
         revocations,
+        closed,
         team,
         roster,
         certs,
@@ -42,6 +46,8 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
         locked: got_locked,
         lock: got_lock,
         legacy_app_children,
+        passkey_logs: got_passkey_logs,
+        passkey_origins: got_passkey_origins,
         purpose,
     } = got;
     ensure!(cert.device == keys.id(), "control sent a certificate for another key");
@@ -57,103 +63,111 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
         verify_hex(&delegation.key, cert.body().as_bytes(), &cert.sig),
         "the certificate isn't signed with the delegation's key"
     );
-    if let Some(p) = prev.and_then(|p| p.hosted.as_ref()) {
+    if let Some(p) = prev.and_then(|p| p.hosted()) {
         ensure!(p.cert == cert, "control sent another certificate for this machine");
     }
     // Removals once seen stay (a refresh adds, never takes away): control
     // leaving one out mustn't let a removed device count again.
-    let revocations =
-        kept(revocations, prev.and_then(|p| p.hosted.as_ref()).map_or(&[][..], |h| h.revocations.as_slice()));
+    let revocations = kept(revocations, prev.and_then(|p| p.hosted()).map_or(&[][..], |h| h.revocations.as_slice()));
+    // Control's word that the delegation ended: the earliest heard, held.
+    let held_closed = prev.and_then(|p| p.hosted()).map_or(&[][..], |h| h.closed.as_slice());
+    let closed: Vec<_> = closed
+        .iter()
+        .chain(held_closed)
+        .filter(|c| c.closes(&delegation))
+        .min_by_key(|c| c.at)
+        .cloned()
+        .into_iter()
+        .collect();
     // When this box first saw each certificate and removal it holds.
     let mut seen = prev.map(|p| p.seen.clone()).unwrap_or_default();
     let now = seen.next();
-    let (account, trust, own_certs, own_revocations, team, roster, team_certs, former_members, (locked, lock)) =
-        match delegation.owner() {
-            Some(Owner::Team(id)) => {
-                let pin = team.context("a team's project came without its team")?;
-                ensure!(pin.team == id, "the project's team isn't the delegation's");
-                let mut r = roster.context("a team's project came without its roster")?;
-                // Each member's removed devices, as the box last held them, stay
-                // removed (members taken out since included), checked from the
-                // root the roster held names; a member control leaves out keeps
-                // them for later. Before the roster's checked, so a removed
-                // device can't sign it.
-                let held_roster = prev.and_then(|p| p.roster.as_ref());
-                let none = Default::default();
-                let mut former = prev.map(|p| p.former_members.clone()).unwrap_or_default();
-                let mut certs =
-                    take_members(prev.map_or(&none, |p| &p.team_certs), held_roster, &former, certs, &mut seen, now);
-                if let Some(p) = prev {
-                    ensure!(p.team.as_ref() == Some(&pin), "control changed this machine's team");
-                    if let Some(last) = &p.roster
-                        && r != *last
-                        && !r.follows(Some(last), &pin, &certs)
-                    {
+    let (account, trust, own_certs, own_revocations, team) = match delegation.owner() {
+        Some(Owner::Team(id)) => {
+            let pin = team.context("a team's project came without its team")?;
+            ensure!(pin.team == id, "the project's team isn't the delegation's");
+            let mut r = roster.context("a team's project came without its roster")?;
+            // Each member's removed devices, as the box last held them, stay
+            // removed (members taken out since included), checked from the
+            // root the roster held names; a member control leaves out keeps
+            // them for later. Before the roster's checked, so a removed
+            // device can't sign it.
+            let held = prev.and_then(|p| p.team());
+            let held_roster = held.and_then(|t| t.roster.as_ref());
+            let none = Default::default();
+            let mut former = held.map(|t| t.former.clone()).unwrap_or_default();
+            let mut certs = take_members(held.map_or(&none, |t| &t.certs), held_roster, &former, certs, &mut seen, now);
+            if let Some(p) = prev {
+                ensure!(p.team_pin() == Some(&pin), "control changed this machine's team");
+                if let Some(last) = p.roster()
+                    && r != *last
+                    && !r.follows(Some(last), &pin, &certs)
+                {
+                    warn!(
+                        version = r.version,
+                        "hosted: a team roster from control doesn't check out; keeping the last"
+                    );
+                    r = last.clone();
+                }
+            }
+            ensure!(r.team == pin.team && r.well_formed(), "the team's roster isn't well formed");
+            ensure!(
+                delegation.signed_for(&Owners::Team { roster: &r, certs: &certs }),
+                "the delegation isn't signed by an owner of the team"
+            );
+            retire_members(held_roster, Some(&r), &mut certs, &mut former);
+            let trust = Trust { account: pin.founder.clone(), root: pin.founder_root.clone() };
+            // Locked or not as an owner's newer signed word says; control
+            // alone can lock it, never unlock it (`take_lock`).
+            let held_lock = held.map_or((false, None), |t| (t.locked, t.lock.as_ref()));
+            let (locked, lock) = take_lock(held_lock, got_lock, got_locked, Some(&r), &certs);
+            let team = InTeam { pin, roster: Some(r), certs, former, names: Default::default(), locked, lock };
+            (team.pin.founder.clone(), trust, vec![], vec![], Some(team))
+        }
+        Some(Owner::Account(id)) => {
+            let t = trust.context("an account's project came without its account")?;
+            ensure!(t.account == id, "the project's account isn't the delegation's");
+            if let Some(p) = prev {
+                ensure!(p.trust.root == t.root, "control changed the account's root");
+            }
+            let (account_certs, account_revocations) = match prev {
+                Some(p) => {
+                    let (c, r, refused) = refresh_account(
+                        &t,
+                        (account_certs, account_revocations),
+                        (&p.certs, &p.revocations),
+                        &mut seen,
+                        now,
+                    );
+                    if refused {
                         warn!(
-                            version = r.version,
-                            "hosted: a team roster from control doesn't check out; keeping the last"
+                            "hosted: the account's certificates would let a removed device back in; keeping the last"
                         );
-                        r = last.clone();
                     }
+                    (c, r)
                 }
-                ensure!(r.team == pin.team && r.well_formed(), "the team's roster isn't well formed");
-                ensure!(
-                    delegation.signed_for(&Owners::Team { roster: &r, certs: &certs }),
-                    "the delegation isn't signed by an owner of the team"
-                );
-                retire_members(held_roster, Some(&r), &mut certs, &mut former);
-                let trust = Trust { account: pin.founder.clone(), root: pin.founder_root.clone() };
-                // Locked or not as an owner's newer signed word says; control
-                // alone can lock it, never unlock it (`take_lock`).
-                let held_lock = prev.map_or((false, None), |p| (p.locked, p.lock.as_ref()));
-                let lock = take_lock(held_lock, got_lock, got_locked, Some(&r), &certs);
-                (pin.founder.clone(), trust, vec![], vec![], Some(pin), Some(r), certs, former, lock)
-            }
-            Some(Owner::Account(id)) => {
-                let t = trust.context("an account's project came without its account")?;
-                ensure!(t.account == id, "the project's account isn't the delegation's");
-                if let Some(p) = prev {
-                    ensure!(p.trust.root == t.root, "control changed the account's root");
+                None => {
+                    arugula_e2e::checkpoint::stamp(&mut seen, &account_certs, &account_revocations, now);
+                    (account_certs, account_revocations)
                 }
-                let (account_certs, account_revocations) = match prev {
-                    Some(p) => {
-                        let (c, r, refused) = refresh_account(
-                            &t,
-                            (account_certs, account_revocations),
-                            (&p.certs, &p.revocations),
-                            &mut seen,
-                            now,
-                        );
-                        if refused {
-                            warn!(
-                                "hosted: the account's certificates would let a removed device back in; keeping the last"
-                            );
-                        }
-                        (c, r)
-                    }
-                    None => {
-                        arugula_e2e::checkpoint::stamp(&mut seen, &account_certs, &account_revocations, now);
-                        (account_certs, account_revocations)
-                    }
-                };
-                ensure!(
-                    delegation.signed_for(&Owners::Account {
-                        trust: &t,
-                        certs: &account_certs,
-                        revocations: &account_revocations
-                    }),
-                    "the delegation isn't signed by the account's device"
-                );
-                let none = (false, None);
-                (id, t, account_certs, account_revocations, None, None, Default::default(), Default::default(), none)
-            }
-            None => anyhow::bail!("the delegation names no owner"),
-        };
+            };
+            ensure!(
+                delegation.signed_for(&Owners::Account {
+                    trust: &t,
+                    certs: &account_certs,
+                    revocations: &account_revocations
+                }),
+                "the delegation isn't signed by the account's device"
+            );
+            (id, t, account_certs, account_revocations, None)
+        }
+        None => anyhow::bail!("the delegation names no owner"),
+    };
     // What grandfathered app windows approved (M219's `check_apply`): the
     // first set control sends is pinned, and every later one only takes
     // from it (what both say), never adds; one control doesn't send keeps
     // what's pinned. Only for the accounts whose certificates the box keeps.
-    let pinned = prev.and_then(|p| p.hosted.as_ref()).and_then(|h| h.legacy_app_children.as_ref());
+    let pinned = prev.and_then(|p| p.hosted()).and_then(|h| h.legacy_app_children.as_ref());
     let legacy_app_children = match (pinned, legacy_app_children) {
         (old, None) => old.cloned(),
         (None, Some(new)) => Some(new),
@@ -169,13 +183,15 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
     .map(|mut m| {
         m.retain(|a, ids| {
             !ids.is_empty()
-                && match &roster {
-                    Some(_) => team_certs.contains_key(a),
+                && match &team {
+                    Some(t) => t.certs.contains_key(a),
                     None => *a == account,
                 }
         });
         m
     });
+    let (passkey_logs, passkey_origins) =
+        pinned_passkeys(prev.and_then(|p| p.hosted()), got_passkey_logs, got_passkey_origins);
     let own = Cert {
         v: 1,
         account,
@@ -188,19 +204,32 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
         approver: String::new(),
         sig: cert.sig.clone(),
     };
+    // A deploy's box (M219) or a snapshot's (M263) stays one: a refresh
+    // that leaves the purpose out doesn't open the box to anyone, and one
+    // that names the other makes it both (`Purpose::or`).
+    let told = match purpose.as_deref() {
+        Some(hosted::DEPLOY) => Purpose::Deploy,
+        Some(hosted::SNAPSHOT) => Purpose::Snapshot,
+        _ => Purpose::People,
+    };
+    let purpose = prev.and_then(|p| p.hosted()).map_or(Purpose::People, |h| h.purpose).or(told);
     let mut out = Saved {
         url: url.trim_end_matches('/').to_owned(),
         trust,
         cert: own,
         certs: own_certs,
         revocations: own_revocations,
-        team,
-        roster,
-        team_certs,
-        former_members,
-        team_names: Default::default(),
-        locked,
-        lock,
+        kind: MachineKind::Hosted(HostedPin {
+            cert,
+            delegation,
+            revocations,
+            closed,
+            purpose,
+            team,
+            legacy_app_children,
+            passkey_logs,
+            passkey_origins,
+        }),
         seen,
         peers: Default::default(),
         shared_teams: Default::default(),
@@ -208,22 +237,59 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
         held_peers: Default::default(),
         login: String::new(),
         moved_at: 0,
-        // A deploy's box (M219) stays one: a refresh that leaves it out
-        // doesn't open the box to anyone.
-        hosted: Some(HostedPin {
-            cert,
-            delegation,
-            revocations,
-            deploy: purpose.as_deref() == Some(hosted::DEPLOY)
-                || prev.and_then(|p| p.hosted.as_ref()).is_some_and(|h| h.deploy),
-            builder: purpose.as_deref() == Some(hosted::SNAPSHOT)
-                || prev.and_then(|p| p.hosted.as_ref()).is_some_and(|h| h.builder),
-            legacy_app_children,
-        }),
     };
     crate::control::prune_seen(&mut out);
     out.seen.settle(now);
     Ok(out)
+}
+
+/// What a box pins of its people's passkeys (aru-126: a deploy's box for
+/// its approval, DK4; every box for the standing grant for runs, DK6), from
+/// what it held (`held`) and what control sent now:
+/// - each account's passkey log, once it holds together
+///   (`arugula_e2e::passkey::check_chain`), and after that only a log that
+///   is the pinned one with more after it (`arugula_e2e::passkey::extends`):
+///   control can't drop a removal the box saw, or swap a key; one control
+///   leaves out keeps what's pinned;
+/// - which origins may use each RP's passkeys: the first set control sends,
+///   and since then only what every later one also says, never more.
+///
+/// Control could send a wrong first log, as it could send wrong
+/// certificates at enrollment (aru-126: tamper-evident, not tamper-proof).
+fn pinned_passkeys(
+    held: Option<&HostedPin>,
+    logs: Option<BTreeMap<String, Log>>,
+    origins: Option<Origins>,
+) -> (BTreeMap<String, Log>, Option<Origins>) {
+    let mut pinned = held.map(|h| h.passkey_logs.clone()).unwrap_or_default();
+    for (account, log) in logs.unwrap_or_default() {
+        if log.account != account || check_chain(&log).is_err() {
+            warn!(account, "hosted: a passkey log from control doesn't hold together; keeping the last");
+            continue;
+        }
+        match pinned.get(&account) {
+            Some(old) if !extends(old, &log) => {
+                warn!(account, "hosted: a passkey log from control isn't the pinned one or after it; keeping the last")
+            }
+            _ => {
+                pinned.insert(account, log);
+            }
+        }
+    }
+    let origins = match (held.and_then(|h| h.passkey_origins.as_ref()), origins) {
+        (old, None) => old.cloned(),
+        (None, Some(new)) => Some(new),
+        (Some(old), Some(new)) => Some(
+            old.iter()
+                .map(|(rp, os)| {
+                    let sent = new.get(rp).map(Vec::as_slice).unwrap_or_default();
+                    (rp.clone(), os.iter().filter(|o| sent.contains(o)).cloned().collect::<Vec<_>>())
+                })
+                .filter(|(_, os)| !os.is_empty())
+                .collect(),
+        ),
+    };
+    (pinned, origins)
 }
 
 #[cfg(test)]
@@ -238,7 +304,7 @@ mod tests {
         let root = DeviceKeys::generate();
         let mut root_cert = Cert::new(&root, "acct1", Kind::Browser, "laptop");
         root_cert.sign_with(&root);
-        let key = HostedKey::generate();
+        let key = HostedKey::from_seed(&ENROLLED_KEY);
         let mut d = Delegation {
             project: "prj_1".into(),
             owner: "account:acct1".into(),
@@ -256,6 +322,7 @@ mod tests {
             cert,
             delegation: d,
             revocations: vec![],
+            closed: vec![],
             team: None,
             roster: None,
             certs: Default::default(),
@@ -265,10 +332,15 @@ mod tests {
             locked: false,
             lock: None,
             legacy_app_children: None,
+            passkey_logs: None,
+            passkey_origins: None,
             purpose: None,
         };
         (got, root)
     }
+
+    /// Control's hosted key in [`enrollment`].
+    const ENROLLED_KEY: [u8; 32] = [7; 32];
 
     /// A device approved by `by`, of `account`.
     fn approved(account: &str, by: &DeviceKeys) -> (DeviceKeys, Cert) {
@@ -276,6 +348,35 @@ mod tests {
         let mut c = Cert::new(&k, account, Kind::Browser, "phone");
         c.sign_with(by);
         (k, c)
+    }
+
+    /// Control's word that the delegation ended stays: the earliest heard,
+    /// whatever a refresh says. What doesn't check out isn't kept.
+    #[test]
+    fn a_delegations_end_stays_when_control_leaves_it_out() {
+        let keys = DeviceKeys::generate();
+        let (got, _) = enrollment(&keys);
+        let first = saved_from(got.clone(), &keys, None).unwrap();
+        assert!(first.hosted().unwrap().closed.is_empty());
+        let word = HostedKey::from_seed(&ENROLLED_KEY).close(&got.delegation, 30);
+        let mut told = got.clone();
+        told.closed = vec![word.clone(), HostedKey::generate().close(&got.delegation, 20)];
+        let second = saved_from(told, &keys, Some(&first)).unwrap();
+        assert_eq!(second.hosted().unwrap().closed, std::slice::from_ref(&word), "only what checks out");
+        let third = saved_from(got, &keys, Some(&second)).unwrap();
+        assert_eq!(
+            third.hosted().unwrap().closed,
+            std::slice::from_ref(&word),
+            "control leaving it out changes nothing"
+        );
+        // And it's in the file: a restart keeps it, and a file from before
+        // reads as none.
+        let mut file = serde_json::to_value(&third).unwrap();
+        let back: Saved = serde_json::from_value(file.clone()).unwrap();
+        assert_eq!(back.hosted().unwrap().closed, [word]);
+        file["hosted"].as_object_mut().unwrap().remove("closed");
+        let before: Saved = serde_json::from_value(file).unwrap();
+        assert!(before.hosted().unwrap().closed.is_empty());
     }
 
     #[test]
@@ -318,15 +419,12 @@ mod tests {
     /// What grandfathered app windows approved, as control sends it, is
     /// pinned with the certificates (another account's is dropped): the
     /// first set taken, and then only shrunk. A refresh that adds an id
-    /// doesn't add it, and an approval through it is refused; one that
-    /// leaves an id out takes it away for good. A box from before (none
-    /// pinned) counts no window until a refresh brings its first set.
+    /// doesn't add it; one that leaves an id out takes it away for good. A
+    /// box from before (none pinned) takes its first set at a refresh. (Runs'
+    /// grants still go by it, M211; a deploy's approval no longer does, DK4.)
     #[test]
     fn what_grandfathered_app_windows_approved_is_pinned_and_only_shrinks() {
-        use arugula_e2e::{
-            cert::LegacyAppChildren,
-            deploy::{ApplyRefusal, Approval, Decision, Operation, PasskeyParts, check_apply},
-        };
+        use arugula_e2e::cert::LegacyAppChildren;
         let keys = DeviceKeys::generate();
         let (mut got, root) = enrollment(&keys);
         let window = DeviceKeys::generate();
@@ -342,8 +440,98 @@ mod tests {
         with_other.insert("someone-else".into(), vec!["x".into()]);
         got.legacy_app_children = Some(with_other);
         let first = saved_from(got.clone(), &keys, None).unwrap();
-        let pinned = |s: &Saved| s.hosted.as_ref().unwrap().legacy_app_children.clone();
+        let pinned = |s: &Saved| s.hosted().unwrap().legacy_app_children.clone();
         assert_eq!(pinned(&first), Some(set(&[&firefox])), "another account's is dropped");
+
+        // A refresh that adds Edge: not added.
+        got.legacy_app_children = Some(set(&[&firefox, &edge]));
+        let second = saved_from(got.clone(), &keys, Some(&first)).unwrap();
+        assert_eq!(pinned(&second), Some(set(&[&firefox])), "a refresh never adds");
+        // One from a control that doesn't send it: kept as pinned.
+        got.legacy_app_children = None;
+        let third = saved_from(got.clone(), &keys, Some(&second)).unwrap();
+        assert_eq!(pinned(&third), Some(set(&[&firefox])));
+        // One that leaves Firefox out: gone, and a later one can't bring it back.
+        got.legacy_app_children = Some(set(&[&edge]));
+        let fourth = saved_from(got.clone(), &keys, Some(&third)).unwrap();
+        assert_eq!(pinned(&fourth), Some(LegacyAppChildren::new()));
+        got.legacy_app_children = Some(set(&[&firefox]));
+        let fifth = saved_from(got.clone(), &keys, Some(&fourth)).unwrap();
+        assert_eq!(pinned(&fifth), Some(LegacyAppChildren::new()));
+
+        // A box from before this (its saved state has no set) against a
+        // control that sends one: it takes its first set at a refresh.
+        let mut old = serde_json::to_value(&first).unwrap();
+        old["hosted"].as_object_mut().unwrap().remove("legacy_app_children");
+        let old: Saved = serde_json::from_value(old).unwrap();
+        assert_eq!(pinned(&old), None);
+        let refreshed = saved_from(got, &keys, Some(&old)).unwrap();
+        assert_eq!(pinned(&refreshed), Some(set(&[&firefox])));
+    }
+
+    /// DK4: a deploy's box pins its people's passkey logs and the origins
+    /// control sends it, and a refresh only extends a log (one that drops a
+    /// removal, or doesn't hold together, is ignored) and only takes from
+    /// the origins. A deploy's approval is checked against what it pinned:
+    /// a passkey removed before the box's clock, one in no log, or one used
+    /// from an origin it didn't pin, doesn't apply a deploy.
+    #[test]
+    fn a_deploy_boxs_passkey_logs_are_pinned_and_only_extended() {
+        use arugula_e2e::{
+            deploy::{ApplyRefusal, Approval, Decision, Operation, Pinned, check_apply},
+            passkey::{Assertion, Change, Draft, EDDSA, NO_AAGUID, Refusal, origins_of_sites},
+        };
+        use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD as B64};
+        use sha2::{Digest as _, Sha256};
+        // A passkey here is an Ed25519 key like a device's.
+        struct Pk(DeviceKeys, String);
+        let pk = |n: u8| Pk(DeviceKeys::generate(), B64.encode([n; 16]));
+        let add = |log: &mut Log, k: &Pk, at: u64| {
+            let e = Draft {
+                account: "acct1".into(),
+                event: Change::Added,
+                credential: k.1.clone(),
+                rp: "control.test".into(),
+                alg: EDDSA,
+                key: k.0.sign_public().to_vec(),
+                aaguid: NO_AAGUID.into(),
+                at,
+                by: "signup".into(),
+            }
+            .after(log.events.last());
+            log.events.push(e);
+        };
+        let sign = |k: &Pk, a: &Approval, origin: &str| {
+            let cd =
+                serde_json::json!({ "type": "webauthn.get", "challenge": a.passkey_challenge(), "origin": origin })
+                    .to_string();
+            let mut data = Sha256::digest(b"control.test").to_vec();
+            data.extend_from_slice(&[0x05, 0, 0, 0, 0]);
+            let mut msg = data.clone();
+            msg.extend_from_slice(&Sha256::digest(cd.as_bytes()));
+            Assertion {
+                id: k.1.clone(),
+                client_data_json: B64.encode(cd.as_bytes()),
+                authenticator_data: B64.encode(&data),
+                signature: B64.encode(k.0.signature(&msg)),
+            }
+        };
+        let (k1, k2) = (pk(1), pk(2));
+        let mut log = Log { account: "acct1".into(), ..Default::default() };
+        add(&mut log, &k1, 100);
+        add(&mut log, &k2, 200);
+        let mut origins = origins_of_sites(["https://control.test"]);
+        origins.get_mut("control.test").unwrap().push("https://app.test".into());
+
+        let keys = DeviceKeys::generate();
+        let (mut got, _) = enrollment(&keys);
+        got.purpose = Some(hosted::DEPLOY.into());
+        got.passkey_logs = Some([("acct1".to_owned(), log.clone())].into());
+        got.passkey_origins = Some(origins.clone());
+        let first = saved_from(got.clone(), &keys, None).unwrap();
+        let pin = |s: &Saved| s.hosted().cloned().unwrap();
+        assert_eq!(pin(&first).passkey_logs["acct1"], log);
+        assert_eq!(pin(&first).passkey_origins, Some(origins.clone()));
 
         let op = Operation {
             project: "prj_1".into(),
@@ -355,55 +543,62 @@ mod tests {
             source_where: "acme/app".into(),
             planned: "ef".repeat(32),
         };
-        // As `arugulad-work`'s `deploy::check` does: none pinned is an empty set.
-        let check = |s: &Saved, by: &DeviceKeys| {
-            let a = Approval::new(by, "dep_1", &op, "acct1", Decision::Once, 2_000);
-            let (cd, ad) = {
-                use base64::Engine as _;
-                let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD;
-                let mut data = vec![0u8; 32];
-                data.extend_from_slice(&[0x05, 0, 0, 0, 0]);
-                let json = serde_json::json!({ "type": "webauthn.get", "challenge": a.passkey_challenge() });
-                (b64.encode(json.to_string()), b64.encode(data))
-            };
-            let parts = Some(PasskeyParts { client_data_json: &cd, authenticator_data: &ad });
+        let a = Approval::v2("dep_1", &op, "acct1", Decision::Once, 2_000);
+        // As `arugulad-work`'s `deploy::check` does.
+        let check = |s: &Saved, k: &Pk, origin: &str| {
             let owners = super::super::runs::owners(s).unwrap();
-            let children = pinned(s).unwrap_or_default();
-            check_apply(&a, &op, "dep_1", &owners, &children, parts, 1_000)
+            let h = pin(s);
+            let origins = h.passkey_origins.clone().unwrap_or_default();
+            let pinned = Pinned { owners: &owners, passkey_logs: &h.passkey_logs, origins: &origins };
+            check_apply(&a, &op, "dep_1", &pinned, Some(&sign(k, &a, origin)), None, 1_000)
         };
-        assert_eq!(check(&first, &firefox), Ok(()));
-        assert_eq!(check(&first, &edge), Err(ApplyRefusal::Device), "not in the set");
+        assert_eq!(check(&first, &k1, "https://control.test"), Ok(()));
+        assert_eq!(check(&first, &k2, "https://app.test"), Ok(()), "your machines page's origin, pinned");
+        assert_eq!(check(&first, &pk(9), "https://control.test"), Err(ApplyRefusal::Passkey(Some(Refusal::NotLive))));
+        assert_eq!(
+            check(&first, &k1, "https://evil.test"),
+            Err(ApplyRefusal::Passkey(Some(Refusal::Origin))),
+            "an origin it didn't pin"
+        );
 
-        // A refresh that adds Edge: not added.
-        got.legacy_app_children = Some(set(&[&firefox, &edge]));
+        // k1 removed at 300: the refresh extends the log.
+        let mut removed = log.clone();
+        let e = removed.events[0].removal(300, "reset").placed_after(removed.events.last());
+        removed.events.push(e);
+        got.passkey_logs = Some([("acct1".to_owned(), removed.clone())].into());
         let second = saved_from(got.clone(), &keys, Some(&first)).unwrap();
-        assert_eq!(pinned(&second), Some(set(&[&firefox])), "a refresh never adds");
-        assert_eq!(check(&second, &edge), Err(ApplyRefusal::Device), "an approval through it");
-        assert_eq!(check(&second, &firefox), Ok(()));
-        // One from a control that doesn't send it: kept as pinned.
-        got.legacy_app_children = None;
+        assert_eq!(pin(&second).passkey_logs["acct1"], removed);
+        assert_eq!(check(&second, &k1, "https://control.test"), Err(ApplyRefusal::Passkey(Some(Refusal::NotLive))));
+        // Control sends the log from before the removal, one that dropped
+        // it and added a key, and one that doesn't hold together: the box
+        // keeps what it pinned.
+        let mut swapped = log.clone();
+        add(&mut swapped, &pk(3), 300);
+        let mut broken = removed.clone();
+        broken.events[1].at = 50;
+        for bad in [log.clone(), swapped, broken] {
+            got.passkey_logs = Some([("acct1".to_owned(), bad)].into());
+            let s = saved_from(got.clone(), &keys, Some(&second)).unwrap();
+            assert_eq!(pin(&s).passkey_logs["acct1"], removed);
+            assert!(check(&s, &k1, "https://control.test").is_err());
+        }
+        // A control that leaves them out keeps them; origins only shrink.
+        got.passkey_logs = None;
+        got.passkey_origins = Some(origins_of_sites(["https://control.test", "https://more.test"]));
         let third = saved_from(got.clone(), &keys, Some(&second)).unwrap();
-        assert_eq!(pinned(&third), Some(set(&[&firefox])));
-        // One that leaves Firefox out: gone, and a later one can't bring it back.
-        got.legacy_app_children = Some(set(&[&edge]));
-        let fourth = saved_from(got.clone(), &keys, Some(&third)).unwrap();
-        assert_eq!(pinned(&fourth), Some(LegacyAppChildren::new()));
-        assert_eq!(check(&fourth, &firefox), Err(ApplyRefusal::Device));
-        got.legacy_app_children = Some(set(&[&firefox]));
-        let fifth = saved_from(got.clone(), &keys, Some(&fourth)).unwrap();
-        assert_eq!(pinned(&fifth), Some(LegacyAppChildren::new()));
-
-        // A box from before this (its saved state has no set) against a
-        // control that sends one: no window counts until it refreshes,
-        // which takes its first set.
-        let mut old = serde_json::to_value(&first).unwrap();
-        old["hosted"].as_object_mut().unwrap().remove("legacy_app_children");
-        let old: Saved = serde_json::from_value(old).unwrap();
-        assert_eq!(pinned(&old), None);
-        assert_eq!(check(&old, &firefox), Err(ApplyRefusal::Device), "fails closed");
-        let refreshed = saved_from(got, &keys, Some(&old)).unwrap();
-        assert_eq!(pinned(&refreshed), Some(set(&[&firefox])));
-        assert_eq!(check(&refreshed, &firefox), Ok(()));
+        assert_eq!(pin(&third).passkey_logs["acct1"], removed);
+        assert_eq!(pin(&third).passkey_origins, Some(origins_of_sites(["https://control.test"])));
+        assert_eq!(
+            check(&third, &k2, "https://app.test"),
+            Err(ApplyRefusal::Passkey(Some(Refusal::Origin))),
+            "taken away for good"
+        );
+        assert_eq!(check(&third, &k2, "https://control.test"), Ok(()));
+        // A box that pinned none refuses.
+        let mut none = got.clone();
+        none.passkey_origins = None;
+        let bare = saved_from(none, &keys, None).unwrap();
+        assert_eq!(check(&bare, &k2, "https://control.test"), Err(ApplyRefusal::PasskeyLog));
     }
 
     /// A team's project: owner `o` (who signs the delegation and the
@@ -458,6 +653,7 @@ mod tests {
             cert,
             delegation: d,
             revocations: vec![],
+            closed: vec![],
             team: Some(TeamPin { team: "t1".into(), founder: "o".into(), founder_root: o_cert.device.clone() }),
             roster: Some(roster),
             certs: [("o".to_owned(), (vec![o_cert], vec![])), ("e".to_owned(), (vec![e_cert, phone.clone()], vec![]))]
@@ -469,6 +665,8 @@ mod tests {
             locked: false,
             lock: None,
             legacy_app_children: None,
+            passkey_logs: None,
+            passkey_origins: None,
             purpose: None,
         };
         Team { got, o, e, phone }
@@ -479,7 +677,8 @@ mod tests {
         use arugula_e2e::team::TeamRole;
         let keys = DeviceKeys::generate();
         let Team { got, o, e, phone } = team(&keys);
-        let has_phone = |s: &Saved| s.roster.as_ref().unwrap().devices("e", &s.team_certs).get(&phone.device).is_some();
+        let has_phone =
+            |s: &Saved| s.roster().unwrap().devices("e", &s.team().unwrap().certs).get(&phone.device).is_some();
         let first = saved_from(got.clone(), &keys, None).unwrap();
         assert!(has_phone(&first));
         // The editor removes the phone; then control drops the removal.
@@ -504,7 +703,7 @@ mod tests {
         r.sign_with(&o);
         newer.roster = Some(r);
         let fifth = saved_from(newer, &keys, Some(&fourth)).unwrap();
-        let role = |s: &Saved| s.roster.as_ref().unwrap().member("e").unwrap().role;
+        let role = |s: &Saved| s.roster().unwrap().member("e").unwrap().role;
         assert_eq!(role(&fifth), TeamRole::Viewer);
         assert_eq!(role(&saved_from(got, &keys, Some(&fifth)).unwrap()), TeamRole::Viewer);
     }
@@ -515,7 +714,8 @@ mod tests {
     fn a_removal_outlives_the_members_removal_from_the_team() {
         let keys = DeviceKeys::generate();
         let Team { got, o, e, phone } = team(&keys);
-        let has_phone = |s: &Saved| s.roster.as_ref().unwrap().devices("e", &s.team_certs).get(&phone.device).is_some();
+        let has_phone =
+            |s: &Saved| s.roster().unwrap().devices("e", &s.team().unwrap().certs).get(&phone.device).is_some();
         let mut removed = got.clone();
         removed.certs.get_mut("e").unwrap().1.push(arugula_e2e::Revocation::new("e", &phone.device, &e));
         let first = saved_from(removed, &keys, None).unwrap();
@@ -533,11 +733,11 @@ mod tests {
         out.roster = Some(roster_at(2, false));
         out.certs.remove("e");
         let second = saved_from(out, &keys, Some(&first)).unwrap();
-        assert!(second.roster.as_ref().unwrap().member("e").is_none());
+        assert!(second.roster().unwrap().member("e").is_none());
         let mut back = got.clone();
         back.roster = Some(roster_at(3, true));
         let third = saved_from(back, &keys, Some(&second)).unwrap();
-        assert!(third.roster.as_ref().unwrap().member("e").is_some());
+        assert!(third.roster().unwrap().member("e").is_some());
         assert!(!has_phone(&third), "a removal from before e left counts again");
     }
 
@@ -555,19 +755,61 @@ mod tests {
             l
         };
         let first = saved_from(got.clone(), &keys, None).unwrap();
-        assert!(!first.locked);
+        assert!(!first.team().unwrap().locked);
         let mut locked = got.clone();
         (locked.locked, locked.lock) = (true, Some(lock(true, 10, &o)));
         let second = saved_from(locked, &keys, Some(&first)).unwrap();
-        assert!(second.locked, "an owner's lock");
+        assert!(second.team().unwrap().locked, "an owner's lock");
         let third = saved_from(got.clone(), &keys, Some(&second)).unwrap();
-        assert!(third.locked, "control unlocked it by its plain word");
+        assert!(third.team().unwrap().locked, "control unlocked it by its plain word");
         let mut by_editor = got.clone();
         by_editor.lock = Some(lock(false, 20, &e));
-        assert!(saved_from(by_editor, &keys, Some(&third)).unwrap().locked, "an editor unlocked it");
+        assert!(saved_from(by_editor, &keys, Some(&third)).unwrap().team().unwrap().locked, "an editor unlocked it");
         let mut by_owner = got.clone();
         by_owner.lock = Some(lock(false, 20, &o));
-        assert!(!saved_from(by_owner, &keys, Some(&third)).unwrap().locked, "an owner's newer unlock");
+        assert!(!saved_from(by_owner, &keys, Some(&third)).unwrap().team().unwrap().locked, "an owner's newer unlock");
+    }
+
+    /// #672: what a box is for only closes, refresh by refresh: a people's
+    /// box told it's a deploy's becomes one and stays one when told nothing
+    /// or told it's a snapshot's (then it's both); a snapshot's told it's a
+    /// deploy's is both too, and nobody gets in from then on; both never
+    /// opens. The flags written say the same as the code before wrote.
+    #[test]
+    fn a_boxs_purpose_only_closes_refresh_by_refresh() {
+        let keys = DeviceKeys::generate();
+        let (got, _) = enrollment(&keys);
+        let told = |p: Option<&str>| hosted::Enrollment { purpose: p.map(str::to_owned), ..got.clone() };
+        let refresh = |prev: &Saved, p: Option<&str>| saved_from(told(p), &keys, Some(prev)).unwrap();
+        let flags = |s: &Saved| {
+            let v = serde_json::to_value(s).unwrap();
+            (v["hosted"]["deploy"].as_bool().unwrap_or(false), v["hosted"]["builder"].as_bool().unwrap_or(false))
+        };
+        let people = saved_from(told(None), &keys, None).unwrap();
+        assert_eq!((people.purpose(), flags(&people)), (Some(Purpose::People), (false, false)));
+        // Deploy, told nothing, then told snapshot.
+        let deploy = refresh(&people, Some(hosted::DEPLOY));
+        assert_eq!((deploy.purpose(), flags(&deploy)), (Some(Purpose::Deploy), (true, false)));
+        assert_eq!(refresh(&deploy, None).purpose(), Some(Purpose::Deploy));
+        assert_eq!(refresh(&deploy, Some("people")).purpose(), Some(Purpose::Deploy));
+        let both = refresh(&deploy, Some(hosted::SNAPSHOT));
+        assert_eq!((both.purpose(), flags(&both)), (Some(Purpose::Both), (true, true)));
+        // Snapshot, told nothing, then told deploy: both, from then on.
+        let snapshot = refresh(&people, Some(hosted::SNAPSHOT));
+        assert_eq!((snapshot.purpose(), flags(&snapshot)), (Some(Purpose::Snapshot), (false, true)));
+        assert_eq!(refresh(&snapshot, None).purpose(), Some(Purpose::Snapshot));
+        let closed = refresh(&snapshot, Some(hosted::DEPLOY));
+        assert_eq!((closed.purpose(), flags(&closed)), (Some(Purpose::Both), (true, true)));
+        for p in [None, Some(hosted::DEPLOY), Some(hosted::SNAPSHOT)] {
+            assert_eq!(refresh(&closed, p).purpose(), Some(Purpose::Both), "{p:?}");
+            assert_eq!(refresh(&both, p).purpose(), Some(Purpose::Both), "{p:?}");
+        }
+        // A file with both flags, from the code before, reads as both.
+        let mut v = serde_json::to_value(&deploy).unwrap();
+        v["hosted"]["builder"] = true.into();
+        let read: Saved = serde_json::from_value(v).unwrap();
+        assert_eq!(read.purpose(), Some(Purpose::Both));
+        assert_eq!(refresh(&read, None).purpose(), Some(Purpose::Both));
     }
 
     #[test]
@@ -577,7 +819,7 @@ mod tests {
         let saved = saved_from(got.clone(), &keys, None).unwrap();
         assert_eq!((saved.url.as_str(), saved.cert.device.as_str()), ("http://control", keys.id().as_str()));
         assert_eq!(saved.cert.account, "acct1");
-        assert!(saved.hosted.is_some());
+        assert!(saved.is_hosted());
         // The account's own devices get in, as the owner.
         assert!(saved.trust.evaluate(&saved.certs, &saved.revocations).get(&root.id()).is_some());
         // And again on a refresh.

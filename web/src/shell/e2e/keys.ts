@@ -179,13 +179,9 @@ export async function loadKeys(): Promise<DeviceKeys> {
   return keys;
 }
 
-/** #758: keys made elsewhere (the desktop app's sign-in page, PKCS#8) as
- * this browser's, replacing any it had: imported non-extractable, checked
- * against the public keys given (a certificate's), and stored as
- * `loadKeys` stores its own (wrapped where it must). Throws if they don't
- * match or can't be kept. */
-export async function adoptKeys(noise: Uint8Array<ArrayBuffer>, sign: Uint8Array<ArrayBuffer>, noisePub: string, signPub: string): Promise<DeviceKeys> {
-  const make = async (extractable: boolean): Promise<DeviceKeys> => ({
+/** Keys as PKCS#8 and their public halves, in memory. */
+async function importKeys(noise: Uint8Array<ArrayBuffer>, sign: Uint8Array<ArrayBuffer>, noisePub: string, signPub: string, extractable: boolean): Promise<DeviceKeys> {
+  return {
     noise: {
       privateKey: await subtle.importKey("pkcs8", noise, { name: "X25519" }, extractable, ["deriveBits"]),
       publicKey: await subtle.importKey("raw", unhex(noisePub), { name: "X25519" }, true, []),
@@ -197,7 +193,16 @@ export async function adoptKeys(noise: Uint8Array<ArrayBuffer>, sign: Uint8Array
     id: await deviceId(unhex(noisePub), unhex(signPub)),
     noisePub,
     signPub,
-  });
+  };
+}
+
+/** #758: keys made elsewhere (the desktop app's sign-in page, PKCS#8) as
+ * this browser's, replacing any it had: imported non-extractable, checked
+ * against the public keys given (a certificate's), and stored as
+ * `loadKeys` stores its own (wrapped where it must). Throws if they don't
+ * match or can't be kept. */
+export async function adoptKeys(noise: Uint8Array<ArrayBuffer>, sign: Uint8Array<ArrayBuffer>, noisePub: string, signPub: string): Promise<DeviceKeys> {
+  const make = (extractable: boolean) => importKeys(noise, sign, noisePub, signPub, extractable);
   const why = await checkKeys(await make(false));
   if (why) throw new Error(`they aren't the certificate's keys: ${why}`);
   let keys = await storeTried(() => make(false));
@@ -255,18 +260,20 @@ export interface PrfDevice {
   device: string;
   /** Its certificate's name: "iCloud Keychain passkey", or "Passkey". */
   name: string;
+  /** The passkey's id (#641), for the page to say which passkey it is. */
+  credential?: string;
 }
 
 /** #764: this browser's keys from a passkey's PRF output (`noise` and
  * `sign`, at `PRF_SALTS`), replacing any it had, stored as `adoptKeys`
  * stores them. Every browser with that passkey derives the same keys, so
  * they are one device. */
-export async function adoptPrfKeys(noise: BufferSource, sign: BufferSource, name: string): Promise<DeviceKeys> {
+export async function adoptPrfKeys(noise: BufferSource, sign: BufferSource, name: string, credential?: string): Promise<DeviceKeys> {
   const n = await fromSeed("X25519", await seedOf(noise, "arugula device x25519 v1"));
   const s = await fromSeed("Ed25519", await seedOf(sign, "arugula device ed25519 v1"));
   try {
     const keys = await adoptKeys(n.pkcs8, s.pkcs8, n.pub, s.pub);
-    await kv("readwrite", (st) => void st.put({ device: keys.id, name } satisfies PrfDevice, "prf"));
+    await kv("readwrite", (st) => void st.put({ device: keys.id, name, credential } satisfies PrfDevice, "prf"));
     return keys;
   } finally {
     n.pkcs8.fill(0);
@@ -274,17 +281,19 @@ export async function adoptPrfKeys(noise: BufferSource, sign: BufferSource, name
   }
 }
 
-/** M218: the Ed25519 key a passkey's PRF output (`sign`, at
- * `PRF_SALTS.sign`) derives, as `adoptPrfKeys` derives it, without storing
- * anything: what signs a deploy's approval when this browser's keys came
- * from that passkey, so the signature itself needs the passkey. Its public
- * key, hex, to check it's this device's. */
-export async function prfSignKey(sign: BufferSource): Promise<{ key: CryptoKey; pub: string }> {
-  const s = await fromSeed("Ed25519", await seedOf(sign, "arugula device ed25519 v1"));
+/** #641: the keys a passkey's PRF output makes, in memory and nowhere else:
+ * a browser with keys of its own uses them to add the passkey's device,
+ * and keeps its own. */
+export async function keysFromPrf(noise: BufferSource, sign: BufferSource): Promise<DeviceKeys> {
+  let n: Awaited<ReturnType<typeof fromSeed>> | undefined;
+  let s: Awaited<ReturnType<typeof fromSeed>> | undefined;
   try {
-    return { key: await subtle.importKey("pkcs8", s.pkcs8, { name: "Ed25519" }, false, ["sign"]), pub: s.pub };
+    n = await fromSeed("X25519", await seedOf(noise, "arugula device x25519 v1"));
+    s = await fromSeed("Ed25519", await seedOf(sign, "arugula device ed25519 v1"));
+    return await importKeys(n.pkcs8, s.pkcs8, n.pub, s.pub, false);
   } finally {
-    s.pkcs8.fill(0);
+    n?.pkcs8.fill(0);
+    s?.pkcs8.fill(0);
   }
 }
 

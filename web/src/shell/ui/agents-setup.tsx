@@ -5,6 +5,9 @@
 // "Use Claude Code with Arugula"). Only the owner's own daemon is asked
 // (`/api/setup?part=agents`), once per page; each adapter's pin is said
 // once per browser, so a release that moves the pin says it again.
+// The same line says when Claude Code's hooks are only partly installed
+// (#906: an older install, say), once per browser for each set of what's
+// missing.
 //
 // And a terminal's: Claude Code waits in it for you, and none of Arugula's
 // hooks has spoken from it (`PaneInfo.unhooked`, the daemon's word), so its
@@ -21,8 +24,9 @@ import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
 import { adapterReady, type Adapter } from "./adapter";
-import { openGettingStarted } from "./welcome";
+import { openGettingStarted, withCode, type HooksPartial } from "./welcome";
 import { ClaudePlugin } from "./claude-plugin";
+import { CloseIcon, IconButton } from "../../shared/ui/icons";
 
 const SAID_KEY = "arugula.agents-nudge";
 
@@ -34,6 +38,10 @@ interface AgentsSetup {
     /** #505: registered as `illogical` (works until set up again). */ old?: boolean;
     /** Arugula's hooks are in Claude Code's settings (absent: an older daemon). */
     hooks?: boolean;
+    /** #395: a policy stops Claude Code running them. */
+    hooks_blocked?: string;
+    /** #906: only some of them are there. */
+    hooks_partial?: HooksPartial;
   };
   adapters?: Adapter[];
 }
@@ -55,6 +63,15 @@ function remember(keys: string[]) {
 }
 
 const keyOf = (a: Adapter) => `${a.kind}@${a.pinned}`;
+
+/** #906: hooks only partly installed, said once per browser for each
+ * set of what's missing (a release that adds a hook says it again). Not
+ * when a policy blocks them: installing the rest wouldn't help. */
+function partialKey(s: AgentsSetup | null): string | null {
+  const p = s?.claude.hooks_partial;
+  if (!p || s?.claude.hooks_blocked) return null;
+  return `hooks:${[...p.missing, ...p.outdated].join(",")}${p.rules ? "+rules" : ""}`;
+}
 
 /** The adapters worth a word: their agent is here, and they aren't. */
 export function nudged(s: AgentsSetup | null): Adapter[] {
@@ -79,6 +96,7 @@ export function AgentsNudge({ client }: { client: Client }) {
   const mine = !client.e2e && !client.state?.roles && !navigator.webdriver;
   const [setup, setSetup] = useState<AgentsSetup | null>(null);
   const [shown, setShown] = useState<Adapter[]>([]);
+  const [partial, setPartial] = useState<string | null>(null);
   useEffect(() => {
     if (!mine) return;
     fetch(`${opPath("setup.get")}?part=agents`)
@@ -86,36 +104,44 @@ export function AgentsNudge({ client }: { client: Client }) {
       .then((s) => {
         const before = said();
         const fresh = nudged(s).filter((a) => !before.includes(keyOf(a)));
-        if (!fresh.length) return;
+        const hooks = partialKey(s);
+        const freshHooks = hooks && !before.includes(hooks) ? hooks : null;
+        if (!fresh.length && !freshHooks) return;
         // Once: shown on this page until acted on, not on the next.
-        remember(fresh.map(keyOf));
+        remember([...fresh.map(keyOf), ...(freshHooks ? [freshHooks] : [])]);
         setSetup(s);
         setShown(fresh);
+        setPartial(freshHooks && (s?.claude.hooks_partial?.says ?? null));
       })
       .catch(() => {});
   }, [mine]);
-  if (!shown.length || !setup) return null;
+  if ((!shown.length && !partial) || !setup) return null;
   const tools = setup.claude.tools;
   const hooks = setup.claude.hooks !== false;
+  const hide = () => {
+    setShown([]);
+    setPartial(null);
+  };
   return (
-    <div class="agents-nudge" role="status" data-agents-nudge={shown.map((a) => a.kind).join(" ")}>
+    <div class="agents-nudge" role="status" data-agents-nudge={[...shown.map((a) => a.kind), ...(partial ? ["hooks"] : [])].join(" ")}>
       <p>
         {shown.map((a) => (
           <span key={a.kind}>{line(a, tools, hooks)} </span>
         ))}
+        {partial && <span data-agents-nudge-hooks>{withCode(partial)}</span>}
       </p>
       <div class="agents-nudge-actions">
         <button
           class="primary"
           data-agents-nudge-setup
           onClick={() => {
-            setShown([]);
+            hide();
             openGettingStarted("agents", client);
           }}
         >
           Set it up…
         </button>
-        <button onClick={() => setShown([])} data-agents-nudge-hide>
+        <button onClick={hide} data-agents-nudge-hide>
           Not now
         </button>
       </div>
@@ -155,7 +181,7 @@ const putAway = new Set<PaneId>();
  * spoken from it: only the owner's own daemon can set it up, and only
  * while its settings lack the hooks (a Claude started before them needs a
  * restart, which Set up can't do). */
-export function HooksChip({ client, id }: { client: Client; id: PaneId }) {
+export function HooksOffer({ client, id }: { client: Client; id: PaneId }) {
   const info = client.info(id);
   const mine = !client.e2e && !client.state?.roles;
   const wants = mine && !!info?.unhooked && info.attention === "needs_input" && !putAway.has(id);
@@ -180,7 +206,7 @@ export function HooksChip({ client, id }: { client: Client; id: PaneId }) {
     setSaid({ ok: o.ok, text: o.ok ? `${o.said} Start Claude again here to use them.` : o.said });
   };
   return (
-    <div class="hooks-chip" role="status" data-hooks-chip={said ? (said.ok ? "done" : "failed") : "offer"} onPointerDown={(e) => e.stopPropagation()}>
+    <div class="hooks-offer" role="status" data-hooks-chip={said ? (said.ok ? "done" : "failed") : "offer"} onPointerDown={(e) => e.stopPropagation()}>
       <span>{said ? said.text : "Its questions could be cards here and on your phone."}</span>
       {!said && (
         <button class="primary" disabled={busy} onClick={() => void setUp()} data-hooks-chip-setup>
@@ -197,10 +223,9 @@ export function HooksChip({ client, id }: { client: Client; id: PaneId }) {
           Getting started…
         </button>
       )}
-      <button
+      <IconButton
+        label="Hide"
         class="link"
-        aria-label="Hide"
-        title="Hide"
         onClick={() => {
           putAway.add(id);
           setSaid(null);
@@ -208,8 +233,8 @@ export function HooksChip({ client, id }: { client: Client; id: PaneId }) {
         }}
         data-hooks-chip-hide
       >
-        ✕
-      </button>
+        <CloseIcon size="sm" />
+      </IconButton>
       {plugin && !said && <ClaudePlugin lead="Claude Code's plugin brings the hooks and Arugula's tools. In Claude Code, then start it again here:" />}
     </div>
   );

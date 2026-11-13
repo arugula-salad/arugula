@@ -19,6 +19,12 @@
 //! them at the deadline; closing the pane ends them and the invite. The
 //! daemon keeps only each token's hash, in `guests.json`.
 //!
+//! Guest SSH access (`sharing.json`, the owner's) is read at each login and
+//! shell, not cached: turned off, however it was, no invite lets anyone in,
+//! and within a second every invite ends, its guests are cut off and the
+//! server stops listening. Turning it on again brings none of them back.
+//! Listing and revoking invites work whatever the setting.
+//!
 //! A daemon behind NAT is reached through control (the relay step): when
 //! it's joined to a control that runs a jump host and no address for
 //! guests is set, the command hops through control first (`ssh -W` to the
@@ -122,6 +128,8 @@ struct Listening {
 
 pub struct Guests {
     path: PathBuf,
+    /// Where `sharing.json` says whether Guest SSH access is on.
+    state_dir: PathBuf,
     key_path: PathBuf,
     /// `None`: `--guest-ssh off`.
     listen: Option<SocketAddr>,
@@ -230,6 +238,7 @@ impl Guests {
         let saved = std::fs::read(&path).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
         Arc::new(Self {
             path,
+            state_dir: state_dir.to_owned(),
             key_path: state_dir.join("guest_ssh_host_key"),
             listen,
             host,
@@ -330,6 +339,29 @@ impl Guests {
         !self.inner.lock().unwrap().invites.is_empty()
     }
 
+    /// Whether the owner has Guest SSH access on, as `sharing.json` says now.
+    fn on(&self) -> bool {
+        arugula_proto::sharing::guest_ssh(&self.state_dir)
+    }
+
+    /// Guest SSH access is off: every invite ends, as each would if
+    /// revoked, and their guests are cut off. Whether any did.
+    fn end_all_if_off(&self) -> bool {
+        if !self.any() || self.on() {
+            return false;
+        }
+        let ended = {
+            let mut s = self.inner.lock().unwrap();
+            let ended = std::mem::take(&mut s.invites).len();
+            self.save(&s);
+            ended
+        };
+        info!(ended, "guest ssh access is off: its ssh invites ended");
+        self.publish_routes();
+        self.ended.send_modify(|n| *n += 1);
+        ended > 0
+    }
+
     /// The host key, made the first time it's needed.
     fn host_key(&self) -> anyhow::Result<PrivateKey> {
         let mut k = self.key.lock().unwrap();
@@ -405,6 +437,7 @@ impl Guests {
 
     pub fn list(&self) -> Vec<GuestInvite> {
         self.prune();
+        self.end_all_if_off();
         let s = self.inner.lock().unwrap();
         s.invites.iter().map(|x| self.public(x)).collect()
     }
@@ -463,6 +496,24 @@ impl Guests {
         Some(g)
     }
 
+    /// A login with `token`: refused where the machine admits no guests (a
+    /// deploy's box, `Control::admits_links_and_guests`) or Guest SSH
+    /// access is off, before the claim, so a single-use invite isn't spent
+    /// on a refusal.
+    fn login(&self, admits: bool, token: &str) -> Option<Granted> {
+        if !admits || !self.on() {
+            return None;
+        }
+        self.claim(token)
+    }
+
+    /// Whether a guest logged in with `g` may have a channel and a shell
+    /// now: its invite still works, Guest SSH access is still on, and the
+    /// machine still admits guests.
+    fn may_shell(&self, admits: bool, g: &Granted) -> bool {
+        admits && self.on() && self.live(g.id)
+    }
+
     fn live(&self, id: u32) -> bool {
         let now = now_ms();
         self.inner.lock().unwrap().invites.iter().any(|x| x.id == id && x.expires_ms > now)
@@ -512,6 +563,7 @@ impl Guests {
         let (me, app) = (self.clone(), app.clone());
         crate::task::spawn(async move {
             me.prune();
+            me.end_all_if_off();
             if me.any()
                 && let Err(e) = me.ensure_listening(&app).await
             {
@@ -528,7 +580,7 @@ impl Guests {
                         Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
                         Err(_) => return,
                     },
-                    _ = tick.tick() => { me.prune(); }
+                    _ = tick.tick() => { me.prune(); me.end_all_if_off(); }
                 }
                 me.stop_if_idle().await;
             }
@@ -627,7 +679,7 @@ impl Guests {
     /// A guest's connection through control's jump host: the same server
     /// as on the port, so the session ends here.
     pub fn serve_relayed(self: &Arc<Self>, app: &Arc<App>, stream: tokio::io::DuplexStream) {
-        if self.listen.is_none() || !self.any() {
+        if self.listen.is_none() || !self.any() || !self.on() {
             return debug!("guest ssh: a relayed connection with guest ssh off or no invites");
         }
         let key = match self.host_key() {
@@ -675,7 +727,9 @@ impl Handler for Conn {
     type Error = russh::Error;
 
     async fn auth_none(&mut self, user: &str) -> Result<Auth, Self::Error> {
-        let Some(g) = self.guests.claim(user) else {
+        // A deploy's box admits no guest, an invite made before it was told
+        // so included ([`Guests::login`]).
+        let Some(g) = self.guests.login(self.app.control.admits_links_and_guests(), user) else {
             info!(peer = %self.peer, "guest ssh: refused a login");
             return Ok(Auth::reject());
         };
@@ -695,7 +749,8 @@ impl Handler for Conn {
         reply: ChannelOpenHandle,
         _session: &mut Session,
     ) -> Result<(), Self::Error> {
-        let ok = self.channel.is_none() && self.granted.as_ref().is_some_and(|g| self.guests.live(g.id));
+        let admits = self.app.control.admits_links_and_guests();
+        let ok = self.channel.is_none() && self.granted.as_ref().is_some_and(|g| self.guests.may_shell(admits, g));
         if ok {
             self.channel = Some(channel.id());
             reply.accept().await;
@@ -729,7 +784,8 @@ impl Handler for Conn {
         let (Some(g), Some(ch)) = (self.granted.clone(), self.channel) else {
             return session.channel_failure(channel);
         };
-        if ch != channel || self.tx.is_some() {
+        if ch != channel || self.tx.is_some() || !self.guests.may_shell(self.app.control.admits_links_and_guests(), &g)
+        {
             return session.channel_failure(channel);
         }
         let (tx, rx) = mpsc::unbounded_channel();
@@ -811,6 +867,15 @@ async fn attach(
         let out = out.clone();
         async move { out.data(chan, b).await.is_ok() }
     };
+    // Subscribed first, so a switch to a deploy's box from here on is seen
+    // below; one already made is refused now ([`Guests::may_shell`]).
+    let mut enrollment = app.control.changed.subscribe();
+    if !guests.may_shell(app.control.admits_links_and_guests(), &g) {
+        let _ = out.extended_data(chan, 1, b"[arugula: this machine admits no guests]\r\n".to_vec()).await;
+        let _ = out.exit_status_request(chan, 1).await;
+        let _ = out.close(chan).await;
+        return;
+    }
     let Some(handle) = app.mux.api(|r| Api::Pane(g.pane, r)).await.flatten() else {
         let _ = out.extended_data(chan, 1, b"[arugula: the pane has closed]\r\n".to_vec()).await;
         let _ = out.exit_status_request(chan, 1).await;
@@ -867,7 +932,16 @@ async fn attach(
                 }
             }
             _ = ended.changed() => {
-                if !guests.live(g.id) { break (Some("the invite was revoked"), 1) }
+                if !guests.live(g.id) {
+                    let why = if guests.on() { "the invite was revoked" } else { "Guest SSH access was turned off" };
+                    break (Some(why), 1)
+                }
+            }
+            // Told it's a deploy's box while a guest is on: they're cut off.
+            Ok(()) = enrollment.changed() => {
+                if !guests.may_shell(app.control.admits_links_and_guests(), &g) {
+                    break (Some("this machine admits no guests now"), 1)
+                }
             }
             _ = tokio::time::sleep_until(deadline) => break (Some("the invite expired"), 1),
             m = rx.recv() => match m {
@@ -961,7 +1035,13 @@ fn hostname() -> String {
     crate::hostname().unwrap_or_else(|| "localhost".into())
 }
 
+/// Whether an invite may be made here: not on a deploy's box (409).
+fn may_mint(admits: bool) -> Result<(), ApiError> {
+    if admits { Ok(()) } else { Err(ApiError(StatusCode::CONFLICT, "a deploy's box admits no guests".into())) }
+}
+
 pub async fn mint_invite(app: &Arc<App>, req: GuestInviteRequest) -> Result<GuestInvite, ApiError> {
+    may_mint(app.control.admits_links_and_guests())?;
     let summaries = app.mux.api(Api::Panes).await.unwrap_or_default();
     match summaries.iter().find(|p| p.info.id == req.pane) {
         None => return Err(ApiError(StatusCode::NOT_FOUND, format!("no pane %{}", req.pane))),
@@ -1074,9 +1154,10 @@ use super::Labs;
 use crate::ops::{Cx, Handle, OpError};
 
 /// `Ok` where the owner has turned on Guest SSH access, a sharing setting
-/// (native #205; it was the `guest-ssh` flag): off, each operation is
+/// (native #205; it was the `guest-ssh` flag): off, making an invite is
 /// refused as a route that isn't there, saying how to turn it on, as a
-/// flag's are.
+/// flag's are. Listing and revoking are not: an owner can always see and
+/// end what's left, whatever the setting.
 fn guest_ssh_on(cx: &Cx<'_>) -> Result<(), OpError> {
     if !arugula_proto::sharing::guest_ssh(cx.app.control.state_dir()) {
         return Err(OpError::Status(StatusCode::NOT_FOUND, arugula_proto::sharing::GUEST_SSH_OFF.into()));
@@ -1085,8 +1166,7 @@ fn guest_ssh_on(cx: &Cx<'_>) -> Result<(), OpError> {
 }
 
 impl Handle<Labs> for GuestsList {
-    async fn handle(cx: &Cx<'_>, _: (), _: Empty) -> Result<Vec<GuestInvite>, OpError> {
-        guest_ssh_on(cx)?;
+    async fn handle(_: &Cx<'_>, _: (), _: Empty) -> Result<Vec<GuestInvite>, OpError> {
         Ok(guests_here()?.list())
     }
 }
@@ -1099,8 +1179,7 @@ impl Handle<Labs> for GuestMint {
 }
 
 impl Handle<Labs> for GuestRevoke {
-    async fn handle(cx: &Cx<'_>, id: u32, _: Empty) -> Result<Empty, OpError> {
-        guest_ssh_on(cx)?;
+    async fn handle(_: &Cx<'_>, id: u32, _: Empty) -> Result<Empty, OpError> {
         revoke_invite(id).await?;
         Ok(Empty {})
     }
@@ -1110,11 +1189,69 @@ impl Handle<Labs> for GuestRevoke {
 mod tests {
     use super::*;
 
+    /// A state dir with Guest SSH access on, as invites need.
     fn dir(name: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("ilg-guests-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
+        arugula_proto::sharing::set_guest_ssh(&d, true).unwrap();
         d
+    }
+
+    /// Guest SSH access turned off, however it was (here as `arugulad
+    /// sharing guest-ssh off` does, the file and nothing else): no held
+    /// invite lets anyone in and a single-use one isn't spent, a guest who
+    /// logged in before gets no shell, and every invite ends, with its
+    /// route withdrawn and its guests told. On again, none comes back.
+    #[test]
+    fn turning_guest_ssh_off_ends_every_invite() {
+        let d = dir("off");
+        let g = Guests::open(&d, None, None);
+        let (once, token) = g.mint(&GuestInviteRequest { pane: 3, ..Default::default() }, None);
+        let route = random_route();
+        let (_, t2) =
+            g.mint(&GuestInviteRequest { pane: 4, reusable: true, ..Default::default() }, Some(digest(&route)));
+        g.publish_routes();
+        let held = g.login(true, &t2).expect("on, it lets a guest in");
+        assert!(g.may_shell(true, &held));
+        let mut ended = g.ended.subscribe();
+        ended.mark_unchanged();
+
+        arugula_proto::sharing::set_guest_ssh(&d, false).unwrap();
+        assert!(g.login(true, &token).is_none() && g.login(true, &t2).is_none(), "off: nobody gets in");
+        assert!(!g.may_shell(true, &held), "off: no shell for a guest already in");
+        assert!(!g.inner.lock().unwrap().invites.iter().find(|x| x.id == once.id).unwrap().used, "and not spent");
+        assert!(g.end_all_if_off(), "every invite ends");
+        assert!(ended.has_changed().unwrap(), "their guests are told");
+        assert!(g.list().is_empty() && !g.any());
+        let routes: serde_json::Value = serde_json::from_str(g.routes_out.borrow().as_deref().unwrap()).unwrap();
+        assert_eq!(routes["routes"], serde_json::json!([]), "control drops the route");
+        assert!(!std::fs::read_to_string(d.join("guests.json")).unwrap().contains(&digest(&token)));
+
+        arugula_proto::sharing::set_guest_ssh(&d, true).unwrap();
+        let g = Guests::open(&d, None, None);
+        assert!(g.login(true, &token).is_none() && g.login(true, &t2).is_none(), "on again: none comes back");
+        assert!(!g.end_all_if_off(), "nothing to end while on");
+        std::fs::remove_dir_all(d).unwrap();
+    }
+
+    /// Where the machine admits no guests (a deploy's box): a held invite's
+    /// login is refused and a single-use one isn't spent, a guest who
+    /// logged in before the switch gets no shell after it, and no invite is
+    /// made (409). Where it admits them (a workspace), all of that works.
+    #[test]
+    fn a_machine_that_admits_no_guests_refuses_their_logins_shells_and_invites() {
+        let d = dir("admits");
+        let g = Guests::open(&d, None, None);
+        let (once, token) = g.mint(&GuestInviteRequest { pane: 3, ..Default::default() }, None);
+        assert!(g.login(false, &token).is_none(), "refused on a deploy's box");
+        assert!(!g.list().iter().find(|x| x.id == once.id).unwrap().used, "and not spent");
+        let got = g.login(true, &token).expect("a workspace lets the same invite in");
+        assert!(g.may_shell(true, &got), "a workspace gives a shell");
+        assert!(!g.may_shell(false, &got), "no shell once it's a deploy's box");
+        assert_eq!(may_mint(false).unwrap_err().0, StatusCode::CONFLICT);
+        assert!(may_mint(true).is_ok());
+        std::fs::remove_dir_all(d).unwrap();
     }
 
     #[test]

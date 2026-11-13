@@ -7,8 +7,21 @@ small script, or a response recorded from the real service and checked in.
 Nothing in the default run costs money, and no test waits for a person:
 what still needs one is listed under [By hand](#by-hand).
 
+Control and its platform, and the tests that start them (control-smoke,
+the test stack's `control` profile, the platform on Postgres, the specs
+that start a control, and the Mac checks that sign in to one: real Safari,
+the iOS Simulator, the app in cloud mode and J2a), left this repository for
+the cloud's own. Sections below that still describe them are history: they
+run there now, against this repository at a pinned commit. There, the
+`control` profile goes over this repository's test stack (its boxes,
+`testnet/`) with `just testnet`, and guest_ssh.rs's jump host test became
+its `guest-hop` claim; real Safari is `just macos-safari`, on this
+repository's VM harness. The iOS Simulator (parked, #257), the app in cloud
+mode and J2a's Mac half weren't brought over: they're in this repository's
+history, before the commit that moved control out.
+
 ```sh
-just test        # Rust tests, the web typecheck, e2e-interop, control-smoke
+just test        # Rust tests, the web typecheck, e2e-interop
 just check       # just test, plus rustfmt and clippy (what CI runs on Linux)
 just e2e         # the browser tests, in the system Chrome and WebKit
 ```
@@ -27,15 +40,15 @@ or an account skip without it and name what's missing
 |---|---|---|
 | `cargo nextest run --workspace` (in `just test`) | unit tests in every crate, and the daemon's integration tests in `crates/arugulad/tests/`, `ssh.rs` and `reboot.rs` among them (Docker); the [client fixtures](#client-fixtures) both ways | Linux and macOS |
 | `just e2e-interop` (in `just test`) | the browser's end-to-end crypto (`web/src/shell/e2e`) against Rust's (`crates/e2e`): certificate vectors made by `crates/e2e/examples/interop.rs` and the ones checked in (`crates/e2e/fixtures/`), and a Noise handshake with its `responder` | Linux and macOS |
-| `just test-platform-postgres` | the platform's tests (`arugula-platform`) again on Postgres 17, in a container of their own: `ARUGULA_TEST_POSTGRES_URL` gives each test a schema there (`Db::test`) where it would have SQLite in memory | Linux (Docker) |
-| `just control-smoke` (in `just test`) | `web/control-smoke.ts`: a fake GitHub, Stripe and push service, the real `arugula-control` and real daemons; headless devices sign in, enroll, approve the daemons' join codes and reach them directly and through the relay; the CLI (M49) logs in with a code the device approves and, with no daemon of its own, runs, lists and captures on one machine directly and one through the relay | Linux and macOS |
 | `just e2e` | the Playwright specs in `web/e2e/` against throwaway daemons (`just e2e <url>` tests a running one): the `chrome` project, and `webkit` for `*.webkit.spec.ts` | Linux (Playwright's Chromium and WebKit) |
 | `just journey [j1\|j2a\|j2b\|j2c\|j5\|j6]` | a new user's journeys ([below](#a-new-users-journeys)): one person from no account to a terminal, two people linking up, someone who won't read docs, and two people on a tailnet with no control; each ends with an annotated graph in `web/journey-reports/` (local, never committed) | Linux, in the e2e shards (they're specs in `web/e2e/`) |
 | `just e2e-webkit` | only the `webkit` project: Safari's engine, for device keys (#94) and the one-click invite (#137) | macOS |
-| `just testnet up`, `test`, `break` (`ssh`, then `control`) | the Docker test stack's claims ([testnet/README.md](../testnet/README.md)), then each claim under `BREAK=1`, where it must fail | Linux |
-| `just forges`, `just testnet-hosts`, `just testnet-editors` | real forges, two hosts and VS Code over Remote-SSH, in Docker ([below](#real-forges-two-hosts-vs-code-over-remote-ssh)) | the forges nightly (`forges-nightly.yml`) |
-| `just macos <test>` | the tart VM's checks: `tools` (real Safari, then launchd with no GUI session, in one VM), Safari in the iOS Simulator, the desktop app ([below](#a-fresh-mac-the-tart-vm-harness)), `journey`: J1 on the real app and Safari, then J2a with Riley in a browser, `journey-j3`: the app installed by hand over an older daemon, and `journey-j4`: an agent installing over ssh, all graphed ([below](#a-new-users-journeys)) | no |
+| `just testnet up`, `test`, `break` (`ssh`) | the Docker test stack's claims ([testnet/README.md](../testnet/README.md)), then each claim under `BREAK=1`, where it must fail | Linux |
+| `just forges`, `just testnet-editors` | real forges and VS Code over Remote-SSH, in Docker ([below](#real-forges-two-hosts-vs-code-over-remote-ssh)) | the forges nightly (`forges-nightly.yml`) |
+| `just macos <test>` | the tart VM's checks: `tools` (launchd with no GUI session, [below](#a-fresh-mac-the-tart-vm-harness)), `journey-j3`: the app installed by hand over an older daemon, and `journey-j4`: an agent installing over ssh, all graphed ([below](#a-new-users-journeys)) | no |
 | `just desktop-check` | rustfmt and clippy for `crates/desktop` | Linux |
+| `just native-check` | rustfmt, clippy, tests and the smoke test for `native/core` | Linux |
+| `just native-ios` | Builds `native/core` and the iPhone app for iOS, and runs the core's smoke test on a simulator when there is one | no, nightly on jake-mini (`macos-vm.yml`), which has Xcode's iOS SDK |
 | `just desktop-xvfb` | the Linux desktop app under Xvfb in a container (`packaging/desktop/xvfb/`): `join` (#204), `app` (`bare`, `links` and `nautilus` among its claims), `stale` (#317) and `platform` (M157) (see [The desktop app's tests](#the-desktop-apps-tests)) | Linux |
 | `just desktop-packages ARCH` | the .deb on Ubuntu 22.04 and the .rpm on Fedora 42 install and claim `arugula://` (after `just desktop-linux ARCH`) | no |
 | `testnet/macos/desktop.sh`, `testnet/macos/update.sh`, `testnet/macos/stale-daemon.sh` | the macOS app from its .dmg in a fresh tart VM, its updater, and a daemon older than the app's (#661) | no |
@@ -47,7 +60,8 @@ CI (`.github/workflows/check.yml`) runs on pushes, every job it can at
 once (#287); a new push to a branch cancels that branch's run:
 - **lint** (GitHub's runners): rustfmt (`just fmt-check`), shellcheck,
   `just test-scripts` and gitleaks (`scripts/ci-gitleaks`).
-- On the home cloud's runners (`arugula-amd64`, a fresh pod per job;
+- On GitHub's runners (`ubuntu-24.04`), except **static**, **test** and
+  **test-2**, on the home cloud's (`arugula-amd64`, a fresh pod per job;
   [development.md](development.md#ci)):
   - **build** and **static**: the debug binaries (with `--features
     debug-embed`, so they carry `web/dist`) and the box's static ones,
@@ -56,32 +70,25 @@ once (#287); a new push to a branch cancels that branch's run:
   - **clippy**: Linux, Apple silicon (`just check-macos`; Intel's runs
     weekly in macos-intel.yml), the desktop app
     and `just notices-check`;
-  - **core**: `just check-core`, clippy and the daemon's and the CLI's
-    tests with the `labs` feature off (#452);
   - **test** and **test-2**: `just test` in two halves on two pods
     (`just test-run 1` and `2`, nextest's `--partition count:N/2`), the
-    box's binaries from static: each builds beside static, runs the server
-    workspace's half while static builds (`just test-run N server`), and
-    waits for them (`scripts/ci-wait-job`) only before the rest run
-    (`just test-run N rest`). test runs the doctests and control-smoke too;
-  - **test-postgres**: the platform's tests again on Postgres
-    (`just test-platform-postgres`), beside test and test-2;
-  - **testnet**: the test stack's ssh and control profiles;
+    box's binaries from static: each builds beside static and waits for
+    them (`scripts/ci-wait-job`) only before its half runs. test-2 runs
+    the doctests and e2e-interop too;
   - **e2e**: the specs (`E2E_SET=rest`) in twelve shards split by recorded
     time (`web/scripts/e2e-shard.mjs` from `web/e2e/durations.json`; refresh
     it with `just e2e-durations RUN` after a main run), each with its own
     test daemon on a free port. The shards run on GitHub's runners
     (`ubuntu-24.04`, since 2026-10-28), from build's binaries: they build
     nothing, and a VM of their own keeps other jobs' load out of their
-    timings. **stack**: those on the test stack
-    (`E2E_SET=stack`). The specs that time things (`E2E_SET=perf`: the
+    timings. The specs that time things (`E2E_SET=perf`: the
     frame rates, `editors.spec.ts`) run nightly instead
     (`.github/workflows/perf-nightly.yml`, since 2026-10-28). The frame
     rates are logged, and what the code does in a frame is asserted: a
     Canvas 2D scene's work against the frame its rate allows, the city's
     draw calls and triangles (#278); the editors' times to a file are reported against
     their 3 s budget (`web/e2e/timing.ts`) in the job's summary, over
-    budget marked, and don't fail it (shared pods put them over with
+    budget marked, and don't fail it (shared pods once put them over with
     nothing broken: 10 red main runs in a week);
   - **desktop-xvfb**: `just desktop-xvfb` (`join`, `app`, `stale`, `platform`)
     in its container. It isn't named `desktop`, which is Windows'
@@ -89,13 +96,32 @@ once (#287); a new push to a branch cancels that branch's run:
   Each job takes one of two build directories kept for its kind of job,
   and a test stack with its own name, ports and subnet (`scripts/ci-env`),
   so jobs and runs on geek don't share either.
-  Pushes to branches other than main skip testnet, stack and perf (geek
-  runs several branches at once, and their load failed the tests that
-  time things); `gh workflow run check.yml --ref BRANCH` runs them all.
-- **macos** (our Macs: a throwaway Tart VM per job, home-cloud's
-  `mac_runner`, `runs-on: [self-hosted, macos-arm64]`):
-  `just test` and `just e2e-webkit`, with `ARUGULA_SKIP_DOCKER=1` (no
-  Docker there; geek's test runs the ssh tests).
+- **macos (test)** (our Macs: a throwaway Tart VM per job, home-cloud's
+  `mac_runner`, `runs-on: [self-hosted, macos-arm64]`, set up by
+  `.github/actions/macos-setup`): `just test`, with
+  `ARUGULA_SKIP_DOCKER=1` (no Docker there; Linux's test runs the ssh
+  tests).
+
+The jobs that rarely failed left check.yml on 2026-10-28 (#305): in
+main's runs from 10-23, test-postgres failed 0 times in 73, testnet 0 in
+107, stack 1 in 107, core 2 in 108 and macos (webkit) 0 in 110, and they
+added the pod and Mac load that drove test's p90. They run in
+`.github/workflows/rare-nightly.yml` every night on main's head, and on a
+release candidate (`gh workflow run rare-nightly.yml --ref main -f
+sha=SHA`, which `just release --rare` runs):
+- core: `just check-core`, clippy and the daemon's and the CLI's
+  tests with the `labs` feature off (#452);
+- testnet: the test stack's ssh profile (its claims
+  under `BREAK=1` are testnet-break.yml's, nightly);
+- stack: the specs on the test stack (`E2E_SET=stack`);
+- webkit: `just e2e-webkit` on our Macs.
+
+It builds what testnet and stack need itself (rare-build and rare-static,
+copies of check.yml's build and static). When every job passes, its last
+job tags the commit `ci/rare/<sha>`, and a daemon release refuses a commit
+without that tag (development.md, "Releasing"). A break these jobs would
+catch now shows up at the nightly or the release candidate, after its
+commit is green: that's the risk #305 accepted.
 
 Pull requests run none of check.yml (the home cloud's pods take only
 main's pushes). They run `.github/workflows/binaries.yml` on GitHub's
@@ -118,15 +144,73 @@ pulls the test image from GHCR. Adding the `full-check` label to a pull
 request from a branch of this repository dispatches check.yml on that
 branch (`.github/workflows/full-check.yml`, the same as `gh workflow run
 check.yml --ref BRANCH`); a fork's pull request can't. To run it again,
-remove the label and add it back.
+remove the label and add it back. Nothing requires it: the merge queue
+runs check.yml before a pull request lands (development.md, "Merging
+through the queue").
+
+Every pull request also runs `.github/workflows/pull-request.yml` (#306,
+#917), on GitHub's `ubuntu-24.04` runners only, and it has to pass before
+the pull request can be queued: the ruleset requires its **pr-gate**
+(development.md, "Merging through the queue"). It was added because a
+third of the queue's runs failed on what a pull request could have shown
+on its own: of 40 failed groups (Nov 10-12), 26 were Rust tests, 10
+clippy, and 5 a spec that imported a file nobody committed.
+
+- **pr-plan** picks what the change reaches: the specs
+  (`scripts/pr-plan`, below) and the Rust crates (`scripts/pr-crates`):
+  the crates whose directory it changes, and those whose source names a
+  changed file by a relative path (`../../docs/mcp-permissions.json`), as
+  a nextest filterset of them and every crate that depends on them
+  (`rdeps()`). A change to the workspace's config (`Cargo.toml`,
+  `Cargo.lock`, `.cargo/`, `rust-toolchain.toml`, `.config/`, `vendor/`,
+  the testkit) or to this workflow takes every test; one that reaches no
+  crate (the web client, docs) takes none, and skips the two jobs below.
+- **pr-clippy**: check.yml's clippy over the root workspace
+  (`--all-targets -- -D warnings`) and `just workspace-guard`; not
+  `check-macos`, the desktop app or the native core, which the queue runs.
+- **pr-test (1)** and **(2)**: the whole workspace's tests built as
+  check.yml's test builds them, and the ones pr-crates picked run in two
+  halves under CI's nextest profile (the quarantine left out), with a
+  systemd user manager (`ARUGULA_REQUIRE_SYSTEMD=1`). The tests on the
+  Docker test stack (`ssh::`, `reboot::`: they need the box's static
+  binaries), the doctests and e2e-interop are left to the queue.
+- **pr-specs**: `playwright test --list` over `E2E_SET=rest`, both
+  projects, so a spec that can't load fails in seconds whatever pr-plan
+  picked. It needs web's packages and nothing built.
+- **pr-build** (the debug binaries, as check.yml's build:
+  `.github/actions/build-debug`) and **pr-e2e (N)** run the specs pr-plan
+  picked (`.github/actions/e2e-shard`, which check.yml's e2e runs too). A
+  change to docs alone runs neither. Otherwise it takes the journeys and a
+  few others, any spec it changes, and any spec whose name shares a word
+  with a changed path; `web/scripts/e2e-select.mjs` has the lists, and what
+  every spec reads (`helpers.ts`, Playwright's config) runs them all.
+- **pr-gate**: the verdict, failing when any job above failed.
+
+So a green pr-gate doesn't mean the group will pass: the merge queue runs
+every spec, every test, macOS and Windows before anything lands. The
+`full-check` label runs check.yml on the branch for an earlier answer.
+Nothing here needs a secret: with sccache's password (a branch of this
+repository) the builds go through sccache, and a fork's compile cold. A
+new push cancels the run before. The workflow also runs on `merge_group`,
+where only pr-gate runs, and passes, since the ruleset requires it there
+too. Its jobs are named `pr-*` so no `ci.green` phase matches them; their
+ids are check.yml's (`build`, `clippy`, `test`) so they restore the build
+caches main's jobs saved.
 
 A commit on main whose required checks all passed gets a `ci/green/<sha>`
 tag, and one that passed and then failed a re-run gets `ci/revoked/<sha>`
 (chant's `ci.green`, #503). `chant.workspace.json` names the checks:
-lint; build, static and clippy; test, test-2, test-postgres and core; the
-e2e shards; testnet, stack and desktop-xvfb (since 2026-10-28: they failed
-unseen while they weren't required); macos (test) and macos (webkit); and
-Windows' workspace, workspace-clippy and desktop. A skipped run counts as
+lint; build, static and clippy; test and test-2; the e2e shards;
+desktop-xvfb (since 2026-10-28: it failed unseen while it wasn't
+required); macos (test); and Windows' workspace, workspace-clippy and
+desktop. The same tick also tags each lane in `ci.green.lanes` (#307):
+`ci/green-app/<sha>` needs only the phases
+the app ships from, and `ci/green-daemon/<sha>` needs them all,
+as `ci/green` does; a lane's revocation is `ci/revoked-<lane>/<sha>`.
+development.md ("Releasing") lists each lane's phases, and the release
+that reads it. rare-nightly.yml's jobs aren't among them (#305), so they keep
+check.yml's names, and its builds and its WebKit job have names of their
+own (rare-build, rare-static, webkit). A skipped run counts as
 passed. Every phase builds the newest commit (`"build": "newest"`, #1675):
 one run at a time on main, and pushes that land while one runs leave only
 the newest waiting; the ones in between get no run and no tag. A required
@@ -135,20 +219,23 @@ the tick bisects the unbuilt commits below it (dispatching check.yml at a
 `ci/build/<sha>` tag) to name the one that broke it. Its records are on the
 `chant/lifecycle` branch (`_ci/<sha>.json`). Since an unbuilt commit
 may sit under a docs-only push, the jobs that skip on what changed
-(`scripts/changed`) diff main against the newest green commit, not the
-push's previous one. The nightly workflows aren't required: `scripts/ci-nightly-red`
+(`scripts/changed`) diff main against `chant ci base` (chant#4643): the
+newest commit below whose record shows every required phase built and
+passed there, not the push's previous one. When chant finds none, they run. The nightly workflows aren't required: `scripts/ci-nightly-red`
 opens an issue for each whose newest scheduled run failed (below). `.github/workflows/chant-ci-green.yml` runs
 `chant ci tick` when check, windows or windows-desktop finish on main, and
 every 15 minutes. It's generated: after changing `ci.green` or those
 workflows' job names, run the command its first line names (it also
-writes check.yml's and windows*.yml's triggers and concurrency). Its
+writes check.yml's and windows*.yml's triggers and concurrency, and
+chant-merge-queue.yml, the merge queue's verdict). Its
 `--install` step gives git an author, without which the tick can't write
 its `_ci` records. A check run is matched by name, so no other workflow
 that runs on main's commits may have a job named like a required one, not
 even one that's skipped there (binaries.yml's PR-only desktop-xvfb is
 named `desktop-xvfb (pull request)` for that). `npx
-@intentius/chant@0.124.60 ci last-green` (after `git fetch --tags`) prints
-the newest green commit.
+@intentius/chant@0.124.70 ci last-green` (after `git fetch --tags`) prints
+the newest green commit, and `--lane server` (or `app`, `daemon`) the
+newest of a lane's.
 
 `.github/workflows/ci-red.yml` runs `scripts/ci-red` every hour and after
 each `chant-ci-green` run, so a red main gets heard: when main has gone 6
@@ -164,12 +251,49 @@ revocation; GitHub notifies the repo's watchers and anyone the
 green commit newer than everything it reported. `scripts/tests/ci-red.sh`
 (`just test-scripts`) runs it with a fake gh.
 
+chant's tick can say the same with `ci.stale` (chant#4678, `staleAfter` in
+`ci.green.notify`), and that replaces the 6-hour timer once chant's events
+reach Arugula's own issues (Arugula issue 774). Until then `scripts/ci-red`
+keeps it.
+
 The same workflow runs `scripts/ci-nightly-red` for the scheduled
 workflows (forges-nightly, macos-vm, macos-intel, testnet-break,
-perf-nightly), which ci/green doesn't count: one issue per workflow,
+perf-nightly, rare-nightly), which ci/green doesn't count: one issue per workflow,
 "nightly is red: WORKFLOW", opened when its newest scheduled run on main
-failed, commented on once per failed run, and closed when one passes.
+failed, commented on once per failed run, and closed when one passes. A
+newer successful manual run (`workflow_dispatch`) on main also clears the
+alert if it tests the failed commit or a descendant. Only the newest
+completed manual run counts: an older success, a run on another branch or
+older code, and a failed or cancelled manual run can't dismiss the alert.
+The monitor needs main's full Git history to check ancestry (ci-red.yml
+already checks it out).
 `scripts/tests/ci-nightly-red.sh` runs it with a fake gh.
+
+`scripts/ci-velocity` says how the merge queue is doing, so a change to CI
+can be judged by its numbers (Arugula issue
+https://app.arugula.io/issues/iss_9c80206ca3fd4fc3a53122efb137311a). Over a
+window (the last 7 days by default; `--since 2026-11-10`, `--since 14d`,
+`--until 2026-11-12`) it reads, with `gh api` and `GH_TOKEN`:
+
+- check.yml's merge_group runs: how many, passed, failed and cancelled, the
+  failure rate (failed over passed and failed: a cancelled group was dropped
+  for a failure ahead of it), and the median and p90 wall time;
+- time to merge: each pull request merged in the window, from its first
+  `added_to_merge_queue` timeline event to its merge, median and p90 (one
+  merged without the queue is counted apart);
+- each failed group's first failing job (the one that finished first, a
+  matrix's shards as one name), as a share of the failures.
+
+It prints a markdown table, or `--json`. `--repo` and `--workflow` point it
+at another repository. `--event pull_request` is for one with no merge queue,
+such as arugula-salad/cloud, which squash-merges a pull request once
+check.yml's `green` passes (Arugula issue
+https://app.arugula.io/issues/iss_ca45835d47a2a200b1120a4340f98b05): the
+same numbers from check.yml's pull_request runs, and time to merge from a
+pull request's last ready-for-review (its creation if it was never a draft)
+to its merge. The table's heading names the repo and the event, and its rows
+read as the queue's do. Percentiles are nearest rank. `scripts/tests/ci-velocity.sh` (`just test-scripts`) runs it against
+recorded API answers (`scripts/tests/ci-velocity/`) through a fake gh.
 
 The Rust tests run under cargo-nextest (`.config/nextest.toml`): each in
 its own process and all at once, `ssh.rs` and `reboot.rs` one at a time
@@ -196,48 +320,57 @@ arugula-salad/site).
 ## Quarantine
 
 A test that fails on both tries on unrelated commits turns main red for
-everyone. Until someone fixes it, it can go in the quarantine,
-`.config/quarantine.toml`: CI's runs leave it out, and
+everyone. Until someone fixes it, it can go in chant's quarantine,
+`ci.green.quarantine` in `chant.workspace.json` (chant's docs: `chant ci`,
+"Quarantine"): CI's runs leave it out, and
 `.github/workflows/quarantine-nightly.yml` runs the quarantined tests
-alone every night, where a red run says one still fails and a green one
-that it may be fixed. That run gates nothing. `just test` and `just e2e`
-on your own machine still run them with the rest.
+alone every night, where a red run says one still fails. That run gates
+nothing. `chant ci quarantine report` there lists each test that passed,
+in the run's summary, so someone can check its issue and take it out.
+Once `ci.green.notify` is set it also sends `ci.quarantine-passed`. `just
+test` and `just e2e` on your own machine still run them with the rest.
 
-Each entry names the test, the issue that tracks the fix, the day it comes
-back and why:
+Each entry is under its phase and names the test, the issue that tracks
+the fix, the last day it stays out (`until`, UTC, at most `maxDays`, 14,
+from today) and why. Without entries there's no `quarantine` key at all,
+since chant refuses an empty one:
 
-```toml
-[[rust]]
-test = "arugulad::integration ssh::ssh_installs_runs_forwards_the_agent_pushes_and_saved_hosts_work"
-issue = "1234"           # a number or a URL
-until = "2026-11-10"     # at most 14 days out
-why = "Fails twice on unrelated commits (2ac1e89ba, c2b452072)."
-
-[[e2e]]
-spec = "web/e2e/chat-control.spec.ts"
-title = "polish: ↑ edits the last message and Esc cancels, ..."   # the test's own title, whole
-issue = "1235"
-until = "2026-11-10"
-why = "..."
+```json
+"quarantine": {
+  "maxDays": 14,
+  "phases": {
+    "test": [
+      { "test": "ssh::ssh_installs_runs_forwards_the_agent_pushes_and_saved_hosts_work", "issue": "1234", "until": "2026-11-10", "why": "Fails twice on unrelated commits (2ac1e89ba, c2b452072)." }
+    ],
+    "e2e": [
+      { "file": "chat-control.spec.ts", "test": "polish: ↑ edits the last message and Esc cancels, ...", "issue": "1235", "until": "2026-11-10", "why": "..." }
+    ]
+  }
+}
 ```
 
-A Rust test is named as nextest prints it in CI's log: the binary id, a
-space, the test's name. To add one, add its entry and run `just
-quarantine`, which writes the entries into `default-filter` in each
-workspace's nextest config (`.config/nextest.toml`,
-`server/.config/nextest.toml`: CI's profile skips them, and nextest says
-how many it skipped) and checks the manifest. Playwright's config reads the
-manifest itself and, under `CI`, leaves the specs out (`grepInvert`);
-`E2E_QUARANTINED=1` runs only them. To take one out, delete its entry
-and run `just quarantine` again.
+A Rust test goes under `test` and is named without its binary id: the
+name nextest prints after the binary (`ssh::...`). Every nextest run in CI
+leaves out the test phase's entries, on Linux, macOS and
+Windows: `just test-run` under CI's
+profile, and windows.yml, pass `chant ci quarantine filter --phase test
+--runner nextest` as `-E`, through `scripts/chant`, which runs the pinned
+chant. Name tests without binary ids, since nextest refuses a binary id
+that isn't in the workspace it runs. A
+spec goes under `e2e`, with `file` its path from `web/e2e` and `test` its
+title. Playwright's config asks chant for the e2e phase's pattern under
+`CI` and leaves those out (`grepInvert`); `E2E_QUARANTINED=1` runs only
+them. Don't quarantine a test in a serial spec (`describe.configure` mode
+`"serial"`): its later tests depend on it. Fix it, or make its timing
+report-only through `web/e2e/timing.ts`. To take one out, delete its
+entry.
 
-`scripts/quarantine.mjs check`, in `just test-scripts` and so in lint, fails
-when an entry has no issue, is past its `until` or more than 14 days out,
-names a test that isn't there, names one in a serial spec (its later
-tests depend on it: fix it, or make its timing report-only through
-`web/e2e/timing.ts`), or the nextest configs don't match the manifest. So an expired quarantine turns lint red: fix the test and delete
-the entry, or delete the test. A new `until` needs a reason in the issue.
-`scripts/tests/quarantine.sh` tests the script.
+`just quarantine`, in `just test-scripts` and so in lint, runs `chant ci
+quarantine check`, which fails when an entry is past its `until` or more
+than 14 days out, and fails on a Rust test named with its binary id. The
+test phase's filter fails the same way, so an expired quarantine turns
+lint and the phase's jobs red: fix the test and delete the entry, or
+delete the test. A new `until` needs a reason in the issue.
 
 ## The daemon's integration tests
 
@@ -247,7 +380,7 @@ through `crates/testkit`, then drive it over its Unix socket and HTTP API.
 ```rust
 use arugula_testkit::{Daemon, arugulad};
 
-let d = arugulad!("api").env("PS1", "$ ").no_wisp().start();
+let d = arugulad!("api").env("PS1", "$ ").no_provider().start();
 let pane = d.post("/api/run", json!({"command": "exit 4"}))["pane"].as_u64().unwrap();
 assert_eq!(d.get(&format!("/api/panes/{pane}/wait?until=exit&timeout=10"))["code"], 4);
 d.wait_for("its history", || d.get(&format!("/api/history?pane={pane}"))[0]["exit"] == 4);
@@ -263,8 +396,8 @@ output goes nowhere. The rest is the test's to say:
 - `.record(dir)` saves the client fixtures its sessions record, and
   `.home_in_state()` gives it a `$HOME` (and XDG dirs) in its state dir
   ([Client fixtures](#client-fixtures)).
-- `.arg()`, `.args()`; `.no_wisp()` and `.no_tailscale()` keep this host's
-  wispd and tailscaled out of it; `.block_listen()` adds
+- `.arg()`, `.args()`; `.no_provider()` and `.no_tailscale()` keep this host's
+  sandbox provider (`LOAM_API_URL`) and tailscaled out of it; `.block_listen()` adds
   `--block-listen 127.0.0.1:0`.
 - `.env()`, `.envs()`, `.env_remove()`, and `.path()` for its `PATH`, so a
   test can keep it from finding something installed on this machine (chant,
@@ -294,8 +427,7 @@ Dropping it kills it, kills what its panes left running and removes its
 state dir (#35, #68). With `ARUGULA_KEEP_TEST_STATE=1` the dir stays and
 its path is printed. A file that needs more (deleting machines it made,
 stopping the code-servers it started) wraps the `Daemon` in a struct of its
-own with a `Drop` that does that first, as `machines.rs` and `editors.rs`
-do.
+own with a `Drop` that does that first, as `editors.rs` does.
 
 Also in the crate: `fixture`, recording and replaying [client
 fixtures](#client-fixtures); `listen`, which reads the port a daemon took from
@@ -437,7 +569,7 @@ Recorded from real systems and checked in, so tests see real shapes:
 | `crates/daemon/tests/fixtures/chant/why/` | `graph --intent app/server.mjs --json` and `status local --json` (chant 0.108.1) over a workspace with a committed agent run, an uncommitted line, a decision and a held lease (#619) | `make.sh DIR CHANT OUT` beside them, with the chant from `web/e2e/fixtures/chant-why` |
 | `crates/daemon/tests/fixtures/chant/audit-agents.json` | `chant audit --agents --scope system,user --format json` (chant 0.95.0), with only Claude Code configured | `chant audit --agents` with `HOME` a scratch dir holding only `.claude/CLAUDE.md` and `.claude/settings.json` |
 | `crates/proto/fixtures/` | client fixtures: what a client and the daemon said to each other ([below](#client-fixtures)) | `just record-fixtures [names]` |
-| `crates/proto/fixtures/releases/<version>/` | the client fixtures as each release shipped them | `just release-fixtures`, when releasing |
+| `crates/proto/fixtures/releases/<version>/` | the client fixtures as each release shipped them | `just release` commits them to main after the tag; by hand, `just release-fixtures X.Y.Z` |
 | `crates/e2e/fixtures/certs.json` | device certificates, a revocation and what Rust makes of them (`interop fixtures`), for implementations without a Rust toolchain | `just e2e-vectors` |
 
 Scrub anything personal or secret before checking a recording in;
@@ -486,7 +618,7 @@ ids are kept: a fresh daemon hands out the same ones.
 `just record-fixtures [names]` runs `crates/testkit/src/bin/record-fixtures.rs`
 against throwaway daemons, one per fixture, set up by
 `arugula_testkit::fixture::daemon`: bash without rc files and `PS1='$ '`,
-a `$HOME` in the state dir, no wisp, tailscaled, Claude Code IDE or update
+a `$HOME` in the state dir, no sandbox provider, tailscaled, Claude Code IDE or update
 check. A test can record too: a builder with `.record(dir)` writes each
 session it finishes.
 
@@ -553,9 +685,13 @@ fails here, as does a message it waited for that no longer comes.
 
 ### Releases
 
-Each release copies the set to `crates/proto/fixtures/releases/<version>/`
-(`just release-fixtures`, committed with the version bump;
-`scripts/release check-version` refuses a tag without it).
+Each daemon release copies the set to `crates/proto/fixtures/releases/<version>/`
+on main: `just release` commits the tag's set there right after it pushes
+the tag (the arugula-release deploy does it with the `arugula-io` App's
+token), and skips it when main has it already. If main refuses that push,
+the release stands and it says to run `just release-fixtures X.Y.Z` and
+merge that; release.yml's `fixtures` job says so too in its summary
+([development.md](development.md#releasing)).
 `released_fixtures_still_play` replays the newest two releases' sets, so
 a daemon change that breaks a client still out there fails before it
 ships. Until the first release with fixtures, it says there are none.
@@ -609,6 +745,16 @@ its `context` fixture made. A context a spec opens with
 through every spec after it, so later specs ran on a busier machine than
 they do alone (#258). Every spec that uses `browser` has
 `test.afterAll(closeContexts)` (from `helpers.ts`); a new one should too.
+
+`a11y-shell.spec.ts` and `a11y-platform.spec.ts` (#401) run axe
+(`@axe-core/playwright`, WCAG 2.0 to 2.2 at A and AA, target-size on) on
+the main places of a machine's page and the platform page, at 1440 and
+400 px, light and dark (`colorScheme` with the Appearance pick "System").
+What a place already does wrong is listed in `web/e2e/a11y-known.json`,
+each line with why; a violation not listed fails, and so does a listed one
+that no longer turns up, so a fix takes its line out. `A11Y_DUMP=DIR` writes
+each place's violations to DIR as JSON, to write lines from. The helpers
+are in `web/e2e/a11y.ts`.
 
 A check that should hold in Chrome and WebKit goes in a plain module both
 projects' specs import, since a spec importing another spec registers its
@@ -960,11 +1106,11 @@ Three tests cover M49, from fastest to most faithful:
   they're still running (#254: a streamed answer, in parts), and `attach`
   with a pipe for stdin types a command, sees its answer and detaches on
   Ctrl-]. `arugula-control`'s own `routing_wire` test checks the join
-  and the signed requests (`scripts/server-cargo test -p arugula-control-base the_cli_joins`).
+  and the signed requests (in the cloud's repository: `the_cli_joins`).
 - `web/e2e/host-menu-control.spec.ts` (`just e2e`): a daemon joined by
   code (approved by the device) has *All your machines…* in its host menu,
   opening control's page; one that isn't joined doesn't.
-- The testnet's `cli` claim (`just testnet test control cli`; Docker):
+- The testnet's `cli` claim (the cloud's `just testnet test cli`; Docker):
   the CLI on the bastion, with no daemon, logs in and reaches box-bare
   directly and box-systemd through the relay; on box-systemd it also
   follows events and a pane's output, and drives `attach` in a
@@ -978,8 +1124,9 @@ Three tests cover M49, from fastest to most faithful:
   [SSH track's table](#the-ssh-tracks-tests) and
   [testnet/README.md](../testnet/README.md#claims). Beside another
   worktree's stack: `COMPOSE_PROJECT_NAME=illo-j
-  ARUGULA_TESTNET_INNER_NET=10.229.85 ARUGULA_TESTNET_SSH_PORT=22955
-  ARUGULA_TESTNET_CONTROL_PORT=22985 ARUGULA_TESTNET_FAKES_PORT=22986`.
+  ARUGULA_TESTNET_INNER_NET=10.229.85 ARUGULA_TESTNET_SSH_PORT=22955`
+  (and, for the cloud's control profile, `ARUGULA_TESTNET_CONTROL_PORT`,
+  `ARUGULA_TESTNET_FAKES_PORT` and `ARUGULA_TESTNET_GUEST_SSH_PORT`).
 
 ## Phones
 
@@ -1019,6 +1166,9 @@ people signed in on any browser context, and machines joined to it.
 | #964 | `doc-grammar.spec.ts` (no page), `doc.spec.ts`, `doc.webkit.spec.ts` | a Doc's charts and drawings: the daemon's validator and the web client's both run over `crates/daemon/tests/fixtures/docs/` (`expect.json` says what each must come to); a chart drawn as SVG, a drawing shown only through `<img>` (a script in one runs nowhere), a chart that can't be drawn saying why with its source, a viewer's page, the light theme and the dark, and a chart fence in a forge body staying code (`forge-github.spec.ts`) |
 | #965 | `doc-grammar.spec.ts`, `doc.spec.ts`, `doc.webkit.spec.ts` | a Doc's pictures: `![alt](assets/<name>)` checked by the daemon and the web client over the same files (`expect.json` lists the Doc's assets); a PNG shown from a data: URL (control's CSP has no blob:, and none is made), fetched once per `name/rev`, a name written again shown with no reload, an `http://`, `data:` or `../` image staying text and never fetched, a viewer's page showing it, and the cache empty once the block is closed |
 | #86 | `studio-phone.spec.ts` | a studio app from the template through the token API (a fake studio and box), `arugula studio login`, `hud share --role follower`, `arugula studio follower`, `arugula app`; a question answered from a Pixel 7 and a gate approved from an iPhone, with hud told who |
+| Arugula #77 | `control-waiting-approvers.spec.ts` | a waiting page names the devices that can approve it, last used first: a new browser lists the laptop and names the desktop app apart (it approves machines and apps, not browsers), a browser here for a machine lists both, and with every device gone it says so and points to a recovery code. A local control (`team-fixture.ts`) |
+| Arugula #85 | `agent-images.spec.ts`, `agents.spec.ts` | an agent block's kept images (M71) from data: URLs, not blob: ones (control's page CSP has no blob:): the preview and the transcript's picture loaded (`naturalWidth`), a viewer's page showing it (reading one is a viewer's call) and refused a send, a click showing it full size. The same through control's page, owner and viewer, is `agent-images-control.spec.ts` in the cloud repository, with the other specs that start a control |
+| Arugula #869 | `doc-prototype.spec.ts` (desktop, Pixel 7), `doc.webkit.spec.ts` (iPhone, and WebKit at a desktop's size) | a Doc whose prototype is there before the page loads, switched to (and away and back): it runs, with no "tried to leave the page", though on a phone each switch moves its frame and loads it again, and each frame loads its page once (Arugula #947: WebKit loaded a `loading="lazy"` frame moved in from off the page twice); a prototype that navigates is still caught after that, also one that says it's ready itself first. The checks are `doc-steps.ts`'s |
 
 Run one with `cd web && E2E_PORT=<port> pnpm exec playwright test
 e2e/<spec>`; `editors.spec.ts` needs code-server, which its first test
@@ -1070,7 +1220,7 @@ stack recreate the boxes they use, so give each worktree its own stack
 
 | Test | Also needs | Run |
 |---|---|---|
-| the testnet's claims | `ssh`: nothing more. `control`: node, and the static binaries (`just static aarch64` on Apple silicon, `just static` on x86_64) | `just testnet up ssh` (or `control`), `just testnet test ssh`, `just testnet break ssh`, `just testnet down`. On `control`'s stack the ssh claims run too: CI runs `up control`, then `test` for `ssh` and `control`, and `break` for both when the claims or the stack change (`scripts/testnet-changed`) and every night (`testnet-break.yml`) |
+| the testnet's claims | nothing more | `just testnet up ssh`, `just testnet test ssh`, `just testnet break ssh`, `just testnet down`. CI runs `up ssh` and `test ssh` (rare-nightly.yml, every night and on a release candidate), and `break ssh` every night (`testnet-break.yml`). The `control` profile's claims are the cloud repository's, over this stack |
 | `crates/arugulad/tests/integration/ssh.rs`, `reboot.rs` (in `just test`) | the box's static binaries (or `ARUGULA_SSH_BINARIES`); `reboot.rs` also node and Playwright's Chromium in `web/` (`cd web && pnpm install`) | `cargo test -p arugulad --test integration ssh::` (or `reboot::`); they bring the `ssh` profile up themselves when it isn't ready (healthy), and `just test-run` brings it up before the suite (`testnet/suite-up.sh`) |
 | `testnet/measure-tailnet.sh` (S28) | the static binaries | `just testnet measure tailnet`; it brings the `tailnet` profile up itself |
 | `team-swarm-phones.spec.ts`, "a machine on another network, behind netem" (in `just e2e`) | `just static <arch>`; it builds a small Debian image with `tc` and `socat`, names its container and network after `COMPOSE_PROJECT_NAME`, and removes them after | `just e2e` |
@@ -1084,7 +1234,7 @@ tests](#the-ssh-tracks-tests).
 
 The Docker Hub images these pull come from a
 mirror on GHCR, `ghcr.io/arugula-salad/ci/<name>`, which is public, so a
-pull needs no credentials. CI's pods start with an empty Docker and pull
+pull needs no credentials. CI's runners start with an empty Docker and pull
 anonymously. Docker Hub's anonymous limit (429 `toomanyrequests`) once
 failed five of main's jobs in one run (2026-10-28).
 
@@ -1111,6 +1261,33 @@ failed five of main's jobs in one run (2026-10-28).
   it public: the org's Packages → the package → Package settings → Change
   visibility. It's a setting on GitHub's site; there is no API for it.
 
+One image is our own: the one check.yml's `e2e` shards and pull-request.yml's
+`pr-e2e` run in (`container:`), so a shard downloads nothing from the
+runners' Ubuntu mirror, which once held shards for hours fetching WebKit's
+packages (https://app.arugula.io/issues/iss_db99400ba2c2d962bd012371678e2cb7).
+
+- **What's in it.** [`packaging/ci-e2e/Dockerfile`](../packaging/ci-e2e/Dockerfile):
+  Playwright's own image (`mcr.microsoft.com/playwright:v<version>-noble`,
+  its browsers and their system packages), plus what
+  `.github/actions/setup` would fetch (vim-tiny, libnss-myhostname, zstd,
+  nvim, just, pnpm, Claude Code), python3, procps, sudo, and
+  `/etc/arugula-ci/browser-deps`, which tells `just browsers` and the
+  e2e-shard action to install no system packages. The jobs run it as
+  `pwuser`, uid 1001, the runner's own.
+- **How it's named.** `ghcr.io/arugula-salad/arugula-ci-e2e:<Playwright>-<hash>`:
+  web's `@playwright/test` from `web/pnpm-lock.yaml`, and a hash of the
+  Dockerfile with it. `scripts/ci-e2e-image ref` prints it.
+- **How it's built.** Each run's `e2e-image` job
+  (`.github/actions/e2e-image`) looks for the tag on GHCR, and builds and
+  pushes it when it's missing, so bumping Playwright or editing the
+  Dockerfile builds it once, in the first run that wants it. A fork's pull
+  request can't push: if the image is new there, its shards run on the
+  runner as before. A version the setup action pins (nvim, Claude Code)
+  is pinned in the Dockerfile too; if they differ, the setup action
+  installs its own, and the run still passes.
+- **Public.** The jobs pull it with the run's token, but make the package
+  public once (as above); the `e2e-image` job warns while it isn't.
+
 ### The test stack
 
 [`testnet/`](../testnet/README.md) is a Docker Compose stack, one profile per
@@ -1127,18 +1304,16 @@ These aren't part of `just check`: each has its own recipe.
 | What | Run | Details |
 |---|---|---|
 | Forgejo and GitLab CE with two bot users and webhooks (#93, M36-M40) | `just forges up forgejo && just forges test forgejo`, the same with `gitlab` (3-5 minutes and 4 GB to start), `just forges down` | [testnet/forges/README.md](../testnet/forges/README.md) |
-| #17 on two machines: home's layout holds panes on `mac`, which drops off the network (`docker network disconnect`) and comes back | `just testnet-hosts` | [testnet/hosts/README.md](../testnet/hosts/README.md) |
 | M28 in real VS Code (downloaded by `@vscode/test-electron`) over Microsoft's Remote-SSH into a box running arugulad: a phone follows the cursor, a breakpoint is a card it continues, an edit is accepted from its rail | `just testnet-editors` (downloads VS Code, its server and Remote-SSH; on Linux it runs under `xvfb-run`) | [testnet/editors/README.md](../testnet/editors/README.md) |
 
 The forge tests are `crates/arugulad/tests/integration/forges_real.rs`, marked
 `#[ignore]` so `cargo test` doesn't need the containers;
 `testnet/forges/test.sh` runs them with `--ignored` against the stack
-`up.sh` started, and they fail if it isn't there. The other two are
-Playwright specs (`web/e2e/testnet-hosts.spec.ts`,
-`web/e2e/editor-remote-ssh.spec.ts`) that bring their stack up and down
-themselves. A plain `just e2e` lists them as skipped, since they belong to
-their own recipes, which set `ARUGULA_TESTNET_HOSTS=1` or
-`ARUGULA_TESTNET_EDITORS=1`; with that set and no Docker they fail.
+`up.sh` started, and they fail if it isn't there. The other is a
+Playwright spec (`web/e2e/editor-remote-ssh.spec.ts`) that brings its stack
+up and down itself. A plain `just e2e` lists it as skipped, since it
+belongs to its own recipe, which sets `ARUGULA_TESTNET_EDITORS=1`; with
+that set and no Docker it fails.
 
 #### The nightly job against github.com
 
@@ -1157,7 +1332,7 @@ It needs, in the repository's Actions settings:
 | `ARUGULA_GH_TEST_REPO` | variable | `org/repo` in a test organization: public, both bots can write, with `.github/workflows/arugula-red.yml` on its default branch (a job that fails on pushes to `red-*`) |
 | `ARUGULA_GH_AUTHOR_TOKEN` | secret | the first bot's token: contents, pull requests, issues and actions, read and write, on that repository |
 | `ARUGULA_GH_REVIEWER_TOKEN` | secret | the second bot's token, the same |
-| `ARUGULA_GH_APP_ID` | variable | a test copy of Arugula's GitHub App (`arugula-forge-tests`), installed on the test organization, with its permissions (issues and pull requests read and write since M167, [control-ops.md](control-ops.md)) and pull request and issue comment events |
+| `ARUGULA_GH_APP_ID` | variable | a test copy of Arugula's GitHub App (`arugula-forge-tests`), installed on the test organization, with its permissions (issues and pull requests read and write since M167, control-ops.md (in the cloud repo's docs/control-ops.md)) and pull request and issue comment events |
 | `ARUGULA_GH_APP_PRIVATE_KEY` | secret | that App's private key (PEM) |
 
 Control is stood in for in that test, and the App's deliveries are read
@@ -1204,7 +1379,8 @@ a machine in those promises:
 - `git`: a forge's ssh git server, bare repositories behind `git-shell`.
   It knows only the client's key, and the boxes have no key of their own,
   so a push from a box can only have used a forwarded agent.
-- `control` and `fakes` (the `control` profile): `arugula-control` with
+- `control` and `fakes` (the `control` profile, the cloud repository's
+  testnet/compose.yaml over this one's): `arugula-control` with
   its relay, at a private address on the inner network that the boxes
   reach by dialing out, and fake GitHub, Stripe and Web Push.
   `web/fixtures/device-cli.ts` on the host is the person's phone or
@@ -1225,16 +1401,7 @@ reached only over ssh.
 | `just testnet test ssh` (`login`, `jump`, `no-route`, `bare`, `bytes`, `agent`, `linger`) | the ground under #153 (S28) and #154 (M51) | checks the stack is the shape the other tests assume: the key and host keys work, ProxyJump works, box-bare has no route out and no Arugula, 1 MiB of random bytes cross ssh's stdio unchanged, a forwarded agent shows on the box and `git push` works with only that agent, and a user turns on lingering with no sudo | the environment changed, not arugula: read it before any other failure. `bare` fails on a box an earlier run installed on (`just testnet down` and `up`); `bytes` means the transport S28's bridge rides on isn't clean; `linger` means no Linux box could keep a daemon past logout without sudo |
 | `crates/arugulad/tests/integration/ssh.rs` | #154 (M51): "an e2e test drives it against a local sshd"; `git push` uses the client's agent | on a recreated box-bare: the first `--ssh box-bare ls` installs and starts the daemon; `run` and `capture` a pane; the client's key shows in a pane while a client is attached; a `git push` from a pane reaches the git server; the same push with `ARUGULA_SSH_AGENT=no` is refused; the pane outlives the connection; a saved `ssh://box-bare` host works with `--host`, and an option as a destination (`ssh://-oProxyCommand=id`) is refused | promise 1 (no install or no daemon on a fresh box), promise 3 (the push failed with the agent, or worked without it, so panes see some other agent or none), promise 2 (the pane went with the connection), or the host list |
 | `crates/arugulad/tests/integration/reboot.rs` | #26; M52's "the box survives a reboot" on Linux | installs over `--ssh` as a lingering user service, builds #26's session (splits, a nested directory, coloured output, every restart policy, a browser block, an agent block), then `docker restart` twice with nobody logged in; checks the daemon is up, the journal's "saved for shutdown" and "restored", layout, directories, scrollback with `── restored`, each pane by its policy, both blocks, and a headless web client (`web/reconnect-watch.ts`) reconnecting without a reload | promise 2 on Linux if the daemon isn't up after the restart (lingering, the user service); otherwise a restore regressed (#26), named by the assertion |
-| `just testnet test control signin reach` | the ground under #155 (M52) | a device signs in with the fake GitHub and is trusted; box-systemd reaches control at its inner address | the stack, not M52: the fakes or the inner network |
-| `just testnet test control relay` | #155 (M52): one step plus the approval, the pane opens from the phone, ssh out of the picture, the box survives a reboot | on a fresh box-systemd, `arugula --ssh box-systemd join` installs and starts the daemon and prints a code; the device approves it; the box is on the device list and online; with the CLI's ssh master closed and the bastion paused, a marker round-trips through a pane over the relay. Then `web/fixtures/m52-phones.ts`: a Pixel 7 (Chrome) and an iPhone (WebKit) sign in to the stack's control, the device approves each, and each opens the box's pane, taps it and types a marker, which the device reads back from the box's pane over the relay; the script `docker restart`s the box, and the same open pages reach it again by themselves and type a second marker; after that the device's own marker round-trips too | promise 4: the join over ssh, the approval, the relay with ssh gone, a phone's page reaching the box through control, or coming back after a reboot (which also rests on promise 2). `m52-phones:` on stderr names the phone and the step |
-| `just testnet test control unreachable` | #155 (M52): "a box that can't reach control says so and stays reachable over `--ssh`" | box-bare, with no route out, joins the hosted control; the output must name the box and control and give `arugula --ssh box-bare web`, and `--ssh box-bare ls` still works | promise 5 |
-| `just testnet test control cli` | #149 (M49), #254 | box-systemd and box-bare join over ssh; the CLI on the bastion, with no daemon, logs in with a code the device approves, lists both from control, and runs, lists and captures on box-bare directly and box-systemd through the relay; on box-systemd, `events --follow` and `tail --follow` print while running, and `attach` in a pty types a command, sees the answer and leaves with Ctrl-] ([M49](#m49-the-cli-through-control)) | the CLI through control (login, `hosts`, direct or relayed routing, streamed answers, `/ws` over the channel); the joins it starts with are promise 4 |
-| `just testnet test control team` | #254: a team machine listed and reachable from `arugula hosts` | an owner's team with box-systemd in it; the CLI's account asks to join and is admitted; `hosts` lists box-systemd as the owner's, and the CLI captures its pane and attaches to it (relayed) | pinning and checking another account's root, or a team member's CLI device not taken by the team's machine |
-| `just testnet test control platform` | #1157 (M140): chat and Cloud stay on control's own site whichever process answers | a person turns chat on, makes a team and a channel, posts, reads it back and hears its event on the live stream, and the platform answers Cloud's and billing's routes, through control (`testnet/platform.ts chat`) | the gateway (out of process, `ARUGULA_TESTNET_PLATFORM=out`) or the in-process mount doesn't carry a platform route, a session, a body or the live stream |
-| `just testnet test control platform-restart` (out of process only) | #1157 (M140): "restarting the platform drops no relay socket" | one relayed session to box-systemd's pane, a marker before and after `docker restart` of the platform's container, on the same socket | a platform restart reaches the relay: the hub holds something it shouldn't depend on the platform for |
-| `testnet/measure-control.sh` (`just testnet measure control`) | #1157 (M140): proxied p95 within 20 ms of in process | times platform routes and a hub route from the host, in whichever way the stack runs the platform; with both measured, compares p95s | the gateway adds more than the gate allows |
 | `crates/arugulad/tests/integration/guest_ssh.rs`, `web/e2e/guest-ssh.spec.ts` | #198 (M65): the direct path and the pane menu entry | the system OpenSSH client as a guest against a dev daemon ([below](#guest-ssh-m65)) | promise 6; the test's name says which part (read-only, read-write, ending a session, refusals, the CLI) |
-| `guest_ssh.rs`'s `a_guest_reaches_a_daemon_behind_nat_through_controls_jump_host` | #253 (M65's relay) | box-systemd joined to the `control` profile's control, a guest on the host through control's jump host | promise 6 for a box behind NAT, and control can't read the pane |
 | `testnet/measure-tailnet.sh` (`just testnet measure tailnet`) | #153 (S28): the tailnet comparison | installs Arugula on ts-box over ssh from ts-client, checks both paths see the same panes, then times `arugula ls` and an 8 MiB `arugula export` over `--ssh` and over the tailnet | one path no longer reaches the daemon, or the two disagree about its panes. Slower numbers don't fail it: compare them with `spikes/s28-ssh/README.md` |
 | `just macos launchd` | #153 (S28) and #155 (M52): jake-mini with no GUI session | in a fresh macOS VM, a user who never had a GUI session runs `arugulad install` over ssh: it installs the background agent, warns that it won't start after a reboot by itself, and the daemon and pane outlive the ssh session; `arugula --ssh` from the host starts it and passes the warning on; `install --system` survives a VM restart with nobody logged in, its pane restored; `uninstall` leaves nothing of either ([its claims](#the-tests)) | promise 2 on macOS: the install a Mac reached only over ssh gets, and what it says about reboots |
 
@@ -1243,7 +1410,7 @@ reached only over ssh.
 Every testnet claim, and `just macos launchd`, has a `BREAK=1` form that
 breaks the one property the claim is about (each claim's breakage is in
 [testnet/README.md](../testnet/README.md#claims)). `just testnet break
-ssh` and `just testnet break control` run every claim that way and pass
+ssh` runs every claim that way and passes
 only if each one fails. That shows a pass isn't vacuous: the claim can
 see the thing it checks go wrong. For the SSH track that means:
 
@@ -1290,29 +1457,11 @@ command has to bring it, so a wrong token failing at once with no prompt
 - `arugula share --guest` prints a command that works, and `arugula
   guests` lists and revokes.
 
-The relay path, `a_guest_reaches_a_daemon_behind_nat_through_controls_jump_host`,
-runs against the `control` profile (Docker; `just static` first, and
-`node` for the approving device). box-systemd, which has no route out but
-to control and which nothing on the host can reach, joins control over ssh
-and runs a pane; `arugula --ssh box-systemd share --guest` then gives a
-command through control's jump host (`127.0.0.1:22982`,
-`ARUGULA_TESTNET_GUEST_SSH_PORT`), and a guest on the host runs it. The
-hop's `ssh` is wrapped in a `tee` both ways, which records exactly what
-control's jump host carried for the session. The test checks:
-
-- the guest sees the pane's screen and its live output, and `arugula
-  guests` on the box counts them;
-- what control carried starts with the daemon's `SSH-2.0-` banner and has
-  neither the pane's text nor the token in it, and control's log has
-  neither (nor the route): control relays ciphertext;
-- a wrong route, and the same command after `guests revoke`, are refused
-  at the hop, with nothing passed on to the daemon;
-- a wrong token on a good route gets through the hop and is refused by the
-  daemon at once, with no prompt (#300).
+The relay path, through control's jump host, is the cloud repository's
+`guest-hop` testnet claim.
 
 Run them with `cargo test -p arugulad --test integration guest_ssh::`. They skip,
-saying so, if there's no `ssh` on PATH; the relay test fails without
-Docker unless ARUGULA_SKIP_DOCKER=1. `web/e2e/guest-ssh.spec.ts`
+saying so, if there's no `ssh` on PATH. `web/e2e/guest-ssh.spec.ts`
 covers *Invite over ssh…* in the pane menu (under *Share*), on desktop and phone viewports,
 with the same system ssh (`pnpm exec playwright test e2e/guest-ssh.spec.ts`
 in `web/`, after `cargo build -p arugulad` and `pnpm run build`).
@@ -1334,24 +1483,16 @@ in to its own GUI session at boot. The scripts are in `testnet/macos/`.
 
 ```sh
 just macos base              # make the base VM, once (about 30 GB)
-just macos tools             # safari, then launchd, in one VM
+just macos tools             # launchd, in a fresh VM
 just macos launchd           # launchd with no GUI session (S28, M52)
-just macos safari            # web/safari against real Safari (#94, #137)
-just macos base --xcode      # the Xcode base for `ios`, once (about 60 GB more)
-just macos ios               # #94 and #137 in the iOS Simulator (#257; parked, below)
-just macos app               # the desktop app in cloud mode (#178)
-just macos journey           # J1, then J2a, on the real app (#551)
 just macos up | ssh CMD | down   # the VM by hand
 ```
 
 `just macos <test>` builds the debug binaries first, then runs
 `testnet/macos/test.sh <test>`. Each test clones a fresh VM, runs, and
-deletes the clone (`KEEP=1` leaves it running for a look). `tools` boots
-one VM for `safari` and `launchd`, in that order: launchd goes
-last because its `reboot` restarts the VM, it leaves a sudoers drop-in,
-and its user must never have had a GUI session. Safari runs as
-`admin` and installs no service, and what it leaves running is stopped
-before launchd starts, so it can't change its results.
+deletes the clone (`KEEP=1` leaves it running for a look). `tools` is
+launchd's claims in one VM (Safari's, which started a control, are the
+cloud repository's `just macos-safari` now, on this harness).
 
 `launchd` and `app` have a `BREAK=1` form that breaks what each
 check is about, and every check must then fail, as in the testnet's
@@ -1395,9 +1536,6 @@ for the images and the app's zip.
 | Test | Checks | How |
 |---|---|---|
 | `launchd` (`install`, `logout`, `uninstall`, `ssh`, `system`, `reboot`, `system-uninstall`) | A user made with `sysadminctl`, who never had a GUI session and is reached only over ssh, runs `arugulad install`. With no GUI session that's the background agent (with one it's the usual GUI LaunchAgent, which this VM's `admin` has and `illo` never does): it installs, warns that the daemon won't start after a reboot by itself, and the daemon and a pane outlive the ssh session. `arugulad uninstall` leaves nothing behind. `arugula --ssh illo@vm ls` from the host starts the daemon there and passes the warning through. `arugulad install --system` switches to a LaunchDaemon cleanly; after a clean shutdown and `tart run`, with nobody logged in as them, the daemon is back with its pane's output; `arugulad uninstall` removes the LaunchDaemon too. | One VM, in that order. "Nothing behind" means no plist in `~/Library/LaunchAgents` or `/Library/LaunchDaemons`, no `arugulad` service in `gui/UID`, `user/UID` or `system`, and no `arugulad` process for the user. The user gets passwordless sudo before `system`, as an admin would have. `BREAK=1` boots the service out before install, logout, system and reboot, drops the `note:` line (install checks both), installs again after each uninstall, and has the daemon already running when the ssh check would start it. |
-| `safari` | `/key-probe.html` puts its verdict in the DOM (`data-verdict` on `#verdict`: `keys`, `wrapped` or `none`, and JSON in `#result`), and it's `keys` or `wrapped`. A signed-out invitee opens a presigned invite, signs in through GitHub and joins in one click; the owner's Chrome sees them in the roster. | `web/safari/safari.spec.ts` with a small WebDriver client (`web/safari/webdriver.ts`). safaridriver runs in the VM (`sudo safaridriver --enable` once); its port comes to the host over ssh, and control and the fake GitHub, run on the host, are forwarded to the same ports on the VM's loopback. `SAFARIDRIVER_URL` alone runs the spec against any safaridriver. |
-| `ios` (`probe`, `invite`, `s27`), parked (#257) | The same key probe and presigned invite as `safari`, in Safari on an iPhone in the iOS Simulator (the probe reports `Safari N on iPhone, iOS N`), and, when named, S27's `safari/safari.ts --ios`, whose verdict must be a go. | `testnet/macos/ios.sh`, in a clone of the Xcode base (`arugula-macos-ios`). In the VM: `safaridriver --enable`, the newest iOS runtime's iPhone (`ARUGULA_IOS_DEVICE` names another device type; one is made if the image has none, and the runtime downloaded with `xcodebuild -downloadPlatform iOS` if it has no iOS runtime) booted with `simctl bootstatus -b`. The Simulator shares the VM's network, so the ports forwarded to the VM's loopback reach it as for `safari`. The spec picks it with `safari:useSimulator` and `safari:deviceUDID` (`SAFARI_IOS=1`, `SAFARI_DEVICE_UDID`). `just macos ios` builds `web/dist` and control first. `s27` needs `ARUGULA_S27_DIR`, the spike built in a worktree of `archive/spikes`: its CA is then trusted in the Mac's keychain and added to the Simulator's (`simctl keychain add-root-cert`), and its block names go in `/etc/hosts`. |
-| `app` (`signin`, `approve`, `machines`, `reach`) | The release's app (`ARUGULA_MACOS_APP_ZIP` for another) signs in to control through the browser hand-over, is approved as a new device, lists every machine on the account (one on the host, and the Mac's own daemon once it joins), and keystrokes in its terminal run in that machine's pane. | `testnet/macos/app-cloud.ts`. Control, the fake GitHub and the host's machine run here; `web/fixtures/device.ts` is the person: it reads the app's `/#app=` page from Safari (AppleScript), allows it, hands the grant to the app's loopback port, and approves the app. The app's window is read through accessibility (JXA and System Events). |
 
 `ios` is parked: on the Xcode image's `:latest` (Xcode 27, iOS 27
 runtime) the Simulator boots and safaridriver answers, but every session
@@ -1459,22 +1597,24 @@ what's missing:
 |---|---|
 | `agents_real.rs`, `swarm-real.spec.ts` | `ARUGULA_REAL_AGENTS=claude,codex,screen,...` (real agents; costs a few cents); `screen` uses `ANTHROPIC_API_KEY` when it's set, and VM agents `~/.config/arugula/claude-oauth-token` or `anthropic-key` |
 | `mcp.spec.ts`, "the real Claude Code runs a build over MCP" | `ANTHROPIC_API_KEY` and `claude` on PATH (costs a few cents) |
-| `resident.rs`, `machines.rs`, `vm_reboot.rs`, `fs.rs`, `mcp.rs`'s VM test, `resident.spec.ts`, `editors-vm.spec.ts` | a wispd token (`ARUGULA_WISP_TOKEN_FILE` or `~/.local/share/wisp/token`), and `just static` for the resident tests |
-| `sandbox.spec.ts` (`just e2e-sandbox`) | `ARUGULA_E2E_TAILNET_AUTHKEY_FILE` and wispd |
 | `forges_github_real.rs` | the test organization's variables and secrets ([the nightly job](#the-nightly-job-against-githubcom)) |
 | `guest_ssh.rs`, `guest-ssh.spec.ts` | an `ssh` client on PATH |
 | `scripts/macos-sign` in the release | the `APPLE_*` secrets (a Developer ID, #177); without them it says which is missing and leaves the ad-hoc signature, except on an `app-v*` tag, which it fails (#1647) |
 | updater signatures and `latest.json` in the release | `TAURI_SIGNING_PRIVATE_KEY` (and its password), and the matching public key in `crates/desktop/tauri.conf.json` |
 
-`vm_reboot.rs` is #214's VM tabs across a real kernel reboot (#256): two
-VM tabs, one split, the daemon stopped as a host reboot would stop it, and
-each sprite suspended and cooled through wispd's operator endpoints (what
-`--warm-ttl` does), so the next wake boots the guest. After the daemon
-starts, every pane says its session was lost and gets a shell on its
-tab's machine under a new boot id, with its home directory kept; each tab
-still has exactly one machine, and wisp lists no other
-`arugula-eph-<daemon id>-*` sprite, nor any once the tabs close. With a token and no wispd answering
-at 127.0.0.1:7788 it fails rather than skips.
+No test drives a real sandbox provider: the tests that did (VM panes
+across a daemon restart and a real reboot, uploads and `fs` on a machine,
+an agent block's MCP relay into a VM, and the VM halves of the picker,
+Changes and editor specs) ran against a wispd on the machine and went with
+the Sprites adapter. What covers the provider now: the loam adapter's unit
+tests in `crates/arugulad-labs/src/loam.rs` against a fake loam (exec with
+detach and reattach from a byte count, pausing and waking, the machine
+going, `run`, files, services and port streams); the daemon's
+`provider_tests` in `crates/daemon/src/lib.rs`, the `sandbox-providers`
+gate over a fake adapter (opened on the running daemon when the flag turns
+on, dropped when it turns off, a terminal refused at once with it off);
+and `vm_layout.rs`, a saved VM pane restored by a daemon with no provider.
+A live run against loam is for when loam has parity.
 
 `workspace.spec.ts` and `changes-why.spec.ts` need the network on their
 first run, to install the pinned chant. `workspace.spec.ts`'s graph test
@@ -1547,7 +1687,7 @@ Only what no test can do:
   3. On the phone, change a section and **Update shared copy**; reload the
      laptop's window: the new text, at the same address. **Unshare**; reload:
      "This Doc isn't shared any more".
-  4. From the account menu, **Shared Docs…** lists it with its size and how
+  4. From the user menu or Settings, **Shared Docs…** lists it with its size and how
      often it was opened, **Copy link** while the machine is on, and **Unshare**.
   5. Keep the screenshots for the PR's description.
 

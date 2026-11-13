@@ -13,7 +13,14 @@
 //!   control signs, all of it, and its artifact with its digest, before
 //!   its end is reported; with no bucket, the run runs and its log stays
 //!   in its pane;
-//! - a run the box's crash interrupts fails, and never runs again (M223).
+//! - a run the box's crash interrupts fails, and never runs again (M223);
+//! - an agent run needs `runs.instruct` as well as `runs.start`;
+//! - DK6: a run starts under a passkey-signed grant (v2), checked against
+//!   the passkey log the box pinned from control, as does one under a
+//!   device-signed v1 until it expires; a passkey revoke stops new runs
+//!   under both; a v2 from a non-owner, with a removed or unknown passkey,
+//!   or from an origin the box didn't pin is refused; and a log the
+//!   platform carries can't add a key.
 
 use std::{
     collections::BTreeMap,
@@ -28,7 +35,7 @@ use std::{
 use arugula_control_wire::{
     hosted::{EnrollRequest, Enrollment},
     run_logs::{Upload, UploadGiven, Uploaded},
-    work::{DeployWork, PasskeyAssertion, Report, Secret, SecretsAsk, SecretsGiven, Work, WorkItem},
+    work::{DeployWork, PasskeyAssertion, ReadyRun, Report, Secret, SecretsAsk, SecretsGiven, Work},
 };
 use arugula_e2e::{
     Cert, DeviceKeys, Kind, Trust,
@@ -64,7 +71,7 @@ struct Fake {
     delegation: Delegation,
     /// What it answered the box's enrollment, and the box's signing key.
     enrolled: Arc<Mutex<Option<(Enrollment, String)>>>,
-    items: Arc<Mutex<Vec<WorkItem>>>,
+    items: Arc<Mutex<Vec<ReadyRun>>>,
     pulls: Arc<Mutex<u32>>,
     reports: Arc<Mutex<Vec<Report>>>,
     /// The project's revokes, with every pull.
@@ -153,21 +160,22 @@ impl Fake {
     /// The project's standing grant, signed by its owner's device, or by
     /// someone else's.
     fn grant(&self, by: &DeviceKeys) -> ProjectGrant {
-        let mut g = ProjectGrant::new(&self.delegation, arugula_e2e::now_ms(), None);
+        let mut g =
+            ProjectGrant::new(&self.delegation, arugula_e2e::now_ms(), Some(arugula_e2e::now_ms() + 86_400_000));
         g.sign_with(by);
         g
     }
 
     /// A run of `sh -c script` on the box, under `grant`.
-    fn item(&self, run: &str, script: &str, grant: ProjectGrant) -> WorkItem {
+    fn item(&self, run: &str, script: &str, grant: ProjectGrant) -> ReadyRun {
         let op = Op { argv: vec!["sh".into(), "-c".into(), script.into()], ..Op::default() };
         self.item_of(run, &op, grant)
     }
 
     /// A run of `op` on the box, under `grant`.
-    fn item_of(&self, run: &str, op: &Op, grant: ProjectGrant) -> WorkItem {
+    fn item_of(&self, run: &str, op: &Op, grant: ProjectGrant) -> ReadyRun {
         let op = op.encode(&self.device());
-        WorkItem {
+        ReadyRun {
             run: run.into(),
             project: PROJECT.into(),
             workspace: WORKSPACE.into(),
@@ -177,8 +185,20 @@ impl Fake {
             last_seq: 1,
             grant: Some(grant),
             revokes: vec![],
+            passkey_log: None,
             deploy: None,
+            deploy_plan: None,
         }
+    }
+
+    /// A v2 grant (DK6) by `account`, good for a day, confirmed by the key
+    /// `by` as the passkey `pk` (the account's passkey when it's the root's)
+    /// from `origin`.
+    fn passkey_grant(&self, account: &str, by: &DeviceKeys, origin: &str) -> ProjectGrant {
+        let now = arugula_e2e::now_ms();
+        let mut g = ProjectGrant::v2(&self.delegation, account, now, now + 86_400_000);
+        g.passkey = Some(passkey_over(by, "pk", &g.passkey_challenge(), origin));
+        g
     }
 
     /// The reports of `run`, each checked against the box's key.
@@ -201,6 +221,24 @@ impl Fake {
         out
     }
 
+    /// acct1's passkey log (DK4): one passkey, `pk`, whose key is the
+    /// root's (an Ed25519 key, as a passkey's may be), made for `c.test`.
+    fn passkey_log(&self) -> arugula_e2e::passkey::Log {
+        let added = arugula_e2e::passkey::Draft {
+            account: "acct1".into(),
+            event: arugula_e2e::passkey::Change::Added,
+            credential: "pk".into(),
+            rp: "c.test".into(),
+            alg: arugula_e2e::passkey::EDDSA,
+            key: self.root.sign_public().to_vec(),
+            aaguid: arugula_e2e::passkey::NO_AAGUID.into(),
+            at: 1,
+            by: "signup".into(),
+        }
+        .after(None);
+        arugula_e2e::passkey::Log { account: "acct1".into(), events: vec![added], began: None }
+    }
+
     fn pulls(&self) -> u32 {
         *self.pulls.lock().unwrap()
     }
@@ -219,6 +257,7 @@ async fn enroll(Axum(f): Axum<Fake>, Json(b): Json<EnrollRequest>) -> Response {
         cert,
         delegation: f.delegation.clone(),
         revocations: vec![],
+        closed: vec![],
         team: None,
         roster: None,
         certs: Default::default(),
@@ -228,6 +267,10 @@ async fn enroll(Axum(f): Axum<Fake>, Json(b): Json<EnrollRequest>) -> Response {
         locked: false,
         lock: None,
         legacy_app_children: None,
+        // DK4: acct1's passkey (the root's key, as an Ed25519 passkey) and
+        // the origin it's used from.
+        passkey_logs: Some([("acct1".to_owned(), f.passkey_log())].into()),
+        passkey_origins: Some(arugula_e2e::passkey::origins_of_sites(["https://c.test"])),
         purpose: f.purpose.lock().unwrap().clone(),
     };
     *f.enrolled.lock().unwrap() = Some((e.clone(), b.sign));
@@ -444,17 +487,29 @@ fn a_hosted_machine_runs_each_run_once() {
     let bin = marks.join("bin");
     std::fs::create_dir_all(&bin).unwrap();
     let claude = bin.join("claude");
+    // It answers as `stream-json`; asked to wait in the background, it
+    // ends its turn waiting on a timer, as Claude Code 2.1.286 did in
+    // Arugula #552 (and stops the timer as it exits).
     std::fs::write(
         &claude,
         format!(
-            "#!/bin/sh\necho \"$* key:${{ANTHROPIC_API_KEY:-}} oauth:${{CLAUDE_CODE_OAUTH_TOKEN:-}}\" > {}\n",
+            "#!/bin/sh\necho \"$* key:${{ANTHROPIC_API_KEY:-}} oauth:${{CLAUDE_CODE_OAUTH_TOKEN:-}}\" > {}\n\
+             case \"$2\" in\n\
+             *background*) cat <<'EOF'\n\
+             {{\"type\":\"system\",\"subtype\":\"task_started\",\"task_id\":\"b1\",\"description\":\"sleep 420\",\"is_backgrounded\":true}}\n\
+             {{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"The timer will report when the rate limit resets. I'll keep going from there.\"}}\n\
+             {{\"type\":\"system\",\"subtype\":\"task_notification\",\"task_id\":\"b1\",\"status\":\"stopped\"}}\n\
+             EOF\n\
+             ;;\n\
+             *) echo '{{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"the build is fixed\"}}' ;;\n\
+             esac\n",
             marks.join("claude").display()
         ),
     )
     .unwrap();
     std::fs::set_permissions(&claude, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
     let mut d = arugulad!("hostedwork")
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .args(["--hosted"])
         .env("ARUGULA_HOSTED_TICKET", "ticket-1")
@@ -556,6 +611,32 @@ fn a_hosted_machine_runs_each_run_once() {
     assert_eq!(lines(&four), 0);
     f.revokes.lock().unwrap().clear();
 
+    // An agent run is an instruction: a grant with `runs.start` alone starts
+    // a command but not an agent, and one with `runs.instruct` alone starts
+    // neither.
+    let narrow = |cap: &str| {
+        let mut g = ProjectGrant::new(&f.delegation, arugula_e2e::now_ms(), Some(arugula_e2e::now_ms() + 1_000_000));
+        g.caps = vec![cap.into()];
+        g.sign_with(&f.root);
+        g
+    };
+    let instructed = Op { instruction: Some("fix the build".into()), ..Op::default() };
+    let (i, j, k) = (run_id('6'), run_id('9'), run_id('0'));
+    let cmd_ran = marks.join("narrow-command");
+    let cmd =
+        Op { argv: vec!["sh".into(), "-c".into(), format!("echo ran >> {}", cmd_ran.display())], ..Op::default() };
+    f.items.lock().unwrap().push(f.item_of(&i, &instructed, narrow("runs.start")));
+    wait(&marks, &f, "run 6 refused", || f.reports_of(&i).len() == 1);
+    assert_eq!(f.reports_of(&i)[0].to, "failed");
+    assert!(f.reports_of(&i)[0].detail.contains("grant_not_covered"), "{}", f.reports_of(&i)[0].detail);
+    assert!(!marks.join("claude").exists(), "no agent ran");
+    f.items.lock().unwrap().push(f.item_of(&j, &cmd, narrow("runs.start")));
+    wait(&marks, &f, "run 9 reported", || f.reports_of(&j).len() == 2);
+    assert_eq!(lines(&cmd_ran), 1, "a command runs under runs.start");
+    f.items.lock().unwrap().push(f.item_of(&k, &cmd, narrow("runs.instruct")));
+    wait(&marks, &f, "run 0 refused", || f.reports_of(&k).len() == 1);
+    assert!(f.reports_of(&k)[0].detail.contains("grant_not_covered"), "{}", f.reports_of(&k)[0].detail);
+
     // C1: a run copies only a directory under the box user's home.
     let g = run_id('1');
     let etc = Op { argv: vec!["ls".into()], directory: Some("/etc".into()), ..Op::default() };
@@ -573,13 +654,40 @@ fn a_hosted_machine_runs_each_run_once() {
     let said = std::fs::read_to_string(marks.join("claude")).unwrap();
     // A hosted box's agent: a turn the platform said may run, on M185's
     // placeholder key (the provider's proxy fills in the real one), never
-    // the daemon's own.
-    assert_eq!(
-        said,
-        "-p fix the build --output-format text --dangerously-skip-permissions key:arugula-brokered oauth:\n"
+    // the daemon's own. It's told it runs headless, and says what it does
+    // as it goes (#552).
+    let headless = arugulad_work::agent_run::HEADLESS;
+    let args = format!(
+        "-p fix the build --append-system-prompt {headless} --output-format stream-json --verbose \
+         --dangerously-skip-permissions"
     );
+    assert_eq!(said, format!("{args} key:arugula-brokered oauth:\n"));
     wait(&marks, &f, "the turn ended", || f.turns.lock().unwrap().len() == 2);
     assert_eq!(*f.turns.lock().unwrap(), ["start claude", "end trn_1"]);
+
+    // Arugula #552: an agent that ends its turn waiting on background work
+    // never gives its answer. Its run fails, saying so, rather than
+    // succeeding with exit 0.
+    let w = run_id('5');
+    let waits = Op { instruction: Some("wait in the background".into()), ..Op::default() };
+    f.items.lock().unwrap().push(f.item_of(&w, &waits, f.grant(&f.root)));
+    wait(&marks, &f, "run 5 reported", || f.reports_of(&w).len() == 2);
+    let ended = &f.reports_of(&w)[1];
+    assert_eq!((ended.from.as_str(), ended.to.as_str()), ("running", "failed"));
+    let detail: serde_json::Value = serde_json::from_str(&ended.detail).unwrap();
+    assert_eq!(detail["exit"], json!(arugulad_work::agent_run::LEFT_WAITING), "{detail}");
+    assert_eq!(detail["reason"], json!(arugulad_work::agent_run::LEFT_WAITING_WHY), "{detail}");
+    wait(&marks, &f, "the turn ended", || f.turns.lock().unwrap().len() == 4);
+    // Its log has what it said, as text, and what it left running.
+    let mut log = Vec::new();
+    for u in f.uploads_of(&w).0 {
+        let Upload::Log { n, .. } = u else { unreachable!() };
+        log.extend_from_slice(&f.objects.lock().unwrap()[&format!("{w}/log/{n}")]);
+    }
+    let log = String::from_utf8_lossy(&log);
+    assert!(log.contains("The timer will report when the rate limit resets."), "{log}");
+    assert!(log.contains("Still running when it ended: sleep 420."), "{log}");
+    assert!(!log.contains(r#""type":"#), "no stream-json in the log: {log}");
 
     // On a Claude subscription's token the placeholder is Claude Code's
     // OAuth token, and no API key goes first.
@@ -588,11 +696,8 @@ fn a_hosted_machine_runs_each_run_once() {
     f.items.lock().unwrap().push(f.item_of(&o, &agent, f.grant(&f.root)));
     wait(&marks, &f, "run 4 reported", || f.reports_of(&o).len() == 2);
     let said = std::fs::read_to_string(marks.join("claude")).unwrap();
-    assert_eq!(
-        said,
-        "-p fix the build --output-format text --dangerously-skip-permissions key: oauth:arugula-brokered\n"
-    );
-    wait(&marks, &f, "the turn ended", || f.turns.lock().unwrap().len() == 4);
+    assert_eq!(said, format!("{args} key: oauth:arugula-brokered\n"));
+    wait(&marks, &f, "the turn ended", || f.turns.lock().unwrap().len() == 6);
 
     // M219: a people's workspace never applies a deploy, even one approved
     // by the account's own browser: only a deploy's own box does.
@@ -619,7 +724,7 @@ fn a_hosted_agent_holds_the_credential_its_turn_says() {
     let sessions = marks.join("sessions");
     std::fs::create_dir_all(&sessions).unwrap();
     let d = arugulad!("hostedagent")
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .args(["--hosted"])
         .env("ARUGULA_HOSTED_TICKET", "ticket-1")
@@ -682,7 +787,7 @@ fn a_run_a_crash_interrupts_fails_and_never_runs_again() {
     let _ = std::fs::remove_dir_all(&marks);
     std::fs::create_dir_all(&marks).unwrap();
     let mut d = arugulad!("hostedcrash")
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .args(["--hosted"])
         .env("ARUGULA_HOSTED_TICKET", "ticket-1")
@@ -746,9 +851,10 @@ fn a_run_a_crash_interrupts_fails_and_never_runs_again() {
     let _ = std::fs::remove_dir_all(&marks);
 }
 
-/// A deploy of `source` to production, approved by `by` (the account's
-/// own browser, or someone else's key), with a passkey over the approval.
-fn deploy_item(f: &Fake, run: &str, dep: &str, source: &str, by: &DeviceKeys) -> WorkItem {
+/// A deploy of `source` to production, approved (v2, DK4) with an assertion
+/// over the approval by the key `by` as the passkey `pk` (the account's
+/// passkey when it's the root's, or someone else's key).
+fn deploy_item(f: &Fake, run: &str, dep: &str, source: &str, by: &DeviceKeys) -> ReadyRun {
     deploy_item_by(f, run, dep, source, by, ("fake", "acme/app", &["APP_TOKEN"]))
 }
 
@@ -760,7 +866,7 @@ fn deploy_item_by(
     source: &str,
     by: &DeviceKeys,
     driver: (&str, &str, &[&str]),
-) -> WorkItem {
+) -> ReadyRun {
     deploy_item_with(f, run, dep, source, by, driver, Default::default())
 }
 
@@ -774,7 +880,7 @@ fn deploy_item_with(
     by: &DeviceKeys,
     (driver, place, secrets): (&str, &str, &[&str]),
     settings: arugula_e2e::drivers::Settings,
-) -> WorkItem {
+) -> ReadyRun {
     use base64::Engine as _;
     let mut op = Operation {
         project: PROJECT.into(),
@@ -787,15 +893,21 @@ fn deploy_item_with(
         planned: "cd".repeat(32),
     };
     op.plan = arugula_e2e::drivers::plan_digest(driver, &op, &settings, None);
-    let approval = Approval::new(by, dep, &op, "acct1", Decision::Once, arugula_e2e::now_ms() + 3_600_000);
+    let approval = Approval::v2(dep, &op, "acct1", Decision::Once, arugula_e2e::now_ms() + 3_600_000);
     let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD;
-    let cd = json!({ "type": "webauthn.get", "challenge": approval.passkey_challenge(), "origin": "https://c.test" });
+    let cd = json!({ "type": "webauthn.get", "challenge": approval.passkey_challenge(), "origin": "https://c.test" })
+        .to_string();
     let mut data = Sha256::digest(b"c.test").to_vec();
     data.extend_from_slice(&[0x05, 0, 0, 0, 0]);
-    let run_op =
-        Op { deploy: Some(DeployApply { deploy: dep.into(), driver: driver.into(), op: op.hash() }), ..Op::default() }
-            .encode(&f.device());
-    WorkItem {
+    let mut signed = data.clone();
+    signed.extend_from_slice(&Sha256::digest(cd.as_bytes()));
+    let signature = b64.encode(by.signature(&signed));
+    let run_op = Op {
+        deploy: Some(DeployApply { deploy: dep.into(), driver: driver.into(), op: op.hash(), plan: false }),
+        ..Op::default()
+    }
+    .encode(&f.device());
+    ReadyRun {
         run: run.into(),
         project: PROJECT.into(),
         workspace: WORKSPACE.into(),
@@ -805,23 +917,162 @@ fn deploy_item_with(
         last_seq: 2,
         grant: None,
         revokes: vec![],
+        passkey_log: None,
         deploy: Some(DeployWork {
             deploy: dep.into(),
             operation: op,
             approval,
             passkey: Some(PasskeyAssertion {
                 id: "pk".into(),
-                client_data_json: b64.encode(cd.to_string()),
+                client_data_json: b64.encode(cd.as_bytes()),
                 authenticator_data: b64.encode(&data),
-                signature: "c2ln".into(),
+                signature,
             }),
+            passkey_log: Some(f.passkey_log()),
             driver: driver.into(),
             secrets: secrets.iter().map(|s| s.to_string()).collect(),
             settings,
             roll_back: None,
             approval_id: None,
         }),
+        deploy_plan: None,
     }
+}
+
+/// An assertion by the key `by` as the passkey `id`, over `challenge`, from
+/// `origin`, for `c.test`, the person verified.
+fn passkey_over(by: &DeviceKeys, id: &str, challenge: &str, origin: &str) -> arugula_e2e::passkey::Assertion {
+    use base64::Engine as _;
+    let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    let cd = json!({ "type": "webauthn.get", "challenge": challenge, "origin": origin }).to_string();
+    let mut data = Sha256::digest(b"c.test").to_vec();
+    data.extend_from_slice(&[0x05, 0, 0, 0, 0]);
+    let mut signed = data.clone();
+    signed.extend_from_slice(&Sha256::digest(cd.as_bytes()));
+    arugula_e2e::passkey::Assertion {
+        id: id.into(),
+        client_data_json: b64.encode(cd.as_bytes()),
+        authenticator_data: b64.encode(&data),
+        signature: b64.encode(by.signature(&signed)),
+    }
+}
+
+/// DK6 (#387): the project's standing grant signed with a passkey. A run
+/// starts under a v2 grant on a hosted box, checked against the passkey
+/// log the box pinned from control; a run under a device-signed v1 grant
+/// still starts until it expires; refused: a v2 by an account that isn't
+/// an owner, one with a passkey that isn't in the pinned log, one from an
+/// origin the box didn't pin, one whose passkey the platform's carried log
+/// removes, and one by a key that log adds (it can't add one); and a
+/// passkey revoke (v3) stops new runs under both.
+#[test]
+fn a_hosted_machine_runs_under_a_passkey_grant() {
+    let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+    let f = Fake::new();
+    let url = serve(&rt, f.clone());
+    let marks: PathBuf = std::env::temp_dir().join(format!("arugula-hosted-passkey-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&marks);
+    std::fs::create_dir_all(&marks).unwrap();
+    let _d = arugulad!("hostedpasskey")
+        .no_provider()
+        .no_tailscale()
+        .args(["--hosted"])
+        .env("ARUGULA_HOSTED_TICKET", "ticket-1")
+        .env("ARUGULA_CONTROL_URL", &url)
+        .env("ARUGULA_WORK_PULL_MS", "150")
+        .env("ARUGULA_HOSTED_RUN_USER", "")
+        .env("ARUGULA_HOSTED_SESSION_USERS", "")
+        .env("RUST_LOG", "info")
+        .args(["--log-file", &marks.join("arugulad.log").to_string_lossy()])
+        .wait_secs(30)
+        .start();
+    wait(&marks, &f, "the box enrolled", || !f.device().is_empty());
+    let here = "https://c.test";
+    let ran_to = |n: &str| marks.join(n);
+
+    // A v2 grant, the account's passkey over its bytes: the run runs. So
+    // does one under a device-signed v1 (made before DK6), until it expires.
+    let b = run_id('b');
+    let v1 = f.grant(&f.root);
+    f.items.lock().unwrap().push(f.item(&b, &format!("echo ran >> {}", ran_to("b").display()), v1.clone()));
+    wait(&marks, &f, "run b ran", || f.reports_of(&b).len() == 2);
+    std::thread::sleep(Duration::from_millis(5));
+    let a = run_id('a');
+    let v2 = f.passkey_grant("acct1", &f.root, here);
+    let mut item = f.item(&a, &format!("echo ran >> {}", ran_to("a").display()), v2.clone());
+    item.passkey_log = Some(f.passkey_log());
+    f.items.lock().unwrap().push(item);
+    wait(&marks, &f, "run a ran", || f.reports_of(&a).len() == 2);
+    assert_eq!((states(&f.reports_of(&a)), states(&f.reports_of(&b))), (ran(1), ran(1)));
+    assert_eq!((lines(&ran_to("a")), lines(&ran_to("b"))), (1, 1));
+
+    // Refused, each before anything runs.
+    let stranger = DeviceKeys::generate();
+    let mut removed = f.passkey_log();
+    let gone = removed.events[0].removal(arugula_e2e::now_ms() - 1, "reset").placed_after(removed.events.last());
+    removed.events.push(gone);
+    // A key the platform's copy of the log adds (`by signup` needs no
+    // proof): never taken.
+    let mut added = f.passkey_log();
+    let k9 = arugula_e2e::passkey::Draft {
+        account: "acct1".into(),
+        event: arugula_e2e::passkey::Change::Added,
+        credential: "pk9".into(),
+        rp: "c.test".into(),
+        alg: arugula_e2e::passkey::EDDSA,
+        key: stranger.sign_public().to_vec(),
+        aaguid: arugula_e2e::passkey::NO_AAGUID.into(),
+        at: 2,
+        by: "signup".into(),
+    }
+    .after(added.events.last());
+    added.events.push(k9);
+    let mut by_k9 = ProjectGrant::v2(&f.delegation, "acct1", arugula_e2e::now_ms(), arugula_e2e::now_ms() + 86_400_000);
+    by_k9.passkey = Some(passkey_over(&stranger, "pk9", &by_k9.passkey_challenge(), here));
+    let refused = [
+        ('c', f.passkey_grant("someone", &stranger, here), None, "grant_not_an_owner"),
+        ('d', f.passkey_grant("acct1", &stranger, here), None, "grant_passkey"),
+        ('e', f.passkey_grant("acct1", &f.root, "https://app.test"), None, "grant_passkey"),
+        ('f', f.passkey_grant("acct1", &f.root, here), Some(removed), "grant_passkey"),
+        ('1', by_k9, Some(added), "grant_passkey"),
+    ];
+    let mut ids = vec![];
+    for (n, g, carried, code) in refused {
+        let run = run_id(n);
+        let mut item = f.item(&run, &format!("echo ran >> {}", ran_to("refused").display()), g);
+        item.passkey_log = carried;
+        f.items.lock().unwrap().push(item);
+        ids.push((run, code));
+    }
+    wait(&marks, &f, "the refused runs reported", || ids.iter().all(|(r, _)| f.reports_of(r).len() == 1));
+    for (run, code) in &ids {
+        let r = &f.reports_of(run)[0];
+        assert_eq!((r.from.as_str(), r.to.as_str()), ("pending", "failed"), "{run}");
+        assert!(r.detail.contains(code), "{run}: {}", r.detail);
+    }
+    assert_eq!(lines(&ran_to("refused")), 0);
+
+    // A passkey revoke (v3), with every pull: new runs under the v1 and the
+    // v2 alike are refused.
+    let mut r = GrantRevoke::v3(PROJECT, &f.delegation.id(), Running::Finish, arugula_e2e::now_ms(), "acct1");
+    r.passkey = Some(passkey_over(&f.root, "pk", &r.passkey_challenge(), here));
+    f.revokes.lock().unwrap().push(r);
+    let (h, i) = (run_id('2'), run_id('3'));
+    let mut item = f.item(&h, &format!("echo ran >> {}", ran_to("revoked").display()), v2);
+    item.passkey_log = Some(f.passkey_log());
+    item.revokes = f.revokes.lock().unwrap().clone();
+    f.items.lock().unwrap().push(item);
+    let mut item = f.item(&i, &format!("echo ran >> {}", ran_to("revoked").display()), v1);
+    item.revokes = f.revokes.lock().unwrap().clone();
+    f.items.lock().unwrap().push(item);
+    wait(&marks, &f, "runs h and i refused", || f.reports_of(&h).len() == 1 && f.reports_of(&i).len() == 1);
+    for run in [&h, &i] {
+        let rep = &f.reports_of(run)[0];
+        assert_eq!((rep.from.as_str(), rep.to.as_str()), ("pending", "failed"));
+        assert!(rep.detail.contains("grant_revoked"), "{}", rep.detail);
+    }
+    assert_eq!(lines(&ran_to("revoked")), 0);
+    let _ = std::fs::remove_dir_all(&marks);
 }
 
 /// Every file under `dir` whose bytes hold `needle`.
@@ -861,7 +1112,7 @@ fn a_hosted_machine_applies_a_deploy_and_its_secret_never_reaches_disk_or_a_pane
     let _ = std::fs::remove_dir_all(&marks);
     std::fs::create_dir_all(&marks).unwrap();
     let d = arugulad!("hosteddeploy")
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .home_in_state()
         .args(["--hosted"])
@@ -879,7 +1130,8 @@ fn a_hosted_machine_applies_a_deploy_and_its_secret_never_reaches_disk_or_a_pane
         .start();
     wait(&marks, &f, "the box enrolled", || !f.device().is_empty());
 
-    // Someone else's key: refused on the box, before any secret.
+    // Someone else's key as the passkey: refused on the box, before any
+    // secret.
     let forged = run_id('7');
     f.items.lock().unwrap().push(deploy_item(
         &f,
@@ -891,9 +1143,9 @@ fn a_hosted_machine_applies_a_deploy_and_its_secret_never_reaches_disk_or_a_pane
     wait(&marks, &f, "the forged deploy refused", || f.reports_of(&forged).len() == 1);
     let r = &f.reports_of(&forged)[0];
     assert_eq!((r.from.as_str(), r.to.as_str()), ("approved", "failed"));
-    assert!(r.detail.contains("approval_device"), "{}", r.detail);
+    assert!(r.detail.contains("approval_passkey"), "{}", r.detail);
 
-    // Approved by the account's own browser: it runs, and fails part way.
+    // Approved with the account's own passkey: it runs, and fails part way.
     let dep = format!("dep_{}", "1".repeat(32));
     let run = run_id('8');
     f.items.lock().unwrap().push(deploy_item(&f, &run, &dep, "fail-1", &f.root));
@@ -946,7 +1198,7 @@ fn a_deploy_box_takes_its_one_deploy_and_stops() {
     let _ = std::fs::remove_dir_all(&marks);
     std::fs::create_dir_all(&marks).unwrap();
     let d = arugulad!("deploybox")
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .home_in_state()
         .args(["--hosted"])
@@ -995,7 +1247,7 @@ fn a_hosted_runs_log_and_artifact_go_to_the_bucket() {
     let f = Fake::new();
     let url = serve(&rt, f.clone());
     let d = arugulad!("hostedlogs")
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .args(["--hosted"])
         .env("ARUGULA_HOSTED_TICKET", "ticket-1")
@@ -1171,7 +1423,7 @@ fn a_deploy_box_applies_an_apps_platform_deploy() {
         at
     });
     let d = arugulad!("appsplatform")
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .home_in_state()
         .args(["--hosted"])
@@ -1241,8 +1493,9 @@ fn a_deploy_box_applies_an_apps_platform_deploy() {
 /// M221: Arugula's own release on a deploy's box, through the daemon: its
 /// minted token comes on the driver's standard input, `arugulad
 /// _arugula-release` runs the commit's real `scripts/release bump` against
-/// a bare repository standing in for GitHub, which tags v0.1.1 and pushes
-/// it with main; the write token is revoked; the release workflow is
+/// a bare repository standing in for GitHub, which tags the commit itself
+/// v0.1.1 and pushes the tag (#1986), then its client fixtures to main; the
+/// write token is revoked; the release workflow is
 /// followed with the read token (a fake API shaped as GitHub's), which is
 /// revoked after; the run succeeds and reports the tag on its result pipe.
 /// Neither token is ever on disk or in the pane.
@@ -1305,7 +1558,7 @@ fn a_deploy_box_releases_arugula() {
         at
     });
     let d = arugulad!("arugularelease")
-        .no_wisp()
+        .no_provider()
         .no_tailscale()
         .home_in_state()
         .args(["--hosted"])
@@ -1361,7 +1614,7 @@ fn a_deploy_box_releases_arugula() {
         "both tokens revoked from the box, the write one first"
     );
     let bare = marks.join("remotes/arugula-salad/arugula.git");
-    assert_eq!(git(&bare, &["rev-parse", "v0.1.1^{commit}^"]), two, "v0.1.1 is a bump on the commit");
+    assert_eq!(git(&bare, &["rev-parse", "v0.1.1^{commit}"]), two, "v0.1.1 is on the commit itself");
     assert!(git(&bare, &["cat-file", "-p", "v0.1.1"]).contains(&format!("Arugula-Deploy: {dep}")));
     std::thread::sleep(Duration::from_millis(300));
     for token in [TOKEN, READ] {

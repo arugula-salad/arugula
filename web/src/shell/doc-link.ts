@@ -25,8 +25,19 @@ export interface ManifestAsset {
   size: number;
 }
 
+/** The proto's `DocLayout`, written out: this file imports nothing. */
+export type DocLayout = "doc" | "tabs" | "prototype";
+
 export interface Manifest {
   title: string;
+  /** Absent in a snapshot from before layouts, or of a plain Doc; read it
+   * with `layoutOf`. */
+  layout?: string;
+  /** When the Doc was made (absent where it isn't known: a Doc from before
+   * Docs were kept) and last changed, in ms; absent in a snapshot from
+   * before them (Arugula #825). */
+  made?: number;
+  updated?: number;
   entries: ManifestEntry[];
   assets: ManifestAsset[];
 }
@@ -45,9 +56,9 @@ export function fromBase64Url(s: string): Uint8Array {
   return Uint8Array.from(bin, (c) => c.charCodeAt(0));
 }
 
-/** The key in a URL's fragment (`#k=…`): 32 bytes, or null. */
+/** The key in a URL's fragment (`#k=…`, and a tab after it as `&s=s2`): 32 bytes, or null. */
 export function keyFromHash(hash: string): Uint8Array | null {
-  const m = /^#?k=([A-Za-z0-9_-]+)$/.exec(hash);
+  const m = /^#?k=([A-Za-z0-9_-]+)(?:&s=[\w-]+)?$/.exec(hash);
   if (!m) return null;
   try {
     const key = fromBase64Url(m[1]!);
@@ -103,6 +114,12 @@ function manifestOf(v: unknown): Manifest {
     if (!a || !str(a.name) || !str(a.mime) || !Number.isSafeInteger(a.size) || a.size < 0) throw new Broken("a bad asset");
   }
   return m as Manifest;
+}
+
+/** The snapshot's layout; a missing one, or one a newer machine made that
+ * this build doesn't know, is `doc`. */
+export function layoutOf(m: Manifest): DocLayout {
+  return m.layout === "tabs" || m.layout === "prototype" ? m.layout : "doc";
 }
 
 /** The snapshot in these parts. */

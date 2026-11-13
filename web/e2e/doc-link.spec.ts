@@ -8,7 +8,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
-import { Broken, additionalData, fromBase64Url, keyFromHash, openParts, openSnapshot } from "../src/shell/doc-link";
+import { Broken, additionalData, fromBase64Url, keyFromHash, layoutOf, openParts, openSnapshot } from "../src/shell/doc-link";
+import { sealParts, snapshotBytes, toBase64Url } from "../src/shared/docs/doc-seal";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const vector = JSON.parse(readFileSync(join(here, "../../crates/daemon/tests/fixtures/docs/link-vector.json"), "utf8")) as {
@@ -33,10 +34,57 @@ test("the vector made in Rust opens in the web's code", async () => {
   expect(new TextDecoder().decode(additionalData(vector.id, vector.ver, 2, 5))).toBe(`ADL1|${vector.id}|${vector.ver}|2|5`);
 });
 
+// Arugula #871: the browser seals a team Doc's link. A round trip in the
+// web's code alone would open its own mistakes, so this makes the vector's
+// parts from its manifest and assets, with the nonces Rust's test counts
+// (0, 1, 2… big-endian, in the last eight bytes), and wants every byte equal.
+test("the web's sealer makes the bytes the Rust sealer made", async () => {
+  const blobs = vector.assets.map((a) => bytes(a.b64));
+  const plain = snapshotBytes(vector.manifest, blobs);
+  const counted = (n: number) => {
+    const iv = new Uint8Array(12);
+    new DataView(iv.buffer).setBigUint64(4, BigInt(n));
+    return iv;
+  };
+  const made = await sealParts(key, vector.id, vector.ver, plain, 64, counted);
+  expect(made.map((p) => Buffer.from(p).toString("base64"))).toEqual(vector.parts);
+  // What it seals opens, and the key's text is the vector's.
+  const opened = await openSnapshot(key, vector.id, vector.ver, made);
+  expect(opened.manifest).toEqual(vector.manifest);
+  expect(toBase64Url(key)).toBe(vector.key);
+  // A part is a fresh nonce each, at the size control takes.
+  const random = await sealParts(key, vector.id, 1, new Uint8Array(100), 64);
+  expect(random.length).toBe(2);
+  expect(Buffer.from(random[0]!.subarray(0, 12)).equals(Buffer.from(random[1]!.subarray(0, 12)))).toBe(false);
+  expect((await sealParts(key, vector.id, 1, new Uint8Array(0))).length).toBe(1);
+});
+
+test("a manifest with a layout opens as it did before layouts, and an unknown layout reads as a doc (Arugula #827)", async () => {
+  const seal = (json: object) => {
+    const m = new TextEncoder().encode(JSON.stringify(json));
+    const out = new Uint8Array(8 + m.length);
+    out.set(new TextEncoder().encode("ADL1"));
+    new DataView(out.buffer).setUint32(4, m.length);
+    out.set(m, 8);
+    return sealOne(key, vector.id, 1, 0, 1, out).then((p) => openSnapshot(key, vector.id, 1, [p]));
+  };
+  const base = { title: "T", entries: [], assets: [] };
+  const tabs = await seal({ ...base, layout: "tabs" });
+  expect(tabs.manifest.title).toBe("T");
+  expect(layoutOf(tabs.manifest)).toBe("tabs");
+  expect(layoutOf((await seal({ ...base, layout: "prototype" })).manifest)).toBe("prototype");
+  expect(layoutOf((await seal({ ...base, layout: "gallery" })).manifest)).toBe("doc");
+  expect(layoutOf((await seal(base)).manifest)).toBe("doc");
+  // The vector, made without one, is a doc.
+  expect(layoutOf((await openSnapshot(key, vector.id, vector.ver, parts())).manifest)).toBe("doc");
+});
+
 test("the key is read from the fragment, 32 bytes of base64url, and nothing else", () => {
   expect(keyFromHash(`#k=${vector.key}`)).toEqual(key);
   expect(keyFromHash(`k=${vector.key}`)).toEqual(key);
-  for (const bad of ["", "#", "#k=", "#k=AAAA", `#k=${vector.key}x`, `#k=${vector.key}=`, `#k=${vector.key.replace(/.$/, "!")}`, `#key=${vector.key}`, `#k=${vector.key}&x=1`]) {
+  // A tab named after the key (Arugula #829) is not part of it.
+  expect(keyFromHash(`#k=${vector.key}&s=s2`)).toEqual(key);
+  for (const bad of ["", "#", "#k=", `#k=${vector.key}&s=`, `#k=${vector.key}&s=a b`, "#k=AAAA", `#k=${vector.key}x`, `#k=${vector.key}=`, `#k=${vector.key.replace(/.$/, "!")}`, `#key=${vector.key}`, `#k=${vector.key}&x=1`]) {
     expect(keyFromHash(bad), bad).toBeNull();
   }
 });

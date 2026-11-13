@@ -1,0 +1,6 @@
+panes, no frame yet                                        {"mb":417,"cpuPct":34.8}
+cold first open, hop and all, until the project list, ms   171
+frame on the project list                                  {"mb":424,"cpuPct":31.4}
+frame on chat                                              {"mb":426,"cpuPct":30.3}
+chat in the hidden frame, panes showing                    {"mb":429,"cpuPct":36.1}
+chat's frame still at                                      http://app.arugula.localhost:7790/p/prj_49938aa69123fa7347bef7b83d0eb027-acme/chat

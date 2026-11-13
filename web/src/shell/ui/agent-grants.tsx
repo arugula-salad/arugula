@@ -13,22 +13,24 @@ import { platformFetch } from "../../shared/maintenance";
 import { Modal } from "../../shared/ui/modal";
 import { directory } from "../hosts";
 import { openPlatform, platformOrigin } from "../platform-links";
+import { ExternalIcon } from "../../shared/ui/icons";
 
 /** A grant, as `GET /api/grants` lists it. */
-interface Grant {
+export interface Grant {
   id: string;
   subject: { kind: string; id: string; name: string | null };
   power: string;
-  scope: { kind: "project" | "account"; id: string; name?: string | null };
+  scope: { kind: "project" | "team" | "account"; id: string; name?: string | null };
   live: boolean;
 }
 
 /** What each power lets an agent do, as a phrase. */
-const POWERS: Record<string, string> = {
+export const POWERS: Record<string, string> = {
   "cloud.drive": "Drive your cloud workspaces",
   "threads.read": "Read threads",
   "threads.post": "Post in threads",
   "issues.write": "Open and change issues",
+  "docs.write": "Write Docs",
   "deploys.plan": "Plan deploys and ask for their approval",
   "runs.read": "Read runs",
   "runs.start": "Start run specs",
@@ -59,7 +61,7 @@ export function withWork(byPower: Map<string, string[]>): Map<string, string[]> 
 }
 
 /** Where one reaches, in words. */
-function over(g: Grant): string {
+export function over(g: Grant): string {
   if (g.power === "cloud.drive") return "your account";
   if (g.scope.kind === "account") return "your DMs";
   return g.scope.name ?? g.scope.id;
@@ -111,7 +113,7 @@ function AgentGrants({ close }: { close: () => void }) {
         if (!r.ok || !v?.grants) throw new Error(v?.error ?? `${r.status}`);
         if (live) setGrants(grantsOf(v.grants, { id, name }));
       })
-      .catch(() => live && setError("Control's page has them: open this machine through Control to see them here."));
+      .catch(() => live && setError("Arugula cloud has them: open this machine there to see them here."));
     return () => void (live = false);
   }, [id, name]);
   const settings = platformOrigin();
@@ -124,23 +126,23 @@ function AgentGrants({ close }: { close: () => void }) {
   return (
     <Modal close={close} label="Agents' grants" class="rules agent-grants">
       <h2>Agents' grants</h2>
-      <p class="hint">
-        What the agents on {name} may do on Arugula control, as you: each one's work there is labelled as your agent's on this machine.
+      <p class="dim">
+        What the agents on {name} may do on Arugula cloud, as you: each one's work there is labelled as your agent's on this machine.
       </p>
-      {error && <p class="hint" data-agent-grants-error>{error}</p>}
-      {!error && grants === null && <p class="hint">Loading…</p>}
-      {grants && !powers.length && <p data-agent-grants-none>None: its agents can't do anything on control.</p>}
+      {error && <p class="dim" data-agent-grants-error>{error}</p>}
+      {!error && grants === null && <p class="dim">Loading…</p>}
+      {grants && !powers.length && <p data-agent-grants-none>None: its agents can't do anything on Arugula cloud.</p>}
       {powers.length > 0 && (
         <ul class="agent-grants-list" data-agent-grants>
           {powers.map((p) => (
             <li key={p} data-agent-grant={p}>
-              <b>{POWERS[p] ?? p}</b> <span class="hint">over {byPower.get(p)!.join(", ")}</span>
+              <b>{POWERS[p] ?? p}</b> <span class="dim">over {byPower.get(p)!.join(", ")}</span>
             </li>
           ))}
         </ul>
       )}
-      <p class="hint">
-        {settings ? "Give or take them back in the platform's Settings, under Agents, or with " : "Give or take them back with "}
+      <p class="dim">
+        {settings ? "Give or take them back in Account settings, under Agents, or with " : "Give or take them back with "}
         <code>arugula grants</code>.
       </p>
       <div class="prompt-buttons">
@@ -154,7 +156,7 @@ function AgentGrants({ close }: { close: () => void }) {
               openPlatform("/settings#agents");
             }}
           >
-            Change them in Settings ↗
+            Change them in Settings <ExternalIcon size="xs" />
           </button>
         )}
         <button class="primary" type="button" onClick={close}>

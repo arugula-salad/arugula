@@ -238,6 +238,14 @@ fn inbox_in_pane(d: &Daemon, dir: &Path) -> u64 {
     d.post("/api/run", json!({ "command": cmd }))["pane"].as_u64().unwrap()
 }
 
+/// The code in `dir/exit`: the pane's shell has that file open before it
+/// writes the code, so wait for the code, not the file.
+fn wait_exit(d: &Daemon, what: &str, dir: &Path) -> String {
+    let code = || std::fs::read_to_string(dir.join("exit")).unwrap_or_default().trim().to_owned();
+    d.wait_for(what, || !code().is_empty());
+    code()
+}
+
 #[test]
 fn a_follow_up_wakes_the_agent_through_its_inbox() {
     let d = Daemon::child();
@@ -246,18 +254,19 @@ fn a_follow_up_wakes_the_agent_through_its_inbox() {
     d.wait_for("the waiter", || info(&d, pane)["inbox"] == true);
     let r = d.post(&format!("/api/panes/{pane}/followup"), json!({ "text": "now run the tests" }));
     assert_eq!(r["delivered"], true, "{r}");
-    d.wait_for("the hook to wake it", || dir.join("exit").exists());
-    assert_eq!(std::fs::read_to_string(dir.join("exit")).unwrap().trim(), "2");
+    assert_eq!(wait_exit(&d, "the hook to wake it", &dir), "2");
     let err = std::fs::read_to_string(dir.join("err")).unwrap();
     assert!(
         err.starts_with("A follow-up from ") && err.trim().ends_with(" (sent through Arugula): now run the tests"),
         "{err}"
     );
-    // Recorded as the sender's.
-    let hist = d.get(&format!("/api/history?pane={pane}"));
-    assert!(hist.as_array().unwrap().iter().any(|h| h["text"] == "follow-up: now run the tests"), "{hist}");
-    let drivers = d.get(&format!("/api/panes/{pane}/drivers"));
-    assert_eq!(drivers.as_array().unwrap().len(), 1, "the sender took a turn: {drivers}");
+    // Recorded as the sender's, by the pane's own task: it can come after
+    // the hook has woken.
+    d.wait_for("the follow-up in the pane's history", || {
+        let hist = d.get(&format!("/api/history?pane={pane}"));
+        hist.as_array().unwrap().iter().any(|h| h["text"] == "follow-up: now run the tests")
+    });
+    d.wait_for("the sender's turn", || d.get(&format!("/api/panes/{pane}/drivers")).as_array().unwrap().len() == 1);
 
     // Sent before anything listens: it waits for the next waiter.
     let dir = d.sessions.join("queued");
@@ -296,8 +305,7 @@ fn a_follow_up_wakes_the_agent_through_its_inbox() {
         let _ = s.read_to_string(&mut out);
         out
     });
-    d.wait_for("the first to step aside", || a.join("exit").exists());
-    assert_eq!(std::fs::read_to_string(a.join("exit")).unwrap().trim(), "0");
+    assert_eq!(wait_exit(&d, "the first to step aside", &a), "0");
     d.post(&format!("/api/panes/{pane_a}/followup"), json!({ "text": "to the second" }));
     assert!(second.join().unwrap().contains("to the second"));
 }

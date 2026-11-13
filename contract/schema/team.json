@@ -98,7 +98,7 @@
       "type": "object"
     },
     "Flags": {
-      "description": "Labs flags control sends a machine (#347): its account's, and its\nteam's if it's a team's machine, by flag name. On or off; a flag\nneither names follows the machine's own default. The daemon's own\n`flags.json` wins over both, and account over team.",
+      "description": "Labs flags control sends a machine (#347): its account's, and its\nteam's if it's a team's machine, by flag name. On or off; a flag\nneither names follows the machine's own default. The daemon's own\n`flags.json` wins over both, and account over team. A personal\nmachine's `team` holds only [`CHAT_HEARD`], when it applies.",
       "properties": {
         "account": {
           "additionalProperties": {
@@ -595,7 +595,7 @@
       "type": "object"
     },
     "TeamNone": {
-      "description": "What control answers a machine that isn't in a team: `{\"team\": null}`.\nA daemon only asks once it has pinned one, and reads this as it always\nhas, as an answer [`TeamAnswer`] can't parse.",
+      "description": "What control answered a machine that isn't in a team, before it\nanswered an empty [`TeamAnswer`] (no team, rosters or certificates) a\ndaemon parses and keeps what it has by: `{\"team\": null}`, which a\ndaemon read as an answer it can't parse.",
       "properties": {
         "team": {
           "anyOf": [

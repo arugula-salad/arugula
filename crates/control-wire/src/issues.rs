@@ -10,6 +10,10 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Whose a project is: [`crate::projects`]' now, kept here for the code
+/// that names it from before.
+pub use crate::projects::ProjectOwner;
+
 /// The agent that wrote something for its owner (M197), labelled
 /// "<owner>'s agent on <machine>": chat's.
 pub use crate::chat::ChatAgent;
@@ -34,9 +38,13 @@ pub const ISSUE_EVENTS: &str = "/api/issues/{id}/events";
 /// A machine's agents' (M200), signed by the machine: the same reads and
 /// writes, each checked against its owner's role and the machine's grants
 /// (M197: `threads.read` to read, `issues.write` to write). `GET
-/// ?project=&repo=`: the project an agent's `#N` means, and where its new
-/// issues go, [`IssueHome`]: `project` (an id or `personal`), else the one
-/// `repo` (`owner/name`) is linked to, else the owner's personal one.
+/// ?project=&session_project=&repo=`: the project an agent's `#N` means,
+/// and where its new issues go, [`IssueHome`]: `project` (an id or
+/// `personal`: the call's, or its block's), else `session_project` (the
+/// agent's session's), else the one `repo` (`owner/name`) is linked to,
+/// else, on a team's machine, the team's default project (where a team's
+/// Docs live too, Arugula #862), else the owner's personal one. Its `rule`
+/// says which answered.
 pub const AGENT_ISSUE_HOME: &str = "/api/daemon/issue-home";
 /// [`PROJECT_ISSUES`], [`PROJECT_ISSUE`], [`ISSUE`] and [`ISSUE_EVENTS`]
 /// for a machine's agents. Comments are posted to the issue's thread
@@ -72,6 +80,10 @@ pub fn agent_issue_events(id: &str) -> String {
 pub struct AgentIssueHomeQuery {
     #[serde(default)]
     pub project: Option<String>,
+    /// The project the agent's session is in. An older control ignores it
+    /// and answers by `repo`, which the machine sends beside it.
+    #[serde(default)]
+    pub session_project: Option<String>,
     #[serde(default)]
     pub repo: Option<String>,
 }
@@ -292,6 +304,49 @@ pub struct IssueHome {
     /// label menus offer (UI audit #163).
     #[serde(default)]
     pub labels: Vec<String>,
+    /// A team's project, not its owner's personal one: where a team's Docs
+    /// live (Arugula #862). An older control sends none, which a machine
+    /// reads as not a team's.
+    #[serde(default)]
+    pub team: bool,
+    /// Whose project it is: a team's or a person's own. It replaces `team`
+    /// as the test of a team's project; an older control sends none, and a
+    /// machine reads `team` then. `team` stays for a release, for older
+    /// machines.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub owner: Option<ProjectOwner>,
+    /// Which step chose the project, for [`AGENT_ISSUE_HOME`]. An older
+    /// control sends none; the machine then says its own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub rule: Option<IssueHomeRule>,
+}
+
+/// The steps that choose an agent's project, in order: the first that has
+/// one answers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum IssueHomeRule {
+    /// The call named it.
+    Explicit,
+    /// The agent's block was started on one of its issues (`work.project`).
+    Block,
+    /// The agent's session is in it.
+    Session,
+    /// The clone's GitHub repo is linked to it.
+    Repo,
+    /// None of those: the owner's default project.
+    Default,
+}
+
+impl IssueHome {
+    /// A team's project: `owner` when control sent one, else `team`.
+    pub fn is_team(&self) -> bool {
+        self.owner.as_ref().map_or(self.team, ProjectOwner::is_team)
+    }
 }
 
 /// `PUT /api/projects/{project}/issue-home`: `native`, `github` (only with
@@ -320,7 +375,8 @@ pub struct IssueExportQuery {
 pub struct IssueComment {
     /// Its number in the thread.
     pub seq: i64,
-    /// The account that wrote it, or "" once it's deleted.
+    /// The account that wrote it, or "": a deleted account's, or one
+    /// nobody here wrote (then `via` says who did).
     pub author: String,
     pub agent: Option<ChatAgent>,
     pub at: u64,
@@ -328,6 +384,13 @@ pub struct IssueComment {
     /// Lines it quoted from a pane.
     pub quote: Option<String>,
     pub edited: Option<u64>,
+    /// As its message's [`via`](crate::chat::ChatMessage::via): with no
+    /// author, Arugula's own post (`system`, a session's card or ask),
+    /// GitHub's (`github:<login>`), CI's (`ci:<source>`) or what an agent
+    /// session said (`said:<ses>`) (Arugula #626).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub via: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -360,4 +423,61 @@ pub struct IssueExport {
     pub issues: Vec<ExportedIssue>,
     /// Everyone it names (authors, actors, assignees, commenters).
     pub people: Vec<ExportedPerson>,
+    /// The comments were left out: they're in chat, which is off for the
+    /// reader (Arugula #746). Absent when they're there.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub comments_in_chat: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An older control sends no `owner`: `team` says then. A newer one's
+    /// `owner` wins.
+    #[test]
+    fn an_issue_home_parses_with_and_without_its_owner() {
+        let older = serde_json::json!({ "project": "prj_t", "name": "Acme", "home": "native", "chosen": false,
+            "repos": [], "native_issues": 0, "both": false, "labels": [], "team": true });
+        let home: IssueHome = serde_json::from_value(older.clone()).unwrap();
+        assert_eq!((home.owner.as_ref(), home.is_team()), (None, true));
+        assert!(serde_json::to_value(&home).unwrap().get("owner").is_none(), "none isn't sent");
+
+        let mut newer = older;
+        newer["owner"] = serde_json::json!({ "kind": "team", "id": "tm_1", "name": "Acme" });
+        let home: IssueHome = serde_json::from_value(newer.clone()).unwrap();
+        assert_eq!(home.owner, Some(ProjectOwner::Team { id: "tm_1".into(), name: "Acme".into() }));
+        assert_eq!(serde_json::to_value(&home).unwrap(), newer, "it goes back as it came");
+
+        newer["owner"] = serde_json::json!({ "kind": "personal", "account": "acc_1" });
+        let home: IssueHome = serde_json::from_value(newer).unwrap();
+        assert!(!home.is_team(), "owner wins over team");
+    }
+
+    /// An older control sends no `rule`; a newer one says which step chose.
+    #[test]
+    fn an_issue_home_parses_with_and_without_its_rule() {
+        let older = serde_json::json!({ "project": "prj_1", "home": "native", "chosen": false,
+            "repos": [], "native_issues": 0, "both": false });
+        let home: IssueHome = serde_json::from_value(older.clone()).unwrap();
+        assert_eq!(home.rule, None);
+        assert!(serde_json::to_value(&home).unwrap().get("rule").is_none(), "none isn't sent");
+
+        let mut newer = older;
+        for (said, rule) in [
+            ("explicit", IssueHomeRule::Explicit),
+            ("block", IssueHomeRule::Block),
+            ("session", IssueHomeRule::Session),
+            ("repo", IssueHomeRule::Repo),
+            ("default", IssueHomeRule::Default),
+        ] {
+            newer["rule"] = said.into();
+            let home: IssueHome = serde_json::from_value(newer.clone()).unwrap();
+            assert_eq!(home.rule, Some(rule), "{said}");
+            assert_eq!(serde_json::to_value(&home).unwrap()["rule"], said);
+        }
+
+        let q: AgentIssueHomeQuery = serde_json::from_value(serde_json::json!({ "repo": "acme/app" })).unwrap();
+        assert_eq!((q.session_project, q.repo.as_deref()), (None, Some("acme/app")), "an older machine's query");
+    }
 }

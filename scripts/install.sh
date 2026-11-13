@@ -8,8 +8,9 @@
 #   curl -fsSL https://arugula.io/install.sh | sh
 #   curl -fsSL https://arugula.io/install.sh | sh -s -- --no-app
 #
-# arugula.io serves this file from this repo's main (arugula-salad/site's
-# Worker, cached 5 minutes): merging a change here ships it.
+# arugula.io serves this file as the newest daemon release's commit has it
+# (arugula-salad/site's Worker, cached 5 minutes): a change here ships with
+# the next release, not when it merges.
 #
 # On a Mac with someone logged in at the screen, it installs the desktop app
 # too, from the app's own releases (app-latest, #393): in /Applications if
@@ -31,6 +32,9 @@
 #                           are, instead of GitHub
 # ARUGULA_APP_DIR=DIR     where Arugula.app goes, instead of
 #                           /Applications or ~/Applications
+# ARUGULA_ALLOW_UNSIGNED=1  install a release whose SHA256SUMS has no
+#                           signature (one from before releases were
+#                           signed, or a local build)
 set -eu
 
 repo=https://github.com/arugula-salad/arugula
@@ -38,6 +42,35 @@ repo=https://github.com/arugula-salad/arugula
 say() { printf '%s\n' "$*"; }
 die() { printf 'arugula: %s\n' "$*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "needs $1"; }
+
+# The key that signs a daemon release's SHA256SUMS (SHA256SUMS.sig, Ed25519,
+# base64; arugula_proto::release_sums has the same key), and its signature
+# of "arugula release key", to tell whether this machine's openssl can check
+# Ed25519 at all (macOS's LibreSSL can't).
+sums_key='-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAsD4YB+GbXgEt8eueJnob85euFZyEZYmLeTfOJhrdsVo=
+-----END PUBLIC KEY-----'
+sums_probe=XB4HUMx0sSs4lma1VQrfL/DGf4X94D1Sdxeas/al96ifurSl/0UcUHyt0VOv/Yyb608YY2/3zmlg3z+cmn0LAg==
+# scripts/tests/install.sh's own key: KEY (a PEM) and KEY.probe.
+if [ -n "${ARUGULA_TEST_RELEASE_KEY:-}" ]; then
+  sums_key=$(cat "$ARUGULA_TEST_RELEASE_KEY")
+  sums_probe=$(cat "$ARUGULA_TEST_RELEASE_KEY.probe")
+fi
+# The Developer ID team the Mac app is signed by.
+app_team=HNDPMQPF22
+
+# signed FILE SIG: 0 when SIG is the release key's signature of FILE, 1 when
+# it isn't, 2 when this machine can't tell (no openssl with Ed25519).
+signed() {
+  command -v openssl >/dev/null 2>&1 || return 2
+  k=$(mktemp -d "$tmp/sig.XXXXXX")
+  printf '%s\n' "$sums_key" >"$k/key.pem"
+  printf 'arugula release key' >"$k/probe"
+  printf '%s' "$sums_probe" | openssl base64 -d -A >"$k/probe.sig" 2>/dev/null || return 2
+  openssl pkeyutl -verify -pubin -inkey "$k/key.pem" -rawin -in "$k/probe" -sigfile "$k/probe.sig" >/dev/null 2>&1 || return 2
+  tr -d '\r\n' <"$2" | openssl base64 -d -A >"$k/sig" 2>/dev/null || return 1
+  openssl pkeyutl -verify -pubin -inkey "$k/key.pem" -rawin -in "$1" -sigfile "$k/sig" >/dev/null 2>&1 || return 1
+}
 
 # The Mac app: by default when this is someone's own session at the screen
 # (not ssh), since that's who the site's one-liner is for; a server or an
@@ -104,6 +137,21 @@ trap 'rm -rf "$tmp"' EXIT
 say "downloading $name"
 curl -fsSL -o "$tmp/$name.tar.gz" "$base/$name.tar.gz" || die "no $name.tar.gz in release $version"
 curl -fsSL -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" || die "no SHA256SUMS in release $version"
+# SHA256SUMS must be the release key's: whoever could swap the tarball could
+# swap SHA256SUMS too, but not sign it.
+if curl -fsSL -o "$tmp/SHA256SUMS.sig" "$base/SHA256SUMS.sig"; then
+  rc=0
+  signed "$tmp/SHA256SUMS" "$tmp/SHA256SUMS.sig" || rc=$?
+  case $rc in
+    0) ;;
+    1) die "release $version's SHA256SUMS isn't signed by the release key: not installing it" ;;
+    *) say "(no openssl with Ed25519 here to check SHA256SUMS's signature: checking the download against it only)" ;;
+  esac
+elif [ "${ARUGULA_ALLOW_UNSIGNED:-}" = 1 ]; then
+  say "release $version's SHA256SUMS isn't signed: installing it anyway (ARUGULA_ALLOW_UNSIGNED=1)"
+else
+  die "release $version's SHA256SUMS isn't signed (no SHA256SUMS.sig): ARUGULA_ALLOW_UNSIGNED=1 installs it anyway"
+fi
 
 want=$(grep " $name.tar.gz\$" "$tmp/SHA256SUMS" | cut -d' ' -f1)
 [ -n "$want" ] || die "$name.tar.gz isn't in SHA256SUMS"
@@ -237,6 +285,11 @@ if [ "$app" = 1 ]; then
   bundle=""
   for b in "$tmp/app/x"/*.app; do [ -d "$b" ] && bundle=$(basename "$b") && break; done
   [ -n "$bundle" ] || die "$zip has no app in it"
+  # Signed with Arugula's Developer ID, whole: curl sets no quarantine, so
+  # Gatekeeper wouldn't look.
+  codesign --verify --deep --strict "$tmp/app/x/$bundle" 2>/dev/null || die "$bundle in $zip isn't validly signed: not installing it"
+  team=$(codesign -dv "$tmp/app/x/$bundle" 2>&1 | sed -n 's/^TeamIdentifier=//p')
+  [ "$team" = "$app_team" ] || die "$bundle in $zip is signed by team ${team:-none}, not Arugula's ($app_team): not installing it"
   if [ -n "${ARUGULA_APP_DIR:-}" ]; then
     appdir=$ARUGULA_APP_DIR
   elif [ -w /Applications ] && { [ ! -e "/Applications/$bundle" ] || [ -w "/Applications/$bundle" ]; }; then
@@ -351,8 +404,9 @@ say "  Anywhere  ${bin}arugulad join https://control.arugula.io"
 say "            (also how you add this machine to a team: pick it when you approve)"
 say "  Agents    ${bin}arugula agent --help · claude mcp add arugula -- ${bin}arugula mcp"
 say "  Hooks     ${bin}arugula hooks install   (Claude Code's questions and approvals as cards)"
-say "            or both at once, in Claude Code: /plugin install arugula --marketplace arugula-salad/arugula"
-say "  Docs      https://arugula.io/#install"
+say "            or both at once, in Claude Code: /plugin marketplace add arugula-salad/arugula"
+say "            then /plugin install arugula@arugula"
+say "  Docs      https://docs.arugula.io/quickstart/"
 # Telemetry is opt-in (docs/telemetry.md): say the first command asks,
 # unless the environment already keeps it off.
 if [ -z "${ARUGULA_TELEMETRY:-}" ] && [ -z "${DO_NOT_TRACK:-}" ]; then

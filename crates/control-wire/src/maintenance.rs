@@ -25,7 +25,7 @@ pub const MAINTENANCE: &str = "maintenance";
 /// What a client says when the window outlasts its patience: calm, since
 /// nothing is wrong and it's over soon.
 pub const MAINTENANCE_SAID: &str =
-    "Arugula control's Chat and Cloud are briefly down for maintenance, back in a minute: try again shortly";
+    "Arugula cloud's Chat and Cloud are briefly down for maintenance, back in a minute: try again shortly";
 
 /// How long a client waits out a window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

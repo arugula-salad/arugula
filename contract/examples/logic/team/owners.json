@@ -1,0 +1,270 @@
+{
+  "about": "DK7 (aru-126): whether a roster version changes who the team's owners are since the version before (someone made an owner, an owner removed or made an editor or a viewer, or an owner's entry moved to another root), and the WebAuthn challenge an owner's passkey signs for such a version: SHA-256 of its bytes (bodies), base64url without padding. The hub takes a version that changes the owners only with that assertion, from an owner of the version before, checked against their passkey log (passkey). Editors and viewers coming and going, a rename and the order of members change no owners.",
+  "cases": [
+    {
+      "about": "an editor made an owner",
+      "input": {"prev": "v1", "roster": "v2-bob-owner"},
+      "output": {"challenge": "s72wGku_2-B5kSdy00kHZ4hYDaOoYupAFTYdR8tbQ98", "changes_owners": true}
+    },
+    {
+      "about": "an editor made a viewer",
+      "input": {"prev": "v1", "roster": "v2-bob-viewer"},
+      "output": {"challenge": "RF8PjIszRCCU_Yk01RSOO_-h4LzWNTRZFUserJw3zag", "changes_owners": false}
+    },
+    {
+      "about": "an editor removed",
+      "input": {"prev": "v1", "roster": "v2-bob-removed"},
+      "output": {"challenge": "CbT-eigJSRxj5iEvueeZvgTqUhbfl-jUsR_5X4lUHX0", "changes_owners": false}
+    },
+    {
+      "about": "an editor added",
+      "input": {"prev": "v1", "roster": "v2-mallory-editor"},
+      "output": {"challenge": "BgGtbRfYkHYOPqHsvz7W9a70Qc3ZaH7C21MgC3OyOYc", "changes_owners": false}
+    },
+    {
+      "about": "an owner added",
+      "input": {"prev": "v1", "roster": "v2-mallory-owner"},
+      "output": {"challenge": "UMLrMhIHFvVcA-Xs9Qf6uDL9df0MenN_tfoQt8v-IGg", "changes_owners": true}
+    },
+    {
+      "about": "the only owner made an editor, another an owner",
+      "input": {"prev": "v1", "roster": "v2-alice-editor"},
+      "output": {"challenge": "6fsiMqTPoqs02IDOV6aq5oqh3wtNSwAumgtlfJJ4MmY", "changes_owners": true}
+    },
+    {
+      "about": "an owner's entry moved to another root",
+      "input": {"prev": "v1", "roster": "v2-alice-elsewhere"},
+      "output": {"challenge": "dKFRkQ54d3j8IpW1Eg69I7ZIyypIJfkVEk29NENzapE", "changes_owners": true}
+    },
+    {
+      "about": "the same members in another order",
+      "input": {"prev": "v1", "roster": "v2-reordered"},
+      "output": {"challenge": "TEtUUbcVkP-yR4AGz56XWQuGwQRX4e3k_Rfl47xFQtM", "changes_owners": false}
+    },
+    {
+      "about": "a rename",
+      "input": {"prev": "v1", "roster": "v2-renamed"},
+      "output": {"challenge": "eQM1MwMq34QlYzsCE_4-pCjtk6T9McNQ7U0aWJpBV2w", "changes_owners": false}
+    },
+    {
+      "about": "one of two owners made an editor",
+      "input": {"prev": "v1-two-owners", "roster": "v1"},
+      "output": {"challenge": "0hVjhSxzLbSCtEpRyRB41Zi9UNf4BjLyA4jtsFcEb0c", "changes_owners": true}
+    },
+    {
+      "about": "one of two owners removed",
+      "input": {"prev": "v1-two-owners", "roster": "v2-bob-removed"},
+      "output": {"challenge": "CbT-eigJSRxj5iEvueeZvgTqUhbfl-jUsR_5X4lUHX0", "changes_owners": true}
+    }
+  ],
+  "checks": ["arugula_e2e::team::Roster::changes_owners", "arugula_e2e::team::Roster::owner_challenge"],
+  "input": "prev: the version before's label; roster: the new version's label",
+  "keys": {
+    "alice": {
+      "device": "37f29b7074cf8b52",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "seed": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c"
+    },
+    "bob": {
+      "device": "c242667535a3d34f",
+      "noise": "0202020202020202020202020202020202020202020202020202020202020202",
+      "seed": "0202020202020202020202020202020202020202020202020202020202020202",
+      "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+    },
+    "mallory": {
+      "device": "e0a128f98e5582a3",
+      "noise": "0303030303030303030303030303030303030303030303030303030303030303",
+      "seed": "0303030303030303030303030303030303030303030303030303030303030303",
+      "sign": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1"
+    }
+  },
+  "objects": {
+    "alice": {
+      "account": "alice",
+      "approver": "37f29b7074cf8b52",
+      "created": 1000,
+      "device": "37f29b7074cf8b52",
+      "kind": "browser",
+      "name": "alice's laptop",
+      "noise": "0101010101010101010101010101010101010101010101010101010101010101",
+      "sig": "4c7a182921697a35256fd95c0c9e8d2e91f60e6f7601e02d600196dda65ed26cd9aff836cd15e6e6d62cdfbb144fe575d921d5035ee13248a8565973ed0fda0d",
+      "sign": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "v": 1
+    },
+    "bob": {
+      "account": "bob",
+      "approver": "c242667535a3d34f",
+      "created": 1000,
+      "device": "c242667535a3d34f",
+      "kind": "browser",
+      "name": "bob's laptop",
+      "noise": "0202020202020202020202020202020202020202020202020202020202020202",
+      "sig": "07e9418076d6edaf8c72fa5be449eeea02b612b5cd17ec9c6654519b853288b6d7a08c29100e96a0b5af3b13fb593ddb25335e0418d10dc2692d44cd3ed48103",
+      "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+      "v": 1
+    },
+    "mallory": {
+      "account": "mallory",
+      "approver": "e0a128f98e5582a3",
+      "created": 1000,
+      "device": "e0a128f98e5582a3",
+      "kind": "browser",
+      "name": "mallory's laptop",
+      "noise": "0303030303030303030303030303030303030303030303030303030303030303",
+      "sig": "0335151b39728073d8d790462273dd3f4eb65467dba6099e554fd86808d0ae18c23c0057e9819afdb465bfd4e6ffd5866416a421d837041ae5cdb5c850bfd002",
+      "sign": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1",
+      "v": 1
+    },
+    "v1": {
+      "at": 1000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "editor", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "d9149e21fb7e917759dc736018c46656ee8bc525e109d33ab2adc153af38885e5725777794d972ff7a901e2301ee9f3a11d0cfeb88e817935a4a2986a130cd0f",
+      "team": "t1",
+      "v": 1,
+      "version": 1
+    },
+    "v1-two-owners": {
+      "at": 1000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "owner", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "5b28790437e273050394d433d6ff2c74b0fb41967d889ef529ccdc8d53d6065a4193b4f0e277c541c05d5c8562b7aa8c0f6eb0fbcf4525bb91a7d3e1bda7b407",
+      "team": "t1",
+      "v": 1,
+      "version": 1
+    },
+    "v2-alice-editor": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "editor", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "owner", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "141aadb006a0a0c330ba6abad12024b7a38373cd073285c622bce8a1a78b2d1d1bea185fecfb7e0991eeb3a6fc96a0503b3ec8664341ab2117534cee6b4cfe00",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-alice-elsewhere": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "e0a128f98e5582a3"},
+        {"account": "bob", "name": "bob-login", "role": "editor", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "7b1165c60c8675d9951ddc79b8e8b16cab73bbb990f1ebf7ff8a620e28de84409a80f617df82adc0c6ebff01a023e7a896ec4f6246d86a5930c4cabedabc1607",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-bob-owner": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "owner", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "3c7688260e29385f04aa7f3d98868e0822e500cbd67f65a2b0702a56c39d3d90618267272fc2c7a847c77936b6e274e92985a5855bac28f8f49be1b89a6acf09",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-bob-removed": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"}
+      ],
+      "name": "Acme",
+      "sig": "60328d36cf1cb3a4fec75d62f8c97b629ddc787dbaf631c6bcd8f432dc080ae124b5c5fe2bfaa670f6b770f61cd307ad8343f8417e5e003819cf1135f532f007",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-bob-viewer": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "viewer", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "9d557fa266e7059003e96c4ce726e955b8b620c84faef61e01982f5f5b4bc260473e81f5535bade3feafc286b0e91691f97f57a14034a40446c32e11d47ebe05",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-mallory-editor": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "editor", "root": "c242667535a3d34f"},
+        {
+          "account": "mallory",
+          "name": "mallory-login",
+          "role": "editor",
+          "root": "e0a128f98e5582a3"
+        }
+      ],
+      "name": "Acme",
+      "sig": "11d353eee5f239e039c04f0b81eaa97e772c0c4b5a47fb00fafc2d81d032defecc32c46b5e7771affbe0e12fc29c132c95c78bdc2c05d7cf2cddcad84aa1750e",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-mallory-owner": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "editor", "root": "c242667535a3d34f"},
+        {"account": "mallory", "name": "mallory-login", "role": "owner", "root": "e0a128f98e5582a3"}
+      ],
+      "name": "Acme",
+      "sig": "fd56af109fbcf624f3480f50e757a3362cc13ed1c616910be201289f1593f29e2e3c3b707682ce81fbf589914501692e6951dd0ef5447d89ff3e09b42f9aae00",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-renamed": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "editor", "root": "c242667535a3d34f"}
+      ],
+      "name": "Other",
+      "sig": "26bf2eb2ced058d4b93202cf2a45af4b65e0f930e711be38ca2dbd10bc069a4b17528c936374ccdd2a97b99dadbf29d1ba0c337e73211e0e00b9e3d3d9cb6f04",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-reordered": {
+      "at": 2000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "bob", "name": "bob-login", "role": "editor", "root": "c242667535a3d34f"},
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"}
+      ],
+      "name": "Acme",
+      "sig": "472b0a7182ceb1707637cef69ee1951f9699f0a5a2865e32d01c169f46238fb225424f815350822db0e61c2d6c6774d9471f8a88a60414015f206d7162a4610b",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    }
+  },
+  "output": "changes_owners: whether its owners (account and root) differ; challenge: its owner_challenge"
+}

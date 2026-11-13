@@ -6,8 +6,9 @@
 #
 #   irm https://arugula.io/install.ps1 | iex
 #
-# arugula.io serves this file from this repo's main (arugula-salad/site's
-# Worker, cached 5 minutes): merging a change here ships it.
+# arugula.io serves this file as the newest daemon release's commit has it
+# (arugula-salad/site's Worker, cached 5 minutes): a change here ships with
+# the next release, not when it merges.
 #
 # $env:ARUGULA_VERSION = 'vX.Y.Z'   a release tag (default: the latest)
 # $env:ARUGULA_NO_START = '1'        register the task without starting it
@@ -64,8 +65,8 @@
     $bin = Join-Path $env:LOCALAPPDATA 'Programs\arugula'
     ''
     'Arugula is installed. In a new terminal:'
-    '  arugula web       open it in your browser, signed in'
-    '  arugula run pwsh  a pane, from the command line'
+    '  arugula web             open it in your browser, signed in'
+    '  arugula run powershell  a pane, from the command line'
     "(Or now: & '$bin\arugula.exe' web)"
     # Telemetry is opt-in (docs/telemetry.md): say the first command asks,
     # unless the environment already keeps it off.

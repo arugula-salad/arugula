@@ -17,8 +17,9 @@ import { BoardPanel } from "../../shared/boards/view";
 import { boards } from "../../shared/boards/store";
 import { platformFetch } from "../../shared/maintenance";
 import { askText, type PromptChoice } from "../../shared/ui/menu";
-import { PlatformApiContext } from "../../shared/platform-api";
+import { PlatformApiContext, type PlatformApi } from "../../shared/platform-api";
 import { useSubscribe } from "../../shared/ui/hooks";
+import { BlockLoading, EmptyState } from "./block-states";
 import { shellPlatformApi } from "../platform-api";
 import { platformHref } from "../platform-links";
 import { getControlSession } from "../ui/people";
@@ -29,25 +30,41 @@ export interface BoardState {
   board: string;
 }
 
-function BoardBlock({ client, s, shown }: { client: Client; s: BoardState | null; shown: boolean }) {
+function BoardBlock({ client, id, s, shown }: { client: Client; id: PaneId; s: BoardState | null; shown: boolean }) {
   const session = getControlSession();
   useSubscribe((fn) => session?.subscribe(fn) ?? (() => {}));
   let body;
-  if (!s) body = <p class="board-none dim">…</p>;
-  else if (session?.phase === "ready") body = <BoardPanel id={s.board} shown={shown} platform={platformHref} menu={(link) => [{ label: "Open in browser ↗", run: () => window.open(link, "_blank", "noopener") }]} />;
+  if (!s) body = <BlockLoading what="the board" />;
+  else if (session?.phase === "ready") body = <BoardPanel id={s.board} shown={shown} platform={platformHref} />;
   else
     body = (
-      <p class="board-none dim" data-board-needs-control>
-        A board is your project's, on Arugula control, and you read it as yourself. Open this machine through control's page, signed in, to see it here.
-      </p>
+      <EmptyState
+        data-board-needs-control
+        title="A board is on Arugula cloud."
+        why="It's your project's, and you read it as yourself. Open this machine in Arugula cloud, signed in, to see it here."
+      />
     );
   return (
-    <PlatformApiContext.Provider value={shellPlatformApi(client)}>
+    <PlatformApiContext.Provider value={boardApi(client, id)}>
       <div class="board-block" data-board-block={s?.board}>
         {body}
       </div>
     </PlatformApiContext.Provider>
   );
+}
+
+/** The shell's api for a board in this pane: a machine Doc opens beside it, and an agent block of this layout comes forward where it is. */
+function boardApi(client: Client, id: PaneId): PlatformApi {
+  const base = shellPlatformApi(client);
+  return {
+    ...base,
+    machineDoc: base.machineDoc && { ...base.machineDoc, open: (machine, doc) => base.machineDoc!.open(machine, doc, id) },
+    goToPane(machine, pane, quote) {
+      const n = Number(pane);
+      if (!quote && base.machineDoc?.here(machine) && client.info(n)) return client.setActive(n);
+      base.goToPane(machine, pane, quote);
+    },
+  };
 }
 
 /** A board's id in what was typed: `brd_…` alone, or in a board page's
@@ -56,7 +73,9 @@ export function boardIdIn(typed: string): string | null {
   return /\bbrd_[0-9a-f]{32}\b/i.exec(typed)?.[0].toLowerCase() ?? null;
 }
 
-/** Every board in the reader's projects, as choices: "Project · Board". */
+/** The open boards in the reader's projects, as choices: "Project · Board".
+ * Those people made come first, then those from Plane epics (started ones
+ * first), marked with the epic's key: "Project · ARUGU-10 · Launch". */
 async function boardChoices(): Promise<PromptChoice[]> {
   const r = await platformFetch("/api/projects", { credentials: "same-origin" });
   if (!r.ok) return [];
@@ -65,20 +84,25 @@ async function boardChoices(): Promise<PromptChoice[]> {
     projects.map((p) =>
       boards
         .list(p.id)
-        .then((l) => l.boards.map((b) => ({ value: b.id, label: `${p.name} · ${b.title}` })))
+        .then((l) =>
+          l.boards
+            .filter((b) => b.closed_at == null)
+            .map((b) => ({ value: b.id, label: `${p.name} · ${b.source ? `${b.source.key} · ` : ""}${b.title}`, rank: b.source ? (b.source.started ? 1 : 2) : 0 })),
+        )
         .catch(() => []),
     ),
   );
-  return lists.flat();
+  // A stable sort keeps each group in the order the projects gave.
+  return lists.flat().sort((a, b) => a.rank - b.rank);
 }
 
-/** "Pin a board…": a block for one of the reader's boards, beside `from`. */
+/** "Board…": a block for one of the reader's boards, beside `from`. */
 export async function pinBoard(client: Client, o: { from: PaneId }) {
   if (getControlSession()?.phase !== "ready") {
-    return client.toast("A board is read as you, through Arugula control: open this machine through control's page, signed in");
+    return client.toast("A board is read as you, through Arugula cloud: open this machine in Arugula cloud, signed in");
   }
   const choices = boardChoices();
-  const v = (await askText("Pin a board", "", "board, or its link", choices))?.trim();
+  const v = (await askText("Board", "", "board, or its link", choices))?.trim();
   if (!v) return;
   const typed = v.toLowerCase();
   const all = await choices.catch(() => []);
@@ -87,12 +111,12 @@ export async function pinBoard(client: Client, o: { from: PaneId }) {
   await client.openBlock({ type: "board", config: { board }, local: true, split: o.from, from_pane: o.from }, "couldn't pin that board");
 }
 
-registerBlock("board", (client: Client, _id: PaneId): BlockView => {
+registerBlock("board", (client: Client, id: PaneId): BlockView => {
   const host = document.createElement("div");
   host.className = "block block-board";
   let state: BoardState | null = null;
   let visible = true;
-  const draw = () => render(<BoardBlock client={client} s={state} shown={visible} />, host);
+  const draw = () => render(<BoardBlock client={client} id={id} s={state} shown={visible} />, host);
   draw();
   return {
     host,
@@ -109,7 +133,7 @@ registerBlock("board", (client: Client, _id: PaneId): BlockView => {
     },
     title: () => "Board",
     text: () => host.textContent ?? "",
-    focus: () => host.querySelector<HTMLElement>("button, input")?.focus(),
+    focus: () => host.querySelector<HTMLElement>("button, input")?.focus({ preventScroll: true }),
     dispose() {
       render(null, host);
       host.remove();

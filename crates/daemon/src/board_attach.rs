@@ -14,9 +14,10 @@ use arugula_control_wire::boards::{
     AttachBlock, BlockAttached, CLAIMED, CheckClaim, ClaimChecked, IssueRef, agent_project_attach_block,
     agent_project_claim_check,
 };
+use arugula_control_wire::issues::{agent_issue, agent_project_issue};
 use std::sync::Arc;
 
-use arugula_proto::{PaneId, flags};
+use arugula_proto::PaneId;
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
@@ -29,9 +30,18 @@ use crate::{control::CloudRefused, mux::Api, server::App};
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Work {
     pub issue: String,
+    /// The project the issue is in (Arugula #771): the agent's current
+    /// project, for its MCP calls (`mcp::issues`) and, as [`PROJECT_ENV`],
+    /// the `arugula` it runs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub boards: Vec<WorkBoard>,
 }
+
+/// The current project of `arugula issue` and `arugula open`, set in an
+/// agent's environment from its [`Work`]'s project.
+pub const PROJECT_ENV: &str = "ARUGULA_PROJECT";
 
 /// A board with a row the block is attached to.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -87,15 +97,17 @@ impl From<String> for NotKept {
 /// with the block (for its chip). `home`: the project of whoever started it,
 /// when known. `take`: take a row another machine's block holds, folding that
 /// block under `earlier`. The boards (none when no board has a row for the
-/// issue), or why it wasn't tried or was refused.
+/// issue), or why it wasn't tried or was refused. `session`: the starter's
+/// name, which holds the row from now (Arugula #765).
 pub async fn keep(
     app: &App,
     home: Option<String>,
     issue: &str,
     pane: PaneId,
     take: bool,
+    session: Option<String>,
 ) -> Result<Vec<WorkBoard>, NotKept> {
-    let boards = attach(app, home, issue, pane, take).await?;
+    let boards = attach(app, home, issue, pane, take, session).await?;
     if !boards.is_empty()
         && let Some(b) = app.mux.api(|r| Api::Block(pane, r)).await.flatten()
     {
@@ -104,11 +116,75 @@ pub async fn keep(
     Ok(boards)
 }
 
+/// [`keep`] for an issue found from a branch's name: the block is on it only
+/// if a board has a row for it, so a block with none keeps no issue, and one
+/// refused (a row another machine's block holds, no grant) says nothing. The
+/// boards, none when it isn't on one.
+pub async fn keep_inferred(app: &App, home: Option<String>, issue: &str, pane: PaneId) -> Vec<WorkBoard> {
+    let boards = match attach(app, home, issue, pane, false, None).await {
+        Ok(b) => b,
+        Err(why) => {
+            debug!(pane, issue, "a branch's issue isn't attached: {why}");
+            return vec![];
+        }
+    };
+    if !boards.is_empty()
+        && let Some(b) = app.mux.api(|r| Api::Block(pane, r)).await.flatten()
+        && let Err(why) = b.call("set_work", serde_json::json!({ "issue": issue, "boards": boards })).await
+    {
+        debug!(pane, issue, "a branch's issue isn't kept: {why}");
+        return vec![];
+    }
+    boards
+}
+
+/// The project that holds `issue` (#430), and the issue as `#N` in it. `#N`
+/// is looked up in each project this machine's boards grants reach; if more
+/// than one has it, the `current` project wins (`Call::chosen_project`'s,
+/// with the agent's `cwd`), else it is refused, naming them. `iss_…` names
+/// its project. `None` for the other forms (`owner/repo#N`, `IDENT-N`) and
+/// when no project has it: the caller falls back to the current project.
+pub async fn issue_project(app: &App, issue: &str, current: Option<&str>) -> Result<Option<(String, String)>, String> {
+    if issue.starts_with("iss_") {
+        let v = app
+            .control
+            .cloud(Method::GET, &agent_issue(issue), None)
+            .await
+            .map_err(|e| format!("issue {issue}: {e}"))?;
+        return match (v["project"].as_str(), v["number"].as_u64()) {
+            (Some(p), Some(n)) => Ok(Some((p.to_owned(), format!("#{n}")))),
+            _ => Err(format!("issue {issue}: Arugula cloud named no project or number")),
+        };
+    }
+    let Some(IssueRef::Number(n)) = IssueRef::parse(issue) else { return Ok(None) };
+    let reach = crate::mcp::registry::boards_reach(app).await;
+    let mut holders = vec![];
+    for p in &reach.projects {
+        if app.control.cloud(Method::GET, &agent_project_issue(&p.id, n), None).await.is_ok() {
+            holders.push(p);
+        }
+    }
+    match holders.as_slice() {
+        [] => Ok(None),
+        [only] => Ok(Some((only.id.clone(), format!("#{n}")))),
+        many => match many.iter().find(|p| Some(p.id.as_str()) == current) {
+            Some(p) => Ok(Some((p.id.clone(), format!("#{n}")))),
+            None => {
+                let names: Vec<_> = many.iter().map(|p| format!("{} ({})", p.name, p.id)).collect();
+                Err(format!(
+                    "#{n} is an issue of several projects ({}): pass its iss_ id, or start the agent in the repo of the one you mean",
+                    names.join(", ")
+                ))
+            }
+        },
+    }
+}
+
 /// [`keep`], in the background, for a block opened through the API
 /// (`arugula agent --issue`): nobody waits for its answer.
 pub fn keep_later(app: Arc<App>, issue: String, take: bool, pane: PaneId) {
     crate::task::spawn(async move {
-        match keep(&app, None, &issue, pane, take).await {
+        match keep(&app, None, &issue, pane, take, None).await {
             Ok(boards) => debug!(pane, issue, boards = boards.len(), "a block is on its issue's rows"),
             Err(why) => debug!(pane, issue, "a block started on an issue isn't on a row: {why}"),
         }
@@ -116,16 +192,16 @@ pub fn keep_later(app: Arc<App>, issue: String, take: bool, pane: PaneId) {
 }
 
 /// Before a pane is opened on `issue`: who holds its row, if another machine's
-/// block does (Arugula #404). A machine that can't ask (boards off, not
+/// block does (Arugula #404) or another session does, on this machine or
+/// another (Arugula #765; `session` is the asker's name, whose own hold is no
+/// claim). A machine that can't ask (not
 /// joined, no grant, control down) is told nothing: the attach says why the
 /// row isn't taken, as it always did, and refuses a race with its 409.
-pub async fn held(app: &App, home: Option<String>, issue: &str) -> Option<String> {
-    if !crate::lab_flags::flags(app.control.state_dir()).has(flags::BOARDS) {
-        return None;
-    }
+pub async fn held(app: &App, home: Option<String>, issue: &str, session: Option<String>) -> Option<String> {
     let enrolled = app.control.enrolled()?;
     let project = write_project(app, home).await.ok()?;
-    let body = serde_json::to_value(CheckClaim { issue: issue.to_owned(), machine: enrolled.keys.id() }).ok()?;
+    let body =
+        serde_json::to_value(CheckClaim { issue: issue.to_owned(), machine: enrolled.keys.id(), session }).ok()?;
     let v = app.control.cloud(Method::POST, &agent_project_claim_check(&project.id), Some(&body)).await.ok()?;
     serde_json::from_value::<ClaimChecked>(v).ok()?.held
 }
@@ -136,12 +212,10 @@ async fn attach(
     issue: &str,
     pane: PaneId,
     take: bool,
+    session: Option<String>,
 ) -> Result<Vec<WorkBoard>, NotKept> {
-    if !crate::lab_flags::flags(app.control.state_dir()).has(flags::BOARDS) {
-        return Err("boards are off on this machine (Labs: boards), so the row wasn't attached".into());
-    }
     let Some(enrolled) = app.control.enrolled() else {
-        return Err("this machine hasn't joined Arugula control, so the row wasn't attached".into());
+        return Err("this machine hasn't joined Arugula cloud, so the row wasn't attached".into());
     };
     let project = write_project(app, home).await?;
     let body = serde_json::to_value(AttachBlock {
@@ -149,6 +223,7 @@ async fn attach(
         machine: enrolled.keys.id(),
         pane: pane.to_string(),
         take,
+        session,
     })
     .map_err(|e| e.to_string())?;
     let v =
@@ -162,7 +237,7 @@ async fn attach(
             }
         })?;
     let attached: BlockAttached =
-        serde_json::from_value(v).map_err(|e| format!("Arugula control sent an answer I can't read: {e}"))?;
+        serde_json::from_value(v).map_err(|e| format!("Arugula cloud sent an answer I can't read: {e}"))?;
     Ok(attached
         .on
         .into_iter()

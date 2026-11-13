@@ -2,7 +2,7 @@
 //! can plan its work around it without its person reading the docs first.
 //! The blocks and tools are what `tools/list` shows it (the Labs flags
 //! leave out the same ones); the forges are asked of the user's own CLIs
-//! (`gh`, and with the `additional-forges` flag `tea` and `glab`) as a block would;
+//! (`gh`, and in a build with Labs' code `tea` and `glab`) as a block would;
 //! hooks are live in a pane when a Claude Code hook has reached the daemon
 //! from it ([`App::hooks_heard`](crate::server::App)), which, with the
 //! hooks installed, includes the `PreToolUse` of this very call.
@@ -84,6 +84,18 @@ impl ToolCall<'_, '_> {
         let mut held: Vec<&str> = threads.scopes.iter().flat_map(|s| &s.powers).map(String::as_str).collect();
         held.extend(runs.projects.iter().flat_map(|p| &p.powers).map(String::as_str));
         held.extend(boards.into_iter().flat_map(|b| &b.projects).flat_map(|p| &p.powers).map(String::as_str));
+        // The powers control didn't answer for, each with why: no answer
+        // isn't "not granted" (Arugula #549).
+        let mut unread: Vec<(&str, &str)> = Vec::new();
+        if !threads.answered {
+            unread.extend(["threads.read", "threads.post", "issues.write"].map(|p| (p, threads.note.as_str())));
+        }
+        if !runs.answered {
+            unread.extend(["runs.read", "runs.start", "runs.command"].map(|p| (p, runs.note.as_str())));
+        }
+        if let Some(b) = boards.filter(|b| !b.answered) {
+            unread.extend(["boards.read", "boards.write"].map(|p| (p, b.note.as_str())));
+        }
         let joined = self.app().control.enrolled().is_some();
         status_of(
             offered,
@@ -91,6 +103,7 @@ impl ToolCall<'_, '_> {
             listed.is_some_and(|l| l.was_told()),
             joined,
             &held,
+            &unread,
         )
     }
 
@@ -125,13 +138,29 @@ impl ToolCall<'_, '_> {
                 "Claude Code's hooks reach Arugula from %{pane}: your questions and permission prompts are cards on the phone and the swarm{}",
                 if inbox { ", and a follow-up sent now goes straight in" } else { "" }
             )
+        } else if let Some(b) = hooks_blocked() {
+            // #395: installing them wouldn't help.
+            format!("No Claude Code hook has reached Arugula from %{pane}. {}", b.says())
         } else {
             format!(
-                "No Claude Code hook has reached Arugula from %{pane}: your questions and permission prompts stay in the terminal. {INSTALL}"
+                "No Claude Code hook has reached Arugula from %{pane}: your questions and permission prompts stay in the terminal. {INSTALL} If they're installed and still don't arrive, a Team or Enterprise policy may be blocking them."
             )
         };
         HooksLive { pane: Some(pane), live: Some(live), heard_secs_ago: ago.map(|a| a / 1000), inbox, note }
     }
+}
+
+/// #395: what stops Claude Code running hooks here: a managed policy, or
+/// the user's own `disableAllHooks` in the settings.json Claude Code reads
+/// (`$CLAUDE_CONFIG_DIR`'s, else `~/.claude`'s, as the daemon sees them).
+fn hooks_blocked() -> Option<arugula_proto::claude_policy::HooksBlocked> {
+    let dir =
+        std::env::var_os("CLAUDE_CONFIG_DIR").filter(|d| !d.is_empty()).map(std::path::PathBuf::from).or_else(|| {
+            std::env::var_os("HOME")
+                .or_else(|| std::env::var_os("USERPROFILE"))
+                .map(|h| std::path::PathBuf::from(h).join(".claude"))
+        });
+    arugula_proto::claude_policy::hooks_blocked(dir.map(|d| d.join("settings.json")).as_deref())
 }
 
 /// What a client does to get a tool list it hasn't asked for again.
@@ -150,11 +179,12 @@ fn reconnect(told: bool) -> String {
 /// The power each control tool needs: any one of them, held over a project
 /// (`arugula grants add`). Asked of control on each call; `capabilities`
 /// says what is missing from the reach it already reads.
-const GRANTS: [(&str, &[&str]); 8] = [
+const GRANTS: [(&str, &[&str]); 9] = [
     ("read_thread", &["threads.read"]),
     ("search_threads", &["threads.read"]),
     ("post_thread", &["threads.post"]),
     ("issue_write", &["issues.write"]),
+    ("link", &["issues.write"]),
     ("start_run", &["runs.start", "runs.command"]),
     ("read_run", &["runs.read"]),
     ("board_read", &["boards.read", "boards.write"]),
@@ -164,8 +194,16 @@ const GRANTS: [(&str, &[&str]); 8] = [
 /// The offered tools a session can't use yet. `had`: what its client last
 /// listed (`None`: it hasn't, so nothing is known to be missing); `told`:
 /// its client was sent `list_changed` since; `joined`: there is a control to
-/// hold grants; `held`: the powers this machine's grants give.
-fn status_of(offered: &[String], had: Option<&[String]>, told: bool, joined: bool, held: &[&str]) -> Vec<ToolStatus> {
+/// hold grants; `held`: the powers this machine's grants give; `unread`:
+/// the powers control didn't answer for, and why.
+fn status_of(
+    offered: &[String],
+    had: Option<&[String]>,
+    told: bool,
+    joined: bool,
+    held: &[&str],
+    unread: &[(&str, &str)],
+) -> Vec<ToolStatus> {
     let mut out = Vec::new();
     for name in offered {
         // A grant is asked of control on each call; without it a restart doesn't help.
@@ -174,8 +212,16 @@ fn status_of(offered: &[String], had: Option<&[String]>, told: bool, joined: boo
             .find(|(tool, _)| tool == name)
             .filter(|(_, powers)| joined && !powers.iter().any(|p| held.contains(p)));
         let missing = had.is_some_and(|h| !h.contains(name));
-        let (status, note) = match (ungranted, missing) {
-            (Some((_, powers)), _) => {
+        let why = ungranted.and_then(|(_, powers)| unread.iter().find(|(p, _)| powers.contains(p)));
+        let (status, note) = match (ungranted, missing, why) {
+            (Some(_), _, Some((_, why))) => {
+                let mut note = format!("{why}, so whether this machine has its grant isn't known: try again shortly");
+                if missing {
+                    note += &format!("; it also needs you to {RECONNECT}");
+                }
+                (ToolState::Unreachable, note)
+            }
+            (Some((_, powers)), _, None) => {
                 let power = powers[0];
                 let mut note = format!(
                     "needs {power} over a project: its owner gives it with `arugula grants add <machine> {power} --project <name>`"
@@ -185,8 +231,8 @@ fn status_of(offered: &[String], had: Option<&[String]>, told: bool, joined: boo
                 }
                 (ToolState::NotGranted, note)
             }
-            (None, true) => (ToolState::Reconnect, reconnect(told)),
-            (None, false) => continue,
+            (None, true, _) => (ToolState::Reconnect, reconnect(told)),
+            (None, false, _) => continue,
         };
         out.push(ToolStatus { tool: shown(name), status, note });
     }
@@ -201,8 +247,8 @@ fn shown(name: &str) -> String {
     }
 }
 
-/// GitHub through `gh`, and Labs' forges where the flag is on.
-async fn forges(app: &App, on: On) -> Vec<ForgeSignIn> {
+/// GitHub through `gh`, and Forgejo's and GitLab's (out of Labs, #523).
+async fn forges(app: &App, _on: On) -> Vec<ForgeSignIn> {
     if !crate::forges::built() {
         return Vec::new();
     }
@@ -228,14 +274,12 @@ async fn forges(app: &App, on: On) -> Vec<ForgeSignIn> {
         note: match gh {
             Ok(()) => "gh".into(),
             Err(e) if joined => {
-                format!("{e}. Until then blocks read through Arugula control's GitHub App, and nothing is sent")
+                format!("{e}. Until then blocks read through Arugula cloud's GitHub App, and nothing is sent")
             }
             Err(e) => e,
         },
     }];
-    if on.has(arugula_proto::flags::ADDITIONAL_FORGES) {
-        out.extend(crate::lab_hooks::labs().forge_logins(&runner, app.control.state_dir()).await);
-    }
+    out.extend(crate::lab_hooks::labs().forge_logins(&runner, app.control.state_dir()).await);
     out
 }
 
@@ -276,8 +320,8 @@ fn control(
         .enrolled()
         .map(|e| {
             e.saved
-                .roster
-                .iter()
+                .roster()
+                .into_iter()
                 .map(|r| r.name.clone())
                 .chain(e.saved.shared_teams.values().map(|t| t.roster.name.clone()))
                 .filter(|n| !n.is_empty())
@@ -310,8 +354,8 @@ mod tests {
     #[test]
     fn a_loaded_tool_is_not_said() {
         let offered = names(&["run", "show", "show:board"]);
-        assert!(status_of(&offered, Some(&offered), false, false, &[]).is_empty());
-        assert!(status_of(&offered, None, false, false, &[]).is_empty(), "never listed: nothing is known");
+        assert!(status_of(&offered, Some(&offered), false, false, &[], &[]).is_empty());
+        assert!(status_of(&offered, None, false, false, &[], &[]).is_empty(), "never listed: nothing is known");
     }
 
     /// A tool a flag added after the session listed says to reconnect, or
@@ -321,10 +365,10 @@ mod tests {
     fn a_tool_added_after_the_session_started_says_what_to_do() {
         let offered = names(&["run", "show", "show:board"]);
         let had = names(&["run", "show"]);
-        let s = status_of(&offered, Some(&had), false, false, &[]);
+        let s = status_of(&offered, Some(&had), false, false, &[], &[]);
         assert_eq!((s.len(), s[0].tool.as_str(), s[0].status), (1, "show {kind: board}", ToolState::Reconnect));
         assert!(s[0].note.contains("`/mcp`") && !s[0].note.contains("will pick it up"), "{}", s[0].note);
-        let s = status_of(&offered, Some(&had), true, false, &[]);
+        let s = status_of(&offered, Some(&had), true, false, &[], &[]);
         assert!(s[0].note.contains("will pick it up"), "{}", s[0].note);
     }
 
@@ -334,13 +378,33 @@ mod tests {
     #[test]
     fn a_tool_without_its_grant_says_which_power_to_give() {
         let offered = names(&["board_read", "board_write"]);
-        let s = status_of(&offered, Some(&offered), false, true, &["boards.read"]);
+        let s = status_of(&offered, Some(&offered), false, true, &["boards.read"], &[]);
         assert_eq!(s.len(), 1, "boards.read is held, boards.write isn't: {s:?}");
         assert_eq!((s[0].tool.as_str(), s[0].status), ("board_write", ToolState::NotGranted));
         assert!(s[0].note.contains("arugula grants add <machine> boards.write --project <name>"), "{}", s[0].note);
-        assert!(status_of(&offered, Some(&offered), false, true, &["boards.write"]).is_empty());
-        assert!(status_of(&offered, Some(&offered), false, false, &[]).is_empty(), "no control, no grants to ask");
-        let s = status_of(&offered, Some(&[]), false, true, &[]);
+        assert!(status_of(&offered, Some(&offered), false, true, &["boards.write"], &[]).is_empty());
+        assert!(status_of(&offered, Some(&offered), false, false, &[], &[]).is_empty(), "no control, no grants to ask");
+        let s = status_of(&offered, Some(&[]), false, true, &[], &[]);
         assert!(s[0].note.contains("then reconnect"), "not granted and not listed: {}", s[0].note);
+    }
+
+    /// Control not answering isn't a missing grant (Arugula #549): a tool
+    /// whose grants weren't read says so and to try again, not to give a
+    /// grant; one whose grants were read still says what's missing.
+    #[test]
+    fn a_grant_control_didnt_answer_for_is_unreachable_not_missing() {
+        let offered = names(&["board_read", "board_write", "post_thread"]);
+        let late = "Arugula cloud didn't answer in time";
+        let unread = [("boards.read", late), ("boards.write", late)];
+        let s = status_of(&offered, Some(&offered), false, true, &[], &unread);
+        let of = |t: &str| s.iter().find(|x| x.tool == t).unwrap_or_else(|| panic!("{t}: {s:?}"));
+        for t in ["board_read", "board_write"] {
+            assert_eq!(of(t).status, ToolState::Unreachable, "{t}");
+            assert!(of(t).note.contains(late) && of(t).note.contains("try again shortly"), "{}", of(t).note);
+            assert!(!of(t).note.contains("grants add"), "no grant to give: {}", of(t).note);
+        }
+        assert_eq!(of("post_thread").status, ToolState::NotGranted, "threads were read, and not held");
+        let s = status_of(&offered, Some(&offered), false, true, &["boards.write", "threads.post"], &unread);
+        assert!(s.is_empty(), "a power that was read and is held says nothing: {s:?}");
     }
 }

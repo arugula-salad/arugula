@@ -6,10 +6,11 @@
 
 import type { ComponentChildren } from "preact";
 import { usePhone, useSubscribe } from "../shared/ui/hooks";
-import { useEffect, useRef } from "preact/hooks";
-import { openMenu, useMenuFrom, type MenuItem } from "../shared/ui/menu";
-import { openAppearance } from "../shared/ui/appearance";
+import { useRef, useState } from "preact/hooks";
+import { openMenu, pressedShut, useMenuFrom, type MenuItem } from "../shared/ui/menu";
 import { WindowButtons } from "../shared/ui/window-buttons";
+import { chatTeam } from "./chat-scope";
+import { currentProject, entryPath } from "./current-project";
 import { follow, go, pathOf, useRoute, type Route } from "./router";
 import { controlOrigin, session } from "./session";
 import { signOut } from "./signin";
@@ -17,18 +18,18 @@ import { names } from "./links";
 import { chat } from "../shared/chat-store";
 import { AccountPicture } from "../shared/chat/avatar";
 import { presenceItems } from "../shared/chat/presence";
-import { LiveSwitch, liveItems } from "../shared/live/switch";
-import { setWorkingTeam } from "../shared/live/live";
 import { ChatPlaceUnread, PlaceUnread } from "./thread-unread";
 import { barProject, where } from "./where";
+import { scopable, scopeOf } from "./scope";
 import { InboxCount } from "./inbox-count";
-import { useBoards } from "./pages/boards";
-import { issuesPlace } from "./pages/triage-text";
+import { Caret } from "../shared/ui/icons";
+import { ownerKey, ownerNamed } from "./owners";
+import { Switcher } from "./switcher";
 
 /** The bar's place a route is under (UI audit #159): a project's cloud
  * workspaces and its deploys (Deploy… and a deploy) have places of their
  * own (Discovery 5). */
-type Section = "home" | "issues" | "boards" | "runs" | "sessions" | "workspaces" | "deploys" | "chat" | "inbox" | "settings";
+type Section = "home" | "boards" | "docs" | "runs" | "sessions" | "workspaces" | "deploys" | "chat" | "inbox" | "settings";
 export function sectionOf(r: Route): Section | null {
   switch (r.page) {
     case "project":
@@ -40,15 +41,18 @@ export function sectionOf(r: Route): Section | null {
     case "new-deploy":
     case "deploy":
       return "deploys";
+    // Issues and Triage are part of Boards (#656): the one place for tickets.
     case "issues":
     case "issue":
     case "new-issue":
     case "triage":
-      return "issues";
     case "boards":
     case "board":
     case "all-boards":
       return "boards";
+    case "docs":
+    case "doc":
+      return "docs";
     case "runs":
     case "run":
       return "runs";
@@ -61,6 +65,7 @@ export function sectionOf(r: Route): Section | null {
     case "inbox":
       return "inbox";
     case "settings":
+    case "owner-settings":
     case "project-settings":
     case "installed":
       return "settings";
@@ -85,51 +90,37 @@ function Place({ to, here, children, data }: { to: string; here: boolean; childr
 
 export function PlatformBar({ children }: { children?: ComponentChildren }) {
   useSubscribe((fn) => session.subscribe(fn));
-  // Issues come with chat (M201): its setting on control says whether they're there,
-  // and its rooms what's new in issues' and runs' threads.
+  // Chat's rooms say what's new in issues' and runs' threads.
   useSubscribe((fn) => chat.subscribe(fn));
   useSubscribe((fn) => where.subscribe(fn));
   const r = useRoute();
   // A phone has no rail (#377): the bar keeps what the rail has elsewhere.
   const rail = !usePhone();
   // None on a page that's no project's: the bar says "All projects".
-  const project = barProject(r);
+  // The bar keeps the current project while Boards, Docs and the Inbox are scoped to it (Arugula #881).
+  const project = barProject(r) ?? (scopable(r) ? scopeOf(r, currentProject(), (id) => !!session.project(id)) : undefined);
   const p = session.project(project);
-  // Live's camera goes to the team of the project on screen (#343).
-  const working = p?.team?.id ?? null;
-  useEffect(() => setWorkingTeam(working), [working]);
-  // With boards on, Triage takes Issues' place and Boards follows it (#292).
-  // Until they've answered, and with them off, the bar is Issues as ever.
-  const boards = useBoards(project);
-  const triage = issuesPlace(boards) === "triage";
   // An id that's none of the reader's lights no place (UI audit #170): the
   // body says it isn't one of theirs.
   const unknown = !!project && !p && session.state === "ready";
   const here = unknown ? null : sectionOf(r);
-  const chatTo = chatPath(project);
-  const pick = (e: MouseEvent) => {
-    const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const items: MenuItem[] = [
-      // The way back to /, where there's no rail's Projects (a phone).
-      { label: "All projects", checked: !project, run: () => go("/") },
-      { header: "Projects" },
-      ...session.projects.map((x) => ({ label: x.name, checked: x.id === project, run: () => go(pathOf({ page: "project", project: x.id }, names)) })),
-    ];
-    openMenu({ clientX: at.left, clientY: at.bottom + 4, preventDefault: () => e.preventDefault() }, items, e.currentTarget as HTMLElement);
-  };
+  // Off a project (Inbox, All projects), Chat is still the current one's (Arugula #880).
+  const chatTo = project ? chatPath(project) : entryPath("chat", session.project(currentProject()), names);
+  // The switcher (Arugula #895) opens on the current project's owner, or a
+  // team page's team.
+  const [picking, setPicking] = useState(false);
+  const team = r.page === "team" ? ownerNamed(session.projects, r.team) : undefined;
+  const openOn = team?.key ?? (p ? ownerKey(p) : undefined);
   const me = session.me;
   const account = (e: MouseEvent) => {
     const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const items: MenuItem[] = [
       { header: me?.login || me?.name || "Signed in", name: !!(me?.login || me?.name) },
-      { label: "Account settings", run: () => go("/settings") },
-      // This device's look, as in the shell's settings menu; on arugula.io
-      // the two pages share it.
-      { label: "Appearance…", run: openAppearance },
+      { label: "Settings", run: () => go("/settings") },
       // Who's around (#110): chat's people see this, and only they.
-      ...presenceItems(liveItems()),
+      ...presenceItems(),
       // Control's one label (UI audit #184): it opens in this tab, so no ↗.
-      { label: "Open Control", run: () => location.assign(controlOrigin()) },
+      { label: "Open your machines", run: () => location.assign(controlOrigin()) },
       "separator",
       // This page only: the hub's session, on control's page, stays.
       { label: "Sign out of this page", run: () => void signOut().then(() => location.reload()) },
@@ -139,10 +130,9 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
   // Both are menu buttons (UI audit #185): they say so, and whether theirs is open.
   const switcher = useRef<HTMLButtonElement>(null);
   const accountButton = useRef<HTMLButtonElement>(null);
-  const switcherOpen = useMenuFrom(switcher);
   const accountOpen = useMenuFrom(accountButton);
   // An id that's none of the reader's says so, not a name.
-  const projectName = project ? (p?.name ?? (session.state === "ready" ? "Unknown project" : "…")) : "All projects";
+  const projectName = project ? (p?.name ?? (session.state === "ready" ? "Unknown project" : "…")) : (team?.name ?? "All projects");
   return (
     <header class="ws-head platform-bar" data-tauri-drag-region data-platform-bar>
       {/* As the shell's "Arugula / Control": which page this is, and the
@@ -166,28 +156,40 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
         data-project-switcher
         title="Your projects"
         aria-label={`Project: ${projectName}`}
-        aria-haspopup="menu"
-        aria-expanded={switcherOpen}
-        onClick={pick}
+        aria-haspopup="dialog"
+        aria-expanded={picking}
+        // A press on it shut the switcher: this click is the same tap.
+        onClick={() => pressedShut(switcher.current) || setPicking(!picking)}
       >
-        <span class="platform-project-name">{projectName}</span> <span class="caret" aria-hidden="true">▾</span>
+        <span class="platform-project-name">{projectName}</span> <Caret />
       </button>
+      {picking && <Switcher from={switcher} project={project} owner={openOn} close={() => setPicking(false)} />}
       <nav class="places" aria-label="Places">
+        {/* All projects is a scope like a project (Arugula #636): these are its places. */}
+        {!project && (
+          <Place to="/" here={r.page === "home"} data="projects">
+            Projects
+          </Place>
+        )}
+        {!project && (
+          <Place to="/boards" here={here === "boards"} data="boards">
+            Boards
+          </Place>
+        )}
         {project && (
           <Place to={pathOf({ page: "project", project }, names)} here={here === "home"} data="home">
-            Project
+            Overview
           </Place>
         )}
-        {/* From the start: only chat saying it's off takes Issues away. */}
-        {project && chat.on !== false && (
-          <Place to={pathOf({ page: triage ? "triage" : "issues", project }, names)} here={here === "issues"} data={triage ? "triage" : "issues"}>
-            {triage ? "Triage" : "Issues"}
-            <PlaceUnread project={project} prefix="iss_" />
-          </Place>
-        )}
-        {project && triage && (
+        {project && (
           <Place to={pathOf({ page: "boards", project }, names)} here={here === "boards"} data="boards">
             Boards
+            {chat.on !== false && <PlaceUnread project={project} prefix="iss_" />}
+          </Place>
+        )}
+        {project && (
+          <Place to={pathOf({ page: "docs", project }, names)} here={here === "docs"} data="docs">
+            Docs
           </Place>
         )}
         {project && (
@@ -198,7 +200,7 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
         )}
         {project && (
           <Place to={pathOf({ page: "sessions", project }, names)} here={here === "sessions"} data="sessions">
-            Sessions
+            Agent sessions
           </Place>
         )}
         {/* Where the reader may have them (the beta's list), or is in one. */}
@@ -216,7 +218,7 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
           <Place to={chatTo} here={here === "chat"} data="chat">
             Chat
             {/* An id that's none of the reader's counts nothing. */}
-            {!unknown && (!project || p) && <ChatPlaceUnread team={p ? (p.team?.id ?? null) : undefined} />}
+            {!unknown && (!project || p) && <ChatPlaceUnread team={chatTeam(p, session.project(currentProject()))} />}
           </Place>
         )}
         <Place to="/inbox" here={here === "inbox"} data="inbox">
@@ -231,18 +233,15 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
       {children}
       <div class="bar-fill" data-tauri-drag-region />
       {!rail && (
-        <a class="place platform-shell" href={controlOrigin()} title="Your machines, terminals, devices and teams, on Control" data-platform-shell>
-          Control
+        <a class="place platform-shell" href={controlOrigin()} title="Your machines, terminals, devices and teams" data-platform-shell>
+          Machines
         </a>
       )}
-      {/* #341: live presence, beside the account, with its Labs flag. */}
-      <LiveSwitch />
       {me && (
         <button
           ref={accountButton}
           class="account-button platform-me"
           title={me.login ? `Signed in as ${me.login}` : "Signed in"}
-          aria-label={`Account: ${me.login || me.name}`}
           aria-haspopup="menu"
           aria-expanded={accountOpen}
           data-signed-in-as
@@ -252,7 +251,7 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
             {(me.login || me.name || "?").slice(0, 1).toUpperCase()}
             <AccountPicture />
           </span>
-          <span class="account-login">{me.login || me.name}</span> <span class="caret">▾</span>
+          <span class="account-login">{me.login || me.name}</span> <Caret />
         </button>
       )}
       {/* In the desktop app on Linux the bar is the titlebar (M157). */}

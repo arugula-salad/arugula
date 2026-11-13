@@ -41,6 +41,7 @@ use aes_gcm::{
     aead::{Aead, Payload},
 };
 use arugula_core::PaneId;
+use arugula_proto::api::DocLayout;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use futures_util::future::BoxFuture;
 use serde::{Deserialize, Serialize};
@@ -219,6 +220,16 @@ fn forget(dir: &Path, id: &str) -> Result<(), String> {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Manifest {
     pub title: String,
+    /// Left out for `doc`, so a snapshot of a plain Doc is what it was
+    /// before layouts; a reader that doesn't know it ignores it.
+    #[serde(default, skip_serializing_if = "DocLayout::is_doc")]
+    pub layout: DocLayout,
+    /// When the Doc was made and last changed (ms), for the viewer's "Created
+    /// … · edited …" (Arugula #825); a snapshot from before them has none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub made: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated: Option<u64>,
     pub entries: Vec<ManifestEntry>,
     pub assets: Vec<ManifestAsset>,
 }
@@ -264,7 +275,7 @@ pub fn seal(
     ver: u64,
     plain: &[u8],
     part_max: usize,
-    nonce: &mut dyn FnMut() -> [u8; 12],
+    nonce: &mut (dyn FnMut() -> [u8; 12] + Send),
 ) -> Result<Vec<Vec<u8>>, String> {
     let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| "a link's key is 32 bytes".to_owned())?;
     let chunks: Vec<&[u8]> = if plain.is_empty() { vec![plain] } else { plain.chunks(part_max).collect() };
@@ -352,7 +363,7 @@ impl From<String> for Fail {
 }
 
 /// One line for a refusal of control's: its `reason`, with what to do.
-fn refused(status: u16, v: &Value) -> String {
+pub fn refused(status: u16, v: &Value) -> String {
     let said = |fallback: &str| {
         v["error"].as_str().filter(|s| !s.is_empty() && !s.contains('\n')).unwrap_or(fallback).to_owned()
     };
@@ -483,9 +494,9 @@ impl Link {
         Ok(Shared { url: entry.url(&id), made: entry.made, updated: entry.updated })
     }
 
-    /// Check the quota, seal `plain` as `entry.ver + 1`, upload the parts and
-    /// commit; on success `entry` has the new version and size. The store is
-    /// the caller's to write.
+    /// Seal `plain` as `entry.ver + 1`, upload the parts and commit; on
+    /// success `entry` has the new version and size. The store is the
+    /// caller's to write.
     async fn push(
         &self,
         id: &str,
@@ -496,9 +507,69 @@ impl Link {
     ) -> Result<(), Fail> {
         let remote = self.remote()?;
         let ver = entry.ver + 1;
-        let mb = |n: u64| n >> 20;
-        let parts_n = plain.len().div_ceil(self.part_max()).max(1);
-        let size = (plain.len() + parts_n * OVERHEAD) as u64;
+        let size =
+            push_version(&**remote, id, key, ver, plain, self.part_max(), &mut *self.nonces(), replacing, true).await?;
+        (entry.ver, entry.size) = (ver, size);
+        Ok(())
+    }
+
+    /// What this Doc's link is, asking control (anonymously, as a visitor
+    /// would) whether it still serves it.
+    pub async fn shares(&self) -> Result<Option<Shared>, Fail> {
+        let Some((id, entry)) = self.current() else { return Ok(None) };
+        if let Some(remote) = &self.remote
+            && let Ok(404) = remote.probe(format!("{}/{id}/data/meta", entry.viewer)).await
+        {
+            forget(&self.state_dir, &id)?;
+            return Err(Fail::Gone);
+        }
+        Ok(Some(Shared { url: entry.url(&id), made: entry.made, updated: entry.updated }))
+    }
+
+    /// Unshare `id` (default this Doc's): control deletes it (a 404 is as
+    /// good), then the key goes.
+    pub async fn unshare(&self, id: Option<&str>) -> Result<(), String> {
+        let id = match id {
+            Some(id) => id.to_owned(),
+            None => self.current().ok_or("this Doc isn't shared")?.0,
+        };
+        unshare_id(&self.state_dir, self.remote()?, &id).await
+    }
+}
+
+/// Check the quota (when `quota`), seal `plain` as version `ver` of link `id`
+/// under `key`, upload the parts and commit; the ciphertext's size. `replacing`
+/// is the size of the version this one replaces, for a link that is served.
+///
+/// A team Doc's public link (Arugula #871) is pushed by this too, with
+/// `quota` off: its bytes count against the project's owner at control, not
+/// against this machine's account, which `GET /api/doc-links/quota` answers
+/// for, so control's own limits (checked per part and again at the commit)
+/// are the ones that say no.
+#[allow(clippy::too_many_arguments)]
+pub async fn push_version(
+    remote: &dyn Remote,
+    id: &str,
+    key: &[u8; 32],
+    ver: u64,
+    plain: Vec<u8>,
+    part_max: usize,
+    nonce: &mut (dyn FnMut() -> [u8; 12] + Send),
+    replacing: Option<u64>,
+    quota: bool,
+) -> Result<u64, Fail> {
+    let mb = |n: u64| n >> 20;
+    let parts_n = plain.len().div_ceil(part_max).max(1);
+    let size = (plain.len() + parts_n * OVERHEAD) as u64;
+    if !quota && parts_n > MAX_PARTS {
+        return Err(format!(
+            "this Doc is {} MB once encrypted and a shared one is at most {} MB: shorten it or drop a picture",
+            mb(size).max(1),
+            MAX_PARTS
+        )
+        .into());
+    }
+    if quota {
         // Before anything is sealed or sent.
         let (status, q) = remote.call("GET", "/api/doc-links/quota".into(), vec![]).await?;
         if status != 200 {
@@ -525,49 +596,24 @@ impl Link {
             )
             .into());
         }
-        let sealed = seal(key, id, ver, &plain, self.part_max(), &mut *self.nonces())?;
-        for (i, part) in sealed.iter().enumerate() {
-            let (status, v) =
-                remote.call("PUT", format!("/api/doc-links/{id}/v/{ver}/parts/{i}"), part.clone()).await?;
-            self.check(status, &v, replacing.is_some())?;
-        }
-        let body = serde_json::to_vec(&json!({ "parts": sealed.len(), "size": size })).expect("JSON");
-        let (status, v) = remote.call("POST", format!("/api/doc-links/{id}/v/{ver}/commit"), body).await?;
-        self.check(status, &v, replacing.is_some())?;
-        (entry.ver, entry.size) = (ver, size);
-        info!(link = id, ver, parts = sealed.len(), size, "shared a Doc");
-        Ok(())
     }
-
-    fn check(&self, status: u16, v: &Value, known: bool) -> Result<(), Fail> {
-        match status {
-            200 => Ok(()),
-            404 if known => Err(Fail::Gone),
-            _ => Err(refused(status, v).into()),
-        }
+    let sealed = seal(key, id, ver, &plain, part_max, nonce)?;
+    for (i, part) in sealed.iter().enumerate() {
+        let (status, v) = remote.call("PUT", format!("/api/doc-links/{id}/v/{ver}/parts/{i}"), part.clone()).await?;
+        check(status, &v, replacing.is_some())?;
     }
+    let body = serde_json::to_vec(&json!({ "parts": sealed.len(), "size": size })).expect("JSON");
+    let (status, v) = remote.call("POST", format!("/api/doc-links/{id}/v/{ver}/commit"), body).await?;
+    check(status, &v, replacing.is_some())?;
+    info!(link = id, ver, parts = sealed.len(), size, "shared a Doc");
+    Ok(size)
+}
 
-    /// What this Doc's link is, asking control (anonymously, as a visitor
-    /// would) whether it still serves it.
-    pub async fn shares(&self) -> Result<Option<Shared>, Fail> {
-        let Some((id, entry)) = self.current() else { return Ok(None) };
-        if let Some(remote) = &self.remote
-            && let Ok(404) = remote.probe(format!("{}/{id}/data/meta", entry.viewer)).await
-        {
-            forget(&self.state_dir, &id)?;
-            return Err(Fail::Gone);
-        }
-        Ok(Some(Shared { url: entry.url(&id), made: entry.made, updated: entry.updated }))
-    }
-
-    /// Unshare `id` (default this Doc's): control deletes it (a 404 is as
-    /// good), then the key goes.
-    pub async fn unshare(&self, id: Option<&str>) -> Result<(), String> {
-        let id = match id {
-            Some(id) => id.to_owned(),
-            None => self.current().ok_or("this Doc isn't shared")?.0,
-        };
-        unshare_id(&self.state_dir, self.remote()?, &id).await
+fn check(status: u16, v: &Value, known: bool) -> Result<(), Fail> {
+    match status {
+        200 => Ok(()),
+        404 if known => Err(Fail::Gone),
+        _ => Err(refused(status, v).into()),
     }
 }
 
@@ -717,6 +763,9 @@ mod tests {
         let png = vec![137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3];
         let manifest = Manifest {
             title: "Vector".into(),
+            layout: DocLayout::Doc,
+            made: None,
+            updated: None,
             entries: vec![
                 ManifestEntry {
                     id: "s1".into(),
@@ -832,5 +881,38 @@ mod tests {
         ivs.sort();
         ivs.dedup();
         assert_eq!(ivs.len(), 4);
+    }
+
+    /// A reader from before layouts, which had these three fields and no more.
+    #[derive(Deserialize)]
+    #[allow(dead_code)]
+    struct OldManifest {
+        title: String,
+        entries: Vec<ManifestEntry>,
+        assets: Vec<ManifestAsset>,
+    }
+
+    #[test]
+    fn a_layout_rides_the_manifest_and_an_older_reader_ignores_it() {
+        let (mut manifest, blobs) = vector_doc();
+        let plain = snapshot(&manifest, &blobs);
+        let json_of = |plain: &[u8]| -> Value {
+            let len = u32::from_be_bytes(plain[4..8].try_into().unwrap()) as usize;
+            serde_json::from_slice(&plain[8..8 + len]).unwrap()
+        };
+        // A plain Doc's manifest is what it was before layouts, byte for byte.
+        assert!(json_of(&plain).get("layout").is_none());
+
+        manifest.layout = DocLayout::Tabs;
+        let tabs = snapshot(&manifest, &blobs);
+        let json = json_of(&tabs);
+        assert_eq!(json["layout"], "tabs");
+        let old: OldManifest = serde_json::from_value(json.clone()).unwrap();
+        assert_eq!((old.title.as_str(), old.entries.len(), old.assets.len()), ("Vector", 2, 1));
+        // The newer reader gets it back, and a name it doesn't know is `doc`.
+        assert_eq!(serde_json::from_value::<Manifest>(json.clone()).unwrap().layout, DocLayout::Tabs);
+        let mut unknown = json;
+        unknown["layout"] = json!("gallery");
+        assert_eq!(serde_json::from_value::<Manifest>(unknown).unwrap().layout, DocLayout::Doc);
     }
 }

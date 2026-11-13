@@ -28,8 +28,6 @@
 //!   for a run whose upload the platform refused: the log stays in the
 //!   pane, and the run goes on.
 
-#[cfg(unix)]
-use std::io::Read as _;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -37,7 +35,6 @@ use std::{
 };
 
 use anyhow::{Context as _, Result};
-#[cfg(unix)]
 use arugula_control_wire::run_logs::MAX_ARTIFACT_BYTES;
 use arugula_control_wire::run_logs::{
     ARTIFACTS_DIR, CHUNK_BYTES, MAX_ARTIFACTS, MAX_CHUNK_BYTES, Upload, UploadGiven, Uploaded, WORK_UPLOAD,
@@ -78,7 +75,7 @@ pub struct Sent {
 /// machine in control does.
 pub fn may_upload(saved: Option<&Saved>) -> Result<(), &'static str> {
     match saved {
-        Some(s) if s.hosted.is_some() => Ok(()),
+        Some(s) if s.is_hosted() => Ok(()),
         _ => Err("not a hosted machine: a run's log stays in its pane"),
     }
 }
@@ -208,46 +205,20 @@ async fn send_log(
     }
 }
 
-/// The uid that owns what the run leaves: the run user's, or (tests only)
-/// this daemon's.
-#[cfg(unix)]
-fn owner(as_: Option<&RunAs>) -> Option<u32> {
-    match as_ {
-        Some(a) => nix::unistd::User::from_name(&a.user).ok().flatten().map(|u| u.uid.as_raw()),
-        None => Some(nix::unistd::getuid().as_raw()),
+/// One artifact, read (`crate::run_files`): a regular file with one name
+/// that the run user owns, not a link, at most [`MAX_ARTIFACT_BYTES`]. The
+/// run user hands it over on a box, where this daemon can't open the run's
+/// home. `None` when it isn't such a file.
+async fn read_artifact(as_: Option<&RunAs>, path: &Path) -> Option<Vec<u8>> {
+    let mut out = Vec::new();
+    match crate::run_files::copy_own(as_, path, MAX_ARTIFACT_BYTES, &mut out).await {
+        Ok(_) => Some(out),
+        Err(crate::run_files::NotRead::Failed(why)) => {
+            warn!(path = %path.display(), why, "hosted: a run's artifact didn't read");
+            None
+        }
+        Err(_) => None,
     }
-}
-
-#[cfg(not(unix))]
-fn owner(_: Option<&RunAs>) -> Option<u32> {
-    None
-}
-
-/// One artifact, read: opened without following a link, a regular file
-/// with one name that `uid` owns, at most [`MAX_ARTIFACT_BYTES`].
-#[cfg(unix)]
-fn read_artifact(path: &Path, uid: u32) -> Result<Option<Vec<u8>>> {
-    use std::os::unix::fs::{MetadataExt as _, OpenOptionsExt as _};
-    let mut f = match std::fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_NONBLOCK)
-        .open(path)
-    {
-        Ok(f) => f,
-        Err(_) => return Ok(None),
-    };
-    let m = f.metadata()?;
-    if !m.is_file() || m.uid() != uid || m.nlink() != 1 || m.len() > MAX_ARTIFACT_BYTES {
-        return Ok(None);
-    }
-    let mut out = Vec::with_capacity(m.len() as usize);
-    f.by_ref().take(MAX_ARTIFACT_BYTES + 1).read_to_end(&mut out)?;
-    Ok((out.len() as u64 <= MAX_ARTIFACT_BYTES).then_some(out))
-}
-
-#[cfg(not(unix))]
-fn read_artifact(_: &Path, _: u32) -> Result<Option<Vec<u8>>> {
-    Ok(None)
 }
 
 /// Send the artifacts run `run` left in `dir`, once. `Err`: try again.
@@ -256,14 +227,8 @@ async fn send_artifacts(app: &App, http: &reqwest::Client, run: &str, dir: &Path
     if s.off.is_some() || s.artifacts {
         return Ok(());
     }
-    let Some(uid) = owner(as_) else {
-        note(app, run, |s| s.artifacts = true);
-        return Ok(());
-    };
-    let mut names: Vec<String> = match std::fs::read_dir(dir) {
-        Ok(entries) => entries.flatten().filter_map(|e| e.file_name().into_string().ok()).collect(),
-        Err(_) => vec![],
-    };
+    // As the run user on a box: this daemon can't list the run's home.
+    let mut names: Vec<String> = crate::run_files::list_own(as_, dir).await;
     names.sort();
     let mut skipped = 0;
     let mut count = 0;
@@ -272,7 +237,7 @@ async fn send_artifacts(app: &App, http: &reqwest::Client, run: &str, dir: &Path
             skipped += 1;
             continue;
         }
-        let Some(bytes) = read_artifact(&dir.join(&name), uid)? else {
+        let Some(bytes) = read_artifact(as_, &dir.join(&name)).await else {
             skipped += 1;
             continue;
         };
@@ -387,6 +352,7 @@ mod tests {
             cert,
             delegation: d,
             revocations: vec![],
+            closed: vec![],
             team: None,
             roster: None,
             certs: Default::default(),
@@ -396,6 +362,8 @@ mod tests {
             locked: false,
             lock: None,
             legacy_app_children: None,
+            passkey_logs: None,
+            passkey_origins: None,
             purpose: None,
         };
         crate::hosted::trust::saved_from(got, &keys, None).unwrap()
@@ -405,28 +373,26 @@ mod tests {
     fn only_a_hosted_machine_sends_a_runs_log() {
         let saved = machine();
         assert_eq!(may_upload(Some(&saved)), Ok(()));
-        let personal = Saved { hosted: None, ..saved };
+        let personal = Saved { kind: crate::control::MachineKind::Personal, ..saved };
         assert!(may_upload(Some(&personal)).is_err());
         assert!(may_upload(None).is_err());
     }
 
     #[cfg(unix)]
-    #[test]
-    fn an_artifact_is_a_file_the_run_owns_and_nothing_it_links_to() {
-        use std::os::unix::fs::MetadataExt as _;
+    #[tokio::test]
+    async fn an_artifact_is_a_file_the_run_owns_and_nothing_it_links_to() {
         let dir = crate::hosted::scratch("run-artifacts");
-        let me = std::fs::metadata(&dir).unwrap().uid();
         std::fs::write(dir.join("ok.txt"), b"fine").unwrap();
         std::fs::write(dir.join("secret"), b"the daemon's").unwrap();
         std::os::unix::fs::symlink(dir.join("secret"), dir.join("link")).unwrap();
         std::fs::hard_link(dir.join("secret"), dir.join("hard")).unwrap();
         std::fs::create_dir(dir.join("sub")).unwrap();
-        assert_eq!(read_artifact(&dir.join("ok.txt"), me).unwrap(), Some(b"fine".to_vec()));
-        assert_eq!(read_artifact(&dir.join("ok.txt"), me + 1).unwrap(), None, "someone else's");
-        assert_eq!(read_artifact(&dir.join("link"), me).unwrap(), None, "a link");
-        assert_eq!(read_artifact(&dir.join("hard"), me).unwrap(), None, "a second name");
-        assert_eq!(read_artifact(&dir.join("sub"), me).unwrap(), None, "a directory");
-        assert_eq!(read_artifact(&dir.join("nope"), me).unwrap(), None);
+        // Someone else's is the run user's script's to refuse (run_files).
+        assert_eq!(read_artifact(None, &dir.join("ok.txt")).await, Some(b"fine".to_vec()));
+        assert_eq!(read_artifact(None, &dir.join("link")).await, None, "a link");
+        assert_eq!(read_artifact(None, &dir.join("hard")).await, None, "a second name");
+        assert_eq!(read_artifact(None, &dir.join("sub")).await, None, "a directory");
+        assert_eq!(read_artifact(None, &dir.join("nope")).await, None);
         let as_ = RunAs { user: "runner".into(), home: "/home/runner".into() };
         assert_eq!(artifacts_dir(&dir, "run_1", Some(&as_)), Path::new("/home/runner/work/run_1/.arugula/artifacts"));
         assert_eq!(artifacts_dir(&dir, "run_1", None), dir.join("work/run_1.artifacts"));

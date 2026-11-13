@@ -1,6 +1,8 @@
 //! arugulad-docs: Docs (#963, #1493, #1066). The Doc block (`docs/`), its
 //! library and its links, their operations (`ops.rs`: `docs.list`,
-//! `doc.open`, `doc.delete`; `links.rs`: `doc_link.get`, `doc_link.delete`)
+//! `doc.open`, `doc.delete`, `doc.preview`, `doc.read`, `doc.asset`,
+//! `doc.move`, `docs.team`;
+//! `links.rs`: `doc_link.get`, `doc_link.delete`)
 //! and the `doc` MCP tool (`tool.rs`). The binary calls [`register`]; the
 //! daemon (`arugulad-base`) reaches it only through its `features` hooks and
 //! `mcp::registry`, so an edit here rebuilds this crate and the binary, not
@@ -18,7 +20,10 @@ use std::{path::Path, sync::Arc};
 use arugula_proto::{
     BlockType,
     api::SearchHit,
-    op::ops::{DocDelete, DocLinkDelete, DocLinkGet, DocOpen, DocsList},
+    op::ops::{
+        DocAssetGet, DocDelete, DocLinkDelete, DocLinkGet, DocMove, DocOpen, DocPreviewGet, DocRead, DocShare,
+        DocsList, DocsTeam,
+    },
 };
 use axum::Router;
 use futures_util::future::BoxFuture;
@@ -49,11 +54,19 @@ impl arugulad_base::features::Feature for Docs {
     fn prepare(&self, state_dir: &Path) {
         // The Docs of the old layout move into the library.
         docs::library::migrate(state_dir);
+        // What copying Docs up kept there goes (Arugula #865).
+        docs::library::forget_copies(state_dir);
     }
 
     fn with_control(&self, control: &Arc<control::Control>) {
         // Doc blocks share through control (#1066).
         docs::link::init(control.clone());
+        // ...and team Docs are read and written there (Arugula #862).
+        docs::team::init(control.clone());
+        // A move to a team that a crash cut off leaves no team Doc behind
+        // (Arugula #863).
+        let (state, cloud) = (control.state_dir().to_owned(), control.clone());
+        task::spawn(async move { docs::moving::clear_unfinished(&state, cloud).await });
     }
 
     fn kinds(&self, kinds: &mut block::BlockKinds, _cx: &arugulad_base::features::KindsCx) {
@@ -65,7 +78,13 @@ impl arugulad_base::features::Feature for Docs {
             .op_of::<DocsList, Docs>()
             .op_of::<DocOpen, Docs>()
             .op_of::<DocDelete, Docs>()
+            .op_of::<DocPreviewGet, Docs>()
+            .op_of::<DocRead, Docs>()
+            .op_of::<DocAssetGet, Docs>()
             .op_of::<DocLinkDelete, Docs>()
+            .op_of::<DocShare, Docs>()
+            .op_of::<DocMove, Docs>()
+            .op_of::<DocsTeam, Docs>()
     }
 
     fn search(

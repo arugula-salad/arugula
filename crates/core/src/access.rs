@@ -66,7 +66,9 @@ pub fn need(mux: &Mux, intent: &Intent) -> Result<Need, Error> {
         |n| mux.tabs.values().find(|t| t.root.has_split(n)).map(|t| t.id).ok_or(Error::NoSplit(n)).and_then(of_tab);
     Ok(match intent {
         Intent::NewSession { .. } => Need::owner(),
-        Intent::RenameSession { session, .. } | Intent::CloseSession { session } => {
+        Intent::RenameSession { session, .. }
+        | Intent::SetSessionProject { session, .. }
+        | Intent::CloseSession { session } => {
             mux.session(*session)?;
             Need::on(Owner, vec![*session])
         }
@@ -87,7 +89,10 @@ pub fn need(mux: &Mux, intent: &Intent) -> Result<Need, Error> {
             mux.session(*session)?;
             Need::on(Editor, vec![of_tab(*tab)?, *session])
         }
-        Intent::Split { pane, .. } | Intent::ClosePane { pane } => Need::on(Editor, vec![of_pane(*pane)?]),
+        // A pop-out (#497) changes every screen's tab, as Focus does.
+        Intent::Split { pane, .. } | Intent::ClosePane { pane } | Intent::PopOut { pane, .. } => {
+            Need::on(Editor, vec![of_pane(*pane)?])
+        }
         Intent::MovePane { pane, target, .. } => Need::on(Editor, vec![of_pane(*pane)?, of_pane(*target)?]),
         Intent::BreakPane { pane, session, .. } => {
             mux.session(*session)?;
@@ -136,6 +141,7 @@ mod tests {
         assert!(!may(Intent::MovePane { pane: pane_a, target: pane_b, edge: Edge::Left }));
         // Editors don't rename or close the session, or make new ones.
         assert!(!may(Intent::RenameSession { session: a, name: "x".into() }));
+        assert!(!may(Intent::SetSessionProject { session: a, project: None }));
         assert!(!may(Intent::CloseSession { session: a }));
         assert!(!may(Intent::NewSession { name: None, from_pane: None }));
         assert!(!may(Intent::SetOption { scope: OptionScope::Global, name: "x".into(), value: None }));

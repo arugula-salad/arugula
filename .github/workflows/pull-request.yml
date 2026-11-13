@@ -1,0 +1,332 @@
+name: pull request (hosted)
+
+# A pull request's own gate, on GitHub's runners alone (#306, #917): the
+# Rust crates its change reaches, their clippy and tests; every Playwright
+# spec the queue runs, listed, so one that can't load fails in seconds; and the debug
+# binaries and the specs the change is likely to reach (#718,
+# scripts/pr-plan). pr-gate is their one verdict, and the ruleset requires
+# it (docs/development.md, "Merging through the queue"), so a pull request
+# can't be queued until it passes.
+#
+# Why (#917): of 40 failed merge-queue runs (Nov 10-12), 26 were Rust tests
+# that failed on Linux and macOS alike, 10 clippy, and 5 every e2e shard at
+# once, because one pull request imported a spec helper it never committed.
+# A third of the queue's runs failed, and each failure rebuilt the groups
+# queued behind it. None of that ran on a pull request then.
+#
+# What's left to the queue (check.yml on the group): the specs pr-plan
+# leaves out, the tests on the Docker test stack (they need the box's static
+# binaries: `just static`), the doctests and e2e-interop, macOS (clippy and
+# the tests), the desktop app's clippy and the native clients' core. So a
+# green pr-gate still isn't a green group, only a much likelier one. Nothing
+# here runs on arugula-amd64 or the Macs: a pull request's code reaches our
+# machines only once someone who may merge queues it. GitHub's Linux runners
+# are free for this public repository, so what it costs is wall time.
+#
+# A fork's pull request gets no secrets, and nothing here needs one:
+# without SCCACHE_WEBDAV_PASSWORD .github/actions/setup leaves sccache out
+# and the build compiles cold. No pull_request_target: a pull request's code
+# never runs with this repository's secrets or a write token.
+#
+# merge_group: the ruleset requires pr-gate by name on the merge group too,
+# and a required check that never reports holds the group forever. On a
+# group every job but pr-gate is skipped, and pr-gate passes at once: the
+# group's own verdict is chant-merge-queue.yml's chant-verdict, which judges
+# check.yml's run.
+#
+# The jobs' names: chant matches main's required checks by name
+# (chant.workspace.json's ci.green phases: lint, build, clippy, test, e2e*,
+# ...), and these run on the merge group's commit, which is the one that
+# lands on main. So each is named `pr-*`, which no phase's pattern matches
+# (docs/testing.md). The job ids are check.yml's (build, clippy, test) on
+# purpose: rust-cache's key has the job id in it, so these restore the
+# caches main's jobs of the same id saved.
+#
+# Its build is cold for the Rust crates even with sccache: on this
+# workflow's first run (#1927) sccache hit only Ghostty's C and assembly
+# (419 of 1018 compiles, no Rust), and rust-cache found nothing, since main's
+# caches then came from the pods (another checkout path, another set of
+# toolchains) and a pull request doesn't save. It still built in under 7
+# minutes.
+on:
+  pull_request:
+  merge_group:
+    types:
+      - checks_requested
+
+# A new push to the pull request cancels its run before. A merge group has
+# no pull request number; its ref is its own.
+concurrency:
+  group: pull-request-hosted-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Empty on a fork's pull request: the build compiles without sccache.
+  SCCACHE_WEBDAV_PASSWORD: ${{ secrets.SCCACHE_WEBDAV_PASSWORD }}
+  # mise's GitHub downloads (Zig's, nextest's) share the runner's IP's rate
+  # limit unauthenticated.
+  GITHUB_TOKEN: ${{ github.token }}
+  # As check.yml's, so the binaries and tests are the ones main's build
+  # makes, and the tests run under CI's nextest profile (a retry, no
+  # fail-fast, the quarantine left out).
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  CARGO_PROFILE_TEST_DEBUG: line-tables-only
+  NEXTEST_PROFILE: ci
+
+jobs:
+  # What this change takes: the specs (scripts/pr-plan) and the Rust tests
+  # (scripts/pr-crates). binaries.yml's quick has the lint (rustfmt,
+  # shellcheck, the scripts' tests), so this run doesn't.
+  plan:
+    name: pr-plan
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      e2e: ${{ steps.plan.outputs.e2e }}
+      shards: ${{ steps.plan.outputs.shards }}
+      only: ${{ steps.plan.outputs.only }}
+      rust: ${{ steps.crates.outputs.rust }}
+      tests: ${{ steps.crates.outputs.tests }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The merge commit and its parents: the diff against the base.
+          fetch-depth: 2
+      - id: plan
+        run: scripts/pr-plan | tee -a "$GITHUB_OUTPUT"
+      - id: crates
+        run: scripts/pr-crates | tee -a "$GITHUB_OUTPUT"
+
+  # Every spec, listed (#917): Playwright loads each spec file to list it,
+  # so one that imports a file nobody committed fails here in seconds, not
+  # in all twelve of the queue's shards (#2414 imported web/e2e/doc-share-rig
+  # and failed five groups). Whatever pr-plan picked: E2E_SET=rest, the set
+  # the queue's shards run, in both projects (chrome, and webkit for the
+  # *.webkit.spec.ts files). Not the nightly sets (stack, perf): the queue
+  # doesn't run them either, so a pull request isn't held for them.
+  # E2E_BASE_URL leaves Playwright's webServer out: listing needs no
+  # daemon, so this job builds nothing.
+  specs:
+    name: pr-specs
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 12
+      - name: web's packages
+        run: cd web && pnpm install --frozen-lockfile
+      - name: Every spec loads
+        run: cd web && pnpm exec playwright test --list
+        env:
+          E2E_SET: rest
+          E2E_BASE_URL: http://127.0.0.1:9
+
+  # check.yml's clippy, the root workspace's half (#917): 10 of the 40
+  # failed queue runs were clippy. Not check-macos (a second whole build,
+  # cross-compiled), the desktop app or the native clients' core: the queue
+  # runs those. Only when the change reaches a crate (scripts/pr-crates).
+  clippy:
+    name: pr-clippy
+    needs: plan
+    if: needs.plan.outputs.rust == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: clippy
+          # It only builds: none of the specs' packages, so no apt.
+          base-packages: "false"
+      - run: just bootstrap
+      # The daemon embeds web/dist, which has to be there to compile.
+      - run: just web
+      - run: mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+      - name: The workspace builds no cloud crate
+        run: just workspace-guard
+      - name: sccache's hits
+        if: always() && env.RUSTC_WRAPPER == 'sccache'
+        run: sccache --show-stats
+
+  # The Rust tests of the crates the change reaches and every crate that
+  # depends on them (#917; scripts/pr-crates' filterset, nextest's rdeps()),
+  # or all of them when it changes the workspace's config. The build is the
+  # whole workspace's, as check.yml's test builds it, so the features (Labs
+  # among them: arugulad's default) and binaries are main's; only what runs
+  # is narrowed. Two halves on two runners (nextest's --partition, as
+  # check.yml's test and test-2), since a cold build and the whole suite on
+  # one 4-core runner would take well over the 15 minutes this aims for.
+  #
+  # GitHub's VMs boot systemd, and the setup starts a user manager for the
+  # runner, so the tests that run the daemon as a service run here, and
+  # ARUGULA_REQUIRE_SYSTEMD fails them if it's missing, as on main. Left
+  # out, which the queue still runs: the tests on the Docker test stack
+  # (the justfile's testnet_tests: ssh::, reboot::), which need the box's
+  # static binaries, a build of its own; the doctests; and e2e-interop.
+  test:
+    name: pr-test (${{ matrix.part }})
+    needs: plan
+    if: needs.plan.outputs.rust == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [1, 2]
+    env:
+      ARUGULA_SKIP_DOCKER: "1"
+      ARUGULA_REQUIRE_SYSTEMD: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: test
+          # Ghostty for x86_64-linux-gnu, as check.yml's build and test
+          # build it.
+          ghostty-key: gnu
+          # As rare-nightly.yml's core, the daemon's tests on a hosted runner.
+          packages: tmux
+          user-manager: "true"
+          claude-code: "true"
+      - run: just bootstrap
+      # The daemon embeds web/dist, which has to be there to compile.
+      - run: just web
+      - name: The tests, built
+        # Three: a runner has 4 cores and 16 GB, and the biggest test
+        # compiles take 3.2-3.5 GiB each (check.yml's test: three at once
+        # OOM-killed a pod).
+        run: CARGO_BUILD_JOBS=3 mise exec -- cargo nextest run --workspace --no-run
+      - name: The tests the change reaches, half ${{ matrix.part }} of 2
+        env:
+          TESTS: ${{ needs.plan.outputs.tests }}
+          PART: ${{ matrix.part }}
+        run: |
+          testnet=$(just --evaluate testnet_tests)
+          quarantine=$(scripts/chant ci quarantine filter --phase test --runner nextest)
+          filter="($TESTS) & not ($testnet) & ($quarantine)"
+          echo "filterset: $filter"
+          # A half can be left nothing when the change reaches few tests.
+          mise exec -- cargo nextest run --workspace --partition "count:$PART/2" --no-tests=pass -E "$filter"
+      - name: sccache's hits
+        if: always() && env.RUSTC_WRAPPER == 'sccache'
+        run: sccache --show-stats
+
+  # check.yml's build, on a hosted runner: Ubuntu 24.04, the glibc the
+  # shards run on.
+  build:
+    name: pr-build
+    needs: plan
+    if: needs.plan.outputs.e2e == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: build
+          ghostty-key: gnu
+          base-packages: "false"
+      - uses: ./.github/actions/build-debug
+      - name: sccache's hits
+        if: always() && env.RUSTC_WRAPPER == 'sccache'
+        run: sccache --show-stats
+
+  # check.yml's e2e shards, on this run's binaries: as many as the chosen specs fill.
+  # The e2e shards' image on GHCR (scripts/ci-e2e-image, #953): there
+  # already, or built and pushed when the Dockerfile or Playwright changed.
+  e2e-image:
+    name: pr-e2e-image
+    needs: plan
+    if: needs.plan.outputs.e2e == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.image.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: image
+        uses: ./.github/actions/e2e-image
+
+  e2e:
+    name: pr-e2e (${{ matrix.shard }})
+    needs: [plan, build, e2e-image]
+    if: needs.plan.outputs.e2e == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    # Our image (Playwright's plus what setup fetches: #953), so a shard
+    # downloads nothing from the runners' Ubuntu mirror. An empty image (a
+    # fork's PR when the tag is new) runs on the runner as before.
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ${{ needs.e2e-image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
+      options: --user 1001 --init --ipc=host
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.plan.outputs.shards) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          rust: "false"
+          fetch: run-debug
+          claude-code: "true"
+      - uses: ./.github/actions/e2e-shard
+        with:
+          shard: ${{ matrix.shard }}
+          total: ${{ strategy.job-total }}
+          only: ${{ needs.plan.outputs.only }}
+
+  # The run's one verdict, the check the ruleset requires (#917): every job
+  # above passed, or wasn't needed. It always runs, since a required check
+  # that's skipped counts as passed (#795). On a merge group the rest are
+  # skipped and this passes: the group's verdict is chant-merge-queue.yml's.
+  gate:
+    name: pr-gate
+    needs: [plan, specs, clippy, test, build, e2e-image, e2e]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Every job passed
+        if: github.event_name == 'pull_request'
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          {
+            echo "## pull request (hosted)"
+            echo
+            echo "Required to queue (#917): the crates this change reaches (clippy and their tests, scripts/pr-crates), every spec listed, and the specs it's likely to reach (scripts/pr-plan)."
+            echo "The merge queue still runs everything before it lands: every spec, the test stack's tests, the doctests, macOS and Windows."
+            echo
+            echo "| job | result |"
+            echo "| --- | --- |"
+            echo "$NEEDS" | jq -r 'to_entries[] | "| \(.key) | \(.value.result) |"'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          if echo "$NEEDS" | jq -e 'any(.[]; .result != "success" and .result != "skipped")' >/dev/null; then
+            echo "::error::a job failed or was cancelled: the pull request can't be queued until pr-gate passes"
+            exit 1
+          fi
+      - name: A merge group
+        if: github.event_name == 'merge_group'
+        run: |
+          echo "A merge group, so nothing to judge here (pr-gate passed on the pull request); chant-merge-queue.yml's chant-verdict judges the group."

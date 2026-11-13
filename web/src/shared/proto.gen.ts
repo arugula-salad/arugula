@@ -9,6 +9,111 @@ export type ClientId = number;
 export type MachineId = number;
 
 /**
+ * One person, team, link or guest that reaches the machine, and as what.
+ */
+export type AccessRow = { 
+/**
+ * `owner` (the machine's), `team_owner` (a team's other owner, an
+ * owner here), `team_role` (a team member by the roster), `share` (a
+ * session share), `team_share` (a member of a team a session was
+ * shared with), `link` (a read-only link: to a session, or to one
+ * pane), `guest` (an ssh invite), `trust` (minutes to type into one
+ * pane).
+ */
+kind: string, 
+/**
+ * Whose word: `this_machine` (its own files and memory) or `roster`
+ * (the team's signed roster, checked by this machine).
+ */
+word: string, 
+/**
+ * What to call them.
+ */
+who: string, 
+/**
+ * Their principal id (`account:…`, `tailnet:…`, `team:…`, `link:…`),
+ * where there is one.
+ */
+principal?: string | null, role: Role, 
+/**
+ * Where they reach: one session, one pane (in `session`), or every
+ * session (neither).
+ */
+session?: number | null, pane?: number | null, 
+/**
+ * A "from now" share: since when (ms), and nothing before it.
+ */
+from_ms?: number | null, 
+/**
+ * When it ends (ms): a link, an invite, trust.
+ */
+until_ms?: number | null, 
+/**
+ * A word more: "full use, as an owner" on a hosted machine's editor,
+ * how an invite may be used, which team a share came through.
+ */
+note?: string | null, };
+
+export type AccessSession = { id: number, name: string, };
+
+export type AccessTeam = { id: string, name: string, 
+/**
+ * Locked: only its owners get in.
+ */
+locked: boolean, };
+
+/**
+ * `GET /api/access` (Arugula #681, the `access.get` operation): who can
+ * reach this machine, and as what, from what the machine holds: its owner,
+ * the roster it checked itself (team owners as owners, the others by their
+ * team role), the session shares in `acl.json` with their floors, links and
+ * when they end, ssh guests, and trust live now. The owner's, read-only, and
+ * nothing an owner can't read from `GET /api/acl`, `/api/shares`,
+ * `/api/guests` and the roster. Each row says whose word it is
+ * ([`AccessRow::word`]). This machine's agents' powers are control's word
+ * (`GET /api/grants`): the page and `arugula access` add them, labelled so.
+ */
+export type AccessView = { 
+/**
+ * `local` (joined to no control), `personal`, `team` or `hosted`.
+ */
+kind: string, 
+/**
+ * A hosted machine's purpose: `people` (a workspace), `deploy` (one
+ * deploy's box: none of the project's people are admitted, and control
+ * routes nobody to it), `snapshot` (a box building a snapshot: its
+ * people are admitted, and control routes nobody to it) or `both`.
+ */
+purpose?: string | null, 
+/**
+ * The machine's name, and (joined) its device id in control's
+ * directory and that control's URL: what its agents' powers are
+ * listed under there, and where.
+ */
+name: string, machine?: string | null, control?: string | null, 
+/**
+ * A team machine's team, or a hosted machine's project's.
+ */
+team?: AccessTeam | null, 
+/**
+ * Guest SSH access: the setting (`None`: this build has no guest ssh).
+ */
+guest_ssh?: boolean | null, 
+/**
+ * The sessions, so a row's session has a name.
+ */
+sessions: Array<AccessSession>, 
+/**
+ * Who can reach it, the owner first.
+ */
+rows: Array<AccessRow>, 
+/**
+ * What holds for the whole machine, in sentences: a locked team, a
+ * hosted machine's editors having full use.
+ */
+notes: Array<string>, };
+
+/**
  * `POST /api/attention/act`: do something about one pane's reason, or
  * several at once ("allow all 3", "dismiss all 11"). Each pane needs
  * editor on its session.
@@ -49,7 +154,7 @@ export type ActResult = { pane: number, ok: boolean, error?: string, };
 /**
  * Something done about a reason (`POST /api/attention/act`).
  */
-export type Action = "allow" | "deny" | "answer" | "dismiss" | "continue" | "accept" | "reject" | "rerun" | "expire";
+export type Action = "allow" | "deny" | "answer" | "dismiss" | "continue" | "accept" | "reject" | "rerun" | "expire" | "deliver";
 
 /**
  * How much a pane prints (M23).
@@ -116,6 +221,14 @@ pr?: number, pr_url?: string,
 pr_block?: number, };
 
 /**
+ * What teammates and their agents may learn of this machine's sessions
+ * (#577): when an agent asks which ones it can `@machine/name`, and in the
+ * strip at the top of a thread (#646). Only with agent mentions on; off,
+ * they learn nothing whatever this says.
+ */
+export type AgentListing = "none" | "names" | "work";
+
+/**
  * The open question or approval behind an `ask` reason.
  */
 export type AskRef = { 
@@ -168,7 +281,31 @@ export type Attention = "idle" | "working" | "needs_input" | "done";
  * What a block is; where one runs is its `host`, not its type. All types
  * share one id space (`%N`) and one place in the layout tree.
  */
-export type BlockType = "terminal" | "browser" | "agent" | "editor" | "diff" | "file" | "remote" | "workspace" | "app" | "forge" | "invite" | "agents" | "doc" | "chat" | "team_chat" | "board" | "people";
+export type BlockType = "terminal" | "browser" | "agent" | "editor" | "diff" | "file" | "remote" | "workspace" | "app" | "forge" | "invite" | "agents" | "doc" | "chat" | "team_chat" | "board";
+
+/**
+ * [`BOARD_ENTRIES_MANY`]' body: exactly one of `pointers` (those items) or
+ * `untriaged` (everything that matches, but the `except` pointers). More
+ * than [`ADD_MANY_MAX`] is refused, 400: narrow the filter.
+ */
+export type BoardAddMany = { pointers?: Array<BoardPointer>, untriaged?: BoardUntriagedQuery, 
+/**
+ * With `untriaged`: pointers to leave out.
+ */
+except?: Array<BoardPointer>, };
+
+/**
+ * [`BOARD_ENTRIES_MANY`]' answer.
+ */
+export type BoardAddedMany = { 
+/**
+ * Rows made. An item on the board already isn't counted.
+ */
+added: number, 
+/**
+ * PRs attached to the row of the issue they close, as a single add does.
+ */
+attached: number, board: BoardView, };
 
 /**
  * An ask that was answered, kept in the row's history.
@@ -286,6 +423,35 @@ export type BoardCategory = "triage" | "backlog" | "unstarted" | "started" | "co
 export type BoardDiffstat = { files: number, added: number, removed: number, };
 
 /**
+ * One Doc of a board: in its strip, or on one row (a row's [`Row::docs`]).
+ */
+export type BoardDoc = { 
+/**
+ * `bdc_` and 32 hex characters.
+ */
+id: string, 
+/**
+ * [`Pointer::Doc`] or [`Pointer::MachineDoc`].
+ */
+pointer: BoardPointer, title: string, sections?: number, written?: number, 
+/**
+ * A project Doc that was deleted.
+ */
+missing?: boolean, 
+/**
+ * A machine Doc's machine, by name.
+ */
+machine_name?: string, 
+/**
+ * The account that linked it (the owner, for an agent).
+ */
+added_by: string, 
+/**
+ * The machine whose agent linked it, if one did.
+ */
+agent?: ChatAgent, created_at: number, };
+
+/**
  * Zone (a group, in a database; a lane, on the wire) or row.
  */
 export type BoardEntryKind = "zone" | "row";
@@ -315,6 +481,33 @@ progress: BoardProgress, };
  * the order `done`, `review`, `doing`, `next`.
  */
 export type BoardLane = "next" | "doing" | "review" | "done";
+
+/**
+ * A lane a person set on a row ([`Row::lane_set`]).
+ */
+export type BoardLaneSet = { 
+/**
+ * `next`, `doing` or `review`.
+ */
+lane: BoardLane, 
+/**
+ * The account that moved the row.
+ */
+by: string, at: number, };
+
+/**
+ * The session that leads a board: the machine it runs on and its name there,
+ * as that machine's daemon matches it (#414).
+ */
+export type BoardLead = { machine: string, 
+/**
+ * The machine's name now; empty while it can't be told.
+ */
+machine_name: string, session: string, 
+/**
+ * When the session took the lead.
+ */
+at: number, };
 
 export type BoardList = { project: string, boards: Array<ProjectBoard>, };
 
@@ -346,6 +539,11 @@ title: string,
  */
 assignees?: Array<string>, 
 /**
+ * The item's labels (#547): a native issue's, a mirrored item's, a
+ * Plane item's. A run has none.
+ */
+labels?: Array<string>, 
+/**
  * `plane` for a tracker's item; absent for GitHub, native issues and runs.
  */
 provider?: string | null, 
@@ -364,7 +562,32 @@ url?: string | null,
 /**
  * An issue's status category; a PR and a run have none.
  */
-category?: BoardCategory, };
+category?: BoardCategory, 
+/**
+ * A closed native issue that a merged PR closed: the PR
+ * (`OWNER/NAME#N`), so a wrong close is easy to spot (Arugula #743).
+ */
+closed_with?: string, 
+/**
+ * With `closed_with`, the words of the PR that closed it: `"(#12)" in
+ * the title`, `"Closes #12" in the body`, `the branch feat/12-x`,
+ * `attached to its board row as work`. Absent for a close from before
+ * they were kept.
+ */
+closed_by?: string, 
+/**
+ * A PR in its branch's merge queue now (Arugula #766). A repo with no
+ * queue, a platform from before it and every other kind say false.
+ */
+queued?: boolean, 
+/**
+ * With `queued`: when it entered the queue, in milliseconds.
+ */
+queued_since?: number, 
+/**
+ * A PR that left the queue unmerged, and why (`ForgeItem::left_queue`).
+ */
+left_queue?: LeftQueue, };
 
 /**
  * What a pointer to an item, an issue or a run is now, from data control
@@ -377,7 +600,25 @@ export type BoardLiveState = "open" | "checks_running" | "checks_failed" | "merg
  * A note on a row that its lane doesn't say, worked out on every read and
  * never stored (aru-125, decisions 7 to 9).
  */
-export type BoardMark = { "kind": "merged_not_closed" } | { "kind": "cancelled" } | { "kind": "after", number: number, repo?: string, } | { "kind": "earlier", attachment: string, } | { "kind": "stalled", since: number, } | { "kind": "blocked_by", number?: number, title?: string, repo?: string, };
+export type BoardMark = { "kind": "merged_not_closed" } | { "kind": "not_finished", reason?: string, merged: boolean, 
+/**
+ * Who marked it: a login or name, and for an agent "<person>'s
+ * agent on <machine>" as the board names an agent.
+ */
+by?: string, 
+/**
+ * When, in milliseconds.
+ */
+at?: number, } | { "kind": "cancelled" } | { "kind": "after", number: number, repo?: string, } | { "kind": "earlier", attachment: string, } | { "kind": "stalled", since: number, } | { "kind": "blocked_by", number?: number, title?: string, repo?: string, 
+/**
+ * The other board the blocker is a row of, when the reader may read
+ * the blocker and it is on a board other than this one.
+ */
+board?: string, 
+/**
+ * The session that leads that board, when one does.
+ */
+lead?: string, } | { "kind": "cycle" };
 
 /**
  * [`BOARD_ENTRY_MOVE`]'s body. A row moves to a group (`zone`) or, with
@@ -386,29 +627,52 @@ export type BoardMark = { "kind": "merged_not_closed" } | { "kind": "cancelled" 
  * one. A group moves among groups:
  * `before` is a group, `zone` is absent. A lane is never set (aru-125): a
  * `zone` that is a lane is refused.
+ *
+ * `seen` is the row ids of the group the row goes to, in the order the
+ * caller read them. A row's `rev` doesn't count moves, so this is what a
+ * move that mustn't overwrite someone else's checks: if the group's rows
+ * aren't those, in that order, nothing moves and the answer is 409
+ * `stale_order` with the group's rows as they are now ([`StaleOrder`]).
+ * Absent, a move is made whatever the order.
  */
 export type BoardMoveEntry = { rev: number | null, 
 /**
- * The group the row goes to; `null`: none. Absent: its own.
+ * The group the row goes to; `null`: none. Absent: its own. `group`
+ * is read as this too.
  */
-zone?: string | null, before: string | null, };
+zone?: string | null, before: string | null, seen?: Array<string>, };
+
+/**
+ * A board that lists a project Doc.
+ */
+export type BoardOfDoc = { board: string, title: string, 
+/**
+ * In the board's Docs strip.
+ */
+strip: boolean, 
+/**
+ * How many rows carry it as a reference.
+ */
+rows: number, };
 
 /**
  * What a row points at. `None` is free text. The ids are the platform's:
- * `fi_…` (a mirrored PR or issue), `iss_…`, `run_…`, `hw_…`.
+ * `fi_…` (a mirrored PR or issue), `iss_…`, `run_…`, `hw_…`, `pdc_…` (a
+ * project Doc).
  */
 export type BoardPointer = { "kind": "none" } | { "kind": "forge_item", id: string, } | { "kind": "issue", id: string, } | { "kind": "run", id: string, } | { "kind": "workspace", id: string, } | { "kind": "block", machine: string, 
 /**
  * The block's pane, as `%N` or `N`; stored as `N`.
  */
-pane: string, } | { "kind": "link", url: string, };
+pane: string, } | { "kind": "link", url: string, } | { "kind": "doc", id: string, } | { "kind": "machine_doc", machine: string, doc: string, title: string, };
 
 /**
  * A board's work, counted: the rows with a primary item (an issue or a
  * PR; a note row is never counted). `done` is those in the Done lane, and
- * `proven` those of them with a proof.
+ * `proven` those of them with a proof; `review` and `doing` are those in
+ * the Review and Doing lanes.
  */
-export type BoardProgress = { done: number, total: number, proven: number, };
+export type BoardProgress = { done: number, total: number, proven: number, review: number, doing: number, };
 
 /**
  * The mark on a Done row that is proven. A Done row without one is not
@@ -437,7 +701,7 @@ export type BoardProofBy = "ci" | "evidence";
  */
 export type BoardPutEntry = { id: string | null, rev: number | null, entry: BoardEntryKind | null, 
 /**
- * A new row's group (`zon_…`).
+ * A new row's group (`zon_…`); `group` is read as this too.
  */
 zone: string | null, 
 /**
@@ -468,9 +732,19 @@ status: BoardStatus,
  */
 lane: BoardLane, 
 /**
+ * Set when a person moved the row and the work hasn't changed its
+ * derived lane since (#494): `lane` is then the row's lane.
+ */
+lane_set?: BoardLaneSet, 
+/**
  * Work and proof attached to the row, oldest first.
  */
 attachments: Array<BoardAttachment>, 
+/**
+ * The Docs linked to the row (#517): its spike or research, in order.
+ * They move no lane and prove nothing.
+ */
+docs?: Array<BoardDoc>, 
 /**
  * Set only on a Done row that is proven.
  */
@@ -480,7 +754,7 @@ proof?: BoardProof,
  */
 group?: string, 
 /**
- * What the lane doesn't say, in a fixed order: `merged_not_closed`,
+ * What the lane doesn't say, in a fixed order: `not_finished`,
  * `cancelled`, `after`, `blocked_by`, then one `earlier` for each closed block.
  */
 marks?: Array<BoardMark>, 
@@ -496,6 +770,31 @@ asked?: Array<BoardAnsweredAsk>,
  * The edges of the row's item, both ways, for the drawer.
  */
 relations?: Array<BoardRowRelation>, 
+/**
+ * The agent sessions started on the row's issue, oldest first
+ * (Arugula #843). A live one puts the row in Doing.
+ */
+sessions?: Array<BoardRowSession>, 
+/**
+ * The session that holds the row's issue (Arugula #765), if one does.
+ * Never set on a row whose issue is closed.
+ */
+held?: SessionHold, 
+/**
+ * Where the row falls in the board's order (Arugula #762): 1 plus the
+ * highest step of the open rows that come before it, worked out on
+ * every read and never stored. Absent for a row with no issue or PR,
+ * and for a Done row. Doing and Review rows are step 1.
+ */
+step?: number, 
+/**
+ * The column the row sits in on the Steps chart (Arugula #824): the
+ * same longest-path layout as [`Row::step`], but over every row with an
+ * issue or a PR, done ones included, using their ordering edges whether
+ * the other end is open or closed. So finishing work never moves a row.
+ * Absent for a row with no issue or PR.
+ */
+place?: number, 
 /**
  * A `fi_`, `iss_` or `run_` pointer's state now, when the reader may see the
  * item ([`BoardView`] is read with it; a write's answer has it too).
@@ -535,6 +834,39 @@ item?: string,
 removable: boolean, };
 
 /**
+ * An agent session started on a row's issue (Arugula #843).
+ */
+export type BoardRowSession = { 
+/**
+ * `ses_…`, for its thread.
+ */
+session: string, 
+/**
+ * Its state as the platform keeps it: `queued`, `working`,
+ * `needs_input`, `done`, `failed`, `unresponsive` or `stopped`.
+ */
+state: string, 
+/**
+ * Whether it moves the row: it is under way, or done with its PR not
+ * yet sent. A session that isn't live is shown dimmed.
+ */
+live: boolean, 
+/**
+ * The one ref it may push, `arugula/<8 hex>-<slug>`.
+ */
+branch: string, 
+/**
+ * Its PR's link, once its asker sent it.
+ */
+pr?: string, };
+
+/**
+ * [`BOARD_ROW_LANE`]'s body. `reason` goes with `done` on a native issue:
+ * `completed` (when not given), `not_planned` or `duplicate`.
+ */
+export type BoardSetLane = { lane: BoardLane, reason: string | null, };
+
+/**
  * What a project says about its boards (Arugula #404).
  */
 export type BoardSettings = { 
@@ -545,9 +877,53 @@ export type BoardSettings = {
 stall_minutes: number, };
 
 /**
+ * The epic a board follows: its children are the board's rows, and the
+ * connection made the board, not a person.
+ */
+export type BoardSource = { 
+/**
+ * `plane`.
+ */
+provider: string, 
+/**
+ * The epic's key in the tracker, such as `ARUGU-10`.
+ */
+key: string, 
+/**
+ * Where the epic is in the tracker's web app.
+ */
+url: string, 
+/**
+ * The connection that made the board, as the project calls it.
+ */
+connection: string, 
+/**
+ * How many children the board is too full to show, the oldest done
+ * ones first.
+ */
+left_out: number, 
+/**
+ * Whether the epic is started in the tracker (Plane's `started` group),
+ * read from its mirrored item; not whether the board is open.
+ */
+started: boolean, };
+
+/**
+ * The body of a move refused as `stale_order`: the group's rows now, in
+ * order.
+ */
+export type BoardStaleOrder = { error: string, reason: string, rows: Array<string>, };
+
+/**
  * Where a row stands. `None` says nothing.
  */
 export type BoardStatus = "none" | "open" | "working" | "needs_input" | "done" | "failed";
+
+/**
+ * Which untriaged items [`AddMany`] adds: a [`WorkQuery`] with `untriaged`
+ * set, of the board's own project.
+ */
+export type BoardUntriagedQuery = { project: string, q?: string, label?: string, };
 
 /**
  * A board with its four lanes, in order (`lane_next`, `lane_doing`,
@@ -561,10 +937,32 @@ export type BoardView = { board: ProjectBoard, zones: Array<BoardZone>,
  */
 groups: Array<BoardGroup>, 
 /**
+ * The Docs strip, in order. Empty for a board with none; an old client
+ * ignores it.
+ */
+docs: Array<BoardDoc>, 
+/**
  * The ready set (Arugula #403): the rows (`row_…`) with an issue or a
  * PR as their item that are in Next and have no open blocker.
  */
 ready?: Array<string>, 
+/**
+ * The rows (`row_…`) that have a [`Row::step`], by step, and inside a
+ * step by what unblocks the most open rows, then by position (#762).
+ */
+sequence?: Array<string>, 
+/**
+ * The longest chain of open rows (`row_…`), first to last; empty when
+ * no row waits on another (#762).
+ */
+chain?: Array<string>, 
+/**
+ * Every row (`row_…`) as the board stores them: by group, in the
+ * groups' order, then by position inside each, those with no group
+ * last. A move that names the order it read (`seen`) names a group's
+ * rows from here.
+ */
+order?: Array<string>, 
 /**
  * What a write did that the board alone doesn't say: a PR attached to
  * the row of the issue it closes, an item that was there already.
@@ -614,12 +1012,35 @@ state: string,
 /**
  * GitHub logins for a mirrored item; account ids for a native issue.
  */
-assignees: Array<string>, updated_at: number, };
+assignees: Array<string>, 
+/**
+ * The item's label names: a native issue's, a mirrored GitHub or Plane
+ * item's. A run has none.
+ */
+labels?: Array<string>, updated_at: number, };
 
 /**
  * [`PROJECT_WORK`]'s answer: the newest first, across sources.
  */
-export type BoardWorkItems = { project: string, items: Array<BoardWorkItem>, };
+export type BoardWorkItems = { project: string, items: Array<BoardWorkItem>, 
+/**
+ * With `untriaged`: the cursor of the next page, null at the end.
+ */
+next: string | null, 
+/**
+ * With `untriaged`: how many items match `q` and `label` in all.
+ */
+total?: number, 
+/**
+ * With `untriaged`: the labels of everything that matches `q`, `label`
+ * aside (so the chips keep their counts), most items first, then by name.
+ */
+labels?: Array<BoardWorkLabel>, };
+
+/**
+ * A label and how many of a query's matches carry it.
+ */
+export type BoardWorkLabel = { name: string, count: number, };
 
 /**
  * [`PROJECT_WORK`]'s query.
@@ -642,8 +1063,27 @@ untriaged: boolean,
 /**
  * At most this many (default 30, at most 100).
  */
-limit: number | null, };
+limit: number | null, 
+/**
+ * With `untriaged`: the page after the one that answered this
+ * [`WorkItems::next`]. Opaque; it holds its place when items leave the
+ * list between pages.
+ */
+cursor: string | null, 
+/**
+ * With `untriaged`, `new` (the default) or `old`: by when an item was
+ * last updated.
+ */
+order: string | null, 
+/**
+ * With `untriaged`: only items with this label.
+ */
+label: string | null, };
 
+/**
+ * One of a board's four lanes as a read answers it, with its rows. The wire
+ * and TypeScript still call it a zone (`zones`, `BoardZone`).
+ */
 export type BoardZone = { id: string, rev: number, title: string, kind?: BoardZoneKind | null, rows: Array<BoardRow>, };
 
 /**
@@ -651,6 +1091,12 @@ export type BoardZone = { id: string, rev: number, title: string, kind?: BoardZo
  * ([`Lane`]). No one makes a zone.
  */
 export type BoardZoneKind = "lane";
+
+/**
+ * [`PROJECT_DOC_BOARDS`]' answer: the project's boards that list the Doc,
+ * open ones first.
+ */
+export type BoardsOfDoc = { boards: Array<BoardOfDoc>, };
 
 /**
  * A side of a PR: which repository (a fork's, for its head), branch and
@@ -734,12 +1180,7 @@ export type ChatAskAnswer = { choice: string, };
  * sets their choice (absent: leave it). `machines`: whose online state
  * the page wants too (the machines its messages' agents are on).
  */
-export type ChatBeat = { idle: boolean, gone: boolean, mode: PresenceMode | null, 
-/**
- * The reader's live presence choice, when they changed it (kept with
- * `live-presence` on; ignored with it off).
- */
-live: LivePresence | null, machines: Array<string>, };
+export type ChatBeat = { idle: boolean, gone: boolean, mode: PresenceMode | null, machines: Array<string>, };
 
 /**
  * A public channel in the browser (#118).
@@ -823,7 +1264,43 @@ export type ChatLevel = { level: NotifyLevel | null, };
  * behind, or missed more events than control keeps) gets `resync`: reload
  * the rooms.
  */
-export type ChatLive = { "type": "hello", stream: string, } | { "type": "message", room: string, seq: number, } | { "type": "pinned", room: string, } | { "type": "changed", room: string, seq: number, } | { "type": "reacted", room: string, seq: number, } | { "type": "reply", room: string, parent: number, seq: number, } | { "type": "threadread", room: string, parent: number, seq: number, } | { "type": "room", room: string, } | { "type": "read", room: string, seq: number, } | { "type": "object", room: string, target: string, } | { "type": "session", room: string, ses: string, } | { "type": "typing", room: string, account: string, name: string, } | { "type": "sidebar", } | { "type": "saved", } | { "type": "resync", };
+export type ChatLive = { "type": "hello", stream: string, } | { "type": "message", room: string, seq: number, } | { "type": "pinned", room: string, } | { "type": "changed", room: string, seq: number, } | { "type": "reacted", room: string, seq: number, } | { "type": "reply", room: string, parent: number, seq: number, } | { "type": "threadread", room: string, parent: number, seq: number, } | { "type": "room", room: string, } | { "type": "read", room: string, seq: number, } | { "type": "object", room: string, target: string, } | { "type": "session", room: string, ses: string, } | { "type": "typing", room: string, account: string, name: string, } | { "type": "sidebar", } | { "type": "saved", } | { "type": "github", room: string, seq: number, github: ChatToGithub, } | { "type": "resync", };
+
+/**
+ * How far a [`ChatMentionStatus`] has got.
+ */
+export type ChatMentionState = "sending" | "delivered" | "fell_back" | "waiting" | "queued" | "silenced" | "no_such_session" | "offline" | "answered" | "chain" | "working" | "read" | "dropped" | "not_granted";
+
+/**
+ * Where a message's `@machine` mention got to (#502), as control knows it:
+ * what the machine's daemon said when it was told, and then whether the
+ * machine's agent answered in the thread.
+ */
+export type ChatMentionStatus = { machine: string, 
+/**
+ * What the machine was called when it was told.
+ */
+machine_name: string, state: ChatMentionState, 
+/**
+ * The session it went to, when the daemon said.
+ */
+session?: string, 
+/**
+ * The session the message named that the daemon couldn't find.
+ */
+asked?: string, 
+/**
+ * With `no_such_session`: the names it could have used (#576).
+ */
+names?: Array<string>, 
+/**
+ * With `answered`: the number of the agent's reply.
+ */
+reply?: number, 
+/**
+ * With `dropped`: why (#613).
+ */
+why?: DropWhy, };
 
 /**
  * A message as the reader sees it.
@@ -875,6 +1352,11 @@ via?: string,
  * Empty for a deleted message and for archives brought in.
  */
 reactions: Array<ChatReaction>, 
+/**
+ * Where each machine's agent mention in it got to (#502), one per
+ * machine, by name. Empty for a message that mentions none.
+ */
+mention_status?: Array<ChatMentionStatus>, 
 /**
  * Files and images attached (#107), in the order they were chosen.
  * Empty for a deleted message: its files went with it.
@@ -1021,6 +1503,13 @@ files?: Array<string>,
  */
 notify_anyway?: boolean, 
 /**
+ * In a thread (#647): who this wakes, chosen in the composer, in place
+ * of the agent it replies to. Agents the text names come too. Empty:
+ * nobody. Absent: as before this field. Ignored from an agent, and
+ * outside a thread.
+ */
+to?: Array<ChatPostTarget>, 
+/**
  * A reply in the thread of this message (#106): the number of a
  * message of the room that is not itself a reply.
  */
@@ -1036,6 +1525,19 @@ also?: boolean,
  */
 session?: string, };
 
+/**
+ * An agent a message is for (#647), as [`ChatThreadAgent`] names it.
+ */
+export type ChatPostTarget = { 
+/**
+ * The machine's id, or a hosted session's `ses_` id.
+ */
+id: string, 
+/**
+ * The session on the machine, when it has a name.
+ */
+session?: string, };
+
 export type ChatPosted = { seq: number, 
 /**
  * The accounts it mentions, and the agents (`machine:<id>`, M198).
@@ -1046,10 +1548,27 @@ mentions: Array<string>,
  */
 unreached: Array<string>, 
 /**
+ * Why, for an `unreached` word that names a machine of the team (#572).
+ */
+unreached_why?: Array<ChatUnreachedWhy>, 
+/**
  * Whom control pushed (not those with the room open, muted, or pushed
  * for it in the last minute).
  */
-pushed: Array<ChatPushed>, };
+pushed: Array<ChatPushed>, 
+/**
+ * A comment on a native issue that's on GitHub (M205): what became
+ * of its copy there, as far as it's known when the post returns. A
+ * person's is `sending` then, and its end comes to them on the live
+ * stream ([`ChatLive::Github`], Arugula #584). `None` anywhere else.
+ */
+github?: ChatToGithub, 
+/**
+ * Where each machine's agent mention in it has got to by now (#571):
+ * `sending` for one whose daemon hasn't answered. Empty for a post that
+ * mentions none.
+ */
+mention_status?: Array<ChatMentionStatus>, };
 
 /**
  * Who's around, for one reader: themselves and everyone who shares a team
@@ -1061,12 +1580,7 @@ export type ChatPresence = {
 /**
  * The reader's own choice.
  */
-mode: PresenceMode, 
-/**
- * The reader's live presence choice, with the `live-presence` Labs flag
- * on for them; absent with it off, which is how a page learns the flag.
- */
-live?: LivePresence | null, people: Array<ChatPresent>, machines_online: Array<string>, };
+mode: PresenceMode, people: Array<ChatPresent>, machines_online: Array<string>, };
 
 /**
  * One teammate's presence.
@@ -1097,6 +1611,11 @@ export type ChatReaction = { emoji: string,
  * All who reacted with it; `who` names the first [`MAX_REACTORS_SHOWN`].
  */
 count: number, 
+/**
+ * How many of `count` are agents' (#632); the rest are people's. An
+ * older control leaves it out, and it reads as none.
+ */
+agents: number, 
 /**
  * The reader has: a person's own reaction, or for an agent reading,
  * its own (never the owner's, nor the agent's for the owner).
@@ -1162,6 +1681,13 @@ last: number, read: number,
  * of those mention the reader.
  */
 unread: number, mentions: number, 
+/**
+ * How much of `unread` wants the reader: what a count of it says. In
+ * an object's thread, its mentions, and on an open native issue
+ * assigned to the reader what isn't from their own agents; the rest
+ * of `unread` is only a dot on its row. In any other room, `unread`.
+ */
+wants: number, 
 /**
  * The reader turned its pushes off (`level` is `nothing`).
  */
@@ -1390,6 +1916,60 @@ following: boolean,
 read: number, unread: number, mentions: number, };
 
 /**
+ * One agent in a thread (#645): a session on someone's machine, or a hosted
+ * session. Never its output, a tool's arguments or a path (aru-051).
+ */
+export type ChatThreadAgent = { 
+/**
+ * The session's name, as its machine called it, or a hosted session's
+ * short id. Empty when a machine was told and no session has spoken.
+ */
+name: string, 
+/**
+ * The machine's id, or a hosted session's `ses_` id.
+ */
+id: string, 
+/**
+ * The machine's name, or the hosted box's.
+ */
+machine_name: string, 
+/**
+ * The owner's account and name; a hosted session's asker.
+ */
+owner: string, owner_name: string, hosted: boolean, state: ChatThreadAgentState, 
+/**
+ * With the owner's `work`: what it was started on.
+ */
+working_on?: string, 
+/**
+ * With the owner's `work`: the name of the tool it last ran.
+ */
+tool?: string, 
+/**
+ * The newest message of the thread it has taken in, or written.
+ */
+read_seq?: number, 
+/**
+ * Messages told to it that it hasn't taken in yet.
+ */
+waiting: number, 
+/**
+ * The agent a message goes to by default (#647): the thread's hosted
+ * session, else the agent first in it.
+ */
+lead: boolean, };
+
+/**
+ * What an agent in a thread is doing (#645).
+ */
+export type ChatThreadAgentState = "working" | "idle" | "needs_you" | "offline" | "failed" | "stopped" | "unknown";
+
+/**
+ * [`chat_thread_agents`]' answer: oldest in the thread first.
+ */
+export type ChatThreadAgents = { agents: Array<ChatThreadAgent>, };
+
+/**
  * One thread the reader follows, in [`ChatThreads`].
  */
 export type ChatThreadItem = { room: string, 
@@ -1417,6 +1997,36 @@ export type ChatThreadRead = { seq: number, };
 export type ChatThreads = { threads: Array<ChatThreadItem>, unread: number, mentions: number, };
 
 /**
+ * A comment on an exported native issue, on its way to GitHub (M205): a
+ * person's is sent as them through one of their machines, and waits as a
+ * draft when none can; an agent's is a draft that waits for its person.
+ * A person's post answers while its send is out (`sending`), and the
+ * send's end comes after, on the live stream ([`ChatLive::Github`]).
+ */
+export type ChatToGithub = { 
+/**
+ * The draft (`dft_…`) that carries it.
+ */
+draft: string, 
+/**
+ * Being sent now, through one of the person's machines: the end comes
+ * on the live stream (Arugula #584).
+ */
+sending: boolean, 
+/**
+ * On GitHub now.
+ */
+sent: boolean, 
+/**
+ * Its comment there, once sent.
+ */
+url: string | null, 
+/**
+ * Why it isn't there yet.
+ */
+why: string | null, };
+
+/**
  * `PUT /api/chat/rooms/{id}/topic`: what a channel's members (or, when
  * the team says so, its owners) write about it. What's left out stays;
  * an empty one clears it. Each change posts a system line. Answers the room.
@@ -1431,6 +2041,12 @@ export type ChatTopicSet = { topic?: string, description?: string, };
  * thread's composer, whose typing nobody is shown).
  */
 export type ChatTyping = { warm: boolean, show: boolean, };
+
+/**
+ * A machine's word that reached nobody (#572): its agents can't read the
+ * room, and `reads` are the rooms they do read that the poster also sees.
+ */
+export type ChatUnreachedWhy = { word: string, machine_name: string, reads: Array<string>, };
 
 /**
  * `POST /api/chat/rooms/{id}/unread`: mark as unread from `seq`: the read
@@ -1453,6 +2069,68 @@ export type CheckState = "queued" | "running" | "success" | "failure" | "cancell
 export type Child = { weight: number, node: Node, };
 
 /**
+ * A branch's open red issue.
+ */
+export type CiAlertOpen = { branch: string, 
+/**
+ * The issue's id (`iss_`) and number.
+ */
+issue: string, number: number, opened_at: number, };
+
+/**
+ * A project's CI alerts (native #774): chant's signed CI events open,
+ * comment on and close a "main is red" native issue. Never the key.
+ */
+export type CiAlerts = { 
+/**
+ * The project's id (`personal` asked is answered with the real one).
+ */
+project: string, 
+/**
+ * On: a key is kept and events are taken.
+ */
+on: boolean, 
+/**
+ * The URL chant posts to: `ci.green.notify.webhook`'s variable.
+ */
+url: string, 
+/**
+ * Who a new red issue mentions (accounts), in order.
+ */
+people: Array<string>, 
+/**
+ * They're assigned it as well.
+ */
+assign: boolean, 
+/**
+ * Who made the key in use (an account, empty once it's deleted), and
+ * when. `None` while off.
+ */
+key_made_by: string | null, key_made_at: number | null, 
+/**
+ * When the last signed event arrived.
+ */
+last_event_at: number | null, 
+/**
+ * Each branch's open red issue.
+ */
+open: Array<CiAlertOpen>, };
+
+/**
+ * The answer to [`PROJECT_CI_ALERTS_KEY`]: the new key, shown this once,
+ * and the alerts as they are now. chant reads it from
+ * `ci.green.notify.key`'s variable.
+ */
+export type CiAlertsKey = { key: string, alerts: CiAlerts, };
+
+/**
+ * `PATCH` [`PROJECT_CI_ALERTS`]: whom a new red issue mentions, whether it
+ * assigns them, or `on: false` to turn alerts off (the key goes; the
+ * issues stay). Each is optional; turning on is [`PROJECT_CI_ALERTS_KEY`].
+ */
+export type CiAlertsSettings = { on?: boolean, people?: Array<string>, assign?: boolean, };
+
+/**
  * Control messages from a client.
  */
 export type ClientMsg = { "type": "attach", panes: Array<AttachPane>, zstd?: boolean, acks?: boolean, 
@@ -1465,7 +2143,7 @@ kitty_keys?: boolean, } | { "type": "ack", pane: number, offset: number, } | { "
 /**
  * The person pressed "Use this window's size" (#1502).
  */
-asked?: boolean, } | { "type": "intent", id: number | null, intent: Intent, } | { "type": "pane", pane: number, op: PaneOp, } | { "type": "focus", pane: number | null, } | { "type": "ping", id: number, } | { "type": "subscribe", summary: boolean, } | { "type": "follow", pane: number, on: boolean, } | { "type": "block_patches" } | { "type": "hand", tools: Array<HandTool>, name?: string, } | { "type": "hand_reply", id: number, result?: unknown, error?: string, };
+asked?: boolean, } | { "type": "intent", id: number | null, intent: Intent, } | { "type": "pane", pane: number, op: PaneOp, } | { "type": "focus", pane: number | null, } | { "type": "dismiss_notice", key: string, } | { "type": "ping", id: number, } | { "type": "subscribe", summary: boolean, } | { "type": "follow", pane: number, on: boolean, } | { "type": "block_patches" } | { "type": "hand", tools: Array<HandTool>, name?: string, } | { "type": "hand_reply", id: number, result?: unknown, error?: string, };
 
 /**
  * A command the shell integration reported.
@@ -1580,7 +2258,11 @@ closed: boolean, };
  * `presence` are whole when present. Anything else (sessions, tabs, options,
  * roles) changes with a new `State`.
  */
-export type Delta = { panes?: Array<{ id: PaneId } & Partial<PaneInfo>>, gone?: Array<number>, machines?: Array<Machine> | null, presence?: Array<Presence> | null, };
+export type Delta = { panes?: Array<{ id: PaneId } & Partial<PaneInfo>>, gone?: Array<number>, machines?: Array<Machine> | null, presence?: Array<Presence> | null, 
+/**
+ * Whole when present, like `presence` (#551).
+ */
+notices?: Array<Notice> | null, };
 
 /**
  * Diagnostic counts: errors, warnings, information.
@@ -1625,9 +2307,74 @@ nvim?: number, };
 export type Dir = "row" | "column";
 
 /**
+ * `GET /api/docs/ID/assets/NAME` (#608): a picture, as the Doc block's
+ * `doc_asset` answers it. The type is what the bytes say.
+ */
+export type DocAsset = { mime: string, 
+/**
+ * Base64.
+ */
+data: string, };
+
+/**
+ * `GET /api/docs/ID/content` (#608): the Doc read from its files, without
+ * opening it in a block, in the shape the Doc block's state has, so the
+ * same renderer draws it.
+ */
+export type DocContent = { title: string, entries: Array<DocContentEntry>, assets: Array<DocContentAsset>, rev: number, 
+/**
+ * The Doc's id in the library.
+ */
+doc?: string | null, 
+/**
+ * The folder couldn't be read back: what to tell the person.
+ */
+error?: string | null, };
+
+/**
+ * A picture a Doc keeps, as its state lists it; `doc.asset` has the bytes.
+ */
+export type DocContentAsset = { name: string, mime: string, size: number, rev: number, };
+
+/**
+ * One section of a Doc as `GET /api/docs/ID/content` has it: the Doc block's
+ * entry. `body` is null while the section is pending.
+ */
+export type DocContentEntry = { id: string, heading: string, intent: string, body: string | null, rev: number, };
+
+/**
+ * How a Doc is laid out: one page (`doc`), its sections as tabs (`tabs`),
+ * or a prototype alone (`prototype`). A Doc that doesn't say is `doc`. A
+ * layout this build doesn't know (a newer peer's) reads as `doc`, never as
+ * an error. A Doc's tabs are its sections; "tab" elsewhere is a session's.
+ */
+export type DocLayout = "doc" | "tabs" | "prototype";
+
+/**
  * `GET /api/doc-links/ID` (#1066): a shared Doc's URL, with its key.
  */
 export type DocLinkUrl = { url: string, };
+
+/**
+ * `POST /api/docs/ID/move` (Arugula #863): give a Doc to a team. The team
+ * Doc is made from it, and the library keeps only a pointer to it. With no
+ * `project`, the current one (the one rule MCP's tools choose by), which
+ * must be a team's.
+ */
+export type DocMoveRequest = { project?: string | null, };
+
+/**
+ * Where a Doc went: the team's project and the team Doc there.
+ */
+export type DocMoved = { 
+/**
+ * The project's id (`prj_…`) and name.
+ */
+project: string, name: string, 
+/**
+ * The team Doc's id (`pdc_…`), and its page on the platform.
+ */
+id: string, link?: string | null, };
 
 /**
  * `POST /api/docs/open` (#1493): a Doc from the library in a block. Exactly
@@ -1650,6 +2397,12 @@ link?: string | null, session?: string | null, split?: number | null, };
 export type DocOpened = { pane: number, };
 
 /**
+ * `GET /api/docs/ID/preview` (#588): a Doc's first paragraphs, as plain
+ * text, without opening it in a block.
+ */
+export type DocPreview = { opening: Array<string>, };
+
+/**
  * One Doc in the library (#1493): `GET /api/docs`. `open` is the block
  * that shows it now, `shared` its link's dates and id (never its key).
  */
@@ -1658,7 +2411,32 @@ export type DocRow = { id: string, title: string, made: number, updated: number,
  * Who made it: an agent (`mcp:NAME`), a person's driver name, or
  * `migrated` for a Doc that predates the library.
  */
-by: string, open?: number | null, shared?: DocShared | null, };
+by: string, open?: number | null, shared?: DocShared | null, 
+/**
+ * Its opening line, as plain text (#588). Empty until it has one.
+ */
+summary: string, 
+/**
+ * Its sections, for the list's picture of its shape and its outline.
+ */
+sections: Array<DocSectionShape>, 
+/**
+ * How it is laid out; `doc` for a Doc that never said, and from a
+ * daemon from before layouts.
+ */
+layout: DocLayout, };
+
+/**
+ * One section of a Doc, as the Docs list shows it (#588). A fenced block is
+ * a figure and not words, or a prototype's code reads as a long essay.
+ */
+export type DocSectionShape = { heading: string, words: number, figures: number, };
+
+/**
+ * `POST /api/docs/ID/share`: `update` makes the Doc's link show it as it is
+ * now (it has one already); otherwise the Doc gets a link.
+ */
+export type DocShareRequest = { update: boolean, };
 
 /**
  * When a Doc was shared with a link, and last updated.
@@ -1669,6 +2447,18 @@ export type DocShared = { made: number, updated: number,
  * key): that list titles its rows from it (UI audit #174).
  */
 link: string, };
+
+/**
+ * A team's project a Doc can move to.
+ */
+export type DocTeam = { project: string, name: string, };
+
+/**
+ * `GET /api/docs/team` (Arugula #863): the team a Doc here would move to
+ * with no project named, so the Docs page can offer Move to <team>. Null
+ * when the current project is a personal one, or control can't say (`why`).
+ */
+export type DocTeams = { team?: DocTeam | null, why?: string | null, };
 
 /**
  * An agent's write, waiting for a person.
@@ -1712,6 +2502,11 @@ export type Driver = {
  * Principal id (`owner`, `tailnet:<login>`, `account:<id>`).
  */
 who: string, name: string, };
+
+/**
+ * Why a mention was dropped (#613).
+ */
+export type DropWhy = "stopped" | "exited";
 
 /**
  * Where to put something relative to a pane.
@@ -1942,7 +2737,12 @@ author: string,
  * The agent that wrote it, and the machine it was on (an id, and its
  * name when the machine is still there).
  */
-agent: string | null, machine: string | null, machine_name: string | null, created_at: number, updated_at: number, sent_at: number | null, sent_url: string | null, error: string | null, };
+agent: string | null, machine: string | null, machine_name: string | null, created_at: number, updated_at: number, sent_at: number | null, sent_url: string | null, error: string | null, 
+/**
+ * The native issue it's for (M205): the issue itself (Open on
+ * GitHub, `kind` `issue`), or one of its comments (`kind` `comment`).
+ */
+native_issue?: string, };
 
 export type ForgeDrafts = { drafts: Array<ForgeDraft>, };
 
@@ -2056,7 +2856,11 @@ pin: ForgePin | null,
  * it isn't known (the forge doesn't say, or says only to someone who
  * can push), and Merge then offers what the forge enforces (#427).
  */
-merge_styles?: Array<string>, };
+merge_styles?: Array<string>, 
+/**
+ * The agent that opened the PR is holding its merge (#495).
+ */
+hold?: Hold, };
 
 /**
  * A body, a comment, a review's text or a review comment.
@@ -2286,6 +3090,25 @@ export type HandTool = { name: string, description: string,
 schema: unknown, };
 
 /**
+ * An agent's hold on a PR block (#495): the merge waits for the agent to
+ * say it's ready. It's a nudge on this machine's block, not a lock and not
+ * on the forge: the person can still merge.
+ */
+export type Hold = { 
+/**
+ * The holding agent block's title, for "Held by …".
+ */
+by: string, 
+/**
+ * The holder's pane, to focus it. The hold ends when it closes.
+ */
+pane: number, reason: string, 
+/**
+ * When it lapses on its own.
+ */
+until_ms: number, };
+
+/**
  * The optional parts of a machine, as `GET /api/host` reports them.
  */
 export type HostFeatures = { 
@@ -2314,7 +3137,7 @@ blocks: boolean,
  */
 block_channels?: boolean, 
 /**
- * VM tabs and panes and *Sandboxes…*: a sandbox provider (wisp).
+ * VM tabs and panes and *Sandboxes…*: a sandbox provider (loam).
  */
 vms: boolean, 
 /**
@@ -2434,7 +3257,7 @@ export type InboxMarked = { item: string,
  */
 marked: number, };
 
-export type Intent = { "op": "new_session", name: string | null, from_pane: number | null, } | { "op": "rename_session", session: number, name: string, } | { "op": "close_session", session: number, } | { "op": "new_tab", session: number, from_pane: number | null, cwd?: string, } | { "op": "rename_tab", tab: number, name: string | null, } | { "op": "close_tab", tab: number, } | { "op": "move_tab", tab: number, session: number, index: number, } | { "op": "split", pane: number, edge: Edge, local?: boolean, cwd?: string, } | { "op": "close_pane", pane: number, } | { "op": "move_pane", pane: number, target: number, edge: Edge, } | { "op": "break_pane", pane: number, session: number, index: number | null, } | { "op": "dock_tab", tab: number, target: number, edge: Edge, } | { "op": "resize_split", split: number, weights: Array<number>, } | { "op": "arrange", tab: number, preset: Preset, main?: number, } | { "op": "focus", tab: number, pane: number | null, } | { "op": "set_option", scope: OptionScope, name: string, value: string | null, };
+export type Intent = { "op": "new_session", name: string | null, from_pane: number | null, } | { "op": "rename_session", session: number, name: string, } | { "op": "set_session_project", session: number, project: ProjectRef | null, } | { "op": "close_session", session: number, } | { "op": "new_tab", session: number, from_pane: number | null, cwd?: string, } | { "op": "rename_tab", tab: number, name: string | null, } | { "op": "close_tab", tab: number, } | { "op": "move_tab", tab: number, session: number, index: number, } | { "op": "split", pane: number, edge: Edge, local?: boolean, cwd?: string, } | { "op": "close_pane", pane: number, } | { "op": "move_pane", pane: number, target: number, edge: Edge, } | { "op": "break_pane", pane: number, session: number, index: number | null, } | { "op": "dock_tab", tab: number, target: number, edge: Edge, } | { "op": "resize_split", split: number, weights: Array<number>, } | { "op": "arrange", tab: number, preset: Preset, main?: number, } | { "op": "focus", tab: number, pane: number | null, } | { "op": "pop_out", pane: number, out: boolean, } | { "op": "set_option", scope: OptionScope, name: string, value: string | null, };
 
 /**
  * How an invite's push went: `sent` once a subscription took it,
@@ -2516,13 +3339,21 @@ export type IssueComment = {
  */
 seq: number, 
 /**
- * The account that wrote it, or "" once it's deleted.
+ * The account that wrote it, or "": a deleted account's, or one
+ * nobody here wrote (then `via` says who did).
  */
 author: string, agent: ChatAgent | null, at: number, text: string, 
 /**
  * Lines it quoted from a pane.
  */
-quote: string | null, edited: number | null, };
+quote: string | null, edited: number | null, 
+/**
+ * As its message's [`via`](crate::chat::ChatMessage::via): with no
+ * author, Arugula's own post (`system`, a session's card or ask),
+ * GitHub's (`github:<login>`), CI's (`ci:<source>`) or what an agent
+ * session said (`said:<ses>`) (Arugula #626).
+ */
+via?: string, };
 
 /**
  * An event on an issue's timeline.
@@ -2562,7 +3393,12 @@ export type IssueExport = { project: string, project_name: string, exported_at: 
 /**
  * Everyone it names (authors, actors, assignees, commenters).
  */
-people: Array<ExportedPerson>, };
+people: Array<ExportedPerson>, 
+/**
+ * The comments were left out: they're in chat, which is off for the
+ * reader (Arugula #746). Absent when they're there.
+ */
+comments_in_chat?: boolean, };
 
 /**
  * `GET /api/projects/{project}/issues/export?format=`: `json` (when not
@@ -2613,13 +3449,37 @@ both: boolean,
  * Every label on its native issues, open or closed, sorted: what the
  * label menus offer (UI audit #163).
  */
-labels: Array<string>, };
+labels: Array<string>, 
+/**
+ * A team's project, not its owner's personal one: where a team's Docs
+ * live (Arugula #862). An older control sends none, which a machine
+ * reads as not a team's.
+ */
+team: boolean, 
+/**
+ * Whose project it is: a team's or a person's own. It replaces `team`
+ * as the test of a team's project; an older control sends none, and a
+ * machine reads `team` then. `team` stays for a release, for older
+ * machines.
+ */
+owner?: ProjectOwner, 
+/**
+ * Which step chose the project, for [`AGENT_ISSUE_HOME`]. An older
+ * control sends none; the machine then says its own.
+ */
+rule?: IssueHomeRule, };
 
 /**
  * `PUT /api/projects/{project}/issue-home`: `native`, `github` (only with
  * a linked repo), or `None` for the default again.
  */
 export type IssueHomeChange = { home: string | null, };
+
+/**
+ * The steps that choose an agent's project, in order: the first that has
+ * one answers.
+ */
+export type IssueHomeRule = "explicit" | "block" | "session" | "repo" | "default";
 
 export type IssueList = { 
 /**
@@ -2711,7 +3571,11 @@ blocked: boolean,
  * Review requests still pending (Forgejo's `requested_reviewers` also
  * keeps whoever already reviewed: see `forge::forgejo`).
  */
-requested: Array<Reviewer>, comments: number, updated_at: number, merged_at: number | null, merged_by: string | null, };
+requested: Array<Reviewer>, comments: number, updated_at: number, merged_at: number | null, merged_by: string | null, 
+/**
+ * An open PR in its branch's merge queue (GitHub only; Arugula #878).
+ */
+queued?: boolean, };
 
 export type ItemKind = "pr" | "issue";
 
@@ -2744,6 +3608,22 @@ token: string | null,
  * (or, running, its agent session is the holder).
  */
 pane: number | null, };
+
+/**
+ * A PR's last unmerged exit from its merge queue (Arugula #766).
+ */
+export type LeftQueue = { 
+/**
+ * GitHub's `reason` as it came, in upper case: `CHECKS_TIMED_OUT`,
+ * `CHECKS_FAILED`, `MERGE_CONFLICT`, `MANUAL`, `BRANCH_PROTECTIONS`,
+ * `GIT_TREE_INVALID`, `INVALID_MERGE_COMMIT`, `UNKNOWN_REMOVAL_REASON`.
+ * One GitHub adds later is kept as it is.
+ */
+reason: string, 
+/**
+ * When the platform heard it, in milliseconds.
+ */
+at: number, };
 
 /**
  * `POST /api/projects/{project}/repos`: link `OWNER/NAME`. A project
@@ -2813,21 +3693,13 @@ process?: string,
 pane?: boolean, };
 
 /**
- * Live presence (Arugula #341, the `live-presence` Labs flag), kept on the
- * account so every page agrees: `off` (the default), in no arugula.stream
- * room; `watching`, in your teams' rooms, seeing their live faces. Live
- * (your camera) isn't kept: it's per window, on top of `watching`.
- */
-export type LivePresence = "off" | "watching";
-
-/**
- * A machine that blocks can run on instead of this host: today a
- * throwaway wisp sprite (a Firecracker microVM) owned by one pane, and
- * deleted when that pane closes.
+ * A machine that blocks can run on instead of this host: a throwaway
+ * sandbox from the provider (a loam microVM) owned by one pane or tab,
+ * and deleted when that closes.
  */
 export type Machine = { id: number, 
 /**
- * Who runs it: `wisp`.
+ * Who runs it: `loam`.
  */
 provider: string, 
 /**
@@ -2887,6 +3759,15 @@ runs_note: string | null,
  */
 ms: number | null, };
 
+/**
+ * `POST` [`PROJECT_DOC_MOVE`]: move a Doc written on the platform to `to`.
+ */
+export type MoveProjectDoc = { 
+/**
+ * The team project (`prj_…`) it moves to.
+ */
+to: string, };
+
 export type NativeIssue = { 
 /**
  * `iss_` and 32 hex characters.
@@ -2933,7 +3814,12 @@ export type NewBoard = { title: string,
 /**
  * What the board is for; left out: none.
  */
-goal?: string, };
+goal?: string, 
+/**
+ * With an agent's write: the session that makes it leads the new board
+ * (#414). A person's write ignores it.
+ */
+lead_session?: string, };
 
 /**
  * A new issue, before and after it reached the forge.
@@ -2970,7 +3856,17 @@ assignees: Array<string>, };
 /**
  * `POST` [`PROJECT_DOCS`]: make a Doc.
  */
-export type NewProjectDoc = { title: string, sections: Array<NewProjectDocSection>, };
+export type NewProjectDoc = { title: string, sections: Array<NewProjectDocSection>, 
+/**
+ * `doc`, `tabs` or `prototype`; missing is `doc`.
+ */
+layout?: string, 
+/**
+ * A machine moving one of its Docs here (Arugula #863), over
+ * [`AGENT_PROJECT_DOCS`]: kept as the Doc's [`Doc::moved_from`]. Its
+ * `machine` must be the one signing; a person never sends it.
+ */
+moved_from?: ProjectDocMovedFrom, };
 
 /**
  * A new Doc's section: a heading, and its Markdown now or an intent for
@@ -2979,6 +3875,60 @@ export type NewProjectDoc = { title: string, sections: Array<NewProjectDocSectio
 export type NewProjectDocSection = { heading: string, intent: string, markdown: string | null, };
 
 export type Node = { "type": "pane", pane: number, } | { "type": "split", id: number, dir: Dir, children: Array<Child>, };
+
+/**
+ * Attention that belongs to no pane (#551): the machine wants its owner for
+ * something no pane can show (a teammate's mention that no session took).
+ * Kept in the mux beside the panes' attention; the owner's `State` and
+ * `Delta`s carry it, and the web and the phone draw a card from it.
+ */
+export type Notice = { 
+/**
+ * One card per key: `mention:<room>`. Raised again, it updates.
+ */
+key: string, kind: NoticeKind, 
+/**
+ * When it was first raised.
+ */
+since_ms: number, 
+/**
+ * One line, for the latest: "<who> mentioned this machine in #room: <first line>".
+ */
+headline: string, 
+/**
+ * How many times it was raised since it last went ("2 mentions in #agents").
+ */
+count: number, 
+/**
+ * `mention`: the room to open (its id), and its name.
+ */
+room?: string, room_name?: string, 
+/**
+ * `grant_ask` (#578): what the owner's Grant is a request for.
+ */
+grant?: NoticeGrant, };
+
+/**
+ * What a `grant_ask` card grants (#578): `threads.read` to `machine`'s
+ * agents over a scope, as `POST /api/grants` says it. The grant is the
+ * owner's, made from their own control session; the machine never makes it.
+ */
+export type NoticeGrant = { 
+/**
+ * This machine's id in control, and its name.
+ */
+machine: string, machine_name: string, 
+/**
+ * `project` (with `scope_id`) or `account`.
+ */
+scope_kind: string, scope_id: string, 
+/**
+ * What the scope is called, for the card ("Acme", "your DMs"); empty
+ * when the grant would be over just the room.
+ */
+scope_name: string, };
+
+export type NoticeKind = "mention" | "grant_ask";
 
 /**
  * How much of a room reaches the reader's pushes, and how its unread shows
@@ -3348,6 +4298,18 @@ inbox?: boolean,
  */
 unhooked?: boolean, 
 /**
+ * The owner silenced teammates' agents' mentions for this session
+ * (#579): `arugula mentions off %N`. It lasts as long as the pane.
+ */
+mentions_off?: boolean, 
+/**
+ * What Claude Code running in it says of its session from inside it
+ * (#450, the arugula-live mod, through `arugula session-signal`): the
+ * agent block's `context` shape, with `source: live`, its versions and
+ * Claude Code's own cost. Only while Claude Code runs there.
+ */
+live?: import("./context").AgentContext | null, 
+/**
  * The last link to a pull request or an issue it printed (`gh pr
  * create`'s), by its shape (`arugula_mux::osc::forge_link`): the web
  * client's hint that a click opens it as a block.
@@ -3392,9 +4354,15 @@ kind?: WorkKind | null,
  */
 resumes?: string | null, 
 /**
- * The git repository it works in, if any (M23).
+ * The git repo it works in, if any (M23). Named `project` on the
+ * wire from before projects; the Arugula project is `session_project`.
  */
 project?: Project | null, 
+/**
+ * The Arugula project its session is in ([`Session::project`]), if
+ * it's in one.
+ */
+session_project?: ProjectRef | null, 
 /**
  * Its repository's checked-out branch, or a short commit when HEAD is
  * detached (M109).
@@ -3436,7 +4404,12 @@ app?: string | null,
  * The issue an agent block was started on, and the boards it is on
  * (#372): the chip on its sidebar row and its swarm card.
  */
-on_issue?: OnIssue | null, };
+on_issue?: OnIssue | null, 
+/**
+ * The git worktree an agent block owns, absolute (start_agent with a
+ * worktree, or an agent on an issue): where its work is.
+ */
+worktree?: string | null, };
 
 export type PaneOp = { "op": "set_policy", policy: Policy, } | { "op": "purge" } | { "op": "set_integration", on: boolean, } | { "op": "attention", state: Attention, } | { "op": "take_control" } | { "op": "request_control" } | { "op": "give_control", to: string, } | { "op": "release_control" } | { "op": "set_pair", on: boolean, } | { "op": "request_trust" } | { "op": "grant_trust", to: string, minutes: number, } | { "op": "revoke_trust", to: string, } | { "op": "set_private", on: boolean, };
 
@@ -3470,7 +4443,21 @@ id: string, name: string,
 /**
  * The team it's the default project of; `None` for the person's own.
  */
-team: ProjectTeam | null, };
+team: ProjectTeam | null, 
+/**
+ * Whose it is: a team's or a person's own. An older control sends
+ * none, and a reader goes by `team` then.
+ */
+owner?: ProjectOwner, 
+/**
+ * Its short name in links, unique among its owner's projects. An older
+ * control sends none.
+ */
+slug?: string, 
+/**
+ * Its owner archived it. Its issues, Docs and boards stay.
+ */
+archived?: boolean, };
 
 export type PlatformProjects = { me: PlatformMe, projects: Array<PlatformProject>, 
 /**
@@ -3542,7 +4529,8 @@ export type PresenceState = "active" | "away" | "offline";
 export type Preset = "columns" | "grid" | "main_stack";
 
 /**
- * The git repository a pane's working directory is in (M23).
+ * The git repo a pane's working directory is in (M23); not an Arugula
+ * project, which is a [`ProjectRef`].
  */
 export type Project = { 
 /**
@@ -3589,7 +4577,29 @@ closed_by_agent?: ChatAgent,
 /**
  * How many of its issues are closed.
  */
-progress: BoardProgress, };
+progress: BoardProgress, 
+/**
+ * The tracker's epic it follows, when it was made from one (Plane's,
+ * #483); absent for a board a person made.
+ */
+source?: BoardSource, 
+/**
+ * The session that leads the board (#414): a post on the board's thread
+ * reaches it. Absent when no session does.
+ */
+lead?: BoardLead, };
+
+/**
+ * `POST /api/projects` (Arugula #892): a new project. Only a team's owners
+ * make one for the team; anyone makes their own. Who may read and write it
+ * is its owner's: a team's roles, or only its person.
+ */
+export type ProjectCreate = { name: string, owner: ProjectOwnerRef, 
+/**
+ * Its short name in links; when not given, control makes one from the
+ * name. Refused if the owner has a project with it already.
+ */
+slug?: string, };
 
 /**
  * A Doc, without its sections: a list's row, and a view's head.
@@ -3600,13 +4610,15 @@ export type ProjectDoc = {
  */
 id: string, project: string, title: string, 
 /**
- * The account that made it, or "" once it's deleted, or for one an
- * agent session made.
+ * The account that made it (an agent's owner's, for one a machine's
+ * agent made), or "" once it's deleted, or for one an agent session made.
  */
 author: string, 
 /**
  * The agent session that made it as itself (aru-115): its `machine`
- * the session's id (`ses_…`), its name `Agent session <id>`.
+ * the session's id (`ses_…`), its name `Agent session <id>`; or the
+ * machine whose agent made it for `author` (Arugula #862), its
+ * `machine` and `machine_name` the machine's.
  */
 agent: ChatAgent | null, 
 /**
@@ -3616,7 +4628,35 @@ sections: number, written: number,
 /**
  * Counts its changes.
  */
-rev: number, created_at: number, updated_at: number, };
+rev: number, created_at: number, updated_at: number, 
+/**
+ * How the Doc is laid out: `doc`, `tabs` or `prototype`. Sent only when
+ * it isn't `doc`: absent, or a name the reader doesn't know, is `doc`,
+ * and an older page ignores it and draws the column.
+ */
+layout?: string, 
+/**
+ * For a team Doc a machine moved here (Arugula #863): the machine and
+ * its Doc's id there. Absent for any other Doc, and from an older
+ * platform.
+ */
+moved_from?: ProjectDocMovedFrom, };
+
+/**
+ * One picture of a Doc, without its bytes: the shape a machine Doc's
+ * state gives (`DocState.assets`).
+ */
+export type ProjectDocAsset = { name: string, 
+/**
+ * `image/png`, `image/jpeg`, `image/gif` or `image/webp`: what the
+ * bytes say.
+ */
+mime: string, size: number, 
+/**
+ * Changes whenever the name is written with other bytes: clients cache
+ * a picture by `name/rev`.
+ */
+rev: number, };
 
 /**
  * `GET` [`PROJECT_DOCS`]: a project's Docs, the latest changed first.
@@ -3626,6 +4666,54 @@ export type ProjectDocList = { project: string, docs: Array<ProjectDoc>,
  * Whether the reader may make one.
  */
 writer: boolean, };
+
+/**
+ * Where a Doc a machine moved to a team was (Arugula #863).
+ */
+export type ProjectDocMovedFrom = { 
+/**
+ * The machine's id in control: the one that signs the call.
+ */
+machine: string, 
+/**
+ * The Doc's id in that machine's library (16 hex digits).
+ */
+doc: string, };
+
+/**
+ * A team Doc's public link (Arugula #871). The platform keeps its key with
+ * the Doc, and gives it only to those who read the Doc; control holds the
+ * ciphertext and never the key. The URL is `<viewer>/<id>#k=<key>`, the
+ * viewer being `/control.json`'s `doc_viewer`.
+ */
+export type ProjectDocPublic = { 
+/**
+ * The link's id at control: 32 lower-case hex digits.
+ */
+id: string, 
+/**
+ * The link's key, base64url without padding: 32 bytes.
+ */
+key: string, 
+/**
+ * The version control serves; 0 while the first one isn't uploaded.
+ */
+ver: number, 
+/**
+ * When the served version was made (ms); 0 while there is none.
+ */
+updated_at: number, 
+/**
+ * The Doc changed since the served version was sealed.
+ */
+behind: boolean, 
+/**
+ * The address anyone can open, `<viewer>/<id>#k=<key>`; empty when this
+ * control keeps no shared Docs, or from an older platform. The platform
+ * page can't read `/control.json` (the platform's host answers none of
+ * the hub's), so the platform says where the viewer is.
+ */
+url: string, };
 
 /**
  * One section: pending (`body` null) until it's written.
@@ -3649,27 +4737,120 @@ body: string | null,
 rev: number, };
 
 /**
+ * `GET` [`PROJECT_DOCS_TRASH`]: a project's trashed Docs, the latest
+ * deleted first.
+ */
+export type ProjectDocTrash = { project: string, docs: Array<ProjectDocTrashed>, 
+/**
+ * How many days a Doc waits ([`TRASH_DAYS`]).
+ */
+days: number, };
+
+/**
+ * One trashed Doc: its head, who deleted it and when.
+ */
+export type ProjectDocTrashed = { doc: ProjectDoc, 
+/**
+ * When it was deleted (ms).
+ */
+trashed_at: number, 
+/**
+ * The account that deleted it, or "" once that account is deleted.
+ * The page names it from the team's members, as it does a Doc's
+ * `author`.
+ */
+trashed_by: string, 
+/**
+ * Whether the reader may restore it.
+ */
+restorable: boolean, };
+
+/**
  * `GET` [`PROJECT_DOC`]: a Doc with its sections, in order.
  */
 export type ProjectDocView = { doc: ProjectDoc, sections: Array<ProjectDocSection>, 
 /**
+ * Its pictures, by name.
+ */
+assets: Array<ProjectDocAsset>, 
+/**
  * Whether the reader may write it.
  */
-writer: boolean, };
+writer: boolean, 
+/**
+ * Whether the reader may delete it: a person who writes in the
+ * project. An older platform sends none; the page then takes `writer`.
+ */
+deleter: boolean, 
+/**
+ * The Doc's page on the platform's page, which the team opens. An older
+ * platform sends none.
+ */
+link: string | null, 
+/**
+ * The Doc's public link, when it has one (Arugula #871). Left out for
+ * an agent session, which is never given the key.
+ */
+public?: ProjectDocPublic, };
 
 /**
- * `PUT` [`PROJECT_DOC`]: what changes. `title` renames it. With `section`,
+ * `PUT` [`PROJECT_DOC`]: what changes. `title` renames it, `layout` lays it out. With `section`,
  * that section's body becomes `markdown` (and its heading `heading`, when
  * given); with no `section` but a `heading`, a section is added at the
  * end, written when `markdown` is given and pending otherwise.
  */
-export type ProjectDocWrite = { title: string | null, section: string | null, heading: string | null, intent: string | null, markdown: string | null, };
+export type ProjectDocWrite = { title: string | null, section: string | null, heading: string | null, intent: string | null, markdown: string | null, 
+/**
+ * Sets the layout (`doc`, `tabs` or `prototype`); omitted leaves it as
+ * it is.
+ */
+layout?: string, };
 
 export type ProjectMember = { account: string, 
 /**
  * What the roster calls them.
  */
 name: string, role: string, };
+
+/**
+ * Whose a project is. The web client has another `Owner` (a pane's), so
+ * this one is named for what it owns.
+ */
+export type ProjectOwner = { "kind": "team", id: string, name: string, } | { "kind": "personal", account: string, };
+
+/**
+ * An owner named by what it is, without its name: a team by its id, or
+ * the reader's own account.
+ */
+export type ProjectOwnerRef = { "kind": "team", id: string, } | { "kind": "personal" };
+
+/**
+ * `PATCH /api/projects/{project}` (Arugula #892): what changes, the rest
+ * as it was. Anyone who may write the project renames it. Only its owner
+ * archives it or moves it: a team's owners, or its person for their own;
+ * a move needs the same of the new owner. Access stays the owner's, so a
+ * move gives it to the new one's people. Its issues keep their numbers,
+ * and its Docs, boards, linked repos and workspaces go with it.
+ */
+export type ProjectPatch = { name?: string, 
+/**
+ * Archive it, or bring it back.
+ */
+archived?: boolean, 
+/**
+ * Move it to this owner.
+ */
+owner?: ProjectOwnerRef, };
+
+/**
+ * A project in Arugula control, as a session keeps it: its id, and its
+ * name when it was set, to show without asking control.
+ */
+export type ProjectRef = { 
+/**
+ * `prj_…`.
+ */
+id: string, name: string, };
 
 export type ProjectTeam = { id: string, name: string, 
 /**
@@ -3791,21 +4972,16 @@ export type RelationDirection = "out" | "in";
 /**
  * What an edge between two work items says (Arugula #403). Only `blocks`
  * gates: it keeps the blocked item's row out of the ready set until the
- * blocker is closed.
+ * blocker is closed. `before` (#761) says an order and gates nothing; it
+ * can't close a cycle with `blocks` edges.
  */
-export type RelationKind = "blocks" | "relates" | "duplicate_of" | "discovered_from";
+export type RelationKind = "blocks" | "relates" | "duplicate_of" | "discovered_from" | "before";
 
 /**
  * Who made an edge. `plane` and `github` edges are read from there, and
  * Arugula doesn't change them.
  */
 export type RelationSource = "person" | "agent" | "plane" | "github";
-
-/**
- * Where a remote block's pane lives (#17): a host in the home daemon's
- * list, and the pane's id there.
- */
-export type RemoteRef = { host: string, pane: number, };
 
 /**
  * `PATCH /api/projects/{project}/repos/{owner}/{name}` (M166): a linked
@@ -4058,7 +5234,20 @@ back: string | null, };
  */
 export type ServerMsg = { "type": "hello", version: string, client: number, state: State, } | { "type": "state", state: State, } | { "type": "size", pane: number, cols: number, rows: number, } | { "type": "resync", pane: number, } | { "type": "error", id: number | null, message: string, } | { "type": "block", block: number, state: unknown, } | { "type": "pong", id: number, } | { "type": "notice", message: string, } | { "type": "control_request", pane: number, who: string, name: string, } | { "type": "trust_request", pane: number, who: string, name: string, } | { "type": "delta", delta: Delta, } | { "type": "follow", pane: number, msg: FollowMsg, } | { "type": "hand_call", id: number, tool: string, args: Record<string, unknown>, from: string, };
 
-export type Session = { id: number, name: string, tabs: Array<number>, };
+export type Session = { id: number, name: string, tabs: Array<number>, 
+/**
+ * The project it's in (Arugula projects RFC): inferred once, from the
+ * repo of the first pane whose clone is linked to one
+ * ([`Mux::infer_project`]), or set by hand
+ * ([`Intent::SetSessionProject`]). Never moved after that by a repo's
+ * link. A layout from before has none, and an older daemon drops it.
+ */
+project?: ProjectRef, 
+/**
+ * Its project was set by hand, or taken away ([`Intent::SetSessionProject`]):
+ * nothing infers one after, even while it has none.
+ */
+project_by_hand?: boolean, };
 
 /**
  * [`SESSION_ACTIONS`]'s body: what to ask of the session's box.
@@ -4232,13 +5421,33 @@ moves: Array<SessionPlace>,
  * The issue it was started on, with the first board that has a row for
  * it (#372).
  */
-work: SessionWork | null, };
+work: SessionIssueLink | null, };
 
 /**
  * A turn's finish step (M261): the command, whether it passed, and when
  * it failed, the last of its output. A failed one isn't pushed.
  */
 export type SessionFinish = { ok: boolean, command: string, output_tail: string, };
+
+/**
+ * The session that holds an issue's row (Arugula #765): the one that last
+ * started an agent on it, or took it. It is the issue's, so a row on two
+ * boards shows the same holder, and it lasts until the issue closes or the
+ * session lets it go. The same shape as [`BoardLead`].
+ */
+export type SessionHold = { machine: string, 
+/**
+ * The machine's name now; empty while it can't be told.
+ */
+machine_name: string, 
+/**
+ * The session's name, as its machine's daemon matches it.
+ */
+session: string, 
+/**
+ * When the session took the row.
+ */
+at: number, };
 
 /**
  * The issue a session works on.
@@ -4248,6 +5457,21 @@ export type SessionIssue = { id: string, number: number, title: string, labels: 
  * `open` or `closed`.
  */
 state: string, };
+
+/**
+ * The issue a session was started on, as its header's chip shows it:
+ * `#N · ‹board›`, linking to the board's row.
+ */
+export type SessionIssueLink = { 
+/**
+ * The issue (`iss_…`) and its number.
+ */
+issue: string, number: number, 
+/**
+ * The board that has a row for it, when boards are on for the reader,
+ * its title and the row.
+ */
+board: string | null, board_title: string | null, row: string | null, };
 
 /**
  * One entry of a session's history, in words.
@@ -4265,6 +5489,18 @@ signed: boolean,
  * What it says, in a line.
  */
 text: string, };
+
+/**
+ * One row of `GET /api/links`: a read-only link to a session that still
+ * works. Its key stays out: the private half never reached the machine, so
+ * a link can't be read back from here, only ended.
+ */
+export type SessionLink = { 
+/**
+ * What `DELETE /api/links/ID` takes: the hash in its `link:<hash>`
+ * principal.
+ */
+id: string, session: number, made_ms: number, expires_ms: number, };
 
 /**
  * [`SESSION_MOVE`]'s body: the workspace it goes to.
@@ -4440,7 +5676,12 @@ question: string | null, pr: string | null, merged_at: number | null,
 /**
  * Why it failed or stopped.
  */
-reason: string | null, created_at: number, updated_at: number, };
+reason: string | null, 
+/**
+ * The latest error its box reported since a turn last pushed its
+ * branch, such as a failed push (Arugula #859).
+ */
+error?: string | null, created_at: number, updated_at: number, };
 
 /**
  * [`PROJECT_SESSION_SETTINGS`]: "agents use model …" (Arugula #215), one
@@ -4586,21 +5827,6 @@ going?: boolean,
 limit?: number, };
 
 /**
- * The issue a session was started on, as its header's chip shows it:
- * `#N · ‹board›`, linking to the board's row.
- */
-export type SessionWork = { 
-/**
- * The issue (`iss_…`) and its number.
- */
-issue: string, number: number, 
-/**
- * The board that has a row for it, when boards are on for the reader,
- * its title and the row.
- */
-board: string | null, board_title: string | null, row: string | null, };
-
-/**
  * A read-only share of one pane. `token`, `path` and `url` are only in the
  * answer that minted it; the daemon keeps a hash.
  */
@@ -4640,6 +5866,12 @@ guest_ssh: boolean,
  */
 agent_mentions?: boolean, 
 /**
+ * What teammates and their agents may learn of this machine's sessions
+ * (#577). `work` by default, since a thread's strip shows it (Jake,
+ * 2026-11-03, aru-133).
+ */
+agent_sessions?: AgentListing, 
+/**
  * Whether this build has guest ssh. A build without Labs keeps the
  * setting, and nothing follows. Absent: it has.
  */
@@ -4649,7 +5881,7 @@ built?: boolean, };
  * `PUT /api/sharing` (the `sharing.set` operation): the settings to
  * change; one left out stays as it is.
  */
-export type SharingSetRequest = { guest_ssh?: boolean, agent_mentions?: boolean, };
+export type SharingSetRequest = { guest_ssh?: boolean, agent_mentions?: boolean, agent_sessions?: AgentListing, };
 
 /**
  * A split's area and how long each child is along the split's direction,
@@ -4696,14 +5928,24 @@ roles?: Array<[number, Role]> | null,
  * Who else is here and where they're looking (M13), within what this
  * client sees.
  */
-presence?: Array<Presence>, };
+presence?: Array<Presence>, 
+/**
+ * Attention that belongs to no pane (#551): the owner's alone.
+ */
+notices?: Array<Notice>, };
 
 export type TabView = { id: number, name: string | null, root: Node, cols: number, rows: number, owner: number | null, zoom: number | null, 
 /**
- * The pane filling the tab for everyone (focus mode, M109), if any.
- * `layout` already shows it.
+ * The pane filling the tab (focus mode, M109), if any: its holder's
+ * view, ended by another client's claim of the tab (#439). `layout`
+ * already shows it.
  */
-focus: number | null, layout: Layout, };
+focus: number | null, 
+/**
+ * Panes shown in a window of their own (Arugula #497): their place in
+ * `layout` holds a placeholder.
+ */
+popped?: Array<number>, layout: Layout, };
 
 /**
  * `GET` and `POST /api/team-pins`: the teams pinned here, and those whose
@@ -4845,13 +6087,74 @@ items: number,
 /**
  * Agents' writes waiting for a person to approve.
  */
-waiting_writes: number, };
+waiting_writes: number, 
+/**
+ * Moves to Done Arugula gave up on after a merged PR (#441), which a
+ * person may retry ([`TRACKER_MOVE_RETRY`]).
+ */
+failed_moves: number, 
+/**
+ * Whether each open epic has a board that follows it (#483). On unless
+ * turned off; off, the boards stay and stop following.
+ */
+epics_as_boards: boolean, 
+/**
+ * Whether a merged PR that names an item moves it to Done (#852). On
+ * unless turned off.
+ */
+close_on_merge: boolean, };
 
 export type TrackerConnections = { 
 /**
  * The project's id (`personal` asked is answered with the real one).
  */
 project: string, connections: Array<TrackerConnection>, };
+
+/**
+ * One change in a [`TrackerHistory`].
+ */
+export type TrackerEvent = { 
+/**
+ * When it happened.
+ */
+at: number, 
+/**
+ * `moved` (a merged PR moved an item to Done), `move_failed` (it gave
+ * up: in `failed`), or an agent's write a person decided: `sent`, `dropped` or
+ * `write_failed`.
+ */
+kind: string, 
+/**
+ * What happened, in a sentence.
+ */
+line: string, 
+/**
+ * Who decided it, for a write.
+ */
+by: string | null, 
+/**
+ * Why it failed.
+ */
+error: string | null, 
+/**
+ * A failed move's job, for the retry.
+ */
+job: string | null, };
+
+/**
+ * What Arugula changed in a connection's Plane project: the newest changes
+ * and the moves that failed.
+ */
+export type TrackerHistory = { 
+/**
+ * The newest 20 changes, newest first, other than a failed move.
+ */
+entries: Array<TrackerEvent>, 
+/**
+ * The connection's failed moves (`move_failed`), newest first, up to 100:
+ * each has its `job` for a retry.
+ */
+failed: Array<TrackerEvent>, };
 
 /**
  * A write waiting for a person, as the Triage page shows it.
@@ -4893,7 +6196,15 @@ export type TrackerPendingWrites = { project: string, writes: Array<TrackerPendi
  * [`TrackerConnection`]. A webhook secret is sealed like the key and never
  * shown back; an empty one removes it.
  */
-export type TrackerSettings = { agent_writes: string | null, write_policy: TrackerWritePolicy | null, attribution: string | null, webhook_secret: string | null, };
+export type TrackerSettings = { agent_writes: string | null, write_policy: TrackerWritePolicy | null, attribution: string | null, webhook_secret: string | null, 
+/**
+ * Whether each open epic has a board that follows it.
+ */
+epics_as_boards: boolean | null, 
+/**
+ * Whether a merged PR moves the items it names to Done.
+ */
+close_on_merge: boolean | null, };
 
 /**
  * A write to a tracker's work item, the same for people and agents. `item`
@@ -5068,6 +6379,7 @@ pane: number | null, };
 
 /** Each operation's method and path (`arugula_proto::op`), by name. */
 export const OPS = {
+  "access.get": { method: "GET", path: "/api/access" },
   "acl.get": { method: "GET", path: "/api/acl" },
   "acl.set": { method: "POST", path: "/api/acl" },
   "adapter.install": { method: "POST", path: "/api/agents/adapters/{kind}/install" },
@@ -5076,12 +6388,19 @@ export const OPS = {
   "agents.get": { method: "GET", path: "/api/hosts/self/agents" },
   "agents.refresh": { method: "POST", path: "/api/hosts/self/agents/refresh" },
   "conversation.open": { method: "POST", path: "/api/conversations/open" },
+  "conversation.session_signal": { method: "POST", path: "/api/conversations/session-signal" },
   "conversations.list": { method: "GET", path: "/api/conversations" },
+  "doc.asset": { method: "GET", path: "/api/docs/{id}/assets/{name}" },
   "doc.delete": { method: "DELETE", path: "/api/docs/{id}" },
+  "doc.move": { method: "POST", path: "/api/docs/{id}/move" },
   "doc.open": { method: "POST", path: "/api/docs/open" },
+  "doc.preview": { method: "GET", path: "/api/docs/{id}/preview" },
+  "doc.read": { method: "GET", path: "/api/docs/{id}/content" },
+  "doc.share": { method: "POST", path: "/api/docs/{id}/share" },
   "doc_link.delete": { method: "DELETE", path: "/api/doc-links/{id}" },
   "doc_link.get": { method: "GET", path: "/api/doc-links/{id}" },
   "docs.list": { method: "GET", path: "/api/docs" },
+  "docs.team": { method: "GET", path: "/api/docs/team" },
   "flag.set": { method: "PUT", path: "/api/flags/{name}" },
   "flags.list": { method: "GET", path: "/api/flags" },
   "fs.list": { method: "GET", path: "/api/fs/list" },
@@ -5093,8 +6412,6 @@ export const OPS = {
   "host.add": { method: "POST", path: "/api/hosts" },
   "host.get": { method: "GET", path: "/api/host" },
   "host.remove": { method: "DELETE", path: "/api/hosts/{name}" },
-  "host_token.mint": { method: "POST", path: "/api/hosts/{name}/token" },
-  "host_token.revoke": { method: "DELETE", path: "/api/hosts/{name}/token" },
   "hosted_setup.get": { method: "GET", path: "/api/hosted/setup" },
   "hosts.list": { method: "GET", path: "/api/hosts" },
   "ide.get": { method: "GET", path: "/api/ide" },
@@ -5102,6 +6419,8 @@ export const OPS = {
   "ide.set": { method: "PUT", path: "/api/ide" },
   "invite.send": { method: "POST", path: "/api/invite" },
   "link.mint": { method: "POST", path: "/api/links" },
+  "link.revoke": { method: "DELETE", path: "/api/links/{id}" },
+  "links.list": { method: "GET", path: "/api/links" },
   "machine.reset": { method: "POST", path: "/api/machines/{id}/reset" },
   "machines.list": { method: "GET", path: "/api/machines" },
   "mcp_token.mint": { method: "POST", path: "/api/mcp/tokens" },
@@ -5125,6 +6444,7 @@ export const OPS = {
   "pane.followup": { method: "POST", path: "/api/panes/{id}/followup" },
   "pane.inbox": { method: "POST", path: "/api/panes/{id}/inbox" },
   "pane.keys": { method: "POST", path: "/api/panes/{id}/keys" },
+  "pane.mentions": { method: "POST", path: "/api/panes/{id}/mentions" },
   "pane.mouse": { method: "POST", path: "/api/panes/{id}/mouse" },
   "pane.nvim_help": { method: "POST", path: "/api/panes/{id}/nvim/help" },
   "pane.nvim_open": { method: "POST", path: "/api/panes/{id}/nvim" },
@@ -5133,6 +6453,7 @@ export const OPS = {
   "pane.process": { method: "GET", path: "/api/panes/{id}/process" },
   "pane.prompt": { method: "POST", path: "/api/panes/{id}/prompt" },
   "pane.send": { method: "POST", path: "/api/panes/{id}/send" },
+  "pane.session_signal": { method: "POST", path: "/api/panes/{id}/session-signal" },
   "pane.wait": { method: "GET", path: "/api/panes/{id}/wait" },
   "panes.list": { method: "GET", path: "/api/panes" },
   "push.key": { method: "GET", path: "/api/push/key" },
@@ -5141,8 +6462,6 @@ export const OPS = {
   "rule.forget": { method: "DELETE", path: "/api/rules/{index}" },
   "rules.forget_all": { method: "DELETE", path: "/api/rules" },
   "rules.list": { method: "GET", path: "/api/rules" },
-  "sandbox.demote": { method: "DELETE", path: "/api/sandboxes/{name}/resident" },
-  "sandbox.promote": { method: "POST", path: "/api/sandboxes/{name}/promote" },
   "sandboxes.list": { method: "GET", path: "/api/sandboxes" },
   "setup.agent": { method: "POST", path: "/api/setup/agents/{kind}" },
   "setup.claude": { method: "POST", path: "/api/setup/claude" },
@@ -5164,9 +6483,6 @@ export const OPS = {
   "studio.login": { method: "POST", path: "/api/studio" },
   "studio.logout": { method: "DELETE", path: "/api/studio" },
   "studio.unfollow": { method: "DELETE", path: "/api/studio/followers/{app}" },
-  "synced.forget": { method: "DELETE", path: "/api/synced/{host}" },
-  "synced.list": { method: "GET", path: "/api/synced" },
-  "synced.rotate": { method: "POST", path: "/api/synced/rotate-key" },
   "team_pins.get": { method: "GET", path: "/api/team-pins" },
   "team_pins.set": { method: "POST", path: "/api/team-pins" },
   "telemetry.get": { method: "GET", path: "/api/telemetry" },
@@ -5181,10 +6497,7 @@ export const FLAGS = [
   { name: "sandbox-providers", title: "External sandbox providers", about: "VM tabs and panes, machines and the sandboxes page, from your own sandbox provider. Cloud workspaces don't need it.", default: false, local_only: false },
   { name: "studio", title: "Studio apps", about: "Studio app blocks. Needs a linked studio.", default: false, local_only: false },
   { name: "chant-workspaces", title: "Chant workspaces", about: "Chant workspace blocks: a workspace's members, relationships and gates.", default: false, local_only: false },
-  { name: "additional-forges", title: "GitLab and Forgejo", about: "PR and issue blocks for GitLab and Forgejo, beside GitHub's.", default: false, local_only: false },
   { name: "agent-delegation", title: "Local agent delegation", about: "Agent recipes, offering them from this machine, your team's agent catalog and tasks between machines.", default: false, local_only: true },
-  { name: "boards", title: "Boards", about: "A project's boards and epics, which need control.", default: false, local_only: false },
-  { name: "live-presence", title: "Live presence", about: "Your teammates' live faces on their avatars across Arugula, and yours when you choose Live. Needs control.", default: false, local_only: false },
 ] as const;
 
 /** Renamed Labs flags (`arugula_proto::flags::ALIASES`, aru-117): the old
@@ -5192,6 +6505,5 @@ export const FLAGS = [
 export const FLAG_ALIASES = [
   ["vms", "sandbox-providers"],
   ["workspaces", "chant-workspaces"],
-  ["forges", "additional-forges"],
   ["agents", "agent-delegation"],
 ] as const;

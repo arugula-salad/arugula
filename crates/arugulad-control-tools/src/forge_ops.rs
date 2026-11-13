@@ -40,21 +40,19 @@ pub struct ItemArgs {
 #[derive(Deserialize, JsonSchema)]
 pub struct IssueItemArgs {
     /// The issue: OWNER/NAME#N, or its link on github.com; or a native
-    /// issue in Arugula control, "#N" (in the current project) or "iss_…";
+    /// issue in Arugula cloud, "#N" (in the current project) or "iss_…";
     /// or a Plane item, IDENT-N (such as ALL-2212).
     pub item: String,
     /// A native issue's project for "#N", or a Plane item's for IDENT-N: its
-    /// id (prj_…) or personal.
-    /// Default: the one this clone's GitHub repo is linked to, else the
-    /// user's personal project.
+    /// id (prj_…) or personal. Default: the current project.
     #[serde(default)]
     pub project: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]
 pub struct ItemsArgs {
-    /// The project's id (prj_…). Default: the repo's project, else the
-    /// user's personal one.
+    /// The project's id (prj_…). Default: repo's project when repo is
+    /// given, else the current project.
     #[serde(default)]
     pub project: Option<String>,
     /// One linked repo, OWNER/NAME.
@@ -89,8 +87,8 @@ pub struct ItemsArgs {
 /// Kind `tracker_fields`'s.
 #[derive(Deserialize, JsonSchema)]
 pub struct TrackerFieldsArgs {
-    /// The project's id (prj_…). Default: the repo's project, else the
-    /// user's personal one.
+    /// The project's id (prj_…). Default: the one connection names, else
+    /// the one tracker is connected in, else the current project.
     #[serde(default)]
     pub project: Option<String>,
     /// A Plane connection's key, such as ARUGU. Not needed when the project
@@ -168,6 +166,22 @@ pub struct IssueArgs {
     pub body: Option<String>,
 }
 
+/// Kind `open_on_github`'s (M205).
+#[derive(Deserialize, JsonSchema)]
+pub struct OpenOnGithubArgs {
+    /// The native issue: "#N" (in the current project) or "iss_…".
+    pub issue: String,
+    /// Its project for "#N": its id (prj_…) or personal. Default: the
+    /// current project.
+    #[serde(default)]
+    #[allow(dead_code)] // `forge_ops` reads it, finding the issue's id.
+    pub project: Option<String>,
+    /// The linked repo it goes to, OWNER/NAME. Default: its project's one
+    /// linked repo.
+    #[serde(default)]
+    pub repo: Option<String>,
+}
+
 pub(crate) const READ: &[Kind] = &[
     Kind {
         name: "pr",
@@ -177,7 +191,7 @@ pub(crate) const READ: &[Kind] = &[
     },
     Kind {
         name: "issue",
-        description: "An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts. A native issue (\"#N\" or \"iss_…\"): it, its timeline and its newest comments. A Plane item (\"IDENT-N\", such as ALL-2212): its title, state and url; its body and comments aren't mirrored.",
+        description: "An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts. A native issue (\"#N\" or \"iss_…\"): it, its timeline and its newest comments. A Plane item (\"IDENT-N\", such as ALL-2212): its title, state, type, labels, modules and url; its body and comments aren't mirrored.",
         schema: schema_for_type::<IssueItemArgs>,
         flag: None,
     },
@@ -191,7 +205,7 @@ pub(crate) const READ: &[Kind] = &[
         name: "tracker_fields",
         description: "What a connected Plane project offers a work item, for tracker_write: its states (name, group, which one a new item starts in), modules, types and labels. Name them in create and edit.",
         schema: schema_for_type::<TrackerFieldsArgs>,
-        flag: Some(arugula_proto::flags::BOARDS),
+        flag: None,
     },
     Kind {
         name: "checks",
@@ -240,6 +254,12 @@ pub(crate) const DRAFT: &[Kind] = &[
         flag: None,
     },
     Kind {
+        name: "open_on_github",
+        description: "Draft opening a native issue on GitHub, as a new issue on a repo linked to its project, for the user to send. Once they've sent it the native issue stays, says where it lives, and new comments cross both ways (an agent's comment there is a draft for them too). Needs the machine's issues.write grant over the issue's project.",
+        schema: schema_for_type::<OpenOnGithubArgs>,
+        flag: None,
+    },
+    Kind {
         name: "discard",
         description: "Discard a waiting draft (yours, or one on a repo the user reads).",
         schema: schema_for_type::<DraftIdArgs>,
@@ -267,6 +287,7 @@ pub(crate) fn op(tool: &str, kind: &str, a: Value, by: &str) -> Result<Op, Strin
         body,
         agent: Some(by.to_owned()),
         import_key: None,
+        native_issue: None,
     };
     Ok(match (tool, kind) {
         ("forge_read", "pr") => Op::PrGet(item(&args::<ItemArgs>(a)?.item)?),
@@ -338,6 +359,15 @@ pub(crate) fn op(tool: &str, kind: &str, a: Value, by: &str) -> Result<Op, Strin
                 ..draft(None, "issue", None, Some(a.title), body)
             })
         }
+        ("forge_draft", "open_on_github") => {
+            // `forge_ops` has made "#N" the issue's id.
+            let a: OpenOnGithubArgs = args(a)?;
+            let Some(crate::mcp::issues::Native::Id(id)) = crate::mcp::issues::Native::parse(&a.issue) else {
+                return Err(format!("issue: #N (in the current project) or iss_…, not {:?}", a.issue));
+            };
+            let d = draft(None, "issue", None, None, String::new());
+            Op::DraftCreate(NewDraft { repo: a.repo.unwrap_or_default(), native_issue: Some(id), ..d })
+        }
         ("forge_draft", "discard") => Op::DraftDiscard(DraftRef { draft: args::<DraftIdArgs>(a)?.draft }),
         _ => return Err(format!("{tool} kind {kind} isn't wired up")),
     })
@@ -346,9 +376,9 @@ pub(crate) fn op(tool: &str, kind: &str, a: Value, by: &str) -> Result<Op, Strin
 /// What a refusal says to an agent.
 fn said(e: CloudRefused) -> String {
     match e {
-        CloudRefused::NotJoined => "this machine hasn't joined Arugula control, where linked repos' PRs and issues live: ask your person to join it (Getting started on the web page, or `arugulad join`); show (kind pr or issue) opens one as a block instead".into(),
+        CloudRefused::NotJoined => "this machine hasn't joined Arugula cloud, where linked repos' PRs and issues live: ask your person to join it (Getting started on the web page, or `arugulad join`); show (kind pr or issue) opens one as a block instead".into(),
         CloudRefused::OldControl | CloudRefused::Said { status: 405, .. } => {
-            "this Arugula control doesn't have forge operations yet: show (kind pr or issue) opens one as a block instead".into()
+            "Arugula cloud doesn't have forge operations yet: show (kind pr or issue) opens one as a block instead".into()
         }
         e => e.to_string(),
     }
@@ -512,6 +542,34 @@ pub(crate) async fn forge_ops(c: &Call<'_>, tool: &str, kind: &str, a: Value) ->
         ("forge_draft", _, Some(item)) => return Err(crate::mcp::issues::not_drafted(&item)),
         _ => {}
     }
+    let mut a = a;
+    if (tool, kind) == ("forge_draft", "open_on_github") {
+        // Open on GitHub (M205): "#N" is the current project's.
+        let at = crate::mcp::issues::native(a["issue"].as_str().unwrap_or_default())?;
+        let i = c.native_issue(&at, a["project"].as_str()).await?;
+        a["issue"] = i["id"].clone();
+    }
+    if (tool, kind) == ("forge_read", "issue")
+        && let Some(item) = a["item"].as_str()
+        && a["project"].as_str().is_none_or(|p| p.trim().is_empty())
+        && !super::plane_home::idents([item]).is_empty()
+    {
+        // The Plane home, else the main rule's: never control's personal project.
+        a["project"] = super::plane_home::home_or_main(c, None, &[item]).await?.into();
+    }
+    let unnamed = |k: &str| a[k].as_str().is_none_or(|p| p.trim().is_empty());
+    let named_elsewhere = match kind {
+        "items" => !unnamed("repo"),
+        "tracker_fields" => !unnamed("connection"),
+        _ => true,
+    };
+    if tool == "forge_read" && unnamed("project") && !named_elsewhere {
+        // The current project, else control would read the personal one. A
+        // Plane key is looked for as its items are (`plane_home`).
+        let key: Vec<String> = a["tracker"].as_str().map(|t| format!("{}-1", t.trim())).into_iter().collect();
+        let items: Vec<&str> = key.iter().map(String::as_str).collect();
+        a["project"] = super::plane_home::home_or_main(c, None, &items).await?.into();
+    }
     let o = op(tool, kind, a, &c.by())?;
     let r = c.forge_op(o.clone(), said).await?;
     let mut out = match r {
@@ -531,14 +589,23 @@ mod tests {
     #[test]
     fn no_kind_sends() {
         let a = json!({ "item": "acme/app#1", "body": "b", "event": "approve", "repo": "acme/app",
-                        "title": "t", "draft": "dft_1" });
+                        "title": "t", "draft": "dft_1", "issue": format!("iss_{}", "0".repeat(32)) });
         for (tool, kinds) in [("forge_read", READ), ("forge_draft", DRAFT)] {
             for k in kinds.iter().filter(|k| k.name != super::super::issues::LIST.name) {
                 let o = op(tool, k.name, a.clone(), "mcp:x").unwrap_or_else(|e| panic!("{tool} {}: {e}", k.name));
                 assert!(!o.sends(), "{tool} {} is {}", k.name, o.name());
             }
         }
-        assert_eq!(DRAFT.iter().map(|k| k.name).collect::<Vec<_>>(), ["comment", "review", "issue", "discard"]);
+        assert_eq!(
+            DRAFT.iter().map(|k| k.name).collect::<Vec<_>>(),
+            ["comment", "review", "issue", "open_on_github", "discard"]
+        );
+        // Open on GitHub is a draft of the native issue, for its person.
+        let o = op("forge_draft", "open_on_github", a, "mcp:x").unwrap();
+        let Op::DraftCreate(d) = o else { panic!("{o:?}") };
+        assert_eq!((d.kind.as_str(), d.repo.as_str(), d.agent.as_deref()), ("issue", "acme/app", Some("mcp:x")));
+        assert_eq!(d.native_issue, Some(format!("iss_{}", "0".repeat(32))));
+        assert!(op("forge_draft", "open_on_github", json!({ "issue": "#3" }), "x").is_err(), "#N is resolved first");
     }
 
     /// `tracker_fields` asks for a Plane project's fields by its key or

@@ -158,6 +158,13 @@
           "description": "Where control is now (#507), when it answers at more than one URL:\na daemon on another of them may move here.",
           "type": "string"
         },
+        "proto": {
+          "description": "Where a Doc's prototypes run (#506, `https://proto.<block_domain>`),\nwhich the page frames; `None` without a block domain.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "url": {
           "default": "",
           "description": "The URL this answer was asked at.",

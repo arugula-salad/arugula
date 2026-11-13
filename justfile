@@ -11,12 +11,6 @@ cargo := "mise exec -- cargo"
 # Where cargo builds (CI keeps one per runner, outside the checkout).
 target_dir := env("CARGO_TARGET_DIR", justfile_directory() / "target")
 
-# cargo on the hosted server's own workspace (server/Cargo.toml: control,
-# its platform and control-common), into the same target dir as the root's
-# (scripts/server-cargo). The root workspace has none of them, so `{{cargo}}`
-# never compiles the server, nor this the daemon or Ghostty.
-server_cargo := "mise exec -- " + justfile_directory() / "scripts/server-cargo"
-
 # Runs a suite while no other worktree here runs one (scripts/suite-lock).
 suite_lock := justfile_directory() / "scripts/suite-lock"
 
@@ -79,48 +73,51 @@ proto-ts mode="write":
 contract-schema mode="write":
     {{ if mode == "write" { "ARUGULA_WRITE_SCHEMA=1" } else { "" } }} cargo test -q -p arugula-control-wire --features schema schema::
 
-# Write DECISIONS.md, the index of the decision records in docs/decisions/.
-# Without `write`, check it's current.
+# Write the native client's OpenAPI document (contract/openapi/native.json,
+# #599) from contract/api/native.json, routes.toml and contract/schema/.
+# Without `write`, check it's current and every route in scope is classified.
+api-contract mode="write":
+    node scripts/api-contract.mjs {{ if mode == "write" { "" } else { "--check" } }}
+
+# Write DECISIONS.md, the index of the decision records in docs/decisions/,
+# and docs/capabilities/README.md, the index of the feature records. Without
+# `write`, check they're current, and that no standing decision names a path
+# that isn't there. Either way, check docs/data-model.md still matches the
+# code: its tables, paths, ID prefixes and "Don't say" words.
 decisions mode="write":
     node scripts/decisions-index.mjs {{ if mode == "write" { "" } else { "--check" } }}
+    node scripts/capabilities.mjs {{ if mode == "write" { "" } else { "--check" } }}
+    node scripts/data-model-check.mjs {{ if mode == "write" { "" } else { "--check" } }}
+
+# What the code and CI say this week, for keeping up (docs/capabilities/):
+# feature records behind the code, where the week's commits went, and what
+# costs what. `just map --no-ci` skips GitHub; `--since "30 days ago"`.
+map *args:
+    node scripts/map.mjs {{args}}
 
 # Check the headline sections of the release notes (docs/releases/X.Y.Z.md),
 # which What's new reads at build time, and list them.
 whats-new:
     node scripts/whats-new.mjs
 
-# Write "What control stores" in docs/control-e2e.md from control's table
-# manifest (crates/control/tables.toml). Without `write`, check it's
-# current, and that the manifest lists every table control has: the same
-# tests `just test` runs, so CI runs them too.
-control-tables mode="write":
-    {{ if mode == "write" { "ARUGULA_WRITE_DOCS=1" } else { "" } }} {{server_cargo}} test -q -p arugula-control-base tables::
-
-# Release build of the daemon and the CLI (the root workspace; control and
-# its platform: `just static`).
+# Release build of the daemon and the CLI.
 build: web
     {{cargo}} build --release
 
-# Static musl binaries (daemon, CLI, arugula-control and arugula-platform)
-# for sandboxes, machines without systemd, hosting control and releases:
+# Static musl binaries (daemon and CLI) for sandboxes, machines without
+# systemd, the hosted box template and releases:
 # target/ARCH-unknown-linux-musl/release/. ARCH is
 # x86_64 or aarch64. Zig, already here for libghostty, is the C compiler and
 # brings musl; for aarch64 it links too.
-static arch="x86_64": web (_static arch "daemon") (_static arch "server")
+static arch="x86_64": web (_static arch)
 
-# Only the daemon's and the CLI's static binaries (arugulad and arugula), with
-# the web client they embed: no server. binaries.yml's desktop-xvfb builds
-# these for the app's tests.
-static-daemon arch="x86_64": web (_static arch "daemon")
+# The same as `just static` (control and its platform, which it also built,
+# left for their own repository). binaries.yml's desktop-xvfb builds these
+# for the app's tests.
+static-daemon arch="x86_64": web (_static arch)
 
-# Only the server's static binaries (arugula-control and arugula-platform),
-# as `just static` builds them: no daemon, no Ghostty.
-static-server arch="x86_64": web (_static arch "server")
-
-# `just static`'s build of one workspace: daemon (the root's arugulad and
-# arugula) or server (server/Cargo.toml's control and platform).
 [private]
-_static arch side:
+_static arch:
     #!/usr/bin/env bash
     set -euo pipefail
     t={{arch}}-unknown-linux-musl; T=$(echo "$t" | tr a-z- A-Z_)
@@ -128,46 +125,9 @@ _static arch side:
     export ZIG_MUSL_ARCH={{arch}} "CC_${t//-/_}=$PWD/scripts/zig-cc-musl" "AR_${t//-/_}=$PWD/scripts/zig-ar"
     # Cross: Zig links too, with its own musl and startup files, not rustc's.
     if [ {{arch}} != "$(uname -m)" ]; then export "CARGO_TARGET_${T}_LINKER=$PWD/scripts/zig-cc-musl" "CARGO_TARGET_${T}_RUSTFLAGS=-C link-self-contained=no"; fi
-    case {{side}} in
-      daemon) bins=(arugulad arugula); {{cargo}} build --release --target "$t" -p arugulad -p arugula ;;
-      server) bins=(arugula-control arugula-platform); {{server_cargo}} build --release --target "$t" -p arugula-control -p arugula-platform ;;
-      *) echo "_static: SIDE is daemon or server" >&2; exit 2 ;;
-    esac
+    bins=(arugulad arugula)
+    {{cargo}} build --release --target "$t" -p arugulad -p arugula
     for b in "${bins[@]}"; do file "{{target_dir}}/$t/release/$b"; done
-
-# Deploy the hosted Arugula control to Fly (packaging/control/fly.toml):
-# the static x86_64 binary in a distroless image, from a small build context.
-# Release tags deploy it from CI (release.yml's `control` job, M133); this
-# is for hotfixes, and the fallback when that job can't.
-control-deploy: static-server
-    #!/usr/bin/env bash
-    set -euo pipefail
-    ctx=$(mktemp -d)
-    trap 'rm -rf "$ctx"' EXIT
-    cp {{target_dir}}/x86_64-unknown-linux-musl/release/arugula-control packaging/control/Dockerfile packaging/control/fly.toml "$ctx"/
-    cd "$ctx" && fly deploy --local-only --ha=false
-
-# Deploy control's platform to Fly (packaging/platform/fly.toml, M140): the
-# static x86_64 binary in a distroless image. Release tags deploy it from
-# CI before the hub (release.yml's `platform` job); this is for hotfixes.
-platform-deploy: static-server
-    #!/usr/bin/env bash
-    set -euo pipefail
-    ctx=$(mktemp -d)
-    trap 'rm -rf "$ctx"' EXIT
-    cp {{target_dir}}/x86_64-unknown-linux-musl/release/arugula-platform packaging/platform/Dockerfile packaging/platform/fly.toml "$ctx"/
-    # Its service is Flycast's, never public (fly.toml): no public IPs.
-    cd "$ctx" && fly deploy --local-only --ha=false --no-public-ips
-
-# The daemons the hosted control saw in the last 30 days, by version: a
-# read-only look at its database (docs/control-ops.md, "Daemon census").
-control-census days="30":
-    fly ssh console -a illogical-control -C "/arugula-control census --db /data/control.db --days {{days}}"
-
-# Hosted workspaces' usage and cost on E2B, read-only (docs/control-ops.md,
-# "E2B (hosted workspaces' boxes)").
-platform-usage days="7":
-    fly ssh console -a arugula-platform -C "/arugula-platform usage --db env:ARUGULA_PLATFORM_DATABASE_URL --days {{days}}"
 
 # The macOS daemon and CLI for Intel Macs, cross-compiled on Apple silicon
 # (or built natively on an Intel Mac): target/x86_64-apple-darwin/release/.
@@ -290,7 +250,7 @@ desktop-macos arch="" *tauri_args="":
     root={{justfile_directory()}}
     dist=$root/dist
     mkdir -p "$dist"
-    command -v cargo-tauri >/dev/null || cargo install tauri-cli --version "^2" --locked
+    command -v cargo-tauri >/dev/null || cargo install tauri-cli --version "=2.12.1" --locked
     # Passkeys in the window (D2): with the Developer ID provisioning
     # profile (APPLE_PROVISIONING_PROFILE, a base64 .provisionprofile) the
     # bundle carries it as Contents/embedded.provisionprofile, and
@@ -446,24 +406,72 @@ desktop-check:
     cargo fmt --check
     cargo clippy -- -D warnings
 
+# The iPhone app on a phone: run on a Mac signed in to the Apple team, from its
+# GUI session's keychain. DEVICE is a `devicectl list devices` id.
+native-phone device:
+    native/ios/gui.sh native/ios/build.sh device {{device}}
+
+# The native clients' shared core (native/core, a workspace of its own):
+# rustfmt, clippy, its tests and its smoke test, on this machine.
+native-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd native/core
+    mise exec -- cargo fmt --check
+    mise exec -- cargo clippy --all-targets -- -D warnings
+    mise exec -- cargo test
+    mise exec -- cargo run --example smoke
+
+# The core for iPhones and the iOS simulator, on a Mac with Xcode's iOS SDK
+# (the macos-arm64 runners' Tart images don't have it), and its smoke test on
+# a throwaway simulator when the Mac has the runtime.
+native-ios:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    rustup target add aarch64-apple-ios aarch64-apple-ios-sim >/dev/null
+    # Rust's default is iOS 10, older than aws-lc and libghostty link for.
+    export IPHONEOS_DEPLOYMENT_TARGET=17.0
+    cd native/core
+    mise exec -- cargo build --release --target aarch64-apple-ios
+    mise exec -- cargo build --release --example smoke --target aarch64-apple-ios-sim
+    # The iPhone app on it, for the simulator, its UI test included.
+    (cd ../ios && ./build.sh sim && xcodebuild -project Arugula.xcodeproj -scheme Arugula -configuration Debug \
+      -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build/dd \
+      CODE_SIGNING_ALLOWED=NO build-for-testing -quiet)
+    # The newest iOS runtime, and an iPhone it supports, as "runtime type".
+    pick=$(xcrun simctl list -j runtimes available | python3 -c '
+    import json, sys
+    ios = [r for r in json.load(sys.stdin)["runtimes"] if r["platform"] == "iOS"]
+    phones = [t for r in ios[-1:] for t in r["supportedDeviceTypes"] if t["productFamily"] == "iPhone"]
+    if phones: print(ios[-1]["identifier"], phones[-1]["identifier"])
+    ')
+    if [ -z "$pick" ]; then
+      echo "native-ios: no iOS simulator runtime on this Mac: built, smoke test not run" >&2
+      exit 0
+    fi
+    read -r runtime type <<<"$pick"
+    device=$(xcrun simctl create arugula-native-smoke "$type" "$runtime")
+    trap 'xcrun simctl delete "$device"' EXIT
+    xcrun simctl bootstatus "$device" -b >/dev/null
+    target=$(mise exec -- cargo metadata --format-version 1 --no-deps | sed -nE 's/.*"target_directory":"([^"]+)".*/\1/p')
+    xcrun simctl spawn "$device" "$target/aarch64-apple-ios-sim/release/examples/smoke"
+
 # THIRD_PARTY.md: notices for the Rust crates (cargo-about) and the npm
-# packages bundled into the web client; server/THIRD_PARTY.md for the
-# server's workspace (control and its platform); crates/desktop/THIRD_PARTY.md
-# for the desktop app's own crates (its about.toml also accepts MPL-2.0).
-# Needs cargo-about 0.9.2; leaves all three alone when anything fails.
+# packages bundled into the web client; crates/desktop/THIRD_PARTY.md for
+# the desktop app's own crates (its about.toml also accepts MPL-2.0).
+# Needs cargo-about 0.9.2; leaves both alone when anything fails.
 notices:
     scripts/notices
 
 # CI runs it on main (check.yml's clippy) and on pull requests (binaries.yml).
 # Fails when a THIRD_PARTY.md is stale: run `just notices`.
 notices-check: notices
-    git diff --exit-code THIRD_PARTY.md server/THIRD_PARTY.md crates/desktop/THIRD_PARTY.md
+    git diff --exit-code THIRD_PARTY.md crates/desktop/THIRD_PARTY.md
 
 # CI runs it on main (check.yml's lint) and on pull requests (binaries.yml).
-# rustfmt's check over the workspace, the server's and the desktop app's.
+# rustfmt's check over the workspace and the desktop app's.
 fmt-check:
     cargo fmt --all --check
-    scripts/server-cargo fmt --all --check
     cd crates/desktop && cargo fmt --check
 
 # CI runs it on main (check.yml's lint) and on pull requests (binaries.yml),
@@ -477,24 +485,33 @@ shellcheck:
     [ "$v" = 0.11.0 ] || echo "shellcheck $v here, 0.11.0 in CI: it may report other things" >&2
     shellcheck -s sh scripts/install.sh scripts/glibc-floor
     shellcheck -s bash scripts/tests/*.sh scripts/dist-pack
-    shellcheck -x scripts/ci-* scripts/free-port testnet/*.sh testnet/forges/*.sh testnet/hosts/*.sh testnet/editors/*.sh testnet/macos/*.sh
+    shellcheck -x scripts/ci-* scripts/chant scripts/free-port scripts/pr-crates testnet/*.sh testnet/forges/*.sh testnet/editors/*.sh testnet/macos/*.sh
     shellcheck -s sh testnet/editors/box/entrypoint.sh testnet/sshd/entrypoint.sh testnet/sshd-systemd/keys.sh testnet/git/entrypoint.sh testnet/tailnet/entrypoint.sh
 
-# Release without waiting for a version bump to pass CI (#524): commit the
-# bump on top of the newest commit on main with a ci/green tag, tag it, and
-# push the tag with main, the bump merged in (docs/development.md).
-# just release [patch|minor|major] [--app] [COMMIT|--older] [--dry-run]
+# Tag the newest commit on main with a ci/green tag (--app: ci/green-app,
+# #307) as it is, with the lane's next version, and push the tag (#1986:
+# no commit moves the version; the release's build stamps it). `--dry-run`
+# names the commit and lists its PRs; write the notes against them and name
+# that commit with `--notes FILE`. The notes go in the tag's message, and it
+# refuses a PR they neither mention nor list as needing none (#707;
+# docs/development.md). It then commits them to main, and the daemon's client
+# fixtures (#200); if main refuses that, it says to run `just release-fixtures
+# X.Y.Z`. A daemon release also needs the commit's ci/rare tag
+# (rare-nightly.yml, #305): --rare starts those jobs on it and waits for them
+# first.
+# just release [patch|minor|major] [--app] [COMMIT|--older] [--notes FILE] [--rare] [--dry-run]
 release *args:
     scripts/release bump {{args}}
 
 # The newest commits on main that passed CI (their ci/green tags), newest
-# first; a tag CI revoked since is gone here too.
-green n="20":
+# first; a tag CI revoked since is gone here too. LANE (server, daemon,
+# app) lists a lane's ci/green-LANE tags instead (#307).
+green n="20" lane="":
     @git fetch -q --force --prune https://github.com/arugula-salad/arugula.git '+refs/tags/ci/*:refs/tags/ci/*'
-    @git log --no-walk --tags='ci/green/*' --date=format-local:'%Y-%m-%d %H:%M' --format='%h %cd %s' | head -n {{n}}
+    @git log --no-walk --tags='ci/green{{ if lane == "" { "" } else { "-" + lane } }}/*' --date=format-local:'%Y-%m-%d %H:%M' --format='%h %cd %s' | head -n {{n}}
 
-# All tests, the root workspace's and the server's. The Rust ones run under
-# cargo-nextest (.config/nextest.toml, server/.config/nextest.toml), which
+# All tests. The Rust ones run under
+# cargo-nextest (.config/nextest.toml), which
 # `just bootstrap` installs; the doctests, which it can't run, under cargo
 # test. Builds first (test-build), then runs the suite one worktree at a time
 # (scripts/suite-lock).
@@ -506,13 +523,11 @@ test: test-build
 [private]
 test-build: web
     {{cargo}} nextest run --workspace --no-run
-    {{server_cargo}} nextest run --workspace --no-run
     {{test_bins}}
-    {{server_test_bins}}
     {{cargo}} build -p arugula-e2e --example interop
     cd web && pnpm run typecheck
 
-# The binaries control-smoke and the specs run, built as the tests' own
+# The binaries the specs run, built as the tests' own
 # build resolves features: the whole workspace with an example, which turns
 # on the dev-dependencies' features (arugula-proto's fixtures, rmcp's
 # client...). A `-p` build resolves them again without those, and every crate
@@ -520,43 +535,29 @@ test-build: web
 # So these are the units `nextest run --workspace` built.
 test_bins := cargo + " build --workspace --bins --example interop"
 
-# The server's binaries (arugula-control's, arugula-platform's), the same
-# way: with its tests, so its dev-dependencies' features (the platform's
-# `contract`) are on as in its tests' build.
-server_test_bins := server_cargo + " build --workspace --bins --tests"
-
-# PART (check.yml's test and test-2, 1 or 2) runs half the Rust tests of
-# each workspace, nextest's count:PART/2; only the second half runs the
-# doctests and control-smoke after them (the first half's tests are the
-# slower ones: 826 vs 511 test-seconds in the server workspace, 480 vs 349
-# in the root, #1680). WHICH splits a run in two:
-# `server`, only the server workspace's suite, which needs none of
-# static's binaries (ARUGULA_SSH_BINARIES), so check.yml runs it while
-# static builds them; `rest`, everything else (#259).
+# PART (check.yml's test and test-2, 1 or 2) runs half the Rust tests,
+# nextest's count:PART/2; only the second half runs the doctests and the
+# e2e interop check after them (the first half's tests are the slower ones:
+# 480 vs 349 test-seconds, #1680). Under CI's nextest profile it leaves out
+# the quarantined tests (docs/testing.md, "Quarantine").
 [private]
-test-run part="" which="":
+test-run part="":
     #!/usr/bin/env bash
     set -euo pipefail
+    q=$({{quarantine_filter}})
     case "{{part}}" in
       '') part=() ;;
       1|2) part=(--partition "count:{{part}}/2") ;;
       *) echo "test-run: PART is 1 or 2" >&2; exit 2 ;;
     esac
-    case "{{which}}" in
-      ''|server|rest) ;;
-      *) echo "test-run: WHICH is server or rest" >&2; exit 2 ;;
-    esac
     # ${part[@]+…}: macOS bash 3.2 calls an empty array unbound.
     # The test stack up and ready first, when this run has its tests: its
     # image build is no test's, against that test's deadline.
-    if [ "{{which}}" != server ]; then testnet/suite-up.sh ${part[@]+"${part[@]}"}; fi
-    if [ "{{which}}" != server ]; then {{cargo}} nextest run --workspace ${part[@]+"${part[@]}"}; fi
-    if [ "{{which}}" != rest ]; then {{server_cargo}} nextest run --workspace ${part[@]+"${part[@]}"}; fi
-    [ "{{which}}" != server ] || exit 0
+    testnet/suite-up.sh ${part[@]+"${part[@]}"}
+    {{cargo}} nextest run --workspace ${part[@]+"${part[@]}"} -E "$q"
     [ "{{part}}" != 1 ] || exit 0
     {{cargo}} test --workspace --doc
-    {{server_cargo}} test --workspace --doc
-    just e2e-interop control-smoke
+    just e2e-interop
 
 # FILTER is a nextest filterset, e.g.
 # 'test(=team_answers::the_terminal_answering_first_closes_the_card)'.
@@ -564,59 +565,47 @@ test-run part="" which="":
 test-stress filter count="50": test-build
     {{suite_lock}} {{cargo}} nextest run --workspace --retries 0 --stress-count {{count}} -E '{{filter}}'
 
-# Flaky tests CI leaves out for a while (.config/quarantine.toml,
-# docs/testing.md "Quarantine"). Run it after changing that manifest:
-# writes the nextest configs' default-filter from it, then checks it.
+# The quarantined tests' filterset for nextest under CI's profile
+# (NEXTEST_PROFILE=ci): chant's, from the test phase's entries in
+# chant.workspace.json (docs/testing.md, "Quarantine"). Every nextest run
+# in CI takes it, macOS's and Windows' too. Elsewhere all().
+quarantine_filter := 'if [ "${NEXTEST_PROFILE:-}" = ci ]; then ' + justfile_directory() / "scripts/chant" + ' ci quarantine filter --phase test --runner nextest; else echo "all()"; fi'
+
+# Flaky tests CI leaves out for a while (chant.workspace.json's
+# ci.green.quarantine, docs/testing.md "Quarantine"): no entry past its
+# `until` or more than maxDays out, and each Rust test named without its
+# binary (nextest refuses a binary id that isn't in the workspace it runs).
+# Lint runs it.
 quarantine:
-    node scripts/quarantine.mjs write
-    node scripts/quarantine.mjs check
+    #!/usr/bin/env bash
+    set -euo pipefail
+    scripts/chant ci quarantine check
+    bad=$(jq -r '.ci.green.quarantine.phases // {} | to_entries[] | select(.key != "e2e") | .key as $phase | .value[] | select(.test | contains(" ")) | "\($phase): \(.test)"' chant.workspace.json)
+    if [ -n "$bad" ]; then
+      echo "quarantine: name a Rust test without its binary id (the name alone, as nextest prints it after the binary):" >&2
+      echo "$bad" >&2
+      exit 1
+    fi
 
 # Only the quarantined tests, which CI's runs leave out (the ssh and reboot
 # tests want what `just test` does: Docker, ARUGULA_SSH_BINARIES).
-# quarantine-nightly.yml runs them every night.
+# quarantine-nightly.yml runs them every night under CI's profile, whose
+# JUnit files chant's report reads (target/nextest/ci/junit.xml, and
+# web/junit.xml for the specs).
 test-quarantined: web e2e-build
     #!/usr/bin/env bash
     set -euo pipefail
     status=0
-    root=$(node scripts/quarantine.mjs nextest root)
-    server=$(node scripts/quarantine.mjs nextest server)
-    if [ -n "$root" ]; then {{cargo}} nextest run --workspace --ignore-default-filter -E "$root" || status=1; fi
-    if [ -n "$server" ]; then {{server_cargo}} nextest run --workspace --ignore-default-filter -E "$server" || status=1; fi
-    if [ -n "$(node scripts/quarantine.mjs e2e)" ]; then
-      (cd web && E2E_QUARANTINED=1 {{suite_lock}} pnpm exec playwright test) || status=1
+    # Only this run's results for the report: a kept target dir has the last.
+    rm -f "{{target_dir}}/nextest/ci/junit.xml" web/junit.xml
+    only=$(scripts/chant ci quarantine filter --phase test --runner nextest --only)
+    if [ "$only" != "none()" ]; then
+      {{cargo}} nextest run --workspace --no-tests=pass -E "$only" || status=1
+    fi
+    if [ -n "$(scripts/chant ci quarantine filter --phase e2e --runner list)" ]; then
+      (cd web && E2E_QUARANTINED=1 PLAYWRIGHT_JUNIT_OUTPUT_NAME=junit.xml {{suite_lock}} pnpm exec playwright test --reporter=junit) || status=1
     fi
     exit "$status"
-
-# The platform's suite on Postgres (M143), as hosted control runs it: a
-# postgres:17 container of its own on a free port, removed after (from
-# CI's mirror: docs/testing.md, "CI's images"). The same tests as on SQLite
-# (`Db::test`); check.yml runs it in a job of its own (test-postgres),
-# beside test and test-2. Every arugula-platform* package: the base, its
-# feature crates and the binary (#314).
-test-platform-postgres:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    name="arugula-platform-pg-$$"
-    # No fsync: a test database needn't survive a crash, and with it every
-    # commit waited on the disk. In a job of its own beside test and
-    # test-2 the suite took 23-27 min instead of 2.
-    docker run -d --rm --name "$name" -e POSTGRES_PASSWORD=platform -p 127.0.0.1::5432 \
-        "${ARUGULA_IMAGES:-ghcr.io/arugula-salad/ci}/postgres:17" -c max_connections=500 -c fsync=off -c synchronous_commit=off \
-        -c full_page_writes=off >/dev/null
-    trap 'docker rm -f "$name" >/dev/null' EXIT
-    port=$(docker port "$name" 5432/tcp | head -1 | sed 's/.*://')
-    # Over TCP: the image's first start answers on its socket only while it
-    # sets itself up.
-    for _ in $(seq 120); do docker exec "$name" pg_isready -h 127.0.0.1 -U postgres -q && break; sleep 0.5; done
-    ARUGULA_TEST_POSTGRES_URL="postgres://postgres:platform@127.0.0.1:$port/postgres" \
-        {{server_cargo}} nextest run --workspace -E 'package(/^arugula-platform/)'
-
-# Control end to end without a browser: sign in (fake GitHub), enroll,
-# join a daemon, reach it through the relay and directly.
-control-smoke:
-    {{test_bins}}
-    {{server_test_bins}}
-    cd web && TARGET_DIR="{{target_dir}}/debug" {{suite_lock}} node --experimental-strip-types --no-warnings control-smoke.ts
 
 # The swarm (M26) by hand: three throwaway daemons with scripted work on
 # 7730-7732 (t: make trouble, a: an agent asks, x: quit).
@@ -694,7 +683,6 @@ e2e-build:
     #!/usr/bin/env bash
     set -euo pipefail
     {{cargo}} build -p arugulad -p arugula
-    {{server_cargo}} build -p arugula-control
     t="{{target_dir}}"
     if [ "$t" != "{{justfile_directory()}}/target" ]; then
       if [ -L target ] || [ ! -e target ]; then ln -sfn "$t" target
@@ -726,8 +714,9 @@ vsix:
 # Publish the extension as `arugula.arugula-editor` (#529): to the Visual
 # Studio Marketplace (VSCE_PAT, an Azure DevOps token with Marketplace
 # Manage) and Open VSX (OVSX_PAT), or just one: `just publish-vsix ovsx`.
-# release.yml does this on every `v*` tag; this is the same by hand, for
-# whoever holds the tokens. A version already there is skipped, so it can
+# release.yml does this on every `v*` tag, through chant's marketplace
+# targets with the run's OIDC identity (#1986); this is the same by hand,
+# with tokens, for whoever holds them. A version already there is skipped, so it can
 # run again after one of them fails.
 publish-vsix to="both":
     #!/usr/bin/env bash
@@ -758,27 +747,10 @@ screenshots:
     (cd web && SHOTS_OUT="$img" pnpm exec playwright test -c screenshots.config.ts)
     scripts/webp "$img"
 
-# M4a for real: a wisp sprite installs the static daemon on the tailnet and
-# joins a throwaway home daemon's list; the phone gets vim there. Needs
-# ARUGULA_E2E_TAILNET_AUTHKEY_FILE (an ephemeral tag:sandbox key) and wispd.
-e2e-sandbox: static
-    {{cargo}} build -p arugulad
-    cd web && pnpm exec playwright test e2e/sandbox.spec.ts
-
 # The local Docker test stack (testnet/README.md): up|test|break|measure|down [profile] [claim...].
-# The control profile builds what it runs: the static binaries for Docker's
-# architecture (unless ARUGULA_TESTNET_BINARIES names others) and the CLI.
 testnet cmd="test" profile="ssh" *claims:
     #!/usr/bin/env bash
     set -euo pipefail
-    if [ {{profile}} = control ] && docker info >/dev/null 2>&1; then
-      case "{{cmd}}" in
-        up) arch=$(docker info --format '{{{{.Architecture}}')
-            case "$arch" in arm64) arch=aarch64 ;; amd64) arch=x86_64 ;; esac
-            [ -n "${ARUGULA_TESTNET_BINARIES:-}" ] || just static "$arch" >&2 ;;
-        test|break) [ -n "${ARUGULA_CLI:-}" ] || {{cargo}} build -q -p arugula ;;
-      esac
-    fi
     case "{{cmd}}" in
       up) testnet/up.sh {{profile}} ;;
       test) testnet/test.sh {{profile}} {{claims}} ;;
@@ -787,17 +759,6 @@ testnet cmd="test" profile="ssh" *claims:
       down) testnet/down.sh ;;
       *) echo "usage: just testnet up|test|break|measure|down [profile] [claim...]" >&2; exit 2 ;;
     esac
-
-# #17 on two Docker machines, one dropping off the network (testnet/hosts/README.md).
-testnet-hosts:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    # No Docker: a failure, or with ARUGULA_SKIP_DOCKER=1 a loud skip.
-    if ! docker info >/dev/null 2>&1; then testnet/hosts/net.sh check; exit $?; fi
-    a=$(uname -m); [ "$a" = arm64 ] && a=aarch64
-    just static "$a"
-    {{cargo}} build -p arugulad
-    cd web && ARUGULA_TESTNET_HOSTS=1 pnpm exec playwright test e2e/testnet-hosts.spec.ts
 
 # M28 for real: VS Code over Remote-SSH into a Docker box (testnet/editors/README.md).
 testnet-editors:
@@ -825,10 +786,8 @@ forges cmd="test" forge="forgejo":
     esac
 
 # macOS checks in a throwaway tart VM (docs/testing.md, "A fresh Mac"):
-# `just macos tools` (safari and launchd in one VM, booted once),
-# each alone (`just macos launchd`, `safari`), `just macos ios`
-# (the iOS Simulator, on the Xcode base: `just macos base --xcode` once;
-# parked, #257), or base|up|down|ssh for the VM.
+# `just macos tools` (launchd), `just macos journey-j3` and `journey-j4`,
+# or base|up|down|ssh for the VM.
 # Fails without tart or the base VM; ARUGULA_SKIP_MACOS_VM=1 skips loudly.
 macos cmd="tools" *args:
     #!/usr/bin/env bash
@@ -837,9 +796,6 @@ macos cmd="tools" *args:
       base|up|down|ssh|ip|push|restart) exec testnet/macos/vm.sh {{cmd}} {{args}} ;;
     esac
     {{cargo}} build -p arugulad -p arugula
-    {{server_cargo}} build -p arugula-control
-    # web/safari serves web/dist.
-    if [ "{{cmd}}" = ios ]; then just web; fi
     exec testnet/macos/test.sh {{cmd}} {{args}}
 
 # Tests for the shell side of releases: install.sh picks the right release
@@ -847,28 +803,37 @@ macos cmd="tools" *args:
 # everywhere (release.yml, scripts/release, Homebrew, install.sh, the site);
 # `just notices` keeping THIRD_PARTY.md when cargo-about fails;
 # `scripts/release check-green` refusing a tag on a commit CI didn't pass;
-# a release deploying the hub only when what it's built from changed; the
-# hosted template's supervision of arugulad (M258); its templates, one
+# the hosted template's supervision of arugulad (M258); its templates, one
 # per workspace size (M266); its tools for session users (Arugula #215);
-# and the flaky tests' quarantine (.config/quarantine.toml): its script,
-# and last the manifest itself, which fails when an entry has no issue or
-# is past its `until`. Also the nvim key tips' `:help` tags, against a real
-# nvim when there is one (`just nvim-tips-check`).
+# binaries.yml's gate on pull requests that change CI (#304); that release,
+# signing and deploy secrets are read only through environments, what ships
+# compiles without the shared cache, and actions are pinned;
+# scripts/ci-velocity's merge queue numbers;
+# and last the flaky tests' quarantine (`just quarantine`), which fails
+# when an entry is past its `until`. Also the nvim key tips' `:help` tags,
+# against a real nvim when there is one (`just nvim-tips-check`).
 test-scripts:
     scripts/tests/ci-red.sh
+    scripts/tests/changed.sh
+    scripts/tests/pr-plan.sh
+    scripts/tests/pr-crates.sh
     scripts/tests/ci-nightly-red.sh
-    scripts/tests/quarantine.sh
+    scripts/tests/ci-auto-revert.sh
+    scripts/tests/ci-velocity.sh
+    scripts/tests/capabilities.sh
+    scripts/tests/data-model-check.sh
     scripts/tests/install.sh
     scripts/tests/release-targets.sh
+    scripts/tests/release-workflows.sh
     scripts/tests/notices.sh
     scripts/tests/release-green.sh
     scripts/tests/suite-lock.sh
     scripts/tests/release-bump.sh
-    scripts/tests/hub-changed.sh
+    scripts/tests/release-notes.sh
     scripts/tests/hosted-supervisor.sh
     scripts/tests/hosted-template.sh
     scripts/tests/hosted-tools.sh
-    node scripts/quarantine.mjs check
+    just quarantine
     scripts/check-nvim-tips
 
 # Every nvim key tip (web/src/shell/hints/nvim-tips.ts) names a `:help` tag
@@ -876,23 +841,15 @@ test-scripts:
 nvim-tips-check:
     scripts/check-nvim-tips
 
-# The two workspaces stay apart: the root's has no server crate, and the
-# server's (server/Cargo.toml) builds none of the daemon's, the mux or
-# Ghostty, whatever a path dependency brings in.
+# The root workspace builds none of control's or the platform's crates:
+# they're closed source now, in their own repository.
 workspace-guard:
     #!/usr/bin/env bash
     set -euo pipefail
     status=0
-    names() { awk '{print $1}' | sort -u; }
-    root=$({{cargo}} tree --workspace -e all --prefix none --target all | names)
-    server=$({{server_cargo}} tree --workspace -e all --prefix none --target all | names)
-    # The hub's crates, and every arugula-platform* (the platform's base, its
-    # feature crates and its binary, #314).
+    root=$({{cargo}} tree --workspace -e all --prefix none --target all | awk '{print $1}' | sort -u)
     for crate in arugula-control arugula-control-base arugula-control-common $(grep -x 'arugula-platform.*' <<<"$root" || true); do
-      if grep -qx "$crate" <<<"$root"; then echo "workspace-guard: the root workspace builds $crate: it belongs to server/Cargo.toml" >&2; status=1; fi
-    done
-    for crate in arugulad arugula arugula-mux arugula-vt libghostty-vt-sys arugula-testkit; do
-      if grep -qx "$crate" <<<"$server"; then echo "workspace-guard: the server's workspace builds $crate: it belongs to the root's" >&2; status=1; fi
+      if grep -qx "$crate" <<<"$root"; then echo "workspace-guard: the root workspace builds $crate: it belongs to the cloud's repository" >&2; status=1; fi
     done
     exit $status
 
@@ -913,6 +870,30 @@ mux-guard:
         fi
       done
     done
+    # Chat is an integration too (native #675): no room, thread or mention
+    # type in the mux's code (comments aside); the daemon keeps those. The
+    # standard library's thread (`std::thread::Thread`, `ThreadId`) isn't
+    # one, and is taken out before the look. A grep that can't read the
+    # code (exit 2: the crate moved, say) fails the check; one that finds
+    # nothing (exit 1) passes it.
+    if ! code=$(grep -rn --include='*.rs' '' crates/mux/src \
+        | sed -E 's#//.*$##; s/thread::Thread([^A-Za-z0-9_]|$)/\1/g; s/(^|[^A-Za-z0-9_])ThreadId([^A-Za-z0-9_]|$)/\1\2/g'); then
+      echo "mux-guard: can't read crates/mux/src" >&2
+      exit 2
+    fi
+    set +e
+    chatty=$(printf '%s\n' "$code" | grep -E '\b(Mention|Chat|Room|Thread)[A-Z][A-Za-z]*\b|\b(Mention|Room|Thread)\b')
+    found=$?
+    set -e
+    if [ "$found" -gt 1 ]; then
+      echo "mux-guard: grep failed ($found) looking for chat types" >&2
+      exit "$found"
+    fi
+    if [ -n "$chatty" ]; then
+      printf '%s\n' "$chatty" >&2
+      echo "mux-guard: arugula-mux names a chat type: rooms, threads and mentions are the daemon's (DECISIONS.md \"The mux names no integration\")" >&2
+      status=1
+    fi
     exit $status
 
 # What CI runs.
@@ -921,28 +902,26 @@ check: test mux-guard workspace-guard
     cd web && pnpm run paths
     just proto-ts check
     just contract-schema check
+    just api-contract check
     just decisions check
     just whats-new
-    just control-tables check
     scripts/check-binaries
     {{cargo}} fmt --all --check
-    {{server_cargo}} fmt --all --check
     {{cargo}} clippy --workspace --all-targets -- -D warnings
-    {{server_cargo}} clippy --workspace --all-targets -- -D warnings
 
 # The tests on the Docker test stack, which need Docker and the box's static
 # binaries (`just static`, or ARUGULA_SSH_BINARIES): .config/nextest.toml's
 # `testnet` group, whose filter this is. Keep the two in step.
-testnet_tests := "package(arugulad) & binary(integration) & (test(/^ssh::/) | test(/^reboot::/) | test(/^guest_ssh::.*jump_host/))"
+testnet_tests := "package(arugulad) & binary(integration) & (test(/^ssh::/) | test(/^reboot::/))"
 
 # A rollup's verdict as CI's check would give it, on this checkout (merge
 # main in first; docs/development.md, "A rollup's check"): the lint job's
-# steps, the rest of `just check`'s, clippy (both workspaces, macOS's, and
+# steps, the rest of `just check`'s, clippy (the workspace's, macOS's, and
 # without Labs as `core` runs it), every Rust test under CI's nextest profile
 # with no fail-fast, and the e2e specs CI's shards run. Each step runs,
 # whatever failed before it, into a log of its own; the end lists each
 # step's result and the tests that failed. The tests that need Docker (the
-# test stack's, and the platform's on Postgres) are reported apart, and
+# test stack's) are reported apart, and
 # skipped, saying so, where there's no Docker. Exits 1 when a step failed.
 #
 # ROLLUP_JOBS (4) and ROLLUP_THREADS (6) are CARGO_BUILD_JOBS and
@@ -973,7 +952,6 @@ rollup-check:
     gone() { results+=("$1|$2|skipped|$3"); }
     lock={{suite_lock}}
     cargo="{{cargo}}"
-    server="{{server_cargo}}"
     # Where main is: the queue tests a rollup on top of it.
     behind=""
     if timeout 60 git fetch -q origin main 2>/dev/null; then
@@ -991,6 +969,7 @@ rollup-check:
     step lint test-scripts just test-scripts
     step lint proto-ts just proto-ts check
     step lint contract-schema just contract-schema check
+    step lint api-contract just api-contract check
     step lint decisions just decisions check
     step lint whats-new just whats-new
     step lint gitleaks scripts/ci-gitleaks
@@ -998,26 +977,21 @@ rollup-check:
     step checks web just web
     step checks web-imports just web-imports
     step checks web-paths bash -c 'cd web && pnpm run paths'
-    step checks control-tables just control-tables check
     step checks check-binaries scripts/check-binaries
     step checks workspace-guard just workspace-guard
     step checks mux-guard just mux-guard
     # check.yml's clippy and core.
     step clippy clippy $cargo clippy --workspace --all-targets -- -D warnings
-    step clippy clippy-server $server clippy --workspace --all-targets -- -D warnings
     step clippy macos just check-macos
     # As check.yml's core job: the test stack's tests are testnet's.
     step clippy core env ARUGULA_SKIP_DOCKER=1 $lock just check-core
     # check.yml's test and test-2, whole: `just test-run`'s, one step each.
     step tests test-build just test-build
     step tests rust $lock $cargo nextest run --workspace --no-fail-fast -E 'not ({{testnet_tests}})'
-    step tests rust-server $lock $server nextest run --workspace --no-fail-fast
     step tests doctests $lock $cargo test --workspace --doc --no-fail-fast
-    step tests doctests-server $lock $server test --workspace --doc --no-fail-fast
-    step tests control-smoke just e2e-interop control-smoke
+    step tests e2e-interop just e2e-interop
     # What only runs with Docker: the test stack's tests (on the box's
-    # static binaries, built as check.yml's static job does) and the
-    # platform on Postgres (test-postgres).
+    # static binaries, built as check.yml's static job does).
     if docker info >/dev/null 2>&1; then
       if [ -z "${ARUGULA_SSH_BINARIES:-}" ]; then
         a=$(docker info --format '{{{{.Architecture}}'); case "$a" in arm64) a=aarch64 ;; amd64) a=x86_64 ;; esac
@@ -1025,10 +999,8 @@ rollup-check:
       fi
       step docker testnet $lock $cargo nextest run --workspace --no-fail-fast -E '{{testnet_tests}}'
       just testnet down >/dev/null 2>&1 || true
-      step docker postgres $lock just test-platform-postgres
     else
       gone docker testnet "no Docker here: the test stack's tests didn't run"
-      gone docker postgres "no Docker here: the platform on Postgres didn't run"
     fi
     # check.yml's e2e shards, in one run.
     step e2e e2e bash -c 'just e2e-build && cd web && E2E_SET=rest E2E_PORT="${E2E_PORT:-$(../scripts/free-port)}" '"$lock"' pnpm exec playwright test'
@@ -1079,8 +1051,6 @@ check-macos arch="aarch64":
     rustup target add {{arch}}-apple-darwin >/dev/null
     ZIG_MACOS_ARCH={{arch}} CC_{{arch}}_apple_darwin="$PWD/scripts/zig-cc-macos" AR_{{arch}}_apple_darwin="$PWD/scripts/zig-ar" \
       {{cargo}} clippy --target {{arch}}-apple-darwin --workspace --all-targets -- -D warnings
-    ZIG_MACOS_ARCH={{arch}} CC_{{arch}}_apple_darwin="$PWD/scripts/zig-cc-macos" AR_{{arch}}_apple_darwin="$PWD/scripts/zig-ar" \
-      {{server_cargo}} clippy --target {{arch}}-apple-darwin --workspace --all-targets -- -D warnings
 
 # Run the daemon the way it runs for real (port 7681, behind `tailscale serve`).
 run *args: build
@@ -1089,23 +1059,6 @@ run *args: build
 # Install as a systemd user service (starts at boot with lingering).
 install: build
     {{target_dir}}/release/arugulad install
-
-# This checkout's web client as control.arugula.io serves it: a local
-# control (fake GitHub sign-in) on 7690 with machines joined to it
-# (default: workstation laptop), rebuilt on every change (web/dev-control.ts).
-# DEV_CONTROL_APPROVE_BROWSERS=0 leaves a signed-in browser waiting.
-dev-control *machines:
-    {{cargo}} build -p arugulad
-    {{server_cargo}} build -p arugula-control
-    cd web && TARGET_DIR="{{target_dir}}/debug" node --experimental-strip-types --no-warnings dev-control.ts {{machines}}
-
-# The platform page (M150) on 127.0.0.1:7691, beside `just dev-control`
-# (run that first): Vite serves it and sends control's paths to 7690. Sign
-# in on control's page; the session cookie is the same host's, so this page
-# is signed in too. DEV_CONTROL_CHAT=1 on dev-control gives it a team's
-# chat to show.
-dev-platform:
-    cd web && pnpm run dev-platform
 
 # A headless Chrome on a page, driven by plain commands, for screenshots:
 # a virtual passkey authenticator (--passkey), a login (--login), a profile
@@ -1139,16 +1092,36 @@ record-fixtures *names:
     {{cargo}} build -p arugulad
     {{cargo}} run -q -p arugula-testkit --bin record-fixtures -- --daemon {{target_dir}}/debug/arugulad --record crates/proto/fixtures {{names}}
 
-# Copy the client fixtures to crates/proto/fixtures/releases/VERSION, as each
-# release does (docs/development.md): the daemon's tests replay the last two.
-release-fixtures:
+# Copy the client fixtures to crates/proto/fixtures/releases/VERSION, to
+# merge to main: the daemon's tests replay the last two releases' sets. With
+# them the release's notes, docs/releases/VERSION.md, from its tag.
+# `just release` commits both to main itself after the tag; this is for
+# when that push didn't go through (it says so, as does release.yml's
+# fixtures job). From the tag vVERSION when it's here or on GitHub, else
+# from this checkout (docs/development.md).
+release-fixtures version:
     #!/usr/bin/env bash
     set -euo pipefail
-    v=$({{cargo}} pkgid -p arugulad | sed 's/.*[#@]//')
+    v={{version}}
+    [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "release-fixtures: VERSION is X.Y.Z" >&2; exit 2; }
     d=crates/proto/fixtures/releases/$v
+    git rev-parse -q --verify "refs/tags/v$v^{commit}" >/dev/null ||
+      git fetch -q https://github.com/arugula-salad/arugula.git "refs/tags/v$v:refs/tags/v$v" 2>/dev/null || true
     rm -rf "$d" && mkdir -p "$d"
-    cp crates/proto/fixtures/*.jsonl "$d/"
+    if git rev-parse -q --verify "refs/tags/v$v^{commit}" >/dev/null; then
+      echo "v$v's client fixtures:"
+      git ls-tree "v$v" crates/proto/fixtures/ | awk -F'\t' '$1 ~ / blob / && $2 ~ /\.jsonl$/ { print $2 }' |
+        while IFS= read -r f; do git show "v$v:$f" >"$d/${f##*/}"; done
+    else
+      echo "no tag v$v: this checkout's client fixtures:"
+      cp crates/proto/fixtures/*.jsonl "$d/"
+    fi
     ls "$d"
+    n=docs/releases/$v.md
+    if [ ! -f "$n" ]; then
+      if scripts/release notes "v$v" >"$n.new"; then mv "$n.new" "$n"; echo "v$v's notes: $n"
+      else rm -f "$n.new"; fi
+    fi
 
 # The certificate vectors checked in for other implementations
 # (crates/e2e/fixtures/certs.json, from `interop fixtures`).

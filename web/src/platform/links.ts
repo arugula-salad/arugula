@@ -6,8 +6,10 @@ import { boards } from "../shared/boards/store";
 import { projectDocs } from "../shared/docs/store";
 import { listedInChat } from "../shared/chat/unread";
 import { issues } from "../shared/issues/store";
+import { chatProject, currentProject, lastTeamProject } from "./current-project";
+import { ownerNamed, PERSONAL } from "./owners";
 import { runs } from "./runs";
-import { current, pathOf, type Route } from "./router";
+import { chatViewIn, current, pathOf, type Route } from "./router";
 import { session } from "./session";
 
 /** The project a room belongs to: its team's; an object thread's, its
@@ -17,9 +19,17 @@ import { session } from "./session";
 export function projectOfRoom(room: string): string | undefined {
   const r = chat.room(room);
   if (r?.kind === "object" && r.project) return r.project;
-  if (r?.team) return session.ofTeam(r.team)?.id ?? routeProject() ?? session.personal()?.id;
+  if (r?.team) return teamProject(r.team) ?? routeProject() ?? session.personal()?.id;
   if (r) return session.personal()?.id;
   return routeProject() ?? session.personal()?.id;
+}
+
+/** The project a team's rooms open in (a team has many, aru-140): the
+ * route's, else the current one, when it's the team's; else the team's
+ * first. Chat goes by a project's `team` (./pages/chat), and so does this. */
+export function teamProject(team: string): string | undefined {
+  const of = (id: string | null | undefined) => session.projects.find((p) => p.id === id && p.team?.id === team)?.id;
+  return of(routeProject()) ?? of(currentProject()) ?? session.projects.find((p) => p.team?.id === team && !p.archived)?.id ?? session.projects.find((p) => p.team?.id === team)?.id;
 }
 
 /** The project the route is in, if it's in one. */
@@ -60,7 +70,9 @@ export function names(id: string): string | undefined {
   if (id.startsWith("brd_")) return boards.title(id);
   if (id.startsWith("pdc_")) return projectDocs.title(id);
   const r = chat.room(id);
-  return r?.kind === "channel" ? r.name : undefined;
+  if (r) return r.kind === "channel" ? r.name : undefined;
+  // A team's id has no prefix: its name, when it's one of the reader's.
+  return id === PERSONAL ? undefined : ownerNamed(session.projects, id)?.name;
 }
 
 /** Where an id-only address (`/chat/:room`, `/issues/:issue`…) belongs,
@@ -76,8 +88,9 @@ export function resolve(r: Extract<Route, { page: "find" }>): string | null {
       if (chat.on === null) return null;
       return roomPath(r.room, r.msg, r.thread);
     }
-    const team = session.projects.find((p) => p.team)?.id;
-    return pathOf({ page: "chat", project: team ?? own, ...(r.view ? { view: r.view, q: r.q } : {}) }, names);
+    // The current project's team, else the last one's, else the first (Arugula #882).
+    const team = chatProject(session.projects, currentProject(), lastTeamProject());
+    return pathOf(chatViewIn(r, team ?? own), names);
   }
   if (r.what === "issue") {
     // Its project, once the page has read it (the page asks).

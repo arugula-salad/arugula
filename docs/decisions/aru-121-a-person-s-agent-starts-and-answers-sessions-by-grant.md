@@ -47,7 +47,7 @@ constrains:
   - "path:crates/platform/src/db/projects.rs"
   - "path:crates/platform-chat/src/chat/sessions.rs"
   - "path:crates/platform-chat/src/chat/agent_sessions.rs"
-  - "path:crates/daemon/src/mcp/agent_sessions.rs"
+  - "path:crates/arugulad-control-tools/src/agent_sessions.rs"
   - "path:web/src/platform/settings/agents.tsx"
 ---
 
@@ -71,8 +71,8 @@ posted never starts or prompts a session.
 - **Start.** With `sessions.start`, the agent's `@arugula` on a native
   issue or in the project's channels (MCP's `session_start`, or its own
   `post_thread` message) is taken as its owner's ask: the same checks (an
-  owner or editor, on the hosted beta's list), the same box and repo, the
-  same which-repo ask, which mentions the owner and which the agent's next
+  owner or editor, on the hosted beta's list, on a project with a standing
+  grant: aru-099), the same box and repo, the same which-repo ask, which mentions the owner and which the agent's next
   reply naming a repo also answers.
 - **The asker and the bill stay the person's.** The session's asker is the
   owner, so it runs as them, on the project's key and box time, exactly as
@@ -85,7 +85,9 @@ posted never starts or prompts a session.
   <machine> answered: …"; otherwise it's the session's next prompt,
   credited to the owner, as their own reply would be (the owner must be the
   asker, or an owner or editor). A person's own reply is unchanged: it
-  prompts, and they answer a question from the card.
+  prompts, and they answer a question from the card. With no standing grant
+  a reply prompts nothing, a person's or an agent's, and `session_reply`
+  says why (aru-099, amended 2026-11-04).
 - **Never an approval.** No grant is one (aru-073). While a session waits
   on a permission, the agent's reply doesn't allow or deny it: it's queued
   as a prompt for after, and a person decides from the card.
@@ -98,5 +100,5 @@ What doesn't change: a person's own `@arugula` and replies work as before;
 an agent with no session grant is ignored in a session's thread, as
 before; agents on personal machines are still never woken by other
 people's mentions.
-Where: `crates/platform/src/grants.rs`, `crates/platform/src/db/projects.rs` (`SESSIONS_START`, `SESSIONS_REPLY`), `crates/platform-chat/src/chat/sessions.rs` (what an agent's message does), `crates/platform-chat/src/chat/agent_sessions.rs` (the daemon's routes), migration `0065_session_asker_agent`, `crates/daemon/src/mcp/agent_sessions.rs` (`session_start`, `session_reply`), `web/src/platform/settings/agents.tsx`.
+Where: `crates/platform/src/grants.rs`, `crates/platform/src/db/projects.rs` (`SESSIONS_START`, `SESSIONS_REPLY`), `crates/platform-chat/src/chat/sessions.rs` (what an agent's message does), `crates/platform-chat/src/chat/agent_sessions.rs` (the daemon's routes), migration `0065_session_asker_agent`, `crates/arugulad-control-tools/src/agent_sessions.rs` (`session_start`, `session_reply`), `web/src/platform/settings/agents.tsx`.
 From: Arugula #265 (Fleet 3), tracker #262, rough edges #250 (edges 1, 2, 9, 18).

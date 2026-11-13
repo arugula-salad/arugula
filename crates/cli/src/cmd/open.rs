@@ -9,7 +9,7 @@ use serde_json::json;
 
 #[derive(clap::Args)]
 pub struct Args {
-    /// `:PORT[/path]`, a URL, or a project's own issue on Arugula control:
+    /// `:PORT[/path]`, a URL, or a project's own issue on Arugula cloud:
     /// `iss_…`, or `#N` in the current project (as `arugula issue` finds
     /// it; `--project` names another).
     target: String,

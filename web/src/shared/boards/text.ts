@@ -3,7 +3,7 @@
 // typed as a pointer. Plain functions, for the view and its tests
 // (scripts/boards.test.mjs).
 
-import type { BoardAsk, BoardAttachment, BoardBlockState, BoardBlockWord, BoardGroup, BoardLane, BoardMark, BoardProgress, BoardLive, BoardLiveState, BoardPointer, BoardProof, BoardRow, BoardRowRelation, BoardView, BoardWorkItem, BoardZone, RelationKind, OnIssue } from "../proto";
+import type { BoardSource, BoardAsk, BoardAttachment, BoardBlockState, BoardBlockWord, BoardGroup, BoardLane, BoardMark, BoardProgress, BoardLive, BoardLiveState, BoardPointer, BoardProof, BoardRow, BoardRowRelation, BoardView, BoardWorkItem, BoardZone, ProjectBoard, RelationKind, OnIssue } from "../proto";
 import type { Tone } from "../ui/state-chip";
 
 /** A row's lane as its glyph. A row asking for input shows `?` instead. */
@@ -19,9 +19,17 @@ export function rowGlyph(r: Pick<BoardRow, "lane" | "status">): string {
   return r.status === "needs_input" ? "?" : LANE_GLYPH[r.lane];
 }
 
-/** The rows that wait on the reader, in the board's order: those whose ask names them, and those the board raised itself (a PR's red checks, an agent waiting). */
+/** Whether a row needs the reader: a question that names them (asked, or raised by the board), a PR whose checks failed or that left its merge queue while open (#766), or an agent that waits for input. A stall is for the block's owner only, and reaches the reader as `ask.mine`; the amber chip says it to everyone. The row's chips say which; its title takes a dot (#903). Only what the reader may see counts: an item they can't read has no `live`. */
+export function needsDot(r: Pick<BoardRow, "ask" | "live" | "attachments">): boolean {
+  if (r.ask?.mine) return true;
+  const trouble = (l: BoardLive | null | undefined) => l?.state === "checks_failed" || (!!l?.left_queue && isOpenPr(l));
+  if (trouble(r.live) || r.attachments?.some((a) => a.role === "work" && trouble(a.live))) return true;
+  return !!r.attachments?.some((a) => holdsRow(a) && a.block?.state === "needs_input");
+}
+
+/** The rows that wait on the reader, in the board's order: those [`needsDot`] marks. A row counts once, however many things in it wait. */
 export function needsYou(v: Pick<BoardView, "zones">): BoardRow[] {
-  return v.zones.flatMap((z) => z.rows).filter((r) => r.ask?.mine);
+  return v.zones.flatMap((z) => z.rows).filter(needsDot);
 }
 
 /** The board header's count: `Needs you (2)`. */
@@ -30,8 +38,15 @@ export function needsYouLine(n: number): string {
 }
 
 /** What a card says of who an ask waits on, when the reader can't answer it. */
-export function askWaitingLine(a: Pick<BoardAsk, "raised" | "who_name" | "asked_by">): string {
-  return a.raised ? "Raised by the board; it clears when its cause does." : `Waiting for ${a.who_name}, asked by ${a.asked_by}.`;
+export function askWaitingLine(a: Pick<BoardAsk, "who_name" | "asked_by">): string {
+  return `Waiting for ${a.who_name}, asked by ${a.asked_by}.`;
+}
+
+/** What a row says while it waits on a person's answer (Arugula #764): `waiting for you` when the open ask is the reader's (#903), else `waiting on Sam`. Only an ask a person or an agent made counts; the board's own raised ask comes from a stall and waits on nobody. Null when the row waits on no one. */
+export function waitingOf(r: Pick<BoardRow, "ask">): { words: string; mine: boolean } | null {
+  const a = r.ask;
+  if (!a || a.raised) return null;
+  return a.mine ? { words: "waiting for you", mine: true } : { words: `waiting on ${a.who_name || "someone"}`, mine: false };
 }
 
 /** Whether a typed answer to a free-text ask can be sent. */
@@ -58,25 +73,27 @@ export const LIVE_LABEL: Record<BoardLiveState, string> = {
   other: "not run",
 };
 
-/** The classes a live tag takes: the forge blocks' state colours, and
- * `waits` and `bad` for checks and runs. */
-export function liveClass(s: BoardLiveState): string {
-  if (s === "checks_running" || s === "running") return "waits";
-  if (s === "checks_failed" || s === "run_failed") return "bad";
-  if (s === "succeeded") return "forge-state merged";
-  if (s === "other") return "";
-  return `forge-state ${s}`;
-}
-
 /** The mark on a Done row: how it is proven, or that it isn't yet. Null for a
  * row that isn't Done, for a note, which has nothing to prove, and for a
  * cancelled one, whose `cancelled` mark says it instead. */
-export function proofMark(r: Pick<BoardRow, "lane" | "pointer" | "proof" | "marks">): { proven: boolean; words: string } | null {
+export function proofMark(r: Pick<BoardRow, "lane" | "pointer" | "proof" | "marks">): { proven: boolean; words: string; title: string } | null {
   if (r.lane !== "done" || !counted(r)) return null;
   if (r.marks?.some((m) => m.kind === "cancelled")) return null;
   const p: BoardProof | undefined = r.proof;
-  if (!p) return { proven: false, words: "not proven yet" };
-  return { proven: true, words: p.by === "ci" ? "proven by CI" : "proven" };
+  if (!p) return { proven: false, words: "no proof", title: "not proven yet" };
+  return { proven: true, words: "Proof", title: p.by === "ci" ? "proven by CI" : "proven" };
+}
+
+/** The lanes in the order every board stacks them: the most actionable first, what waits for review right after (#479). The server sends them Next, Doing, Review, Done; the board page, the block and the swarm's board focus all order them with [`inLaneOrder`]. Four across, the board's CSS reads them Next, Doing, Review, Done instead, to match the progress bar; the DOM keeps this order. */
+export const LANE_ORDER: BoardLane[] = ["doing", "review", "next", "done"];
+
+/** A board's zones in [`LANE_ORDER`]; a zone that is no lane goes last, in the order it came. */
+export function inLaneOrder<Z extends { id: string }>(zones: Z[]): Z[] {
+  const at = (z: Z) => {
+    const i = LANE_ORDER.findIndex((l) => z.id === `lane_${l}`);
+    return i < 0 ? LANE_ORDER.length : i;
+  };
+  return [...zones].sort((a, b) => at(a) - at(b));
 }
 
 /** A board's sections, top to bottom: each group with the four lanes of its
@@ -86,8 +103,8 @@ export type Section = { group: BoardGroup | null; lanes: BoardZone[] };
 
 export function sections(v: Pick<BoardView, "zones" | "groups">): Section[] {
   const groups = v.groups ?? [];
-  if (!groups.length) return [{ group: null, lanes: v.zones }];
-  const of = (keep: (r: BoardRow) => boolean): BoardZone[] => v.zones.map((z) => ({ ...z, rows: z.rows.filter(keep) }));
+  if (!groups.length) return [{ group: null, lanes: inLaneOrder(v.zones) }];
+  const of = (keep: (r: BoardRow) => boolean): BoardZone[] => inLaneOrder(v.zones).map((z) => ({ ...z, rows: z.rows.filter(keep) }));
   const out: Section[] = groups.map((g) => ({ group: g, lanes: of((r) => r.group === g.id) }));
   const loose = of((r) => !r.group || !groups.some((g) => g.id === r.group));
   if (loose.some((z) => z.rows.length)) out.push({ group: null, lanes: loose });
@@ -99,23 +116,40 @@ export function groupLine(p: Pick<BoardProgress, "done" | "total">): string {
   return p.total ? `${p.done} of ${p.total} done` : "no work yet";
 }
 
-/** What a row's marks say, for its card: `merged, not closed`; `cancelled`; `after #1859`
+/** A row's Not finished mark (#841): the issue is marked with `reason` (what is left), or an open issue's PR merged and nobody said why (`reason` null). `merged`: a PR of the row merged. `by` and `at` are who marked it and when, when someone did. A server from before the mark says `merged_not_closed`, which reads as no reason, merged. */
+export type NotFinished = { reason: string | null; merged: boolean; by?: string; at?: number };
+
+/** The card's words for the mark: `Not finished: second PR for the API`, or `Not finished · no reason given`. */
+export function notFinishedLine(n: Pick<NotFinished, "reason">): string {
+  return n.reason ? `Not finished: ${n.reason}` : "Not finished · no reason given";
+}
+
+/** What a row's marks say, for its card: `not finished: why`; `cancelled`; `after #1859`
  * for a PR stacked on another (the row waits for it); `blocked by #7` for each
  * open blocker, or `blocked by something you can't see` when the reader may not
  * read it (#403); and the attachments of agents that were replaced
  * (`earlier`), which the card folds. */
-export function marksOf(r: Pick<BoardRow, "marks">, now: number = Date.now()): { merged: boolean; cancelled: boolean; after: { words: string; repo?: string } | null; stalled: { words: string; since: number } | null; blocked: { words: string; title?: string; repo?: string }[]; earlier: Set<string> } {
+export function marksOf(r: Pick<BoardRow, "marks">, now: number = Date.now()): { notFinished: NotFinished | null; cancelled: boolean; after: { words: string; repo?: string } | null; stalled: { words: string; since: number } | null; blocked: { words: string; title?: string; repo?: string }[]; earlier: Set<string> } {
   const marks: BoardMark[] = r.marks ?? [];
   const after = marks.find((m) => m.kind === "after");
   const stalled = marks.find((m) => m.kind === "stalled");
+  const nf = marks.find((m) => m.kind === "not_finished" || m.kind === "merged_not_closed");
   return {
-    merged: marks.some((m) => m.kind === "merged_not_closed"),
+    notFinished: !nf ? null : nf.kind === "not_finished" ? { reason: nf.reason ?? null, merged: nf.merged, by: nf.by, at: nf.at } : { reason: null, merged: true },
     cancelled: marks.some((m) => m.kind === "cancelled"),
     after: after && after.kind === "after" ? { words: `after #${after.number}`, repo: after.repo } : null,
     stalled: stalled && stalled.kind === "stalled" ? { words: `stalled ${stalledFor(stalled.since, now)}`, since: stalled.since } : null,
     blocked: marks.flatMap((m) => (m.kind === "blocked_by" ? [m.number === undefined ? { words: UNSEEN_BLOCKER } : { words: `blocked by #${m.number}`, title: m.title, repo: m.repo }] : [])),
     earlier: new Set(marks.flatMap((m) => (m.kind === "earlier" ? [m.attachment] : []))),
   };
+}
+
+/** For an issue a merged PR closed, which PR and by which words, so a wrong
+ * close is easy to spot (Arugula #743): `closed with acme/site#70, by "(#4)"
+ * in the title`. Null otherwise. */
+export function closedWithLine(live: Pick<BoardLive, "closed_with" | "closed_by"> | null | undefined): string | null {
+  if (!live?.closed_with) return null;
+  return `closed with ${live.closed_with}${live.closed_by ? `, by ${live.closed_by}` : ""}`;
 }
 
 /** How long ago a stall began, to the minute, as the wire's `ago` says it: `42m`, `3h5m`, `2d` (#404). */
@@ -132,6 +166,13 @@ export function holdsRow(a: Pick<BoardAttachment, "role" | "block" | "released">
   return a.role === "work" && !a.released && !!a.block && a.block.state !== "closed";
 }
 
+/** Who holds a row's issue (Arugula #765): the chip's words, and its title, which says which machine. Not said while the holder's own agent block is attached and open: that block's chip is the claim. */
+export function heldChip(r: Pick<BoardRow, "held" | "attachments">): { text: string; title: string } | null {
+  const h = r.held;
+  if (!h || r.attachments.some(holdsRow)) return null;
+  return { text: `held by ${h.session}`, title: `Held by the session ${h.session} on ${h.machine_name || h.machine}: another session's agent start on this issue is refused unless it takes over` };
+}
+
 /** What a row says of a blocker the reader may not read. */
 export const UNSEEN_BLOCKER = "blocked by something you can't see";
 
@@ -143,6 +184,7 @@ export function readyCount(v: Pick<BoardView, "ready">): number {
 /** The kinds a person may relate by, with their words from the first item's side and the second's. */
 export const RELATION_KINDS: { kind: RelationKind; out: string; in: string }[] = [
   { kind: "blocks", out: "Blocks", in: "Blocked by" },
+  { kind: "before", out: "Before", in: "After" },
   { kind: "relates", out: "Relates to", in: "Relates to" },
   { kind: "duplicate_of", out: "Duplicate of", in: "Duplicated by" },
   { kind: "discovered_from", out: "Discovered from", in: "Led to" },
@@ -169,11 +211,6 @@ export const BLOCK_LABEL: Record<BoardBlockWord, string> = {
   closed: "closed",
 };
 
-/** The class a block's state tag takes: `waits` when it wants someone. */
-export function blockClass(w: BoardBlockWord): string {
-  return w === "needs_input" ? "waits" : "";
-}
-
 /** The facts of a block worth saying beside its chip: its branch, pushed state and uncommitted files once it has stopped working (idle or closed), where they say what is left to do. While it works or waits, the state is all. */
 export function settledFacts(b: BoardBlockState): string[] {
   return b.state === "idle" || b.state === "closed" ? blockFacts(b) : [];
@@ -198,14 +235,71 @@ export function laneCount(z: Pick<BoardZone, "rows">): { total: number; proven: 
   return { total: z.rows.length, proven: z.rows.filter((r) => r.proof).length };
 }
 
-/** An attachment's chip: what it points at, and its state when the reader
- * may see it (an item they can't read says nothing but what it is). */
-export function chipOf(a: Pick<BoardAttachment, "pointer" | "live" | "block" | "role">): { label: string; state: string | null } {
-  const label = pointerLabel(a.pointer, a.live);
+/** The lanes a person moves a row to by hand, in the board's order (#494). */
+export const MOVE_LANES: { lane: BoardLane; title: string }[] = [
+  { lane: "next", title: "Next" },
+  { lane: "doing", title: "Doing" },
+  { lane: "review", title: "Review" },
+  { lane: "done", title: "Done" },
+];
+
+/** A lane's id (`lane_done`) as the lane. */
+export function laneOfZone(zone: string): BoardLane | null {
+  return MOVE_LANES.find((l) => `lane_${l.lane}` === zone)?.lane ?? null;
+}
+
+/** Why a row can't be moved to Done from here, or null when it can (a native issue is closed). */
+export function doneRefusal(r: Pick<BoardRow, "pointer">): string | null {
+  if (r.pointer.kind === "issue") return null;
+  if (r.pointer.kind === "forge_item") return "Close it in GitHub/Plane to move it to Done.";
+  return "A row with no issue can't be moved to Done.";
+}
+
+/** The issue a Done move closes, as the dialog names it: `#12`, or "this issue". */
+export function closeName(r: Pick<BoardRow, "live">): string {
+  return r.live?.number ? `#${r.live.number}` : "this issue";
+}
+
+/** The mark of a lane a person set: `set by kim`, null on a row that follows its work. */
+export function laneSetLine(r: Pick<BoardRow, "lane_set">, nameOf: (account: string) => string | undefined): string | null {
+  return r.lane_set ? `set by ${nameOf(r.lane_set.by) || "someone who left"}` : null;
+}
+
+/** The words of a PR's chip: its repo's short name and number, `cloud#16`, since `#16` alone doesn't say which repo (#903). The board doesn't tell the project's own linked repo from another, so it is always short. */
+function prLabel(live: BoardLive): string {
+  return `${live.repo!.split("/").pop()}#${live.number}`;
+}
+
+/** An attachment's chip: what it points at, its state when the reader may see it (an item they can't read says nothing but what it is), and the tone of that state. The chip in trouble carries the problem (#903): a PR's `checks failed` in danger, an agent's `waiting for you` in accent, and with `stalled` (the row's words, `stalled 2h`) the agent holding the row in warn. A row that waits on a person says so on that agent's chip instead (`waiting` is [`waitingOf`]'s words, #764), and a stall isn't said. */
+export function chipOf(a: Pick<BoardAttachment, "pointer" | "live" | "block" | "role"> & Partial<Pick<BoardAttachment, "released">>, stalled?: string | null, waiting?: { words: string; mine: boolean } | null, now: number = Date.now()): { label: string; state: string | null; tone: Tone | null } {
+  const label = a.live?.kind === "pr" && a.live.repo && a.pointer.kind === "forge_item" ? prLabel(a.live) : pointerLabel(a.pointer, a.live);
   // The block's own name, when its starter gave it one (#372).
-  if (a.block) return { label: a.block.title?.trim() || label, state: BLOCK_LABEL[a.block.state] };
-  if (a.live) return { label, state: liveWord(a.live) };
-  return { label, state: null };
+  // "working" is what the Doing lane already says; the other states stay.
+  if (a.block) {
+    const name = a.block.title?.trim() || label;
+    const holds = holdsRow({ role: a.role, block: a.block, released: a.released });
+    if (waiting && holds) return { label: name, state: waiting.words, tone: waiting.mine ? "accent" : "muted" };
+    if (stalled && holds) return { label: name, state: stalled, tone: "warn" };
+    if (a.block.state === "needs_input") return { label: name, state: "waiting for you", tone: "accent" };
+    return { label: name, state: a.block.state === "working" ? null : BLOCK_LABEL[a.block.state], tone: "muted" };
+  }
+  const q = a.live && queueChip(a.live, now);
+  if (q) return { label, state: q.word, tone: q.tone };
+  if (a.live) return { label, state: liveWord(a.live), tone: a.live.state === "merged" ? "merged" : liveTone(a.live.state) };
+  return { label, state: null, tone: null };
+}
+
+/** Whether a live item is a PR still open: not merged or closed. */
+function isOpenPr(l: Pick<BoardLive, "kind" | "state">): boolean {
+  return l.kind === "pr" && l.state !== "merged" && l.state !== "closed";
+}
+
+/** What a PR says of its merge queue (#766), as the wire's `Live::queue_line` does: `queued 12m` in accent while it's in, `left queue: checks timed out` in danger once it left unmerged (GitHub's reason in lower case words, an unknown one as it came), null for a repo with no queue. It replaces the state word, since queued or out is what the reader needs. */
+export function queueChip(l: Pick<BoardLive, "kind" | "state" | "queued" | "queued_since" | "left_queue">, now: number = Date.now()): { word: string; tone: Tone } | null {
+  if (l.kind !== "pr") return null;
+  if (l.queued && isOpenPr(l)) return { word: l.queued_since ? `queued ${stalledFor(l.queued_since, now)}` : "queued", tone: "accent" };
+  if (l.left_queue) return { word: `left queue: ${l.left_queue.reason.toLowerCase().replace(/_/g, " ")}`, tone: "danger" };
+  return null;
 }
 
 /** Work that knows its issue (#372): the chip `#12 · Launch` on an agent block's or a session's header, or `#12` when it is on no board (or isn't known to be), and the platform page's address of the board with `#row=` its row, for its link. */
@@ -234,9 +328,10 @@ export function boardGroup(on?: OnIssue | null): string {
   return board ? board.title || "Untitled board" : NO_BOARD;
 }
 
-/** Clusters in the order they are laid out: the biggest first, then by name; [`NO_BOARD`] after all the others. */
-export function clusterOrder(a: [string, number], b: [string, number]): number {
-  return +(a[0] === NO_BOARD) - +(b[0] === NO_BOARD) || b[1] - a[1] || a[0].localeCompare(b[0]);
+/** Clusters in the order they are laid out: the biggest first, then by name; [`NO_BOARD`] after all the others. With `order` (a board focus's lanes, #466), those named come first in that order. */
+export function clusterOrder(a: [string, number], b: [string, number], order?: string[] | null): number {
+  const at = (n: string) => (order?.includes(n) ? order.indexOf(n) : order?.length ?? 0);
+  return at(a[0]) - at(b[0]) || +(a[0] === NO_BOARD) - +(b[0] === NO_BOARD) || b[1] - a[1] || a[0].localeCompare(b[0]);
 }
 
 /** The longest goal the platform takes (`GOAL_MAX`, control-wire). */
@@ -247,12 +342,23 @@ export function firstLine(text: string): string {
   return text.split("\n").map((l) => l.trim()).find(Boolean) ?? "";
 }
 
-/** A board's work that is done, in words, and how much of that is proven;
- * `pct` is for its bar. */
-export function epicLine(p: Pick<BoardProgress, "done" | "total" | "proven">): { words: string; pct: number } {
-  if (!p.total) return { words: "No work yet", pct: 0 };
+/** A board's work that is done, in review and doing, in words, and how much of the done is proven;
+ * `pct` is done's share for its bar, and `segments` the bar's parts in order (a lane with no rows has none). */
+export function epicLine(p: Pick<BoardProgress, "done" | "total" | "proven" | "review" | "doing">): {
+  words: string;
+  /** Just the done share, for a board's bar and card; `words` is the rest too, for the bar's label. */
+  short: string;
+  pct: number;
+  segments: { lane: "done" | "review" | "doing"; pct: number }[];
+} {
+  if (!p.total) return { words: "No work yet", short: "No work yet", pct: 0, segments: [] };
+  const share = (n: number) => Math.round((n / p.total) * 100);
   const proven = p.done ? `, ${p.proven} proven` : "";
-  return { words: `${p.done} of ${p.total} done${proven}`, pct: Math.round((p.done / p.total) * 100) };
+  const words = [`${p.done} of ${p.total} done${proven}`, p.review ? `${p.review} in review` : "", p.doing ? `${p.doing} doing` : ""];
+  const segments = (["done", "review", "doing"] as const)
+    .filter((lane) => p[lane] > 0)
+    .map((lane) => ({ lane, pct: share(p[lane]) }));
+  return { words: words.filter(Boolean).join(" · "), short: `${p.done} of ${p.total} done`, pct: share(p.done), segments };
 }
 
 /** The last characters of an id, for a row that says nothing better. */
@@ -278,6 +384,10 @@ export function pointerLabel(p: BoardPointer, live?: BoardLive | null): string {
       return "agent";
     case "link":
       return p.url.replace(/^https:\/\//, "");
+    case "doc":
+      return `Doc ${short(p.id)}`;
+    case "machine_doc":
+      return p.title;
   }
 }
 
@@ -296,7 +406,7 @@ export function assigneesLine(who?: string[] | null): string {
 
 /** The pointer as the id a person edits: none for a block's, which isn't typed. */
 export function pointerText(p: BoardPointer): string {
-  return p.kind === "none" || p.kind === "block" ? "" : p.kind === "link" ? p.url : p.id;
+  return p.kind === "none" || p.kind === "block" || p.kind === "machine_doc" ? "" : p.kind === "link" ? p.url : p.id;
 }
 
 /** An id a person typed as a row's item (`fi_…`, `iss_…`) or an `https://`
@@ -361,6 +471,24 @@ export function liveWord(l: Pick<BoardLive, "state" | "state_name">): string {
   return l.state_name || LIVE_LABEL[l.state];
 }
 
+/** What a Doc's chip says after its title: `3/5` sections written for a project Doc, `on <machine>` for a machine's, nothing for a Doc that is gone. */
+export function docWords(d: { pointer: BoardPointer; sections?: number; written?: number; missing?: boolean; machine_name?: string }): string {
+  if (d.missing) return "";
+  const counts = d.sections ? `${d.written ?? 0}/${d.sections}` : "";
+  // A machine Doc has counts once the machine copied it up (native #673).
+  if (d.pointer.kind === "machine_doc") return `${counts ? `${counts} ` : ""}on ${d.machine_name || "a machine"}`;
+  return counts;
+}
+
+/** Where a board lists a Doc, for the Doc's page: `Docs strip`, `2 rows`, or both. */
+export function onBoardWords(b: { strip: boolean; rows: number }): string {
+  const rows = b.rows === 1 ? "1 row" : `${b.rows} rows`;
+  return [b.strip ? "Docs strip" : "", b.rows > 0 ? rows : ""].filter(Boolean).join(", ");
+}
+
+/** A project Doc's page on the platform page, in the project, by the host's `platform` paths. */
+export const docHref = (project: string, id: string, platform: (path: string) => string | undefined): string | undefined => platform(`/p/${project}/docs/${id}`);
+
 /** Where a row's link goes: an item on its forge, a native issue or a run on
  * the platform page (`platform`, the paths of ids a host knows how to open). */
 export function pointerHref(r: Pick<BoardRow, "pointer" | "live">, platform: (path: string) => string | undefined): string | undefined {
@@ -376,11 +504,10 @@ export function pointerHref(r: Pick<BoardRow, "pointer" | "live">, platform: (pa
   return undefined;
 }
 
-/** A card's tone, which is its lane's: Next muted, Doing ok, Review warn and Done ok; a row that waits on the reader takes the attention tone (accent), whatever its lane. */
-export function cardTone(r: Pick<BoardRow, "lane" | "ask"> & Partial<Pick<BoardRow, "marks">>): Tone {
-  if (r.marks?.some((m) => m.kind === "stalled")) return "warn";
-  if (r.ask?.mine) return "accent";
-  return r.lane === "next" ? "muted" : r.lane === "review" ? "warn" : "ok";
+/** A card's tone, which is its lane's and the progress bar's: Next muted, Doing warn, Review accent, Done ok. A stalled row is danger (warn is Doing's) (a row that waits on a person's answer isn't stalled, #764); a row that waits on the reader keeps its lane's tone and shows it with a dot before its title (`needsDot`). */
+export function cardTone(r: Pick<BoardRow, "lane"> & Partial<Pick<BoardRow, "marks">>): Tone {
+  if (r.marks?.some((m) => m.kind === "stalled")) return "danger";
+  return r.lane === "next" ? "muted" : r.lane === "doing" ? "warn" : r.lane === "review" ? "accent" : "ok";
 }
 
 /** A live item's state chip tone, as the lists' chips take it: open and merged ok, checks running warn, failed danger, closed muted. */
@@ -405,7 +532,7 @@ export function prsOf(r: Pick<BoardRow, "pointer" | "live" | "attachments">): { 
     if (p.kind === "forge_item" && live?.kind === "pr" && !out.some((o) => o.id === p.id)) out.push({ id: p.id, label: pointerLabel(p, live) });
   };
   add(r.pointer, r.live);
-  for (const a of r.attachments) if (a.role !== "proof") add(a.pointer, a.live);
+  for (const a of r.attachments) if (a.role === "work") add(a.pointer, a.live);
   return out;
 }
 
@@ -419,4 +546,130 @@ export function checkTone(c: { status: string; conclusion: string | null }): Ton
   if (c.status !== "completed") return "warn";
   if (c.conclusion === "success") return "ok";
   return c.conclusion === "failure" || c.conclusion === "timed_out" || c.conclusion === "cancelled" || c.conclusion === "action_required" ? "danger" : "muted";
+}
+
+/** What a board from a Plane epic says while the epic is still in backlog or unstarted. */
+export const NOT_STARTED = "Not started in Plane";
+
+/** The board header's word for where a board comes from: `From Plane · ARUGU-10`. */
+export function sourceLine(s: Pick<BoardSource, "key">): string {
+  return `From Plane · ${s.key}`;
+}
+
+/** Whether a source's link is safe to show as one. */
+export function sourceLinked(s: Pick<BoardSource, "url">): boolean {
+  return s.url.startsWith("https://");
+}
+
+/** The header's note on a board too full for all its done children. */
+export function leftOutLine(n: number): string {
+  return `${n} done ${n === 1 ? "child" : "children"} left out`;
+}
+
+/** What a row says of itself that a find reads: the item's title (a note row has its pointer's words), the note, and the item's labels when the view carries them. */
+function rowWords(r: Pick<BoardRow, "pointer" | "live" | "note">): string {
+  const title = r.live ? r.live.title : pointerLabel(r.pointer, r.live);
+  return [title, r.note, ...(r.live?.labels ?? [])].join("\n").toLowerCase();
+}
+
+/** Whether a row's item has this label, case-insensitive and whole (#547). */
+export function rowHasLabel(r: Pick<BoardRow, "live">, label: string): boolean {
+  const l = label.trim().toLowerCase();
+  return !!l && (r.live?.labels ?? []).some((x) => x.toLowerCase() === l);
+}
+
+/** Whether a row's item is assigned to someone whose name or login holds `who`, case-insensitive; a space in a name reads as `_`, as `@alice_diaz` writes it. */
+export function rowHasPerson(r: Pick<BoardRow, "live">, who: string): boolean {
+  const w = who.trim().toLowerCase().replace(/\s+/g, "_");
+  return !!w && (r.live?.assignees ?? []).some((a) => a.toLowerCase().replace(/\s+/g, "_").includes(w));
+}
+
+/** Whether a row answers a find box's text, case-insensitive. A word is `#541` or `541` (the item's number), `ARUGU-12` (a tracker key), `label:boards` (a label) or `@alice` (a person assigned), or text that appears in the title, the note or a label; every word has to hold. An empty text matches every row. */
+export function rowMatches(r: Pick<BoardRow, "pointer" | "live" | "note">, q: string): boolean {
+  const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return true;
+  const text = rowWords(r);
+  const number = r.live && r.live.number > 0 ? r.live.number : undefined;
+  const key = number !== undefined && r.live?.identifier ? `${r.live.identifier}-${number}`.toLowerCase() : undefined;
+  return words.every((w) => {
+    if (w.startsWith("label:") && w.length > 6) return rowHasLabel(r, w.slice(6));
+    if (w.startsWith("@") && w.length > 1) return rowHasPerson(r, w.slice(1));
+    const hash = /^#(\d+)$/.exec(w);
+    if (hash) return number === Number(hash[1]);
+    if (/^\d+$/.test(w)) return number === Number(w) || text.includes(w);
+    if (/^[a-z][a-z0-9]*-\d+$/.test(w)) return key === w || text.includes(w);
+    return text.includes(w);
+  });
+}
+
+/** What narrows a board: the find box's text, and the Label and Person menus. */
+export type BoardFilter = { q: string; labels: string[]; people: string[] };
+
+/** Whether a filter narrows anything. */
+export function filtering(f: BoardFilter): boolean {
+  return !!f.q.trim() || f.labels.length > 0 || f.people.length > 0;
+}
+
+/** Whether a row passes a filter: the text and each menu all hold, and within a menu any value does. */
+export function rowPasses(r: Pick<BoardRow, "pointer" | "live" | "note">, f: BoardFilter): boolean {
+  return rowMatches(r, f.q) && (!f.labels.length || f.labels.some((l) => rowHasLabel(r, l))) && (!f.people.length || f.people.some((p) => rowHasPerson(r, p)));
+}
+
+/** The labels (or people) the rows have, most common first, for a menu: each once, as its first row spells it. */
+export function filterChoices(rows: Pick<BoardRow, "live">[], of: "labels" | "assignees"): { value: string; count: number }[] {
+  const seen = new Map<string, { value: string; count: number }>();
+  for (const r of rows) {
+    for (const v of new Set((r.live?.[of] ?? []).filter(Boolean).map((x) => x.toLowerCase()))) {
+      const first = (r.live![of] ?? []).find((x) => x.toLowerCase() === v)!;
+      const e = seen.get(v);
+      if (e) e.count++;
+      else seen.set(v, { value: first, count: 1 });
+    }
+  }
+  return [...seen.values()].sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
+}
+
+/** A filter as a URL hash, `q=…&label=boards&person=alice`; empty for none. */
+export function filterHash(f: BoardFilter): string {
+  const p = new URLSearchParams();
+  if (f.q.trim()) p.set("q", f.q.trim());
+  for (const l of f.labels) p.append("label", l);
+  for (const w of f.people) p.append("person", w);
+  return p.toString();
+}
+
+/** A filter from a URL hash (with or without the `#`); `null` when it names none. */
+export function parseFilterHash(hash: string): BoardFilter | null {
+  const p = new URLSearchParams(hash.replace(/^#/, ""));
+  const f = { q: p.get("q") ?? "", labels: p.getAll("label").filter(Boolean), people: p.getAll("person").filter(Boolean) };
+  return filtering(f) ? f : null;
+}
+
+/** At most `max` of `list`, and how many more there are, for chips with a `+N`. */
+export function topAndMore<T>(list: T[], max: number): { top: T[]; more: number } {
+  return { top: list.slice(0, max), more: Math.max(0, list.length - max) };
+}
+
+/** A name's initials, up to two: `Ana Diaz` is `AD`, `alice` is `A`. */
+export function initialsOf(name: string): string {
+  return (
+    name
+      .split(/[\s._-]+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((w) => [...w][0].toUpperCase())
+      .join("") || "?"
+  );
+}
+
+/** The find box's count: `7 of 89 rows`. */
+export function findLine(shown: number, all: number): string {
+  return `${shown} of ${all} ${all === 1 ? "row" : "rows"}`;
+}
+
+/** Whether a board in a list answers the filter box: its title, its epic's key or its goal, every word of it. */
+export function boardMatches(b: Pick<ProjectBoard, "title" | "goal" | "source">, q: string): boolean {
+  const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const text = [b.title, b.source?.key ?? "", b.goal].join("\n").toLowerCase();
+  return words.every((w) => text.includes(w));
 }

@@ -13,7 +13,7 @@
 #                       by side;
 #   ci-env keep debug|static
 #                       keep this build's binaries in CI_RUN (debug: with
-#                       web/dist, which control's specs serve);
+#                       web/dist, which the specs serve);
 #   ci-env use          make target/ and web/dist this run's.
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -45,9 +45,6 @@ case "${1:-}" in
     {
       echo "COMPOSE_PROJECT_NAME=illo-ci-$n"
       echo "ARUGULA_TESTNET_SSH_PORT=$((25000 + n * 10))"
-      echo "ARUGULA_TESTNET_CONTROL_PORT=$((25001 + n * 10))"
-      echo "ARUGULA_TESTNET_FAKES_PORT=$((25002 + n * 10))"
-      echo "ARUGULA_TESTNET_GUEST_SSH_PORT=$((25003 + n * 10))"
       echo "ARUGULA_TESTNET_INNER_NET=10.229.$((100 + n))"
     } >> "$GITHUB_ENV"
     echo "test stack illo-ci-$n"
@@ -61,7 +58,7 @@ case "${1:-}" in
     mkdir -p "$run/$sub"
     # Hard links: instant, and cargo replaces files rather than writing
     # into them, so the next build into this directory leaves these alone.
-    for b in arugulad arugula arugula-control; do
+    for b in arugulad arugula; do
       ln -f "${CARGO_TARGET_DIR:?}/$sub/$b" "$run/$sub/$b"
     done
     if [ "$2" = debug ]; then rm -rf "$run/dist" && cp -a web/dist "$run/dist"; fi

@@ -27,6 +27,24 @@ for t in x86_64-unknown-linux-musl aarch64-unknown-linux-musl aarch64-apple-darw
 done
 (cd "$rel" && { sha256sum -- *.tar.gz 2>/dev/null || shasum -a 256 -- *.tar.gz; } >SHA256SUMS)
 
+# SHA256SUMS.sig, signed with a key of the test's own (install.sh takes it
+# from ARUGULA_TEST_RELEASE_KEY), when this machine's openssl does Ed25519;
+# else install.sh can't check signatures here either, and says so.
+key=$work/release-key.pem
+sign() { openssl pkeyutl -sign -inkey "$work/release-key.priv" -rawin -in "$1" | openssl base64 -A; }
+if openssl genpkey -algorithm ed25519 -out "$work/release-key.priv" 2>/dev/null &&
+  openssl pkey -in "$work/release-key.priv" -pubout -out "$key" 2>/dev/null &&
+  printf 'arugula release key' >"$work/probe" && sign "$work/probe" >"$key.probe" 2>/dev/null; then
+  ed25519=1
+  sign "$rel/SHA256SUMS" >"$rel/SHA256SUMS.sig"
+else
+  ed25519=""
+  : >"$key"
+  : >"$key.probe"
+  echo "(no openssl with Ed25519: the signature cases check that install.sh says it can't tell)"
+  printf 'unchecked\n' >"$rel/SHA256SUMS.sig"
+fi
+
 # The app's release (app-latest, #393): a stand-in zip per Mac, which the
 # ditto stand-in "unpacks" into an arugula.app that names it.
 apprel=$work/app-release
@@ -81,6 +99,15 @@ EOF
 # shellcheck disable=SC2016 # expands in the stand-in, not here
 printf '#!/bin/sh\necho "open $*" >>"$HOME/calls"\n' >"$stubs/open"
 printf '#!/bin/sh\nexit 1\n' >"$stubs/pgrep"
+# codesign: the app is validly signed by Arugula's team, unless
+# FAKE_CODESIGN says it isn't signed (bad) or names another team.
+cat >"$stubs/codesign" <<'EOF'
+#!/bin/sh
+case "$1" in
+  --verify) [ "${FAKE_CODESIGN:-}" != bad ] ;;
+  -dv) echo "TeamIdentifier=${FAKE_CODESIGN:-HNDPMQPF22}" >&2 ;;
+esac
+EOF
 chmod +x "$stubs"/*
 
 # run NAME OS ARCH [ARM64] [ARG...]: install.sh as that machine, in a
@@ -97,7 +124,7 @@ run() {
   mkdir -p "$home"
   status=0
   out=$(env -u ARUGULA_VERSION -u ARUGULA_NO_START \
-    HOME="$home" PATH="$path" FAKE_OS="$2" FAKE_ARCH="$3" FAKE_ARM64="${4:-}" \
+    HOME="$home" PATH="$path" FAKE_OS="$2" FAKE_ARCH="$3" FAKE_ARM64="${4:-}" ARUGULA_TEST_RELEASE_KEY="$key" \
     SSH_CONNECTION="10.0.0.1 22 10.0.0.2 22" ARUGULA_APP_DIR="$home/Apps" \
     "${release[@]}" ${with[@]+"${with[@]}"} \
     sh "$root/scripts/install.sh" "${@:5}" 2>&1) || status=$?
@@ -160,6 +187,46 @@ else
   bad tampered "installed a tarball that doesn't match SHA256SUMS"
 fi
 cp "$work/good.tar.gz" "$good"
+
+# SHA256SUMS must be signed by the release key: not by another, and not
+# missing unless ARUGULA_ALLOW_UNSIGNED=1 says to go on without.
+cp "$rel/SHA256SUMS.sig" "$work/good.sig"
+if [ -n "$ed25519" ]; then
+  openssl genpkey -algorithm ed25519 -out "$work/other.priv" 2>/dev/null
+  openssl pkeyutl -sign -inkey "$work/other.priv" -rawin -in "$rel/SHA256SUMS" | openssl base64 -A >"$rel/SHA256SUMS.sig"
+  run sig-other-key Linux x86_64
+  if [ "$status" != 0 ] && grep -q "isn't signed by the release key" <<<"$out" && [ ! -f "$home/calls" ] && [ ! -e "$home/.local/bin/arugulad" ]; then
+    ok "SHA256SUMS signed by another key refused"
+  else
+    bad sig-other-key "installed a release whose SHA256SUMS another key signed"
+  fi
+  # Sums rewritten to match a swapped tarball, the old signature kept.
+  cp "$work/good.sig" "$rel/SHA256SUMS.sig"
+  cp "$rel/SHA256SUMS" "$work/good.sums"
+  printf '%s  extra.tar.gz\n' "$(printf x | { sha256sum 2>/dev/null || shasum -a 256; } | cut -d' ' -f1)" >>"$rel/SHA256SUMS"
+  run sig-sums-changed Linux x86_64
+  if [ "$status" != 0 ] && grep -q "isn't signed by the release key" <<<"$out" && [ ! -f "$home/calls" ]; then
+    ok "SHA256SUMS changed after signing refused"
+  else
+    bad sig-sums-changed "installed with SHA256SUMS changed after it was signed"
+  fi
+  cp "$work/good.sums" "$rel/SHA256SUMS"
+else
+  run sig-cant-tell Linux x86_64
+  if [ "$status" = 0 ] && grep -q "no openssl with Ed25519 here" <<<"$out"; then ok "can't check signatures here: says so"; else bad sig-cant-tell "didn't say it couldn't check"; fi
+fi
+rm "$rel/SHA256SUMS.sig"
+run sig-missing Linux x86_64
+if [ "$status" != 0 ] && grep -q "isn't signed (no SHA256SUMS.sig)" <<<"$out" && [ ! -f "$home/calls" ]; then
+  ok "unsigned release refused"
+else
+  bad sig-missing "installed a release with no SHA256SUMS.sig"
+fi
+with=(ARUGULA_ALLOW_UNSIGNED=1)
+run sig-missing-allowed Linux x86_64
+with=()
+if [ "$status" = 0 ] && grep -q "installing it anyway" <<<"$out"; then ok "unsigned release with ARUGULA_ALLOW_UNSIGNED=1"; else bad sig-missing-allowed "didn't install with ARUGULA_ALLOW_UNSIGNED=1"; fi
+cp "$work/good.sig" "$rel/SHA256SUMS.sig"
 
 # app NAME OS ARCH ARM64 ZIP [ARG...]: the daemon as above, then the Mac
 # app ZIP from app-latest, checked against app-latest's SHA256SUMS, in
@@ -231,6 +298,19 @@ else
   bad tampered-app "installed with an app zip that doesn't match SHA256SUMS"
 fi
 cp "$work/good.zip" "$zip"
+
+# An app that isn't validly signed, or is signed by another team: nothing
+# goes in /Applications.
+for c in "bad" "ZZZZZZZZZZ"; do
+  with=(FAKE_CODESIGN="$c")
+  run "app-signed-$c" Darwin arm64 "" --app
+  with=()
+  if [ "$status" != 0 ] && grep -q "not installing it" <<<"$out" && [ ! -e "$home/Apps/Arugula.app" ]; then
+    ok "app signed $c: refused"
+  else
+    bad "app-signed-$c" "installed an app that isn't Arugula's signed one"
+  fi
+done
 
 # A Mac with the app from before the rename: illogical.app goes, Arugula.app
 # takes its place (an app updated in place since keeps that folder).

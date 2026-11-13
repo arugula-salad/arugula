@@ -1,0 +1,10 @@
+/* The Docs page (#1494, shell/ui/docs-page.tsx) in the shell. The list and
+   its reader are the one Docs list's (shared/docs/docs.css). */
+
+/* In the workspace the page is in the panes' row (ui/app.tsx): under the
+   workspace's header and the macOS titlebar strip, beside the rail, over the
+   sessions sidebar and the panes, which stay laid out under it (Arugula #796). */
+.app.ws .ws-row > .chat.ws-page {
+  position: absolute;
+  inset: 0;
+}

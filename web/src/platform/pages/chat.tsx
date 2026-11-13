@@ -15,6 +15,7 @@ import type { ChatRoute } from "../../shared/chat/route";
 import { ChatApp } from "../../shared/chat/app";
 import type { ChatScope } from "../../shared/chat/sidebar";
 import { useSubscribe } from "../../shared/ui/hooks";
+import { ChatArrival } from "../chat-arrival";
 import { WithRail } from "../rail";
 import { session } from "../session";
 
@@ -27,6 +28,7 @@ export function ChatPage({ project, route, children }: { project: string; route:
       <WithRail>
         <ChatApp route={route} scope={scope} />
       </WithRail>
+      <ChatArrival />
       {children}
     </div>
   );

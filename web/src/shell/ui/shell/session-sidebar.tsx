@@ -3,6 +3,7 @@
 // breadcrumb, whose menu switches sessions and holds the session's
 // commands.
 
+import { EmptyLine } from "../../../shared/ui/block-states";
 import { Fragment } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { paneIds, type Client } from "../../client";
@@ -11,18 +12,19 @@ import type { Attention, PaneInfo, Session, SessionId, TabId } from "../../../sh
 import { AttentionBadge } from "../attention";
 import { onIssueChip } from "../../../shared/boards/text";
 import { platformHref } from "../../platform-links";
-import { needsYou, NEEDS_YOU } from "../../../shared/needs-you";
+import { needsYou, NEEDS_YOU, placeOf, sortNeedsYou } from "../../../shared/needs-you";
 import { sessionItems, sessionMenuHint } from "../commands";
 import { openFresh } from "../open-fresh";
 import { closePlace, currentPlace, openOverview } from "../places";
 import { openAttention } from "./attention-drawer";
 import { sessionUnread } from "../threads";
-import { BranchIcon, MoreIcon, PanesIcon, PlusIcon, SearchIcon, TabsIcon } from "./icons";
+import { BranchIcon, Caret, MoreIcon, PanesIcon, PlusIcon, SearchIcon, TabsIcon } from "../../../shared/ui/icons";
 import { setSidebarOpen, setSidebarWidth, takeSearchFocus, useSidebar } from "./prefs";
 import { offlineWhy } from "./live";
 import { RenameInput, type Renaming } from "./rename-input";
 import type { MenuItem } from "../../../shared/ui/menu";
 import { Time } from "../../../shared/ui/time";
+import { ObjectChip } from "../../../shared/ui/state-chip";
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -64,9 +66,10 @@ export function summarize(client: Client, session: Session): SessionSummary {
   });
   const pick = (s: Attention) => infos.find((i) => i.attention === s);
   // What needs you, as the bell counts it: an ask first, then a failure
-  // (a PR's failed checks are `done`, but need you: UI audit #154).
-  const needs = infos.filter(needsYou);
-  const top = needs.find((i) => i.attention === "needs_input") ?? needs[0] ?? pick("working") ?? pick("done");
+  // (a PR's failed checks are `done`, but need you: UI audit #154), in
+  // the order every needs-you list shares (#451).
+  const needs = sortNeedsYou(infos.filter(needsYou), (i) => placeOf(i, i.id));
+  const top = needs[0] ?? pick("working") ?? pick("done");
   const attention = top?.attention ?? "idle";
   const repos = [...new Set(infos.flatMap((i) => (i.project ? [i.project.name] : [])))];
   const branches = [...new Set(infos.flatMap((i) => (i.branch ? [i.branch] : [])))];
@@ -198,7 +201,7 @@ export function SessionSidebar({
         )}
       </div>
       <label class="ws-search">
-        <SearchIcon size={14} />
+        <SearchIcon size="sm" />
         <input
           ref={search}
           type="search"
@@ -217,13 +220,13 @@ export function SessionSidebar({
           onKeyDown={onKey}
         />
       </label>
-      <div class="ws-session-list" id="ws-session-list" role="listbox" aria-label="Sessions">
+      <div class="ws-session-list" id="ws-session-list" aria-label="Sessions">
         {GROUPS.map((g) => {
           const rows = shown.filter((r) => r.group === g.id);
           if (!rows.length) return null;
           return (
             <Fragment key={g.id}>
-              <h3 class={`ws-group ${g.id}`} data-session-group={g.id}>
+              <h3 class={`ws-group ${g.id}`} id={`ws-group-${g.id}`} data-session-group={g.id}>
                 {g.id === "needs" ? (
                   // M111: what each one asks, in the attention drawer.
                   <button class="ws-group-open" data-open-attention-group title="See what needs you, on every machine (looking doesn't answer it)" onClick={() => openAttention()}>
@@ -237,6 +240,7 @@ export function SessionSidebar({
                   </>
                 )}
               </h3>
+              <div role="list" aria-labelledby={`ws-group-${g.id}`}>
               {rows.map((r) => (
                 <SessionRow
                   key={r.session.id}
@@ -249,28 +253,27 @@ export function SessionSidebar({
                   choose={choose}
                 />
               ))}
+              </div>
             </Fragment>
           );
         })}
         {shown.length === 0 && (
-          <div class="ws-empty" data-session-empty role="status">
-            {q ? (
-              <>
-                <p>No session on {host} matches “{query.trim()}”.</p>
-                <button
-                  onClick={() => {
+          <EmptyLine
+            role="status"
+            data-session-empty
+            clearLabel="Clear the search"
+            clear={
+              q
+                ? () => {
                     setQuery("");
                     // Back to the search, not to the page (UI audit #171).
                     search.current?.focus();
-                  }}
-                >
-                  Clear the search
-                </button>
-              </>
-            ) : (
-              <p>{owner ? `No sessions on ${host}.` : `Nothing on ${host} is shared with you.`}</p>
-            )}
-          </div>
+                  }
+                : undefined
+            }
+          >
+            {q ? `No session on ${host} matches “${query.trim()}”.` : owner ? `No sessions on ${host}.` : `Nothing on ${host} is shared with you.`}
+          </EmptyLine>
         )}
       </div>
       </>}
@@ -310,8 +313,7 @@ function SessionRow({
     <div
       id={`ws-session-${s.id}`}
       class={`ws-session${current ? " current" : ""}${hi ? " hi" : ""}`}
-      role="option"
-      aria-selected={current}
+      role="listitem"
       data-session-id={s.id}
       data-attention={row.attention}
       onContextMenu={menu}
@@ -325,7 +327,7 @@ function SessionRow({
           }}
         />
       ) : (
-        <button class="ws-session-main" title={`${s.name}: ${row.tabs} tab${row.tabs === 1 ? "" : "s"}, ${row.panes} pane${row.panes === 1 ? "" : "s"}`} onClick={() => choose(s.id)}>
+        <button class="ws-session-main" aria-current={current ? "true" : undefined} title={`${s.name}: ${row.tabs} tab${row.tabs === 1 ? "" : "s"}, ${row.panes} pane${row.panes === 1 ? "" : "s"}`} onClick={() => choose(s.id)}>
           <span class="ws-session-line">
             <span class={`ws-dot ${row.attention}`} aria-hidden="true" />
             <span class="ws-session-name">{s.name}</span>
@@ -335,7 +337,7 @@ function SessionRow({
                 <TabsIcon /> {row.tabs}
               </span>
               <span title={`${row.panes} pane${row.panes === 1 ? "" : "s"}`}>
-                <PanesIcon size={12} /> {row.panes}
+                <PanesIcon size="xs" /> {row.panes}
               </span>
             </span>
           </span>
@@ -345,7 +347,7 @@ function SessionRow({
                 // "Multiple repos" is words, not a repo · branch: not set in
                 // mono (UI audit #171).
                 <span class={row.context.startsWith("Multiple") ? "ws-session-context words" : "ws-session-context"}>
-                  {row.context.startsWith("Multiple") ? null : <BranchIcon size={11} />}
+                  {row.context.startsWith("Multiple") ? null : <BranchIcon size="xs" />}
                   <span class="ws-ellipsis" title={row.context}>
                     {row.context}
                   </span>
@@ -360,9 +362,9 @@ function SessionRow({
       )}
       <span class="ws-session-actions">
         {row.work && (row.work.path && platformHref(row.work.path) ? (
-          <a class="work-chip" href={platformHref(row.work.path)} target="_blank" rel="noopener noreferrer" title={row.work.title} data-session-work>{row.work.label}</a>
+          <ObjectChip href={platformHref(row.work.path)} target="_blank" rel="noopener noreferrer" title={row.work.title} data-session-work>{row.work.label}</ObjectChip>
         ) : (
-          <span class="work-chip" title={row.work.title} data-session-work>{row.work.label}</span>
+          <ObjectChip title={row.work.title} data-session-work>{row.work.label}</ObjectChip>
         ))}
         <AttentionBadge state={row.attention} reason={row.reason} pane={row.pane} client={client} />
         <button class="ws-icon-button ws-session-more" aria-label={`Actions for ${s.name}`} title={cap(sessionMenuHint(items()))} onClick={menu}>
@@ -457,7 +459,7 @@ export function SessionButton({
         {unread.unread ? <span class={unread.mention ? "session-unread mention" : "session-unread"} title="New in the session thread" /> : null}
       </button>
       <button class="ws-crumb-caret" aria-label={`Session menu: ${session.name}`} title={hint ? `Switch sessions, ${hint}` : "Switch sessions"} data-crumb-menu onClick={sessionMenu}>
-        <span class="caret" aria-hidden="true">▾</span>
+        <Caret />
       </button>
     </span>
   );

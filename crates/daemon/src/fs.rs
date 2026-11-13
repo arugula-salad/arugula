@@ -6,10 +6,8 @@
 //! re-exported here; this file is the routes and the handlers.
 //!
 //! **Who.** `/api/fs/…` is part of the owner's API: share-link viewers only
-//! ever reach `/share/<token>` and its socket, host tokens only the dial-in
-//! and sync paths, and everything else needs the owner (`server.rs`'s
-//! `guard`). Through `/h/NAME` and `/tunnel/NAME` the home daemon checks
-//! the owner before forwarding.
+//! ever reach `/share/<token>` and its socket, and everything else needs
+//! the owner (`server.rs`'s `guard`).
 
 use std::{
     collections::{BTreeMap, HashSet},
@@ -135,17 +133,22 @@ async fn read(State(app): AppState, Query(q): Query<FsQuery>) -> Result<Response
 
 /// A file's bytes from `offset` (at most `len`, capped at [`READ_MAX`]) and
 /// its size, on the host `pane` runs on (this host without one): MCP's
-/// `read_file` (M16).
+/// `read_file` (M16). With `inside`, only a file in that directory.
 pub async fn read_on(
     app: &App,
     pane: Option<PaneId>,
     path: &str,
     offset: u64,
     len: u64,
+    inside: Option<&str>,
 ) -> Result<(Vec<u8>, u64), String> {
     let q = FsQuery { path: Some(path.to_owned()), pane, ..Default::default() };
     let (path, len) = (path_of(&q), len.min(READ_MAX));
-    let read = match target(app, &q).await.map_err(|e| e.to_string())? {
+    let mut t = target(app, &q).await.map_err(|e| e.to_string())?;
+    if let Some(dir) = inside {
+        t = t.inside(dir).map_err(|e| e.to_string())?;
+    }
+    let read = match t {
         Target::Local(s) => blocking(move || s.read(&path, offset, len)).await,
         Target::Machine(m) => m.read(&path, offset, len).await,
     };

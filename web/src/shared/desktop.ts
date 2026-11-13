@@ -14,15 +14,20 @@
 //   one has focus or is the active pane, else the active terminal's
 //   *Attach file…* (M70). They're in ui/keys.ts's table.
 
+import type { ChatRoom } from "./proto.gen";
+import { dockBadge } from "./chat/unread";
+
 /** `signedIn`: whether the app is signed in to the machine's control
- * (#1580); absent from apps before it. */
-type AppInfo = { name?: string; platform?: "macos" | "linux"; signedIn?: boolean };
+ * (#1580); absent from apps before it. `platform`: "windows" since DK5
+ * (#386), where WebView2 has passkeys; apps before it said "linux" there,
+ * whose WebKitGTK window has none. */
+type AppInfo = { name?: string; platform?: "macos" | "linux" | "windows"; signedIn?: boolean };
 
 export function desktopApp(): AppInfo | null {
   return (globalThis as { __arugulaApp?: AppInfo }).__arugulaApp ?? null;
 }
 
-export function desktopPlatform(): "macos" | "linux" | null {
+export function desktopPlatform(): "macos" | "linux" | "windows" | null {
   return desktopApp()?.platform ?? null;
 }
 
@@ -78,4 +83,25 @@ export function openInNewWindow(pane?: number) {
 export function setupDesktop() {
   const platform = desktopPlatform();
   if (platform) document.documentElement.dataset.desktop = platform;
+}
+
+/** Chat's unread on the desktop app's Dock badge (#498), from this page's
+ * chat as it changes: a number for mentions and DMs, which the app adds to
+ * the panes that need you, and a dot for unread alone. Nothing outside the
+ * app, or before chat has said it's on. */
+export function followChatBadge(store: { subscribe(fn: () => void): () => void; on: boolean | null; rooms: readonly ChatRoom[] }) {
+  const invoke = tauriInvoke();
+  if (!invoke) return;
+  let last = "";
+  const send = () => {
+    const b = store.on ? dockBadge(store.rooms) : { count: 0, unread: false };
+    const key = `${b.count} ${b.unread}`;
+    if (key === last) return;
+    last = key;
+    invoke("chat_badge", b).catch(() => {
+      // An older app without the command: no chat on its badge.
+    });
+  };
+  store.subscribe(send);
+  send();
 }

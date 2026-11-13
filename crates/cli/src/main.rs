@@ -93,7 +93,7 @@ enum Command {
     /// Open a browser block on a port or a web page, or a project's issue.
     ///
     /// `:PORT[/path]` is a port on its machine, `https://…` a web page.
-    /// `iss_…` or `#N` is a project's own issue on Arugula control, as an
+    /// `iss_…` or `#N` is a project's own issue on Arugula cloud, as an
     /// issue block that reads it there.
     Open(cmd::open::Args),
     /// Open VS Code on a folder or a file; prints its block.
@@ -117,7 +117,7 @@ enum Command {
     /// Your teams' channels, direct messages, threads and Activity, as on the
     /// chat page, in a block beside this terminal: split, tabbed, zoomed like
     /// any other. `ROOM` opens on that room; with `--pin` the block is that
-    /// room alone. It reads as you through Arugula control, so this machine
+    /// room alone. It reads as you through Arugula cloud, so this machine
     /// has to have joined it. Prints the block.
     Chat(cmd::chat::Args),
     /// Show a chant workspace as a block.
@@ -145,7 +145,7 @@ enum Command {
     /// Prints the block, then the PR as text. `pr comment|review|merge|rerun %N`
     /// write to it; run by an agent (CLAUDECODE or AI_AGENT set), a write is a
     /// draft that waits for a person to send it. On a repo linked to a project
-    /// on Arugula control, with no block: `pr view|checks OWNER/REPO#N`, `pr
+    /// on Arugula cloud, with no block: `pr view|checks OWNER/REPO#N`, `pr
     /// list`, and `pr comment|review OWNER/REPO#N` (`--draft` to keep it a
     /// draft).
     #[command(args_conflicts_with_subcommands = true)]
@@ -157,26 +157,31 @@ enum Command {
     /// `N` in this directory's repository. `issue new` opens one (run by an
     /// agent, it's a draft a person sends); `issue comment %N` comments; `issue
     /// agent %N` starts an agent on it in a worktree and branch of its own, in a
-    /// tab with the issue. On a repo linked on Arugula control, with no block:
+    /// tab with the issue. On a repo linked on Arugula cloud, with no block:
     /// `issue view|comment OWNER/REPO#N`, `issue list OWNER/REPO` and `issue
     /// create OWNER/REPO`.
     ///
-    /// A project's own issues on Arugula control (no block, no daemon; needs
+    /// A project's own issues on Arugula cloud (no block, no daemon; needs
     /// `arugula login`): `issue new|list|show|comment|close|reopen|edit|export`,
     /// and `issue agent`. `#N` or `N` is a number in the current project,
     /// `iss_…` any issue you can read. The current project is `--project
-    /// NAME|ID` (or `$ARUGULA_PROJECT`; `personal` is yours), else the project
-    /// this directory's GitHub repo is linked to, else your personal one; a
-    /// GitHub clone that none of your projects links keeps GitHub's issues.
+    /// NAME|ID` (or `$ARUGULA_PROJECT`; `personal` is yours), else this
+    /// session's project, else the one this directory's GitHub repo is
+    /// linked to, else your personal one; a GitHub clone that none of your
+    /// projects links keeps GitHub's issues.
     /// Its issue home says whether they're native or GitHub's; `--native` and
     /// `--github` override it. `issue list` on a GitHub home lists the linked
-    /// repo's issues from Arugula control.
+    /// repo's issues from Arugula cloud.
     #[command(args_conflicts_with_subcommands = true)]
     Issue(cmd::issue::Args),
     /// Type a pane's failed command again.
     ///
     /// Once its shell is waiting at its prompt.
     Rerun(cmd::rerun::Args),
+    /// Let teammates' agents mention a session, or silence them.
+    ///
+    /// `off %N` keeps them out of one session for as long as the pane lives.
+    Mentions(cmd::mentions::Args),
     /// Claude Code conversations on this machine.
     ///
     /// From a terminal or the desktop app's Code tab. `open` shows one as an agent
@@ -213,6 +218,14 @@ enum Command {
     /// Its port, and which IDE gets Claude Code's diffs (`--diffs arugula`, or
     /// another IDE's name as it registered, e.g. "Visual Studio Code").
     Ide(cmd::ide::Args),
+    /// Docs on this machine: `doc move` gives them to a team.
+    ///
+    /// The team owns a moved Doc, and this machine keeps only a pointer to it,
+    /// which a block showing it and `doc open` follow.
+    Doc {
+        #[command(subcommand)]
+        cmd: cmd::doc::DocCmd,
+    },
     /// Standing permission rules for agent blocks.
     ///
     /// What agent blocks on this daemon allow without asking, made by "Always" for
@@ -287,6 +300,15 @@ enum Command {
     /// once.
     #[command(hide = true)]
     Inbox,
+    /// What Claude Code says about its session from inside it.
+    ///
+    /// The Claude Code mod in `plugins/claude-code/hooks/live.ts` runs it with a signal
+    /// on stdin (the window's fill, the model and effort, a compaction) and
+    /// reads the session's context, the pane it shows on and both versions
+    /// back. It's kept by Claude Code's session id, from a pane or not;
+    /// with neither a session id nor a pane: exit 3.
+    #[command(hide = true)]
+    SessionSignal,
     /// The commands Claude Code's hooks and Arugula's clients run.
     ///
     /// People don't run them, so `arugula --help` leaves them out; they're
@@ -326,16 +348,20 @@ enum Command {
     ///
     /// Made with `share --guest`, where the machine's owner has turned on
     /// Guest SSH access (`arugulad sharing guest-ssh on`). `guests revoke ID`
-    /// ends one and cuts off anyone using it.
+    /// ends one and cuts off anyone using it; turning Guest SSH access off
+    /// ends them all.
     Guests {
         #[command(subcommand)]
         cmd: Option<cmd::share::SharesCmd>,
     },
-    /// Who else can reach which sessions.
+    /// Who can reach this machine, and as what.
     ///
-    /// `access` lists grants, `access grant SESSION WHO ROLE`, `access revoke
-    /// SESSION WHO`, `access log`. WHO is a tailnet login (or `account:ID` from
-    /// control).
+    /// `access` shows it: the owner, the team's people by their role, each
+    /// session's shares, links, ssh guests and trust, each saying whose word
+    /// it is (this machine's, or the team's roster), then its agents' powers
+    /// on Arugula cloud. `access grant SESSION WHO ROLE` shares a session,
+    /// `access revoke SESSION WHO` ends that, `access log` lists every grant
+    /// and revoke. WHO is a tailnet login (or `account:ID` from control).
     Access {
         #[command(subcommand)]
         cmd: Option<cmd::access::AccessCmd>,
@@ -344,7 +370,7 @@ enum Command {
     ///
     /// Shares it with them (as a viewer unless --role says otherwise) and
     /// notifies them alone, opening at a pane. WHO is a tailnet login, someone already shared with, or (when
-    /// joined to Arugula control) a member of your teams, by name.
+    /// joined to Arugula cloud) a member of your teams, by name.
     /// Prints whether the notification reached them: sent, pending (they
     /// haven't accepted this machine yet) or unreachable, and why.
     Invite(cmd::invite::Args),
@@ -355,10 +381,13 @@ enum Command {
         #[command(subcommand)]
         cmd: Option<cmd::share::SharesCmd>,
     },
-    /// History other hosts synced here (kept encrypted).
-    Synced {
+    /// Read-only links to a session that still work.
+    ///
+    /// Made in the Share dialog. `links revoke ID` ends one; anyone watching
+    /// is cut off.
+    Links {
         #[command(subcommand)]
-        cmd: Option<cmd::synced::SyncedCmd>,
+        cmd: Option<cmd::share::LinksCmd>,
     },
     /// Open this machine's page in your browser, signed in.
     ///
@@ -370,34 +399,44 @@ enum Command {
     ///
     /// `arugulad install` with these arguments.
     Install(cmd::install::Args),
-    /// Add a machine to your account on Arugula control.
+    /// Add a machine to your account on Arugula cloud.
     ///
     /// So the web, the phone and other machines reach it through control. With
     /// `--ssh user@box`: that box, set up over ssh first (Arugula installed, its
     /// daemon kept running after you log out); its code shows here, to approve from
     /// a signed-in device. Without: this machine.
     Join(cmd::join::Args),
-    /// Make this CLI one of your devices on Arugula control.
+    /// Make this CLI one of your devices on Arugula cloud.
     ///
     /// So `--host NAME` reaches every machine on your account, directly or through
     /// control's relay. Shows a code to approve on a signed-in device.
     Login(cmd::login::Args),
     /// Forget this CLI's key for control (`arugula login` makes a new one).
     Logout,
-    /// What your machines' agents may do with your things on Arugula control.
+    /// The powers your machines' agents hold: what they may do in a project on
+    /// Arugula cloud.
     ///
     /// Every machine you join gets `cloud.drive`: the agents on it drive your
     /// Cloud workspaces. `add` lets them read and post in a project's threads
     /// or your DMs, or write a project's issues (off until you do). `revoke`
-    /// takes grants from one machine, `restore` gives `cloud.drive` back; `ls`
-    /// (the default) lists them. Needs `arugula login`.
+    /// takes powers from one machine, `restore` gives `cloud.drive` back; `ls`
+    /// (the default) lists them, and `ls --project X` is a project's Access
+    /// view: who can do what there. Needs `arugula login`.
     Grants {
         #[command(subcommand)]
         cmd: Option<cmd::grants::GrantsCmd>,
     },
-    /// Tokens for agents with no machine, on Arugula control's MCP endpoint.
+    /// A machine's name on Arugula cloud.
     ///
-    /// They're made on the platform page (Settings, Agents with no machine),
+    /// `rename` changes what the machines list, chat and `@machine` mentions
+    /// call it. Needs `arugula login`.
+    Machine {
+        #[command(subcommand)]
+        cmd: cmd::machine::MachineCmd,
+    },
+    /// Tokens for agents with no machine, on Arugula cloud's MCP endpoint.
+    ///
+    /// They're made on your machines page (Settings, Agents with no machine),
     /// never from a CLI: its agent acts as yours over their projects,
     /// labelled with its name, never past your role, and never approves
     /// anything. `ls` (the default) lists them, `calls` what one's agent
@@ -406,16 +445,16 @@ enum Command {
         #[command(subcommand)]
         cmd: Option<cmd::agent_tokens::AgentTokensCmd>,
     },
-    /// A project's cloud workspaces on Arugula control.
+    /// A project's cloud workspaces on Arugula cloud.
     ///
     /// `create NAME` makes one (owner or editor on the project; `--repo`,
     /// `--package`, `--setup` and `--env` say what it's built from), `ls`
     /// lists them (and how each one's setup goes), `open` wakes one and
     /// says its machine, `edit` changes its spec, `secret` sets what it
-    /// clones with and takes as env, `rebuild` makes its box again from its
-    /// spec (asking the box for unpushed work first), `delete` takes it and
-    /// its box away. `key set anthropic|openai` gives the project its own
-    /// inference key (from stdin; never in the box; Anthropic's may be a
+    /// clones with and takes as env, `rebuild` makes its machine again from
+    /// its spec (asking the machine for unpushed work first), `delete` takes
+    /// it and its machine away. `key set anthropic|openai` gives the project its own
+    /// inference key (from stdin; never on the machine; Anthropic's may be a
     /// Claude subscription's `claude setup-token`), `key clear` and `key ls`.
     /// `preview public WORKSPACE PORT` gives a port a public address for 7
     /// days (`renew`, `off`, `ls`).
@@ -425,7 +464,7 @@ enum Command {
         #[command(subcommand)]
         cmd: cmd::cloud::CloudCmd,
     },
-    /// Runs on a project's cloud workspaces, on Arugula control.
+    /// Runs on a project's cloud workspaces, on Arugula cloud.
     ///
     /// `list`, `show RUN` and `logs RUN [--follow]` read them (logs: the
     /// platform's log of a run, or its pane while it runs). `start` runs a
@@ -444,7 +483,7 @@ enum Command {
         #[command(subcommand)]
         cmd: cmd::runs::RunsCmd,
     },
-    /// A project's deploys on Arugula control.
+    /// A project's deploys on Arugula cloud.
     ///
     /// `envs` lists its environments, `ls [--env NAME]` its deploys, newest
     /// first, `plan --env NAME --commit SHA --repo OWNER/NAME
@@ -452,24 +491,36 @@ enum Command {
     /// `request DEP` asks the project's owners to approve it, `show DEP`
     /// reads it (its plan, state and log). An owner approves on their phone
     /// or in a browser, with a passkey, never here; environments and their
-    /// secrets are made on the platform page. `--project` names a project
+    /// secrets are made on your machines page. `--project` names a project
     /// by id or name; the default is your personal one. Needs `arugula
     /// login`.
     Deploys {
         #[command(subcommand)]
         cmd: cmd::deploys::DeploysCmd,
     },
-    /// A project's linked GitHub repos on Arugula control.
+    /// What chant needs from Arugula.
     ///
-    /// `link OWNER/REPO` links one (you need admin or maintain on it on
-    /// GitHub), `unlink` takes it out, `ls` lists them. `--project` names a
-    /// project by id or name; the default is your personal one. Needs
-    /// `arugula login`.
+    /// `trust-entry` prints your passkeys as entries for chant's
+    /// `.chant/trust.json` (`passkeys`), as `arugula:<account>`: a chant-fly
+    /// deploy's approval is your passkey's signature over chant's gate
+    /// statement, which chant counts only for a passkey listed there. It
+    /// only prints. Needs `arugula login`.
+    Chant {
+        #[command(subcommand)]
+        cmd: cmd::chant::ChantCmd,
+    },
+    /// Your projects on Arugula cloud, and their linked GitHub repos.
+    ///
+    /// `list` lists your projects, `new NAME` makes one, and `use PROJECT`
+    /// puts this session in one. `link OWNER/REPO` links a repo (you need
+    /// admin or maintain on it on GitHub), `unlink` takes it out, `repos`
+    /// lists them. `--project` names a project by id or name; the default
+    /// is your personal one. Needs `arugula login`.
     Project {
         #[command(subcommand)]
         cmd: cmd::project::ProjectCmd,
     },
-    /// Drafts on your linked repos' PRs and issues, on Arugula control.
+    /// Drafts on your linked repos' PRs and issues, on Arugula cloud.
     ///
     /// Comments, reviews and new issues that you (`--draft`) or your agents
     /// wrote, waiting for a person to send them: `ls` lists them (on
@@ -480,7 +531,7 @@ enum Command {
         #[command(subcommand)]
         cmd: cmd::forge_ops::DraftCmd,
     },
-    /// Your inbox of PRs and issues on linked repos, on Arugula control.
+    /// Your inbox of PRs and issues on linked repos, on Arugula cloud.
     ///
     /// What wants you there (a review requested, your checks failed,
     /// changes requested, a mention, assigned, merged or ready, a draft
@@ -493,7 +544,7 @@ enum Command {
     /// How Arugula is doing on this machine.
     ///
     /// The daemon (its version, the service that runs it, its binary and
-    /// log), whether and where it's joined to Arugula control
+    /// log), whether and where it's joined to Arugula cloud
     /// (connected, or dropped by control), each agent's adapter and
     /// whether Claude Code has Arugula's MCP server. Exits 1 when the
     /// daemon doesn't answer or control dropped it.
@@ -525,13 +576,9 @@ enum Command {
     },
     /// The sandbox provider's sandboxes.
     ///
-    /// This daemon's: open a shell on one (`run --sandbox`), or make a daemon
-    /// resident there.
+    /// This daemon's: open a shell on one (`run --sandbox`).
     #[command(hide = true)]
-    Sandboxes {
-        #[command(subcommand)]
-        cmd: Option<hosts::SandboxesCmd>,
-    },
+    Sandboxes,
     /// An MCP server on stdio, for agents that start one as a command.
     ///
     /// `claude mcp add arugula -- arugula mcp`: Arugula's tools, bridged to
@@ -566,6 +613,7 @@ impl Cli {
                     | Command::Ask
                     | Command::Hook
                     | Command::Inbox
+                    | Command::SessionSignal
                     | Command::Plumbing
             )
     }
@@ -607,9 +655,8 @@ const LABS_COMMANDS: &[(&str, &str)] = &[
     ("machines", flags::SANDBOX_PROVIDERS),
     ("sandboxes", flags::SANDBOX_PROVIDERS),
 ];
-const LABS_OPTIONS: [(&str, &[&str], &str); 6] = [
+const LABS_OPTIONS: [(&str, &[&str], &str); 5] = [
     ("agent", &["recipe"], flags::AGENT_DELEGATION),
-    ("agent", &["issue", "take"], flags::BOARDS),
     ("agent", &["vm", "machine"], flags::SANDBOX_PROVIDERS),
     ("run", &["vm", "vm_tab", "image", "sandbox"], flags::SANDBOX_PROVIDERS),
     ("open", &["machine"], flags::SANDBOX_PROVIDERS),
@@ -624,15 +671,29 @@ const GROUPS: &[(&str, &[&str])] = &[
         "Panes",
         &[
             "ls", "run", "attach", "send", "keys", "mouse", "upload", "tail", "wait", "capture", "process", "cd",
-            "rerun", "close", "export", "events", "history", "log", "search", "fs", "synced",
+            "rerun", "mentions", "close", "export", "events", "history", "log", "search", "fs",
         ],
     ),
     (
         "Blocks",
-        &["describe", "call", "open", "edit", "diff", "view", "chat", "pr", "issue", "editors", "workspace", "app"],
+        &[
+            "describe",
+            "call",
+            "open",
+            "edit",
+            "diff",
+            "view",
+            "doc",
+            "chat",
+            "pr",
+            "issue",
+            "editors",
+            "workspace",
+            "app",
+        ],
     ),
     ("Agents", &["agent", "claude", "attention", "rules", "ide", "shell-env", "agents"]),
-    ("Sharing", &["share", "shares", "invite", "access", "guests"]),
+    ("Sharing", &["share", "shares", "links", "invite", "access", "guests"]),
     (
         "Machines and control",
         &[
@@ -643,20 +704,21 @@ const GROUPS: &[(&str, &[&str])] = &[
             "login",
             "logout",
             "grants",
+            "machine",
             "agent-tokens",
             "telemetry",
             "machines",
             "sandboxes",
         ],
     ),
-    ("Cloud and projects", &["cloud", "runs", "deploys", "project", "draft", "forge", "studio"]),
+    ("Cloud and projects", &["cloud", "runs", "deploys", "chant", "project", "draft", "forge", "studio"]),
     ("Setup", &["install", "setup", "hooks", "mcp"]),
 ];
 
 /// What Claude Code's hooks and the clients run, hidden from `--help` and
 /// listed by `arugula help plumbing` (with `attention STATE`, which is
 /// `attention`'s other half).
-const PLUMBING: &[&str] = &["ask", "hook", "inbox", "bridge"];
+const PLUMBING: &[&str] = &["ask", "hook", "inbox", "session-signal", "bridge"];
 
 /// Rows of `  name  summary` under a heading, styled as clap styles its own.
 fn command_rows(cmd: &clap::Command, heading: &str, rows: &[(String, String)], width: usize) -> String {
@@ -754,12 +816,22 @@ fn socket(cli: &Cli) -> PathBuf {
 }
 
 fn default_socket() -> PathBuf {
-    if let Some(s) = std::env::var_os("ARUGULA_SOCK") {
+    socket_from(|k| std::env::var_os(k), arugula_proto::dirs::default_state_dir())
+}
+
+/// `ARUGULA_SOCK`, else the socket in the state directory: the daemon's,
+/// so `ARUGULA_STATE_DIR` first (#490).
+fn socket_from(env: impl Fn(&str) -> Option<std::ffi::OsString>, default_state: Option<PathBuf>) -> PathBuf {
+    if let Some(s) = env("ARUGULA_SOCK") {
         return PathBuf::from(s);
     }
     // The daemon records its socket beside its state: Windows' named pipe,
     // or one put elsewhere because the directory is too deep for a socket.
-    let state = arugula_proto::dirs::default_state_dir().unwrap_or_else(|| PathBuf::from(".local/state/arugula"));
+    let state = env("ARUGULA_STATE_DIR")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .or(default_state)
+        .unwrap_or_else(|| PathBuf::from(".local/state/arugula"));
     match std::fs::read_to_string(state.join("sock.path")) {
         Ok(p) if !p.trim().is_empty() => PathBuf::from(p.trim()),
         _ => state.join("sock"),
@@ -812,6 +884,9 @@ fn main() {
 
 fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
     ask_about_telemetry(&cli);
+    // The session this runs in is this machine's daemon's, whatever
+    // `--host` names.
+    let _ = cmd::project::SOCKET.set(socket(&cli));
     if let Command::Join(args) = &cli.cmd {
         return cmd::join::run(args, &cli);
     }
@@ -825,6 +900,9 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
     if let Command::Grants { cmd } = cli.cmd {
         return cmd::grants::run(cmd, cli.json);
     }
+    if let Command::Machine { cmd } = cli.cmd {
+        return cmd::machine::run(cmd, cli.json);
+    }
     if let Command::AgentTokens { cmd } = cli.cmd {
         return cmd::agent_tokens::run(cmd, cli.json);
     }
@@ -836,6 +914,9 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
     }
     if let Command::Deploys { cmd } = cli.cmd {
         return cmd::deploys::run(cmd, cli.json);
+    }
+    if let Command::Chant { cmd } = cli.cmd {
+        return cmd::chant::run(cmd, cli.json);
     }
     if let Command::Project { cmd } = cli.cmd {
         return cmd::project::run(cmd, cli.json);
@@ -874,6 +955,9 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
     if let Command::Hook = cli.cmd {
         return Ok(hook::run(http::Target::Socket(socket(&cli))));
     }
+    if let Command::SessionSignal = cli.cmd {
+        return Ok(hook::session_signal(http::Target::Socket(socket(&cli))));
+    }
     if let Command::Web(args) = &cli.cmd
         && cli.ssh.is_none()
     {
@@ -904,19 +988,12 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
             cli.json,
         );
     }
-    let reads_history = matches!(cli.cmd, Command::History(_) | Command::Search(_) | Command::Tail(_));
     let resolved = match &cli.ssh {
         Some(dest) => ssh::Remote::parse(dest).map(http::Target::Ssh),
         None => hosts::target(socket(&cli), cli.host.as_deref()),
     };
-    let (sock, gone) = match resolved {
-        Ok(t) => (t, None),
-        // A host that's gone (deleted, unreachable) may have left its
-        // history here.
-        Err(e) if reads_history && cli.host.is_some() => {
-            eprintln!("arugula: {e:#}; reading what it synced here instead");
-            (http::Target::Socket(socket(&cli)), cli.host.clone())
-        }
+    let sock = match resolved {
+        Ok(t) => t,
         // `open --host m2` meant a machine: the flag is `--machine` (#61).
         Err(e)
             if cli.host.as_deref().is_some_and(looks_like_machine)
@@ -933,23 +1010,21 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
         r.prepare()?;
     }
     let json_out = cli.json;
-    // `run --home`: the local daemon too, and the host's name in its list.
-    let (local_sock, host_name) = (socket(&cli), cli.host.clone());
-    let ctx = cmd::Ctx { sock, json_out, local_sock, host_name, gone };
+    let ctx = cmd::Ctx { sock, json_out };
     match cli.cmd {
         Command::Share(args) => cmd::share::run(args, ctx),
         Command::Guests { cmd } => cmd::share::guests(cmd, ctx),
         Command::Access { cmd } => cmd::access::run(cmd, ctx),
         Command::Invite(args) => cmd::invite::run(args, ctx),
         Command::Shares { cmd } => cmd::share::shares(cmd, ctx),
+        Command::Links { cmd } => cmd::share::links(cmd, ctx),
         Command::Mcp(args) => cmd::mcp::run(args, ctx),
-        Command::Synced { cmd } => cmd::synced::run(cmd, ctx),
         Command::Hosts { cmd } => {
-            hosts::run(&ctx.sock, cmd, ctx.json_out, util::duration)?;
+            hosts::run(&ctx.sock, cmd, ctx.json_out)?;
             Ok(0)
         }
-        Command::Sandboxes { cmd } => {
-            hosts::sandboxes(&ctx.sock, cmd, ctx.json_out)?;
+        Command::Sandboxes => {
+            hosts::sandboxes(&ctx.sock, ctx.json_out)?;
             Ok(0)
         }
         // Only with --ssh: the box daemon's link, over the bridge to its
@@ -962,10 +1037,12 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
         | Command::Login(_)
         | Command::Logout
         | Command::Grants { .. }
+        | Command::Machine { .. }
         | Command::AgentTokens { .. }
         | Command::Cloud { .. }
         | Command::Runs { .. }
         | Command::Deploys { .. }
+        | Command::Chant { .. }
         | Command::Project { .. }
         | Command::Draft { .. }
         | Command::Forge { .. } => {
@@ -986,11 +1063,13 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
         Command::Pr(args) => cmd::pr::run(args, ctx),
         Command::Issue(args) => cmd::issue::run(args, ctx),
         Command::Rerun(args) => cmd::rerun::run(args, ctx),
+        Command::Mentions(args) => cmd::mentions::run(args, ctx),
         Command::Agent(args) => cmd::agent::run(*args, ctx),
         Command::Claude { cmd } => cmd::claude::run(cmd, ctx),
         Command::Studio { cmd } => cmd::studio::run(cmd, ctx),
         Command::App(args) => cmd::app::run(args, ctx),
         Command::Editors { cmd } => cmd::editors::run(cmd, ctx),
+        Command::Doc { cmd } => cmd::doc::run(cmd, ctx),
         Command::Rules(args) => cmd::rules::run(args, ctx),
         Command::Ide(args) => cmd::ide::run(args, ctx),
         Command::ShellEnv(args) => cmd::shell_env::run(args, ctx),
@@ -1011,7 +1090,12 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
         Command::Capture(args) => cmd::capture::run(args, ctx),
         Command::Events(args) => cmd::events::run(args, ctx),
         Command::Close(args) => cmd::close::run(args, ctx),
-        Command::Ask | Command::Hook | Command::Inbox | Command::Plumbing | Command::Hooks { .. } => {
+        Command::Ask
+        | Command::Hook
+        | Command::Inbox
+        | Command::SessionSignal
+        | Command::Plumbing
+        | Command::Hooks { .. } => {
             unreachable!("handled first")
         }
         Command::Attention(args) => cmd::attention::run(args, ctx),
@@ -1023,6 +1107,26 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn socket_follows_the_state_dir_outside_a_pane() {
+        use super::socket_from;
+        use std::path::PathBuf;
+        let dir = std::env::temp_dir().join(format!("arugula-cli-sock-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let state = dir.clone().into_os_string();
+        let outside = |k: &str| (k == "ARUGULA_STATE_DIR").then(|| state.clone());
+        let default = Some(PathBuf::from("/default/state"));
+        assert_eq!(socket_from(outside, default.clone()), dir.join("sock"));
+        std::fs::write(dir.join("sock.path"), "/tmp/elsewhere.sock\n").unwrap();
+        assert_eq!(socket_from(outside, default.clone()), PathBuf::from("/tmp/elsewhere.sock"));
+        // No state dir in the environment: the default place.
+        assert_eq!(socket_from(|_| None, default), PathBuf::from("/default/state/sock"));
+        // Inside a pane ARUGULA_SOCK wins.
+        let pane = |k: &str| Some(if k == "ARUGULA_SOCK" { "/pane.sock".into() } else { state.clone() });
+        assert_eq!(socket_from(pane, None), PathBuf::from("/pane.sock"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     /// The command line with every Labs flag on, or none.
     fn labs_command(labs: bool) -> clap::Command {
         use arugula_proto::flags::On;
@@ -1063,7 +1167,7 @@ mod tests {
         assert!(listed.contains(&"run") && listed.contains(&"pr"), "{listed:?}");
         // Options: out of the subcommand's help, still parsed.
         for (cmd, opts) in [
-            ("agent", &["recipe", "issue", "take", "vm", "machine"][..]),
+            ("agent", &["recipe", "vm", "machine"][..]),
             ("run", &["vm", "vm_tab", "image", "sandbox"][..]),
             ("open", &["machine"][..]),
             ("edit", &["machine"][..]),
@@ -1114,7 +1218,7 @@ mod tests {
         let (off, on) = (hidden(&labs_command(false)), hidden(&labs_command(true)));
         let mut set: Vec<String> = super::LABS_COMMANDS.iter().map(|(c, _)| (*c).to_owned()).collect();
         for (cmd, opts) in [
-            ("agent", &["recipe", "issue", "take", "vm", "machine"][..]),
+            ("agent", &["recipe", "vm", "machine"][..]),
             ("run", &["vm", "vm_tab", "image", "sandbox"][..]),
             ("open", &["machine"][..]),
             ("edit", &["machine"][..]),

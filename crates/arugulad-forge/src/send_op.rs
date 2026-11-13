@@ -27,7 +27,7 @@ use super::{
 use crate::review::Runner;
 
 /// Who the block's log says sent it.
-const BY: &str = "Arugula control, for its person";
+const BY: &str = "Arugula cloud, for its person";
 
 /// A comment or review as the block's write, for its log.
 fn write_of(s: &ForgeSend) -> Option<Write> {
@@ -96,7 +96,7 @@ pub async fn forge_send(app: &Arc<crate::server::App>, s: ForgeSend) -> OpAnswer
                 url = sent.url,
                 "a draft sent for its person, as control asked"
             );
-            OpAnswer::Done { url: sent.url }
+            OpAnswer::Done { url: sent.url, routed: None }
         }
         Err(Error::Login(why)) => {
             warn!(draft = s.draft, why, "can't send a draft for control: no gh login");

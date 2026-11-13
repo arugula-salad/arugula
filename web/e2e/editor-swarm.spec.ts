@@ -81,7 +81,7 @@ test.beforeAll(async () => {
       ...["--listen", ANY, "--block-listen", ANY, "--state-dir", labs(state)],
       ...["--shell", "bash --norc --noprofile", "--no-manager-env", "--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"],
     ],
-    { stdio: "ignore", env: { ...process.env, ARUGULA_WISP_TOKEN_FILE: "/nonexistent", XDG_DATA_HOME: join(dir, "data") } },
+    { stdio: "ignore", env: { ...process.env, XDG_DATA_HOME: join(dir, "data") } },
   );
   APP = `http://127.0.0.1:${await daemonPort(state, daemon)}`;
   await up(`${APP}/api/host`);

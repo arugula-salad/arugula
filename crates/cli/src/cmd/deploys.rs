@@ -30,7 +30,7 @@ use crate::util::print_json;
 pub enum DeploysCmd {
     /// A project's environments: their drivers, settings and secrets' names.
     ///
-    /// Never a secret's value: those are set on the platform page and never
+    /// Never a secret's value: those are set on your machines page and never
     /// read back.
     #[command(visible_alias = "environments")]
     Envs {
@@ -118,6 +118,19 @@ fn checked_id(id: &str) -> anyhow::Result<&str> {
     Ok(id)
 }
 
+/// What asking for a deploy's approval did: its owners got a card, or (a
+/// chant-fly deploy, #1985) chant plans it first, and they get one once it
+/// has.
+fn asked_text(d: &Value) -> &'static str {
+    match d["chant"]["state"].as_str() {
+        Some("planning") => {
+            "chant plans it first, on a box of its own with no Fly token; its owners get a card once it has. \
+             `arugula deploys show` follows it."
+        }
+        _ => "Its owners got a card: one of them approves it on their phone or in a browser.",
+    }
+}
+
 /// `OWNER/NAME`.
 fn repo_ok(r: &str) -> bool {
     let part = |s: &str| {
@@ -146,7 +159,7 @@ fn plan_body(env: &str, commit: &str, repo: &str, roll_back: bool) -> anyhow::Re
 
 pub fn run(cmd: DeploysCmd, json_out: bool) -> anyhow::Result<i32> {
     let Some(e) = Enrolled::load()? else {
-        bail!("this CLI isn't logged in to Arugula control: `arugula login` first");
+        bail!("this CLI isn't logged in to Arugula cloud: `arugula login` first");
     };
     if matches!(cmd, DeploysCmd::Plan { .. } | DeploysCmd::Request { .. }) && http::agent() {
         bail!(
@@ -164,7 +177,7 @@ pub fn run(cmd: DeploysCmd, json_out: bool) -> anyhow::Result<i32> {
             }
             let envs = listed["environments"].as_array().cloned().unwrap_or_default();
             if envs.is_empty() {
-                println!("No environments: an owner makes one on the platform page, in the project's settings.");
+                println!("No environments: an owner makes one on your machines page, in the project's settings.");
             }
             for env in &envs {
                 println!("{}", env_lines(env));
@@ -216,7 +229,7 @@ pub fn run(cmd: DeploysCmd, json_out: bool) -> anyhow::Result<i32> {
             let d = e.api("POST", &format!("/api/deploys/{}/request", checked_id(&id)?), None)?;
             if !json_out {
                 println!("{}", deploy_line(&d));
-                println!("Its owners got a card: one of them approves it on their phone or in a browser.");
+                println!("{}", asked_text(&d));
                 return Ok(0);
             }
             d
@@ -292,7 +305,12 @@ fn deploy_text(d: &Value) -> String {
     }
     for a in d["approvals"].as_array().into_iter().flatten() {
         let what = if a["decision"] == "deny" { "denied" } else { "approved" };
-        s += &format!("  {what} by {} on {}\n", t(a, "name"), t(a, "device_name"));
+        // DK4's approvals (v2) are a passkey's alone; older ones name the
+        // device that signed.
+        match a["v"].as_u64() {
+            Some(2) => s += &format!("  {what} by {} with a passkey\n", t(a, "name")),
+            _ => s += &format!("  {what} by {} on {}\n", t(a, "name"), t(a, "device_name")),
+        }
     }
     for ev in d["events"].as_array().into_iter().flatten() {
         s += &format!("  [{}] {} by {}\n", ev["seq"], t(ev, "kind"), t(ev, "by"));
@@ -359,12 +377,14 @@ mod tests {
             "source": { "kind": "commit", "ref": "0123456789abcdef0123456789abcdef01234567", "where": "acme/app" },
             "roll_back": null, "planned_by_name": "alice", "agent": { "machine": "m", "machine_name": "geek" },
             "plan": "ab", "plan_text": "deploy fake to production\nsetting x y\n",
-            "approvals": [{ "decision": "deny", "name": "bob", "device_name": "Pixel" }],
+            "approvals": [{ "decision": "deny", "name": "bob", "device_name": "Pixel" },
+                          { "v": 2, "decision": "once", "name": "carol", "device_name": "" }],
             "events": [{ "seq": 1, "kind": "planned", "by": "alice's agent on geek" }], "log": { "verified": 1 } });
         assert_eq!(
             deploy_text(&d),
             "dep_1  pending  to production: commit 0123456789ab of acme/app\n  planned by alice's agent on geek\n  \
-             plan:\n    deploy fake to production\n    setting x y\n  denied by bob on Pixel\n  [1] planned by \
+             plan:\n    deploy fake to production\n    setting x y\n  denied by bob on Pixel\n  approved by carol with a \
+             passkey\n  [1] planned by \
              alice's agent on geek\n"
         );
         let env = json!({ "name": "production", "id": "env_1", "driver": "chant-fly",

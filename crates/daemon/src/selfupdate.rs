@@ -3,7 +3,8 @@
 //! `POST /api/update/apply` (the web notice's Update now, for owners) and
 //! `arugulad update` do what install.sh does: download this platform's
 //! archive from the release, check it against the release's `SHA256SUMS`,
-//! unpack it, and run the new `arugulad install`. That copies the
+//! whose signature (`SHA256SUMS.sig`) must be the release key's
+//! (`arugula_proto::release_sums`), unpack it, and run the new `arugulad install`. That copies the
 //! binaries into place, keeps the flags the last install wrote, and
 //! restarts the service with the panes kept (the systemd FD store, pane
 //! shims on macOS, pane hosts on Windows). Anything that fails before the
@@ -32,7 +33,8 @@ use std::{
     time::Duration,
 };
 
-use anyhow::{Context, bail, ensure};
+use anyhow::{Context, anyhow, bail, ensure};
+use arugula_proto::release_sums;
 use axum::{Json, Router, http::StatusCode, routing::post};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -100,14 +102,24 @@ fn client() -> anyhow::Result<reqwest::Client> {
 }
 
 /// Download release `version` into `into`, check it against the release's
-/// `SHA256SUMS` and unpack it: the new `arugulad`. Nothing is unpacked
-/// from an archive whose sum doesn't match.
+/// `SHA256SUMS`, signed by the release key, and unpack it: the new
+/// `arugulad`. Nothing is unpacked from an archive whose sum doesn't match,
+/// or from a release whose sums aren't signed.
 pub async fn fetch(releases: &str, version: &str, into: &Path) -> anyhow::Result<PathBuf> {
+    fetch_signed_by(&release_sums::public_key(), releases, version, into).await
+}
+
+/// [`fetch`], with sums signed by `key`.
+async fn fetch_signed_by(key: &[u8; 32], releases: &str, version: &str, into: &Path) -> anyhow::Result<PathBuf> {
     let stem = stem(version).context("there's no release build for this platform")?;
     let name = format!("{stem}.{EXT}");
     let url = |f: &str| format!("{releases}/download/v{version}/{f}");
     let client = client()?;
     let sums = get(&client, &url("SHA256SUMS")).await?;
+    let sig = get(&client, &url(release_sums::SIG_FILE))
+        .await
+        .with_context(|| format!("release v{version}'s SHA256SUMS isn't signed: not installing it"))?;
+    release_sums::verify_with(key, &sums, &sig).map_err(|e| anyhow!("release v{version}: {e}: not installing it"))?;
     let want = sum_for(&String::from_utf8_lossy(&sums), &name)
         .with_context(|| format!("{name} isn't in release v{version}'s SHA256SUMS"))?;
     let bytes = get(&client, &url(&name)).await?;
@@ -132,17 +144,25 @@ pub async fn fetch(releases: &str, version: &str, into: &Path) -> anyhow::Result
 /// Expand-Archive (as install.ps1 does; the release's zip has `\` paths).
 fn unpack(archive: &Path, into: &Path) -> anyhow::Result<()> {
     let out = if cfg!(windows) {
-        let q = |p: &Path| p.display().to_string().replace('\'', "''");
-        Command::new("powershell")
-            .args(["-NoProfile", "-NonInteractive", "-Command"])
-            .arg(format!("Expand-Archive -LiteralPath '{}' -DestinationPath '{}' -Force", q(archive), q(into)))
-            .output()
+        expand_archive(archive, into).output()
     } else {
         Command::new("tar").arg("-xzf").arg(archive).arg("-C").arg(into).output()
     }
     .context("unpacking the release")?;
     ensure!(out.status.success(), "unpacking {}: {}", archive.display(), String::from_utf8_lossy(&out.stderr).trim());
     Ok(())
+}
+
+/// Windows PowerShell 5.1's Expand-Archive. Without `PSModulePath`, which
+/// a daemon or shell started from PowerShell 7 hands down pointing at 7's
+/// modules, 5.1 builds its own and finds `Microsoft.PowerShell.Archive`.
+fn expand_archive(archive: &Path, into: &Path) -> Command {
+    let q = |p: &Path| p.display().to_string().replace('\'', "''");
+    let mut c = Command::new("powershell");
+    c.args(["-NoProfile", "-NonInteractive", "-Command"])
+        .arg(format!("Expand-Archive -LiteralPath '{}' -DestinationPath '{}' -Force", q(archive), q(into)))
+        .env_remove("PSModulePath");
+    c
 }
 
 /// `arugulad --version` says `arugulad 0.24.0`.
@@ -397,7 +417,7 @@ pub fn cli(yes: bool, latest_url: &str) -> anyhow::Result<()> {
     }
     let dir = std::env::temp_dir().join(format!("arugula-update-{}", std::process::id()));
     let exe = rt.block_on(fetch(&releases(latest_url), &latest, &dir))?;
-    println!("checked {latest} against the release's SHA256SUMS; installing it");
+    println!("checked {latest} against the release's signed SHA256SUMS; installing it");
     let status = Command::new(&exe).arg("install").status().with_context(|| format!("running {}", exe.display()))?;
     let _ = std::fs::remove_dir_all(&dir);
     ensure!(status.success(), "{} install failed ({status})", exe.display());
@@ -446,6 +466,15 @@ mod tests {
         assert_eq!(releases("http://127.0.0.1:9/releases/latest/"), "http://127.0.0.1:9/releases");
     }
 
+    /// Arugula #128: PowerShell 7's `PSModulePath` stops 5.1 loading
+    /// Expand-Archive.
+    #[test]
+    fn expand_archive_drops_ps_module_path() {
+        let c = expand_archive(Path::new("a.zip"), Path::new("out"));
+        assert_eq!(c.get_program(), "powershell");
+        assert!(c.get_envs().any(|(k, v)| k == "PSModulePath" && v.is_none()));
+    }
+
     #[test]
     fn reads_sha256sums() {
         let sums = "AB12  arugula-1.0.0-x.tar.gz\ncd34 *arugula-1.0.0-y.zip\n";
@@ -463,11 +492,35 @@ mod tests {
         d
     }
 
-    /// A fake release on loopback: `SHA256SUMS` and this platform's
-    /// archive, holding an `arugulad` that says it's `version`.
+    /// How a fake release signs its `SHA256SUMS`.
+    #[cfg(unix)]
+    #[derive(Clone, Copy, PartialEq)]
+    enum Signed {
+        /// With [`test_key`].
+        Yes,
+        /// With another key.
+        ByAnother,
+        /// No `SHA256SUMS.sig`.
+        No,
+    }
+
+    #[cfg(unix)]
+    fn test_key(seed: u8) -> ed25519_dalek::SigningKey {
+        ed25519_dalek::SigningKey::from_bytes(&[seed; 32])
+    }
+
+    /// A fake release on loopback: `SHA256SUMS`, its signature, and this
+    /// platform's archive, holding an `arugulad` that says it's `version`.
     #[cfg(unix)]
     async fn fake_release(name: &str, version: &str, sums_lie: bool) -> String {
+        fake_signed_release(name, version, sums_lie, Signed::Yes).await
+    }
+
+    #[cfg(unix)]
+    async fn fake_signed_release(name: &str, version: &str, sums_lie: bool, signed: Signed) -> String {
         use axum::routing::get;
+        use base64::Engine as _;
+        use ed25519_dalek::Signer as _;
         let tmp = scratch(&format!("{name}-release"));
         let stem = stem(version).unwrap();
         std::fs::create_dir_all(tmp.join(&stem)).unwrap();
@@ -481,9 +534,14 @@ mod tests {
         let archive = std::fs::read(tmp.join(&name)).unwrap();
         let sum = if sums_lie { "0".repeat(64) } else { hex::encode(Sha256::digest(&archive)) };
         let sums = format!("{sum}  {name}\n");
-        let app = Router::new()
+        let by = test_key(if signed == Signed::ByAnother { 2 } else { 1 });
+        let sig = base64::engine::general_purpose::STANDARD.encode(by.sign(sums.as_bytes()).to_bytes()) + "\n";
+        let mut app = Router::new()
             .route(&format!("/releases/download/v{version}/SHA256SUMS"), get(move || async move { sums }))
             .route(&format!("/releases/download/v{version}/{name}"), get(move || async move { archive }));
+        if signed != Signed::No {
+            app = app.route(&format!("/releases/download/v{version}/SHA256SUMS.sig"), get(move || async move { sig }));
+        }
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         crate::task::spawn(async move { axum::serve(listener, app).await.unwrap() });
@@ -495,8 +553,28 @@ mod tests {
     async fn fetches_and_checks_a_release() {
         let releases = fake_release("ok", "9.9.9", false).await;
         let into = scratch("ok");
-        let exe = fetch(&releases, "9.9.9", &into).await.unwrap();
+        let exe = fetch_signed_by(&test_key(1).verifying_key().to_bytes(), &releases, "9.9.9", &into).await.unwrap();
         assert_eq!(version_of(&exe).as_deref(), Some("9.9.9"));
+    }
+
+    /// Sums signed by another key, or not signed at all, aren't trusted:
+    /// nothing is unpacked, whatever they say.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn refuses_sums_the_release_key_didnt_sign() {
+        let key = test_key(1).verifying_key().to_bytes();
+        for (case, signed) in [("other-key", Signed::ByAnother), ("unsigned", Signed::No)] {
+            let releases = fake_signed_release(case, "9.9.9", false, signed).await;
+            let into = scratch(case);
+            let err = format!("{:#}", fetch_signed_by(&key, &releases, "9.9.9", &into).await.unwrap_err());
+            assert!(err.contains("not installing it"), "{case}: {err}");
+            assert!(!into.join(stem("9.9.9").unwrap()).exists(), "{case}: unpacked a release whose sums aren't signed");
+        }
+        // And the real key refuses the test key's signature.
+        let releases = fake_release("real-key", "9.9.9", false).await;
+        let into = scratch("real-key");
+        let err = format!("{:#}", fetch(&releases, "9.9.9", &into).await.unwrap_err());
+        assert!(err.contains("isn't signed by the release key"), "{err}");
     }
 
     #[cfg(unix)]
@@ -504,7 +582,10 @@ mod tests {
     async fn refuses_a_bad_checksum() {
         let releases = fake_release("bad", "9.9.9", true).await;
         let into = scratch("bad");
-        let err = fetch(&releases, "9.9.9", &into).await.unwrap_err().to_string();
+        let err = fetch_signed_by(&test_key(1).verifying_key().to_bytes(), &releases, "9.9.9", &into)
+            .await
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("doesn't match"), "{err}");
         assert!(!into.join(stem("9.9.9").unwrap()).exists(), "unpacked a bad archive");
     }

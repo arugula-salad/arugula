@@ -5,8 +5,8 @@
 # builds, in the same profile, and saves the target dir under the key the
 # release reads (shared-key windows-release). The workspace's libraries are
 # 0.0.0 (#1036), so a release finds them built, not just the dependencies.
-# Not in ci/green (chant's windows phase counts workspace and desktop only):
-# nothing waits for it.
+# Not in ci/green (chant's windows phases count workspace, workspace-clippy
+# and desktop only): nothing waits for it.
 name: windows-release-cache
 on:
   push:
@@ -39,7 +39,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # Zig for Ghostty's lib-vt, as release.yml's windows job.
-      - uses: mlugg/setup-zig@v2
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
           version: 0.16.0
       # Ghostty's build (libghostty-vt-sys's Zig, 2.5 min of a warm build,
@@ -53,7 +53,7 @@ jobs:
           key: ghostty-Windows-release-${{ hashFiles('vendor/libghostty-vt-sys/**', '.mise.toml') }}
       # Not keyed on the job's id (rust-cache's default): release.yml's job
       # is named windows, this one release-cache.
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: windows-release
           add-job-id-key: false

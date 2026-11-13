@@ -25,16 +25,24 @@
 //!   text, and asks again when something is new or after [`LOOK_AGAIN`].
 //!   There are still no PRs that refer to an issue. "You" is the owner's
 //!   GitHub login as the platform has it, without their teams.
-//! - **Falling back.** The platform says it isn't linked (or the item is
-//!   gone): the pin goes and the block reads GitHub again. The platform
-//!   can't be reached: what it said last stays, marked stale, for
-//!   [`STALE`]; with nothing to show yet (a restart), or after that, the
-//!   block reads GitHub until the platform answers again. A block is never
-//!   blank because the platform is down.
+//! - **Falling back.** The platform says it isn't linked, or has no item
+//!   the owner may read (a 404): the pin goes and the block reads GitHub
+//!   again, with the person's own `gh`. The platform can't be reached:
+//!   what it said last stays, marked stale, for [`STALE`]; with nothing to
+//!   show yet (a restart), or after that, the block reads GitHub until the
+//!   platform answers again, and keeps the pin for then. The platform
+//!   refuses the read (a 400 or 409): GitHub at once, the pin kept the
+//!   same way. A block is never blank because the platform is down. Every
+//!   fallback shows what the person's own GitHub login may read, which is
+//!   what the viewer check asks GitHub too.
 //!
-//! Writes a person sends from a pinned block still go out with their `gh`
-//! (as M170 leaves them) until sending is the platform's (M168), and *Diff*
-//! and *Checkout* still fetch with the person's git.
+//! Writes a person sends from a pinned block go out with their `gh`, as
+//! every block's do (the platform is told first, [`platform::sending`]);
+//! from the phone the platform sends with a one-use token of theirs,
+//! falling back to their machine (M168, [`super::send_op`]). *Diff* and
+//! *Checkout* fetch with the person's git. The boundary between the two
+//! readers is written down in docs/data-model.md, "Forge items: two read
+//! paths".
 
 use std::time::{Duration, Instant};
 
@@ -91,7 +99,7 @@ impl Kept {
 /// when it doesn't (not linked for the owner, not mirrored yet, or a PR
 /// where an issue was asked for), or why the platform couldn't say.
 pub async fn resolve(repo: &str, number: u64, kind: ItemKind) -> Result<Option<String>, String> {
-    let control = super::live::control().ok_or("not in Arugula control")?;
+    let control = super::live::control().ok_or("not in Arugula cloud")?;
     let at = ItemRef { repo: repo.to_owned(), number };
     let op = match kind {
         ItemKind::Pr => Op::PrGet(at),
@@ -227,6 +235,7 @@ fn item(r: &Read) -> Item {
             .collect(),
         comments: comments as u64,
         updated_at: i.updated_at as i64,
+        queued: i.state == "open" && i.queued,
         ..Default::default()
     };
     item.head.sha = i.head_sha.clone().unwrap_or_default();
@@ -367,7 +376,7 @@ pub fn rerun(pr: &Pr) -> Option<Rerun> {
     Some(Rerun {
         api: false,
         url,
-        note: "This block reads through Arugula control: rerun them on the run's page".into(),
+        note: "This block reads through Arugula cloud: rerun them on the run's page".into(),
         runs: None,
         pipeline: None,
     })
@@ -389,6 +398,8 @@ mod tests {
                 identifier: None,
                 state_name: None,
                 state_group: None,
+                item_type: None,
+                modules: vec![],
                 url: None,
                 kind: "pr".into(),
                 state: "open".into(),
@@ -404,6 +415,9 @@ mod tests {
                 base_ref: Some("main".into()),
                 created_at: 1,
                 updated_at: 9,
+                queued: false,
+                queued_since: None,
+                left_queue: None,
             },
             checks: vec![
                 ForgeCheck {
@@ -573,6 +587,18 @@ mod tests {
             (ItemKind::Issue, ItemState::Closed, "https://github.com/acme/app/issues/7")
         );
         assert!(i.item.head_ref.is_empty() && i.linked.is_empty());
+    }
+
+    /// Arugula #878: the platform's `queued` is the block's while the PR is
+    /// open; a merged PR that a stale mirror still calls queued isn't.
+    #[test]
+    fn queued_while_open() {
+        let mut r = read();
+        assert!(!pr(&r).item.queued);
+        r.item.queued = true;
+        assert!(pr(&r).item.queued);
+        r.item.state = "merged".into();
+        assert!(!pr(&r).item.queued);
     }
 
     #[test]

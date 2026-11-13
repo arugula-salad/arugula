@@ -44,6 +44,9 @@ pub trait Feature: Send + Sync + 'static {
     fn prepare(&self, _state_dir: &Path) {}
     /// Once control is there (before any block is made).
     fn with_control(&self, _control: &Arc<Control>) {}
+    /// This machine left control (or was found out of it at a start): what
+    /// it kept of control's is stale now.
+    fn left_control(&self, _state_dir: &Path) {}
     /// Its block types, and what they're given ([`KindsCx`]).
     fn kinds(&self, _kinds: &mut BlockKinds, _cx: &KindsCx) {}
     /// Its routes and operations, beside the API's.
@@ -82,6 +85,12 @@ pub(crate) fn prepare(state_dir: &Path) {
 pub(crate) fn with_control(control: &Arc<Control>) {
     for f in all() {
         f.with_control(control);
+    }
+}
+
+pub(crate) fn left_control(state_dir: &Path) {
+    for f in all() {
+        f.left_control(state_dir);
     }
 }
 

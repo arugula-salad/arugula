@@ -6,7 +6,9 @@ reach them from a browser, a phone, the desktop app or a shell. One daemon,
 
 Building, running and releasing are in [docs/development.md](docs/development.md);
 tests in [docs/testing.md](docs/testing.md); contributing in
-[CONTRIBUTING.md](CONTRIBUTING.md).
+[CONTRIBUTING.md](CONTRIBUTING.md). What each noun means and where its truth
+lives is in [docs/data-model.md](docs/data-model.md): read it before adding a
+noun or reusing a word.
 
 ## Size the work to the task
 
@@ -15,6 +17,14 @@ gets the smallest thing that answers it: no new tests, no pull request and no
 full `just check` unless the task asks for them. New tests are for changes to
 behaviour that ships, and then only for that behaviour, not the code around
 it. When unsure, do the small version and say what you left out.
+
+## Keeping up
+
+[docs/capabilities/](docs/capabilities/README.md) has a record for each major
+feature: where it runs, who owns its state and what proves it. Read the record
+before tracing a feature from scratch, and trust it only as far as its
+`verified_through` commit. You don't need to update a record in your PR: a
+weekly agent keeps them. `just map` prints what the code and CI say now.
 
 ## Crates
 
@@ -91,7 +101,7 @@ Each has a `README.md` with where to start reading.
   `work` keeps what others read without it (`printable`, the fenced ports,
   the session users and the sessions' ledger as it's read).
 - `crates/arugulad-labs`: `arugulad-labs`, Labs (studio apps, chant
-  workspaces, VMs and resident daemons, guest ssh, agent recipes and
+  workspaces, VMs, guest ssh, agent recipes and
   delegating, the Forgejo and GitLab forges). The daemon reaches it only
   through `lab_hooks.rs` (the `Hooks` trait, whose defaults are a build
   without Labs); its operations are `Handle<Labs>`. The binary registers it
@@ -101,33 +111,13 @@ Each has a `README.md` with where to start reading.
   (`tests/integration/`; their fixtures stay in `crates/daemon/tests/`).
 - `crates/cli`: `arugula`, the CLI. It doesn't link `arugula-vt`, so it
   builds without libghostty and Zig.
-The server crates (`crates/control`, `crates/platform`,
-`crates/control-common`, and the binaries `crates/arugula-control` and
-`crates/arugula-platform`) are a Cargo workspace of their own,
-`server/Cargo.toml`, so daemon work never compiles them and server work
-never compiles the daemon, the mux or Ghostty: build them with
-`scripts/server-cargo` (or `cargo` in `server/`), as the justfile does
-([docs/development.md](docs/development.md), "Build from source").
+Control's hub and its platform aren't here: they're closed source, in
+their own repository (arugula-salad/cloud), which builds against this one's
+shared crates (`control-wire`, `core`, `e2e`, `proto`, `prices`,
+`forge-github`) at a pinned commit. A change to those crates or to
+`contract/` lands here first; the cloud moves its pin after. Agents with
+access work there as described in its AGENTS.md.
 
-- `crates/control`: Arugula control's hub (`arugula-control-base`, a
-  library): accounts, devices, the directory and the relay. It runs the
-  platform in process, or is its gateway when the platform runs as its own
-  (`arugula-platform`, M140). It builds against `crates/platform-api`
-  (`arugula-platform-api`: the ports, the page, the platform in process),
-  never the platform's base; its binary is `crates/arugula-control` (#314),
-  which registers the platform's feature crates and makes the platform.
-- `crates/platform`: control's platform (#1150, `arugula-platform-base`, a
-  library): billing, Cloud, chat's core, projects and grants are here
-  (chat's routes and its agent sessions are `crates/platform-chat`); its binary
-  is `crates/arugula-platform` (#314), and its feature crates are
-  `crates/platform-*` (`arugula-platform-<area>`, side by side on the base,
-  registered by `crates/platform-all`). Its tests are under
-  `-p arugula-platform-base` and each feature crate's (`-p
-  arugula-platform` is the binary). It
-  reaches the hub only through `HubPort`, and the hub reaches it through
-  `PlatformPort`, in process or over the private network (`remote`).
-- `crates/control-common`: what the hub and the platform both use: the SQLite
-  opener, API errors, rate limits, analytics and the signed principal.
 - `crates/control-wire`: the enrolment, routing, relay, push and TURN messages
   between daemons and control (and the CLI's join), one type each, so both
   sides build from the same definition.
@@ -136,7 +126,16 @@ never compiles the daemon, the mux or Ghostty: build them with
   GitLab map onto too), with its tokens from a `TokenSource`. The daemon's
   forge blocks read through it with the person's `gh` token; the platform
   will with an installation or one-use user token. It knows no blocks.
+- `crates/prices`: Anthropic's list prices for Claude tokens, one table:
+  the platform's broker settles hosted calls at it, and the daemon estimates
+  what a Claude Code session cost with it (#398).
 - `crates/testkit`: the harness for the daemon's integration tests.
+- `native/ios`: the iPhone app (SwiftUI on `native/core`, aru-132). `just
+  native-phone DEVICE` signs and installs it from a Mac (its simulator
+  test against a control runs in the cloud's repository).
+- `native/core`: what native clients share (signing, channels, panes, the
+  terminal; aru-132). Its own workspace, outside `crates/` so it isn't a hub
+  input. `just native-check`, and `just native-ios` on a Mac.
 - `crates/desktop`: the desktop app (Tauri). Outside the Cargo workspace, with
   its own `Cargo.lock`, so it releases on its own (#388).
 - `web/`: the web client (TypeScript, Preact, xterm.js). The daemon embeds its
@@ -154,9 +153,10 @@ nothing marked `mux:` names the edge or the block kinds.
   (`api.rs`), MCP (`mcp/`, what everything shares, and `arugulad-mcp`, the
   server, the table and the tools' calls, reached through `mcp/`'s `Mcp`; its tools for what lives in control, such as
   Cloud workspaces, conversations, native issues, runs and deploys, are
-  in `arugulad-control-tools`, registered through `mcp/registry.rs`), share links (`share.rs`), file uploads (`upload.rs`), the dial-out transport
-  (`dial.rs`), end-to-end channels from client devices (`e2e.rs`), enrolment in
-  control (`control.rs`), Windows' named pipe (`pipe.rs`).
+  in `arugulad-control-tools`, registered through `mcp/registry.rs`), share links (`share.rs`), file uploads (`upload.rs`), the WebSocket
+  transport under control's relay and the peer channels (`relay_ws.rs`),
+  end-to-end channels from client devices (`e2e.rs`), enrolment in control
+  (`control.rs`), Windows' named pipe (`pipe.rs`).
 - **Who may:** who may talk to the daemon (`access.rs`, `localauth.rs`),
   principals and grants (`mux:acl.rs`), the API for someone who isn't the owner
   (`authz.rs`), standing permission rules (`rules.rs`), file modes (`mux:perm.rs`).
@@ -169,13 +169,16 @@ nothing marked `mux:` names the edge or the block kinds.
 - **The mux:** `mux/` (`mux:`, with `block.rs`, `history.rs`
   and `agentenv.rs`): the task that owns the layout, the
   panes and every client (`mod.rs`), with one file per area: `attention.rs`,
-  `clients.rs`, `blocks.rs`, `api_calls.rs`, `who_may.rs`, `chat_readers.rs`,
+  `clients.rs`, `blocks.rs`, `api_calls.rs`, `who_may.rs`, `readers.rs`,
   `machines.rs`, `info.rs`, `config.rs`, and the traits it calls out
-  through, `outside.rs`. Chat is control's (M125): the mux only lists who
-  reads each pane's and session's thread (`chat_readers.rs`), and, in the
-  daemon,
-  gates waiting for a person (`gate.rs`), hands (`hand.rs`), Web Push
-  (`push.rs`).
+  through, `outside.rs`. Chat is control's (M125), and the mux names none
+  of it (#675): it lists who may read each pane and session (`readers.rs`),
+  which the daemon's `chat_readers.rs` tells control as thread readers, and
+  queues a follow-up for a pane with an opaque `Tag` it never reads
+  (`followups.rs`), reporting its turn through `Followups`; rooms, threads
+  and mention routing are the daemon's (`agent_mentions.rs`). In the
+  daemon too: gates waiting for a person (`gate.rs`), hands (`hand.rs`),
+  Web Push (`push.rs`).
 - **Panes** (`mux:`): a process on a PTY and its VT thread (`pane.rs`),
   Windows' pseudoconsole (`conpty.rs`), what survives a restart (`store.rs`),
   keeping terminals open across restarts (`holder.rs`, `shim.rs`, `sys.rs`),
@@ -191,14 +194,14 @@ nothing marked `mux:` names the edge or the block kinds.
   workspaces (`labs/workspace/`), studio apps
   (`labs/apps/`),
   conversations (`conversations/`, in `arugulad-agent`), the IDE bridge (`ide/` in `arugulad-editor`, the mux's half in `mux:ide/`), invites
-  (`invite/`, in `arugulad-invite`), remote blocks (`remote.rs`), board pins (`board_block.rs`),
+  (`invite/`, in `arugulad-invite`), board pins (`board_block.rs`),
   configured agent harnesses
   (`mux:inventory.rs`).
 - **Reach:** other daemons (`hosts.rs`), machines that aren't this host
-  (`mux:labs/machine.rs`), sandbox providers (the trait in `mux:provider/`; the
-  Sprites adapter, `labs/provider_tunnel.rs`, `labs/resident.rs` and
-  `labs/sandbox.rs` in Labs), synced history (`sync.rs`, `seal.rs`),
-  tailscaled (`tailscale.rs`), outgoing TLS roots (`roots.rs`).
+  (`mux:labs/machine.rs`), sandbox providers (the trait in `mux:provider/`,
+  the `sandbox-providers` flag's gate on the one in use, `provider_gate.rs`; the
+  loam adapter, `labs/loam.rs`, and `labs/sandboxes.rs` in Labs), tailscaled
+  (`tailscale.rs`), outgoing TLS roots (`roots.rs`).
 - **Lifecycle:** the command line (`args.rs`), startup (`lib.rs`), a
   hosted workspace's box (`arugulad-hosted`: `--hosted`, its own keys per
   box, enrolling, redialling on resume, busy and idle for control; it
@@ -244,18 +247,20 @@ removed").
 ## Labs
 
 A flag per feature turns on what a stranger doesn't get (#385, #464, #665):
-`sandbox-providers`, `studio`, `chant-workspaces`, `additional-forges`,
-`agent-delegation`, `boards` (DECISIONS.md "Four Labs flags stay, renamed; the rest
-graduate or retire"). Their old names, `vms`, `workspaces`, `forges` and
+`sandbox-providers`, `studio`, `chant-workspaces`,
+`agent-delegation` (DECISIONS.md "Four Labs flags stay, renamed; the rest
+graduate or retire"). Their old names, `vms`, `workspaces` and
 `agents`, are aliases forever (`flags::ALIASES`, mirrored for control as
-`wire::FLAG_ALIASES`): every name that comes in goes through
+`wire::FLAG_ALIASES`, which also keeps `forges` for daemons from before
+GitLab and Forgejo left Labs): every name that comes in goes through
 `flags::canonical`/`lookup`, and only new names are listed. A feature that
 leaves takes its row out of `FLAGS` and puts its name in `flags::RETIRED`,
 so an old file naming it is ignored: `fountain` (daemon-side Managoat,
 removed: DECISIONS.md "Daemon-side Managoat is removed"), `huddles`
 (DECISIONS.md "Huddles are removed"), and, graduated or retired in the same
 rethink, `chat` (control's, on by team; the import of a machine's old threads went with it), `docs`, `guest-ssh` (now a machine sharing setting, Guest SSH access, in `sharing.json`: `arugula_proto::sharing`, off by default, the owner's alone; the old flag's word is kept once), `swarm-themes`
-(the swarm's views, under Theme); `studio` stays until the platform covers
+(the swarm's views, under Theme), and `boards` (native #191: a project's boards
+and epics are on for everyone; agents' `boards.read`/`boards.write` grants still gate them), and `additional-forges` and `forges` (native #523: GitLab and Forgejo blocks are on for everyone at launch); `studio` stays until the platform covers
 its connector. They're named
 flags in `flags.json` in the state
 dir (`arugula_proto::flags`: the `FLAGS` registry, `get`, `on`, `set`, `all`;
@@ -271,8 +276,8 @@ says how to turn it on. `labs` in the file, or the old empty `labs`
 file (which a daemon moves into it at startup), means every flag the file
 doesn't name. `ARUGULA_STATE_DIR` moves the state dir. A `labs` cargo feature (on by default) compiles Labs
 code in or out: it lives in the crate `arugulad-labs` (`crates/arugulad-labs`), and core reaches it
-only through its surface, the trait `lab_hooks::Hooks`, whose defaults are what a build without Labs does; the crate's `lib.rs` implements it and explains the pattern. Studio apps, chant workspaces, and VMs (the Sprites adapter, machines, resident
-daemons, the provider tunnel and the tailnet sandbox supervisor) and guest ssh
+only through its surface, the trait `lab_hooks::Hooks`, whose defaults are what a build without Labs does; the crate's `lib.rs` implements it and explains the pattern. Studio apps, chant workspaces, and VMs (the loam adapter, machines and the
+sandboxes list) and guest ssh
 (`guest_ssh.rs`; `russh` is Labs' dependency, and a build without
 Labs answers `/api/guests` with 501), and the Forgejo and GitLab forges
 (`forgejo.rs`, `gitlab.rs`, `tea.rs`, `forge_live.rs`,
@@ -293,6 +298,13 @@ the way `labs` is. Both are crates the binary registers (#232): the surface asks
 `labs` turns `forge` on (Forgejo and GitLab are forges); `just check-features`
 lints the daemon with neither, and with each alone.
 
+## Building UI
+
+Read [docs/design/language.md](docs/design/language.md) before you build or
+restyle a page, pane, dialog, list or menu in `web/`: it names the shared
+component for each piece (type, colour, buttons, headers, rows, chips,
+dialogs, menus, empty states) and what not to invent.
+
 ## Commands
 
 - `just bootstrap`, then `just web`: toolchains, web dependencies, and the web
@@ -301,7 +313,12 @@ lints the daemon with neither, and with each alone.
   typecheck), then the web import rule and its tests (`just web-imports`),
   the `proto-ts` check, fmt and clippy, for both workspaces (the root's
   and the server's).
-- `just e2e`: the browser specs. `just e2e-webkit`: WebKit's.
+- `just e2e`: the browser specs. `just e2e-webkit`: WebKit's. CI runs
+  WebKit's specs, `just check-core`, the platform on Postgres and the
+  test stack's claims and specs nightly and on a release candidate
+  (`.github/workflows/rare-nightly.yml`), not on each push to main; a
+  daemon release needs them to have passed (docs/development.md,
+  "Releasing").
   `just e2e-spec e2e/<name>.spec.ts`: only the ones named.
 - In a session on a hosted dev box (your branch is `arugula/...`): run the
   specs you wrote or changed with `just e2e-spec`, one at a time
@@ -330,6 +347,45 @@ lints the daemon with neither, and with each alone.
   Arugula pane). Agents building side by side: `CARGO_BUILD_JOBS=4`.
   Run suites through `just`: a `cargo nextest run` of your own skips the
   lock.
+
+## Release notes
+
+A pull request that changes what people using Arugula get adds a file in
+`docs/notes/` (`docs/notes/README.md` has the format): its `line` says, in one
+sentence, what it means for them. A change nobody would notice says so in a commit
+message instead: `Release-note: none, WHY`. The `notes` check fails until it has one
+or the other; a change only to docs, tests, CI or scripts needs neither. Releases
+are built from these, so nobody writes a release's notes at the end.
+
+## Changing CI, and a red main
+
+- main takes pull requests through GitHub's merge queue: `gh pr merge N`
+  queues one, and it lands once its group passes the whole suite, about
+  20 minutes later. If its group fails, the pull request leaves the queue;
+  read the group's run, fix it, and queue it again. A CI change is tested
+  the same way, so it needs no branch run first (docs/development.md,
+  "Merging through the queue"). The `full-check` label runs check.yml on the
+  branch for an earlier answer.
+- When main goes red and the same job fails again on its retry, revert
+  the commit that broke it within about 30 minutes and bring the change
+  back with its fix in a new pull request. Don't fix forward while others
+  land on top (docs/development.md, "When main goes red").
+
+## What Arugula builds, and what it waits on chant for
+
+Arugula is built on chant, as terragucci and sql-yodeler are. A feature
+goes in chant core when other products on chant would share it, else in a
+chant lexicon when it belongs to one target, else in Arugula. Arugula
+keeps people and machines: identity, where things run, triggers and
+schedules, the inbox and push, secret values, and its own words and UI.
+Releases, approval rules, environments and promotion, plans and stale
+checks, and CI verdicts are chant's.
+
+A pull request that builds something this rule puts in chant, instead of
+waiting for chant, adds a row to #1988 (epic: Arugula on chant) with the
+chant issue it waits on, filed if there's none, and a reason from
+Arugula's users; convenience isn't one. When chant ships it, the row's
+child issue drops Arugula's copy.
 
 ## Binaries
 

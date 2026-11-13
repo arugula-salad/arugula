@@ -38,7 +38,7 @@ pub const FILE: &str = "sharing.json";
 /// choice ([`migrate`]).
 pub const OLD_FLAG: &str = "guest-ssh";
 
-/// What a request for a guest invite is told where Guest SSH access is
+/// What a request to make a guest invite is told where Guest SSH access is
 /// off: the machine is the daemon that answered.
 pub const GUEST_SSH_OFF: &str = "Guest SSH access is off on this machine: its owner turns it on in the machine menu's Guest SSH access…, or with `arugulad sharing guest-ssh on` there";
 
@@ -57,6 +57,12 @@ pub struct Sharing {
     #[serde(default = "yes")]
     #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
     pub agent_mentions: bool,
+    /// What teammates and their agents may learn of this machine's sessions
+    /// (#577). `work` by default, since a thread's strip shows it (Jake,
+    /// 2026-11-03, aru-133).
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(as = "Option<AgentListing>", optional))]
+    pub agent_sessions: AgentListing,
     /// Whether this build has guest ssh. A build without Labs keeps the
     /// setting, and nothing follows. Absent: it has.
     #[serde(default = "yes")]
@@ -66,6 +72,45 @@ pub struct Sharing {
 
 fn yes() -> bool {
     true
+}
+
+/// What teammates and their agents may learn of this machine's sessions
+/// (#577): when an agent asks which ones it can `@machine/name`, and in the
+/// strip at the top of a thread (#646). Only with agent mentions on; off,
+/// they learn nothing whatever this says.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum AgentListing {
+    /// No session is named to them.
+    None,
+    /// Each session's name, tab, how recently it was active and whether
+    /// it's working.
+    Names,
+    /// Also what each works on (the issue it was started on) and the name of
+    /// the tool it last ran. Never output, a tool's arguments or a path.
+    #[default]
+    Work,
+}
+
+impl AgentListing {
+    /// The word `sharing.json` and `arugulad sharing` use.
+    pub fn word(self) -> &'static str {
+        match self {
+            AgentListing::None => "none",
+            AgentListing::Names => "names",
+            AgentListing::Work => "work",
+        }
+    }
+
+    pub fn from_word(w: &str) -> Option<Self> {
+        match w {
+            "none" => Some(AgentListing::None),
+            "names" => Some(AgentListing::Names),
+            "work" => Some(AgentListing::Work),
+            _ => None,
+        }
+    }
 }
 
 /// `PUT /api/sharing` (the `sharing.set` operation): the settings to
@@ -79,6 +124,9 @@ pub struct SharingSetRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub agent_mentions: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub agent_sessions: Option<AgentListing>,
 }
 
 /// The file as it is: empty if there's none, or it doesn't parse (logged
@@ -106,6 +154,22 @@ pub fn agent_mentions(state_dir: &Path) -> bool {
     doc(state_dir).get("agent_mentions").and_then(Value::as_bool).unwrap_or(true)
 }
 
+/// What teammates and their agents may learn of this machine's sessions
+/// (#577): the file's word, else the default. A word it doesn't know is
+/// names, the middle way, so a typo neither opens nor closes it.
+pub fn agent_sessions(state_dir: &Path) -> AgentListing {
+    match doc(state_dir).get("agent_sessions") {
+        None => AgentListing::default(),
+        Some(w) => w.as_str().and_then(AgentListing::from_word).unwrap_or(AgentListing::Names),
+    }
+}
+
+/// What agents may learn of a machine's sessions, with the owner's two
+/// switches together (#576, #577): nothing when mentions are off.
+pub fn sessions_shown(state_dir: &Path) -> AgentListing {
+    if agent_mentions(state_dir) { agent_sessions(state_dir) } else { AgentListing::None }
+}
+
 /// Turns Guest SSH access on or off, keeping the rest of the file.
 pub fn set_guest_ssh(state_dir: &Path, on: bool) -> io::Result<()> {
     set(state_dir, "guest_ssh", on)
@@ -116,9 +180,19 @@ pub fn set_agent_mentions(state_dir: &Path, on: bool) -> io::Result<()> {
     set(state_dir, "agent_mentions", on)
 }
 
+/// Sets what agents may learn of the machine's sessions, keeping the rest
+/// of the file (#577).
+pub fn set_agent_sessions(state_dir: &Path, what: AgentListing) -> io::Result<()> {
+    write(state_dir, "agent_sessions", Value::String(what.word().into()))
+}
+
 fn set(state_dir: &Path, key: &str, on: bool) -> io::Result<()> {
+    write(state_dir, key, Value::Bool(on))
+}
+
+fn write(state_dir: &Path, key: &str, v: Value) -> io::Result<()> {
     let mut m = doc(state_dir);
-    m.insert(key.into(), Value::Bool(on));
+    m.insert(key.into(), v);
     let mut text = serde_json::to_string_pretty(&Value::Object(m)).expect("a JSON object serializes");
     text.push('\n');
     flags::write_atomic(&state_dir.join(FILE), text.as_bytes())
@@ -146,6 +220,20 @@ mod tests {
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    /// A `sharing.json` a release wrote reads the same.
+    #[test]
+    fn release_sharing_loads() {
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/stored/sharing.json");
+        let d = dir("release");
+        fs::copy(&fixture, d.join(FILE)).unwrap();
+        assert!(guest_ssh(&d) && agent_mentions(&d));
+        assert_eq!(agent_sessions(&d), AgentListing::Names);
+        let text = fs::read_to_string(&fixture).unwrap();
+        let s: Sharing = serde_json::from_str(&text).unwrap();
+        assert_eq!((s.guest_ssh, s.agent_mentions, s.agent_sessions), (true, true, AgentListing::Names));
+        fs::remove_dir_all(&d).unwrap();
     }
 
     #[test]
@@ -188,6 +276,24 @@ mod tests {
         flags::write_control(&d, &pushed).unwrap();
         assert!(!guest_ssh(&d) && !migrate(&d).unwrap());
         fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn agent_sessions_are_work_until_the_owner_says_otherwise() {
+        let d = dir("sessions");
+        assert_eq!(agent_sessions(&d), AgentListing::Work);
+        for what in [AgentListing::Work, AgentListing::None, AgentListing::Names] {
+            set_agent_sessions(&d, what).unwrap();
+            assert_eq!(agent_sessions(&d), what);
+        }
+        // Another key's write keeps it, an owner's own choice stays, and a
+        // word it doesn't know is names.
+        set_agent_sessions(&d, AgentListing::Work).unwrap();
+        set_agent_mentions(&d, false).unwrap();
+        assert_eq!(agent_sessions(&d), AgentListing::Work);
+        assert_eq!(sessions_shown(&d), AgentListing::None, "mentions off shows nothing");
+        std::fs::write(d.join(FILE), r#"{"agent_sessions": "everything"}"#).unwrap();
+        assert_eq!(agent_sessions(&d), AgentListing::Names);
     }
 
     #[test]

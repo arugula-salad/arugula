@@ -21,7 +21,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test, type Page } from "@playwright/test";
-import { closeContexts, menuItem, paneEl, panes, ready, reset, text } from "./helpers";
+import { closeContexts, menuItem, paneEl, panes, ready, reset, text, openSettingsPage, closeSettingsPage } from "./helpers";
 import type { PaneId } from "../src/shared/proto";
 import { ANY, daemonPort } from "./ports";
 
@@ -32,7 +32,9 @@ const FRIEND = "friend@example.com";
 let APP = "";
 let state = "";
 let daemon: ChildProcess | undefined;
-/** The page the browser block shows: it counts the clicks and keys that reach it. */
+/** The page the browser block shows: it counts the clicks and keys that
+ * reach it. Its script writes "clicks 0 keys 0" once it's listening, so
+ * waiting for that text waits for the listeners, not the page's HTML. */
 let site: Server;
 let sitePort = 0;
 
@@ -113,9 +115,9 @@ test.beforeAll(async () => {
   state = mkdtempSync(join(tmpdir(), "ilg-e2e-pane-modal-"));
   site = createServer((_, res) => {
     res.setHeader("content-type", "text/html");
-    res.end(`<!doctype html><body style="margin:0;height:100vh"><p id="n">clicks 0 keys 0</p>
+    res.end(`<!doctype html><body style="margin:0;height:100vh"><p id="n">loading</p>
 <script>let c = 0, k = 0; const say = () => (document.getElementById("n").textContent = "clicks " + c + " keys " + k);
-addEventListener("pointerdown", () => { c++; say(); }); addEventListener("keydown", () => { k++; say(); });</script></body>`);
+addEventListener("pointerdown", () => { c++; say(); }); addEventListener("keydown", () => { k++; say(); }); say();</script></body>`);
   });
   await new Promise<void>((r) => site.listen(0, "127.0.0.1", () => r()));
   sitePort = (site.address() as AddressInfo).port;
@@ -161,7 +163,9 @@ test("over a terminal: only its pane, drawing underneath, deaf until Escape; Esc
   expect(await tip(page, term).evaluate((e) => getComputedStyle(e).borderTopWidth)).toBe("1px");
   const inner = (await tip(page, term).locator(".pane-tip-inner").boundingBox())!;
   expect(Math.abs(inner.x + inner.width / 2 - (panel.x + panel.width / 2))).toBeLessThan(2);
-  expect(Math.abs(inner.y + inner.height / 2 - (panel.y + panel.height / 2))).toBeLessThan(3);
+  // Centred above the footer, which is Modal's and stays pinned at the bottom (#690).
+  const body = (await tip(page, term).locator(".pane-tip-scroll").boundingBox())!;
+  expect(Math.abs(inner.y + inner.height / 2 - (body.y + body.height / 2))).toBeLessThan(3);
   await expect(page.locator(`[data-pane-header="${term}"]`)).toBeVisible();
   // Seen on answer, not on show.
   expect(await seenHere(page)).not.toHaveProperty("seen:test-tip-term");
@@ -245,7 +249,8 @@ test("over an agent block: it takes the composer's focus and gives it back; × c
   await expect(composer).toHaveValue("hi");
 });
 
-/** A browser block on the spec's own page beside `term`: its id and its frame. */
+/** A browser block on the spec's own page beside `term`, listening and
+ * painted: its id and its frame. */
 async function browserBlock(page: Page, term: PaneId) {
   const id = await page.evaluate(
     ({ port, term }) => window.__arugula.client.openBlock({ type: "browser", config: { port }, split: term, local: true } as never),
@@ -254,6 +259,9 @@ async function browserBlock(page: Page, term: PaneId) {
   expect(id).not.toBeNull();
   const frame = page.frameLocator(`[data-pane="${id}"] iframe`);
   await expect(frame.locator("#n")).toHaveText("clicks 0 keys 0", { timeout: 30_000 });
+  // The frame is a process of its own (the block's origin): until it has
+  // drawn, Chrome can send a click at it to the app's page instead.
+  await frame.locator("body").evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
   return { id: id!, frame };
 }
 
@@ -327,10 +335,10 @@ test("Don't show tips like this again: every pane modal stops, chips don't; Sett
   await page.locator(`[data-pane-header="${term}"] [data-hint-dismiss]`).click();
 
   // Settings › Big tips says it's off, and turns them on again.
-  await page.locator("[data-account-menu]").click();
-  const big = await menuItem(page, "Big tips", { exact: true });
-  await expect(big).toHaveAttribute("aria-checked", "false");
+  const big = (await openSettingsPage(page)).getByRole("switch", { name: "Big tips", exact: true });
+  await expect(big).not.toBeChecked();
   await big.click();
+  await closeSettingsPage(page);
   expect(await seenHere(page)).not.toHaveProperty("tips.modal");
   // The agent's, unanswered, shows; its button acts (and answers it).
   await expect(tip(page, block)).toBeVisible();

@@ -16,6 +16,14 @@
             "string",
             "null"
           ]
+        },
+        "session_project": {
+          "default": null,
+          "description": "The project the agent's session is in. An older control ignores it\nand answers by `repo`, which the machine sends beside it.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "type": "object"
@@ -226,7 +234,7 @@
           "type": "integer"
         },
         "author": {
-          "description": "The account that wrote it, or \"\" once it's deleted.",
+          "description": "The account that wrote it, or \"\": a deleted account's, or one\nnobody here wrote (then `via` says who did).",
           "type": "string"
         },
         "edited": {
@@ -251,6 +259,13 @@
         },
         "text": {
           "type": "string"
+        },
+        "via": {
+          "description": "As its message's [`via`](crate::chat::ChatMessage::via): with no\nauthor, Arugula's own post (`system`, a session's card or ask),\nGitHub's (`github:<login>`), CI's (`ci:<source>`) or what an agent\nsession said (`said:<ses>`) (Arugula #626).",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -328,6 +343,10 @@
     "IssueExport": {
       "description": "Every issue in a project, by number, with its timeline and comments.",
       "properties": {
+        "comments_in_chat": {
+          "description": "The comments were left out: they're in chat, which is off for the\nreader (Arugula #746). Absent when they're there.",
+          "type": "boolean"
+        },
         "exported_at": {
           "format": "uint64",
           "minimum": 0,
@@ -428,6 +447,17 @@
           "minimum": 0,
           "type": "integer"
         },
+        "owner": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProjectOwner"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Whose project it is: a team's or a person's own. It replaces `team`\nas the test of a team's project; an older control sends none, and a\nmachine reads `team` then. `team` stays for a release, for older\nmachines."
+        },
         "project": {
           "type": "string"
         },
@@ -437,6 +467,22 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "rule": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/IssueHomeRule"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Which step chose the project, for [`AGENT_ISSUE_HOME`]. An older\ncontrol sends none; the machine then says its own."
+        },
+        "team": {
+          "default": false,
+          "description": "A team's project, not its owner's personal one: where a team's Docs\nlive (Arugula #862). An older control sends none, which a machine\nreads as not a team's.",
+          "type": "boolean"
         }
       },
       "required": [
@@ -460,6 +506,36 @@
         }
       },
       "type": "object"
+    },
+    "IssueHomeRule": {
+      "description": "The steps that choose an agent's project, in order: the first that has\none answers.",
+      "oneOf": [
+        {
+          "const": "explicit",
+          "description": "The call named it.",
+          "type": "string"
+        },
+        {
+          "const": "block",
+          "description": "The agent's block was started on one of its issues (`work.project`).",
+          "type": "string"
+        },
+        {
+          "const": "session",
+          "description": "The agent's session is in it.",
+          "type": "string"
+        },
+        {
+          "const": "repo",
+          "description": "The clone's GitHub repo is linked to it.",
+          "type": "string"
+        },
+        {
+          "const": "default",
+          "description": "None of those: the owner's default project.",
+          "type": "string"
+        }
+      ]
     },
     "IssueList": {
       "properties": {
@@ -706,6 +782,49 @@
         "title"
       ],
       "type": "object"
+    },
+    "ProjectOwner": {
+      "description": "Whose a project is. The web client has another `Owner` (a pane's), so\nthis one is named for what it owns.",
+      "oneOf": [
+        {
+          "description": "A team's: its id and name.",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "team",
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id",
+            "name"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A person's own: their account.",
+          "properties": {
+            "account": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "personal",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "account"
+          ],
+          "type": "object"
+        }
+      ]
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",

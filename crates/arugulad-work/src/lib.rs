@@ -34,7 +34,10 @@
 //!   ([`kill_all`]), so nothing carries into the next run.
 //! - **Agent runs** are Claude Code, headless, as the run user. On a
 //!   hosted box each is a turn the platform says may run (M185's gate),
-//!   with its placeholder key, ended with the run.
+//!   with its placeholder key, ended with the run. The daemon's own
+//!   binary follows it ([`agent_run`], Arugula #552): a run whose turn
+//!   ends with background work still running, its answer never given,
+//!   fails rather than succeeding.
 //! - **In a pane.** A run is its command in a new pane in the `runs`
 //!   session, which ends when the command does. Its live view is an
 //!   ordinary end-to-end pane, which the project's people watch as they
@@ -50,7 +53,9 @@
 //!   it's stopped.
 //! - **Revokes stop runs.** A revoke that says `running stop`, relayed or
 //!   with a pull, stops the runs going under the grants it covers
-//!   ([`stop_revoked`]).
+//!   ([`stop_revoked`]), and ends the sessions going under them. Any other
+//!   revoke ends those too, once a turn under way does
+//!   ([`sessions::stop_revoked`]).
 //! - **Its log and artifacts** go to the run-log bucket as it runs and
 //!   when it ends, before its end is reported (M213, [`crate::run_logs`]).
 //! - **Busy while it runs** ([`running`]): the machine says it's working
@@ -58,7 +63,9 @@
 //!   pause mid-run.
 //! - **Agent sessions** ride the same pull (M255, [`sessions`]): a box
 //!   with session users takes up to three at once, beside its one run at a
-//!   time, each an ACP agent block run as its own session user.
+//!   time, each an ACP agent block run as its own session user, under the
+//!   project's standing grant, checked here before it's taken and as each
+//!   turn's prompt goes to its agent, whatever queued it.
 //!
 //! This is the crate `arugulad-work` (#232), beside the other feature crates
 //! on the base: the binary calls [`register`], which installs the base's
@@ -82,13 +89,13 @@ use std::{
 use arugula_control_wire::{
     run_logs::ARTIFACTS_ENV,
     work::{
-        Report, Reported, TAKES_DEPLOY, TAKES_RUN, TAKES_SESSION, WORK_REPORT, Work, WorkItem, WorkQuery,
+        ReadyRun, Report, Reported, TAKES_DEPLOY, TAKES_RUN, TAKES_SESSION, WORK_REPORT, Work, WorkQuery,
         session_users_take,
     },
 };
 use arugula_e2e::{
     now_ms,
-    project_grant::ProjectGrant,
+    project_grant::{INSTRUCT, ProjectGrant, START},
     run::{Event, Op, State},
 };
 use arugula_proto::{Policy, StartedBy, api::RunRequest};
@@ -107,7 +114,9 @@ use crate::{
     work::{DIR, PROVIDER_PORTS, printable},
 };
 
+pub mod agent_run;
 mod deploy;
+mod run_files;
 mod run_logs;
 pub mod sessions;
 
@@ -222,6 +231,10 @@ pub struct Ledger {
     /// restart, as its driver went with the daemon.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deploy: Option<String>,
+    /// An agent run's (Claude Code, followed by [`agent_run`]): its exit
+    /// [`agent_run::LEFT_WAITING`] says it ended waiting.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub agent: bool,
     #[serde(default)]
     pub events: Vec<Kept>,
     /// What's been sent of its log and artifacts (M213).
@@ -468,7 +481,10 @@ fn agent_login() -> Option<(&'static str, String)> {
 }
 
 /// What a run runs, in the shell's words, and its banner's second line.
-fn what(op: &Op, claude: Option<&Path>) -> Result<(String, String), Refused> {
+/// An agent's Claude Code runs under `follow`, this daemon's own binary
+/// ([`agent_run`]), told it's headless, saying what it does as
+/// `stream-json`.
+fn what(op: &Op, claude: Option<&Path>, follow: Option<&Path>) -> Result<(String, String), Refused> {
     match &op.instruction {
         None => {
             let cmd = command_line(&op.argv);
@@ -476,22 +492,30 @@ fn what(op: &Op, claude: Option<&Path>) -> Result<(String, String), Refused> {
         }
         Some(i) => {
             let claude = claude.ok_or_else(|| Refused("op_agent", "Claude Code isn't on this box".into()))?;
+            let follow = follow
+                .ok_or_else(|| Refused("op_agent", "the daemon can't find its own binary to follow it".into()))?;
             let cmd = format!(
-                "{} -p {} --output-format text --dangerously-skip-permissions",
+                "{} {} {} -p {} --append-system-prompt {} --output-format stream-json --verbose \
+                 --dangerously-skip-permissions",
+                quote(&follow.to_string_lossy()),
+                agent_run::NAME,
                 quote(&claude.to_string_lossy()),
-                quote(i)
+                quote(i),
+                quote(agent_run::HEADLESS)
             );
             Ok((cmd, format!("claude -p {}", quote(i))))
         }
     }
 }
 
-/// What an agent run is given: Claude Code's CLI; the daemon's login,
+/// What an agent run is given: Claude Code's CLI, and the daemon's own
+/// binary that follows it ([`agent_run`]); the daemon's login,
 /// from a file the pane's shell reads and removes (away from a hosted box);
 /// and its environment besides (M185's placeholder key, on one).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Agent<'a> {
     pub claude: Option<&'a Path>,
+    pub follow: Option<&'a Path>,
     pub login: Option<(&'a str, &'a Path)>,
     pub env: &'a [(String, String)],
 }
@@ -516,8 +540,8 @@ pub fn pane_command(
     agent: &Agent<'_>,
     artifacts: &Path,
 ) -> Result<String, Refused> {
-    let Agent { claude, login, env: env_extra } = *agent;
-    let (cmd, shown) = what(op, claude)?;
+    let Agent { claude, follow, login, env: env_extra } = *agent;
+    let (cmd, shown) = what(op, claude, follow)?;
     let banner = format!(
         r"printf '%s\n' {} {}",
         quote(&printable(&format!("arugula run {run} · operation sha256:{op_hash}"))),
@@ -583,7 +607,13 @@ pub fn pane_command(
 /// the revokes it carries kept first ([`crate::hosted::runs::allows`]). An
 /// approved run (one with no grant) waits for M218's check of its
 /// approval: until then it doesn't start here (fail closed).
-pub fn grant(app: &App, item: &WorkItem) -> Result<(), Refused> {
+pub fn grant(app: &App, item: &ReadyRun) -> Result<(), Refused> {
+    grant_for(app, item, START)
+}
+
+/// Whether the project's standing grant gives `cap` over `item`, as
+/// [`grant`] asks.
+fn grant_for(app: &App, item: &ReadyRun, cap: &str) -> Result<(), Refused> {
     if item.state != State::Pending.as_str() {
         return Err(Refused("approval_unchecked", "this machine can't check a run's approval yet".into()));
     }
@@ -594,9 +624,10 @@ pub fn grant(app: &App, item: &WorkItem) -> Result<(), Refused> {
         project: item.project.clone(),
         workspace: item.workspace.clone(),
         run: Some(item.run.clone()),
-        cap: "runs.start".into(),
+        cap: cap.into(),
         grant: g,
         revokes: item.revokes.clone(),
+        passkey_log: item.passkey_log.clone(),
     };
     crate::hosted::runs::allows(app, &start).map_err(|r| Refused(r.code, r.says.into()))
 }
@@ -605,7 +636,7 @@ pub fn grant(app: &App, item: &WorkItem) -> Result<(), Refused> {
 /// it's a hosted machine in control.
 pub(crate) fn me(app: &App) -> Option<(Arc<arugula_e2e::DeviceKeys>, String, String, String)> {
     let e = app.control.enrolled()?;
-    let pin = e.saved.hosted.as_ref()?;
+    let pin = e.saved.hosted()?;
     Some((e.keys.clone(), pin.cert.device.clone(), pin.cert.project.clone(), pin.cert.workspace.clone()))
 }
 
@@ -613,7 +644,7 @@ pub(crate) fn me(app: &App) -> Option<(Arc<arugula_e2e::DeviceKeys>, String, Str
 /// operation): the operation, and the directory its copy is made from.
 pub fn check(
     app: &App,
-    item: &WorkItem,
+    item: &ReadyRun,
     me: &str,
     project: &str,
     workspace: &str,
@@ -624,19 +655,28 @@ pub fn check(
     if hex::encode(Sha256::digest(item.op.as_bytes())) != item.op_hash {
         return Err(Refused("op_hash", "the operation's bytes don't hash to the run's operation hash".into()));
     }
-    // A deploy's box (M219) takes its one deploy's run, nothing else.
-    if deploy::deploy_box(app) && item.deploy.is_none() {
+    // A deploy's box (M219) takes its one deploy's run (or, #1985, its
+    // plan's), nothing else.
+    if deploy::deploy_box(app) && item.deploy.is_none() && item.deploy_plan.is_none() {
         return Err(Refused("deploy_box", "this box was made for one deploy, and takes nothing else".into()));
     }
     // A deploy's run (M219) goes by its owner's approval of the deploy,
-    // checked here against what this machine pinned; any other run by the
-    // project's standing grant.
-    match &item.deploy {
-        Some(d) => deploy::check(app, item, d)?,
-        None => grant(app, item)?,
+    // checked here against what this machine pinned; its plan run (#1985)
+    // by what a plan may do; any other run by the project's standing grant.
+    match (&item.deploy, &item.deploy_plan) {
+        (Some(d), None) => deploy::check(app, item, d)?,
+        (None, Some(p)) => deploy::check_plan(app, item, p)?,
+        (None, None) => grant(app, item)?,
+        (Some(_), Some(_)) => {
+            return Err(Refused("op_deploy", "a run is a deploy's apply or its plan, not both".into()));
+        }
     }
     let op = parse_op(&item.op, me)?;
-    deploy::matches(&op, item.deploy.as_ref())?;
+    // An agent's run tells it what to do: that's `runs.instruct` as well.
+    if item.deploy.is_none() && op.instruction.is_some() {
+        grant_for(app, item, INSTRUCT)?;
+    }
+    deploy::matches(&op, item.deploy.as_ref(), item.deploy_plan.as_ref())?;
     let src = op.directory.as_deref().map(|d| source_dir(d, &arugula_mux::sys::home())).transpose()?;
     Ok((op, src))
 }
@@ -854,7 +894,7 @@ fn tab_name(run: &str, op_hash: &str, shown: &str) -> String {
 
 /// Take `item`, once: a run in the ledger already (or one whose entry
 /// can't be read) is only reported. One run goes at a time.
-async fn take(app: &Arc<App>, item: WorkItem) {
+async fn take(app: &Arc<App>, item: ReadyRun) {
     let dir = app.control.state_dir().to_owned();
     let Some((keys, me, project, workspace)) = me(app) else { return };
     if !good_id(&item.run) {
@@ -875,7 +915,12 @@ async fn take(app: &Arc<App>, item: WorkItem) {
         taken_at: now_ms(),
         grant: item.grant.clone(),
         turn: None,
-        deploy: item.deploy.as_ref().map(|d| d.deploy.clone()),
+        deploy: item
+            .deploy
+            .as_ref()
+            .map(|d| d.deploy.clone())
+            .or_else(|| item.deploy_plan.as_ref().map(|p| p.deploy.clone())),
+        agent: false,
         events: vec![],
         logs: Default::default(),
     };
@@ -928,6 +973,7 @@ async fn take(app: &Arc<App>, item: WorkItem) {
             return;
         }
     };
+    l.agent = op.instruction.is_some();
     // `running`, on disk, once, before anything starts.
     if !claim(&dir, &l) {
         return;
@@ -962,6 +1008,7 @@ async fn take(app: &Arc<App>, item: WorkItem) {
         None => None,
     };
     let claude = claude_bin();
+    let follow = std::env::current_exe().ok();
     let artifacts = crate::run_logs::artifacts_dir(&dir, &item.run, as_.as_ref());
     let command = match pane_command(
         &item.run,
@@ -969,13 +1016,13 @@ async fn take(app: &Arc<App>, item: WorkItem) {
         &op,
         src.as_deref(),
         as_.as_ref(),
-        &Agent { claude: claude.as_deref(), login, env: &env_extra },
+        &Agent { claude: claude.as_deref(), follow: follow.as_deref(), login, env: &env_extra },
         &artifacts,
     ) {
         Ok(c) => c,
         Err(Refused(code, why)) => return fail(l, format!("{code}: {why}")),
     };
-    let shown = what(&op, claude.as_deref()).map(|w| w.1).unwrap_or_default();
+    let shown = what(&op, claude.as_deref(), follow.as_deref()).map(|w| w.1).unwrap_or_default();
     let events = app.mux.events();
     let req = RunRequest {
         command: Some(command),
@@ -1084,6 +1131,13 @@ async fn watch(app: Arc<App>, l: Ledger, events: Option<tokio::sync::broadcast::
     // answers) stands.
     let ended = update(&dir, &l.run, |now| match end {
         Ok(0) => now.push(&keys, &me, State::Succeeded, serde_json::json!({ "exit": 0 })),
+        // An agent that ended its turn waiting on background work (#552).
+        Ok(code) if l.agent && code == agent_run::LEFT_WAITING => now.push(
+            &keys,
+            &me,
+            State::Failed,
+            serde_json::json!({ "exit": code, "reason": agent_run::LEFT_WAITING_WHY }),
+        ),
         Ok(code) => now.push(&keys, &me, State::Failed, serde_json::json!({ "exit": code })),
         Err(why) => now.push(&keys, &me, State::Failed, serde_json::json!({ "reason": why })),
     });
@@ -1243,6 +1297,7 @@ async fn send_all(app: &App, open: &mut BTreeSet<String>) {
 /// left, then pull, take what's ready (one run at a time), stop what a
 /// revoke covers, and send what's unsent.
 pub fn start(app: Arc<App>) {
+    let _ = sessions::APP.set(app.clone());
     crate::task::spawn(async move {
         let dir = app.control.state_dir().to_owned();
         let every = pull_every();
@@ -1257,6 +1312,9 @@ pub fn start(app: Arc<App>) {
             warn!(why, "hosted: sessions and runs can't be kept off the daemon's ports yet");
         }
         sessions::resume(&app).await;
+        if sessions::takes() {
+            sessions::watch(app.clone());
+        }
         let mut open: BTreeSet<String> = all(&dir)
             .into_iter()
             .filter(|l| l.state == State::Running.as_str() || l.events.iter().any(|k| !k.answered))
@@ -1266,7 +1324,8 @@ pub fn start(app: Arc<App>) {
             send_all(&app, &mut open).await;
             // A snapshot's builder (M263) takes nothing: it sets up, wipes
             // itself and goes.
-            let builder = app.control.enrolled().is_some_and(|e| e.saved.hosted.as_ref().is_some_and(|h| h.builder));
+            let builder =
+                app.control.enrolled().is_some_and(|e| e.saved.purpose().is_some_and(|p| p.builds_snapshot()));
             if me(&app).is_some() && !builder {
                 // Only a deploy's own box (M219) takes deploys; a box with
                 // session users takes sessions (M255).
@@ -1284,6 +1343,7 @@ pub fn start(app: Arc<App>) {
                         // The project's revokes come with every pull: kept,
                         // then checked against the runs going.
                         crate::hosted::runs::keep_revokes(&app, &w.revokes);
+                        sessions::stop_revoked(&app);
                         for item in w.items {
                             if run_going() {
                                 break;
@@ -1318,6 +1378,8 @@ struct Engine;
 /// Puts the runs engine in the daemon. Call it before `arugulad_base::main`.
 pub fn register() {
     crate::work::install(Box::new(Engine));
+    // An agent run's Claude Code, followed, as the run user (#552).
+    arugulad_base::subcommands::register(agent_run::NAME, agent_run::cli);
 }
 
 impl crate::work::Work for Engine {
@@ -1331,6 +1393,16 @@ impl crate::work::Work for Engine {
 
     fn stop_revoked(&self, app: &App) {
         stop_revoked(app);
+        if let Some(app) = sessions::APP.get() {
+            sessions::stop_revoked(app);
+        }
+    }
+
+    fn session_turn(
+        &self,
+        session: String,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send>> {
+        Box::pin(sessions::turn_allowed(session))
     }
 
     fn running(&self) -> bool {
@@ -1431,26 +1503,45 @@ mod tests {
 
     /// The agent's login reaches the run on its standard input, from a file
     /// the outer shell removes: never on a command line.
+    // Its command is read back through `sh`.
+    #[cfg(unix)]
     #[test]
     fn an_agent_runs_claude_with_its_login_on_stdin() {
         let op = Op { instruction: Some("fix the build".into()), ..Op::default() };
         let as_ = RunAs { user: "runner".into(), home: "/home/runner".into() };
         let file = Path::new("/state/work/run_1.login");
         let claude = Path::new("/usr/local/bin/claude");
-        let (cmd, shown) = what(&op, Some(claude)).unwrap();
+        let follow = Path::new("/usr/local/bin/arugulad");
+        let (cmd, shown) = what(&op, Some(claude), Some(follow)).unwrap();
+        // Followed by the daemon's own binary, told it's headless, saying
+        // what it does as it goes (#552).
         assert_eq!(
-            cmd,
-            "'/usr/local/bin/claude' -p 'fix the build' --output-format text --dangerously-skip-permissions"
+            sh(&format!("printf '%s\\n' {cmd}")),
+            [
+                "/usr/local/bin/arugulad",
+                "_agent-run",
+                "/usr/local/bin/claude",
+                "-p",
+                "fix the build",
+                "--append-system-prompt",
+                agent_run::HEADLESS,
+                "--output-format",
+                "stream-json",
+                "--verbose",
+                "--dangerously-skip-permissions\n",
+            ]
+            .join("\n")
         );
         assert_eq!(shown, "claude -p 'fix the build'");
-        assert_eq!(what(&op, None).unwrap_err().0, "op_agent");
+        assert_eq!(what(&op, None, Some(follow)).unwrap_err().0, "op_agent");
+        assert_eq!(what(&op, Some(claude), None).unwrap_err().0, "op_agent");
         let c = pane_command(
             "run_1",
             "abc",
             &op,
             None,
             Some(&as_),
-            &Agent { claude: Some(claude), login: Some(("ANTHROPIC_API_KEY", file)), env: &[] },
+            &Agent { claude: Some(claude), follow: Some(follow), login: Some(("ANTHROPIC_API_KEY", file)), env: &[] },
             Path::new("/home/runner/work/run_1/.arugula/artifacts"),
         )
         .unwrap();
@@ -1519,6 +1610,7 @@ mod tests {
             grant: None,
             turn: None,
             deploy: None,
+            agent: false,
             events: vec![],
             logs: Default::default(),
         }

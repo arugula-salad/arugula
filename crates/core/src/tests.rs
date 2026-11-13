@@ -105,56 +105,6 @@ fn view_ownership_and_zoom() {
     assert_eq!(m.pane_rects().len(), 2);
 }
 
-/// #333: two editors typing in one pane in turn, a second or so apart,
-/// used to resize it at every handover. The size now stays with whoever
-/// has it until they've left the keyboard for [`SIZE_HOLD`].
-#[test]
-fn editors_typing_in_turn_dont_fight_over_the_size() {
-    use std::time::{Duration, Instant};
-
-    use crate::{Claim, SIZE_HOLD, SizeHold};
-
-    let mut m = mux_with_session();
-    let mut hold = SizeHold::default();
-    let t0 = Instant::now();
-    let at = |s: f64| t0 + Duration::from_secs_f64(s);
-    let (a, b) = (7, 8);
-    let size = |m: &Mux| (m.tab(1).unwrap().cols, m.tab(1).unwrap().rows);
-    // A opens the tab; B opens it too, later, and the size is B's.
-    assert!(hold.view(&mut m, a, 1, (120, 40), None, Claim::Yes, at(0.0)).unwrap());
-    assert!(hold.view(&mut m, b, 1, (90, 30), None, Claim::Yes, at(10.0)).unwrap());
-    // Long after, A types: B left the keyboard, so A takes it.
-    assert!(hold.view(&mut m, a, 1, (120, 40), None, Claim::Typed, at(20.0)).unwrap());
-    hold.typed(&m, a, 1, at(20.0));
-    // Now they take turns, 1.5 s apart, for a minute: nothing resizes.
-    let mut resizes = 0;
-    let mut t = 20.0;
-    for turn in 0..40 {
-        t += 1.5;
-        let who = if turn % 2 == 0 { b } else { a };
-        let mine = if who == a { (120, 40) } else { (90, 30) };
-        let before = size(&m);
-        hold.view(&mut m, who, 1, mine, None, Claim::Typed, at(t)).unwrap();
-        hold.typed(&m, who, 1, at(t));
-        resizes += usize::from(size(&m) != before);
-    }
-    assert_eq!(resizes, 0, "typing in turn resized the pane");
-    assert_eq!(m.tab(1).unwrap().owner, Some(a));
-    // A stops; B's keys take the size once A has been idle long enough.
-    let last = t;
-    assert!(!hold.view(&mut m, b, 1, (90, 30), None, Claim::Typed, at(last + 1.0)).unwrap());
-    let idle = last + SIZE_HOLD.as_secs_f64() + 0.01;
-    assert!(hold.view(&mut m, b, 1, (90, 30), None, Claim::Typed, at(idle)).unwrap());
-    assert_eq!((size(&m), m.tab(1).unwrap().owner), ((90, 30), Some(b)));
-    // Showing the tab or "use this size" still takes it at once.
-    assert!(hold.view(&mut m, a, 1, (120, 40), None, Claim::Yes, at(idle + 0.1)).unwrap());
-    // A plain view by someone else changes nothing.
-    assert!(!hold.view(&mut m, b, 1, (91, 30), None, Claim::No, at(idle + 60.0)).unwrap());
-    // The owner leaving frees the size for the next typist at once.
-    m.release(a);
-    assert!(hold.view(&mut m, b, 1, (90, 30), None, Claim::Typed, at(idle + 0.2)).unwrap());
-}
-
 #[test]
 fn layout_serializes_for_clients() {
     let mut m = mux_with_session();
@@ -408,13 +358,83 @@ fn focus_then_unfocus_gives_back_the_layout() {
     assert_eq!(m.layout(1).unwrap(), before);
     // A pane from elsewhere can't be focused.
     assert!(m.apply(Intent::Focus { tab: 1, pane: Some(42) }).is_err());
-    // Focus is saved with the layout; an older layout loads without it.
+}
+
+#[test]
+fn focus_belongs_to_the_client_holding_the_tab() {
+    let mut m = tab_of(4);
+    let (desktop, phone) = (7, 8);
+    m.view(desktop, 1, 100, 40, None, true).unwrap();
     m.apply(Intent::Focus { tab: 1, pane: Some(2) }).unwrap();
+    assert_eq!(m.tab(1).unwrap().focus, Some(2));
+    // Showing the tab again, or zooming to the same pane, keeps it.
+    assert!(!m.view(desktop, 1, 100, 40, None, false).unwrap());
+    assert_eq!(m.tab(1).unwrap().focus, Some(2));
+    // Without a claim, another client changes nothing.
+    assert!(!m.view(phone, 1, 60, 59, Some(3), false).unwrap());
+    assert_eq!(m.tab(1).unwrap().focus, Some(2));
+    // Its claim wins: the phone's zoom isn't beaten by the desktop's focus.
+    m.view(phone, 1, 60, 59, Some(3), true).unwrap();
+    assert_eq!(m.tab(1).unwrap().focus, None, "another client's claim");
+    assert_eq!(m.layout(1).unwrap().panes.iter().map(|p| p.0).collect::<Vec<_>>(), vec![3]);
+    // The same size and zoom, but a focus to end: still a change to send.
+    m.view(phone, 1, 60, 59, Some(3), true).unwrap();
+    m.apply(Intent::Focus { tab: 1, pane: Some(3) }).unwrap();
+    assert_eq!(m.tab(1).unwrap().focus_by, Some(phone));
+    m.view(phone, 1, 60, 59, Some(4), true).unwrap();
+    assert_eq!(m.tab(1).unwrap().focus, None, "the holder zooms to another pane");
+    // The holder going away ends its focus.
+    m.view(desktop, 1, 100, 40, None, true).unwrap();
+    m.apply(Intent::Focus { tab: 1, pane: Some(2) }).unwrap();
+    assert!(!m.release(phone));
+    assert_eq!(m.tab(1).unwrap().focus, Some(2));
+    assert!(m.release(desktop));
+    assert_eq!(m.tab(1).unwrap().focus, None, "released");
+    assert_eq!(m.layout(1).unwrap().panes.len(), 4);
+}
+
+/// #497: a pane popped out keeps its place in the tree, and comes back when
+/// its window (the client that popped it) goes, when it's closed, or when
+/// it's brought back. Popping a focused pane out ends the focus.
+#[test]
+fn a_popped_out_pane_comes_back_with_its_window() {
+    let mut m = tab_of(3);
+    let (desktop, window) = (7, 9);
+    m.view(desktop, 1, 100, 40, None, true).unwrap();
+    let before = m.layout(1).unwrap();
+    m.apply(Intent::Focus { tab: 1, pane: Some(2) }).unwrap();
+    m.apply(Intent::PopOut { pane: 2, out: true, by: Some(window) }).unwrap();
+    let t = m.tab(1).unwrap();
+    assert_eq!((t.popped.get(&2), t.focus), (Some(&Some(window)), None));
+    assert_eq!(m.layout(1).unwrap(), before, "its place stays");
+    // Another client going changes nothing; its window going brings it back.
+    assert!(!m.release(desktop) || m.tab(1).unwrap().popped.contains_key(&2));
+    assert!(m.release(window));
+    assert!(m.tab(1).unwrap().popped.is_empty());
+    // Brought back by hand, or closed.
+    m.apply(Intent::PopOut { pane: 3, out: true, by: Some(window) }).unwrap();
+    m.apply(Intent::PopOut { pane: 3, out: false, by: None }).unwrap();
+    assert!(m.tab(1).unwrap().popped.is_empty());
+    m.apply(Intent::PopOut { pane: 3, out: true, by: Some(window) }).unwrap();
+    m.apply(Intent::ClosePane { pane: 3 }).unwrap();
+    assert!(m.tab(1).unwrap().popped.is_empty());
+    assert!(m.apply(Intent::PopOut { pane: 42, out: true, by: None }).is_err());
+}
+
+#[test]
+fn an_old_save_loads_without_focus() {
+    let mut m = tab_of(3);
+    m.view(7, 1, 100, 40, None, true).unwrap();
+    m.apply(Intent::Focus { tab: 1, pane: Some(2) }).unwrap();
+    // Focus isn't saved: nobody holds it after a restart.
     let back: Mux = serde_json::from_str(&serde_json::to_string(&m).unwrap()).unwrap();
-    assert_eq!(back.tab(1).unwrap().focus, Some(2));
+    assert_eq!(back.tab(1).unwrap().focus, None);
+    // A save from before has the key, with no holder: it's ignored.
     let mut old = serde_json::to_value(&m).unwrap();
-    old["tabs"]["1"].as_object_mut().unwrap().remove("focus");
-    assert_eq!(serde_json::from_value::<Mux>(old).unwrap().tab(1).unwrap().focus, None);
+    old["tabs"]["1"]["focus"] = serde_json::json!(2);
+    let old: Mux = serde_json::from_value(old).unwrap();
+    assert_eq!(old.tab(1).unwrap().focus, None);
+    assert_eq!(old.layout(1).unwrap().panes.len(), 3);
 }
 
 #[test]
@@ -438,4 +458,66 @@ fn layout_changes_clear_focus() {
     m.apply(Intent::MovePane { pane: 3, target: 5, edge: Edge::Center }).unwrap();
     assert_eq!(m.validate(), Ok(()));
     assert_eq!(m.tab(1).unwrap().focus, None, "swapped away");
+}
+
+fn project(id: &str) -> crate::ProjectRef {
+    crate::ProjectRef { id: id.into(), name: format!("{id}'s name") }
+}
+
+#[test]
+fn a_session_keeps_its_project_through_a_save_and_a_layout_from_before_has_none() {
+    let mut m = mux_with_session();
+    let bare = serde_json::to_value(&m).unwrap();
+    assert!(bare["sessions"][0].get("project").is_none(), "{bare}");
+    let back: Mux = serde_json::from_value(bare).unwrap();
+    assert_eq!(back.sessions[0].project, None);
+
+    m.apply(Intent::SetSessionProject { session: 1, project: Some(project("prj_a")) }).unwrap();
+    let saved = serde_json::to_value(&m).unwrap();
+    assert_eq!(saved["sessions"][0]["project"], serde_json::json!({"id": "prj_a", "name": "prj_a's name"}));
+    assert_eq!(saved["sessions"][0]["project_by_hand"], true);
+    let back: Mux = serde_json::from_value(saved).unwrap();
+    assert_eq!(back, m);
+    assert!(back.sessions[0].project_by_hand);
+}
+
+#[test]
+fn an_inferred_project_is_set_once_and_never_moved() {
+    let mut m = mux_with_session();
+    assert_eq!(m.infer_project(1, project("prj_a")), Ok(true));
+    let rev = m.rev;
+    // A later pane in another repo, or the repo linked elsewhere since.
+    assert_eq!(m.infer_project(1, project("prj_b")), Ok(false));
+    assert_eq!(m.sessions[0].project, Some(project("prj_a")));
+    assert_eq!(m.rev, rev);
+    assert_eq!(m.infer_project(9, project("prj_a")), Err(crate::Error::NoSession(9)));
+}
+
+#[test]
+fn a_project_set_by_hand_replaces_an_inferred_one_and_clears() {
+    let mut m = mux_with_session();
+    m.infer_project(1, project("prj_a")).unwrap();
+    m.apply(Intent::SetSessionProject { session: 1, project: Some(project("prj_b")) }).unwrap();
+    assert_eq!(m.sessions[0].project, Some(project("prj_b")));
+    m.apply(Intent::SetSessionProject { session: 1, project: None }).unwrap();
+    assert_eq!(m.sessions[0].project, None);
+    let intent: Intent = serde_json::from_str(r#"{"op":"set_session_project","session":1,"project":null}"#).unwrap();
+    assert_eq!(intent, Intent::SetSessionProject { session: 1, project: None });
+    assert!(m.apply(Intent::SetSessionProject { session: 9, project: None }).is_err());
+}
+
+#[test]
+fn no_project_by_hand_sticks_when_another_pane_opens() {
+    let mut m = mux_with_session();
+    m.infer_project(1, project("prj_a")).unwrap();
+    m.apply(Intent::SetSessionProject { session: 1, project: None }).unwrap();
+    assert!(!m.sessions[0].inferable());
+    // Another pane opens in a linked clone: the session stays in none.
+    let fx = m.apply(Intent::Split { pane: 1, edge: Edge::Right, local: false, cwd: None }).unwrap();
+    assert_eq!(fx, vec![Effect::Spawn { pane: 2, cwd_from: Some(1), cwd: None }]);
+    assert_eq!(m.infer_project(1, project("prj_b")), Ok(false));
+    assert_eq!(m.sessions[0].project, None);
+    // And it's kept through a save.
+    let back: Mux = serde_json::from_str(&serde_json::to_string(&m).unwrap()).unwrap();
+    assert!(!back.sessions[0].inferable());
 }

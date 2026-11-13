@@ -412,6 +412,13 @@
             "null"
           ]
         },
+        "native_issue": {
+          "description": "The native issue it's for (M205): the issue itself (Open on\nGitHub, `kind` `issue`), or one of its comments (`kind` `comment`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "number": {
           "format": "uint64",
           "minimum": 0,
@@ -578,11 +585,30 @@
           },
           "type": "array"
         },
+        "left_queue": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LeftQueue"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Why it last left the merge queue unmerged: GitHub's `dequeued`.\nCleared by the next `enqueued` and by a merge; it stays after a\nclose, so the row still says why."
+        },
         "merge_state": {
           "type": [
             "string",
             "null"
           ]
+        },
+        "modules": {
+          "default": [],
+          "description": "The names of the modules a Plane item is in; its `labels` are names too.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "number": {
           "description": "A Plane item's sequence id (`ALL-2212` is 2212).",
@@ -594,6 +620,19 @@
           "default": "github",
           "description": "`github` or `plane`; an older platform's items are GitHub's.",
           "type": "string"
+        },
+        "queued": {
+          "description": "An open PR in its branch's merge queue: from GitHub's `enqueued`,\nuntil `dequeued` or it closes (Arugula #878). An older platform\ndoesn't say, so false.",
+          "type": "boolean"
+        },
+        "queued_since": {
+          "description": "When it last entered the merge queue, in milliseconds: GitHub's\n`enqueued`, as the platform heard it (Arugula #766). Kept after it\nleaves, so a reader tells how long it was queued from `left_queue`.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
         },
         "repo": {
           "default": null,
@@ -631,6 +670,13 @@
         },
         "title": {
           "type": "string"
+        },
+        "type": {
+          "description": "A Plane item's type (`Epic`, `Task`), when its project has types.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "updated_at": {
           "format": "uint64",
@@ -857,6 +903,26 @@
       ],
       "type": "object"
     },
+    "LeftQueue": {
+      "description": "A PR's last unmerged exit from its merge queue (Arugula #766).",
+      "properties": {
+        "at": {
+          "description": "When the platform heard it, in milliseconds.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reason": {
+          "description": "GitHub's `reason` as it came, in upper case: `CHECKS_TIMED_OUT`,\n`CHECKS_FAILED`, `MERGE_CONFLICT`, `MANUAL`, `BRANCH_PROTECTIONS`,\n`GIT_TREE_INVALID`, `INVALID_MERGE_COMMIT`, `UNKNOWN_REMOVAL_REASON`.\nOne GitHub adds later is kept as it is.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reason",
+        "at"
+      ],
+      "type": "object"
+    },
     "NewDraft": {
       "description": "A draft to make. From a person (their own), or from a machine (an\nagent's on it, for its owner: the platform records the machine, and\n`agent` names the agent).",
       "properties": {
@@ -891,6 +957,13 @@
         "kind": {
           "description": "`comment`, `review` or `issue`.",
           "type": "string"
+        },
+        "native_issue": {
+          "description": "Open on GitHub (M205): a native issue (`iss_…`) to send as a new\nissue, with `kind` `issue`. Its title and body are the issue's, read\nagain when it's sent, and `repo` may be empty for its project's one\nlinked repo. Sending it sets the issue's GitHub origin.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "number": {
           "default": null,

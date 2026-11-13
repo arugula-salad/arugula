@@ -1,5 +1,10 @@
 # Research notes
 
+Later investigations:
+
+- [A GIF picker in chat](research/gif-picker.md) (2026-10-31, #1626):
+  providers, privacy, rating policy, media retention and implementation scope.
+
 Gathered 2026-10-01 to back the decisions in [plan-archive.md](plan-archive.md). Items
 marked *(unverified)* were not checked against a primary source.
 

@@ -43,10 +43,13 @@ The platform's nouns, in tables, code, ids and later URLs (Jake, 2026-10-20,
 - **Org:** where a group's billing and identity will live (later steps).
 - **Team:** people with a signed roster.
 - **Project:** what platform objects hang off ("The project is the unit of
-  platform sharing"). Ids are `prj_` and random characters, beside `cw_`
+  platform sharing"). Ids are `prj_` and random characters, beside `hw_`
   for Cloud workspaces.
-- **Cloud workspace:** a session backed by a cloud machine (`cw_…`).
-- **Machine, session, pane:** the machine plane's nouns, unchanged.
+- **Cloud workspace:** a project's durable object (`hw_…`), with a hosted
+  machine running inside it ("One data model", aru-134). `cw_` was the
+  Managoat-backed version, now gone.
+- **Machine, session, pane:** the machine plane's nouns, unchanged. A session
+  is a group of tabs, and the platform's `ses_` is an agent session (aru-134).
 - **Grant:** a subject's power over a scope ("Grants, not impersonation").
 
 The word is **Project**, not "App". experimental's `product.md` calls the

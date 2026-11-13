@@ -1,5 +1,6 @@
 // M103: the machine's web client asks its owner once whether to send usage
-// counts and crash reports, with the card in the corner. Not under a test
+// counts and crash reports, with the card in the corner, once no dialog is
+// up (Getting started's greeting comes first). Not under a test
 // runner unless a spec says so (this one does, `__arugulaTelemetry`), and
 // never to anyone but the owner. Put away unanswered, it asks again on the
 // next load; answered, never again. Yes and No are the daemon's
@@ -14,7 +15,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { closeContexts, open } from "./helpers";
+import { closeContexts, open, settingsRow } from "./helpers";
 import { ANY, daemonPort } from "./ports";
 
 const OWNER = "me@example.com";
@@ -48,13 +49,13 @@ test.afterAll(() => {
 
 type Info = { on: boolean; why: string; via?: string; preview: { events: { event: string; views?: Record<string, number> }[] } };
 const info = async (): Promise<Info> => (await (await fetch(`${base}/api/telemetry`)).json()) as Info;
-const card = (p: Page) => p.getByRole("dialog", { name: "Help improve Arugula?" });
+const card = (p: Page) => p.getByRole("region", { name: "Help improve Arugula?" });
 const optIn = (p: Page) => p.addInitScript(() => Object.assign(window, { __arugulaTelemetry: true }));
 
 /** The page, connected and drawn, then a moment for the card to come. */
 async function load(page: Page) {
   await open(page);
-  await expect(page.locator(".ws-head [data-account-menu]")).toBeVisible();
+  await expect(page.locator(".ws-rail [data-open-settings]")).toBeVisible();
   await page.waitForTimeout(500);
 }
 
@@ -75,6 +76,22 @@ test("a guest is never asked, and can't read or answer it", async ({ browser }) 
   expect((await page.request.get("/api/telemetry", { headers: as })).status()).toBe(403);
   expect((await page.request.put("/api/telemetry", { headers: as, data: { on: true } })).status()).toBe(403);
   await ctx.close();
+  expect((await info()).why).toBe("not_asked");
+});
+
+test("on a first visit it waits for Getting started: one panel at a time", async ({ page }) => {
+  rmSync(join(state, "telemetry.json"), { force: true });
+  // Getting started greets a person, not automation.
+  await page.addInitScript(() => Object.defineProperty(Navigator.prototype, "webdriver", { get: () => false }));
+  await optIn(page);
+  await load(page);
+  const greeting = page.getByRole("dialog", { name: "Getting started" });
+  await expect(greeting).toBeVisible();
+  await expect(card(page)).toHaveCount(0);
+  await greeting.getByRole("button", { name: "Close" }).click();
+  await expect(card(page)).toBeVisible();
+  // Put away: the next test starts with nobody asked.
+  await card(page).getByRole("button", { name: "Not now" }).click();
   expect((await info()).why).toBe("not_asked");
 });
 
@@ -120,8 +137,7 @@ test("the settings switch flips it, and No turns it off for good", async ({ page
   await load(page);
   await expect(card(page)).toHaveCount(0);
   const settings = async () => {
-    await page.locator(".ws-head [data-account-menu]").click();
-    await page.getByRole("menuitem", { name: "Usage and crash reports…" }).click();
+    await settingsRow(page, "Usage and crash reports…");
     return page.getByRole("dialog", { name: "Usage and crash reports" });
   };
   let dialog = await settings();

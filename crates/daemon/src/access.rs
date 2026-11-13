@@ -37,17 +37,10 @@
 //!   proves nothing. Nothing that grants access is a cookie: cookies aren't
 //!   kept apart by port, so a browser would send one to every server on
 //!   127.0.0.1. The page's own files (`/`, `/assets/…`) need nothing.
-//! - **A resident daemon in a sandbox** (M4b) is reached through its
-//!   provider's proxy, which arrives on loopback like a local process.
-//!   There, everything not identified by tailscaled must carry the token
-//!   the home daemon minted for this host (`Authorization: Bearer …`): the
-//!   home daemon checked the owner on its side, and the token says so. Only
-//!   its SHA-256 is kept here, so a process in the sandbox reading our
-//!   arguments or files learns nothing it can use.
 
 use std::{collections::HashSet, net::SocketAddr};
 
-use axum::http::{HeaderMap, StatusCode, header};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use sha2::{Digest, Sha256};
 
 use crate::acl::Principal;
@@ -74,8 +67,6 @@ pub struct Access {
     /// Exact `scheme://host[:port]` values accepted as WebSocket origins.
     origins: HashSet<String>,
     owner: Option<String>,
-    /// SHA-256 of the tunnel token, when loopback connections need it.
-    tunnel: Option<[u8; 32]>,
     /// This daemon's page, for share links.
     page: String,
     /// This node's MagicDNS name, when tailscaled told us (#109): where
@@ -137,7 +128,6 @@ impl Access {
             origins,
             owner,
             page,
-            tunnel: None,
             tailnet: None,
             port,
             local: None,
@@ -167,22 +157,6 @@ impl Access {
         matches!(peer, Peer::Tailnet { .. }) || header_str(headers, "tailscale-user-login").is_some()
     }
 
-    /// From now on, connections from this machine need the token whose
-    /// SHA-256 this is (hex): a resident daemon reached through its
-    /// provider's tunnel.
-    pub fn require_tunnel_token(mut self, sha256_hex: &str) -> anyhow::Result<Self> {
-        let hex = sha256_hex.trim();
-        if hex.len() != 64 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
-            anyhow::bail!("a tunnel token's SHA-256 is 64 hex digits");
-        }
-        let mut d = [0u8; 32];
-        for (i, b) in d.iter_mut().enumerate() {
-            *b = u8::from_str_radix(&hex[2 * i..2 * i + 2], 16)?;
-        }
-        self.tunnel = Some(d);
-        Ok(self)
-    }
-
     /// From now on, loopback callers that tailscaled didn't vouch for need
     /// `token` (`localauth.rs`). `listen`: where the sign-in link goes.
     pub fn require_local_token(mut self, token: &str, listen: SocketAddr) -> Self {
@@ -203,11 +177,6 @@ impl Access {
             token,
         });
         self
-    }
-
-    /// Whether a resident's tunnel token is what loopback callers need.
-    pub fn tunnelled(&self) -> bool {
-        self.tunnel.is_some()
     }
 
     /// The cookie older sign-in links set (the token itself): read only to
@@ -314,7 +283,6 @@ impl Access {
                 Err((StatusCode::FORBIDDEN, "tagged tailnet nodes can't open share links".into()))
             }
             Peer::Other => Err((StatusCode::FORBIDDEN, "share links are for the tailnet only".into())),
-            Peer::Local if self.tunnel.is_some() => self.check_tunnel_token(headers),
             Peer::Local => match header_str(headers, "tailscale-user-login") {
                 // Through serve, from a tailnet user.
                 Some(_) => Ok(()),
@@ -335,7 +303,7 @@ impl Access {
     }
 
     /// Every request: the Host check and the identity check (the server
-    /// runs them separately, for the join exception).
+    /// runs them separately, for the share viewer and the token class).
     #[cfg(test)]
     pub fn check(&self, headers: &HeaderMap, peer: &Peer) -> Result<(), Refusal> {
         self.check_host(headers)?;
@@ -363,7 +331,6 @@ impl Access {
                 Err((StatusCode::FORBIDDEN, "tagged tailnet nodes have no user identity".into()))
             }
             Peer::Other => Err((StatusCode::FORBIDDEN, "not from this machine or the tailnet".into())),
-            Peer::Local if self.tunnel.is_some() => self.check_tunnel_token(headers).map(|()| Principal::Owner),
             Peer::Local => match header_str(headers, "tailscale-user-login") {
                 Some(login) => self.who(login),
                 None if self.public.contains(&host(headers)) => {
@@ -381,13 +348,6 @@ impl Access {
             Err(e) if self.owner.is_none() => Err(e),
             Err(_) => Ok(Principal::tailnet(&login.to_ascii_lowercase())),
         }
-    }
-
-    fn check_tunnel_token(&self, headers: &HeaderMap) -> Result<(), Refusal> {
-        let (Some(want), Some(given)) = (&self.tunnel, bearer(headers)) else {
-            return Err((StatusCode::UNAUTHORIZED, "this daemon is reached through its home daemon's tunnel".into()));
-        };
-        if same(want, given) { Ok(()) } else { Err((StatusCode::UNAUTHORIZED, "wrong tunnel token".into())) }
     }
 
     fn must_be_owner(&self, login: &str) -> Result<(), Refusal> {
@@ -470,8 +430,32 @@ pub fn owner_fix(login: &str) -> String {
     format!("arugulad install -- --owner {login}")
 }
 
-/// A refusal as a page, for a browser (#109): the fix's command copyable.
-pub fn refusal_page(status: StatusCode, why: &str) -> String {
+/// The script of the refusal page: its Copy button.
+const REFUSAL_SCRIPT: &str = "const b=document.getElementById('copy'),f=document.getElementById('fix');\
+if(b&&f)b.onclick=()=>navigator.clipboard.writeText(f.textContent).then(()=>b.textContent='Copied',\
+()=>getSelection().selectAllChildren(f))";
+
+/// A policy for a page whose only script is `script`, inline: that script
+/// and nothing else, no other page framing it.
+pub fn inline_page_csp(script: &str) -> HeaderValue {
+    use base64::Engine;
+    let hash = base64::engine::general_purpose::STANDARD.encode(Sha256::digest(script.as_bytes()));
+    let csp = format!(
+        "default-src 'none'; script-src 'sha256-{hash}'; style-src 'unsafe-inline'; base-uri 'none'; \
+         form-action 'none'; frame-ancestors 'none'"
+    );
+    HeaderValue::from_str(&csp).unwrap_or(HeaderValue::from_static("default-src 'none'; frame-ancestors 'none'"))
+}
+
+/// A refusal as a page, for a browser (#109), with its policy.
+pub fn refusal(status: StatusCode, why: &str) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    let csp = inline_page_csp(REFUSAL_SCRIPT);
+    (status, [(header::CONTENT_SECURITY_POLICY, csp)], axum::response::Html(refusal_page(status, why))).into_response()
+}
+
+/// A refusal as a page (#109): the fix's command copyable.
+fn refusal_page(status: StatusCode, why: &str) -> String {
     let esc = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;");
     let body: String = why
         .split("\n\n")
@@ -479,12 +463,7 @@ pub fn refusal_page(status: StatusCode, why: &str) -> String {
         .map(|p| {
             let p = p.trim();
             if p.starts_with("arugulad ") || p == "arugula web" {
-                format!(
-                    "<p class=cmd><code id=fix>{}</code> <button onclick=\"navigator.clipboard.writeText(\
-                     document.getElementById('fix').textContent).then(()=>this.textContent='Copied',()=>\
-                     getSelection().selectAllChildren(document.getElementById('fix')))\">Copy</button></p>",
-                    esc(p)
-                )
+                format!("<p class=cmd><code id=fix>{}</code> <button id=copy>Copy</button></p>", esc(p))
             } else {
                 format!("<p>{}</p>", esc(p))
             }
@@ -495,7 +474,7 @@ pub fn refusal_page(status: StatusCode, why: &str) -> String {
          <title>arugula: {}</title><style>body{{font:16px/1.5 system-ui,sans-serif;max-width:36em;\
          margin:3em auto;padding:0 16px;color:#222;background:#fff}}@media(prefers-color-scheme:dark){{\
          body{{color:#ddd;background:#111}}}}code{{font:14px ui-monospace,monospace;word-break:break-all}}\
-         .cmd{{display:flex;gap:.5em;align-items:center}}</style>{body}",
+         .cmd{{display:flex;gap:.5em;align-items:center}}</style>{body}<script>{REFUSAL_SCRIPT}</script>",
         status.as_u16()
     )
 }
@@ -601,7 +580,13 @@ mod tests {
         let page = refusal_page(StatusCode::FORBIDDEN, &a.not_yours("<b>@x.com"));
         assert!(page.contains("&lt;b&gt;@x.com") && !page.contains("<b>@"), "{page}");
         assert!(page.contains("<code id=fix>arugulad install -- --owner &lt;b&gt;@x.com</code>"), "{page}");
-        assert!(page.contains(">Copy</button>"));
+        assert!(page.contains(">Copy</button>") && !page.contains(" onclick="), "{page}");
+        // Its one script is the one its policy names.
+        let res = refusal(StatusCode::FORBIDDEN, "no");
+        let csp = res.headers()[header::CONTENT_SECURITY_POLICY].to_str().unwrap().to_owned();
+        assert_eq!(csp, inline_page_csp(REFUSAL_SCRIPT).to_str().unwrap());
+        assert!(page.contains(&format!("<script>{REFUSAL_SCRIPT}</script>")));
+        assert!(csp.contains("script-src 'sha256-") && !csp.contains("script-src 'unsafe-inline'"), "{csp}");
     }
 
     #[test]
@@ -698,26 +683,6 @@ mod tests {
         assert!(a.check_viewer(&headers(&[("host", "127.0.0.1:7681")]), &Peer::Local).is_ok());
         assert_eq!(a.page_origin(), "https://geek.example.ts.net");
         assert_eq!(Access::new(7681, &[], &[], &[], None).page_origin(), "http://127.0.0.1:7681");
-    }
-
-    #[test]
-    fn tunnelled_connections_need_the_token() {
-        let token = "ilp_secret";
-        let digest: String = Sha256::digest(token.as_bytes()).iter().map(|b| format!("{b:02x}")).collect();
-        let a = Access::new(7681, &[], &[], &[], None).require_tunnel_token(&digest).unwrap();
-        let local = [("host", "127.0.0.1:7681")];
-        assert_eq!(check(&a, &local).unwrap_err().0, StatusCode::UNAUTHORIZED, "no token");
-        let bearer = format!("Bearer {token}");
-        assert!(check(&a, &[local[0], ("authorization", &bearer)]).is_ok());
-        assert!(check(&a, &[local[0], ("authorization", "Bearer ilp_wrong")]).is_err());
-        assert!(check(&a, &[local[0], ("authorization", token)]).is_err(), "not a bearer");
-        // A forged serve header is no substitute.
-        assert!(check(&a, &[local[0], ("tailscale-user-login", "me@x.com")]).is_err());
-        // Nor for share links.
-        assert!(a.check_viewer(&headers(&local), &Peer::Local).is_err());
-        // The Host check still applies.
-        assert!(check(&a, &[("host", "evil.com"), ("authorization", &bearer)]).is_err());
-        assert!(Access::new(7681, &[], &[], &[], None).require_tunnel_token("abc").is_err());
     }
 
     #[test]

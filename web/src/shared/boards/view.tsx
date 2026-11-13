@@ -1,11 +1,11 @@
 // One board (boards, step 2; lanes, aru-125), wherever it's drawn: the
 // platform page's `/p/:project/boards/:board`, and a board block in a daemon
 // workspace (a pin onto it, `shell/blocks/board.tsx`). The four lanes in
-// order (Next, Doing, Review, Done: nobody makes or moves them, the work
+// order (Doing, Review, Next, Done: nobody makes or moves them, the work
 // does), each with its rows; a board whose author made groups (phases, waves)
 // shows each as a section with its progress and the four lanes of its rows
 // under it, the rows with no group last. A row's marks say what its lane
-// doesn't: merged but not closed, waiting on another PR, earlier agents
+// doesn't: marked not finished (or merged and still open), waiting on another PR, earlier agents
 // folded away. Each row has: a glyph for the row's lane, a link to what it
 // points at with that item's state now (`live`), chips for what is attached
 // to it, on a Done row the mark that says it is proven or not yet, and a
@@ -22,24 +22,47 @@
 // to make again.
 
 import { useEffect, useId, useRef, useState } from "preact/hooks";
-import type { RelationKind, BoardAsk, BoardAnsweredAsk, BoardAttachment, BoardGroup, BoardPointer, ForgeText, ProjectBoard, BoardRow, BoardView, BoardWorkItem, BoardZone } from "../proto";
+import type { RelationKind, BoardLane, BoardAsk, BoardAnsweredAsk, BoardAttachment, BoardGroup, BoardPointer, ForgeText, ProjectBoard, BoardRow, BoardRowSession, BoardView, BoardWorkItem, BoardZone } from "../proto";
 import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
+import { Card } from "../ui/card";
 import { Markdown } from "../ui/markdown";
+import { ArrowIcon, CheckCircleIcon, ChevronIcon, CloseIcon, EditIcon, ExternalIcon, IconButton, LinksIcon, MoreIcon, PlusIcon } from "../ui/icons";
 import { ConfirmRemove } from "../ui/confirm";
-import { StateChip } from "../ui/state-chip";
-import { useSubscribe } from "../ui/hooks";
-import { CopyLinkButton } from "../ui/copy-link";
-import { askText, openMenu, type MenuItem } from "../ui/menu";
+import { SideSheet } from "../ui/side-sheet";
+import { StateChip, Chip, ObjectChip } from "../ui/state-chip";
+import { usePhone, useSubscribe } from "../ui/hooks";
+import { DocActions, openTab } from "../docs/doc-actions";
+import { DocTimes } from "../docs/doc-times";
+import { BlockError, BlockLoading, EmptyLine, EmptyState } from "../ui/block-states";
+import { PageHeader } from "../ui/page-header";
+import { SectionHead } from "../ui/section-head";
+import { askText, MenuHost, menuBelow, openMenu, type MenuItem } from "../ui/menu";
 import { issues } from "../issues/store";
-import { whoLabel } from "../issues/text";
 import { agentShort } from "../agent-label";
 import { day } from "../time";
-import { BoardError, STALE_REV, boards, type ForgeChecks } from "./store";
+import { BoardError, STALE_ORDER, STALE_REV, boards, type ForgeChecks } from "./store";
+import { StepsView } from "./steps-view";
+import { loadDone, loadLinks, loadMode, nudge, saveDone, saveLinks, saveMode, stepPlace, type BoardMode, type Reorder } from "./steps";
+import { DocLink, DocPicker } from "./docs";
+import "./bar.css";
 import "./boards.css";
-import { PICK_DELAY_MS, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, PICK_LIMIT, assigneesLine, blockClass, GOAL_MAX, answerReady, askWaitingLine, blockFacts, chipOf, settledFacts, debounced, earlierLine, epicLine, holdsRow, groupLine, isCard, laneCount, liveClass, liveWord, marksOf, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, readyCount, relationLine, RELATION_KINDS, sections, stepActive, workLabel } from "./text";
+import { groupFold, groupLaneFold, isFolded, laneFold, loadFolds, saveFolds, type Folds } from "./folds";
+import { MOVE_LANES, closeName, closedWithLine, doneRefusal, laneOfZone, laneSetLine, PICK_DELAY_MS, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, PICK_LIMIT, assigneesLine, GOAL_MAX, answerReady, askWaitingLine, blockFacts, BLOCK_LABEL, chipOf, settledFacts, debounced, earlierLine, epicLine, holdsRow, heldChip, groupLine, isCard, laneCount, liveWord, queueChip, marksOf, waitingOf, notFinishedLine, type NotFinished, needsDot, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, relationLine, RELATION_KINDS, sections, sourceLine, sourceLinked, leftOutLine, stepActive, workLabel, findLine, type BoardFilter, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, topAndMore, initialsOf } from "./text";
 
 const STALE_SAID = "That changed while you were editing, so the board is read again. Make your change again if it still applies.";
+
+/** What a card carries while it's dragged to another lane (#494). */
+const ROW_DRAG = "text/x-arugula-board-row";
+// The dragged row's group rides in the type's name, since a drop target can read only `types` while the drag is over it (types are lowercased).
+const ROW_GROUP = "text/x-arugula-board-row-group-";
+const dragGroupType = (group: string | null) => `${ROW_GROUP}${group ?? "none"}`.toLowerCase();
+/** Whether the drag is a board row from the group `group` (null: no group). Absent for any other drag. */
+const dragFrom = (e: DragEvent, group: string | null): boolean | undefined => {
+  const types = e.dataTransfer?.types;
+  if (!types?.includes(ROW_DRAG)) return undefined;
+  return types.includes(dragGroupType(group));
+};
 
 const menuAt = (e: MouseEvent, items: MenuItem[]) => {
   const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -52,7 +75,7 @@ export function BoardPanel({
   platform,
   back,
   write = true,
-  menu,
+  keepInUrl = false,
 }: {
   id: string;
   /** False for a block that isn't on screen: it reads nothing then. */
@@ -63,18 +86,84 @@ export function BoardPanel({
   back?: preact.ComponentChildren;
   /** Whether to offer the board's own edits (title, goal, closing). False for a viewer; a block can't tell, so it offers them and the platform's 403 comes back as a toast. */
   write?: boolean;
-  /** The Copy link button's ▾ items, given the board's team link (the block adds "Open in browser ↗"). */
-  menu?: (link: string) => MenuItem[];
+  /** Keep the find text and the Label and Person menus in the URL's hash (#547), so a link keeps them. The shell's block keeps them in memory. */
+  keepInUrl?: boolean;
 }) {
-  const { toast } = usePlatformApi();
+  const { toast, teams } = usePlatformApi();
+  const nameOf = (account: string) => teams().flatMap((t) => t.roster.members).find((m) => m.account === account)?.name;
   const [view, setView] = useState<BoardView | null>(null);
   const [missing, setMissing] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   /** The row whose drawer is open. */
   const [drawer, setDrawer] = useState<string | null>(null);
+  /** Lanes or Steps, as this viewer last picked (Steps on a phone until they do). */
+  const [mode, setModeNow] = useState<BoardMode>(() => loadMode());
+  const setMode = (m: BoardMode) => (setModeNow(m), saveMode(m), setBehind(null));
+  /** Whether the Steps view draws done rows (#831), as this viewer last picked. */
+  const [showDone, setShowDoneNow] = useState(loadDone);
+  const setShowDone = (on: boolean) => (setShowDoneNow(on), saveDone(on));
+  const [showLinks, setShowLinksNow] = useState(loadLinks);
+  const setShowLinks = (on: boolean) => (setShowLinksNow(on), saveLinks(on));
+  const phone = usePhone();
+  /** The row whose reorder was refused because someone else moved its group first (Steps). */
+  const [behind, setBehind] = useState<string | null>(null);
+  useEffect(() => {
+    if (!behind) return;
+    const t = setTimeout(() => setBehind(null), 10_000);
+    return () => clearTimeout(t);
+  }, [behind]);
+  /** The headings this viewer folded, kept in this browser per board. */
+  const [folds, setFolds] = useState<Folds>(() => loadFolds(id));
+  useEffect(() => setFolds(loadFolds(id)), [id]);
+  const toggleFold = (key: string) => {
+    const next = { ...folds, [key]: !isFolded(folds, key) };
+    setFolds(next);
+    saveFolds(id, next);
+  };
   /** The group a Delete waits on. */
   const [dropping, setDropping] = useState<BoardGroup | null>(null);
+  /** The row a move to Done waits on: its issue is closed once the person confirms (#494). */
+  const [closing, setClosing] = useState<BoardRow | null>(null);
+  /** The close-epic form is open and what it has been given: the trigger is in the view switch's row, the form under the progress bar. */
+  const [epicClosing, setEpicClosing] = useState(false);
+  const [epicNote, setEpicNote] = useState("");
+  const [closeReason, setCloseReason] = useState("completed");
+  /** The find box's text (#546); the bar is always there (#614), so empty is no find. */
+  const [find, setFind] = useState<string>(() => (keepInUrl ? (parseFilterHash(location.hash)?.q ?? "") : ""));
+  /** The Label and Person menus' values (#547): any of a menu's matches, and every menu and the text have to. */
+  const [labels, setLabels] = useState<string[]>(() => (keepInUrl ? (parseFilterHash(location.hash)?.labels ?? []) : []));
+  const [people, setPeople] = useState<string[]>(() => (keepInUrl ? (parseFilterHash(location.hash)?.people ?? []) : []));
+  const findBox = useRef<HTMLInputElement>(null);
+  // Another board starts with no filter; the first one keeps what its link said.
+  const was = useRef(id);
+  useEffect(() => {
+    if (was.current === id) return;
+    was.current = id;
+    setFind("");
+    setLabels([]);
+    setPeople([]);
+  }, [id]);
+  /** Clear and Esc: no text, no menu values. */
+  const clearFind = () => (setFind(""), setLabels([]), setPeople([]));
+  // `/` focuses the find box, from anywhere that isn't a field.
+  useEffect(() => {
+    if (!shown) return;
+    const slash = (e: KeyboardEvent) => {
+      if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
+      if ((e.target as Element | null)?.closest("input, textarea, select, [contenteditable]")) return;
+      e.preventDefault();
+      findBox.current?.focus();
+    };
+    window.addEventListener("keydown", slash);
+    return () => window.removeEventListener("keydown", slash);
+  }, [shown]);
+  const filter: BoardFilter = { q: find, labels, people };
+  useEffect(() => {
+    if (!keepInUrl || !shown) return;
+    const h = filterHash(filter);
+    if (location.hash.replace(/^#/, "") !== h) history.replaceState(history.state, "", location.pathname + location.search + (h ? `#${h}` : ""));
+  }, [keepInUrl, shown, find, labels, people]);
   // Chat says when the thread's object changed; it's on while chat is.
   useSubscribe((fn) => chat.subscribe(fn));
   const seen = useRef(0);
@@ -112,8 +201,8 @@ export function BoardPanel({
     if (rowKey) document.querySelector(`[data-board-row="${rowKey}"]`)?.scrollIntoView({ block: "center" });
   }, [rowKey, !!view]);
 
-  if (missing && !view) return <p class="board-none dim" data-board-missing>That board isn't one you can read ({missing}).</p>;
-  if (!view) return <p class="board-none dim">Loading…</p>;
+  if (missing && !view) return <BlockError inline data-board-missing title="Can't read this board." detail={missing} retry={again} />;
+  if (!view) return <BlockLoading inline what="the board" />;
 
   /** Run a write; on 409 read again and say so. */
   const act = async (write: () => Promise<BoardView>): Promise<boolean> => {
@@ -183,6 +272,34 @@ export function BoardPanel({
     if (to) void act(() => boards.move(id, g.id, g.rev, to));
   };
   const moveRow = (r: BoardRow, zone: string | null) => void act(() => boards.move(id, r.id, r.rev, { zone }));
+  /** A reorder inside a step (Steps): it names the group's rows as this view read them. If someone moved them first, nothing moves; the board is read again and the row says so. It isn't made again by itself. */
+  const reorderRow = async (r: BoardRow, m: Reorder) => {
+    setBehind(null);
+    try {
+      setView(await boards.reorder(id, r.id, m.before, m.seen));
+      setStale(false);
+    } catch (e) {
+      if (e instanceof BoardError && e.reason === STALE_ORDER) {
+        setBehind(r.id);
+        again();
+      } else toast(`Couldn't move it: ${(e as Error).message}`);
+    }
+  };
+  /** A row dropped on a group (#664): it moves there with its lane unchanged. */
+  const dropRow = (row: string, group: string | null) => {
+    const r = view.zones.flatMap((z) => z.rows).find((x) => x.id === row);
+    if (r && (r.group ?? null) !== group) moveRow(r, group);
+  };
+  /** Move a row to a lane by hand (#494). Done closes its native issue after a confirm; any other item is closed where it lives, and the row says so. */
+  const moveLane = (row: string, lane: BoardLane) => {
+    const r = view.zones.flatMap((z) => z.rows).find((x) => x.id === row);
+    if (!r || r.lane === lane) return;
+    if (lane !== "done") return void act(() => boards.setLane(id, r.id, lane));
+    const why = doneRefusal(r);
+    if (why) return void toast(why);
+    setCloseReason("completed");
+    setClosing(r);
+  };
   const groupMenu = (e: MouseEvent, g: BoardGroup) => {
     const all = view.groups ?? [];
     const at = all.findIndex((x) => x.id === g.id);
@@ -194,56 +311,159 @@ export function BoardPanel({
       { label: "Delete the group…", danger: true, run: () => setDropping(g) },
     ]);
   };
+  // A find narrows the view to the rows it matches; the saved folds stay as they are.
+  const query = find.trim();
+  const narrows = filtering(filter);
+  const narrowed: BoardView = narrows ? { ...view, zones: view.zones.map((z) => ({ ...z, rows: z.rows.filter((r) => rowPasses(r, filter)) })) } : view;
+  const every = view.zones.reduce((n, z) => n + z.rows.length, 0);
+  const allRows = view.zones.flatMap((z) => z.rows);
+  const found = narrowed.zones.flatMap((z) => z.rows);
+  const firstMatch = sections(narrowed).flatMap((s) => s.lanes.flatMap((z) => z.rows))[0];
   const opened = drawer ? view.zones.flatMap((z) => z.rows).find((r) => r.id === drawer) : undefined;
 
   return (
     <div class="board" data-board={id}>
-      {back}
-      <div class="board-head">
-      <h1 class="board-title" data-board-title>
-        {write ? (
-          <span role="button" tabIndex={0} class="board-rename" title="Rename the board" data-board-rename onClick={() => void rename()} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), void rename())}>
-            {view.board.title}
-          </span>
-        ) : (
-          view.board.title
-        )}
-      </h1>
-      <CopyLinkButton link={shareLink} menu={shareLink ? menu?.(shareLink) : undefined} />
+      <BoardHead
+        view={view}
+        back={back}
+        write={write}
+        shareLink={shareLink}
+        rename={() => void rename()}
+        close={write && view.board.closed_at == null && !epicClosing ? () => (setEpicNote(""), setEpicClosing(true)) : undefined}
+        act={act}
+        id={id}
+        platform={platform}
+      />
+      <div class="board-switch">
+        <div class="seg small board-views" role="group" aria-label="View" data-board-views>
+          {(["lanes", "steps"] as const).map((m) => (
+            <button key={m} type="button" aria-pressed={mode === m} data-board-view={m} onClick={() => setMode(m)}>
+              {m === "lanes" ? "Lanes" : "Steps"}
+            </button>
+          ))}
+        </div>
       </div>
-      <Epic b={view.board} act={act} id={id} write={write} view={view} />
+      <div class="board-find" role="search" data-board-find>
+        <input
+          ref={findBox}
+          type="text"
+          inputMode="search"
+          value={find}
+          placeholder="Find a row: #541, ARUGU-12 or words"
+          aria-label="Find a row"
+          data-board-find-input
+          autoComplete="off"
+          onInput={(e) => setFind(e.currentTarget.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") (e.preventDefault(), clearFind(), e.currentTarget.blur());
+            else if (e.key === "Enter" && firstMatch) (e.preventDefault(), setDrawer(firstMatch.id));
+          }}
+        />
+        <FilterMenu name="label" title="Label" choices={filterChoices(allRows, "labels")} picked={labels} set={setLabels} />
+        <FilterMenu name="person" title="Person" choices={filterChoices(allRows, "assignees")} picked={people} set={setPeople} />
+        {narrows && (
+          <span class="board-find-count dim" role="status" data-board-find-count>
+            {findLine(found.length, every)}
+          </span>
+        )}
+        {narrows && (
+          <button type="button" class="board-find-clear" data-board-find-clear onClick={clearFind}>
+            Clear
+          </button>
+        )}
+      </div>
+      <Epic b={view.board} closing={epicClosing} setClosing={setEpicClosing} note={epicNote} setNote={setEpicNote} act={act} id={id} write={write} view={view} />
       {stale && (
         <p class="board-stale" role="status" data-board-stale>
           {STALE_SAID}
         </p>
       )}
-      {sections(view).map((s) => {
+      {narrows && found.length === 0 && (
+        <EmptyLine data-board-find-none>{query ? `No row matches “${query}”.` : "No row matches the filter."}</EmptyLine>
+      )}
+      {!narrows && allRows.length === 0 && editing !== "new" && (
+        <EmptyState
+          where="page"
+          data-board-empty
+          title="No rows yet."
+          why={`A row is one piece of work: an issue or a PR. Its lane follows the work, so you never move it.${write ? "" : " Its writers add rows."}`}
+          action={
+            write && (
+              <button type="button" class="secondary small" data-board-add-row onClick={() => setEditing("new")}>
+                <PlusIcon size="xs" />
+                Add row
+              </button>
+            )
+          }
+        />
+      )}
+      {mode === "steps" && allRows.length > 0 && !(narrows && found.length === 0) && (
+        <>
+          <div class="steps-toggles" data-steps-toggles>
+            <button type="button" class="secondary small steps-toggle" aria-pressed={showDone} data-board-done title={showDone ? "Hide done rows" : "Show done rows"} aria-label={phone ? (showDone ? "Hide done rows" : "Show done rows") : undefined} onClick={() => setShowDone(!showDone)}>
+              <CheckCircleIcon />
+              {!phone && "Done"}
+            </button>
+            <button type="button" class="secondary small steps-toggle" aria-pressed={showLinks} data-board-links title={showLinks ? "Hide links" : "Show links"} aria-label={phone ? (showLinks ? "Hide links" : "Show links") : undefined} onClick={() => setShowLinks(!showLinks)}>
+              <LinksIcon />
+              {!phone && "Links"}
+            </button>
+          </div>
+          <StepsView view={narrowed} write={write} open={setDrawer} opened={drawer} move={(r, m) => void reorderRow(r, m)} behind={behind} showDone={showDone} showLinks={showLinks} />
+        </>
+      )}
+      {mode === "lanes" && sections(narrowed).map((s) => {
+        const grouped = !!view.groups?.length;
+        const key = groupFold(s.group?.id ?? null);
+        const held = s.lanes.reduce((n, z) => n + z.rows.length, 0);
+        // A find hides what doesn't match, and opens a heading that holds a match without saving it.
+        if (narrows && held === 0) return null;
+        const folded = grouped && !narrows && isFolded(folds, key);
         const lanes = (
           <div class="board-lanes">
-            {s.lanes.map((z) => (
-              <Lane key={z.id} z={z} project={view.board.project} editing={editing} setEditing={setEditing} act={act} id={id} platform={platform} groups={write ? (view.groups ?? []) : []} moveRow={moveRow} open={setDrawer} />
-            ))}
+            {s.lanes.map((z) => {
+              if (narrows && z.rows.length === 0) return null;
+              const laneKey = grouped ? groupLaneFold(s.group?.id ?? null, z.id) : laneFold(z.id);
+              return (
+              <Lane key={z.id} z={z} fold={{ key: laneKey, folded: !narrows && isFolded(folds, laneKey), toggle: () => toggleFold(laneKey) }} project={view.board.project} editing={editing} setEditing={setEditing} act={act} id={id} platform={platform} groups={write ? (view.groups ?? []) : []} group={s.group?.id ?? null} moveRow={moveRow} moveLane={write ? moveLane : undefined} open={setDrawer} opened={drawer} />
+              );
+            })}
           </div>
         );
         // No groups: the lanes alone, as before.
-        if (!view.groups?.length) return lanes;
+        if (!grouped) return lanes;
+        const title = s.group?.title ?? "No group";
+        const rows = held;
         return (
-          <section class="board-group" key={s.group?.id ?? "none"} data-board-group={s.group?.id ?? "none"}>
-            <header class="board-group-head">
-              <h2 data-board-group-title>{s.group?.title ?? "No group"}</h2>
-              {s.group && (
-                <span class="board-group-progress dim" data-board-group-progress>
-                  {groupLine(s.group.progress)}
-                </span>
-              )}
-              {s.group && write && (
-                <button type="button" class="board-more" aria-label={`Group actions: ${s.group.title}`} data-board-group-menu={s.group.id} onClick={(e) => groupMenu(e, s.group!)}>
-                  ⋯
+          <GroupDrop key={s.group?.id ?? "none"} group={s.group?.id ?? null} take={write ? dropRow : undefined}>
+            <SectionHead
+              rule
+              titleData="board-group-title"
+              title={
+                <button type="button" class="board-fold" aria-expanded={!folded} data-board-fold={key} onClick={() => toggleFold(key)}>
+                  <ChevronIcon open={!folded} />
+                  {title}
+                  {folded && ` · ${rows}`}
                 </button>
-              )}
-            </header>
-            {lanes}
-          </section>
+              }
+              count={folded ? undefined : rows}
+              action={
+                <>
+                  {s.group && (
+                    <span class="board-group-progress dim" data-board-group-progress>
+                      {groupLine(s.group.progress)}
+                    </span>
+                  )}
+                  {s.group && write && (
+                    <IconButton label={`Group actions: ${s.group.title}`} class="bar-btn sq board-more" data-board-group-menu={s.group.id} onClick={(e) => groupMenu(e, s.group!)}>
+                      <MoreIcon size="sm" />
+                    </IconButton>
+                  )}
+                </>
+              }
+            />
+            {!folded && lanes}
+          </GroupDrop>
         );
       })}
       {view.said && (
@@ -255,20 +475,26 @@ export function BoardPanel({
         <RowForm project={view.board.project} row={null} save={(f) => act(() => boards.put(id, { entry: "row", note: f.note, pointer: f.pointer ?? null }))} done={() => setEditing(null)} />
       ) : (
         <p class="board-foot">
-          <button type="button" class="board-add" data-board-add-row onClick={() => setEditing("new")}>
-            + Add row
-          </button>
-          {write && (
-            <button type="button" class="board-add" data-board-add-group onClick={() => void addGroup()}>
-              + Add a group
+          {allRows.length > 0 && (
+            <button type="button" class="secondary small" data-board-add-row onClick={() => setEditing("new")}>
+              <PlusIcon size="xs" />
+              Add row
             </button>
           )}
-          <button type="button" class="board-add" data-board-new-issue onClick={() => void newIssue()}>
-            + New issue
+          {write && (
+            <button type="button" class="secondary small" data-board-add-group onClick={() => void addGroup()}>
+              <PlusIcon size="xs" />
+              Add a group
+            </button>
+          )}
+          <button type="button" class="secondary small" data-board-new-issue onClick={() => void newIssue()}>
+            <PlusIcon size="xs" />
+            New issue
           </button>
           {plane.map((c) => (
-            <button key={c.id} type="button" class="board-add" data-board-new-plane-issue={c.identifier} onClick={() => void newPlaneIssue(c)}>
-              + New issue in Plane ({c.identifier})
+            <button key={c.id} type="button" class="secondary small" data-board-new-plane-issue={c.identifier} onClick={() => void newPlaneIssue(c)}>
+              <PlusIcon size="xs" />
+              New issue in Plane ({c.identifier})
             </button>
           ))}
         </p>
@@ -283,91 +509,182 @@ export function BoardPanel({
           <p>Its rows go with it. Their issues and PRs stay where they are.</p>
         </ConfirmRemove>
       )}
-      {opened && <Drawer r={opened} platform={platform} close={() => setDrawer(null)} project={view.board.project} others={view.zones.flatMap((z) => z.rows)} write={write} act={act} id={id} />}
+      {closing && (
+        <ConfirmRemove
+          title={`Close ${closeName(closing)}?`}
+          label="Close"
+          go={() => (setClosing(null), void act(() => boards.setLane(id, closing.id, "done", closeReason)))}
+          cancel={() => setClosing(null)}
+        >
+          <p>Moving a row to Done closes its issue. Moving it out of Done opens it again.</p>
+          <label class="dim">
+            Reason{" "}
+            <select data-board-close-reason value={closeReason} onChange={(e) => setCloseReason(e.currentTarget.value)}>
+              <option value="completed">Completed</option>
+              <option value="not_planned">Not planned</option>
+              <option value="duplicate">Duplicate</option>
+            </select>
+          </label>
+        </ConfirmRemove>
+      )}
+      {opened && <Drawer steps={mode === "steps" && write ? { place: stepPlace(view, opened.id), move: (m) => void reorderRow(opened, m) } : undefined} r={opened} platform={platform} close={() => setDrawer(null)} project={view.board.project} others={view.zones.flatMap((z) => z.rows)} write={write} act={act} id={id} moveLane={moveLane} nameOf={nameOf} />}
     </div>
   );
 }
 
-/** A board's goal, progress and closing, under its title. The panel doesn't know whether the person may write (the pin block has no project), so without `write` the controls still show and the platform's refusal comes back as `act`'s toast. */
-function Epic({ b, act, id, write, view }: { b: ProjectBoard; act: Act; id: string; write: boolean; view: BoardView }) {
+/** The board's header, as a Doc's (#929): the title and, at its right, Copy link, Open in browser and ⋯; when it was made and last edited; the goal with the Docs beside it; and the progress as its bottom rule. The panel doesn't know whether the person may write (the pin block has no project), so without `write` the controls still show and the platform's refusal comes back as `act`'s toast. */
+function BoardHead({ view, back, write, shareLink, rename, close, act, id, platform }: { view: BoardView; back?: preact.ComponentChildren; write: boolean; shareLink: string | null; rename: () => void; close?: () => void; act: Act; id: string; platform: (path: string) => string | undefined }) {
+  const b = view.board;
+  const { toast } = usePlatformApi();
   const [goalOpen, setGoalOpen] = useState(false);
   const [goal, setGoal] = useState("");
-  const [closing, setClosing] = useState(false);
-  const [note, setNote] = useState("");
   const e = epicLine(b.progress);
-  const waiting = needsYou(view);
-  const { teams } = usePlatformApi();
-  const nameOf = (account: string) => teams().flatMap((t) => t.roster.members).find((m) => m.account === account)?.name;
+  const editGoal = () => (setGoal(b.goal), setGoalOpen(true));
   const saveGoal = async () => {
     if (await act(() => boards.edit(id, { goal: goal.trim() }))) setGoalOpen(false);
   };
+  const copy = async (): Promise<"ok" | false> => {
+    try {
+      await navigator.clipboard.writeText(shareLink ?? "");
+      return "ok";
+    } catch {
+      toast("Couldn't copy the link");
+      return false;
+    }
+  };
+  const items: MenuItem[] = [
+    ...(write
+      ? [
+          { label: "Rename…", run: rename, attrs: { "data-board-rename": "" } },
+          { label: "Edit goal…", run: editGoal, attrs: { "data-board-goal-menu": "" } },
+        ]
+      : []),
+    ...(close ? [{ label: "Close epic…", run: close, attrs: { "data-board-close": "" } }] : []),
+  ];
+  // The goal's button takes the focus back when its form shuts.
+  const goalButton = useRef<HTMLParagraphElement>(null);
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (wasOpen.current && !goalOpen) goalButton.current?.focus({ preventScroll: true });
+    wasOpen.current = goalOpen;
+  }, [goalOpen]);
+  const press = (ev: KeyboardEvent) => (ev.key === "Enter" || ev.key === " ") && (ev.preventDefault(), editGoal());
+  const pencil = (
+    <span class="board-goal-pencil" aria-hidden="true">
+      <EditIcon size="xs" />
+    </span>
+  );
+  return (
+    <PageHeader
+      named
+      class="board-head"
+      back={back}
+      title={<span data-board-heading>{b.title}</span>}
+      link={
+        <DocActions
+          none={!shareLink}
+          copy={copy}
+          open={() => shareLink && openTab(shareLink)}
+          hooks={{ copy: { "data-doc-copy-link": "", "data-copy-link": "", "data-link": shareLink ?? undefined } }}
+        >
+          {items.length > 0 && (
+            <IconButton label="More" class="bar-btn sq" aria-haspopup="menu" data-board-more data-page-more onClick={(ev) => openMenu(ev, items, { from: ev.currentTarget, end: true })}>
+              <MoreIcon size="sm" />
+            </IconButton>
+          )}
+        </DocActions>
+      }
+    >
+      <p class="doc-meta board-meta" data-board-meta>
+        <DocTimes doc={{ made: b.created_at, updated: b.updated_at }} />
+      </p>
+      {(write || b.goal || (view.docs ?? []).length > 0) && (
+        <div class="board-head-body">
+          <div class="board-goal-col">
+            {goalOpen ? (
+              <div class="board-form" data-board-goal-form>
+                <textarea
+                  value={goal}
+                  rows={4}
+                  maxLength={GOAL_MAX}
+                  aria-label="Goal"
+                  data-board-goal-input
+                  autoFocus
+                  onInput={(ev) => setGoal(ev.currentTarget.value)}
+                  onKeyDown={(ev) => {
+                    if (ev.key === "Escape") (ev.preventDefault(), ev.stopPropagation(), setGoalOpen(false));
+                    else if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) (ev.preventDefault(), void saveGoal());
+                  }}
+                />
+                <span class="board-form-buttons">
+                  <button type="button" class="primary small" data-board-goal-save onClick={() => void saveGoal()}>
+                    Save
+                  </button>
+                  <button type="button" class="secondary small" onClick={() => setGoalOpen(false)}>
+                    Cancel
+                  </button>
+                </span>
+              </div>
+            ) : write ? (
+              <p ref={goalButton} class={b.goal ? "board-goal editable" : "board-goal editable empty"} role="button" tabIndex={0} title="Edit goal" data-board-goal={b.goal ? "" : undefined} data-board-goal-edit onClick={editGoal} onKeyDown={press}>
+                {b.goal || "Add a goal…"}
+                {pencil}
+              </p>
+            ) : (
+              b.goal && (
+                <p class="board-goal" data-board-goal>
+                  {b.goal}
+                </p>
+              )
+          )}
+        </div>
+        <DocsStrip view={view} act={act} id={id} write={write} platform={platform} />
+      </div>
+      )}
+      {b.progress.total > 0 ? (
+        <div class="board-bar" role="progressbar" aria-valuemin={0} aria-valuemax={b.progress.total} aria-valuenow={b.progress.done} aria-label={e.words} data-board-progress>
+          {e.segments.map((s) => (
+            <i key={s.lane} data-lane={s.lane} style={{ width: `${s.pct}%` }} />
+          ))}
+        </div>
+      ) : (
+        <div class="board-bar" aria-hidden="true" data-board-progress />
+      )}
+    </PageHeader>
+  );
+}
+
+/** A board's source, who needs you, and closing, under its header. */
+function Epic({ b, closing, setClosing, note, setNote, act, id, write, view }: { b: ProjectBoard; closing: boolean; setClosing: (on: boolean) => void; note: string; setNote: (note: string) => void; act: Act; id: string; write: boolean; view: BoardView }) {
+  const waiting = needsYou(view);
   const close = async () => {
     if (await act(() => boards.close(id, note.trim()))) setClosing(false);
   };
   return (
     <div class="board-epic">
-      {goalOpen ? (
-        <div class="board-form" data-board-goal-form>
-          <textarea value={goal} rows={4} maxLength={GOAL_MAX} aria-label="Goal" data-board-goal-input autoFocus onInput={(ev) => setGoal(ev.currentTarget.value)} />
-          <span class="board-form-buttons">
-            <button type="button" class="primary" data-board-goal-save onClick={() => void saveGoal()}>
-              Save
-            </button>
-            <button type="button" onClick={() => setGoalOpen(false)}>
-              Cancel
-            </button>
-          </span>
-        </div>
-      ) : (
-        <>
-          {b.goal && (
-            <p class="board-goal" data-board-goal>
-              {b.goal}
-            </p>
+      {b.source && (
+        <p class="dim board-source" data-board-source={b.source.key}>
+          {sourceLinked(b.source) ? (
+            <a href={b.source.url} target="_blank" rel="noreferrer">
+              {sourceLine(b.source)}
+            </a>
+          ) : (
+            sourceLine(b.source)
           )}
-          {write && (
-            <p class="board-epic-actions">
-              <button type="button" data-board-goal-edit onClick={() => (setGoal(b.goal), setGoalOpen(true))}>
-                {b.goal ? "Edit goal" : "Add a goal"}
-              </button>
-            </p>
-          )}
-        </>
-      )}
-      {b.created_by_agent && (
-        <p class="dim" data-board-made-by>
-          Made by {whoLabel(b.created_by, b.created_by_agent, nameOf)}
+          {b.source.left_out > 0 && <span data-board-left-out> · {leftOutLine(b.source.left_out)}</span>}
         </p>
       )}
-      <div class="sw-stats board-stats" data-board-stats>
-        <span>
-          <b>{b.progress.done}</b> done
-        </span>
-        <span>
-          <b>{b.progress.proven}</b> proven
-        </span>
-        <span data-board-ready={readyCount(view)}>
-          <b>{readyCount(view)}</b> ready
-        </span>
-        {waiting.length > 0 && (
+      {waiting.length > 0 && (
+        <div class="sw-stats board-stats" data-board-stats>
           <button type="button" class="needs board-needs-you-button" data-board-needs-you={waiting.length} onClick={() => document.querySelector(`[data-board-row="${waiting[0].id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" })}>
             <b>{waiting.length}</b> Needs you
           </button>
-        )}
-      </div>
-      <div class="board-progress" data-board-progress>
-        {b.progress.total > 0 && (
-          <div class="board-bar" role="progressbar" aria-valuemin={0} aria-valuemax={b.progress.total} aria-valuenow={b.progress.done} aria-label={e.words}>
-            <i style={{ width: `${e.pct}%` }} />
-          </div>
-        )}
-        <span class="dim">{e.words}</span>
-      </div>
+        </div>
+      )}
       {b.closed_at != null ? (
         <div class="board-done" data-board-done>
           <p>
-            <span class="ws-tag board-done-tag">Done</span> <span class="dim">{day(b.closed_at)}</span>
-            {b.closed_by_agent && <span class="dim" data-board-done-by> by {whoLabel(b.closed_by, b.closed_by_agent, nameOf)}</span>}
+            <Chip kind="tag" tone="ok">Done</Chip> <span class="dim">{day(b.closed_at)}</span>
           </p>
           <p class="board-goal" data-board-done-note>
             {b.done_note}
@@ -387,20 +704,14 @@ function Epic({ b, act, id, write, view }: { b: ProjectBoard; act: Act; id: stri
             <textarea value={note} rows={3} aria-label="What can a person now do?" data-board-close-note autoFocus onInput={(ev) => setNote(ev.currentTarget.value)} />
           </label>
           <span class="board-form-buttons">
-            <button type="button" class="primary" data-board-close-save disabled={!note.trim()} onClick={() => void close()}>
+            <button type="button" class="primary small" data-board-close-save disabled={!note.trim()} onClick={() => void close()}>
               Close epic
             </button>
-            <button type="button" onClick={() => setClosing(false)}>
+            <button type="button" class="secondary small" onClick={() => setClosing(false)}>
               Cancel
             </button>
           </span>
         </div>
-      ) : write ? (
-        <p class="board-epic-actions">
-          <button type="button" data-board-close onClick={() => (setNote(""), setClosing(true))}>
-            Close epic…
-          </button>
-        </p>
       ) : null}
     </div>
   );
@@ -408,7 +719,30 @@ function Epic({ b, act, id, write, view }: { b: ProjectBoard; act: Act; id: stri
 
 type Act = (write: () => Promise<BoardView>) => Promise<boolean>;
 
-/** A row's open question: the question, its why folded, the options as buttons with the recommendation marked, and a text box when there are none. Only a person who may answer gets the buttons; a raised ask has none to give. */
+/** The board's Docs, in a column beside its goal (under it on a narrow board): each Doc's title on a line, and Link a Doc for a writer. A reader who can't write sees the titles; with no Docs and no right to link one, nothing. */
+function DocsStrip({ view, act, id, write, platform }: { view: BoardView; act: Act; id: string; write: boolean; platform: (path: string) => string | undefined }) {
+  const [picking, setPicking] = useState(false);
+  const docs = view.docs ?? [];
+  if (!docs.length && !write) return null;
+  const taken = new Set(docs.flatMap((d) => (d.pointer.kind === "doc" ? [d.pointer.id] : [])));
+  return (
+    <nav class="board-docs" aria-label="Docs" data-board-docs>
+      <h2 class="board-docs-head">Docs</h2>
+      {docs.map((d) => (
+        <DocLink key={d.id} list d={d} project={view.board.project} platform={platform} remove={write ? () => void act(() => boards.removeDoc(id, d.id)) : undefined} />
+      ))}
+      {write && !picking && (
+        <button type="button" class="board-doc-link" data-board-doc-add onClick={() => setPicking(true)}>
+          <PlusIcon size="xs" />
+          Link a Doc
+        </button>
+      )}
+      {picking && <DocPicker project={view.board.project} taken={taken} pick={(p) => act(() => boards.addDoc(id, p))} close={() => setPicking(false)} />}
+    </nav>
+  );
+}
+
+/** A row's open question: the question, its why folded, the options as buttons with the recommendation marked, and a text box when there are none. Only a person who may answer gets the buttons. The board's own flags (`raised`) have no card: the chip in trouble carries them (#903). */
 function AskCard({ a, answer }: { a: BoardAsk; answer: (a: { option: string } | { text: string }) => Promise<boolean> }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -418,9 +752,9 @@ function AskCard({ a, answer }: { a: BoardAsk; answer: (a: { option: string } | 
     setBusy(false);
   };
   return (
-    <div class={`board-ask${a.raised ? " raised" : ""}${a.mine ? " mine" : ""}`} data-board-ask={a.raised ? "raised" : a.id}>
+    <div class={`board-ask${a.mine ? " mine" : ""}`} data-board-ask={a.id}>
       <div class="board-line board-ask-question">
-        <span class="ws-tag waits">{a.raised ? "Board" : "Asks"}</span>
+        <StateChip tone="accent">Asks</StateChip>
         <span data-board-ask-question>{a.question}</span>
       </div>
       {a.why && (
@@ -432,7 +766,7 @@ function AskCard({ a, answer }: { a: BoardAsk; answer: (a: { option: string } | 
       {a.can_answer && a.options.length > 0 && (
         <div class="board-line board-ask-options">
           {a.options.map((o) => (
-            <button key={o} type="button" class={`board-ask-option${o === a.recommend ? " recommended" : ""}`} disabled={busy} data-board-ask-option={o} title={o === a.recommend ? "Recommended" : undefined} onClick={() => void send({ option: o })}>
+            <button key={o} type="button" class="secondary small" disabled={busy} data-board-ask-option={o} title={o === a.recommend ? "Recommended" : undefined} onClick={() => void send({ option: o })}>
               {o}
               {o === a.recommend && <span class="dim"> · recommended</span>}
             </button>
@@ -476,8 +810,38 @@ function Answered({ asked }: { asked: BoardAnsweredAsk[] }) {
   );
 }
 
+/** A group's section, which takes a row dragged from another group (#664). */
+function GroupDrop({ group, take, children }: { group: string | null; take?: (row: string, group: string | null) => void; children: preact.ComponentChildren }) {
+  const [over, setOver] = useState(false);
+  const takes = (e: DragEvent) => !!take && dragFrom(e, group) === false;
+  return (
+    <section
+      class={`board-group drop-target${over ? " drop-over" : ""}`}
+      data-board-group={group ?? "none"}
+      data-drop-over={over ? "" : undefined}
+      onDragOver={(e) => {
+        if (!takes(e)) return;
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+        setOver(true);
+      }}
+      onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && setOver(false)}
+      onDrop={(e) => {
+        if (!takes(e)) return;
+        e.preventDefault();
+        setOver(false);
+        const row = e.dataTransfer?.getData(ROW_DRAG);
+        if (row) take!(row, group);
+      }}
+    >
+      {children}
+    </section>
+  );
+}
+
 function Lane({
   z,
+  fold,
   project,
   editing,
   setEditing,
@@ -485,10 +849,15 @@ function Lane({
   id,
   platform,
   groups,
+  group,
   moveRow,
+  moveLane,
   open,
+  opened,
 }: {
   z: BoardZone;
+  /** The lane heading as a button; inside a group its key carries the group. */
+  fold: { key: string; folded: boolean; toggle: () => void };
   project: string;
   editing: string | null;
   setEditing: (e: string | null) => void;
@@ -497,65 +866,235 @@ function Lane({
   platform: (path: string) => string | undefined;
   /** The groups a row may move to; none for a reader who can't write. */
   groups: BoardGroup[];
+  /** The group this lane sits in (null: no group). */
+  group: string | null;
   moveRow: (r: BoardRow, zone: string | null) => void;
+  /** Move a row to a lane by hand (#494); none for a reader who can't write. */
+  moveLane?: (row: string, lane: BoardLane) => void;
   open: (row: string) => void;
+  /** The row whose drawer is open: its card is the selected one. */
+  opened: string | null;
 }) {
   const n = laneCount(z);
+  // A card dragged over the lane (#494): the lane takes it, unless it comes from another group, which takes it whole (#664).
+  const [over, setOver] = useState(false);
+  const lane = laneOfZone(z.id);
+  const takes = (e: DragEvent) => !!moveLane && !!lane && dragFrom(e, group) === true;
+  const drop = (e: DragEvent) => {
+    if (!takes(e)) return;
+    e.preventDefault();
+    setOver(false);
+    const row = e.dataTransfer?.getData(ROW_DRAG);
+    if (row && lane) moveLane!(row, lane);
+  };
   return (
-    <section class="board-zone" data-board-zone={z.id} data-zone-kind={z.kind ?? undefined}>
+    <section
+      class={`board-zone drop-target${over ? " drop-over" : ""}`}
+      data-board-zone={z.id}
+      data-zone-kind={z.kind ?? undefined}
+      data-drop-over={over ? "" : undefined}
+      onDragOver={(e) => {
+        if (!takes(e)) return;
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+        setOver(true);
+      }}
+      onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && setOver(false)}
+      onDrop={drop}
+    >
       <header class="board-zone-head">
-        <h2>{z.title}</h2>
+        <h2>
+          <button type="button" class="board-fold" aria-expanded={!fold.folded} data-board-fold={fold.key} onClick={fold.toggle}>
+            <ChevronIcon open={!fold.folded} />
+            {z.title}
+          </button>
+        </h2>
         <span class="board-count dim" data-board-count>
           {n.total}
           {n.proven > 0 && ` · ${n.proven} proven`}
         </span>
       </header>
-      <ul class="board-rows sw-cards">
-        {z.rows.map((r) => (
-          <Row key={r.id} r={r} editing={editing === r.id} setEditing={setEditing} act={act} id={id} project={project} platform={platform} groups={groups} moveRow={moveRow} open={open} />
-        ))}
-      </ul>
+      {!fold.folded && (
+        <ul class="board-rows card-list">
+          {z.rows.map((r) => (
+            <Row key={r.id} r={r} editing={editing === r.id} setEditing={setEditing} act={act} id={id} project={project} platform={platform} groups={groups} moveRow={moveRow} moveLane={moveLane} open={open} opened={opened} />
+          ))}
+        </ul>
+      )}
     </section>
   );
 }
 
-/** An attachment as a chip (`sw-chip`): what it points at, and its state. An agent block is one chip, its title and its state (no second status line), a link to its pane where the reader can reach it: control's page on the platform page, the pane itself in the shell. `facts` says its branch and the rest after the chip, dim: `settled`, once it has stopped; `all`, in the drawer. */
-function Chip({ a, platform, facts = "settled" }: { a: BoardAttachment; platform: (path: string) => string | undefined; facts?: "settled" | "all" }) {
+/** A session started on the row's issue (#843): its branch without the `arugula/` prefix, and its state, a link to its thread where the reader has one. Dim once it no longer moves the row. */
+function SessionChip({ s, project }: { s: BoardRowSession; project: string }) {
   const api = usePlatformApi();
-  const c = chipOf(a);
+  const href = api.sessionHref?.(project, s.session);
+  const branch = s.branch.replace(/^arugula\//, "");
+  const state = s.state.replace(/_/g, " ");
+  return (
+    <ObjectChip
+      class={s.live ? undefined : "dim"}
+      title={s.live ? "An agent session working on this issue" : "An agent session that has stopped moving this row"}
+      fact={{ tone: s.live ? (s.state === "needs_input" ? "accent" : "muted") : "muted", text: state }}
+      data-board-session={s.session}
+      data-board-session-live={s.live ? "" : undefined}
+    >
+      {href ? (
+        <a class="board-ptr" href={href} target="_blank" rel="noopener noreferrer">
+          {branch}
+        </a>
+      ) : (
+        <span class="board-ptr">{branch}</span>
+      )}
+    </ObjectChip>
+  );
+}
+
+/** An attachment as an object chip: what it points at, and its state. An agent block is one chip, its title and its state (no second status line), a link to its pane where the reader can reach it: control's page on the platform page, the pane itself in the shell. `facts` says its branch and the rest after the chip, dim: `settled`, once it has stopped; `all`, in the drawer. */
+function AttachmentChip({ a, platform, facts = "settled", stalled, waiting }: { a: BoardAttachment; platform: (path: string) => string | undefined; facts?: "settled" | "all"; stalled?: string | null; waiting?: { words: string; mine: boolean } | null }) {
+  const api = usePlatformApi();
+  const c = chipOf(a, stalled, waiting);
   const p = a.pointer;
+  // An agent block with no name of its own is named by its pane, as the machine reports it.
+  if (p.kind === "block" && !a.block?.title?.trim()) c.label = api.paneTitle(p.machine, p.pane) || c.label;
+  const text = a.role === "proof" ? "Proof" : c.label;
   const href = pointerHref({ pointer: p, live: a.live }, platform);
-  // The pane: a link to control's page here; in the shell, when the machine is one of the reader's.
-  const pane = p.kind === "block" ? (api.controlHref ? { href: api.controlHref(`pane=${p.machine}.${p.pane}`) } : api.machine(p.machine) ? { go: () => api.goToPane(p.machine, p.pane, null) } : null) : null;
+  // The pane: a link to control's page here; in the shell, when the machine is one of the reader's. A block whose machine the reader isn't told (a blank id) links nowhere.
+  const pane = p.kind === "block" && p.machine ? (api.controlHref ? { href: api.controlHref(`pane=${p.machine}.${p.pane}`) } : api.machine(p.machine) ? { go: () => api.goToPane(p.machine, p.pane, null) } : null) : null;
   const name = pane?.href ? (
     <a class="board-ptr" href={pane.href} target="_blank" rel="noopener noreferrer" title="Open its pane" data-board-block-open>
-      {c.label}
+      {text}
     </a>
   ) : pane?.go ? (
     <a class="board-ptr" href="#" title="Open its pane" data-board-block-open onClick={(e) => (e.preventDefault(), pane.go!())}>
-      {c.label}
+      {text}
     </a>
   ) : href ? (
     <a class="board-ptr" href={href} target={p.kind === "forge_item" || p.kind === "link" ? "_blank" : undefined} rel="noopener noreferrer">
-      {c.label}
+      {text}
     </a>
   ) : (
-    <span class="board-ptr">{c.label}</span>
+    <span class="board-ptr">{text}</span>
   );
   const more = a.block ? (facts === "all" ? blockFacts(a.block) : settledFacts(a.block)) : [];
   return (
     <>
-      <span class={`sw-chip board-chip ${a.role}`} data-board-attachment={a.id} data-attach-role={a.role} data-board-block={a.block?.state}>
-        {a.role === "proof" && <span class="dim">proof </span>}
+      <ObjectChip
+        proof={a.role === "proof"}
+        class={a.role}
+        title={a.role === "proof" ? c.label : a.block?.state === "working" ? BLOCK_LABEL.working : undefined}
+        fact={c.state ? { tone: c.tone, text: c.state } : null}
+        data-board-chip-state={c.state ? c.tone : undefined}
+        data-board-attachment={a.id}
+        data-attach-role={a.role}
+        data-board-block={a.block?.state}
+      >
         {name}
-        {c.state && <span class={`ws-tag board-live ${a.live ? liveClass(a.live.state) : a.block ? blockClass(a.block.state) : ""}`}>{c.state}</span>}
-      </span>
+      </ObjectChip>
       {more.length > 0 && (
         <span class="board-fact dim" data-board-block-facts>
           {more.join(" · ")}
         </span>
       )}
     </>
+  );
+}
+
+/** A card's assignees as initials in small circles: two, then `+N`. Named in full for a screen reader and on hover. */
+function Owners({ who, all }: { who: string[]; all?: boolean }) {
+  const list = who.filter(Boolean);
+  if (!list.length) return null;
+  const { top, more } = topAndMore(list, all ? list.length : 2);
+  return (
+    <span class="board-who" role="img" aria-label={assigneesLine(list)} title={list.join(", ")} data-board-who={list.join(", ")}>
+      {top.map((w) => (
+        <span key={w} class="board-avatar" aria-hidden="true" data-board-avatar>
+          {initialsOf(w)}
+        </span>
+      ))}
+      {more > 0 && (
+        <span class="board-avatar more" aria-hidden="true" data-board-avatar-more>
+          +{more}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** An item's labels as chips: three, then `+N`; on a phone (its CSS) only the `+N` of all of them. The drawer lists every one. */
+function Labels({ labels, all }: { labels: string[]; all?: boolean }) {
+  if (!labels.length) return null;
+  const { top, more } = topAndMore(labels, all ? labels.length : 3);
+  return (
+    <div class={all ? "board-labels" : "board-line board-labels"} data-board-labels>
+      <span class="board-labels-top">
+        {top.map((l) => (
+          <Chip key={l} kind="tag" class="board-label" data-board-label={l}>
+            {l}
+          </Chip>
+        ))}
+        {more > 0 && (
+          <Chip kind="tag" class="board-label" title={labels.slice(top.length).join(", ")} data-board-label-more>
+            +{more}
+          </Chip>
+        )}
+      </span>
+      {!all && (
+        <Chip kind="tag" class="board-label board-labels-all" title={labels.join(", ")} data-board-labels-all>
+          +{labels.length}
+        </Chip>
+      )}
+    </div>
+  );
+}
+
+/** A filter menu of the find bar (#547): its values with how many rows have each, several at once. */
+function FilterMenu({ name, title, choices, picked, set }: { name: string; title: string; choices: { value: string; count: number }[]; picked: string[]; set: (v: string[]) => void }) {
+  const button = useRef<HTMLButtonElement>(null);
+  // Drawn in the facet itself, so it is part of the board it filters.
+  const [open, setOpen] = useState(false);
+  // The open menu's items were made when it opened and it stays open while you
+  // tick, so a tick works on what is picked now.
+  const now = useRef({ picked, set });
+  now.current = { picked, set };
+  // A value picked from a link that no row has now still shows, so it can be cleared.
+  const have = new Set(choices.map((c) => c.value.toLowerCase()));
+  const shown = [...choices, ...picked.filter((p) => !have.has(p.toLowerCase())).map((value) => ({ value, count: 0 }))];
+  if (!shown.length) return null;
+  const on = (v: string) => picked.some((p) => p.toLowerCase() === v.toLowerCase());
+  const toggle = (v: string) => {
+    const { picked: was, set: setTo } = now.current;
+    setTo(was.some((p) => p.toLowerCase() === v.toLowerCase()) ? was.filter((p) => p.toLowerCase() !== v.toLowerCase()) : [...was, v]);
+  };
+  const items: MenuItem[] = shown.map((c) => ({
+    label: c.value,
+    detail: String(c.count),
+    checked: on(c.value),
+    multi: true,
+    run: () => toggle(c.value),
+    attrs: { "data-board-facet-value": c.value },
+  }));
+  return (
+    <span class="board-facet" data-board-facet={name}>
+      <button
+        ref={button}
+        type="button"
+        class="secondary small"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        data-board-facet-button={name}
+        onClick={() => setOpen(true)}
+      >
+        {title}
+        {picked.length > 0 && <span class="board-facet-n"> · {picked.length}</span>}
+      </button>
+      {open && (
+        <MenuHost
+          show={() => !!button.current && openMenu(menuBelow(button.current), items, { from: button.current, label: title, attrs: { "data-board-facet-menu": name }, onClose: () => setOpen(false) })}
+          close={() => setOpen(false)}
+        />
+      )}
+    </span>
   );
 }
 
@@ -569,7 +1108,9 @@ function Row({
   platform,
   groups,
   moveRow,
+  moveLane,
   open,
+  opened,
 }: {
   r: BoardRow;
   editing: boolean;
@@ -580,21 +1121,33 @@ function Row({
   platform: (path: string) => string | undefined;
   groups: BoardGroup[];
   moveRow: (r: BoardRow, zone: string | null) => void;
+  moveLane?: (row: string, lane: BoardLane) => void;
   open: (row: string) => void;
+  opened: string | null;
 }) {
+  const phone = usePhone();
+  const { teams } = usePlatformApi();
+  const setBy = laneSetLine(r, (a) => teams().flatMap((t) => t.roster.members).find((m) => m.account === a)?.name);
   const label = pointerLabel(r.pointer, r.live);
   const href = pointerHref(r, platform);
   const card = isCard(r.live);
-  const who = card ? assigneesLine(r.live!.assignees) : "";
   const mark = proofMark(r);
   const marks = marksOf(r);
+  // A stalled row says so on its agent's chip; with no such chip the mark stays.
+  const waiting = waitingOf(r);
+  const stalledMark = r.attachments.some(holdsRow) || waiting ? null : marks.stalled;
+  const stalledWords = marks.stalled?.words;
+  // A row that waits on a person says who on its agent's chip, else as a mark of its own (#764).
+  const waitingMark = r.attachments.some(holdsRow) ? null : waiting;
   const earlier = r.attachments.filter((a) => marks.earlier.has(a.id));
   const current = r.attachments.filter((a) => !marks.earlier.has(a.id));
+  const held = heldChip(r);
   const tone = cardTone(r);
-  const proofTag = mark && (
-    <span class={`ws-tag board-proof ${mark.proven ? "proven" : "unproven"}`} data-board-proof={mark.proven ? (r.proof?.by ?? "proven") : "not-proven"}>
+  // Proof attached to the row is its "Proof" link (`AttachmentChip`); the tag stands for proof that has none (a merged PR, CI), and for none.
+  const proofLink = mark && (!mark.proven || !r.attachments.some((a) => a.role === "proof")) && (
+    <Chip kind="tag" tone={mark.proven ? "ok" : "muted"} title={mark.title} data-board-proof={mark.proven ? (r.proof?.by ?? "proven") : "not-proven"}>
       {mark.words}
-    </span>
+    </Chip>
   );
   const more = (e: MouseEvent) =>
     menuAt(e, [
@@ -611,6 +1164,9 @@ function Row({
             },
           ]
         : []),
+      ...(moveLane
+        ? [{ label: "Move to", submenu: MOVE_LANES.filter((l) => l.lane !== r.lane).map((l) => ({ label: l.title, run: () => moveLane(r.id, l.lane) })) }]
+        : []),
       "separator",
       { label: "Delete the row", danger: true, run: () => void act(() => boards.remove(id, r.id)) },
     ]);
@@ -626,7 +1182,10 @@ function Row({
   const title = card ? r.live!.title : label || "Note";
   const external = r.pointer.kind === "forge_item" || r.pointer.kind === "link";
   return (
-    <li class={`board-card sw-card sw-${tone}`} data-board-row={r.id} data-lane={r.lane} data-status={r.status} data-tone={tone} data-needs-you={r.ask?.mine ? "" : undefined} tabIndex={editing ? undefined : 0} onClick={editing ? undefined : body} onKeyDown={editing ? undefined : key}>
+    <Card as="li" tone={tone} class="board-row" data-board-row={r.id} data-lane={r.lane} data-status={r.status} data-tone={tone} data-needs-you={needsDot(r) ? "" : undefined} aria-current={opened === r.id ? "true" : undefined} data-lane-set={r.lane_set ? r.lane_set.lane : undefined} draggable={!!moveLane && !phone && !editing} onDragStart={(e) => {
+      e.dataTransfer?.setData(ROW_DRAG, r.id);
+      e.dataTransfer?.setData(dragGroupType(r.group ?? null), r.group ?? "none"); // a type with no data is dropped
+    }} tabIndex={editing ? undefined : 0} onClick={editing ? undefined : body} onKeyDown={editing ? undefined : key}>
       {editing ? (
         <RowForm
           project={project}
@@ -638,6 +1197,7 @@ function Row({
         <div class="board-main">
           <div class="board-card-head board-line board-card-title">
             <div class="board-card-lead">
+              {needsDot(r) && <span class="board-needs-dot" data-board-needs-dot title="Needs you" role="img" aria-label="Needs you" />}
               {href ? (
                 <a class="board-card-name board-title" href={href} target={external ? "_blank" : undefined} rel="noopener noreferrer" data-board-title data-board-item-link>
                   {title}
@@ -647,63 +1207,85 @@ function Row({
                   {title}
                 </span>
               )}
-              {r.live && (
-                <StateChip tone={liveTone(r.live.state)} data-board-live={r.live.state}>
-                  {liveWord(r.live)}
-                </StateChip>
-              )}
             </div>
-            <button type="button" class="board-more" aria-label="Row actions" data-board-row-menu onClick={more}>
-              ⋯
-            </button>
+            <IconButton label="Row actions" class="bar-btn sq board-more" data-board-row-menu onClick={more}>
+              <MoreIcon size="sm" />
+            </IconButton>
           </div>
           <div class="board-line board-sub dim">
             {label && <span class="board-ptr" data-board-ptr>{label}</span>}
-            {card && who && (
-              <span class="board-who dim" data-board-who>
-                {who}
-              </span>
-            )}
+            {card && <Owners who={r.live!.assignees ?? []} />}
             {r.agent && (
               <span class="board-agent dim" data-row-agent>
                 {agentShort(r.agent)}
               </span>
             )}
-            {proofTag}
+            {proofLink}
+            {setBy && (
+              <Chip kind="tag" data-board-lane-set title="A person moved this row. It follows its work again once the work changes.">
+                {setBy}
+              </Chip>
+            )}
           </div>
-          {(marks.merged || marks.cancelled || marks.after || marks.stalled || marks.blocked.length > 0) && (
+          {card && <Labels labels={r.live!.labels ?? []} />}
+          {(marks.notFinished || marks.cancelled || marks.after || stalledMark || waitingMark || marks.blocked.length > 0) && (
             <div class="board-line board-marks" data-board-marks>
-              {marks.merged && (
-                <span class="ws-tag board-mark" data-board-mark="merged_not_closed" title="A PR of this row merged, but its issue is still open">
-                  merged, not closed
-                </span>
+              {marks.notFinished && (
+                <StateChip tone="warn" class="board-mark-nf" data-board-mark="not_finished" title={notFinishedTitle(marks.notFinished)}>
+                  {notFinishedLine(marks.notFinished)}
+                </StateChip>
               )}
               {marks.cancelled && (
-                <span class="ws-tag board-mark" data-board-mark="cancelled" title="This item was canceled, so the row is done and not proven">
+                <Chip kind="tag" data-board-mark="cancelled" title="This item was canceled, so the row is done and not proven">
                   cancelled
-                </span>
+                </Chip>
               )}
               {marks.after && (
-                <span class="ws-tag waits board-mark" data-board-mark="after" title={marks.after.repo ? `Stacked on a PR of ${marks.after.repo}` : "Stacked on another PR"}>
+                <StateChip tone="accent" data-board-mark="after" title={marks.after.repo ? `Stacked on a PR of ${marks.after.repo}` : "Stacked on another PR"}>
                   {marks.after.words}
-                </span>
+                </StateChip>
               )}
-              {marks.stalled && (
-                <span class="ws-tag warn board-mark" data-board-mark="stalled" title="Every agent on this row has been idle past the project's limit, and no pull request is open">
-                  {marks.stalled.words}
-                </span>
+              {stalledMark && (
+                <StateChip tone="warn" data-board-mark="stalled" title="Every agent on this row has been idle past the project's limit, and no pull request is open">
+                  {stalledMark.words}
+                </StateChip>
+              )}
+              {waitingMark && (
+                <StateChip tone={waitingMark.mine ? "accent" : "muted"} data-board-mark="waiting" title="This row has an open question for a person">
+                  {waitingMark.words}
+                </StateChip>
               )}
               {marks.blocked.map((m, i) => (
-                <span key={i} class="ws-tag waits board-mark" data-board-mark="blocked_by" title={m.title ? `${m.title}${m.repo ? ` (${m.repo})` : ""}` : "You can't read the item that blocks this one"}>
+                <StateChip key={i} tone="accent" data-board-mark="blocked_by" title={m.title ? `${m.title}${m.repo ? ` (${m.repo})` : ""}` : "You can't read the item that blocks this one"}>
                   {m.words}
-                </span>
+                </StateChip>
               ))}
             </div>
           )}
-          {current.length > 0 && (
+          {closedWithLine(r.live) && (
+            <div class="board-line board-sub dim" data-board-closed-with title="The merged pull request that closed this issue, and the words of it that did">
+              {closedWithLine(r.live)}
+            </div>
+          )}
+          {(current.length > 0 || (r.sessions ?? []).length > 0 || held) && (
             <div class="board-line board-chips" data-board-attachments>
               {current.map((a) => (
-                <Chip key={a.id} a={a} platform={platform} />
+                <AttachmentChip key={a.id} a={a} platform={platform} stalled={stalledWords} waiting={waiting} />
+              ))}
+              {held && (
+                <Chip class="dim" title={held.title} data-board-held={r.held?.session}>
+                  {held.text}
+                </Chip>
+              )}
+              {(r.sessions ?? []).map((x) => (
+                <SessionChip key={x.session} s={x} project={project} />
+              ))}
+            </div>
+          )}
+          {(r.docs ?? []).length > 0 && (
+            <div class="board-line board-chips" data-board-row-docs>
+              {(r.docs ?? []).map((d) => (
+                <DocLink key={d.id} d={d} project={project} platform={platform} />
               ))}
             </div>
           )}
@@ -712,7 +1294,7 @@ function Row({
               <summary class="dim">{earlierLine(earlier.length)}</summary>
               <div class="board-line board-chips">
                 {earlier.map((a) => (
-                  <Chip key={a.id} a={a} platform={platform} />
+                  <AttachmentChip key={a.id} a={a} platform={platform} />
                 ))}
               </div>
             </details>
@@ -722,11 +1304,11 @@ function Row({
               <Markdown text={r.note} refs={null} />
             </div>
           )}
-          {r.ask && <AskCard a={r.ask} answer={(a) => act(() => boards.answer(id, r.ask!.id, a))} />}
+          {r.ask && !r.ask.raised && <AskCard a={r.ask} answer={(a) => act(() => boards.answer(id, r.ask!.id, a))} />}
           {r.asked && r.asked.length > 0 && <Answered asked={r.asked} />}
         </div>
       )}
-    </li>
+    </Card>
   );
 }
 
@@ -776,10 +1358,87 @@ async function readRow(r: BoardRow): Promise<Read> {
   return out;
 }
 
+/** What the card's chip says in full on hover: the words, and who marked it and when. */
+function notFinishedTitle(n: NotFinished): string {
+  const who = n.by ? ` Marked by ${n.by}${n.at ? ` on ${day(n.at)}` : ""}.` : "";
+  const merged = n.merged ? " A PR of this row merged, and the issue stays open." : "";
+  return `${notFinishedLine(n)}.${merged}${who}`;
+}
+
+/** The drawer's Not finished section (#841), above the attachments: the reason, who marked it and when, with Clear the mark for those who may edit; with no mark, Mark not finished… opens a line for what is left. Only on a native issue or a Plane item that isn't done. */
+function NotFinishedSection({ r, nf, write, act, id }: { r: BoardRow; nf: NotFinished | null; write: boolean; act: (write: () => Promise<BoardView>) => Promise<boolean>; id: string }) {
+  const [marking, setMarking] = useState(false);
+  const [reason, setReason] = useState("");
+  const holdable = r.pointer.kind === "issue" || (r.pointer.kind === "forge_item" && r.live?.provider === "plane");
+  if (!holdable || (r.lane === "done" && !nf)) return null;
+  // A mark with a writer is a hold; one with none only says a PR merged.
+  const held = !!nf && nf.at !== undefined;
+  const save = async () => {
+    if (await act(() => boards.hold(id, r.id, reason.trim()))) {
+      setMarking(false);
+      setReason("");
+    }
+  };
+  return (
+    <section data-board-drawer-not-finished>
+      <h3>Not finished</h3>
+      {nf && (
+        <p data-board-drawer-not-finished-reason>
+          {nf.reason ?? "No reason given."}
+          {held && nf.by && (
+            <span class="dim">
+              {" "}
+              · {nf.by}
+              {nf.at ? `, ${day(nf.at)}` : ""}
+            </span>
+          )}
+        </p>
+      )}
+      {!nf && <p class="dim">A merged PR closes this issue. Mark it not finished to keep it open, with what is left.</p>}
+      {write && !marking && (
+        <div class="board-line">
+          {held && (
+            <button type="button" class="secondary small" data-board-clear-mark title="Take the mark off. The issue closes now if a PR that names it has merged." onClick={() => void act(() => boards.release(id, r.id))}>
+              Clear the mark
+            </button>
+          )}
+          <button type="button" class="secondary small" data-board-mark-start onClick={() => { setReason(nf?.reason ?? ""); setMarking(true); }}>
+            {held ? "Change the reason…" : "Mark not finished…"}
+          </button>
+        </div>
+      )}
+      {write && marking && (
+        <div class="board-line" data-board-mark-form>
+          <input
+            type="text"
+            value={reason}
+            maxLength={200}
+            placeholder="What is left"
+            aria-label="What is left"
+            data-board-mark-input
+            autoFocus
+            onInput={(e) => setReason(e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && reason.trim()) void save();
+              if (e.key === "Escape") setMarking(false);
+            }}
+          />
+          <button type="button" class="primary small" data-board-mark-save disabled={!reason.trim()} onClick={() => void save()}>
+            Mark
+          </button>
+          <button type="button" class="secondary small" data-board-mark-cancel onClick={() => setMarking(false)}>
+            Cancel
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
+
 /** The drawer: a row's item, read-only, beside the board (a sheet on a phone). Its title, state and link out; the body, the latest comments, the PRs' checks, the attachments and the proof's evidence. */
-function Drawer({ r, platform, close, project, others, write, act, id }: { r: BoardRow; platform: (path: string) => string | undefined; close: () => void; project: string; others: BoardRow[]; write: boolean; act: (write: () => Promise<BoardView>) => Promise<boolean>; id: string }) {
+function Drawer({ steps, r, platform, close, project, others, write, act, id, moveLane, nameOf }: { /** In Steps, the row's place in its group and its step, and the move ↑ and ↓ send on a phone. */ steps?: { place: ReturnType<typeof stepPlace>; move: (m: Reorder) => void }; r: BoardRow; platform: (path: string) => string | undefined; close: () => void; project: string; others: BoardRow[]; write: boolean; act: (write: () => Promise<BoardView>) => Promise<boolean>; id: string; moveLane: (row: string, lane: BoardLane) => void; nameOf: (account: string) => string | undefined }) {
   const [read, setRead] = useState<Read | null>(null);
-  const ref = useRef<HTMLDivElement>(null);
+  const phone = usePhone();
   const href = pointerHref(r, platform);
   const key = `${r.id}:${r.updated_at}`;
   useEffect(() => {
@@ -788,35 +1447,104 @@ function Drawer({ r, platform, close, project, others, write, act, id }: { r: Bo
     void readRow(r).then((v) => live && setRead(v));
     return () => void (live = false);
   }, [key]);
-  useEffect(() => {
-    ref.current?.focus({ preventScroll: true });
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && close();
-    document.addEventListener("keydown", esc);
-    return () => document.removeEventListener("keydown", esc);
-  }, []);
   const title = isCard(r.live) ? r.live.title : pointerLabel(r.pointer, r.live) || "Note";
   const evidence = r.attachments.filter((a) => a.role === "proof");
   const readable = r.pointer.kind === "issue" || (r.pointer.kind === "forge_item" && r.live?.provider !== "plane");
   const external = r.pointer.kind === "forge_item" || r.pointer.kind === "link";
+  const marks = marksOf(r);
+  const waiting = waitingOf(r);
+  const holding = r.attachments.some(holdsRow);
   return (
-    <div ref={ref} class="board-drawer" role="dialog" aria-label={title} tabIndex={-1} data-board-drawer={r.id}>
-      <header class="board-drawer-head">
-        <h2 class="board-drawer-title" data-board-drawer-title>
-          {title}
-        </h2>
-        <button type="button" class="board-more" aria-label="Close" data-board-drawer-close onClick={close}>
-          ×
-        </button>
-      </header>
-      <div class="board-line">
-        {r.live && <StateChip tone={liveTone(r.live.state)}>{liveWord(r.live)}</StateChip>}
+    <SideSheet title={title} close={close} class="board-drawer" root={{ "data-board-drawer": r.id }} titleAttrs={{ "data-board-drawer-title": true }} closeAttrs={{ "data-board-drawer-close": true }}>
+      <div class="board-line board-drawer-lane">
+        {write ? (
+          <label class="dim">
+            Lane{" "}
+            <select
+              data-board-drawer-lane
+              value={r.lane}
+              onChange={(e) => {
+                const lane = e.currentTarget.value as BoardLane;
+                // The row's lane is what the board says: a move that waits on a confirm, or is refused, leaves it.
+                e.currentTarget.value = r.lane;
+                moveLane(r.id, lane);
+              }}
+            >
+              {MOVE_LANES.map((l) => (
+                <option key={l.lane} value={l.lane}>
+                  {l.title}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <span class="dim" data-board-drawer-lane-name>
+            {MOVE_LANES.find((l) => l.lane === r.lane)?.title}
+          </span>
+        )}
+        {laneSetLine(r, nameOf) && (
+          <Chip kind="tag" data-board-lane-set>
+            {laneSetLine(r, nameOf)}
+          </Chip>
+        )}
+      </div>
+      {steps?.place && phone && (
+        <div class="board-line board-drawer-steps" data-board-drawer-steps>
+          {([true, false] as const).map((up) => {
+            const m = nudge(steps.place!.group, steps.place!.step, r.id, up);
+            return (
+              <IconButton key={String(up)} label={up ? "Move up in its step" : "Move down in its step"} class="secondary small" disabled={!m} data-board-step-move={up ? "up" : "down"} onClick={() => m && steps.move(m)}>
+                <ArrowIcon dir={up ? "up" : "down"} size="xs" />
+              </IconButton>
+            );
+          })}
+        </div>
+      )}
+      <div class="board-line" title={r.live?.state === "closed" && r.lane === "done" ? liveWord(r.live) : undefined}>
+        {r.live && !(r.live.state === "closed" && r.lane === "done") && <StateChip tone={queueChip(r.live)?.tone ?? liveTone(r.live.state)}>{queueChip(r.live)?.word ?? liveWord(r.live)}</StateChip>}
         {href && (
           <a class="board-ptr" href={href} target={external ? "_blank" : undefined} rel="noopener noreferrer" data-board-drawer-link>
-            {pointerLabel(r.pointer, r.live)} ↗
+            {pointerLabel(r.pointer, r.live)} <ExternalIcon size="xs" />
           </a>
         )}
       </div>
+      {closedWithLine(r.live) && (
+        <div class="board-line dim" data-board-closed-with title="The merged pull request that closed this issue, and the words of it that did">
+          {closedWithLine(r.live)}
+        </div>
+      )}
+      {((marks.stalled && !holding && !waiting) || (waiting && !holding) || marks.blocked.length > 0 || r.marks?.some((m) => m.kind === "cycle")) && (
+        <div class="board-line" data-board-drawer-marks>
+          {r.marks?.some((m) => m.kind === "cycle") && (
+            <StateChip tone="warn" data-board-mark="cycle" title="This row and others wait on each other, so they share a step">
+              cycle
+            </StateChip>
+          )}
+          {marks.stalled && !holding && !waiting && (
+            <StateChip tone="warn" data-board-mark="stalled" title="Every agent on this row has been idle past the project's limit, and no pull request is open">
+              {marks.stalled.words}
+            </StateChip>
+          )}
+          {waiting && !holding && (
+            <StateChip tone={waiting.mine ? "accent" : "muted"} data-board-mark="waiting" title="This row has an open question for a person">
+              {waiting.words}
+            </StateChip>
+          )}
+          {marks.blocked.map((m, i) => (
+            <StateChip key={i} tone="accent" data-board-mark="blocked_by" title={m.title ?? "You can't read the item that blocks this one"}>
+              {m.words}
+            </StateChip>
+          ))}
+        </div>
+      )}
       {r.note && <p class="dim">{r.note}</p>}
+      {((r.live?.labels?.length ?? 0) > 0 || (r.live?.assignees?.length ?? 0) > 0) && (
+        <div class="board-line board-drawer-tags" data-board-drawer-tags>
+          <Owners who={r.live?.assignees ?? []} all />
+          {r.live?.assignees?.length ? <span class="dim" data-board-drawer-owners>{r.live.assignees.join(', ')}</span> : null}
+          <Labels labels={r.live?.labels ?? []} all />
+        </div>
+      )}
       {readable && (
         <section data-board-drawer-body>
           {!read ? (
@@ -825,9 +1553,7 @@ function Drawer({ r, platform, close, project, others, write, act, id }: { r: Bo
             <p class="dim">{href ? <a href={href} target="_blank" rel="noopener noreferrer">Open on GitHub</a> : "Not available here."}</p>
           ) : read.body.trim() ? (
             <Markdown text={read.body} refs={null} />
-          ) : (
-            <p class="dim">No description.</p>
-          )}
+          ) : null}
         </section>
       )}
       {read && read.comments.length > 0 && (
@@ -869,12 +1595,24 @@ function Drawer({ r, platform, close, project, others, write, act, id }: { r: Bo
         </section>
       )}
       {(r.relations?.length || (write && itemId(r))) && <Relations r={r} project={project} others={others} write={write} act={act} id={id} />}
+      <RowDocs r={r} project={project} platform={platform} write={write} act={act} id={id} />
+      {(r.sessions ?? []).length > 0 && (
+        <section data-board-drawer-sessions>
+          <h3>Sessions</h3>
+          {(r.sessions ?? []).map((x) => (
+            <div key={x.session} class="board-drawer-attached">
+              <SessionChip s={x} project={project} />
+            </div>
+          ))}
+        </section>
+      )}
+      <NotFinishedSection r={r} nf={marks.notFinished} write={write} act={act} id={id} />
       {r.attachments.length > 0 && (
         <section data-board-drawer-attachments>
           <h3>Attached</h3>
           {r.attachments.map((a) => (
             <div key={a.id} class="board-drawer-attached">
-              <Chip a={a} platform={platform} facts="all" />
+              <AttachmentChip a={a} platform={platform} facts="all" stalled={marks.stalled?.words} waiting={waiting} />
               {write && holdsRow(a) && (
                 <button type="button" class="secondary small" data-board-release={a.id} title="Take this agent off the row; it keeps running, and another may take the row" onClick={() => void act(() => boards.detach(id, a.id))}>
                   Release
@@ -893,11 +1631,36 @@ function Drawer({ r, platform, close, project, others, write, act, id }: { r: Bo
             </p>
           )}
           {evidence.map((a) => (
-            <Chip key={a.id} a={a} platform={platform} />
+            <AttachmentChip key={a.id} a={a} platform={platform} />
           ))}
         </section>
       )}
-    </div>
+    </SideSheet>
+  );
+}
+
+/** A row's Docs (#517): its spike or research. They move no lane and prove nothing. Writers link a project Doc and take one off. */
+function RowDocs({ r, project, platform, write, act, id }: { r: BoardRow; project: string; platform: (path: string) => string | undefined; write: boolean; act: Act; id: string }) {
+  const [picking, setPicking] = useState(false);
+  const refs = r.docs ?? [];
+  if (!refs.length && !write) return null;
+  const taken = new Set(refs.flatMap((d) => (d.pointer.kind === "doc" ? [d.pointer.id] : [])));
+  return (
+    <section data-board-drawer-docs>
+      <h3>Docs</h3>
+      <div class="board-line board-chips">
+        {refs.map((d) => (
+          <DocLink key={d.id} d={d} project={project} platform={platform} remove={write ? () => void act(() => boards.removeDoc(id, d.id)) : undefined} />
+        ))}
+        {write && !picking && (
+          <button type="button" class="secondary small" data-board-drawer-doc-add onClick={() => setPicking(true)}>
+            <PlusIcon size="xs" />
+            Doc
+          </button>
+        )}
+      </div>
+      {picking && <DocPicker project={project} taken={taken} pick={(p) => act(() => boards.addDoc(id, p, r.id))} close={() => setPicking(false)} />}
+    </section>
   );
 }
 
@@ -931,9 +1694,9 @@ function Relations({ r, project, others, write, act, id }: { r: BoardRow; projec
           <span>{relationLine(x)}</span>
           {x.source !== "person" && x.source !== "agent" && <span class="dim"> · from {x.source === "plane" ? "Plane" : "GitHub"}</span>}
           {x.removable && (
-            <button type="button" class="board-more" aria-label="Remove relation" data-board-relation-remove onClick={() => void act(then(() => boards.unrelate(project, x.id)))}>
-              ×
-            </button>
+            <IconButton label="Remove relation" class="bar-btn sq board-more" data-board-relation-remove onClick={() => void act(then(() => boards.unrelate(project, x.id)))}>
+              <CloseIcon size="xs" />
+            </IconButton>
           )}
         </div>
       ))}
@@ -1063,17 +1826,17 @@ function RowForm({ project, row, save, done }: { project: string; row: BoardRow 
             <li key={w.pointer.kind + ("id" in w.pointer ? w.pointer.id : "")} id={optionId(i)} role="option" aria-selected={i === active} class={i === active ? "active" : undefined} data-board-pick={i} onMouseDown={(e) => (e.preventDefault(), pick(w))}>
               <span class="board-ptr">{workLabel(w)}</span>
               <span class="board-pick-title">{w.title}</span>
-              <span class="board-pick-state dim">{w.state}</span>
+              <StateChip tone="muted">{w.state}</StateChip>
             </li>
           ))}
         </ul>
       </div>
       {bad && <span class="board-bad">Expected an id that starts iss_ or fi_, or an https:// link. A run or an agent block is attached to a row.</span>}
       <span class="board-form-buttons">
-        <button type="submit" class="primary" data-board-save>
+        <button type="submit" class="primary small" data-board-save>
           Save
         </button>
-        <button type="button" onClick={done}>
+        <button type="button" class="secondary small" onClick={done}>
           Cancel
         </button>
       </span>

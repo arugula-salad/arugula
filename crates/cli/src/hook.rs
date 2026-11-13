@@ -30,7 +30,8 @@
 //! Code waits for SessionStart hooks before a headless session's first
 //! turn. A `PreToolUse` of Bash that runs `gh issue create` gets the issues
 //! sentence again as its context: it doesn't stop the command, which may
-//! be what the user asked for.
+//! be what the user asked for. A `PostToolUse` in a session a person drives
+//! also takes a mention that's waiting (#644), as `additionalContext`.
 //!
 //! Outside an Arugula pane all of them do nothing.
 
@@ -42,8 +43,8 @@ use std::{
 use serde_json::Value;
 
 use arugula_proto::{
-    api::{Empty, InboxAnswer, PermitAnswer},
-    flags::{DOCS_STEERING, ISSUES_STEERING},
+    api::{Empty, HOOK_MENTIONS_TOLD, HOOK_TAKES_MENTION, HookAnswer, InboxAnswer, PermitAnswer},
+    flags::{DOCS_STEERING, ISSUES_STEERING, MENTIONS_STEERING},
     op::ops::{FlagsList, PaneInbox, PanePermit},
 };
 
@@ -78,10 +79,14 @@ fn stdin_hook(command: &str) -> Option<(u32, Value)> {
 pub fn run(sock: Target) -> i32 {
     let Some((pane, hook)) = stdin_hook("arugula hook") else { return 0 };
     if hook["hook_event_name"] == "SessionStart" {
-        if let Some(out) = session_start(&sock, FLAGS_WAIT) {
+        let driven = session_driven();
+        if let Some(out) = session_start(&sock, FLAGS_WAIT, driven) {
             let mut stdout = std::io::stdout().lock();
             let _ = writeln!(stdout, "{out}");
             let _ = stdout.flush();
+            if driven {
+                say_mentions_told(&sock, pane, hook, FLAGS_WAIT);
+            }
         }
         return 0;
     }
@@ -91,7 +96,17 @@ pub fn run(sock: Target) -> i32 {
             let _ = writeln!(stdout, "{out}");
             let _ = stdout.flush();
         }
-        let _ = request(&sock, "POST", &format!("/api/panes/{pane}/hook"), Some(&hook));
+        let asks = session_driven() && hook["hook_event_name"] == "PostToolUse";
+        let mut hook = hook;
+        if asks {
+            hook[HOOK_TAKES_MENTION] = true.into();
+        }
+        let answer = request(&sock, "POST", &format!("/api/panes/{pane}/hook"), Some(&hook));
+        if asks && let Some(out) = answer.ok().and_then(|r| r.parse::<HookAnswer>().ok()).and_then(mention_context) {
+            let mut stdout = std::io::stdout().lock();
+            let _ = writeln!(stdout, "{out}");
+            let _ = stdout.flush();
+        }
         return 0;
     }
     if hook["tool_name"].as_str().is_none_or(|t| t == arugula_proto::ask::ASK_USER_QUESTION) {
@@ -122,15 +137,33 @@ pub fn run(sock: Target) -> i32 {
     }
 }
 
+/// A follow-up's words as `arugula inbox` gives them to Claude Code.
+fn follow_up_line(by: &arugula_proto::Driver, text: &str) -> String {
+    let name = if by.name.is_empty() { "a teammate" } else { &by.name };
+    format!("A follow-up from {name} (sent through Arugula): {text}")
+}
+
+/// What `PostToolUse` prints when a mention was waiting (#644): it reaches
+/// the model with the tool's result, in the turn that's running.
+fn mention_context(answer: HookAnswer) -> Option<Value> {
+    let f = answer.follow_up?;
+    Some(serde_json::json!({
+        "hookSpecificOutput": { "hookEventName": "PostToolUse", "additionalContext": follow_up_line(&f.by, &f.text) }
+    }))
+}
+
 /// What `SessionStart` prints, if the daemon answers within `wait`: Claude
 /// Code's `additionalContext`, the issues sentence, with the Doc one first.
 /// Nothing when the daemon doesn't answer in time, or answers something
 /// else.
-fn session_start(sock: &Target, wait: Duration) -> Option<Value> {
-    let context = match docs_on(sock, wait)? {
+fn session_start(sock: &Target, wait: Duration, driven: bool) -> Option<Value> {
+    let mut context = match docs_on(sock, wait)? {
         true => format!("{DOCS_STEERING} {ISSUES_STEERING}"),
         false => ISSUES_STEERING.to_owned(),
     };
+    if driven {
+        context = format!("{context} {MENTIONS_STEERING}");
+    }
     Some(serde_json::json!({
         "hookSpecificOutput": { "hookEventName": "SessionStart", "additionalContext": context }
     }))
@@ -140,6 +173,24 @@ fn session_start(sock: &Target, wait: Duration) -> Option<Value> {
 /// daemon that accepts and never answers still costs only `wait` (the thread
 /// ends with the process). `None`: it didn't answer. Every daemon since
 /// native #204 has them; an older one has them where its `docs` flag is on.
+/// Tells the daemon this session heard [`MENTIONS_STEERING`] (#644), for at
+/// most `wait`: a session must never wait on Arugula.
+fn say_mentions_told(sock: &Target, pane: u32, mut hook: Value, wait: Duration) {
+    hook[HOOK_MENTIONS_TOLD] = true.into();
+    let (tx, rx) = std::sync::mpsc::channel();
+    let sock = sock.clone();
+    std::thread::spawn(move || {
+        let _ = request(&sock, "POST", &format!("/api/panes/{pane}/hook"), Some(&hook));
+        let _ = tx.send(());
+    });
+    let _ = rx.recv_timeout(wait);
+}
+
+fn session_driven() -> bool {
+    let env = |k| std::env::var(k).ok();
+    driven(env("CLAUDE_CODE_SESSION_ATTENDED").as_deref(), env("CLAUDE_CODE_ENTRYPOINT").as_deref())
+}
+
 fn docs_on(sock: &Target, wait: Duration) -> Option<bool> {
     let (tx, rx) = std::sync::mpsc::channel();
     let sock = sock.clone();
@@ -176,8 +227,7 @@ fn files_a_github_issue(command: &str) -> bool {
 /// over or there's nothing to wait for.
 pub fn inbox(sock: Target) -> i32 {
     let Some((pane, hook)) = stdin_hook("arugula inbox") else { return 0 };
-    let env = |k| std::env::var(k).ok();
-    if !driven(env("CLAUDE_CODE_SESSION_ATTENDED").as_deref(), env("CLAUDE_CODE_ENTRYPOINT").as_deref()) {
+    if !session_driven() {
         return 0;
     }
     loop {
@@ -186,9 +236,8 @@ pub fn inbox(sock: Target) -> i32 {
             Ok(res) if res.status >= 400 => return 0,
             Ok(res) => {
                 let Ok(InboxAnswer::FollowUp { text, by }) = res.parse() else { return 0 };
-                let name = if by.name.is_empty() { "a teammate" } else { &by.name };
                 let mut err = std::io::stderr().lock();
-                let _ = writeln!(err, "A follow-up from {name} (sent through Arugula): {text}");
+                let _ = writeln!(err, "{}", follow_up_line(&by, &text));
                 let _ = err.flush();
                 return 2;
             }
@@ -219,6 +268,77 @@ fn driven(attended: Option<&str>, entrypoint: Option<&str>) -> bool {
         Some("0") => false,
         Some("1") => true,
         _ => !entrypoint.is_some_and(|e| e.starts_with("sdk-")),
+    }
+}
+
+/// `arugula session-signal` (#396, #453): what the Claude Code mod in
+/// `plugins/claude-code/hooks/live.ts` says about its session from inside it
+/// (a `SessionSignal` on stdin), for the daemon to keep by Claude Code's
+/// session id, with the pane optional. It adds the pane its environment
+/// names (`ARUGULA_PANE`), if any, and its own pid: the daemon shows the
+/// session on that pane only when this runs in the pane's foreground job.
+/// With no pane it finds the daemon all the same (`ARUGULA_SOCK`, else the
+/// default socket). Prints `{pane, session_id, cli_version, daemon_version,
+/// context}` for the mod's status line, or `{error}`; exits 0 when the
+/// daemon took it, 3 when there's nothing to key it by (no session id and
+/// no pane), 1 when it didn't.
+pub fn session_signal(sock: Target) -> i32 {
+    use arugula_proto::{
+        api::{ConversationSignal, SessionSignal, SessionSignaled},
+        op::ops::{ConversationSessionSignal, PaneSessionSignal},
+    };
+    let mut input = String::new();
+    let _ = std::io::stdin().take(1 << 20).read_to_string(&mut input);
+    let say = |v: serde_json::Value| println!("{v}");
+    let signal: SessionSignal = match serde_json::from_str(&input) {
+        Ok(s) => s,
+        Err(e) => {
+            say(serde_json::json!({ "error": format!("not a session signal: {e}") }));
+            return 1;
+        }
+    };
+    let pane = crate::util::env_pane();
+    let session = signal.session_id.clone().filter(|s| !s.is_empty());
+    let by_pane = |signal: &SessionSignal| -> Option<anyhow::Result<SessionSignaled>> {
+        pane.map(|p| call::<PaneSessionSignal>(&sock, &p, signal).map(|got| SessionSignaled { pane: Some(p), ..got }))
+    };
+    let got = match &session {
+        Some(_) => {
+            let req = ConversationSignal { signal: signal.clone(), pane, pid: Some(std::process::id()) };
+            match crate::http::send_op::<ConversationSessionSignal>(&sock, &(), &req) {
+                // A daemon from before #453 has no such route: its pane, as
+                // it was.
+                Ok(r) if matches!(r.status, 404 | 405) => match by_pane(&signal) {
+                    Some(got) => got,
+                    None => Err(anyhow::anyhow!("this Arugula daemon is too old to take a signal from outside a pane")),
+                },
+                Ok(r) => r.parse::<SessionSignaled>(),
+                Err(e) => Err(e),
+            }
+        }
+        None => match by_pane(&signal) {
+            Some(got) => got,
+            None => {
+                say(serde_json::json!({ "error": "no session id, and not in an Arugula pane" }));
+                return 3;
+            }
+        },
+    };
+    match got {
+        Ok(got) => {
+            say(serde_json::json!({
+                "pane": got.pane,
+                "session_id": session,
+                "cli_version": env!("CARGO_PKG_VERSION"),
+                "daemon_version": got.daemon_version,
+                "context": got.context,
+            }));
+            0
+        }
+        Err(e) => {
+            say(serde_json::json!({ "error": format!("{e:#}"), "cli_version": env!("CARGO_PKG_VERSION") }));
+            1
+        }
     }
 }
 

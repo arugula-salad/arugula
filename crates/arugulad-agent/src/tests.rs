@@ -274,7 +274,7 @@ fn a_prompt_queued_while_the_agent_is_down_survives_a_restart() {
     ] {
         inner.rebuild_line(&l);
     }
-    assert_eq!(inner.queue, [Queued { text: "whats this project?".into(), images: vec![], by: None }]);
+    assert_eq!(inner.queue, [Queued { text: "whats this project?".into(), images: vec![], by: None, mention: vec![] }]);
     // Sending it takes it off, here as when it's rebuilt.
     inner.rebuild_line(&frame(
         "out",
@@ -478,6 +478,30 @@ fn an_agent_woken_by_a_background_task_works_until_its_cycle_closes() {
     assert_eq!(g.attention().0, Attention::Done);
 }
 
+#[test]
+fn a_woken_cycle_holds_what_is_queued_until_it_ends() {
+    // #716: a prompt sent into the adapter's own cycle is never answered, so
+    // what's queued waits for the cycle's end, which says to send it. A new
+    // server ends the cycle too.
+    let mut g = rebuilt();
+    g.pending.clear();
+    g.agent_info = json!({ "name": "@agentclientprotocol/claude-agent-acp" });
+    g.on_in(&json!({ "jsonrpc": "2.0", "id": 3, "result": { "stopReason": "end_turn" } }), 2000);
+    let u = |update: Value| json!({ "jsonrpc": "2.0", "method": "session/update", "params": { "update": update } });
+    let chunk = u(json!({ "sessionUpdate": "agent_message_chunk", "content": { "type": "text", "text": "back" } }));
+    g.on_in(&chunk, 2100);
+    assert!(g.autonomous_at.is_some());
+    let close =
+        u(json!({ "sessionUpdate": "usage_update", "_meta": { "_claude/origin": { "kind": "task-notification" } } }));
+    assert_eq!(g.on_in(&close, 2200), vec![Effect::WokenEnded]);
+    assert!(g.autonomous_at.is_none());
+    g.on_in(&chunk, 2300);
+    assert!(g.autonomous_at.is_some());
+    g.on_note(&json!({ "e": "spawn", "argv": ["fake"] }), 2400);
+    assert!(g.autonomous_at.is_none(), "the cycle went with its server");
+    assert_eq!(g.turns.last().and_then(|t| t.ended_ms), Some(2400));
+}
+
 /// M255: a follow-up is credited as it's sent, not as it's queued. Two
 /// queued behind a turn are each named just before their own prompt (not
 /// both at once, ahead of the turn they waited behind), and whose each is
@@ -488,7 +512,7 @@ fn a_queued_prompt_is_credited_to_its_author_as_it_is_sent() {
     for l in &log_lines()[..5] {
         g.rebuild_line(l);
     }
-    let q = |text: &str, by: &str| Queued { text: text.into(), images: vec![], by: Some(by.into()) };
+    let q = |text: &str, by: &str| Queued { text: text.into(), images: vec![], by: Some(by.into()), mention: vec![] };
     g.enqueue(&q("first", "Ada"), false);
     g.enqueue(&q("second", "Bo"), false);
     let said = |g: &Inner| -> Vec<String> {
@@ -528,11 +552,60 @@ fn a_queued_prompt_is_credited_to_its_author_as_it_is_sent() {
     assert_eq!(said(&g), ["A follow-up from Ada", "> first", "A follow-up from Bo", "> second"]);
 
     // The owner's own prompt names nobody.
-    let mine = Queued { text: "mine".into(), images: vec![], by: None };
+    let mine = Queued { text: "mine".into(), images: vec![], by: None, mention: vec![] };
     g.enqueue(&mine, false);
     g.send_prompt(&mine, vec![json!({ "type": "text", "text": "mine" })]);
     assert_eq!(said(&g).last().map(String::as_str), Some("> mine"));
     assert_eq!(said(&g).len(), 5);
+}
+
+/// #580: replies of one thread that wait together are one queued prompt with
+/// all their tags, oldest first; another thread's wait their turn, and a
+/// restart rebuilds the same queue from the log.
+#[test]
+fn replies_of_one_thread_in_the_queue_are_one_prompt_with_every_tag() {
+    let mut g = Inner::new(Config::default(), None);
+    for l in &log_lines()[..5] {
+        g.rebuild_line(l);
+    }
+    let reply = |seq: i64, root: i64| {
+        let thread = agent_mentions::MentionThread {
+            root,
+            head: format!("Thread {root}:"),
+            line: format!("ada: reply {seq}"),
+            tail: "(tail)".into(),
+        };
+        let tag = MentionTag { room: "ch_x".into(), seq, headline: String::new(), thread: Some(thread) };
+        Queued { text: format!("framed {seq}"), images: vec![], by: None, mention: vec![tag] }
+    };
+    let seqs = |q: &Queued| q.mention.iter().map(|t| t.seq).collect::<Vec<_>>();
+    for (seq, root) in [(11, 10), (21, 20), (12, 10)] {
+        g.enqueue(&reply(seq, root), false);
+    }
+    assert_eq!(g.queue.len(), 2);
+    assert_eq!(seqs(&g.queue[0]), [11, 12]);
+    assert_eq!(g.queue[0].text, "Thread 10:\nada: reply 11\nada: reply 12\n\n(tail)");
+    assert_eq!((seqs(&g.queue[1]), g.queue[1].text.as_str()), (vec![21], "framed 21"));
+
+    // The same log, rebuilt, comes out the same.
+    let mut again = Inner::new(Config::default(), None);
+    for l in &log_lines()[..5] {
+        again.rebuild_line(l);
+    }
+    for (seq, root) in [(11, 10), (21, 20), (12, 10)] {
+        let q = reply(seq, root);
+        again.rebuild_line(&frame(
+            "note",
+            json!({ "e": "queue", "text": q.text, "images": [], "front": false, "mention": q.mention[0].to_json() }),
+        ));
+    }
+    assert_eq!(again.queue, g.queue);
+
+    // Sending the first takes it off whole; the other thread stays.
+    let next = g.queue.front().cloned().unwrap();
+    g.send_prompt(&next, vec![json!({ "type": "text", "text": next.text })]);
+    assert_eq!(g.queue.len(), 1);
+    assert_eq!(seqs(&g.queue[0]), [21]);
 }
 
 /// Arugula #215: a turn's result is its final message, exactly, though the
@@ -643,4 +716,20 @@ fn a_model_word_names_one_of_its_models() {
     now[0]["currentValue"] = json!("opus");
     g.on_in(&u(json!({ "sessionUpdate": "config_option_update", "configOptions": now })), 2100);
     assert_eq!(g.model_name().as_deref(), Some("Opus 5.5"), "switched");
+}
+
+#[test]
+fn the_adapters_window_from_a_result_is_the_sessions() {
+    // #444: the transcript never says the window; claude-agent-acp's
+    // result `usage_update` has the SDK's. Mid-turn ones may carry a guess.
+    let mut g = rebuilt();
+    let u = |update: Value| json!({ "jsonrpc": "2.0", "method": "session/update", "params": { "update": update } });
+    let result = json!({ "sessionUpdate": "usage_update", "used": 5, "size": 1_000_000, "cost": { "amount": 1.0 } });
+    g.on_in(&u(result.clone()), 2000);
+    assert_eq!(g.engine_window, None, "not claude-agent-acp's");
+    g.agent_info = json!({ "name": "@agentclientprotocol/claude-agent-acp" });
+    g.on_in(&u(json!({ "sessionUpdate": "usage_update", "used": 5, "size": 200_000 })), 2100);
+    assert_eq!(g.engine_window, None, "a mid-turn update's size may be a guess");
+    g.on_in(&u(result), 2200);
+    assert_eq!(g.engine_window, Some(1_000_000));
 }

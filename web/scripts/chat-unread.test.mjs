@@ -6,7 +6,8 @@
 // --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bold, counted, chatUnread, listedInChat, objectUnread, projectUnread, threadNews } from "../src/shared/chat/unread.ts";
+import { chatTeam } from "../src/platform/chat-scope.ts";
+import { bold, counted, chatUnread, dockBadge, listedInChat, objectUnread, projectUnread, threadNews } from "../src/shared/chat/unread.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
 const Q = "prj_00112233445566778899aabbccddeeff";
@@ -70,12 +71,23 @@ test("a project's Chat counts its own chat's rooms: a team's, or Personal's (UI 
 
 test("an issue's or a run's row counts its own thread", () => {
   const rooms = [thread("iss_a", { unread: 3 }), thread("run_b", { unread: 2, mentions: 1 }), room("pane", { target: "iss_a", unread: 7 })];
-  assert.deepEqual({ ...objectUnread(rooms, "iss_a"), room: undefined }, { n: 3, mention: false, room: undefined });
+  assert.deepEqual({ ...objectUnread(rooms, "iss_a"), room: undefined }, { n: 3, mention: false, quiet: 0, room: undefined });
   assert.equal(objectUnread(rooms, "iss_a").room?.id, rooms[0].id);
   assert.equal(objectUnread(rooms, "run_b").mention, true);
   // Nobody's opened its thread: nothing.
-  assert.deepEqual(objectUnread(rooms, "iss_none"), { n: 0, mention: false, room: undefined });
+  assert.deepEqual(objectUnread(rooms, "iss_none"), { n: 0, mention: false, quiet: 0, room: undefined });
   assert.equal(objectUnread([thread("iss_m", { unread: 5, mentions: 0, muted: true })], "iss_m").n, 0);
+});
+
+test("a thread that asks nothing of the reader is a dot on its row, in no count", () => {
+  const quiet = thread("iss_q", { level: "mentions", unread: 3, wants: 0 });
+  const asks = thread("iss_a", { level: "mentions", unread: 4, wants: 1 });
+  const rooms = [quiet, asks];
+  assert.deepEqual({ ...objectUnread(rooms, "iss_q"), room: undefined }, { n: 0, mention: false, quiet: 3, room: undefined });
+  assert.deepEqual({ ...objectUnread(rooms, "iss_a"), room: undefined }, { n: 1, mention: false, quiet: 0, room: undefined });
+  assert.equal(objectUnread([{ ...quiet, level: "nothing" }], "iss_q").quiet, 0);
+  assert.deepEqual(projectUnread(rooms, P, "iss_"), { n: 1, mention: false });
+  assert.deepEqual(threadNews(rooms, []).map((r) => r.target), ["iss_a"]);
 });
 
 test("a project's Issues and Runs places sum their threads", () => {
@@ -127,7 +139,41 @@ test("a channel on mentions counts its mentions and shows its other unread as bo
   assert.deepEqual([counted({ ...none, mentions: 0 }), bold({ ...none, mentions: 0 })], [0, false]);
   // A DM, a pane's thread and an object's keep counting everything.
   for (const k of ["dm", "pane", "session"]) assert.equal(counted(room(k, { level: "mentions", unread: 3 })), 3, k);
-  assert.equal(counted(thread("iss_x", { level: "mentions", unread: 2 })), 2);
+  // An object's thread counts what wants the reader, unless they asked for it all.
+  const asks = thread("iss_x", { level: "mentions", unread: 5, wants: 2 });
+  assert.equal(counted(asks), 2);
+  assert.equal(counted({ ...asks, level: "all" }), 5);
+  assert.equal(counted(thread("iss_x", { level: "mentions", unread: 2 })), 2, "a server from before `wants`");
   // The Chat button follows: a quiet channel adds nothing.
   assert.deepEqual(chatUnread([quiet, room("dm", { level: "all", unread: 1 })]), { n: 1, mention: false });
+});
+
+test("the Chat count is the current team's: the route's project's, else the current one's (#883)", () => {
+  const acme = { team: { id: "t1" } };
+  const other = { team: { id: "t2" } };
+  const mine = {};
+  assert.equal(chatTeam(acme, other), "t1");
+  // Personal on the route counts the rooms of no team, as before.
+  assert.equal(chatTeam(mine, acme), null);
+  // Off a project's pages: the current project's team, else every room.
+  assert.equal(chatTeam(undefined, other), "t2");
+  assert.equal(chatTeam(undefined, mine), undefined);
+  assert.equal(chatTeam(undefined, undefined), undefined);
+  const rooms = [room("channel", { unread: 2, team: "t1" }), room("channel", { unread: 5, team: "t2" }), room("pane", { unread: 1 })];
+  assert.equal(chatUnread(rooms, chatTeam(undefined, acme)).n, 2);
+  assert.equal(chatUnread(rooms, chatTeam(undefined, undefined)).n, 8);
+});
+
+test("the Dock badge (#498): a number for mentions and DMs, a dot for unread alone, nothing when read", () => {
+  // A channel on the default level: its messages are a dot, its mentions a number.
+  assert.deepEqual(dockBadge([room("channel", { level: "mentions", unread: 4 })]), { count: 0, unread: true });
+  assert.deepEqual(dockBadge([room("channel", { level: "mentions", unread: 4, mentions: 2 })]), { count: 2, unread: true });
+  // A DM counts every message, in any project.
+  assert.deepEqual(dockBadge([room("dm", { level: "mentions", unread: 3, team: "t2" })]), { count: 3, unread: true });
+  // A muted room: only its mentions, and no dot for the rest.
+  assert.deepEqual(dockBadge([room("channel", { level: "nothing", unread: 9 })]), { count: 0, unread: false });
+  assert.deepEqual(dockBadge([room("channel", { level: "nothing", unread: 9, mentions: 1 })]), { count: 1, unread: true });
+  // An object's thread is its list's and the inbox's, not chat's.
+  assert.deepEqual(dockBadge([thread("iss_a", { unread: 4, mentions: 4 })]), { count: 0, unread: false });
+  assert.deepEqual(dockBadge([]), { count: 0, unread: false });
 });

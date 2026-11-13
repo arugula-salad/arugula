@@ -18,6 +18,11 @@
 //! someone who ran `install` and then added the plugin gets each hook once.
 //! `status` names the plugin when settings enable it, and `install` then
 //! adds only the permission rules.
+//!
+//! The plugin also carries live session signals (#447, aru-128): a Claude
+//! Code mod, `hooks/live.ts`, behind the plugin's `live` option, off by
+//! default. `install` and `status` say whether it's on and how to turn it
+//! on; neither turns it on.
 
 use std::{
     fs,
@@ -57,6 +62,17 @@ pub const HOOKS_SNIPPET: &str = r#"{
 /// lists it as `arugula@<marketplace>`.
 pub const PLUGIN: &str = "arugula";
 
+/// The plugin's option for live session signals (#447): a `userConfig`
+/// field in its plugin.json, off by default. Claude Code keeps its value in
+/// settings.json's `pluginConfigs.<plugin key>.options`.
+const LIVE: &str = "live";
+
+/// The events `hooks/live.ts` hooks, pinned: Claude Code refuses the whole
+/// module for an `on(...)` name it doesn't know (#449), so a rename in the
+/// mod API is a change here first. `session.measure` was `session.usage`.
+#[cfg(test)]
+const LIVE_EVENTS: &[&str] = &["session.start", "turn.step", "session.measure", "session.compact"];
+
 /// How Claude Code names the plugin's MCP tools: `mcp__plugin_<plugin>_<server>__`,
 /// where the plugin's .mcp.json names its server `arugula` too.
 const PLUGIN_TOOLS: &str = "mcp__plugin_arugula_arugula__";
@@ -64,8 +80,8 @@ const PLUGIN_TOOLS: &str = "mcp__plugin_arugula_arugula__";
 /// The `permissions.allow` rules `install` adds by default (#655): what only
 /// reads. Claude Code's `Bash(prefix:*)` matches a command that starts with
 /// the prefix, so each is one subcommand and never `Bash(arugula:*)`. `hosts`
-/// and `shares` are exact, with no `:*`: `hosts add|rm|token|revoke` and
-/// `shares revoke` change things. `attention` sets attention, so it is in
+/// `shares` and `links` are exact, with no `:*`: `hosts add|rm|token|revoke`,
+/// `shares revoke` and `links revoke` change things. `attention` sets attention, so it is in
 /// neither tier.
 const READ_RULES: &[&str] = &[
     "Bash(arugula ls:*)",
@@ -82,6 +98,7 @@ const READ_RULES: &[&str] = &[
     "Bash(arugula hooks status:*)",
     "Bash(arugula hosts)",
     "Bash(arugula shares)",
+    "Bash(arugula links)",
     // M216: reading runs. Starting one is `arugula run:*`'s prefix, which
     // is acting (and the CLI refuses an agent's start).
     "Bash(arugula runs list:*)",
@@ -103,6 +120,7 @@ const READ_RULES: &[&str] = &[
     "mcp__arugula__read_cloud",
     "mcp__arugula__read_thread",
     "mcp__arugula__search_threads",
+    "mcp__arugula__board_read",
     "mcp__arugula__read_run",
     "mcp__arugula__read_deploy",
     "mcp__arugula__read_session",
@@ -155,10 +173,14 @@ const ACTING_RULES: &[&str] = &[
     "mcp__arugula__link_repo",
     "mcp__arugula__post_thread",
     "mcp__arugula__issue_write",
+    "mcp__arugula__board_write",
     "mcp__arugula__start_run",
     "mcp__arugula__plan_deploy",
     "mcp__arugula__session_start",
     "mcp__arugula__session_reply",
+    "mcp__arugula__session_stop",
+    "mcp__arugula__tracker_write",
+    "mcp__arugula__link",
 ];
 
 #[derive(Subcommand)]
@@ -202,7 +224,10 @@ pub fn run(cmd: HooksCmd, json_out: bool) -> anyhow::Result<i32> {
         HooksCmd::Install { project, dry_run, allow_acting } => {
             install_for(&settings_path(project)?, dry_run, allow_acting, plugin_for_user(), json_out)
         }
-        HooksCmd::Status { project } => status_for(&settings_path(project)?, json_out, plugin_for_user()),
+        HooksCmd::Status { project } => {
+            let install = install_command(project.as_deref());
+            status_for(&settings_path(project)?, &install, json_out, plugin_for_user())
+        }
     }
     .map(|()| 0)
 }
@@ -238,6 +263,35 @@ fn plugin_enabled(settings: &Value) -> Option<String> {
         .iter()
         .find(|(k, v)| k.split_once('@').is_some_and(|(name, _)| name == PLUGIN) && v.as_bool() == Some(true))
         .map(|(k, _)| k.clone())
+}
+
+/// Whether `settings` turn the plugin's live session signals on for
+/// `plugin` (its `enabledPlugins` key). A value set from a shell (`claude
+/// plugin configure --values-stdin`) is stored as given, so `"true"` counts.
+fn live_on(settings: &Value, plugin: &str) -> bool {
+    let v = &settings["pluginConfigs"][plugin]["options"][LIVE];
+    *v == json!(true) || *v == json!("true")
+}
+
+/// Whether the user's settings turn live session signals on for `plugin`.
+fn live_for_user(plugin: &str) -> bool {
+    user_settings().iter().filter_map(|p| read_settings(p).ok()).any(|s| live_on(&s, plugin))
+}
+
+/// What `install` says about live session signals (#447): with the plugin
+/// and the option off, how to turn it on; without the plugin, that the
+/// plugin has it. Nothing once it's on.
+fn live_offer(plugin: Option<&str>, live: bool) -> Option<String> {
+    match plugin {
+        Some(_) if live => None,
+        Some(p) => Some(format!(
+            "Live session signals are off (opt in: the context window's fill, the model and compactions, on the pane and in Claude Code's status line; Claude Code 2.1.286+, verified in a terminal only). To turn them on: /config in Claude Code, \"Live session signals\", or `echo '{{\"live\":\"true\"}}' | claude plugin configure {p} --values-stdin`."
+        )),
+        None => Some(
+            "Claude Code's plugin (`/plugin marketplace add arugula-salad/arugula`, then `/plugin install arugula@arugula`) brings these hooks and, opt in, live session signals: the context window's fill, the model and compactions, on the pane."
+                .to_owned(),
+        ),
+    }
 }
 
 /// The plugin, when the user's settings enable it (a project's settings.json
@@ -456,7 +510,23 @@ fn install(path: &Path, dry_run: bool, allow_acting: bool) -> anyhow::Result<()>
 /// What `install --json` says it did: Getting started's "Use Claude Code
 /// with Arugula" runs it and says so in its own words.
 fn said_json(path: &Path, merged: &Merged, plugin: Option<&str>) -> Value {
-    json!({ "settings": path, "hooks_added": merged.added, "rules_added": merged.allowed, "plugin": plugin })
+    json!({
+        "settings": path, "hooks_added": merged.added, "rules_added": merged.allowed, "plugin": plugin,
+        "blocked": blocked_json(path),
+    })
+}
+
+/// #395: what stops Claude Code running the hooks in `path` (the settings
+/// it reads), if anything.
+fn blocked(path: &Path) -> Option<arugula_proto::claude_policy::HooksBlocked> {
+    arugula_proto::claude_policy::hooks_blocked(Some(path))
+}
+
+/// [`blocked`] as JSON: the file, the key, whether it's managed, and the
+/// sentence that says so (`says`); null when nothing blocks them.
+fn blocked_json(path: &Path) -> Value {
+    blocked(path)
+        .map_or(Value::Null, |b| json!({ "file": b.file, "key": b.key, "managed": b.managed, "says": b.says() }))
 }
 
 /// `install`, where the user's settings may enable the plugin (`plugin`, its
@@ -489,8 +559,13 @@ fn install_for(
         print!("{text}");
         return Ok(());
     }
+    let live = plugin.as_deref().is_some_and(|p| live_on(&settings, p) || live_for_user(p));
+    let offer = live_offer(plugin.as_deref(), live);
+    let warn = blocked(path).map(|b| b.says());
     if !merged.changed() && path.exists() {
         println!("{}: the hooks and permission rules are already there", path.display());
+        offer.iter().for_each(|o| println!("{o}"));
+        warn.iter().for_each(|w| println!("{w}"));
         return Ok(());
     }
     write_atomic(path, &text)?;
@@ -506,6 +581,8 @@ fn install_for(
         });
     }
     println!("{}: {}", path.display(), said.join("; "));
+    offer.iter().for_each(|o| println!("{o}"));
+    warn.iter().for_each(|w| println!("{w}"));
     Ok(())
 }
 
@@ -565,6 +642,89 @@ fn tiers(settings: &Value) -> (Tier, Tier) {
     (tier(&default), tier(ACTING_RULES))
 }
 
+/// #906: what's left to install when Arugula's hooks are only partly
+/// there: an older `install` (before SessionStart's `arugula hook`, say)
+/// or a hand edit. `status`, `arugula status` and Getting started say it,
+/// with the one command that finishes the job. Not there at all is an
+/// offer, not this; the acting rules are a choice, so they never count.
+#[derive(Debug, Clone, PartialEq)]
+struct Partly {
+    /// Events with none of Arugula's entries.
+    missing: Vec<String>,
+    /// Events with some of Arugula's entries but not all.
+    outdated: Vec<String>,
+    /// Some of the default tier's permission rules, not all.
+    rules: bool,
+}
+
+/// Whether `settings` (with the plugin bringing the hooks: `plugin`) has
+/// Arugula's hooks only in part. `None` when they're all there, and when
+/// none are (nothing installed is an offer, said elsewhere).
+fn partly(settings: &Value, plugin: bool) -> Option<Partly> {
+    let mut any = plugin;
+    let (mut missing, mut outdated) = (vec![], vec![]);
+    for (event, wanted) in snippet() {
+        let groups = settings["hooks"][event.as_str()].as_array().map(Vec::as_slice).unwrap_or_default();
+        let wanted = wanted.as_array().cloned().unwrap_or_default();
+        let has = wanted.iter().filter(|w| has_group(groups, w)).count();
+        any |= has > 0;
+        if plugin || has == wanted.len() {
+            continue;
+        }
+        (if has == 0 { &mut missing } else { &mut outdated }).push(event);
+    }
+    let rules = tiers(settings).0 == Tier::Partial;
+    (any && (!missing.is_empty() || !outdated.is_empty() || rules)).then_some(Partly { missing, outdated, rules })
+}
+
+/// "A", "A and B", "A, B and C".
+fn and_list(items: &[String]) -> String {
+    match items {
+        [] => String::new(),
+        [one] => one.clone(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    }
+}
+
+impl Partly {
+    /// One sentence for a person: what's missing from `file`, and `install`
+    /// (the command that adds it).
+    fn says(&self, file: &str, install: &str) -> String {
+        let mut what = vec![];
+        let are = |n: usize| if n == 1 { "is" } else { "are" };
+        if !self.missing.is_empty() {
+            what.push(format!("{} {} missing", and_list(&self.missing), are(self.missing.len())));
+        }
+        if !self.outdated.is_empty() {
+            what.push(format!("{} {} out of date", and_list(&self.outdated), are(self.outdated.len())));
+        }
+        if self.rules {
+            what.push("some read-only permission rules are missing".into());
+        }
+        format!(
+            "Arugula's hooks are only partly installed in {file}: {}. `{install}` adds the rest and changes nothing else.",
+            and_list(&what)
+        )
+    }
+}
+
+/// `path` with the home directory as `~`, as a person reads it.
+fn tilde(path: &Path) -> String {
+    match home().ok().and_then(|h| path.strip_prefix(&h).ok().map(Path::to_owned)) {
+        Some(rest) => format!("~/{}", rest.display()),
+        None => path.display().to_string(),
+    }
+}
+
+/// The command that installs into `path`: the user's settings, or a
+/// project's (`DIR/.claude/settings.json`).
+fn install_command(project: Option<&Path>) -> String {
+    match project {
+        Some(dir) => format!("arugula hooks install --project {}", dir.display()),
+        None => "arugula hooks install".into(),
+    }
+}
+
 /// A `.claude.json` with an MCP server named `arugula` that isn't the
 /// plugin's own command (`arugula mcp`, which Claude Code counts as the same
 /// server): beside the plugin, Claude Code runs both and lists every tool
@@ -582,24 +742,36 @@ fn manual_mcp_beside_plugin() -> Option<PathBuf> {
 
 /// `status`, where the user's settings may enable the plugin (`plugin`, its
 /// `enabledPlugins` key).
-fn status_for(path: &Path, json_out: bool, plugin: Option<String>) -> anyhow::Result<()> {
+/// `install`: the command that installs into `path`, for what's said.
+fn status_for(path: &Path, install: &str, json_out: bool, plugin: Option<String>) -> anyhow::Result<()> {
     let settings = read_settings(path)?;
     let plugin = plugin_enabled(&settings).or(plugin);
     let events = present(&settings);
     let (read, acting) = tiers(&settings);
     let installed = plugin.is_some() || events.iter().all(|(_, h)| *h != Has::Missing);
+    let live = plugin.as_deref().map(|p| live_on(&settings, p) || live_for_user(p));
+    let block = blocked(path);
+    // #906: blocked by a policy, installing the rest wouldn't help: that's said instead.
+    let partial = partly(&settings, plugin.is_some()).filter(|_| block.is_none());
+    let partial_says = partial.as_ref().map(|p| p.says(&tilde(path), install));
     if json_out {
         let map: Map<String, Value> =
             events.iter().map(|(e, h)| (e.clone(), Value::Bool(*h != Has::Missing))).collect();
         let permissions = json!({ "read": read.says(), "acting": acting.says() });
+        let partial = partial
+            .as_ref()
+            .map(|p| json!({ "missing": p.missing, "outdated": p.outdated, "rules": p.rules, "says": partial_says }));
         let v = json!({
             "settings": path, "installed": installed, "events": map, "permissions": permissions,
-            "plugin": plugin,
+            "plugin": plugin, "live": live, "blocked": blocked_json(path), "partial": partial,
         });
         println!("{}", serde_json::to_string_pretty(&v).unwrap_or_default());
         return Ok(());
     }
     println!("{}", path.display());
+    if let Some(b) = &block {
+        println!("  blocked: {}", b.says());
+    }
     for (event, h) in &events {
         let says = match h {
             Has::Present => "present",
@@ -611,20 +783,30 @@ fn status_for(path: &Path, json_out: bool, plugin: Option<String>) -> anyhow::Re
     if let Some(p) = &plugin {
         println!("Claude Code plugin");
         println!("  {p:<20} enabled: its hooks run where settings.json doesn't have the same one");
+        println!("  {:<20} {}", LIVE, if live == Some(true) { "on: live session signals" } else { "off (opt in)" });
     }
     println!("permissions.allow");
     println!("  {:<20} {}", "read", read.says());
     println!("  {:<20} {}", "acting", acting.says());
-    if !installed {
-        println!("`arugula hooks install` adds the missing ones (or install the Claude Code plugin).");
-    }
-    if read != Tier::Present {
-        println!("`arugula hooks install` adds the read-only permission rules.");
+    if let Some(says) = &partial_says {
+        println!("{says}");
+    } else if block.is_none() {
+        if !installed {
+            println!("`{install}` adds the missing ones (or install the Claude Code plugin).");
+        }
+        if read != Tier::Present {
+            println!("`{install}` adds the read-only permission rules.");
+        }
     }
     if acting != Tier::Present {
         println!(
-            "`arugula hooks install --allow-acting` adds the acting ones (an agent can then start agents and type into panes without asking)."
+            "`{install} --allow-acting` adds the acting ones (an agent can then start agents and type into panes without asking)."
         );
+    }
+    if let (Some(p), Some(false)) = (&plugin, live)
+        && let Some(o) = live_offer(Some(p), false)
+    {
+        println!("{o}");
     }
     if plugin.is_some()
         && let Some(c) = manual_mcp_beside_plugin()
@@ -721,7 +903,11 @@ mod tests {
         assert!(present(&v).iter().all(|(_, h)| *h == Has::Present));
         let m = merge(&mut v, false).unwrap();
         let said = said_json(&path, &m, None);
-        assert_eq!(said, json!({ "settings": path, "hooks_added": false, "rules_added": false, "plugin": null }));
+        // `blocked` is this machine's (#395): tests/hooks_blocked.rs pins it.
+        assert_eq!(
+            said,
+            json!({ "settings": path, "hooks_added": false, "rules_added": false, "plugin": null, "blocked": blocked_json(&path) })
+        );
         let fresh = said_json(&path, &Merged { added: true, allowed: true }, Some("arugula@arugula"));
         assert_eq!((fresh["hooks_added"].clone(), fresh["plugin"].clone()), (json!(true), json!("arugula@arugula")));
     }
@@ -871,6 +1057,7 @@ mod tests {
             "Bash(arugula hooks status:*)",
             "Bash(arugula hosts)",
             "Bash(arugula shares)",
+            "Bash(arugula links)",
             "Bash(arugula runs list:*)",
             "Bash(arugula runs ls:*)",
             "Bash(arugula runs show:*)",
@@ -887,6 +1074,7 @@ mod tests {
             "mcp__arugula__read_cloud",
             "mcp__arugula__read_thread",
             "mcp__arugula__search_threads",
+            "mcp__arugula__board_read",
             "mcp__arugula__read_run",
             "mcp__arugula__read_deploy",
             "mcp__arugula__read_session",
@@ -1026,6 +1214,53 @@ mod tests {
         }
     }
 
+    /// #906: some hooks there and some not (or some read rules) is partial,
+    /// and says which; all, or none, isn't; the acting rules never count.
+    #[test]
+    fn partly_installed_says_what_is_left() {
+        let (full, _) = merged(MINE);
+        assert_eq!(partly(&full, false), None, "all there");
+        assert_eq!(partly(&serde_json::from_str(MINE).unwrap(), false), None, "none: an offer, said elsewhere");
+        assert_eq!(partly(&json!({}), false), None);
+
+        // Jake's: every hook but SessionStart, and a read rule short.
+        let mut v = full.clone();
+        v["hooks"].as_object_mut().unwrap().remove("SessionStart");
+        v["permissions"]["allow"].as_array_mut().unwrap().retain(|r| r != READ_RULES[2]);
+        let p = partly(&v, false).unwrap();
+        assert_eq!(p, Partly { missing: vec!["SessionStart".into()], outdated: vec![], rules: true });
+        assert_eq!(
+            p.says("~/.claude/settings.json", "arugula hooks install"),
+            "Arugula's hooks are only partly installed in ~/.claude/settings.json: SessionStart is missing and some read-only permission rules are missing. `arugula hooks install` adds the rest and changes nothing else."
+        );
+
+        // An older install: SessionStart had only `arugula inbox`, and Notification is gone.
+        let mut v = full.clone();
+        v["hooks"]["SessionStart"].as_array_mut().unwrap().retain(|g| g["hooks"][0]["command"] != "arugula hook");
+        v["hooks"].as_object_mut().unwrap().remove("Notification");
+        v["hooks"].as_object_mut().unwrap().remove("PostToolUse");
+        let p = partly(&v, false).unwrap();
+        assert_eq!((p.outdated.clone(), p.rules), (vec!["SessionStart".to_owned()], false));
+        assert_eq!(p.missing, ["Notification", "PostToolUse"]);
+        let says = p.says("/x/settings.json", "arugula hooks install --project /x");
+        assert!(
+            says.contains(": Notification and PostToolUse are missing and SessionStart is out of date. `arugula hooks install --project /x` adds"),
+            "{says}"
+        );
+
+        // Only the read rules short: still partial. Acting rules missing: a choice, not partial.
+        let mut v = full.clone();
+        v["permissions"]["allow"].as_array_mut().unwrap().retain(|r| r != READ_RULES[0]);
+        assert_eq!(partly(&v, false).map(|p| p.rules), Some(true));
+        assert_eq!(tiers(&full).1, Tier::Missing);
+
+        // The plugin brings the hooks: only the rules can be partial.
+        let rules_only = json!({ "permissions": { "allow": [READ_RULES[0]] } });
+        assert_eq!(partly(&rules_only, false), None, "no hook at all: not installed");
+        assert_eq!(partly(&rules_only, true).map(|p| (p.missing.len(), p.rules)), Some((0, true)));
+        assert_eq!(partly(&json!({ "permissions": full["permissions"] }), true), None);
+    }
+
     #[test]
     fn status_says_present_partial_or_missing_per_tier() {
         let none: Value = serde_json::from_str(MINE).unwrap();
@@ -1124,7 +1359,52 @@ mod tests {
         .unwrap();
         assert_eq!(market["plugins"][0]["name"], PLUGIN);
         assert_eq!(market["plugins"][0]["source"], "./plugins/claude-code");
+        assert_eq!(market["plugins"].as_array().unwrap().len(), 1, "one plugin: live signals are its option (#447)");
         assert!(Path::new(PLUGIN_DIR).join("skills/arugula/SKILL.md").is_file());
+    }
+
+    /// #447/#449: the live session signals mod is the plugin's one hooks
+    /// module, behind its `live` option, off by default; it hooks exactly
+    /// LIVE_EVENTS (Claude Code refuses the whole module for a name it
+    /// doesn't know), never a `classic.*` event, and does nothing unless the
+    /// option is on.
+    #[test]
+    fn plugin_live_module_is_opt_in_and_pinned() {
+        assert_eq!(plugin_file("hooks/hooks.json")["modules"], json!(["./live.ts"]));
+        let option = &plugin_file(".claude-plugin/plugin.json")["userConfig"][LIVE];
+        assert_eq!((&option["type"], &option["default"]), (&json!("boolean"), &json!(false)), "{option}");
+        let module = fs::read_to_string(format!("{PLUGIN_DIR}/hooks/live.ts")).unwrap();
+        let hooked: Vec<&str> =
+            module.split("on('").skip(1).filter_map(|rest| rest.split_once('\'')).map(|(name, _)| name).collect();
+        // Exactly these, so no `classic.*` one either (aru-128).
+        assert_eq!(hooked, LIVE_EVENTS, "the events live.ts hooks");
+        assert!(!module.contains("on(\""), "every on(...) name in single quotes, so this test sees it");
+        let gate = module.find("if (options.live !== true && options.live !== 'true') return").expect("the live gate");
+        assert!(gate < module.find("on('").unwrap(), "the gate comes before the first hook");
+    }
+
+    #[test]
+    fn live_is_read_from_plugin_configs_and_offered_until_on() {
+        let p = "arugula@arugula";
+        let with = |v: Value| json!({ "pluginConfigs": { p: { "options": { "live": v } } } });
+        assert!(live_on(&with(json!(true)), p));
+        assert!(live_on(&with(json!("true")), p), "as `claude plugin configure --values-stdin` stores it");
+        for off in [
+            with(json!(false)),
+            with(json!("false")),
+            json!({}),
+            json!({ "pluginConfigs": { "arugula@x": { "options": { "live": true } } } }),
+        ] {
+            assert!(!live_on(&off, p), "{off}");
+        }
+        assert_eq!(live_offer(Some(p), true), None);
+        let off = live_offer(Some(p), false).unwrap();
+        assert!(
+            off.contains("claude plugin configure arugula@arugula --values-stdin") && off.contains("/config"),
+            "{off}"
+        );
+        assert!(off.contains(r#"echo '{"live":"true"}'"#), "{off}");
+        assert!(live_offer(None, false).unwrap().contains("/plugin install arugula@arugula"));
     }
 
     #[test]

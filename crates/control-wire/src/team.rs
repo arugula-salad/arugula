@@ -39,7 +39,9 @@ pub const LOCAL_ONLY_FLAGS: &[&str] = &["guest-ssh", "agent-delegation"];
 /// Labs flags that were renamed (aru-117): the old name, then the new.
 /// Control stores and pushes the new name, takes the old one from an older
 /// page, and pushes it beside the new for a daemon from before the rename.
-/// The daemon's tests check this is `arugula_proto::flags::ALIASES`.
+/// The daemon's tests check this is `arugula_proto::flags::ALIASES`, but
+/// for `forges`: its flag left Labs (native #523), and the pair stays for
+/// daemons from before that, which still have it.
 pub const FLAG_ALIASES: &[(&str, &str)] = &[
     ("vms", "sandbox-providers"),
     ("workspaces", "chant-workspaces"),
@@ -52,10 +54,18 @@ pub const FLAG_ALIASES: &[(&str, &str)] = &[
 /// page offers the account's Labs flags only to people with such a machine.
 pub const DEV_SETTINGS: &str = "dev-settings";
 
+/// What a machine joined to the account alone is sent in `team` when any
+/// of the account's teams turned chat on (native #673): the platform reads
+/// chat per account that way, so the machine's reader lists and threads
+/// follow it. It is not `chat`, so an older daemon doesn't take it for its
+/// own account's word.
+pub const CHAT_HEARD: &str = "chat-heard";
+
 /// Labs flags control sends a machine (#347): its account's, and its
 /// team's if it's a team's machine, by flag name. On or off; a flag
 /// neither names follows the machine's own default. The daemon's own
-/// `flags.json` wins over both, and account over team.
+/// `flags.json` wins over both, and account over team. A personal
+/// machine's `team` holds only [`CHAT_HEARD`], when it applies.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Flags {
@@ -83,9 +93,10 @@ pub struct TeamAnswer {
     pub names: BTreeMap<String, String>,
 }
 
-/// What control answers a machine that isn't in a team: `{"team": null}`.
-/// A daemon only asks once it has pinned one, and reads this as it always
-/// has, as an answer [`TeamAnswer`] can't parse.
+/// What control answered a machine that isn't in a team, before it
+/// answered an empty [`TeamAnswer`] (no team, rosters or certificates) a
+/// daemon parses and keeps what it has by: `{"team": null}`, which a
+/// daemon read as an answer it can't parse.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct TeamNone {

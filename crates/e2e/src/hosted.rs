@@ -15,6 +15,13 @@
 //! everything control signs under it from then on; what it signed before
 //! stays, as with a revoked device's approvals.
 //!
+//! **A revoked delegation stays revoked** (aru-095). Control judges a revoke
+//! once, as it arrives, by who's an owner then and by its own clock. From
+//! then on it says the delegation ended ([`DelegationClosed`]), signed with
+//! the key the delegation names: the delegate giving up what it was given,
+//! which needs nobody's authority and only ever makes an answer a refusal.
+//! Whoever checks keeps that word ([`HeldClosures`]).
+//!
 //! What's signed is a fixed line format, as for certificates:
 //!
 //! ```text
@@ -35,6 +42,13 @@
 //! ```
 //!
 //! ```text
+//! arugula project delegation closed v1
+//! project <prj_ id>
+//! delegation <delegation id>
+//! at <ms>
+//! ```
+//!
+//! ```text
 //! arugula hosted machine v1
 //! project <prj_ id>
 //! owner team:<id>|account:<id>
@@ -46,6 +60,8 @@
 //! sign <hex>
 //! created <ms>
 //! ```
+
+use std::collections::BTreeMap;
 
 use anyhow::ensure;
 use ed25519_dalek::{Signer, SigningKey};
@@ -185,15 +201,178 @@ impl DelegationRevoke {
     /// It takes back `d`, signed by a device that may sign for `d`'s
     /// project (any of its owners, not only the one who delegated).
     pub fn revokes(&self, d: &Delegation, owners: &Owners) -> bool {
-        self.project == d.project
+        self.at <= MAX_TIME
+            && self.project == d.project
             && self.delegation == d.id()
             && owners.may_sign(&d.owner, &self.by, &self.body(), &self.sig)
     }
 }
 
-/// Control's hosted key: it signs hosted machines' certificates and
-/// public previews' grants (M187, [`crate::preview`]), each under a first
-/// line of its own, and nothing else. A delegation names its public half.
+/// Control's own word that a delegation ended, signed with the key the
+/// delegation names. `at` is control's clock, or the earliest revoke's own
+/// time when that's before it. Control sends it beside the revokes it took.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct DelegationClosed {
+    pub project: String,
+    /// The delegation's [`Delegation::id`].
+    pub delegation: String,
+    pub at: u64,
+    pub sig: String,
+}
+
+impl DelegationClosed {
+    pub fn body(&self) -> String {
+        format!(
+            "arugula project delegation closed v1\nproject {}\ndelegation {}\nat {}\n",
+            self.project, self.delegation, self.at
+        )
+    }
+
+    /// It ends `d`, signed with the key `d` names.
+    pub fn closes(&self, d: &Delegation) -> bool {
+        self.at <= MAX_TIME
+            && self.project == d.project
+            && self.delegation == d.id()
+            && verify_hex(&d.key, self.body().as_bytes(), &self.sig)
+    }
+}
+
+/// The largest time these papers take, 2^53 - 1: the browser reads a JSON
+/// number as a double, and signs and checks the digits it makes of it.
+pub const MAX_TIME: u64 = (1 << 53) - 1;
+
+/// A time as these papers read one, here and in the browser's copy
+/// (`hosted.ts`): a JSON number whose value is a non-negative integer no larger
+/// than [`MAX_TIME`], however it's written (`2500`, `2500.0`, `2.5e3`). A page
+/// has only the value to go by, and the signed body says it in plain digits.
+pub fn read_time(v: &serde_json::Value) -> Option<u64> {
+    let t = match v.as_u64() {
+        Some(t) => t,
+        None => {
+            let f = v.as_f64()?;
+            if f.fract() != 0.0 || f < 0.0 || f > MAX_TIME as f64 {
+                return None;
+            }
+            f as u64
+        }
+    };
+    (t <= MAX_TIME).then_some(t)
+}
+
+/// `v` as a `T`, its `field` in plain digits if it reads as a time.
+fn with_time<T: serde::de::DeserializeOwned>(v: &serde_json::Value, field: &str) -> serde_json::Result<T> {
+    let mut v = v.clone();
+    if let Some(t) = read_time(&v[field])
+        && let Some(o) = v.as_object_mut()
+    {
+        o.insert(field.to_owned(), t.into());
+    }
+    serde_json::from_value(v)
+}
+
+/// A machine's certificate as a directory or an enrollment lists it.
+pub fn read_cert(v: &serde_json::Value) -> serde_json::Result<HostedCert> {
+    with_time(v, "created")
+}
+
+/// A delegation as a directory or an enrollment lists it.
+pub fn read_delegation(v: &serde_json::Value) -> serde_json::Result<Delegation> {
+    with_time(v, "at")
+}
+
+/// The entries of a list of revokes or closures that read, each on its own:
+/// one that doesn't, or whose `at` isn't a time ([`read_time`]), is left out,
+/// and takes nothing else with it. What isn't a list is none. The browser's
+/// copy reads a list the same way (`hosted.ts`).
+pub fn entries<T: serde::de::DeserializeOwned>(list: &serde_json::Value) -> Vec<T> {
+    list.as_array()
+        .into_iter()
+        .flatten()
+        .filter(|e| read_time(&e["at"]).is_some())
+        .filter_map(|e| with_time(e, "at").ok())
+        .collect()
+}
+
+/// [`entries`], for a field of a type that comes over the wire.
+pub fn read_entries<'de, D, T>(d: D) -> Result<Vec<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::de::DeserializeOwned,
+{
+    Ok(entries(&serde_json::Value::deserialize(d)?))
+}
+
+/// What a directory entry's `hosted` says of how its delegation ended: the
+/// revokes control took and its own word, as a CLI and a daemon read them.
+pub fn ends_listed(hosted: &serde_json::Value) -> (Vec<DelegationRevoke>, Vec<DelegationClosed>) {
+    (entries(&hosted["revocations"]), entries(&hosted["closed"]))
+}
+
+/// How many delegations' ends a client keeps. Each is of a delegation an
+/// owner signed, so this is far more than one client meets.
+pub const HELD_CLOSURES: usize = 512;
+
+/// Control's word that a delegation ended, as a client that once heard it
+/// keeps it, by delegation: control leaving it out later changes nothing. The
+/// earliest of each, and [`HELD_CLOSURES`] at most (the earliest-ended go
+/// first). A client that never heard one has none to keep.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct HeldClosures(BTreeMap<String, DelegationClosed>);
+
+impl HeldClosures {
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// The one kept for delegation `id`.
+    pub fn get(&self, id: &str) -> Option<&DelegationClosed> {
+        self.0.get(id)
+    }
+
+    /// Keep those of `closed` that check out, when an owner signed `d`, as
+    /// `owners` says: nothing else can fill this.
+    pub fn take(&mut self, d: &Delegation, closed: &[DelegationClosed], owners: &Owners) {
+        if !closed.iter().any(|c| c.closes(d)) || !d.signed_for(owners) {
+            return;
+        }
+        for c in closed.iter().filter(|c| c.closes(d)) {
+            self.keep(c.clone());
+        }
+    }
+
+    /// Add what `other` holds: the earlier of each. It's checked when it's
+    /// used ([`accept`]), as anything read back from a file is.
+    pub fn merge(&mut self, other: &HeldClosures) {
+        for c in other.0.values() {
+            self.keep(c.clone());
+        }
+    }
+
+    fn keep(&mut self, c: DelegationClosed) {
+        match self.0.get_mut(&c.delegation) {
+            Some(held) if held.at <= c.at => {}
+            Some(held) => *held = c,
+            None => {
+                self.0.insert(c.delegation.clone(), c);
+            }
+        }
+        while self.0.len() > HELD_CLOSURES {
+            let first = self.0.values().min_by_key(|c| (c.at, c.delegation.clone())).map(|c| c.delegation.clone());
+            first.map(|id| self.0.remove(&id));
+        }
+    }
+}
+
+/// Control's hosted key: it signs hosted machines' certificates, public
+/// previews' grants (M187, [`crate::preview`]) and the end of a delegation
+/// ([`DelegationClosed`]), each under a first line of its own, and nothing
+/// else. A delegation names its public half.
 pub struct HostedKey(SigningKey);
 
 impl HostedKey {
@@ -216,6 +395,13 @@ impl HostedKey {
 
     pub fn sign(&self, cert: &mut HostedCert) {
         cert.sig = hex::encode(self.0.sign(cert.body().as_bytes()).to_bytes());
+    }
+
+    /// Its word that `d` ended at `at`.
+    pub fn close(&self, d: &Delegation, at: u64) -> DelegationClosed {
+        let mut c = DelegationClosed { project: d.project.clone(), delegation: d.id(), at, sig: String::new() };
+        c.sig = hex::encode(self.0.sign(c.body().as_bytes()).to_bytes());
+        c
     }
 
     /// An Ed25519 signature over `body`, which starts with a first line of
@@ -380,9 +566,8 @@ impl Owners<'_> {
     /// device on each link ([`Cert::is_browser`]), or the desktop app's
     /// window from before it had a kind just above a browser it approved
     /// back then (`children`, by account, [`legacy_app_link`]): never as
-    /// the device that signs, nor above anything else. The hub's check
-    /// (`owner_browser_signed`), and a hosted machine's against the set it
-    /// pinned, as for a deploy's approval (`deploy::check_apply`); one that
+    /// the device that signs, nor above anything else. A hosted machine's
+    /// check of a v1 standing grant against the set it pinned; one that
     /// pinned none counts no app window.
     pub fn browser_signed(
         &self,
@@ -456,18 +641,23 @@ impl HostedRefusal {
 /// project's owners (as `owners` says, which the client got from its own
 /// checks, not control's word for the machine), the certificate is signed
 /// with the key it names, made while it stood, and `me` is in the project.
-/// Revocations that don't check out are ignored, as everywhere: control
-/// may send junk, and it can only make the answer a refusal.
+/// It ended at the earliest of a revoke an owner signed, as `owners` says
+/// now, and `closed`, control's word ([`DelegationClosed`]). Either that
+/// doesn't check out is ignored, as everywhere: control may send junk, and it
+/// can only make the answer a refusal.
 pub fn accept(
     me: &str,
     cert: &HostedCert,
     d: &Delegation,
     revokes: &[DelegationRevoke],
+    closed: &[DelegationClosed],
     owners: &Owners,
 ) -> Result<Accepted, HostedRefusal> {
     let owner = d.owner().ok_or(HostedRefusal::Form)?;
     if cert.check_form().is_err()
         || !d.well_formed()
+        || cert.created > MAX_TIME
+        || d.at > MAX_TIME
         || cert.project != d.project
         || cert.owner != d.owner
         || cert.delegation != d.id()
@@ -484,11 +674,29 @@ pub fn accept(
     if !verify_hex(&d.key, cert.body().as_bytes(), &cert.sig) {
         return Err(HostedRefusal::BadSignature);
     }
-    let revoked = revokes.iter().filter(|r| r.revokes(d, owners)).map(|r| r.at).min();
+    let by_owner = revokes.iter().filter(|r| r.revokes(d, owners)).map(|r| r.at);
+    let revoked = by_owner.chain(closed.iter().filter(|c| c.closes(d)).map(|c| c.at)).min();
     if cert.created < d.at || revoked.is_some_and(|at| at <= cert.created) {
         return Err(HostedRefusal::Revoked);
     }
     Ok(Accepted { project: d.project.clone(), owner, workspace: cert.workspace.clone(), role })
+}
+
+/// [`accept`], by a client that keeps what it hears: `closed` that checks out
+/// goes into `held`, and what `held` has of `d` counts as though control sent
+/// it again.
+pub fn accept_holding(
+    me: &str,
+    cert: &HostedCert,
+    d: &Delegation,
+    revokes: &[DelegationRevoke],
+    closed: &[DelegationClosed],
+    owners: &Owners,
+    held: &mut HeldClosures,
+) -> Result<Accepted, HostedRefusal> {
+    held.take(d, closed, owners);
+    let all: Vec<DelegationClosed> = closed.iter().chain(held.get(&d.id())).cloned().collect();
+    accept(me, cert, d, revokes, &all, owners)
 }
 
 /// Whether control may enroll under `d` now: it checks out for `owners`
@@ -593,7 +801,7 @@ mod tests {
         let (_, c) = machine(&d, &w.key, 20);
         let owners = Owners::Team { roster: &w.roster, certs: &w.certs };
         for (p, role) in [(&w.owner, TeamRole::Owner), (&w.editor, TeamRole::Editor), (&w.viewer, TeamRole::Viewer)] {
-            let a = accept(&p.account, &c, &d, &[], &owners).unwrap();
+            let a = accept(&p.account, &c, &d, &[], &[], &owners).unwrap();
             assert_eq!(
                 a,
                 Accepted { project: "prj_1".into(), owner: Owner::Team("t1".into()), workspace: "hw_1".into(), role }
@@ -607,11 +815,11 @@ mod tests {
         let d = delegation("team:t1", &w.key, &w.owner.keys, 10);
         let (_, c) = machine(&d, &w.key, 20);
         let owners = Owners::Team { roster: &w.roster, certs: &w.certs };
-        assert_eq!(accept(&w.outsider.account, &c, &d, &[], &owners), Err(HostedRefusal::NotInProject));
+        assert_eq!(accept(&w.outsider.account, &c, &d, &[], &[], &owners), Err(HostedRefusal::NotInProject));
         // Nor as a machine of the outsider's own account's project.
         let t = Trust { account: w.outsider.account.clone(), root: w.outsider.cert.device.clone() };
         let theirs = Owners::Account { trust: &t, certs: std::slice::from_ref(&w.outsider.cert), revocations: &[] };
-        assert_eq!(accept(&w.outsider.account, &c, &d, &[], &theirs), Err(HostedRefusal::WrongProject));
+        assert_eq!(accept(&w.outsider.account, &c, &d, &[], &[], &theirs), Err(HostedRefusal::WrongProject));
     }
 
     #[test]
@@ -622,7 +830,7 @@ mod tests {
         for by in [&w.editor.keys, &w.viewer.keys, &w.outsider.keys] {
             let d = delegation("team:t1", &w.key, by, 10);
             let (_, c) = machine(&d, &w.key, 20);
-            assert_eq!(accept(&w.editor.account, &c, &d, &[], &owners), Err(HostedRefusal::Unsigned));
+            assert_eq!(accept(&w.editor.account, &c, &d, &[], &[], &owners), Err(HostedRefusal::Unsigned));
         }
         // An owner's machine, or a recovery code of theirs, doesn't either.
         for kind in [Kind::Daemon, Kind::Recovery] {
@@ -634,13 +842,13 @@ mod tests {
             let owners = Owners::Team { roster: &w.roster, certs: &certs };
             let d = delegation("team:t1", &w.key, &k, 10);
             let (_, c) = machine(&d, &w.key, 20);
-            assert_eq!(accept(&w.editor.account, &c, &d, &[], &owners), Err(HostedRefusal::Unsigned), "{kind:?}");
+            assert_eq!(accept(&w.editor.account, &c, &d, &[], &[], &owners), Err(HostedRefusal::Unsigned), "{kind:?}");
         }
         // A delegation for another team, signed by this team's owner,
         // isn't this team's.
         let d = delegation("team:t2", &w.key, &w.owner.keys, 10);
         let (_, c) = machine(&d, &w.key, 20);
-        assert_eq!(accept(&w.editor.account, &c, &d, &[], &owners), Err(HostedRefusal::WrongProject));
+        assert_eq!(accept(&w.editor.account, &c, &d, &[], &[], &owners), Err(HostedRefusal::WrongProject));
     }
 
     #[test]
@@ -651,7 +859,7 @@ mod tests {
         // The owner is now an editor, and the editor the owner.
         let later = roster(vec![member(&w.owner, TeamRole::Editor), member(&w.editor, TeamRole::Owner)], &w.owner);
         let owners = Owners::Team { roster: &later, certs: &w.certs };
-        assert_eq!(accept(&w.editor.account, &c, &d, &[], &owners), Err(HostedRefusal::Unsigned));
+        assert_eq!(accept(&w.editor.account, &c, &d, &[], &[], &owners), Err(HostedRefusal::Unsigned));
         // So does a device of theirs that signed it and is removed since.
         let pk = DeviceKeys::generate();
         let mut pc = Cert::new(&pk, &w.owner.account, Kind::Browser, "phone");
@@ -661,10 +869,10 @@ mod tests {
         let mut certs = w.certs.clone();
         certs.get_mut(&w.owner.account).unwrap().0.push(pc.clone());
         let owners = Owners::Team { roster: &w.roster, certs: &certs };
-        assert!(accept(&w.editor.account, &c, &d, &[], &owners).is_ok());
+        assert!(accept(&w.editor.account, &c, &d, &[], &[], &owners).is_ok());
         certs.get_mut(&w.owner.account).unwrap().1.push(Revocation::new(&w.owner.account, &pc.device, &w.owner.keys));
         let owners = Owners::Team { roster: &w.roster, certs: &certs };
-        assert_eq!(accept(&w.editor.account, &c, &d, &[], &owners), Err(HostedRefusal::Unsigned));
+        assert_eq!(accept(&w.editor.account, &c, &d, &[], &[], &owners), Err(HostedRefusal::Unsigned));
     }
 
     #[test]
@@ -673,22 +881,22 @@ mod tests {
         let d = delegation("team:t1", &w.key, &w.owner.keys, 10);
         let owners = Owners::Team { roster: &w.roster, certs: &w.certs };
         let (_, c) = machine(&d, &HostedKey::generate(), 20);
-        assert_eq!(accept(&w.editor.account, &c, &d, &[], &owners), Err(HostedRefusal::BadSignature));
+        assert_eq!(accept(&w.editor.account, &c, &d, &[], &[], &owners), Err(HostedRefusal::BadSignature));
         // Tampered after signing: another workspace, another key.
         let (_, mut c) = machine(&d, &w.key, 20);
         c.workspace = "hw_2".into();
-        assert_eq!(accept(&w.editor.account, &c, &d, &[], &owners), Err(HostedRefusal::BadSignature));
+        assert_eq!(accept(&w.editor.account, &c, &d, &[], &[], &owners), Err(HostedRefusal::BadSignature));
         let (_, mut c) = machine(&d, &w.key, 20);
         c.noise = hex::encode(DeviceKeys::generate().noise_public);
-        assert_eq!(accept(&w.editor.account, &c, &d, &[], &owners), Err(HostedRefusal::Form));
+        assert_eq!(accept(&w.editor.account, &c, &d, &[], &[], &owners), Err(HostedRefusal::Form));
         // Moved to another project, or under another delegation.
         let (_, mut c) = machine(&d, &w.key, 20);
         c.project = "prj_2".into();
         w.key.sign(&mut c);
-        assert_eq!(accept(&w.editor.account, &c, &d, &[], &owners), Err(HostedRefusal::Form));
+        assert_eq!(accept(&w.editor.account, &c, &d, &[], &[], &owners), Err(HostedRefusal::Form));
         let other = delegation("team:t1", &w.key, &w.owner.keys, 11);
         let (_, c) = machine(&other, &w.key, 20);
-        assert_eq!(accept(&w.editor.account, &c, &d, &[], &owners), Err(HostedRefusal::Form));
+        assert_eq!(accept(&w.editor.account, &c, &d, &[], &[], &owners), Err(HostedRefusal::Form));
     }
 
     #[test]
@@ -701,15 +909,236 @@ mod tests {
         let r = DelegationRevoke::new(&d, 30, &w.owner.keys);
         assert!(live(&d, &[], &owners));
         assert!(!live(&d, std::slice::from_ref(&r), &owners));
-        assert!(accept(&w.editor.account, &before, &d, std::slice::from_ref(&r), &owners).is_ok());
-        assert_eq!(accept(&w.editor.account, &after, &d, &[r], &owners), Err(HostedRefusal::Revoked));
+        assert!(accept(&w.editor.account, &before, &d, std::slice::from_ref(&r), &[], &owners).is_ok());
+        assert_eq!(accept(&w.editor.account, &after, &d, &[r], &[], &owners), Err(HostedRefusal::Revoked));
         // Before the delegation was made: not under it.
         let (_, early) = machine(&d, &w.key, 5);
-        assert_eq!(accept(&w.editor.account, &early, &d, &[], &owners), Err(HostedRefusal::Revoked));
+        assert_eq!(accept(&w.editor.account, &early, &d, &[], &[], &owners), Err(HostedRefusal::Revoked));
         // A revocation by someone who isn't an owner counts for nothing.
         let spite = DelegationRevoke::new(&d, 30, &w.editor.keys);
         assert!(live(&d, std::slice::from_ref(&spite), &owners));
-        assert!(accept(&w.editor.account, &after, &d, &[spite], &owners).is_ok());
+        assert!(accept(&w.editor.account, &after, &d, &[spite], &[], &owners).is_ok());
+    }
+
+    /// A revoke counts by whether its signer is an owner now. Control's word
+    /// counts whoever that was: an owner who left, one made an editor, a
+    /// device taken off an account.
+    #[test]
+    fn controls_word_holds_when_a_revokes_signer_is_gone() {
+        let w = world();
+        let other = person("other");
+        let team = |members| roster(members, &w.owner);
+        let both = team(vec![
+            member(&w.owner, TeamRole::Owner),
+            member(&other, TeamRole::Owner),
+            member(&w.editor, TeamRole::Editor),
+        ]);
+        let mut certs = w.certs.clone();
+        certs.insert(other.account.clone(), (vec![other.cert.clone()], vec![]));
+        let d = delegation("team:t1", &w.key, &w.owner.keys, 10);
+        let (_, before) = machine(&d, &w.key, 20);
+        let (_, after) = machine(&d, &w.key, 40);
+        let r = DelegationRevoke::new(&d, 30, &other.keys);
+        let closed = w.key.close(&d, 30);
+        assert!(closed.closes(&d));
+        let revs = std::slice::from_ref(&r);
+        let word = std::slice::from_ref(&closed);
+
+        // Still an owner: the same answer with or without control's word.
+        let owners = Owners::Team { roster: &both, certs: &certs };
+        for c in [&[][..], word] {
+            assert!(accept(&w.editor.account, &before, &d, revs, c, &owners).is_ok());
+            assert_eq!(accept(&w.editor.account, &after, &d, revs, c, &owners), Err(HostedRefusal::Revoked));
+        }
+
+        // Gone from the team, or an editor now.
+        let gone = team(vec![member(&w.owner, TeamRole::Owner), member(&w.editor, TeamRole::Editor)]);
+        let editor = team(vec![
+            member(&w.owner, TeamRole::Owner),
+            member(&other, TeamRole::Editor),
+            member(&w.editor, TeamRole::Editor),
+        ]);
+        for later in [&gone, &editor] {
+            let owners = Owners::Team { roster: later, certs: &certs };
+            assert!(!r.revokes(&d, &owners));
+            assert!(accept(&w.editor.account, &after, &d, revs, &[], &owners).is_ok());
+            assert!(accept(&w.editor.account, &before, &d, revs, word, &owners).is_ok(), "what came before stays");
+            assert_eq!(accept(&w.editor.account, &after, &d, revs, word, &owners), Err(HostedRefusal::Revoked));
+        }
+
+        // A device taken off an account.
+        let me = person("me");
+        let t = Trust { account: "me".into(), root: me.cert.device.clone() };
+        let d = delegation("account:me", &w.key, &me.keys, 10);
+        let (_, before) = machine(&d, &w.key, 20);
+        let (_, after) = machine(&d, &w.key, 40);
+        let pk = DeviceKeys::generate();
+        let mut pc = Cert::new(&pk, "me", Kind::Browser, "phone");
+        pc.sign_with(&me.keys);
+        let all = [me.cert.clone(), pc.clone()];
+        let removed = [Revocation::new("me", &pc.device, &me.keys)];
+        let r = DelegationRevoke::new(&d, 30, &pk);
+        let closed = w.key.close(&d, 30);
+        let owners = Owners::Account { trust: &t, certs: &all, revocations: &removed };
+        assert!(!r.revokes(&d, &owners));
+        let (revs, word) = (std::slice::from_ref(&r), std::slice::from_ref(&closed));
+        assert!(accept("me", &after, &d, revs, &[], &owners).is_ok());
+        assert!(accept("me", &before, &d, revs, word, &owners).is_ok());
+        assert_eq!(accept("me", &after, &d, revs, word, &owners), Err(HostedRefusal::Revoked));
+    }
+
+    /// Only the key the delegation names says it ended, of that delegation,
+    /// for that time. Nobody else's word counts, a former owner's included.
+    #[test]
+    fn only_the_delegated_key_closes_it() {
+        let w = world();
+        let d = delegation("team:t1", &w.key, &w.owner.keys, 10);
+        let other = delegation("team:t1", &w.key, &w.owner.keys, 11);
+        let (_, c) = machine(&d, &w.key, 40);
+        let owners = Owners::Team { roster: &w.roster, certs: &w.certs };
+        let good = w.key.close(&d, 30);
+        let mut moved = good.clone();
+        moved.at = 50;
+        let mut elsewhere = good.clone();
+        elsewhere.project = "prj_2".into();
+        // A device of an owner's, or of anyone's, signing in control's place.
+        let signed_by = |by: &DeviceKeys| {
+            let mut x = w.key.close(&d, 30);
+            x.sig = hex::encode(by.signature(x.body().as_bytes()));
+            x
+        };
+        for no in [
+            HostedKey::generate().close(&d, 30),
+            w.key.close(&other, 30),
+            moved,
+            elsewhere,
+            signed_by(&w.owner.keys),
+            signed_by(&w.outsider.keys),
+        ] {
+            assert!(!no.closes(&d), "{no:?}");
+            assert!(accept(&w.editor.account, &c, &d, &[], &[no], &owners).is_ok());
+        }
+        assert!(good.closes(&d));
+        assert_eq!(accept(&w.editor.account, &c, &d, &[], &[good], &owners), Err(HostedRefusal::Revoked));
+    }
+
+    /// A client keeps what it heard: control leaving it out later doesn't
+    /// change the answer, across a save and a load too. What doesn't check
+    /// out isn't kept, nor is anything of a delegation no owner signed.
+    #[test]
+    fn a_client_keeps_a_delegations_end() {
+        let w = world();
+        let owners = Owners::Team { roster: &w.roster, certs: &w.certs };
+        let d = delegation("team:t1", &w.key, &w.owner.keys, 10);
+        let (_, before) = machine(&d, &w.key, 20);
+        let (_, after) = machine(&d, &w.key, 40);
+        let word = w.key.close(&d, 30);
+        let mut held = HeldClosures::default();
+        let e = &w.editor.account;
+
+        assert!(accept_holding(e, &after, &d, &[], &[], &owners, &mut held).is_ok(), "heard nothing yet");
+        assert_eq!(
+            accept_holding(e, &after, &d, &[], std::slice::from_ref(&word), &owners, &mut held),
+            Err(HostedRefusal::Revoked)
+        );
+        assert_eq!(accept_holding(e, &after, &d, &[], &[], &owners, &mut held), Err(HostedRefusal::Revoked));
+        assert!(accept_holding(e, &before, &d, &[], &[], &owners, &mut held).is_ok());
+        let mut again: HeldClosures = serde_json::from_str(&serde_json::to_string(&held).unwrap()).unwrap();
+        let mut merged = HeldClosures::default();
+        merged.merge(&again);
+        assert_eq!(merged, held);
+        assert_eq!(accept_holding(e, &after, &d, &[], &[], &owners, &mut again), Err(HostedRefusal::Revoked));
+
+        // A later time changes nothing; an earlier one is kept in its place.
+        held.take(&d, &[w.key.close(&d, 90)], &owners);
+        assert_eq!(held.get(&d.id()).unwrap().at, 30);
+        held.take(&d, &[w.key.close(&d, 25)], &owners);
+        assert_eq!(held.get(&d.id()).unwrap().at, 25);
+
+        // Nothing that doesn't check out, nor of a delegation no owner signed.
+        let mut none = HeldClosures::default();
+        none.take(&d, &[HostedKey::generate().close(&d, 30)], &owners);
+        let unsigned = delegation("team:t1", &w.key, &w.outsider.keys, 10);
+        none.take(&unsigned, &[w.key.close(&unsigned, 30)], &owners);
+        assert!(none.is_empty());
+    }
+
+    #[test]
+    fn what_a_client_keeps_is_bounded() {
+        let w = world();
+        let owners = Owners::Team { roster: &w.roster, certs: &w.certs };
+        let mut held = HeldClosures::default();
+        let mut first = None;
+        for n in 0..HELD_CLOSURES as u64 + 3 {
+            let d = delegation("team:t1", &w.key, &w.owner.keys, 10 + n);
+            held.take(&d, &[w.key.close(&d, 100 + n)], &owners);
+            first.get_or_insert(d.id());
+        }
+        assert_eq!(held.len(), HELD_CLOSURES);
+        assert!(held.get(&first.unwrap()).is_none(), "the earliest-ended goes first");
+    }
+
+    /// Each entry of a list reads on its own.
+    #[test]
+    fn one_bad_entry_takes_nothing_else_with_it() {
+        let w = world();
+        let d = delegation("team:t1", &w.key, &w.owner.keys, 10);
+        let (word, r) = (w.key.close(&d, 30), DelegationRevoke::new(&d, 30, &w.owner.keys));
+        let (revokes, closed) = ends_listed(&serde_json::json!({
+            "revocations": [{}, r, null, 7], "closed": [word, {}, "x"],
+        }));
+        assert_eq!((revokes, closed), (vec![r], vec![word]));
+        assert_eq!(ends_listed(&serde_json::json!({ "revocations": {}, "closed": "x" })), (vec![], vec![]));
+    }
+
+    /// A time is a value, however it's written, up to 2^53 - 1.
+    #[test]
+    fn a_time_is_a_value_up_to_the_browsers_limit() {
+        for (text, want) in [
+            ("2500", Some(2500)),
+            ("2500.0", Some(2500)),
+            ("2.5e3", Some(2500)),
+            ("0", Some(0)),
+            ("-0.0", Some(0)),
+            ("9007199254740991", Some(MAX_TIME)),
+            ("9007199254740992", None),
+            ("9007199254740992.0", None),
+            ("18446744073709551615", None),
+            ("2500.5", None),
+            ("-1", None),
+            ("-1.0", None),
+            ("1e300", None),
+            ("\"2500\"", None),
+            ("true", None),
+            ("null", None),
+        ] {
+            assert_eq!(read_time(&serde_json::from_str(text).unwrap()), want, "{text}");
+        }
+        let w = world();
+        let d = delegation("team:t1", &w.key, &w.owner.keys, 10);
+        let word = w.key.close(&d, 30);
+        let spelled = format!(
+            r#"{{"closed":[{{"project":"{}","delegation":"{}","at":3e1,"sig":"{}"}}]}}"#,
+            word.project, word.delegation, word.sig
+        );
+        let (_, closed) = ends_listed(&serde_json::from_str(&spelled).unwrap());
+        assert_eq!(closed, std::slice::from_ref(&word));
+        assert!(closed[0].closes(&d));
+        assert!(!w.key.close(&d, MAX_TIME + 1).closes(&d));
+    }
+
+    /// Hex reads in either case on these papers, as everywhere in Rust. What's
+    /// signed is the text as given.
+    #[test]
+    fn hex_reads_in_either_case() {
+        let w = world();
+        let d = delegation("team:t1", &w.key, &w.owner.keys, 10);
+        let mut upper = w.key.close(&d, 30);
+        upper.sig = upper.sig.to_uppercase();
+        assert!(upper.closes(&d));
+        let mut named = d.clone();
+        named.key = named.key.to_uppercase();
+        assert!(named.well_formed());
     }
 
     #[test]
@@ -720,8 +1149,8 @@ mod tests {
         let (_, c) = machine(&d, &key, 20);
         let t = Trust { account: "me".into(), root: me.cert.device.clone() };
         let owners = Owners::Account { trust: &t, certs: std::slice::from_ref(&me.cert), revocations: &[] };
-        assert_eq!(accept("me", &c, &d, &[], &owners).unwrap().role, TeamRole::Owner);
-        assert_eq!(accept("you", &c, &d, &[], &owners), Err(HostedRefusal::NotInProject));
+        assert_eq!(accept("me", &c, &d, &[], &[], &owners).unwrap().role, TeamRole::Owner);
+        assert_eq!(accept("you", &c, &d, &[], &[], &owners), Err(HostedRefusal::NotInProject));
         // Control's own "root" for the account: the delegation's signer
         // isn't in the chain this client pinned.
         let fake = person("me");
@@ -729,7 +1158,7 @@ mod tests {
         let (_, c2) = machine(&d2, &key, 20);
         let both = [me.cert.clone(), fake.cert.clone()];
         let owners = Owners::Account { trust: &t, certs: &both, revocations: &[] };
-        assert_eq!(accept("me", &c2, &d2, &[], &owners), Err(HostedRefusal::Unsigned));
+        assert_eq!(accept("me", &c2, &d2, &[], &[], &owners), Err(HostedRefusal::Unsigned));
     }
 
     /// Personal devices never trust a hosted machine for anything else:
@@ -800,6 +1229,8 @@ mod fixed {
             HostedCert::new(&d, "hw_1", "box", &hex::encode(boxk.noise_public), &hex::encode(boxk.sign_public()), 3000);
         key.sign(&mut c);
         let r = DelegationRevoke::new(&d, 4000, &owner);
+        // Control's word that it ended, after the box was made and before.
+        let (closed, closed_early) = (key.close(&d, 4000), key.close(&d, 2500));
         // The same owner's team's project.
         let mut td = Delegation { owner: "team:t1".into(), ..d.clone() };
         td.sign_with(&owner);
@@ -814,6 +1245,7 @@ mod fixed {
         key.sign(&mut tc);
         let got = serde_json::json!({
             "root": root, "delegation": d, "id": d.id(), "cert": c, "revoke": r,
+            "closed": closed, "closedEarly": closed_early,
             "team": { "delegation": td, "cert": tc },
         });
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../web/scripts/hosted.fixture.json");
@@ -824,6 +1256,8 @@ mod fixed {
         assert_eq!(got, want, "ARUGULA_WRITE_FIXTURE=1 writes it again, if the formats changed on purpose");
         let t = Trust { account: "acct1".into(), root: root.device.clone() };
         let owners = Owners::Account { trust: &t, certs: std::slice::from_ref(&root), revocations: &[] };
-        assert!(accept("acct1", &c, &d, std::slice::from_ref(&r), &owners).is_ok());
+        assert!(accept("acct1", &c, &d, std::slice::from_ref(&r), &[], &owners).is_ok());
+        assert!(accept("acct1", &c, &d, &[], &[closed], &owners).is_ok());
+        assert_eq!(accept("acct1", &c, &d, &[], &[closed_early], &owners), Err(HostedRefusal::Revoked));
     }
 }

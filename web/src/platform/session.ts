@@ -5,9 +5,12 @@
 // the hub. A hop that just came back without one isn't tried again by
 // itself, and the page says where to sign in.
 
-import type { PlatformMe, PlatformProject, PlatformProjects } from "../shared/proto.gen";
+import type { PlatformMe, PlatformProject, PlatformProjects, ProjectCreate, ProjectPatch } from "../shared/proto.gen";
 import { chat } from "../shared/chat-store";
 import { platformFetch, refusalOf } from "../shared/maintenance";
+import { setProtoOrigin } from "../shared/ui/prototype-frame";
+import { currentProject, forgetCurrentProject, onCurrentProject, rememberTeamProject } from "./current-project";
+import { PERSONAL, ownerKey } from "./owners";
 import { finishSignIn, signIn, triedJustNow } from "./signin";
 
 export type { PlatformProject };
@@ -21,6 +24,14 @@ let hub: string | null = null;
  * guess from this page's host name. */
 export function controlOrigin(): string {
   return hub || (import.meta.env.VITE_CONTROL_ORIGIN as string | undefined) || location.origin;
+}
+
+/** A change to the platform: its answer, or its `{error}` thrown. */
+async function send<T>(method: string, path: string, body: unknown): Promise<T> {
+  const r = await platformFetch(path, { method, credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const v = (await r.json().catch(() => ({}))) as T & { error?: string; reason?: string };
+  if (!r.ok) throw new Error(refusalOf(r.status, v));
+  return v;
 }
 
 const listeners = new Set<() => void>();
@@ -42,13 +53,21 @@ export const session = {
   project(id: string | null | undefined): PlatformProject | undefined {
     return id ? this.projects.find((p) => p.id === id) : undefined;
   },
-  /** The reader's own project. */
+  /** The reader's own project: the first of Personal's. */
   personal(): PlatformProject | undefined {
-    return this.projects.find((p) => !p.team);
+    return this.projects.find((p) => ownerKey(p) === PERSONAL);
   },
-  /** The project a team's rooms belong to. */
-  ofTeam(team: string | null | undefined): PlatformProject | undefined {
-    return team ? this.projects.find((p) => p.team?.id === team) : undefined;
+  /** Make a project (`POST /api/projects`), then read the list again. */
+  async create(body: ProjectCreate): Promise<PlatformProject> {
+    const made = await send<PlatformProject>("POST", "/api/projects", body);
+    await this.load();
+    return made;
+  },
+  /** Rename, archive or move one (`PATCH /api/projects/{project}`), then
+   * read the list again. */
+  async patch(id: string, body: ProjectPatch) {
+    await send("PATCH", `/api/projects/${encodeURIComponent(id)}`, body);
+    await this.load();
   },
   async load() {
     try {
@@ -56,6 +75,9 @@ export const session = {
       const r = await platformFetch("/api/projects", { credentials: "same-origin" });
       const said = r.headers.get("x-arugula-hub");
       if (said && /^https?:\/\/[^/]+$/.test(said)) hub = said;
+      // Where a Doc's prototype runs (#506): control's proto origin, if it has one.
+      const proto = r.headers.get("x-arugula-proto");
+      setProtoOrigin(proto && /^https?:\/\/[^/]+$/.test(proto) ? proto : null);
       const v = (await r.json().catch(() => ({}))) as PlatformProjects & { error?: string; reason?: string };
       if (r.status === 401) {
         // Off through the hub, unless that's just been tried.
@@ -69,7 +91,12 @@ export const session = {
       this.projects = v.projects;
       this.hosted = !!v.hosted;
       this.state = "ready";
+      // The current project is gone, or no longer the reader's (Arugula #880).
+      const cur = currentProject();
+      if (cur && !v.projects.some((p) => p.id === cur)) forgetCurrentProject();
+      rememberTeamProject(v.projects);
       if (first) {
+        onCurrentProject(() => rememberTeamProject(this.projects));
         const roster = v.projects.flatMap((p) => p.team?.members.filter((m) => m.account === v.me.account).map((m) => m.name) ?? []);
         chat.start(v.me.account, [v.me.login, v.me.name, ...roster]);
       }

@@ -1,0 +1,26 @@
+# The image check.yml's e2e and pull-request.yml's pr-e2e shards run in
+# (`container:`), from scripts/ci-e2e-image: on GHCR already, or built and
+# pushed here when the Dockerfile or web's Playwright changed. A job of its
+# own beside the build, which takes longer, so the shards don't wait on it.
+# Its job needs `packages: write`; a fork's pull request gets only read, so
+# when the image is new there it says so and the shards run on the runner.
+name: e2e-image
+description: The e2e shards' image on GHCR, built and pushed when it's new
+outputs:
+  image:
+    description: The image's reference, or empty when GHCR hasn't it and this run can't push it
+    value: ${{ steps.image.outputs.image }}
+runs:
+  using: composite
+  steps:
+    - name: GHCR
+      shell: bash
+      run: echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      env:
+        GH_TOKEN: ${{ github.token }}
+    - name: The image
+      id: image
+      shell: bash
+      run: scripts/ci-e2e-image ensure
+      env:
+        ARUGULA_E2E_IMAGE_PUSH: ${{ github.event.pull_request.head.repo.fork && '0' || '1' }}

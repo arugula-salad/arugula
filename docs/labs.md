@@ -10,10 +10,13 @@ moved to the site.
 
 Managoat was here until it left Labs (#942, F5). Its daemon side was
 removed on 2026-10-18 and control's on 2026-10-23; agents in the cloud run
-on hosted workspaces now ([managoat.md](managoat.md)). Huddles,
+on hosted workspaces now (managoat.md (in the cloud repo's docs/managoat.md)). Huddles,
 voice calls on a session, were here until they were removed (2026-10-18,
 DECISIONS.md "Huddles are removed"); a `huddles` flag left in `flags.json`
-does nothing. Chat was here until it left Labs (native #203, 2026-10-26):
+does nothing. Live presence and People blocks, video presence
+on arugula.stream, were here until they were removed (2026-11-09,
+DECISIONS.md "Video presence is removed"); a `live-presence` flag left in
+`flags.json` does nothing. Chat was here until it left Labs (native #203, 2026-10-26):
 it's on wherever a team's owners turn it on in control, a `chat` flag left
 in `flags.json` does nothing, and a machine's old threads are no longer
 brought into control. [Threads and chat](#threads-and-chat) still
@@ -23,16 +26,30 @@ Guest ssh (inviting someone with only OpenSSH to a pane, M65) was the
 `guest-ssh` flag until it left Labs (2026-10-26, native #205). It is a
 sharing setting now, **Guest SSH access**, off until the machine's owner
 turns it on: *Guest SSH access…* in the machine's settings (the machine
-menu, the account menu's *This machine*, the phone's sheet), or
+menu, Settings' *This machine*, the phone's sheet), or
 `arugulad sharing guest-ssh on` on the machine. It is kept in
 `sharing.json` in the state directory (`arugula_proto::sharing`), which
 control never writes, so no push turns it on, as the flag was local-only.
 A machine that had the flag on (by name, or `labs`) keeps it on: the
 daemon writes the old flag's word there once, at its start. With it off,
-*Invite over ssh…* isn't offered and `/api/guests` (list, invite, revoke)
-is refused, saying how to turn it on. `arugula guests`, `arugula share
---guest…` and `arugulad --guest-ssh`/`--guest-ssh-host` (the listener) are
-always in `--help` now; `guest-ssh` is a retired flag.
+*Invite over ssh…* isn't offered and making an invite is refused, saying
+how to turn it on. Turning it off ends every ssh invite and cuts off its
+guests (native #270); listing and revoking invites work whatever the
+setting. `arugula guests`, `arugula share --guest…` and `arugulad
+--guest-ssh`/`--guest-ssh-host` (the listener) are always in `--help` now;
+`guest-ssh` is a retired flag.
+
+Boards, a project's boards and epics, were the `boards` flag until they left
+Labs (native #191, 2026-11-02, Aaron): they're on for everyone, and a
+`boards` flag left in `flags.json` or a team's Labs does nothing.
+[Boards](control.md#boards) describes them.
+
+GitLab merge requests and Forgejo pull requests and issues, as blocks and
+with their webhooks, were the `additional-forges` flag (`forges` before
+2026-10-26) until they left Labs for the launch (native #523, 2026-11-11,
+Jake): they're on for everyone, beside GitHub's, and either name left in
+`flags.json` or a team's Labs does nothing. A build without Labs' code
+(`--no-default-features`) still opens only GitHub's.
 
 ## Turning a feature on
 
@@ -43,10 +60,7 @@ Each feature has a flag, off on a new install:
 | `sandbox-providers` | VM tabs and panes, machines and the sandboxes page, from your own sandbox provider (cloud workspaces are the platform's, and need no flag) |
 | `studio` | Studio app blocks |
 | `chant-workspaces` | Chant workspace blocks: a workspace's members, relationships and gates |
-| `additional-forges` | GitLab and Forgejo pull request and issue blocks (GitHub's are always on), until they fit platform projects and workflows |
 | `agent-delegation` | Agent recipes, offering them from this machine as A2A agents, the team's agent catalog and tasks between machines (#403); set only on the machine |
-| `boards` | A project's boards, which are control's: where its issues, PRs and runs are managed, and an epic is a board ([Boards](#boards)) |
-| `live-presence` | Live presence: your teammates' live faces on their avatars across Arugula, from arugula.stream, and yours when you choose Live (Arugula #341–#347) |
 
 A flag also lists its feature's tools, commands and options in `arugula mcp`,
 `arugula --help` and `arugulad --help`. Without it they aren't offered, and
@@ -63,10 +77,7 @@ one isn't made.
 | `sandbox-providers` | `/api/machines`, `/api/sandboxes`, a new VM pane or tab, a borrowed sandbox (`run --sandbox`), *Share machine with tab* |
 | `studio` | `/api/studio…`, app blocks, `show` kind `app` |
 | `chant-workspaces` | chant workspace blocks |
-| `additional-forges` | Forgejo and GitLab blocks and webhooks |
 | `agent-delegation` | `/api/a2a/…`, the agent catalog block, recipes, `delegate` |
-| `boards` | nothing on the daemon: control's board routes answer 404 for an account without it |
-| `live-presence` | nothing on the daemon: control keeps no live presence choice for an account without it, and its pages offer none |
 
 ```
 arugulad flags                            # the flags, and which are on
@@ -75,8 +86,9 @@ arugulad flags sandbox-providers on       # and `off`, or `unset`
 
 Four flags were renamed on 2026-10-26 (DECISIONS.md "Four Labs flags
 stay, renamed; the rest graduate or retire"): `vms` is
-`sandbox-providers`, `workspaces` is `chant-workspaces`, `forges` is
-`additional-forges` and `agents` is `agent-delegation`. The old names
+`sandbox-providers`, `workspaces` is `chant-workspaces`, `forges` was
+`additional-forges` (which has since left Labs) and `agents` is
+`agent-delegation`. The old names
 still work, forever, wherever a name comes in: in `flags.json`, in what
 control pushes, in `PUT /api/flags/NAME` and in `arugulad flags NAME on`
 (`flags::ALIASES`). Only the new names are listed.
@@ -120,8 +132,7 @@ leaves the rest. (The empty `labs` file of 0.24 to 0.28 was moved into
   `run --vm/--vm-tab/--image/--sandbox`
   (`LABS_COMMANDS`, `LABS_OPTIONS` in `crates/cli/src/main.rs`).
 - **Daemon (`arugulad --help`):**
-  `--studio-file`, `--wisp-url`,
-  `--wisp-token-file`, `--loam-url`,
+  `--studio-file`, `--loam-url`,
   `--loam-key-file`
   (`LABS_OPTIONS` in `crates/daemon/src/args.rs`).
 - **MCP:** the kinds `show:app`, `show:workspace` and `list:agents`, and
@@ -144,20 +155,22 @@ leaves the rest. (The empty `labs` file of 0.24 to 0.28 was moved into
   local`, MCP `run`'s `machine`) is a VM or sandbox from the provider
   (`crates/mux/src/labs/machine.rs`). Examples that use them: `arugula open
   --machine m2 :3000`, `arugula edit --machine m2 ~/app`, `arugula view
-  m2:src/main.rs`, `arugula fs cat m2:~/log.txt`, `arugula agent --machine
-  m3 …`, and `arugula --host s1 ls` for a sandbox with a resident daemon
-  (`arugula hosts promote`), which wakes it.
+  m2:src/main.rs`, `arugula fs cat m2:~/log.txt` and `arugula agent
+  --machine m3 …`.
 
 ### Where machines come from
 
-One provider per daemon (the `Provider` trait, `crates/mux/src/provider/`):
+One provider per daemon (the `Provider` trait, `crates/mux/src/provider/`),
+behind `sandbox-providers` like the rest of the feature: with the flag off
+the daemon opens no adapter and asks nothing of a provider, whatever key
+is on disk, and turning the flag on or off works on the running daemon.
+The provider is loam; without `--loam-url` VM panes are off. (The Sprites
+adapter, for a wispd on the machine or Fly's sprites, was the first and
+was removed with the older machine model: a wisp token left on disk is
+never read, and the log says so at startup.)
 
-- **A Sprites API** (`crates/arugulad-labs/src/sprites.rs`): a wispd
-  (`--wisp-url`, default `http://127.0.0.1:7788`, token in
-  `--wisp-token-file`, default `~/.local/share/wisp/token`) or Fly's
-  sprites. The default.
-- **loam** (`crates/arugulad-labs/src/loam.rs`), when `--loam-url` (or
-  `LOAM_API_URL`) is given, e.g. `https://api.loam.inevitable.fyi`. Its
+- **loam** (`crates/arugulad-labs/src/loam.rs`), named by `--loam-url` (or
+  `LOAM_API_URL`), e.g. `https://api.loam.inevitable.fyi`. Its
   project key (`loam_…`, from the loam operator) is read from
   `--loam-key-file` (`ARUGULA_LOAM_KEY_FILE`), default
   `~/.config/arugula/loam-key`: one line, mode 0600, beside the other
@@ -207,7 +220,7 @@ machine, unread, and `threads.imported/` is left as it was.
 
 What the daemon still does for chat is say who may read each pane's and
 session's thread (`POST /api/daemon/chat/readers`, from
-`crates/mux/src/mux/chat_readers.rs`, sent by
+`crates/mux/src/mux/readers.rs`, sent by
 `crates/daemon/src/chat_readers.rs` while control has chat on for the
 machine's account or team): the same people as the pane or session, a
 private pane's only its owner, a "from now" share from when it was made.
@@ -260,15 +273,20 @@ says what is stored.
   (recent, then common, first); the picker has search and categories, and
   remembers recent picks on the device. A message of up to three emoji draws
   large. The table is loaded only when a message or the composer needs it.
-- **Files and images:** paste, drop or 📎. Up to 10 files of 10 MB each on a
-  message, 256 MB per team, 30 uploads a minute. A file is uploaded first
-  and waits, its uploader's alone, for an hour until a message names it.
-  Pictures show inline and open in a viewer; video and audio play in the
-  browser (and seek); anything else is a card to download. The bytes are in
-  control's database (`chat_files`), and only readers of the room get them
-  (404 to anyone else). The type is read from the bytes, not the name or the
-  upload: SVG and HTML are text and download, never run, and every response
-  is `nosniff` and sandboxed. Search finds file names.
+- **Files and images:** paste, drop or 📎. Up to 10 files of 100 MB each on
+  a message, 2 GB per team, 30 uploads a minute (a control with no bucket
+  for chat's files keeps them in its database, at 10 MB each and 256 MB per
+  team; `ARUGULA_CHAT_FILE_MAX_MIB` and `ARUGULA_CHAT_FILES_TEAM_MAX_MIB` set
+  either). A file is uploaded first and waits, its uploader's alone, for an
+  hour until a message names it. Pictures show inline and open in a viewer;
+  video and audio play in the browser (and seek); anything else is a card to
+  download. The bytes are in control's bucket for them (Arugula #125; files
+  from before it move there in the background), read only through control,
+  and only readers of the room get them (404 to anyone else): there's no
+  public or signed link. The type is read from the bytes, not the name or
+  the upload: SVG and HTML are text and download, never run, and every
+  response is `nosniff` and sandboxed. Deleting a message deletes its files
+  from the bucket too. Search finds file names.
 - **Link previews:** a link becomes a card, drawn when the message is read.
   A link to one of our own objects (an issue, run, deploy or hosted
   workspace on control's hosts) shows its title and state, read as the
@@ -299,39 +317,6 @@ says what is stored.
   (idle, or chosen) and offline (no page, or chosen: *Appear offline* in the
   account menu). A closed app is offline within a minute. Only the times and
   the chosen mode are stored. A machine's agents show their machine's dot.
-- **People blocks:** right-click a pane, then *Open beside → People*: who's
-  around in one of your teams, live, as a block beside it. It's the team's
-  room on arugula.stream (`team:<id>`), drawn by arugula.stream's own
-  elements: a tile per person in the room, their avatar (a character that
-  follows your face) or outline while their camera is on, reactions and
-  waves; the room's voice channel (join muted, unmute, start video); and a
-  wave's private call. In voice or a call, *Speaker* shows whoever's
-  talking big and everyone else in it in a strip (click someone to pin
-  them); *Grid* is a tile each, and the block remembers which. Control signs your room token as you
-  (`POST /api/chat/presence/token`: a team's members only, named as its
-  roster names them), and keeps nothing of the room. The camera is off
-  until you turn it on, and an avatar or an outline is lines and numbers
-  made in your browser, never a picture; video, in voice or a call, is
-  your camera's real picture, for the people in it. The block joins only
-  while it's shown. It needs an arugula.stream app on control
-  ([control-ops.md](control-ops.md)); without one it says so.
-- **Live presence** (the `live-presence` Labs flag, Arugula #341–#347): the
-  same rooms as a layer over the whole app, not a block. A camera button
-  beside the account button (on control's page and the platform page) and
-  *Your presence* in the account menu choose **Off** (the default),
-  **Watching** or **Live**. Off and Watching are kept on your account, so
-  every page and window follows. Watching puts your pages in every one of
-  your teams' rooms, and wherever someone's picture shows (chat's messages,
-  members, DMs and threads, issues, a session's people) it becomes their
-  live character while their camera is on. Live is Watching plus this
-  window's camera, sent to one room (the team of the project on screen),
-  and it stops while the window is hidden and when the page reloads. At
-  chat's sizes a face is always the character, even for someone who chose
-  an outline. With Watching, arugula.stream learns you're around (your
-  account, your roster name and your teams) whenever a page is open; with
-  Live, also your character's movements, never a picture (Who else sees
-  it, [control-e2e.md](control-e2e.md)). A People block still joins its
-  team's room when the switch is Off.
 - **Typing:** the composer pings while the text changes (at most every 3 s,
   never when empty). Others with the room open see up to three names, then
   "Several people are typing…", for 6 s. It is a short-lived row in
@@ -400,8 +385,8 @@ nothing else of the above. What they get:
   `read_thread` shows each message's reactions. Theirs are the owner's,
   labelled with the machine, and apart from the owner's own.
 - Files: `post_thread`'s `files` (paths the agent may read, at most 10 of
-  10 MB), and `read_thread` lists each message's attachments with name,
-  type, size and control's address.
+  100 MB, or less if control's limit is lower), and `read_thread` lists each
+  message's attachments with name, type, size and control's address.
 - Pins: `post_thread`'s `pin_seq` (and `remove`). `read_thread` begins with
   the room's topic, description and pins, marks pinned messages, and shows
   system lines as `* alice set the topic: …` (the platform's own as
@@ -450,83 +435,6 @@ The machine's agents call, with the machine's signature and a grant, under
 and `PUT`/`DELETE /rooms/{id}/messages/{seq}/pin` (`threads.post`), beside the
 rooms, messages and search of [control.md](control.md). They act as the
 machine's owner, labelled with the machine, within the owner's reach.
-
-## Boards
-
-A project's work is managed on boards, and an epic is a board
-([aru-122](decisions/aru-122-boards-manage-a-project-s-issues-wherever-they-live.md)).
-They're control's, so they work with every machine asleep.
-
-**Turning it on.** A team owner turns on `boards` in the team's Labs on
-control's page; the Boards page says so while it's off, and its routes
-answer 404 until then. An agent's machine also needs the Boards grant over
-the project: *Settings → Agents*, Boards set to read, or to read and write,
-or `arugula grants add <machine> boards.read --project <prj_…>` (and
-`boards.write`, which reads too).
-
-**Running work on a board.**
-
-- Make a board on the project's Boards page, and zones on it. *+ Add PROOFS*
-  makes the zone for evidence; a row there counts as proven when it links
-  evidence (an https URL: a CI page, a report), points at a run that
-  succeeded or at a merged PR.
-- *+ Add row* in a zone picks from the project's issues, PRs and runs across
-  its linked repos, or a zone's menu has *New issue…*, which files one and
-  puts it there.
-- An issue or PR row reads as a card with its assignees.
-- **Triage** lists the project's open issues that are on no board. With
-  boards on it takes Issues' place in the bar.
-
-**Epics.** Give a board a goal (*Add a goal*) and its progress reads "3 of 5
-issues done": only issue rows count, an issue is done when it's closed at its
-source, one issue counts once however many rows point at it, and a row the
-reader can't read counts toward neither number. *Close epic…* asks "What can
-a person now do?" and keeps the answer as the done note; *Reopen* keeps the
-note. A closed board's rows stay editable, and the lists fold closed epics
-under *Done (N)*. A team's owners and editors change things; viewers see
-everything.
-
-**Agents.** `board_read` lists a project's boards and reads one (zones, rows,
-ids and revs). `board_write` lands at once, labelled as the person's agent on
-that machine, never as them: a board it makes or closes says so, as a row it
-adds does. It may make a board (an epic, with a goal and its zones), set its
-title and goal, close it with a done note and open it again; make, rename,
-move and delete zones (PROOFS too); add rows, set any row's note and status,
-move rows, and remove or repoint a row it added. It may not delete a zone that
-holds a row someone else added, or remove or repoint such a row. The person's
-role is still the ceiling: a viewer's machine makes nothing, whatever it was
-granted. A note, a pointer or a zone's title names the `rev` that `board_read`
-showed, and one that moved on asks to read again. Agents are told to run work
-of more than one ticket on a board, keep its rows current and close it with a
-note (`BOARDS_STEERING`, `crates/proto/src/flags.rs`); the tools are in
-`crates/arugulad-control-tools/src/boards.rs`, the rules in
-`crates/platform/src/boards.rs` (aru-123).
-
-**Plane.** A project's owner or editor connects a Plane project in project
-settings (*Plane*, after *Linked repos*): its workspace slug, the project's id
-or identifier, and an API key, with an optional webhook secret. Control asks
-Plane for the project with the key first, and keeps nothing if Plane refuses
-it. The key and the secret are sealed in `project_secrets` and never read
-back; no machine or agent route touches them. A Plane project is connected to
-one project at a time. Its work items are read into the mirror (`forge_items`,
-`provider = 'plane'`), a completed or cancelled state as closed. The
-connection's *agent writes* is *Approve each write* (the default) or *Allow
-all writes*. *Disconnect* removes the secrets at once and the items after the
-grace period, as unlinking a repo does
-([aru-124](decisions/aru-124-plane-is-a-source-of-a-project-s-issues.md);
-`crates/platform/src/trackers/`).
-
-People and agents write back: create an item, comment, close (completed or
-cancelled), reopen, and edit its title or body. An owner's or editor's own
-write lands at once; *New issue in Plane…* in a zone's menu makes one there.
-An agent's needs `trackers.write` over the project (its `tracker_write` tool)
-and never goes past what its owner may do by hand. Under *Approve each write*
-it waits at the top of the project's Triage, where a person approves, edits or
-drops it; under *Allow all writes* it lands at once. Each body and comment ends
-with a line saying who it was for ("via Arugula, by ‹person›'s agent on
-‹machine›"), added as it's sent, so an edit can't take it off. Bodies and
-comments go to Plane as escaped HTML; titles as plain text
-(`crates/platform/src/trackers/writes.rs`).
 
 ## Chant workspaces
 
@@ -820,14 +728,21 @@ people's agents. With `agent-delegation` on (M76, #398):
     Claude Code reads it. An edit keeps any keys the form doesn't know, and
     MCP servers written inline in the file. A new recipe never replaces a
     file that's already there.
-  - **Run here** opens an agent block wearing the recipe.
-  - **Offer** and **Stop offering** put it in, or take it out of, the
+  - **Run on <machine>…** opens an agent block wearing the recipe.
+  - **Offer to team** and **Stop offering** put it in, or take it out of, the
     team's catalog.
-  - **Delete** removes the file, after asking, and its offer with it.
+  - **Delete…**, behind the preview's ⋯, removes the file, after asking, and
+    its offer with it. A project added here comes off the page from the same
+    menu; its files stay.
   - Writing and deleting are this machine's own account's.
 - **Team** (`#agents=team`) shows the team's catalog by machine and owner,
-  tasks from other people waiting for you (*Allow once*, *For an hour*,
-  *Deny*), and standing grants with *Revoke*.
+  tasks from other people waiting for you (*Allow once*, *Allow for an hour*,
+  *Deny*, answered from the list without selecting anything), and standing
+  grants with *Revoke*.
+
+Both tabs are list pages: selecting a row shows its preview, with its buttons,
+and the recipe form takes the preview's place. `/` searches, and arrows and
+`j`/`k` move. Under 760 px of room, a tap opens the preview in the list's place.
 
 ### The team's catalog (M77)
 

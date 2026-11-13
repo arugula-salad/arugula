@@ -1,0 +1,104 @@
+# The merge queue's numbers each morning (Arugula #925): its failure rate,
+# run times and time to merge over the last 7 days (scripts/ci-velocity),
+# in the run's summary and in the #dora chat channel, through its webhook
+# (Arugula #963). The CI velocity board judges changes by these.
+name: ci-velocity
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch: {}
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+  issues: read
+jobs:
+  report:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: The merge queue, last 7 days
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/ci-velocity | tee open.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: open
+          path: open.md
+          retention-days: 3
+  # The cloud repo is private, so github.token can't read it: a GitHub App
+  # installed on it (read-only Actions, Pull requests, Metadata) lends a
+  # token (Arugula #964). Its key is a secret of the ci-velocity environment.
+  # Skipped until the app is set up.
+  cloud:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: ci-velocity
+    steps:
+      - uses: actions/checkout@v4
+      - name: Is the cloud's app set up?
+        id: cloud
+        env:
+          APP_ID: ${{ vars.CI_VELOCITY_APP_ID }}
+          APP_KEY: ${{ secrets.CI_VELOCITY_APP_KEY }}
+        run: |
+          if [ -z "$APP_ID" ] || [ -z "$APP_KEY" ]; then
+            echo "::notice::Skipping arugula-salad/cloud: set the variable CI_VELOCITY_APP_ID and the secret CI_VELOCITY_APP_KEY"
+            echo ready=0 >> "$GITHUB_OUTPUT"
+          else
+            echo ready=1 >> "$GITHUB_OUTPUT"
+          fi
+      - name: A token for arugula-salad/cloud
+        id: token
+        if: steps.cloud.outputs.ready == '1'
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ vars.CI_VELOCITY_APP_ID }}
+          private-key: ${{ secrets.CI_VELOCITY_APP_KEY }}
+          owner: arugula-salad
+          repositories: cloud
+      - name: The cloud's pull requests, last 7 days
+        if: steps.cloud.outputs.ready == '1'
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: scripts/ci-velocity --repo arugula-salad/cloud --event pull_request | tee cloud.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: steps.cloud.outputs.ready == '1'
+        with:
+          name: cloud
+          path: cloud.md
+          retention-days: 3
+  # Both tables in one message in #dora, by the channel's webhook (Arugula
+  # #963), whose URL is a secret of the ci-velocity environment. Skipped
+  # while it's missing; a table that didn't come is left out.
+  post:
+    needs: [report, cloud]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: ci-velocity
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: tables
+          merge-multiple: true
+      - name: Post to #dora
+        env:
+          HOOK: ${{ secrets.DORA_WEBHOOK_URL }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo "::notice::Not posted: set the secret DORA_WEBHOOK_URL in the ci-velocity environment"
+            exit 0
+          fi
+          shopt -s nullglob
+          files=(tables/open.md tables/cloud.md)
+          have=()
+          for f in "${files[@]}"; do [ -s "$f" ] && have+=("$f"); done
+          if [ ${#have[@]} -eq 0 ]; then
+            echo "::warning::No table to post"
+            exit 0
+          fi
+          body=$({ for f in "${have[@]}"; do cat "$f"; echo; done; echo "[The run]($RUN)"; } | jq -Rs '{content: ., username: "CI velocity"}')
+          curl -fsS --retry 3 -H 'content-type: application/json' -d "$body" "$HOOK" > /dev/null

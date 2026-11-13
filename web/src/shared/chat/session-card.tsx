@@ -49,6 +49,7 @@
 // closed on its box, keeping its checkout and conversation. The card says
 // "parked", with no Open (its block is gone); a reply opens it again.
 
+import { Card } from "../ui/card";
 import "./session-card.css";
 import { useEffect, useState } from "preact/hooks";
 import { AskCard, type Ask } from "../ask";
@@ -58,6 +59,9 @@ import { usePlatformApi } from "../platform-api";
 import type { ChatMessage, ChatRoom, SessionAct, SessionCard, SessionMove, SessionPick, SessionPr, SessionPrSent, SessionTry, SessionTryAsk, SessionView } from "../proto";
 import { DiffLink, MergedLine, mergedOf } from "./session-done";
 import { workChip } from "../boards/text";
+import { Bar, BarWhere } from "../ui/bar";
+import { ObjectChip, Chip, StateChip } from "../ui/state-chip";
+import { CheckIcon, ExternalIcon } from "../ui/icons";
 
 /** How long a turn may go without its box saying anything (`QUIET_MS`). */
 export const QUIET_MS = 60_000;
@@ -138,9 +142,9 @@ export function SaidHead({ ses, project }: { ses: string; project: string | null
       ) : (
         <span class="thread-name said-name">{name}</span>
       )}
-      <span class="msg-badge said-badge" title={c?.role === "review" ? "A read-only review by an agent session" : "What an agent session said at the end of a turn"}>
+      <Chip tone="accent" data-said-badge title={c?.role === "review" ? "A read-only review by an agent session" : "What an agent session said at the end of a turn"}>
         {c?.role === "review" ? "review" : "agent session"}
-      </span>
+      </Chip>
     </>
   );
 }
@@ -187,7 +191,7 @@ export type Tone = "accent" | "ok" | "warn" | "danger" | "muted";
 function SessionWorkChip({ card }: { card: SessionCard }) {
   const w = card.work!;
   const c = workChip(`#${w.number}`, w.board && w.row ? { project: card.project, board: w.board, title: w.board_title ?? "", row: w.row } : null);
-  return c.path ? <a class="work-chip" href={c.path} title="Its issue's row on the board" data-session-work>{c.label}</a> : <span class="work-chip" title="The issue it was started on" data-session-work>{c.label}</span>;
+  return c.path ? <ObjectChip href={c.path} title="Its issue's row on the board" data-session-work>{c.label}</ObjectChip> : <ObjectChip title="The issue it was started on" data-session-work>{c.label}</ObjectChip>;
 }
 
 export function stateOf(state: string, quiet: boolean): { label: string; tone: Tone } {
@@ -200,7 +204,7 @@ export function stateOf(state: string, quiet: boolean): { label: string; tone: T
     case "needs_input":
       return { label: "needs input", tone: "warn" };
     case "done":
-      return { label: "done", tone: "ok" };
+      return { label: "turn ended", tone: "ok" };
     case "failed":
       return { label: "failed", tone: "danger" };
     default:
@@ -232,6 +236,18 @@ export function lastLines(text: string, n = 6): string {
 /** What an idle session's stop says (M261, the platform's `idle: …`). */
 export function idleOf(c: SessionCard): string | null {
   return c.state === "stopped" && c.reason?.startsWith("idle: ") ? c.reason.slice("idle: ".length) : null;
+}
+
+/** Why a session ended or waits, in words, when the card has no line of
+ * its own for it: control's reason with its code taken off. A stopped
+ * one's too (its workspace failed or was deleted, Arugula #744), except
+ * the stops the label or a line already says (idle, merged, not picked,
+ * reviewed) and a person's, whose reason has no code. */
+export function reasonLine(c: { state: string; reason: string | null }): string | null {
+  if (!c.reason) return null;
+  const code = /^([a-z_]+): /.exec(c.reason)?.[1];
+  if (c.state === "stopped" && (!code || ["idle", "merged", "not_picked", "reviewed"].includes(code))) return null;
+  return c.reason.replace(/^[a-z_]+: /, "");
 }
 
 /** What a try's or a review's state says, past the plain states: a try
@@ -334,7 +350,7 @@ export function ChoiceForm({ question, choices, words, busy, answer }: { questio
       {choices.length > 0 && (
         <div class="session-ask-choices" role="group" aria-label={question}>
           {choices.map((c) => (
-            <button key={c} type="button" disabled={busy} data-ask-choice={c} onClick={() => answer(c, false)}>
+            <button key={c} type="button" class="secondary small" disabled={busy} data-ask-choice={c} onClick={() => answer(c, false)}>
               {c}
             </button>
           ))}
@@ -349,7 +365,7 @@ export function ChoiceForm({ question, choices, words, busy, answer }: { questio
           }}
         >
           <input aria-label="Your own answer" placeholder={choices.length ? "Or in your own words" : "Your answer"} value={own} maxLength={2000} onInput={(e) => setOwn(e.currentTarget.value)} data-ask-words />
-          <button type="submit" disabled={busy || !own.trim()} data-ask-send>
+          <button type="submit" class="secondary small" disabled={busy || !own.trim()} data-ask-send>
             Send
           </button>
         </form>
@@ -474,7 +490,7 @@ export function PrEditor({ ses, onClose }: { ses: string; onClose: () => void })
         <p class={said ? "session-card-line bad" : "session-card-line dim"}>{said ?? "Reading its PR…"}</p>
         {said && (
           <div class="session-card-buttons">
-            <button type="button" onClick={onClose}>
+            <button type="button" class="secondary small" onClick={onClose}>
               Close
             </button>
           </div>
@@ -538,14 +554,14 @@ export function PrEditor({ ses, onClose }: { ses: string; onClose: () => void })
         </p>
       )}
       <div class="session-card-buttons">
-        <button type="submit" disabled={busy || !title.trim()} title="It goes out on GitHub as you" data-session-pr-send>
+        <button type="submit" class="primary small" disabled={busy || !title.trim()} title="It goes out on GitHub as you" data-session-pr-send>
           Send as you
         </button>
-        <button type="button" disabled={busy} onClick={() => void save()} data-session-pr-save>
+        <button type="button" class="secondary small" disabled={busy} onClick={() => void save()} data-session-pr-save>
           Keep
         </button>
         <span class="session-card-fill" />
-        <button type="button" onClick={onClose} data-session-pr-close>
+        <button type="button" class="secondary small" onClick={onClose} data-session-pr-close>
           Close
         </button>
       </div>
@@ -587,7 +603,7 @@ function TriesView({ c, may, busy, pick }: { c: SessionCard; may: boolean; busy:
                 <p class="session-try-finish" data-session-try-finish={t.turn.finish.ok ? "ok" : "failed"}>
                   {t.turn.finish.ok ? (
                     <>
-                      finish: <span class="ok">✓</span>
+                      finish: <span class="ok"><CheckIcon size="xs" /></span>
                     </>
                   ) : (
                     <span class="bad">finish failed</span>
@@ -605,12 +621,12 @@ function TriesView({ c, may, busy, pick }: { c: SessionCard; may: boolean; busy:
                 )}
                 {diff && (
                   <a href={diff} target="_blank" rel="noopener" title={`What it pushed, against the repo's default branch, on GitHub`} data-session-try-diff>
-                    diff ↗
+                    diff <ExternalIcon size="xs" />
                   </a>
                 )}
                 <span class="session-card-fill" />
                 {may && !c.picked && c.merged_at === null && t.state !== "failed" && t.state !== "stopped" && (
-                  <button type="button" disabled={busy} title="Keep this one: the others stop, and what they didn't push goes" data-session-pick={t.session} onClick={() => pick(t.session)}>
+                  <button type="button" class="secondary small" disabled={busy} title="Keep this one: the others stop, and what they didn't push goes" data-session-pick={t.session} onClick={() => pick(t.session)}>
                     Pick
                   </button>
                 )}
@@ -650,9 +666,9 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
   useEffect(() => void (view && onView?.(view)), [view]);
   if (!view || !c) {
     return (
-      <div class="session-card tone-muted" data-session-card={ses} data-session-state="loading">
+      <Card class="session-card" tone="muted" data-session-card={ses} data-session-state="loading">
         <span class="dim">{error ? `This session can't be read: ${error}` : "Reading the session…"}</span>
-      </div>
+      </Card>
     );
   }
   const quiet = isQuiet(c, now);
@@ -690,24 +706,39 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
   // Not once its PR merged (M265): its thread is done.
   const mayTry = view.may && c.role === "thread" && c.tries.length === 0 && c.merged_at === null && c.state !== "failed" && c.state !== "stopped";
   return (
-    <div class={`session-card tone-${tone}${large ? " large" : ""}`} data-session-card={c.session} data-session-state={quiet && c.state !== "unresponsive" ? "quiet" : c.state}>
-      <div class="session-card-top">
-        <span class="session-card-state" data-session-label>
-          {label}
-        </span>
-        <span class="session-card-what">{review ? "review" : c.role === "try" ? "try" : "agent session"}</span>
-        {page ? (
-          <a class="session-card-id" href={page} title="This session's own page" data-session-page>
-            {short}
-          </a>
-        ) : (
-          <span class="session-card-id">{short}</span>
-        )}
-        <span class="session-card-fill" />
-        <time class="session-card-time" title={ended ? "How long it ran" : "How long it's run"} data-session-elapsed>
-          {took}
-        </time>
-      </div>
+    <Card
+      class={`session-card${large ? " large" : ""}`}
+      tone={tone}
+      head={
+      <Bar
+        sub
+        lead={
+          <StateChip tone={tone} data-session-label>
+            {label}
+          </StateChip>
+        }
+        where={
+          <BarWhere>
+            {review ? "review " : c.role === "try" ? "try " : ""}
+            {page ? (
+              <a class="session-card-id" href={page} title="This session's own page" data-session-page>
+                {short}
+              </a>
+            ) : (
+              <span class="session-card-id">{short}</span>
+            )}
+          </BarWhere>
+        }
+        actions={
+          <time class="session-card-time" title={ended ? "How long it ran" : "How long it's run"} data-session-elapsed>
+            {took}
+          </time>
+        }
+      />
+      }
+      data-session-card={c.session}
+      data-session-state={quiet && c.state !== "unresponsive" ? "quiet" : c.state}
+    >
       <div class="session-card-where">
         {c.repo && <span data-session-repo>{c.repo}</span>}
         <span class="session-card-branch" data-session-branch>
@@ -758,9 +789,9 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
           {c.last_error}
         </p>
       )}
-      {c.reason && c.state !== "stopped" && (
+      {reasonLine(c) && (
         <p class={c.state === "queued" ? "session-card-line dim" : "session-card-line bad"} data-session-reason>
-          {c.reason.replace(/^[a-z_]+: /, "")}
+          {reasonLine(c)}
         </p>
       )}
       {idle && (
@@ -778,18 +809,24 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
         </p>
       ) : null}
       {c.turn && (
-        <div class="session-card-turn" data-session-turn>
-          <span class={c.turn.pushed ? "ok" : "dim"}>{review ? "Read only" : c.turn.pushed ? "Pushed" : "Not pushed"}</span>
-          <span class="dim">
-            {" "}
-            · {c.turn.commits.length} commit{c.turn.commits.length === 1 ? "" : "s"}
-            {c.turn.uncommitted ? ` · ${c.turn.uncommitted} uncommitted` : ""}
-          </span>
+        <div class="session-card-turn" data-session-turn title={c.turn.pushed ? `Pushed · ${c.turn.commits.length} commit${c.turn.commits.length === 1 ? "" : "s"}` : undefined}>
+          {c.turn.pushed && !review ? (
+            !!c.turn.uncommitted && <span class="dim">{c.turn.uncommitted} uncommitted</span>
+          ) : (
+            <>
+              <span class="dim">{review ? "Read only" : "Not pushed"}</span>
+              <span class="dim">
+                {" "}
+                · {c.turn.commits.length} commit{c.turn.commits.length === 1 ? "" : "s"}
+                {c.turn.uncommitted ? ` · ${c.turn.uncommitted} uncommitted` : ""}
+              </span>
+            </>
+          )}
           {c.turn.diffstat && <pre data-session-diffstat>{c.turn.diffstat}</pre>}
           {c.turn.finish &&
             (c.turn.finish.ok ? (
               <p class="session-card-finish" data-session-finish="ok">
-                finish: <span class="ok">✓</span> <code>{c.turn.finish.command}</code>
+                finish: <span class="ok"><CheckIcon size="xs" /></span> <code>{c.turn.finish.command}</code>
               </p>
             ) : (
               <div class="session-card-finish" data-session-finish="failed">
@@ -815,35 +852,38 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
         {c.machine && block && !parked && (
           <button
             type="button"
+            class="secondary small"
             title={
               onControl
-                ? `Its agent block, live on its box, on Control (${onControl}), where your machines are. A browser is approved there once before it reaches them.`
+                ? `Its agent block, live on its box, on your machines (${onControl}). A browser is approved there once before it reaches them.`
                 : "Its agent block, live on its box"
             }
             data-session-open
             onClick={() => open(`pane=${c.machine}.${block}`, () => api.goToPane(c.machine!, block, null))}
           >
-            {onControl ? "Open on Control ↗" : "Open ↗"}
+            {onControl ? "Open on your machines" : "Open"} <ExternalIcon size="xs" />
           </button>
         )}
         {c.machine && port && (
           <button
             type="button"
-            title={port.url ? `Its dev server on :${port.port}, public` : `Its dev server on :${port.port}, on Control`}
+            class="secondary small"
+            title={port.url ? `Its dev server on :${port.port}, public` : `Its dev server on :${port.port}, on your machines`}
             data-session-preview
             onClick={() => (port.url ? window.open(port.url, "_blank", "noopener") : open(`machine=${c.machine}`, () => api.goToSession(c.machine!)))}
           >
-            Preview ↗
+            Preview <ExternalIcon size="xs" />
           </button>
         )}
         {review ? null : <DiffLink c={c} />}
         {review ? null : c.pr && /^https:\/\//.test(c.pr) ? (
-          <a class="button" href={c.pr} target="_blank" rel="noopener" data-session-pr>
-            PR ↗
+          <a class="secondary small" href={c.pr} target="_blank" rel="noopener" data-session-pr>
+            PR <ExternalIcon size="xs" />
           </a>
         ) : c.pushed && view.asked ? (
           <button
             type="button"
+            class="secondary small"
             aria-pressed={drafting}
             title={failed ? "Draft its PR, then send it as you: it has what was pushed, not the last turn, whose finish step failed" : "Draft its PR, then send it as you"}
             data-session-pr
@@ -854,6 +894,7 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
         ) : (
           <button
             type="button"
+            class="secondary small"
             disabled
             title={
               c.pushed ? `${c.asker_name || "Its asker"} sends its PR: it goes out as them` : failed ? "PR after its finish step passes and a turn pushes its branch" : "PR after a turn pushes its branch"
@@ -867,6 +908,7 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
           <span class="session-try3" data-session-try3>
             <button
               type="button"
+              class="secondary small"
               disabled={busy}
               title="Run it two more ways at once, each in a slot of its own on its box, re-running its first prompt; then keep the one you like"
               data-session-try-go
@@ -874,7 +916,7 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
             >
               Try 3
             </button>
-            <select aria-label="The two more" title="The agents the two more run on" value={tryWith} disabled={busy} onChange={(e) => setTryWith(e.currentTarget.value)} data-session-try-with>
+            <select class="field small" aria-label="The two more" title="The agents the two more run on" value={tryWith} disabled={busy} onChange={(e) => setTryWith(e.currentTarget.value)} data-session-try-with>
               <option value="codex">+ Claude, Codex</option>
               <option value="claude">+ Claude ×2</option>
             </select>
@@ -882,7 +924,7 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
         )}
         {c.moves.length > 0 && (c.state === "queued" || c.state === "done") && (
           <select
-            class="session-move"
+            class="field small"
             aria-label="Move to…"
             title="Move it to another of the project's workspaces with its repo: its next turn starts there, from the thread"
             value=""
@@ -905,12 +947,12 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
         )}
         <span class="session-card-fill" />
         {view.may && (c.state === "working" || c.state === "needs_input") && !c.cancelling && (
-          <button type="button" disabled={busy} title="Cancel the turn under way: the session goes on" data-session-cancel onClick={() => void act("actions", { kind: "cancel" })}>
+          <button type="button" class="secondary small" disabled={busy} title="Cancel the turn under way: the session goes on" data-session-cancel onClick={() => void act("actions", { kind: "cancel" })}>
             Cancel turn
           </button>
         )}
         {view.may && c.state !== "failed" && c.state !== "stopped" && (
-          <button type="button" class="danger" disabled={busy} title="Stop the session: its box stops the agent" data-session-stop onClick={() => void act("stop")}>
+          <button type="button" class="secondary small danger" disabled={busy} title="Stop the session: its box stops the agent" data-session-stop onClick={() => void act("stop")}>
             Stop
           </button>
         )}
@@ -918,6 +960,6 @@ export function SessionCardView({ ses, large = false, onView }: { ses: string; l
       <div class="session-card-foot dim" data-session-started-by={c.started_by ? "" : undefined}>
         {c.started_by ? `Started by ${c.started_by}` : `Asked by ${c.asker_name || "someone who left"}`}
       </div>
-    </div>
+    </Card>
   );
 }

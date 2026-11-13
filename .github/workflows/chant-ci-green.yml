@@ -31,6 +31,9 @@ permissions:
 jobs:
   tick:
     runs-on: ubuntu-latest
+    # Not chant's: CI_GREEN_TOKEN is the ci-green environment's, which only
+    # main reaches. Keep this line when regenerating the file.
+    environment: ci-green
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -49,4 +52,4 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GIT_COMMITTER_NAME: github-actions[bot]
           GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
-        run: npx --yes @intentius/chant@0.124.60 ci tick
+        run: npx --yes @intentius/chant@0.124.70 ci tick

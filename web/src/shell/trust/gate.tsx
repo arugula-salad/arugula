@@ -7,10 +7,10 @@
 import { useEffect, useState } from "preact/hooks";
 import { CopyText } from "../../shared/ui/copy";
 import { Time } from "../../shared/ui/time";
-import { cameToRecover, DEVICE_HASH, deviceName, inApp, inviteInHash, joinInHash, passkeyRegister, passkeySignIn, previewInvite, signInNext, wholeJoinInHash, type ControlSession } from "../control";
-import { fingerprint, type Cert } from "../e2e/cert.ts";
+import { cameToRecover, DEVICE_HASH, deviceName, inApp, inviteInHash, joinInHash, passkeyRegister, passkeySignIn, previewInvite, shownName, signInNext, wholeJoinInHash, type Approver as ApproverRow, type Approvers, type ControlSession } from "../control";
+import { fingerprint, type Kind } from "../e2e/cert.ts";
 import { AddedAt, Center, QrCode, useControl, WaitingLine } from "./common";
-import { Mark } from "../ui/shell/icons";
+import { Mark } from "../../shared/ui/icons";
 import { DeviceDetails } from "./devices";
 import { RecoveryForm } from "./recovery";
 import { ResetOffer } from "./reset";
@@ -33,7 +33,7 @@ function HostedTerms() {
 /** Everything before the app: sign in, approval, no machines yet. */
 export function ControlGate({ s }: { s: ControlSession }) {
   useControl(s);
-  if (s.phase === "loading") return <Center>Connecting to Arugula control…</Center>;
+  if (s.phase === "loading") return <Center>Connecting to Arugula cloud…</Center>;
   if (s.phase === "error")
     return (
       <Center>
@@ -62,7 +62,7 @@ export function ControlGate({ s }: { s: ControlSession }) {
           ) : null}
           {s.info.passkeys ? <PasskeyButtons /> : null}
         </div>
-        {!s.info.github && !s.info.passkeys ? <p class="control-error">No sign-in is configured on this control.</p> : null}
+        {!s.info.github && !s.info.passkeys ? <p class="control-error">No sign-in is configured on this server.</p> : null}
         <HostedTerms />
       </Center>
     );
@@ -246,6 +246,7 @@ function Waiting({ s }: { s: ControlSession }) {
         {mine ? <QrCode text={link} label="QR code for the machine's approval link" /> : null}
         <CopyText text={link} data-control-join-link />
         <p>Approve the code there, and pick where the machine goes: your account, or a team you own. That's the one approval the machine needs.</p>
+        <WhoApproves s={s} kind="daemon" />
         {mine ? (
           <>
             <p class="dim" data-waiting-also data-device-code={mine}>
@@ -273,6 +274,8 @@ function Waiting({ s }: { s: ControlSession }) {
   return (
     <Center>
       <h1>{inApp() ? "Approve this app as a device" : "Approve this browser"}</h1>
+      {/* #641: a synced passkey needs no other device, so it comes first. */}
+      <PasskeyInstead s={s} lead />
       {mine ? (
         <>
           <p data-waiting-browser={name} data-waiting-passkey={s.fromPasskey ? "" : undefined}>
@@ -297,12 +300,17 @@ function Waiting({ s }: { s: ControlSession }) {
           <WaitingLine />
         </>
       )}
-      <WhyAgain s={s} name={name} />
+      <WhoApproves s={s} kind={inApp() ? "app" : "browser"} name={name} />
       <p class="control-aside" data-waiting-machine>
         Here to add a machine to your account or a team? That's a separate approval, and it doesn't need this one. The machine shows a code (in
         Getting started, or where you ran <code>arugulad join</code>): approve that code on a device you already use.
       </p>
-      <PasskeyInstead s={s} />
+      {/* A GitHub-only account has nothing to use yet: what to do next time. */}
+      {s.info.passkeys && !s.passkeys && !s.fromPasskey && !inApp() ? (
+        <p class="dim" data-waiting-next-time>
+          Next time: once you're in, add a passkey that syncs and turn on <i>Use on new computers</i>. A computer it syncs to won't need another device.
+        </p>
+      ) : null}
       <RecoveryForm s={s} open={recovering()} />
       {inApp() ? null : <ResetOffer />}
       <SignOuts s={s} />
@@ -310,54 +318,111 @@ function Waiting({ s }: { s: ControlSession }) {
   );
 }
 
-/** #1581: an account that has devices already, asking this browser to be
- * approved: say why, since it may have been approved before. Its approval
- * is kept per address, so one made at another address (control moved), or
- * saved data cleared, leaves it asking again. A browser of the same name
- * leads. */
-function WhyAgain({ s, name }: { s: ControlSession; name: string }) {
-  const [others, setOthers] = useState<Cert[] | null>(null);
+/** #77: the account's devices that can approve what waits here (this
+ * browser, this app window, or a machine), by name, with when each was last
+ * used, so a person knows which one to pick up; and, when none can, that
+ * plainly, with the recovery code. (Its words never say "approve this
+ * browser": that's the heading's, which the specs find by text.) The desktop app approves machines and
+ * apps, never a browser: on a browser's page it's named apart, so nobody
+ * goes to it in vain.
+ *
+ * #1581: for a browser, with devices there already, why it's asked again.
+ * Its approval is kept per address, so one made at another address (control
+ * moved), or saved data cleared, leaves it asking again. A browser of the
+ * same name leads. */
+function WhoApproves({ s, kind, name }: { s: ControlSession; kind: Kind; name?: string }) {
+  const [a, setA] = useState<Approvers | null>(null);
   useEffect(() => {
-    s.otherDevices()
-      .then(setOthers)
-      .catch(() => setOthers([]));
-  }, [s]);
-  if (inApp() || !others?.length) return null;
+    s.approvers(kind)
+      .then(setA)
+      .catch(() => setA(null));
+  }, [s, kind]);
+  if (!a) return null;
   const host = new URL(s.info.url).host;
-  const same = others.filter((c) => c.name === name).sort((a, b) => b.created - a.created)[0];
+  const others = [...a.can, ...a.cannot].map((x) => x.cert);
+  const browser = kind === "browser";
+  const same = browser ? others.filter((c) => c.name === name).sort((x, y) => y.created - x.created)[0] : undefined;
   return (
-    <div class="control-aside" data-why-again={same ? "same-name" : "others"}>
-      <p>
-        {same ? (
+    <div class="control-aside" data-approvers-for={kind} data-why-again={browser && others.length ? (same ? "same-name" : "others") : undefined}>
+      {browser && others.length ? (
+        <p>
+          {same ? (
+            <>
+              Your account already has <b>{shownName(same.name)}</b>, added <AddedAt at={same.created} />. If that's this browser, it's asked again because its
+              approval is saved for one address: it was approved at an earlier address of Arugula's, or its saved data for {host} was cleared.
+            </>
+          ) : (
+            <>
+              Your account has {others.length === 1 ? "another device" : `${others.length} other devices`}. If you approved this browser before, its approval
+              was saved for another address, or its saved data for {host} was cleared, so it's asked again here.
+            </>
+          )}
+        </p>
+      ) : null}
+      {a.can.length ? (
+        <>
+          <p>{a.can.length === 1 ? "Your device that can approve it:" : "Your devices that can approve it, last used first:"}</p>
+          <ul class="control-approvers" data-approvers>
+            {a.can.map((x) => (
+              <Approver key={x.cert.device} x={x} />
+            ))}
+          </ul>
+          <p>Open {host} on {a.can.length === 1 ? "it" : "one of them"}; it asks there. If {a.can.length === 1 ? "it isn't" : "none is"} at hand, use a recovery code below.</p>
+        </>
+      ) : (
+        <p data-approvers-none>
+          {others.length ? "None of your devices can approve it" : "Your account has no other device that can approve it"}, so waiting here won't get
+          it approved. Use a recovery code below{browser || kind === "app" ? "" : ": it approves this browser, which can then approve the machine"}.
+        </p>
+      )}
+      {a.cannot.length ? (
+        <p data-approvers-cannot>
+          {a.cannot.map((x, i) => (
+            <span key={x.cert.device}>
+              {i ? (i === a.cannot.length - 1 ? " and " : ", ") : ""}
+              <b data-approver-cannot={x.cert.device}>{shownName(x.cert.name)}</b>
+            </span>
+          ))}{" "}
+          can't approve a browser: the desktop app, and what it approved, approve machines and apps only.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/** One device that can approve: its name, and when it was last used (or,
+ * never seen used, when it was added). */
+function Approver({ x }: { x: ApproverRow }) {
+  return (
+    <li data-approver={x.cert.device}>
+      <b>{shownName(x.cert.name)}</b>{" "}
+      <span class="dim">
+        {x.used ? (
           <>
-            Your account already has <b>{same.name}</b>, added <AddedAt at={same.created} />. If that's this browser, it's asked again because its approval
-            is saved for one address: it was approved at an earlier address of Arugula's, or its saved data for {host} was cleared.
+            last used <Time at={Math.min(x.used, Date.now())} on data-used={x.used} />
           </>
         ) : (
           <>
-            Your account has {others.length === 1 ? "another device" : `${others.length} other devices`}. If you approved this browser before, its approval
-            was saved for another address, or its saved data for {host} was cleared, so it's asked again here.
+            added <AddedAt at={x.cert.created} />
           </>
         )}
-      </p>
-      <p>
-        Approve it from a device that opens {host} now. If none does, use a recovery code below.
-      </p>
-    </div>
+      </span>
+    </li>
   );
 }
 
 /** #764: a passkey whose PRF output gives the device another browser
  * enrolled with it: this browser becomes that device, with no approval. */
-function PasskeyInstead({ s }: { s: ControlSession }) {
+function PasskeyInstead({ s, lead = false }: { s: ControlSession; lead?: boolean }) {
   const [err, setErr] = useState("");
   if (!s.info.passkeys || !s.passkeys || s.fromPasskey || inApp()) return null;
   return (
     <>
-      <button class="secondary" data-use-passkey onClick={() => s.usePasskey().catch((e: Error) => setErr(e.name === "NotAllowedError" ? "Cancelled." : e.message))}>
-        Use your passkey instead
+      <button class={lead ? "primary" : "secondary"} data-use-passkey onClick={() => s.usePasskey().catch((e: Error) => setErr(e.name === "NotAllowedError" ? "Cancelled." : e.message))}>
+        {lead ? "Use your passkey" : "Use your passkey instead"}
       </button>
       {err ? <p class="control-error">{err}</p> : null}
+      {lead ? <p class="dim" data-waiting-or>Or approve it from a device you already use:</p> : null}
     </>
   );
 }
@@ -374,7 +439,7 @@ function Unvouched({ s }: { s: ControlSession }) {
       <Center>
         <h1>The approval doesn't match this browser's code</h1>
         <p data-unvouched="wrong">
-          {by} approved this browser, but its answer doesn't match the code this browser showed: the code was mistyped, or control changed the account
+          {by} approved this browser, but its answer doesn't match the code this browser showed: the code was mistyped, or Arugula cloud changed the account
           it was approved into. This browser doesn't trust it, and that code is used up.
         </p>
         <p>Enroll it again to get a new code. If the old one is listed under <i>Devices and machines</i> on your other device, remove it there.</p>
@@ -388,7 +453,7 @@ function Unvouched({ s }: { s: ControlSession }) {
     <Center>
       <h1>Check your account's fingerprint</h1>
       <p data-unvouched="missing">
-        {by} approved this browser from a page that didn't use its code, so this browser can't tell your account from one control made up. On{" "}
+        {by} approved this browser from a page that didn't use its code, so this browser can't tell your account from one Arugula cloud made up. On{" "}
         {v.by ? "that device" : "a device you use"}, open <i>Devices and machines</i> and check your account's fingerprint there is this one:
       </p>
       <p class="fingerprint" data-unvouched-account={v.root}>

@@ -249,11 +249,12 @@ pub async fn run(app: &App, b: InviteRequest, drafted: Option<&Drafted>) -> Resu
             }
         };
         let set = app.acl.set_full(b.session, &person.id, &person.name, Some(want), "owner", from, person.root.clone());
+        // An error too: it may have happened all the same (`Acl::commit`).
+        app.mux.send(Cmd::AclChanged);
+        app.control.poke();
         if let Err(e) = set {
             return Err(no(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
         }
-        app.mux.send(Cmd::AclChanged);
-        app.control.poke();
     }
     let drive = match b.drive_minutes.filter(|_| !co_owner) {
         Some(m) => Some(app.mux.api(|r| Api::Trust(pane, person.id.clone(), m, r)).await.unwrap_or(false)),
@@ -329,7 +330,7 @@ async fn deliver(
     let through_control = to.starts_with("account:") && app.control.enrolled().is_some();
     if !through_control {
         return match (to.starts_with("account:"), here) {
-            (true, _) => (InviteDelivery::Unreachable, Some("this machine isn't joined to Arugula control".into())),
+            (true, _) => (InviteDelivery::Unreachable, Some("this machine isn't joined to Arugula cloud".into())),
             (false, 0) => (InviteDelivery::Unreachable, Some("they haven't turned on notifications here".into())),
             (false, _) => (InviteDelivery::Unreachable, Some("their push service turned it down".into())),
         };
@@ -373,7 +374,7 @@ pub async fn add_pins(app: &App, agent: bool, b: TeamPinsRequest) -> Result<Team
         return Err(no(StatusCode::FORBIDDEN, "the owner's browser pins teams, not an agent"));
     }
     if app.control.enrolled().is_none() {
-        return Err(no(StatusCode::BAD_REQUEST, "this machine isn't joined to Arugula control"));
+        return Err(no(StatusCode::BAD_REQUEST, "this machine isn't joined to Arugula cloud"));
     }
     let well_formed = |team: &str, root: &str| {
         ok_id(team) && root.split_once('.').is_some_and(|(f, r)| ok_id(f) && ok_id(r) && !r.contains('.'))

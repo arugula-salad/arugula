@@ -40,7 +40,7 @@ if (!plain.arugula) {
     const url = new URL(input instanceof Request ? input.url : String(input));
     if (!loopback.includes(url.hostname)) return plain(input, init);
     const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
-    // A request with cookies of its own is for something else (wisp's UI).
+    // A request with cookies of its own is for something else.
     if (headers.has("cookie") || headers.has("x-arugula-key")) return plain(input, init);
     headers.set("x-arugula-key", pageKey);
     return plain(input, { ...init, headers });

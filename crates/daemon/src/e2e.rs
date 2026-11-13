@@ -15,6 +15,7 @@ use arugula_e2e::{
     Kind,
     channel::{Channel, MAX_MSG, MAX_WIRE, Msg, Refusal, RequestHead, Responder, ResponseHead, Welcome, prologue},
 };
+use arugula_proto::{Frame, FrameKind};
 use axum::{
     Router,
     body::{Body, HttpBody},
@@ -35,9 +36,19 @@ use tracing::{debug, info, warn};
 
 use crate::{
     mux::Cmd,
-    pane::{Subscriber, ToClient, client_queue},
+    pane::{ClientRx, Subscriber, ToClient, client_queue},
     server::App,
 };
+
+/// A relayed channel's pane output goes at most this often (#856): a busy
+/// pane's thousands of small reads a second become one message per pane
+/// each time, so control's relay moves about 60 messages a second for it,
+/// not 4,000. Output after a quiet spell goes at once (a keystroke's echo).
+const COALESCE: std::time::Duration = std::time::Duration::from_millis(16);
+/// The most output one coalesced frame carries.
+const COALESCE_MAX: usize = 32 * 1024;
+/// The most queued items taken together.
+const COALESCE_ITEMS: usize = 512;
 
 pub const PATH: &str = "/e2e";
 
@@ -77,7 +88,7 @@ async fn serve_ws(app: Arc<App>, socket: WebSocket) {
     };
     let w = crate::task::spawn(writer);
     tokio::select! {
-        r = serve(app, in_rx, out_tx) => log_end(r),
+        r = serve(app, in_rx, out_tx, false) => log_end(r),
         _ = reader => {}
     }
     drain(w).await;
@@ -121,8 +132,9 @@ pub async fn serve_stream(app: Arc<App>, stream: DuplexStream) {
         let _ = wr.shutdown().await;
     };
     let w = crate::task::spawn(writer);
+    // Through control's relay: its output is coalesced (#856).
     tokio::select! {
-        r = serve(app, in_rx, out_tx) => log_end(r),
+        r = serve(app, in_rx, out_tx, true) => log_end(r),
         _ = reader => {}
     }
     drain(w).await;
@@ -155,7 +167,15 @@ impl Out {
     }
 }
 
-async fn serve(app: Arc<App>, mut inbound: mpsc::Receiver<Vec<u8>>, out: mpsc::Sender<Vec<u8>>) -> anyhow::Result<()> {
+async fn serve(
+    app: Arc<App>,
+    mut inbound: mpsc::Receiver<Vec<u8>>,
+    out: mpsc::Sender<Vec<u8>>,
+    relayed: bool,
+) -> anyhow::Result<()> {
+    // Before anyone's looked up: a change from here on is one this channel
+    // sees, however soon it comes.
+    let mut changed = app.control.changed.subscribe();
     let m1 = tokio::time::timeout(std::time::Duration::from_secs(15), inbound.recv())
         .await
         .map_err(|_| anyhow::anyhow!("no handshake"))?
@@ -191,7 +211,7 @@ async fn serve(app: Arc<App>, mut inbound: mpsc::Receiver<Vec<u8>>, out: mpsc::S
     // machine, a project person's own machine drives it: any request.
     if device.kind == Kind::Daemon {
         let full = app.control.drives(&who);
-        return serve_machine(app, inbound, out, who, device, principal, caller, full).await;
+        return serve_machine(app, inbound, out, who, device, principal, caller, full, changed).await;
     }
     let ch = out.ch.clone();
 
@@ -221,10 +241,11 @@ async fn serve(app: Arc<App>, mut inbound: mpsc::Receiver<Vec<u8>>, out: mpsc::S
     // which is how most channels end: leave the mux and the hands then too.
     let _left = Leave { app: app.clone(), client, device: device.device.clone(), opened: std::time::Instant::now() };
     let router = crate::server::channel_router(app.clone());
-    let mut changed = app.control.changed.subscribe();
     // Its requests (a follow can run for as long as the channel does) end
     // with it: dropping the set aborts them.
     let mut requests = tokio::task::JoinSet::new();
+    // When this relayed channel last sent pane output (#856).
+    let mut last_output: Option<tokio::time::Instant> = None;
     loop {
         tokio::select! {
             Some(_) = requests.join_next(), if !requests.is_empty() => {}
@@ -243,6 +264,11 @@ async fn serve(app: Arc<App>, mut inbound: mpsc::Receiver<Vec<u8>>, out: mpsc::S
                         }
                     }
                     Ok(Some(Msg::Request { id, head, body })) => {
+                        // By what's true now, not at the handshake: the mux's
+                        // word that access went may still be on its way here.
+                        if no_longer(app.control.device(&who).map(|(_, p)| p), &principal).is_some() {
+                            break Ok(());
+                        }
                         requests.spawn(answer(router.clone(), out.clone(), id, head, body, principal.clone(), caller.clone()));
                     }
                     Ok(Some(Msg::Response { .. })) => break Err(anyhow::anyhow!("a client doesn't answer requests")),
@@ -264,8 +290,19 @@ async fn serve(app: Arc<App>, mut inbound: mpsc::Receiver<Vec<u8>>, out: mpsc::S
                 if let Some(r) = end { break r }
             }
             Some(o) = data_rx.recv() => {
-                let Some(m) = to_msg(o) else { break Ok(()) };
-                if let Err(e) = out.put(&m).await { break Err(e) }
+                let batch = if relayed { coalesced(o, &mut data_rx, &mut last_output).await } else { vec![o] };
+                let mut end = None;
+                for o in batch {
+                    let Some(m) = to_msg(o) else {
+                        end = Some(Ok(()));
+                        break;
+                    };
+                    if let Err(e) = out.put(&m).await {
+                        end = Some(Err(e));
+                        break;
+                    }
+                }
+                if let Some(r) = end { break r }
             }
             Ok(()) = changed.changed() => {
                 if let Some(why) = no_longer(app.control.device(&who).map(|(_, p)| p), &principal) {
@@ -309,6 +346,10 @@ impl Caller {
 /// The request headers a channel carries besides `Content-Type` (#400).
 const PASSED_HEADERS: [&str; 2] = ["A2A-Version", "A2A-Extensions"];
 
+/// The response headers a channel carries besides `Content-Type` (#933): a
+/// file read's size and offset.
+const PASSED_BACK: [&str; 2] = ["x-arugula-size", "x-arugula-offset"];
+
 /// Whether `path` is one an agent-calling daemon may ask for: under
 /// `/api/a2a/`, as the router will see it (decoded, no `..`).
 fn agents_only(path: &str) -> bool {
@@ -332,12 +373,12 @@ async fn serve_machine(
     principal: crate::acl::Principal,
     caller: Caller,
     full: bool,
+    mut changed: tokio::sync::watch::Receiver<u64>,
 ) -> anyhow::Result<()> {
     let what = if full { "driving channel" } else { "agent channel" };
     info!(device = device.device, account = device.account, name = device.name, "{what} open");
     let router = crate::server::channel_router(app.clone());
     let ch = out.ch.clone();
-    let mut changed = app.control.changed.subscribe();
     let mut requests = tokio::task::JoinSet::new();
     let r = loop {
         tokio::select! {
@@ -351,7 +392,7 @@ async fn serve_machine(
                     }
                     Ok(Some(Msg::Request { id, .. })) => {
                         let body = serde_json::to_vec(&serde_json::json!({ "error": "a machine reaches only the agents here (/api/a2a/)" })).unwrap();
-                        let m = Msg::Response { id, head: ResponseHead { status: 403, content_type: Some("application/json".to_owned()), more: false }, body };
+                        let m = Msg::Response { id, head: ResponseHead { status: 403, content_type: Some("application/json".to_owned()), more: false, headers: Default::default() }, body };
                         if let Err(e) = out.put(&m).await { break Err(e) }
                     }
                     Ok(Some(_)) => break Err(anyhow::anyhow!("a machine's channel carries requests only")),
@@ -371,13 +412,13 @@ async fn serve_machine(
     r
 }
 
-const UNTRUSTED: &str = "device no longer trusted";
+pub(crate) const UNTRUSTED: &str = "device no longer trusted";
 
 /// Why a channel opened as `was` closes now that its device resolves to
 /// `now` (None: no longer trusted): it's gone, or it's someone else or has
 /// another standing here (an owner made a viewer, say). The client opens a
 /// new one as whoever it is now. None: it carries on.
-fn no_longer(now: Option<crate::acl::Principal>, was: &crate::acl::Principal) -> Option<&'static str> {
+pub(crate) fn no_longer(now: Option<crate::acl::Principal>, was: &crate::acl::Principal) -> Option<&'static str> {
     match now {
         None => Some(UNTRUSTED),
         Some(p) if p.id() != was.id() || p.is_owner() != was.is_owner() => Some("device's standing changed"),
@@ -404,6 +445,67 @@ impl Drop for Leave {
     }
 }
 
+/// What a relayed channel sends for `first` and whatever is queued behind
+/// it (#856). Pane output within [`COALESCE`] of the last that went waits
+/// out the rest of it, so a busy pane's output goes in one message per
+/// pane per [`COALESCE`]; then everything queued is taken, in order, with
+/// each pane's back-to-back output joined ([`join_output`]).
+async fn coalesced(first: ToClient, rx: &mut ClientRx, last: &mut Option<tokio::time::Instant>) -> Vec<ToClient> {
+    let output = matches!(&first, ToClient::Frame(b) if b.first() == Some(&(FrameKind::Output as u8)));
+    if output && let Some(at) = *last {
+        tokio::time::sleep_until(at + COALESCE).await;
+    }
+    let mut items = vec![first];
+    while items.len() < COALESCE_ITEMS {
+        let Some(o) = rx.try_recv() else { break };
+        items.push(o);
+    }
+    let items = join_output(items);
+    if items.iter().any(|o| matches!(o, ToClient::Frame(b) if b.first() == Some(&(FrameKind::Output as u8)))) {
+        *last = Some(tokio::time::Instant::now());
+    }
+    items
+}
+
+/// `items` in order, with each run of one pane's output whose offsets follow
+/// on joined into one frame (up to [`COALESCE_MAX`]): the client writes the
+/// same bytes at the same offsets either way.
+fn join_output(items: Vec<ToClient>) -> Vec<ToClient> {
+    let mut out: Vec<ToClient> = Vec::with_capacity(items.len());
+    // The output frame being built, not yet in `out`.
+    let mut open: Option<Frame> = None;
+    for o in items {
+        let f = match &o {
+            ToClient::Frame(b) => Frame::decode(b).ok().filter(|f| f.kind == FrameKind::Output),
+            _ => None,
+        };
+        match (f, open.as_mut()) {
+            (Some(f), Some(cur))
+                if f.pane == cur.pane
+                    && f.offset == cur.offset + cur.data.len() as u64
+                    && cur.data.len() + f.data.len() <= COALESCE_MAX =>
+            {
+                cur.data.extend_from_slice(&f.data);
+            }
+            (Some(f), _) => {
+                if let Some(cur) = open.replace(f) {
+                    out.push(ToClient::Frame(cur.encode()));
+                }
+            }
+            (None, _) => {
+                if let Some(cur) = open.take() {
+                    out.push(ToClient::Frame(cur.encode()));
+                }
+                out.push(o);
+            }
+        }
+    }
+    if let Some(cur) = open {
+        out.push(ToClient::Frame(cur.encode()));
+    }
+    out
+}
+
 /// `None`: hang up.
 fn to_msg(o: ToClient) -> Option<Msg> {
     match o {
@@ -423,19 +525,25 @@ async fn answer(
     who: crate::acl::Principal,
     caller: Caller,
 ) {
-    let say = |status, content_type, more, body| Msg::Response {
-        id,
-        head: ResponseHead { status, content_type, more },
-        body,
-    };
     let stream = head.stream;
-    let (status, content_type, body) = match call(router, head, body, who, caller).await {
+    let (status, content_type, headers, body) = match call(router, head, body, who, caller).await {
         Ok(r) => r,
         Err(e) => {
             let body = serde_json::to_vec(&serde_json::json!({ "error": e.to_string() })).unwrap();
-            let _ = out.put(&say(400, Some("application/json".to_owned()), false, body)).await;
+            let head = ResponseHead {
+                status: 400,
+                content_type: Some("application/json".to_owned()),
+                more: false,
+                headers: Default::default(),
+            };
+            let _ = out.put(&Msg::Response { id, head, body }).await;
             return;
         }
+    };
+    let say = |status, content_type, more, body| Msg::Response {
+        id,
+        head: ResponseHead { status, content_type, more, headers: headers.clone() },
+        body,
     };
     // A body of no fixed length (a follow) goes in parts when the client
     // can take them; otherwise whole, as before.
@@ -470,7 +578,7 @@ async fn call(
     body: Vec<u8>,
     who: crate::acl::Principal,
     caller: Caller,
-) -> anyhow::Result<(u16, Option<String>, Body)> {
+) -> anyhow::Result<(u16, Option<String>, std::collections::BTreeMap<String, String>, Body)> {
     anyhow::ensure!(head.path.starts_with("/api/"), "only the API is reachable this way");
     let mut req = Request::builder().method(head.method.as_str()).uri(head.path.as_str());
     if let Some(ct) = &head.content_type {
@@ -493,7 +601,120 @@ async fn call(
     let res = router.oneshot(req).await?;
     let status = res.status().as_u16();
     let ct = res.headers().get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).map(str::to_owned);
-    Ok((status, ct, res.into_body()))
+    // The answer's headers a client pages by (#933), nothing else.
+    let headers = PASSED_BACK
+        .iter()
+        .filter_map(|h| Some(((*h).to_owned(), res.headers().get(*h)?.to_str().ok()?.to_owned())))
+        .collect();
+    Ok((status, ct, headers, res.into_body()))
+}
+
+#[cfg(test)]
+mod passed_back_tests {
+    use super::*;
+
+    /// A file read's size and offset cross the channel with its bytes, and
+    /// nothing else the router sets does (#933).
+    #[tokio::test]
+    async fn a_reads_size_and_offset_cross_the_channel() {
+        let router = Router::new().route(
+            "/api/x",
+            axum::routing::get(|| async {
+                ([("x-arugula-size", "3145728"), ("x-arugula-offset", "0"), ("set-cookie", "a=b")], "bytes")
+            }),
+        );
+        let head = RequestHead {
+            method: "GET".into(),
+            path: "/api/x".into(),
+            content_type: None,
+            stream: false,
+            headers: Default::default(),
+        };
+        let caller = Caller { account: String::new(), device: String::new(), name: String::new() };
+        let (_, _, headers, _) = call(router, head, Vec::new(), crate::acl::Principal::Owner, caller).await.unwrap();
+        let sent: Vec<_> = headers.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        assert_eq!(sent, [("x-arugula-offset", "0"), ("x-arugula-size", "3145728")]);
+    }
+}
+
+#[cfg(test)]
+mod coalesce_tests {
+    use super::*;
+
+    fn out(pane: u32, offset: u64, data: &[u8]) -> ToClient {
+        ToClient::Frame(Frame { kind: FrameKind::Output, pane, offset, data: data.to_vec() }.encode())
+    }
+
+    fn frames(items: &[ToClient]) -> Vec<(u32, u64, Vec<u8>)> {
+        items
+            .iter()
+            .map(|o| match o {
+                ToClient::Frame(b) => {
+                    let f = Frame::decode(b).unwrap();
+                    (f.pane, f.offset, f.data)
+                }
+                ToClient::Json(j) => (0, 0, j.as_bytes().to_vec()),
+                _ => (0, 0, vec![]),
+            })
+            .collect()
+    }
+
+    /// A pane's output that follows on is one frame; another pane's, a gap,
+    /// or anything else in between keeps the order and starts a new one.
+    #[test]
+    fn back_to_back_output_is_joined_in_order() {
+        let items = vec![
+            out(1, 0, b"ab"),
+            out(1, 2, b"cd"),
+            out(2, 0, b"x"),
+            out(1, 4, b"ef"),
+            out(1, 9, b"gap"),
+            ToClient::Json("{}".into()),
+            out(1, 12, b"h"),
+        ];
+        assert_eq!(
+            frames(&join_output(items)),
+            vec![
+                (1, 0, b"abcd".to_vec()),
+                (2, 0, b"x".to_vec()),
+                (1, 4, b"ef".to_vec()),
+                (1, 9, b"gap".to_vec()),
+                (0, 0, b"{}".to_vec()),
+                (1, 12, b"h".to_vec()),
+            ]
+        );
+    }
+
+    /// A joined frame stops at [`COALESCE_MAX`].
+    #[test]
+    fn joined_output_is_bounded() {
+        let chunk = vec![b'x'; COALESCE_MAX / 2 + 1];
+        let items = vec![out(1, 0, &chunk), out(1, chunk.len() as u64, &chunk)];
+        assert_eq!(join_output(items).len(), 2);
+    }
+
+    /// A busy pane's thousand small reads go as a few messages, and output
+    /// after a quiet spell goes at once.
+    #[tokio::test]
+    async fn a_busy_panes_output_goes_once_per_interval() {
+        let (tx, mut rx) = client_queue();
+        let mut last = None;
+        let first = out(1, 0, b"a");
+        let t = tokio::time::Instant::now();
+        let sent = coalesced(first, &mut rx, &mut last).await;
+        assert_eq!(sent.len(), 1);
+        assert!(t.elapsed() < COALESCE, "the first goes at once");
+        for i in 1..1000u64 {
+            tx.try_send(ToClient::Frame(
+                Frame { kind: FrameKind::Output, pane: 1, offset: i, data: b"a".to_vec() }.encode(),
+            ))
+            .unwrap();
+        }
+        let next = rx.recv().await.unwrap();
+        let sent = coalesced(next, &mut rx, &mut last).await;
+        assert!(last.unwrap() >= t + COALESCE, "the next waits out the interval");
+        assert_eq!(frames(&sent), vec![(1, 1, vec![b'a'; COALESCE_ITEMS])]);
+    }
 }
 
 #[cfg(test)]

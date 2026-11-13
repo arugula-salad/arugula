@@ -82,6 +82,23 @@ impl Daemon {
             if agent.as_deref() != Some("claude") && self.hooked.remove(id) {
                 self.mark(*id);
             }
+            // Nor does what it said of its session (#450), unless it still
+            // runs in front of the pane through a `tmux` client there (#453).
+            if agent.as_deref() != Some("claude") && self.live.contains_key(id) {
+                let leader = self.panes.get(id).and_then(|h| h.pid_now());
+                let kept = match (leader, self.live_pid.get(id)) {
+                    (Some(l), Some(pid)) => {
+                        let sessions = &self.config.sessions;
+                        crate::procinfo::alive(*pid) && crate::procinfo::in_front(l, *pid, |c| sessions.through(c))
+                    }
+                    _ => false,
+                };
+                if !kept {
+                    self.live.remove(id);
+                    self.live_pid.remove(id);
+                    self.mark(*id);
+                }
+            }
         }
         // Claude Code without hooks: its session files say which
         // conversation each holds (#146).
@@ -103,6 +120,7 @@ impl Daemon {
     /// Write the layout and pane details if anything changed since the last
     /// write.
     pub(super) fn save(&mut self) {
+        self.save_closed();
         // Whichever notices a new directory or command tells the clients
         // (at the next tick).
         self.refresh_meta();
@@ -162,7 +180,13 @@ impl Daemon {
         seen
     }
 
-    fn pane_info(&self, p: &PaneHandle) -> PaneInfo {
+    /// The project a pane's session is in.
+    fn session_project(&self, pane: PaneId) -> Option<arugula_core::ProjectRef> {
+        let session = self.session_of(pane)?;
+        self.mux.session(session).ok()?.project.clone()
+    }
+
+    pub(super) fn pane_info(&self, p: &PaneHandle) -> PaneInfo {
         let meta = self.meta.get(&p.id).cloned().unwrap_or_default();
         let running = p.running();
         let status = p.status();
@@ -211,6 +235,7 @@ impl Daemon {
             branch: head.as_ref().map(|h| h.branch.clone()),
             head: head.and_then(|h| h.commit),
             project,
+            session_project: self.session_project(p.id),
             cwd,
             command,
             work: Some(work),
@@ -223,6 +248,7 @@ impl Daemon {
             started_by: meta.started_by.clone(),
             app: meta.app.clone(),
             on_issue: None,
+            worktree: None,
             running,
             policy: meta.policy,
             current: status.current.map(info_of),
@@ -237,6 +263,8 @@ impl Daemon {
             answered: self.answered.get(&p.id).cloned(),
             inbox: self.inbox.contains_key(&p.id),
             unhooked,
+            mentions_off: self.tagged_off.contains(&p.id),
+            live: self.live.get(&p.id).cloned().map(Box::new),
             link: self.links.get(&p.id).cloned(),
             restored: self.restored.contains(&p.id),
             driver: self.drivers.get(&p.id).cloned(),
@@ -267,6 +295,7 @@ impl Daemon {
             branch: s.project.as_ref().and_then(|p| crate::classify::branch(&p.root)),
             head: None,
             project: s.project,
+            session_project: self.session_project(id),
             cwd: s.cwd,
             file: s.file,
             command: None,
@@ -285,6 +314,9 @@ impl Daemon {
             answered: self.answered.get(&id).cloned(),
             inbox: false,
             unhooked: false,
+            mentions_off: false,
+            // The mod in an agent block's Claude Code, if it has one.
+            live: self.live.get(&id).cloned().map(Box::new),
             link: None,
             restored: false,
             driver: None,
@@ -304,6 +336,7 @@ impl Daemon {
             app: None,
             editor: s.editor,
             on_issue: s.on_issue,
+            worktree: s.worktree,
             diff: None,
             claude_ide: false,
         }
@@ -354,6 +387,9 @@ impl Daemon {
                     owner: t.owner,
                     zoom: t.zoom,
                     focus: t.focus,
+                    // Only those still in this tab: a pane moved to another
+                    // leaves its pop-out behind.
+                    popped: t.popped.keys().copied().filter(|p| t.root.contains(*p)).collect(),
                     layout: self.mux.layout(t.id).ok()?,
                 })
             })
@@ -372,6 +408,7 @@ impl Daemon {
             options,
             roles: None,
             presence: Vec::new(),
+            notices: Vec::new(),
         }
     }
 }

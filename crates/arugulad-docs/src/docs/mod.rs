@@ -43,6 +43,16 @@
 //! a URL. The state gains `shared: {made, updated} | null` and nothing more:
 //! the key is in `<state>/doc-links.json`, never here.
 //!
+//! **A team's Doc** (Arugula #862, [`team`]): in a team's context the block's
+//! config also names a `project`, and the Doc is that project's on the
+//! platform, read and filled through control; none of it is in the library.
+//!
+//! **A Doc moved to a team** (Arugula #863, [`moving`]) leaves a pointer in
+//! the library. A block that showed it shows the team Doc from then on (it
+//! holds a [`team`] block and passes everything to it, its config included,
+//! so a restart opens the team block), and one opened on the old id is the
+//! team block.
+//!
 //! Docs left Labs (native #204): no flag gates them, and sharing is still
 //! only ever the owner's tap or the card an agent's `share` raises.
 
@@ -52,13 +62,16 @@ pub(crate) mod checklist;
 pub(crate) mod embeds;
 pub mod library;
 pub mod link;
+pub(crate) mod moving;
+pub mod shape;
+pub(crate) mod team;
 
 use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex, Weak, atomic::AtomicBool},
 };
 
-use arugula_proto::{BlockType, fs::READ_MAX};
+use arugula_proto::{BlockType, api::DocLayout, fs::READ_MAX};
 use futures_util::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -88,6 +101,19 @@ pub struct DocKind;
 impl BlockKind for DocKind {
     fn create(&self, ctx: BlockCtx, config: Value) -> Result<Arc<dyn Block>, String> {
         let config: Config = serde_json::from_value(config).map_err(|e| format!("doc config: {e}"))?;
+        // A team's Doc is in its project on the platform, not in the library
+        // (Arugula #862, [`team`]).
+        if let Some(project) = config.project.clone().filter(|p| !p.is_empty()) {
+            let id = config.doc.clone().filter(|d| !d.is_empty()).ok_or("a team Doc's config names its Doc")?;
+            let name = config.project_name.clone().unwrap_or_default();
+            return Ok(team::open(ctx, project, name, id, config.title));
+        }
+        // A Doc moved to a team opens as the team's (Arugula #863).
+        if let Some(id) = &config.doc
+            && let Some(to) = library::moved_to(&ctx.state_dir, id)
+        {
+            return Ok(team::open(ctx, to.project, to.name, to.id, config.title));
+        }
         let id = match config.doc {
             Some(id) => id,
             // Only a layout from before the library has none, and the
@@ -113,6 +139,7 @@ impl BlockKind for DocKind {
         // a restart.
         let doc = Doc::with_link(dir, config.title, true, link, Arc::new(move || ctx.changed()));
         doc.attach(own, config.share_ask);
+        LIVE.lock().unwrap().push(Arc::downgrade(&doc));
         Ok(doc)
     }
 
@@ -127,6 +154,12 @@ struct Config {
     doc: Option<String>,
     #[serde(default)]
     title: String,
+    /// A team Doc's project, and its name (Arugula #862): `doc` is then the
+    /// platform's id for it (`pdc_…`), and nothing of it is in the library.
+    #[serde(default)]
+    project: Option<String>,
+    #[serde(default)]
+    project_name: Option<String>,
     /// #1067: an agent's ask to share, kept across a restart.
     #[serde(default)]
     share_ask: Option<ask::Asked>,
@@ -178,6 +211,11 @@ struct State {
     rev: u64,
     /// When it was shared with a link and last updated; the link is not here.
     shared: Option<SharedAt>,
+    /// How it is laid out, as its `meta.json` has it (#827).
+    layout: DocLayout,
+    /// When a section was last written (ms), to tell a shared copy is older
+    /// (#509); on a restart, the newest section file's time.
+    filled: u64,
     /// The folder couldn't be read back: the block shows this and writes
     /// nothing.
     error: Option<String>,
@@ -198,6 +236,16 @@ struct Loaded {
 
 type Changed = Arc<dyn Fn() + Send + Sync>;
 
+/// The Docs blocks show now, for [`moved`] to find.
+static LIVE: Mutex<Vec<Weak<Doc>>> = Mutex::new(Vec::new());
+
+/// The blocks showing the library Doc `id` now.
+fn showing(id: &str) -> Vec<Arc<Doc>> {
+    let mut live = LIVE.lock().unwrap();
+    live.retain(|d| d.strong_count() > 0);
+    live.iter().filter_map(Weak::upgrade).filter(|d| d.link.doc == id).collect()
+}
+
 pub struct Doc {
     me: Weak<Doc>,
     dir: PathBuf,
@@ -216,6 +264,9 @@ pub struct Doc {
     card: ask::Card,
     /// A retry task exists only while checklist feedback is waiting.
     checklist_delivery: AtomicBool,
+    /// The team Doc it shows since the Doc moved (Arugula #863): every call
+    /// goes there.
+    moved: Mutex<Option<Arc<team::Team>>>,
 }
 
 impl Doc {
@@ -232,10 +283,12 @@ impl Doc {
                 Err(e) => state.error = Some(e),
             }
         }
+        state.layout = library::read_meta(&dir).map_or(DocLayout::Doc, |m| m.layout);
         if restoring {
             state.assets = assets::load(&dir.join(assets::FOLDER));
             checklist::prune_restored_screenshots(&dir, &mut state);
             state.shared = link.current().map(|(_, e)| SharedAt { made: e.made, updated: e.updated });
+            state.filled = newest_section(&dir, &state.entries);
         }
         Arc::new_cyclic(|me| Doc {
             me: me.clone(),
@@ -248,7 +301,29 @@ impl Doc {
             shares: tokio::sync::Mutex::new(()),
             card: Default::default(),
             checklist_delivery: AtomicBool::new(false),
+            moved: Mutex::new(None),
         })
+    }
+
+    /// The team block it passes everything to, once its Doc moved.
+    fn moved_to(&self) -> Option<Arc<team::Team>> {
+        self.moved.lock().unwrap().clone()
+    }
+
+    /// The Doc moved to `to`, and is `view` there: this block shows that from
+    /// now on. Called with its write lock held, so a fill waiting for it
+    /// lands in the team Doc.
+    fn follow(
+        &self,
+        cloud: Option<Arc<dyn team::Cloud>>,
+        to: &moving::Target,
+        view: arugula_control_wire::project_docs::DocView,
+    ) {
+        let ctx = self.card.ctx.get();
+        let team = team::moved(ctx, cloud, self.changed.clone(), to.project.clone(), to.name.clone(), view);
+        self.drop_card();
+        *self.moved.lock().unwrap() = Some(team);
+        (self.changed)();
     }
 
     /// The Doc changed on disk: its `meta.json` says when (and its title).
@@ -257,9 +332,31 @@ impl Doc {
         let _ = crate::task::spawn_blocking(move || library::touch(&dir, title.as_deref())).await;
     }
 
-    /// `doc_outline`: the sections, once.
-    async fn outline(&self, title: &str, sections: Vec<Planned>) -> Result<Value, String> {
+    /// The Doc's layout is `layout` now: kept in its `meta.json`, and the
+    /// block, its share's next update and its copy follow. Only tests call
+    /// it: `doc_outline` sets the layout a Doc is made with.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) async fn set_layout(&self, layout: DocLayout) -> bool {
         let _io = self.io.lock().await;
+        let dir = self.dir.clone();
+        let kept = crate::task::spawn_blocking(move || library::set_layout(&dir, layout)).await.unwrap_or(false);
+        if kept {
+            let mut st = self.state.lock().unwrap();
+            st.layout = layout;
+            st.rev += 1;
+            drop(st);
+            (self.changed)();
+        }
+        kept
+    }
+
+    /// `doc_outline`: the sections, once.
+    async fn outline(&self, title: &str, sections: Vec<Planned>, layout: DocLayout) -> Result<Value, String> {
+        let _io = self.io.lock().await;
+        if let Some(team) = self.moved_to() {
+            drop(_io);
+            return team.call("doc_outline", json!({})).await;
+        }
         let title = title.trim();
         if title.is_empty() {
             return Err("a Doc needs a title".into());
@@ -272,6 +369,9 @@ impl Doc {
         }
         if sections.len() > SECTIONS_MAX {
             return Err(format!("a Doc has at most {SECTIONS_MAX} sections, not {}", sections.len()));
+        }
+        if layout == DocLayout::Prototype && sections.len() > 1 {
+            return Err("a prototype Doc has one section".into());
         }
         let mut planned = Vec::new();
         for (i, s) in sections.into_iter().enumerate() {
@@ -302,10 +402,15 @@ impl Doc {
         let bytes = serde_json::to_vec_pretty(&outline).map_err(|e| e.to_string())?;
         write(dir, OUTLINE, bytes).await?;
         self.touched(Some(outline.title.clone())).await;
+        if !layout.is_doc() {
+            let dir = self.dir.clone();
+            let _ = crate::task::spawn_blocking(move || library::set_layout(&dir, layout)).await;
+        }
         let ids: Vec<Value> = planned.iter().map(|s| json!({ "id": s.id, "heading": s.heading })).collect();
         {
             let mut st = self.state.lock().unwrap();
             st.title = outline.title;
+            st.layout = layout;
             st.entries = planned
                 .into_iter()
                 .map(|s| Entry { id: s.id, heading: s.heading, intent: s.intent, body: None, rev: 0, tasks: vec![] })
@@ -319,6 +424,11 @@ impl Doc {
     /// `doc_fill`: one section's body.
     async fn fill(&self, section: &str, md: &str) -> Result<Value, String> {
         let _io = self.io.lock().await;
+        // It moved while this waited: the team Doc takes it.
+        if let Some(team) = self.moved_to() {
+            drop(_io);
+            return team.call("doc_fill", json!({ "section": section, "markdown": md })).await;
+        }
         {
             let st = self.state.lock().unwrap();
             if let Some(e) = &st.error {
@@ -336,6 +446,10 @@ impl Doc {
             }
             // Before the first write: a bad fence leaves the section, on
             // disk and in the state, exactly as it was.
+            if st.layout == DocLayout::Prototype {
+                embeds::check_prototype_only(md)
+                    .map_err(|e| format!("section {section}: {e}; the section is unchanged"))?;
+            }
             embeds::check(md, &st.assets).map_err(|e| format!("section {section}: {e}; the section is unchanged"))?;
             let tasks_size = checklist::stored_size(&st.entries[at].tasks);
             if md.len() + tasks_size > SECTION_MAX {
@@ -366,6 +480,8 @@ impl Doc {
             e.body = Some(md.to_owned());
             e.rev += 1;
             st.rev += 1;
+            // After the link's last update, even in the same millisecond.
+            st.filled = now_ms().max(st.shared.map_or(0, |s| s.updated + 1));
         }
         (self.changed)();
         Ok(json!({ "section": section, "bytes": md.len() }))
@@ -387,6 +503,10 @@ impl Doc {
         }
         let mime = assets::kind_of(name, &bytes)?;
         let _io = self.io.lock().await;
+        if let Some(team) = self.moved_to() {
+            drop(_io);
+            return team.call("doc_asset_put", json!({ "name": name, "data": data })).await;
+        }
         {
             let st = self.state.lock().unwrap();
             if let Some(e) = &st.error {
@@ -441,7 +561,7 @@ impl Doc {
     /// lock so a fill can't land halfway.
     async fn snapshot(&self) -> Result<(String, Vec<u8>), String> {
         let _io = self.io.lock().await;
-        let (title, entries, kept) = {
+        let (title, entries, kept, layout) = {
             let st = self.state.lock().unwrap();
             if let Some(e) = &st.error {
                 return Err(e.clone());
@@ -449,7 +569,7 @@ impl Doc {
             if st.entries.is_empty() {
                 return Err("this Doc has no outline yet: there is nothing to share".into());
             }
-            (st.title.clone(), st.entries.clone(), st.assets.clone())
+            (st.title.clone(), st.entries.clone(), st.assets.clone(), st.layout)
         };
         let mut blobs = Vec::new();
         let mut assets = Vec::new();
@@ -464,8 +584,14 @@ impl Doc {
             });
             blobs.push(bytes);
         }
+        // A Doc from before Docs were kept has no made time worth saying
+        // (`made_time`).
+        let meta = library::read_meta(&self.dir);
         let manifest = link::Manifest {
             title: title.clone(),
+            layout,
+            made: meta.as_ref().and_then(library::Meta::made_time),
+            updated: meta.as_ref().map(|m| m.updated),
             entries: entries
                 .into_iter()
                 .map(|e| {
@@ -551,16 +677,70 @@ impl Doc {
     }
 
     fn state_json(&self) -> Value {
+        // When it was made and last changed, and by whom, from `meta.json`:
+        // the page says them under the title (Arugula #825).
+        let meta = library::read_meta(&self.dir);
         let st = self.state.lock().unwrap();
         let mut v = json!({
             "title": st.title, "entries": st.entries, "entries_from": 0, "assets": st.assets, "rev": st.rev,
             "shared": st.shared,
+            // A section was written after the link was last updated (#509).
+            "shared_older": st.shared.is_some_and(|s| st.filled > s.updated),
         });
+        if let Some(m) = &meta {
+            v["made"] = json!(m.made_time());
+            v["updated"] = json!(m.updated);
+            v["by"] = json!(m.by);
+        }
+        if !st.layout.is_doc() {
+            v["layout"] = json!(st.layout);
+        }
         if let Some(e) = &st.error {
             v["error"] = json!(e);
         }
+        // The Doc's library id, which a block's number isn't: a page keeps
+        // a prototype's settings under it (#508).
+        if !self.link.doc.is_empty() {
+            v["doc"] = json!(self.link.doc);
+        }
         v
     }
+}
+
+/// A Doc in the library, read from its files as the block reads them when
+/// it opens, and not shown anywhere: no block, no card, and nothing it
+/// writes. For `doc.read` and `doc.asset` (#608), which must not open it.
+fn kept(state_dir: &Path, id: &str) -> Result<Arc<Doc>, String> {
+    let dir = library::dir(state_dir, id)?;
+    let title = library::read_meta(&dir).map(|m| m.title).unwrap_or_default();
+    let mut link = Link::none(state_dir.to_owned(), id.to_owned());
+    link.remote = link::remote();
+    Ok(Doc::with_link(dir, title, true, link, Arc::new(|| {})))
+}
+
+/// Share the Doc `id` (or update its link) with no block showing it: the
+/// block's own `share`, run on the Doc read from its files, so both make the
+/// link by the one code path (Arugula #819). Its `shared` goes nowhere: a
+/// block opened later reads the link's entry.
+pub async fn share_kept(state_dir: PathBuf, id: String, update: bool) -> Result<Value, String> {
+    let doc = {
+        let dir = state_dir.clone();
+        crate::task::spawn_blocking(move || kept(&dir, &id)).await.map_err(|e| e.to_string())??
+    };
+    doc.share(update).await
+}
+
+/// The state a block of the Doc `id` would have now.
+pub async fn read(state_dir: PathBuf, id: String) -> Result<Value, String> {
+    crate::task::spawn_blocking(move || kept(&state_dir, &id).map(|d| d.state_json()))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// The picture `name` of the Doc `id`, as a block's `doc_asset` answers it.
+pub async fn read_asset(state_dir: PathBuf, id: String, name: String) -> Result<Value, String> {
+    let doc = crate::task::spawn_blocking(move || kept(&state_dir, &id)).await.map_err(|e| e.to_string())??;
+    doc.asset(&name).await
 }
 
 /// Write `name` in the Doc's folder, off the async threads.
@@ -578,6 +758,17 @@ async fn write(dir: PathBuf, name: &str, bytes: Vec<u8>) -> Result<(), String> {
 /// so no file name comes from anything else.
 fn is_id(id: &str) -> bool {
     id.strip_prefix('s').is_some_and(|n| !n.is_empty() && n.len() <= 3 && n.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// When the newest section file was written (ms); 0 if none can say.
+fn newest_section(dir: &Path, entries: &[Entry]) -> u64 {
+    entries
+        .iter()
+        .filter_map(|e| std::fs::metadata(dir.join(format!("{}.md", e.id))).ok()?.modified().ok())
+        .filter_map(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64)
+        .max()
+        .unwrap_or(0)
 }
 
 /// The folder read back. An error says what to tell the person.
@@ -641,6 +832,10 @@ impl Block for Doc {
     }
 
     fn config(&self) -> Value {
+        // A restart opens the team block it shows now.
+        if let Some(team) = self.moved_to() {
+            return team.config();
+        }
         let mut v = json!({ "title": self.state.lock().unwrap().title });
         // A Doc made without the library (a test's) has no id.
         if !self.link.doc.is_empty() {
@@ -653,13 +848,19 @@ impl Block for Doc {
     }
 
     fn state(&self) -> Value {
-        self.state_json()
+        match self.moved_to() {
+            Some(team) => team.state(),
+            None => self.state_json(),
+        }
     }
 
     /// The first entry whose fingerprint differs from what clients were
     /// last sent (the Doc's sections are all its `entries`, `entries_from`
     /// 0): a patch is that entry and every one after it.
     fn state_and_changed(&self) -> Option<(Value, u64)> {
+        if let Some(team) = self.moved_to() {
+            return team.state_and_changed();
+        }
         let state = self.state_json();
         let hashes: Vec<u64> =
             state["entries"].as_array().map(|es| es.iter().map(|e| hash(&e.to_string())).collect()).unwrap_or_default();
@@ -670,6 +871,9 @@ impl Block for Doc {
     }
 
     fn text(&self) -> String {
+        if let Some(team) = self.moved_to() {
+            return team.text();
+        }
         let st = self.state.lock().unwrap();
         match &st.error {
             Some(e) => format!("{e}\n"),
@@ -682,6 +886,9 @@ impl Block for Doc {
     }
 
     fn call_by(&self, method: &str, args: Value, by: Option<&str>) -> BoxFuture<'static, Result<Value, String>> {
+        if let Some(team) = self.moved_to() {
+            return team.call_by(method, args, by);
+        }
         let me = self.me.upgrade();
         match method {
             "doc_checklist" => {
@@ -715,9 +922,10 @@ impl Block for Doc {
                 let title = args["title"].as_str().unwrap_or_default().to_owned();
                 let sections = serde_json::from_value::<Vec<Planned>>(args["sections"].clone())
                     .map_err(|e| format!("doc_outline needs {{title, sections: [{{heading, intent}}]}}: {e}"));
+                let layout = DocLayout::from_name(args["layout"].as_str().unwrap_or_default());
                 Box::pin(async move {
                     let me = me.ok_or("closed")?;
-                    me.outline(&title, sections?).await
+                    me.outline(&title, sections?, layout).await
                 })
             }
             "doc_fill" => {
@@ -767,11 +975,23 @@ impl Block for Doc {
         }
     }
 
+    fn drawn(&self, on: bool) {
+        if let Some(team) = self.moved_to() {
+            team.drawn(on);
+        }
+    }
+
     fn close(&self) {
         self.drop_card();
+        if let Some(team) = self.moved_to() {
+            team.close();
+        }
     }
 
     fn summary(&self) -> Summary {
+        if let Some(team) = self.moved_to() {
+            return team.summary();
+        }
         let title = self.state.lock().unwrap().title.clone();
         Summary { title: Some(title).filter(|t| !t.is_empty()), ..Summary::default() }
     }
@@ -1639,6 +1859,48 @@ mod tests {
         assert_eq!(d.summary().title.as_deref(), Some("Plan"));
         std::fs::remove_dir_all(dir).unwrap();
     }
+
+    #[tokio::test]
+    async fn an_outline_sets_the_layout_and_a_prototype_doc_is_one_section_of_one_prototype() {
+        let state = temp("outline-layout");
+        let make = |name: &str| {
+            let meta = library::make(&state, name, "me").unwrap();
+            let folder = library::dir(&state, &meta.id).unwrap();
+            (Doc::new(folder.clone(), name.into(), false, Arc::new(|| {})), folder)
+        };
+        let with = |layout: &str, n: usize| {
+            let mut args = plan(n);
+            args["layout"] = json!(layout);
+            args
+        };
+        let (d, folder) = make("tabs");
+        d.call("doc_outline", with("tabs", 2)).await.unwrap();
+        assert_eq!(d.state()["layout"], "tabs");
+        assert_eq!(library::read_meta(&folder).unwrap().layout, DocLayout::Tabs);
+        let (d, _) = make("plain");
+        outline(&d, 2).await.unwrap();
+        assert!(d.state().get("layout").is_none());
+
+        let (d, folder) = make("proto");
+        let e = d.call("doc_outline", with("prototype", 2)).await.unwrap_err();
+        assert_eq!(e, "a prototype Doc has one section");
+        assert!(entries(&d).is_empty() && library::read_meta(&folder).unwrap().layout.is_doc());
+        d.call("doc_outline", with("prototype", 1)).await.unwrap();
+        assert_eq!(d.state()["layout"], "prototype");
+        let page = "<!doctype html><html><body>x</body></html>";
+        let e = fill(&d, "s1", "Words and nothing else.").await.unwrap_err();
+        assert!(e.contains("a prototype Doc holds one line") && e.contains("unchanged"), "{e}");
+        assert_eq!(entries(&d)[0]["body"], Value::Null);
+        fill(&d, "s1", &format!("A tuner.\n\n```prototype\n{page}\n```")).await.unwrap();
+        // The cap is the same 64 KB.
+        let big = format!("```prototype\n{page}<!-- {} -->\n```", "x".repeat(SECTION_MAX));
+        assert!(fill(&d, "s1", &big).await.is_err());
+        // Restarted, the Doc is still a prototype Doc.
+        drop(d);
+        let again = Doc::new(folder, "proto".into(), true, Arc::new(|| {}));
+        assert!(fill(&again, "s1", "Just words.").await.is_err());
+        std::fs::remove_dir_all(state).unwrap();
+    }
 }
 
 /// Sharing a Doc (#1066), against a control that keeps what it is sent
@@ -1809,6 +2071,7 @@ mod share_tests {
         // The state says only when.
         let st = s.doc.state();
         assert_eq!(st["shared"].as_object().unwrap().len(), 2);
+        assert_eq!(st["shared_older"], false, "nothing written since");
         assert!(st["shared"]["made"].as_u64().unwrap() > 0);
         // A second share is refused, saying what to use.
         let e = s.doc.call("doc_share", json!({})).await.unwrap_err();
@@ -1822,11 +2085,15 @@ mod share_tests {
         let first = s.doc.call("doc_share", json!({})).await.unwrap()["url"].as_str().unwrap().to_owned();
         let made = s.doc.state()["shared"]["made"].clone();
         s.doc.call("doc_fill", json!({ "section": "s3", "markdown": "A new section." })).await.unwrap();
+        // A refill makes the shared copy older (#509), and the link is not updated by it.
+        assert_eq!(s.doc.state()["shared_older"], true);
+        assert_eq!(s.fake.served.lock().unwrap()[ID].0, 1, "a fill never republishes");
         let again = s.doc.call("doc_share_update", json!({})).await.unwrap()["url"].as_str().unwrap().to_owned();
         assert_eq!(first, again, "the same URL");
         assert_eq!(s.fake.served.lock().unwrap()[ID].0, 2);
         assert!(s.fake.paths().iter().any(|p| p.starts_with(&format!("PUT /api/doc-links/{ID}/v/2/parts/0"))));
         assert_eq!(s.doc.state()["shared"]["made"], made, "made stays");
+        assert_eq!(s.doc.state()["shared_older"], false, "an Update catches the link up");
         let n = s.fake.served.lock().unwrap()[ID].1;
         let held: Vec<Vec<u8>> =
             (0..n).map(|n| s.fake.parts.lock().unwrap()[&(ID.to_string(), 2, n)].clone()).collect();
@@ -2037,5 +2304,23 @@ mod share_tests {
         // The block is gone; the key isn't (the account list still copies it).
         drop(again);
         assert_eq!(link::url_of(&s.state_dir, ID).unwrap().as_deref(), Some(url.as_str()));
+    }
+
+    #[tokio::test]
+    async fn the_blocks_state_carries_its_layout_and_a_restart_keeps_it() {
+        let state = temp("layout");
+        let meta = library::make(&state, "Plan", "me").unwrap();
+        let folder = library::dir(&state, &meta.id).unwrap();
+        let d = Doc::new(folder.clone(), "Plan".into(), false, Arc::new(|| {}));
+        assert!(d.state().get("layout").is_none(), "a plain Doc's state is what it was");
+        let before = d.state()["rev"].as_u64().unwrap();
+        assert!(d.set_layout(DocLayout::Tabs).await);
+        assert_eq!(d.state()["layout"], "tabs");
+        assert!(d.state()["rev"].as_u64().unwrap() > before, "clients are told");
+        assert!(!d.set_layout(DocLayout::Tabs).await);
+        drop(d);
+        let again = Doc::new(folder, "Plan".into(), true, Arc::new(|| {}));
+        assert_eq!(again.state()["layout"], "tabs");
+        std::fs::remove_dir_all(state).unwrap();
     }
 }

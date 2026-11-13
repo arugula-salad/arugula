@@ -1,7 +1,7 @@
 // A tab's panes, laid out at the cells the daemon computed.
 
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import type { Client } from "../../client";
+import { paneIds, type Client } from "../../client";
 import type { PaneId, TabId, TabView } from "../../../shared/proto";
 import type { Cell } from "../cells";
 import { PaneHeader } from "../shell/pane-header";
@@ -10,6 +10,8 @@ import { DropOverlay } from "./drop-overlay";
 import { len, px } from "./geometry";
 import { paneChrome, PIXELS } from "./chrome-geometry";
 import { PaneSlot } from "./pane-slot";
+import { PoppedOut } from "./pop-out";
+import { attachSwipe } from "../../../shared/ui/swipe";
 import { FONT_SIZE } from "../../terminal-view";
 
 /** The smallest a viewer's pane is drawn on a phone: text at 10px. */
@@ -53,21 +55,25 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
   // one, and the two swap for good, the page stuck redrawing.
   const stale = () => client.tab !== tab.id;
 
-  // A tab focused on one pane (M109, anyone's doing) has the keys there.
+  // A tab we focused on one pane (M109) has the keys there. Not one another
+  // client holds: following it would zoom to it here, which claims the tab
+  // and ends their focus (#439).
+  const holder = tab.owner === client.clientId;
   useEffect(() => {
     if (stale()) return;
-    if (tab.focus !== null && client.active(tab.id) !== tab.focus) client.setActive(tab.focus);
-  }, [client, tab.id, tab.focus]);
+    if (holder && tab.focus !== null && client.active(tab.id) !== tab.focus) client.setActive(tab.focus);
+  }, [client, tab.id, tab.focus, holder]);
 
   // Tell the daemon what we show. Showing a tab (or another pane, on a
-  // phone) claims its size; resizing the window only updates a size we own.
+  // phone) claims its size, which the daemon grants only if no other screen
+  // holds it; resizing the window only updates a size we own.
   const size = useRef({ cols, rows, zoom });
   size.current = { cols, rows, zoom };
   const shown = useRef<{ tab: TabId; zoom: PaneId | null } | null>(null);
   useEffect(() => {
-    client.claim = (t, typed, asked) => {
+    client.claim = (t, asked) => {
       const s = size.current;
-      if (s.cols) client.view(t, s.cols, s.rows, s.zoom, true, typed, asked);
+      if (s.cols) client.view(t, s.cols, s.rows, s.zoom, true, asked);
     };
   }, [client]);
   useEffect(() => {
@@ -77,6 +83,26 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
     shown.current = { tab: tab.id, zoom };
     client.view(tab.id, cols, rows, zoom, claim);
   }, [client, tab.id, cols, rows, zoom]);
+
+  // #815: on a phone, a sideways swipe moves to the next or previous pane
+  // of the tab, in its order. Not for a viewer's single pane (below).
+  useEffect(() => {
+    const el = ref.current;
+    if (!phone || !el) return;
+    const near = (dir: 1 | -1) => {
+      const ids = paneIds(client.tabView(tab.id) ?? tab);
+      const at = ids.indexOf(client.active(tab.id) ?? -1);
+      return at < 0 ? undefined : ids[at + dir];
+    };
+    return attachSwipe(el, {
+      moved: () => el.querySelector<HTMLElement>(".grid"),
+      has: (dir) => near(dir) !== undefined,
+      commit: (dir) => {
+        const to = near(dir);
+        if (to !== undefined) client.setActive(to);
+      },
+    });
+  }, [client, tab.id, phone]);
 
   // Keyboard focus follows the active pane (not on phones: that would pop
   // up the keyboard on every switch).
@@ -89,7 +115,14 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
   useEffect(() => {
     if (stale() || inDialog()) return;
     const now = client.active(tab.id) ?? null;
-    if (!phone && now !== null) client.viewOf(now)?.focus();
+    if (phone || now === null) return;
+    // Not from where a click already put it (#472): a pointer activation
+    // leaves focus on what was pressed, and moving it mid-press can scroll
+    // the pane under the pointer.
+    const host = client.viewOf(now)?.host;
+    const at = document.activeElement;
+    if (host && at && host.contains(at)) return;
+    client.viewOf(now)?.focus();
   }, [client, tab.id, active, phone]);
   // ...and comes back to it after menus and buttons, unless something else
   // (a rename box) is using the keyboard.
@@ -119,7 +152,7 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
   // Said in a pane's header, the active one's, where it covers nothing
   // (UI audit #171); a phone, with no headers, keeps the note.
   const chipOn = elsewhere && headers ? (active ?? tab.layout.panes[0]?.[0] ?? null) : null;
-  const claimHere = () => client.claim(tab.id, false, true);
+  const claimHere = () => client.claim(tab.id, true);
 
   // A viewer on a phone (a read-only link's page, or someone who only
   // watches) can't size the tab to the phone, so the owner's whole tab
@@ -153,9 +186,16 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
           transform: scale < 1 ? `scale(${scale})` : undefined,
         }}
       >
-        {drawingTab.layout.panes.map(([id, r]) => (
-          <PaneSlot key={id} client={client} id={id} rect={r} cell={drawingCell} active={id === active} phone={phone} />
-        ))}
+        {drawingTab.layout.panes.map(([id, r]) =>
+          // #497: out in a window of its own, it leaves a placeholder.
+          tab.popped?.includes(id) ? (
+            <div key={id} class="pane popped" data-pane={id} style={px(r, drawingCell)}>
+              <PoppedOut client={client} id={id} />
+            </div>
+          ) : (
+            <PaneSlot key={id} client={client} id={id} rect={r} cell={drawingCell} active={id === active} phone={phone} />
+          ),
+        )}
         {headers &&
           drawingTab.layout.panes.map(([id, r]) => (
             <PaneHeader key={`h${id}`} client={client} tab={tab} id={id} rect={r} cell={drawingCell} height={chrome?.header} active={id === active} sizedElsewhere={id === chipOn ? claimHere : undefined} />

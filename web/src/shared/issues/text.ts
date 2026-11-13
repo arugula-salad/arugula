@@ -25,10 +25,11 @@ export function whoShort(account: string, agent: ChatAgent | null, nameOf: NameO
   return account ? nameOf(account) || "someone who left" : "a deleted account";
 }
 
-/** A list row's line after its number: `opened 3 days ago by kim`, or a
+/** A list row's line after its number: `3d · kim` (an open one's state is
+ * the tab's), or a
  * closed one's `closed as completed by kim 2 days ago` (UI audit #163). */
 export function rowLine(i: Pick<NativeIssue, "state" | "close_reason" | "author" | "agent" | "created_at" | "closed_at" | "closed_by" | "closed_by_agent">, nameOf: NameOf, now = Date.now()): string {
-  if (i.state !== "closed" || !i.closed_at) return `opened ${ago(i.created_at, now)} by ${whoShort(i.author, i.agent, nameOf)}`;
+  if (i.state !== "closed" || !i.closed_at) return `${timeAgo(i.created_at, now).replace(/ ago$/, "")} · ${whoShort(i.author, i.agent, nameOf)}`;
   const by = i.closed_by !== undefined ? ` by ${whoShort(i.closed_by, i.closed_by_agent ?? null, nameOf)}` : "";
   return `closed as ${reasonLabel(i.close_reason)}${by} ${ago(i.closed_at, now)}`;
 }
@@ -66,8 +67,9 @@ export function eventLine(e: IssueEvent, nameOf: NameOf): string | null {
       return said.join(" and ") || "edited this";
     }
     case "closed":
-      // A merged PR that closed it (Arugula #432) is named.
-      return `closed this as ${reasonLabel(str(d.reason) || null)}${str(d.pr) ? ` with ${str(d.pr)}` : ""}`;
+      // A merged PR that closed it (Arugula #432) is named, and the words of
+      // it that did (Arugula #743).
+      return `closed this as ${reasonLabel(str(d.reason) || null)}${str(d.pr) ? ` with ${str(d.pr)}` : ""}${str(d.pr) && str(d.by) ? `, by ${str(d.by)}` : ""}`;
     case "reopened":
       return "reopened this";
     case "labelled":

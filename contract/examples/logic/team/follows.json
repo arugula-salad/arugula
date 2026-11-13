@@ -1,5 +1,5 @@
 {
-  "about": "Whether a roster version may follow the one a team daemon has (or, with none, start the team as its pin says). It must be well formed (v1 without spent or redeem, or v2; ids one word of at most 120 bytes; a name of 1 to 80 bytes, no control character; at least one owner), of the pinned team, newer, and signed by a device trusted now of an owner of the version before (the founder for a first), one that approves and may raise what this version raises (raise_ok). Or, for someone who isn't an owner, it redeems a presigned invite: exactly the version before plus the invitee at the end, the invite marked spent and never spent before, one version on, no earlier than the version before and no later than the invite expires; the invite of this team, not for an owner, signed by an owner then who may raise to its role; the one-time key's proof over exactly this member at this version; and the version signed by that key. Control holds no owner's key and no one-time key, so it can add no one.",
+  "about": "Whether a roster version may follow the one a team daemon has (or, with none, start the team as its pin says). It must be well formed (v1 without spent or redeem, or v2; ids one word of at most 120 bytes; a name of 1 to 80 bytes, no control character; at least one owner), of the pinned team, newer, and signed by a device trusted now of an owner of the version before (the founder for a first), one that approves and may raise what this version raises (raise_ok; a version that changes who the owners are, removing or demoting one or moving one's root too, as one that makes an owner: DK7). Or, for someone who isn't an owner, it redeems a presigned invite: exactly the version before plus the invitee at the end, the invite marked spent and never spent before, one version on, no earlier than the version before and no later than the invite expires; the invite of this team, not for an owner, signed by an owner then who may raise to its role; the one-time key's proof over exactly this member at this version; and the version signed by that key. Control holds no owner's key and no one-time key, so it can add no one.",
   "cases": [
     {
       "about": "a first version, signed by the founder",
@@ -674,7 +674,7 @@
         "prev": "v1-bob-viewer",
         "roster": "v2-makes-mallory-an-owner-by-alices-app"
       },
-      "output": {"ok": false}
+      "output": {"ok": true}
     },
     {
       "about": "a browser alice's CLI made: never trusted makes mallory an owner",
@@ -1214,7 +1214,7 @@
         "prev": "v1-bob-viewer",
         "roster": "v2-moves-alices-own-entry-to-another-root-by-alices-app"
       },
-      "output": {"ok": false}
+      "output": {"ok": true}
     },
     {
       "about": "a browser alice's CLI made: never trusted moves alice's own entry to another root",
@@ -1376,7 +1376,115 @@
         "prev": null,
         "roster": "v1-founded-by-app-with-owner"
       },
+      "output": {"ok": true}
+    },
+    {
+      "about": "alice's CLI removes an owner",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1-two-owners",
+        "roster": "v2-removes-an-owner-by-alices-CLI"
+      },
       "output": {"ok": false}
+    },
+    {
+      "about": "alice's app removes an owner",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1-two-owners",
+        "roster": "v2-removes-an-owner-by-alices-app"
+      },
+      "output": {"ok": true}
+    },
+    {
+      "about": "alice's CLI demotes an owner",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1-two-owners",
+        "roster": "v2-demotes-an-owner-by-alices-CLI"
+      },
+      "output": {"ok": false}
+    },
+    {
+      "about": "alice's app demotes an owner",
+      "input": {
+        "certs": {
+          "alice": {
+            "certs": ["alice", "alice-cli", "alice-app", "alice-browser-by-cli"],
+            "revocations": []
+          },
+          "bob": {
+            "certs": ["bob"],
+            "revocations": []
+          },
+          "carol": {
+            "certs": ["carol"],
+            "revocations": []
+          },
+          "mallory": {
+            "certs": ["mallory"],
+            "revocations": []
+          }
+        },
+        "pin": {"founder": "alice", "founder_root": "37f29b7074cf8b52", "team": "t1"},
+        "prev": "v1-two-owners",
+        "roster": "v2-demotes-an-owner-by-alices-app"
+      },
+      "output": {"ok": true}
     },
     {
       "about": "a CLI swaps an editor's account for another root",
@@ -2624,6 +2732,19 @@
       "v": 1,
       "version": 1
     },
+    "v1-two-owners": {
+      "at": 1000,
+      "by": "37f29b7074cf8b52",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "owner", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "5b28790437e273050394d433d6ff2c74b0fb41967d889ef529ccdc8d53d6065a4193b4f0e277c541c05d5c8562b7aa8c0f6eb0fbcf4525bb91a7d3e1bda7b407",
+      "team": "t1",
+      "v": 1,
+      "version": 1
+    },
     "v2": {
       "at": 2000,
       "by": "37f29b7074cf8b52",
@@ -2866,6 +2987,32 @@
       ],
       "team": "t1",
       "v": 2,
+      "version": 2
+    },
+    "v2-demotes-an-owner-by-alices-CLI": {
+      "at": 2000,
+      "by": "6ec4cb2579ac7165",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "editor", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "5145d2b43012b1887563706c6e840be59ffb9132d80131775992a77093ab1ebd3ad46354b4f8f6956d335828e76cfe390c0f08ff49dc4864827f18d028961309",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-demotes-an-owner-by-alices-app": {
+      "at": 2000,
+      "by": "422c26dbf1e40b7b",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"},
+        {"account": "bob", "name": "bob-login", "role": "editor", "root": "c242667535a3d34f"}
+      ],
+      "name": "Acme",
+      "sig": "07c1b37b626a28638d05592c0d2a5d3c61ae9fede5533fe56203ed0cc9cdc38a29e934cef99180c3d9c10ae0e1ca22e9e4d033efbbde0d703ecddd9f42ae110b",
+      "team": "t1",
+      "v": 1,
       "version": 2
     },
     "v2-forged-proof": {
@@ -3727,6 +3874,30 @@
       ],
       "team": "t1",
       "v": 2,
+      "version": 2
+    },
+    "v2-removes-an-owner-by-alices-CLI": {
+      "at": 2000,
+      "by": "6ec4cb2579ac7165",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"}
+      ],
+      "name": "Acme",
+      "sig": "76fef44d89467254a04fbd716aa1457c3ebe4f8d0c8fa0676a5a8709068cb0e0cc09d2b86c24003d1b463e5e3c5b43eca829151d57fd9af6879e3a92d4048a05",
+      "team": "t1",
+      "v": 1,
+      "version": 2
+    },
+    "v2-removes-an-owner-by-alices-app": {
+      "at": 2000,
+      "by": "422c26dbf1e40b7b",
+      "members": [
+        {"account": "alice", "name": "alice-login", "role": "owner", "root": "37f29b7074cf8b52"}
+      ],
+      "name": "Acme",
+      "sig": "ab7e6be420d7e01c1833030a8e2511e2d9b8965a428ef388394969b597f9d6438657274f6fa267c4a2f7e288c13685f69d1b18cef34a226e32771741b4cfd70d",
+      "team": "t1",
+      "v": 1,
       "version": 2
     },
     "v2-space-in-member-name": {

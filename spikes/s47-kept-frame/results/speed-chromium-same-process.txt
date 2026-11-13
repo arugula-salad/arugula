@@ -1,0 +1,9 @@
+today: panes to platform page, ms                          {"median":50,"all":[98,35,40,50,57,50]}
+today: platform page to first terminal element, ms         {"median":365,"all":[371,365,362,350,361,390]}
+today: platform page to terminal showing text, ms          {"median":387,"all":[385,378,375,387,394,415]}
+frame (display): first open, until the project list, ms    107
+frame (display): platform to panes, painted, ms            {"median":30.9,"worst":32}
+frame (display): panes to platform, painted, ms            {"median":30.7,"worst":32}
+frame (visibility): first open, until the project list, ms 80
+frame (visibility): platform to panes, painted, ms         {"median":30.5,"worst":32}
+frame (visibility): panes to platform, painted, ms         {"median":30.8,"worst":32}

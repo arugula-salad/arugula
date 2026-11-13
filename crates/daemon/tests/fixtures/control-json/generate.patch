@@ -1,0 +1,513 @@
+diff --git a/crates/daemon/src/control.rs b/crates/daemon/src/control.rs
+index d2fab15eb..ff1c44f2b 100644
+--- a/crates/daemon/src/control.rs
++++ b/crates/daemon/src/control.rs
+@@ -5811,4 +5811,495 @@ pub(crate) mod tests {
+         let (a, h) = take_shared(&at3, &held, &BTreeMap::new(), BTreeMap::new(), &mut checkpoint::Seen::default(), 1);
+         assert!(a.is_empty() && h.is_empty());
+     }
++
++    // ----- #672: the control.json fixtures, written from these types -----
++    // (crates/daemon/tests/fixtures/control-json/README.md says how.)
++
++    pub(crate) const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/control-json");
++
++    const ACCOUNTS: [&str; 11] = ["a", "o", "e", "v", "s", "x", "p", "q", "r", "m", "acct1"];
++
++    /// What a saved enrollment decides, as JSON (the same function, on the
++    /// types after #672, checks each fixture against this).
++    pub(crate) fn outcomes(saved: &Saved, dir: &Path) -> serde_json::Value {
++        use serde_json::json;
++        let acl = Arc::new(Acl::open(dir));
++        let c = Control::new(dir, vec![], String::new(), acl.clone(), false);
++        let e = Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), &acl, true);
++        let sorted = |mut v: Vec<String>| {
++            v.sort();
++            v
++        };
++        let who = |l: &[(Cert, Principal)]| sorted(l.iter().map(|(c, p)| format!("{}:{p:?}", c.device)).collect());
++        let mut team_roles: Vec<(String, String)> =
++            e.team_roles.iter().map(|(k, v)| (k.clone(), format!("{v:?}"))).collect();
++        team_roles.sort();
++        let mut shared_roles: Vec<(String, Vec<(String, String)>)> = e
++            .shared_roles
++            .iter()
++            .map(|(t, m)| {
++                let mut m: Vec<(String, String)> = m.iter().map(|(k, v)| (k.clone(), format!("{v:?}"))).collect();
++                m.sort();
++                (t.clone(), m)
++            })
++            .collect();
++        shared_roles.sort();
++        let owners = crate::hosted::runs::owners(saved).map(|o| match o {
++            arugula_e2e::hosted::Owners::Team { roster, certs } => json!({
++                "kind": "team",
++                "team": roster.team,
++                "version": roster.version,
++                "members": roster.members.iter().map(|m| format!("{}:{:?}:{}", m.account, m.role, m.root)).collect::<Vec<_>>(),
++                "certs": certs.iter().map(|(a, (c, r))| (a.clone(), json!([c.len(), r.len()]))).collect::<BTreeMap<_, _>>(),
++            }),
++            arugula_e2e::hosted::Owners::Account { trust, certs, revocations } => json!({
++                "kind": "account",
++                "account": trust.account,
++                "root": trust.root,
++                "certs": sorted(certs.iter().map(|c| c.device.clone()).collect()),
++                "revocations": sorted(revocations.iter().map(|r| r.device.clone()).collect()),
++            }),
++        });
++        let signers = crate::hosted::runs::owners(saved).map(|o| {
++            let s = crate::hosted::runs::signers(saved, &o);
++            json!({
++                "passkey_logs": s.pinned.passkey_logs.iter().map(|(a, l)| (a.clone(), l.events.len())).collect::<BTreeMap<_, _>>(),
++                "origins": s.pinned.origins,
++                "children": s.children,
++            })
++        });
++        let per_account = |f: &dyn Fn(&str) -> serde_json::Value| {
++            ACCOUNTS.iter().map(|a| (a.to_string(), f(a))).collect::<BTreeMap<_, _>>()
++        };
++        let known_roots = per_account(&|a| json!(e.known_root(a)));
++        let co_owner = per_account(&|a| json!(e.co_owner(a).map(|p| format!("{p:?}"))));
++        c.install(Some(Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), &acl, true)));
++        let owns_here = per_account(&|a| json!(c.owns_here(a)));
++        let is_me = per_account(&|a| json!(c.is_me(a)));
++        let name_of_account = per_account(&|a| json!(c.name_of_account(a)));
++        let co_owner_of = per_account(&|a| json!(c.co_owner_of(a).map(|p| format!("{p:?}"))));
++        let reaches = per_account(&|a| json!(c.reaches(&format!("account:{a}"))));
++        let mut known: Vec<String> = c.known().iter().map(|k| format!("{k:?}")).collect();
++        known.sort();
++        let state = c.state();
++        json!({
++            "trusted": sorted(e.trusted.devices.keys().cloned().collect()),
++            "others": who(&e.others),
++            "drivers": who(&e.drivers),
++            "agent_callers": who(&e.agent_callers),
++            "agent_accounts": e.agent_accounts(),
++            "accounts": e.accounts(),
++            "team_roles": team_roles,
++            "shared_roles": shared_roles,
++            "kind_name": kind_name(saved),
++            "whose": whose(saved),
++            "already_in": [already_in(saved, None), already_in(saved, Some("t1")), already_in(saved, Some("t2"))],
++            "state": [state.kind, state.name],
++            "is_team": c.is_team(),
++            "hosted": saved.hosted.is_some(),
++            "owners": owners,
++            "signers": signers,
++            "legacy_app_children": crate::hosted::runs::legacy_app_children(saved),
++            "known_roots": known_roots,
++            "co_owner": co_owner,
++            "owns_here": owns_here,
++            "is_me": is_me,
++            "name_of_account": name_of_account,
++            "co_owner_of": co_owner_of,
++            "reaches": reaches,
++            "known": known,
++            "team_people": sorted(c.team_people().iter().map(|p| format!("{p:?}")).collect()),
++            "co_owners": sorted(c.co_owners().iter().map(|p| format!("{p:?}")).collect()),
++        })
++    }
++
++    /// Writes the fixtures: `cargo nextest run -p arugulad-base --run-ignored
++    /// only -E 'test(zz_write_control_json_fixtures)'`.
++    #[test]
++    #[ignore]
++    fn zz_write_control_json_fixtures() {
++        use arugula_e2e::hosted::{Delegation, DelegationRevoke, HostedCert, HostedKey};
++        use serde_json::json;
++        let scratch = std::env::temp_dir().join(format!("arugula-fixtures-{}", std::process::id()));
++        std::fs::create_dir_all(&scratch).unwrap();
++        let out = Path::new(FIXTURES);
++        std::fs::create_dir_all(out).unwrap();
++
++        // A device of `account`, approved by `by`.
++        let own = |account: &str, by: &DeviceKeys, kind: Kind, name: &str| {
++            let k = DeviceKeys::generate();
++            let mut c = Cert::new(&k, account, kind, name);
++            c.sign_with(by);
++            (k, c)
++        };
++        // Roots (self-signed browsers) and devices.
++        let (ak, ac) = device("a", Kind::Browser);
++        let (_, daemon) = own("a", &ak, Kind::Daemon, "geek");
++        let (_, phone) = own("a", &ak, Kind::Browser, "phone");
++        let (_, gone) = own("a", &ak, Kind::Browser, "old laptop");
++        let (_, other_box) = own("a", &ak, Kind::Daemon, "jake-air");
++        let a_removal = Revocation::new("a", &gone.device, &ak);
++        let (ok, oc) = device("o", Kind::Browser);
++        let (_, o_box) = own("o", &ok, Kind::Daemon, "o-box");
++        let (ek, ec) = device("e", Kind::Browser);
++        let (_, e_box) = own("e", &ek, Kind::Daemon, "e-box");
++        let (_, e_phone) = own("e", &ek, Kind::Browser, "e-phone");
++        let e_removal = Revocation::new("e", &e_phone.device, &ek);
++        let (_, vc) = device("v", Kind::Browser);
++        let (sk, sc) = device("s", Kind::Browser);
++        let (_, s_phone) = own("s", &sk, Kind::Browser, "s-phone");
++        let (xk, xc) = device("x", Kind::Browser);
++        let (_, x_box) = own("x", &xk, Kind::Daemon, "x-box");
++        let x_removal = Revocation::new("x", &x_box.device, &xk);
++        let (pk, pc) = device("p", Kind::Browser);
++        let (_, p_box) = own("p", &pk, Kind::Daemon, "p-box");
++        let (_, qc) = device("q", Kind::Browser);
++        let (rk, rc) = device("r", Kind::Browser);
++        let (_, r_box) = own("r", &rk, Kind::Daemon, "r-box");
++        let (acct_root, acct_cert) = device("acct1", Kind::Browser);
++        let (_, acct_phone) = own("acct1", &acct_root, Kind::Browser, "phone");
++        let (_, acct_box) = own("acct1", &acct_root, Kind::Daemon, "laptop-daemon");
++
++        // Team t1 (founded by o): its roster, members' certificates (one
++        // device of e's removed), their names, and x, taken out before.
++        let pin = TeamPin { team: "t1".into(), founder: "o".into(), founder_root: oc.device.clone() };
++        let t1_members = |with_x: bool| {
++            let mut m = vec![
++                member("o", &oc, TeamRole::Owner),
++                member("a", &ac, TeamRole::Owner),
++                member("e", &ec, TeamRole::Editor),
++                member("v", &vc, TeamRole::Viewer),
++            ];
++            if with_x {
++                m.push(member("x", &xc, TeamRole::Editor));
++            }
++            m
++        };
++        let roster = signed_roster(4, t1_members(false), &ok);
++        let team_certs: AccountCerts = [
++            ("o".to_owned(), (vec![oc.clone(), o_box.clone()], vec![])),
++            ("a".to_owned(), (vec![ac.clone(), phone.clone()], vec![])),
++            ("e".to_owned(), (vec![ec.clone(), e_box.clone(), e_phone.clone()], vec![e_removal.clone()])),
++            ("v".to_owned(), (vec![vc.clone()], vec![])),
++        ]
++        .into();
++        let former_x: BTreeMap<String, Former> = [(
++            "x".to_owned(),
++            Former { root: xc.device.clone(), certs: vec![xc.clone(), x_box.clone()], revocations: vec![x_removal.clone()] },
++        )]
++        .into();
++        let team_names: BTreeMap<String, String> = [("e".to_owned(), "Erin".to_owned())].into();
++        let mut t1_lock = TeamLock { team: "t1".into(), locked: true, version: 4, at: 40, by: String::new(), sig: String::new() };
++        t1_lock.sign_with(&ok);
++
++        // Team t2 (founded by p), sessions were shared with; t9, held.
++        let t2_pin = TeamPin { team: "t2".into(), founder: "p".into(), founder_root: pc.device.clone() };
++        let t2_roster = {
++            let mut r = Roster {
++                v: 1,
++                team: "t2".into(),
++                name: "Beta".into(),
++                version: 2,
++                at: 2,
++                members: vec![
++                    member("p", &pc, TeamRole::Owner),
++                    member("q", &qc, TeamRole::Editor),
++                    member("a", &ac, TeamRole::Editor),
++                ],
++                spent: vec![],
++                redeem: None,
++                by: String::new(),
++                sig: String::new(),
++            };
++            r.sign_with(&pk);
++            r
++        };
++        let t2 = SharedTeam {
++            roster: t2_roster.clone(),
++            certs: [("p".to_owned(), (vec![pc.clone(), p_box.clone()], vec![])), ("q".to_owned(), (vec![qc.clone()], vec![]))]
++                .into(),
++            names: [("q".to_owned(), "Quinn".to_owned())].into(),
++            locked: false,
++            lock: None,
++            pin: Some(t2_pin.clone()),
++            former: Default::default(),
++        };
++        // t3 (founded by r), shared with and locked by r's signed word:
++        // only its owner gets in through it.
++        let t3_pin = TeamPin { team: "t3".into(), founder: "r".into(), founder_root: rc.device.clone() };
++        let t3_roster = {
++            let mut r = Roster {
++                v: 1,
++                team: "t3".into(),
++                name: "Gamma".into(),
++                version: 3,
++                at: 3,
++                members: vec![
++                    member("r", &rc, TeamRole::Owner),
++                    member("q", &qc, TeamRole::Editor),
++                    member("a", &ac, TeamRole::Editor),
++                ],
++                spent: vec![],
++                redeem: None,
++                by: String::new(),
++                sig: String::new(),
++            };
++            r.sign_with(&rk);
++            r
++        };
++        let mut t3_lock = TeamLock { team: "t3".into(), locked: true, version: 3, at: 30, by: String::new(), sig: String::new() };
++        t3_lock.sign_with(&rk);
++        let t3 = SharedTeam {
++            roster: t3_roster,
++            certs: [("r".to_owned(), (vec![rc.clone(), r_box.clone()], vec![])), ("q".to_owned(), (vec![qc.clone()], vec![]))]
++                .into(),
++            names: [("r".to_owned(), "Robin".to_owned())].into(),
++            locked: true,
++            lock: Some(t3_lock),
++            pin: Some(t3_pin),
++            former: Default::default(),
++        };
++        let t9 = SharedTeam {
++            roster: Roster { team: "t9".into(), name: "Held".into(), ..t2_roster.clone() },
++            certs: Default::default(),
++            names: Default::default(),
++            locked: false,
++            lock: None,
++            pin: None,
++            former: Default::default(),
++        };
++
++        // Other hosted machines' certificates, for `accept_hosted`.
++        let delegated = |owner: &str, by: &DeviceKeys| {
++            let key = HostedKey::generate();
++            let mut d = Delegation { project: "prj_2".into(), owner: owner.into(), key: key.public(), at: 1, by: String::new(), sig: String::new() };
++            d.sign_with(by);
++            let k = DeviceKeys::generate();
++            let (noise, sign) = (hex::encode(k.noise_public), hex::encode(k.sign_public()));
++            let mut cert = HostedCert::new(&d, "hw_9", "other", &noise, &sign, 2);
++            key.sign(&mut cert);
++            json!({ "id": cert.device, "hosted": { "cert": cert, "delegation": d, "revocations": [] } })
++        };
++        let accept_inputs = vec![
++            delegated("team:t1", &ok),
++            delegated("team:t1", &ek),
++            delegated("team:t2", &pk),
++            delegated("team:t2", &ak),
++            delegated("team:t3", &rk),
++            delegated("team:t9", &pk),
++            delegated("account:a", &ak),
++            delegated("account:a", &sk),
++            delegated("account:acct1", &acct_root),
++        ];
++
++        let write = |name: &str, s: &Saved| {
++            let dir = scratch.join(name);
++            std::fs::create_dir_all(&dir).unwrap();
++            std::fs::write(out.join(format!("{name}.json")), serde_json::to_vec_pretty(s).unwrap()).unwrap();
++            std::fs::write(out.join(format!("{name}.who.json")), serde_json::to_vec_pretty(&outcomes(s, &dir)).unwrap())
++                .unwrap();
++            let acl = Acl::open(&dir);
++            let e = Enrolled::build(s.clone(), Arc::new(DeviceKeys::generate()), &acl, true);
++            let accepts: Vec<serde_json::Value> = accept_inputs
++                .iter()
++                .map(|i| {
++                    let mut i = i.clone();
++                    i["expect"] = match crate::peer::accept_hosted(&e, i["id"].as_str().unwrap(), &i["hosted"]) {
++                        Ok((project, _)) => format!("ok {project}"),
++                        Err(_) => "err".to_owned(),
++                    }
++                    .into();
++                    i
++                })
++                .collect();
++            std::fs::write(out.join(format!("{name}.accept.json")), serde_json::to_vec_pretty(&accepts).unwrap()).unwrap();
++        };
++
++        // 1. Just joined to its account: what `join` saves.
++        let joined = Saved {
++            url: "https://control.example".into(),
++            trust: Trust { account: "a".into(), root: ac.device.clone() },
++            cert: daemon.clone(),
++            certs: vec![ac.clone(), daemon.clone()],
++            revocations: vec![],
++            team: None,
++            roster: None,
++            team_certs: Default::default(),
++            former_members: Default::default(),
++            team_names: Default::default(),
++            locked: false,
++            lock: None,
++            seen: Default::default(),
++            peers: Default::default(),
++            shared_teams: Default::default(),
++            held_teams: Default::default(),
++            held_peers: Default::default(),
++            login: String::new(),
++            moved_at: 0,
++            hosted: None,
++        };
++        write("personal-joined", &joined);
++
++        // 2. A personal machine after refreshes: a removal, a login, a move
++        // back from a team, a person and a team sessions were shared with,
++        // and a person and a team control left out.
++        let mut seen = checkpoint::Seen::default();
++        let round = seen.next();
++        checkpoint::stamp(
++            &mut seen,
++            &[ac.clone(), daemon.clone(), phone.clone(), gone.clone(), other_box.clone()],
++            &[a_removal.clone()],
++            round,
++        );
++        seen.settle(round);
++        let personal = Saved {
++            certs: vec![ac.clone(), daemon.clone(), phone.clone(), gone.clone(), other_box.clone()],
++            revocations: vec![a_removal.clone()],
++            seen: seen.clone(),
++            peers: [("s".to_owned(), PeerCerts { name: "Sam".into(), certs: vec![sc.clone(), s_phone.clone()], revocations: vec![] })].into(),
++            held_peers: [("h".to_owned(), PeerCerts { name: String::new(), certs: vec![], revocations: vec![] })].into(),
++            shared_teams: [("t2".to_owned(), t2.clone()), ("t3".to_owned(), t3.clone())].into(),
++            held_teams: [("t9".to_owned(), t9.clone())].into(),
++            login: "jake".into(),
++            moved_at: 1_700_000_000_000,
++            ..joined.clone()
++        };
++        write("personal", &personal);
++
++        // 3. Just moved or joined into t1: the pin, no roster yet.
++        let team_joined = Saved { team: Some(pin.clone()), moved_at: 1_700_000_000_001, ..personal.clone() };
++        write("team-joined", &team_joined);
++
++        // 4. A team machine after refreshes: the roster checked, members'
++        // certificates (one removed), their names, x taken out.
++        let team = Saved {
++            roster: Some(roster.clone()),
++            team_certs: team_certs.clone(),
++            former_members: former_x.clone(),
++            team_names: team_names.clone(),
++            ..team_joined.clone()
++        };
++        write("team", &team);
++        // 5. The same, locked by an owner's signed word.
++        write("team-locked", &Saved { locked: true, lock: Some(t1_lock.clone()), ..team.clone() });
++
++        // Hosted machines, as `saved_from` keeps control's enrollment.
++        let hosted = |owner: &str, by: &DeviceKeys, purpose: Option<&str>, name: &str| {
++            let key = HostedKey::generate();
++            let mut d = Delegation { project: "prj_1".into(), owner: owner.into(), key: key.public(), at: 1, by: String::new(), sig: String::new() };
++            d.sign_with(by);
++            let keys = DeviceKeys::generate();
++            let (noise, sign) = (hex::encode(keys.noise_public), hex::encode(keys.sign_public()));
++            let mut cert = HostedCert::new(&d, "hw_1", name, &noise, &sign, 2);
++            key.sign(&mut cert);
++            let revoke = DelegationRevoke::new(&Delegation { at: 0, ..d.clone() }, 5, by);
++            let got = wire::hosted::Enrollment {
++                url: "https://control.example/".into(),
++                cert,
++                delegation: d,
++                revocations: vec![revoke],
++                team: None,
++                roster: None,
++                certs: Default::default(),
++                trust: None,
++                account_certs: vec![],
++                account_revocations: vec![],
++                locked: false,
++                lock: None,
++                legacy_app_children: None,
++                passkey_logs: None,
++                passkey_origins: None,
++                purpose: purpose.map(str::to_owned),
++            };
++            (got, keys)
++        };
++        let account_got = |got: &mut wire::hosted::Enrollment| {
++            got.trust = Some(Trust { account: "acct1".into(), root: acct_root.id() });
++            got.account_certs = vec![acct_cert.clone(), acct_phone.clone(), acct_box.clone()];
++            got.legacy_app_children = Some([("acct1".to_owned(), vec![acct_phone.device.clone()])].into());
++        };
++        let team_got = |got: &mut wire::hosted::Enrollment, with_x: bool| {
++            got.team = Some(pin.clone());
++            got.roster = Some(signed_roster(if with_x { 4 } else { 5 }, t1_members(with_x), &ok));
++            let mut certs = team_certs.clone();
++            if with_x {
++                certs.insert("x".to_owned(), (vec![xc.clone(), x_box.clone()], vec![x_removal.clone()]));
++            }
++            got.certs = certs;
++            got.legacy_app_children = Some([("o".to_owned(), vec![oc.device.clone()])].into());
++        };
++        // A passkey log and the origins, as a deploy's box pins them.
++        let (log, origins) = {
++            use arugula_e2e::passkey::{Change, Draft, EDDSA, Log, NO_AAGUID, origins_of_sites};
++            use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD as B64};
++            let mut log = Log { account: "acct1".into(), ..Default::default() };
++            for (n, at) in [(1u8, 100u64), (2, 200)] {
++                let k = DeviceKeys::generate();
++                let e = Draft {
++                    account: "acct1".into(),
++                    event: Change::Added,
++                    credential: B64.encode([n; 16]),
++                    rp: "control.example".into(),
++                    alg: EDDSA,
++                    key: k.sign_public().to_vec(),
++                    aaguid: NO_AAGUID.into(),
++                    at,
++                    by: "signup".into(),
++                }
++                .after(log.events.last());
++                log.events.push(e);
++            }
++            let mut origins = origins_of_sites(["https://control.example"]);
++            origins.get_mut("control.example").unwrap().push("https://app.example".into());
++            (log, origins)
++        };
++
++        // 6. A people's workspace of an account's project.
++        let (mut got, keys) = hosted("account:acct1", &acct_root, None, "box");
++        account_got(&mut got);
++        got.passkey_logs = Some([("acct1".to_owned(), log.clone())].into());
++        got.passkey_origins = Some(origins.clone());
++        write("hosted-account", &crate::hosted::trust::saved_from(got, &keys, None).unwrap());
++
++        // 7. A people's workspace of a team's project.
++        let (mut got, keys) = hosted("team:t1", &ok, None, "box");
++        team_got(&mut got, false);
++        write("hosted-team", &crate::hosted::trust::saved_from(got, &keys, None).unwrap());
++
++        // 8. The same after two refreshes: x taken out of the team between
++        // them, and the team locked by an owner's word.
++        let (mut got, keys) = hosted("team:t1", &ok, None, "box");
++        team_got(&mut got, true);
++        let first = crate::hosted::trust::saved_from(got.clone(), &keys, None).unwrap();
++        team_got(&mut got, false);
++        got.locked = true;
++        got.lock = Some(t1_lock.clone());
++        write("hosted-team-locked", &crate::hosted::trust::saved_from(got, &keys, Some(&first)).unwrap());
++
++        // 9. A deploy's box of an account's project, with the passkeys it
++        // checks the approval against.
++        let (mut got, keys) = hosted("account:acct1", &acct_root, Some(wire::hosted::DEPLOY), "deploy");
++        account_got(&mut got);
++        got.passkey_logs = Some([("acct1".to_owned(), log.clone())].into());
++        got.passkey_origins = Some(origins.clone());
++        write("hosted-deploy", &crate::hosted::trust::saved_from(got, &keys, None).unwrap());
++
++        // 10. A deploy's box of a team's project.
++        let (mut got, keys) = hosted("team:t1", &ok, Some(wire::hosted::DEPLOY), "deploy");
++        team_got(&mut got, false);
++        write("hosted-deploy-team", &crate::hosted::trust::saved_from(got, &keys, None).unwrap());
++
++        // 11. A snapshot's box of a team's project.
++        let (mut got, keys) = hosted("team:t1", &ok, Some(wire::hosted::SNAPSHOT), "snapshot");
++        team_got(&mut got, false);
++        write("hosted-snapshot", &crate::hosted::trust::saved_from(got, &keys, None).unwrap());
++
++        // 12. A deploy's box of an account's project told, at a refresh,
++        // that it's a snapshot's: both flags set.
++        let (mut got, keys) = hosted("account:acct1", &acct_root, Some(wire::hosted::DEPLOY), "deploy");
++        account_got(&mut got);
++        let first = crate::hosted::trust::saved_from(got.clone(), &keys, None).unwrap();
++        got.purpose = Some(wire::hosted::SNAPSHOT.into());
++        write("hosted-both", &crate::hosted::trust::saved_from(got, &keys, Some(&first)).unwrap());
++    }
+ }
+diff --git a/crates/daemon/src/peer.rs b/crates/daemon/src/peer.rs
+index 1091b6c69..5d31137d3 100644
+--- a/crates/daemon/src/peer.rs
++++ b/crates/daemon/src/peer.rs
+@@ -120,7 +120,7 @@ pub async fn machines(control: &Control) -> anyhow::Result<Vec<Machine>> {
+ /// own chain for a personal project; for a team's, a roster checked from
+ /// its pin (this machine's own team's, or one the owner's browser pinned
+ /// here, #233).
+-fn accept_hosted(e: &Enrolled, id: &str, v: &serde_json::Value) -> anyhow::Result<(String, Cert)> {
++pub(crate) fn accept_hosted(e: &Enrolled, id: &str, v: &serde_json::Value) -> anyhow::Result<(String, Cert)> {
+     use arugula_e2e::hosted::{Delegation, DelegationRevoke, HostedCert, Owner, Owners, accept};
+     let cert: HostedCert = serde_json::from_value(v["cert"].clone())?;
+     let d: Delegation = serde_json::from_value(v["delegation"].clone())?;

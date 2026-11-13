@@ -1,0 +1,5 @@
+{
+  "guest_ssh": true,
+  "agent_mentions": true,
+  "agent_sessions": "names"
+}

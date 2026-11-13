@@ -11,8 +11,11 @@ use std::collections::HashMap;
 
 use arugula_proto::{
     PaneId,
-    api::{ConversationList, ConversationRow, ConversationsQuery, OpenConversationRequest, OpenConversationResponse},
-    op::ops::{ConversationOpen, ConversationsList},
+    api::{
+        ConversationList, ConversationRow, ConversationSignal, ConversationsQuery, OpenConversationRequest,
+        OpenConversationResponse, SessionSignal, SessionSignaled,
+    },
+    op::ops::{ConversationOpen, ConversationSessionSignal, ConversationsList, PaneSessionSignal},
 };
 use axum::http::StatusCode;
 use futures_util::future::BoxFuture;
@@ -101,6 +104,93 @@ impl Handle<AgentBlock> for ConversationOpen {
         };
         Ok(open_conversation_as(cx.app, who, req).await?)
     }
+}
+
+impl Handle<AgentBlock> for PaneSessionSignal {
+    /// From an older `arugula` (no pid), or a page: its pane, as before.
+    async fn handle(cx: &Cx<'_>, id: PaneId, s: SessionSignal) -> Result<SessionSignaled, OpError> {
+        Ok(session_signal(cx.app, s, Some(id), None).await?)
+    }
+}
+
+impl Handle<AgentBlock> for ConversationSessionSignal {
+    async fn handle(cx: &Cx<'_>, _: (), s: ConversationSignal) -> Result<SessionSignaled, OpError> {
+        if s.signal.session_id.as_deref().is_none_or(str::is_empty) {
+            return Err(bad("a session signal for a conversation needs Claude Code's session id").into());
+        }
+        Ok(session_signal(cx.app, s.signal, s.pane, s.pid).await?)
+    }
+}
+
+/// What Claude Code said of its session from inside it (#396, #453): the
+/// mod's signals, read into the same context an agent block reads from its
+/// transcript (#397), kept by session ([`signals`]). Logged, listed with
+/// its conversation, and given to the mux as the `live` of the pane it
+/// runs in (#450), which the strip shows.
+///
+/// [`signals`]: crate::conversations::signals
+async fn session_signal(
+    app: &App,
+    s: SessionSignal,
+    pane: Option<PaneId>,
+    pid: Option<u32>,
+) -> Result<SessionSignaled, ApiError> {
+    use crate::conversations::signals::{Hint, Signals, place};
+    let Some(key) = Signals::key(&s, pane) else {
+        return Err(bad("no session id and no pane: nothing to keep it by"));
+    };
+    // The Claude Code that sent it: the CLI's parent.
+    let claude = pid.and_then(crate::procinfo::ppid);
+    let hint = match pane {
+        None => Hint::None,
+        Some(p) => match app.mux.api(|r| Api::Pane(p, r)).await.flatten() {
+            Some(h) => {
+                let leader = h.pid_now();
+                // In the pane's foreground job, or in the pane a `tmux`
+                // client there shows (which asks `tmux`).
+                let front = match pid {
+                    None => None,
+                    Some(pid) => Some(match leader {
+                        Some(l) => crate::task::spawn_blocking(move || {
+                            crate::procinfo::in_front(l, pid, crate::conversations::signals::tmux_pane)
+                        })
+                        .await
+                        .unwrap_or(false),
+                        None => false,
+                    }),
+                };
+                Hint::Terminal(p, front)
+            }
+            None => match app.mux.api(|r| Api::Block(p, r)).await.flatten() {
+                Some(b) => Hint::Block(p, b.config()["session_id"].as_str().map(str::to_owned)),
+                None => Hint::None,
+            },
+        },
+    };
+    let session = s.session_id.as_deref().filter(|id| !id.is_empty());
+    let held = match (session, &hint) {
+        (Some(id), Hint::None | Hint::Block(..)) => blocks_by_session(app).await.get(id).copied(),
+        _ => None,
+    };
+    let at = place(session, &hint, held);
+    let context = Signals::global().lock().unwrap_or_else(|p| p.into_inner()).take(&key, &s, crate::store::now_ms());
+    tracing::info!(
+        target: "arugulad_agent::session_signal",
+        session = %key,
+        pane = ?pane,
+        shows_on = ?at.pane(),
+        event = %s.event,
+        signal = %serde_json::to_string(&s).unwrap_or_default(),
+        context = %context,
+        "session signal"
+    );
+    if let Some(p) = at.pane() {
+        let live = (!context.is_null()).then(|| context.clone());
+        // A terminal keeps it while that Claude Code is in front (#453).
+        let by = matches!(at, crate::conversations::signals::Place::Pane(_)).then_some(claude).flatten();
+        app.mux.send(crate::mux::Cmd::Api(Api::Live(p, live, by)));
+    }
+    Ok(SessionSignaled { daemon_version: arugula_core::version::get().to_owned(), context, pane: at.pane() })
 }
 
 impl McpOp<AgentBlock> for ConversationsList {
@@ -228,6 +318,7 @@ async fn list_conversations(app: &App, q: ConversationsQuery) -> Result<Conversa
     })
     .await
     .map_err(|e| e.to_string())?;
+    let signaled = crate::conversations::signals::Signals::global().lock().unwrap_or_else(|p| p.into_inner());
     let words: Vec<String> = q.q.as_deref().unwrap_or("").split_whitespace().map(str::to_lowercase).collect();
     let total = list.len();
     let out: Vec<ConversationRow> = list
@@ -248,6 +339,10 @@ async fn list_conversations(app: &App, q: ConversationsQuery) -> Result<Conversa
         })
         .take(q.limit.unwrap_or(500))
         .map(|mut c| {
+            // #398: its estimate, once the pricing thread has read it.
+            c.estimate = crate::conversations::spend::Listed::global().get(&c.path, (c.size, c.updated_ms));
+            // #453: what Claude Code said of it from inside, live.
+            c.context = signaled.get(&c.id);
             let block = blocks.get(&c.id).copied();
             c.live = c.live.take().map(|l| l.ours(|p| ours.contains(&p)));
             // The adapter of the block that has it, when its scope didn't

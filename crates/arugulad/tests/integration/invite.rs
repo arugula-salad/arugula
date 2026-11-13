@@ -36,7 +36,7 @@ const FRIEND: &str = "friend@example.com";
 const OTHER: &str = "other@example.com";
 
 fn tailnet_daemon(env: &[(&str, &str)]) -> Daemon {
-    let args = ["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock", "--wisp-token-file", "/nonexistent"];
+    let args = ["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"];
     Daemon::child_env(&args, env)
 }
 
@@ -453,7 +453,7 @@ impl World {
             "revocations": [],
             "team": team.then(|| TeamPin { team: "t1".into(), founder: "a1".into(), founder_root: self.alex_root.device.clone() }),
         });
-        Daemon::child_in(&["--wisp-token-file", "/nonexistent"], &[], |state| {
+        Daemon::child_in(&[], &[], |state| {
             std::fs::write(state.join("control.json"), saved.to_string()).unwrap();
             self.daemon.save(&state.join("daemon.key")).unwrap();
         })
@@ -742,6 +742,8 @@ async fn a_teams_other_owner_cant_share_a_doc_or_read_its_link() {
     calls.push(("DELETE", format!("/api/doc-links/{id}")));
     // Deleting a Doc from the library (#1493) is the same account's.
     calls.push(("DELETE", format!("/api/docs/{}", &id[..16])));
+    // ...and so is sharing one by its id, with no block (Arugula #819).
+    calls.push(("POST", format!("/api/docs/{}/share", &id[..16])));
     for (method, path) in &calls {
         let (status, r) = channel_call(&mut dee, &dee_ch, method, path, json!({})).await;
         assert_eq!(status, 403, "dee {method} {path}: {r}");
@@ -750,6 +752,18 @@ async fn a_teams_other_owner_cant_share_a_doc_or_read_its_link() {
         let (status, r) = channel_call(&mut alex, &alex_ch, method, path, json!({})).await;
         assert_ne!(status, 403, "alex {method} {path}: {r}");
     }
+}
+
+/// A Doc in this machine's library, as one made before it joined a team
+/// leaves it: `doc new` on a team's machine makes the team's (Arugula #862).
+#[cfg(feature = "labs")]
+fn a_library_doc(state: &std::path::Path, title: &str) -> String {
+    let id = "0123456789abcdef";
+    let dir = state.join("docs").join(id);
+    std::fs::create_dir_all(&dir).unwrap();
+    let meta = json!({ "id": id, "title": title, "made": 1, "updated": 1, "by": "alex" });
+    std::fs::write(dir.join("meta.json"), meta.to_string()).unwrap();
+    id.to_owned()
 }
 
 /// #1067: the card an agent's `doc share` raises is the owner's to answer, and
@@ -769,8 +783,8 @@ async fn a_teams_other_owner_cant_answer_a_docs_share_card() {
     let via_mcp = |args: Value| -> Value {
         std::thread::scope(|t| t.spawn(|| Mcp::bridge(&d, Some(pane)).call("doc", args).unwrap()).join().unwrap())
     };
-    let sections = json!([{ "heading": "One", "intent": "first" }]);
-    let doc = via_mcp(json!({ "kind": "new", "title": "Plan", "sections": sections }))["block"].as_u64().unwrap();
+    let id = a_library_doc(&d.state, "Plan");
+    let doc = via_mcp(json!({ "kind": "open", "doc": id }))["block"].as_u64().unwrap();
     let r = via_mcp(json!({ "kind": "share", "block": doc }));
     assert_eq!(r["status"], "waiting", "{r}");
     let card =

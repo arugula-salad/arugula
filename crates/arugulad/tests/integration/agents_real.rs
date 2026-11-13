@@ -23,19 +23,22 @@
 //!   answers hooks (`arugula hook`, `arugula inbox`): a tool permission
 //!   allowed from its card, then a follow-up through the inbox wakes it.
 //!   Runs in `target/m29-tui`.
+//! - `midturn` (#644): Claude Code's TUI in a terminal pane with the hooks,
+//!   and a fake control: a mention taken at its next tool call, answered
+//!   before the turn ends. Runs in `target/midturn-tui`.
 //! - `mcp` (M6c): an MCP server's form and sign-in link (`fake_mcp.py`)
 //!   through Claude Code in an agent block.
 //! - `mcp-cc` (M16): Claude Code outside Arugula (`claude -p`, haiku),
 //!   with `arugula mcp` as its MCP server: a build that fails after a
 //!   while, waited through; it reads why, fixes it and reruns, and the
-//!   pane says "started by mcp:claude-code". With `mcp-vm` too, the build
-//!   runs in a throwaway wisp VM pane (needs wisp).
+//!   pane says "started by mcp:claude-code".
 //! - `claude`: Claude Code through the pinned `claude-agent-acp`, on your
 //!   own login, in a scratch git repo: a command it asks to run, approved.
 //! - `codex`: `codex-acp` against your `codex`.
-//! - `vm`: Claude Code in a throwaway wisp VM, with the token in
-//!   `~/.config/arugula/claude-oauth-token` (or an API key in
-//!   `…/anthropic-key`); skipped if neither exists.
+//!
+//! Claude Code in a throwaway VM (`vm`, and `mcp-vm` for the build above)
+//! ran on wisp and went with the Sprites adapter; a run on loam is for
+//! when loam has parity.
 //!
 //! Managed cloud live coverage is in arugula-control, `live_subscription_run`.
 //!
@@ -131,36 +134,6 @@ fn codex_runs() {
     let t = text(&d, id);
     assert!(t.contains("m6b-ok"), "{t}");
     assert_eq!(d.state(id)["server"]["name"], "@agentclientprotocol/codex-acp");
-}
-
-#[test]
-fn claude_code_in_a_vm() {
-    if !wanted("vm") {
-        return;
-    }
-    let config = home().join(".config/arugula");
-    if !config.join("claude-oauth-token").exists() && !config.join("anthropic-key").exists() {
-        eprintln!("SKIP: no credentials for VM agents (~/.config/arugula/claude-oauth-token or anthropic-key)");
-        return;
-    }
-    let token = home().join(".local/share/wisp/token");
-    if !token.exists() {
-        eprintln!("SKIP: no wisp token (~/.local/share/wisp/token)");
-        return;
-    }
-    let d = Daemon::child_with(&["--wisp-token-file", token.to_str().unwrap()]);
-    // VMs are the `sandbox-providers` flag's (#347).
-    arugula_testkit::labs(&d.state, true);
-    let config = json!({ "agent": "claude", "model": "haiku", "prompt": PROMPT });
-    let id = d.open_with(json!({ "type": "agent", "vm": true, "config": config }));
-    // The first start installs Node and the adapter in the machine.
-    approve_a_command(&d, id, 300);
-    let machines: Value = d.get("/api/machines");
-    let sprite = machines[0]["sprite"].as_str().unwrap().to_owned();
-    assert!(sprite.starts_with("arugula-eph-"), "{machines}");
-    // Closing it deletes its machine.
-    d.post(&format!("/api/panes/{id}/close"), json!({}));
-    d.wait_for("its machine to go", || d.get("/api/machines").as_array().unwrap().is_empty());
 }
 
 /// M6c: Claude Code's AskUserQuestion in an agent block (one haiku turn):
@@ -352,6 +325,91 @@ fn claude_code_permission_and_follow_up_through_the_hooks() {
     d.post(&format!("/api/panes/{pane}/keys"), json!({ "keys": ["C-c", "C-c"] }));
 }
 
+/// #644: a real session takes a teammate's mention at its next tool call,
+/// in the turn that's running, and answers before the turn's work is done.
+/// Against a fake control, for the tag that says it's a mention.
+#[test]
+fn claude_code_takes_a_mention_at_its_next_tool_call() {
+    use super::mention_agent_block::{Fake, answer, enroll, serve, states};
+    if !wanted("midturn") {
+        return;
+    }
+    let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+    let f = Fake::default();
+    let url = serve(&rt, f.clone());
+    let mut d = Daemon::child();
+    d.stop();
+    enroll(&d.state, &url);
+    d.start();
+    let cli = std::path::Path::new(env!("CARGO_BIN_EXE_arugulad")).with_file_name("arugula");
+    assert!(
+        std::process::Command::new(env!("CARGO")).args(["build", "-q", "-p", "arugula"]).status().unwrap().success()
+    );
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/midturn-tui");
+    std::fs::create_dir_all(&dir).unwrap();
+    let settings = d.sessions.join("midturn-settings.json");
+    let hook = |cmd: &str| json!([{ "hooks": [{ "type": "command", "command": format!("{} {cmd}", cli.display()) }] }]);
+    let hooks = json!({ "hooks": {
+        "SessionStart": hook("hook"), "PreToolUse": hook("hook"), "PostToolUse": hook("hook"),
+        "UserPromptSubmit": hook("hook"), "Stop": hook("hook"),
+    } });
+    std::fs::write(&settings, hooks.to_string()).unwrap();
+    // A stand-in for `post_thread`, which would need a real control.
+    let posts = dir.join("posts.log");
+    let _ = std::fs::remove_file(&posts);
+    let server = dir.join("fake_post_thread.py");
+    let code = r#"import json, os, sys
+for line in sys.stdin:
+    m = json.loads(line)
+    i, how = m.get("id"), m.get("method")
+    def rep(r): print(json.dumps({"jsonrpc": "2.0", "id": i, "result": r}), flush=True)
+    if how == "initialize": rep({"protocolVersion": m["params"]["protocolVersion"], "capabilities": {"tools": {}}, "serverInfo": {"name": "arugula", "version": "1"}})
+    elif how == "tools/list": rep({"tools": [{"name": "post_thread", "description": "Post in a conversation in Arugula cloud.", "inputSchema": {"type": "object", "properties": {"room": {"type": "string"}, "text": {"type": "string"}}, "required": ["room", "text"]}}]})
+    elif how == "tools/call":
+        open(os.environ["POSTS"], "a").write(json.dumps(m["params"]["arguments"]) + "\n")
+        rep({"content": [{"type": "text", "text": "posted"}]})
+    elif i is not None: rep({})
+"#;
+    std::fs::write(&server, code).unwrap();
+    let mcp = dir.join("mcp.json");
+    let servers = json!({ "mcpServers": { "arugula": { "command": "python3", "args": ["-I", server],
+        "env": { "POSTS": posts } } } });
+    std::fs::write(&mcp, servers.to_string()).unwrap();
+    let unset: String = CLAUDE_ENV.iter().map(|v| format!("-u {v} ")).collect();
+    let prompt =
+        "Use the Bash tool to run sleep 15. Then use the Bash tool to run sleep 15. Then reply with the word FINISHED.";
+    let cmd = format!(
+        "cd {} && env {unset}claude --model haiku --name midturn-worker --allowedTools Bash,mcp__arugula__post_thread --strict-mcp-config --mcp-config {} --setting-sources local --settings {} '{prompt}'",
+        dir.canonicalize().unwrap().display(),
+        mcp.display(),
+        settings.display(),
+    );
+    let pane = d.post("/api/run", json!({ "command": cmd }))["pane"].as_u64().unwrap();
+    d.wait_for("the daemon on the relay", || f.said.lock().unwrap().iter().any(|v| v["t"] == "ops"));
+    until(&d, pane, "the first command", 90, |s| s.contains("Bash(sleep 15"));
+    std::thread::sleep(std::time::Duration::from_secs(1));
+    let mention = json!({ "t": "op", "id": "m1", "op": { "op": "agents.mention", "room": "ch_x", "room_name": "general",
+        "seq": 7, "author": "Ada", "text": "Which command did you just run? Please put the word PINEAPPLE in your answer.",
+        "session": "midturn-worker" } });
+    f.outbox.lock().unwrap().push(mention.to_string());
+    d.wait_for("the daemon's answer", || answer(&f, "m1").is_some());
+    let routed = answer(&f, "m1").unwrap();
+    assert_eq!(routed["routed"]["step"], "named", "{routed}");
+    until(&d, pane, "the mention taken", 120, |_| states(&f).contains(&(7, "working".into())));
+    // It answers in the thread while the turn's work goes on: the second
+    // command hasn't ended yet. The prompt on screen says FINISHED too, so
+    // the agent's own lines are the ones that start with a dot.
+    let said = |s: &str, word: &str| s.lines().any(|l| l.trim_start().starts_with('●') && l.contains(word));
+    until(&d, pane, "its reply in the thread", 120, |_| {
+        std::fs::read_to_string(&posts).is_ok_and(|p| p.contains("PINEAPPLE"))
+    });
+    let now = screen(&d, pane);
+    assert!(!said(&now, "FINISHED"), "answered before the turn was done:\n{now}");
+    until(&d, pane, "FINISHED", 120, |s| said(s, "FINISHED"));
+    until(&d, pane, "read", 30, |_| states(&f).contains(&(7, "read".into())));
+    d.post(&format!("/api/panes/{pane}/keys"), json!({ "keys": ["C-c", "C-c"] }));
+}
+
 /// M6c: an MCP server's form and sign-in link (`fake_mcp.py`) through
 /// Claude Code in an agent block (one haiku turn): its tools are approved,
 /// the form is filled in, the link opened, and its card closes when the
@@ -415,16 +473,7 @@ fn claude_code_outside_runs_a_build_through_mcp() {
     if !wanted("mcp-cc") {
         return;
     }
-    let on_vm = std::env::var("ARUGULA_REAL_AGENTS").unwrap_or_default().split(',').any(|w| w.trim() == "mcp-vm");
-    let wisp = home().join(".local/share/wisp/token");
-    if on_vm && !wisp.exists() {
-        eprintln!("SKIP: mcp-vm needs a wisp token (~/.local/share/wisp/token)");
-        return;
-    }
-    let d = if on_vm { Daemon::child_with(&["--wisp-token-file", wisp.to_str().unwrap()]) } else { Daemon::child() };
-    if on_vm {
-        arugula_testkit::labs(&d.state, true);
-    }
+    let d = Daemon::child();
     let cli = std::path::Path::new(env!("CARGO_BIN_EXE_arugulad")).with_file_name("arugula");
     assert!(
         std::process::Command::new(env!("CARGO")).args(["build", "-q", "-p", "arugula"]).status().unwrap().success()
@@ -434,14 +483,12 @@ fn claude_code_outside_runs_a_build_through_mcp() {
     let server = json!({ "mcpServers": { "arugula": { "command": cli, "args": ["--socket", d.sock(), "mcp"] } } });
     std::fs::write(&config, server.to_string()).unwrap();
     // A build that takes a while and fails until a file exists.
-    let marker = if on_vm { "/tmp/ready".to_owned() } else { format!("{repo}/ready") };
+    let marker = format!("{repo}/ready");
     let build = format!(
         "sleep 20; test -f {marker} && echo BUILD-OK || {{ echo 'error: {marker} is missing (touch it)'; false; }}"
     );
-    let place =
-        if on_vm { "with vm: true (a throwaway VM pane; run the fix in that same pane with send_input)" } else { "" };
     let prompt = format!(
-        "Use the Arugula MCP tools. Run this build with the run tool {place}, with wait true: `{build}`. \
+        "Use the Arugula MCP tools. Run this build with the run tool, with wait true: `{build}`. \
          If it fails, read why, fix it, and run the build again until it succeeds (wait again if it's still running). \
          Then reply with just the word DONE."
     );
@@ -469,9 +516,6 @@ fn claude_code_outside_runs_a_build_through_mcp() {
     assert!(builds.iter().all(|c| c["by"] == "mcp:claude-code"), "{h}");
     let panes = d.get("/api/panes");
     assert!(panes.as_array().unwrap().iter().any(|p| p["started_by"]["by"] == "mcp:claude-code"), "{panes}");
-    if on_vm {
-        assert!(!d.get("/api/machines").as_array().unwrap().is_empty(), "on a VM");
-    }
 }
 
 /// #145, #146, #147 against the real Claude Code: no hooks, so everything

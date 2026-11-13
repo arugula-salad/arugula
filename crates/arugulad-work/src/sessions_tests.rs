@@ -50,7 +50,7 @@ fn the_template_makes_a_user_for_each_session_held() {
 fn each_report_is_the_sessions_next_signed() {
     let keys = arugula_e2e::DeviceKeys::generate();
     let me = keys.id();
-    let mut l = Session {
+    let mut l = AgentSessionLedger {
         session: format!("ses_{}", "c".repeat(32)),
         project: "prj_1".into(),
         workspace: "hw_1".into(),
@@ -61,6 +61,8 @@ fn each_report_is_the_sessions_next_signed() {
         checkout: "/home/ses1/work/x".into(),
         block: Some(3),
         taken_at: 1,
+        grant: None,
+        cleanup_owed: false,
         n: 0,
         state: "queued".into(),
         ended: None,
@@ -149,7 +151,7 @@ fn a_turns_report_carries_its_last_message() {
 
     let keys = arugula_e2e::DeviceKeys::generate();
     let me = keys.id();
-    let mut l = Session {
+    let mut l = AgentSessionLedger {
         session: format!("ses_{}", "e".repeat(32)),
         project: "prj_1".into(),
         workspace: "hw_1".into(),
@@ -160,6 +162,8 @@ fn a_turns_report_carries_its_last_message() {
         checkout: "/home/ses1/work/x".into(),
         block: Some(3),
         taken_at: 1,
+        grant: None,
+        cleanup_owed: false,
         n: 0,
         state: "working".into(),
         ended: None,
@@ -396,13 +400,12 @@ async fn a_push_from_a_bundle_moves_one_ref() {
 /// A session that began before main changed CI (the v0.63.0 live test):
 /// GitHub compares a new branch's tree with the default branch's, so the
 /// branch's older workflow file reads as an edit, and a token without
-/// `workflows` is refused. The remote's hook stands in for GitHub's rule,
-/// knowing the token by the environment git hands it. With the token the
-/// platform mints now (`workflows: write`, aru-115 amended), it goes
-/// through.
+/// `workflows` (all a session's push gets, aru-115 amended 2026-11-10) is
+/// refused. The remote's hook stands in for GitHub's rule. The refusal is
+/// said plainly, and nothing moved.
 #[cfg(unix)]
 #[tokio::test]
-async fn a_branch_behind_a_main_that_changed_ci_pushes_with_workflows() {
+async fn a_branch_behind_a_main_that_changed_ci_is_refused_plainly() {
     let dir = crate::hosted::scratch("session-push-ci");
     let remote = dir.join("remote.git");
     git_in(&dir, &["init", "-q", "--bare", "-b", "main", remote.to_str().unwrap()]);
@@ -423,7 +426,6 @@ async fn a_branch_behind_a_main_that_changed_ci_pushes_with_workflows() {
     std::fs::write(work.join("NOTES.md"), "notes\n").unwrap();
     git_in(&work, &["add", "."]);
     git_in(&work, &["commit", "-qm", "add notes"]);
-    let head = git_in(&work, &["rev-parse", "HEAD"]);
     git_in(&work, &["switch", "-q", "main"]);
     std::fs::write(work.join(".github/workflows/test.yml"), "on: [push, pull_request]\n").unwrap();
     git_in(&work, &["commit", "-qam", "test on PRs too"]);
@@ -448,20 +450,26 @@ async fn a_branch_behind_a_main_that_changed_ci_pushes_with_workflows() {
     let mirror = dir.join("mirror.git");
     let url = remote.display().to_string();
 
-    // As before: contents only, refused, and nothing moved.
+    // Contents only: refused, said plainly, and nothing moved.
     let e = push::push_bundle(&mirror, &b, &id, &own, &own, &url, Some("ghs_contents_only"), &[]).await.unwrap_err();
-    assert!(e.contains("without `workflows` permission"), "{e}");
+    assert_eq!(e, push::CI_BEHIND);
+    assert!(e.contains("can't change workflow files") && e.contains("new session"), "{e}");
     assert_eq!(git_in(&remote, &["for-each-ref", "--format=%(refname)"]), "refs/heads/main");
-    // With workflows: through, and main is as it was.
-    let main = git_in(&remote, &["rev-parse", "refs/heads/main"]);
-    assert_eq!(
-        push::push_bundle(&mirror, &b, &id, &own, &own, &url, Some("ghs_with_workflows"), &[]).await.unwrap(),
-        head
-    );
-    assert_eq!(
-        git_in(&remote, &["for-each-ref", "--format=%(refname) %(objectname)"]),
-        format!("refs/heads/{own} {head}\nrefs/heads/main {main}")
-    );
+}
+
+/// A turn whose own commits change a workflow file isn't pushed: the box
+/// says which files and why, before it asks for a token. Other files, or
+/// none, push as before.
+#[test]
+fn a_turn_that_changes_workflow_files_says_why_it_isnt_pushed() {
+    assert_eq!(push::changes_ci(""), None);
+    assert_eq!(push::changes_ci("\n  \n"), None);
+    let why = push::changes_ci(".github/workflows/ci.yml\n.github/workflows/canary.yml\n").unwrap();
+    assert!(why.contains(".github/workflows/ci.yml, .github/workflows/canary.yml"), "{why}");
+    assert!(why.contains("a session's push can't change workflow files"), "{why}");
+    let many: String = (0..8).map(|i| format!(".github/workflows/w{i}.yml\n")).collect();
+    let why = push::changes_ci(&many).unwrap();
+    assert!(why.contains("w4.yml and 3 more") && !why.contains("w5.yml"), "{why}");
 }
 
 /// A stop while a push ran cleaned the slot under it, and the push made
@@ -472,7 +480,7 @@ async fn a_branch_behind_a_main_that_changed_ci_pushes_with_workflows() {
 #[tokio::test]
 async fn a_push_back_after_an_end_cleans_again() {
     let dir = crate::hosted::scratch("session-push-end");
-    let l = Session {
+    let l = AgentSessionLedger {
         session: format!("ses_{}", "d".repeat(32)),
         project: "prj_1".into(),
         workspace: "hw_1".into(),
@@ -483,6 +491,8 @@ async fn a_push_back_after_an_end_cleans_again() {
         checkout: dir.join("home/work").display().to_string(),
         block: None,
         taken_at: 1,
+        grant: None,
+        cleanup_owed: false,
         n: 0,
         state: "working".into(),
         ended: None,
@@ -559,7 +569,7 @@ fn what_was_typed_in_the_block_is_its_turns() {
 /// reports say the one its agent is on when that changes, and each turn's.
 #[test]
 fn a_session_runs_on_the_model_asked_for() {
-    let w = |model: Option<&str>| -> SessionWork {
+    let w = |model: Option<&str>| -> AgentSessionWork {
         serde_json::from_value(json!({ "session": format!("ses_{}", "f".repeat(32)), "project": "prj_1",
             "workspace": "hw_1", "asker": "acct1", "branch": "arugula/x", "state": "queued", "n": 0, "model": model }))
         .unwrap()
@@ -572,12 +582,12 @@ fn a_session_runs_on_the_model_asked_for() {
 
     let keys = arugula_e2e::DeviceKeys::generate();
     let me = keys.id();
-    let mut l: Session = serde_json::from_value(json!({
+    let mut l: AgentSessionLedger = serde_json::from_value(json!({
         "session": format!("ses_{}", "f".repeat(32)), "project": "prj_1", "workspace": "hw_1", "asker": "acct1",
         "branch": "arugula/x", "user": { "user": "ses1", "home": "/home/ses1" }, "checkout": "/home/ses1/work/x",
         "taken_at": 1, "n": 0, "state": "queued", "model": "opus" }))
     .unwrap();
-    let model = |l: &Session, i: usize| -> Option<String> {
+    let model = |l: &AgentSessionLedger, i: usize| -> Option<String> {
         serde_json::from_str::<SessionDetail>(&l.events[i].report.detail).unwrap().model
     };
     l.push(&keys, &me, Kind::State, State::Working, SessionDetail::default());
@@ -592,4 +602,214 @@ fn a_session_runs_on_the_model_asked_for() {
         "once it's known, again on each turn"
     );
     assert_eq!(agent_config(&l)["model"], "opus", "the block switches to it as the session opens");
+}
+
+/// A slot keeps its build caches for its next session only when its last
+/// session was the same asker's: another asker's, or a slot with no
+/// session before it (or none it still knows of), starts from an empty
+/// home.
+#[test]
+fn a_slot_keeps_its_caches_only_for_the_same_asker() {
+    let dir = crate::hosted::scratch("session-same-asker");
+    let ledger = |n: char, asker: &str, user: &str, at: u64| AgentSessionLedger {
+        session: format!("ses_{}", n.to_string().repeat(32)),
+        project: "prj_1".into(),
+        workspace: "hw_1".into(),
+        asker: asker.into(),
+        repo: None,
+        branch: format!("arugula/{}-fix", n.to_string().repeat(8)),
+        user: AsUser { user: user.into(), home: dir.join(user).display().to_string() },
+        checkout: dir.join(user).join("work").display().to_string(),
+        block: None,
+        taken_at: at,
+        grant: None,
+        cleanup_owed: false,
+        n: 0,
+        state: "done".into(),
+        ended: Some("done".into()),
+        handed: vec![],
+        turn: None,
+        notes: None,
+        acted: vec![],
+        unnamed: vec![],
+        error: None,
+        last_at: 0,
+        events: vec![],
+        pushed_head: None,
+        turns_seen: None,
+        harness: None,
+        review: false,
+        model: None,
+        model_now: None,
+        model_said: None,
+        parked: None,
+        reopened: false,
+    };
+    let next = format!("ses_{}", "f".repeat(32));
+    assert!(!same_asker(&dir, "ses2", &next, "acct1"), "nothing before it");
+    assert!(claim(&dir, &ledger('a', "acct1", "ses2", 1)));
+    assert!(claim(&dir, &ledger('b', "acct2", "ses1", 5)));
+    assert!(same_asker(&dir, "ses2", &next, "acct1"));
+    assert!(!same_asker(&dir, "ses2", &next, "acct2"), "another asker's slot");
+    assert!(!same_asker(&dir, "ses2", &next, ""), "nobody's");
+    // The slot's latest session is what counts.
+    assert!(claim(&dir, &ledger('c', "acct2", "ses2", 9)));
+    assert!(!same_asker(&dir, "ses2", &next, "acct1"));
+    assert!(same_asker(&dir, "ses2", &next, "acct2"));
+}
+
+/// A session's ledger as a turn leaves it, in `dir`, for the push tests.
+#[cfg(unix)]
+fn pushing_ledger(dir: &Path, c: char) -> AgentSessionLedger {
+    let l = AgentSessionLedger {
+        session: format!("ses_{}", c.to_string().repeat(32)),
+        project: "prj_1".into(),
+        workspace: "hw_1".into(),
+        asker: "acct1".into(),
+        repo: Some("o/r".into()),
+        branch: format!("arugula/{}-fix", c.to_string().repeat(8)),
+        user: AsUser { user: "ses1".into(), home: "/home/ses1".into() },
+        checkout: "/home/ses1/work/x".into(),
+        block: Some(3),
+        taken_at: 1,
+        grant: None,
+        cleanup_owed: false,
+        n: 0,
+        state: "working".into(),
+        ended: None,
+        handed: vec![],
+        turn: None,
+        notes: None,
+        acted: vec![],
+        unnamed: vec![],
+        error: None,
+        last_at: 0,
+        events: vec![],
+        pushed_head: None,
+        turns_seen: Some(1),
+        harness: None,
+        review: false,
+        model: None,
+        model_now: None,
+        model_said: None,
+        parked: None,
+        reopened: false,
+    };
+    assert!(claim(dir, &l));
+    l
+}
+
+/// What a session's report says, kind by kind, with its error and its
+/// `pushed`.
+#[cfg(unix)]
+fn said(dir: &Path, id: &str) -> Vec<(String, Option<String>, Option<bool>)> {
+    let l = read(dir, id).unwrap().unwrap();
+    l.events
+        .iter()
+        .map(|k| {
+            let d: SessionDetail = serde_json::from_str(&k.report.detail).unwrap();
+            (k.report.kind.clone(), d.error, d.pushed)
+        })
+        .collect()
+}
+
+/// A turn whose push fails (a full disk, #842) says why, as the session's
+/// error, and is not pushed (#859). The turn's report that follows carries
+/// `pushed: false`; the retry's test below shows what clears it.
+#[cfg(unix)]
+#[test]
+fn a_turn_whose_push_fails_is_unpushed_with_its_reason() {
+    let dir = crate::hosted::scratch("session-push-fails");
+    let l = pushing_ledger(&dir, 'e');
+    let keys = arugula_e2e::DeviceKeys::generate();
+    let me = keys.id();
+    let why = "git couldn't take the session's commits: fatal: write error: No space left on device";
+    let (now, pushed) = update(&dir, &l.session, |now| pushed_now(now, &keys, &me, Err(why.into()))).unwrap();
+    assert!(!pushed);
+    assert_eq!(now.pushed_head, None);
+    assert_eq!(
+        said(&dir, &l.session),
+        [("error".to_owned(), Some(format!("couldn't push {}: {why}", l.branch)), None)]
+    );
+}
+
+/// The retry of a failed push (#859): each failure says its newest reason,
+/// and the push that gets there clears it, as a turn's report does:
+/// `pushed`, and the ledger knows the head.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_failed_push_is_tried_again_until_it_gets_there() {
+    let dir = crate::hosted::scratch("session-push-retry");
+    let l = pushing_ledger(&dir, 'f');
+    let keys = arugula_e2e::DeviceKeys::generate();
+    let me = keys.id();
+    retry::own(&l.session, 7);
+    let tried = std::sync::atomic::AtomicUsize::new(0);
+    let push = |_: AgentSessionLedger| async {
+        match tried.fetch_add(1, std::sync::atomic::Ordering::SeqCst) {
+            0 => Err("No space left on device".to_owned()),
+            1 => Err("Out of diskspace".to_owned()),
+            _ => Ok(Some("abcdef0123456789".to_owned())),
+        }
+    };
+    let waits = [Duration::from_millis(1), Duration::from_millis(2)];
+    retry::retry(&dir, &l.session, 7, &waits, &keys, &me, push).await;
+    assert_eq!(tried.load(std::sync::atomic::Ordering::SeqCst), 3);
+    let b = &l.branch;
+    assert_eq!(
+        said(&dir, &l.session),
+        [
+            ("error".to_owned(), Some(format!("couldn't push {b}: No space left on device")), None),
+            ("error".to_owned(), Some(format!("couldn't push {b}: Out of diskspace")), None),
+            ("turn".to_owned(), None, Some(true)),
+        ]
+    );
+    let now = read(&dir, &l.session).unwrap().unwrap();
+    assert_eq!(now.pushed_head.as_deref(), Some("abcdef0123456789"));
+    let turn: SessionDetail = serde_json::from_str(&now.events[2].report.detail).unwrap();
+    assert_eq!((turn.branch.as_deref(), turn.head.as_deref()), (Some(b.as_str()), Some("abcdef0")));
+    // It's done: nothing keeps it going, and another loop could start.
+    assert!(!retry::is_running(&l.session));
+}
+
+/// A turn starting stops the retry: its own finish step pushes. So does
+/// the session ending, and a newer loop taking its place; none of them
+/// pushes.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_retry_stops_when_a_turn_starts() {
+    let dir = crate::hosted::scratch("session-push-retry-stops");
+    let keys = arugula_e2e::DeviceKeys::generate();
+    let me = keys.id();
+    let waits = [Duration::from_millis(1)];
+    let tried = std::sync::atomic::AtomicUsize::new(0);
+    let push = |_: AgentSessionLedger| async {
+        tried.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Err::<Option<String>, String>("No space left on device".into())
+    };
+
+    // A turn under way.
+    let l = pushing_ledger(&dir, 'a');
+    retry::own(&l.session, 1);
+    update(&dir, &l.session, |now| {
+        now.turn = Some(Turn { prompts: vec![], base: 1, sent: true, at: 1, fix: None, cancelled: false })
+    })
+    .unwrap();
+    retry::retry(&dir, &l.session, 1, &waits, &keys, &me, &push).await;
+    // Ended.
+    let l = pushing_ledger(&dir, 'b');
+    retry::own(&l.session, 2);
+    update(&dir, &l.session, |now| now.ended = Some("stopped".into())).unwrap();
+    retry::retry(&dir, &l.session, 2, &waits, &keys, &me, &push).await;
+    // Replaced by a newer loop (or cancelled by a turn's end).
+    let l = pushing_ledger(&dir, 'c');
+    retry::own(&l.session, 4);
+    retry::retry(&dir, &l.session, 3, &waits, &keys, &me, &push).await;
+    retry::cancel(&l.session);
+    retry::retry(&dir, &l.session, 4, &waits, &keys, &me, &push).await;
+
+    assert_eq!(tried.load(std::sync::atomic::Ordering::SeqCst), 0, "none of them pushed");
+    for c in ['a', 'b', 'c'] {
+        assert!(said(&dir, &format!("ses_{}", c.to_string().repeat(32))).is_empty());
+    }
 }

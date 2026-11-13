@@ -4,10 +4,10 @@
 use super::{AskReply, Daemon, Dirty, PaneView, SAVE_DEBOUNCE, Seen, Sent, TYPING, exec_tag, seed};
 use crate::{
     acl::Principal,
-    pane::{Start, ToClient, Want},
+    pane::{Start, Subscriber, ToClient, Want},
     store::{PaneLog, PaneMeta},
 };
-use arugula_core::{Claim, Effect, Intent, Role};
+use arugula_core::{Effect, Intent, Role};
 use arugula_proto::{
     Activity, Attention, ClientId, ClientMsg, Delta, Driver, EventKind, MachineId, Owner, PaneId, PaneInfo, PaneOp,
     Presence, ServerMsg, SessionId, State, TabId,
@@ -27,12 +27,20 @@ const URGENT: Duration = Duration::from_millis(40);
 /// the pane.
 const NOT_IN_SUMMARIES: &[&str] = &["epoch", "policy", "resumes", "integration"];
 
+/// A client's access is gone: it hears why, and is hung up on.
+pub(super) fn hang_up(sub: &Subscriber) {
+    let message = "your access was removed".to_owned();
+    let _ = sub.ctrl.send(ToClient::Msg(ServerMsg::Error { id: None, message }));
+    let _ = sub.ctrl.send(ToClient::Close);
+}
+
 impl Daemon {
     pub(super) fn message(&mut self, client: ClientId, msg: ClientMsg) {
         let Some(sub) = self.clients.get(&client).cloned() else {
             return;
         };
         let who = sub.principal.clone();
+        self.first_message(client, &msg);
         match msg {
             ClientMsg::Attach { panes, zstd, acks, kitty_keys: _ } => {
                 for a in panes {
@@ -57,11 +65,12 @@ impl Daemon {
                     }
                 }
             }
-            ClientMsg::View { tab, cols, rows, zoom, claim, typed, asked } => {
+            ClientMsg::View { tab, cols, rows, zoom, claim, typed: _, asked } => {
                 match zoom {
                     Some(z) => self.zoomed.insert(client, z),
                     None => self.zoomed.remove(&client),
                 };
+                self.view_size.insert(client, (cols, rows));
                 if self.viewing.insert(client, tab) != Some(tab) {
                     // Presence only: no pane changed.
                     self.soon();
@@ -77,14 +86,13 @@ impl Daemon {
                 if !editor {
                     return;
                 }
-                let claim = match (claim, typed) {
-                    (false, _) => Claim::No,
-                    (true, true) => Claim::Typed,
-                    (true, false) => Claim::Yes,
-                };
-                let claim = self.between_people(client, who.id(), tab, claim, asked);
-                let now = std::time::Instant::now();
-                if let Ok(true) = self.hold.view(&mut self.mux, client, tab, (cols, rows), zoom, claim, now) {
+                // `typed` is from older clients, whose typing claimed the size.
+                let take = self.may_take(client, tab, claim, asked);
+                // Showing the tab or picking a pane without the size: the
+                // holder's focus ends, as it would if this screen took the
+                // size, but the size stays (#439).
+                let freed = claim && !take && self.mux.end_focus_for(client, tab);
+                if matches!(self.mux.view(client, tab, cols, rows, zoom, take), Ok(true)) || freed {
                     self.changed();
                 }
             }
@@ -137,8 +145,9 @@ impl Daemon {
                     for p in self.panes.values() {
                         p.detach(client);
                     }
-                } else {
-                    self.summary.remove(&client);
+                } else if self.summary.remove(&client) {
+                    // Summaries only until now: it has none of them.
+                    self.send_blocks_to(client);
                 }
                 let state = self.state_for(&who);
                 self.send_state(client, state, summary, false);
@@ -146,6 +155,11 @@ impl Daemon {
                 self.soon();
             }
             ClientMsg::Follow { pane, on } => self.follow(client, pane, on),
+            ClientMsg::DismissNotice { key } => {
+                if who.is_owner() {
+                    self.clear_notice(&key);
+                }
+            }
             ClientMsg::BlockPatches => {
                 self.patched.insert(client, Default::default());
             }
@@ -241,10 +255,27 @@ impl Daemon {
             }
             i => i,
         };
+        // #497: the window that pops a pane out holds it, and its going
+        // brings the pane back. A block only: a terminal's size is its tab's
+        // until sizes are per pane (#477).
+        let intent = match intent {
+            Intent::PopOut { pane, out, .. } => {
+                if out && !self.blocks.contains_key(&pane) {
+                    let why = "only a block pops out, not a terminal yet".to_owned();
+                    info!(?client, pane, why, "intent refused");
+                    return Err(why);
+                }
+                Intent::PopOut { pane, out, by: client }
+            }
+            i => i,
+        };
         let refused = |why: String| {
             info!(?client, ?intent, why, "intent refused");
             why
         };
+        if let (Intent::Focus { tab, pane: Some(_) }, Some(client)) = (&intent, client) {
+            self.take_for_focus(client, *tab).map_err(refused)?;
+        }
         self.check_move(&intent).map_err(refused)?;
         let local = matches!(intent, Intent::Split { local: true, .. });
         let before: Vec<SessionId> = self.mux.sessions.iter().map(|s| s.id).collect();
@@ -259,9 +290,6 @@ impl Daemon {
             .collect();
         let effects = self.mux.apply(intent.clone()).map_err(|e| refused(e.to_string()))?;
         let was = std::mem::replace(&mut self.was, was);
-        for gone in before.into_iter().filter(|s| self.mux.session(*s).is_err()) {
-            self.config.acl.forget_session(gone);
-        }
         info!(?client, ?intent, "intent");
         let rects = self.mux.pane_rects();
         for e in effects {
@@ -354,6 +382,13 @@ impl Daemon {
                     }
                 }
                 Effect::Kill { pane } => {
+                    // Its thread's readers are still worked out (`readers.rs`).
+                    // Its session's shares are still there (`sessions_gone`
+                    // comes after).
+                    if let Some(&(Some(session), private, _)) = self.was.get(&pane) {
+                        let readers = self.readers_at_close(session, private);
+                        self.closed.pane(pane, session, private, crate::store::now_ms(), readers);
+                    }
                     self.ids.lock().unwrap().remove(&pane);
                     if let Some(p) = self.panes.remove(&pane) {
                         p.close();
@@ -385,6 +420,13 @@ impl Daemon {
                     self.status_pushed.remove(&pane);
                     self.turn_typed.remove(&pane);
                     self.hooked.remove(&pane);
+                    self.tagged_off.remove(&pane);
+                    self.held.remove(&pane);
+                    self.queued.gone(pane);
+                    self.midturn_told.remove(&pane);
+                    self.last_tools.remove(&pane);
+                    self.live.remove(&pane);
+                    self.live_pid.remove(&pane);
                     self.links.remove(&pane);
                     self.restored.remove(&pane);
                     if let Some(a) = self.asks.remove(&pane) {
@@ -394,6 +436,9 @@ impl Daemon {
                 }
             }
         }
+        // After the panes that went: who read them is taken before their
+        // sessions' shares go.
+        self.sessions_gone(before);
         self.reap_machines();
         self.was = was;
         self.changed();
@@ -487,35 +532,43 @@ impl Daemon {
         }
     }
 
-    /// A claim on `tab`'s size from `client` (`who`), after the rule between
-    /// people (#1502, DECISIONS.md "Size arbitration"). Switching to a tab or
-    /// typing in it takes the size from nobody or from the same person's
-    /// window, never from another person's; that takes `asked` (the button).
-    /// An owner whose client has gone is nobody's.
-    fn between_people(&self, client: ClientId, who: &str, tab: TabId, claim: Claim, asked: bool) -> Claim {
-        let other = self
-            .mux
-            .tab(tab)
-            .ok()
-            .and_then(|t| t.owner)
-            .filter(|o| *o != client)
-            .and_then(|o| self.clients.get(&o))
-            .is_some_and(|o| o.principal.id() != who);
-        match claim {
-            Claim::Yes if other && asked => Claim::Yes,
-            _ if other => Claim::No,
-            c => c,
-        }
+    /// Whether a claim on `tab`'s size from `client` takes it (#473, DECISIONS.md
+    /// "Size arbitration"). While another connected client holds the size, only
+    /// `asked` (the button) takes it: typing, mouse and focus reports, showing
+    /// the tab and zooming don't, whoever the holder is. An owner whose client
+    /// has gone is nobody's.
+    fn may_take(&self, client: ClientId, tab: TabId, claim: bool, asked: bool) -> bool {
+        let held =
+            self.mux.tab(tab).ok().and_then(|t| t.owner).is_some_and(|o| o != client && self.clients.contains_key(&o));
+        claim && (asked || !held)
     }
 
-    /// An ssh guest's (`who`, a principal id) window (M65) sizes the pane's tab, zoomed to it.
+    /// A focus is its holder's view, so `client` takes the tab first, under
+    /// the size rule (#1506): another person's tab isn't taken, and the
+    /// focus is refused rather than hiding panes on their screen (#439).
+    fn take_for_focus(&mut self, client: ClientId, tab: TabId) -> Result<(), String> {
+        let owner = self.mux.tab(tab).map_err(|e| e.to_string())?.owner;
+        if owner.is_none_or(|o| o == client) {
+            return Ok(());
+        }
+        if !self.may_take(client, tab, true, false) {
+            return Err("someone else is using this tab's size: ask for it first".to_owned());
+        }
+        let size = self.view_size.get(&client).copied().ok_or("show the tab first")?;
+        let zoom = self.zoomed.get(&client).copied();
+        if self.mux.view(client, tab, size.0, size.1, zoom, true).map_err(|e| e.to_string())? {
+            self.changed();
+        }
+        Ok(())
+    }
+
+    /// An ssh guest's window (M65) sizes the pane's tab, zoomed to it.
     #[cfg(feature = "labs")]
-    pub(super) fn guest_view(&mut self, client: ClientId, who: &str, pane: PaneId, (cols, rows): (u16, u16)) {
+    pub(super) fn guest_view(&mut self, client: ClientId, pane: PaneId, (cols, rows): (u16, u16)) {
         let Ok(tab) = self.mux.tab_of(pane) else { return };
-        // A guest never asks, so they never take another person's size.
-        let claim = self.between_people(client, who, tab, Claim::Yes, false);
-        let now = std::time::Instant::now();
-        if let Ok(true) = self.hold.view(&mut self.mux, client, tab, (cols, rows), Some(pane), claim, now) {
+        // A guest never asks, so they never take a connected holder's size.
+        let claim = self.may_take(client, tab, true, false);
+        if let Ok(true) = self.mux.view(client, tab, cols, rows, Some(pane), claim) {
             self.changed();
         }
     }
@@ -610,8 +663,9 @@ impl Daemon {
                     })
                     .collect()
             });
-            let (machines, presence) =
-                people.entry(who.clone()).or_insert_with(|| (self.machines_for(&who), self.presence(&who)));
+            let (machines, presence, notices) = people
+                .entry(who.clone())
+                .or_insert_with(|| (self.machines_for(&who), self.presence(&who), self.notices_for(&who)));
             let Some(sent) = self.sent.get_mut(&client) else { continue };
             let mut delta = Delta::default();
             for (id, v) in view.iter() {
@@ -650,6 +704,10 @@ impl Daemon {
                 sent.presence = presence.clone();
                 delta.presence = Some(presence.clone());
             }
+            if sent.notices != *notices {
+                sent.notices = notices.clone();
+                delta.notices = Some(notices.clone());
+            }
             if !delta.is_empty()
                 && let Some(c) = self.clients.get(&client)
             {
@@ -668,6 +726,7 @@ impl Daemon {
             panes: HashMap::new(),
             machines: state.machines.clone(),
             presence: state.presence.clone(),
+            notices: state.notices.clone(),
         };
         let mut panes = Vec::with_capacity(state.panes.len());
         for p in &state.panes {
@@ -708,6 +767,7 @@ impl Daemon {
                 answered: None,
                 work: None,
                 on_issue: None,
+                worktree: None,
                 project: None,
                 branch: None,
                 head: None,
@@ -718,6 +778,8 @@ impl Daemon {
                 diff: None,
                 resumes: None,
                 unhooked: false,
+                mentions_off: false,
+                live: None,
                 link: None,
                 ..info
             };
@@ -766,6 +828,11 @@ impl Daemon {
             self.machines.remove(&m);
         }
         r
+    }
+
+    /// The notices `who` sees: the owner's alone (#551).
+    pub(super) fn notices_for(&self, who: &Principal) -> Vec<arugula_proto::Notice> {
+        if who.is_owner() { self.notices_list() } else { Vec::new() }
     }
 
     pub(super) fn presence(&self, viewer: &Principal) -> Vec<Presence> {
@@ -822,15 +889,15 @@ impl Daemon {
     /// Grants changed: hang up on whoever has nothing left, let go of panes
     /// they no longer see, and show everyone their state.
     pub(super) fn acl_changed(&mut self) {
+        // Whoever lost a closed pane's thread has lost it for good.
+        self.settle_closed();
         let acl = self.config.acl.clone();
         let gone: Vec<ClientId> =
             self.clients.iter().filter(|(_, c)| !acl.knows(&c.principal)).map(|(id, _)| *id).collect();
         for id in gone {
             if let Some(sub) = self.clients.remove(&id) {
                 info!(client = id, who = sub.principal.id(), "access revoked: disconnecting");
-                let message = "your access was removed".to_owned();
-                let _ = sub.ctrl.send(ToClient::Msg(ServerMsg::Error { id: None, message }));
-                let _ = sub.ctrl.send(ToClient::Close);
+                hang_up(&sub);
             }
             self.focus.remove(&id);
             for p in self.panes.values() {
@@ -860,6 +927,7 @@ impl Daemon {
     pub(super) fn state_for(&self, who: &Principal) -> State {
         let mut st = self.state();
         st.presence = self.presence(who);
+        st.notices = self.notices_for(who);
         if who.is_owner() {
             return st;
         }

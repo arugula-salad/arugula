@@ -32,7 +32,7 @@ constrains:
   - "path:crates/proto/src/op.rs"
   - "path:crates/arugulad-labs/src/lib.rs"
   - "path:crates/mux/src/mux/machines.rs"
-  - "path:crates/daemon/tests/integration/flag_gates.rs"
+  - "path:crates/arugulad/tests/integration/flag_gates.rs"
 ---
 
 # Each flag gates its feature, not just its listing
@@ -67,5 +67,5 @@ everything about the feature follows the flag (#347):
   machine; the CLI keeps no list of its own for this.
 - **A build without Labs is unchanged.** `labs::flag` is `Ok` there, and
   each feature's twin says it isn't built, as before.
-Where: `crates/mux/src/labs/mod.rs` (`flag`, `flag_off`), `crates/daemon/src/ops/mod.rs` (`flagged`), `crates/daemon/src/mcp/ops.rs`, `crates/proto/src/op.rs` (`FLAG`), `crates/arugulad-labs/src/lib.rs` (`Flagged`, `block_flag`), `crates/mux/src/mux/machines.rs`, `crates/daemon/tests/integration/flag_gates.rs`.
+Where: `crates/mux/src/labs/mod.rs` (`flag`, `flag_off`), `crates/daemon/src/ops/mod.rs` (`flagged`), `crates/daemon/src/mcp/ops.rs`, `crates/proto/src/op.rs` (`FLAG`), `crates/arugulad-labs/src/lib.rs` (`Flagged`, `block_flag`), `crates/mux/src/mux/machines.rs`, `crates/arugulad/tests/integration/flag_gates.rs`.
 From: #347, #665.

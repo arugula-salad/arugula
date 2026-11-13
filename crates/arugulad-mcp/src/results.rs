@@ -130,11 +130,32 @@ pub struct Page {
     pub text: String,
 }
 
+/// A page of an agent block's messages, paged by message.
+#[derive(Debug, Serialize)]
+pub struct Messages {
+    pub pane: PaneId,
+    pub offset: usize,
+    pub next_offset: usize,
+    pub total: usize,
+    pub more: bool,
+    pub text: String,
+}
+
 /// A pane's screen.
 #[derive(Debug, Serialize)]
 pub struct Screen {
     pub pane: PaneId,
     pub text: String,
+}
+
+/// `wait` on pull requests: the ones that met what's waited for (`state`
+/// `met`), or every one's state as it stands (`still running`).
+#[derive(Debug, Serialize)]
+pub struct PrsWaited {
+    pub state: &'static str,
+    /// The `OWNER/REPO#N` of each that met it.
+    pub met: Vec<String>,
+    pub prs: Vec<crate::forge_wait::PrVerdict>,
 }
 
 /// The `arugula://block/N` resource: the pane, and the block's state.
@@ -207,6 +228,27 @@ pub struct StartedAgent {
     pub block: PaneId,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub issue: Option<StartedOn>,
+    /// The MCP servers it was started with and the grants this machine
+    /// holds for its project (Arugula #836).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mcp: Option<StartedMcp>,
+}
+
+/// What a started agent can reach: its MCP servers by name, whether
+/// Arugula's own is one, and the powers this machine's grants give over
+/// projects (issues, boards, trackers, threads; never a value or a key).
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct StartedMcp {
+    pub servers: Vec<String>,
+    pub arugula: bool,
+    /// Why not, when Arugula's MCP isn't given.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    /// `project: power, power` lines; empty when there is no control or no grant.
+    pub grants: Vec<String>,
+    /// Why `grants` is empty or partial, when control couldn't say.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grants_note: Option<String>,
 }
 
 /// The issue a block was started on, the boards whose row it is attached
@@ -326,6 +368,9 @@ pub enum ToolState {
     Reconnect,
     /// Needs a grant over a project that this machine's owner hasn't given.
     NotGranted,
+    /// Needs a grant, and Arugula control didn't answer whether this
+    /// machine has it: try again shortly.
+    Unreachable,
 }
 
 /// One kind of block.
@@ -473,7 +518,7 @@ mod tests {
             json!({ "pane": 7, "tab": "its tab", "chat": "c1", "position": null }),
         );
         shaped(BlockOnly { block: 9 }, json!({ "block": 9 }));
-        shaped(StartedAgent { block: 9, issue: None }, json!({ "block": 9 }));
+        shaped(StartedAgent { block: 9, issue: None, mcp: None }, json!({ "block": 9 }));
         same(PortOpened { block: 9, port: 3000 }, json!({ "block": 9, "port": 3000 }));
         same(Screen { pane: 7, text: "hi".into() }, json!({ "pane": 7, "text": "hi" }));
         shaped(
@@ -573,6 +618,7 @@ mod tests {
             current: None,
             last: None,
             started_by: None,
+            worktree: None,
             you: None,
         };
         let want = serde_json::to_value(&pane).unwrap();

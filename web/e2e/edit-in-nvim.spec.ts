@@ -5,7 +5,7 @@
 // VS Code is in editor-pref.spec.ts, whose daemon has a block listener.
 
 import { expect, test, type Page } from "@playwright/test";
-import { closeContexts, menuItem, reset } from "./helpers";
+import { closeContexts, menuItem, reset, openSettingsPage, closeSettingsPage } from "./helpers";
 
 test.afterAll(closeContexts);
 
@@ -16,9 +16,8 @@ const pref = (page: Page) => page.evaluate(() => (JSON.parse(localStorage.getIte
 
 /** Settings › Editor's row for `label` is checked (or not). */
 async function settingsShows(page: Page, label: "VS Code" | "nvim" | "Ask each time", checked: boolean) {
-  await page.locator("[data-account-menu]").first().click();
-  await expect(await menuItem(page, label, { exact: true })).toHaveAttribute("aria-checked", String(checked));
-  await page.keyboard.press("Escape");
+  await expect((await openSettingsPage(page)).getByRole("radio", { name: label, exact: true })).toBeChecked({ checked });
+  await closeSettingsPage(page);
 }
 
 test("+ Pane › Editor on a page that can't show VS Code: Edit in nvim is ticked and fixed", async ({ page }) => {
@@ -37,6 +36,14 @@ test("Getting started: Edit in nvim sets the same preference", async ({ browser 
   await reset(page);
   const panel = page.getByRole("dialog", { name: "Getting started" });
   await expect(panel).toBeVisible();
+  // Named once (the card's heading), and it says there's nothing to
+  // install only when the daemon found nvim.
+  await expect(panel.getByText("Edit in nvim", { exact: true })).toHaveCount(1);
+  const found = await page.evaluate(async () => ((await (await fetch("/api/setup?part=agents")).json()) as { nvim?: boolean }).nvim);
+  expect(typeof found).toBe("boolean");
+  await expect(panel.locator("[data-edit-in-nvim-says]")).toHaveText(
+    found ? "Opens files in nvim, in a pane. Nothing to install." : "Opens files in nvim, in a pane. Needs nvim, which isn't on this machine's PATH yet.",
+  );
   const box = panel.locator("[data-edit-in-nvim]");
   await expect(box).not.toBeChecked();
   await box.check();

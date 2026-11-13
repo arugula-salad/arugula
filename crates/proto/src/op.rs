@@ -77,6 +77,14 @@ impl PathArgs for String {
     }
 }
 
+/// A Doc's picture (`/api/docs/{id}/assets/{name}`): two names, filled in
+/// order.
+impl PathArgs for (String, String) {
+    fn fill(&self, template: &str) -> String {
+        fill_hole(&fill_hole(template, &self.0), &self.1)
+    }
+}
+
 /// An index, as a standing rule's (`DELETE /api/rules/{index}`).
 impl PathArgs for usize {
     fn fill(&self, template: &str) -> String {
@@ -128,6 +136,8 @@ impl Request for crate::api::WaitRequest {}
 
 impl Request for crate::api::PortsQuery {}
 
+impl Request for crate::api::LinksQuery {}
+
 impl Request for crate::api::SendRequest {}
 
 impl Request for crate::api::KeysRequest {}
@@ -137,6 +147,11 @@ impl Request for crate::api::MouseRequest {}
 impl Request for crate::api::NvimHelpRequest {}
 
 impl Request for crate::api::AttentionRequest {}
+impl Request for crate::api::MentionsRequest {}
+
+impl Request for crate::api::SessionSignal {}
+
+impl Request for crate::api::ConversationSignal {}
 
 impl Request for crate::api::PromptRequest {}
 
@@ -167,6 +182,10 @@ impl Request for crate::api::OpenConversationRequest {}
 
 impl Request for crate::api::DocOpenRequest {}
 
+impl Request for crate::api::DocShareRequest {}
+
+impl Request for crate::api::DocMoveRequest {}
+
 impl Request for crate::api::Subscription {}
 
 impl Request for crate::api::NotifyRequest {}
@@ -174,13 +193,6 @@ impl Request for crate::api::NotifyRequest {}
 impl Request for crate::api::StudioLoginRequest {}
 
 impl Request for crate::api::FollowerLinkRequest {}
-
-/// A promote's body may be left off (`Content-Type` and all).
-impl Request for crate::hosts::PromoteRequest {
-    fn absent() -> Option<Self> {
-        Some(Self::default())
-    }
-}
 
 impl Request for crate::api::InstallAdapterRequest {
     fn absent() -> Option<Self> {
@@ -235,8 +247,10 @@ pub trait Op: Send + Sync + 'static {
     /// operation: its MCP tool or kind is listed only with it, and every way
     /// in (its route, its tool by name) is refused without it (#347).
     const FLAG: Option<&'static str> = None;
-    /// Types into a pane, so needs the owner's trust on their machine
-    /// (M14): `authz::check` asks the mux whether the caller may (`ops::drives`).
+    /// Types into a pane, or speaks for what runs in it (its agent's hooks:
+    /// attention, questions, permission prompts, the inbox), so needs the
+    /// owner's trust on their machine (M14): `authz::check` asks the mux
+    /// whether the caller may (`ops::drives`).
     const DRIVES: bool = false;
     /// A GET whose answer grants access (a sign-in link, a list of tokens):
     /// a read-only MCP token can't call it. Any other GET is read-only.
@@ -276,13 +290,20 @@ macro_rules! every_op {
         $m!($crate::op::ops::DocLinkDelete);
         $m!($crate::op::ops::DocsList);
         $m!($crate::op::ops::DocOpen);
+        $m!($crate::op::ops::DocShare);
         $m!($crate::op::ops::DocDelete);
+        $m!($crate::op::ops::DocMove);
+        $m!($crate::op::ops::DocsTeam);
+        $m!($crate::op::ops::DocPreviewGet);
+        $m!($crate::op::ops::DocRead);
+        $m!($crate::op::ops::DocAssetGet);
         $m!($crate::op::ops::AgentCanGet);
         $m!($crate::op::ops::PaneWait);
         $m!($crate::op::ops::PaneSend);
         $m!($crate::op::ops::PaneKeys);
         $m!($crate::op::ops::PaneMouse);
         $m!($crate::op::ops::PaneAttention);
+        $m!($crate::op::ops::PaneMentions);
         $m!($crate::op::ops::PaneFollowUp);
         $m!($crate::op::ops::PanePrompt);
         $m!($crate::op::ops::PaneAsk);
@@ -310,6 +331,8 @@ macro_rules! every_op {
         $m!($crate::op::ops::AdapterInstall);
         $m!($crate::op::ops::ConversationsList);
         $m!($crate::op::ops::ConversationOpen);
+        $m!($crate::op::ops::PaneSessionSignal);
+        $m!($crate::op::ops::ConversationSessionSignal);
         $m!($crate::op::ops::MachinesList);
         $m!($crate::op::ops::MachineReset);
         $m!($crate::op::ops::PushKeyGet);
@@ -326,8 +349,6 @@ macro_rules! every_op {
         $m!($crate::op::ops::HostsList);
         $m!($crate::op::ops::HostAdd);
         $m!($crate::op::ops::HostRemove);
-        $m!($crate::op::ops::HostTokenMint);
-        $m!($crate::op::ops::HostTokenRevoke);
         $m!($crate::op::ops::SetupGet);
         $m!($crate::op::ops::SetupTailscale);
         $m!($crate::op::ops::SetupControl);
@@ -343,7 +364,10 @@ macro_rules! every_op {
         $m!($crate::op::ops::GuestRevoke);
         $m!($crate::op::ops::AclGet);
         $m!($crate::op::ops::AclSet);
+        $m!($crate::op::ops::AccessGet);
         $m!($crate::op::ops::LinkMint);
+        $m!($crate::op::ops::LinksList);
+        $m!($crate::op::ops::LinkRevoke);
         $m!($crate::op::ops::InviteSend);
         $m!($crate::op::ops::TeamPinsGet);
         $m!($crate::op::ops::TeamPinsSet);
@@ -351,13 +375,8 @@ macro_rules! every_op {
         $m!($crate::op::ops::McpTokenMint);
         $m!($crate::op::ops::McpTokenRevoke);
         $m!($crate::op::ops::SigninLinkGet);
-        // #578 part c: synced history, sandboxes, studio.
-        $m!($crate::op::ops::SyncedList);
-        $m!($crate::op::ops::SyncedRotate);
-        $m!($crate::op::ops::SyncedForget);
+        // #578 part c: sandboxes, studio.
         $m!($crate::op::ops::SandboxesList);
-        $m!($crate::op::ops::SandboxPromote);
-        $m!($crate::op::ops::SandboxDemote);
         $m!($crate::op::ops::StudioGet);
         $m!($crate::op::ops::StudioLogin);
         $m!($crate::op::ops::StudioLogout);
@@ -375,21 +394,22 @@ pub mod ops {
     use crate::{
         Machine, PaneId,
         api::{
-            AclSetRequest, Adapters, AgentCan, AgentsInventory, AskAnswer, AskRequest, AttentionRequest,
-            ConversationList, ConversationsQuery, DetectionAnswer, DocLinkUrl, DocOpenRequest, DocOpened, DocRow,
-            DriverEntry, Empty, FollowUpRequest, FollowedUp, FollowerLinkRequest, GuestInvite, GuestInviteRequest,
-            IdeDiffs, IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned, InboxAnswer, InstallAdapterRequest,
-            InviteRequest, Invited, KeysRequest, LinkRequest, McpTokenRequest, MouseRequest, NotifyPref, NotifyRequest,
-            NvimBlockOpened, NvimBlockRequest, NvimHelpRequest, NvimOpenRequest, NvimOpened, NvimPluginCopies,
-            NvimPluginInstalled, NvimPluginRemoved, NvimTheme, NvimThemed, OpenConversationRequest,
-            OpenConversationResponse, PaneDiff, PaneSummary, PermitAnswer, PermitRequest, Ports, PortsQuery, Process,
-            PromptRequest, PromptResult, PushKey, PushSubscriptions, Rules, RunResponse, SendRequest, Share,
-            ShareRequest, ShellEnv, SigninLink, StudioApps, StudioLoggedIn, StudioLoginRequest, StudioStatus,
-            Subscription, SyncedHost, SyncedRotated, TeamPins, TeamPinsRequest, TokenInfo, WaitRequest, WaitResult,
-            WithdrawRequest,
+            AccessView, AclSetRequest, Adapters, AgentCan, AgentsInventory, AskAnswer, AskRequest, AttentionRequest,
+            ConversationList, ConversationsQuery, DetectionAnswer, DocAsset, DocContent, DocLinkUrl, DocMoveRequest,
+            DocMoved, DocOpenRequest, DocOpened, DocPreview, DocRow, DocShareRequest, DocTeams, DriverEntry, Empty,
+            FollowUpRequest, FollowedUp, FollowerLinkRequest, GuestInvite, GuestInviteRequest, IdeDiffs,
+            IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned, InboxAnswer, InstallAdapterRequest,
+            InviteRequest, Invited, KeysRequest, LinkRequest, LinksQuery, McpTokenRequest, MentionsRequest,
+            MouseRequest, NotifyPref, NotifyRequest, NvimBlockOpened, NvimBlockRequest, NvimHelpRequest,
+            NvimOpenRequest, NvimOpened, NvimPluginCopies, NvimPluginInstalled, NvimPluginRemoved, NvimTheme,
+            NvimThemed, OpenConversationRequest, OpenConversationResponse, PaneDiff, PaneSummary, PermitAnswer,
+            PermitRequest, Ports, PortsQuery, Process, PromptRequest, PromptResult, PushKey, PushSubscriptions, Rules,
+            RunResponse, SendRequest, SessionLink, Share, ShareRequest, ShellEnv, SigninLink, StudioApps,
+            StudioLoggedIn, StudioLoginRequest, StudioStatus, Subscription, TeamPins, TeamPinsRequest, TokenInfo,
+            WaitRequest, WaitResult, WithdrawRequest,
         },
         flags::{FlagInfo, FlagSetRequest},
-        hosts::{Demoted, Host, PromoteRequest, SandboxList},
+        hosts::SandboxList,
         sharing::{Sharing, SharingSetRequest},
         telemetry::{TelemetryInfo, TelemetryNoteRequest, TelemetrySetRequest},
     };
@@ -651,6 +671,65 @@ pub mod ops {
         type Res = DocOpened;
     }
 
+    /// `POST /api/docs/ID/share` (Arugula #819): share a Doc with a link, or
+    /// update the link it has, whether or not a block shows it. The owner's,
+    /// and never an agent's, as the block's own `doc_share` is. The answer
+    /// holds the key, as `DocLinkGet`'s does.
+    pub struct DocShare;
+
+    impl Op for DocShare {
+        const NAME: &'static str = "doc.share";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/docs/{id}/share";
+        const ACCESS: Access = Access::Owner;
+        // The URL holds the key that opens the Doc.
+        const CREDENTIAL: bool = true;
+        type Path = String;
+        type Req = DocShareRequest;
+        type Res = DocLinkUrl;
+    }
+
+    /// `GET /api/docs/ID/preview` (#588): a Doc's first paragraphs, read
+    /// without opening a block, so its list can show them.
+    pub struct DocPreviewGet;
+
+    impl Op for DocPreviewGet {
+        const NAME: &'static str = "doc.preview";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/docs/{id}/preview";
+        const ACCESS: Access = Access::Owner;
+        type Path = String;
+        type Req = Empty;
+        type Res = DocPreview;
+    }
+
+    /// `GET /api/docs/ID/content` (#608): a whole Doc, read without opening a
+    /// block or changing which block has it, so its list can show it.
+    pub struct DocRead;
+
+    impl Op for DocRead {
+        const NAME: &'static str = "doc.read";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/docs/{id}/content";
+        const ACCESS: Access = Access::Owner;
+        type Path = String;
+        type Req = Empty;
+        type Res = DocContent;
+    }
+
+    /// `GET /api/docs/ID/assets/NAME` (#608): one of a Doc's pictures.
+    pub struct DocAssetGet;
+
+    impl Op for DocAssetGet {
+        const NAME: &'static str = "doc.asset";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/docs/{id}/assets/{name}";
+        const ACCESS: Access = Access::Owner;
+        type Path = (String, String);
+        type Req = Empty;
+        type Res = DocAsset;
+    }
+
     /// `DELETE /api/docs/ID` (#1493): unshare a Doc, close its block and
     /// remove it. The machine's own account's, and never an agent's.
     pub struct DocDelete;
@@ -663,6 +742,35 @@ pub mod ops {
         type Path = String;
         type Req = Empty;
         type Res = Empty;
+    }
+
+    /// `POST /api/docs/ID/move` (Arugula #863): give a Doc to a team's
+    /// project. The team Doc is made from it, its copy on the platform comes
+    /// down, and the library keeps a hidden pointer that open blocks, `doc
+    /// open` and old links follow. The owner's, and their own agents'.
+    pub struct DocMove;
+
+    impl Op for DocMove {
+        const NAME: &'static str = "doc.move";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/docs/{id}/move";
+        const ACCESS: Access = Access::Owner;
+        type Path = String;
+        type Req = DocMoveRequest;
+        type Res = DocMoved;
+    }
+
+    /// `GET /api/docs/team` (Arugula #863): the team a Doc would move to.
+    pub struct DocsTeam;
+
+    impl Op for DocsTeam {
+        const NAME: &'static str = "docs.team";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/docs/team";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = Empty;
+        type Res = DocTeams;
     }
 
     /// `GET /api/agent-can`: the card *What your agent can do here*, a line
@@ -746,8 +854,23 @@ pub mod ops {
         const METHOD: Method = Method::Post;
         const PATH: &'static str = "/api/panes/{id}/attention";
         const ACCESS: Access = Access::Pane(Role::Editor);
+        const DRIVES: bool = true;
         type Path = PaneId;
         type Req = AttentionRequest;
+        type Res = Empty;
+    }
+
+    /// `POST /api/panes/N/mentions` (#579): let teammates' agents mention
+    /// this session, or not (`arugula mentions on|off %N`). The owner's.
+    pub struct PaneMentions;
+
+    impl Op for PaneMentions {
+        const NAME: &'static str = "pane.mentions";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/panes/{id}/mentions";
+        const ACCESS: Access = Access::Owner;
+        type Path = PaneId;
+        type Req = MentionsRequest;
         type Res = Empty;
     }
 
@@ -792,6 +915,7 @@ pub mod ops {
         const METHOD: Method = Method::Post;
         const PATH: &'static str = "/api/panes/{id}/ask";
         const ACCESS: Access = Access::Pane(Role::Editor);
+        const DRIVES: bool = true;
         type Path = PaneId;
         type Req = AskRequest;
         type Res = AskAnswer;
@@ -805,6 +929,7 @@ pub mod ops {
         const METHOD: Method = Method::Post;
         const PATH: &'static str = "/api/panes/{id}/ask/withdraw";
         const ACCESS: Access = Access::Pane(Role::Editor);
+        const DRIVES: bool = true;
         type Path = PaneId;
         type Req = WithdrawRequest;
         type Res = Empty;
@@ -820,6 +945,7 @@ pub mod ops {
         const METHOD: Method = Method::Post;
         const PATH: &'static str = "/api/panes/{id}/permit";
         const ACCESS: Access = Access::Pane(Role::Editor);
+        const DRIVES: bool = true;
         type Path = PaneId;
         type Req = PermitRequest;
         type Res = PermitAnswer;
@@ -834,6 +960,7 @@ pub mod ops {
         const METHOD: Method = Method::Post;
         const PATH: &'static str = "/api/panes/{id}/inbox";
         const ACCESS: Access = Access::Pane(Role::Editor);
+        const DRIVES: bool = true;
         type Path = PaneId;
         type Req = serde_json::Value;
         type Res = InboxAnswer;
@@ -1141,6 +1268,39 @@ pub mod ops {
         type Res = ConversationList;
     }
 
+    /// `POST /api/panes/N/session-signal` (#396, a spike): what Claude Code
+    /// in a pane says about its session from inside it (the window's fill,
+    /// the model and effort, a compaction), from the Claude Code mod
+    /// through `arugula session-signal`. Answers the pane's context.
+    pub struct PaneSessionSignal;
+
+    impl Op for PaneSessionSignal {
+        const NAME: &'static str = "pane.session_signal";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/panes/{id}/session-signal";
+        const ACCESS: Access = Access::Pane(Role::Editor);
+        type Path = PaneId;
+        type Req = crate::api::SessionSignal;
+        type Res = crate::api::SessionSignaled;
+    }
+
+    /// `POST /api/conversations/session-signal` (#453): the same signal
+    /// keyed by Claude Code's session id, with the pane optional: what
+    /// `arugula session-signal` sends, from a terminal pane or from no pane
+    /// at all (an editor, the desktop app). Answers the session's context
+    /// and the pane it shows on, if any.
+    pub struct ConversationSessionSignal;
+
+    impl Op for ConversationSessionSignal {
+        const NAME: &'static str = "conversation.session_signal";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/conversations/session-signal";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = crate::api::ConversationSignal;
+        type Res = crate::api::SessionSignaled;
+    }
+
     /// `POST /api/conversations/open` (M33): a conversation as an agent
     /// block, stopped, showing its transcript; the block that already has
     /// it, if one does. `then` continues or forks it.
@@ -1367,35 +1527,6 @@ pub mod ops {
         type Res = Empty;
     }
 
-    /// `POST /api/hosts/NAME/token` (M4c): mint the per-host token that lets one
-    /// host dial in, replacing the last (`arugula hosts token`). A POST, so
-    /// not read-only whatever it hands back.
-    pub struct HostTokenMint;
-
-    impl Op for HostTokenMint {
-        const NAME: &'static str = "host_token.mint";
-        const METHOD: Method = Method::Post;
-        const PATH: &'static str = "/api/hosts/{name}/token";
-        const ACCESS: Access = Access::Owner;
-        type Path = String;
-        type Req = Empty;
-        type Res = crate::hosts::HostToken;
-    }
-
-    /// `DELETE /api/hosts/NAME/token`: revoke it and drop the host's dial-out
-    /// connection (`arugula hosts revoke`).
-    pub struct HostTokenRevoke;
-
-    impl Op for HostTokenRevoke {
-        const NAME: &'static str = "host_token.revoke";
-        const METHOD: Method = Method::Delete;
-        const PATH: &'static str = "/api/hosts/{name}/token";
-        const ACCESS: Access = Access::Owner;
-        type Path = String;
-        type Req = Empty;
-        type Res = Empty;
-    }
-
     /// `GET /api/setup`: how far along each part of Getting started is;
     /// `?part=control` or `?part=agents` for one part. A JSON object whose keys
     /// depend on the part.
@@ -1526,9 +1657,10 @@ pub mod ops {
     }
 
     /// `GET /api/guests` (M65): the ssh invites made here. A credential. A
-    /// build without Labs answers 501 to every method. Like making and
-    /// revoking one, refused where Guest SSH access is off (a sharing
-    /// setting, `crate::sharing`, native #205; it was the `guest-ssh` flag).
+    /// build without Labs answers 501 to every method. Listing and revoking
+    /// work whatever Guest SSH access says (a sharing setting,
+    /// `crate::sharing`, native #205; it was the `guest-ssh` flag); off,
+    /// there are none, since turning it off ends them (native #270).
     pub struct GuestsList;
 
     impl Op for GuestsList {
@@ -1543,7 +1675,7 @@ pub mod ops {
     }
 
     /// `POST /api/guests`: an ssh invite to one terminal pane (`arugula share
-    /// --guest`).
+    /// --guest`). Refused where Guest SSH access is off.
     pub struct GuestMint;
 
     impl Op for GuestMint {
@@ -1596,6 +1728,22 @@ pub mod ops {
         type Res = serde_json::Value;
     }
 
+    /// `GET /api/access` (Arugula #681): who can reach this machine and as
+    /// what, from what it holds (`arugula access`, the shell's *Access…*).
+    /// The owner's, and read-only: nothing an owner can't read from
+    /// `/api/acl`, `/api/shares`, `/api/guests` and the roster.
+    pub struct AccessGet;
+
+    impl Op for AccessGet {
+        const NAME: &'static str = "access.get";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/access";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = Empty;
+        type Res = AccessView;
+    }
+
     /// `POST /api/links` (M19): a read-only link to one session, for a
     /// browser that holds the key.
     pub struct LinkMint;
@@ -1608,6 +1756,36 @@ pub mod ops {
         type Path = ();
         type Req = LinkRequest;
         type Res = serde_json::Value;
+    }
+
+    /// `GET /api/links`: the read-only links to sessions that still work
+    /// (`arugula links`), or one session's with `?session=N`. No keys, so
+    /// not a credential: it says no more than `GET /api/acl` does.
+    pub struct LinksList;
+
+    impl Op for LinksList {
+        const NAME: &'static str = "links.list";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/links";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = LinksQuery;
+        type Res = Vec<SessionLink>;
+    }
+
+    /// `DELETE /api/links/ID`: end a read-only link now (`arugula links
+    /// revoke`). Its viewers are cut off at once, and control stops letting
+    /// them through once no other link is live.
+    pub struct LinkRevoke;
+
+    impl Op for LinkRevoke {
+        const NAME: &'static str = "link.revoke";
+        const METHOD: Method = Method::Delete;
+        const PATH: &'static str = "/api/links/{id}";
+        const ACCESS: Access = Access::Owner;
+        type Path = String;
+        type Req = Empty;
+        type Res = Empty;
     }
 
     /// `POST /api/invite` (#233): share a session with someone and tell them
@@ -1711,47 +1889,7 @@ pub mod ops {
         type Res = SigninLink;
     }
 
-    // #578 part c: the home daemon's synced history and sandboxes, and studio.
-
-    /// `GET /api/synced`: the hosts whose history this daemon keeps
-    /// (`arugula synced`).
-    pub struct SyncedList;
-
-    impl Op for SyncedList {
-        const NAME: &'static str = "synced.list";
-        const METHOD: Method = Method::Get;
-        const PATH: &'static str = "/api/synced";
-        const ACCESS: Access = Access::Owner;
-        type Path = ();
-        type Req = Empty;
-        type Res = Vec<SyncedHost>;
-    }
-
-    /// `POST /api/synced/rotate-key`: re-encrypt it all under a new key.
-    pub struct SyncedRotate;
-
-    impl Op for SyncedRotate {
-        const NAME: &'static str = "synced.rotate";
-        const METHOD: Method = Method::Post;
-        const PATH: &'static str = "/api/synced/rotate-key";
-        const ACCESS: Access = Access::Owner;
-        type Path = ();
-        type Req = Empty;
-        type Res = SyncedRotated;
-    }
-
-    /// `DELETE /api/synced/NAME`: forget a host's synced history.
-    pub struct SyncedForget;
-
-    impl Op for SyncedForget {
-        const NAME: &'static str = "synced.forget";
-        const METHOD: Method = Method::Delete;
-        const PATH: &'static str = "/api/synced/{host}";
-        const ACCESS: Access = Access::Owner;
-        type Path = String;
-        type Req = Empty;
-        type Res = Empty;
-    }
+    // #578 part c: the home daemon's sandboxes, and studio.
 
     /// `GET /api/sandboxes`: the provider's sandboxes (`arugula sandboxes`).
     /// Labs; home daemons only.
@@ -1766,34 +1904,6 @@ pub mod ops {
         type Path = ();
         type Req = Empty;
         type Res = SandboxList;
-    }
-
-    /// `POST /api/sandboxes/NAME/promote`: keep a daemon running in a sandbox.
-    pub struct SandboxPromote;
-
-    impl Op for SandboxPromote {
-        const NAME: &'static str = "sandbox.promote";
-        const METHOD: Method = Method::Post;
-        const PATH: &'static str = "/api/sandboxes/{name}/promote";
-        const ACCESS: Access = Access::Owner;
-        const FLAG: Option<&'static str> = Some(crate::flags::SANDBOX_PROVIDERS);
-        type Path = String;
-        type Req = PromoteRequest;
-        type Res = Host;
-    }
-
-    /// `DELETE /api/sandboxes/NAME/resident`: stop that daemon, take its host off the list.
-    pub struct SandboxDemote;
-
-    impl Op for SandboxDemote {
-        const NAME: &'static str = "sandbox.demote";
-        const METHOD: Method = Method::Delete;
-        const PATH: &'static str = "/api/sandboxes/{name}/resident";
-        const ACCESS: Access = Access::Owner;
-        const FLAG: Option<&'static str> = Some(crate::flags::SANDBOX_PROVIDERS);
-        type Path = String;
-        type Req = Empty;
-        type Res = Demoted;
     }
 
     /// `GET /api/studio` (M35): which studio, and whether there's a token.
@@ -1913,6 +2023,8 @@ mod tests {
             ("keys", ops::PaneKeys::path(&7)),
             ("mouse", ops::PaneMouse::path(&7)),
             ("attention", ops::PaneAttention::path(&7)),
+            ("mentions", ops::PaneMentions::path(&7)),
+            ("session-signal", ops::PaneSessionSignal::path(&7)),
             ("followup", ops::PaneFollowUp::path(&7)),
             ("prompt", ops::PanePrompt::path(&7)),
             ("ask", ops::PaneAsk::path(&7)),

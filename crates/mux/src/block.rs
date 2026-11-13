@@ -53,6 +53,12 @@ pub trait Block: Send + Sync {
     }
     /// A plain-text rendering, for `capture --text`, history and search.
     fn text(&self) -> String;
+    /// What was said, one message each (a prompt, the assistant's text, a
+    /// tool call's name and one line), with no payloads: `read_output`'s
+    /// `messages` format. None for a block that isn't a conversation.
+    fn messages(&self) -> Option<Vec<String>> {
+        None
+    }
     /// One of the type's methods.
     fn call(&self, method: &str, args: Value) -> BoxFuture<'static, Result<Value, String>>;
     /// ...on behalf of someone (M29: their name, for its transcript and
@@ -124,6 +130,8 @@ pub struct Summary {
     pub editor: Option<arugula_proto::EditorInfo>,
     /// The issue an agent block was started on, and its boards (#372).
     pub on_issue: Option<arugula_proto::OnIssue>,
+    /// The git worktree it owns, absolute.
+    pub worktree: Option<String>,
     /// Its program ended: an agent block whose agent stopped. It isn't
     /// running then (UI audit #154).
     pub stopped: bool,
@@ -274,6 +282,14 @@ impl BlockCtx {
         }
     }
 
+    /// Say where the turn that took a tagged follow-up is (#611): the mux
+    /// tells the same place a terminal's turns go (#540).
+    pub fn followup_turn(&self, tag: crate::mux::Tag, turn: crate::mux::Turn) {
+        if let Some(cmds) = &self.cmds {
+            let _ = cmds.send(crate::mux::Cmd::Api(crate::mux::Api::FollowupTurn(self.id, tag, turn)));
+        }
+    }
+
     /// Open another block (M36: a diff beside a PR), as the owner.
     pub async fn open(&self, req: arugula_proto::api::OpenRequest) -> Result<PaneId, String> {
         let cmds = self.cmds.as_ref().ok_or("this block can't open others")?;
@@ -346,7 +362,7 @@ impl BlockCtx {
             return Err("attachments need an agent block".into());
         }
         let (tx, rx) = tokio::sync::oneshot::channel();
-        cmds.send(crate::mux::Cmd::Api(crate::mux::Api::FollowUp(pane, text, by, tx)))
+        cmds.send(crate::mux::Cmd::Api(crate::mux::Api::FollowUp(pane, text, by, None, tx)))
             .map_err(|_| "the daemon is stopping".to_owned())?;
         rx.await.map_err(|_| "the daemon is stopping".to_owned())?
     }

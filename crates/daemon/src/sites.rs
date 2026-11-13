@@ -245,7 +245,7 @@ pub fn shown() -> Option<Arc<Sites>> {
 
 /// What a page says when it can't open a port or editor block: neither a
 /// listener of its own nor a control with a block domain.
-pub const OFF: &str = "blocks on ports and editors are off here: join this machine to Arugula control, or start arugulad with --block-listen";
+pub const OFF: &str = "blocks on ports and editors are off here: join this machine to Arugula cloud, or start arugulad with --block-listen";
 
 /// Turn block sites on (once per process); `serve` then serves them.
 pub fn install(settings: Settings) -> Arc<Sites> {
@@ -456,7 +456,7 @@ pub async fn serve(sites: Arc<Sites>, listener: TcpListener, tls: Option<Arc<tok
 }
 
 /// The connections to the port that one browser connection's requests
-/// reuse (one Sprites proxy socket per browser connection, not per
+/// reuse (one provider port stream per browser connection, not per
 /// request), or one block channel's (a few, since its requests come at
 /// once and HTTP/1 takes one at a time).
 #[derive(Default)]

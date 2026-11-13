@@ -4,13 +4,14 @@
 //!
 //! - **Checked here, against what this machine pinned** ([`check`]): the
 //!   run's operation is the apply of one deploy (`kind deploy`); the
-//!   approval it carries is a project owner's, signed by one of their
-//!   browsers over exactly that deploy's operation, not past its
-//!   `expires` by this machine's clock, confirmed with a passkey over its
-//!   bytes (`arugula_e2e::deploy::check_apply`, with the team's roster and
-//!   members' certificates, or the account's chain, and what grandfathered
-//!   app windows approved, as this machine pinned them). A run whose
-//!   approval doesn't verify here fails, and nothing runs.
+//!   approval it carries is a project owner's, over exactly that deploy's
+//!   operation, not past its `expires` by this machine's clock, its
+//!   passkey assertion checked against the owner's passkey log
+//!   (`arugula_e2e::deploy::check_apply`, DK4: with the team's roster or
+//!   the account, the passkey logs and the origins this machine pinned from
+//!   control; of a log the work carries, only its removals since).
+//!   No device signs it (aru-126). A run whose approval doesn't verify here
+//!   fails, and nothing runs.
 //! - **Started only once control takes its start** ([`apply`]): its
 //!   `running` report is sent and answered before anything runs, because
 //!   that's when the platform starts the deploy (and refuses a stale one,
@@ -34,10 +35,13 @@
 
 use std::{path::PathBuf, process::Stdio, sync::Arc, time::Duration};
 
-use arugula_control_wire::work::{DeployWork, Secret, SecretsAsk, WORK_ARTIFACT, WORK_SECRETS, WorkItem};
+use arugula_control_wire::work::{
+    DeployPlanWork, DeployWork, PlanStep, ReadyRun, Secret, SecretsAsk, WORK_ARTIFACT, WORK_SECRETS,
+};
 use arugula_e2e::{
-    deploy::{PasskeyParts, check_apply},
+    deploy::{Pinned, check_apply},
     now_ms,
+    passkey::Assertion,
     run::{Op, State},
 };
 #[cfg(unix)]
@@ -85,7 +89,7 @@ const MAX_RESULT: usize = 2048;
 /// one deploy's run. Nobody gets in, it takes that run only, and it stops
 /// once the run's end is reported.
 pub fn deploy_box(app: &App) -> bool {
-    app.control.enrolled().is_some_and(|e| e.saved.hosted.as_ref().is_some_and(|h| h.deploy))
+    app.control.enrolled().is_some_and(|e| e.saved.purpose().is_some_and(|p| p.deploys()))
 }
 
 /// The sudo rule a deploy's box keeps for this daemon's user: to the run
@@ -385,7 +389,7 @@ fn word(s: &str) -> bool {
 
 /// The checks a deploy's run passes before it starts, instead of the
 /// standing grant's: what this machine can check of the approval itself.
-pub fn check(app: &App, item: &WorkItem, d: &DeployWork) -> Result<(), Refused> {
+pub fn check(app: &App, item: &ReadyRun, d: &DeployWork) -> Result<(), Refused> {
     // Only a deploy's own box applies one: never a people's workspace.
     if !deploy_box(app) {
         return Err(Refused("not_deploy_box", "only a box made for a deploy applies one".into()));
@@ -396,7 +400,7 @@ pub fn check(app: &App, item: &WorkItem, d: &DeployWork) -> Result<(), Refused> 
     let Some(e) = app.control.enrolled() else {
         return Err(Refused("not_hosted", "this machine isn't in control".into()));
     };
-    let Some(pin) = e.saved.hosted.as_ref() else {
+    let Some(pin) = e.saved.hosted() else {
         return Err(Refused("not_hosted", "this machine isn't a hosted machine".into()));
     };
     let o = &d.operation;
@@ -418,14 +422,17 @@ pub fn check(app: &App, item: &WorkItem, d: &DeployWork) -> Result<(), Refused> 
     let Some(owners) = crate::hosted::runs::owners(&e.saved) else {
         return Err(Refused("approval_not_an_owner", "this machine pinned no owners for its project".into()));
     };
-    let pk = d
-        .passkey
-        .as_ref()
-        .map(|p| PasskeyParts { client_data_json: &p.client_data_json, authenticator_data: &p.authenticator_data });
-    // A box that pinned none counts no app window.
-    let children = pin.legacy_app_children.clone().unwrap_or_default();
-    check_apply(&d.approval, o, &d.deploy, &owners, &children, pk, now_ms())
-        .map_err(|r| Refused(r.code(), r.says().into()))?;
+    let pk = d.passkey.as_ref().map(|p| Assertion {
+        id: p.id.clone(),
+        client_data_json: p.client_data_json.clone(),
+        authenticator_data: p.authenticator_data.clone(),
+        signature: p.signature.clone(),
+    });
+    // A box that pinned no origins takes a passkey from none.
+    let origins = pin.passkey_origins.clone().unwrap_or_default();
+    let pinned = Pinned { owners: &owners, passkey_logs: &pin.passkey_logs, origins: &origins };
+    check_apply(&d.approval, o, &d.deploy, &pinned, pk.as_ref(), d.passkey_log.as_ref(), now_ms())
+        .map_err(|r| Refused(r.code(), r.says()))?;
     // The plan the owner approved names the driver, its settings and the
     // roll back (M220): the platform can't swap in another driver, another
     // Fly app, or another image to go back to.
@@ -438,6 +445,19 @@ pub fn check(app: &App, item: &WorkItem, d: &DeployWork) -> Result<(), Refused> 
     }
     if !arugula_e2e::drivers::planned(&d.driver, o, &d.settings, d.roll_back.as_ref()) {
         return Err(Refused("plan_driver", "the approved plan isn't this driver's plan for this deploy".into()));
+    }
+    // A chant→Fly apply is approved over chant's statement (v3, #1985),
+    // which its driver hands chant; nothing else is.
+    let in_chant = arugula_e2e::deploy::chant::approved_in_chant(&d.driver, d.roll_back.is_some());
+    if in_chant != (d.approval.v == arugula_e2e::deploy::V3) {
+        return Err(Refused(
+            "approval_form",
+            if in_chant {
+                "this deploy is approved over chant's gate statement, and its approval isn't one".into()
+            } else {
+                "an approval over chant's gate statement approves only a chant-fly apply".into()
+            },
+        ));
     }
     // Each deploy applies on this box once, and a box applies one deploy.
     // A box is new for each deploy, so this alone doesn't stop a replay on
@@ -499,14 +519,120 @@ pub fn mark_applied(dir: &std::path::Path, deploy: &str, run: &str) -> bool {
 }
 
 /// Whether the run's operation is the apply of exactly the deploy it
-/// carries (or, for a run that carries none, not an apply at all).
-pub fn matches(op: &Op, d: Option<&DeployWork>) -> Result<(), Refused> {
-    let ok = match (&op.deploy, d) {
-        (None, None) => true,
-        (Some(a), Some(d)) => a.deploy == d.deploy && a.driver == d.driver && a.op == d.approval.op,
+/// carries, or (#1985) the plan of exactly the deploy whose plan it
+/// carries (or, for a run that carries neither, not a deploy's at all).
+pub fn matches(op: &Op, d: Option<&DeployWork>, p: Option<&DeployPlanWork>) -> Result<(), Refused> {
+    let ok = match (&op.deploy, d, p) {
+        (None, None, None) => true,
+        (Some(a), Some(d), None) => !a.plan && a.deploy == d.deploy && a.driver == d.driver && a.op == d.approval.op,
+        (Some(a), None, Some(p)) => {
+            a.plan && a.deploy == p.deploy && a.driver == p.driver && a.op == p.operation.hash()
+        }
         _ => false,
     };
     if ok { Ok(()) } else { Err(Refused("op_deploy", "the operation isn't the apply of the deploy it carries".into())) }
+}
+
+/// The checks a deploy's plan run passes before it starts (#1985): there's
+/// no approval yet, so what this machine checks is that it runs only a
+/// plan, as the deploy's plan says, with nothing but the GitHub token that
+/// pushes chant's ledger. Only a chant→Fly apply plans first.
+pub fn check_plan(app: &App, item: &ReadyRun, p: &DeployPlanWork) -> Result<(), Refused> {
+    if !deploy_box(app) {
+        return Err(Refused("not_deploy_box", "only a box made for a deploy plans one".into()));
+    }
+    if item.state != State::Approved.as_str() {
+        return Err(Refused("approval_state", "a deploy plan's run starts only once the platform approved it".into()));
+    }
+    let Some(e) = app.control.enrolled() else {
+        return Err(Refused("not_hosted", "this machine isn't in control".into()));
+    };
+    let Some(pin) = e.saved.hosted() else {
+        return Err(Refused("not_hosted", "this machine isn't a hosted machine".into()));
+    };
+    let o = &p.operation;
+    if o.project != pin.cert.project || item.project != pin.cert.project {
+        return Err(Refused("plan_operation", "the deploy is another project's".into()));
+    }
+    let fields = [&o.environment, &o.environment_name, &o.plan, &o.source_kind, &o.source_ref, &o.source_where];
+    if !fields.iter().all(|f| word(f)) {
+        return Err(Refused("op_form", "the deploy's fields aren't ones this machine reads".into()));
+    }
+    if !arugula_e2e::deploy::chant::approved_in_chant(&p.driver, false) {
+        return Err(Refused("plan_driver", format!("the {} driver doesn't plan first", printable(&p.driver))));
+    }
+    // Its one token, minted to push chant's ledger: none of the
+    // environment's secrets, Fly's above all.
+    if p.secrets != ["GITHUB_TOKEN"] {
+        return Err(Refused("secret_name", "a deploy's plan gets GITHUB_TOKEN and nothing else".into()));
+    }
+    let settings_ok = arugula_e2e::drivers::settings(&p.driver, &p.settings).is_ok_and(|s| s == p.settings);
+    if !settings_ok || !arugula_e2e::drivers::source_ok(&p.driver, &o.source_kind, &o.source_ref) {
+        return Err(Refused("op_form", "the deploy's settings aren't ones its driver takes".into()));
+    }
+    if !arugula_e2e::drivers::planned(&p.driver, o, &p.settings, None) {
+        return Err(Refused("plan_driver", "the deploy's plan isn't this driver's plan for it".into()));
+    }
+    // A deploy's box runs one run, ever.
+    if any_applied(app.control.state_dir()) {
+        return Err(Refused("deploy_box", "this box was made for one run, and ran it already".into()));
+    }
+    driver_argv(&p.driver)?;
+    Ok(())
+}
+
+/// What a deploy's run drives (its apply), or its plan run (#1985) as one:
+/// the deploy, its operation, driver, settings and secrets, with no
+/// approval but a placeholder the driver never reads (`DEPLOY_PHASE` is
+/// `plan`, and no approver's variable is set).
+pub fn driven(item: &ReadyRun) -> Option<(DeployWork, bool)> {
+    if let Some(d) = &item.deploy {
+        return Some((d.clone(), false));
+    }
+    let p = item.deploy_plan.as_ref()?;
+    let none = arugula_e2e::deploy::Approval::v2(&p.deploy, &p.operation, "", arugula_e2e::deploy::Decision::Deny, 0);
+    Some((
+        DeployWork {
+            deploy: p.deploy.clone(),
+            operation: p.operation.clone(),
+            approval: none,
+            passkey: None,
+            passkey_log: None,
+            driver: p.driver.clone(),
+            secrets: p.secrets.clone(),
+            settings: p.settings.clone(),
+            roll_back: None,
+            approval_id: None,
+        },
+        true,
+    ))
+}
+
+/// What a v3 approval (#1985) hands the chant→Fly driver, as JSON in
+/// `DEPLOY_CHANT`: chant's gate, the statement's time and binding, the
+/// approver's principal, the challenge the passkey signed, and its
+/// assertion as `chant approve --signature` reads one. None of it secret.
+pub fn chant_relay(d: &DeployWork) -> Option<String> {
+    let a = &d.approval;
+    let gate = a.chant.as_ref().filter(|_| a.v == arugula_e2e::deploy::V3)?;
+    let pk = d.passkey.as_ref()?;
+    Some(
+        serde_json::json!({
+            "gate": gate,
+            "at": a.at,
+            "binding": a.binding(),
+            "principal": arugula_e2e::deploy::chant::principal(&a.account),
+            "relay": arugula_e2e::deploy::chant::RELAY,
+            "challenge": a.passkey_challenge(),
+            "signature": {
+                "id": pk.id,
+                "clientDataJSON": pk.client_data_json,
+                "authenticatorData": pk.authenticator_data,
+                "signature": pk.signature,
+            },
+        })
+        .to_string(),
+    )
 }
 
 /// Replaces each secret's exact bytes in a stream with `[redacted NAME]`,
@@ -607,7 +733,7 @@ fn wipe(secrets: Vec<Secret>) {
 /// one line of its name and its bytes escaped, unescaped by `printf -v` in
 /// the C locale, so a value keeps every byte, trailing newlines too, with
 /// no subshell and nothing on a command line. An empty line ends them.
-pub fn driver_script(work: &std::path::Path, argv: &[String]) -> String {
+pub fn driver_script(work: &std::path::Path, argv: &[String], fresh: bool) -> String {
     // Each secret is one line, `NAME \xHH\xHH…`: its bytes escaped, so no
     // byte of a value (a newline, a NUL) can end it early or start another
     // header. `printf -v` unescapes it with no subshell (trailing newlines
@@ -615,8 +741,11 @@ pub fn driver_script(work: &std::path::Path, argv: &[String]) -> String {
     // length and runs nothing. A name the deploy doesn't name
     // ($DEPLOY_SECRETS) runs nothing either.
     format!(
-        r#"set -e; w={}; rm -rf -- "$w"; mkdir -p -m 700 -- "$w"; cd -- "$w"; export LC_ALL=C; while IFS=' ' read -r n e && [ -n "$n" ]; do case " $DEPLOY_SECRETS " in *" $n "*) ;; *) echo 'arugula: a secret the deploy does not name' >&2; exit 97;; esac; case "$e" in *[!\\x0-9a-f]*) exit 97;; esac; printf -v v '%b' "$e"; [ "${{#v}}" = "$(( ${{#e}} / 4 ))" ] || {{ echo 'arugula: a secret came short' >&2; exit 97; }}; export "$n=$v"; done; unset n e v LC_ALL; set +e; exec {} < /dev/null"#,
+        r#"set -e; w={}; {}cd -- "$w"; export LC_ALL=C; while IFS=' ' read -r n e && [ -n "$n" ]; do case " $DEPLOY_SECRETS " in *" $n "*) ;; *) echo 'arugula: a secret the deploy does not name' >&2; exit 97;; esac; case "$e" in *[!\\x0-9a-f]*) exit 97;; esac; printf -v v '%b' "$e"; [ "${{#v}}" = "$(( ${{#e}} / 4 ))" ] || {{ echo 'arugula: a secret came short' >&2; exit 97; }}; export "$n=$v"; done; unset n e v LC_ALL; set +e; exec {} < /dev/null"#,
         quote(&work.to_string_lossy()),
+        // A run's first step starts in an empty home; a plan's later steps
+        // (#1985) in the one the first left.
+        if fresh { r#"rm -rf -- "$w"; mkdir -p -m 700 -- "$w"; "# } else { "" },
         super::command_line(argv)
     )
 }
@@ -669,9 +798,12 @@ async fn remove_home(as_: Option<&RunAs>, work: &std::path::Path) {
 /// The driver's process: as `as_` (or, in tests, this daemon's user),
 /// with an empty environment but its own and the deploy's (never a
 /// secret's: those come on its standard input).
+#[allow(clippy::too_many_arguments)]
 fn driver_command(
     run: &str,
     d: &DeployWork,
+    phase: Phase,
+    extra: &[(&str, String)],
     argv: &[String],
     as_: Option<&RunAs>,
     dir: &std::path::Path,
@@ -696,17 +828,28 @@ fn driver_command(
         ("DEPLOY_SOURCE_WHERE", o.source_where.clone()),
         ("DEPLOY_PLAN", o.plan.clone()),
         ("DEPLOY_SECRETS", names.join(" ")),
-        // M220: who approved it (chant's approve gate records them), the
-        // settings and the roll back the plan names.
         ("DEPLOY_RUN", run.to_owned()),
-        ("DEPLOY_APPROVER", d.approval.account.clone()),
-        ("DEPLOY_APPROVED_BY", d.approval.by.clone()),
-        ("DEPLOY_APPROVAL", d.approval_id.clone().unwrap_or_default()),
-        ("DEPLOY_OP_HASH", d.approval.op.clone()),
+        // #1985: a step of its plan (before anyone approves it), or its
+        // apply.
+        ("DEPLOY_PHASE", phase.as_str().to_owned()),
         ("DEPLOY_SETTINGS", serde_json::to_string(&d.settings).unwrap_or_default()),
         ("DEPLOY_ROLL_BACK", d.roll_back.as_ref().and_then(|r| serde_json::to_string(r).ok()).unwrap_or_default()),
     ]
     .into_iter()
+    // M220: who approved it (chant's approve gate records them), and for a
+    // chant gate (v3, #1985) what chant is handed: an apply's only.
+    .chain(
+        [
+            ("DEPLOY_APPROVER", d.approval.account.clone()),
+            ("DEPLOY_APPROVED_BY", d.approval.by.clone()),
+            ("DEPLOY_APPROVAL", d.approval_id.clone().unwrap_or_default()),
+            ("DEPLOY_OP_HASH", d.approval.op.clone()),
+            ("DEPLOY_CHANT", chant_relay(d).unwrap_or_default()),
+        ]
+        .into_iter()
+        .filter(|_| phase == Phase::Apply),
+    )
+    .chain(extra.iter().map(|(k, v)| (*k, v.clone())))
     .map(|(k, v)| (k.to_owned(), v))
     .chain(
         // A box that runs the fake driver (tests, testnet) says so: only
@@ -714,7 +857,7 @@ fn driver_command(
         fake_on().then(|| ("ARUGULA_HOSTED_FAKE_DRIVER".to_owned(), "1".to_owned())),
     )
     .collect();
-    let script = driver_script(&work, argv);
+    let script = driver_script(&work, argv, phase.fresh());
     let mut c = match as_ {
         Some(a) => {
             let mut c = tokio::process::Command::new("sudo");
@@ -731,8 +874,382 @@ fn driver_command(
         }
     };
     c.current_dir("/").stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
+    // A group of its own, which [`stop_step`] kills when there's no run
+    // user to kill everything of (tests).
+    #[cfg(unix)]
+    c.process_group(0);
     result.give(&mut c);
     c
+}
+
+/// Which process of a deploy's driver (#1985): its apply, or a step of its
+/// plan, each a process of its own, its `DEPLOY_PHASE`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Phase {
+    Apply,
+    /// With a token that reads: the commit, fetched. Nothing of it runs.
+    PlanFetch,
+    /// With no token: the commit's code, to chant's gate.
+    Plan,
+}
+
+impl Phase {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Phase::Apply => "apply",
+            Phase::PlanFetch => "plan-fetch",
+            Phase::Plan => "plan",
+        }
+    }
+
+    /// A run's first step, which starts in an empty home.
+    fn fresh(self) -> bool {
+        matches!(self, Phase::Apply | Phase::PlanFetch)
+    }
+}
+
+/// The short-lived tokens among `given`, to revoke once its step ends.
+fn tokens_of(given: &[Secret]) -> Vec<(String, String)> {
+    given.iter().filter_map(|s| s.revoke.clone().map(|u| (u, s.value.clone()))).collect()
+}
+
+/// Everything a driver's step left, killed: every process of the run
+/// user's (`kill_all`), or, with no run user (tests), the step's process
+/// group.
+async fn stop_step(as_: Option<&RunAs>, group: Option<u32>) {
+    match as_ {
+        Some(a) => kill_all(a).await,
+        None => {
+            #[cfg(unix)]
+            if let Some(g) = group.and_then(|g| i32::try_from(g).ok()) {
+                let _ = nix::sys::signal::killpg(nix::unistd::Pid::from_raw(g), nix::sys::signal::SIGKILL);
+            }
+            #[cfg(not(unix))]
+            let _ = group;
+        }
+    }
+}
+
+/// One process of the driver's (an apply, or a step of a plan): `given`
+/// on its standard input, then closed; its output redacted into the pane
+/// (`out`); once it ends, everything it left is killed ([`stop_step`]),
+/// so nothing it started outlives it, before its output's end is waited
+/// for. Its exit and what it said on its result pipe.
+#[allow(clippy::too_many_arguments)]
+async fn step(
+    run: &str,
+    d: &DeployWork,
+    phase: Phase,
+    extra: &[(&str, String)],
+    argv: &[String],
+    as_: Option<&RunAs>,
+    dir: &std::path::Path,
+    given: Vec<Secret>,
+    out: &mut tokio::fs::File,
+) -> Result<(i32, Vec<u8>), String> {
+    let pipe = match ResultPipe::new() {
+        Ok(p) => p,
+        Err(e) => {
+            wipe(given);
+            return Err(e);
+        }
+    };
+    let spawned = driver_command(run, d, phase, extra, argv, as_, dir, &pipe).spawn();
+    let result_r = pipe.spawned();
+    let mut child = match spawned {
+        Ok(c) => c,
+        Err(e) => {
+            wipe(given);
+            return Err(format!("its driver didn't start: {e}"));
+        }
+    };
+    let group = child.id();
+    info!(
+        run,
+        deploy = d.deploy,
+        driver = d.driver,
+        phase = phase.as_str(),
+        secrets = given.len(),
+        "hosted: running a deploy's driver"
+    );
+    // Its secrets on its standard input, a pipe, then closed.
+    if let Some(mut stdin) = child.stdin.take() {
+        let mut input = secrets_input(&given);
+        let _ = stdin.write_all(&input).await;
+        input.iter_mut().for_each(|b| *b = 0);
+        drop(stdin);
+    }
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(64);
+    for stream in [
+        child.stdout.take().map(|s| Box::new(s) as Box<dyn tokio::io::AsyncRead + Unpin + Send>),
+        child.stderr.take().map(|s| Box::new(s) as Box<dyn tokio::io::AsyncRead + Unpin + Send>),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        let mut r = Redactor::new(&given);
+        let tx = tx.clone();
+        crate::task::spawn(async move {
+            let mut stream = stream;
+            let mut buf = vec![0u8; 8192];
+            loop {
+                match stream.read(&mut buf).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        let shown = r.feed(&buf[..n]);
+                        if !shown.is_empty() && tx.send(shown).await.is_err() {
+                            break;
+                        }
+                    }
+                }
+            }
+            buf.iter_mut().for_each(|b| *b = 0);
+            let rest = r.finish();
+            if !rest.is_empty() {
+                let _ = tx.send(rest).await;
+            }
+        });
+    }
+    drop(tx);
+    wipe(given);
+    // Its output to the pane while it runs; once it ends, everything it
+    // left goes first (M220), so nothing it started writes after the end
+    // or holds its output open.
+    let ran = async {
+        let status = child.wait().await;
+        stop_step(as_, group).await;
+        status
+    };
+    let shown = async {
+        while let Some(chunk) = rx.recv().await {
+            let _ = out.write_all(&chunk).await;
+        }
+    };
+    let (status, ()) = tokio::join!(ran, shown);
+    let said = read_result(result_r);
+    let status = status.map_err(|e| format!("its driver: {e}"))?;
+    let code = status.code().ok_or_else(|| "stopped".to_owned())?;
+    Ok((code, said))
+}
+
+/// A deploy's plan run (#1985). No token that writes ever reaches the run
+/// user, and none exists until everything the commit's code ran is gone:
+/// 1. With a token that reads, this daemon reads origin's ledger
+///    (`before`), and the driver's `plan-fetch` step fetches the commit.
+///    Nothing of the commit's runs.
+/// 2. The driver's `plan` step, with no token at all, runs the commit's
+///    code to chant's gate, and leaves what chant added to its ledger as a
+///    bundle (`before..tip`).
+/// 3. Everything the run user runs is killed, and `none_left` must say
+///    nothing is (else the plan fails here, before any token is asked for).
+/// 4. This daemon takes the bundle as data and checks it
+///    ([`plan_ledger::PlanLedger::check`]); only then is the token that
+///    writes asked for, and this daemon pushes the ledger itself
+///    ([`plan_ledger::PlanLedger::push`]).
+///
+/// Each token is revoked as its use ends. Its exit (a step's that isn't 0)
+/// and what `plan` said on its result pipe (chant's gate).
+#[allow(clippy::too_many_arguments)]
+pub async fn plan_steps<A, F, N, G>(
+    run: &str,
+    d: &DeployWork,
+    argv: &[String],
+    as_: Option<&RunAs>,
+    dir: &std::path::Path,
+    origin: &str,
+    out: &mut tokio::fs::File,
+    ask: A,
+    none_left: N,
+) -> Result<(i32, Vec<u8>), String>
+where
+    A: Fn(PlanStep) -> F,
+    F: std::future::Future<Output = Result<Vec<Secret>, String>>,
+    N: Fn() -> G,
+    G: std::future::Future<Output = Result<(), String>>,
+{
+    let ledger_dir = dir.join(DIR).join(format!("{run}.ledger"));
+    let ledger = plan_ledger::PlanLedger::new(ledger_dir.clone())?;
+    let r = plan_in(run, d, argv, as_, dir, origin, out, &ledger, ask, none_left).await;
+    let _ = std::fs::remove_dir_all(&ledger_dir);
+    r
+}
+
+/// The token named `GITHUB_TOKEN` among `given`.
+fn github_token(given: &[Secret]) -> Option<String> {
+    given.iter().find(|s| s.name == "GITHUB_TOKEN").map(|s| s.value.clone())
+}
+
+/// Run blocking `f` (git) off the runtime.
+async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> Result<T, String> {
+    tokio::task::spawn_blocking(f).await.map_err(|e| format!("its ledger's check: {e}"))
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn plan_in<A, F, N, G>(
+    run: &str,
+    d: &DeployWork,
+    argv: &[String],
+    as_: Option<&RunAs>,
+    dir: &std::path::Path,
+    origin: &str,
+    out: &mut tokio::fs::File,
+    ledger: &plan_ledger::PlanLedger,
+    ask: A,
+    none_left: N,
+) -> Result<(i32, Vec<u8>), String>
+where
+    A: Fn(PlanStep) -> F,
+    F: std::future::Future<Output = Result<Vec<Secret>, String>>,
+    N: Fn() -> G,
+    G: std::future::Future<Output = Result<(), String>>,
+{
+    let say = |s: &str| format!("arugula: {}\n", printable(s));
+    // 1. Origin's ledger, read here, and the commit, fetched by the run user.
+    let given = ask(PlanStep::Fetch).await?;
+    let tokens = tokens_of(&given);
+    let token = github_token(&given);
+    let (l, o) = (ledger.clone(), origin.to_owned());
+    let before = blocking(move || {
+        let r = l.fetch_before(&o, token.as_deref());
+        if let Some(t) = token {
+            wipe_bytes(t.into_bytes());
+        }
+        r
+    })
+    .await
+    .and_then(|r| r);
+    let before = match before {
+        Ok(b) => b,
+        Err(why) => {
+            wipe(given);
+            revoke_tokens(tokens).await;
+            return Err(why);
+        }
+    };
+    let _ = out
+        .write_all(
+            say(&format!("chant's ledger on origin is at {}", before.as_deref().unwrap_or("nothing yet"))).as_bytes(),
+        )
+        .await;
+    let extra = [("DEPLOY_LEDGER_BEFORE", before.clone().unwrap_or_default())];
+    let fetched = step(run, d, Phase::PlanFetch, &extra, argv, as_, dir, given, out).await;
+    revoke_tokens(tokens).await;
+    let (code, fetch_said) = fetched?;
+    if code != 0 {
+        return Ok((code, Vec::new()));
+    }
+    // Where this deploy's chant member keeps its ledger, as the fetch read
+    // it at the commit (its workspace declaration, if any): data, read
+    // before anything of the commit's ran.
+    let fetch_said = result_of(&fetch_said).unwrap_or_default();
+    let prefix = match (fetch_said["ledger_prefix"].as_str(), fetch_said["ledger_layout"].as_str()) {
+        (Some(p), _) if p.is_empty() || (p.starts_with("_members/") && p.ends_with('/')) => p.to_owned(),
+        (_, Some(why)) => return Err(printable(why)),
+        _ => return Err("the plan's fetch didn't say where chant's ledger is for this member".into()),
+    };
+    // 2. The commit's code, with no token.
+    let (code, said) = step(run, d, Phase::Plan, &extra, argv, as_, dir, Vec::new(), out).await?;
+    // 3. Nothing of the run user's left.
+    none_left().await?;
+    if code != 0 {
+        return Ok((code, said));
+    }
+    let gate: arugula_e2e::deploy::chant::Gate = result_of(&said)
+        .and_then(|r| serde_json::from_value(r.get("chant_gate")?.clone()).ok())
+        .ok_or_else(|| "its plan named no chant gate: nothing is pushed".to_owned())?;
+    // 4. Its ledger, taken as data and checked, then pushed from here.
+    // Handed over by the run user: this daemon can't open the run's home.
+    ledger.take_bundle(as_, &work_dir(run, as_, dir).join(plan_ledger::BUNDLE)).await?;
+    // An empty setting is an unset one, as the driver reads it.
+    let setting = |k: &str| d.settings.get(k).filter(|v| !v.is_empty()).cloned();
+    let op = setting(arugula_e2e::drivers::CHANT_OP).unwrap_or_else(|| "release".into());
+    let gates_allowed = setting(arugula_e2e::drivers::CHANT_GATES);
+    let chant_env = setting(arugula_e2e::drivers::CHANT_ENV).unwrap_or_default();
+    let (l, g, source_ref, b) = (ledger.clone(), gate.clone(), d.operation.source_ref.clone(), before.clone());
+    let tip = blocking(move || {
+        let want = plan_ledger::Want {
+            op: &op,
+            gate: &g,
+            gates_allowed: gates_allowed.as_deref(),
+            source_ref: &source_ref,
+            prefix: &prefix,
+            chant_env: &chant_env,
+        };
+        l.check(b.as_deref(), &want)
+    })
+    .await
+    .and_then(|r| r)?;
+    let _ = out
+        .write_all(
+            say(&format!(
+                "chant's ledger from the plan holds run {}'s pending fact for gate {} and nothing else: pushing it",
+                gate.run, gate.gate
+            ))
+            .as_bytes(),
+        )
+        .await;
+    let given = ask(PlanStep::Push).await?;
+    let tokens = tokens_of(&given);
+    let token = github_token(&given);
+    wipe(given);
+    let (l, o) = (ledger.clone(), origin.to_owned());
+    let pushed = blocking(move || {
+        let r = l.push(&o, &tip, before.as_deref(), token.as_deref());
+        if let Some(t) = token {
+            wipe_bytes(t.into_bytes());
+        }
+        r
+    })
+    .await;
+    revoke_tokens(tokens).await;
+    match pushed? {
+        Ok(()) => {
+            let _ = out.write_all(say("chant's ledger is on origin").as_bytes()).await;
+            Ok((0, said))
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+/// Nothing of the run user's runs any more (#1985 review): everything it
+/// runs killed, the kill checked, and `pgrep -u` finding nothing, over a
+/// second at most. `Err` names what's left. With no run user (tests),
+/// nothing to look at.
+pub async fn none_left(as_: Option<&RunAs>) -> Result<(), String> {
+    let Some(a) = as_ else { return Ok(()) };
+    let mut left = String::new();
+    for _ in 0..20 {
+        // `--`: procps' kill reads a bare `-1` after a signal as it likes,
+        // and exits 1 whatever it did; this way it exits 0 when it ran.
+        let killed = tokio::process::Command::new("sudo")
+            .args(["-n", "-u", &a.user, "--", "kill", "-KILL", "--", "-1"])
+            .stdin(Stdio::null())
+            .output()
+            .await
+            .map_err(|e| format!("killing what the plan left: {e}"))?;
+        if !killed.status.success() {
+            return Err(format!(
+                "what the plan left couldn't be killed (kill exited {}): {}",
+                killed.status.code().unwrap_or(-1),
+                printable(String::from_utf8_lossy(&killed.stderr).trim())
+            ));
+        }
+        let found = tokio::process::Command::new("pgrep")
+            .args(["-u", &a.user])
+            .env_clear()
+            .env("PATH", RUN_PATH)
+            .stdin(Stdio::null())
+            .output()
+            .await
+            .map_err(|e| format!("looking for what the plan left: {e}"))?;
+        match found.status.code() {
+            Some(1) => return Ok(()),
+            Some(0) => left = String::from_utf8_lossy(&found.stdout).split_whitespace().collect::<Vec<_>>().join(" "),
+            _ => return Err(format!("pgrep -u {} failed: nothing is pushed", a.user)),
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    Err(format!("the plan left processes of {} running ({left}) that weren't killed: nothing is pushed", a.user))
 }
 
 /// The driver's result pipe (M220): its write end becomes the driver's fd
@@ -860,8 +1377,8 @@ const MAX_SECRETS_ANSWER: usize = 1024 * 1024;
 /// carries, each once, none reserved. Read by hand from the answer's bytes,
 /// so no parse error can quote a value, and the bytes are overwritten
 /// after.
-async fn secrets(app: &App, run: &str, names: &[String]) -> Result<Vec<Secret>, String> {
-    let ask = SecretsAsk { run: run.into() };
+async fn secrets(app: &App, run: &str, names: &[String], step: Option<PlanStep>) -> Result<Vec<Secret>, String> {
+    let ask = SecretsAsk { run: run.into(), plan_step: step };
     let bytes = match app.control.post_signed_bytes(WORK_SECRETS, &ask, MAX_SECRETS_ANSWER).await {
         Ok(b) => b,
         Err(e) => return Err(format!("its secrets: {e:#}")),
@@ -970,9 +1487,10 @@ async fn pane(app: &App, l: &Ledger, d: &DeployWork) -> Result<(u32, Option<u64>
 /// Apply the deploy `item` carries (checked, and its ledger entry made):
 /// its pane, its start taken by control, its secrets, its driver with its
 /// output redacted into the pane, and its end reported.
-pub async fn apply(app: Arc<App>, mut l: Ledger, item: WorkItem, as_: Option<RunAs>) {
+pub async fn apply(app: Arc<App>, mut l: Ledger, item: ReadyRun, as_: Option<RunAs>) {
     let dir = app.control.state_dir().to_owned();
-    let Some(d) = item.deploy.clone() else { return };
+    // An apply, or (#1985) a chant→Fly deploy's plan, run the same way.
+    let Some((d, plan)) = driven(&item) else { return };
     let run_id = l.run.clone();
     let finish = |end: Result<i32, String>, result: Option<serde_json::Value>| {
         let (app, run) = (app.clone(), run_id.clone());
@@ -1025,8 +1543,14 @@ pub async fn apply(app: Arc<App>, mut l: Ledger, item: WorkItem, as_: Option<Run
         "{}\n{}\n",
         printable(&format!("arugula run {} · operation sha256:{}", l.run, l.op_hash)),
         printable(&format!(
-            "deploy {} to {}: {} {} from {}, by the {} driver",
-            d.deploy, o.environment_name, o.source_kind, o.source_ref, o.source_where, d.driver
+            "{} {} to {}: {} {} from {}, by the {} driver",
+            if plan { "the plan of deploy" } else { "deploy" },
+            d.deploy,
+            o.environment_name,
+            o.source_kind,
+            o.source_ref,
+            o.source_where,
+            d.driver
         )),
     );
     let _ = out.write_all(banner.as_bytes()).await;
@@ -1060,7 +1584,17 @@ pub async fn apply(app: Arc<App>, mut l: Ledger, item: WorkItem, as_: Option<Run
         }
         started(&app, &l.run).await?;
         let argv = driver_argv_for(&d, &l.run).map_err(|r| r.1)?;
-        let given = secrets(&app, &l.run, &d.secrets).await?;
+        // A plan (#1985): three steps, its tokens asked for and revoked
+        // step by step.
+        if plan {
+            let ask = |step| secrets(&app, &l.run, &d.secrets, Some(step));
+            let left = || none_left(as_.as_ref());
+            let origin = format!("https://github.com/{}.git", d.operation.source_where);
+            let (code, said) = plan_steps(&l.run, &d, &argv, as_.as_ref(), &dir, &origin, &mut out, ask, left).await?;
+            said_on_fd = said;
+            return Ok(code);
+        }
+        let given = secrets(&app, &l.run, &d.secrets, None).await?;
         // planter's Ship (M233): the source it ships, where its driver reads
         // it; not a secret (the driver checks its digest).
         if super::ships(&d.driver, &d.operation.source_where)
@@ -1069,83 +1603,10 @@ pub async fn apply(app: Arc<App>, mut l: Ledger, item: WorkItem, as_: Option<Run
             wipe(given);
             return Err(e);
         }
-        revocable = given.iter().filter_map(|s| s.revoke.clone().map(|u| (u, s.value.clone()))).collect();
-        let pipe = match ResultPipe::new() {
-            Ok(p) => p,
-            Err(e) => {
-                wipe(given);
-                return Err(e);
-            }
-        };
-        let spawned = driver_command(&l.run, &d, &argv, as_.as_ref(), &dir, &pipe).spawn();
-        let result_r = pipe.spawned();
-        let mut child = match spawned {
-            Ok(c) => c,
-            Err(e) => {
-                wipe(given);
-                return Err(format!("its driver didn't start: {e}"));
-            }
-        };
-        info!(run = l.run, deploy = d.deploy, driver = d.driver, secrets = given.len(), "hosted: applying a deploy");
-        // Its secrets on its standard input, a pipe, then closed.
-        if let Some(mut stdin) = child.stdin.take() {
-            let mut input = secrets_input(&given);
-            let _ = stdin.write_all(&input).await;
-            input.iter_mut().for_each(|b| *b = 0);
-            drop(stdin);
-        }
-        let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(64);
-        for stream in [
-            child.stdout.take().map(|s| Box::new(s) as Box<dyn tokio::io::AsyncRead + Unpin + Send>),
-            child.stderr.take().map(|s| Box::new(s) as Box<dyn tokio::io::AsyncRead + Unpin + Send>),
-        ]
-        .into_iter()
-        .flatten()
-        {
-            let mut r = Redactor::new(&given);
-            let tx = tx.clone();
-            crate::task::spawn(async move {
-                let mut stream = stream;
-                let mut buf = vec![0u8; 8192];
-                loop {
-                    match stream.read(&mut buf).await {
-                        Ok(0) | Err(_) => break,
-                        Ok(n) => {
-                            let shown = r.feed(&buf[..n]);
-                            if !shown.is_empty() && tx.send(shown).await.is_err() {
-                                break;
-                            }
-                        }
-                    }
-                }
-                buf.iter_mut().for_each(|b| *b = 0);
-                let rest = r.finish();
-                if !rest.is_empty() {
-                    let _ = tx.send(rest).await;
-                }
-            });
-        }
-        drop(tx);
-        wipe(given);
-        // Its output to the pane while it runs; once it ends, everything the
-        // run user left goes first (M220), so nothing it started writes after
-        // the end or holds its output open.
-        let ran = async {
-            let status = child.wait().await;
-            if let Some(a) = &as_ {
-                kill_all(a).await;
-            }
-            status
-        };
-        let shown = async {
-            while let Some(chunk) = rx.recv().await {
-                let _ = out.write_all(&chunk).await;
-            }
-        };
-        let (status, ()) = tokio::join!(ran, shown);
-        said_on_fd = read_result(result_r);
-        let status = status.map_err(|e| format!("its driver: {e}"))?;
-        status.code().ok_or_else(|| "stopped".to_owned())
+        revocable = tokens_of(&given);
+        let (code, said) = step(&l.run, &d, Phase::Apply, &[], &argv, as_.as_ref(), &dir, given, &mut out).await?;
+        said_on_fd = said;
+        Ok(code)
     }
     .await;
     if let Some(a) = &as_ {
@@ -1156,6 +1617,7 @@ pub async fn apply(app: Arc<App>, mut l: Ledger, item: WorkItem, as_: Option<Run
     revoke_tokens(std::mem::take(&mut revocable)).await;
     let result = result_of(&said_on_fd);
     let tail_line = match &end {
+        Ok(0) if plan => said("the deploy was planned"),
         Ok(0) => said("the deploy was applied"),
         Ok(code) => said(&format!("the driver exited {code}")),
         Err(why) => said(why),
@@ -1187,7 +1649,7 @@ const MAX_ARTIFACT_ANSWER: usize = arugula_e2e::deploy::planter::MAX_TARBALL * 4
 /// by the driver against the approved operation.
 async fn fetch_artifact(app: &App, run: &str) -> Result<(), String> {
     use base64::Engine as _;
-    let ask = SecretsAsk { run: run.into() };
+    let ask = SecretsAsk::run(run);
     let bytes = app
         .control
         .post_signed_bytes(WORK_ARTIFACT, &ask, MAX_ARTIFACT_ANSWER)
@@ -1268,6 +1730,8 @@ pub fn result_of(said: &[u8]) -> Option<serde_json::Value> {
 #[cfg(all(test, unix))]
 #[path = "deploy_chant_fly_tests.rs"]
 mod chant_fly_tests;
+#[path = "deploy_plan_ledger.rs"]
+pub mod plan_ledger;
 
 #[cfg(test)]
 mod tests {
@@ -1310,13 +1774,169 @@ mod tests {
         let work = dir.join("w");
         let argv =
             vec!["/bin/sh".to_owned(), "-c".to_owned(), "printf '%s|' \"$TOKEN\" \"$OTHER\" \"$(pwd)\"".to_owned()];
-        let script = driver_script(&work, &argv);
+        let script = driver_script(&work, &argv, true);
         let secret = "multi\nline 'quoted' $value \\n é\n\n";
         assert!(!script.contains("multi"), "{script}");
         let out = drive(&script, "TOKEN OTHER", &secrets_input(&[s("TOKEN", secret), s("OTHER", "two")])).await;
         assert_eq!(String::from_utf8_lossy(&out.stdout), format!("{secret}|two|{}|", work.display()));
         let on_disk: Vec<String> = walk(&dir).iter().filter_map(|p| std::fs::read_to_string(p).ok()).collect();
         assert!(on_disk.iter().all(|f| !f.contains("multi")), "nothing of it on disk");
+    }
+
+    /// A plan run (#1985), as the box runs it: the fetch step gets the token
+    /// that reads; the plan step, the one that runs the commit's code, no
+    /// token, and leaves chant's ledger as a bundle; once nothing it ran is
+    /// left, this daemon checks the bundle, only then asks for the token
+    /// that writes, and pushes the ledger itself. No run-user process or
+    /// file ever holds that token. A survivor of the plan step (here one
+    /// that left its process group) fails the plan before the token is
+    /// asked for, as does a plan step that fails.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_plans_ledger_is_pushed_by_the_daemon_once_its_code_is_gone() {
+        let dir = crate::hosted::scratch("deploy-plan-steps");
+        let sha = "c".repeat(40);
+        let gate = serde_json::json!({
+            "chant": "0.124.68", "op": "release", "gate": "ship", "plan": format!("sha256:{}", "ab".repeat(32)),
+            "run": "local-1", "recorded": "2026-11-06T23:27:30.435Z",
+        });
+        let pending = serde_json::json!({
+            "kind": "pending", "op": "release", "gate": "ship", "gitSha": sha, "planDigest": gate["plan"],
+            "runId": "local-1", "timestamp": gate["recorded"], "version": 1, "origin": "cli",
+            "expiresAt": "2026-11-08T23:27:30.435Z",
+        });
+        let script = format!(
+            r#"export GIT_CONFIG_GLOBAL=/dev/null GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
+case "$DEPLOY_PHASE" in
+plan-fetch) [ "$GITHUB_TOKEN" = reads ] || exit 11; printf '{{"ledger_prefix":""}}' >&3; echo fetched;;
+plan) env > "$HOME/plan-env"; [ -z "$GITHUB_TOKEN" ] || exit 12
+  if [ -e "$HOME/../survive" ]; then
+    perl -e 'use POSIX; setsid() or die; open my $f, ">", "$ENV{{HOME}}/left.new" or die; print $f $$; close $f; rename "$ENV{{HOME}}/left.new", "$ENV{{HOME}}/left"; exec "sleep", "30"' </dev/null >/dev/null 2>&1 3>&- &
+    i=0; until [ -e "$HOME/left" ]; do [ $i -lt 1000 ] || exit 9; i=$((i+1)); sleep 0.01; done
+  else (exec sleep 30 </dev/null >/dev/null 2>&1 3>&-) & echo $! > "$HOME/left"; fi
+  [ -e "$HOME/../fail" ] && exit 3
+  git init -q "$HOME/l" && cd "$HOME/l" && git checkout -q --orphan chant/lifecycle && mkdir _gates
+  echo '{pending}' > _gates/release.jsonl && git add -A && git commit -q -m pending
+  git bundle create -q "$HOME/ledger.bundle" refs/heads/chant/lifecycle
+  printf '%s' '{{"chant_gate":{gate}}}' >&3; echo planned;;
+*) exit 10;;
+esac"#
+        );
+        let argv = vec!["/bin/sh".to_owned(), "-c".to_owned(), script];
+        let op = arugula_e2e::deploy::Operation {
+            project: "prj_1".into(),
+            environment: "env_1".into(),
+            environment_name: "production".into(),
+            plan: "ab".repeat(32),
+            source_kind: "commit".into(),
+            source_ref: sha.clone(),
+            source_where: "acme/app".into(),
+            planned: "cd".repeat(32),
+        };
+        let d = DeployWork {
+            deploy: "dep_1".into(),
+            operation: op.clone(),
+            approval: arugula_e2e::deploy::Approval::v2("dep_1", &op, "", arugula_e2e::deploy::Decision::Deny, 0),
+            passkey: None,
+            passkey_log: None,
+            driver: "chant-fly".into(),
+            secrets: vec!["GITHUB_TOKEN".into()],
+            settings: Default::default(),
+            roll_back: None,
+            approval_id: None,
+        };
+        // Whether a pid still runs: given a moment to be reaped once it's
+        // killed, never thirty seconds.
+        let runs = |pid: i32| {
+            (0..40).all(|_| {
+                let alive = std::process::Command::new("ps")
+                    .args(["-o", "stat=", "-p", &pid.to_string()])
+                    .output()
+                    .is_ok_and(|o| o.status.success() && !String::from_utf8_lossy(&o.stdout).trim().starts_with('Z'));
+                if alive {
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+                alive
+            })
+        };
+        let left_of = |run: &str| {
+            std::fs::read_to_string(work_dir(run, None, &dir).join("left"))
+                .ok()
+                .and_then(|p| p.trim().parse::<i32>().ok())
+        };
+        let origin = crate::hosted::scratch("deploy-plan-steps-origin").join("origin.git");
+        assert!(
+            std::process::Command::new("git").args(["init", "-q", "--bare"]).arg(&origin).status().unwrap().success()
+        );
+        let origin = origin.to_str().unwrap().to_owned();
+        let asked = std::sync::Mutex::new(Vec::new());
+        let ask = |step: PlanStep| {
+            asked.lock().unwrap().push(step);
+            let value = if step == PlanStep::Fetch { "reads" } else { "writes" };
+            std::future::ready(Ok(vec![s("GITHUB_TOKEN", value)]))
+        };
+        let mut out = tokio::fs::File::create(dir.join("pane")).await.unwrap();
+
+        // What the plan step left is gone when the daemon looks; the push
+        // lands, from here.
+        let gone = |run: &'static str| {
+            let left = left_of(run);
+            std::future::ready(match left {
+                Some(pid) if runs(pid) => Err(format!("process {pid} is left")),
+                _ => Ok(()),
+            })
+        };
+        let (code, said) =
+            plan_steps("run_1", &d, &argv, None, &dir, &origin, &mut out, ask, || gone("run_1")).await.unwrap();
+        // A tokio file's last write can still be in flight until flushed.
+        out.flush().await.unwrap();
+        let shown = std::fs::read_to_string(dir.join("pane")).unwrap();
+        assert_eq!(code, 0, "{shown}");
+        assert!(
+            shown.contains("fetched") && shown.contains("planned") && shown.contains("chant's ledger is on origin"),
+            "{shown}"
+        );
+        assert_eq!(result_of(&said).unwrap()["chant_gate"]["gate"], "ship");
+        assert_eq!(*asked.lock().unwrap(), [PlanStep::Fetch, PlanStep::Push]);
+        let pushed = std::process::Command::new("git")
+            .args(["--git-dir", &origin, "show", "refs/heads/chant/lifecycle:_gates/release.jsonl"])
+            .output()
+            .unwrap();
+        assert_eq!(String::from_utf8_lossy(&pushed.stdout).trim(), pending.to_string(), "the daemon pushed it");
+        // The token that writes never reached the run's environment or files.
+        let home = work_dir("run_1", None, &dir);
+        let plan_env = std::fs::read_to_string(home.join("plan-env")).unwrap();
+        assert!(!plan_env.contains("reads") && !plan_env.contains("writes"), "{plan_env}");
+        let mut files = vec![home.clone()];
+        while let Some(p) = files.pop() {
+            match std::fs::read_dir(&p) {
+                Ok(rd) => files.extend(rd.flatten().map(|e| e.path())),
+                Err(_) => assert!(!std::fs::read(&p).unwrap_or_default().windows(6).any(|w| w == b"writes"), "{p:?}"),
+            }
+        }
+
+        // A survivor that left the step's group: the plan fails there, and
+        // the token that writes is never asked for. The step waits until
+        // the survivor has left (it writes its pid after `setsid`), or the
+        // group's kill at the step's end could take it first on a loaded
+        // box.
+        std::fs::write(dir.join(DIR).join("survive"), "").unwrap();
+        asked.lock().unwrap().clear();
+        let r = plan_steps("run_2", &d, &argv, None, &dir, &origin, &mut out, ask, || gone("run_2")).await;
+        let survivor = left_of("run_2").unwrap();
+        let _ = nix::sys::signal::kill(nix::unistd::Pid::from_raw(survivor), nix::sys::signal::SIGKILL);
+        let e = r.unwrap_err();
+        assert!(e.contains("is left"), "{e}");
+        assert_eq!(*asked.lock().unwrap(), [PlanStep::Fetch], "no push token");
+        std::fs::remove_file(dir.join(DIR).join("survive")).unwrap();
+
+        // A plan that fails asks for no push token, and pushes nothing.
+        std::fs::write(dir.join(DIR).join("fail"), "").unwrap();
+        asked.lock().unwrap().clear();
+        let (code, _) =
+            plan_steps("run_3", &d, &argv, None, &dir, &origin, &mut out, ask, || gone("run_3")).await.unwrap();
+        assert_eq!(code, 3);
+        assert_eq!(*asked.lock().unwrap(), [PlanStep::Fetch]);
     }
 
     /// The driver's shell, given `input` on its standard input, with
@@ -1354,7 +1974,7 @@ mod tests {
             "-c".to_owned(),
             "printf 'RAN %s %s' \"$DEPLOY_SOURCE_REF\" \"$PATH\"".to_owned(),
         ];
-        let script = driver_script(&dir.join("w"), &argv);
+        let script = driver_script(&dir.join("w"), &argv, true);
         // A value that, NUL dropped, would read on as `DEPLOY_SOURCE_REF 4`
         // and `PATH 4` headers.
         let evil = "x\0\nDEPLOY_SOURCE_REF 4\nevilPATH 4\n/tmp";

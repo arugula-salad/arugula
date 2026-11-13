@@ -1,12 +1,13 @@
 import { AgentMessage } from "../../shared/agent-message";
 // Agent blocks (M6b): an agent run as messages, thoughts and tool-call
-// cards, with its commands' output in a read-only terminal, permission
+// cards, with its commands' output as text (in a read-only terminal if it
+// has colours or redraws its line), permission
 // requests as approve/deny cards, questions and forms as cards (M6c), and a
 // composer, which takes images and files pasted, dropped or picked (M71).
 // Works the same on a phone.
 
 import { render, type ComponentChildren } from "preact";
-import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import type { Client } from "../client";
@@ -20,9 +21,13 @@ import { BlockLoading } from "./block-states";
 import { openFile } from "./diff";
 import { workChip } from "../../shared/boards/text";
 import { platformHref } from "../platform-links";
-import { ContextStrip, type AgentContext } from "./agent-context";
+import { ContextStrip, CostEstimate, type AgentContext, type Estimate } from "./agent-context";
 import { AskCard, headline, type Ask, type Question } from "../../shared/ask";
 import { pick, store } from "../upload";
+import { Chip, ObjectChip } from "../../shared/ui/state-chip";
+import { Bar } from "../../shared/ui/bar";
+import { CloseIcon, IconButton } from "../../shared/ui/icons";
+import { Modal } from "../../shared/ui/modal";
 
 export interface Tool {
   type: "tool";
@@ -70,9 +75,9 @@ function WorkChip({ work }: { work: NonNullable<AgentState["work"]> }) {
   const href = c.path ? platformHref(c.path) : undefined;
   const more = (work.boards?.length ?? 0) > 1 ? ` (and ${work.boards!.length - 1} more board${work.boards!.length > 2 ? "s" : ""})` : "";
   return href ? (
-    <a class="work-chip" href={href} target="_blank" rel="noopener noreferrer" title={`On ${work.issue}'s row${more}`} data-work-chip>{c.label}</a>
+    <ObjectChip href={href} target="_blank" rel="noopener noreferrer" title={`On ${work.issue}'s row${more}`} data-work-chip>{c.label}</ObjectChip>
   ) : (
-    <span class="work-chip" title={`Started on ${work.issue}`} data-work-chip>{c.label}</span>
+    <ObjectChip title={`Started on ${work.issue}`} data-work-chip>{c.label}</ObjectChip>
   );
 }
 
@@ -110,7 +115,7 @@ export interface AgentState {
   wearing?: boolean;
   /** A Claude Code conversation this block opened (M33). */
   import: {
-    source: "terminal" | "desktop" | "other";
+    source: "terminal" | "desktop" | "vscode" | "other";
     path: string;
     title: string | null;
     /** Continued here: from now on it's this block's. */
@@ -125,6 +130,9 @@ export interface AgentState {
   model?: string | null;
   /** From the transcript (#397): null before it has said anything. */
   context?: AgentContext | null;
+  /** What it and its subagents cost at API list prices, from their
+   *  transcripts (#398): null before they've used any tokens. */
+  estimate?: Estimate | null;
 }
 
 interface Worn {
@@ -160,14 +168,14 @@ function WornBar({ s }: { s: AgentState }) {
       <span class="agent-worn-as" title={`${from}${w.model ? ` (${w.model})` : ""}`}>as {w.agent}</span>
       <span class="ws-tags">
         {w.skills.map((k) => (
-          <span key={`s-${k}`} class="ws-tag" title={`skill (${w.plugin}:${k})`} data-worn-skill={k}>
+          <Chip key={`s-${k}`} kind="tag" title={`skill (${w.plugin}:${k})`} data-worn-skill={k}>
             {k}
-          </span>
+          </Chip>
         ))}
         {w.servers.map((m) => (
-          <span key={`m-${m.name}`} class="ws-tag worn-mcp" title={m.vars.length ? m.vars.join("\n") : "MCP server"} data-worn-server={m.name}>
+          <Chip key={`m-${m.name}`} kind="tag" title={m.vars.length ? m.vars.join("\n") : "MCP server"} data-worn-server={m.name}>
             ⚙ {m.name}
-          </span>
+          </Chip>
         ))}
       </span>
       {missing.length > 0 && (
@@ -201,6 +209,12 @@ const strip = (s: string) => s.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "").replace
 
 /** Tool cards older than this many show plain text instead of a terminal. */
 const LIVE_TERMINALS = 30;
+
+/** Output only a terminal can draw: escape codes, or a carriage return that
+ * overwrites its line. Most has neither (Claude Code's never does), and a
+ * `<pre>` draws that for far less: each terminal adds `<style>` tags, which
+ * make the browser restyle the whole page, every other block's included. */
+const NEEDS_TERMINAL = /\x1b|\r(?!\n)/;
 
 export function money(n: number, currency: string | null) {
   const sym = !currency || currency === "USD" ? "$" : `${currency} `;
@@ -257,12 +271,25 @@ function Output({ data }: { data: string }) {
   return <div class="agent-output" ref={host} />;
 }
 
+/** A command's output with no terminal: scrolled to its end, as a terminal
+ * is, by the box's reversed column rather than by measuring it. */
+function PlainOutput({ data }: { data: string }) {
+  return (
+    <pre class="agent-tool-text agent-tool-tail">
+      <span>{data}</span>
+    </pre>
+  );
+}
+
 function ToolCard({ t, live, openAt }: { t: Tool; live: boolean; openAt?: (path: string) => void }) {
   const [open, setOpen] = useState(true);
   const icon = t.name === "AskUserQuestion" ? "?" : { execute: "$", edit: "✎", read: "◱", delete: "✕", move: "→", search: "⌕", fetch: "↓", think: "…" }[t.kind] ?? "⚙";
   const body = t.output || t.text;
+  // Every update draws every card: look through the output, or strip it, once.
+  const terminal = useMemo(() => NEEDS_TERMINAL.test(t.output), [t.output]);
+  const plain = useMemo(() => (terminal ? strip(t.output) : t.output), [terminal, t.output]);
   return (
-    <div class={`agent-tool ${t.status}`} data-tool={t.id}>
+    <div class={`agent-tool ${t.status}${live && terminal ? " agent-tool-term" : ""}`} data-tool={t.id}>
       <button class="agent-tool-head" onClick={() => setOpen(!open)} aria-expanded={open}>
         <span class="agent-tool-icon">{icon}</span>
         <span class="agent-tool-title">{t.title || t.kind || "tool"}</span>
@@ -289,7 +316,7 @@ function ToolCard({ t, live, openAt }: { t: Tool; live: boolean; openAt?: (path:
             </div>
           )}
           {t.output ? (
-            live ? <Output data={t.output} /> : <pre class="agent-tool-text">{strip(t.output)}</pre>
+            live && terminal ? <Output data={t.output} /> : <PlainOutput data={plain} />
           ) : body ? (
             <pre class="agent-tool-text">{body}</pre>
           ) : null}
@@ -358,7 +385,7 @@ function PermCard({ client, id, p, cwd, owner }: { client: Client; id: PaneId; p
           <label>
             Allow {p.tool}
             <input name="prefix" value={prefix} placeholder="any" onInput={(e) => setPrefix(e.currentTarget.value)} />
-            <span class="hint">{prefix.trim() ? "commands starting with this" : "anything"}</span>
+            <span class="dim">{prefix.trim() ? "commands starting with this" : "anything"}</span>
           </label>
           <label>
             <select name="scope" value={scope} onChange={(e) => setScope(e.currentTarget.value as "cwd" | "everywhere")}>
@@ -374,36 +401,61 @@ function PermCard({ client, id, p, cwd, owner }: { client: Client; id: PaneId; p
               Cancel
             </button>
           </div>
-          <p class="hint">On this machine; forget it from the account menu, Permission rules…</p>
+          <p class="dim">On this machine; forget it from Settings, Permission rules…</p>
         </form>
       )}
     </div>
   );
 }
 
-/** Images the block keeps (M71), fetched once each: a URL to show. */
-const kept = new Map<string, Promise<string | null>>();
+/** The types a kept image can be (the daemon's `images::mime`): raster
+ * pictures only, never SVG or HTML. The page opens nothing else it's sent
+ * as one. */
+const KEPT_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+
+/** Images the blocks keep (M71), fetched once per host, block and name:
+ * each the data: URL it is shown from. A data: URL and not a blob: URL
+ * because control serves this client with `img-src 'self' data: https:`
+ * (no blob:), so a blob URL shows nothing for someone who comes in through
+ * control (Arugula #85); the Doc block's pictures do the same (#965). Each
+ * block's own are dropped when the block is closed (`forgetKept`). */
+const kept = new Map<string, Map<string, Promise<string | null>>>();
+
+/** Whose images `kept` files them under: the host's and the block's. */
+const keptKey = (client: Client, id: PaneId) => `${client.base} ${id}`;
 
 function keptImage(client: Client, id: PaneId, name: string): Promise<string | null> {
-  const key = `${id}/${name}`;
-  let p = kept.get(key);
+  const key = keptKey(client, id);
+  const mine = kept.get(key) ?? new Map<string, Promise<string | null>>();
+  kept.set(key, mine);
+  let p = mine.get(name);
   if (!p) {
     p = client
       .request("POST", `/api/blocks/${id}/call/image`, { name })
       .then(async (res) => {
         if (!res.ok) return null;
         const { mime, data } = await res.json<{ mime: string; data: string }>();
-        const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
-        return URL.createObjectURL(new Blob([bytes], { type: mime }));
+        // The bytes go into a URL: only a picture's type, and base64 alone.
+        if (!KEPT_TYPES.has(mime) || !/^[A-Za-z0-9+/]*={0,2}$/.test(data)) return null;
+        return `data:${mime};base64,${data}`;
       })
       .catch(() => null);
-    kept.set(key, p);
+    const asked = p;
+    // A failed fetch is asked again the next time the image is drawn.
+    void asked.then((u) => u === null && mine.get(name) === asked && mine.delete(name));
+    mine.set(name, p);
   }
   return p;
 }
 
+/** The block `id` on `client`'s host is closed: its images' URLs go. */
+export function forgetKept(client: Client, id: PaneId) {
+  kept.delete(keptKey(client, id));
+}
+
 export function KeptImage({ client, id, name }: { client: Client; id: PaneId; name: string }) {
   const [url, setUrl] = useState<string | null>(null);
+  const [full, setFull] = useState(false);
   useEffect(() => {
     let live = true;
     void keptImage(client, id, name).then((u) => live && setUrl(u));
@@ -412,10 +464,27 @@ export function KeptImage({ client, id, name }: { client: Client; id: PaneId; na
     };
   }, [id, name]);
   if (!url) return <span class="agent-image missing">image</span>;
+  // A click shows it full size over the page: a new tab can't open a data:
+  // URL (browsers refuse to navigate to one).
   return (
-    <a href={url} target="_blank" rel="noopener" class="agent-image">
-      <img src={url} alt="image" />
-    </a>
+    <>
+      <button type="button" class="agent-image" aria-label="Show the image full size" data-kept-image={name} onClick={() => setFull(true)}>
+        <img src={url} alt="image" />
+      </button>
+      {full && (
+        <Modal class="image-viewer" backdropClass="image-viewer-backdrop" backdropProps={{ "data-image-viewer": "" }} label="Image" close={() => setFull(false)} x={false}>
+          <img src={url} alt="image" />
+          <div class="image-viewer-bar">
+            <a href={url} download={name}>
+              Download
+            </a>
+            <IconButton label="Close" data-viewer-close onClick={() => setFull(false)}>
+              <CloseIcon size="sm" />
+            </IconButton>
+          </div>
+        </Modal>
+      )}
+    </>
   );
 }
 
@@ -424,16 +493,22 @@ function Attached({ file, remove }: { file: File; remove: () => void }) {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     if (!file.type.startsWith("image/")) return;
-    const u = URL.createObjectURL(file);
-    setUrl(u);
-    return () => URL.revokeObjectURL(u);
+    // A data: URL, as the kept ones are (control's CSP has no blob:).
+    let live = true;
+    const r = new FileReader();
+    r.onload = () => live && typeof r.result === "string" && setUrl(r.result);
+    r.readAsDataURL(file);
+    return () => {
+      live = false;
+      r.abort();
+    };
   }, [file]);
   return (
     <span class="agent-attached-file" title={file.name}>
       {url ? <img src={url} alt={file.name} /> : <span class="agent-attached-name">{file.name || "file"}</span>}
-      <button type="button" aria-label={`Remove ${file.name || "file"}`} onClick={remove}>
-        ×
-      </button>
+      <IconButton label={`Remove ${file.name || "file"}`} onClick={remove}>
+        <CloseIcon size="sm" />
+      </IconButton>
     </span>
   );
 }
@@ -562,12 +637,18 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
   const call = (method: string, args: unknown) => void client.api(`/api/blocks/${id}/call/${method}`, args, `couldn't ${method}`);
   // M29: who answered last, and whether this person may answer at all.
   const answered = client.info(id)?.answered ?? null;
+  // #450: what Claude Code says from inside (its arugula-live mod) wins over
+  // what its transcript says. Its own cost wins over the estimate whenever
+  // it reports one: the mod's, else claude-agent-acp's (the SDK's figure).
+  const ctx = client.info(id)?.live ?? s.context ?? null;
+  const adapter = !!s.server?.name?.includes("claude-agent-acp") && !!s.cost && (s.cost.currency ?? "USD") === "USD" ? s.cost.total : null;
+  const own = (ctx?.source === "live" ? ctx.cost_usd : null) ?? adapter;
   const can = !archived && mayAnswer(client, id);
   // The daemon says an error twice, as a note and as the error: the strip
   // by the composer says it, so the note it repeats doesn't (UI audit #178).
   const last = s.entries.length - 1;
   const repeats = !!s.error && s.entries[last]?.type === "note" && s.entries[last].text.toLowerCase().includes(s.error.toLowerCase());
-  const chip = archived ? "Archived" : s.pending.length || open.length ? "Needs you" : s.import && !s.import.continued ? (s.import.held ? "Open elsewhere" : "Conversation") : STATUS[s.status];
+  const chip = archived ? "Archived" : s.pending.length || open.length ? null : s.import && !s.import.continued ? (s.import.held ? "Open elsewhere" : "Conversation") : STATUS[s.status];
   return (
     <div
       class="agent"
@@ -581,22 +662,24 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
         setAttached([...attached, ...files]);
       }}
     >
-      <div class="agent-bar">
-        <span class={`agent-status ${s.status}`}>{chip}</span>
-        <span class="agent-name" title={s.server?.name ? `${s.server.name} ${s.server.version ?? ""}` : undefined}>
+      <Bar sub class="agent-bar">
+        {chip && <span class={`agent-status ${s.status}`}>{chip}</span>}
+        <span class="agent-name" aria-description={chip ? undefined : "Needs you"} title={s.server?.name ? `${s.server.name} ${s.server.version ?? ""}` : undefined}>
           {s.title ?? s.label}
         </span>
         {s.work && <WorkChip work={s.work} />}
         {s.vm && (
-          <span class="host-tag" title="Runs on this tab's throwaway VM">
+          <Chip kind="tag" tone="info" class="chip-gap" title="Runs on this tab's throwaway VM">
             VM
-          </span>
+          </Chip>
         )}
         <span class="agent-spacer" />
-        {s.context && <ContextStrip c={s.context} />}
-        {s.cost && (
-          <span class="agent-cost" title={`${s.turns} turns, ${s.tokens.total} tokens`}>
-            {money(s.cost.total, s.cost.currency)}
+        {ctx && <ContextStrip c={ctx} />}
+        {(s.estimate || own != null) && <CostEstimate e={s.estimate} claude={own} />}
+        {/* What an agent with no transcript we read says it cost: its own estimate. */}
+        {s.cost && !s.estimate && own == null && (
+          <span class="agent-cost" title={`What the agent reports this session cost: its own estimate, not a bill. ${s.turns} turns, ${s.tokens.total} tokens.`}>
+            ≈ {money(s.cost.total, s.cost.currency)}
             {s.cost.last_turn != null && s.turns > 1 ? ` (last ${money(s.cost.last_turn, s.cost.currency)})` : ""}
           </span>
         )}
@@ -621,11 +704,11 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
             Fork
           </button>
         )}
-      </div>
+      </Bar>
       <WornBar s={s} />
       {opened && (
         <div class="agent-import">
-          A Claude Code conversation from {s.import!.source === "desktop" ? "the desktop app" : s.import!.source === "terminal" ? "a terminal" : "elsewhere"}
+          A Claude Code conversation from {s.import!.source === "desktop" ? "the desktop app" : s.import!.source === "terminal" ? "a terminal" : s.import!.source === "vscode" ? "VS Code" : "elsewhere"}
           {s.import!.held ? `, ${s.import!.held.place}: this follows it as it goes. Fork it to go on here.` : ". Continue it to go on here."}
         </div>
       )}
@@ -666,6 +749,9 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
               );
             case "tool": {
               if (e.id === liveFrom) live = true;
+              // While its card shows, the card says it; this row would say
+              // it again. Answered, the row is the transcript's record.
+              if (e.name === "AskUserQuestion" && open.length > 0 && e.status !== "completed" && e.status !== "failed") return null;
               // An archived Managoat conversation's paths were in its
               // sandbox, not here.
               const openAt = client.state?.roles || archived ? undefined : (path: string) => void openFile(client, id, path, null);
@@ -673,7 +759,7 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
             }
           }
         })}
-        {s.status === "working" && !s.pending.length && !open.length && <div class="agent-working">{s.current_tool ? `Running ${s.current_tool.title}…` : "Working…"}</div>}
+        {s.status === "working" && !s.pending.length && !open.length && <div class="agent-working">Working…</div>}
         {s.queued.length > 0 && <div class="agent-note">Queued: {s.queued.join(" · ")}</div>}
       </div>
       {s.error && <div class="agent-error">{s.error}</div>}
@@ -761,6 +847,17 @@ registerBlock("agent", (client, id): BlockView => {
   let state: AgentState | null = null;
   const draw = () => render(<AgentBlock client={client} id={id} s={state} />, host);
   draw();
+  // #450: what Claude Code says from inside comes on the pane, not the
+  // block's state: draw again when it changes.
+  const said = () => JSON.stringify(client.info(id)?.live ?? null);
+  let live = said();
+  const off = client.subscribe(() => {
+    const now = said();
+    if (now !== live) {
+      live = now;
+      draw();
+    }
+  });
   return {
     host,
     setVisible: (v) => (host.style.display = v ? "" : "none"),
@@ -772,6 +869,8 @@ registerBlock("agent", (client, id): BlockView => {
     text: () => (state ? plain(state) : ""),
     focus: () => host.querySelector<HTMLElement>(".agent-composer textarea")?.focus(),
     dispose: () => {
+      off();
+      forgetKept(client, id);
       render(null, host);
       host.remove();
     },

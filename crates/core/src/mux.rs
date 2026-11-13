@@ -4,10 +4,7 @@
 //! a pane's process) for the daemon to carry out; sizes come from
 //! [`Mux::pane_rects`].
 
-use std::{
-    collections::{BTreeMap, HashMap},
-    time::{Duration, Instant},
-};
+use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
@@ -23,6 +20,37 @@ pub struct Session {
     pub id: SessionId,
     pub name: String,
     pub tabs: Vec<TabId>,
+    /// The project it's in (Arugula projects RFC): inferred once, from the
+    /// repo of the first pane whose clone is linked to one
+    /// ([`Mux::infer_project`]), or set by hand
+    /// ([`Intent::SetSessionProject`]). Never moved after that by a repo's
+    /// link. A layout from before has none, and an older daemon drops it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub project: Option<ProjectRef>,
+    /// Its project was set by hand, or taken away ([`Intent::SetSessionProject`]):
+    /// nothing infers one after, even while it has none.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    pub project_by_hand: bool,
+}
+
+impl Session {
+    /// Whether a pane's linked repo may still give it a project: it has
+    /// none, and none was set or taken away by hand.
+    pub fn inferable(&self) -> bool {
+        self.project.is_none() && !self.project_by_hand
+    }
+}
+
+/// A project in Arugula control, as a session keeps it: its id, and its
+/// name when it was set, to show without asking control.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ProjectRef {
+    /// `prj_…`.
+    pub id: String,
+    pub name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -38,12 +66,24 @@ pub struct Tab {
     /// While set, this pane fills the tab and the others keep their sizes
     /// (a phone showing one pane at a time).
     pub zoom: Option<PaneId>,
-    /// While set, this pane fills the tab for everyone (desktop focus mode,
-    /// [`Intent::Focus`]). Unlike `zoom`, which follows one client's view,
-    /// it's shared, saved and survives a reload; it never touches `root`,
-    /// so unfocusing gives back the same layout.
-    #[serde(default)]
+    /// While set, this pane fills the tab (desktop focus mode,
+    /// [`Intent::Focus`]); it never touches `root`, so unfocusing gives back
+    /// the same layout. Like `zoom` it belongs to the client holding the
+    /// tab ([`Tab::focus_by`]): another client's claim, or the holder going
+    /// away, ends it, so it can't trap a client that took the tab since.
+    /// Not saved: a focus from an older save has no holder and is dropped.
+    #[serde(skip)]
     pub focus: Option<PaneId>,
+    /// The client that set `focus`: the tab's owner at the time.
+    #[serde(skip)]
+    pub focus_by: Option<ClientId>,
+    /// Panes shown in a window of their own (Arugula #497,
+    /// [`Intent::PopOut`]), each with the client that popped it out: that
+    /// window. The pane keeps its place in `root`, where every other
+    /// screen shows that it's out; its window closing (the client going
+    /// away) brings it back. Not saved.
+    #[serde(skip)]
+    pub popped: std::collections::BTreeMap<PaneId, Option<ClientId>>,
 }
 
 /// A whole-tab arrangement for [`Intent::Arrange`].
@@ -150,6 +190,12 @@ pub enum Intent {
         session: SessionId,
         name: String,
     },
+    /// Put a session in a project, or in none (`None`), by hand: it
+    /// replaces an inferred one, and nothing infers one after.
+    SetSessionProject {
+        session: SessionId,
+        project: Option<ProjectRef>,
+    },
     CloseSession {
         session: SessionId,
     },
@@ -222,11 +268,21 @@ pub enum Intent {
         #[cfg_attr(feature = "ts", ts(optional))]
         main: Option<PaneId>,
     },
-    /// Show one pane filling the tab, for everyone, or (`pane: None`) the
-    /// whole tab again. See [`Tab::focus`].
+    /// Show one pane filling the tab, until another client takes the tab,
+    /// or (`pane: None`) the whole tab again. See [`Tab::focus`].
     Focus {
         tab: TabId,
         pane: Option<PaneId>,
+    },
+    /// Show `pane` in a window of its own (`out`), or bring it back
+    /// (Arugula #497). See [`Tab::popped`]. `by` is the client that sent it,
+    /// which the daemon fills in: the window that shows it.
+    PopOut {
+        pane: PaneId,
+        out: bool,
+        #[serde(skip)]
+        #[cfg_attr(feature = "ts", ts(skip))]
+        by: Option<ClientId>,
     },
     /// Set an option, or unset it (`value: None`). No client sends it
     /// since the tmux front end was removed; kept in the protocol (see
@@ -344,7 +400,18 @@ impl Mux {
         let id = self.next_tab;
         self.tabs.insert(
             id,
-            Tab { id, name: None, root, cols: DEFAULT_COLS, rows: DEFAULT_ROWS, owner: None, zoom: None, focus: None },
+            Tab {
+                id,
+                name: None,
+                root,
+                cols: DEFAULT_COLS,
+                rows: DEFAULT_ROWS,
+                owner: None,
+                zoom: None,
+                focus: None,
+                focus_by: None,
+                popped: Default::default(),
+            },
         );
         let s = self.session_mut(session)?;
         let at = index.unwrap_or(s.tabs.len()).min(s.tabs.len());
@@ -375,10 +442,24 @@ impl Mux {
                 if tab.focus == Some(pane) {
                     tab.focus = None;
                 }
+                tab.popped.remove(&pane);
             }
             None => self.remove_tab(tab_id),
         }
         Ok(())
+    }
+
+    /// A session's project from its pane's linked repo: set only while it
+    /// has none and none was set or taken away by hand
+    /// ([`Session::inferable`]), so it stays put. Whether it was set.
+    pub fn infer_project(&mut self, session: SessionId, project: ProjectRef) -> Result<bool, Error> {
+        let s = self.session_mut(session)?;
+        if !s.inferable() {
+            return Ok(false);
+        }
+        s.project = Some(project);
+        self.rev += 1;
+        Ok(true)
     }
 
     pub fn apply(&mut self, intent: Intent) -> Result<Vec<Effect>, Error> {
@@ -396,13 +477,25 @@ impl Mux {
             NewSession { name, from_pane } => {
                 self.next_session += 1;
                 let id = self.next_session;
-                self.sessions.push(Session { id, name: name.unwrap_or_else(|| id.to_string()), tabs: vec![] });
+                self.sessions.push(Session {
+                    id,
+                    name: name.unwrap_or_else(|| id.to_string()),
+                    tabs: vec![],
+                    project: None,
+                    project_by_hand: false,
+                });
                 let pane = self.new_pane();
                 self.add_tab(id, Node::pane(pane), None)?;
                 Ok(vec![Effect::Spawn { pane, cwd_from: from_pane, cwd: None }])
             }
             RenameSession { session, name } => {
                 self.session_mut(session)?.name = name;
+                Ok(vec![])
+            }
+            SetSessionProject { session, project } => {
+                let s = self.session_mut(session)?;
+                s.project = project;
+                s.project_by_hand = true;
                 Ok(vec![])
             }
             CloseSession { session } => {
@@ -569,6 +662,21 @@ impl Mux {
                     return Err(Error::NoPane(p));
                 }
                 t.focus = pane;
+                t.focus_by = pane.and(t.owner);
+                Ok(vec![])
+            }
+            PopOut { pane, out, by } => {
+                let tab = self.tab_of(pane)?;
+                let t = self.tabs.get_mut(&tab).ok_or(Error::NoTab(tab))?;
+                if out {
+                    t.popped.insert(pane, by);
+                    // Out of the tab, it can't fill it.
+                    if t.focus == Some(pane) {
+                        (t.focus, t.focus_by) = (None, None);
+                    }
+                } else {
+                    t.popped.remove(&pane);
+                }
                 Ok(vec![])
             }
             SetOption { scope, name, value } => {
@@ -628,22 +736,53 @@ impl Mux {
         // bigger tab, as tmux does.
         let (min_cols, min_rows) = t.root.min_size();
         let next = (cols.max(2).max(min_cols), rows.max(1).max(min_rows), Some(client), zoom);
+        // A focus is its holder's view: anyone else taking the tab, or the
+        // holder zooming to another pane (a phone's tap), ends it.
+        let unfocus = t.focus.is_some() && (t.focus_by != Some(client) || zoom.is_some_and(|z| Some(z) != t.focus));
+        if unfocus {
+            (t.focus, t.focus_by) = (None, None);
+        }
         if (t.cols, t.rows, t.owner, t.zoom) == next {
-            return Ok(false);
+            if unfocus {
+                self.rev += 1;
+            }
+            return Ok(unfocus);
         }
         (t.cols, t.rows, t.owner, t.zoom) = next;
         self.rev += 1;
         Ok(true)
     }
 
+    /// A screen that doesn't hold `tab`'s size showed it or picked a pane
+    /// in it (#473, #439): a focus the holder set ends, and the size stays.
+    pub fn end_focus_for(&mut self, client: ClientId, tab: TabId) -> bool {
+        let Some(t) = self.tabs.get_mut(&tab) else { return false };
+        if t.owner == Some(client) || t.focus.is_none() {
+            return false;
+        }
+        (t.focus, t.focus_by) = (None, None);
+        self.rev += 1;
+        true
+    }
+
     /// A client went away: its tabs keep their size until someone else
     /// views them.
     pub fn release(&mut self, client: ClientId) -> bool {
         let mut changed = false;
-        for t in self.tabs.values_mut().filter(|t| t.owner == Some(client)) {
-            t.owner = None;
-            t.zoom = None;
-            changed = true;
+        for t in self.tabs.values_mut() {
+            if t.owner == Some(client) {
+                t.owner = None;
+                t.zoom = None;
+                changed = true;
+            }
+            if t.focus_by == Some(client) {
+                (t.focus, t.focus_by) = (None, None);
+                changed = true;
+            }
+            // Its pop-out windows closed: those panes come back (#497).
+            let n = t.popped.len();
+            t.popped.retain(|_, by| *by != Some(client));
+            changed |= t.popped.len() != n;
         }
         if changed {
             self.rev += 1;
@@ -730,73 +869,4 @@ fn arrange(panes: &[PaneId], preset: Preset, main: Option<PaneId>, next_id: &mut
     };
     root.normalize();
     root
-}
-
-/// How long a tab's size owner keeps the size against another client's
-/// typing after it last typed there or took the size (#333).
-pub const SIZE_HOLD: Duration = Duration::from_secs(3);
-
-/// Why a client sends its size for a tab.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Claim {
-    /// It only shows the tab: its size counts if it owns the tab or nobody
-    /// does.
-    No,
-    /// It typed in the tab. It takes the size unless the owner typed there
-    /// or took the size within [`SIZE_HOLD`]; until then it types into the
-    /// owner's size, letterboxed or scaled.
-    Typed,
-    /// It opened or switched to the tab, or asked for it ("use this size").
-    Yes,
-}
-
-/// Size arbitration between clients (DECISIONS.md, "Size arbitration"):
-/// when each tab's size owner last did something there. Kept beside the
-/// [`Mux`], not in it, as it's only for now: nothing to save or send.
-#[derive(Debug, Default)]
-pub struct SizeHold {
-    active: HashMap<TabId, Instant>,
-}
-
-impl SizeHold {
-    /// [`Mux::view`], with typing claims held off while the owner is busy.
-    #[allow(clippy::too_many_arguments)]
-    pub fn view(
-        &mut self,
-        mux: &mut Mux,
-        client: ClientId,
-        tab: TabId,
-        (cols, rows): (u16, u16),
-        zoom: Option<PaneId>,
-        claim: Claim,
-        now: Instant,
-    ) -> Result<bool, Error> {
-        let owner = mux.tab(tab)?.owner;
-        let take = match claim {
-            Claim::No => false,
-            Claim::Yes => true,
-            Claim::Typed => {
-                owner.is_none_or(|o| o == client)
-                    || self.active.get(&tab).is_none_or(|at| now.saturating_duration_since(*at) >= SIZE_HOLD)
-            }
-        };
-        let changed = mux.view(client, tab, cols, rows, zoom, take)?;
-        if take {
-            self.active.insert(tab, now);
-        }
-        if self.active.len() > mux.tabs.len() {
-            self.active.retain(|t, _| mux.tabs.contains_key(t));
-        }
-        Ok(changed)
-    }
-
-    /// `client` typed in `pane`: if its tab's size is theirs, they keep it
-    /// a while longer.
-    pub fn typed(&mut self, mux: &Mux, client: ClientId, pane: PaneId, now: Instant) {
-        if let Ok(tab) = mux.tab_of(pane)
-            && mux.tab(tab).is_ok_and(|t| t.owner == Some(client))
-        {
-            self.active.insert(tab, now);
-        }
-    }
 }

@@ -10,13 +10,19 @@ on:
     branches:
       - main
   workflow_dispatch: {}
+  merge_group:
+    types:
+      - checks_requested
 
 # Written by chant ci workflow from ci.green's build (#4169); edit ci.green and run it again.
 concurrency:
+  # A job skipped by changed paths diffs against `chant ci base --phase windows`, not github.event.before, which a newer push may have kept from being built (#4643).
   group: chant-build-lint-windows-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
+  # scripts/queue-tested reads this commit's merge_group runs.
+  actions: read
   contents: read
 
 jobs:
@@ -28,12 +34,18 @@ jobs:
       run: ${{ steps.ask.outputs.run }}
     steps:
       - uses: actions/checkout@v4
+      # scripts/changed runs chant ci base (chant#4643) through npx: keep its download.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-chant-0.124.64
       - id: ask
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: if scripts/suite-changed "${{ github.event.before }}"; then echo run=true >> "$GITHUB_OUTPUT"; else echo run=false >> "$GITHUB_OUTPUT"; fi
 
   # M55 (#218): the workspace compiles on Windows, and its unit tests pass.
-  # The root workspace only: control and its platform run on Fly, and are a
-  # workspace of their own (server/Cargo.toml). Under cargo-nextest (.config/nextest.toml's ci profile, as
+  # Under cargo-nextest (.config/nextest.toml's ci profile, as
   # on Linux): `cargo test` ran the test binaries one at a time, 4 min of
   # this job's 14 (2026-10-23). Clippy is workspace-clippy, beside it.
   workspace:
@@ -50,18 +62,20 @@ jobs:
       # Zig, for Ghostty's lib-vt (the version in .mise.toml). Not through
       # mise: its Windows shims are .cmd files, which the build script's
       # Command can't run.
-      - uses: mlugg/setup-zig@v2
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
           version: 0.16.0
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cargo-nextest
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       # PowerShell 7 started once, alone, before the tests start it in
       # several daemons at once (#524): its first start on a fresh runner
       # is the slow one.
       - run: pwsh -NoLogo -NoProfile -Command Get-Date
-      - run: cargo nextest run --workspace
+      # Leaving out the quarantined tests, the test phase's (docs/testing.md,
+      # "Quarantine"), as the Linux and macOS runs do.
+      - run: q=$(scripts/chant ci quarantine filter --phase test --runner nextest) && cargo nextest run --workspace -E "$q"
       # nextest doesn't run doctests.
       - run: cargo test --workspace --doc
 
@@ -76,8 +90,8 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
-      - uses: mlugg/setup-zig@v2
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
           version: 0.16.0
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: cargo clippy --workspace --all-targets -- -D warnings

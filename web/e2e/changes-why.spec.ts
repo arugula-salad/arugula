@@ -51,7 +51,7 @@ test.beforeAll(async () => {
     "../target/debug/arugulad",
     [
       ...["--listen", ANY, "--state-dir", labs(join(dir, "state")), "--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"],
-      ...["--shell", "bash --norc --noprofile", "--no-manager-env", "--wisp-token-file", "/nonexistent"],
+      ...["--shell", "bash --norc --noprofile", "--no-manager-env"],
     ],
     // The workspace has no node_modules of its own: its chant is this one.
     { stdio: "ignore", env: { ...process.env, CHANT } },

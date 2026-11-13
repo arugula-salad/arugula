@@ -13,7 +13,7 @@ use std::path::Path;
 
 use arugula_proto::Policy;
 
-use crate::store::{AgentSession, PaneMeta};
+use crate::store::{PaneConversation, PaneMeta};
 
 /// A session id an agent would give: a UUID, or near it. Anything else is
 /// refused rather than passed on.
@@ -33,7 +33,7 @@ pub fn name(agent: &str) -> &str {
 }
 
 /// The command that resumes `s`, as argv.
-fn argv(s: &AgentSession) -> Option<Vec<String>> {
+fn argv(s: &PaneConversation) -> Option<Vec<String>> {
     let (program, flag) = match s.agent.as_str() {
         "claude" => ("claude", "--resume"),
         "codex" => ("codex", "resume"),
@@ -44,7 +44,7 @@ fn argv(s: &AgentSession) -> Option<Vec<String>> {
 
 /// Whether a restart of this pane resumes its conversation: its policy says
 /// so (or is the default), and the agent was running in it.
-pub fn applies(meta: &PaneMeta) -> Option<&AgentSession> {
+pub fn applies(meta: &PaneMeta) -> Option<&PaneConversation> {
     let s = meta.session.as_ref()?;
     let wants = match meta.policy {
         Policy::Resume => true,
@@ -94,7 +94,7 @@ mod tests {
             policy,
             policy_set: set,
             cwd: Some("/".into()),
-            session: Some(AgentSession {
+            session: Some(PaneConversation {
                 agent: "claude".into(),
                 id: id.into(),
                 transcript: transcript.map(str::to_owned),

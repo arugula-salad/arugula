@@ -47,7 +47,13 @@ which keys may reach a machine. It doesn't prove a person meant an action:
 on the platform plane that's a passkey's user-verified assertion over the
 action's bytes (deploy approvals, standing run grants, team owner changes).
 A device's kind matters only for who may connect and who may approve a new
-device.
+device, and for team rosters as follows. An owner change (making, removing
+or demoting an owner, or moving an owner's root) takes the owner's passkey
+at control (aru-126), and team machines still require that roster version
+to be signed by a browser all the way back or the desktop app, never a CLI:
+an agent can read a CLI's key, and a roster a machine accepts persists
+after the key is revoked, so a passkey control checks can't stand in for
+the machine's own check (Jake, 2026-10-31, DK7, Arugula native #388).
 
 Where: `crates/e2e/src/cert.rs`, `crates/e2e/src/team.rs`.
 From: [M17](docs/plan-archive.md#m17-illogical-control-accounts-devices-enrollment-directory), [M19](docs/plan-archive.md#m19-teams-sharing-roles-team-daemons-invites), S15.

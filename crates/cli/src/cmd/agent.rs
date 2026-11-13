@@ -43,15 +43,15 @@ pub struct Args {
     #[arg(long)]
     title: Option<String>,
     /// The issue it works on (`#N`, `owner/repo#N` or `IDENT-N`): the block
-    /// is attached to that issue's row on the boards of its project (Labs:
-    /// boards; with this machine's boards.write grant) and says it in its
+    /// is attached to that issue's row on the boards of its project (with this
+    /// machine's boards.write grant) and says it in its
     /// header.
-    #[arg(long, value_name = "ISSUE", hide = true, conflicts_with_all = ["chat", "resume", "fork"])]
+    #[arg(long, value_name = "ISSUE", conflicts_with_all = ["chat", "resume", "fork"])]
     issue: Option<String>,
     /// With --issue: take the row over when another machine's agent holds
     /// it (that agent is folded under "earlier agents"). Without it the
     /// start is refused, naming who holds the row.
-    #[arg(long, hide = true, requires = "issue")]
+    #[arg(long, requires = "issue")]
     take: bool,
     /// An MCP server for the session, `NAME=COMMAND LINE` (stdio; may be
     /// repeated). Its forms and sign-in links show as cards.

@@ -8,9 +8,9 @@ import { rmSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChildProcess } from "node:child_process";
-import { expect, test } from "@playwright/test";
-import { bring, brokenEmbeds, fillEmbeds, fillsInPlace, imagesInPlace, newDoc, seeEmbeds, type Post } from "./doc-steps";
-import { open, ready } from "./helpers";
+import { expect, test, type BrowserContext } from "@playwright/test";
+import { attacker, bring, brokenEmbeds, protoLeavesAfterMove, protoOpenBeforeLoad, fill, fillEmbeds, prototype, prototypeRan, fillsInPlace, imagesInPlace, newDoc, seeEmbeds, type Post } from "./doc-steps";
+import { open, panes, ready, reset } from "./helpers";
 import { daemon, iphone } from "./phones";
 
 let dir = "";
@@ -22,7 +22,7 @@ test.use({ ...iphone, baseURL: async ({}, use) => use(url) });
 
 test.beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "ilg-e2e-doc-ios-"));
-  ({ proc, url } = await daemon(join(dir, "state"), ["--tailscale-socket", "/nonexistent/sock", "--wisp-token-file", "/nonexistent"]));
+  ({ proc, url } = await daemon(join(dir, "state"), ["--tailscale-socket", "/nonexistent/sock"]));
 });
 
 test.afterAll(() => {
@@ -61,4 +61,55 @@ test("a picture shows in WebKit, a replaced one with no reload, and other images
   await ready(page, term);
   const doc = await newDoc(post, term);
   await imagesInPlace(page, post, doc);
+});
+
+// #506: a prototype runs in WebKit's sandboxed frame (the daemon's runner page)
+// and gets out of nowhere.
+test("a prototype runs its script in WebKit and gets out of nowhere", async ({ page }) => {
+  const a = await attacker();
+  try {
+    await open(page);
+    const term = await page.evaluate(() => window.__arugula.client.state!.panes[0].id);
+    await ready(page, term);
+    const doc = await newDoc(post, term);
+    await bring(page, doc);
+    await fill(post, doc, "s1", prototype(a));
+    await prototypeRan(page, a, "dark");
+  } finally {
+    a.close();
+  }
+});
+
+// Arugula #869: a Doc with its prototype there before the page loads, switched
+// to, on the iPhone and at a desktop's size. The Doc is made from a page of its
+// own (`fresh`, in a session of its own: the earlier tests' Docs have
+// prototypes too), and the page under test loads once.
+const openBeforeLoad = async (context: BrowserContext) => {
+  const a = await attacker();
+  const fresh = async () => {
+    const p = await context.newPage();
+    await reset(p);
+    const [term] = await panes(p);
+    // Closed before the page under test opens: it checks it's the only one.
+    await p.close();
+    return term;
+  };
+  try {
+    let term = await fresh();
+    let page = await context.newPage();
+    await protoOpenBeforeLoad(page, post, term, a);
+    await page.close();
+    term = await fresh();
+    page = await context.newPage();
+    await protoLeavesAfterMove(page, post, term);
+  } finally {
+    a.close();
+  }
+};
+test("a prototype open before the page loads runs when switched to, and one that leaves is still caught", async ({ context }) => openBeforeLoad(context));
+test.describe("at a desktop's size", () => {
+  // Without the page's service worker: here, Playwright's WebKit never
+  // finishes loading a second page it controls at this size.
+  test.use({ viewport: { width: 1000, height: 640 }, isMobile: false, hasTouch: false, deviceScaleFactor: 1, userAgent: undefined, serviceWorkers: "block" });
+  test("a prototype open before the page loads runs when switched to, and one that leaves is still caught", async ({ context }) => openBeforeLoad(context));
 });

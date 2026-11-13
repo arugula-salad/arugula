@@ -192,6 +192,19 @@
       ],
       "type": "object"
     },
+    "AgentSessionStop": {
+      "description": "[`AGENT_SESSION_STOP`]'s body.",
+      "properties": {
+        "reason": {
+          "description": "Why, in at most [`STOP_REASON_MAX`] characters: the thread's note\nsays it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "AgentSessionWait": {
       "description": "[`AGENT_SESSIONS_WAIT`]'s body.",
       "properties": {
@@ -692,7 +705,7 @@
         "work": {
           "anyOf": [
             {
-              "$ref": "#/$defs/SessionWork"
+              "$ref": "#/$defs/SessionIssueLink"
             },
             {
               "type": "null"
@@ -782,6 +795,47 @@
         "title",
         "labels",
         "state"
+      ],
+      "type": "object"
+    },
+    "SessionIssueLink": {
+      "description": "The issue a session was started on, as its header's chip shows it:\n`#N · ‹board›`, linking to the board's row.",
+      "properties": {
+        "board": {
+          "default": null,
+          "description": "The board that has a row for it, when boards are on for the reader,\nits title and the row.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "board_title": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "issue": {
+          "description": "The issue (`iss_…`) and its number.",
+          "type": "string"
+        },
+        "number": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "row": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "issue",
+        "number"
       ],
       "type": "object"
     },
@@ -1148,6 +1202,13 @@
           "format": "uint64",
           "minimum": 0,
           "type": "integer"
+        },
+        "error": {
+          "description": "The latest error its box reported since a turn last pushed its\nbranch, such as a failed push (Arugula #859).",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "head": {
           "description": "HEAD after its latest turn, and when a turn last pushed the branch.",
@@ -1624,47 +1685,6 @@
           ]
         }
       },
-      "type": "object"
-    },
-    "SessionWork": {
-      "description": "The issue a session was started on, as its header's chip shows it:\n`#N · ‹board›`, linking to the board's row.",
-      "properties": {
-        "board": {
-          "default": null,
-          "description": "The board that has a row for it, when boards are on for the reader,\nits title and the row.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "board_title": {
-          "default": null,
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "issue": {
-          "description": "The issue (`iss_…`) and its number.",
-          "type": "string"
-        },
-        "number": {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "row": {
-          "default": null,
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "issue",
-        "number"
-      ],
       "type": "object"
     }
   },

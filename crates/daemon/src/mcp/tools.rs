@@ -8,7 +8,7 @@
 use std::{future::Future, sync::Arc, time::Duration};
 
 use arugula_proto::{
-    Driver, PaneId, StartedBy,
+    Driver, MachineId, PaneId, StartedBy,
     api::{HistoryKind, OpenRequest, PaneSummary},
 };
 use rmcp::{
@@ -453,6 +453,39 @@ impl<'a> Call<'a> {
         Ok(p)
     }
 
+    /// The guest behind this caller, when it's an agent one stands behind
+    /// (M14).
+    pub async fn guest_behind_me(&self) -> Option<String> {
+        let me = self.me()?;
+        self.app.mux.api(|r| Api::GuestBehind(me, r)).await.flatten()
+    }
+
+    /// An open pane or block whose output, history and files this caller
+    /// may read: one it may see, and for an agent a guest stands behind,
+    /// one on a machine of that guest's (its own, or what it started
+    /// there). The rest of its tab runs here, as the owner: their files,
+    /// and what was in it before the guest came in.
+    pub async fn contents_readable(&self, pane: PaneId) -> Result<PaneSummary, String> {
+        let p = self.readable(pane).await?;
+        let Some(guest) = self.guest_behind_me().await else { return Ok(p) };
+        let mine = p.info.host.is_some()
+            && (p.info.started_by.as_ref().and_then(|s| s.block) == self.me()
+                || self.app.mux.api(|r| Api::GuestBehind(pane, r)).await.flatten().as_deref() == Some(guest.as_str())
+                || self.on_my_machine(p.info.host).await);
+        if !mine {
+            return Err(format!(
+                "%{pane} doesn't run on this agent's machine: an agent a guest started reads what runs there only"
+            ));
+        }
+        Ok(p)
+    }
+
+    /// Whether `host` is the machine this caller's own block runs on.
+    async fn on_my_machine(&self, host: Option<MachineId>) -> bool {
+        let Some(me) = self.me() else { return false };
+        host.is_some() && self.panes().await.iter().any(|p| p.info.id == me && p.info.host == host)
+    }
+
     /// Why a pane isn't there, as specifically as history can say.
     pub async fn gone(&self, pane: PaneId) -> String {
         let store = self.app.mux.store.clone();
@@ -586,6 +619,7 @@ pub fn entry(p: &PaneSummary) -> results::PaneEntry {
         current: i.current.as_ref().and_then(|c| c.text.clone()),
         last: i.last.as_ref().map(|c| results::LastCommand { command: c.text.clone(), exit: c.exit }),
         started_by: i.started_by.as_ref().map(|s| s.by.clone()),
+        worktree: i.worktree.clone(),
         you: None,
     }
 }

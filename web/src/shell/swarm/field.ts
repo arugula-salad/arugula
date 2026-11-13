@@ -11,24 +11,39 @@
 // (yellow: one mentions you).
 
 import type { WorkKind } from "../../shared/proto";
+import { onAppearance } from "../../shared/appearance";
 import { KINDS } from "./model";
 import { clusterOrder } from "../../shared/boards/text";
 
-/** M61: an unread thread, and one that mentions you. */
-export const UNREAD = "#e6ebf4";
-export const UNREAD_MENTION = "#f9e2af";
+/** The palette's colors, as the canvases paint them: style.css's
+ * `:where(.swarm, …)` rule names them (the letterbox, text and dim text, the
+ * line, danger, warn: #729), and each scene reads them from there
+ * (readColors) when it's made and when the appearance changes (UI audit
+ * #180). These are only what it starts as (Slate's). `unread` is M61's
+ * folded corner, an unread thread, and `mention` one that mentions you. */
+export const C = { void: "#06090d", ink: "#d6dee9", mute: "#8b98ab", line: "#1a2230", fail: "#f2778a", unread: "#d6dee9", mention: "#f0b45a" };
 
-/** The swarm's dark set, as the canvases paint it: style.css's
- * `:where(.swarm, …)` rule is where it's defined, and each scene reads it
- * from there (readColors) when it's made (UI audit #180). These are only
- * what it starts as. */
-export const C = { void: "#06080d", ink: "#e6ebf4", mute: "#7c8698", line: "#1a2030", fail: "#ff5468" };
+/** `color` (`#rrggbb`, as the palette writes it) at an opacity. */
+export function alpha(color: string, a: number): string {
+  const n = parseInt(color.slice(1, 7), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+
+const brightness = (color: string) => {
+  const n = parseInt(color.slice(1, 7), 16);
+  return 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+};
+
+/** What is written on a pane's kind color (a tile's title bar, its stubs):
+ * the darker of the letterbox and the text, as the kinds are pale in both
+ * schemes, so it's the letterbox in dark and the text in light (#729). */
+export const onKind = () => (brightness(C.void) <= brightness(C.ink) ? C.void : C.ink);
 
 /** Takes C from the swarm's custom properties, as `el` (a canvas in the
  * swarm) inherits them. */
 export function readColors(el: Element) {
   const css = getComputedStyle(el);
-  const from = { void: "--void", ink: "--ink", mute: "--mute", line: "--line", fail: "--s-fail" } as const;
+  const from = { void: "--void", ink: "--ink", mute: "--mute", line: "--line", fail: "--s-fail", unread: "--ink", mention: "--s-wait" } as const;
   for (const k of Object.keys(from) as (keyof typeof from)[]) {
     const v = css.getPropertyValue(from[k]).trim();
     if (v) C[k] = v;
@@ -190,6 +205,10 @@ export interface FieldHooks {
   hover(key: string | null, x: number, y: number): void;
   /** A right-click on a pane. */
   menu?(key: string, e: MouseEvent): void;
+  /** A click on a cluster's name: true when the view took it (#466), else the scene dives in. */
+  name?(name: string): boolean;
+  /** Cluster names in the order to lay them out (a board focus's lanes, #466); none for the usual order. */
+  order?(): string[] | null;
   /** M42: commands that finished in the last `sinceS` seconds, on every
    * connected host (each daemon's `/api/history`), for the timeline. */
   history?(sinceS: number): Promise<HistoryRun[]>;
@@ -250,6 +269,7 @@ export class Field implements SwarmScene {
   private dpr = 1;
   readonly cam = { x: 0, y: 0, z: 0.5, tx: 0, ty: 0, tz: 0.5 };
   private raf = 0;
+  private offAppearance: (() => void) | null = null;
   private last = 0;
   private lastLayout = 0;
   /** Physics asleep (S16: it's half the frame). */
@@ -361,18 +381,24 @@ export class Field implements SwarmScene {
     const placedBefore = this.groups.size;
     const counts = new Map<string, number>();
     for (const t of this.tiles.values()) counts.set(t.group, (counts.get(t.group) ?? 0) + 1);
-    const names = [...counts.keys()].sort((a, b) => clusterOrder([a, counts.get(a)!], [b, counts.get(b)!]));
+    const order = this.hooks.order?.() ?? null;
+    const names = [...counts.keys()].sort((a, b) => clusterOrder([a, counts.get(a)!], [b, counts.get(b)!], order));
     const placed: Group[] = [];
     // Spread the clusters to the view's shape: wide on a laptop, tall on a
     // phone held upright.
     const tall = this.W > 0 && this.W - this.hooks.railW() < this.H - this.hooks.railH() - this.hooks.top();
     const [sx, sy] = tall ? [0.75, 1.5] : [1.25, 0.8];
+    // A board's lanes read in a line: left to right, or top to bottom upright.
+    let along = 0;
     names.forEach((name, i) => {
       const n = counts.get(name)!;
       const r = 11 * Math.sqrt(n) + 34;
       let tx = 0;
       let ty = 0;
-      if (i > 0) {
+      if (order) {
+        along += i ? placed[i - 1].r + r + (tall ? 150 : 110) : 0;
+        [tx, ty] = tall ? [0, along] : [along, 0];
+      } else if (i > 0) {
         for (let d = 60; d < 6000; d += 14) {
           const a = i * 2.39996 + d * 0.004;
           tx = Math.cos(a) * d * sx;
@@ -397,7 +423,8 @@ export class Field implements SwarmScene {
 
   /** Cluster names and sizes, as drawn (for tests and the phone's list). */
   get clusters(): { name: string; n: number; need: number }[] {
-    return [...this.groups].map(([name, g]) => ({ name, n: g.n, need: g.need }));
+    const order = this.hooks.order?.() ?? null;
+    return [...this.groups].map(([name, g]) => ({ name, n: g.n, need: g.need })).sort((a, b) => clusterOrder([a.name, a.n], [b.name, b.n], order));
   }
 
   /** Where a tile is on the screen now (tests click it). */
@@ -625,7 +652,7 @@ export class Field implements SwarmScene {
     const sx = e.clientX - r.left;
     const sy = e.clientY - r.top;
     const g = this.labelAt(sx, sy);
-    if (g) return this.dive(g);
+    if (g) return this.hooks.name?.(g) ? undefined : this.dive(g);
     const t = this.paneAt(sx, sy);
     if (t) this.hooks.open(t.key);
   }
@@ -635,6 +662,10 @@ export class Field implements SwarmScene {
   start() {
     this.resize();
     this.last = performance.now();
+    this.offAppearance = onAppearance(() => {
+      readColors(this.cv);
+      this.dirty = true;
+    });
     const frame = (now: number) => {
       // The tiles' springs take at most 50 ms a step, so a stall can't
       // fling them; the camera and the clusters ease by the time that
@@ -664,6 +695,7 @@ export class Field implements SwarmScene {
 
   stop() {
     cancelAnimationFrame(this.raf);
+    this.offAppearance?.();
   }
 
   wake() {
@@ -785,7 +817,7 @@ export class Field implements SwarmScene {
     const sp = 80 * z;
     if (sp > 14) {
       const o = this.toScreen(0, 0);
-      cx.fillStyle = "rgba(124,134,152,.13)";
+      cx.fillStyle = alpha(C.mute, 0.13);
       for (let x = ((o.x % sp) + sp) % sp; x < W; x += sp) for (let y = ((o.y % sp) + sp) % sp; y < H; y += sp) cx.fillRect(x, y, 1.2, 1.2);
     }
 
@@ -794,9 +826,9 @@ export class Field implements SwarmScene {
       const s = this.toScreen(g.x, g.y);
       const r = g.r * z * 1.25;
       const grd = cx.createRadialGradient(s.x, s.y, 0, s.x, s.y, r);
-      const hot = g.need ? "255,84,104" : "120,150,210";
-      grd.addColorStop(0, `rgba(${hot},${g.need ? 0.08 : 0.05})`);
-      grd.addColorStop(1, `rgba(${hot},0)`);
+      const hot = g.need ? C.fail : "#7896d2";
+      grd.addColorStop(0, alpha(hot, g.need ? 0.08 : 0.05));
+      grd.addColorStop(1, alpha(hot, 0));
       cx.fillStyle = grd;
       cx.beginPath();
       cx.arc(s.x, s.y, r, 0, 7);
@@ -836,7 +868,7 @@ export class Field implements SwarmScene {
       const x = s.x - w / 2;
       const y = s.y - h / 2;
       if (textMode) {
-        cx.fillStyle = "rgba(10,13,20,.95)";
+        cx.fillStyle = C.void;
         cx.fillRect(x, y, w, h);
         cx.strokeStyle = `rgba(${c},${0.35 + 0.5 * act})`;
         cx.lineWidth = 1;
@@ -847,16 +879,16 @@ export class Field implements SwarmScene {
         cx.beginPath();
         cx.rect(x, y, w, h);
         cx.clip();
-        cx.fillStyle = C.void;
+        cx.fillStyle = onKind();
         cx.fillText(`${t.label} · ${t.where}`, x + fs * 0.6, y + fs * 1.15);
-        cx.fillStyle = "rgba(200,210,226,.35)";
+        cx.fillStyle = alpha(C.ink, 0.35);
         stubs(t.key).forEach((len, i) => cx.fillRect(x + fs * 0.6, y + fs * 2.4 + i * fs * 1.35, (w - fs * 1.2) * len * act, fs * 0.5));
         cx.restore();
       } else {
         cx.fillStyle = `rgba(${c},${a})`;
         cx.fillRect(x, y, w, h);
         if (w > 16) {
-          cx.fillStyle = "rgba(6,8,13,.55)";
+          cx.fillStyle = alpha(onKind(), 0.55);
           stubs(t.key).forEach((len, i) => cx.fillRect(x + w * 0.1, y + h * (0.25 + i * 0.22), w * 0.8 * len, Math.max(1, h * 0.08)));
         }
       }
@@ -867,7 +899,7 @@ export class Field implements SwarmScene {
       if (t.unread) {
         // M61: an unread thread folds the tile's top-right corner.
         const k = Math.max(4, Math.min(w, h) * 0.22);
-        cx.fillStyle = t.mention ? UNREAD_MENTION : UNREAD;
+        cx.fillStyle = t.mention ? C.mention : C.unread;
         cx.beginPath();
         cx.moveTo(x + w - k, y);
         cx.lineTo(x + w, y);
@@ -921,19 +953,19 @@ export class Field implements SwarmScene {
     for (const l of this.labels) {
       cx.textAlign = "center";
       cx.font = `800 ${l.big}px "Big Shoulders Display", "Arial Narrow", sans-serif`;
-      cx.fillStyle = l.need ? "#ffd5da" : "rgba(230,235,244,.92)";
+      cx.fillStyle = l.need ? C.fail : alpha(C.ink, 0.92);
       cx.fillText(l.title, l.x, l.y - 12);
       if (l.meta || l.needText) {
         cx.font = META_FONT;
         cx.textAlign = "start";
         let x = l.x - l.metaW / 2;
         if (l.meta) {
-          cx.fillStyle = "rgba(124,134,152,.95)";
+          cx.fillStyle = alpha(C.mute, 0.95);
           cx.fillText(l.meta, x, l.y + 2);
           x += cx.measureText(l.meta).width;
         }
         if (l.needText) {
-          cx.fillStyle = "#ff5468";
+          cx.fillStyle = C.fail;
           cx.fillText(l.needText, x, l.y + 2);
         }
       }

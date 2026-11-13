@@ -26,8 +26,6 @@ fn unit_text(args: &[String], env: &[String]) -> String {
         "\
 [Unit]
 Description=arugula: terminals that outlive their windows
-# VM panes reattach to wispd's machines; start after it when it's here.
-After=wisp.service
 
 [Service]
 Type=notify
@@ -51,9 +49,10 @@ WantedBy=default.target
 
 #[cfg_attr(any(target_os = "macos", windows), allow(dead_code))]
 fn systemctl(args: &[&str]) -> anyhow::Result<()> {
-    let status = Command::new("systemctl").arg("--user").args(args).status().context(
-        "running systemctl (no systemd here? run `arugulad` directly, or `arugulad install --tailnet` in a sandbox)",
-    )?;
+    let status =
+        Command::new("systemctl").arg("--user").args(args).status().context(
+            "running systemctl (no systemd here? run `arugulad` directly, or `arugulad install --no-service`)",
+        )?;
     if !status.success() {
         bail!("systemctl --user {} failed", args.join(" "));
     }

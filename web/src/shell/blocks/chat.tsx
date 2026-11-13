@@ -11,9 +11,10 @@ import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
 import { AdapterHelp, installAdapter } from "../ui/adapter";
 import { AgentMessage } from "../../shared/agent-message";
-import { Composer, EarlierNote, KeptImage, STATUS, filesOf, money, type AgentState, type Entry } from "./agent";
-import { BlockLoading } from "./block-states";
+import { Composer, EarlierNote, KeptImage, STATUS, filesOf, forgetKept, money, type AgentState, type Entry } from "./agent";
+import { BlockLoading, EmptyState } from "./block-states";
 import { registerBlock, type BlockView } from "./view";
+import { Bar } from "../../shared/ui/bar";
 
 /** Plain text of the conversation, roughly as `capture --text` gives it. */
 export function chatText(s: AgentState): string {
@@ -105,7 +106,7 @@ function ChatBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentStat
         setAttached([...attached, ...files]);
       }}
     >
-      <div class="agent-bar">
+      <Bar sub class="agent-bar">
         {/* One rule with the agent block's (UI audit #178): always says how it is. */}
         <span class={`agent-status ${s.status}`}>{STATUS[s.status]}</span>
         <span class="agent-name">{chatTitle(s)}</span>
@@ -117,7 +118,7 @@ function ChatBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentStat
         )}
         <ModelPicker client={client} id={id} s={s} />
         {stopped && <button onClick={() => void client.api(`/api/blocks/${id}/call/start`, {}, "couldn't start it")}>Resume</button>}
-      </div>
+      </Bar>
       <div
         class="agent-log"
         ref={scroller}
@@ -129,10 +130,10 @@ function ChatBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentStat
         <div class="chat-block-column">
           {s.entries_from > 0 && <EarlierNote n={s.entries_from} id={id} />}
           {!said && !s.queued.length && (
-            <div class="chat-block-empty">
-              <h3>What's on your mind?</h3>
-              <p>A conversation with {s.label}: no tools, files or shell. Attach images or files to talk about them.</p>
-            </div>
+            <EmptyState
+              title={`A conversation with ${s.label}.`}
+              why="No tools, files or shell. Attach images or files to talk about them."
+            />
           )}
           {s.entries.map((e, i) => (
             <Message key={i} client={client} id={id} e={e} />
@@ -167,6 +168,7 @@ registerBlock("chat", (client, id): BlockView => {
     text: () => (state ? chatText(state) : ""),
     focus: () => host.querySelector<HTMLElement>(".agent-composer textarea")?.focus(),
     dispose: () => {
+      forgetKept(client, id);
       render(null, host);
       host.remove();
     },

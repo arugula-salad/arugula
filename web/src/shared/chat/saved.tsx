@@ -3,16 +3,18 @@
 // Activity. What's saved is control's, per account, and reaches this page's
 // other copies over the live stream (../chat-store).
 
+import { BlockLoading, EmptyState } from "../ui/block-states";
 import { useEffect, useState } from "preact/hooks";
 import { chat } from "../chat-store";
+import { inView, type ChatScope } from "./sidebar";
 import { usePlatformApi } from "../platform-api";
 import { useSubscribe } from "../ui/hooks";
 import { Markup } from "../ui/markup";
 import type { ChatSavedItem } from "../proto";
-import { authorLabel } from "./agents";
+import { AuthorName } from "./agent-name";
 import { AuthorAvatar } from "./room";
 import { ViewHead, when, whereOf } from "./find";
-import { BookmarkIcon } from "./icons";
+import { BookmarkIcon } from "../ui/icons";
 
 export const HOUR = 3_600_000;
 
@@ -47,7 +49,7 @@ function SavedRow({ item, onError }: { item: ChatSavedItem; onError: (e: string)
         <span class="chat-hit-body">
           <AuthorAvatar m={m} />
           <span class={m.agent ? "chat-hit-text by-agent" : "chat-hit-text"}>
-            <b>{authorLabel(m)}</b>
+            <AuthorName m={m} />
             {m.text ? <Markup text={m.text} /> : <p class="thread-text">{m.quote}</p>}
           </span>
         </span>
@@ -77,25 +79,31 @@ function SavedRow({ item, onError }: { item: ChatSavedItem; onError: (e: string)
 }
 
 /** Saved: the messages this person saved, to do first, then done
- * ones, each with its room, a link to it and what to do with it. */
-export function SavedView({ phone }: { phone: boolean }) {
+ * ones, in the scope's rooms, each with its room, a link to it and what to do with it. */
+export function SavedView({ phone, scope }: { phone: boolean; scope?: ChatScope }) {
   useSubscribe((fn) => chat.subscribe(fn));
   const [err, setErr] = useState("");
   useEffect(() => {
     void chat.loadSaved();
   }, []);
-  const items = chat.saved;
+  // In a scope, the messages of its rooms (Arugula #883).
+  const items = chat.saved?.filter((i) => inView(chat.room(i.room), scope)) ?? null;
   const todo = items?.filter((i) => i.done === null) ?? [];
   const finished = items?.filter((i) => i.done !== null) ?? [];
   return (
     <section class="chat-thread chat-view" aria-label="Saved" data-chat-saved-view>
       <ViewHead title="Saved" sub={items ? `${todo.length} to do` : undefined} phone={phone} />
       <div class="thread-list">
-        {items === null && <p class="thread-empty">Loading…</p>}
+        {items === null && <BlockLoading inline what="what you saved" />}
         {items?.length === 0 && (
-          <p class="thread-empty">
-            Nothing saved. Save a message with <BookmarkIcon size={12} /> on its hover bar to come back to it, or set a reminder from its ⋯ menu. Only you see this.
-          </p>
+          <EmptyState
+            title="Nothing saved."
+            why={
+              <>
+                Save a message with <BookmarkIcon size="xs" /> on its hover bar to come back to it, or set a reminder from its ⋯ menu. Only you see this.
+              </>
+            }
+          />
         )}
         {err && <p class="thread-error">{err}</p>}
         {todo.length > 0 && (

@@ -16,7 +16,9 @@ export const GROUPINGS: GroupBy[] = ["project", "machine", "kind", "session", "o
 
 /** Each grouping's button, in sentence case. */
 export const GROUPING_LABEL: Record<GroupBy, string> = {
-  project: "Project",
+  // A git repository, not a project on the platform page (Arugula #639); the
+  // key stays, so a saved choice still works.
+  project: "Repo",
   machine: "Machine",
   kind: "Kind",
   session: "Session",

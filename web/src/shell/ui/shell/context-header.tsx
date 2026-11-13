@@ -17,7 +17,8 @@ import { AttentionBell } from "./attention-drawer";
 import { offlineWhy } from "./live";
 import { setSidebarOpen, useSidebar } from "./prefs";
 import { usePlace } from "./rail";
-import { openOverview } from "../places";
+import { MachinePlaces } from "../places";
+import { ChevronIcon } from "../../../shared/ui/icons";
 
 export type Connection = "direct" | "relayed" | "reconnecting" | "offline" | "waking" | "asleep";
 
@@ -27,7 +28,7 @@ export type Connection = "direct" | "relayed" | "reconnecting" | "offline" | "wa
 export function connection(client: Client): { state: Connection; why: string } {
   if (client.connected) {
     return client.path === "relayed"
-      ? { state: "relayed", why: "Through Arugula control's relay (end-to-end encrypted)" }
+      ? { state: "relayed", why: "Through Arugula cloud's relay (end-to-end encrypted)" }
       : { state: "direct", why: "Straight to the machine" };
   }
   const name = directory.current;
@@ -79,7 +80,7 @@ function SidebarToggle({ client }: { client: Client }) {
       title={`${label} on ${directory.current || "this machine"}`}
       onClick={() => setSidebarOpen(!open)}
     >
-      <span aria-hidden="true">{open ? "‹" : "›"}</span>
+      <ChevronIcon dir={open ? "left" : "right"} />
     </button>
   );
 }
@@ -94,23 +95,15 @@ export function ContextHeader({
 }) {
   useSubscribe((fn) => directory.subscribe(fn));
   const sidebar = useSidebar();
+  const at = usePlace(client);
+  // The session's own parts (where you are in it, Share) are the panes'.
+  const panes = at === "panes" || at === "overview";
   const state = client.state!;
   const session = state.sessions.find((s) => s.id === client.session) ?? state.sessions[0];
   const tab = client.tabView();
   return (
     <header class="ws-head" data-tauri-drag-region>
-      {sidebar.open && !sidebar.narrow && (
-        // A link, as the platform page's wordmark is (UI audit #170).
-        <a class="ws-wordmark" style={{ width: `${sidebar.width}px` }} href="#overview"
-          aria-label="Arugula Control: session overview" title="This machine’s session overview"
-          onClick={(e) => {
-            e.preventDefault();
-            openOverview();
-          }}>
-          Arugula <span aria-hidden="true">/</span> <strong>Control</strong>
-        </a>
-      )}
-      <nav class="ws-crumbs" aria-label="Where you are" data-tauri-drag-region>
+      <nav class="ws-crumbs" aria-label="This machine" data-tauri-drag-region>
         <SidebarToggle client={client} />
         {/* The machine's name even where there's no menu of others (a
             daemon's own page alone): HostButton draws nothing then. */}
@@ -122,30 +115,32 @@ export function ContextHeader({
           </span>
         )}
         <ConnectionChip client={client} />
-        {session && (
-          <>
-            <span class="ws-crumb-sep" aria-hidden="true">
-              /
-            </span>
-            <SessionButton client={client} session={session} setRenaming={setRenaming} />
-          </>
-        )}
-        {tab && (
-          <span class="ws-crumb-tab" title="This tab" data-tauri-drag-region>
-            <span class="ws-crumb-sep" aria-hidden="true">
-              /
-            </span>
-            <span class="ws-crumb-tab-name">{tabLabel(client, tab)}</span>
-          </span>
-        )}
       </nav>
+      {/* Docs sits under this head (Arugula #796); the other places cover it
+          with a bar of their own (AppBar). */}
+      {(panes || at === "docs") && <MachinePlaces client={client} at={at} />}
+      {/* The sidebar and tab strip say which session and tab this is; without
+          the sidebar, this does (Arugula #637). */}
+      {panes && (!sidebar.open || sidebar.narrow) && (
+        <nav class="ws-crumbs ws-trail" aria-label="Where you are" data-tauri-drag-region>
+          {session && <SessionButton client={client} session={session} setRenaming={setRenaming} />}
+          {tab && (
+            <span class="ws-crumb-tab" title="This tab" data-tauri-drag-region>
+              <span class="ws-crumb-sep" aria-hidden="true">
+                /
+              </span>
+              <span class="ws-crumb-tab-name">{tabLabel(client, tab)}</span>
+            </span>
+          )}
+        </nav>
+      )}
       <div class="bar-fill" data-tauri-drag-region />
       <CommandsButton client={client} search />
       <UpdateChip client={client} />
       {/* M111: what waits on you, on every machine. */}
       <AttentionBell client={client} />
       {/* Sharing is the daemon's owner's (M13), and in sight so it's found (#551). */}
-      {session && !state.roles && (
+      {panes && session && !state.roles && (
         <button
           class="ws-share"
           aria-label="Share session"

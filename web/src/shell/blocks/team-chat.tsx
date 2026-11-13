@@ -39,6 +39,8 @@ import { getControlSession } from "../ui/people";
 import { openGettingStarted } from "../ui/welcome";
 import { registerBlock, type BlockView } from "./view";
 import { BlockLoading } from "./block-states";
+import { Count } from "../../shared/ui/state-chip";
+import { Bar } from "../../shared/ui/bar";
 
 /** The block's state: its layout entry, which the daemon says whole. */
 export interface TeamChatState {
@@ -125,7 +127,7 @@ function hostApi(client: Client, id: PaneId, go: (r: ChatRoute) => void, pin: ()
       }
       base.goToPane(machine, pane, quote);
     },
-    Bar: ({ children }) => <div class="chat-bar chat-block-bar">{children}</div>,
+    Bar: ({ children }) => <Bar sub class="chat-bar chat-block-bar">{children}</Bar>,
     quote: { can: () => true, Picker: (p) => <NeighbourQuote client={client} block={id} {...p} /> },
   };
 }
@@ -229,7 +231,7 @@ function TeamChatBlock({ client, id, s, shown }: { client: Client; id: PaneId; s
         </ChatShown.Provider>
       </PlatformApiContext.Provider>
     );
-  } else if (signedIn) body = <BlockLoading data-chat-reading what="chat from Arugula control" />;
+  } else if (signedIn) body = <BlockLoading data-chat-reading what="chat from Arugula cloud" />;
   else body = <NeedsControl client={client} joined={owned?.state === "joined"} guest={!!client.state?.roles} />;
   return (
     <div class="chat-block" ref={box} data-chat-block={id} data-chat-pinned-to={pinned} data-chat-narrow={narrow ? "" : undefined}>
@@ -242,16 +244,16 @@ function TeamChatBlock({ client, id, s, shown }: { client: Client; id: PaneId; s
 function NeedsControl({ client, joined, guest }: { client: Client; joined: boolean; guest: boolean }) {
   return (
     <div class="chat-block-needs" data-chat-needs-control>
-      <h3>Team chat needs Arugula control</h3>
+      <h3>Team chat needs Arugula cloud</h3>
       {guest ? (
-        <p>Chat is your team's, on Arugula control, and you read it as yourself. Open this machine through Control, signed in, to chat here.</p>
+        <p>Chat is your team's, on Arugula cloud, and you read it as yourself. Open this machine in Arugula cloud, signed in, to chat here.</p>
       ) : joined ? (
-        <p>This machine has joined Arugula control, but this page isn't signed in to it. Open the machine through Control and chat is here as you.</p>
+        <p>This machine has joined Arugula cloud, but this page isn't signed in to it. Open the machine there and chat is here as you.</p>
       ) : (
         <>
-          <p>Channels, direct messages and threads are held by Arugula control, and you read them as yourself. This machine hasn't joined one.</p>
+          <p>Channels, direct messages and threads are held by Arugula cloud, and you read them as yourself. This machine hasn't joined it.</p>
           <button class="primary" data-chat-join onClick={() => openGettingStarted("cloud", client)}>
-            Join Arugula control…
+            Join Arugula cloud…
           </button>
         </>
       )}
@@ -289,9 +291,9 @@ export function ChatTabBadge({ client, panes }: { client: Client; panes: PaneId[
   const { n, mention } = teamChatUnread(client, panes);
   if (!n) return null;
   return (
-    <span class={mention ? "chat-count mention" : "chat-count"} data-chat-tab-badge title={mention ? `${n} unread in chat, you're mentioned` : `${n} unread in chat`}>
+    <Count for={mention ? "mention" : "you"} class="count-after" data-chat-tab-badge title={mention ? `${n} unread in chat, you're mentioned` : `${n} unread in chat`}>
       {mention ? `@${n}` : n}
-    </span>
+    </Count>
   );
 }
 
@@ -326,7 +328,7 @@ registerBlock("team_chat", (client: Client, id): BlockView => {
       return room ? roomLabel(room, shellPlatformApi(client)) : "Chat";
     },
     text: () => host.textContent ?? "",
-    focus: () => host.querySelector<HTMLElement>("textarea, input, button")?.focus(),
+    focus: () => host.querySelector<HTMLElement>("textarea, input, button")?.focus({ preventScroll: true }),
     dispose() {
       render(null, host);
       host.remove();

@@ -10,6 +10,8 @@ import type { Client } from "./client";
 import type { FleetPane } from "./fleet";
 import { directory } from "./hosts";
 import { whatItDoes } from "./swarm/model";
+import { isThisMachine } from "./this-machine";
+import { openDoc } from "./ui/docs-route";
 import { openPlatform, platformHref } from "./platform-links";
 import { getFleet } from "./ui/hosts";
 import { getControlSession } from "./ui/people";
@@ -18,6 +20,9 @@ import { closeRoomDrawer } from "./ui/threads";
 import type { PaneQuote } from "../shared/chat-store";
 import type { PlatformApi } from "../shared/platform-api";
 import { useSubscribe } from "../shared/ui/hooks";
+import { sessionSlug } from "../shared/chat/agents";
+import { cleanTitle } from "../shared/titles";
+import { CloseIcon, IconButton } from "../shared/ui/icons";
 
 const made = new WeakMap<Client, PlatformApi>();
 
@@ -85,6 +90,22 @@ function build(client: Client): PlatformApi {
       getFleet()?.touch(h.name);
       directory.select(h.name);
     },
+    agentPane(machine, session) {
+      const h = hostOf(machine);
+      const slug = sessionSlug(session);
+      if (!h || !slug) return undefined;
+      const p = getFleet()?.panes.find((x) => x.host === h.name && !x.stale && sessionSlug(cleanTitle(x.info.title ?? "")) === slug);
+      return p ? { pane: String(p.id), up: h.state === "connected" } : undefined;
+    },
+    // A Doc on this machine opens in a block here; one on another stays where it is.
+    machineDoc: {
+      here: (machine) => {
+        const fleet = getFleet();
+        const h = fleet?.hostById(machine);
+        return !!h && h.state === "connected" && isThisMachine(client.base, () => directory.base(h.name));
+      },
+      open: (_machine, doc, beside) => void openDoc(client, doc, beside).then((why) => why && toast(`Couldn't open the Doc: ${why}`)),
+    },
     // Chat's page, which draws the bar, isn't the shell's (M155).
     Bar: ({ children }) => <>{children}</>,
     quote: { can: () => (getFleet()?.list.length ?? 0) > 0, Picker: QuotePicker },
@@ -118,9 +139,9 @@ export function QuotePicker({ close, take }: { close: () => void; take: (q: Pane
     <div class="chat-quote-pick" role="dialog" aria-label="Quote a pane" data-quote-picker>
       <header>
         <strong>{picked ? `%${picked.id} on ${picked.host}` : "Quote a pane"}</strong>
-        <button type="button" class="thread-close" title="Close" aria-label="Close the pane picker" onClick={close}>
-          ✕
-        </button>
+        <IconButton label="Close the pane picker" title="Close" class="thread-close" onClick={close}>
+          <CloseIcon size="sm" />
+        </IconButton>
       </header>
       {!picked && (
         <ul>
@@ -139,7 +160,7 @@ export function QuotePicker({ close, take }: { close: () => void; take: (q: Pane
           {text === null && !err && <p class="chat-none">Reading it…</p>}
           {text !== null && (
             <>
-              <p class="dim">Keep the lines you want to share: only these go to control, in the message.</p>
+              <p class="dim">Keep the lines you want to share: only these go to Arugula cloud, in the message.</p>
               <textarea class="chat-quote-text" aria-label="Lines to quote" value={text} rows={8} onInput={(e) => setText((e.target as HTMLTextAreaElement).value)} />
             </>
           )}

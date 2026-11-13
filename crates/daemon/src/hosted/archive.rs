@@ -78,7 +78,7 @@ fn post(c: Closed, closed_at: u64) -> TranscriptPost {
 /// This daemon's control, when it's a hosted machine.
 fn hosted() -> Option<Arc<Control>> {
     let control = CONTROL.get().cloned()?;
-    control.enrolled().is_some_and(|e| e.saved.hosted.is_some()).then_some(control)
+    control.enrolled().is_some_and(|e| e.saved.is_hosted()).then_some(control)
 }
 
 /// An agent block closed: archive it, if this is a hosted machine.
@@ -121,7 +121,7 @@ pub async fn flush(only: Option<&[u64]>) -> OpAnswer {
             let kept = sent.iter().filter(|k| **k).count();
             info!(open = n, kept, "hosted: archived the open agents' transcripts before a rebuild");
             if kept == n {
-                OpAnswer::Done { url: None }
+                OpAnswer::Done { url: None, routed: None }
             } else {
                 OpAnswer::Failed { error: format!("{} of {n} transcripts weren't archived", n - kept) }
             }

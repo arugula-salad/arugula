@@ -205,7 +205,9 @@ impl Inventory {
         let snap = self.ask().await;
         match &snap.state {
             State::Read => info!(runtimes = ?snap.runtimes(), "agent inventory (chant audit --agents)"),
-            State::Failed | State::NoChant => {
+            // No chant is the usual case, not a fault: it's an extra.
+            State::NoChant => info!("no chant on PATH, so no agent inventory; every rule set runs"),
+            State::Failed => {
                 warn!(error = snap.error.as_deref().unwrap_or_default(), "no agent inventory; every rule set runs")
             }
             _ => {}

@@ -2,6 +2,8 @@
 // tabs and panes to switch between, and a key bar supplies the keys a phone
 // keyboard lacks.
 
+import { EmptyLine, EmptyState } from "../../shared/ui/block-states";
+import { openSettings } from "./settings-route";
 import { openAgentsPage } from "./agents-route";
 import { openDocsPage } from "./docs-route";
 import { useState } from "preact/hooks";
@@ -11,12 +13,15 @@ import { useSubscribe } from "../../shared/ui/hooks";
 import { AttentionBadge } from "./attention";
 import { HostCrumb, HostSection } from "./hosts";
 import { openSwarm } from "../swarm/route";
-import { hasBoards, hasChat, openBoards, openChat } from "./places";
+import { hasBoards, hasChat, openBoards, openChat, openRoom } from "./places";
+import { noticeRoom, noticeTitle, sortNotices } from "../../shared/notice";
+import { GrantActs } from "./grant-acts";
 import { ChatTabBadge, openChanges, openIssue, openPort, openPr } from "../blocks";
 import { startAgent } from "./agent-dialog";
 import { pickConversation } from "./conversations";
 import { pickApp, openSandboxes } from "../labs-load";
 import { openPicker } from "./picker";
+import { confirmClosePane, confirmCloseTab } from "./close-tab";
 import { NotifySection } from "./notify";
 import { openDeveloper } from "./developer";
 import { openMachineTelemetry } from "./machine-telemetry";
@@ -28,7 +33,10 @@ import { PointChoices, pointOf } from "./point-choices";
 import { shareSession } from "./people";
 import { accountHeader, useAccount } from "./app-bar";
 import { docShareItems } from "./doc-share";
-import { needsYou } from "../../shared/needs-you";
+import { needsYou, placeOf, sortNeedsYou } from "../../shared/needs-you";
+import { Chip } from "../../shared/ui/state-chip";
+import type { ComponentChildren } from "preact";
+import { ArrowIcon, AttachIcon, ChevronIcon, PipeKeyIcon, SlashKeyIcon, TildeKeyIcon } from "../../shared/ui/icons";
 
 export function PhoneHeader({ client }: { client: Client }) {
   const [open, setOpen] = useState(false);
@@ -40,18 +48,25 @@ export function PhoneHeader({ client }: { client: Client }) {
     <>
       <header class="bar phone-bar">
         <button class="sheet-button" aria-expanded={open} onClick={() => setOpen(!open)}>
-          {client.state?.panes.some(needsYou) ? <span class="att needs_input">●</span> : "☰"} <HostCrumb />
+          {client.state?.panes.some(needsYou) || client.state?.notices?.length ? <span class="att needs_input">●</span> : "☰"} <HostCrumb />
           {session && (
             <>
-              <span class="crumb">{session.name}</span> ›{" "}
-              {tab && client.tabMachine(tab.id) && <span class="host-tag">VM</span>}
+              <span class="crumb">{session.name}</span> <ChevronIcon dir="right" />{" "}
+              {tab && client.tabMachine(tab.id) && <Chip kind="tag" class="chip-gap">VM</Chip>}
               <span class="crumb">{tab ? tabLabel(client, tab) : ""}</span>
             </>
           )}
         </button>
         {panes.length > 1 && (
-          <span class="pane-count">
-            {panes.indexOf(active ?? -1) + 1}/{panes.length}
+          <span class="pane-pos">
+            <span class="pane-dots" aria-hidden="true">
+              {panes.map((p) => (
+                <i key={p} class={p === active ? "on" : undefined} />
+              ))}
+            </span>
+            <span class="pane-count">
+              {panes.indexOf(active ?? -1) + 1}/{panes.length}
+            </span>
           </span>
         )}
       </header>
@@ -79,13 +94,14 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
     if (!next.delete(id)) next.add(id);
     setUnfolded(next);
   };
-  // Gates first (M34): a release waiting for a person is the most likely
-  // reason to have opened this on a phone.
   // What needs you, as the bell counts it: not what only finished (UI
-  // audit #154).
-  const wanting = state.panes
-    .filter(needsYou)
-    .sort((a, b) => Number(b.reason?.kind === "gate") - Number(a.reason?.kind === "gate"));
+  // audit #154). In the order the swarm's rail and the drawer share
+  // (#451): gates first (M34: a release waiting for a person is the most
+  // likely reason to have opened this on a phone), the other asks, then
+  // the failures, each oldest first.
+  const wanting = sortNeedsYou(state.panes.filter(needsYou), (p) => placeOf(p, p.id));
+  // Cards that belong to no pane (#551): a mention no session took.
+  const notices = sortNotices((state.notices ?? []).map((n) => ({ n })));
   const act = (fn: () => void) => () => {
     fn();
     close();
@@ -105,9 +121,32 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
         <div class="sheet-panel" role="tabpanel" id={`sheet-panel-${tab}`} aria-labelledby={`sheet-tab-${tab}`} data-sheet-panel={tab}>
           {tab === "here" && (
             <>
-            {wanting.length > 0 && (
+            {(wanting.length > 0 || notices.length > 0) && (
               <section class="sheet-card needs-you">
                 <h2>Needs you</h2>
+                {notices.map(({ n }) => (
+                  <div key={n.key} class="sheet-row" data-notice={n.key}>
+                    <button
+                      class="sheet-item"
+                      onClick={act(() => {
+                        // A grant card is answered by its buttons (#578).
+                        if (n.kind === "grant_ask") return;
+                        client.dismissNotice(n.key);
+                        const room = noticeRoom(n);
+                        if (room) openRoom(room);
+                      })}
+                    >
+                      <span class="att needs_input">●</span> <span class="sheet-wants">{noticeTitle(n)}</span>
+                    </button>
+                    {n.kind === "grant_ask" ? (
+                      <GrantActs n={n} sheet done={() => client.dismissNotice(n.key)} />
+                    ) : (
+                      <button class="sheet-act primary" data-notice-dismiss={n.key} onClick={() => client.dismissNotice(n.key)}>
+                        Dismiss
+                      </button>
+                    )}
+                  </div>
+                ))}
                 {wanting.map((p) => {
                   const may = client.role(client.sessionOfTab(client.tabOfPane(p.id)?.id ?? -1) ?? null) !== "viewer";
                   const rerun = p.reason?.actions.includes("rerun") && may;
@@ -124,25 +163,25 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                         </span>
                       </button>
                       {rerun && (
-                        <button class="sheet-act" data-rerun={p.id} onClick={act(() => void client.act({ action: "rerun", pane: p.id }))}>
+                        <button class="sheet-act primary" data-rerun={p.id} onClick={act(() => void client.act({ action: "rerun", pane: p.id }))}>
                           Rerun
                         </button>
                       )}
                       {gate && point && may && (
                         <PointChoices
                           point={point}
-                          cls="sheet-act"
+                          cls="sheet-act primary"
                           answer={(answer) => act(() => void client.act({ action: "answer", pane: p.id, id: gateKey(gate), content: { answer } }))()}
                         />
                       )}
                       {gate && !point && may && (
-                        <button class="sheet-act" data-approve-gate={p.id} onClick={act(() => void client.act({ action: "allow", pane: p.id, id: gateKey(gate) }))}>
+                        <button class="sheet-act primary" data-approve-gate={p.id} onClick={act(() => void client.act({ action: "allow", pane: p.id, id: gateKey(gate) }))}>
                           Approve
                         </button>
                       )}
                       {gate && may && p.reason?.actions.includes("expire") && (
                         <button
-                          class="sheet-act"
+                          class="sheet-act primary"
                           data-expire-gate={p.id}
                           title={EXPIRE_TITLE}
                           onClick={act(() => void client.act({ action: "expire", pane: p.id, id: gateKey(gate) }))}
@@ -153,6 +192,12 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                     </div>
                   );
                 })}
+              </section>
+            )}
+            {wanting.length === 0 && notices.length === 0 && (
+              <section class="sheet-group sheet-needs-none" data-needs-none>
+                <h2>Needs you</h2>
+                <EmptyLine>Nothing right now.</EmptyLine>
               </section>
             )}
               {/* What a phone is opened for most: right at the top. */}
@@ -196,9 +241,9 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                 return (
                   <div key={s.id} class={here ? "sheet-card sheet-session here" : "sheet-card sheet-session"}>
                     <button class="sheet-session-head" aria-expanded={open} data-session={s.id} onClick={() => fold(s.id)}>
-                      <span class="fold">{open ? "▾" : "▸"}</span>
+                      <span class="fold"><ChevronIcon open={open} /></span>
                       <span class="name">{s.name}</span>
-                      <span class="count">
+                      <span class="sheet-count">
                         {s.tabs.length} tab{s.tabs.length === 1 ? "" : "s"}
                       </span>
                     </button>
@@ -210,9 +255,9 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                         return (
                           <div key={tid} class="sheet-tab">
                             <button class={tid === client.tab ? "sheet-item current" : "sheet-item"} onClick={act(() => client.selectTab(tid))}>
-                              {(client.tabMachine(tid) || panes.some((p) => client.machine(p))) && <span class="host-tag">VM</span>}
+                              {(client.tabMachine(tid) || panes.some((p) => client.machine(p))) && <Chip kind="tag" class="chip-gap">VM</Chip>}
                               <span class="label">{tabLabel(client, t)}</span>
-                              {panes.length > 1 && <span class="count">{panes.length}</span>}
+                              {panes.length > 1 && <span class="sheet-count">{panes.length}</span>}
                               <ChatTabBadge client={client} panes={panes} />
                             </button>
                             {panes.length > 1 &&
@@ -233,6 +278,21 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                   </div>
                 );
               })}
+              {state.sessions.length === 0 && (
+                <EmptyState
+                  where="page"
+                  data-sheet-no-sessions
+                  title="No sessions yet."
+                  why="A session holds tabs, and each tab its panes."
+                  action={
+                    !state.roles && (
+                      <button class="primary" onClick={act(() => client.intent({ op: "new_session", name: null, from_pane: active ?? null }))}>
+                        New session
+                      </button>
+                    )
+                  }
+                />
+              )}
             </section>
             </>
           )}
@@ -267,12 +327,12 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                         ),
                       )}
                     {active !== undefined && (
-                      <button class="danger" onClick={act(() => client.intent({ op: "close_pane", pane: active }))}>
+                      <button class="danger" onClick={act(() => confirmClosePane(client, active))}>
                         Close pane
                       </button>
                     )}
                     {closeTab && (
-                      <button class="danger" onClick={act(() => client.tab !== null && client.intent({ op: "close_tab", tab: client.tab }))}>
+                      <button class="danger" onClick={act(() => client.tab !== null && confirmCloseTab(client, client.tab))}>
                         {client.tabMachine(client.tab!) ? "Close tab and machine" : "Close tab"}
                       </button>
                     )}
@@ -343,6 +403,9 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                 <NotifySection client={client} session={session} />
                 <AccountSection close={close} />
                 <div class="sheet-actions">
+                  <button data-open-settings onClick={act(() => openSettings())}>
+                    Settings
+                  </button>
                   <button data-getting-started-open onClick={act(() => openGettingStarted(undefined, client))}>
                     Getting started
                   </button>
@@ -354,7 +417,7 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
             </>
           )}
         </div>
-        <div class="sheet-tabs" role="tablist" aria-label="Sheet">
+        <div class="seg touch sheet-tabs" role="tablist" aria-label="Sheet">
           {TABS.map(([id, label]) => (
             <button
               key={id}
@@ -413,19 +476,18 @@ function AccountSection({ close }: { close: () => void }) {
   );
 }
 
-const KEYS: { label: string; bytes?: string; app?: string; mod?: "ctrl" | "alt" }[] = [
-  { label: "Esc", bytes: "\x1b" },
-  { label: "Tab", bytes: "\t" },
-  { label: "Ctrl", mod: "ctrl" },
-  { label: "Alt", mod: "alt" },
-  { label: "←", bytes: "\x1b[D", app: "\x1bOD" },
-  { label: "↑", bytes: "\x1b[A", app: "\x1bOA" },
-  { label: "↓", bytes: "\x1b[B", app: "\x1bOB" },
-  { label: "→", bytes: "\x1b[C", app: "\x1bOC" },
-  { label: "|", bytes: "|" },
-  { label: "~", bytes: "~" },
-  { label: "/", bytes: "/" },
-  { label: "-", bytes: "-" },
+const KEYS: { label: string; text?: string; icon?: ComponentChildren; bytes?: string; app?: string; mod?: "ctrl" | "alt" }[] = [
+  { label: "Esc", text: "Esc", bytes: "\x1b" },
+  { label: "Tab", text: "Tab", bytes: "\t" },
+  { label: "Ctrl", text: "Ctrl", mod: "ctrl" },
+  { label: "Alt", text: "Alt", mod: "alt" },
+  { label: "Left", icon: <ArrowIcon dir="left" size="lg" />, bytes: "\x1b[D", app: "\x1bOD" },
+  { label: "Up", icon: <ArrowIcon dir="up" size="lg" />, bytes: "\x1b[A", app: "\x1bOA" },
+  { label: "Down", icon: <ArrowIcon dir="down" size="lg" />, bytes: "\x1b[B", app: "\x1bOB" },
+  { label: "Right", icon: <ArrowIcon dir="right" size="lg" />, bytes: "\x1b[C", app: "\x1bOC" },
+  { label: "Pipe", icon: <PipeKeyIcon />, bytes: "|" },
+  { label: "Tilde", icon: <TildeKeyIcon />, bytes: "~" },
+  { label: "Slash", icon: <SlashKeyIcon />, bytes: "/" },
 ];
 
 export function KeyBar({ client }: { client: Client }) {
@@ -439,6 +501,9 @@ export function KeyBar({ client }: { client: Client }) {
         return (
           <button
             key={k.label}
+            // A word key is named by its word (a label that differs fails axe's
+            // label-content-name-mismatch); a drawn one by its label.
+            aria-label={k.icon ? k.label : undefined}
             class={on ? "key on" : "key"}
             aria-pressed={k.mod ? on : undefined}
             // Keep focus (and the on-screen keyboard) on the terminal.
@@ -456,13 +521,13 @@ export function KeyBar({ client }: { client: Client }) {
               client.input(pane, enc.encode(seq));
             }}
           >
-            {k.label}
+            {k.icon ?? k.text}
           </button>
         );
       })}
       </div>
       {/* M70: a photo, or the camera, into the pane. Pinned at the end,
-          outside the keys that scroll, so it's always in sight. */}
+          at the end of the row. */}
       <button
         class="key attach"
         title="Attach file"
@@ -473,7 +538,7 @@ export function KeyBar({ client }: { client: Client }) {
           if (pane !== undefined) void client.attachFiles(pane);
         }}
       >
-        📎
+        <AttachIcon />
       </button>
     </div>
   );

@@ -1,12 +1,11 @@
 // First: this daemon's page key on the page's own requests (local-key.ts).
-import "./local-key";
+import { startPageKey } from "./local-key";
 import { AgentDialogLayer, startAgent } from "./ui/agent-dialog";
 import { chat } from "../shared/chat-store";
-// Live presence (#343): in the reader's teams' rooms while their switch says so.
-import { live } from "../shared/live/live";
 import { shellPlatformApi } from "./platform-api";
 import { platformOrigin, setPlatformOrigin } from "./platform-links";
 import { platformPath } from "./fragments";
+import { POP_HASH, PopOutPage } from "./ui/panes/pop-out";
 import { PlatformApiContext } from "../shared/platform-api";
 // Arugula web client: tabs and splits of terminals owned by the daemon.
 
@@ -23,6 +22,9 @@ import "./interaction-chrome.css";
 import "./block-chrome.css";
 import "./phone-sheet.css";
 import "./phone-machines.css";
+import "./docs-page.css";
+import "../shared/ui/settings-section.css";
+import "./settings-page.css";
 // The one button set (UI audit #158), last: what it draws, it draws everywhere.
 import "../shared/buttons.css";
 import { apply as applyAppearance } from "../shared/appearance";
@@ -31,10 +33,12 @@ import { Client } from "./client";
 import { Fleet, type HostRef } from "./fleet";
 import { directory } from "./hosts";
 import { App } from "./ui/app";
-import { openTeamChat, remotes } from "./blocks";
+import { openTeamChat } from "./blocks";
 import { measureCell } from "./ui/cells";
-import { desktopPush, enableControlPush, registerWorker, setPushBackend } from "./push";
-import { setReadOnlyLink } from "./ui/link-note";
+import { currentSubscription, desktopPush, enableControlPush, registerWorker, setPushBackend, subscriptionParts } from "./push";
+import { LinkEnded, setReadOnlyLink, waitForLinkOpen } from "./ui/link-note";
+import { setProtoOrigin } from "../shared/ui/prototype-frame";
+import "../shared/ui/prototype-storage";
 import { ControlSession, detectControl, restoreInvite, showMoving } from "./control";
 import { useControl } from "./trust/common";
 import { ControlGate } from "./trust/gate";
@@ -49,7 +53,7 @@ import { SwarmView } from "./swarm/view";
 import { AppBar, setAccount } from "./ui/app-bar";
 import { fakeSwarm } from "./swarm/fake";
 import { closeSwarm, onSwarmRoute, swarmRoute } from "./swarm/route";
-import { setupDesktop, tauriInvoke } from "../shared/desktop";
+import { followChatBadge, setupDesktop, tauriInvoke } from "../shared/desktop";
 import { installKeys } from "./ui/keys";
 import { openDeveloper } from "./ui/developer";
 import { openGettingStarted, type Section } from "./ui/welcome";
@@ -61,12 +65,23 @@ import { followMachine, machineTelemetryChanged, MachineTelemetryLayer } from ".
 // (M19, `#link=…`) needs no account: its key is in the fragment.
 // This device's palette and finish, before anything draws.
 applyAppearance();
+// UI audit #149: a link made since says when it ends, after the key.
+const linkMatch = /^#link=([0-9a-f]+)\.([0-9a-f]{64})\.([0-9a-f]{64})\.([0-9a-f]{64})(?:\.(\d+))?$/.exec(location.hash);
+// A read-only link says what it is and waits to be opened: nothing is
+// fetched and no key is read until someone clicks, here, in a focused window.
+const linkEnds = linkMatch?.[5] ? Number(linkMatch[5]) : null;
+if (linkMatch) await waitForLinkOpen(document.getElementById("root")!, linkEnds);
+await startPageKey();
 const info = await detectControl();
 // Back from signing in with a presigned invite's link (kept off control).
 if (info) restoreInvite();
 if (info) showMoving(info);
 // M153: chat is on the platform page, when control has one.
 setPlatformOrigin(info?.platform);
+// #506: `script-src 'self'` stops a srcdoc frame's scripts, so a Doc's
+// prototype loads from control's proto origin (or says there is none), or on a
+// page a daemon serves, from the daemon's own runner page.
+setProtoOrigin(info ? (info.proto ?? null) : `${location.origin}/proto`);
 // M154: an old link of the platform's (`#chat…`, `#cloud…`, `#cloud-ws…`)
 // lands on its new page there. Keep this forever (./fragments).
 const moved = platformOrigin() ? platformPath(location.hash) : null;
@@ -79,14 +94,12 @@ addEventListener("hashchange", () => {
   const to = platformOrigin() ? platformPath(location.hash) : null;
   if (to) location.replace(`${platformOrigin()}${to}`);
 });
-// UI audit #149: a link made since says when it ends, after the key.
-const linkMatch = /^#link=([0-9a-f]+)\.([0-9a-f]{64})\.([0-9a-f]{64})\.([0-9a-f]{64})(?:\.(\d+))?$/.exec(location.hash);
 const session = info && !linkMatch ? new ControlSession(info) : null;
 setControlSession(session);
 let linkTarget: import("./client").E2ETarget | undefined;
 if (info && linkMatch) {
-  const [, daemon, noise, seed, pub, ends] = linkMatch;
-  setReadOnlyLink(ends ? Number(ends) : null);
+  const [, daemon, noise, seed, pub] = linkMatch;
+  setReadOnlyLink(linkEnds);
   const pkcs8 = new Uint8Array(48);
   pkcs8.set(unhex("302e020100300506032b656e04220420"));
   pkcs8.set(unhex(seed), 16);
@@ -125,6 +138,25 @@ if (session) {
     },
     prefs: () => session.pushPrefs(),
     setPrefs: (p) => session.setPushPrefs(p),
+    // #468: a subscription this browser still has but control has none of
+    // (or one from a key it no longer approves) is handed over again, signed
+    // by this device's key now: nothing reached it, and the switch said on.
+    check: async () => {
+      const sub = await currentSubscription();
+      const parts = sub && subscriptionParts(sub);
+      const s = await session.pushCheck(parts?.endpoint ?? null);
+      if (!parts || (s.this_device !== "missing" && s.this_device !== "unusable") || Notification.permission !== "granted") return s;
+      try {
+        await session.subscribePush(parts);
+        return await session.pushCheck(parts.endpoint);
+      } catch {
+        return s;
+      }
+    },
+    test: async () => {
+      const sub = await currentSubscription();
+      return session.pushTest((sub && subscriptionParts(sub)?.endpoint) ?? null);
+    },
   });
   // The desktop app has no Web Push: it shows what control pushes itself,
   // while it runs, once it says it can (an app from before doesn't).
@@ -138,6 +170,8 @@ if (session) {
             unsubscribe: (endpoint) => session.unsubscribePush(endpoint),
             prefs: () => session.pushPrefs(),
             setPrefs: (p) => session.setPushPrefs(p),
+            check: (endpoint) => session.pushCheck(endpoint),
+            test: (endpoint) => session.pushTest(endpoint),
           }),
         ),
       () => {},
@@ -207,6 +241,8 @@ function untilShown(done: (c: Client) => boolean) {
 // Inside the desktop app: its titlebar (M46). The page's keys, the app's
 // among them (ui/keys.ts).
 setupDesktop();
+// Chat's unread on the app's Dock badge (#498).
+followChatBadge(chat);
 installKeys(() => client);
 /** Hand a machine of yours the teams this browser pinned (#233), and drop
  * those it has that this account isn't in now (only once the teams have
@@ -261,6 +297,12 @@ fitViewport();
 
 const cell = await measureCell();
 const root = document.getElementById("root")!;
+// #497: a pane popped out into a window of its own (`#pop=<daemon>.<pane>`):
+// the page shows it alone, with no rail, tabs or other panes.
+const popAt = POP_HASH.exec(location.hash);
+const shell = () =>
+  popAt ? <PopOutPage client={client} pane={Number(popAt[2])} daemon={popAt[1]} /> : <App key={client.base} client={client} cell={cell} />;
+
 function ControlRoot({ s }: { s: ControlSession }) {
   useControl(s);
   useSubscribe((fn) => directory.subscribe(fn));
@@ -268,7 +310,7 @@ function ControlRoot({ s }: { s: ControlSession }) {
     s.phase !== "ready" ? (
       <ControlGate s={s} />
     ) : client.e2e ? (
-      <App key={client.base} client={client} cell={cell} />
+      shell()
     ) : s.daemons.length ? (
       // Machines, but none picked yet: not "Add a machine" (#749).
       <Connecting name={directory.current} />
@@ -373,7 +415,7 @@ function Swarm({ client }: { client: Client }) {
   const f = route.focus;
   // A notification through control names its daemon; else it's this page's.
   const host = f ? (f.daemon ? directory.list?.hosts.find((h) => h.id === f.daemon)?.name : (directory.home ?? directory.names[0])) : undefined;
-  const view = (bar: boolean) => <SwarmView fleet={fleet} back={closeSwarm} focus={f && host ? { host, pane: f.pane } : null} inBar={bar} />;
+  const view = (bar: boolean) => <SwarmView fleet={fleet} back={closeSwarm} focus={f && host ? { host, pane: f.pane } : null} board={route.board} inBar={bar} />;
   // The bar every place shares, over it, once a machine is shown; a phone
   // has its own header, and the swarm its Panes button.
   if (!client.state || phone) return view(false);
@@ -389,8 +431,8 @@ const draw = () =>
   render(
     // What a pane's thread reaches the shell through (M147).
     <PlatformApiContext.Provider value={shellPlatformApi(client)}>
-      {session ? <ControlRoot key={client.base} s={session} /> : <App key={client.base} client={client} cell={cell} />}
-      <Swarm key={client.base} client={client} />
+      {session ? <ControlRoot key={client.base} s={session} /> : shell()}
+      {!popAt && <Swarm key={client.base} client={client} />}
       <AgentDialogLayer />
       <AppearanceLayer />
       <MachineTelemetryLayer />
@@ -399,6 +441,17 @@ const draw = () =>
   );
 draw();
 connect();
+
+// A link that ended goes (M30: what it showed isn't kept greyed) and stops
+// asking: the machine won't take it back.
+if (linkTarget) {
+  const off = client.subscribe(() => {
+    if (!client.revoked) return;
+    off();
+    client.close();
+    render(<LinkEnded />, root);
+  });
+}
 
 // A link's page shows its one daemon: no host list.
 if (!linkTarget) {
@@ -562,13 +615,9 @@ Object.assign(window, {
       return client;
     },
     hosts: directory,
-    /** #17: the connections remote panes use, by host. */
-    remotes,
     control: session,
     /** M123: control's chat (rooms, messages, the live stream). */
     chat,
-    /** #343: live presence's rooms on arugula.stream. */
-    live,
     fleet,
     /** M26: made-up panes in the swarm (frame-rate check, screenshots). */
     swarmFake: (n: number) => fakeSwarm(fleet, n),

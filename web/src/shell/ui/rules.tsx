@@ -91,12 +91,12 @@ function Rules({ client, close }: { client: Client; close: () => void }) {
     <>
       <Modal close={close} label="Permission rules" class="rules">
         <h2>Permission rules</h2>
-        <p class="hint">
+        <p class="dim">
           Agent blocks on this machine allow these without asking. An approval card's <b>From now on…</b> makes one; a block's own{" "}
           <b>Always</b> stays in that block.
         </p>
         {error && <p class="error">{error}</p>}
-        {rules && rules.length === 0 && <p class="hint">No standing tool rules yet.</p>}
+        {rules && rules.length === 0 && <p class="dim">No standing tool rules yet.</p>}
         <ul class="rules-list">
           {(rules ?? []).map((r) => (
             <li key={`${r.index}-${r.at_ms}`} data-rule={r.index}>

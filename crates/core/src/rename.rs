@@ -5,18 +5,18 @@
 //! name left as a link to it (`dirs::renamed`): the state, config, data and
 //! cache directories. What a running pane or agent was started with is
 //! still found under illogical's name until it ends: its holder socket in
-//! the temp dir, its systemd scope, its sandbox (`illogical-eph-`), a
-//! resident daemon's service, a VM agent's MCP relay socket and its block
-//! token. New ones get Arugula's.
+//! the temp dir, its systemd scope, its sandbox (`illogical-eph-`), a VM
+//! agent's MCP relay socket and its block token. New ones get Arugula's.
 //!
 //! **Never renamed**, because something already stored depends on the
 //! exact bytes. Each is marked "Frozen (#504)" where it's defined:
 //!
 //! - the domains signed or hashed into device certificates, join and team
 //!   proofs, push and call tokens (`illogical device v1`, `illogical team
-//!   invite v1`, …), the Noise prologue `illogical/1`, the sync key's HKDF
-//!   info `illogical sync v1`, the key file header `illogical-device-key 1`
-//!   and the checkpoint magic `ILLOGICAL-CKPT1`;
+//!   invite v1`, …), the Noise prologue `illogical/1`, the key file header
+//!   `illogical-device-key 1` and the checkpoint magic `ILLOGICAL-CKPT1`
+//!   (the sync key's HKDF info `illogical sync v1` was one until synced
+//!   history was removed in 0.67: files sealed under it stay as they are);
 //! - the browser's IndexedDB `illogical-device`, which holds its device key.
 
 /// The old name of the product, for what was made under it.

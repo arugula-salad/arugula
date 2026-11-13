@@ -2,7 +2,7 @@
 # scripts/suite-lock COMMAND...: run COMMAND while no other worktree on this
 # machine runs a suite; wait while one does.
 #
-# A suite (nextest, the doctests, the interop and control smokes, Playwright)
+# A suite (nextest, the doctests, the interop check, Playwright)
 # runs fresh unsigned binaries, and many of its tests start daemons on
 # loopback. Two at once on a Mac wedge syspolicyd, which checks every new
 # binary before it runs: every exec on the machine, the app included, then

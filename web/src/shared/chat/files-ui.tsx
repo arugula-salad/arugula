@@ -9,7 +9,9 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import type { ChatFile } from "../proto";
 import { kindText, MAX_FILES, pastedName, sizeText, tooBig, type Pending } from "./files";
 import { upload } from "./files-upload";
-import { closeOnEscape } from "./escape";
+import { Modal } from "../ui/modal";
+import { ObjectChip } from "../ui/state-chip";
+import { AttachIcon, CloseIcon, DownloadIcon, IconButton } from "../ui/icons";
 
 // ---- the composer's side
 
@@ -109,10 +111,8 @@ export function AttachButton({ add }: { add: (files: File[]) => void }) {
           e.currentTarget.value = "";
         }}
       />
-      <button type="button" class="compose-tool" title={`Attach files (${attachHint})`} aria-label="Attach files" aria-keyshortcuts={onMac ? "Meta+U" : "Control+U"} data-attach-button onClick={() => input.current?.click()}>
-        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4">
-          <path d="M13.2 7.6l-5 5a3.2 3.2 0 0 1-4.5-4.5l5.3-5.3a2.1 2.1 0 0 1 3 3L6.6 11a1 1 0 0 1-1.5-1.5l4.7-4.7" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
+      <button type="button" class="compose-tool bar-btn sq" title={`Attach files (${attachHint})`} aria-label="Attach files" aria-keyshortcuts={onMac ? "Meta+U" : "Control+U"} data-attach-button onClick={() => input.current?.click()}>
+        <AttachIcon />
       </button>
     </>
   );
@@ -124,14 +124,13 @@ export function AttachChips({ items, remove }: { items: Pending[]; remove: (key:
   return (
     <ul class="attach-chips" aria-label="Files to send">
       {items.map((x) => (
-        <li key={x.key} class={`attach-chip ${x.state}`} data-attach-chip={x.name} title={x.error ?? x.name}>
+        <li key={x.key}>
+          <ObjectChip class={x.state} data-attach-chip={x.name} title={x.error ?? x.name} onRemove={() => remove(x.key)} removeLabel={`Remove ${x.name}`}>
           {x.file?.kind === "image" ? <img src={x.file.url} alt="" width="28" height="28" /> : <span class="attach-kind">{kindText({ name: x.name, mime: x.file?.mime ?? "" })}</span>}
           <span class="attach-name">{x.name}</span>
           <span class="attach-size">{x.state === "failed" ? x.error : sizeText(x.size)}</span>
           {x.state === "uploading" && <progress max="1" value={x.progress} aria-label={`Uploading ${x.name}`} />}
-          <button type="button" title="Remove" aria-label={`Remove ${x.name}`} data-attach-remove onClick={() => remove(x.key)}>
-            ✕
-          </button>
+          </ObjectChip>
         </li>
       ))}
     </ul>
@@ -214,9 +213,7 @@ function FileCard({ f }: { f: ChatFile }) {
         </span>
       </span>
       <a class="msg-file-get" href={`${f.url}?download=1`} download={f.name} title="Download" aria-label={`Download ${f.name}`} data-file-download>
-        <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M8 2v8M4.5 7L8 10.5 11.5 7M3 13.5h10" />
-        </svg>
+        <DownloadIcon />
       </a>
     </div>
   );
@@ -224,24 +221,25 @@ function FileCard({ f }: { f: ChatFile }) {
 
 /** A picture full size over the page; Escape or a click outside closes it. */
 function Viewer({ f, close }: { f: ChatFile; close: () => void }) {
-  useEffect(() => {
-    const key = closeOnEscape(close);
-    // Capture, so no other Escape handler on the page sees it first (#380).
-    addEventListener("keydown", key, true);
-    return () => removeEventListener("keydown", key, true);
-  }, []);
   return (
-    <div class="image-viewer" role="dialog" aria-modal="true" aria-label={f.name} data-image-viewer onClick={close}>
-      <img src={f.url} alt={f.name} onClick={(e) => e.stopPropagation()} />
-      <div class="image-viewer-bar" onClick={(e) => e.stopPropagation()}>
+    <Modal
+      class="image-viewer"
+      backdropClass="image-viewer-backdrop"
+      backdropProps={{ "data-image-viewer": "" }}
+      label={f.name}
+      close={close}
+      x={false}
+    >
+      <img src={f.url} alt={f.name} />
+      <div class="image-viewer-bar">
         <span>{f.name}</span>
         <a href={`${f.url}?download=1`} download={f.name}>
           Download
         </a>
-        <button type="button" aria-label="Close" data-viewer-close onClick={close}>
-          ✕
-        </button>
+        <IconButton label="Close" data-viewer-close onClick={close}>
+          <CloseIcon size="sm" />
+        </IconButton>
       </div>
-    </div>
+    </Modal>
   );
 }

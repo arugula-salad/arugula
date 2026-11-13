@@ -60,5 +60,14 @@ A deploy's history is a log anyone can check, and we don't call it WORM
   agents never approve"), checked against the owner device's public key.
 - **Not WORM.** Whoever runs the platform's database could still rewrite it.
   The log makes that visible, not impossible, and nothing calls it WORM.
+
+**Amended: an approval is a passkey's assertion** (Jake, 2026-10-30,
+aru-126, Arugula native #385). Since approval v2, an approval in the log is
+one user-verified passkey assertion over the approval's bytes, with no
+device signature. Anyone can check it against the account's published
+passkey log (`GET /api/accounts/{id}/passkeys/log`, DK3) with
+`arugula_e2e::passkey::verify`, with no call to the hub. v1 approvals
+already in logs keep verifying as they were made.
+
 Where: environments and deploys (Arugula #13, M217, native), `crates/platform/migrations/`, `crates/platform/src/db/`.
 From: #1317 (platform step 7), the plan in #1290, S37 (q3).

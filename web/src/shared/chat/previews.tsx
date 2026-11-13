@@ -1,6 +1,6 @@
 // Link previews under a message (#108): a link to one of our own objects
-// (an issue, a PR the team mirrors, a run, a deploy, a workspace) is a
-// small live card; any other link is its Open Graph card, read by control
+// (an issue, a PR the team mirrors, a run, a deploy, a workspace, a board)
+// is a small live card, a board's the board at a glance; any other link is its Open Graph card, read by control
 // so this browser never contacts the site. Control draws them for the
 // reader (a link to something they can't see has no card), and takes the
 // message numbers, not the links: one request answers for every message
@@ -13,11 +13,29 @@
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch, refusalOf } from "../maintenance";
 import { Time } from "../ui/time";
+import "../boards/bar.css";
+import { epicLine } from "../boards/text";
+import { CloseIcon } from "../ui/icons";
 
 export type Tone = "open" | "done" | "bad" | "wait" | "off";
 
 export type Preview =
   | { kind: "object"; url: string; what: string; title: string; state: string; tone: Tone; who: string | null; at: number }
+  | {
+      kind: "board";
+      url: string;
+      title: string;
+      goal: string | null;
+      done: number;
+      review: number;
+      doing: number;
+      total: number;
+      needs_you: number;
+      lead: string | null;
+      closed: boolean;
+      note: string | null;
+      at: number;
+    }
   | { kind: "web"; url: string; site: string; title: string; description: string; image: string | null };
 
 // Polled, not pushed: a card's object changes in tables that know nothing of
@@ -79,6 +97,35 @@ export function mayLink(text: string): boolean {
   return /https?:\/\//i.test(text);
 }
 
+/** A link without its fragment, normalised the way control's link reading
+ * does (WHATWG URLs both), or null when it isn't one. */
+function bare(link: string): string | null {
+  try {
+    const u = new URL(link);
+    u.hash = "";
+    return u.href;
+  } catch {
+    return null;
+  }
+}
+
+/** Where a card goes: the link as the message wrote it (Arugula #879). Control
+ * reads and matches links without their fragment, so a card's `url` has
+ * none; but a shared Doc's key is its link's fragment (`#k=…`, which never
+ * reaches a server), and without it the Doc says its link is broken. So a
+ * card whose link the message wrote with a fragment opens that. */
+export function asWritten(text: string, url: string): string {
+  const want = bare(url);
+  if (want === null) return url;
+  for (const m of text.matchAll(/https?:\/\/[^\s<>()"`]+/gi)) {
+    // A sentence's last mark isn't the link's, as the message's own link
+    // ends (ui/markup.tsx). Not `_`: a Doc's key may end in one.
+    const link = m[0].replace(/[.,;:!?'"]+$/, "");
+    if (link.includes("#") && bare(link) === want) return link;
+  }
+  return url;
+}
+
 // ---- the cards
 
 /** The cards under one message. `mine`: its author, who may remove them. */
@@ -106,7 +153,11 @@ export function MessagePreviews({ room, seq, text, mine }: { room: string; seq: 
   if (!wants || removed || cards.length === 0) return null;
   return (
     <div class="link-cards" data-link-cards>
-      {cards.map((c) => (c.kind === "object" ? <ObjectCard key={c.url} c={c} /> : <WebCard key={c.url} c={c} />))}
+      {cards.map((card) => {
+        // #879: the link as written, a Doc's key with it.
+        const c = { ...card, url: asWritten(text, card.url) };
+        return c.kind === "object" ? <ObjectCard key={card.url} c={c} /> : c.kind === "board" ? <BoardCard key={card.url} c={c} /> : <WebCard key={card.url} c={c} />;
+      })}
       {mine && (
         <button
           class="link-card-remove"
@@ -117,7 +168,7 @@ export function MessagePreviews({ room, seq, text, mine }: { room: string; seq: 
             call("POST", `/api/chat/rooms/${enc(room)}/messages/${seq}/previews`, { hidden: true }).catch(() => setRemoved(false));
           }}
         >
-          ✕ Remove preview
+          <CloseIcon size="xs" /> Remove preview
         </button>
       )}
     </div>
@@ -138,6 +189,38 @@ function ObjectCard({ c }: { c: Extract<Preview, { kind: "object" }> }) {
         {c.who ? `${c.who} · ` : ""}
         <Time at={Math.min(c.at, Date.now())} />
       </span>
+    </a>
+  );
+}
+
+function BoardCard({ c }: { c: Extract<Preview, { kind: "board" }> }) {
+  // The board's own words and segments; `proven` is the board page's, not the card's.
+  const e = epicLine({ ...c, proven: 0 });
+  return (
+    <a class="link-card object board-link" href={c.url} data-link-card-object data-what="board" data-link-card-board>
+      <span class="link-card-top">
+        <span class="link-card-what">Board</span>
+        {c.closed && (
+          <span class="link-card-state tone-off" data-link-card-state>
+            Closed
+          </span>
+        )}
+      </span>
+      <span class="link-card-title">{c.title}</span>
+      {c.goal && <span class="link-card-desc" data-link-card-goal>{c.goal}</span>}
+      {c.total > 0 && (
+        <span class="board-bar" role="progressbar" aria-valuemin={0} aria-valuemax={c.total} aria-valuenow={c.done} aria-label={`${c.done} of ${c.total} done`}>
+          {e.segments.map((s) => (
+            <i key={s.lane} data-lane={s.lane} style={{ width: `${s.pct}%` }} />
+          ))}
+        </span>
+      )}
+      <span class="link-card-meta" data-link-card-progress>
+        {c.total > 0 ? `${c.done} of ${c.total} done` : "No work yet"}
+        {c.needs_you > 0 && <b class="link-card-needs" data-link-card-needs-you>{` · ${c.needs_you} need you`}</b>}
+      </span>
+      {c.lead && <span class="link-card-meta" data-link-card-lead>Led by {c.lead}</span>}
+      {c.closed && c.note && <span class="link-card-desc" data-link-card-note>{c.note}</span>}
     </a>
   );
 }

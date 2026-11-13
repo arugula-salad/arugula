@@ -1,8 +1,10 @@
-/* One chip (UI audit #183, ./state-chip.tsx): a state, a label or an
-   agent's badge. A tone sets the chip's color (--c, its border, fill and
-   dot) and its text's (--ct): a color only where the palette keeps it
-   legible as text (shared/appearance.ts), so muted text is subtle. A
-   state has a dot before its word. */
+/* Chips, in five shapes (#730, ./state-chip.tsx): a state (.chip), a label
+   (.chip-tag), a count (.count), a linked thing (.chip-object) and a hint
+   (.hint). A tone sets a chip's color (--c, its border, fill and dot) and
+   its text's (--ct): a color only where the palette keeps it legible as
+   text (shared/appearance.ts), so muted text is subtle. A state has a dot
+   before its word. Every other stylesheet takes its chips from here
+   (scripts/check-chips.mjs). */
 
 .chip {
   --c: var(--muted);
@@ -11,12 +13,13 @@
   align-items: center;
   gap: 6px;
   max-width: 100%;
-  padding: 1px 8px;
+  padding: 0 8px;
   border: 1px solid var(--c);
   border-radius: var(--chip-radius);
-  background: color-mix(in srgb, var(--c) 12%, transparent);
+  /* Over the surface, not what's behind: a chip on a selected row keeps its contrast. */
+  background: color-mix(in srgb, var(--c) 12%, var(--surface));
   color: var(--ct);
-  font: 600 12px/1.3 var(--mono);
+  font: 600 var(--text-xs)/18px var(--f-mono);
   letter-spacing: 0;
   text-transform: none;
   white-space: nowrap;
@@ -26,8 +29,8 @@
 .chip-dot::before {
   content: "";
   flex: none;
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: var(--c);
 }
@@ -78,4 +81,269 @@ button.chip:is(:hover, :focus-visible) {
 .chip-muted {
   --c: var(--muted);
   --ct: var(--subtle);
+}
+
+/* A label: a raised box with no edge, square-cornered where a state and a
+   count are round. It takes a tone for its text only. */
+.chip-tag {
+  padding: 0 6px;
+  border-color: transparent;
+  border-radius: var(--tag-radius);
+  background: var(--raised);
+  font: 500 var(--text-xs)/18px var(--f-ui);
+}
+
+.chip-tag.chip-muted {
+  --ct: var(--dim);
+}
+
+.chip-tag svg {
+  flex: none;
+  width: 11px;
+  height: 11px;
+}
+
+/* A count: neutral, accent when it's unread or for you, warn when it
+   names you (--on-color on both). */
+.count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  box-sizing: border-box;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--chip-radius);
+  background: var(--raised);
+  color: var(--fg);
+  font: 700 var(--text-xs)/1 var(--f-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.count-you {
+  background: var(--accent);
+  color: var(--on-color);
+}
+
+.count-mention {
+  background: var(--warn);
+  color: var(--on-color);
+}
+
+button.count {
+  cursor: pointer;
+}
+
+/* Before a tag that follows text in a row. */
+.chip-lead {
+  margin-left: var(--space-2);
+}
+
+/* Between a tag and what follows it in a line of text. */
+.chip-gap {
+  margin-right: var(--space-1);
+}
+
+/* Beside a label in a row or a tab, or at the end of a card's head. */
+.count-end {
+  margin-left: auto;
+}
+
+.count-after {
+  margin-left: 6px;
+}
+
+/* A linked thing: its id in mono, its title, a fact in its tone. Dashed
+   when it's proof, in two parts for a setting, with a ✕ when it can go. */
+.chip-object {
+  --c: var(--divider);
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  max-width: 100%;
+  min-height: 22px;
+  padding: 1px 8px;
+  border: 1px solid var(--c);
+  border-radius: var(--chip-radius);
+  background: transparent;
+  color: var(--fg);
+  font: 500 var(--text-sm)/1.4 var(--f-ui);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.chip-object.proof {
+  border-style: dashed;
+}
+
+a.chip-object:hover,
+button.chip-object:hover:not(:disabled) {
+  background: var(--raised);
+}
+
+button.chip-object {
+  cursor: pointer;
+}
+
+button.chip-object:disabled {
+  cursor: default;
+}
+
+.chip-object[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, var(--surface));
+}
+
+.chip-object.failed {
+  border-color: var(--danger);
+}
+
+.chip-object-id {
+  flex: none;
+  font: 600 var(--text-xs)/1.4 var(--f-mono);
+  color: var(--fg);
+}
+
+.chip-object-fact {
+  flex: none;
+  font: 600 var(--text-xs)/1.4 var(--f-mono);
+  color: var(--ct);
+}
+
+.chip-object-x {
+  position: relative;
+  flex: none;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  color: var(--dim);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.chip-object-x:hover {
+  color: var(--fg);
+}
+
+.chip-object.pair {
+  gap: 0;
+  padding: 0;
+  border-color: var(--line-strong);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.chip-object.pair > * {
+  padding: 1px 8px;
+}
+
+.chip-object.pair .chip-object-id {
+  background: var(--raised);
+}
+
+.chip-object.pair .chip-object-fact {
+  font-weight: 500;
+}
+
+/* A setting's value is plain text in a pair. */
+.chip-object.pair .chip-object-fact.chip-muted {
+  --ct: var(--fg);
+  white-space: pre;
+}
+
+/* A hint about a pane (shell/hints): one line, its action and ×. */
+.hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 2px 0 8px;
+  border-radius: var(--chip-radius);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  color: var(--fg);
+  font-size: var(--text-xs);
+  cursor: default;
+}
+
+.hint button {
+  height: 18px;
+  padding: 0 8px;
+  border-radius: var(--chip-radius);
+  font-family: inherit;
+  font-size: var(--text-xs);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.hint .hint-act {
+  background: var(--accent);
+  color: var(--on-color);
+  font-weight: 600;
+}
+
+.hint .hint-dismiss {
+  padding: 0 4px;
+  background: none;
+  color: var(--dim);
+}
+
+.hint .hint-dismiss:hover {
+  color: var(--fg);
+}
+
+/* Touch: bigger shapes, and a 44px target on anything pressable. */
+@media (pointer: coarse), (max-width: 600px) {
+  .chip,
+  .chip-tag {
+    min-height: 28px;
+    font-size: var(--text-md);
+    line-height: 1.2;
+  }
+
+  .count {
+    min-width: 24px;
+    height: 24px;
+    font-size: var(--text-md);
+  }
+
+  .chip-object {
+    min-height: 32px;
+    font-size: var(--text-md);
+  }
+
+  .hint {
+    min-height: 36px;
+  }
+
+  button.chip,
+  a.chip,
+  button.count,
+  a.chip-object,
+  button.chip-object,
+  .chip-object-x,
+  .hint button {
+    position: relative;
+  }
+
+  button.chip::after,
+  a.chip::after,
+  button.count::after,
+  a.chip-object::after,
+  button.chip-object::after,
+  .chip-object-x::after,
+  .hint button::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    transform: translate(-50%, -50%);
+  }
 }

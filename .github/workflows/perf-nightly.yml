@@ -30,7 +30,7 @@ env:
 jobs:
   # check.yml's build: the debug binaries, web/dist embedded.
   perf-build:
-    runs-on: arugula-amd64
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
@@ -40,7 +40,6 @@ jobs:
       - run: just bootstrap
       - run: just web
       - run: mise exec -- cargo build -p arugulad -p arugula --features arugulad/debug-embed
-      - run: mise exec -- scripts/server-cargo build -p arugula-control --features arugula-control/debug-embed
       - run: scripts/ci-env keep debug
       - name: Hand them to the perf job
         run: tar -cf "$RUNNER_TEMP/run-debug.tar" -C "$CI_RUN" debug dist
@@ -53,7 +52,7 @@ jobs:
 
   perf:
     needs: perf-build
-    runs-on: arugula-amd64
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup

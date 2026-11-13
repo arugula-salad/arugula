@@ -8,8 +8,12 @@ import { OPS, opPath } from "../ops";
 import type { ListeningPort, PaneId, Ports } from "../../shared/proto";
 import { askText, tellSetup, type PromptChoice } from "../../shared/ui/menu";
 import { BlockFrame, RoutePill } from "./block-frame";
-import { BlockError, BlockLoading, OpenOutside } from "./block-states";
+import { BlockError, BlockLoading, EmptyState, OpenOutside } from "./block-states";
 import { registerBlock, type BlockView } from "./view";
+import { Chip } from "../../shared/ui/state-chip";
+import { Bar } from "../../shared/ui/bar";
+import { ExternalIcon, IconButton, ReloadIcon } from "../../shared/ui/icons";
+import { webLink } from "../../shared/web-link";
 
 export interface BrowserState {
   /** Where the page is now. */
@@ -42,8 +46,8 @@ export function blocksOff(what: "port" | "editor") {
   void tellSetup(
     title,
     `${thing} is optional: each block gets a web origin of its own. ` +
-      "Join this machine to Arugula control and they open in Control with nothing else set up. " +
-      "Without control, start arugulad with --block-listen 127.0.0.1:7701 for a browser on this computer " +
+      "Join this machine to Arugula cloud and they open there with nothing else set up. " +
+      "Without it, start arugulad with --block-listen 127.0.0.1:7701 for a browser on this computer " +
       "(arugulad install -- --block-listen 127.0.0.1:7701); from your phone or other machines it also needs a domain of yours.",
     { label: "How to turn it on (advanced setup)", href: ADVANCED + anchor },
   );
@@ -133,17 +137,17 @@ function BrowserBlock({ client, id, s }: { client: Client; id: PaneId; s: Browse
   })();
   return (
     <div class="browser">
-      <div class="browser-bar">
+      <Bar sub class="browser-bar">
         <button title="Back" aria-label="Back" disabled={s.back.length === 0} onClick={() => call("back")}>
           ←
         </button>
-        <button title="Reload" aria-label="Reload" onClick={() => call("reload")}>
-          ↻
-        </button>
+        <IconButton label="Reload" onClick={() => call("reload")}>
+          <ReloadIcon size="sm" />
+        </IconButton>
         {port && s.machine && (
-          <span class="host-tag" title={`Port ${s.port} on ${s.machine}, a throwaway VM`}>
+          <Chip kind="tag" tone="info" class="chip-gap" title={`Port ${s.port} on ${s.machine}, a throwaway VM`}>
             VM
-          </span>
+          </Chip>
         )}
         <form
           class="browser-url"
@@ -156,8 +160,8 @@ function BrowserBlock({ client, id, s }: { client: Client; id: PaneId; s: Browse
           <input name="url" value={shown(s)} spellcheck={false} autocomplete="off" />
         </form>
         <RoutePill id={id} />
-        {/^https?:/.test(s.url) && <OpenOutside href={s.url} />}
-      </div>
+        {webLink(s.url) && <OpenOutside href={s.url} />}
+      </Bar>
       {s.error ? (
         <BlockError title={port ? `Nothing is answering on ${where}` : `Couldn't load ${where}`} detail={s.error} retry={() => call("reload")}>
           {port && <p class="block-error-detail">It shows again when the server is back.</p>}
@@ -165,12 +169,16 @@ function BrowserBlock({ client, id, s }: { client: Client; id: PaneId; s: Browse
       ) : s.framable === false ? (
         // The host, not the page's title: a long one flooded the card
         // (UI audit #177).
-        <div class="block-empty" data-browser-refused>
-          <p>{where} doesn't allow being shown inside another page.</p>
-          <a class="primary" href={s.url} target="_blank" rel="noopener noreferrer">
-            Open in a new tab ↗
-          </a>
-        </div>
+        <EmptyState
+          data-browser-refused
+          title={`${where} won't show here.`}
+          why="It doesn't allow being shown inside another page."
+          action={
+            <a class="primary" href={webLink(s.url)} target="_blank" rel="noopener noreferrer">
+              Open in a new tab <ExternalIcon size="xs" />
+            </a>
+          }
+        />
       ) : s.framable === null ? (
         <BlockLoading what={where} />
       ) : port ? (
@@ -188,11 +196,12 @@ function BrowserBlock({ client, id, s }: { client: Client; id: PaneId; s: Browse
           sandbox="allow-scripts allow-forms allow-same-origin"
         />
       ) : (
-        // A web page, on its own site.
+        // A web page, on its own site: a web address only, whatever the
+        // state says (it can come from another host).
         <iframe
           key={`${s.src}#${s.reloads}`}
           class="browser-frame"
-          src={s.src}
+          src={webLink(s.src) ?? "about:blank"}
           title={s.title ?? s.url}
           sandbox="allow-scripts allow-forms allow-same-origin allow-popups"
           referrerpolicy="no-referrer"
@@ -217,7 +226,7 @@ registerBlock("browser", (client, id): BlockView => {
     },
     title: () => state?.title ?? (state ? shown(state) : "browser"),
     text: () => (state ? `${state.title ?? ""}\n${shown(state)}`.trim() : ""),
-    focus: () => host.querySelector<HTMLElement>("iframe, input")?.focus(),
+    focus: () => host.querySelector<HTMLElement>("iframe, input")?.focus({ preventScroll: true }),
     dispose: () => {
       render(null, host);
       host.remove();

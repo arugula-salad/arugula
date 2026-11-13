@@ -49,8 +49,13 @@ pub trait Work: Send + Sync + 'static {
     fn start(&self, app: Arc<App>);
     /// Ask for work now, not at the next pull.
     fn nudge(&self);
-    /// Stop the runs going under a standing grant a revoke takes back.
+    /// Stop the runs and end the sessions going under a standing grant a
+    /// revoke takes back, without waiting on control.
     fn stop_revoked(&self, app: &App);
+    /// Whether a session's agent may start a turn now, whatever put the
+    /// prompt in its queue: the project's standing grant, checked here. It
+    /// answers when it can say: `Err` is why not.
+    fn session_turn(&self, session: String) -> futures_util::future::BoxFuture<'static, Result<(), String>>;
     /// Whether a run, or a session's turn, is going on this machine.
     fn running(&self) -> bool;
 }
@@ -83,6 +88,14 @@ pub fn nudge() {
 pub fn stop_revoked(app: &App) {
     if let Some(w) = WORK.get() {
         w.stop_revoked(app);
+    }
+}
+
+/// [`Work::session_turn`]; never without the engine.
+pub async fn session_turn(session: String) -> Result<(), String> {
+    match WORK.get() {
+        Some(w) => w.session_turn(session).await,
+        None => Err("this build has no runs engine".into()),
     }
 }
 

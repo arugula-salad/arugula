@@ -1,5 +1,31 @@
 {
   "$defs": {
+    "Assertion": {
+      "additionalProperties": false,
+      "description": "A passkey's assertion, as the page got it from\n`navigator.credentials.get`: each base64url.",
+      "properties": {
+        "authenticatorData": {
+          "type": "string"
+        },
+        "clientDataJSON": {
+          "type": "string"
+        },
+        "id": {
+          "description": "The credential's id (`rawId`).",
+          "type": "string"
+        },
+        "signature": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "clientDataJSON",
+        "authenticatorData",
+        "signature"
+      ],
+      "type": "object"
+    },
     "Cert": {
       "properties": {
         "account": {
@@ -55,6 +81,14 @@
       ],
       "type": "object"
     },
+    "Change": {
+      "description": "What happened to a passkey.",
+      "enum": [
+        "added",
+        "removed"
+      ],
+      "type": "string"
+    },
     "Delegation": {
       "description": "An owner's device saying control may enroll hosted machines into\n`project` with `key`, until it's revoked.",
       "properties": {
@@ -88,6 +122,33 @@
         "key",
         "at",
         "by",
+        "sig"
+      ],
+      "type": "object"
+    },
+    "DelegationClosed": {
+      "description": "Control's own word that a delegation ended, signed with the key the\ndelegation names. `at` is control's clock, or the earliest revoke's own\ntime when that's before it. Control sends it beside the revokes it took.",
+      "properties": {
+        "at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "delegation": {
+          "description": "The delegation's [`Delegation::id`].",
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "sig": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "delegation",
+        "at",
         "sig"
       ],
       "type": "object"
@@ -344,6 +405,13 @@
           "default": {},
           "type": "object"
         },
+        "closed": {
+          "description": "Control's word that it ended. Empty from a control from before, or\nwhile it stands.",
+          "items": {
+            "$ref": "#/$defs/DelegationClosed"
+          },
+          "type": "array"
+        },
         "delegation": {
           "$ref": "#/$defs/Delegation"
         },
@@ -374,6 +442,29 @@
           "default": false,
           "description": "A team's project: whether the team is locked, as control says\n(`locked`) and as an owner signed it (`lock`, the latest).",
           "type": "boolean"
+        },
+        "passkey_logs": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Log"
+          },
+          "description": "The passkey logs of the project's people (its team's members, or its\naccount), as the hub publishes them, by account (aru-126). The box\npins each, and takes a later one only as the pinned one with more\nafter it (`arugula_e2e::passkey::extends`): what it checks a deploy's\napproval against (`arugula_e2e::deploy::check_apply`, DK4) and the\nproject's standing grant for runs and its revokes\n(`arugula_e2e::project_grant::check`, DK6). `None` from a control\nfrom before (before DK6, sent to deploys' boxes only).",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "passkey_origins": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "description": "With them: which origins may use each RP's passkeys (control's\nsites, and the platform page's for control's own RP). The box pins\nthe first it hears, and a refresh only takes from it, never adds.",
+          "type": [
+            "object",
+            "null"
+          ]
         },
         "purpose": {
           "description": "What the box is for (M219): [`DEPLOY`] or [`SNAPSHOT`], or `None` for\na people's workspace. A box that hears either stays one.",
@@ -434,6 +525,91 @@
         "url",
         "cert",
         "delegation"
+      ],
+      "type": "object"
+    },
+    "Event": {
+      "additionalProperties": false,
+      "description": "One event of an account's log.",
+      "properties": {
+        "aaguid": {
+          "description": "The authenticator's AAGUID, 32 hex, [`NO_AAGUID`] when unknown.",
+          "type": "string"
+        },
+        "account": {
+          "type": "string"
+        },
+        "alg": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "by": {
+          "description": "What let it happen ([`By`]).",
+          "type": "string"
+        },
+        "credential": {
+          "description": "The passkey's credential id, base64url.",
+          "type": "string"
+        },
+        "event": {
+          "$ref": "#/$defs/Change"
+        },
+        "hash": {
+          "description": "SHA-256 of the body and proof line, hex.",
+          "type": "string"
+        },
+        "key": {
+          "description": "Its public key, base64url.",
+          "type": "string"
+        },
+        "keyFormat": {
+          "description": "How `key` is encoded: `sec1` (P-256, uncompressed), `raw` (Ed25519)\nor `spki` (RSA).",
+          "type": "string"
+        },
+        "prev": {
+          "description": "The hash of the event before, or [`ZERO`].",
+          "type": "string"
+        },
+        "proof": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Assertion"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "On a `by passkey` event, the signer's assertion over [`Event::challenge`]."
+        },
+        "rp": {
+          "description": "The RP ID it was made for; for a backfilled event, possibly each of\ncontrol's sites, space-separated.",
+          "type": "string"
+        },
+        "seq": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "account",
+        "seq",
+        "prev",
+        "event",
+        "credential",
+        "rp",
+        "alg",
+        "keyFormat",
+        "key",
+        "aaguid",
+        "at",
+        "by",
+        "hash"
       ],
       "type": "object"
     },
@@ -545,6 +721,35 @@
           "type": "string"
         }
       ]
+    },
+    "Log": {
+      "additionalProperties": false,
+      "description": "An account's log, oldest first.",
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "began": {
+          "description": "When this hub began keeping logs (ms): removals before then are in\nno log. Said by the hub, not hashed; `None` when it doesn't say.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "events": {
+          "items": {
+            "$ref": "#/$defs/Event"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "account",
+        "events"
+      ],
+      "type": "object"
     },
     "Member": {
       "properties": {
@@ -793,6 +998,13 @@
       "properties": {
         "password": {
           "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "revoke": {
+          "description": "Where the box revokes `password` once its clones are done\n(`DELETE`, the token as its bearer): a `github_app` token's.",
           "type": [
             "string",
             "null"

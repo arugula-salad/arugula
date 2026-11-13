@@ -12,7 +12,8 @@ import type { ControlSession, Team } from "../control";
 import { splitJoinCode } from "../e2e/cert.ts";
 import { AccountButton } from "../ui/app-bar";
 import { MovingNote } from "../ui/moving-note";
-import { Mark } from "../ui/shell/icons";
+import { DeploysWaitingNote } from "../ui/deploys-waiting";
+import { Mark } from "../../shared/ui/icons";
 
 /** Ready, but no machine to show yet: the account's menu (#97), any team
  * this account is waiting on (#103), and how to add a machine (#98). */
@@ -30,6 +31,8 @@ export function NoMachines({ s }: { s: ControlSession }) {
       </header>
       <MenuLayer />
       <MovingNote />
+      {/* #468: a deploy waiting for you, with no machine needed. */}
+      <DeploysWaitingNote />
       <main>
         {s.asked.map((a) => (
           <p key={a.team} class="control-asked" data-asked={a.team}>

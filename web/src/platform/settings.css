@@ -11,82 +11,12 @@
    the driver, a chip per secret and the deploys as a table. The colors
    are the palette's, so every appearance holds. */
 
-/* -- The sections */
-
-.platform .settings-sec {
-  margin-top: 32px;
-  scroll-margin-top: 16px;
-}
-
-.platform .settings-body > h1 + .settings-sec {
-  margin-top: 20px;
-}
-
-.platform .sw-page .settings-sec > h2 {
-  margin: 0 0 6px;
-}
-
-.platform .settings-sec > h2:focus {
-  outline: none;
-}
-
-.platform .settings-lede {
-  margin: 0 0 10px;
-  color: var(--dim);
-}
-
-/* More: the rest of a section's explanation, a click away. */
-.platform .settings-more {
-  margin: -4px 0 12px;
-  font-size: 13px;
-  color: var(--dim);
-}
-
-.platform .settings-more > summary {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  font: 500 11px/1.6 var(--f-mono);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--accent);
-  cursor: pointer;
-  list-style: none;
-}
-
-.platform .settings-more > summary::-webkit-details-marker {
-  display: none;
-}
-
-.platform .settings-more > summary::before {
-  content: "";
-  border: 4px solid transparent;
-  border-left: 5px solid currentColor;
-  border-right-width: 0;
-  transition: transform 0.15s;
-}
-
-.platform .settings-more[open] > summary::before {
-  transform: rotate(90deg);
-}
-
-.platform .settings-more > summary:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  border-radius: var(--tag-radius);
-}
-
-.platform .settings-more p {
-  max-width: 70ch;
-  margin: 6px 0 0;
-}
-
 /* A finger, not a pointer (UI audit #198): More, a row's link and a
    card's actions are as tall as a button (shared/buttons.css), and a
    secret's box as tall as its field's. */
 @media (pointer: coarse) {
   .platform .settings-more > summary,
-  .platform .settings-rows :is(a, .link),
+  .platform .settings-rows :is(a:not(.settings-open), .link),
   .platform .settings-card-act :is(a, .link) {
     display: inline-flex;
     align-items: center;
@@ -98,48 +28,23 @@
   }
 }
 
-/* Appearance & account: what to open, and what it is. */
-.platform .settings-rows > li {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 2px 12px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--line);
-}
-
-.platform .settings-rows > li:last-child {
-  border-bottom: 0;
-}
-
-.platform .settings-rows .link,
-.platform .settings-rows a {
-  font-weight: 600;
-}
-
 /* A card's actions, at the end of its head. */
 .platform .settings-card-act {
   display: inline-flex;
   gap: 12px;
   margin-left: auto;
-  font-size: 13px;
-}
-
-.platform .settings-cards .sw-card {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  font-size: var(--text-md);
 }
 
 /* On a light palette a settings card is big (an environment's holds its
-   deploys), and swarm.css's tint flooded it with its tone: Latte's
+   deploys), and the card's Latte tint flooded it with its tone: Latte's
    production read solid green. Here the bar says the state, the border
    only hints at it, and the card is the surface with the faintest cast,
    as calm as it is on a dark palette. */
 @supports (color: oklch(from red l c h)) {
-  html[data-scheme="light"] .platform .sw-cards.settings-cards .sw-card {
-    border-color: oklch(from var(--c) 0.88 min(calc(c * 0.35), 0.04) h);
-    background: color-mix(in srgb, var(--c) 4%, var(--surface));
+  html[data-scheme="light"] .platform .settings-cards .card-tone {
+    --card-edge: oklch(from var(--c) 0.88 min(calc(c * 0.35), 0.04) h);
+    --card-tint: color-mix(in srgb, var(--c) 4%, var(--surface));
   }
 }
 
@@ -154,7 +59,7 @@
 }
 
 .platform .settings-endpoint code {
-  font: 500 12px/1.4 var(--f-mono);
+  font: 500 var(--text-sm)/1.4 var(--f-mono);
 }
 
 /* A field with its words before it (Chat notifications' levels, the time
@@ -197,79 +102,7 @@
 }
 
 .platform .settings-spend li {
-  font-size: 13px;
-}
-
-/* -- A switch: the swarm's compact switch, a knob in a pill. Off, its knob
-      sits left on the raised grey; on, right on the accent; partly on (some
-      of what it gives, its title says which), in the middle on warn, so it
-      reads as neither. Drawn with backgrounds, not ::before, which an input
-      may not have. */
-
-.platform input.sw-switch {
-  --knob: var(--dim);
-  flex: none;
-  width: 32px;
-  height: 18px;
-  margin: 0;
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
-  background: radial-gradient(circle closest-side, var(--knob) 0 calc(100% - 1px), transparent 100%) 0% 50% / 16px 16px no-repeat,
-    var(--raised);
-  appearance: none;
-  -webkit-appearance: none;
-  vertical-align: middle;
-  cursor: pointer;
-  transition: background-position 0.15s, background-color 0.15s, border-color 0.15s;
-}
-
-.platform input.sw-switch:checked {
-  --knob: var(--on-color);
-  border-color: var(--accent);
-  background-color: var(--accent);
-  background-position: 100% 50%;
-}
-
-.platform input.sw-switch.partial {
-  --knob: var(--warn);
-  border-color: var(--warn);
-  border-style: dashed;
-  background-color: color-mix(in srgb, var(--warn) 18%, var(--surface));
-  background-position: 50% 50%;
-}
-
-.platform input.sw-switch:hover:not(:disabled) {
-  border-color: var(--accent);
-}
-
-.platform input.sw-switch:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.platform input.sw-switch:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
-/* Being turned: it waits, breathing, until the grants come back. */
-.platform input.sw-switch[aria-busy="true"] {
-  border-color: var(--accent);
-  cursor: progress;
-  animation: sw-switch-busy 0.9s ease-in-out infinite alternate;
-}
-
-@keyframes sw-switch-busy {
-  from {
-    opacity: 0.8;
-  }
-  to {
-    opacity: 0.3;
-  }
-}
-
-html[data-corners="square"] .platform input.sw-switch {
-  border-radius: 3px;
+  font-size: var(--text-md);
 }
 
 /* A switch with its words beside it (a product's or an app's consent). */
@@ -278,7 +111,7 @@ html[data-corners="square"] .platform input.sw-switch {
   align-items: flex-start;
   gap: 10px;
   margin: 4px 0;
-  font-size: 13px;
+  font-size: var(--text-md);
   cursor: pointer;
 }
 
@@ -290,37 +123,11 @@ html[data-corners="square"] .platform input.sw-switch {
   padding: 2px 0;
 }
 
-/* -- Agents on your machines: what each column gives, then a card per
-      project (and your DMs) holding its matrix. */
+/* -- Agents on your machines: a card per project (and your DMs) holding
+      its matrix. */
 
-.platform .agent-key {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px 24px;
-  margin: 0 0 14px;
-  font-size: 12px;
-}
-
-.platform .agent-key > div {
-  min-width: 0;
-}
-
-.platform .agent-key dt {
-  display: inline;
-  font: 600 11px/1.4 var(--f-mono);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--fg);
-}
-
-.platform .agent-key dt::after {
-  content: " ";
-}
-
-.platform .agent-key dd {
-  display: inline;
-  margin: 0;
-  color: var(--dim);
+.platform .agent-card.card {
+  display: block;
 }
 
 .platform .agent-cards {
@@ -330,7 +137,7 @@ html[data-corners="square"] .platform input.sw-switch {
 .platform .agent-card-sub {
   display: block;
   margin-top: 2px;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .platform .agent-matrix {
@@ -338,7 +145,7 @@ html[data-corners="square"] .platform input.sw-switch {
   margin-top: 8px;
   border-collapse: collapse;
   table-layout: fixed;
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 
 .platform .agent-matrix th,
@@ -352,8 +159,8 @@ html[data-corners="square"] .platform input.sw-switch {
 .platform .settings-table thead th {
   padding-top: 2px;
   border-bottom: 1px solid var(--line);
-  font: 500 11px/1.3 var(--f-mono);
-  letter-spacing: 0.06em;
+  font: 500 var(--text-xs)/1.3 var(--f-mono);
+  letter-spacing: var(--track-caps);
   text-transform: uppercase;
   color: var(--dim);
   text-align: center;
@@ -380,7 +187,7 @@ html[data-corners="square"] .platform input.sw-switch {
 .platform .agent-matrix tbody th,
 .platform .settings-table tbody th {
   padding-left: 0;
-  font: 500 13px/1.3 var(--f-mono);
+  font: 500 var(--text-md)/1.3 var(--f-mono);
   color: var(--fg);
   text-align: left;
   overflow-wrap: anywhere;
@@ -421,7 +228,7 @@ html[data-corners="square"] .platform input.sw-switch {
 }
 
 .platform .agent-level {
-  font: 500 11px/1.2 var(--f-mono);
+  font: 500 var(--text-xs)/1.2 var(--f-mono);
   padding: 3px 6px;
   max-width: 100%;
   border-radius: 6px;
@@ -439,9 +246,19 @@ html[data-corners="square"] .platform input.sw-switch {
 .platform .agent-only {
   display: block;
   margin-top: 3px;
-  font: 500 10px/1.2 var(--f-mono);
+  font: 500 var(--text-xs)/1.2 var(--f-mono);
   color: var(--warn);
   overflow-wrap: anywhere;
+}
+
+/* A live grant that does nothing now (Arugula #683): a write power while
+   its giver only views the project. */
+.platform .agent-idle {
+  display: block;
+  margin-top: 3px;
+  font: 500 var(--text-xs)/1.2 var(--f-mono);
+  color: var(--dim);
+  cursor: help;
 }
 
 /* -- A project's settings: tables, tags and chips, and the environments'
@@ -457,32 +274,12 @@ html[data-corners="square"] .platform input.sw-switch {
   white-space: nowrap;
 }
 
-/* A tag: one fact about what it's beside (a repo's private, an
-   environment's driver, a product), a quiet pill. */
-.platform .settings-tag {
-  flex: none;
-  display: inline-block;
-  margin-left: 8px;
-  padding: 1px var(--space-2);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--chip-radius);
-  font: 500 11px/1.4 var(--f-mono);
-  color: var(--dim);
-  vertical-align: 1px;
-  white-space: nowrap;
-}
-
-.platform .sw-head .settings-tag,
-.platform .settings-rows .settings-tag {
-  margin-left: 0;
-}
-
 /* A table of a section's things (linked repos, a month's spend): mono
    names, a row each, quiet actions at the end. */
 .platform .settings-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 
 .platform .settings-table th,
@@ -521,7 +318,7 @@ html[data-corners="square"] .platform input.sw-switch {
 }
 
 .platform .repo-table .repo-keep .dim {
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .platform .spend-table .num,
@@ -555,17 +352,17 @@ html[data-corners="square"] .platform input.sw-switch {
 
 .platform .settings-note {
   margin: 10px 0 0;
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 
 .platform .settings-warn {
-  font-size: 13px;
+  font-size: var(--text-md);
   color: var(--warn);
 }
 
 .platform .settings-past {
   margin-top: 6px;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 /* A project secret: its name, who set it, Clear, and under it a switch
@@ -582,7 +379,7 @@ html[data-corners="square"] .platform input.sw-switch {
 }
 
 .platform .secret-name {
-  font: 600 13px/1.3 var(--f-mono);
+  font: 600 var(--text-md)/1.3 var(--f-mono);
 }
 
 .platform .secret-rows .settings-switch {
@@ -591,7 +388,7 @@ html[data-corners="square"] .platform input.sw-switch {
 
 /* An environment: its card's head holds its name, its driver's tag and
    Deploy… at the end. */
-.platform .env-card .sw-head {
+.platform .env-card .card-head {
   flex-wrap: wrap;
   align-items: center;
 }
@@ -606,7 +403,7 @@ html[data-corners="square"] .platform input.sw-switch {
   flex-wrap: wrap;
   gap: 2px 18px;
   margin: 6px 0 0;
-  font: 500 12px/1.4 var(--f-mono);
+  font: 500 var(--text-sm)/1.4 var(--f-mono);
 }
 
 .platform .env-facts > div {
@@ -635,15 +432,15 @@ html[data-corners="square"] .platform input.sw-switch {
 .platform .env-label {
   display: block;
   margin-bottom: 4px;
-  font: 500 11px/1.3 var(--f-mono);
-  letter-spacing: 0.06em;
+  font: 500 var(--text-xs)/1.3 var(--f-mono);
+  letter-spacing: var(--track-caps);
   text-transform: uppercase;
   color: var(--dim);
 }
 
 .platform .env-part > p {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 
 /* Its secrets: a chip each, wrapping; an owner's held ones a row each,
@@ -674,51 +471,12 @@ html[data-corners="square"] .platform input.sw-switch {
   height: 32px;
 }
 
-/* A chip: the secret's name in mono, then where its value comes from. */
-.platform .settings-chip {
-  display: inline-flex;
-  align-items: stretch;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--chip-radius);
-  overflow: hidden;
-  font: 500 11px/1.5 var(--f-mono);
-  white-space: nowrap;
-}
-
-.platform .settings-chip > * {
-  padding: 1px 8px;
-}
-
-.platform .settings-chip code {
-  font: 600 11px/1.5 var(--f-mono);
-  color: var(--fg);
-  background: var(--raised);
-}
-
-.platform .settings-chip > span {
-  color: var(--ok);
-}
-
-.platform .settings-chip.minted {
-  border-style: dashed;
-}
-
-.platform .settings-chip.minted > span {
-  color: var(--dim);
-}
-
-/* A driver's setting: its name, then its value, in the text's colour. */
-.platform .settings-chip.setting > span {
-  color: var(--fg);
-  white-space: pre;
-}
-
 /* Its deploys: state (in its tone, after a dot), what it deployed (a
    commit, or an image's digest, labelled), whether it's a rollback, when.
    The whole row opens the deploy; the source is its link, in the links'
    colour. Mono heads over them, left and right as the cells are. */
 .platform .deploy-table {
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 .platform .deploy-table thead th {
@@ -733,8 +491,8 @@ html[data-corners="square"] .platform input.sw-switch {
 
 .platform .deploy-source-kind {
   margin-right: var(--space-1);
-  font: 500 10px/1.3 var(--f-mono);
-  letter-spacing: 0.04em;
+  font: 500 var(--text-xs)/1.3 var(--f-mono);
+  letter-spacing: var(--track-caps);
   text-transform: uppercase;
   color: var(--dim);
 }
@@ -757,7 +515,7 @@ html[data-corners="square"] .platform input.sw-switch {
   border-radius: var(--chip-radius);
   background: none;
   box-shadow: none;
-  font: 500 11px/1.4 var(--f-mono);
+  font: 500 var(--text-xs)/1.4 var(--f-mono);
   color: var(--dim);
 }
 
@@ -794,7 +552,7 @@ html[data-corners="square"] .platform input.sw-switch {
 }
 
 .platform .deploy-table a code {
-  font: 500 12px/1.3 var(--f-mono);
+  font: 500 var(--text-sm)/1.3 var(--f-mono);
 }
 
 .platform .deploy-table tr:hover a code,
@@ -813,59 +571,7 @@ html[data-corners="square"] .platform input.sw-switch {
 
 .platform .env-older {
   margin-top: 4px;
-  font-size: 12px;
-}
-
-/* -- The index: in the panel's left gutter, where it's wide enough for
-      one (a panel of 880px plus two gutters of ~200px), and sticky as the
-      page scrolls. Narrower, there's no gutter to put it in, and the page
-      goes without. 180px holds the longest title on one line ("Agents on
-      your machines", UI audit #168). */
-
-.platform .settings-index {
-  display: none;
-}
-
-@media (min-width: 1320px) {
-  .platform .settings-layout {
-    display: grid;
-    grid-template-columns: 180px minmax(0, 1fr);
-    column-gap: 28px;
-    margin-left: -208px;
-  }
-  .platform .settings-index {
-    display: block;
-    position: sticky;
-    top: 0;
-    align-self: start;
-    padding-top: 6px;
-  }
-  .platform .settings-index ul {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    border-left: 1px solid var(--line);
-  }
-  .platform .settings-index a {
-    display: block;
-    margin-left: -1px;
-    padding: var(--space-1) 0 var(--space-1) 12px;
-    border-left: 2px solid transparent;
-    font: 500 11px/1.3 var(--f-mono);
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-    color: var(--dim);
-    text-decoration: none;
-  }
-  .platform .settings-index a:is(:hover, :focus-visible) {
-    border-left-color: var(--accent);
-    color: var(--fg);
-  }
-  /* The section you're in (UI audit #166). */
-  .platform .settings-index a[aria-current] {
-    border-left-color: var(--accent);
-    color: var(--accent);
-  }
+  font-size: var(--text-sm);
 }
 
 /* -- A phone: each machine of a project's matrix is a row of its own, its
@@ -873,9 +579,6 @@ html[data-corners="square"] .platform input.sw-switch {
       the screen. */
 
 @media (max-width: 700px) {
-  .platform .agent-key {
-    grid-template-columns: 1fr;
-  }
   .platform .agent-card[data-agent-dms] {
     justify-self: stretch;
     width: auto;
@@ -918,8 +621,8 @@ html[data-corners="square"] .platform input.sw-switch {
   }
   .platform .agent-matrix-wide td::before {
     content: attr(data-col);
-    font: 500 9px/1.2 var(--f-mono);
-    letter-spacing: 0.04em;
+    font: 500 var(--text-xs)/1.2 var(--f-mono);
+    letter-spacing: var(--track-caps);
     text-transform: uppercase;
     color: var(--dim);
     text-align: center;
@@ -968,8 +671,8 @@ html[data-corners="square"] .platform input.sw-switch {
   .platform .settings-table td[data-col]::before {
     content: attr(data-col);
     margin-right: 8px;
-    font: 500 10px/1.2 var(--f-mono);
-    letter-spacing: 0.04em;
+    font: 500 var(--text-xs)/1.2 var(--f-mono);
+    letter-spacing: var(--track-caps);
     text-transform: uppercase;
     color: var(--dim);
   }
@@ -1015,30 +718,20 @@ html[data-corners="square"] .platform input.sw-switch {
   .platform .env-deploy {
     margin-left: 0;
   }
-  .platform .env-card .sw-head .settings-tag {
+  .platform .env-card .card-head .chip-tag {
     margin-right: auto;
   }
   .platform .env-secret {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
   }
-  .platform .env-secret > .settings-chip,
+  .platform .env-secret > .chip-object,
   .platform .env-secret > [role="status"] {
     grid-column: 1 / -1;
     justify-self: start;
   }
   .platform .deploy-table tbody tr > td:nth-child(n) {
     width: auto;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .platform input.sw-switch,
-  .platform .settings-more > summary::before {
-    transition: none;
-  }
-  .platform input.sw-switch[aria-busy="true"] {
-    animation: none;
   }
 }
 
@@ -1062,7 +755,7 @@ html[data-corners="square"] .platform input.sw-switch {
   box-sizing: border-box;
 }
 .platform .plane-connect-field .dim {
-  font-size: 0.85em;
+  font-size: var(--text-sm);
 }
 .platform .plane-connect-label {
   font-weight: 600;
@@ -1080,7 +773,7 @@ html[data-corners="square"] .platform input.sw-switch {
   margin: 0;
   padding: 0;
   list-style: none;
-  font-size: 0.85em;
+  font-size: var(--text-sm);
 }
 .platform .plane-kinds label,
 .platform .plane-attribution {
@@ -1090,7 +783,7 @@ html[data-corners="square"] .platform input.sw-switch {
   gap: 8px;
 }
 .platform .plane-policy .dim {
-  font-size: 0.85em;
+  font-size: var(--text-sm);
 }
 .platform .plane-hook {
   display: grid;
@@ -1109,13 +802,162 @@ html[data-corners="square"] .platform input.sw-switch {
 .platform .plane-hook-url code {
   min-width: 0;
   overflow-wrap: anywhere;
-  font-size: 0.85em;
+  font-size: var(--text-sm);
 }
 .platform .plane-hook-form .field {
   flex: 1 1 10rem;
   min-width: 0;
 }
+.platform .ci-alerts-people {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.platform .ci-alerts-people legend {
+  padding: 0;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+.platform .ci-alerts-people .dim {
+  font-size: var(--text-sm);
+}
+.platform .plane-epics {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  max-width: 28rem;
+}
+.platform .plane-epics .dim {
+  font-size: var(--text-sm);
+}
+.platform .plane-history {
+  display: grid;
+  gap: 6px;
+  margin: 16px 0 24px;
+  min-width: 0;
+}
+.platform .plane-history h3 {
+  margin: 0;
+}
+.platform .plane-failed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+.platform .plane-failed span {
+  flex: 1 1 16rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.platform .plane-events {
+  margin: 0;
+  padding-left: 1.2em;
+}
 .platform .plane-connect-buttons {
   display: flex;
   justify-content: flex-end;
+}
+
+/* -- An owner's Project defaults (Arugula #897): a row per key, the
+      default, then a column per project. Wide, it scrolls sideways with
+      the key and the default kept in place. A project's own value is
+      raised and bold; a change not yet saved has a warn edge. */
+
+.platform .defaults-bar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
+  background: var(--surface);
+  font-weight: 600;
+}
+
+.platform .defaults-bar > span {
+  margin-right: auto;
+}
+
+.platform .defaults-scroll {
+  overflow-x: auto;
+  margin-top: var(--space-2);
+}
+
+.platform .defaults-table {
+  width: max-content;
+  min-width: 100%;
+}
+
+.platform .defaults-table th,
+.platform .defaults-table td {
+  min-width: 150px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.platform .defaults-table thead th {
+  text-align: left;
+}
+
+.platform .defaults-table thead th:nth-child(-n + 2),
+.platform .defaults-table tbody > tr > :nth-child(-n + 2) {
+  position: sticky;
+  z-index: 1;
+  background: var(--bg);
+}
+
+.platform .defaults-table thead th:first-child,
+.platform .defaults-table tbody > tr > :first-child {
+  left: 0;
+  width: 160px;
+  min-width: 160px;
+}
+
+.platform .defaults-table thead th:nth-child(2),
+.platform .defaults-table tbody > tr > :nth-child(2) {
+  left: 160px;
+  border-right: 1px solid var(--line);
+}
+
+.platform .defaults-table select {
+  max-width: 220px;
+}
+
+.platform .defaults-table .defaults-own,
+.platform .defaults-table .defaults-own select {
+  background: var(--raised);
+  font-weight: 600;
+}
+
+.platform .defaults-staged {
+  box-shadow: inset 2px 0 0 var(--warn);
+}
+
+.platform .overrides-rows > li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.platform .overrides-rows > li > b {
+  width: 160px;
+  flex: none;
+}
+
+.platform .overrides-rows > li > [data-override-line] {
+  flex: 1;
+}
+
+/* Hover's tint is see-through: the pinned columns stay opaque over it. */
+.platform .defaults-table tbody tr:hover > :nth-child(-n + 2) {
+  background: var(--bg);
 }

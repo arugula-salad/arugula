@@ -1,0 +1,5 @@
+{"total_count":3,"jobs":[
+{"id":1,"run_id":102,"name":"build","status":"completed","conclusion":"success","started_at":"2026-11-10T11:00:00Z","completed_at":"2026-11-10T11:08:00Z"},
+{"id":2,"run_id":102,"name":"e2e (3, 12)","status":"completed","conclusion":"failure","started_at":"2026-11-10T11:08:00Z","completed_at":"2026-11-10T11:14:00Z"},
+{"id":3,"run_id":102,"name":"lint","status":"completed","conclusion":"failure","started_at":"2026-11-10T11:00:00Z","completed_at":"2026-11-10T11:05:00Z"}
+]}

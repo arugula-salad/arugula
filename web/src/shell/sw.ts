@@ -334,7 +334,7 @@ sw.addEventListener("notificationclick", (event: ClickEvent) => {
   );
 });
 
-/** A chat push's tap on this page, as before the platform page: a page of
+/** A platform push's tap on this page, as before the platform page: a page of
  * this app's that's open shows it, else one opens. */
 async function here(data: Msg): Promise<unknown> {
   const windows = await sw.clients.matchAll({ type: "window", includeUncontrolled: true });
@@ -349,6 +349,10 @@ async function here(data: Msg): Promise<unknown> {
   };
   const room = data.control ? chatTap(data) : undefined;
   if (room) return show({ type: "open-room", url: room }, room);
+  // #468: anything else of the platform's (a deploy waiting, the inbox)
+  // when the platform page's origin couldn't be read: control's page,
+  // which shows what waits, rather than nothing at all.
+  return show({ type: "control-refresh" }, "/");
 }
 
 /** M156: the platform page's origin, from control's `/control.json`, when

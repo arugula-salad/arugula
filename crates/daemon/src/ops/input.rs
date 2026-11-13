@@ -3,10 +3,14 @@
 //! only. `authz::check` made the pane's role and trust check before a
 //! handler runs.
 
+use std::time::Duration;
+
 use arugula_proto::{
     PaneId,
-    api::{AttentionRequest, Empty, FollowUpRequest, FollowedUp, KeysRequest, MouseRequest, SendRequest},
-    op::ops::{PaneAttention, PaneFollowUp, PaneKeys, PaneMouse, PaneSend},
+    api::{
+        AttentionRequest, Empty, FollowUpRequest, FollowedUp, KeysRequest, MentionsRequest, MouseRequest, SendRequest,
+    },
+    op::ops::{PaneAttention, PaneFollowUp, PaneKeys, PaneMentions, PaneMouse, PaneSend},
 };
 use axum::http::StatusCode;
 
@@ -17,14 +21,39 @@ use crate::{
     mux::{Api, Cmd},
 };
 
+/// How long the Enter waits after the text (#573), so the program has read
+/// the text before the Enter reaches it.
+const ENTER_AFTER: Duration = Duration::from_millis(30);
+
+/// Type `text` into a pane, and with `enter` press Enter as a write of its
+/// own after a short pause (#573). Answers once the Enter is in, so one
+/// caller's next send or keys can't overtake it. `by` is who typed it, for
+/// the record, when it isn't the owner.
+pub async fn send_text(
+    app: &crate::server::App,
+    id: PaneId,
+    p: &arugula_mux::pane::PaneHandle,
+    text: &str,
+    enter: bool,
+    by: Option<String>,
+) {
+    p.mark_input();
+    let (data, enter) = keys::send_text(text, enter, p.status().modes);
+    let write = |data: Vec<u8>| match &by {
+        Some(by) => app.mux.send(Cmd::Api(Api::InputBy(id, data, by.clone()))),
+        None => app.mux.send(Cmd::Input { client: None, pane: id, data }),
+    };
+    write(data);
+    if let Some(data) = enter {
+        tokio::time::sleep(ENTER_AFTER).await;
+        write(data);
+    }
+}
+
 impl Handle for PaneSend {
     async fn handle(cx: &Cx<'_>, id: PaneId, req: SendRequest) -> Result<Empty, OpError> {
-        pane(cx.app, id).await?.mark_input();
-        let mut data = req.text.into_bytes();
-        if req.enter {
-            data.push(b'\r');
-        }
-        cx.app.mux.send(Cmd::Input { client: None, pane: id, data });
+        let p = pane(cx.app, id).await?;
+        send_text(cx.app, id, &p, &req.text, req.enter, None).await;
         Ok(Empty {})
     }
 }
@@ -60,6 +89,22 @@ impl Handle for PaneAttention {
     }
 }
 
+/// Let teammates' agents mention a session, or not (#579). The owner's:
+/// `authz` made that check.
+impl Handle for PaneMentions {
+    async fn handle(cx: &Cx<'_>, id: PaneId, req: MentionsRequest) -> Result<Empty, OpError> {
+        // Silence is the owner's alone, not an agent's on the owner's CLI
+        // (which could un-silence its own pane).
+        if cx.agent_or_guest() {
+            return Err(OpError::Forbidden("only this machine's owner silences or allows mentions".into()));
+        }
+        match cx.app.mux.api(|r| Api::SilenceTagged(id, req.on, r)).await {
+            Some(true) => Ok(Empty {}),
+            _ => Err(OpError::NoPane(id)),
+        }
+    }
+}
+
 /// A follow-up for the agent in a pane (M29), from whoever may drive it:
 /// an agent block's next prompt, or Claude Code's in a terminal (through
 /// its inbox hook, never typed). Recorded as theirs. `delivered`: it went
@@ -73,7 +118,7 @@ impl Handle for PaneFollowUp {
             b.call_by("send", serde_json::json!({ "text": req.text }), name).await.map_err(bad)?;
             return Ok(FollowedUp { delivered: true });
         }
-        match app.mux.api(|r| Api::FollowUp(id, req.text, by, r)).await {
+        match app.mux.api(|r| Api::FollowUp(id, req.text, by, None, r)).await {
             Some(Ok(now)) => Ok(FollowedUp { delivered: now }),
             Some(Err(e)) => Err(bad(e).into()),
             None => Err(shutting_down().into()),

@@ -32,13 +32,13 @@ test.afterAll(closeContexts);
 test.beforeAll(async () => {
   state = mkdtempSync(join(tmpdir(), "arugula-e2e-labs-off-"));
   writeFileSync(join(state, "studio.json"), JSON.stringify({ url: "http://127.0.0.1:9", token: "e2e-studio-token" }));
-  writeFileSync(join(state, "wisp-token"), "e2e-wisp-token");
+  writeFileSync(join(state, "loam-key"), "loam_e2e-key");
   daemon = spawn(
     "../target/debug/arugulad",
     [
       ...["--listen", ANY, "--state-dir", state, "--shell", "bash --norc --noprofile", "--no-manager-env"],
       ...["--owner", OWNER, "--tailscale-socket", "/nonexistent/tailscaled.sock"],
-      ...["--wisp-url", "http://127.0.0.1:9", "--wisp-token-file", join(state, "wisp-token")],
+      ...["--loam-url", "http://127.0.0.1:9", "--loam-key-file", join(state, "loam-key")],
       ...["--guest-ssh", "127.0.0.1:0", "--guest-ssh-host", "127.0.0.1"],
     ],
     { stdio: "ignore" },
@@ -90,7 +90,8 @@ test("the host says labs is off, and what follows it", async () => {
   });
 });
 
-test("links to Forgejo and GitLab stay plain links; GitHub's still open as blocks", async ({ page }) => {
+// GitLab and Forgejo left Labs (native #523): their links are blocks with Labs off too.
+test("links to Forgejo, GitLab and GitHub open as blocks with Labs off", async ({ page }) => {
   await open(page);
   await expect.poll(() => page.evaluate(() => window.__arugula.client.features !== null)).toBe(true);
   const kinds = (uris: string[]) =>
@@ -104,7 +105,7 @@ test("links to Forgejo and GitLab stay plain links; GitHub's still open as block
       "https://github.com/o/r/pull/3",
       "https://github.com/o/r/issues/3",
     ]),
-  ).toEqual([null, null, null, null, "pr", "issue"]);
+  ).toEqual(["pr", "issue", "pr", "issue", "pr", "issue"]);
 });
 
 test("on a desktop: no chat or threads, no studio or VMs, no ssh invite", async ({ page }) => {
@@ -119,7 +120,7 @@ test("on a desktop: no chat or threads, no studio or VMs, no ssh invite", async 
   await expect(page.locator("[data-open-chat]")).toHaveCount(0);
   // The Docs page (#1494) isn't Labs' (native #204): in the rail, and at
   // its address.
-  await expect(page.locator(".ws-rail [data-open-docs]")).toBeVisible();
+  await expect(page.locator("[data-machine-docs]")).toBeVisible();
   await page.goto("/#docs");
   await expect(page.locator("[data-docs-page]")).toBeVisible();
   await open(page);
@@ -217,7 +218,7 @@ test.describe("on a phone", () => {
     await expect(page.locator("[data-open-pr]")).toBeVisible();
     for (const gone of ["[data-open-chat]", "[data-studio-apps]"]) await expect(page.locator(gone)).toHaveCount(0);
     for (const name of ["New VM tab", "Sandboxes"]) await expect(page.getByRole("button", { name })).toHaveCount(0);
-    await expect(page.locator(".session-unread, .thread-badge")).toHaveCount(0);
+    await expect(page.locator(".session-unread, [data-room-badge]")).toHaveCount(0);
   });
 });
 
@@ -238,7 +239,7 @@ test("a daemon from before labs, which says nothing of it, gets none of it eithe
   expect(await page.evaluate(() => window.__arugula.client.hasLabs())).toBe(false);
   expect(await page.evaluate(() => (["vms", "studio"] as const).map((f) => window.__arugula.client.has(f)))).toEqual([false, false]);
   await expect(page.locator("[data-open-chat]")).toHaveCount(0);
-  await expect(page.locator(".thread-badge, .session-unread")).toHaveCount(0);
+  await expect(page.locator("[data-room-badge], .session-unread")).toHaveCount(0);
   await noLabsItems(page, pane);
 });
 
@@ -276,7 +277,7 @@ test("setting the flag on the running daemon brings it all back, with no restart
     // `labs`, the one switch from before, is every flag (#665), and keeps guest ssh on as
     // Guest SSH access, a sharing setting (native #205).
     guest_ssh: true,
-    flags: ["sandbox-providers", "studio", "chant-workspaces", "additional-forges", "agent-delegation", "boards", "live-presence"],
+    flags: ["sandbox-providers", "studio", "chant-workspaces", "agent-delegation"],
   });
 
   await open(page);
@@ -286,7 +287,7 @@ test("setting the flag on the running daemon brings it all back, with no restart
   // Chat is control's (M125), on its platform page (M155): a machine on its
   // own has none, and offers none, even with the flag.
   await expect(page.locator("[data-open-chat]")).toHaveCount(0);
-  await expect(page.locator(".thread-badge")).toHaveCount(0);
+  await expect(page.locator("[data-room-badge]")).toHaveCount(0);
   await open(page);
   await ready(page, pane);
   // Now the Labs chunk was fetched, since this machine has them.
@@ -300,8 +301,8 @@ test("setting the flag on the running daemon brings it all back, with no restart
   await page.goto("/#swarm");
   await expect(page.locator("[data-theme-pick]")).toHaveCount(4);
 
-  // And the Docs page: in the rail, and at its address.
-  await expect(page.locator(".ws-rail [data-open-docs]")).toBeVisible();
+  // And the Docs page: at its address, and one of the machine's places.
   await page.goto("/#docs");
   await expect(page.locator("[data-docs-page]")).toBeVisible();
+  await expect(page.locator("[data-machine-docs]")).toHaveAttribute("aria-current", "page");
 });

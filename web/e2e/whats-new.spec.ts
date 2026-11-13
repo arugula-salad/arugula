@@ -10,7 +10,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { menuItem, open, reset } from "./helpers";
+import { menuItem, open, reset, settingsRow } from "./helpers";
 
 const panel = (page: Page) => page.locator("[data-whats-new]");
 /** This build's version, as web/vite.config.ts reads it. */
@@ -58,11 +58,10 @@ test("a first visit gets Getting started, not What's new too", async ({ page }) 
   await expect(panel(page)).toHaveCount(0);
 });
 
-test("the account menu's What's new; Try it opens the thing and closes it", async ({ page }) => {
+test("Settings' What's new; Try it opens the thing and closes it", async ({ page }) => {
   await reset(page);
   await expect(panel(page)).toHaveCount(0);
-  await page.locator("[data-account-menu]").first().click();
-  await (await menuItem(page, /^What's new/)).click();
+  await settingsRow(page, "What's new");
   await expect(panel(page)).toBeVisible();
   const tries = panel(page).locator("[data-whats-new-try]");
   if ((await tries.count()) === 0) return;
@@ -87,7 +86,7 @@ test("the update chip's What's new opens the panel, with the new release's notes
   await page.locator("[data-update-whats-new]").click();
   await expect(page.getByRole("dialog", { name: "Update Arugula" })).toHaveCount(0);
   await expect(panel(page)).toContainText("Arugula 0.17.0 is out.");
-  await expect(panel(page).getByRole("link", { name: "Its notes ↗" })).toHaveAttribute("href", /\/tag\/v0\.17\.0$/);
+  await expect(panel(page).getByRole("link", { name: "Its notes" })).toHaveAttribute("href", /\/tag\/v0\.17\.0$/);
   await panel(page).locator("[data-whats-new-close]").click();
   await expect(panel(page)).toHaveCount(0);
 });

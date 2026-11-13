@@ -118,6 +118,7 @@ fn parse(out: &str) -> Option<Work> {
     }
     let diffstat = known.then(|| shorten(stat));
     Some(Work {
+        worktree: None,
         branch: branch?,
         head,
         pushed,

@@ -1,4 +1,5 @@
-// `/p/:project/settings`: a project's settings (M163). For now its linked
+// `/p/:project/settings`: a project's settings (M163). First its name, whose
+// it is and archiving it (General, Arugula #895, ../settings/general). Its linked
 // GitHub repos: who links one is a member who maintains it on GitHub, and
 // the platform checks that. Where the GitHub App isn't installed, linking
 // sends the person to GitHub to install it, and GitHub sends them back to
@@ -10,12 +11,15 @@
 // sessions (M261),
 // for its owners the agent tokens over it
 // and its own secrets (M230), what its Claude calls cost (M231), and the
-// apps products keep in it (M236), and for a team's owners its chat's
-// owners-only switches (UI audit #168). Each part is a section
-// (../settings/section), as /settings's are: a heading, one line, the rest
+// apps products keep in it (M236), and first, for every member, who
+// can do what here (Access, Arugula #682, ../settings/access). Each part is a section
+// (shared/ui/settings-section), as /settings's are: a heading, one line, the rest
 // behind More, and on a wide screen an index of them beside the column.
+// After the repos, its Overrides (Arugula #897, ../settings/project-overrides):
+// which of its owner's defaults it follows, and which it sets itself.
 // The repos are a table, a row each with its switch. After them, the Plane
-// projects connected to it (#356, ../settings/plane), with boards on.
+// projects connected to it (#356, ../settings/plane), with boards on, and
+// after where its issues go, its CI alerts (native #774, ../settings/ci-alerts).
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { LinkedRepo, LinkedRepos } from "../../shared/proto.gen";
@@ -39,10 +43,14 @@ import { Environments } from "../settings/environments";
 import { ProjectAgents } from "../settings/project-agents";
 import { ClaudeSpend } from "../settings/spend";
 import { ClientApps } from "../settings/client-apps";
-import { TeamChat } from "../settings/chat-alerts";
 import { PlaneConnections } from "../settings/plane";
+import { CiAlertsSetting } from "../settings/ci-alerts";
 import { BoardSettings } from "../settings/board-settings";
-import { Section, SectionIndex } from "../settings/section";
+import { Section, SectionIndex } from "../../shared/ui/settings-section";
+import { Access } from "../settings/access";
+import { General } from "../settings/general";
+import { Overrides } from "../settings/project-overrides";
+import { Chip } from "../../shared/ui/state-chip";
 
 /** A call to the platform: its JSON, or the platform's `{error}` thrown
  * with the rest of the answer. */
@@ -67,7 +75,7 @@ const KEEP =
 export function ProjectSettings({ id, link }: { id: string; link?: string }) {
   useSubscribe((fn) => session.subscribe(fn));
   const p = session.project(id);
-  // Plane is Labs with boards (#356): shown once the boards flag is known on.
+  // Plane's connections and the boards' settings show once the boards are read.
   const boards = useBoards(id);
   const [repos, setRepos] = useState<LinkedRepo[] | null>(null);
   const [repo, setRepo] = useState(link ?? "");
@@ -126,11 +134,12 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
         <SectionIndex body={body} />
         <div class="settings-body" ref={body}>
           <PageHeader title="Project settings" back={{ href: home, label: p.name, onClick: (e) => follow(e, home) }} />
+          <General p={p} />
+          <Access p={p} />
           <Section
             id="repos"
             title="Linked repos"
             count={repos ? linked : undefined}
-            lede="GitHub repos whose pull requests and issues live in this project, for its members."
             more={
               <>
                 <p>
@@ -170,7 +179,7 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
                       <tr key={r.repo_id} data-linked-repo={r.full_name}>
                         <th scope="row">
                           <span class="repo-name">{r.full_name}</span>
-                          {r.private && <span class="settings-tag">private</span>}
+                          {r.private && <Chip kind="tag" class="chip-lead">private</Chip>}
                         </th>
                         {r.purge_after !== null ? (
                           <>
@@ -274,9 +283,11 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
               </ConfirmRemove>
             )}
           </Section>
-          {boards !== null && boards !== "off" && <PlaneConnections p={p} />}
-          {boards !== null && boards !== "off" && <BoardSettings p={p} />}
+          <Overrides p={p} />
+          {boards !== null && <PlaneConnections p={p} />}
+          {boards !== null && <BoardSettings p={p} />}
           <IssueHomeSetting key={linked} p={p} />
+          <CiAlertsSetting p={p} />
           <Environments p={p} />
           <RunGrant project={p.id} />
           <WorkspaceSize p={p} />
@@ -285,7 +296,6 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
           <ProjectAgents p={p} />
           <ClaudeSpend p={p} />
           <ClientApps p={p} />
-          <TeamChat p={p} />
         </div>
       </div>
     </section>

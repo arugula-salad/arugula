@@ -39,11 +39,14 @@
 //! | GET | `/api/panes/N/wait` | `until=command-end\|exit\|match\|idle\|needs-input`, `re=`, `timeout=` secs | `WaitResult` |
 //! | GET | `/api/panes/N/export.cast` | | asciicast v3 |
 //! | GET | `/api/events` | `pane=`, `session=`, `type=a,b`, `follow=1`, `since=` secs | NDJSON `Event`s, each with an `id` (M112); a guest gets the panes they may read; a follow of one pane naming `attention` starts with its attention now (#895) |
-//! | GET | `/api/history` | `pane=`, `session=`, `failed=1`, `since=` secs, `cwd=`, `match=`, `kind=`, `limit=`, `host=` | `[HistoryEntry]`, each with a stable `id` (M112); a guest gets the panes they may read |
+//! | GET | `/api/history` | `pane=`, `session=`, `failed=1`, `since=` secs, `cwd=`, `match=`, `kind=`, `limit=` | `[HistoryEntry]`, each with a stable `id` (M112); a guest gets the panes they may read |
 //! | GET | `/api/search` | `re=`, `since=` secs | `[SearchHit]`: lines of output |
 //! | GET | `/api/docs` | | `[DocRow]`: the Docs in the library, newest first (#1493; the owner's) |
 //! | POST | `/api/docs/open` | `DocOpenRequest`: a Doc `id` or a shared `link`'s id | `DocOpened`: the Doc's block, the one that has it open or a new one |
+//! | POST | `/api/docs/ID/share` | `DocShareRequest`: `update` for a Doc that has a link | `DocLinkUrl`: the Doc's link, made or updated, whether or not a block shows it (the owner's, never an agent's) |
 //! | DELETE | `/api/docs/ID` | | `Empty`: unshared first, then removed (the owner's, never an agent's) |
+//! | POST | `/api/docs/ID/move` | `DocMoveRequest`: the team `project`, else the current one | `DocMoved`: the team Doc it is now; the library keeps a hidden pointer (the owner's) |
+//! | GET | `/api/docs/team` | | `DocTeams`: the team a Doc here would move to, if any (the owner's) |
 //! | GET | `/api/agent-can` | | `[AgentCan]`: what an agent here can do for the person, in their words (the owner's) |
 //! | GET | `/api/fs/…`, POST `/api/panes/N/cd` | | files on a host: see [`crate::fs`] |
 //! | GET | `/api/host` | | `HostInfo`: this daemon's name and version, its tailnet URL, whether the tailnet has reached it, the control it joined |
@@ -67,35 +70,14 @@
 //! | GET | `/api/hosts` | | `HostList`: the daemons a client can switch between |
 //! | POST | `/api/hosts` | `AddHost` | `Host` (replaces one with the same name) |
 //! | DELETE | `/api/hosts/NAME` | | `{}` |
-//! | POST | `/api/hosts/invite` | | `Invite`: a one-time token for `join` |
-//! | POST | `/api/hosts/join` | `JoinRequest` | `Joined`; the token is the credential |
-//! | POST | `/api/hosts/NAME/token` | | `HostToken`: a per-host token (replaces the last) |
-//! | DELETE | `/api/hosts/NAME/token` | | `{}`: revoked, and its dial-out connection dropped |
-//! | GET | `/api/dial` | `Authorization: Bearer <host token>` | WebSocket: a dial-out host's tunnel |
-//! | any | `/h/NAME/ws`, `/h/NAME/api/...` | | a dial-out host's own WebSocket and API, through its tunnel |
 //! | POST | `/api/shares` | `ShareRequest` | `Share` (with its token, shown once) |
 //! | GET | `/api/shares` | | `[Share]` (no tokens) |
 //! | DELETE | `/api/shares/N` | | `{}`: revoked; open viewers are cut off |
 //! | GET | `/share/TOKEN` | | the read-only viewer page |
 //! | GET | `/share/TOKEN/ws` | | WebSocket: the shared pane's snapshot and output, nothing else |
-//! | GET | `/api/sync/state` | host token | `SyncState`: how much of each pane the home daemon has |
-//! | POST | `/api/sync/N/log?from=OFFSET` | host token; raw bytes | `SyncedPane` |
-//! | POST | `/api/sync/N/index?from=BYTE` | host token; raw bytes | `SyncedPane` |
-//! | POST | `/api/sync/N/closed?at=MS` | host token | `SyncedPane` |
-//! | GET | `/api/synced` | | `[SyncedHost]`: hosts whose history is kept here |
-//! | DELETE | `/api/synced/NAME` | | `{}`: forget a host's synced history |
-//! | POST | `/api/synced/rotate-key` | | `{"key": id}`: re-encrypt it all under a new key |
 //!
-//! `history`, `search` and `tail` take `host=NAME` (`*`: every host, for
-//! history and search) to read history synced from another host instead.
-//!
-//! `dial`, `sync/*` and `/share/*` are reached without the owner's
-//! identity: a host token or a share token is the credential there, and it
-//! grants nothing else.
-//!
-//! `join` is how a sandbox adds itself to the home daemon's list. Sandboxes
-//! are tagged tailnet nodes with no user identity, so the access checks
-//! refuse them everything else.
+//! `/share/*` is reached without the owner's identity: the share token is
+//! the credential there, and it grants nothing else.
 //!
 //! Errors are `{"error": "..."}` with a 4xx/5xx status.
 
@@ -410,6 +392,85 @@ pub struct AttentionRequest {
     pub why: Option<String>,
 }
 
+/// `arugula mentions on|off %N` (#579): whether teammates' agents may mention
+/// this session. Off lasts as long as the pane.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MentionsRequest {
+    pub on: bool,
+}
+
+/// What Claude Code says about its session from inside it (#396, a spike):
+/// the Claude Code mod in `plugins/claude-code/hooks/live.ts` sends one per event,
+/// through `arugula session-signal`. `event` is `start`, `usage` (the
+/// engine's `session.measure`: the window's fill), `step` (a model request:
+/// its model and effort) or `compact` (a compaction, after it ran).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct SessionSignal {
+    pub event: String,
+    /// Claude Code's session id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    /// A subagent's loop, when it's one of theirs; else the main loop.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
+    /// Input tokens the last response was answered over (the fill).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens: Option<u64>,
+    /// The model's window, as the engine has it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window: Option<u64>,
+    /// A compaction's `manual`, `auto` or `plugin`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trigger: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens_before: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens_after: Option<u64>,
+    /// What the session has cost so far, in US dollars (the engine's ledger).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost_usd: Option<f64>,
+    /// Claude Code's version, and the mod's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claude_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mod_version: Option<String>,
+}
+
+/// A [`SessionSignal`] for its conversation (#453): keyed by Claude Code's
+/// session id (required here), with the pane optional. `arugula
+/// session-signal` adds `pane` (its `ARUGULA_PANE`, if any) and `pid` (its
+/// own process id): the session shows on that pane only when the CLI runs
+/// in the pane's foreground job, so an editor or desktop app started from a
+/// pane doesn't lump its sessions onto it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct ConversationSignal {
+    #[serde(flatten)]
+    pub signal: SessionSignal,
+    /// The pane Claude Code was started in, as its environment says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pane: Option<PaneId>,
+    /// The process id of whoever sent it (the CLI, Claude Code's child).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pid: Option<u32>,
+}
+
+/// What the daemon makes of a [`SessionSignal`]: the session's context, in
+/// the agent block's `context` shape (#397), and its own version.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SessionSignaled {
+    pub daemon_version: String,
+    #[serde(default)]
+    pub context: serde_json::Value,
+    /// The pane or agent block it shows on (#453), if any: else only its
+    /// conversation does.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pane: Option<PaneId>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Process {
     pub pid: u32,
@@ -546,9 +607,6 @@ pub struct HistoryEntry {
     /// Stream offsets of the output: `tail --from start`.
     pub start: u64,
     pub end: Option<u64>,
-    /// A synced copy of another host's history (`host=NAME`), not ours.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub host: Option<String>,
     /// Who typed it (M13).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub by: Option<String>,
@@ -582,9 +640,6 @@ pub struct SearchHit {
     pub line: String,
     /// The command whose output it is, if known.
     pub command: Option<String>,
-    /// A synced copy of another host's history (`host=NAME`), not ours.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub host: Option<String>,
     /// A line of a Doc in the library (#1493): its id. `pane` is the block
     /// that shows it now, or 0 when none does; `offset` is the line.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -709,45 +764,109 @@ pub struct GuestInvite {
     pub jump: Option<String>,
 }
 
-/// `GET /api/sync/state`: what the home daemon holds of the calling host's
-/// panes, so a push resumes where the last one stopped.
+/// `GET /api/access` (Arugula #681, the `access.get` operation): who can
+/// reach this machine, and as what, from what the machine holds: its owner,
+/// the roster it checked itself (team owners as owners, the others by their
+/// team role), the session shares in `acl.json` with their floors, links and
+/// when they end, ssh guests, and trust live now. The owner's, read-only, and
+/// nothing an owner can't read from `GET /api/acl`, `/api/shares`,
+/// `/api/guests` and the roster. Each row says whose word it is
+/// ([`AccessRow::word`]). This machine's agents' powers are control's word
+/// (`GET /api/grants`): the page and `arugula access` add them, labelled so.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SyncState {
-    pub panes: std::collections::BTreeMap<PaneId, SyncedPane>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SyncedPane {
-    /// Stream offset just past the last output byte held.
-    pub log_end: u64,
-    /// Bytes of the pane's index held.
-    pub index_len: u64,
-    /// When the pane closed on its host, once it has.
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(optional_fields = nullable))]
+pub struct AccessView {
+    /// `local` (joined to no control), `personal`, `team` or `hosted`.
+    pub kind: String,
+    /// A hosted machine's purpose: `people` (a workspace), `deploy` (one
+    /// deploy's box: none of the project's people are admitted, and control
+    /// routes nobody to it), `snapshot` (a box building a snapshot: its
+    /// people are admitted, and control routes nobody to it) or `both`.
     #[serde(default)]
-    pub closed_ms: Option<u64>,
-    #[serde(default)]
-    pub last_push_ms: u64,
-    /// Output bytes held (after retention).
-    #[serde(default)]
-    pub bytes: u64,
-}
-
-/// `GET /api/synced`: a host whose history the home daemon keeps.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SyncedHost {
-    #[serde(default)]
+    pub purpose: Option<String>,
+    /// The machine's name, and (joined) its device id in control's
+    /// directory and that control's URL: what its agents' powers are
+    /// listed under there, and where.
     pub name: String,
     #[serde(default)]
-    pub panes: std::collections::BTreeMap<PaneId, SyncedPane>,
+    pub machine: Option<String>,
+    #[serde(default)]
+    pub control: Option<String>,
+    /// A team machine's team, or a hosted machine's project's.
+    #[serde(default)]
+    pub team: Option<AccessTeam>,
+    /// Guest SSH access: the setting (`None`: this build has no guest ssh).
+    #[serde(default)]
+    pub guest_ssh: Option<bool>,
+    /// The sessions, so a row's session has a name.
+    #[serde(default)]
+    pub sessions: Vec<AccessSession>,
+    /// Who can reach it, the owner first.
+    #[serde(default)]
+    pub rows: Vec<AccessRow>,
+    /// What holds for the whole machine, in sentences: a locked team, a
+    /// hosted machine's editors having full use.
+    #[serde(default)]
+    pub notes: Vec<String>,
 }
 
-/// `POST /api/synced/rotate-key`: the id of the key all synced history is
-/// now sealed under.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SyncedRotated {
-    pub key: u32,
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct AccessTeam {
+    pub id: String,
+    pub name: String,
+    /// Locked: only its owners get in.
+    #[serde(default)]
+    pub locked: bool,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct AccessSession {
+    pub id: SessionId,
+    pub name: String,
+}
+
+/// One person, team, link or guest that reaches the machine, and as what.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(optional_fields = nullable))]
+pub struct AccessRow {
+    /// `owner` (the machine's), `team_owner` (a team's other owner, an
+    /// owner here), `team_role` (a team member by the roster), `share` (a
+    /// session share), `team_share` (a member of a team a session was
+    /// shared with), `link` (a read-only link: to a session, or to one
+    /// pane), `guest` (an ssh invite), `trust` (minutes to type into one
+    /// pane).
+    pub kind: String,
+    /// Whose word: `this_machine` (its own files and memory) or `roster`
+    /// (the team's signed roster, checked by this machine).
+    pub word: String,
+    /// What to call them.
+    pub who: String,
+    /// Their principal id (`account:…`, `tailnet:…`, `team:…`, `link:…`),
+    /// where there is one.
+    #[serde(default)]
+    pub principal: Option<String>,
+    pub role: arugula_core::Role,
+    /// Where they reach: one session, one pane (in `session`), or every
+    /// session (neither).
+    #[serde(default)]
+    pub session: Option<SessionId>,
+    #[serde(default)]
+    pub pane: Option<PaneId>,
+    /// A "from now" share: since when (ms), and nothing before it.
+    #[serde(default)]
+    pub from_ms: Option<u64>,
+    /// When it ends (ms): a link, an invite, trust.
+    #[serde(default)]
+    pub until_ms: Option<u64>,
+    /// A word more: "full use, as an owner" on a hosted machine's editor,
+    /// how an invite may be used, which team a share came through.
+    #[serde(default)]
+    pub note: Option<String>,
+}
 /// `GET /api/doc-links/ID` (#1066): a shared Doc's URL, with its key.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -801,6 +920,9 @@ impl TurnResult {
 /// What a turn left in a git repo (AR-1, #1475).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Work {
+    /// The worktree the agent block owns, absolute, when it owns one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree: Option<String>,
     /// The checked-out branch, or `(detached)`.
     pub branch: String,
     /// HEAD, abbreviated.
@@ -892,6 +1014,50 @@ pub struct AgentCan {
     pub example: String,
 }
 
+/// How a Doc is laid out: one page (`doc`), its sections as tabs (`tabs`),
+/// or a prototype alone (`prototype`). A Doc that doesn't say is `doc`. A
+/// layout this build doesn't know (a newer peer's) reads as `doc`, never as
+/// an error. A Doc's tabs are its sections; "tab" elsewhere is a session's.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub enum DocLayout {
+    #[default]
+    Doc,
+    Tabs,
+    Prototype,
+}
+
+impl DocLayout {
+    pub fn is_doc(&self) -> bool {
+        *self == DocLayout::Doc
+    }
+
+    /// The name it has on the wire and in `meta.json`.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            DocLayout::Doc => "doc",
+            DocLayout::Tabs => "tabs",
+            DocLayout::Prototype => "prototype",
+        }
+    }
+
+    /// The layout named `s`; one this build doesn't know is `doc`.
+    pub fn from_name(s: &str) -> DocLayout {
+        match s {
+            "tabs" => DocLayout::Tabs,
+            "prototype" => DocLayout::Prototype,
+            _ => DocLayout::Doc,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for DocLayout {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(DocLayout::from_name(&String::deserialize(d)?))
+    }
+}
+
 /// One Doc in the library (#1493): `GET /api/docs`. `open` is the block
 /// that shows it now, `shared` its link's dates and id (never its key).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -909,6 +1075,86 @@ pub struct DocRow {
     pub open: Option<PaneId>,
     #[serde(default)]
     pub shared: Option<DocShared>,
+    /// Its opening line, as plain text (#588). Empty until it has one.
+    #[serde(default)]
+    pub summary: String,
+    /// Its sections, for the list's picture of its shape and its outline.
+    #[serde(default)]
+    pub sections: Vec<DocSectionShape>,
+    /// How it is laid out; `doc` for a Doc that never said, and from a
+    /// daemon from before layouts.
+    #[serde(default)]
+    pub layout: DocLayout,
+}
+
+/// One section of a Doc, as the Docs list shows it (#588). A fenced block is
+/// a figure and not words, or a prototype's code reads as a long essay.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct DocSectionShape {
+    pub heading: String,
+    pub words: u32,
+    pub figures: u32,
+}
+
+/// `GET /api/docs/ID/preview` (#588): a Doc's first paragraphs, as plain
+/// text, without opening it in a block.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct DocPreview {
+    pub opening: Vec<String>,
+}
+
+/// One section of a Doc as `GET /api/docs/ID/content` has it: the Doc block's
+/// entry. `body` is null while the section is pending.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct DocContentEntry {
+    pub id: String,
+    pub heading: String,
+    pub intent: String,
+    pub body: Option<String>,
+    pub rev: u64,
+}
+
+/// A picture a Doc keeps, as its state lists it; `doc.asset` has the bytes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct DocContentAsset {
+    pub name: String,
+    pub mime: String,
+    pub size: u64,
+    pub rev: u64,
+}
+
+/// `GET /api/docs/ID/content` (#608): the Doc read from its files, without
+/// opening it in a block, in the shape the Doc block's state has, so the
+/// same renderer draws it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(optional_fields = nullable))]
+pub struct DocContent {
+    pub title: String,
+    pub entries: Vec<DocContentEntry>,
+    #[serde(default)]
+    pub assets: Vec<DocContentAsset>,
+    pub rev: u64,
+    /// The Doc's id in the library.
+    #[serde(default)]
+    pub doc: Option<String>,
+    /// The folder couldn't be read back: what to tell the person.
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+/// `GET /api/docs/ID/assets/NAME` (#608): a picture, as the Doc block's
+/// `doc_asset` answers it. The type is what the bytes say.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct DocAsset {
+    pub mime: String,
+    /// Base64.
+    pub data: String,
 }
 
 /// When a Doc was shared with a link, and last updated.
@@ -942,11 +1188,67 @@ pub struct DocOpenRequest {
     pub split: Option<PaneId>,
 }
 
+/// `POST /api/docs/ID/share`: `update` makes the Doc's link show it as it is
+/// now (it has one already); otherwise the Doc gets a link.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct DocShareRequest {
+    #[serde(default)]
+    pub update: bool,
+}
+
 /// The block that shows the Doc: the one that had it open, or a new one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct DocOpened {
     pub pane: PaneId,
+}
+
+/// `POST /api/docs/ID/move` (Arugula #863): give a Doc to a team. The team
+/// Doc is made from it, and the library keeps only a pointer to it. With no
+/// `project`, the current one (the one rule MCP's tools choose by), which
+/// must be a team's.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(optional_fields = nullable))]
+pub struct DocMoveRequest {
+    #[serde(default)]
+    pub project: Option<String>,
+}
+
+/// Where a Doc went: the team's project and the team Doc there.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(optional_fields = nullable))]
+pub struct DocMoved {
+    /// The project's id (`prj_…`) and name.
+    pub project: String,
+    pub name: String,
+    /// The team Doc's id (`pdc_…`), and its page on the platform.
+    pub id: String,
+    #[serde(default)]
+    pub link: Option<String>,
+}
+
+/// A team's project a Doc can move to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct DocTeam {
+    pub project: String,
+    pub name: String,
+}
+
+/// `GET /api/docs/team` (Arugula #863): the team a Doc here would move to
+/// with no project named, so the Docs page can offer Move to <team>. Null
+/// when the current project is a personal one, or control can't say (`why`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(optional_fields = nullable))]
+pub struct DocTeams {
+    #[serde(default)]
+    pub team: Option<DocTeam>,
+    #[serde(default)]
+    pub why: Option<String>,
 }
 
 /// What a route answers when it has nothing to say: `{}`.
@@ -1136,6 +1438,29 @@ pub struct LinkRequest {
     pub history: bool,
 }
 
+/// `GET /api/links`'s query string: one session's links, or every session's.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LinksQuery {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<SessionId>,
+}
+
+/// One row of `GET /api/links`: a read-only link to a session that still
+/// works. Its key stays out: the private half never reached the machine, so
+/// a link can't be read back from here, only ended.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct SessionLink {
+    /// What `DELETE /api/links/ID` takes: the hash in its `link:<hash>`
+    /// principal.
+    pub id: String,
+    pub session: SessionId,
+    #[serde(default)]
+    pub made_ms: u64,
+    #[serde(default)]
+    pub expires_ms: u64,
+}
+
 fn link_ttl() -> u64 {
     3600
 }
@@ -1315,6 +1640,31 @@ pub enum PermitAnswer {
         output: serde_json::Value,
     },
     Withdrawn,
+}
+
+/// The field `arugula hook` adds to a `PostToolUse` of a session a person
+/// drives (#644): it wants a mention that's waiting, if there is one.
+pub const HOOK_TAKES_MENTION: &str = "arugula_takes_mention";
+
+/// The field `arugula hook` adds to a `SessionStart` whose session was told
+/// how a mid-turn mention arrives (`flags::MENTIONS_STEERING`, #644). Only
+/// those sessions take one at a tool call: a session that started before
+/// could read it as injected text, so it keeps getting them between turns.
+pub const HOOK_MENTIONS_TOLD: &str = "arugula_mentions_told";
+
+/// What `POST /api/panes/N/hook` answers. Empty, unless the hook asked
+/// ([`HOOK_TAKES_MENTION`]) and a mention was waiting.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HookAnswer {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub follow_up: Option<HookFollowUp>,
+}
+
+/// A mention taken at a tool call (#644): its framed text, and who sent it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HookFollowUp {
+    pub text: String,
+    pub by: crate::Driver,
 }
 
 /// `POST /api/panes/N/inbox` (`arugula inbox`): a follow-up for the agent,
@@ -1763,11 +2113,43 @@ pub struct HostedSetup {
     /// The hash of the spec it ran.
     #[serde(default)]
     pub spec_hash: String,
+    /// The repos it cloned, then any other repo in the box's homes with
+    /// work a rebuild would lose (Arugula #932).
     #[serde(default)]
     pub repos: Vec<HostedRepo>,
+    /// Where it looked for work a rebuild would lose. None from a daemon
+    /// before Arugula #932, which looked only at the cloned repos'
+    /// checked-out branches and their files.
+    #[serde(default)]
+    pub check: Option<HostedCheck>,
 }
 
-/// A repo a hosted machine's setup cloned, and what isn't pushed from it.
+/// Where a hosted machine looked for work a rebuild would lose (Arugula
+/// #932): every git repo in its homes, each local branch and stash.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct HostedCheck {
+    /// The homes it looked through: the box's user's and each session
+    /// user's.
+    #[serde(default)]
+    pub homes: Vec<String>,
+    /// What it couldn't look at, and why: work there may be lost.
+    #[serde(default)]
+    pub missed: Vec<HostedMissed>,
+}
+
+/// A home or repo a hosted machine couldn't look at.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct HostedMissed {
+    pub dir: String,
+    pub why: String,
+}
+
+/// A repo on a hosted machine (one its setup cloned, or one found in its
+/// homes), and what isn't pushed from it. A repo's linked worktree is one
+/// of these too, with its own files; its branches and stashes are on the
+/// repo's.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct HostedRepo {
@@ -1780,17 +2162,33 @@ pub struct HostedRepo {
     /// Files changed or not tracked (ignored ones aside).
     #[serde(default)]
     pub changed: u32,
-    /// Commits on no remote branch.
+    /// Commits on no remote branch: on any local branch (only the
+    /// checked-out one before Arugula #932), or a detached HEAD.
     #[serde(default)]
     pub unpushed: u32,
+    /// Each local branch with commits on no remote branch (Arugula #932),
+    /// and a detached HEAD's as `HEAD`.
+    #[serde(default)]
+    pub branches: Vec<HostedBranch>,
+    /// Its `git stash` entries.
+    #[serde(default)]
+    pub stashes: u32,
     /// Why it couldn't be read (not cloned, not a repo).
     pub error: Option<String>,
+}
+
+/// A local branch with commits on no remote branch.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct HostedBranch {
+    pub name: String,
+    pub commits: u32,
 }
 
 impl HostedRepo {
     /// It holds work a rebuild would lose.
     pub fn dirty(&self) -> bool {
-        self.changed > 0 || self.unpushed > 0
+        self.changed > 0 || self.unpushed > 0 || self.stashes > 0
     }
 }
 
@@ -2550,5 +2948,21 @@ mod wire {
         same(&Empty {}, json!({}));
         let back: Empty = serde_json::from_value(json!({})).unwrap();
         assert_eq!(back, Empty {});
+    }
+
+    /// A Doc's layout (Arugula #827): `doc` when it's missing, and a name
+    /// from a newer peer reads as `doc` rather than failing the row.
+    #[test]
+    fn a_doc_layout_defaults_and_forgives() {
+        let row = |extra: serde_json::Value| -> DocRow {
+            let mut v = json!({ "id": "a", "title": "T", "made": 1, "updated": 2, "by": "me" });
+            v.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+            serde_json::from_value(v).unwrap()
+        };
+        assert_eq!(row(json!({})).layout, DocLayout::Doc);
+        assert_eq!(row(json!({ "layout": "tabs" })).layout, DocLayout::Tabs);
+        assert_eq!(row(json!({ "layout": "prototype" })).layout, DocLayout::Prototype);
+        assert_eq!(row(json!({ "layout": "gallery" })).layout, DocLayout::Doc);
+        assert_eq!(serde_json::to_value(DocLayout::Prototype).unwrap(), json!("prototype"));
     }
 }

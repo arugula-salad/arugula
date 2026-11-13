@@ -32,7 +32,9 @@
 //! - **Native notifications** (S25: a webview has no push): a thread
 //!   follows the daemon's state, notifies when a pane starts needing you and
 //!   no window has focus, and a click opens that pane. The needs-you count
-//!   goes on the dock badge (macOS) and the tray. And what control would
+//!   goes on the dock badge (macOS) and the tray, and on the badge with it
+//!   chat's unread, which the page counts and sends (`chat_badge`, #498):
+//!   a number for mentions and DMs, a dot for unread alone. And what control would
 //!   push this device, while the app runs, once control's page turns
 //!   *Notify this device* on (`notices.rs`).
 //! - **Every machine, through Arugula cloud** (M48, #159): once this
@@ -656,6 +658,8 @@ fn allow_control(app: &AppHandle) {
             .permission("core:window:allow-start-dragging");
         // Both pages ask for a step in the person's browser (#364).
         cap = cap.permission("allow-open-outside");
+        // Both have chat, whose unread goes on the badge (#498).
+        cap = cap.permission("allow-chat-badge");
         // Control's page turns the app's notifications on and off
         // (`notices.rs`); the platform page doesn't.
         if control.as_deref() == Some(origin.as_str()) {
@@ -672,6 +676,9 @@ fn allow_control(app: &AppHandle) {
 
 fn open_window(app: &AppHandle, url: WebviewUrl) -> tauri::Result<tauri::WebviewWindow> {
     allow_control(app);
+    // A pane popped out (#497, `#pop=`): a window of its own, for another
+    // monitor, never a tab of the window it came from; and pane-sized.
+    let popped = matches!(&url, WebviewUrl::External(u) if pop_out(u));
     let n = WINDOWS.fetch_add(1, Ordering::SeqCst);
     let label = format!("w{n}");
     let handle = app.clone();
@@ -687,7 +694,7 @@ fn open_window(app: &AppHandle, url: WebviewUrl) -> tauri::Result<tauri::Webview
         builder = builder
             .title_bar_style(tauri::TitleBarStyle::Overlay)
             .hidden_title(true)
-            .tabbing_identifier("arugula")
+            .tabbing_identifier(&if popped { format!("arugula-pop-{n}") } else { "arugula".into() })
             // Shown once it's set to join the others as a tab.
             .visible(false);
     }
@@ -697,12 +704,11 @@ fn open_window(app: &AppHandle, url: WebviewUrl) -> tauri::Result<tauri::Webview
     }
     let w = builder
         .title("Arugula")
-        .inner_size(1280.0, 820.0)
+        .inner_size(if popped { 720.0 } else { 1280.0 }, 820.0)
         .initialization_script(cloud::init_script(cloud::control().is_some_and(|c| cloud::signed_in(app, &c))))
         // The microphone and camera for the client's own pages (a lent
-        // device's record_audio, S33; a People block's camera, voice and
-        // calls, #1792; macOS still asks, once each, for the app); nobody
-        // else's.
+        // device's record_audio, S33; scanning a QR code; macOS still asks,
+        // once each, for the app); nobody else's.
         .on_permission_request(|w, kind| match kind {
             tauri::webview::PermissionKind::Microphone | tauri::webview::PermissionKind::Camera
                 if w.url().is_ok_and(|u| ours(&u)) =>
@@ -794,7 +800,7 @@ fn open_window(app: &AppHandle, url: WebviewUrl) -> tauri::Result<tauri::Webview
         _ => {}
     });
     #[cfg(target_os = "macos")]
-    tab_in(&w);
+    tab_in(&w, popped);
     // Back from an update's restart on its own: not in front of whatever
     // someone's doing now (#561).
     if !updates::quiet() {
@@ -803,16 +809,25 @@ fn open_window(app: &AppHandle, url: WebviewUrl) -> tauri::Result<tauri::Webview
     Ok(w)
 }
 
+/// A pane popped out into a window of its own (#497): the page's `#pop=`.
+fn pop_out(url: &tauri::Url) -> bool {
+    url.fragment().is_some_and(|f| f.starts_with("pop="))
+}
+
 /// macOS: a new window opens as a tab of the window in front, whatever the
-/// system's "Prefer tabs" setting says.
+/// system's "Prefer tabs" setting says; a popped-out pane's never does.
 #[cfg(target_os = "macos")]
-fn tab_in(w: &tauri::WebviewWindow) {
+fn tab_in(w: &tauri::WebviewWindow, popped: bool) {
     let Ok(ptr) = w.ns_window() else { return };
     let (ptr, w2) = (ptr as usize, w.clone());
     let _ = w.run_on_main_thread(move || {
         // SAFETY: the window's NSWindow, on the main thread, while it lives.
         let ns = unsafe { &*(ptr as *const objc2_app_kit::NSWindow) };
-        ns.setTabbingMode(objc2_app_kit::NSWindowTabbingMode::Preferred);
+        ns.setTabbingMode(if popped {
+            objc2_app_kit::NSWindowTabbingMode::Disallowed
+        } else {
+            objc2_app_kit::NSWindowTabbingMode::Preferred
+        });
         keep_full_screen_on_escape();
         let _ = w2.show();
         if !updates::quiet() {
@@ -1161,12 +1176,45 @@ fn needs_you(pane: u32) -> bool {
     NEEDS.lock().unwrap().contains(&pane)
 }
 
+/// The panes that need you, as `watch` last counted them (the badge's
+/// first half).
+static NEEDS_N: Mutex<usize> = Mutex::new(0);
+
+/// Chat's unread, as the page last counted it (#498, `chat_badge`): its
+/// count (the Chat button's number) and whether anything at all is unread.
+static CHAT: Mutex<(usize, bool)> = Mutex::new((0, false));
+
+/// What the Dock (or taskbar) badge says (#498): the panes that need you
+/// plus chat's count, as a number; else a dot when chat has only unread
+/// that doesn't count (a channel's messages, no mention), as Slack does;
+/// else nothing.
+fn badge(needs: usize, chat: usize, unread: bool) -> Option<String> {
+    match needs + chat {
+        0 if unread => Some("\u{2022}".into()),
+        0 => None,
+        n => Some(n.to_string()),
+    }
+}
+
 fn set_count(app: &AppHandle, count: usize) {
+    *NEEDS_N.lock().unwrap() = count;
+    show_badge(app);
+}
+
+fn show_badge(app: &AppHandle) {
+    let count = *NEEDS_N.lock().unwrap();
+    let (chat, unread) = *CHAT.lock().unwrap();
+    let label = badge(count, chat, unread);
     let app2 = app.clone();
     let _ = app.run_on_main_thread(move || {
         for w in app2.webview_windows().values() {
-            let _ = w.set_badge_count(if count == 0 { None } else { Some(count as i64) });
+            // macOS takes a label (the dot); elsewhere only a number.
+            #[cfg(target_os = "macos")]
+            let _ = w.set_badge_label(label.clone());
+            #[cfg(not(target_os = "macos"))]
+            let _ = w.set_badge_count(label.as_deref().and_then(|l| l.parse().ok()));
         }
+        // The tray is the panes': it says what needs you.
         if let Some(tray) = app2.tray_by_id("arugula") {
             let _ = tray.set_tooltip(Some(if count == 0 {
                 "Arugula".to_string()
@@ -1176,6 +1224,32 @@ fn set_count(app: &AppHandle, count: usize) {
             let _ = tray.set_title(Some(if count == 0 { String::new() } else { count.to_string() }));
         }
     });
+}
+
+/// Chat's unread, from a page that has chat open (#498): `count` is the
+/// Chat button's number (mentions, DMs, rooms set to every message), and
+/// `unread` whether anything at all is unread. Every window with chat
+/// sends it when it changes; they agree, as they count the same rooms.
+mod chat_badge {
+    #[tauri::command]
+    pub fn chat_badge(app: tauri::AppHandle, count: u32, unread: bool) {
+        *super::CHAT.lock().unwrap() = (count as usize, unread);
+        super::show_badge(&app);
+    }
+}
+
+#[cfg(test)]
+mod badge_tests {
+    use super::badge;
+
+    #[test]
+    fn panes_and_mentions_count_and_unread_alone_is_a_dot() {
+        assert_eq!(badge(0, 0, false), None);
+        assert_eq!(badge(0, 0, true).as_deref(), Some("\u{2022}"));
+        assert_eq!(badge(0, 3, true).as_deref(), Some("3"));
+        assert_eq!(badge(2, 3, false).as_deref(), Some("5"));
+        assert_eq!(badge(1, 0, true).as_deref(), Some("1"));
+    }
 }
 
 /// Follows the daemon's state over its WebSocket, reconnecting as needed.
@@ -1308,7 +1382,8 @@ fn main() {
         notices::notices_start,
         notices::notices_stop,
         notices::notices_state,
-        page_open::open_outside
+        page_open::open_outside,
+        chat_badge::chat_badge
     ]);
     builder
         .menu(|app| {

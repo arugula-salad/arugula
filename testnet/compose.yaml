@@ -6,13 +6,11 @@
 name: arugula-testnet
 
 networks:
-  # The outer network: the bastion, and control and its fakes.
+  # The outer network: the bastion.
   outer:
     name: ${COMPOSE_PROJECT_NAME:-arugula-testnet}
   # Only ssh gets through: no route out, and nothing published to the host.
-  # The bastion is on both networks, and so is control (profile `control`),
-  # which the boxes reach by dialing out to it, as joined machines do. Its
-  # subnet is fixed so control has a known address there
+  # The bastion is on both networks. Its subnet is fixed
   # (ARUGULA_TESTNET_INNER_NET, the first three octets).
   inner:
     name: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-inner
@@ -25,8 +23,7 @@ networks:
 # check passes, so `up --wait` (up.sh, the tests' recreate) returns when a
 # box answers ssh, not when its container is running. Without one, --wait
 # took "running" for ready: box-systemd's systemd was still booting (no
-# sshd yet) and the fakes' node hadn't bound its ports when the first
-# login or sign-in came. Probed every second until the first pass (up to
+# sshd yet) when the first login came. Probed every second until the first pass (up to
 # start_period), then every minute.
 x-ready: &ready
   start_period: 5m
@@ -97,22 +94,6 @@ services:
           exec 3<>/dev/tcp/127.0.0.1/22 && read -r -t 5 l <&3 && [[ $$l == SSH-* ]]
     networks: [inner]
 
-  # A hosted workspace's box (M212's `runs` claim): M177's users, on the
-  # inner network only, with the stack's binaries. The claim starts
-  # `arugulad --hosted` in it.
-  hosted-box:
-    profiles: [control]
-    build: { context: ./hosted, args: *images }
-    image: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-hosted
-    container_name: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-hosted-box
-    hostname: hosted-box
-    init: true
-    # arugulad's iptables rules keep runs off its ports (M212).
-    cap_add: [NET_ADMIN]
-    volumes:
-      - ${ARUGULA_TESTNET_BINARIES:-./.state/no-binaries}:/opt/arugula:ro
-    networks: [inner]
-
   # A git server (bare repositories over ssh) for M51's `git push` from a
   # pane with the agent forwarded through `arugula --ssh`. git@git:repo.git.
   git:
@@ -126,242 +107,6 @@ services:
     # sshd starts last, after nginx (entrypoint.sh).
     healthcheck: *sshd-ready
     networks: [inner]
-
-  # Profile `control`: this tree's arugula-control (the static build,
-  # mounted, `just static`) with its relay, signing in with the fake GitHub
-  # and billing with the fake Stripe in `fakes`. Daemons on the inner
-  # network reach it at its fixed address there: a private IP, so they take
-  # its plain http. Its public URL is that address too; tests on the host
-  # reach it on the published port (web/fixtures/device.ts `via`).
-  control:
-    profiles: [control]
-    image: ${ARUGULA_IMAGES:-ghcr.io/arugula-salad/ci}/debian:bookworm-slim
-    container_name: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-control
-    hostname: control
-    depends_on:
-      postgres:
-        condition: service_healthy
-    command:
-      - /opt/arugula/arugula-control
-      - --listen=0.0.0.0:8080
-      - --public-url=http://${ARUGULA_TESTNET_INNER_NET:-10.229.80}.10:8080
-      - --db=/var/lib/arugula-control/control.db
-      - --github-client-id=id
-      - --github-client-secret=secret
-      - --github-url=http://fakes:9001
-      - --github-api=http://fakes:9001
-      - --stripe-api=http://fakes:9002
-      - --stripe-seat-price=price_seat
-      - --stripe-minutes-price=price_min
-      - --push-host=fakes:9003
-      # The ssh jump host for guests of boxes behind NAT (M65), as the
-      # host reaches it.
-      - --guest-ssh=0.0.0.0:2222
-      - --guest-ssh-host=127.0.0.1:${ARUGULA_TESTNET_GUEST_SSH_PORT:-22982}
-    environment:
-      # The platform on the `postgres` service's Postgres (M143) when the
-      # stack is brought up with ARUGULA_TESTNET_POSTGRES=1; on control's
-      # own file otherwise, as always.
-      ARUGULA_PLATFORM_DATABASE_URL: ${ARUGULA_TESTNET_POSTGRES:+postgres://postgres:testnet@postgres:5432/platform}
-      RUST_LOG: arugula_control=debug
-      # Anyone here may start runs on a hosted workspace (M212's `runs`).
-      ARUGULA_HOSTED_ACCOUNTS: "*"
-      # The platform's Anthropic key pays for agent turns (M185) in
-      # workspaces this account made: `runs` makes its workspace as it.
-      ARUGULA_HOSTED_PLATFORM_KEYS: anthropic
-      ARUGULA_CLOUD_ACCOUNTS: acct-testnet-runs-maker
-      # The inference broker (M231): Anthropic is the fake in `fakes`
-      # (9004), the platform's key a test value, and studio's lobby a
-      # registered client (its credential is `testnet-studio-client-credential`,
-      # its SHA-256 here) whose accounts the platform's key pays for up to
-      # $20 a month, naming sponsors. Projects' own keys are sealed with
-      # the stack's master key (hosted.yaml's).
-      ARUGULA_INFERENCE_UPSTREAM: http://fakes:9004
-      ARUGULA_INFERENCE_ANTHROPIC_KEY: sk-ant-api03-testnet-platform-key-0123456789
-      ARUGULA_INFERENCE_CLIENTS: studio:6655cc9fd497644fe53b64282c8b0c0a8d98a037102691345774f41b6dd01d3a:20:payers
-      ARUGULA_CLOUD_SECRET_KEY: 5ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec0
-      # Environments may name the fake driver (M219's `deploys`).
-      ARUGULA_PLATFORM_FAKE_DRIVER: "1"
-      STRIPE_SECRET_KEY: sk_test_testnet
-      STRIPE_WEBHOOK_SECRET: whsec_testnet
-      # The platform (M140): in process unless `up.sh control` was asked
-      # for it out of process (ARUGULA_TESTNET_PLATFORM=out), when it's the
-      # `platform` service and control is its gateway. The key is the
-      # stack's own, shared with `platform`; the internal API listens
-      # either way (it answers nothing unsigned).
-      ARUGULA_PLATFORM: ${ARUGULA_TESTNET_PLATFORM_URL:-in-process}
-      ARUGULA_PLATFORM_KEY: &platform-key 7e577e577e577e577e577e577e577e577e577e577e577e577e577e577e577e57
-      ARUGULA_CONTROL_INTERNAL_LISTEN: 0.0.0.0:7691
-      # The platform page's own host (M151), served through control on its
-      # port as app.arugula.io is: the host asks for it by name (`Host:`),
-      # whichever process the platform is in.
-      ARUGULA_PLATFORM_HOST: app.control.test
-      # Block origins (M50), off unless a test asks for them:
-      # ARUGULA_TESTNET_BLOCK_DOMAIN=blocks.localhost serves
-      # b-<key>.blocks.localhost on control's port (M186's previews).
-      ARUGULA_CONTROL_BLOCK_DOMAIN: ${ARUGULA_TESTNET_BLOCK_DOMAIN:-}
-      # Public previews (M187), off unless a test asks for them:
-      # ARUGULA_TESTNET_PREVIEW_DOMAIN=previews.localhost serves
-      # <id>.previews.localhost on control's port.
-      ARUGULA_PREVIEW_DOMAIN: ${ARUGULA_TESTNET_PREVIEW_DOMAIN:-}
-      # The hub as an issuer (M228): its keys are files up.sh makes in the
-      # state directory (an empty one is unset), which the `issuer` claim
-      # rewrites and restarts control to rotate.
-      ARUGULA_ISSUER_KEY: file:/issuer/current
-      ARUGULA_ISSUER_KEY_NEXT: file:/issuer/next
-      ARUGULA_ISSUER_KEY_PREVIOUS: file:/issuer/previous
-      ARUGULA_ISSUER_KEY_PREVIOUS_UNTIL: file:/issuer/previous_until
-    volumes:
-      - ${ARUGULA_TESTNET_BINARIES:-./.state/no-binaries}:/opt/arugula:ro
-      - ${ARUGULA_TESTNET_STATE:-./.state}/issuer:/issuer:ro
-    tmpfs: [/var/lib/arugula-control]
-    # Its site answers (control.json) and the guest jump host listens.
-    healthcheck:
-      <<: *ready
-      test:
-        - CMD
-        - bash
-        - -c
-        - >-
-          exec 3<>/dev/tcp/127.0.0.1/8080 &&
-          printf 'GET /control.json HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n' >&3 &&
-          read -r -t 5 _ code _ <&3 && [ "$$code" = 200 ] &&
-          exec 4<>/dev/tcp/127.0.0.1/2222
-    ports:
-      - "127.0.0.1:${ARUGULA_TESTNET_CONTROL_PORT:-22980}:8080"
-      - "127.0.0.1:${ARUGULA_TESTNET_GUEST_SSH_PORT:-22982}:2222"
-    networks:
-      outer: {}
-      inner:
-        ipv4_address: ${ARUGULA_TESTNET_INNER_NET:-10.229.80}.10
-
-  # Control's platform out of process (M140): this tree's arugula-platform,
-  # reached only by control, on the outer network (nothing published).
-  # `ARUGULA_TESTNET_PLATFORM=out testnet/up.sh control` brings it up and
-  # points control at it. Its database is in the container's own
-  # filesystem, so it outlives `docker restart` (the platform-restart
-  # claim); `down` removes it.
-  platform:
-    profiles: [platform]
-    image: ${ARUGULA_IMAGES:-ghcr.io/arugula-salad/ci}/debian:bookworm-slim
-    container_name: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-platform
-    hostname: platform
-    depends_on:
-      postgres:
-        condition: service_healthy
-    command:
-      - /opt/arugula/arugula-platform
-      - --listen=0.0.0.0:7700
-      - --db=/root/platform.db
-      - --hub=http://control:7691
-      - --public-url=http://${ARUGULA_TESTNET_INNER_NET:-10.229.80}.10:8080
-      - --stripe-api=http://fakes:9002
-      - --stripe-seat-price=price_seat
-      - --stripe-minutes-price=price_min
-      - --github-api=http://fakes:9001
-    environment:
-      # On `postgres` with ARUGULA_TESTNET_POSTGRES=1 (M143), as control's.
-      ARUGULA_PLATFORM_DATABASE_URL: ${ARUGULA_TESTNET_POSTGRES:+postgres://postgres:testnet@postgres:5432/platform}
-      RUST_LOG: arugula_platform=debug
-      # The platform page's host, as control's: links to the page are on it.
-      ARUGULA_PLATFORM_HOST: app.control.test
-      # Anyone here may start runs on a hosted workspace (M212's `runs`).
-      ARUGULA_HOSTED_ACCOUNTS: "*"
-      # The platform's Anthropic key pays for agent turns (M185) in
-      # workspaces this account made: `runs` makes its workspace as it.
-      ARUGULA_HOSTED_PLATFORM_KEYS: anthropic
-      ARUGULA_CLOUD_ACCOUNTS: acct-testnet-runs-maker
-      # The inference broker (M231): Anthropic is the fake in `fakes`
-      # (9004), the platform's key a test value, and studio's lobby a
-      # registered client (its credential is `testnet-studio-client-credential`,
-      # its SHA-256 here) whose accounts the platform's key pays for up to
-      # $20 a month, naming sponsors. Projects' own keys are sealed with
-      # the stack's master key (hosted.yaml's).
-      ARUGULA_INFERENCE_UPSTREAM: http://fakes:9004
-      ARUGULA_INFERENCE_ANTHROPIC_KEY: sk-ant-api03-testnet-platform-key-0123456789
-      ARUGULA_INFERENCE_CLIENTS: studio:6655cc9fd497644fe53b64282c8b0c0a8d98a037102691345774f41b6dd01d3a:20:payers
-      ARUGULA_CLOUD_SECRET_KEY: 5ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec0
-      STRIPE_SECRET_KEY: sk_test_testnet
-      STRIPE_WEBHOOK_SECRET: whsec_testnet
-      ARUGULA_PLATFORM_KEY: *platform-key
-      # The GitHub App (M161): its webhook comes to control's site and lands
-      # here (the github-webhook claim). The key is a throwaway up.sh makes.
-      GITHUB_APP_ID: "1"
-      GITHUB_APP_SLUG: arugula-testnet
-      GITHUB_APP_WEBHOOK_SECRET: whsec-github-testnet
-      GITHUB_APP_PRIVATE_KEY_FILE: /keys/github-app.pem
-      # planter's GitHub App, the deploy App (M233), against the fake GitHub
-      # in `fakes`, which takes any App's JWT: the redone claim plans a ship.
-      PLANTER_APP_ID: "4242"
-      PLANTER_APP_PRIVATE_KEY_FILE: /keys/github-app.pem
-      # Every project may use planter's drivers here (`*` only where the fake
-      # driver is allowed, as it is above).
-      PLANTER_PROJECTS: "*"
-      # The Infisical projection (M235), into the fake Infisical in `fakes`
-      # as a writer identity of its own (the redone claim).
-      ARUGULA_INFISICAL_PROJECTION: "on"
-      ARUGULA_INFISICAL_URL: http://fakes:9007
-      ARUGULA_INFISICAL_PROJECT_ID: testnet-planter-apps
-      ARUGULA_INFISICAL_CLIENT_ID: testnet-secret-writer
-      ARUGULA_INFISICAL_CLIENT_SECRET: infisical-testnet-secret
-      # Environments may name the fake driver (M219), as tests do: the redone
-      # claim's apps deploy with it.
-      ARUGULA_PLATFORM_FAKE_DRIVER: "1"
-    volumes:
-      - ${ARUGULA_TESTNET_BINARIES:-./.state/no-binaries}:/opt/arugula:ro
-      - ${ARUGULA_TESTNET_STATE:-./.state}:/keys:ro
-    networks: [outer]
-
-  # The platform's Postgres (M143): 17, as hosted control's Fly Managed
-  # Postgres. Control's platform uses it with ARUGULA_TESTNET_POSTGRES=1 (in
-  # process, or out of it: `platform` takes the same URL). Only they reach
-  # it, on the outer network; its data is in memory, so `down` forgets it.
-  postgres:
-    profiles: [control]
-    image: ${ARUGULA_IMAGES:-ghcr.io/arugula-salad/ci}/postgres:17-alpine
-    container_name: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-postgres
-    hostname: postgres
-    environment:
-      POSTGRES_PASSWORD: testnet
-      POSTGRES_DB: platform
-    tmpfs: [/var/lib/postgresql/data]
-    healthcheck:
-      # Over TCP: its first start answers on the socket while it sets up.
-      test: [CMD, pg_isready, -h, 127.0.0.1, -U, postgres, -d, platform]
-      interval: 1s
-      retries: 60
-    networks: [outer]
-
-  # The fakes control-smoke uses (web/fixtures/fakes.ts): GitHub sign-in on
-  # 9001 (published, for the browser's redirect), Stripe on 9002, a Web Push
-  # endpoint on 9003, Anthropic on 9004 (the inference broker's upstream,
-  # M231), Infisical on 9007 (M235: the platform's projection). Only control
-  # and the platform talk to them, over the outer network.
-  fakes:
-    profiles: [control]
-    image: ${ARUGULA_IMAGES:-ghcr.io/arugula-salad/ci}/node:22-slim
-    container_name: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-fakes
-    hostname: fakes
-    command: [node, --experimental-strip-types, --no-warnings, /fixtures/fakes-serve.ts]
-    volumes:
-      - ../web/fixtures:/fixtures:ro
-      # Infisical's captured answers, for the fake Infisical on 9007 (M235).
-      - ../crates/platform/fixtures/infisical:/infisical:ro
-    # Every fake listens: control signs in with the first right away.
-    healthcheck:
-      <<: *ready
-      test:
-        - CMD
-        - node
-        - -e
-        - >-
-          const net = require("net");
-          Promise.all([9001, 9002, 9003, 9004].map((p) => new Promise((ok, no) =>
-            net.connect(p, "127.0.0.1", ok).on("error", no))))
-            .then(() => process.exit(0), () => process.exit(1))
-    ports:
-      - "127.0.0.1:${ARUGULA_TESTNET_FAKES_PORT:-22981}:9001"
-    networks: [outer]
 
   # S28's tailnet comparison: headscale and two Tailscale nodes on the inner
   # network. ts-box is a box (userspace tailscaled, sshd); ts-client is

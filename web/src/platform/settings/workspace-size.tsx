@@ -9,7 +9,8 @@ import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import { CopyText } from "../../shared/ui/copy";
 import type { PlatformProject } from "../session";
-import { Section } from "./section";
+import { Section } from "../../shared/ui/settings-section";
+import { StateChip } from "../../shared/ui/state-chip";
 
 export type Size = "small" | "large";
 
@@ -139,7 +140,7 @@ export function WorkspaceSize({ p }: { p: PlatformProject }) {
             )}
             {w.rebuild_needed && (
               <span data-size-rebuild>
-                <span class="sw-chip">Wants a rebuild</span>
+                <StateChip tone="warn">Wants a rebuild</StateChip>
                 <CopyText text={`arugula cloud rebuild ${w.name} --project ${p.id}`} />
               </span>
             )}

@@ -5,9 +5,10 @@
 // (../../shared/issues/view), the way a Cloud workspace block once drew
 // control's views: the view reads through `IssueApiContext`.
 //
-// - On control's page, signed in, with chat on (issues come with it), the
-//   view reads and writes as the person looking, through control, as the
-//   platform page does: its thread, the timeline and every change, live.
+// - On control's page, signed in, the view reads and writes as the person
+//   looking, through control, as the platform page does: the timeline and
+//   every change, and its thread and live changes while chat is on for
+//   them.
 //   Nobody needs an agent grant to see their own issue.
 // - Otherwise (a machine's own page, or someone the project doesn't
 //   have), the machine's owner sees what the daemon read for them, read
@@ -91,7 +92,7 @@ export const isNativeIssue = (s: unknown): s is NativeIssueState => (s as { nati
 let projects: Promise<PlatformProjects> | null = null;
 function readProjects(): Promise<PlatformProjects> {
   projects ??= platformFetch("/api/projects", { credentials: "same-origin" }).then(async (r) => {
-    if (!r.ok) throw new IssueError(r.status, `control said ${r.status}`);
+    if (!r.ok) throw new IssueError(r.status, `Arugula cloud said ${r.status}`);
     return (await r.json()) as PlatformProjects;
   });
   projects.catch(() => (projects = null));
@@ -108,7 +109,7 @@ function placeIn(all: PlatformProjects, project: string): IssuePlace | null {
 
 /** The issue as the daemon read it for its owner: read only. */
 function blockApi(issue: NativeIssue): IssueApi {
-  const nope = (what: string) => Promise.reject(new IssueError(403, `${what} on the platform page`));
+  const nope = (what: string) => Promise.reject(new IssueError(403, `${what} in the project`));
   return {
     get: () => Promise.resolve(issue),
     events: () => Promise.resolve([]),
@@ -126,14 +127,11 @@ type Reader = { as: "me"; place: IssuePlace } | { as: "block" } | null;
 function useReader(s: NativeIssueState, project: string | null | undefined): Reader {
   const session = getControlSession();
   useSubscribe((fn) => session?.subscribe(fn) ?? (() => {}));
-  useSubscribe((fn) => chat.subscribe(fn));
   const [reader, setReader] = useState<Reader>(null);
   const signedIn = session?.phase === "ready";
-  const on = chat.on;
   const id = s.pin.global_id;
   useEffect(() => {
-    if (!signedIn || on === false) return setReader({ as: "block" });
-    if (on === null) return;
+    if (!signedIn) return setReader({ as: "block" });
     let live = true;
     (async () => {
       // Its project: the daemon's word to the owner, else the person's
@@ -142,7 +140,7 @@ function useReader(s: NativeIssueState, project: string | null | undefined): Rea
       if (live) setReader(place ? { as: "me", place } : { as: "block" });
     })().catch(() => live && setReader({ as: "block" }));
     return () => void (live = false);
-  }, [signedIn, on, id, project]);
+  }, [signedIn, id, project]);
   return reader;
 }
 
@@ -150,13 +148,13 @@ function useReader(s: NativeIssueState, project: string | null | undefined): Rea
  * last. Where an issue was read from is the source icon's tooltip. */
 function Foot({ s }: { s: NativeIssueState }) {
   if (!s.pin.stale) return null;
-  return <span data-issue-foot>Arugula control can't be reached now: this is what it said {s.read_ms ? <Time at={s.read_ms} long /> : "last"}.</span>;
+  return <span data-issue-foot>Arugula cloud can't be reached now: this is what it said {s.read_ms ? <Time at={s.read_ms} long /> : "last"}.</span>;
 }
 
 /** The source icon's tooltip: who it's read as, and how it's followed. */
 function sourceTitle(s: NativeIssueState, me: boolean): string {
-  if (s.pin.stale && !me) return "Arugula · control can't be reached: this is what it said last";
-  return me ? "Arugula · read as you, through Arugula control" : "Arugula · read through Arugula control by this machine, for its owner";
+  if (s.pin.stale && !me) return "Arugula · the cloud can't be reached: this is what it said last";
+  return me ? "Arugula · read as you, through Arugula cloud" : "Arugula · read through Arugula cloud by this machine, for its owner";
 }
 
 export function NativeIssueBlock({ client, block, s, refresh }: { client: Client; block: number; s: NativeIssueState; refresh: () => void }) {
@@ -177,7 +175,7 @@ export function NativeIssueBlock({ client, block, s, refresh }: { client: Client
     return (
       <div class="issue-block" {...attrs}>
         {reader === null ? (
-          <BlockLoading what="the issue from Arugula control" />
+          <BlockLoading what="the issue from Arugula cloud" />
         ) : reader.as === "me" ? (
           <IssueView key={id} id={id} place={reader.place} refresh={s.read_ms ?? undefined} Missing={({ what }) => <FromBlock s={s} owners={owners} what={what} />} />
         ) : (
@@ -228,10 +226,10 @@ function FromBlock({ s, owners, what }: { s: NativeIssueState; owners: OwnersRea
   if (!issue) {
     const why =
       s.loading || owners === undefined
-        ? "Loading the issue from Arugula control…"
+        ? "Loading the issue from Arugula cloud…"
         : owners === null
           ? `${s.number ? `#${s.number}: you` : "You"} can't read this here.`
-          : (what ?? s.error ?? "Arugula control didn't say what it is.");
+          : (what ?? s.error ?? "Arugula cloud didn't say what it is.");
     return (
       <p class="dim" data-issue-missing data-issue-unreadable={owners === null ? "" : undefined}>
         {why}
@@ -255,7 +253,7 @@ function FromBlock({ s, owners, what }: { s: NativeIssueState; owners: OwnersRea
  * daemon gives it to everyone. */
 export function nativeIssueText(s: NativeIssueState): string {
   const lines = [s.number ? `#${s.number} · ${s.pin.global_id}` : s.pin.global_id];
-  if (s.pin.stale) lines.push(`(as Arugula control said it last: ${s.pin.stale})`);
+  if (s.pin.stale) lines.push(`(as Arugula cloud said it last: ${s.pin.stale})`);
   if (s.error) lines.push(s.error);
   return lines.join("\n");
 }

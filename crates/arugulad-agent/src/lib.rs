@@ -75,7 +75,8 @@ use arugula_mux::{acl, block, mux, pane, paths, perm, procinfo, provider, shelle
 #[cfg(unix)]
 use arugulad_base::upload;
 use arugulad_base::{
-    agent, api, board_attach, features, lab_hooks, mcp, review, rules, server, task, telemetry, work, worktree,
+    agent, agent_mentions, agent_mentions::MentionTag, api, board_attach, features, lab_hooks, mcp, review, rules,
+    server, task, telemetry, work, worktree,
 };
 
 use std::{
@@ -206,7 +207,7 @@ pub struct Config {
 pub struct Import {
     /// Its transcript.
     pub path: String,
-    /// `terminal`, `desktop` or `other`.
+    /// `terminal`, `desktop`, `vscode` or `other`.
     #[serde(default)]
     pub source: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -302,12 +303,16 @@ pub struct TurnStat {
 /// A prompt waiting for the agent: its text, images (M71) by name in the
 /// block's folder, and whose it is when that isn't the block's owner
 /// (M29): the transcript says so when it's sent, not when it's queued, so
-/// a follow-up queued mid-turn is credited to its own author (M255).
+/// a follow-up queued mid-turn is credited to its own author (M255). A
+/// mention (#611) carries its tag, so its turn reports `working` when it is
+/// sent and `read` when it ends (#540). The replies of one thread that wait
+/// together are one prompt (#580), with every one's tag.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Queued {
     pub text: String,
     pub images: Vec<String>,
     pub by: Option<String>,
+    pub mention: Vec<MentionTag>,
 }
 
 impl Queued {
@@ -357,6 +362,9 @@ enum Effect {
     SessionLost(String),
     /// A turn ended: send what's queued.
     TurnEnded,
+    /// A cycle the agent woke for by itself ended: send what's queued
+    /// (#716).
+    WokenEnded,
     /// A permission request came: answer it if a rule allows it.
     Permission(String),
     /// An agent request we don't serve.
@@ -397,6 +405,8 @@ struct Inner {
     /// they end, so `wait --idle` waits.
     background: background::Background,
     queue: VecDeque<Queued>,
+    /// The mentions whose turn is running (#611), told `read` when it ends.
+    mention_turn: Vec<MentionTag>,
     cost: Option<f64>,
     currency: Option<String>,
     turns: Vec<TurnStat>,
@@ -438,11 +448,17 @@ struct Inner {
     live_ctx_path: Option<PathBuf>,
     live_ctx_looked: u32,
     live_ctx_stamp: Option<(u64, std::time::SystemTime)>,
+    /// Its session's subagents' transcripts, followed for what they cost
+    /// (#398).
+    subagents: crate::conversations::spend::Subagents,
     /// The session's `configOptions` (for choosing a model).
     config_options: Value,
     /// The model the agent says it answers with (claude-agent-acp's
     /// `usage_update` `_meta` `_claude/model`), once it has (Arugula #215).
     served_model: Option<String>,
+    /// The context window claude-agent-acp says the session has (#444),
+    /// from a turn's result: what the transcript can't say.
+    engine_window: Option<u64>,
     /// The agent answered the switch to the block's own model (`def.model`):
     /// until then, the model it's on isn't the one it'll answer with.
     model_settled: bool,
@@ -476,6 +492,11 @@ struct Inner {
     /// channel, for the answer.
     hosted_turn: Option<String>,
     gating: bool,
+    /// A thread session's next turn is being checked against the project's
+    /// standing grant (`work::session_turn`).
+    checking_turn: bool,
+    /// Until when that check's yes holds.
+    turn_allowed: Option<std::time::Instant>,
     to_self: Option<mpsc::UnboundedSender<Msg>>,
     /// The kind of credential its last turn ran on, which it's started
     /// holding (else the box's last Claude turn's).
@@ -491,6 +512,7 @@ enum Msg {
     /// M185: what the platform said about the next turn on a hosted box:
     /// its turn, or why it can't run.
     Gated(Result<hosted::Given, String>),
+    TurnChecked(Result<(), String>),
 }
 
 /// Whose the agent block's operations are (`impl Handle<AgentBlock> for
@@ -513,9 +535,14 @@ impl crate::features::Feature for AgentBlock {
     }
 
     fn routes(&self, r: axum::Router<Arc<crate::server::App>>) -> axum::Router<Arc<crate::server::App>> {
-        use arugula_proto::op::ops::{ConversationOpen, ConversationsList};
+        use arugula_proto::op::ops::{
+            ConversationOpen, ConversationSessionSignal, ConversationsList, PaneSessionSignal,
+        };
         use arugulad_base::ops::OpRoutes;
-        r.op_of::<ConversationsList, AgentBlock>().op_of::<ConversationOpen, AgentBlock>()
+        r.op_of::<ConversationsList, AgentBlock>()
+            .op_of::<ConversationOpen, AgentBlock>()
+            .op_of::<PaneSessionSignal, AgentBlock>()
+            .op_of::<ConversationSessionSignal, AgentBlock>()
     }
 }
 
@@ -524,8 +551,8 @@ impl crate::agent::Agents for AgentBlock {
         open_transcripts()
     }
 
-    fn sessions(&self) -> Arc<dyn crate::mux::AgentSessions> {
-        Arc::new(crate::conversations::Sessions)
+    fn sessions(&self) -> Arc<dyn crate::mux::Conversations> {
+        Arc::new(crate::conversations::ClaudeConversations)
     }
 
     fn conversation_titles(&self, ids: &[String]) -> std::collections::HashMap<String, String> {
@@ -688,6 +715,7 @@ impl Inner {
             autonomous_at: None,
             background: Default::default(),
             queue: VecDeque::new(),
+            mention_turn: vec![],
             cost: None,
             currency: None,
             turns: vec![],
@@ -712,8 +740,10 @@ impl Inner {
             live_ctx_path: None,
             live_ctx_looked: 0,
             live_ctx_stamp: None,
+            subagents: Default::default(),
             config_options: Value::Null,
             served_model: None,
+            engine_window: None,
             model_settled: false,
             adapter: None,
             worn: None,
@@ -726,6 +756,8 @@ impl Inner {
             next_run: None,
             hosted_turn: None,
             gating: false,
+            checking_turn: false,
+            turn_allowed: None,
             to_self: None,
             hosted_auth: None,
         }
@@ -756,6 +788,9 @@ impl Inner {
         let mut e = json!({ "e": "queue", "text": q.text, "images": q.images, "front": front });
         if let Some(by) = &q.by {
             e["by"] = json!(by);
+        }
+        if let [m] = q.mention.as_slice() {
+            e["mention"] = m.to_json();
         }
         self.note(e);
     }
@@ -833,6 +868,25 @@ impl Inner {
         list
     }
 
+    /// The MCP servers this agent is started with, by name, and whether
+    /// Arugula's own is among them; when it isn't, why (Arugula #836).
+    /// No values: a token or a header never leaves in it.
+    fn mcp_report(&self, ctx: &AgentCtx) -> Value {
+        let servers: Vec<String> =
+            self.servers(ctx).iter().filter_map(|s| s["name"].as_str().map(str::to_owned)).collect();
+        let arugula = servers.iter().any(|n| n == crate::mcp::SERVER_NAME);
+        let note = if arugula {
+            None
+        } else if self.cfg.def.chat {
+            Some("A chat has no tools, so none of Arugula's MCP server: it can't reach issues, boards or threads")
+        } else if self.cfg.run_as.is_some() {
+            Some("This session's agent gets Arugula's MCP only over HTTP, and this agent or box doesn't offer it")
+        } else {
+            Some("Arugula's MCP server isn't given to this agent: it has no tools to reach issues, boards or threads")
+        };
+        json!({ "servers": servers, "arugula": arugula, "note": note })
+    }
+
     /// What never goes into the log or the transcript: a worn agent's
     /// secrets, and Arugula's own token where it went by reference.
     fn secrets(&self) -> Vec<String> {
@@ -875,10 +929,24 @@ impl Inner {
                     text: e["text"].as_str().unwrap_or_default().to_owned(),
                     images: strings(&e["images"]),
                     by: e["by"].as_str().map(str::to_owned),
+                    mention: mention_of(&e["mention"]).into_iter().collect(),
                 };
                 match e["front"].as_bool() {
                     Some(true) => self.queue.push_front(q),
-                    _ => self.queue.push_back(q),
+                    _ => {
+                        // #580: a reply to a thread that has replies waiting
+                        // joins them, oldest first; both live and in a log's
+                        // replay, so the queue comes out the same.
+                        let joined = match (q.mention.as_slice(), q.images.is_empty()) {
+                            ([tag], true) => self.queue.iter_mut().any(|w| {
+                                w.images.is_empty() && agent_mentions::absorb(&mut w.text, &mut w.mention, tag)
+                            }),
+                            _ => false,
+                        };
+                        if !joined {
+                            self.queue.push_back(q)
+                        }
+                    }
                 }
             }
             "queue_clear" => self.queue.clear(),
@@ -887,6 +955,7 @@ impl Inner {
                 // A new server: nothing outstanding carries over. (An old
                 // Managoat block's turn wasn't cut: it went on there.)
                 self.background.clear();
+                self.close_woken(at);
                 let cut_now = e["fountain"] != true
                     && (self.prompt_id.is_some() || !self.pending.is_empty() || !self.asks.is_empty());
                 if cut_now {
@@ -915,6 +984,7 @@ impl Inner {
             }
             "exit" | "stopped" => {
                 self.background.clear();
+                self.close_woken(at);
                 if self.prompt_id.is_some() {
                     self.interrupted = true;
                 }
@@ -1045,7 +1115,12 @@ impl Inner {
                             .filter_map(|c| c["text"].as_str())
                             .collect::<Vec<_>>()
                             .join("\n");
-                        let sent = Queued { text, images: blocks.iter().filter_map(image).collect(), by: None };
+                        let sent = Queued {
+                            text,
+                            images: blocks.iter().filter_map(image).collect(),
+                            by: None,
+                            mention: vec![],
+                        };
                         let mut by = None;
                         if self.queue.front().is_some_and(|q| q.is(&sent)) {
                             by = self.queue.pop_front().and_then(|q| q.by);
@@ -1170,7 +1245,7 @@ impl Inner {
                         if let Some(Entry::User { text, images, .. }) = self.t.entries.last().cloned() {
                             self.t.entries.pop();
                             // Whose it is was said as it went the first time.
-                            fx.push(Effect::Retry(Queued { text, images, by: None }));
+                            fx.push(Effect::Retry(Queued { text, images, by: None, mention: vec![] }));
                         }
                     }
                     (Purpose::Prompt, result) => {
@@ -1241,6 +1316,17 @@ impl Inner {
                         // An autonomous cycle's close.
                         if claude && self.replay.is_none() && origin != "human" && self.autonomous_at.take().is_some() {
                             self.end_woken(at);
+                            fx.push(Effect::WokenEnded);
+                        }
+                        // #444: the window claude-agent-acp learned from the
+                        // turn's result (the SDK's `modelUsage`), which the
+                        // transcript never says. Its other updates may carry
+                        // a guess.
+                        if claude
+                            && u["cost"].is_object()
+                            && let Some(size) = u["size"].as_u64().filter(|s| *s > 0)
+                        {
+                            self.engine_window = Some(size);
                         }
                         if let Some(amount) = u["cost"]["amount"].as_f64() {
                             self.cost = Some(amount);
@@ -1492,6 +1578,14 @@ impl Inner {
         news
     }
 
+    /// The server it was woken on went away: so did its cycle, which no
+    /// longer holds back what's queued (#716).
+    fn close_woken(&mut self, at: u64) {
+        if self.autonomous_at.take().is_some() {
+            self.end_woken(at);
+        }
+    }
+
     /// A woken cycle ended (#700): its turn did.
     fn end_woken(&mut self, at: u64) {
         if let Some(t) = self.turns.last_mut().filter(|t| t.prompt == WOKEN && t.ended_ms.is_none()) {
@@ -1605,10 +1699,21 @@ impl Inner {
         (state, changed as u64)
     }
 
+    /// What the block has spent: `cost {total, currency, last_turn}` (null
+    /// when the agent reports none: codex-acp sends tokens only) and
+    /// `tokens {total, last_turn}`.
+    fn spend(&self) -> (Value, Value) {
+        let total: u64 = self.turns.iter().filter_map(|t| t.tokens.as_ref()?["totalTokens"].as_u64()).sum();
+        let cost = self.cost.map(
+            |c| json!({ "total": c, "currency": self.currency, "last_turn": self.turns.last().and_then(|t| t.cost) }),
+        );
+        (json!(cost), json!({ "total": total, "last_turn": self.turns.last().and_then(|t| t.tokens.clone()) }))
+    }
+
     fn state(&self, ctx: &AgentCtx) -> Value {
         let (from, entries) = self.t.for_state(ENTRIES_IN_STATE);
         let (attention, _) = self.attention();
-        let total_tokens: u64 = self.turns.iter().filter_map(|t| t.tokens.as_ref()?["totalTokens"].as_u64()).sum();
+        let (cost, tokens) = self.spend();
         let mut state = json!({
             "agent": self.cfg.def.agent,
             "label": self.cfg.def.label(),
@@ -1627,8 +1732,8 @@ impl Inner {
             "pending": self.pending,
             "asks": self.asks.iter().map(|a| &a.ask).collect::<Vec<_>>(),
             "queued": self.queue.iter().map(Queued::label).collect::<Vec<_>>(),
-            "cost": self.cost.map(|c| json!({ "total": c, "currency": self.currency, "last_turn": self.turns.last().and_then(|t| t.cost) })),
-            "tokens": { "total": total_tokens, "last_turn": self.turns.last().and_then(|t| t.tokens.clone()) },
+            "cost": cost,
+            "tokens": tokens,
             "turns": self.turns.len(),
             "recent_turns": self.turns.iter().rev().take(20).collect::<Vec<_>>(),
             "allow": self.cfg.allow,
@@ -1653,15 +1758,21 @@ impl Inner {
         state["recipe"] = json!(self.cfg.def.recipe);
         // #372: the issue it was started on, and the boards it is on.
         state["work"] = json!(self.cfg.work);
+        // #836: the MCP servers it has, and whether Arugula's is one.
+        state["mcp"] = self.mcp_report(ctx);
+        state["worktree"] = json!(self.cfg.worktree.as_ref().map(|w| &w.path));
         // What it may switch to, and what it's on.
         let (models, model) = self.models();
         state["models"] = models;
         state["model"] = model;
         // #397: the model, the window's fill and the compactions, from the
         // transcript.
-        state["context"] =
-            if self.cfg.import.is_some() && !self.frozen { self.follow.context() } else { self.live_ctx.context() }
-                .unwrap_or(Value::Null);
+        let transcript = if self.cfg.import.is_some() && !self.frozen { &self.follow } else { &self.live_ctx };
+        state["context"] = transcript.context_with(self.engine_window).unwrap_or(Value::Null);
+        // #398: what the session and its subagents cost, estimated from
+        // their transcripts' tokens at API list prices.
+        state["estimate"] =
+            crate::conversations::spend::estimate(&transcript.spend(), &self.subagents).unwrap_or(Value::Null);
         state["model_name"] = json!(self.model_name());
         state["served_model"] = json!(self.served_model);
         // #606: it will carry on by itself (its turn held for background
@@ -1708,7 +1819,7 @@ impl Agent {
         }
         let vm = ctx.sprite.is_some();
         if vm && ctx.provider.is_none() {
-            return Err("VM agents need wisp (VM panes aren't set up)".into());
+            return Err("VM agents need a sandbox provider (VM panes aren't set up)".into());
         }
         // Fail now, with a clear reason, rather than in the VM later.
         if vm && cfg.def.agent == Kind::Claude && !ctx.restoring {
@@ -1787,7 +1898,7 @@ impl Agent {
             return;
         }
         if let Some(p) = inner.cfg.prompt.take() {
-            inner.enqueue(&Queued { text: p, images: vec![], by: None }, false);
+            inner.enqueue(&Queued { text: p, images: vec![], by: None, mention: vec![] }, false);
         }
         if inner.cfg.import.is_some() {
             if let Some(t) = inner.cfg.import.as_ref().and_then(|i| i.title.clone()) {
@@ -1984,6 +2095,12 @@ impl Agent {
                 // #304: the member's agent session, which chant judges its
                 // writes by.
                 env.extend(session_env(&inner.cfg));
+                // Arugula #771: the `arugula issue` it runs looks in its
+                // issue's project, as its MCP calls do.
+                if let Some(p) = inner.cfg.work.as_ref().and_then(|w| w.project.clone()) {
+                    env.retain(|(n, _)| n != board_attach::PROJECT_ENV);
+                    env.push((board_attach::PROJECT_ENV.to_owned(), p));
+                }
                 // M44 and #128: what the session's `${…}`s stand for, in the
                 // adapter's environment (its own and its children's: never
                 // on a command line).
@@ -2021,6 +2138,12 @@ impl Agent {
                 {
                     let st = adapters::status(a, &self.ctx.home, &env);
                     if !st.ok() {
+                        // #520: Node installed since the shell was read is
+                        // only in its rc files: read them again, so
+                        // starting the block again finds it.
+                        if matches!(st.state, adapters::State::NoNode { .. }) && self.ctx.sprite.is_none() {
+                            self.ctx.shell_env.refresh();
+                        }
                         return self.failed_with(inner, st.why(), Some(st.json()));
                     }
                 }
@@ -2066,7 +2189,7 @@ impl Agent {
             }
             Some(sprite) => {
                 let Some(provider) = self.ctx.provider.clone() else {
-                    return self.failed(inner, "VM agents need wisp".into());
+                    return self.failed(inner, "VM agents need a sandbox provider".into());
                 };
                 let mut secret = match inner.cfg.def.agent {
                     Kind::Claude => match secret_env(&self.ctx) {
@@ -2347,10 +2470,35 @@ async fn run(agent: Agent, mut rx: mpsc::UnboundedReceiver<Msg>) {
                                 }
                             }
                         }
+                        Msg::TurnChecked(answer) => {
+                            g.checking_turn = false;
+                            match answer {
+                                Ok(()) => {
+                                    g.turn_allowed = Some(std::time::Instant::now() + TURN_ALLOWED_FOR);
+                                    send_next(&ctx, &mut g);
+                                }
+                                // Not sent: said in its place, and nothing
+                                // that was queued goes.
+                                Err(why) => {
+                                    info!(block = ctx.id, why, "hosted: a session's turn wasn't started");
+                                    end_hosted_turn(&ctx, &mut g);
+                                    for tag in g.queue.iter().flat_map(|q| q.mention.clone()) {
+                                        ctx.followup_turn(tag.to_tag(), mux::Turn::Dropped(mux::DropWhy::Stopped));
+                                    }
+                                    g.note(json!({ "e": "queue_clear" }));
+                                    g.note(json!({ "e": "error", "message": why }));
+                                }
+                            }
+                        }
                         Msg::Closed(generation, why) if generation == g.generation => {
                             end_hosted_turn(&ctx, &mut g);
                             g.link = None;
                             g.pid = None;
+                            // #613: a turn cut off by the exit never ends
+                            // with `TurnEnded`: its mention is dropped.
+                            for tag in std::mem::take(&mut g.mention_turn) {
+                                ctx.followup_turn(tag.to_tag(), mux::Turn::Dropped(mux::DropWhy::Exited));
+                            }
                             info!(block = ctx.id, why, "agent server stopped");
                             g.note(json!({ "e": "exit", "why": why }));
                             if ctx.sprite.is_some() && why.contains("machine is gone") {
@@ -2390,6 +2538,7 @@ async fn run(agent: Agent, mut rx: mpsc::UnboundedReceiver<Msg>) {
                     if g.autonomous_at.is_some_and(|t| t.elapsed() >= autonomous_quiet()) {
                         g.autonomous_at = None;
                         g.end_woken(now_ms());
+                        send_next(&ctx, &mut g);
                         dirty = true;
                     }
                     // #606: what it left running, checked on this host only.
@@ -2413,6 +2562,9 @@ async fn run(agent: Agent, mut rx: mpsc::UnboundedReceiver<Msg>) {
                         dirty = true;
                     }
                     if (g.cfg.import.is_none() || g.frozen) && refresh_context(&mut g) {
+                        dirty = true;
+                    }
+                    if refresh_subagents(&mut g) {
                         dirty = true;
                     }
                 }
@@ -2447,6 +2599,16 @@ fn refresh_context(g: &mut Inner) -> bool {
     }
     g.live_ctx_stamp = stamp;
     g.live_ctx.read(&path).unwrap_or(false)
+}
+
+/// The subagents of the session whose transcript this block reads, for
+/// what they cost (#398). True if what they say changed.
+fn refresh_subagents(g: &mut Inner) -> bool {
+    let transcript = match &g.cfg.import {
+        Some(imp) if !g.frozen => Some(PathBuf::from(&imp.path)),
+        _ => g.live_ctx_path.clone(),
+    };
+    transcript.is_some_and(|t| g.subagents.refresh(&t))
 }
 
 /// An opened conversation, read again if its transcript changed; and who
@@ -2631,8 +2793,12 @@ fn act(ctx: &AgentCtx, g: &mut Inner, f: Effect) {
             }
             send_next(ctx, g);
         }
+        Effect::WokenEnded => send_next(ctx, g),
         Effect::TurnEnded => {
             end_hosted_turn(ctx, g);
+            for tag in std::mem::take(&mut g.mention_turn) {
+                ctx.followup_turn(tag.to_tag(), mux::Turn::Ended);
+            }
             // In history as an entry of its own: the prompt. Not a command
             // and no exit code: a turn that stopped early isn't a failure of
             // anything that ran.
@@ -2930,9 +3096,17 @@ fn end_hosted_turn(ctx: &AgentCtx, g: &mut Inner) {
     }
 }
 
-/// Send the next queued prompt, if the agent can take it.
+/// How long a session's turn may wait for its agent after its grant checked
+/// out, before it's checked again: an agent starting over on the turn's
+/// credential, say.
+const TURN_ALLOWED_FOR: Duration = Duration::from_secs(5);
+
+/// Send the next queued prompt, if the agent can take it. Not while it
+/// works on a cycle it woke for by itself (#716): claude-agent-acp folds a
+/// prompt that comes then into that cycle and never answers it, so the
+/// block would wait on it for good. It goes when the cycle ends.
 fn send_next(ctx: &AgentCtx, g: &mut Inner) {
-    if g.status != Status::Ready || g.prompt_id.is_some() || g.cfg.session_id.is_none() {
+    if g.status != Status::Ready || g.prompt_id.is_some() || g.cfg.session_id.is_none() || g.autonomous_at.is_some() {
         return;
     }
     let Some(q) = g.queue.front().cloned() else { return };
@@ -2950,6 +3124,23 @@ fn send_next(ctx: &AgentCtx, g: &mut Inner) {
             let session = crate::work::sessions::session_of(ctx.id);
             crate::task::spawn_on(&ctx.rt, async move {
                 let _ = tx.send(Msg::Gated(gate.start(agent, session).await));
+            });
+        }
+        return;
+    }
+    // A thread session's turn runs under the project's standing grant
+    // (aru-115, as amended): checked here, the last thing before the agent
+    // has the prompt, whatever queued it (the session's follow-up, a mention,
+    // a person in the block, what was queued when a restart cut in).
+    if g.turn_allowed.take().is_none_or(|until| std::time::Instant::now() >= until)
+        && let Some(session) = crate::work::sessions::session_of(ctx.id)
+    {
+        if !g.checking_turn
+            && let Some(tx) = g.to_self.clone()
+        {
+            g.checking_turn = true;
+            crate::task::spawn_on(&ctx.rt, async move {
+                let _ = tx.send(Msg::TurnChecked(crate::work::session_turn(session).await));
             });
         }
         return;
@@ -2985,7 +3176,17 @@ fn send_next(ctx: &AgentCtx, g: &mut Inner) {
         g.next_run = g.carry_run.is_none().then_some(run);
     }
     g.send_prompt(&q, prompt);
+    // #611: a mention's turn starts as it is sent, not as it is queued.
+    for tag in &q.mention {
+        ctx.followup_turn(tag.to_tag(), mux::Turn::Started);
+    }
+    g.mention_turn = q.mention.clone();
     start_run(ctx, g, &q.text);
+}
+
+/// The mention a `send` or a logged queue entry carries (#611).
+fn mention_of(v: &Value) -> Option<MentionTag> {
+    MentionTag::from_json(v)
 }
 
 impl Agent {
@@ -3183,6 +3384,12 @@ impl Agent {
         // A held turn's work is done (#606): stopping it is to get on to
         // what's queued, not to drop it.
         if !g.result_in {
+            // #613: a mention in it is told it was dropped. The running
+            // turn's own is not: it ends with `cancelled`, and `TurnEnded`
+            // reports it `read`.
+            for tag in g.queue.iter().flat_map(|q| q.mention.clone()) {
+                self.ctx.followup_turn(tag.to_tag(), mux::Turn::Dropped(mux::DropWhy::Stopped));
+            }
             g.note(json!({ "e": "queue_clear" }));
         }
         // Open questions aren't answered: the agent withdraws them itself
@@ -3209,11 +3416,16 @@ impl Agent {
     /// work it left, as a [`arugula_proto::api::TurnResult`]; `null` while a
     /// turn runs, before the first, or when it said nothing.
     fn turn_result(&self) -> BoxFuture<'static, Result<Value, String>> {
-        let (message, started_ms, cwd) = {
+        let (message, started_ms, cwd, worktree) = {
             let g = self.inner.lock().unwrap();
             let done = g.turns.last().is_some_and(|t| t.ended_ms.is_some()) && g.prompt_id.is_none();
             let message = if done { g.t.last_message() } else { None };
-            (message, g.turns.last().map(|t| t.started_ms), work_dir(&self.ctx, &g))
+            (
+                message,
+                g.turns.last().map(|t| t.started_ms),
+                work_dir(&self.ctx, &g),
+                g.cfg.worktree.as_ref().map(|w| w.path.clone()),
+            )
         };
         let block = self.ctx.block.clone();
         let run_as = self.inner.lock().unwrap().cfg.run_as.clone();
@@ -3225,10 +3437,13 @@ impl Agent {
                 Some(u) => Ok(crate::review::Runner::As(u)),
                 None => crate::review::Runner::user(&block).await,
             };
-            let r = match runner {
+            let mut r = match runner {
                 Ok(runner) => turnwork::result(&runner, &cwd, started_ms, message).await,
                 Err(_) => arugula_proto::api::TurnResult { message, work: None },
             };
+            if let Some(w) = r.work.as_mut() {
+                w.worktree = worktree;
+            }
             serde_json::to_value(r).map_err(|e| e.to_string())
         })
     }
@@ -3261,7 +3476,8 @@ impl Agent {
         }
         // A follow-up from someone (M29): the transcript says whose as it's
         // sent (`send_prompt`).
-        let mut q = Queued { text: text.to_owned(), images: vec![], by: by.map(str::to_owned) };
+        let mention: Vec<_> = mention_of(&args["mention"]).into_iter().collect();
+        let mut q = Queued { text: text.to_owned(), images: vec![], by: by.map(str::to_owned), mention };
         if let Some(bytes) = image {
             q.images.push(images::keep(&self.ctx.dir, &bytes).map_err(|e| format!("can't keep the image: {e}"))?);
         }
@@ -3364,11 +3580,15 @@ impl Agent {
 
     /// Keep the boards this block is on (`start_agent` with an `issue`): its
     /// chip. The issue is the block's from its start; only the boards come
-    /// later, with control's answer.
+    /// later, with control's answer. An `issue` makes the block's own: for one
+    /// found from its branch, once a row is.
     fn set_work(&self, args: &Value) -> Result<Value, String> {
         let boards: Vec<board_attach::WorkBoard> =
             serde_json::from_value(args["boards"].clone()).map_err(|e| format!("set_work takes boards: {e}"))?;
         let mut g = self.inner.lock().unwrap();
+        if let Some(issue) = args["issue"].as_str() {
+            g.cfg.work.get_or_insert_with(Default::default).issue = issue.to_owned();
+        }
         let work = g.cfg.work.as_mut().ok_or("this block wasn't started on an issue")?;
         work.boards = boards;
         drop(g);
@@ -3424,7 +3644,8 @@ impl Block for Agent {
                 })
                 .collect(),
         });
-        crate::block::Summary { title: g.shown_title(), on_issue, stopped, ..Default::default() }
+        let worktree = g.cfg.worktree.as_ref().map(|w| w.path.clone());
+        crate::block::Summary { title: g.shown_title(), on_issue, worktree, stopped, ..Default::default() }
     }
 
     fn state(&self) -> Value {
@@ -3460,6 +3681,10 @@ impl Block for Agent {
             out.push_str(&fix);
         }
         out
+    }
+
+    fn messages(&self) -> Option<Vec<String>> {
+        Some(self.inner.lock().unwrap().t.messages())
     }
 
     fn call(&self, method: &str, args: Value) -> BoxFuture<'static, Result<Value, String>> {
@@ -3510,6 +3735,10 @@ impl Block for Agent {
             "set_work" => self.set_work(&args),
             "set_model" => self.set_model(&args),
             "state" => Ok(self.state()),
+            "spend" => {
+                let (cost, tokens) = self.inner.lock().unwrap().spend();
+                Ok(json!({ "cost": cost, "tokens": tokens }))
+            }
             "turn_result" => return self.turn_result(),
             "image" => images::read(&self.ctx.dir, args["name"].as_str().unwrap_or_default()),
             m => Err(no_method(self.kind(), m)),
@@ -3522,6 +3751,16 @@ impl Block for Agent {
         arugulad_base::hosted::archive::closed(&self.ctx.rt, self.transcript());
         let mut g = self.inner.lock().unwrap();
         g.closing = true;
+        // #662: the run loop stops at `closing`, before `Msg::Closed` could
+        // tell its mentions. The running turn's is dropped, unless its
+        // answer is already in (#606's held turn); what's queued never goes.
+        let ran = if g.result_in { mux::Turn::Ended } else { mux::Turn::Dropped(mux::DropWhy::Exited) };
+        for tag in std::mem::take(&mut g.mention_turn) {
+            self.ctx.followup_turn(tag.to_tag(), ran);
+        }
+        for tag in g.queue.iter().flat_map(|q| q.mention.clone()) {
+            self.ctx.followup_turn(tag.to_tag(), mux::Turn::Dropped(mux::DropWhy::Exited));
+        }
         if let Some(l) = g.link.take() {
             l.stop();
         }

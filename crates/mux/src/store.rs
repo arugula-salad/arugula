@@ -59,6 +59,95 @@ pub struct Saved {
     pub next_machine: MachineId,
 }
 
+/// Panes and sessions that closed, kept so a share taken away later still
+/// reaches who may read their threads in control's chat. Each keeps who
+/// read it when it closed, by principal id with the time their reading
+/// starts, and when it closed (ms); a pane keeps its session and whether
+/// it was private. Who reads its thread is only ever narrowed from there
+/// (Jake, 2026-11-05): nobody shared with or joining the team later
+/// gains it. Only the [`CLOSED_KEPT`] panes and
+/// [`CLOSED_SESSIONS_KEPT`] sessions that closed last are kept: control
+/// lets only the machine's owner read the threads of older ones.
+///
+/// Kept in `closed.json`, apart from the layout, and written only when it
+/// changes ([`StateDir::save_closed`]).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Closed {
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub panes: BTreeMap<PaneId, ClosedPane>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub sessions: BTreeMap<SessionId, ClosedSession>,
+    /// Changed since it was last written.
+    #[serde(skip)]
+    pub dirty: bool,
+}
+
+/// Who read a closed pane or session: by principal id, from when (ms).
+pub type ReadersAtClose = BTreeMap<String, u64>;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClosedPane {
+    pub session: SessionId,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub private: bool,
+    /// When it closed (ms).
+    #[serde(default)]
+    pub at: u64,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub readers: ReadersAtClose,
+    /// It closed before the team's roster was known here: who of the
+    /// team read it is added once it is.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub pending: bool,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClosedSession {
+    /// When it closed (ms).
+    #[serde(default)]
+    pub at: u64,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub readers: ReadersAtClose,
+    /// As [`ClosedPane::pending`].
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub pending: bool,
+}
+
+/// How many closed panes, and closed sessions, [`Closed`] keeps.
+pub const CLOSED_KEPT: usize = 2000;
+pub const CLOSED_SESSIONS_KEPT: usize = 500;
+
+impl Closed {
+    pub fn is_empty(&self) -> bool {
+        self.panes.is_empty() && self.sessions.is_empty()
+    }
+
+    /// A pane closed at `at` (ms), in `session`. Past [`CLOSED_KEPT`], the
+    /// one that closed longest ago goes (of two at once, the lower id).
+    pub fn pane(&mut self, pane: PaneId, session: SessionId, private: bool, at: u64, readers: (ReadersAtClose, bool)) {
+        let (readers, pending) = readers;
+        self.dirty = true;
+        self.panes.insert(pane, ClosedPane { session, private, at, readers, pending });
+        while self.panes.len() > CLOSED_KEPT {
+            let Some(oldest) = self.panes.iter().min_by_key(|(id, c)| (c.at, **id)).map(|(id, _)| *id) else { break };
+            self.panes.remove(&oldest);
+        }
+    }
+
+    /// A session closed at `at` (ms): as [`Closed::pane`].
+    pub fn session(&mut self, session: SessionId, at: u64, readers: (ReadersAtClose, bool)) {
+        let (readers, pending) = readers;
+        self.dirty = true;
+        self.sessions.insert(session, ClosedSession { at, readers, pending });
+        while self.sessions.len() > CLOSED_SESSIONS_KEPT {
+            let Some(oldest) = self.sessions.iter().min_by_key(|(id, c)| (c.at, **id)).map(|(id, _)| *id) else {
+                break;
+            };
+            self.sessions.remove(&oldest);
+        }
+    }
+}
+
 /// What a restore needs to know about a pane beyond its place in the layout.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct PaneMeta {
@@ -95,7 +184,7 @@ pub struct PaneMeta {
     /// The agent conversation running in it (#146), for a restart to
     /// resume.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub session: Option<AgentSession>,
+    pub session: Option<PaneConversation>,
     /// Someone picked its restart policy (a pane left at the default that
     /// runs Claude Code resumes its conversation).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -109,7 +198,7 @@ pub struct PaneMeta {
 /// An agent's conversation in a pane (#146), as its hooks or Claude
 /// Code's session files said.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AgentSession {
+pub struct PaneConversation {
     /// `claude`, `codex`.
     pub agent: String,
     /// Its session id: checked by [`crate::resume::valid_id`] before it's
@@ -153,18 +242,43 @@ fn private_file() -> OpenOptions {
 /// Write a file so that it is either entirely old or entirely new, even
 /// across a crash or power loss.
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    replace_atomic(path, bytes).map_err(io::Error::from)
+}
+
+/// How [`replace_atomic`] failed: whether the file changed.
+#[derive(Debug)]
+pub enum ReplaceError {
+    /// Before the replacement: the file holds what it did.
+    NotReplaced(io::Error),
+    /// After it: the file holds the new bytes, though a crash could still
+    /// bring the old ones back.
+    NotSynced(io::Error),
+}
+
+impl From<ReplaceError> for io::Error {
+    fn from(e: ReplaceError) -> Self {
+        match e {
+            ReplaceError::NotReplaced(e) | ReplaceError::NotSynced(e) => e,
+        }
+    }
+}
+
+/// [`write_atomic`], for a caller that keeps a copy of what the file holds
+/// and so needs to know whether it changed.
+pub fn replace_atomic(path: &Path, bytes: &[u8]) -> Result<(), ReplaceError> {
     let tmp = path.with_extension("tmp");
-    {
+    let written = (|| {
         let mut f = private_file().write(true).create(true).truncate(true).open(&tmp)?;
         f.write_all(bytes)?;
         f.sync_all()?;
-    }
-    fs::rename(&tmp, path)?;
+        fs::rename(&tmp, path)
+    })();
+    written.map_err(ReplaceError::NotReplaced)?;
     // The rename itself, on disk. (Windows can't open a directory as a
     // file; NTFS journals the rename.)
     #[cfg(unix)]
     if let Some(dir) = path.parent() {
-        File::open(dir)?.sync_all()?;
+        File::open(dir).and_then(|d| d.sync_all()).map_err(ReplaceError::NotSynced)?;
     }
     Ok(())
 }
@@ -209,6 +323,25 @@ impl StateDir {
 
     pub fn save_layout(&self, saved: &Saved) -> io::Result<()> {
         write_atomic(&self.root.join("layout.json"), &serde_json::to_vec_pretty(saved).map_err(io::Error::other)?)
+    }
+
+    /// The panes and sessions that closed ([`Closed`]): none if there's no
+    /// file, or it can't be read (said, and kept aside).
+    pub fn load_closed(&self) -> Closed {
+        let path = self.root.join("closed.json");
+        match fs::read(&path) {
+            Ok(b) => serde_json::from_slice(&b).unwrap_or_else(|e| {
+                tracing::warn!(error = %e, "closed.json is unreadable; only the owner reads closed panes' threads");
+                let _ = fs::rename(&path, self.root.join(format!("closed.json.unreadable-{}", now_ms())));
+                Closed::default()
+            }),
+            Err(_) => Closed::default(),
+        }
+    }
+
+    /// Write [`Closed`], compactly.
+    pub fn save_closed(&self, closed: &Closed) -> io::Result<()> {
+        write_atomic(&self.root.join("closed.json"), &serde_json::to_vec(closed).map_err(io::Error::other)?)
     }
 
     /// Pane directories with no pane in the layout (closed while the daemon
@@ -586,6 +719,24 @@ mod tests {
         d
     }
 
+    /// A `layout.json` a release saved loads, its panes' conversations
+    /// with it, and saves back as it was: a renamed type drops no field.
+    #[test]
+    fn release_layout_loads() {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("../proto/fixtures/stored/layout.json");
+        let bytes = fs::read(&fixture).unwrap();
+        let root = tmp("release-layout");
+        let store = StateDir::open(root.clone()).unwrap();
+        fs::write(root.join("layout.json"), &bytes).unwrap();
+        let saved = store.load_layout().unwrap().unwrap();
+        let conversations: Vec<&PaneConversation> = saved.panes.values().filter_map(|m| m.session.as_ref()).collect();
+        assert_eq!(conversations.len(), 14);
+        assert!(conversations.iter().all(|c| c.agent == "claude" && c.transcript.is_some() && c.cwd.is_some()));
+        let was: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(serde_json::to_value(&saved).unwrap(), was);
+        fs::remove_dir_all(&root).unwrap();
+    }
+
     #[test]
     fn log_appends_rotates_reads_and_reopens() {
         let dir = tmp("log");
@@ -712,6 +863,37 @@ mod tests {
         assert!(root.join("events.1.jsonl").exists());
         assert_eq!(store.system_events(0), vec![opened, gone, closed]);
         let _ = fs::remove_dir_all(&root);
+    }
+
+    /// Past what's kept, the pane or session that closed longest ago goes,
+    /// whatever its id.
+    #[test]
+    fn closed_keeps_the_ones_that_closed_last() {
+        let mut c = Closed::default();
+        c.pane(5, 1, false, 10, Default::default());
+        for i in 0..CLOSED_KEPT as u32 {
+            c.pane(1000 + i, 1, false, 100 + u64::from(i), Default::default());
+        }
+        c.pane(1, 1, true, 1_000_000, (BTreeMap::from([("account:a2".into(), 7)]), false));
+        assert_eq!(c.panes.len(), CLOSED_KEPT);
+        assert!(!c.panes.contains_key(&5) && !c.panes.contains_key(&1000), "the two that closed first");
+        let readers = BTreeMap::from([("account:a2".into(), 7)]);
+        assert_eq!(c.panes[&1], ClosedPane { session: 1, private: true, at: 1_000_000, readers, pending: false });
+        c.session(9, 1, Default::default());
+        for s in 0..CLOSED_SESSIONS_KEPT as u32 {
+            c.session(100 + s, 50, Default::default());
+        }
+        assert_eq!(c.sessions.len(), CLOSED_SESSIONS_KEPT);
+        assert!(!c.sessions.contains_key(&9));
+
+        // Its own file, compact, read back as it was.
+        let dir = tmp("closed");
+        let state = StateDir::open(dir.clone()).unwrap();
+        assert!(state.load_closed().is_empty());
+        state.save_closed(&c).unwrap();
+        let back = state.load_closed();
+        assert_eq!((back.panes, back.sessions), (c.panes, c.sessions));
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

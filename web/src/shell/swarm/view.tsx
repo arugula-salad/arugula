@@ -1,5 +1,5 @@
 // The swarm view (M26, `/#swarm`): every pane the page can see, on every
-// host (M25), as one field of tiles that cluster by project, machine, kind,
+// host (M25), as one field of tiles that cluster by repo, machine, kind,
 // session or person, with what needs you lifted out to a rail of cards
 // (M24's reasons, bundled by their bundle keys) that anyone who may answer
 // can act on: allow, deny, answer, dismiss, and send the agent a follow-up
@@ -10,6 +10,7 @@
 // (archive/spikes:spikes/s16-swarm/canvas.html). On a phone the rail is a strip of cards
 // along the bottom, and the field pinches and pans.
 
+import { EmptyLine } from "../../shared/ui/block-states";
 import { OPS, opPath } from "../ops";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Fleet, FleetPane } from "../fleet";
@@ -24,11 +25,17 @@ import { FollowView, appName } from "./follow";
 import { DiffCard } from "../ui/diff-card";
 import { diffLine, fleetTarget, openInEditor, wholePath } from "../open-in-editor";
 import { GateWhy } from "../ui/gate-why";
-import { NvimIcon } from "../ui/shell/icons";
+import { CloseIcon, IconButton, NvimIcon } from "../../shared/ui/icons";
 import { PointChoices, pointOf, proposalLine } from "../ui/point-choices";
-import { finished, needsYou, NEEDS_YOU } from "../../shared/needs-you";
-import { onIssueChip } from "../../shared/boards/text";
+import { ariaKeys, keyHint, useBinding } from "../ui/keys";
+import { useWall } from "./wall";
+import { finished, needsYou, needsYouRank, NEEDS_YOU, sortNeedsYou } from "../../shared/needs-you";
+import { NO_BOARD, boardGroup, onIssueChip } from "../../shared/boards/text";
+import { boardFocus, rowChip } from "./board-focus";
+import { useBoardView } from "./board-live";
+import { closeSwarmBoard, openSwarmBoard } from "./route";
 import { activityOf, bundleOf, cardTitle, headlineOf, holdStill, shortHost, whatItDoes, shortPaths, shownNow, wantsYou, followable, editorAt, GROUPING_LABEL, GROUPINGS, groupOf, isPresence, kindOf, KIND_LABEL, KINDS, REASON_COL, reasonOf, type GroupBy } from "./model";
+import { ObjectChip } from "../../shared/ui/state-chip";
 
 const BY_KEY = "arugula.swarm.by";
 const THEME_KEY = "arugula.swarm.theme";
@@ -76,7 +83,9 @@ export interface Bundle {
 
 
 
-/** What's on the rail: the bundles that fit, and the rest waiting. */
+/** What's on the rail: the bundles that fit, and the rest waiting, in the
+ * order every needs-you list shares (`byNeedsYou`): asks, then failures,
+ * then what finished, each oldest first. */
 export function bundlesOf(panes: FleetPane[]): Bundle[] {
   const out = new Map<string, Bundle>();
   for (const p of panes) {
@@ -89,7 +98,7 @@ export function bundlesOf(panes: FleetPane[]): Bundle[] {
       b.since = Math.min(b.since, r.since_ms);
     } else out.set(key, { key, reason: r, panes: [p], since: r.since_ms });
   }
-  return [...out.values()].sort((a, b) => a.since - b.since || a.key.localeCompare(b.key));
+  return sortNeedsYou([...out.values()], (b) => ({ rank: Math.min(...b.panes.map((p) => needsYouRank(p.info))), since: b.since, key: b.key }));
 }
 
 /** A card answered by someone, kept a while for its follow-up box. */
@@ -104,6 +113,7 @@ export function SwarmView({
   fleet,
   back,
   focus,
+  board,
   inBar,
 }: {
   fleet: Fleet;
@@ -113,6 +123,8 @@ export function SwarmView({
   inBar?: boolean;
   /** Opened from a notification: the pane to show, and its card. */
   focus?: { host: string; pane: number } | null;
+  /** A board to show the agents of (#466), by its id: its lanes are the clusters. */
+  board?: string | null;
 }) {
   useSubscribe((fn) => fleet.subscribe(fn));
   const phone = usePhone();
@@ -143,13 +155,45 @@ export function SwarmView({
     open(key: string): void;
     hover(key: string | null, x: number, y: number): Promise<void> | void;
     menu(key: string, e: MouseEvent): void;
+    name(name: string): boolean;
+    order(): string[] | null;
   }>({
     open: () => {},
     hover: () => {},
     menu: () => {},
+    name: () => false,
+    order: () => null,
   });
 
-  const panes = fleet.panes;
+  // Wall mode (#446): the swarm alone, fit to the screen it fills. Not on
+  // a phone, whose strip of cards is the rail.
+  const wall = useWall(() => {
+    field.current?.resize();
+    if (wall.on) field.current?.fitAll();
+  });
+  useBinding(
+    phone
+      ? null
+      : {
+          id: "swarm.wall",
+          label: "Wall mode",
+          keys: { mac: ["key:w"], other: ["key:w"] },
+          when: (e) => !e.repeat && !following && swarmHasKeys(e),
+          run: () => wall.toggle(),
+        },
+    [phone, wall.on, following],
+  );
+  // A window narrowed to a phone's leaves it.
+  useEffect(() => {
+    if (phone && wall.on) wall.exit();
+  }, [phone]);
+
+  // A board's focus (#466): only the panes working on its rows, each in its row's lane.
+  const read = useBoardView(board ?? null);
+  const lanes = read.view
+    ? boardFocus(read.view, fleet.panes.map((p) => ({ key: p.key, host: p.host, id: p.id, on_issue: p.info.on_issue })), (m) => fleet.hostById(m)?.name ?? fleet.host(m)?.name)
+    : null;
+  const panes = board ? fleet.panes.filter((p) => lanes?.placed.has(p.key)) : fleet.panes;
   const bundles = bundlesOf(panes);
   const cap = phone ? 4 : Math.max(2, Math.floor((innerHeight - 120) / 170));
   const shown = bundles.slice(0, cap);
@@ -180,6 +224,8 @@ export function SwarmView({
       },
       hover: (key, x, y) => void handlers.current.hover(key, x, y),
       menu: (key, e) => handlers.current.menu(key, e),
+      name: (name) => handlers.current.name(name),
+      order: () => handlers.current.order(),
       history: (sinceS) => historyOf(fleet, sinceS),
     };
     let scene: SwarmScene | null = null;
@@ -234,12 +280,12 @@ export function SwarmView({
         return {
           key: p.key,
           kind: kindOf(p),
-          group: groupOf(p, by),
+          group: lanes?.placed.get(p.key)?.name ?? groupOf(p, by),
           act: activityOf(p),
           stale: p.stale,
           label: `${p.info.editor
             ? `%${p.id} ${p.info.file?.split("/").pop() ?? p.info.title ?? "editor"} · ${appName(p.info.editor.app)}`
-            : `%${p.id} ${whatItDoes(p)}`}${p.info.on_issue ? ` ${onIssueChip([p.info.on_issue])!.label}` : ""}`,
+            : `%${p.id} ${whatItDoes(p)}`}${lanes?.placed.has(p.key) ? ` ${rowChip(lanes.placed.get(p.key)!.row)}` : p.info.on_issue ? ` ${onIssueChip([p.info.on_issue])!.label}` : ""}`,
           where: p.host,
           lastOut: p.info.activity?.last_ms ?? 0,
           att: r && wanting.has(p.key) ? { col: REASON_COL[r.kind], bundle: onRail.get(p.key) ?? null, since: r.since_ms, need: needsYou(p.info) } : null,
@@ -319,11 +365,13 @@ export function SwarmView({
     const key = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || escapeTaken(e) || (e.target as HTMLElement).closest?.("input, textarea, select")) return;
       if (following) setFollowing(null);
+      // Wall mode first (#446): Escape leaves it, not the swarm.
+      else if (wall.on) wall.exit();
       else back();
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [following, back]);
+  }, [following, back, wall.on]);
 
   // A notification's deep link: the pane, and its card.
   useEffect(() => {
@@ -386,7 +434,15 @@ export function SwarmView({
     ]);
   };
 
-  handlers.current = { open: openKey, hover: hoverPane, menu: paneMenu };
+  // Clicking a board cluster's name focuses that board; "No board" only dives in.
+  const nameClicked = (name: string) => {
+    if (board || by !== "board" || name === NO_BOARD) return false;
+    const on = fleet.panes.map((p) => p.info.on_issue?.boards?.[0]).find((b) => b && boardGroup({ issue: "", boards: [b] }) === name);
+    if (!on) return false;
+    openSwarmBoard(on.board);
+    return true;
+  };
+  handlers.current = { open: openKey, hover: hoverPane, menu: paneMenu, name: nameClicked, order: () => (board && lanes ? lanes.lanes.map((l) => l.name) : null) };
   // Every machine the host menu lists, not only those with panes here.
   const machines = fleet.list.length;
   const busy = panes.filter((p) => activityOf(p) > 0.3).length;
@@ -398,7 +454,13 @@ export function SwarmView({
   const clusters = field.current?.clusters ?? [];
 
   return (
-    <div class={`swarm${phone ? " phone" : ""}`} data-swarm={by} data-theme={theme}>
+    <div
+      class={`swarm${phone ? " phone" : ""}`}
+      data-swarm={board ? "lane" : by}
+      data-theme={theme}
+      data-wall={wall.on ? "" : undefined}
+      data-wall-idle={wall.idle ? "" : undefined}
+    >
       <canvas
         key={theme}
         ref={canvas}
@@ -410,6 +472,14 @@ export function SwarmView({
           <h1>
             Swarm
           </h1>
+          {board && (
+            <div class="swarm-board" data-swarm-board={board}>
+              <b>Board: {read.view?.board.title ?? "…"}</b>
+              <button data-swarm-all title="Every pane again" onClick={closeSwarmBoard}>
+                <CloseIcon size="xs" /> All panes
+              </button>
+            </div>
+          )}
         </div>
         <div class="swarm-stats">
           <div>
@@ -431,19 +501,21 @@ export function SwarmView({
           )}
         </div>
         <div class="swarm-spacer" />
-        <div>
-          <div class="swarm-seg-l">Cluster by</div>
-          <div class="swarm-seg" role="group" aria-label="Cluster by">
-            {GROUPINGS.map((g) => (
-              <button key={g} data-g={g} aria-pressed={g === by} onClick={() => choose(g)}>
-                {GROUPING_LABEL[g]}
-              </button>
-            ))}
+        {!board && (
+          <div>
+            <div class="swarm-seg-l">Cluster by</div>
+            <div class="seg small swarm-seg" role="group" aria-label="Cluster by">
+              {GROUPINGS.map((g) => (
+                <button key={g} data-g={g} aria-pressed={g === by} onClick={() => choose(g)}>
+                  {GROUPING_LABEL[g]}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
         <div>
           <div class="swarm-seg-l">Theme</div>
-          <div class="swarm-seg" role="group" aria-label="Theme">
+          <div class="seg small swarm-seg" role="group" aria-label="Theme">
             {THEMES.map((t) => (
               <button key={t} data-theme-pick={t} aria-pressed={t === theme} onClick={() => pickTheme(t)}>
                 {t.charAt(0).toUpperCase() + t.slice(1)}
@@ -455,6 +527,16 @@ export function SwarmView({
           <button data-fit onClick={() => field.current?.fitAll()}>
             Fit
           </button>
+          {!phone && (
+            <button
+              data-wall-enter
+              title={`Fill this screen with the swarm, for a TV or a second monitor (${keyHint("swarm.wall") ?? "W"})`}
+              aria-keyshortcuts={ariaKeys(keyHint("swarm.wall"))}
+              onClick={wall.enter}
+            >
+              Wall mode
+            </button>
+          )}
           {!inBar && (
             <button data-swarm-back title="Back to the panes (Escape)" onClick={back}>
               Panes
@@ -486,6 +568,17 @@ export function SwarmView({
             </button>
           </div>
         )}
+        {board && (
+          <div class="swarm-lanes" data-swarm-lanes>
+            {read.missing && !read.view && <p class="dim" data-swarm-board-missing>That board isn't one you can read ({read.missing}).</p>}
+            {lanes?.lanes.length === 0 && <EmptyLine>No rows on this board yet.</EmptyLine>}
+            {lanes?.lanes.map((l) => (
+              <span key={l.name} class="swarm-lane" data-lane={l.name} data-workers={l.keys.length} data-rows={l.rows}>
+                {l.label}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
       {fleet.notice && <div class="swarm-notice">{fleet.notice}</div>}
 
@@ -496,7 +589,7 @@ export function SwarmView({
         </header>
         <div class="swarm-cards" onPointerEnter={() => setHeld(true)} onPointerLeave={() => setHeld(false)}>
           {shown.length === 0 && answered.length === 0 && (
-            <p class="swarm-empty">Nothing needs you. Panes that ask, fail, finish or wait for input lift out of the swarm and land here.</p>
+            <EmptyLine>Nothing needs you. Panes that ask, fail, finish or wait for input lift out of the swarm and land here.</EmptyLine>
           )}
           {railed.map((b) => (
             <Card
@@ -547,6 +640,14 @@ export function SwarmView({
         </div>
       </div>
 
+      {wall.on && (
+        <div class="swarm-wall-ctl" onPointerEnter={() => wall.hold(true)} onPointerLeave={() => wall.hold(false)}>
+          <button data-wall-exit title="Back to the swarm with its controls (Escape)" onClick={wall.exit}>
+            Exit wall mode
+          </button>
+        </div>
+      )}
+
       {following && <FollowView fleet={fleet} pkey={following} close={() => setFollowing(null)} back={back} />}
       <MenuLayer />
       {peek && (
@@ -554,15 +655,15 @@ export function SwarmView({
           <div class="ph">
             {(byKey(peek.key)?.info.app === "nvim" || byKey(peek.key)?.info.editor?.app === "nvim") && (
               <span class="swarm-peek-app" data-swarm-nvim role="img" aria-label="nvim" title="nvim">
-                <NvimIcon size={12} />
+                <NvimIcon size="xs" />
               </span>
             )}
             <b>{byKey(peek.key) ? `%${byKey(peek.key)!.id}  ${editorAt(byKey(peek.key)!) ?? byKey(peek.key)!.info.current?.text ?? byKey(peek.key)!.info.command ?? ""}` : ""}</b>
             <span>{byKey(peek.key) ? `${byKey(peek.key)!.host} · ${groupOf(byKey(peek.key)!, by)}` : ""}</span>
             {onIssueChip([byKey(peek.key)?.info.on_issue]) && (
-              <span class="work-chip" title={onIssueChip([byKey(peek.key)?.info.on_issue])!.title} data-swarm-work>
+              <ObjectChip title={onIssueChip([byKey(peek.key)?.info.on_issue])!.title} data-swarm-work>
                 {onIssueChip([byKey(peek.key)?.info.on_issue])!.label}
-              </span>
+              </ObjectChip>
             )}
           </div>
           <pre>{peek.text}</pre>
@@ -580,8 +681,8 @@ const ARIA: Record<Theme, string> = {
 };
 
 /** What to do with each theme: [laptop, phone]. */
-/** #551: where a pane's project comes from. */
-const PROJECTS = "A pane's project is the git repository it's in; one outside a repository goes by its directory.";
+/** #551: where a pane's repo comes from. */
+const PROJECTS = "A pane's repo is the git repository it's in; one outside a repository goes by its directory.";
 
 
 /** The how-to tip, once put away. */
@@ -971,16 +1072,17 @@ function AnsweredCard({ d, fleet, close }: { d: Done; fleet: Fleet; close: () =>
     <div class="swarm-card in t-answered" data-answered={d.answered.id} data-panes={p.key} style={{ "--c": "rgb(124,134,152)" }}>
       <div class="ch">
         <b class="answered-by">{answeredLine(d.answered)}</b>
-        <button class="link swarm-close" title="Close" onClick={close}>
-          ✕
-        </button>
+        <IconButton label="Close" class="link swarm-close" onClick={close}>
+          <CloseIcon size="sm" />
+        </IconButton>
       </div>
       <div class="cm">
         %{p.id} · {p.host}
       </div>
       <div class="cq">{d.answered.headline}</div>
-      {can && (p.info.inbox || p.info.type === "agent") && (
+      {can && (
         <FollowUpBox
+          open={p.info.inbox || p.info.type === "agent"}
           pane={p.id}
           request={requester(fleet, p.host)}
           paneOp={(op) => fleet.paneOp(p.host, p.id, op)}
@@ -989,6 +1091,14 @@ function AnsweredCard({ d, fleet, close }: { d: Done; fleet: Fleet; close: () =>
       )}
     </div>
   );
+}
+
+/** `w` is the swarm's unless something is typed into (a field, a
+ * terminal's, whose keys are its program's) or a dialog is over it. */
+function swarmHasKeys(e: KeyboardEvent): boolean {
+  if (document.querySelector(".prompt-backdrop")) return false;
+  const t = e.target as Element | null;
+  return !t?.closest?.("input, textarea, select, [contenteditable]:not([contenteditable='false'])");
 }
 
 /** A tap on a tile opens its pane and closes the swarm on pointerup; the

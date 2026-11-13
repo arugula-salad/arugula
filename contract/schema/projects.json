@@ -1,5 +1,148 @@
 {
   "$defs": {
+    "CiAlertOpen": {
+      "description": "A branch's open red issue.",
+      "properties": {
+        "branch": {
+          "type": "string"
+        },
+        "issue": {
+          "description": "The issue's id (`iss_`) and number.",
+          "type": "string"
+        },
+        "number": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "opened_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "branch",
+        "issue",
+        "number",
+        "opened_at"
+      ],
+      "type": "object"
+    },
+    "CiAlerts": {
+      "description": "A project's CI alerts (native #774): chant's signed CI events open,\ncomment on and close a \"main is red\" native issue. Never the key.",
+      "properties": {
+        "assign": {
+          "description": "They're assigned it as well.",
+          "type": "boolean"
+        },
+        "key_made_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "key_made_by": {
+          "description": "Who made the key in use (an account, empty once it's deleted), and\nwhen. `None` while off.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_event_at": {
+          "description": "When the last signed event arrived.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "on": {
+          "description": "On: a key is kept and events are taken.",
+          "type": "boolean"
+        },
+        "open": {
+          "description": "Each branch's open red issue.",
+          "items": {
+            "$ref": "#/$defs/CiAlertOpen"
+          },
+          "type": "array"
+        },
+        "people": {
+          "description": "Who a new red issue mentions (accounts), in order.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "project": {
+          "description": "The project's id (`personal` asked is answered with the real one).",
+          "type": "string"
+        },
+        "url": {
+          "description": "The URL chant posts to: `ci.green.notify.webhook`'s variable.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "on",
+        "url",
+        "people",
+        "assign",
+        "open"
+      ],
+      "type": "object"
+    },
+    "CiAlertsKey": {
+      "description": "The answer to [`PROJECT_CI_ALERTS_KEY`]: the new key, shown this once,\nand the alerts as they are now. chant reads it from\n`ci.green.notify.key`'s variable.",
+      "properties": {
+        "alerts": {
+          "$ref": "#/$defs/CiAlerts"
+        },
+        "key": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "alerts"
+      ],
+      "type": "object"
+    },
+    "CiAlertsSettings": {
+      "description": "`PATCH` [`PROJECT_CI_ALERTS`]: whom a new red issue mentions, whether it\nassigns them, or `on: false` to turn alerts off (the key goes; the\nissues stay). Each is optional; turning on is [`PROJECT_CI_ALERTS_KEY`].",
+      "properties": {
+        "assign": {
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "on": {
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "people": {
+          "default": null,
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "ConnectTracker": {
       "description": "`POST /api/projects/{project}/trackers`: connect a Plane project. A\nproject's owner or editor may. `project` is Plane's project id or its\nidentifier. Control reads the project with the key first: a key Plane\nrefuses or a project it doesn't know is a 422 and nothing is kept. The\nkey and the webhook secret are sealed and never come back.",
       "properties": {
@@ -264,6 +407,13 @@
             "null"
           ]
         },
+        "native_issue": {
+          "description": "The native issue it's for (M205): the issue itself (Open on\nGitHub, `kind` `issue`), or one of its comments (`kind` `comment`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "number": {
           "format": "uint64",
           "minimum": 0,
@@ -462,11 +612,30 @@
           },
           "type": "array"
         },
+        "left_queue": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LeftQueue"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Why it last left the merge queue unmerged: GitHub's `dequeued`.\nCleared by the next `enqueued` and by a merge; it stays after a\nclose, so the row still says why."
+        },
         "merge_state": {
           "type": [
             "string",
             "null"
           ]
+        },
+        "modules": {
+          "default": [],
+          "description": "The names of the modules a Plane item is in; its `labels` are names too.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "number": {
           "description": "A Plane item's sequence id (`ALL-2212` is 2212).",
@@ -478,6 +647,19 @@
           "default": "github",
           "description": "`github` or `plane`; an older platform's items are GitHub's.",
           "type": "string"
+        },
+        "queued": {
+          "description": "An open PR in its branch's merge queue: from GitHub's `enqueued`,\nuntil `dequeued` or it closes (Arugula #878). An older platform\ndoesn't say, so false.",
+          "type": "boolean"
+        },
+        "queued_since": {
+          "description": "When it last entered the merge queue, in milliseconds: GitHub's\n`enqueued`, as the platform heard it (Arugula #766). Kept after it\nleaves, so a reader tells how long it was queued from `left_queue`.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
         },
         "repo": {
           "default": null,
@@ -515,6 +697,13 @@
         },
         "title": {
           "type": "string"
+        },
+        "type": {
+          "description": "A Plane item's type (`Epic`, `Task`), when its project has types.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "updated_at": {
           "format": "uint64",
@@ -615,6 +804,13 @@
           "minimum": 0,
           "type": [
             "integer",
+            "null"
+          ]
+        },
+        "role": {
+          "description": "The reader's role in the project it's linked to (`owner`, `editor`\nor `viewer`), when it's linked for them: a viewer's machine makes\nno drafts on the platform, so its blocks raise only the owner's own.\nAbsent from a control before this.",
+          "type": [
+            "string",
             "null"
           ]
         },
@@ -864,18 +1060,23 @@
       ],
       "type": "object"
     },
-    "InboxShadow": {
-      "description": "What an opted-in machine's forge blocks want of its owner (the shadow\nperiod, M171): items and reasons, never a title.",
+    "LeftQueue": {
+      "description": "A PR's last unmerged exit from its merge queue (Arugula #766).",
       "properties": {
-        "blocks": {
-          "items": {
-            "$ref": "#/$defs/ShadowBlock"
-          },
-          "type": "array"
+        "at": {
+          "description": "When the platform heard it, in milliseconds.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reason": {
+          "description": "GitHub's `reason` as it came, in upper case: `CHECKS_TIMED_OUT`,\n`CHECKS_FAILED`, `MERGE_CONFLICT`, `MANUAL`, `BRANCH_PROTECTIONS`,\n`GIT_TREE_INVALID`, `INVALID_MERGE_COMMIT`, `UNKNOWN_REMOVAL_REASON`.\nOne GitHub adds later is kept as it is.",
+          "type": "string"
         }
       },
       "required": [
-        "blocks"
+        "reason",
+        "at"
       ],
       "type": "object"
     },
@@ -1054,6 +1255,13 @@
           "description": "`comment`, `review` or `issue`.",
           "type": "string"
         },
+        "native_issue": {
+          "description": "Open on GitHub (M205): a native issue (`iss_…`) to send as a new\nissue, with `kind` `issue`. Its title and body are the issue's, read\nagain when it's sent, and `repo` may be empty for its project's one\nlinked repo. Sending it sets the issue's GitHub origin.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "number": {
           "default": null,
           "description": "The PR or issue; `None` for a new issue.",
@@ -1085,12 +1293,34 @@
     },
     "Project": {
       "properties": {
+        "archived": {
+          "description": "Its owner archived it. Its issues, Docs and boards stay.",
+          "type": "boolean"
+        },
         "id": {
           "description": "`prj_` and 32 hex characters.",
           "type": "string"
         },
         "name": {
           "type": "string"
+        },
+        "owner": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProjectOwner"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Whose it is: a team's or a person's own. An older control sends\nnone, and a reader goes by `team` then."
+        },
+        "slug": {
+          "description": "Its short name in links, unique among its owner's projects. An older\ncontrol sends none.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "team": {
           "anyOf": [
@@ -1107,6 +1337,29 @@
       "required": [
         "id",
         "name"
+      ],
+      "type": "object"
+    },
+    "ProjectCreate": {
+      "description": "`POST /api/projects` (Arugula #892): a new project. Only a team's owners\nmake one for the team; anyone makes their own. Who may read and write it\nis its owner's: a team's roles, or only its person.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "owner": {
+          "$ref": "#/$defs/ProjectOwnerRef"
+        },
+        "slug": {
+          "description": "Its short name in links; when not given, control makes one from the\nname. Refused if the owner has a project with it already.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "owner"
       ],
       "type": "object"
     },
@@ -1128,6 +1381,114 @@
         "name",
         "role"
       ],
+      "type": "object"
+    },
+    "ProjectOwner": {
+      "description": "Whose a project is. The web client has another `Owner` (a pane's), so\nthis one is named for what it owns.",
+      "oneOf": [
+        {
+          "description": "A team's: its id and name.",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "team",
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id",
+            "name"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A person's own: their account.",
+          "properties": {
+            "account": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "personal",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "account"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ProjectOwnerRef": {
+      "description": "An owner named by what it is, without its name: a team by its id, or\nthe reader's own account.",
+      "oneOf": [
+        {
+          "description": "A team the reader owns.",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "team",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The reader's own account.",
+          "properties": {
+            "kind": {
+              "const": "personal",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ProjectPatch": {
+      "description": "`PATCH /api/projects/{project}` (Arugula #892): what changes, the rest\nas it was. Anyone who may write the project renames it. Only its owner\narchives it or moves it: a team's owners, or its person for their own;\na move needs the same of the new owner. Access stays the owner's, so a\nmove gives it to the new one's people. Its issues keep their numbers,\nand its Docs, boards, linked repos and workspaces go with it.",
+      "properties": {
+        "archived": {
+          "description": "Archive it, or bring it back.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "owner": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProjectOwnerRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Move it to this owner."
+        }
+      },
       "type": "object"
     },
     "ProjectTeam": {
@@ -1213,73 +1574,6 @@
       },
       "type": "object"
     },
-    "ShadowBlock": {
-      "properties": {
-        "drafts": {
-          "default": [],
-          "description": "The platform's waiting drafts the block shows (`dft_` ids): its\n`draft` reason, when one is the owner's.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "number": {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "reasons": {
-          "description": "What the block's attention rules find now, as [`INBOX_REASONS`]\n(`draft` aside), whether or not the person looked.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "repo": {
-          "description": "`OWNER/NAME` on github.com.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "repo",
-        "number",
-        "reasons"
-      ],
-      "type": "object"
-    },
-    "ShadowCompared": {
-      "properties": {
-        "agree": {
-          "format": "uint32",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "compared": {
-          "description": "Blocks on items the platform has, and how many agreed.",
-          "format": "uint32",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "disagree": {
-          "format": "uint32",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "explained": {
-          "default": 0,
-          "description": "Differences the platform can't help by design (a mention where\ncontent isn't mirrored): not in `compared`.",
-          "format": "uint32",
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "compared",
-        "agree",
-        "disagree"
-      ],
-      "type": "object"
-    },
     "TrackerClose": {
       "description": "How a tracker item is closed.",
       "enum": [
@@ -1308,7 +1602,24 @@
             "null"
           ]
         },
+        "close_on_merge": {
+          "default": true,
+          "description": "Whether a merged PR that names an item moves it to Done (#852). On\nunless turned off.",
+          "type": "boolean"
+        },
         "created_at": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "epics_as_boards": {
+          "default": true,
+          "description": "Whether each open epic has a board that follows it (#483). On unless\nturned off; off, the boards stay and stop following.",
+          "type": "boolean"
+        },
+        "failed_moves": {
+          "default": 0,
+          "description": "Moves to Done Arugula gave up on after a merged PR (#441), which a\nperson may retry ([`TRACKER_MOVE_RETRY`]).",
           "format": "uint64",
           "minimum": 0,
           "type": "integer"
@@ -1431,6 +1742,55 @@
       ],
       "type": "object"
     },
+    "TrackerEvent": {
+      "description": "One change in a [`TrackerHistory`].",
+      "properties": {
+        "at": {
+          "description": "When it happened.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "by": {
+          "default": null,
+          "description": "Who decided it, for a write.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "error": {
+          "default": null,
+          "description": "Why it failed.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "job": {
+          "default": null,
+          "description": "A failed move's job, for the retry.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "description": "`moved` (a merged PR moved an item to Done), `move_failed` (it gave\nup: in `failed`), or an agent's write a person decided: `sent`, `dropped` or\n`write_failed`.",
+          "type": "string"
+        },
+        "line": {
+          "description": "What happened, in a sentence.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "at",
+        "kind",
+        "line"
+      ],
+      "type": "object"
+    },
     "TrackerFieldName": {
       "description": "A module, a type or a label of a Plane project.",
       "properties": {
@@ -1524,6 +1884,30 @@
         "types",
         "labels",
         "read_at"
+      ],
+      "type": "object"
+    },
+    "TrackerHistory": {
+      "description": "What Arugula changed in a connection's Plane project: the newest changes\nand the moves that failed.",
+      "properties": {
+        "entries": {
+          "description": "The newest 20 changes, newest first, other than a failed move.",
+          "items": {
+            "$ref": "#/$defs/TrackerEvent"
+          },
+          "type": "array"
+        },
+        "failed": {
+          "default": [],
+          "description": "The connection's failed moves (`move_failed`), newest first, up to 100:\neach has its `job` for a retry.",
+          "items": {
+            "$ref": "#/$defs/TrackerEvent"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "entries"
       ],
       "type": "object"
     },
@@ -1627,6 +2011,16 @@
           "description": "`allow` if every kind of write is allowed, else `approve`.",
           "type": "string"
         },
+        "close_on_merge": {
+          "default": true,
+          "description": "Whether a merged PR moves the items it names to Done (#852).",
+          "type": "boolean"
+        },
+        "epics_as_boards": {
+          "default": true,
+          "description": "Whether each open epic has a board that follows it (#483).",
+          "type": "boolean"
+        },
         "id": {
           "type": "string"
         },
@@ -1692,6 +2086,22 @@
           "default": null,
           "type": [
             "string",
+            "null"
+          ]
+        },
+        "close_on_merge": {
+          "default": null,
+          "description": "Whether a merged PR moves the items it names to Done.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "epics_as_boards": {
+          "default": null,
+          "description": "Whether each open epic has a board that follows it.",
+          "type": [
+            "boolean",
             "null"
           ]
         },
@@ -2001,7 +2411,7 @@
           "type": "string"
         },
         "why": {
-          "description": "`no_github` (the reader didn't sign in to control with GitHub),\n`no_access` (GitHub doesn't give them access), `busy` (too many\nlookups lately: it shows again within the hour) or `no_app` (this\ncontrol has no GitHub App to ask with).",
+          "description": "`no_github` (the reader didn't sign in to control with GitHub),\n`no_access` (GitHub doesn't give them access), `busy` (too many\nlookups lately: it shows again within the hour), `unsure` (GitHub\ncouldn't be asked just now: it's asked again next time) or `no_app`\n(this control has no GitHub App to ask with).",
           "type": "string"
         }
       },

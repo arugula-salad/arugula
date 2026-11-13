@@ -36,6 +36,24 @@
     "project": "prj_1",
     "sig": "1476617d6ac8f0ecb2ec7ddd4f3f35dc1bd615f3d24d1f644a27e061d561e92d5c3fb58c9d9b65de6a53efea63929f7b422473a37c461c7930e84862224f590a"
   },
+  "grant_v2": {
+    "account": "acct1",
+    "by": "",
+    "caps": [
+      "runs.instruct",
+      "runs.start"
+    ],
+    "delegation": "017b544b71e654f70c0a0fda7f9993b0",
+    "expires": 9000,
+    "id": "00112233445566778899aabbccddeeff",
+    "made": 3000,
+    "owner": "account:acct1",
+    "project": "prj_1",
+    "sig": "",
+    "v": 2
+  },
+  "grant_v2_body": "arugula project grant v2\nid 00112233445566778899aabbccddeeff\nproject prj_1\nowner account:acct1\ndelegation 017b544b71e654f70c0a0fda7f9993b0\nresource hosted\nto platform\ncaps runs.instruct\ncaps runs.start\nmade 3000\nexpires 9000\naccount acct1\n",
+  "grant_v2_challenge": "Zv7OdOi4lf1vpPtBiRFv_1ftUYJU0fmJMfeR70Kdkc8",
   "revoke": {
     "at": 4000,
     "by": "4439457f6ef4c3ff",
@@ -45,6 +63,18 @@
     "sig": "8165971086501fa372fa97cc05a4d7bce1365e24c9754717ef65140a5185c1b5c803014201773965f28bab3ca062f69ff164f19b72e63f75096cf05dd3cb4d07"
   },
   "revoke_body": "arugula project grant revoke v2\nproject prj_1\ndelegation 017b544b71e654f70c0a0fda7f9993b0\nrunning stop\nat 4000\nby 4439457f6ef4c3ff\n",
+  "revoke_v3": {
+    "account": "acct1",
+    "at": 4000,
+    "by": "",
+    "delegation": "017b544b71e654f70c0a0fda7f9993b0",
+    "project": "prj_1",
+    "running": "stop",
+    "sig": "",
+    "v": 3
+  },
+  "revoke_v3_body": "arugula project grant revoke v3\nproject prj_1\ndelegation 017b544b71e654f70c0a0fda7f9993b0\nrunning stop\nat 4000\naccount acct1\n",
+  "revoke_v3_challenge": "QIMYvP1hGy0hll0qgPFCU_EcfgsVA9kDkv2WXEeK8WQ",
   "root": {
     "account": "acct1",
     "approver": "4439457f6ef4c3ff",

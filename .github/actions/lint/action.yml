@@ -13,7 +13,9 @@ runs:
       # The version geek has: the runner image's changes what it reports.
       shell: bash
       run: |
-        curl -fsSL https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz | tar -xJ -C /tmp
+        # To a file first: a retry mid-download would repeat bytes into a pipe.
+        curl -fsSL --retry 4 --retry-delay 5 --retry-all-errors -o /tmp/shellcheck.tar.xz https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz
+        tar -xJf /tmp/shellcheck.tar.xz -C /tmp
         sudo install /tmp/shellcheck-v0.11.0/shellcheck /usr/local/bin/shellcheck
         shellcheck --version
     - name: Formatting
@@ -32,7 +34,10 @@ runs:
     - name: The contract's JSON Schema is current (contract/schema/)
       shell: bash
       run: just contract-schema check
-    - name: DECISIONS.md lists the decision records (docs/decisions/)
+    - name: The native client's OpenAPI document is current (contract/openapi/)
+      shell: bash
+      run: just api-contract check
+    - name: DECISIONS.md lists the decision records (docs/decisions/), and docs/data-model.md matches the code
       shell: bash
       run: just decisions check
     - name: The release notes' headline sections (docs/releases/, What's new)

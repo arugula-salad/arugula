@@ -11,6 +11,9 @@ import { PageHeader } from "../shared/ui/page-header";
 import { PlatformBar } from "./bar";
 import { WithRail } from "./rail";
 import { names, resolve, roomElsewhere } from "./links";
+import { currentProject, entryPath, type Entry } from "./current-project";
+import { slugIn } from "./paths";
+import { arrive } from "./chat-nav";
 import { go, pathOf, useRoute, type Route } from "./router";
 import { controlOrigin, session } from "./session";
 import { signIn } from "./signin";
@@ -26,21 +29,29 @@ import { DeploysPage } from "./pages/deploys";
 import { InboxPage } from "./pages/inbox";
 import { Missing, ProjectHome } from "./pages/project";
 import { Installed, ProjectSettings } from "./pages/project-settings";
+import { DesignPage } from "./pages/design";
 import { SettingsPage } from "./pages/settings";
+import { OwnerSettings } from "./pages/owner-settings";
 import { HostedWorkspacePage, HostedWorkspaces } from "./pages/hosted-workspace";
 import { RunPage, RunsPage } from "./pages/runs";
 import { SessionsPage } from "./pages/sessions";
 import { AllBoardsPage, BoardPage, BoardsPage } from "./pages/boards";
-import { TriagePage } from "./pages/triage";
 import { DocPage, DocsPage } from "./pages/docs";
 import { projectDocs } from "../shared/docs/store";
 import { SessionPage } from "./pages/session";
+import { TeamPage } from "./pages/team";
 import { runs } from "./runs";
 import { runTitle } from "./runs-text";
 import { titleOf } from "./titles";
 import { barProject, where } from "./where";
 
 export function PlatformPage() {
+  // The design reference needs no one signed in and no project, so nothing of
+  // the session is loaded for it (#693).
+  return useRoute().page === "design" ? <DesignPage /> : <Routed />;
+}
+
+function Routed() {
   useSubscribe((fn) => session.subscribe(fn));
   const r = useRoute();
   useEffect(() => void session.load(), []);
@@ -51,7 +62,7 @@ export function PlatformPage() {
   if (s === null) return <Shell><p class="platform-section dim">Loading…</p></Shell>;
   if (s === "signed-out") return <SignIn />;
   if (typeof s === "object") return <Shell><p class="platform-section control-error">{s.error}</p></Shell>;
-  if (r.page === "chat") return <ChatPage project={r.project} route={{ room: r.room, msg: r.msg, thread: r.thread, view: r.view, q: r.q }}><Toast /></ChatPage>;
+  if (r.page === "chat") return <ChatPage project={r.project} route={{ room: r.room, msg: r.msg, thread: r.thread, view: r.view, q: r.q, all: r.all }}><Toast /></ChatPage>;
   if (r.page === "dm") return <ChatPage project={r.project} route={{ room: r.room, msg: r.msg, thread: r.thread }}><Toast /></ChatPage>;
   return <Shell>{body(r, lost)}</Shell>;
 }
@@ -65,7 +76,7 @@ function body(r: Route, lost: string | null) {
       if (r.what === "run" && lost === r.run) return <Missing what="That run isn't one you can read (or it's gone)." />;
       return <p class="platform-section dim">Finding it…</p>;
     case "home":
-      return <Home />;
+      return r.to ? <Entering to={r.to} /> : <Home />;
     case "project":
       return <ProjectHome id={r.project} />;
     case "issues":
@@ -75,13 +86,13 @@ function body(r: Route, lost: string | null) {
     case "issue":
       return <IssuePage project={r.project} issue={r.issue} msg={r.msg} />;
     case "triage":
-      return <TriagePage project={r.project} />;
+      return <BoardsPage project={r.project} scroll />;
     case "boards":
       return <BoardsPage project={r.project} />;
     case "board":
       return <BoardPage project={r.project} board={r.board} />;
     case "docs":
-      return <DocsPage project={r.project} />;
+      return <DocsPage project={r.project} all={r.all} />;
     case "doc":
       return <DocPage project={r.project} doc={r.doc} />;
     case "runs":
@@ -106,16 +117,31 @@ function body(r: Route, lost: string | null) {
       // M184: a hosted workspace is a machine of the project.
       return <HostedWorkspacePage project={r.project} workspace={r.workspace} />;
     case "inbox":
-      return <InboxPage />;
+      return <InboxPage all={r.all} />;
     case "all-boards":
-      return <AllBoardsPage />;
+      return <AllBoardsPage all={r.all} />;
     case "settings":
       return <SettingsPage />;
+    case "owner-settings":
+      return <OwnerSettings owner={r.owner} />;
     case "deploy":
       return <DeployPage id={r.deploy} />;
+    case "team":
+      return <TeamPage team={r.team} tab={r.tab} />;
     default:
       return <Missing what="Nothing's at this address." />;
   }
+}
+
+/** A shell button's place (`/?to=docs`): in the current project once the page
+ * knows the reader's, else the global page. */
+function Entering({ to }: { to: Entry }) {
+  useSubscribe((fn) => session.subscribe(fn));
+  const ready = session.state === "ready";
+  useEffect(() => {
+    if (ready) go(entryPath(to, session.project(currentProject()), names), true);
+  }, [ready]);
+  return <p class="platform-section dim">Finding it…</p>;
 }
 
 function Shell({ children }: { children: preact.ComponentChildren }) {
@@ -141,7 +167,7 @@ function SignIn() {
             <button class="primary" data-sign-in onClick={() => void signIn(controlOrigin())}>
               Sign in
             </button>{" "}
-            <span class="dim">on Control, where your passkeys are; it brings you back here.</span>
+            <span class="dim">on your machines page, where your passkeys are; it brings you back here.</span>
           </p>
         </section>
       </main>
@@ -178,7 +204,7 @@ function useFind(r: Route): string | null {
     return () => void (live = false);
   }, [ask]);
   useEffect(() => {
-    if (to) go(to, true);
+    if (to) arrive(to);
   }, [to]);
   return lost;
 }
@@ -202,17 +228,22 @@ function useTitle(r: Route) {
       if (x.kind === "dm") return x.name || x.others.map((o) => o.name).join(", ") || x.with?.name;
       return x.name;
     },
+    team: names,
     shown: barProject(r),
   });
   useEffect(() => void (document.title = title), [title]);
 }
 
 /** Put the address's slugs right once the names are known: only the ids
- * are read, so an old slug lands, and the bar shows the current one. A
- * room of another project's goes to its own (UI audit #169). */
+ * are read, so an old slug lands, and the bar shows the current one. An id
+ * whose name isn't known yet (a Doc's, until it's read) keeps the slug it
+ * has, so loading a page doesn't take it off the address and put it back. A
+ * room of another project's goes to its own (UI audit #169). The hash stays:
+ * it can name a Doc's tab. */
 function useSlug(r: Route) {
-  const want = r.page === "missing" || r.page === "find" ? null : (roomElsewhere(r) ?? pathOf(r, names));
+  const known = (id: string) => names(id) ?? slugIn(location.pathname, id);
+  const want = r.page === "missing" || r.page === "find" || (r.page === "home" && r.to) ? null : (roomElsewhere(r) ?? pathOf(r, known));
   useEffect(() => {
-    if (want && want !== location.pathname + location.search && session.state === "ready") go(want, true);
+    if (want && want !== location.pathname + location.search && session.state === "ready") go(want + location.hash, true);
   }, [want, session.state]);
 }

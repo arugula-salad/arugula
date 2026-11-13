@@ -5,8 +5,9 @@
 # hand. The workflow runs on every push to main and desktop-changed asks
 # scripts/app-changed, the same question check.yml's desktop-check asks, so
 # a push that leaves the app alone still reports `desktop`, as skipped.
-# ci.green's windows phase (chant.workspace.json, #503) counts a skipped
-# run as passed, and can't count a run that never happened.
+# ci.green's windows-desktop phase (chant.workspace.json, #503; its own,
+# so the app's lane needs it without windows.yml's jobs, #307) counts a
+# skipped run as passed, and can't count a run that never happened.
 name: windows-desktop
 # Written by chant ci workflow from ci.green's build (#4169); edit ci.green and run it again.
 on:
@@ -14,13 +15,19 @@ on:
     branches:
       - main
   workflow_dispatch: {}
+  merge_group:
+    types:
+      - checks_requested
 
 # Written by chant ci workflow from ci.green's build (#4169); edit ci.green and run it again.
 concurrency:
-  group: chant-build-windows-${{ github.ref }}
+  # A job skipped by changed paths diffs against `chant ci base --phase windows-desktop`, not github.event.before, which a newer push may have kept from being built (#4643).
+  group: chant-build-windows-desktop-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
+  # scripts/queue-tested reads this commit's merge_group runs.
+  actions: read
   contents: read
 
 jobs:
@@ -31,7 +38,14 @@ jobs:
       run: ${{ steps.ask.outputs.run }}
     steps:
       - uses: actions/checkout@v4
+      # scripts/changed runs chant ci base (chant#4643) through npx: keep its download.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-chant-0.124.64
       - id: ask
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: if scripts/app-changed "${{ github.event.before }}"; then echo run=true >> "$GITHUB_OUTPUT"; else echo run=false >> "$GITHUB_OUTPUT"; fi
 
   # M54 (#217): lint the desktop app and build its installer, kept as an
@@ -48,7 +62,7 @@ jobs:
       - uses: actions/checkout@v4
       # Under a key app-release.yml's windows job reads: a tag's run can
       # only read main's caches, and this is main's release build of the app.
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: crates/desktop
           shared-key: windows-desktop

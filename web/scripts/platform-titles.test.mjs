@@ -12,6 +12,7 @@ const known = {
   issue: (id) => (id === "iss_bbbb" ? { number: 142, title: "M265 the bar" } : undefined),
   run: (id) => (id === "run_cccc" ? "ci.test" : undefined),
   room: (id) => ({ ch_dddd: "#general", dm_eeee: "sam" })[id],
+  team: (id) => ({ tm_ffff: "Acme Inc." })[id],
 };
 const t = (path, k = known) => {
   const [p, q = ""] = path.split("?");
@@ -23,6 +24,7 @@ test("each route has a title of its own", () => {
   assert.equal(t("/p/prj_aaaa-acme"), "Acme · Arugula");
   assert.equal(t("/p/prj_aaaa/runs"), "Runs · Acme · Arugula");
   assert.equal(t("/p/prj_aaaa/runs/run_cccc"), "ci.test · Acme · Arugula");
+  assert.equal(t("/p/prj_aaaa/sessions"), "Agent sessions · Acme · Arugula");
   assert.equal(t("/p/prj_aaaa/issues"), "Issues · Acme · Arugula");
   assert.equal(t("/p/prj_aaaa/issues/iss_bbbb-m265"), "#142 M265 the bar · Acme · Arugula");
   assert.equal(t("/p/prj_aaaa/issues/new"), "New issue · Acme · Arugula");
@@ -34,6 +36,9 @@ test("each route has a title of its own", () => {
   assert.equal(t("/p/prj_aaaa/chat/activity"), "Activity · Chat · Acme · Arugula");
   assert.equal(t("/inbox"), "Inbox · Arugula");
   assert.equal(t("/settings"), "Account settings · Arugula");
+  assert.equal(t("/design"), "Design reference · Arugula");
+  assert.equal(t("/t/tm_ffff/members"), "Members · Acme Inc. · Arugula");
+  assert.equal(t("/t/tm_gggg/chat"), "Chat · Arugula", "a team not known yet is left out");
   assert.equal(t("/nowhere/at/all"), "Not found · Arugula");
 });
 

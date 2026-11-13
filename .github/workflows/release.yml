@@ -1,42 +1,82 @@
-# A `v*` tag, the daemon's release: build Linux (x86_64, arm64, static) and
-# macOS (arm64, and x86_64 cross-compiled for Intel Macs) binaries, and a
-# zip of arugulad and arugula for Windows (install.ps1's), attach them
-# to the tag's release with SHA256SUMS, publish it as latest, bump the
-# Homebrew formula, send the editor extension to the marketplaces, build
-# the hosted workspace's E2B templates (M177, one per size: M266), and
-# deploy the hosted control from the x86_64 static build (M133): its
-# platform first (M140), then its hub, only when something the hub is
-# built from changed since the release it runs (the control job). No
-# desktop app: it has its own release, app-v* tags (app-release.yml,
-# #393), and the daemon updates itself (#391).
+# A `v*` tag, the daemon's release, through chant (#1986): `chant release
+# cut --lane daemon` records release/daemon's release of the tag's commit,
+# which must be green in the daemon's lane, before anything is built. Then
+# build Linux (x86_64, arm64, static) and macOS (arm64, and x86_64
+# cross-compiled for Intel Macs) binaries, and a zip of arugulad and arugula
+# for Windows (install.ps1's), each with the tag's version and notes written
+# into its checkout (`scripts/release stamp`: no commit moves the version, and
+# the notes are in the tag's message, #707). `chant
+# release publish` (release/daemon/chant.config.ts) then attaches them to
+# the tag's release with SHA256SUMS and publishes it as latest, commits the
+# Homebrew formula to the tap and sends the editor extension to the
+# marketplaces. Beside the publish, build the hosted workspace's E2B
+# templates (M177, one per size: M266). No hosted control here: control
+# and its platform release from their own repository. No desktop app: it has its own release, app-v*
+# tags (app-release.yml, #393), and the daemon updates itself (#391).
 name: release
 on:
   push:
     tags: ["v*"]
 
+# Read by default: only the cut (chant/lifecycle) and the publish write.
 permissions:
-  contents: write
+  contents: read
 
-# scripts/release check-green: the tag's commit must have passed CI (#503).
-# The repository variable ARUGULA_RELEASE_SKIP_GREEN=1 lets a release
-# through anyway.
+# The tag's commit must have passed CI (#503): chant's cut refuses it
+# otherwise. The repository variable ARUGULA_RELEASE_SKIP_GREEN=1 makes the
+# cut ask for a person's override instead (`--override-green`,
+# docs/development.md), and skips check-rare.
 env:
   ARUGULA_RELEASE_SKIP_GREEN: ${{ vars.ARUGULA_RELEASE_SKIP_GREEN }}
 
 jobs:
+  # The release chant publishes (#1986), cut before anything is built:
+  # `chant release cut --lane daemon` from the tag's commit, as CI passed
+  # it, which must have ci/green-daemon and no ci/revoked-daemon. It records
+  # the release on chant/lifecycle and pushes it; a cut that's there already
+  # is left as it is. Every build waits for it, so a refused cut builds and
+  # deploys nothing. With ARUGULA_RELEASE_SKIP_GREEN=1 it cuts under a
+  # person's override (`--override-green`): the first run records the
+  # request and stops with the `chant approve` line to run; re-run it once
+  # that's done.
+  cut:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      - run: git fetch -q origin chant/lifecycle:chant/lifecycle
+      - run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      # chant from release/tools' lockfile, not resolved afresh.
+      - run: npm ci --prefix release/tools --no-fund --no-audit && echo "$PWD/release/tools/node_modules/.bin" >>"$GITHUB_PATH"
+      - working-directory: release/daemon
+        run: |
+          override=()
+          if [ "${ARUGULA_RELEASE_SKIP_GREEN:-}" = 1 ]; then override=(--override-green); fi
+          chant release cut "$GITHUB_REF_NAME" --at "$(git rev-parse "$GITHUB_REF_NAME^{commit}")" --lane daemon "${override[@]}" --yes
+
   # On the home cloud's runners (arugula-amd64, a fresh pod per job,
   # docs/development.md). A tag's run can only read main's caches and its
-  # own, and main never saves release-static, so rust-cache starts cold:
-  # sccache (check.yml's, through the setup action) is what keeps a
-  # release's unchanged crates from compiling again. x86_64 alone, as the
-  # deploys wait for this job; aarch64 builds beside it (linux-arm64).
+  # own, and main never saves release-static, so rust-cache starts cold.
+  # A release compiles everything itself: not through sccache, whose store
+  # pull requests and merge groups write too (check.yml's), so nothing in
+  # what ships comes from another job's cache. x86_64 alone, as the
+  # template jobs wait for this job; aarch64 builds beside it (linux-arm64).
+  # It stays on a pod for that wait.
   linux:
+    needs: cut
     runs-on: arugula-amd64
-    env:
-      SCCACHE_WEBDAV_PASSWORD: ${{ secrets.SCCACHE_WEBDAV_PASSWORD }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          persist-credentials: false
           # Every release tag and its tree: control's build.rs serves
           # editors/nvim as a git repository with one commit for each
           # release that changed it (#1748), and fails here without them.
@@ -47,20 +87,15 @@ jobs:
           cache-key: release-static
           packages: gh
       - run: just bootstrap
+      # The rare jobs (#305), which the cut doesn't read; then the tag's
+      # version into this checkout.
       - run: scripts/release check-version "$GITHUB_REF_NAME"
+      - run: scripts/release stamp "$GITHUB_REF_NAME"
       - run: just static x86_64
-      # What the hub's arugula-control was built from (cargo's dep-info
-      # beside it, and the build's own files), for the control job to
-      # compare with the release the hub runs. If it can't be listed, the
-      # whole tree stands in for it, and the hub deploys.
-      - run: |
-          scripts/ci-hub-changed inputs "$CARGO_TARGET_DIR/x86_64-unknown-linux-musl/release/arugula-control.d" >"$RUNNER_TEMP/hub-inputs" ||
-            { echo "::warning::the hub's inputs weren't listed: it deploys"; echo . >"$RUNNER_TEMP/hub-inputs"; }
-      # Control's binaries, for the platform and control jobs' images, and
-      # arugulad and arugula for the template job's (a tar keeps them
-      # executable); the hub's inputs for the control job.
-      - run: tar -cf "$RUNNER_TEMP/control-binaries.tar" -C "$CARGO_TARGET_DIR/x86_64-unknown-linux-musl/release" arugula-control arugulad arugula-platform arugula -C "$RUNNER_TEMP" hub-inputs
-      - uses: actions/upload-artifact@v4
+      # arugulad and arugula for the template job's image (a tar keeps them
+      # executable).
+      - run: tar -cf "$RUNNER_TEMP/control-binaries.tar" -C "$CARGO_TARGET_DIR/x86_64-unknown-linux-musl/release" arugulad arugula
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: control-binaries
           path: ${{ runner.temp }}/control-binaries.tar
@@ -69,19 +104,27 @@ jobs:
       - run: just dist
       # The editor extension, from the daemon that carries it (#529).
       - run: '"$CARGO_TARGET_DIR/x86_64-unknown-linux-musl/release/arugulad" _vsix dist'
-      - run: scripts/release upload "$GITHUB_REF_NAME" dist/*.tar.gz dist/*.vsix
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # For the publish job, which publishes what the build jobs made.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-linux-x86_64
+          path: |
+            dist/*.tar.gz
+            dist/*.vsix
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
 
   # The arm64 tarball, cross-compiled with Zig: nothing deploys from it, so
-  # it holds back only publish.
+  # it holds back only publish, which waits for Windows' longer job anyway.
+  # On GitHub's runner, without sccache (as linux).
   linux-arm64:
-    runs-on: arugula-amd64
-    env:
-      SCCACHE_WEBDAV_PASSWORD: ${{ secrets.SCCACHE_WEBDAV_PASSWORD }}
+    needs: cut
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          persist-credentials: false
           # just static builds control here too: as the linux job's (#1748).
           fetch-depth: 0
       - uses: ./.github/actions/setup
@@ -89,50 +132,65 @@ jobs:
           cache-key: release-static-aarch64
           packages: gh
       - run: just bootstrap
-      - run: scripts/release check-version "$GITHUB_REF_NAME"
+      - run: scripts/release stamp "$GITHUB_REF_NAME"
       - run: just static aarch64
       - run: just dist
-      - run: scripts/release upload "$GITHUB_REF_NAME" dist/*.tar.gz
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-linux-aarch64
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
 
   macos:
+    needs: cut
     runs-on: [self-hosted, macos-arm64]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - run: echo "CARGO_TARGET_DIR=$HOME/.cache/illogical-ci/release" >> "$GITHUB_ENV"
       - run: scripts/ci-cap-target 30
       - run: just bootstrap
+      - run: scripts/release stamp "$GITHUB_REF_NAME"
       - run: just build
       - run: just build-macos-x86_64
       - run: just dist
-      - run: scripts/release upload "$GITHUB_REF_NAME" dist/*.tar.gz
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-macos
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
 
   # GitHub's runner: Jake has no Windows machine (M54, #217).
   windows:
+    needs: cut
     runs-on: windows-latest
     defaults:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       # Zig for Ghostty's lib-vt, pnpm for the web client the daemon embeds.
-      - uses: mlugg/setup-zig@v2
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
           version: 0.16.0
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           version: 10
       # main's warm target dir and Ghostty build
       # (windows-release-cache.yml); a tag's run only reads them.
       - run: echo "LIBGHOSTTY_VT_SYS_CACHE_DIR=$(cygpath -w "$HOME/.cache/libghostty-vt-sys")" >> "$GITHUB_ENV"
-      - uses: actions/cache/restore@v4
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/libghostty-vt-sys
           key: ghostty-Windows-release-${{ hashFiles('vendor/libghostty-vt-sys/**', '.mise.toml') }}
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: windows-release
           add-job-id-key: false
@@ -140,117 +198,111 @@ jobs:
           save-if: false
       # arugulad and arugula, with Microsoft's ConPTY: the zip
       # (install.ps1's, M59).
+      - run: scripts/release stamp "$GITHUB_REF_NAME"
       - run: scripts/windows-dist "${GITHUB_REF_NAME#v}"
-      - run: scripts/release upload "$GITHUB_REF_NAME" dist/arugula-*-x86_64-pc-windows-msvc.zip
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  publish:
-    needs: [linux, linux-arm64, macos, windows]
-    runs-on: arugula-amd64
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          rust: "false"
-          packages: gh
-      - run: scripts/release sums "$GITHUB_REF_NAME"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - run: scripts/release publish "$GITHUB_REF_NAME"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - run: scripts/release homebrew "$GITHUB_REF_NAME"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_KEY: ${{ secrets.HOMEBREW_TAP_KEY }}
+          name: release-windows
+          path: dist/arugula-*-x86_64-pc-windows-msvc.zip
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
 
-  # The hosted control (control.arugula.io, M133 #1129), from the tag's
-  # own static build, as soon as linux has built it: automatic, with no
-  # approval step (Jake, 2026-10-20). `just control-deploy` stays, for
-  # hotfixes. scripts/ci-control-deploy builds the image here as that
-  # recipe does (fly deploy --local-only: packaging/control's Dockerfile
-  # around the binaries), labels it with the tag so `fly releases` names
-  # it, and fails unless /control.json answers and every machine runs the
-  # tag's image. A re-run of an older tag leaves a newer one running.
-  # FLY_API_TOKEN is a deploy token for illogical-control; without it the
-  # job fails. One deploy at a time: a tag's waits for the one before (a
-  # third tag replaces the one waiting; GitHub keeps one pending per
-  # group). GitHub's runner: Docker of its own. It waits for the platform's
-  # deploy (the platform deploys first: a hub never forwards a route the
-  # platform doesn't serve yet), but deploys whatever became of it.
+  # Publishes what the build jobs made, through chant
+  # (release/daemon/chant.config.ts): from a checkout of the tag's commit
+  # (the cut's), unstamped, as `chant release publish` asks, with the files
+  # in dist/release (gitignored). The draft step titles the release and
+  # gives it its notes first, from the tag's message, and the formula step writes the Homebrew
+  # formula's template there. The publish stages every target, then
+  # reveals them in order: the tarballs, the Windows zip, the extension,
+  # SHA256SUMS and its signature (sign-sums, with RELEASE_SUMS_KEY) and
+  # chant's provenance statement on the draft, published as
+  # latest; Formula/arugula.rb in the tap, pushed over SSH with its deploy
+  # key (HOMEBREW_TAP_KEY); the extension on the VS Code Marketplace and
+  # Open VSX. Run again, it resumes from chant's record and publishes
+  # nothing twice.
   #
-  # The hub holds every relayed terminal, and a deploy drops them all
-  # ("Control is two processes": the hub deploys rarely). So it deploys
-  # only when something it's built from changed since the release it runs:
-  # the linux job's hub-inputs, compared between that release's tag and
-  # this one (scripts/ci-hub-changed; version numbers alone don't count).
-  # Otherwise the job says "hub unchanged since vX: not deployed" in its
-  # summary and checks the hub on vX. It deploys whenever it can't tell. The
-  # repository variable ARUGULA_HUB_DEPLOY=always deploys it anyway: set it
-  # and re-run this job (then unset it). The release the M221 deploy driver
-  # pushes is a tag like any other, so the same rule holds for it.
-  control:
-    needs: [linux, platform]
-    if: ${{ !cancelled() && needs.linux.result == 'success' }}
+  # The marketplaces take the run's identity, with no stored token (#529):
+  # - the VS Code Marketplace: the Entra app arugula-marketplace-publish
+  #   (Jake's Default Directory; AZURE_CLIENT_ID and AZURE_TENANT_ID are
+  #   repo variables), which trusts this repo's `marketplace` environment
+  #   and is a Contributor on the arugula publisher (#934), signed in with
+  #   azure/login. So this job runs in that environment (v* tags only).
+  # - Open VSX: a trusted publisher on arugula-editor (this repo,
+  #   release.yml), through this job's OIDC token.
+  # A store that refuses the upload is a warning, not a failed release
+  # (Open VSX has 406'd every release since 0.44.0, #1015). GitHub's
+  # runner: it has the Azure CLI that azure/login needs.
+  publish:
+    needs: [cut, linux, linux-arm64, macos, windows]
     runs-on: ubuntu-latest
+    environment: marketplace
     permissions:
-      contents: read
-    concurrency:
-      group: control-deploy
-      cancel-in-progress: false
+      contents: write
+      id-token: write
     steps:
-      - name: FLY_API_TOKEN is set
-        run: |
-          if [ -z "$FLY_API_TOKEN" ]; then
-            echo "::error::FLY_API_TOKEN isn't set: control wasn't deployed. Make a deploy token (fly tokens create deploy -a illogical-control), set it as the repository secret FLY_API_TOKEN, and re-run this job."
-            exit 1
-          fi
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          name: control-binaries
-          path: ${{ runner.temp }}/control
-      - run: tar -xf "$RUNNER_TEMP/control/control-binaries.tar" -C "$RUNNER_TEMP/control"
-      # master on 2026-04-08 (Node 24; the 1.5 tag is Node 20), and the
-      # flyctl `just control-deploy` was last run with.
-      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          version: 0.4.104
-      - run: scripts/ci-control-deploy deploy "$GITHUB_REF_NAME" "$RUNNER_TEMP/control"
+          node-version: 24
+      - run: git fetch -q origin chant/lifecycle:chant/lifecycle
+      - run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: dist/release
+      - run: scripts/release sums "$GITHUB_REF_NAME" dist/release
+      # SHA256SUMS.sig, which `arugulad update` and install.sh check
+      # SHA256SUMS against: the key is this environment's alone.
+      - run: scripts/release sign-sums dist/release
         env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-          ARUGULA_HUB_DEPLOY: ${{ vars.ARUGULA_HUB_DEPLOY }}
+          RELEASE_SUMS_KEY: ${{ secrets.RELEASE_SUMS_KEY }}
+      - run: scripts/release formula "$GITHUB_REF_NAME" dist/release
+      - run: scripts/release draft "$GITHUB_REF_NAME"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+      # chant, and the vsce its marketplace target runs, from release/tools'
+      # lockfile.
+      - run: npm ci --prefix release/tools --no-fund --no-audit && echo "$PWD/release/tools/node_modules/.bin" >>"$GITHUB_PATH"
+      - working-directory: release/daemon
+        run: chant release publish "$GITHUB_REF_NAME" --yes
+        env:
+          ARUGULA_RELEASE_TAG: ${{ github.ref_name }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_KEY: ${{ secrets.HOMEBREW_TAP_KEY }}
+      - run: scripts/release check-latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # Control's platform (arugula-platform, M140 #1157), from the same build,
-  # before the hub. Until that Fly app exists there's no deploy token for
-  # it: with FLY_PLATFORM_API_TOKEN unset, scripts/ci-platform-deploy says
-  # so and succeeds, and the hub deploys as before. Once set, a failed
-  # platform deploy fails this job but not the hub's.
-  platform:
-    needs: linux
+  # The release's client fixtures (#200) and notes (#707) on main.
+  # `scripts/release bump` commits them there right after it pushes the tag
+  # (from the arugula-release deploy, with the arugula-io App's token, which
+  # the "binaries check" ruleset lets push to main), since there's no bump
+  # commit to carry them. This only checks: if main doesn't have
+  # crates/proto/fixtures/releases/X.Y.Z or docs/releases/X.Y.Z.md, its
+  # summary says to run `just release-fixtures X.Y.Z`. It never fails, and
+  # runs whatever became of publish.
+  fixtures:
+    needs: [cut, publish]
+    if: ${{ !cancelled() && needs.cut.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    concurrency:
-      group: platform-deploy
-      cancel-in-progress: false
-    env:
-      FLY_API_TOKEN: ${{ secrets.FLY_PLATFORM_API_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          name: control-binaries
-          path: ${{ runner.temp }}/control
-      - run: tar -xf "$RUNNER_TEMP/control/control-binaries.tar" -C "$RUNNER_TEMP/control"
-      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1
-        if: ${{ env.FLY_API_TOKEN != '' }}
-        with:
-          version: 0.4.104
-      - run: scripts/ci-platform-deploy deploy "$GITHUB_REF_NAME" "$RUNNER_TEMP/control"
+          persist-credentials: false
+      - run: scripts/release check-fixtures "$GITHUB_REF_NAME"
 
   # A hosted workspace's box (M177 #1238): packaging/hosted around the
   # tag's static arugulad and arugula, built on E2B as a template per
@@ -272,58 +324,23 @@ jobs:
       matrix:
         size: [small, large]
     name: template (${{ matrix.size }})
+    # E2B_API_KEY is the release environment's, which only v* tags reach.
+    environment: release
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: control-binaries
           path: ${{ runner.temp }}/control
       - run: tar -xf "$RUNNER_TEMP/control/control-binaries.tar" -C "$RUNNER_TEMP/control"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22.23.3
       - run: scripts/ci-hosted-template publish "$GITHUB_REF_NAME" "$RUNNER_TEMP/control"
         env:
           ARUGULA_TEMPLATE_SIZES: ${{ matrix.size }}
           E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
-
-  # The editor extension as arugula.arugula-editor (#529), once the
-  # release is out. A version that's already there is skipped, so most
-  # releases publish nothing: bump the extension's package.json to ship it.
-  # No stored secrets, both through the workflow's OIDC token:
-  # - Open VSX: a trusted publisher on arugula-editor (this repo,
-  #   release.yml).
-  # - The Marketplace: the Entra app arugula-marketplace-publish (Jake's
-  #   Default Directory; AZURE_CLIENT_ID and AZURE_TENANT_ID are repo
-  #   variables), which trusts this repo's `marketplace` environment and
-  #   is a Contributor on the arugula publisher (#934).
-  # GitHub's runner: it has the Azure CLI that azure/login needs.
-  extension:
-    needs: publish
-    runs-on: ubuntu-latest
-    environment: marketplace
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - run: gh release download "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" -p 'arugula-editor-*.vsix' -D vsix
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - uses: azure/login@v2
-        with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          allow-no-subscriptions: true
-      - run: npx -y @vscode/vsce@4.0.0 publish --azure-credential --skip-duplicate --packagePath vsix/*.vsix
-      # Each store on its own: one refusing (Open VSX 406'd 0.2.1) doesn't hold back the other.
-      # Open VSX has refused every release since 0.44.0 with a 406 on its
-      # side (#1015), which left every release run red: a warning on the
-      # run until it takes them again, not a failed release.
-      - name: Open VSX
-        if: ${{ !cancelled() }}
-        continue-on-error: true
-        run: |
-          npx -y ovsx@1.2.0 publish --trusted-publishing --skip-duplicate --packagePath vsix/*.vsix ||
-            { echo "::warning::Open VSX refused the extension (#1015): the release went on without it"; exit 1; }

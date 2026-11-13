@@ -4,16 +4,24 @@
 # against its SHA256SUMS: `scripts/release sidecars`), which the app installs
 # on a machine with none. Then it builds the app: a .deb, an .rpm and an
 # AppImage for each Linux arch, a .dmg and a zipped app for each macOS arch, an
-# installer for Windows. `app-publish` writes SHA256SUMS and the updater's
-# latest.json, publishes the release (never as latest: releases/latest is
-# the daemon's), and copies it all to the rolling `app-latest` release, where
-# the site's download links and the updater's endpoint point.
+# installer for Windows. It's released through chant (#1986): first `chant
+# release cut --lane app` records release/app's release of the tag's commit,
+# which must be green in the app's lane (ci/green-app), and then, once the
+# builds are done, `chant release publish` (release/app/chant.config.ts)
+# attaches them with
+# SHA256SUMS to the tag's release, published never as latest
+# (releases/latest is the daemon's), and replaces the rolling `app-latest`
+# release, where the site's download links and the updater's endpoint
+# point, with them and the updater's latest.json.
 #
-# Cut one only when crates/desktop changes: set its version in
-# crates/desktop/Cargo.toml, then `git tag -a app-vX.Y.Z`.
+# Cut one only when crates/desktop changes: `just release --app` tags the
+# newest commit with ci/green-app as it is. No commit moves the version:
+# each build job writes the tag's into crates/desktop in its own checkout
+# (`scripts/release stamp`). The notes are in the tag's message (#707).
 #
 # Secrets the app uses when they're set, and skips (saying which) when not:
-# TAURI_SIGNING_PRIVATE_KEY and _PASSWORD (updater signatures),
+# TAURI_SIGNING_PRIVATE_KEY and _PASSWORD (updater signatures; the publish
+# needs them, since latest.json lists every platform's),
 # APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY,
 # APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID (Developer ID signing and
 # notarization, #177), APPLE_PROVISIONING_PROFILE (the Developer ID
@@ -24,29 +32,34 @@ on:
   push:
     tags: ["app-v*"]
 
+# Read by default: only the cut (chant/lifecycle) and the publish write.
 permissions:
-  contents: write
+  contents: read
 
-# scripts/release check-green: the tag's commit must have passed CI (#503).
-# The repository variable ARUGULA_RELEASE_SKIP_GREEN=1 lets a release
-# through anyway.
+# The tag's commit must have passed CI (#503), the app's lane of it
+# (ci/green-app, #307): chant's cut refuses it otherwise. The repository
+# variable ARUGULA_RELEASE_SKIP_GREEN=1 makes the cut ask for a person's
+# override instead (`--override-green`, docs/development.md).
 env:
   ARUGULA_RELEASE_SKIP_GREEN: ${{ vars.ARUGULA_RELEASE_SKIP_GREEN }}
 
 jobs:
-  # On the home cloud's runners (arugula-amd64, docs/development.md). The
-  # app builds in its own container (`just desktop-linux`), as linux-arm64's
-  # does on GitHub's runner.
+  # On GitHub's runner. The app builds in its own container (`just
+  # desktop-linux`), as linux-arm64's does.
   linux:
-    runs-on: arugula-amd64
+    needs: cut
+    runs-on: ubuntu-24.04
+    environment: app-release
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - uses: ./.github/actions/setup
         with:
           rust: "false"
           packages: gh
       - run: just bootstrap
-      - run: scripts/release check-app-version "$GITHUB_REF_NAME"
+      - run: scripts/release stamp "$GITHUB_REF_NAME"
       - run: scripts/release sidecars x86_64-unknown-linux-musl "$RUNNER_TEMP/sidecars"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -58,20 +71,28 @@ jobs:
           ARUGULA_DESKTOP_BINARIES: ${{ runner.temp }}/sidecars
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-      - run: scripts/release app-upload "$GITHUB_REF_NAME" dist/arugula-desktop-*
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-app-linux-x86_64
+          path: dist/arugula-desktop-*
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
 
   # GitHub's arm runner, free for a public repo (#287): the same container
   # build, natively.
   linux-arm64:
+    needs: cut
     runs-on: ubuntu-24.04-arm
+    environment: app-release
     steps:
-      - uses: actions/checkout@v4
-      - uses: taiki-e/install-action@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: just
-      - run: scripts/release check-app-version "$GITHUB_REF_NAME"
+      - run: scripts/release stamp "$GITHUB_REF_NAME"
       - run: scripts/release sidecars aarch64-unknown-linux-musl "$RUNNER_TEMP/sidecars"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -80,18 +101,26 @@ jobs:
           ARUGULA_DESKTOP_BINARIES: ${{ runner.temp }}/sidecars
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-      - run: scripts/release app-upload "$GITHUB_REF_NAME" dist/arugula-desktop-*
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-app-linux-aarch64
+          path: dist/arugula-desktop-*
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
 
   macos:
+    needs: cut
     runs-on: [self-hosted, macos-arm64]
+    environment: app-release
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - run: echo "CARGO_TARGET_DIR=$HOME/.cache/illogical-ci/app-release" >> "$GITHUB_ENV"
       - run: scripts/ci-cap-target 30
       - run: just bootstrap
-      - run: scripts/release check-app-version "$GITHUB_REF_NAME"
+      - run: scripts/release stamp "$GITHUB_REF_NAME"
       - run: |
           scripts/release sidecars aarch64-apple-darwin "$RUNNER_TEMP/sidecars-aarch64"
           scripts/release sidecars x86_64-apple-darwin "$RUNNER_TEMP/sidecars-x86_64"
@@ -113,22 +142,32 @@ jobs:
           APPLE_PROVISIONING_PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-      - run: scripts/release app-upload "$GITHUB_REF_NAME" dist/arugula-desktop-*
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-app-macos
+          path: dist/arugula-desktop-*
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
 
   # GitHub's runner: Jake has no Windows machine (M54, #217).
   windows:
+    needs: cut
     runs-on: windows-latest
+    environment: app-release
     defaults:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
-      - run: scripts/release check-app-version "$GITHUB_REF_NAME"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      # The Tauri CLI from release/tools' lockfile, not resolved afresh.
+      - run: npm ci --prefix release/tools --no-fund --no-audit
+      - run: scripts/release stamp "$GITHUB_REF_NAME"
       # main's warm build of the app (windows-desktop.yml); a tag's run
       # only reads it.
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: crates/desktop
           shared-key: windows-desktop
@@ -145,7 +184,7 @@ jobs:
           cp "$RUNNER_TEMP/sidecars/conpty.dll" "$RUNNER_TEMP/sidecars/OpenConsole.exe" "$RUNNER_TEMP/sidecars/ConPTY-LICENSE.txt" "$b/"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - run: cd crates/desktop && npx --yes @tauri-apps/cli@2 build --bundles nsis
+      - run: cd crates/desktop && ../../release/tools/node_modules/.bin/tauri build --bundles nsis
       - run: |
           mkdir -p dist
           v=$(sed -n 's/^version = "\(.*\)"/\1/p' crates/desktop/Cargo.toml | head -1)
@@ -155,7 +194,7 @@ jobs:
       # key (#384).
       - run: |
           if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
-            npx --yes @tauri-apps/cli@2 signer sign dist/arugula-desktop-windows-x86_64-setup.exe >/dev/null
+            release/tools/node_modules/.bin/tauri signer sign dist/arugula-desktop-windows-x86_64-setup.exe >/dev/null
             echo "signed the installer for the updater"
           else
             echo "no updater signature: TAURI_SIGNING_PRIVATE_KEY isn't set"
@@ -163,22 +202,90 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-      - run: scripts/release app-upload "$GITHUB_REF_NAME" dist/arugula-desktop-windows-x86_64-setup.exe*
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  publish:
-    needs: [linux, linux-arm64, macos, windows]
-    runs-on: arugula-amd64
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          rust: "false"
-          packages: gh
-      - run: scripts/release app-publish "$GITHUB_REF_NAME"
+          name: release-app-windows
+          path: dist/arugula-desktop-windows-x86_64-setup.exe*
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+  # The release chant publishes (#1986), cut before anything is built:
+  # `chant release cut --lane app` from the tag's commit, as CI passed it,
+  # which must have ci/green-app and no ci/revoked-app. It records the
+  # release on chant/lifecycle and pushes it; a cut that's there already is
+  # left as it is. The builds wait for it, so a refused cut builds nothing.
+  # With ARUGULA_RELEASE_SKIP_GREEN=1 it cuts under a person's override
+  # (`--override-green`): the first run records the request and stops with
+  # the `chant approve` line to run; re-run it once that's done.
+  cut:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      - run: git fetch -q origin chant/lifecycle:chant/lifecycle
+      - run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      # chant from release/tools' lockfile, not resolved afresh.
+      - run: npm ci --prefix release/tools --no-fund --no-audit && echo "$PWD/release/tools/node_modules/.bin" >>"$GITHUB_PATH"
+      - working-directory: release/app
+        run: |
+          override=()
+          if [ "${ARUGULA_RELEASE_SKIP_GREEN:-}" = 1 ]; then override=(--override-green); fi
+          chant release cut "$GITHUB_REF_NAME" --at "$(git rev-parse "$GITHUB_REF_NAME^{commit}")" --lane app "${override[@]}" --yes
+
+  # Publishes what the build jobs made, through chant
+  # (release/app/chant.config.ts), from a checkout of the tag's commit (the
+  # cut's), unstamped, with the files in dist/release (gitignored). The
+  # draft step titles the release and gives it its notes first. The publish attaches every
+  # download, the updater's bundles and signatures, SHA256SUMS and chant's
+  # provenance statement to the draft and publishes it, never as latest;
+  # then it replaces app-latest with a new release of the same files and
+  # latest.json, whose URLs point at this tag's release. Moving app-latest
+  # takes TAG_TOKEN: GITHUB_TOKEN gets 403 there (#526), as it does tagging
+  # commits for chant-ci-green.
+  publish:
+    needs: [cut, linux, linux-arm64, macos, windows]
+    runs-on: ubuntu-latest
+    # TAG_TOKEN is the app-release environment's, which only app-v* tags
+    # reach, as are the build jobs' signing keys.
+    environment: app-release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      - run: git fetch -q origin chant/lifecycle:chant/lifecycle
+      - run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: release-app-*
+          merge-multiple: true
+          path: dist/release
+      - run: scripts/release sums "$GITHUB_REF_NAME" dist/release
+      - run: scripts/release draft "$GITHUB_REF_NAME"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Moving app-latest: GITHUB_TOKEN gets 403 there (#526), as it
-          # does tagging commits for chant-ci-green.
+      - run: npm ci --prefix release/tools --no-fund --no-audit && echo "$PWD/release/tools/node_modules/.bin" >>"$GITHUB_PATH"
+      - working-directory: release/app
+        run: chant release publish "$GITHUB_REF_NAME" --yes
+        env:
+          ARUGULA_RELEASE_TAG: ${{ github.ref_name }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_TOKEN: ${{ secrets.CI_GREEN_TOKEN }}
+      - run: scripts/release check-latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

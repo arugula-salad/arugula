@@ -28,7 +28,7 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 const OWNER: &str = "me@example.com";
 
 fn daemon(tag: &str) -> arugula_testkit::Daemon {
-    arugulad!(tag).no_wisp().args(["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"]).start()
+    arugulad!(tag).no_provider().args(["--owner", OWNER, "--tailscale-socket", "/nonexistent/sock"]).start()
 }
 
 /// What a refusal for `flag` says, whatever else it says.
@@ -56,12 +56,7 @@ fn requests() -> Vec<(&'static str, &'static str, String, Option<Value>)> {
         ("studio", "POST", "/api/blocks".into(), block("app", json!({ "app": "nothing-here" }))),
         ("chant-workspaces", "POST", "/api/blocks".into(), block("workspace", json!({}))),
         ("agent-delegation", "GET", "/api/a2a/agents".into(), None),
-        (
-            "additional-forges",
-            "POST",
-            "/api/blocks".into(),
-            block("forge", json!({ "repo": "o/r", "number": 0, "provider": "forgejo" })),
-        ),
+        // GitLab and Forgejo left Labs (native #523): forge_labs_off.rs.
     ]
 }
 
@@ -93,25 +88,29 @@ fn each_flag_gates_its_routes_and_blocks_both_ways() {
     set(&d.state, "studio", true);
     let (status, text) = d.raw("GET", "/api/studio", None);
     assert_eq!(status, 200, "{text}");
-    let (status, text) = d.raw("GET", "/api/guests", None);
+    let (status, text) = d.raw("POST", "/api/guests", Some(json!({ "pane": 1 })));
     assert_eq!(status, 404, "{text}");
     assert!(text.contains("`arugulad sharing guest-ssh on`"), "{text}");
 }
 
-/// Guest ssh is a sharing setting (native #205): off by default, refused
-/// saying how to turn it on, past the gate once the owner does (the
-/// `sharing.set` operation), and refused again when it goes off. The old
+/// Guest ssh is a sharing setting (native #205): off by default, making an
+/// invite is refused saying how to turn it on, past the gate once the owner
+/// does (the `sharing.set` operation), and refused again when it goes off.
+/// Listing and revoking invites are never refused for the setting (native
+/// #270): off, the list is empty and a revoke finds no such invite. The old
 /// flag, set on, counts until the setting is.
 #[test]
 fn guest_ssh_follows_its_sharing_setting() {
     let d = daemon("guest-ssh-setting");
     let refused = |what: &str| {
-        for (method, path) in [("GET", "/api/guests"), ("POST", "/api/guests"), ("DELETE", "/api/guests/1")] {
-            let body = (method == "POST").then(|| json!({ "pane": 1 }));
-            let (status, text) = d.raw(method, path, body);
-            assert_eq!(status, 404, "{what}: {method} {path}: {text}");
-            assert!(text.contains("`arugulad sharing guest-ssh on`"), "{what}: {method} {path}: {text}");
-        }
+        let (status, text) = d.raw("POST", "/api/guests", Some(json!({ "pane": 1 })));
+        assert_eq!(status, 404, "{what}: POST: {text}");
+        assert!(text.contains("`arugulad sharing guest-ssh on`"), "{what}: POST: {text}");
+        let (status, text) = d.raw("GET", "/api/guests", None);
+        assert_eq!((status, text.trim()), (200, "[]"), "{what}: GET");
+        let (status, text) = d.raw("DELETE", "/api/guests/1", None);
+        assert_eq!(status, 404, "{what}: DELETE: {text}");
+        assert!(text.contains("no invite 1") && !text.contains("guest-ssh on"), "{what}: DELETE: {text}");
     };
     refused("by default");
     assert_eq!(d.get("/api/sharing")["guest_ssh"], false);
@@ -165,10 +164,10 @@ fn managoat_is_gone_and_an_old_flag_changes_nothing() {
         assert!(d.get("/api/flags").as_array().unwrap().iter().all(|f| f["name"] != "fountain"));
     }
     // What the file said is kept, for an older daemon reading it.
-    set(&d.state, "forges", true);
+    set(&d.state, "workspaces", true);
     let file: Value = serde_json::from_str(&std::fs::read_to_string(d.state.join("flags.json")).unwrap()).unwrap();
     // An old name is written as its new one (aru-117).
-    assert_eq!(file["flags"], json!({ "fountain": true, "additional-forges": true }));
+    assert_eq!(file["flags"], json!({ "fountain": true, "chant-workspaces": true }));
 
     let arugulad = |args: &[&str]| {
         arugula_testkit::command(Path::new(env!("CARGO_BIN_EXE_arugulad")))
@@ -181,7 +180,8 @@ fn managoat_is_gone_and_an_old_flag_changes_nothing() {
     let list = arugulad(&["flags"]);
     assert!(list.status.success());
     let list = String::from_utf8_lossy(&list.stdout);
-    assert!(list.contains("forges") && !list.lines().any(|l| l.starts_with("fountain")), "{list}");
+    assert!(list.contains("chant-workspaces") && !list.lines().any(|l| l.starts_with("fountain")), "{list}");
+    assert!(!list.contains("forges"), "GitLab and Forgejo left Labs (native #523): {list}");
     for args in [&["flags", "fountain", "on"][..], &["flags", "fountain"][..]] {
         let out = arugulad(args);
         let err = String::from_utf8_lossy(&out.stderr);
@@ -212,14 +212,14 @@ fn an_old_flag_name_still_turns_its_feature_on() {
     assert!(!text.contains("arugulad flags"), "agents set by its old name: {text}");
 
     let out = arugula_testkit::command(Path::new(env!("CARGO_BIN_EXE_arugulad")))
-        .args(["flags", "forges", "on", "--state-dir"])
+        .args(["flags", "workspaces", "on", "--state-dir"])
         .arg(&d.state)
         .output()
         .unwrap();
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
-    assert!(String::from_utf8_lossy(&out.stdout).starts_with("additional-forges is on"));
+    assert!(String::from_utf8_lossy(&out.stdout).starts_with("chant-workspaces is on"));
     let file: Value = serde_json::from_str(&std::fs::read_to_string(d.state.join("flags.json")).unwrap()).unwrap();
-    assert_eq!(file["flags"], json!({ "vms": true, "agent-delegation": true, "additional-forges": true }));
+    assert_eq!(file["flags"], json!({ "vms": true, "agent-delegation": true, "chant-workspaces": true }));
 }
 
 type Ws = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;

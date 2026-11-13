@@ -52,12 +52,8 @@ pub struct App {
     /// Claude Code's IDE (M28), if on.
     pub ide: Option<Arc<dyn crate::editors::Ide>>,
     pub hosts: Arc<Hosts>,
-    /// Dial-out hosts connected to us (M4c).
-    pub dial_outs: Arc<crate::dial::DialOuts>,
     /// Read-only share links.
     pub shares: Arc<crate::share::Shares>,
-    /// History other hosts synced to us.
-    pub synced: Arc<crate::sync::Synced>,
     /// Enrollment in Arugula control: trusted devices, the relay.
     pub control: Arc<crate::control::Control>,
     /// Who else may reach which sessions (M12).
@@ -90,13 +86,13 @@ impl App {
         ide: Option<Arc<dyn crate::editors::Ide>>,
         hosts: Arc<Hosts>,
         shares: Arc<crate::share::Shares>,
-        synced: Arc<crate::sync::Synced>,
         control: Arc<crate::control::Control>,
         acl: Arc<crate::acl::Acl>,
         mcp: Arc<crate::mcp::Tokens>,
         hands: Arc<crate::hand::Hands>,
         rules: Arc<crate::rules::Rules>,
     ) -> Arc<Self> {
+        let agent_mentions = crate::agent_mentions::State::open(control.state_dir());
         Arc::new(Self {
             access,
             identify,
@@ -104,9 +100,7 @@ impl App {
             push,
             ide,
             hosts,
-            dial_outs: Default::default(),
             shares,
-            synced,
             control,
             acl,
             mcp,
@@ -115,7 +109,7 @@ impl App {
             next_client: AtomicU64::new(1),
             tailnet_seen: Default::default(),
             hooks_heard: Default::default(),
-            agent_mentions: Default::default(),
+            agent_mentions,
         })
     }
 
@@ -132,27 +126,60 @@ fn own_routes(app: &Arc<App>) -> Router<Arc<App>> {
         .merge(crate::hosts::routes())
         .merge(crate::share::api_routes())
         .merge(crate::acl::api::routes())
+        .merge(crate::acl::api::link_routes())
         .merge(crate::setup::routes())
         .merge(crate::update::routes())
         .merge(crate::selfupdate::routes())
 }
 
-/// Plus what makes it a home daemon: hosts dialing in and pushing history,
-/// the way through to dial-out hosts (`/h/NAME`), its provider's sandboxes,
-/// and the provider tunnel to resident daemons in them (`/tunnel/NAME`).
+/// Plus what makes it a home daemon: its provider's sandboxes.
 fn api_routes(app: &Arc<App>) -> Router<Arc<App>> {
-    crate::lab_hooks::labs().home_routes(own_routes(app).merge(crate::dial::routes()).merge(crate::sync::routes()))
+    crate::lab_hooks::labs().home_routes(own_routes(app))
 }
 
 /// Over TCP (loopback, behind `tailscale serve`, or a tailnet address):
 /// every request passes the access checks, and API calls from a browser
 /// must come from one of our origins. Serve it with
 /// `into_make_service_with_connect_info::<SocketAddr>()`.
+/// The policy of the page and of every answer that sets none of its own:
+/// scripts only from the page's own files (none inline, none from another
+/// host's state), nothing framing it, no plugins, no `<base>`, and forms
+/// sent only here.
+pub const PAGE_CSP: &str =
+    "script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+
+/// Where a Doc's prototype runs (#506): the runner page, which the app
+/// frames from here, as control's pages frame it from control's proto
+/// origin (a frame by `srcdoc` would take on the page's policy, and its
+/// inline scripts wouldn't run).
+pub const RUNNER_PATH: &str = "/proto/";
+
+/// The runner (`web/src/shared/ui/runner.html`): static text.
+const RUNNER: &str = include_str!("../../../web/src/shared/ui/runner.html");
+
+/// What the runner is served under, as control serves it: `sandbox
+/// allow-scripts` keeps its origin opaque even opened on its own (none of
+/// this page's storage, nor the page key), the page and the prototype it
+/// becomes run inline code and load nothing, and only this page frames it.
+const RUNNER_CSP: &str = "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; \
+     style-src 'unsafe-inline'; img-src data: blob:; font-src data:; base-uri 'none'; form-action 'none'; \
+     frame-ancestors 'self'";
+
+async fn runner() -> Response {
+    Response::builder()
+        .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
+        .header(header::CACHE_CONTROL, "no-cache")
+        .header(header::CONTENT_SECURITY_POLICY, RUNNER_CSP)
+        .body(Body::from(RUNNER))
+        .unwrap()
+}
+
 pub fn router(app: Arc<App>) -> Router {
     let r = Router::new()
         .route("/ws", get(ws))
         .route(crate::e2e::PATH, get(crate::e2e::ws))
         .route(crate::localauth::AUTH_PATH, get(signin))
+        .route(RUNNER_PATH, get(runner))
         .merge(
             api_routes(&app)
                 .layer(middleware::from_fn_with_state(app.clone(), crate::authz::check))
@@ -189,13 +216,6 @@ pub fn local_router(app: Arc<App>) -> Router {
 /// is all it can do there, not drive the daemon.
 pub fn editors_router(app: Arc<App>) -> Router {
     crate::editors::local_routes(Router::new()).with_state(app)
-}
-
-/// Over the tunnel to the home daemon (a dial-out host): the home daemon
-/// checked who is asking. Our own WebSocket and API only: nothing that
-/// would make this host a way to anywhere else (no `/h/`, no dialing in).
-pub fn tunnel_router(app: Arc<App>) -> Router {
-    Router::new().route("/ws", get(local_ws)).merge(own_routes(&app)).with_state(app)
 }
 
 /// Inside an end-to-end channel (`e2e.rs`): the device was checked by the
@@ -270,7 +290,6 @@ async fn guard(
     let class = match class(&req, &app.access) {
         Class::Shell
             if peer == crate::access::Peer::Local
-                && !app.access.tunnelled()
                 && !req.headers().contains_key("tailscale-user-login")
                 && !app.access.is_public_host(req.headers()) =>
         {
@@ -285,7 +304,6 @@ async fn guard(
         Class::Owner => {
             // serve's identity header, on loopback: only from tailscaled.
             if peer == crate::access::Peer::Local
-                && !app.access.tunnelled()
                 && req.headers().contains_key("tailscale-user-login")
                 && !crate::localauth::serve_peer_ok(addr, app.access.port())
             {
@@ -297,7 +315,6 @@ async fn guard(
             // From serve: a person's request (the header), or a tagged
             // node's (none, for a tailnet name), which is refused below.
             if peer == crate::access::Peer::Local
-                && !app.access.tunnelled()
                 && (req.headers().contains_key("tailscale-user-login") || app.access.is_public_host(req.headers()))
                 && crate::localauth::serve_peer_ok(addr, app.access.port())
             {
@@ -325,7 +342,7 @@ async fn guard(
         Class::Viewer => app.access.check_viewer(req.headers(), &peer),
         Class::Token => Ok(()),
         // The link carries the credential; a browser on this machine only.
-        Class::SignIn if peer == crate::access::Peer::Local && !app.access.tunnelled() => Ok(()),
+        Class::SignIn if peer == crate::access::Peer::Local => Ok(()),
         Class::SignIn => Err((StatusCode::FORBIDDEN, "sign-in links are for this machine's browsers".into())),
         // A browser asking first, for one of our origins (`cors` answers
         // it; it carries no credentials, and its answer gives nothing away).
@@ -339,7 +356,7 @@ async fn guard(
     if let Some(f) = forwarded {
         app.identify.saw_forwarded(&f).await;
     }
-    // Checked: nothing past here (a handler, a dial-out host's proxy) sees
+    // Checked: nothing past here (a handler) sees
     // it, but the sign-in link's page, which hands it back.
     if !signin {
         req.headers_mut().remove(crate::access::PAGE_KEY_HEADER);
@@ -354,16 +371,11 @@ async fn guard(
                 .get(header::ACCEPT)
                 .and_then(|v| v.to_str().ok())
                 .is_some_and(|a| a.contains("text/html"));
-            let mut res = if page {
-                (status, axum::response::Html(crate::access::refusal_page(status, &why))).into_response()
-            } else {
-                (status, why).into_response()
-            };
+            let mut res = if page { crate::access::refusal(status, &why) } else { (status, why).into_response() };
             // The page's cue to go to the sign-in link's page (local-key.ts),
             // rather than any 401 an API call answers for its own reasons.
             if status == StatusCode::UNAUTHORIZED
                 && peer == crate::access::Peer::Local
-                && !app.access.tunnelled()
                 && app.access.needs_local_token()
             {
                 res.headers_mut().insert("x-arugula-sign-in", HeaderValue::from_static("/auth"));
@@ -373,9 +385,10 @@ async fn guard(
     };
     // serve authenticates by source, so any page the owner visits could frame
     // the logged-in app (clickjacking). Nothing frames us legitimately.
-    // (A stricter policy already set, on a dial-out host's answer, stays.)
+    // Scripts come from the page's own files only. (A page that sets its
+    // own policy, one inline script's, keeps it.)
     let h = res.headers_mut();
-    h.entry(header::CONTENT_SECURITY_POLICY).or_insert(HeaderValue::from_static("frame-ancestors 'none'"));
+    h.entry(header::CONTENT_SECURITY_POLICY).or_insert(HeaderValue::from_static(PAGE_CSP));
     h.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
     res
 }
@@ -416,10 +429,16 @@ fn page_key_from_query(req: &mut Request) {
     }
 }
 
-/// The app's own files: the page and what Vite built for it.
+/// The app's own files: the page and what Vite built for it. And
+/// `/control.json`, which the page asks for as it loads, without its key,
+/// to learn whether control serves it: a daemon answers 404 (`asset`),
+/// not 401 and a rejected request in its log.
 fn shell_file(path: &str) -> bool {
     let file = path.trim_start_matches('/');
-    file.is_empty() || (!file.starts_with("api/") && !file.contains("..") && Assets::get(file).is_some())
+    file.is_empty()
+        || path == arugula_control_wire::CONTROL_JSON
+        || path == RUNNER_PATH
+        || (!file.starts_with("api/") && !file.contains("..") && Assets::get(file).is_some())
 }
 
 /// Whose request this can be.
@@ -428,13 +447,9 @@ enum Class {
     Owner,
     /// A share link's viewer: the viewer page, its socket and static files.
     Viewer,
-    /// A host's, without a user identity: the token it carries (an invite,
-    /// or its per-host token) is the credential, checked by the handler.
-    /// Or an end-to-end channel, whose handshake is the credential.
-    /// Joining is how a tagged sandbox node adds itself; dialing in and
-    /// pushing history are how a dial-out host reaches us. A forge's
-    /// webhook (M40) is signed with a secret only this daemon and the forge
-    /// hold.
+    /// Without a user identity: an end-to-end channel, whose handshake is
+    /// the credential, checked by the handler; or a forge's webhook (M40),
+    /// signed with a secret only this daemon and the forge hold.
     Token,
     /// MCP with a bearer token (M16): an MCP client without a tailnet
     /// identity of its own, or an agent block's.
@@ -472,12 +487,7 @@ fn class(req: &Request, access: &Access) -> Class {
     {
         return Class::Preflight;
     }
-    if (m == Method::POST && path == crate::hosts::JOIN_PATH)
-        || (m == Method::GET && path == crate::dial::DIAL_PATH)
-        || (m == Method::GET && path == crate::e2e::PATH)
-        || path.starts_with(crate::sync::PUSH_PREFIX)
-        || (m == Method::POST && crate::lab_hooks::labs().is_hook(path))
-    {
+    if (m == Method::GET && path == crate::e2e::PATH) || (m == Method::POST && crate::lab_hooks::labs().is_hook(path)) {
         Class::Token
     } else if path == crate::mcp::PATH
         && req.headers().get(header::AUTHORIZATION).is_some()
@@ -525,37 +535,37 @@ async fn signin(
             "This machine's Arugula needs you to sign in from it.\n\n\
              Run this in a terminal here, which opens the page signed in:\n\narugula web"
         };
-        return (
-            StatusCode::UNAUTHORIZED,
-            axum::response::Html(crate::access::refusal_page(StatusCode::UNAUTHORIZED, why)),
-        )
-            .into_response();
+        return crate::access::refusal(StatusCode::UNAUTHORIZED, why);
     };
     // Only a path of ours: never another site.
     let next = q.next.filter(|n| n.starts_with('/') && !n.starts_with("//") && !n.contains('\\')).unwrap_or("/".into());
     let clear = format!("{}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0", app.access.legacy_cookie_name());
+    let script = signin_script(key, &next);
     let mut res = Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
         .header(header::CACHE_CONTROL, "no-store")
-        .header(header::REFERRER_POLICY, "no-referrer");
+        .header(header::REFERRER_POLICY, "no-referrer")
+        .header(header::CONTENT_SECURITY_POLICY, crate::access::inline_page_csp(&script));
     if let Ok(v) = HeaderValue::from_str(&clear) {
         res = res.header(header::SET_COOKIE, v);
     }
-    res.body(Body::from(signin_page(key, &next))).unwrap()
+    res.body(Body::from(signin_page(&script))).unwrap()
 }
 
-/// The sign-in link's page: stores `key` where the app's page looks for it
-/// (`web/src/shell/local-key.ts`), then goes to `next`.
-fn signin_page(key: &str, next: &str) -> String {
+/// The sign-in link's script: stores `key` where the app's page looks for
+/// it (`web/src/shell/local-key.ts`), then goes to `next`.
+fn signin_script(key: &str, next: &str) -> String {
     // JSON in a script: `<` escaped, so nothing in it can close the tag.
     let js = |v: &str| serde_json::to_string(v).unwrap_or_default().replace('<', "\\u003c");
+    format!("try{{localStorage.setItem(\"arugula.key\",{})}}catch(e){{}}location.replace({})", js(key), js(next))
+}
+
+/// The sign-in link's page, around its script.
+fn signin_page(script: &str) -> String {
     format!(
         "<!doctype html><meta charset=utf-8><meta name=referrer content=no-referrer><title>arugula</title>\
-         <script>try{{localStorage.setItem(\"arugula.key\",{})}}catch(e){{}}location.replace({})</script>\
-         <noscript>Arugula's page needs JavaScript.</noscript>",
-        js(key),
-        js(next)
+         <script>{script}</script><noscript>Arugula's page needs JavaScript.</noscript>"
     )
 }
 
@@ -738,10 +748,10 @@ mod tests {
         page_key_from_query(&mut r);
         assert_eq!(r.uri().to_string(), "/ws?surface=web");
         assert_eq!(r.headers()["x-arugula-key"], "ilp_abc");
-        let mut r = req("/h/box/ws?arugula_key=ilp_abc", true);
+        let mut r = req("/ws?arugula_key=ilp_abc", true);
         r.headers_mut().insert("x-arugula-key", HeaderValue::from_static("ilp_other"));
         page_key_from_query(&mut r);
-        assert_eq!(r.uri().to_string(), "/h/box/ws");
+        assert_eq!(r.uri().to_string(), "/ws");
         assert_eq!(r.headers()["x-arugula-key"], "ilp_abc", "the page's own key wins");
         // Only for a WebSocket: elsewhere it stays put and counts for nothing.
         let mut r = req("/api/panes?arugula_key=ilp_abc", false);
@@ -755,14 +765,14 @@ mod tests {
 
     #[test]
     fn the_signin_page_stores_the_key_and_goes_on() {
-        let p = signin_page("ilp_abc", "/#pane=3");
+        let p = signin_page(&signin_script("ilp_abc", "/#pane=3"));
         assert!(p.contains(r#"localStorage.setItem("arugula.key","ilp_abc")"#), "{p}");
         assert!(p.contains(r#"location.replace("/#pane=3")"#), "{p}");
         // Nothing in `next` closes the script.
-        let p = signin_page("ilp_abc", "/</script><script>alert(1)//");
+        let p = signin_page(&signin_script("ilp_abc", "/</script><script>alert(1)//"));
         assert!(!p.contains("</script><script>alert"), "{p}");
         assert!(!shell_file("/api/panes") && !shell_file("/ws") && !shell_file("/auth"));
-        assert!(shell_file("/"));
+        assert!(shell_file("/") && shell_file("/control.json"));
     }
 
     fn state(block: u32, n: u64) -> ToClient {

@@ -2,17 +2,21 @@
 // most recently active first, each with its unread count. A row opens the
 // thread beside its room; the corner stops following it.
 
+import { EmptyState } from "../ui/block-states";
 import "./threads.css";
 import { useEffect } from "preact/hooks";
 import type { ChatStore } from "../chat-store";
+import { inView, type ChatScope } from "./sidebar";
 import type { ChatThreadItem } from "../proto";
 import { useSubscribe } from "../ui/hooks";
 import { Markup } from "../ui/markup";
 import { usePlatformApi } from "../platform-api";
-import { authorLabel } from "./agents";
+import { AuthorName } from "./agent-name";
 import { AuthorAvatar, roomLabel, roomSigil } from "./room";
 import { footer, repliesOf } from "./threads";
+import { ViewHead } from "./find";
 import { iso, when } from "../time";
+import { Count } from "../ui/state-chip";
 
 function Row({ store, it }: { store: ChatStore; it: ChatThreadItem }) {
   const api = usePlatformApi();
@@ -36,19 +40,19 @@ function Row({ store, it }: { store: ChatStore; it: ChatThreadItem }) {
         <span class="chat-hit-body">
           <AuthorAvatar m={m} />
           <span class={m.agent ? "chat-hit-text by-agent" : "chat-hit-text"}>
-            <b>{authorLabel(m)}</b>
+            <AuthorName m={m} />
             {m.deleted !== null ? <p class="thread-text dim">This message was deleted.</p> : m.text ? <Markup text={m.text} /> : <p class="thread-text">{m.quote}</p>}
           </span>
         </span>
         {it.latest && (
           <span class="thread-row-latest">
-            <b>{authorLabel(it.latest)}</b> {it.latest.text || "…"}
+            <AuthorName m={it.latest} /> {it.latest.text || "…"}
           </span>
         )}
         {unread > 0 && (
-          <span class={t.mentions ? "chat-count mention thread-row-count" : "chat-count thread-row-count"} data-thread-row-unread>
+          <Count for={t.mentions ? "mention" : "you"} class="thread-row-count" data-thread-row-unread>
             {t.mentions ? `@${unread}` : unread}
-          </span>
+          </Count>
         )}
       </button>
       <button
@@ -64,30 +68,27 @@ function Row({ store, it }: { store: ChatStore; it: ChatThreadItem }) {
   );
 }
 
-/** Followed threads over every room I read (`GET /api/chat/threads`). */
-export function ThreadsView({ store, phone }: { store: ChatStore; phone: boolean }) {
-  const { nav } = usePlatformApi();
+/** Followed threads over every room I read (`GET /api/chat/threads`), or
+ * the scope's (Arugula #883). */
+export function ThreadsView({ store, phone, scope }: { store: ChatStore; phone: boolean; scope?: ChatScope }) {
   useSubscribe((fn) => store.subscribe(fn));
   useEffect(() => store.threads.watch(), []);
   const list = store.threads.list;
   // A thread I just stopped following goes at once.
-  const shown = (list?.threads ?? []).filter((it) => it.parent.thread?.following !== false);
+  const shown = (list?.threads ?? []).filter((it) => it.parent.thread?.following !== false && inView(store.room(it.room), scope));
   const n = shown.length;
   return (
     <section class="chat-thread chat-view" aria-label="Threads" data-chat-threads-view>
-      <header class="chat-head chat-view-head">
-        {phone && (
-          <button class="chat-back" title="Every room" onClick={() => nav.openChat()}>
-            ‹
-          </button>
-        )}
-        <div class="chat-title">
-          <strong>Threads</strong>
-          <span>{list ? (n ? `${repliesOf(shown.reduce((k, it) => k + (it.parent.thread?.replies ?? 0), 0))} in ${n} ${n === 1 ? "thread" : "threads"} you follow` : "Threads you follow") : "Loading…"}</span>
-        </div>
-      </header>
+      <ViewHead
+        title="Threads"
+        sub={list ? (n ? `${repliesOf(shown.reduce((k, it) => k + (it.parent.thread?.replies ?? 0), 0))} in ${n} ${n === 1 ? "thread" : "threads"} you follow` : "Threads you follow") : "Loading…"}
+        phone={phone}
+        back="Every room"
+      />
       <div class="thread-list">
-        {list && n === 0 && <p class="thread-empty">Nothing yet. When you reply in a thread, or someone replies to your message, it is here, with what's new in it.</p>}
+        {list && n === 0 && (
+          <EmptyState title="No threads yet." why="When you reply in a thread, or someone replies to your message, it's here, with what's new in it." />
+        )}
         <ul class="chat-hits">
           {shown.map((it) => (
             <Row key={`${it.room}/${it.parent.seq}`} store={store} it={it} />
