@@ -230,7 +230,8 @@ pub struct Applied {
     pub dir: String,
     /// The files it changed.
     pub files: Vec<String>,
-    /// All of it applied (three-way where it had to).
+    /// All of it applied, with no conflicts and no rejected hunks, however
+    /// it got there.
     pub clean: bool,
     /// Files merged with conflict markers to resolve (three-way).
     pub conflicts: Vec<String>,
@@ -238,6 +239,9 @@ pub struct Applied {
     pub rejected: Vec<String>,
     /// What git said when it didn't apply cleanly.
     pub said: Option<String>,
+    /// Files with uncommitted changes, which three-way refused: it applied
+    /// without a merge (#82).
+    pub dirty: Vec<String>,
     /// New binary files the task made that the patch leaves out.
     pub left_out: Vec<String>,
     /// The commit the task started from isn't in this checkout (another
@@ -257,6 +261,12 @@ impl Applied {
         }
         if !self.rejected.is_empty() {
             out.push_str(&format!("Hunks that didn't apply (see the .rej files): {}\n", self.rejected.join(", ")));
+        }
+        if !self.dirty.is_empty() {
+            out.push_str(&format!(
+                "Applied without a three-way merge: these files had uncommitted changes: {}\n",
+                self.dirty.join(", ")
+            ));
         }
         if let Some(s) = &self.said {
             out.push_str(&format!("git said: {s}\n"));
@@ -311,15 +321,37 @@ async fn apply_in(dir: &Path, p: &Patch, state_dir: &Path, task: &str) -> Result
     match git(&top, &["apply", "--3way", "--whitespace=nowarn", &f]).await {
         Ok(_) => out.clean = true,
         Err(e) => {
-            out.said = Some(e.lines().take(6).collect::<Vec<_>>().join(" / "));
             // Merged, with conflict markers in these (`U path`): they're
             // for someone to resolve, and nothing else is tried over them.
             out.conflicts = e.lines().filter_map(|l| l.strip_prefix("U ")).map(str::to_owned).collect();
+            // Three-way refuses files whose index or working tree differ
+            // from HEAD (`error: PATH: does not match index`): that's the
+            // checkout's state, not a failed apply (#82).
+            out.dirty = e
+                .lines()
+                .filter_map(|l| l.split_once("error: ").map(|(_, r)| r))
+                .filter_map(|l| {
+                    l.strip_suffix(": does not match index")
+                        .or_else(|| l.strip_suffix(": already exists in working directory"))
+                })
+                .map(str::to_owned)
+                .collect();
+            if out.dirty.is_empty() {
+                out.said = Some(e.lines().take(6).collect::<Vec<_>>().join(" / "));
+            }
             if out.conflicts.is_empty() {
                 // Nothing went in: what applies does, the rest as .rej files.
-                let _ = git(&top, &["apply", "--reject", "--whitespace=nowarn", &f]).await;
-                out.rejected =
-                    files_of(&p.text).into_iter().filter(|x| top.join(format!("{x}.rej")).exists()).collect();
+                // A `.rej` left by an earlier run would read as a reject now.
+                let rej = |x: &String| top.join(format!("{x}.rej"));
+                for x in &out.files {
+                    let _ = std::fs::remove_file(rej(x));
+                }
+                let fell_back = git(&top, &["apply", "--reject", "--whitespace=nowarn", &f]).await;
+                out.rejected = out.files.iter().filter(|x| rej(x).exists()).cloned().collect();
+                out.clean = fell_back.is_ok() && out.rejected.is_empty();
+                if out.clean {
+                    out.said = None;
+                }
             }
         }
     }
@@ -510,6 +542,76 @@ mod tests {
         assert_eq!(again.conflicts, ["calc.py"], "{again:?}");
         assert!(again.text("t9").contains("conflicts to resolve: calc.py"));
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A repo with `calc.py` and `test_calc.py` committed, and the patch
+    /// that changes the last line of each; the repo, the patch and the state
+    /// dir `apply_in` writes to.
+    async fn repo_and_patch(tag: &str) -> (PathBuf, Patch, PathBuf) {
+        use super::super::tasks::git;
+        let root = std::env::temp_dir().join(format!("arugula-apply-{tag}-{}-{}", std::process::id(), now_ms()));
+        let (repo, state) = (root.join("repo"), root.join("state"));
+        std::fs::create_dir_all(&repo).unwrap();
+        std::fs::create_dir_all(state.join("a2a/results")).unwrap();
+        let g = |args: &'static [&'static str]| {
+            let repo = repo.clone();
+            async move { git(&repo, &[&["-c", "user.name=t", "-c", "user.email=t@e"][..], args].concat()).await.unwrap() }
+        };
+        std::fs::write(repo.join("calc.py"), "a = 1\nx\ny\nz\nb = 2\n").unwrap();
+        std::fs::write(repo.join("test_calc.py"), "t = 1\nx\ny\nz\nu = 2\n").unwrap();
+        g(&["init", "-q"]).await;
+        g(&["add", "-A"]).await;
+        g(&["commit", "-q", "-m", "c"]).await;
+        std::fs::write(repo.join("calc.py"), "a = 1\nx\ny\nz\nb = 3\n").unwrap();
+        std::fs::write(repo.join("test_calc.py"), "t = 1\nx\ny\nz\nu = 3\n").unwrap();
+        let text = git(&repo, &["diff", "--binary"]).await.unwrap();
+        g(&["reset", "-q", "--hard"]).await;
+        (repo, Patch { text, base: String::new(), left_out: vec![] }, state)
+    }
+
+    #[tokio::test]
+    async fn a_patch_on_a_dirty_checkout_applies_without_a_merge_and_says_so() {
+        use super::super::tasks::git;
+        let (repo, p, state) = repo_and_patch("dirty").await;
+        let read = |f: &str| std::fs::read_to_string(repo.join(f)).unwrap().replace("\r\n", "\n");
+        // Changes from an earlier apply, in the index and the working tree,
+        // elsewhere in the same files.
+        std::fs::write(repo.join("calc.py"), "a = 9\nx\ny\nz\nb = 2\n").unwrap();
+        std::fs::write(repo.join("test_calc.py"), "t = 9\nx\ny\nz\nu = 2\n").unwrap();
+        git(&repo, &["add", "-A"]).await.unwrap();
+        std::fs::write(repo.join("calc.py"), "top\na = 9\nx\ny\nz\nb = 2\n").unwrap();
+        // A `.rej` from an earlier run mustn't read as a reject now.
+        std::fs::write(repo.join("calc.py.rej"), "old\n").unwrap();
+        let a = apply_in(&repo, &p, &state, "t1").await.unwrap();
+        assert!(a.clean, "{a:?}");
+        assert!(a.conflicts.is_empty() && a.rejected.is_empty() && a.said.is_none(), "{a:?}");
+        assert_eq!(a.dirty, ["calc.py"], "{a:?}");
+        assert_eq!(read("calc.py"), "top\na = 9\nx\ny\nz\nb = 3\n");
+        assert_eq!(read("test_calc.py"), "t = 9\nx\ny\nz\nu = 3\n");
+        let text = a.text("t1");
+        assert!(!text.contains("only in part") && !text.contains("git said"), "{text}");
+        assert!(
+            text.contains("without a three-way merge") && text.contains("uncommitted changes: calc.py\n"),
+            "{text}"
+        );
+        let _ = std::fs::remove_dir_all(state.parent().unwrap());
+    }
+
+    #[tokio::test]
+    async fn a_patch_with_a_rejected_hunk_says_only_in_part() {
+        let (repo, p, state) = repo_and_patch("rej").await;
+        // The line the patch changes is changed, uncommitted: it can't go in.
+        std::fs::write(repo.join("calc.py"), "a = 1\nx\ny\nz\nb = 7\n").unwrap();
+        let a = apply_in(&repo, &p, &state, "t2").await.unwrap();
+        assert!(!a.clean, "{a:?}");
+        assert_eq!(a.rejected, ["calc.py"], "{a:?}");
+        let text = a.text("t2");
+        assert!(text.contains("only in part") && text.contains("(see the .rej files): calc.py"), "{text}");
+        assert_eq!(
+            std::fs::read_to_string(repo.join("test_calc.py")).unwrap().replace("\r\n", "\n"),
+            "t = 1\nx\ny\nz\nu = 3\n"
+        );
+        let _ = std::fs::remove_dir_all(state.parent().unwrap());
     }
 
     #[test]
