@@ -170,6 +170,21 @@ pub fn sessions_shown(state_dir: &Path) -> AgentListing {
     if agent_mentions(state_dir) { agent_sessions(state_dir) } else { AgentListing::None }
 }
 
+/// Whether people reaching this machine through control with a machine
+/// token (aru-141) may type and act here: on unless the file says
+/// `remote_input: false`. Off, every such channel is a viewer's. Only
+/// `arugulad sharing remote-input` on the machine sets it: it isn't in
+/// [`SharingSetRequest`], so nothing that comes through control can turn
+/// it back on.
+pub fn remote_input(state_dir: &Path) -> bool {
+    doc(state_dir).get("remote_input").and_then(Value::as_bool).unwrap_or(true)
+}
+
+/// Turns remote input on or off, keeping the rest of the file.
+pub fn set_remote_input(state_dir: &Path, on: bool) -> io::Result<()> {
+    set(state_dir, "remote_input", on)
+}
+
 /// Turns Guest SSH access on or off, keeping the rest of the file.
 pub fn set_guest_ssh(state_dir: &Path, on: bool) -> io::Result<()> {
     set(state_dir, "guest_ssh", on)

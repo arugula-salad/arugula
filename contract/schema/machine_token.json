@@ -1,0 +1,172 @@
+{
+  "$defs": {
+    "Jwk": {
+      "description": "One public key, as a JWKS lists it.",
+      "properties": {
+        "alg": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "crv": {
+          "type": "string"
+        },
+        "kid": {
+          "type": "string"
+        },
+        "kty": {
+          "type": "string"
+        },
+        "use": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "x": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kty",
+        "crv",
+        "x",
+        "kid"
+      ],
+      "type": "object"
+    },
+    "Jwks": {
+      "description": "`/.well-known/jwks.json`.",
+      "properties": {
+        "keys": {
+          "items": {
+            "$ref": "#/$defs/Jwk"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "keys"
+      ],
+      "type": "object"
+    },
+    "MachineClaims": {
+      "description": "A machine token's claims.",
+      "properties": {
+        "aud": {
+          "description": "The machine's id.",
+          "type": "string"
+        },
+        "exp": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "iat": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "iss": {
+          "description": "The hub's public URL.",
+          "type": "string"
+        },
+        "jti": {
+          "description": "Unique to this token: a daemon takes each one once.",
+          "type": "string"
+        },
+        "name": {
+          "description": "The account's login, to show.",
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/TokenRole"
+        },
+        "sub": {
+          "description": "The account's id.",
+          "type": "string"
+        },
+        "use": {
+          "description": "Always [`USE`].",
+          "type": "string"
+        }
+      },
+      "required": [
+        "iss",
+        "sub",
+        "aud",
+        "use",
+        "role",
+        "name",
+        "iat",
+        "exp",
+        "jti"
+      ],
+      "type": "object"
+    },
+    "MachineTokenResponse": {
+      "description": "The hub's answer to `POST /api/machines/{id}/token`.",
+      "properties": {
+        "expires": {
+          "description": "When it runs out, in seconds since the epoch.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "role": {
+          "$ref": "#/$defs/TokenRole"
+        },
+        "token": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "token",
+        "expires",
+        "role"
+      ],
+      "type": "object"
+    },
+    "TokenHello": {
+      "additionalProperties": false,
+      "description": "The payload of a channel's first message when it opens with a machine\ntoken rather than a device key.",
+      "properties": {
+        "machine_token": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "machine_token"
+      ],
+      "type": "object"
+    },
+    "TokenRole": {
+      "description": "What the token lets its holder do on the machine, as the hub saw it when\nit made the token.",
+      "oneOf": [
+        {
+          "const": "owner",
+          "description": "The machine's owner, or an owner of its team.",
+          "type": "string"
+        },
+        {
+          "const": "editor",
+          "description": "An editor in the machine's team.",
+          "type": "string"
+        },
+        {
+          "const": "viewer",
+          "description": "A viewer in the machine's team.",
+          "type": "string"
+        },
+        {
+          "const": "guest",
+          "description": "Anyone else signed in: they reach only sessions shared with them.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "arugula_control_wire::machine_token"
+}

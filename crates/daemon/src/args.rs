@@ -151,6 +151,10 @@ pub enum SharingSetting {
     /// What a teammate's agent may learn of this machine's sessions:
     /// `work`, `names` or `none`.
     AgentSessions,
+    /// Whether people reaching this machine through control may type and
+    /// act here (aru-141). Off, they can only watch. Only set here, on the
+    /// machine.
+    RemoteInput,
 }
 
 /// What `arugulad sharing NAME` is told: `on` or `off`, or for

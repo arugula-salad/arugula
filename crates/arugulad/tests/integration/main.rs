@@ -88,6 +88,8 @@ mod hosts;
 mod ide;
 mod invite;
 mod local_auth;
+#[cfg(unix)]
+mod machine_tokens;
 mod mcp;
 mod memory;
 mod mention_agent_block;

@@ -1287,6 +1287,8 @@ pub struct Control {
     resumed: tokio::sync::Notify,
     /// Resumes so far, for a dial that failed as one came (M182).
     resumes: std::sync::atomic::AtomicU64,
+    /// The hub's keys and the machine tokens already taken (aru-141).
+    tokens: crate::machine_token::Verifier,
 }
 
 /// How talking to control is going, for [`State`].
@@ -1598,6 +1600,7 @@ impl Control {
             activity: watch::channel(None).0,
             resumed: tokio::sync::Notify::new(),
             resumes: Default::default(),
+            tokens: Default::default(),
         });
         me.reload();
         me
@@ -1741,6 +1744,34 @@ impl Control {
 
     pub fn enrolled(&self) -> Option<Arc<Enrolled>> {
         self.now.read().unwrap().clone()
+    }
+
+    /// Who a machine token (aru-141) lets in here: its claims, once it's
+    /// checked against the keys control publishes and taken. Fetches the
+    /// keys first when none are held, or the token names one not held.
+    pub async fn check_machine_token(
+        &self,
+        token: &str,
+    ) -> Result<arugula_control_wire::machine_token::MachineClaims, crate::machine_token::Refused> {
+        use crate::machine_token::{Refused, Verifier, verify};
+        let e = self.enrolled().ok_or(Refused::NoKeys)?;
+        let kid = Verifier::kid(token)?;
+        if self.tokens.should_fetch(&kid) {
+            let url =
+                format!("{}{}", e.saved.url.trim_end_matches('/'), arugula_control_wire::machine_token::JWKS_PATH);
+            match async { self.http.get(&url).send().await?.error_for_status()?.json().await }.await {
+                Ok(k) => self.tokens.set_keys(k),
+                Err(err) => warn!(error = %err, "couldn't fetch control's keys"),
+            }
+        }
+        let keys = self.tokens.keys().ok_or(Refused::NoKeys)?;
+        let mut issuers: Vec<String> = self.control_urls.lock().unwrap().clone();
+        issuers.push(e.saved.url.clone());
+        let iss_ok = |iss: &str| issuers.iter().any(|u| u.trim_end_matches('/') == iss.trim_end_matches('/'));
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
+        let claims = verify(token, &keys, iss_ok, &e.keys.id(), now)?;
+        self.tokens.take(&claims, now)?;
+        Ok(claims)
     }
 
     /// Control's ssh jump host for guests (M65), from its `/control.json`;
