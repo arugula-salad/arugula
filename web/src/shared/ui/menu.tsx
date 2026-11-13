@@ -188,13 +188,17 @@ function expanded(el: HTMLElement | null) {
 /** Whether the menu open now hangs from `el`, for a menu button's
  * aria-expanded in its own markup (UI audit #174). */
 export function useMenuOpenFrom(el: { current: HTMLElement | null }): boolean {
-  const [, setTick] = useState(0);
+  const open = () => !!current && !!from && from === el.current;
+  const [, setOpen] = useState(open);
   useEffect(() => {
-    const fn = () => setTick((t) => t + 1);
+    // Only when it opens or shuts: a popover's content changes on every
+    // render of its caller, and a caller that redrew on each would never
+    // stop (the bar's project switcher, Arugula #895).
+    const fn = () => setOpen(open());
     listeners.add(fn);
     return () => void listeners.delete(fn);
   }, []);
-  return !!current && !!from && from === el.current;
+  return open();
 }
 
 /** The same, by the name the platform bar knows it (UI audit #185). */
