@@ -179,7 +179,9 @@ export function overviewOf(project: string, views: BoardView[], panes: OvPane[],
   };
   for (const [k, t] of tiles) {
     const lead = leadOf(t.panes);
-    const name = lead.session && !lead.agent && t.panes.length > 1 ? lead.session.name : lead.name;
+    // Named by its agent where it has one, though the pane it opens is the one asking.
+    const agent = t.panes.find((p) => p.agent);
+    const name = agent ? agent.name : lead.session && t.panes.length > 1 ? lead.session.name : lead.name;
     put(t.at, { key: k, name, where: lead.host, standing: worst(t.panes.map((p) => p.standing)), lead, panes: t.panes });
   }
   // The hub's sessions the machines don't show here: named, where they run, no pane.

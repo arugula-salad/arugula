@@ -93,6 +93,15 @@ test("a terminal in an agent's session is on the agent's card, though its sessio
   assert.deepEqual(o.boards[0].doing[0].sessions[0].panes.map((p) => p.key), ["workstation:1", "workstation:2"]);
 });
 
+test("a session's tile is named by its agent, and opens the pane that asks", () => {
+  const on = { issue: "#1", boards: [{ project: P, board: "brd_a", title: "A", row: "r1" }] };
+  const panes = [pane("workstation", 1, { on_issue: on, agent: true, name: "Claude Code · #1 docs" }), pane("workstation", 2, { standing: "needs", name: "bash" })];
+  const s = overviewOf(P, [view("brd_a", "A", [row("r1", "doing", 1)])], panes, null, hostOf).boards[0].doing[0].sessions[0];
+  assert.equal(s.name, "Claude Code · #1 docs");
+  assert.equal(s.lead.key, "workstation:2");
+  assert.equal(s.standing, "needs");
+});
+
 test("Not on a card: the project's sessions that work on none, each a tile", () => {
   const panes = [pane("workstation", 1, { name: "Lead agent", agent: true, session: { id: 1, name: "Project Inversion" } }), pane("workstation", 2, { session: { id: 2, name: "scratch" }, name: "just check" }), pane("workstation", 3, { session: { id: 2, name: "scratch" } })];
   const o = overviewOf(P, [], panes, null, hostOf);
@@ -109,6 +118,7 @@ test("the hub's sessions by card place panes the machines report, and name the s
   const c983 = o.boards[0].doing[0];
   // The machine's session, with both its panes, and the cloud workspace's, which has no pane here.
   assert.deepEqual(c983.sessions.map((s) => [s.name, s.where, s.panes.length]), [["pane 12", "workstation", 2], ["arugula/983-cloud-half", "Arugula cloud", 0]]);
+  assert.equal(c983.sessions[0].lead.key, "workstation:12");
   assert.equal(c983.sessions[1].hosted, "hs_1");
   assert.equal(c983.standing, "needs");
   assert.deepEqual(o.boards[0].review[0].sessions.map((s) => s.lead?.key), ["build-01:4"]);

@@ -214,6 +214,12 @@ function OverviewBody({ project, board, card, fleet, children }: { project: stri
   useEffect(() => {
     if (opened) where.cardIs(opened.id, cardWords(opened));
   }, [opened && cardWords(opened), opened?.id]);
+  // The drawer's backdrop starts under the bar, as the prototype's does, so
+  // the path above it stays a way up while the card is open.
+  const [barBottom, setBarBottom] = useState(0);
+  useLayoutEffect(() => {
+    if (opened) setBarBottom(Math.max(0, Math.round(document.querySelector("[data-platform-bar]")?.getBoundingClientRect().bottom ?? 0)));
+  }, [!!opened, phone]);
   const act = async (write: () => Promise<BoardView>): Promise<boolean> => {
     try {
       put(await write());
@@ -305,7 +311,7 @@ function OverviewBody({ project, board, card, fleet, children }: { project: stri
     </aside>
   );
   return (
-    <div class={phone ? "ov phone" : "ov"} data-overview={project}>
+    <div class={phone ? "ov phone" : "ov"} data-overview={project} style={{ "--ov-bar-bottom": `${phone ? 0 : barBottom}px` }}>
       {/* On a phone, a list with Needs you on top. */}
       {phone ? [rail, field] : [field, rail]}
       {opened && shownView && (

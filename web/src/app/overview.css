@@ -218,3 +218,8 @@
   font: 500 var(--text-xs) var(--f-mono);
   color: var(--subtle);
 }
+
+/* The card's drawer leaves the bar uncovered: its path climbs back. */
+.ov .side-sheet-backdrop {
+  top: var(--ov-bar-bottom, 0px);
+}

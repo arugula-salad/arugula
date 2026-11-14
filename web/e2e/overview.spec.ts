@@ -163,20 +163,24 @@ test.describe("on a computer", () => {
   test("a question in a card's session pulses its tile, and is answered in place on Needs you", async ({ page }, info) => {
     const { term } = await overview(page);
     const needs = page.locator("[data-ov-needs]");
-    await expect(needs.locator(".swarm-card")).toHaveCount(0);
-    await expect(needs).toContainText("Nothing needs you.");
+    // The agent finishing may put a Finished card there (Swarm's rail does); nothing asks yet.
+    await expect(needs.locator('.swarm-card[data-kind="ask"]')).toHaveCount(0);
     // Claude Code's question, asked in the agent's terminal.
     await page.evaluate(
       ({ term, line }) => fetch(`/api/panes/${term}/send`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: line, enter: true }) }),
       { term, line: `out=$(${cli} ask < ${hookInput}); echo "ONE[\${#out}]"; echo "$out" | grep -o '"Which [a-z ]*?":"[^"]*"'` },
     );
-    const card = needs.locator(".swarm-card");
+    const card = needs.locator('.swarm-card[data-kind="ask"]');
     await expect(card).toHaveCount(1, { timeout: 20_000 });
     // It names its card, and the card waits on you.
     await expect(card.locator("[data-card-work]")).toHaveText("#12 · Fix the installer");
     await expect(tile(page, "row_b")).toHaveAttribute("data-ov-standing", "needs");
     await expect(tile(page, "row_b")).toHaveClass(/ov-pulse/);
     await expect(needs.locator("[data-ov-needs-count]")).toHaveText("1");
+    await expect(card).toBeVisible();
+    // The session is named by its agent, though it's the terminal that asks.
+    await expect(tile(page, "row_b").locator("[data-ov-session] b")).toHaveText("Agent");
+    await page.waitForTimeout(400);
     await page.screenshot({ path: info.outputPath("overview-needs.png") });
     const q = (n: number) => card.locator(`[data-question="${n}"]`);
     await q(0).getByRole("radio", { name: /^Blue/ }).click();
