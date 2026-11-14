@@ -200,7 +200,10 @@ html[data-corners="square"] .platform-section {
   border-radius: 0;
 }
 
-.platform-section h2 {
+/* The page's default h2. :where() keeps it at (0,0,1) so a component's own
+   heading (.section-head h2, .board-zone-head h2, .md h2…) wins whichever
+   CSS file the build emits last. */
+:where(.platform-section) h2 {
   margin: 20px 0 8px;
   font-size: var(--text-lg);
 }
