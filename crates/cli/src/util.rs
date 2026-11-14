@@ -152,6 +152,29 @@ pub fn hostname() -> Option<String> {
     std::env::var("COMPUTERNAME").ok()
 }
 
+/// Open `url` in this computer's browser, when it has a screen to show one
+/// on: whether it did.
+pub fn open_in_browser(url: &str) -> bool {
+    // Windows: the URL handler itself (`cmd /c start` would split at `&`).
+    let (opener, pre): (&str, &[&str]) = if cfg!(windows) {
+        ("rundll32.exe", &["url.dll,FileProtocolHandler"])
+    } else if cfg!(target_os = "macos") {
+        ("open", &[])
+    } else {
+        ("xdg-open", &[])
+    };
+    (cfg!(any(target_os = "macos", windows))
+        || std::env::var_os("DISPLAY").is_some()
+        || std::env::var_os("WAYLAND_DISPLAY").is_some())
+        && std::process::Command::new(opener)
+            .args(pre)
+            .arg(url)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success())
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

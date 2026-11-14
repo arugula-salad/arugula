@@ -29,25 +29,7 @@ pub fn web(sock: &http::Target, print: bool) -> anyhow::Result<i32> {
         println!("It holds {}'s local token: don't share it.", r.dest);
         return Ok(0);
     }
-    // Windows: the URL handler itself (`cmd /c start` would split at `&`).
-    let (opener, pre): (&str, &[&str]) = if cfg!(windows) {
-        ("rundll32.exe", &["url.dll,FileProtocolHandler"])
-    } else if cfg!(target_os = "macos") {
-        ("open", &[])
-    } else {
-        ("xdg-open", &[])
-    };
-    let opened = (cfg!(any(target_os = "macos", windows))
-        || std::env::var_os("DISPLAY").is_some()
-        || std::env::var_os("WAYLAND_DISPLAY").is_some())
-        && std::process::Command::new(opener)
-            .args(pre)
-            .arg(url)
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .is_ok_and(|s| s.success());
-    if opened {
+    if crate::util::open_in_browser(url) {
         println!("Opened {page} in your browser, signed in.");
     } else {
         println!("Open this in a browser on this machine (it signs the browser in, once):\n\n  {url}\n");
