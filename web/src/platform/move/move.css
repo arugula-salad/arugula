@@ -1,9 +1,5 @@
-/* "Move to project…" (move-page.tsx, Arugula #971 spike): two columns, one
-   on a phone. Layout only; the pieces bring their own look. */
-
-.move-try {
-  padding: 0 var(--space-4);
-}
+/* "Move to project…" (move-page.tsx, Arugula #971): two columns, one on a
+   phone. Layout only; the pieces bring their own look. */
 
 .move-cols {
   display: grid;
@@ -45,4 +41,8 @@
 
 .move-go {
   margin: var(--space-4) 0;
+}
+
+.move-said {
+  margin: var(--space-4) 0 0;
 }

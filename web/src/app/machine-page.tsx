@@ -36,6 +36,8 @@ import type { Fleet, FleetHost } from "../shell/fleet";
 import { ROLE_WORDS, rowsOf, sessionsLine, sortRows } from "./machine-list";
 import type { AppSession } from "./session";
 import type { Client } from "../shell/client";
+import { OPS, opPath } from "../shell/ops";
+import type { DocMoveRequest } from "../shared/proto.gen";
 import { notePane } from "../platform/places-kept";
 
 export interface Booted {
@@ -131,6 +133,27 @@ export function paneOf(id: string, pane: number, session: AppSession | null): { 
   const h = hostById(id, session);
   const p = h && up?.machines.fleet.panes.find((x) => x.host === h.name && x.id === pane);
   return p ? { line: whatItDoes(p), branch: p.info.branch ?? null } : undefined;
+}
+
+/** Whether the reader's own machine `id` answers now, so it can be asked
+ * to move its Docs (`PlatformApi.machineDocs`). */
+export function docsHere(id: string, session: AppSession | null): boolean {
+  const h = hostById(id, session);
+  return !!h && !h.owner && h.state === "connected";
+}
+
+/** Ask machine `id` to give its Doc `doc` to `project` (its `doc move`):
+ * null once it has, else why not. */
+export async function moveDoc(id: string, doc: string, project: string, session: AppSession | null): Promise<string | null> {
+  const h = hostById(id, session);
+  if (!h || !up) return "that machine isn't reached from here";
+  try {
+    const res = await up.machines.fleet.request(h.name, OPS["doc.move"].method, opPath("doc.move", { id: doc }), { project } satisfies DocMoveRequest);
+    if (res.ok) return null;
+    return (await res.json<{ error?: string }>().catch(() => null))?.error ?? `HTTP ${res.status}`;
+  } catch (e) {
+    return (e as Error).message;
+  }
 }
 
 /** Once the session has first said what it has. */

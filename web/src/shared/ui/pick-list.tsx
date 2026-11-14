@@ -132,8 +132,9 @@ export interface Counted {
 }
 
 /** "25 issues ›": the count, opening into its rows a page at a time. With
- * no rows, a line that doesn't open; a count of none isn't drawn. */
-export function CountList({ n, label, rows, note, ...data }: { n: number; label: string; rows?: Counted[]; note?: ComponentChildren; [hook: `data-${string}`]: string | undefined }) {
+ * no rows, a line that doesn't open; a count of none isn't drawn. `rows`
+ * can be fewer than `n`: past them, Show more asks `more` for the next. */
+export function CountList({ n, label, rows, note, more: fetch, ...data }: { n: number; label: string; rows?: Counted[]; note?: ComponentChildren; more?: () => void; [hook: `data-${string}`]: string | undefined }) {
   const [open, setOpen] = useState(false);
   const [shown, setShown] = useState(PAGE);
   const more = (rows?.length ?? 0) - shown;
@@ -164,10 +165,17 @@ export function CountList({ n, label, rows, note, ...data }: { n: number; label:
               </li>
             ))}
           </ul>
-          {more > 0 && (
+          {more > 0 ? (
             <button type="button" class="link pick-more" onClick={() => setShown(shown + PAGE)}>
               Show {Math.min(more, PAGE)} more{more > PAGE ? ` of ${more}` : ""}
             </button>
+          ) : (
+            fetch &&
+            rows.length < n && (
+              <button type="button" class="link pick-more" data-count-more onClick={fetch}>
+                Show more of {n - rows.length}
+              </button>
+            )
           )}
         </>
       )}

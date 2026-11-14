@@ -33,7 +33,7 @@ import { go, pathOf } from "../platform/router";
 import { controlOrigin, session } from "../platform/session";
 import { fromControl } from "../shared/machine-paths";
 import type { PlatformApi } from "../shared/platform-api";
-import { appMachines, appOverview, appPanes } from "./machines";
+import { appMachineDocs, appMachines, appOverview, appPanes } from "./machines";
 import { appLive } from "./live";
 import { AppSession } from "./session";
 import { accountBackend, setSeenBackend } from "../shared/seen";
@@ -66,6 +66,7 @@ const api: PlatformApi = {
   Machines: appMachines(appSession),
   panes: appPanes(appSession),
   Overview: appOverview(appSession),
+  machineDocs: appMachineDocs(appSession),
   // A board card's session, drawn in its drawer with the app's own clients.
   ...appLive(appSession),
   goToPane: (machine, pane, quote) =>

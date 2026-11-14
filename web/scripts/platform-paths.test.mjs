@@ -87,6 +87,7 @@ test("links carry the current slug, and read back as the same route", () => {
     { page: "dm", project: P, room: "dm_00aa11bb22cc33dd" },
     { page: "workspace", project: P, workspace: "hw_0123456789abcdef0123456789abcdef" },
     { page: "project-settings", project: P, link: "acme/app" },
+    { page: "move", project: P },
     { page: "installed", project: P, repo: "acme/app" },
     { page: "deploys", project: P },
     { page: "new-deploy", project: P, env: `env_${"0a".repeat(16)}` },
