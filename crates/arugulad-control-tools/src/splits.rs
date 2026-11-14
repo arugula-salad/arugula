@@ -5,11 +5,13 @@
 //! projects: the answer ends with the command its person runs to move it,
 //! or where on the page they do.
 //!
-//! The call is the platform's `/api/projects/{project}/split/plan` (the
-//! web's `platform/move/plan.ts` has its shape), signed with this machine's
-//! key and acting as its owner. What comes along is the planner's to say:
-//! nothing here works it out.
+//! The call is the platform's planner for machines, `/api/daemon/projects/
+//! {project}/split/plan` (the web's `platform/move/plan.ts` has its shape),
+//! signed with this machine's key and acting as its owner with the
+//! machine's grant over the project. What comes along is the planner's to
+//! say: nothing here works it out.
 
+use arugula_control_wire::projects::agent_split_plan;
 use reqwest::Method;
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -182,7 +184,7 @@ pub(crate) async fn project_split(c: &Call<'_>, a: SplitArgs) -> Out {
         issues.push(issue["id"].as_str().ok_or_else(|| format!("{i} has no id"))?.to_owned());
     }
     let ask = json!({ "to": to, "repos": a.repos, "boards": a.boards, "issues": issues, "docs": a.docs });
-    let plan = c.issues_call(Method::POST, &format!("/api/projects/{from}/split/plan"), Some(ask)).await?;
+    let plan = c.issues_call(Method::POST, &agent_split_plan(&from), Some(ask)).await?;
     done(planned(&plan, &command(&from, &a)), plan)
 }
 
