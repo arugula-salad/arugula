@@ -678,11 +678,13 @@ async fn unread_replies(c: &Call<'_>) -> Out {
                 .into_iter()
                 .flatten()
                 .map(|m| {
+                    let attached = files_of(m);
                     format!(
-                        "  [{}] {}: {}",
+                        "  [{}] {}: {}{}",
                         m["seq"],
                         m["by"].as_str().unwrap_or("?"),
-                        m["text"].as_str().unwrap_or("")
+                        m["text"].as_str().unwrap_or(""),
+                        if attached.is_empty() { String::new() } else { format!("  [files: {attached}]") },
                     )
                 })
                 .collect();
@@ -705,6 +707,15 @@ async fn unread_replies(c: &Call<'_>) -> Out {
             blocks.len(),
             blocks.join("\n")
         )
+    };
+    // As a room's read says (#538): how to look at one.
+    let with_files = threads.iter().any(|t| {
+        t["replies"].as_array().into_iter().flatten().any(|m| m["files"].as_array().is_some_and(|f| !f.is_empty()))
+    });
+    let summary = if with_files {
+        summary + "\nread_thread with a reply's room and file (an id above) saves that file here, for you to read."
+    } else {
+        summary
     };
     done(summary, json!({ "threads": threads }))
 }

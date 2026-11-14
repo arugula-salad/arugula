@@ -2143,10 +2143,16 @@ async fn fake_threads(f: FakeThreads) -> String {
                             "pane": null, "mentions": [], "edited": null, "deleted": null, "imported": null,
                             "agent": agent })
                 };
+                // #1029: a reply's file, listed as a room's read lists it.
+                let with_file = |mut m: Value| {
+                    m["files"] = json!([{ "id": "cf_2", "name": "log.txt", "mime": "text/plain", "kind": "file",
+                                          "size": 5, "url": "/api/daemon/chat/rooms/ch_general/files/cf_2" }]);
+                    m
+                };
                 let geek = json!({ "machine": "m1", "machine_name": "geek" });
                 Json(json!({ "threads": [
                     { "room": "ch_general", "room_name": "general", "root": m(1, "Plan for the beta\nmore", geek.clone()),
-                      "replies": [m(4, "one", Value::Null), m(6, "two", Value::Null)] },
+                      "replies": [m(4, "one", Value::Null), with_file(m(6, "two", Value::Null))] },
                     { "room": "ch_general", "room_name": "general", "root": m(2, "Deploy?", geek),
                       "replies": [m(5, "three", Value::Null)] },
                 ] }))
@@ -2252,6 +2258,9 @@ async fn an_agent_reads_and_posts_in_conversations_through_control() {
             && said.contains("ch_general thread 1 (Sam's agent on geek: Plan for the beta)"),
         "{said}"
     );
+    assert!(said.contains("[6] Sam: two  [files: log.txt (text/plain, 5 bytes, file cf_2)]"), "{said}");
+    assert!(said.contains("read_thread with a reply's room and file"), "{said}");
+    assert_eq!(unread["threads"][0]["replies"][1]["files"][0]["id"], "cf_2", "{unread}");
     let found = call(&s, "search_threads", json!({ "q": "on it*", "team": "t1" })).await;
     assert_eq!(found["found"][0]["message"]["by"], "Jake's agent on geek", "{found}");
 
