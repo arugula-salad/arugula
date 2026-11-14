@@ -6,8 +6,9 @@
 // one on the tailnet. WebCrypto is async, so sealing and opening each run
 // in a strict queue: nonces must go out (and be read) in order.
 
-import { cat, Initiator, type Cipher } from "./noise.ts";
+import { cat, deviceKey, Initiator, type Cipher } from "./noise.ts";
 import type { DeviceKeys } from "./keys.ts";
+import { tokenHello, TOKEN_REFUSED, type MachineTokens } from "./machine-token.ts";
 import { unhex } from "./cert.ts";
 import { fullReason, RelayMux, type SocketLike, type WakeSaid } from "./relaymux.ts";
 
@@ -77,9 +78,17 @@ export function decodeMsg(b: Uint8Array): Msg {
 export interface DaemonRef {
   /** Its device id (in the prologue). */
   id: string;
-  /** Its Noise public key, hex, from a certificate this browser checked. */
+  /** Its Noise public key, hex: from a certificate this browser checked,
+   * or (with machine tokens, aru-141) as control's directory gives it. */
   noise: string;
 }
+
+/** What a channel opens with: this browser's device keys, or machine
+ * tokens from control (aru-141), a new token and a key of its own for each
+ * try. */
+export type Credential = DeviceKeys | MachineTokens;
+
+export const usesTokens = (c: Credential): c is MachineTokens => typeof (c as MachineTokens).token === "function";
 
 export interface Response {
   status: number;
@@ -148,12 +157,16 @@ export function daemonNow(c: DaemonClock, perfNow = performance.now()): number {
 }
 
 /** What message 2's payload says: a clock (a device's channel), or a
- * refusal (`{"ok":false,"refused":…}`). Anything else is nothing. */
-export function readWelcome(payload: Uint8Array, at: number): { clock?: DaemonClock; refused?: string } {
+ * refusal (`{"ok":false,"refused":…}`: its message, and its code, such as
+ * `machine-token`). Anything else is nothing. */
+export function readWelcome(payload: Uint8Array, at: number): { clock?: DaemonClock; refused?: string; code?: string } {
   if (!payload.length) return {};
   try {
     const j = JSON.parse(dec.decode(payload)) as { now?: unknown; ok?: unknown; refused?: unknown; message?: unknown };
-    if (j.ok === false) return { refused: typeof j.message === "string" ? j.message : String(j.refused ?? "refused") };
+    if (j.ok === false) {
+      const code = typeof j.refused === "string" ? j.refused : undefined;
+      return { refused: typeof j.message === "string" ? j.message : String(j.refused ?? "refused"), ...(code ? { code } : {}) };
+    }
     if (typeof j.now === "number" && Number.isFinite(j.now) && j.now > 0) return { clock: { now: j.now, at } };
   } catch {
     // an older or odder daemon: no clock
@@ -207,37 +220,66 @@ export class E2ESocket {
     ws.onclose = () => this.close((ws as { reason?: string }).reason ? `relay closed it: ${(ws as { reason?: string }).reason}` : "socket closed");
   }
 
-  /** Try each URL in order (direct ones first, the relay last). */
-  static async connect(urls: Route[], daemon: DaemonRef, keys: DeviceKeys): Promise<E2ESocket> {
+  /** Try each URL in order (direct ones first, the relay last). With
+   * machine tokens (aru-141), a try that sends message 1 spends its token
+   * (the daemon takes each once), so the next try asks control for
+   * another; one that never got that far leaves its token for the next. A
+   * token the daemon refused (expired, already used) is replaced and tried
+   * once more on the same way. */
+  static async connect(urls: Route[], daemon: DaemonRef, cred: Credential): Promise<E2ESocket> {
     let last: unknown = new Error("no way to reach it");
     let refused = false;
+    const tokens = usesTokens(cred) ? cred : null;
+    let unspent: string | null = null;
     for (const route of urls) {
       if (route.ifNoMux && refused) continue;
-      try {
-        const ws = await openRoute(route, daemon.id);
+      for (let tries = 1; ; tries++) {
+        let sent = false;
         try {
-          return await E2ESocket.handshake(ws, daemon, keys, route.timeoutMs);
+          // Asked for before the way is opened: without one, no way would
+          // do. A failure says `noToken`.
+          const token = tokens ? (unspent ??= await tokens.token(daemon.id)) : null;
+          const ws = await openRoute(route, daemon.id);
+          try {
+            // The daemon ignores a token channel's static key: one made for
+            // it, so nothing ties this channel to another.
+            const s = token === null ? (cred as DeviceKeys).noise : await deviceKey();
+            const payload = token === null ? new Uint8Array() : tokenHello(token);
+            return await E2ESocket.handshake(ws, daemon, s, payload, route.timeoutMs, () => {
+              sent = true;
+              unspent = null;
+            });
+          } catch (e) {
+            ws.close();
+            throw e;
+          }
         } catch (e) {
-          ws.close();
-          throw e;
+          last = e;
+          const err = e as { byDaemon?: boolean; code?: string; refused?: unknown; noToken?: boolean };
+          // Control gave no token (signed out, or not let in to it).
+          if (err.noToken) throw e;
+          // The daemon refused the token: a new one, once, the same way.
+          if (tokens && sent && err.byDaemon && err.code === TOKEN_REFUSED && tries < 2) continue;
+          // The daemon itself said no (#913: it doesn't trust this device
+          // yet, say). Every way reaches the same daemon, so another one
+          // would only hear the same, or, a moment later, be let in on a
+          // worse way than the first and stay there: try again later, from
+          // the first.
+          if (err.byDaemon) throw e;
+          if (route.mux && err.refused) refused = true;
+          break;
         }
-      } catch (e) {
-        last = e;
-        // The daemon itself said no (#913: it doesn't trust this device
-        // yet, say). Every way reaches the same daemon, so another one
-        // would only hear the same, or, a moment later, be let in on a
-        // worse way than the first and stay there: try again later, from
-        // the first.
-        if ((e as { byDaemon?: boolean }).byDaemon) throw e;
-        if (route.mux && (e as { refused?: boolean }).refused) refused = true;
       }
     }
     throw last;
   }
 
-  private static handshake(ws: SocketLike, daemon: DaemonRef, keys: DeviceKeys, timeoutMs: number): Promise<E2ESocket> {
+  /** Noise IK with static key `s`, `payload` in message 1 (a token's
+   * hello, or nothing for a device); `sent` hears that message 1 went. */
+  private static handshake(ws: SocketLike, daemon: DaemonRef, s: CryptoKeyPair, payload: Uint8Array, timeoutMs: number, sent: () => void): Promise<E2ESocket> {
+    const token = payload.length > 0;
     return new Promise((res, rej) => {
-      const ik = new Initiator(keys.noise, unhex(daemon.noise));
+      const ik = new Initiator(s, unhex(daemon.noise));
       const t = setTimeout(() => rej(new Error("handshake timed out")), Math.max(timeoutMs, 5000));
       // Every message from the first on is kept: the daemon's first
       // transport message can arrive before we've finished reading its
@@ -256,7 +298,10 @@ export class E2ESocket {
             const { payload, channel } = await ik.read(wire);
             clearTimeout(t);
             const w = readWelcome(payload, performance.now());
-            if (w.refused) return rej(Object.assign(new Error(`the machine refused: ${w.refused}`), { refused: w.refused, byDaemon: true }));
+            // A daemon from before tokens takes the hello for a block's
+            // grant, and finds it malformed.
+            const why = token && w.code === "malformed" ? "its Arugula is too old to take a token from Arugula cloud: update it" : w.refused;
+            if (w.refused) return rej(Object.assign(new Error(`the machine refused: ${why}`), { refused: w.refused, code: w.code, byDaemon: true }));
             const sock = new E2ESocket(ws, channel.send, channel.recv, early);
             sock.clock = w.clock;
             res(sock);
@@ -271,13 +316,16 @@ export class E2ESocket {
         void reading.then(() => {
           clearTimeout(t);
           if (full) rej(Object.assign(new Error(full), { full: true }));
-          else rej(new Error("closed during the handshake (not an approved device?)"));
+          else rej(new Error(token ? "closed during the handshake" : "closed during the handshake (not an approved device?)"));
         });
       };
       void ik
         // Frozen (#504): the prologue both ends agree on.
-        .write(new Uint8Array(), enc.encode(`illogical/1\n${daemon.id}\n`))
-        .then((m) => ws.send(m))
+        .write(payload, enc.encode(`illogical/1\n${daemon.id}\n`))
+        .then((m) => {
+          ws.send(m);
+          sent();
+        })
         .catch(rej);
     });
   }

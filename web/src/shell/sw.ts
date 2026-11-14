@@ -21,6 +21,7 @@ import { E2ESocket } from "./e2e/channel.ts";
 import { KEY_CACHE } from "./local-key-cache.ts";
 import type { ActRequest } from "../shared/proto";
 import { existingKeys, loadWorkerDirectory } from "./e2e/keys.ts";
+import { controlTokens } from "./e2e/machine-token.ts";
 import { chatTap, platformOf, platformTap, shareUrl, tapUrl, withShare } from "./tap.ts";
 
 /** The parts of a service worker's global scope used here (the project's
@@ -183,12 +184,17 @@ async function act(daemon: string | undefined, body: ActRequest): Promise<boolea
     }
     const [keys, dir] = await Promise.all([existingKeys(), loadWorkerDirectory()]);
     const d = dir.find((x) => x.id === daemon);
-    if (!keys || !d) return false;
+    if (!d) return false;
+    // aru-141: with machine tokens as the page uses them (this worker is
+    // on control's origin, so its session cookie goes along); else with
+    // the device key.
+    const cred = d.tokens ? controlTokens() : keys;
+    if (!cred) return false;
     const urls = [
       ...d.direct.map((u) => ({ url: `${u.replace(/^http/, "ws").replace(/\/$/, "")}/e2e`, timeoutMs: 1500 })),
       { url: d.relay, timeoutMs: 10_000 },
     ];
-    const sock = await E2ESocket.connect(urls, { id: d.id, noise: d.noise }, keys);
+    const sock = await E2ESocket.connect(urls, { id: d.id, noise: d.noise }, cred);
     try {
       sock.start();
       const res = await sock.request("POST", "/api/attention/act", body);

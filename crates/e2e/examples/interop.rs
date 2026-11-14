@@ -10,7 +10,8 @@
 //!   stdin (a block grant the TS code minted, M50) and print what
 //!   `Grant::check` makes of it: `ok`, or the refusal's code;
 //! - `responder ADDR`: a WebSocket daemon stand-in that answers the Noise
-//!   handshake (with its clock in message 2, as the daemon does) and echoes
+//!   handshake (with its clock in message 2, as the daemon does; a machine
+//!   token named `spent…` it refuses, as the daemon refuses a used one) and echoes
 //!   text and binary messages, and answers requests with their method,
 //!   path and body.
 
@@ -20,7 +21,7 @@ use arugula_e2e::{
     Cert, DeviceKeys, Kind, Revocation, Trust,
     block::{Expect, Grant},
     cert::join_code,
-    channel::{Msg, Responder, ResponseHead, Welcome, prologue},
+    channel::{Msg, Refusal, Responder, ResponseHead, Welcome, prologue},
     keys::hex32,
     team::{AccountCerts, Roster, TeamPin},
 };
@@ -170,7 +171,19 @@ async fn main() -> anyhow::Result<()> {
                 tokio::spawn(async move {
                     let mut ws = tokio_tungstenite::accept_async(sock).await?;
                     let Some(Ok(Message::Binary(m1))) = ws.next().await else { anyhow::bail!("no handshake") };
-                    let (r, _who, _) = Responder::read(&keys, &prologue(&keys.id()), &m1)?;
+                    let (r, who, payload) = Responder::read(&keys, &prologue(&keys.id()), &m1)?;
+                    // A machine token's hello (aru-141): one named `spent…`
+                    // is refused as the daemon refuses a used one.
+                    let token = serde_json::from_slice::<serde_json::Value>(&payload)
+                        .ok()
+                        .and_then(|v| v.get("machine_token").and_then(|t| t.as_str()).map(String::from));
+                    if token.as_deref().is_some_and(|t| t.starts_with("spent")) {
+                        let no = Refusal { ok: false, refused: "machine-token".into(), message: "already used".into() };
+                        let (m2, _) = r.finish(&no.encode())?;
+                        ws.send(Message::Binary(m2.into())).await?;
+                        ws.close(None).await.ok();
+                        return anyhow::Ok(());
+                    }
                     let (m2, ch) = r.finish(&Welcome { now: arugula_e2e::now_ms() }.encode())?;
                     ws.send(Message::Binary(m2.into())).await?;
                     while let Some(Ok(Message::Binary(w))) = ws.next().await {
@@ -186,6 +199,7 @@ async fn main() -> anyhow::Result<()> {
                                 },
                                 body: serde_json::to_vec(&serde_json::json!({
                                     "method": head.method, "path": head.path, "len": body.len(),
+                                    "token": token, "who": hex::encode(who),
                                 }))?,
                             },
                             other => other,
