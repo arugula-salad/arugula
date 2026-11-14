@@ -89,9 +89,12 @@ function SidebarToggle({ client }: { client: Client }) {
 export function ContextHeader({
   client,
   setRenaming,
+  onSwarm,
 }: {
   client: Client;
   setRenaming: (r: Renaming) => void;
+  /** The app's Swarm, among this machine's places (Arugula #989). */
+  onSwarm?: () => void;
 }) {
   useSubscribe((fn) => directory.subscribe(fn));
   const sidebar = useSidebar();
@@ -118,7 +121,7 @@ export function ContextHeader({
       </nav>
       {/* Docs sits under this head (Arugula #796); the other places cover it
           with a bar of their own (AppBar). */}
-      {(panes || at === "docs") && <MachinePlaces client={client} at={at} />}
+      {(panes || at === "docs") && <MachinePlaces client={client} at={at} onSwarm={onSwarm} />}
       {/* The sidebar and tab strip say which session and tab this is; without
           the sidebar, this does (Arugula #637). */}
       {panes && (!sidebar.open || sidebar.narrow) && (

@@ -251,6 +251,7 @@ export function MenuHost({ show, close }: { show: () => boolean; close: () => vo
 export function Popover({
   from,
   end,
+  beside,
   label,
   attrs,
   onClose,
@@ -258,6 +259,9 @@ export function Popover({
 }: {
   from: { current: HTMLElement | null };
   end?: boolean;
+  /** Beside `from`, to its right with their tops together (the rail's
+   * project tile, Arugula #989), rather than under it. */
+  beside?: boolean;
   /** Its accessible name. */
   label: string;
   /** Attributes for the popover itself, such as a `data-` hook for the specs. */
@@ -272,7 +276,8 @@ export function Popover({
   useLayoutEffect(() => {
     const el = from.current;
     if (!el) return told.current();
-    const at = menuBelow(el, end);
+    const r = el.getBoundingClientRect();
+    const at = beside ? { clientX: r.right + 6, clientY: r.top } : menuBelow(el, end);
     let leaving = false;
     const mine: OpenMenu = {
       x: at.clientX,

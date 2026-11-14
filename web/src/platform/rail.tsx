@@ -1,121 +1,173 @@
-// The platform page's rail (#377): the same one as the panes page's
-// (shared/ui/rail), down the left of the page on a computer. Projects, Chat and Docs
-// are places in this page; Panes and Swarm are links to control's page, in
-// this window (no `target`: the desktop app keeps the
-// platform page and control's in one window each, #288). The bar beside it
-// (./bar) keeps the project and its places.
+// The app's rail (#377; the project-rooted rail of Arugula #989): the same
+// one as the panes page's (shared/ui/rail), down the left on a computer.
+// The project tile at the top is the switcher. Then the project's places
+// (Overview, Boards, Sessions, Docs, Deploys), a line, the team's (Chat,
+// Machines), and at the foot the Inbox, Settings and you. The bar beside
+// it (./bar) is the path to where you are. A phone has no rail: the same
+// places are a bar along the bottom (`PhoneTabs`).
 
 import type { ComponentChildren } from "preact";
+import { useRef, useState } from "preact/hooks";
 import { chat } from "../shared/chat-store";
 import { chatUnread } from "../shared/chat/unread";
+import { usePlatformApi } from "../shared/platform-api";
 import { usePhone, useSubscribe } from "../shared/ui/hooks";
-import { Rail, type RailItem } from "../shared/ui/rail";
-import { ChatIcon, DocsIcon, Mark, PanesIcon, ProjectsIcon, SettingsIcon, SwarmIcon } from "../shared/ui/icons";
-import { chatPath, sectionOf } from "./bar";
+import { BellIcon, BoardsIcon, ChatIcon, DeploysIcon, DocsIcon, MachineIcon, MoreIcon, ProjectsIcon, SessionsIcon, SettingsIcon } from "../shared/ui/icons";
+import { openMenu, pressedShut, type MenuItem } from "../shared/ui/menu";
+import { Rail, RAIL_LINE, type RailItem } from "../shared/ui/rail";
+import { AccountButton, chatPath, sectionOf } from "./bar";
 import { chatTeam } from "./chat-scope";
 import { currentProject, entryPath, onCurrentProject } from "./current-project";
-import { go, pathOf, useRoute } from "./router";
-import { usePlatformApi } from "../shared/platform-api";
-import type { MachineAt } from "../shared/machine-paths";
+import { useInboxCount } from "./inbox-count";
 import { names } from "./links";
+import { ownerKey } from "./owners";
+import { go, pathOf, useRoute, type Route } from "./router";
 import { controlOrigin, session } from "./session";
+import { Switcher } from "./switcher";
 import { barProject, where } from "./where";
 
-export function PlatformRail() {
+/** A place on the rail or the phone's bar. */
+interface PlaceLink {
+  key: string;
+  label: string;
+  tip: string;
+  icon: ComponentChildren;
+  to: string;
+  here: boolean;
+  count?: { n: number; mention: boolean };
+}
+
+/** The places, for the project the page is in (else the current one, else
+ * Personal's), as both the rail and the phone's bar draw them. */
+function usePlaces() {
   useSubscribe((fn) => session.subscribe(fn));
   useSubscribe((fn) => chat.subscribe(fn));
   useSubscribe((fn) => where.subscribe(fn));
   useSubscribe(onCurrentProject);
   const r = useRoute();
-  const project = barProject(r);
-  const p = session.project(project);
-  // As the bar does: an id that's none of the reader's lights no place.
-  const unknown = !!project && !p && session.state === "ready";
-  const here = unknown ? null : sectionOf(r);
-  const control = controlOrigin();
-  // Where a button opens: the project the bar is in, else the current one (Arugula #880).
-  const inProject = session.project(project ?? currentProject());
-  const chatTo = project ? chatPath(project) : entryPath("chat", inProject, names);
-  const { n, mention } = !unknown && (!project || p) ? chatUnread(chat.rooms, chatTeam(p, inProject)) : { n: 0, mention: false };
-  const place = (to: string) => () => go(to);
-  // Projects goes to the current project while it's still one of the reader's; else the list.
-  const projectsTo = entryPath("projects", inProject, names);
-  const docsTo = entryPath("docs", inProject, names);
   const { Machines } = usePlatformApi();
-  const machinesHere = r.page === "machines";
-  const swarmHere = r.page === "machines" && r.at.at === "swarm";
-  const machinesIn = (at: MachineAt) => (inProject ? pathOf({ page: "machines", project: inProject.id, at }, names) : pathOf({ page: "find", what: "machines", at }));
-  const panesTo = machinesIn({ at: "machines" });
-  const swarmTo = machinesIn({ at: "swarm" });
-  const items: RailItem[] = [
-    {
-      label: "Projects",
-      tip: "Projects: their issues, boards, runs, deploys and chat",
-      // In any project and across All projects' places (the bar's), but Chat
-      // and Docs are lit on their own.
-      here: !unknown && (r.page === "home" || !!project || here === "boards" || here === "inbox") && here !== "chat" && here !== "docs" && !machinesHere,
-      hook: "data-open-projects",
-      icon: <ProjectsIcon />,
-      href: projectsTo,
-      onClick: place(projectsTo),
-    },
-    // In the app, the machines are its own places (Arugula #989); else control's page.
-    Machines
-      ? { label: "Panes", tip: "Your panes, on your machines", here: machinesHere && !swarmHere, hook: "data-open-panes", icon: <PanesIcon />, href: panesTo, onClick: place(panesTo) }
-      : { label: "Panes", tip: "Your panes, on your machines", here: false, hook: "data-open-panes", icon: <PanesIcon />, href: `${control}/` },
-    Machines
-      ? { label: "Swarm", tip: "Swarm: every agent on every machine", here: swarmHere, hook: "data-open-swarm", icon: <SwarmIcon />, href: swarmTo, onClick: place(swarmTo) }
-      : { label: "Swarm", tip: "Swarm: every agent on every machine", here: false, hook: "data-open-swarm", icon: <SwarmIcon />, href: `${control}/#swarm` },
-    {
-      label: "Chat",
-      aria: n ? `Chat, ${n} unread${mention ? ", mentioning you" : ""}` : "Chat",
-      tip: "Chat: every thread, on every machine",
-      here: here === "chat",
-      hook: "data-open-chat",
-      icon: <ChatIcon />,
-      count: { n, mention },
-      href: chatTo,
-      onClick: place(chatTo),
-    },
-    // A project's Docs, or with none current the team Docs and the reader's own;
-    // lit on every Docs page: a project's and a Doc's too.
-    {
-      label: "Docs",
-      tip: "Docs: your team's Docs, and yours from your machines",
-      here: !unknown && here === "docs",
-      hook: "data-open-docs-all",
-      icon: <DocsIcon />,
-      href: docsTo,
-      onClick: place(docsTo),
-    },
+  const inbox = useInboxCount();
+  const shown = barProject(r);
+  const p = session.project(shown);
+  // As the bar does: an id that's none of the reader's lights no place.
+  const unknown = !!shown && !p && session.state === "ready";
+  const section = unknown ? null : sectionOf(r);
+  const project = p ?? session.project(currentProject()) ?? session.personal();
+  const at = (page: "project" | "boards" | "sessions" | "docs" | "deploys" | "project-settings") => (project ? pathOf({ page, project: project.id } as Route, names) : "/");
+  const { n, mention } = !unknown ? chatUnread(chat.rooms, chatTeam(p, project)) : { n: 0, mention: false };
+  const chatTo = shown ? chatPath(shown) : entryPath("chat", project, names);
+  // The machines are the app's own places where it has them; else control's page.
+  const machinesTo = Machines && project ? pathOf({ page: "machines", project: project.id, at: { at: "machines" } }, names) : `${controlOrigin()}/`;
+  const machinesHere = r.page === "machines" || section === "workspaces";
+  const own: PlaceLink[] = [
+    { key: "overview", label: "Overview", tip: "Overview: this project's work", icon: <ProjectsIcon />, to: at("project"), here: section === "home" },
+    { key: "boards", label: "Boards", tip: "Boards: this project's boards and tickets", icon: <BoardsIcon />, to: at("boards"), here: section === "boards" && !!shown },
+    // A run is a session in a cloud workspace (decision 6): Runs is under Sessions.
+    { key: "sessions", label: "Sessions", tip: "Sessions: this project's sessions and runs", icon: <SessionsIcon />, to: at("sessions"), here: section === "sessions" || section === "runs" },
+    { key: "docs", label: "Docs", tip: "Docs: this project's Docs", icon: <DocsIcon />, to: at("docs"), here: section === "docs" },
+    { key: "deploys", label: "Deploys", tip: "Deploys: this project's deploys", icon: <DeploysIcon />, to: at("deploys"), here: section === "deploys" },
   ];
-  const brand = (
-    <a class="ws-brand" href={`${control}/`} aria-label="Arugula: your machines and sessions" title="Your machines and sessions" data-open-control>
-      <Mark />
-    </a>
-  );
-  const bottom: RailItem[] = [
-    {
-      label: "Settings",
-      tip: "Settings: your agents and chat here, and each owner's plan and defaults; this device and machine on your machines page",
-      // A project's settings are the bar's.
-      here: r.page === "settings",
-      hook: "data-open-settings",
-      icon: <SettingsIcon />,
-      href: "/settings",
-      onClick: place("/settings"),
-    },
+  const team: PlaceLink[] = [
+    { key: "chat", label: "Chat", tip: "Chat: your team's rooms", icon: <ChatIcon />, to: chatTo, here: section === "chat", count: { n, mention } },
+    { key: "machines", label: "Machines", tip: "Machines: your team's computers and cloud workspaces", icon: <MachineIcon size="lg" />, to: machinesTo, here: machinesHere },
   ];
-  return <Rail brand={brand} items={items} bottom={bottom} />;
+  const foot: PlaceLink[] = [
+    { key: "inbox", label: "Inbox", tip: inbox.title || "Inbox: what wants you, across your projects", icon: <BellIcon />, to: "/inbox", here: section === "inbox", count: { n: inbox.n, mention: inbox.waiting > 0 } },
+    // A project's settings; account settings are the avatar's menu.
+    { key: "settings", label: "Settings", tip: "Settings: this project's", icon: <SettingsIcon />, to: shown ? at("project-settings") : "/settings", here: section === "settings" },
+  ];
+  return { own, team, foot, project, shown };
 }
 
-/** The page's body beside its rail: the rail on a computer, none on a phone. */
-export function WithRail({ children }: { children: ComponentChildren }) {
+const railItem = (p: PlaceLink): RailItem => {
+  const external = /^https?:/.test(p.to);
+  return {
+    label: p.label,
+    tip: p.tip,
+    aria: p.count?.n ? `${p.label}, ${p.count.n}${p.count.mention ? ", for you" : ""}` : undefined,
+    here: p.here,
+    hook: `data-open-${p.key}`,
+    icon: p.icon,
+    count: p.count,
+    href: p.to,
+    // Control's page is a page load; the rest are this page's.
+    onClick: external ? undefined : () => go(p.to),
+  };
+};
+
+export function PlatformRail() {
+  const { own, team, foot, project, shown } = usePlaces();
+  const brand = <ProjectTile project={project} shown={shown} />;
+  return <Rail brand={brand} items={[...own.map(railItem), RAIL_LINE, ...team.map(railItem)]} bottom={foot.map(railItem)} foot={<AccountButton compact />} />;
+}
+
+/** The project tile at the top of the rail: the project you're in, and the
+ * switcher to every other. */
+function ProjectTile({ project, shown }: { project: ReturnType<typeof session.project>; shown: string | undefined }) {
+  const [picking, setPicking] = useState(false);
+  const tile = useRef<HTMLButtonElement>(null);
+  const name = shown && project ? project.name : "All projects";
+  const initial = shown && project ? (project.name.trim()[0] ?? "?").toUpperCase() : "∗";
+  return (
+    <>
+      <button
+        ref={tile}
+        class="ws-brand ws-project-tile"
+        data-project-switcher
+        title={`${name}: switch project`}
+        aria-label={`Project: ${name}`}
+        aria-haspopup="dialog"
+        aria-expanded={picking}
+        // A press on it shut the switcher: this click is the same tap.
+        onClick={() => pressedShut(tile.current) || setPicking(!picking)}
+      >
+        <span class="ws-project-initial" aria-hidden="true">
+          {initial}
+        </span>
+      </button>
+      {picking && <Switcher beside from={tile} project={shown} owner={project ? ownerKey(project) : undefined} close={() => setPicking(false)} />}
+    </>
+  );
+}
+
+/** The phone's bar along the bottom (decision 15): Overview, Boards,
+ * Sessions, Chat, and More for the rest. */
+export function PhoneTabs() {
+  const { own, team, foot } = usePlaces();
+  const by = (k: string) => [...own, ...team, ...foot].find((p) => p.key === k)!;
+  const tabs = ["overview", "boards", "sessions", "chat"].map(by);
+  const rest = ["docs", "deploys", "machines", "settings"].map(by);
+  const more = (e: MouseEvent) => {
+    const items: MenuItem[] = rest.map((p) => ({ label: p.label, current: p.here, run: () => (/^https?:/.test(p.to) ? location.assign(p.to) : go(p.to)) }));
+    openMenu(e, items, e.currentTarget as HTMLElement);
+  };
+  return (
+    <nav class="app-tabs" aria-label="Places" data-phone-tabs>
+      {tabs.map((p) => (
+        <a key={p.key} class={p.here ? "app-tab here" : "app-tab"} href={p.to} aria-current={p.here ? "page" : undefined} {...{ [`data-tab-${p.key}`]: "" }} onClick={(e) => (e.preventDefault(), go(p.to))}>
+          {p.icon}
+          <span>{p.label}</span>
+          {!!p.count?.n && <span class={p.count.mention ? "ws-rail-count mention" : "ws-rail-count"}>{p.count.n}</span>}
+        </a>
+      ))}
+      <button class={rest.some((p) => p.here) ? "app-tab here" : "app-tab"} aria-haspopup="menu" data-tab-more onClick={more}>
+        <MoreIcon />
+        <span>More</span>
+      </button>
+    </nav>
+  );
+}
+
+/** The page's body beside its rail: the rail on a computer; on a phone, the
+ * bar along the bottom instead, unless `tabs` is false (a machine's page,
+ * whose key bar has the bottom). */
+export function WithRail({ children, tabs = true }: { children: ComponentChildren; tabs?: boolean }) {
   const phone = usePhone();
   return (
     <>
       {!phone && <PlatformRail />}
       <div class="ws-shell-body platform-body">{children}</div>
+      {phone && tabs && <PhoneTabs />}
     </>
   );
 }

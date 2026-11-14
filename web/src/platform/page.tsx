@@ -15,7 +15,8 @@ import { names, resolve, roomElsewhere } from "./links";
 import { currentProject, entryPath, type Entry } from "./current-project";
 import { slugIn } from "./paths";
 import { arrive, openingChat } from "./chat-nav";
-import { go, pathOf, useRoute, type Route } from "./router";
+import { follow, go, pathOf, useRoute, type Route } from "./router";
+import type { MachineAt } from "../shared/machine-paths";
 import { controlOrigin, session } from "./session";
 import { signIn } from "./signin";
 import { toasts } from "./toast";
@@ -68,7 +69,7 @@ function Routed() {
   if (r.page === "chat") return <ChatPage project={r.project} route={{ room: r.room, msg: r.msg, thread: r.thread, view: r.view, q: r.q, all: r.all }}><Toast /></ChatPage>;
   if (r.page === "dm") return <ChatPage project={r.project} route={{ room: r.room, msg: r.msg, thread: r.thread }}><Toast /></ChatPage>;
   // A machine's page has its own header (Arugula #989): the rail, then it.
-  if (r.page === "machines" && Machines) return <MachinesShell><MachinesPage project={r.project} at={r.at} /></MachinesShell>;
+  if (r.page === "machines" && Machines) return <MachinesShell project={r.project} at={r.at} />;
   return <Shell>{body(r, lost)}</Shell>;
 }
 
@@ -167,12 +168,29 @@ function Shell({ children }: { children: preact.ComponentChildren }) {
   );
 }
 
-/** The machines' places, beside the rail, with no bar: the machine page,
- * Swarm and the list draw their own heads. */
-function MachinesShell({ children }: { children: preact.ComponentChildren }) {
+/** The machines' places, beside the rail. The list has the bar, with
+ * Panes and Swarm (decision 3); a machine's page and Swarm draw their own
+ * heads, and on a phone keep the bottom (a pane's key bar, Swarm's field). */
+function MachinesShell({ project, at }: { project: string; at: MachineAt }) {
+  const list = at.at === "machines" && at.pane === undefined && !at.name;
+  const swarmTo = pathOf({ page: "machines", project, at: { at: "swarm" } }, names);
   return (
     <div class="platform platform-machines" data-platform data-platform-machines>
-      <WithRail>{children}</WithRail>
+      <WithRail tabs={list}>
+        {list && (
+          <PlatformBar>
+            <nav class="places" aria-label="Machines' places" data-machines-places>
+              <span class="place frame-place here" aria-current="page" data-machines-panes>
+                Panes
+              </span>
+              <a class="place frame-place" href={swarmTo} data-machines-swarm onClick={(e) => follow(e, swarmTo)}>
+                Swarm
+              </a>
+            </nav>
+          </PlatformBar>
+        )}
+        <MachinesPage project={project} at={at} />
+      </WithRail>
       <Toast />
     </div>
   );

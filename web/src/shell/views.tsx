@@ -17,8 +17,8 @@ import { PopOutPage } from "./ui/panes/pop-out";
 
 /** The machine shown: its sessions, tabs and panes, or, popped out into a
  * window of its own (#497, `pop`), one pane alone. */
-export function MachineView({ client, cell, pop, frame }: { client: Client; cell: Cell; pop?: { daemon?: string; pane: number } | null; frame?: Frame }) {
-  return pop ? <PopOutPage client={client} pane={pop.pane} daemon={pop.daemon} /> : <App key={client.base} client={client} cell={cell} frame={frame} />;
+export function MachineView({ client, cell, pop, frame, onSwarm }: { client: Client; cell: Cell; pop?: { daemon?: string; pane: number } | null; frame?: Frame; onSwarm?: () => void }) {
+  return pop ? <PopOutPage client={client} pane={pop.pane} daemon={pop.daemon} /> : <App key={client.base} client={client} cell={cell} frame={frame} onSwarm={onSwarm} />;
 }
 
 /** Between knowing the account's machines and showing one. */

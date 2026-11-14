@@ -224,7 +224,7 @@ export function Places({ client, at }: { client: Client; at: Place }) {
 /** A machine's own places, in the bar on a computer (Arugula #637): the bar is
  * what you're in, the machine, then what it has, as a project's is. Docs and
  * Recipes are offered as the phone's Places are. */
-export function MachinePlaces({ client, at }: { client: Client; at: Place }) {
+export function MachinePlaces({ client, at, onSwarm }: { client: Client; at: Place; onSwarm?: () => void }) {
   const owner = !client.state?.roles;
   const recipes = client.flag("agent-delegation") && owner;
   const panes = at === "panes" || at === "overview";
@@ -245,6 +245,8 @@ export function MachinePlaces({ client, at }: { client: Client; at: Place }) {
         if (at !== "panes") closePlace(at);
         else client.viewOf(client.active() ?? -1)?.focus();
       })}
+      {/* In the app (Arugula #989), Swarm is under Machines, beside Panes (decision 3). */}
+      {onSwarm && item("Swarm", "swarm", false, "Swarm: every pane on every machine", onSwarm)}
       {owner && item("Docs", "docs", at === "docs", "Docs: the Docs your agents wrote on this machine, to open again", () => at !== "docs" && openDocsPage())}
       {recipes && item("Recipes", "recipes", at === "agents", "Recipes: this machine's recipes and your team's agents", () => at !== "agents" && openAgentsPage())}
     </nav>
