@@ -6,8 +6,9 @@
 // board's drawer, its address and the path in the bar, Esc and the path
 // climbing back; a session opening on its machine's page; a question in a
 // card's session pulsing its tile and answered in place on Needs you; the
-// hub's sessions by card adding a cloud workspace's session; and on a
-// phone, one list with Needs you on top. The platform's boards and the
+// card's drawer drawing its session live with its question (#987's, as on
+// the board); the hub's sessions by card adding a cloud workspace's
+// session; and on a phone, one list with Needs you on top. The platform's boards and the
 // hub's sessions are made up here; the panes are the daemon's own.
 import { fileURLToPath } from "node:url";
 import { devices, expect, test, type Page } from "@playwright/test";
@@ -30,35 +31,38 @@ type Lane = "next" | "doing" | "review" | "done";
 const LANES: Lane[] = ["next", "doing", "review", "done"];
 const board = (id: string, title: string) => ({ id, project: P, title, created_by: "", created_at: 1, updated_at: 1, goal: "", done_note: "", progress: { done: 0, total: 0, proven: 0, review: 0, doing: 0 } });
 /** A board's view as the platform answers it: a row is `[id, lane, number, title]`, its card the native issue `iss_<number>`. */
-function view(id: string, title: string, rows: [string, Lane, number, string][]) {
+function view(id: string, title: string, rows: [string, Lane, number, string][], attached: Record<string, unknown[]> = {}) {
   const row = ([rid, lane, n, t]: [string, Lane, number, string]) => ({
-    id: rid, rev: 1, pointer: { kind: "issue", id: `iss_${n}` }, note: "", status: "none", lane, attachments: [],
+    id: rid, rev: 1, pointer: { kind: "issue", id: `iss_${n}` }, note: "", status: "none", lane, attachments: attached[rid] ?? [],
     live: { state: "open", kind: "native", number: n, title: t }, created_at: 1, updated_at: n,
   });
   return { board: board(id, title), zones: LANES.map((l) => ({ id: `lane_${l}`, rev: 1, title: l[0].toUpperCase() + l.slice(1), kind: "lane", rows: rows.filter((r) => r[1] === l).map(row) })), groups: [], docs: [] };
 }
-const LAUNCH = view(B, "Launch", [
+const ROWS: [string, Lane, number, string][] = [
   ["row_a", "next", 11, "Write the changelog"],
   ["row_b", "doing", 12, "Fix the installer"],
   ["row_c", "doing", 13, "Tidy the docs"],
   ["row_r", "review", 14, "Cut the release"],
   ["row_d", "done", 15, "Pick a name"],
-]);
+];
+/** `live`: #12's work is the suite's daemon's pane (the machine `m_suite` on the fixture page), as #987's drawer draws it. */
+const launch = (live?: number) =>
+  view(B, "Launch", ROWS, live === undefined ? {} : { row_b: [{ id: "att_term", role: "work", pointer: { kind: "block", machine: "m_suite", pane: String(live) }, block: { state: "working", title: "Fixer" } }] });
 
 /** The platform's boards for the project, and the hub's sessions by card (`null`: the route isn't there yet, 404). */
-async function serve(page: Page, byCard: unknown = null) {
+async function serve(page: Page, byCard: unknown = null, live?: number) {
   await page.route(`**/api/projects/${P}/boards`, (r) => r.fulfill({ json: { project: P, boards: [board(B, "Launch"), board(LATER, "Later")] } }));
-  await page.route(`**/api/boards/${B}`, (r) => r.fulfill({ json: LAUNCH }));
+  await page.route(`**/api/boards/${B}`, (r) => r.fulfill({ json: launch(live) }));
   await page.route(`**/api/boards/${LATER}`, (r) => r.fulfill({ json: view(LATER, "Later", [["row_z", "next", 21, "Someday"]]) }));
   await page.route(`**/api/projects/${P}/sessions/by-card`, (r) => (byCard ? r.fulfill({ json: byCard }) : r.fulfill({ status: 404, json: { error: "not found" } })));
   await page.route("**/api/issues/iss_*", (r) => r.fulfill({ status: 404, json: { error: "not found" } }));
 }
 
 /** The app on the project's Overview, with an agent block on #12 beside the reset's terminal (in its session), and a second session in the project on no card. */
-async function overview(page: Page, byCard: unknown = null): Promise<{ term: number; agent: number; scratch: number }> {
+async function overview(page: Page, byCard: unknown = null, live = false): Promise<{ term: number; agent: number; scratch: number }> {
   await reset(page);
   const [term] = await panes(page);
-  await serve(page, byCard);
+  await serve(page, byCard, live ? term : undefined);
   const body = await fixturePage("./app-frame-page.tsx");
   await page.route(new RegExp(`/p/${P}`), (r) => r.fulfill({ contentType: "text/html", body }));
   await page.goto(`/p/${P}`);
@@ -189,6 +193,29 @@ test.describe("on a computer", () => {
     await card.getByRole("button", { name: "Submit" }).click();
     await expect(tile(page, "row_b")).not.toHaveAttribute("data-ov-standing", "needs", { timeout: 20_000 });
     await expect.poll(() => page.evaluate((t) => (window as unknown as { __app: { text(p: number): string } }).__app.text(t), term)).toContain('"Which colour do you prefer?":"Blue"');
+  });
+
+  test("the card's drawer draws its session live, and its question at the top, as on the board", async ({ page }, info) => {
+    const { term } = await overview(page, null, true);
+    await tile(page, "row_b").locator("[data-ov-card-open]").click();
+    const drawer = page.locator('[data-board-drawer="row_b"]');
+    const live = drawer.locator("[data-board-drawer-live]");
+    await expect(live.locator(`[data-live-slot="${term}"] .xterm`)).toBeVisible({ timeout: 20_000 });
+    // The session's question, answered at the drawer's top.
+    await page.evaluate(
+      ({ term, line }) => fetch(`/api/panes/${term}/send`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: line, enter: true }) }),
+      { term, line: `out=$(${cli} ask < ${hookInput}); echo "$out" | grep -o '"Which [a-z ]*?":"[^"]*"'` },
+    );
+    const ask = drawer.locator("[data-board-drawer-ask]");
+    await expect(ask).toBeVisible({ timeout: 20_000 });
+    await expect(ask.locator("h3")).toHaveText("Claude Code asks");
+    await page.screenshot({ path: info.outputPath("overview-drawer-live.png") });
+    await ask.locator('[data-question="0"]').getByRole("radio", { name: /^Blue/ }).click();
+    await ask.locator('[data-question="1"]').getByRole("checkbox", { name: /Pear/ }).check();
+    await ask.locator('[data-question="2"]').getByRole("radio", { name: /^Cat/ }).click();
+    await ask.getByRole("button", { name: "Submit" }).click();
+    await expect(ask).toHaveCount(0);
+    await expect.poll(() => page.evaluate(async (p) => (await fetch(`/api/panes/${p}/capture?format=text`)).text(), term)).toContain('"Which colour do you prefer?":"Blue"');
   });
 
   test("the hub's sessions by card add the sessions the machines don't show here", async ({ page }) => {
