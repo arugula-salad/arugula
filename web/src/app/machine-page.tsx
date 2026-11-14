@@ -16,10 +16,11 @@ import "../shell/settings-page.css";
 import { useEffect, useLayoutEffect, useState } from "preact/hooks";
 import { machinesPath, type MachineAt } from "../shared/machine-paths";
 import { PlatformApiContext } from "../shared/platform-api";
+import { EmptyState } from "../shared/ui/block-states";
 import { Card } from "../shared/ui/card";
 import { usePhone, useSubscribe } from "../shared/ui/hooks";
 import { PageHeader } from "../shared/ui/page-header";
-import { StateChip } from "../shared/ui/state-chip";
+import { Chip, StateChip } from "../shared/ui/state-chip";
 import { directory } from "../shell/hosts";
 import { followSource, Machines } from "../shell/machines";
 import { shellPlatformApi } from "../shell/platform-api";
@@ -30,6 +31,8 @@ import { installKeys } from "../shell/ui/keys";
 import { MachineView, Swarm } from "../shell/views";
 import { names } from "../platform/links";
 import { current, follow, go, pathOf } from "../platform/router";
+import type { Fleet } from "../shell/fleet";
+import { ROLE_WORDS, rowsOf, sessionsLine, sortRows } from "./machine-list";
 import type { AppSession } from "./session";
 
 interface Booted {
@@ -108,10 +111,10 @@ export function MachinesPlace({ project, at, session }: { project: string; at: M
     return () => void (live = false);
   }, []);
   if (!b) return <p class="platform-section dim" data-machines-loading>Reaching your machines…</p>;
-  return <Place project={project} at={at} b={b} />;
+  return <Place project={project} at={at} b={b} session={session} />;
 }
 
-function Place({ project, at, b: { machines, cell } }: { project: string; at: MachineAt; b: Booted }) {
+function Place({ project, at, b: { machines, cell }, session }: { project: string; at: MachineAt; b: Booted; session: AppSession | null }) {
   useSubscribe((fn) => directory.subscribe(fn));
   const list = at.at === "machines" && at.pane === undefined && !at.name;
   // The shell's keys while a machine's page or Swarm is shown, and only then.
@@ -151,7 +154,7 @@ function Place({ project, at, b: { machines, cell } }: { project: string; at: Ma
     return (
       // In the panel the project's other pages sit in.
       <main class="platform-main">
-        <MachinesList project={project} />
+        <MachinesList project={project} fleet={machines.fleet} session={session} />
       </main>
     );
   const client = machines.client;
@@ -179,36 +182,62 @@ function BesideRail() {
   return null;
 }
 
-/** The machines this person reaches. #990 makes this the Machines page;
- * for now, each one opens its page. */
-function MachinesList({ project }: { project: string }) {
+/** The team's machines: each one's state, whose it is and what you may do
+ * there, its sessions and the projects they serve, and its page one click
+ * on. Cloud workspaces are among them, marked. */
+function MachinesList({ project, fleet, session }: { project: string; fleet: Fleet; session: AppSession | null }) {
   useSubscribe((fn) => directory.subscribe(fn));
-  const hosts = directory.names.map((name) => ({ name, host: directory.find(name) }));
+  useSubscribe((fn) => fleet.subscribe(fn));
+  useSubscribe((fn) => session?.subscribe(fn) ?? (() => {}));
+  const phone = usePhone();
+  const rows = sortRows(rowsOf(fleet.list, fleet.panes, (id) => session?.daemons.find((d) => d.id === id)?.hosted?.role));
   return (
     <section class="platform-section sw-page" data-machines-list>
       <PageHeader title="Machines" />
       {directory.list === null ? (
         <p class="dim">Loading…</p>
-      ) : hosts.length ? (
-        <ul class="platform-list card-grid">
-          {hosts.map(({ name, host }) => {
-            const at: MachineAt = host?.id ? { at: "machine", machine: host.id } : { at: "machines", name };
+      ) : rows.length ? (
+        <ul class={`platform-list ${phone ? "card-list" : "card-grid"}`}>
+          {rows.map((r) => {
+            const at: MachineAt = r.id ? { at: "machine", machine: r.id } : { at: "machines", name: r.name };
             const to = `/p/${project}${machinesPath(at)}`;
-            const up = host ? host.status !== "offline" : true;
+            const line = sessionsLine(r);
             return (
-              <li key={name}>
-                <Card as="a" tone={up ? "ok" : "muted"} href={to} data-machine-link={host?.id ?? name} onClick={(e) => follow(e, to)}>
+              <li key={r.name}>
+                <Card as="a" tone={r.needsYou ? "accent" : r.online ? "ok" : "muted"} href={to} data-machine-link={r.id ?? r.name} onClick={(e) => follow(e, to)}>
                   <span class="card-head">
-                    <b class="card-title big">{name}</b>
+                    <b class="card-title">{r.name}</b>
+                    <StateChip tone={r.online ? "ok" : "muted"} data-machine-state>
+                      {r.online ? "online" : "offline"}
+                    </StateChip>
+                    {r.cloud && (
+                      <Chip kind="tag" data-machine-cloud>
+                        Cloud
+                      </Chip>
+                    )}
                   </span>
-                  <StateChip tone={up ? "ok" : "muted"}>{up ? "online" : "offline"}</StateChip>
+                  <p class="card-meta">{[r.owner ? `${r.owner}'s` : "Yours", ROLE_WORDS[r.role]].join(" · ")}</p>
+                  {line && (
+                    <p class="card-meta" data-machine-sessions>
+                      {line}
+                    </p>
+                  )}
+                  {!phone && r.projects.length > 0 && (
+                    <span class="card-head">
+                      {r.projects.map((p) => (
+                        <Chip key={p} kind="tag">
+                          {p}
+                        </Chip>
+                      ))}
+                    </span>
+                  )}
                 </Card>
               </li>
             );
           })}
         </ul>
       ) : (
-        <p class="dim">No machines yet.</p>
+        <EmptyState where="page" title="No machines yet." why="A machine shows here once it has joined your team. Its sessions and who may steer them come with it." data-machines-empty />
       )}
     </section>
   );
