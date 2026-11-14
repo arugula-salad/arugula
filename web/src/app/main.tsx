@@ -33,7 +33,8 @@ import { go, pathOf } from "../platform/router";
 import { controlOrigin, session } from "../platform/session";
 import { fromControl } from "../shared/machine-paths";
 import type { PlatformApi } from "../shared/platform-api";
-import { appMachines, appPanes } from "./machines";
+import { appMachines, appOverview, appPanes } from "./machines";
+import { appLive } from "./live";
 import { AppSession } from "./session";
 import { accountBackend, setSeenBackend } from "../shared/seen";
 import { arriveHere } from "../platform/chat-nav";
@@ -64,6 +65,9 @@ const api: PlatformApi = {
   ...platformApi,
   Machines: appMachines(appSession),
   panes: appPanes(appSession),
+  Overview: appOverview(appSession),
+  // A board card's session, drawn in its drawer with the app's own clients.
+  ...appLive(appSession),
   goToPane: (machine, pane, quote) =>
     here() ? go(pathOf({ page: "find", what: "machines", at: { at: "machine", machine, pane: Number(pane) } }, names)) : platformApi.goToPane(machine, pane, quote),
   goToSession: (machine) => (here() ? go(pathOf({ page: "find", what: "machines", at: { at: "machine", machine } }, names)) : platformApi.goToSession(machine)),

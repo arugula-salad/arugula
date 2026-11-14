@@ -292,8 +292,19 @@ export function Drawer({ steps, r, platform, close, project, others, write, act,
   const marks = marksOf(r);
   const waiting = waitingOf(r);
   const holding = r.attachments.some(holdsRow);
+  const api = usePlatformApi();
+  // The row's sessions, and the one shown: the one that needs you, else the one that moved last, until another is picked.
+  const [picked, setPicked] = useState<string | null>(null);
+  const lives = liveSessions(r, waiting, marks.stalled?.words);
+  const shown = lives.find((x) => x.key === picked) ?? lives[0];
+  // Where the page reaches machines itself (the app), a session's question is answered at the top, and on a phone its pane fills the screen.
+  const Ask = shown?.kind === "block" && shown.machine ? api.LiveAsk : undefined;
+  const full = !!api.LiveAsk && !!api.LivePane && who === "steer" && shown?.kind === "block" && !!shown.machine;
+  // The agent blocks are in Live session: Attached keeps the PRs, runs and the rest.
+  const attached = r.attachments.filter((a) => !(a.role === "work" && a.pointer.kind === "block"));
   return (
-    <SideSheet title={title} close={close} class="board-drawer" root={{ "data-board-drawer": r.id }} titleAttrs={{ "data-board-drawer-title": true }} closeAttrs={{ "data-board-drawer-close": true }}>
+    <SideSheet title={title} close={close} class={full ? "board-drawer board-drawer-live" : "board-drawer"} root={{ "data-board-drawer": r.id }} titleAttrs={{ "data-board-drawer-title": true }} closeAttrs={{ "data-board-drawer-close": true }}>
+      {Ask && shown?.kind === "block" && <Ask key={shown.key} machine={shown.machine} pane={shown.pane} />}
       <div class="board-line board-drawer-lane">
         {write ? (
           <label class="dim">
@@ -383,7 +394,7 @@ export function Drawer({ steps, r, platform, close, project, others, write, act,
           <Labels labels={r.live?.labels ?? []} all />
         </div>
       )}
-      <LiveSession r={r} project={project} waiting={waiting} who={who} />
+      <LiveSession r={r} project={project} all={lives} s={shown} pick={setPicked} who={who} write={write} act={act} id={id} />
       {readable && (
         <section data-board-drawer-body>
           {!read ? (
@@ -436,10 +447,10 @@ export function Drawer({ steps, r, platform, close, project, others, write, act,
       {(r.relations?.length || (write && itemId(r))) && <Relations r={r} project={project} others={others} write={write} act={act} id={id} />}
       <RowDocs r={r} project={project} platform={platform} write={write} act={act} id={id} />
       <NotFinishedSection r={r} nf={marks.notFinished} write={write} act={act} id={id} />
-      {r.attachments.length > 0 && (
+      {attached.length > 0 && (
         <section data-board-drawer-attachments>
           <h3>Attached</h3>
-          {r.attachments.map((a) => (
+          {attached.map((a) => (
             <div key={a.id} class="board-drawer-attached">
               <AttachmentChip a={a} platform={platform} facts="all" stalled={marks.stalled?.words} waiting={waiting} />
               {write && holdsRow(a) && (
@@ -468,39 +479,55 @@ export function Drawer({ steps, r, platform, close, project, others, write, act,
   );
 }
 
-/** The drawer's Live session (Arugula iss_c62e00eee3b4b953ff054d2951827de8): the row's work session that needs the reader, else the one that moved last, with the others as chips to switch to. A hosted session is here once (the drawer's Sessions section was folded in), and keeps its hooks: `data-board-drawer-sessions` on the section when the row has any, and `data-board-session` on its chip, or on the state card when it is the only session. Its state card says its state, where it runs, and its branch and diffstat; where the page draws panes (`PlatformApi.LivePane`) and the reader steers, its pane is under it, with Hand off to me. Open on its machine goes to its pane. */
-function LiveSession({ r, project, waiting, who }: { r: BoardRow; project: string; waiting: { words: string; mine: boolean } | null; who: "steer" | "read" }) {
+/** The drawer's Live session (Arugula iss_c62e00eee3b4b953ff054d2951827de8): the row's work session that needs the reader, else the one that moved last (`s`, which the drawer keeps), with the others as chips to switch to. Its state card says its state, where it runs, and its branch and diffstat; where the page draws panes (`PlatformApi.LivePane`) and the reader steers, its pane is under it, with Hand off to me. Open on its machine goes to its pane.
+ *
+ * Each session is here once, and keeps the hooks of the sections it came from: `data-board-drawer-sessions` on the section when the row has hosted sessions; on a session's chip, or on the state card when it is the only one, a hosted session's `data-board-session` and an agent block's `data-board-attachment`, `data-attach-role` and `data-board-block` (Attached's); the block's facts and its pane's link keep `data-board-block-facts` and `data-board-block-open`, and Release its `data-board-release`. With no session, where the page reaches machines itself, it says so, and starts none. */
+function LiveSession({ r, project, all, s, pick, who, write, act, id }: { r: BoardRow; project: string; all: LiveSession[]; s: LiveSession | undefined; pick: (key: string) => void; who: "steer" | "read"; write: boolean; act: Act; id: string }) {
   const api = usePlatformApi();
   useSubscribe(api.subscribe);
-  const [picked, setPicked] = useState<string | null>(null);
-  const all = liveSessions(r, waiting);
-  if (!all.length) return null;
-  const s = all.find((x) => x.key === picked) ?? all[0];
+  if (!s) {
+    if (!api.LiveAsk || r.lane === "done") return null;
+    return (
+      <section data-board-drawer-live="">
+        <h3>Live session</h3>
+        <p class="dim" data-board-live-none>
+          No session yet.
+        </p>
+      </section>
+    );
+  }
+  const attachment = (x: LiveSession) => (x.kind === "block" ? r.attachments.find((a) => a.id === x.key) : undefined);
   // An agent block with no name of its own is named by its pane, as the machine reports it.
-  const name = (x: LiveSession) => (x.kind === "block" && !r.attachments.find((a) => a.id === x.key)?.block?.title?.trim() && api.paneTitle(x.machine, x.pane)) || x.name;
+  const name = (x: LiveSession) => (x.kind === "block" && !attachment(x)?.block?.title?.trim() && api.paneTitle(x.machine, x.pane)) || x.name;
   const where = s.kind === "hosted" ? "on Arugula cloud" : s.machine ? `on ${api.machine(s.machine)?.name ?? "its machine"}` : null;
-  // Its pane: control's page here; in the shell, when the machine is one of the reader's. A hosted session's own page.
+  // Its pane: in the app, its machine's page (`goToPane`); control's page on the platform page; in the shell, when the machine is one of the reader's. A hosted session's own page.
   const open =
     s.kind === "hosted"
       ? api.sessionHref && { href: api.sessionHref(project, s.session) }
       : s.machine
-        ? api.controlHref
+        ? api.LiveAsk
+          ? { go: () => api.goToPane(s.machine, s.pane, null) }
+          : api.controlHref
           ? { href: api.controlHref(`pane=${s.machine}.${s.pane}`) }
           : api.machine(s.machine)
             ? { go: () => api.goToPane(s.machine, s.pane, null) }
             : null
         : null;
   const Pane = who === "steer" && s.kind === "block" && s.machine ? api.LivePane : undefined;
-  // A hosted session's hooks, as the Sessions section's chip had them: on its chip, or on the card when there are no chips.
-  const hooks = (x: LiveSession) => (x.kind === "hosted" ? { "data-board-session": x.session, "data-board-session-live": x.live ? "" : undefined } : {});
+  // The hooks of the sections a session came from: on its chip, or on the card when there are no chips.
+  const hooks = (x: LiveSession) => {
+    if (x.kind === "hosted") return { "data-board-session": x.session, "data-board-session-live": x.live ? "" : undefined };
+    return { "data-board-attachment": x.key, "data-attach-role": "work", "data-board-block": attachment(x)?.block?.state };
+  };
   const sessionHref = s.kind === "hosted" ? api.sessionHref?.(project, s.session) : undefined;
+  const a = attachment(s);
   return (
     <section data-board-drawer-live={s.key} data-board-drawer-sessions={(r.sessions ?? []).length > 0 ? "" : undefined}>
       <h3>Live session</h3>
       {all.length > 1 && (
         <div class="board-line board-chips" data-board-live-sessions>
           {all.map((x) => (
-            <ObjectChip key={x.key} class={x.kind === "hosted" && !x.live ? "dim" : undefined} pressed={x.key === s.key} fact={{ tone: x.tone, text: x.word }} data-board-live-pick={x.key} onClick={() => setPicked(x.key)} {...hooks(x)}>
+            <ObjectChip key={x.key} class={x.kind === "hosted" && !x.live ? "dim" : undefined} pressed={x.key === s.key} fact={{ tone: x.tone, text: x.word }} data-board-live-pick={x.key} onClick={() => pick(x.key)} {...hooks(x)}>
               {name(x)}
             </ObjectChip>
           ))}
@@ -519,21 +546,27 @@ function LiveSession({ r, project, waiting, who }: { r: BoardRow; project: strin
           {where && <span class="dim">{where}</span>}
         </div>
         {s.facts.length > 0 && (
-          <div class="board-fact dim" data-board-live-facts>
+          <div class="board-fact dim" data-board-live-facts data-board-block-facts={s.kind === "block" ? "" : undefined}>
             {s.facts.join(" · ")}
           </div>
         )}
       </Card>
       {Pane && s.kind === "block" && <Pane key={s.key} machine={s.machine} pane={s.pane} />}
-      {open && (
+      {(open || (write && a && holdsRow(a))) && (
         <div class="board-line">
-          {"href" in open ? (
-            <a class="secondary small" href={open.href} target="_blank" rel="noopener noreferrer" data-board-live-open>
-              Open on its machine <ExternalIcon size="xs" />
-            </a>
-          ) : (
-            <button type="button" class="secondary small" data-board-live-open onClick={open.go}>
-              Open on its machine
+          {open &&
+            ("href" in open ? (
+              <a class="secondary small" href={open.href} target="_blank" rel="noopener noreferrer" data-board-live-open data-board-block-open={s.kind === "block" ? "" : undefined}>
+                Open on its machine <ExternalIcon size="xs" />
+              </a>
+            ) : (
+              <button type="button" class="secondary small" data-board-live-open data-board-block-open={s.kind === "block" ? "" : undefined} onClick={open.go}>
+                Open on its machine
+              </button>
+            ))}
+          {write && a && holdsRow(a) && (
+            <button type="button" class="secondary small" data-board-release={a.id} title="Take this agent off the row; it keeps running, and another may take the row" onClick={() => void act(() => boards.detach(id, a.id))}>
+              Release
             </button>
           )}
         </div>

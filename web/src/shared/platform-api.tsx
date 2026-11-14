@@ -101,6 +101,8 @@ export interface PlatformApi {
   machineDoc?: { here(machine: string): boolean; open(machine: string, doc: string, beside?: number): void };
   /** A live pane in a fixed slot: the shell draws its own PaneSlot; a page that can't draw one leaves it out and the drawer shows the session's state card. */
   LivePane?: ComponentType<{ machine: string; pane: string }>;
+  /** A pane's question and its choices, answered in place as Swarm's cards answer them; nothing while it asks none. Where the page reaches machines itself (the app): a board drawer draws it at its top, and with it says when a row has no session yet. Control's page leaves it out. */
+  LiveAsk?: ComponentType<{ machine: string; pane: string }>;
   /** The machines, a machine's page and Swarm, in a project (Arugula
    * #989): the app's, where it reaches machines. A page without it sends
    * them to control's page. */
@@ -117,6 +119,12 @@ export interface PlatformApi {
     /** A pane live, at its own size, its machine shown for it. */
     Live: ComponentType<{ machine: string; pane: number }>;
   };
+  /** A project's Overview (Arugula inversion, L6): its boards' cards in
+   * flight with the sessions on them, and Needs you, where the page reaches
+   * machines; `board` and `card` name the card whose drawer is open. Its
+   * children are what the project's page shows besides. A page without it
+   * shows those alone. */
+  Overview?: ComponentType<{ project: string; board?: string; card?: string; children?: ComponentChildren }>;
 }
 
 const none = () => () => {};

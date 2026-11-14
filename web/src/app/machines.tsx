@@ -4,7 +4,7 @@
 // While the hub can't reach machines from this host, each place opens on
 // control's page, as the links did before.
 
-import type { ComponentType } from "preact";
+import type { ComponentChildren, ComponentType } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import type { MachineAt } from "../shared/machine-paths";
 import type { PlatformApi } from "../shared/platform-api";
@@ -14,10 +14,13 @@ import type { AppSession } from "./session";
 
 type Place = ComponentType<{ project: string; at: MachineAt }>;
 type Page = typeof import("./machine-page");
+type OverviewPage = typeof import("./overview");
 
 /** The machine page's chunk, once asked for. */
 let loading: Promise<Page> | null = null;
 const load = () => (loading ??= import("./machine-page"));
+let loadingOverview: Promise<OverviewPage> | null = null;
+const loadOverview = () => (loadingOverview ??= import("./overview"));
 
 /** `PlatformApi.Machines` over `session`: the hub's machines, reached with
  * machine tokens. `session` null is a daemon's own page (its machines
@@ -72,5 +75,39 @@ export function appPanes(session: () => AppSession | null): NonNullable<Platform
       if (!p) return <p class="dim" data-live-loading>Reaching your machines…</p>;
       return <p.LiveHere session={session()} machine={machine} pane={pane} />;
     },
+  };
+}
+
+/** `PlatformApi.Overview` over `session` (Arugula inversion, L6): the
+ * project's Overview, in a chunk of its own with the machine page's. While
+ * the hub can't reach machines from this host, the project's page as it
+ * was (its children). */
+export function appOverview(session: () => AppSession | null): ComponentType<{ project: string; board?: string; card?: string; children?: ComponentChildren }> {
+  return function Overview({ project, board, card, children }) {
+    const s = session();
+    useSubscribe((fn) => s?.subscribe(fn) ?? (() => {}));
+    const [page, setPage] = useState<OverviewPage | null>(null);
+    const reachable = !s || s.reachable !== false;
+    useEffect(() => {
+      if (!reachable) return;
+      let live = true;
+      void loadOverview().then((p) => live && setPage(() => p));
+      return () => void (live = false);
+    }, [reachable]);
+    if (!reachable) return <>{children}</>;
+    if (!page)
+      return (
+        <>
+          <p class="dim" data-overview-loading>
+            Reaching your machines…
+          </p>
+          {children}
+        </>
+      );
+    return (
+      <page.OverviewPlace project={project} board={board} card={card} session={s}>
+        {children}
+      </page.OverviewPlace>
+    );
   };
 }

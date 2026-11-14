@@ -81,6 +81,8 @@ function onKey(e: KeyboardEvent) {
   const up = paneModalAt(document.activeElement) ?? top();
   const root = up?.el();
   if (!up || !root) return;
+  // A terminal driven inside the dialog (a board drawer's live pane) takes its own Escape and Tab: × closes the dialog then.
+  if ((e.target as Element | null)?.closest?.("[data-keys-own]") && root.contains(e.target as Node)) return;
   if (e.key === "Escape") {
     // A menu open over the dialog takes its own Escape (menu.tsx), and so
     // does a context window's popover (blocks/agent-context.tsx, which
