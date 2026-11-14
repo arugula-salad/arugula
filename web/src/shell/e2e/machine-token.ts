@@ -60,6 +60,21 @@ export function controlTokens(origin = "", send: typeof fetch = (i, o) => fetch(
   };
 }
 
+/** Whether control at `origin` signs machine tokens: it publishes its
+ * issuer's keys. A control without an issuer (a self-host or a test hub
+ * started without one) answers 404, and a browser that isn't a device yet
+ * asks to be approved instead of waiting on tokens that never come. */
+export async function controlIssues(origin = "", send: typeof fetch = (i, o) => fetch(i, o)): Promise<boolean> {
+  try {
+    const res = await send(`${origin}/.well-known/jwks.json`, { credentials: "omit" });
+    if (!res.ok) return false;
+    const j = (await res.json()) as { keys?: unknown };
+    return Array.isArray(j.keys) && j.keys.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 /** How this browser reaches its machines: `first` (the default since
  * every machine runs 0.70.4 or newer, Jake 2026-11-14) uses tokens even
  * when it's one of the account's devices; `no-key` uses them only when it
