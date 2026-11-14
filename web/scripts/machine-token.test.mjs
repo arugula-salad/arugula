@@ -27,16 +27,17 @@ test("a token is POSTed for, per machine, and a refusal says why", async () => {
   await assert.rejects(t.token("gone"), (e) => e instanceof NoTokenError && e.noToken && e.status === 403 && /not your machine/.test(e.message));
 });
 
-test("tokens when there's no device key, unless this browser says", () => {
-  assert.equal(tokenMode(() => null), "no-key");
+test("tokens first, unless this browser says", () => {
+  assert.equal(tokenMode(() => null), "first");
+  assert.equal(tokenMode(() => "no-key"), "no-key");
   assert.equal(tokenMode(() => "first"), "first");
   assert.equal(tokenMode(() => "off"), "off");
-  assert.equal(tokenMode(() => "nonsense"), "no-key");
+  assert.equal(tokenMode(() => "nonsense"), "first");
   assert.equal(
     tokenMode(() => {
       throw new Error("no storage");
     }),
-    "no-key",
+    "first",
   );
 });
 
@@ -72,4 +73,17 @@ test("a hosted machine: its own certificate's key, the relay only, and its proje
   const teams = [{ team: "t1", roster: { members: [{ account: "a1", role: "editor" }] } }];
   assert.equal(tokenEntry({ ...base, id: "h1", hosted: proof("team:t1") }, [], "a1", teams).hosted.role, "editor");
   assert.equal(tokenEntry({ ...base, id: "h1", hosted: proof("team:t2") }, [], "a1", teams).hosted.role, "viewer");
+});
+
+test("a device falls back to its key only when tokens can't reach the machine at all", async () => {
+  const { keyAfterTokens } = await import("../src/shell/e2e/channel.ts");
+  // A control with no issuer key (dev, tests) answers 404.
+  assert.equal(keyAfterTokens(new NoTokenError(404, "no issuer")), true);
+  // A daemon from before tokens reads the hello as a malformed block grant.
+  assert.equal(keyAfterTokens(Object.assign(new Error("old"), { byDaemon: true, code: "malformed" })), true);
+  // Signed out, not let in, or a token refused: the key wouldn't help.
+  assert.equal(keyAfterTokens(new NoTokenError(401, "signed out")), false);
+  assert.equal(keyAfterTokens(new NoTokenError(403, "not yours")), false);
+  assert.equal(keyAfterTokens(Object.assign(new Error("used"), { byDaemon: true, code: "machine-token" })), false);
+  assert.equal(keyAfterTokens(new Error("socket closed")), false);
 });

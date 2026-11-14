@@ -47,7 +47,7 @@ import {
 import { decompress } from "fzstd";
 import { SCROLLBACK, TerminalView } from "./terminal-view";
 import { makeBlockView, type BlockView } from "./blocks";
-import { E2ESocket, type DaemonClock, type DaemonRef } from "./e2e/channel.ts";
+import { E2ESocket, connectWith, type DaemonClock, type DaemonRef } from "./e2e/channel.ts";
 import type { WakeSaid } from "./e2e/relaymux.ts";
 import type { DeviceKeys } from "./e2e/keys.ts";
 import type { MachineTokens } from "./e2e/machine-token.ts";
@@ -198,8 +198,7 @@ class E2ELink implements Link {
       // A control without the shared socket: one of its own.
       ...(target.mux ? [{ url: target.relay, timeoutMs: 10_000, ifNoMux: true }] : []),
     ];
-    const cred = target.tokens ?? target.keys;
-    (cred ? E2ESocket.connect(urls, target.daemon, cred) : Promise.reject(new Error("no device key and no token to reach it with"))).then(
+    connectWith(urls, target.daemon, target.tokens, target.keys).then(
       (sock) => {
         if (this.closed) return sock.close();
         this.sock = sock;
