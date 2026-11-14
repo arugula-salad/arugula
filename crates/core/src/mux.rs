@@ -20,11 +20,12 @@ pub struct Session {
     pub id: SessionId,
     pub name: String,
     pub tabs: Vec<TabId>,
-    /// The project it's in (Arugula projects RFC): inferred once, from the
-    /// repo of the first pane whose clone is linked to one
-    /// ([`Mux::infer_project`]), or set by hand
-    /// ([`Intent::SetSessionProject`]). Never moved after that by a repo's
-    /// link. A layout from before has none, and an older daemon drops it.
+    /// The project it's in (Arugula projects RFC): inferred from the repo
+    /// of the first pane whose clone is linked to one
+    /// ([`Mux::infer_project`]), following that repo when it moves to
+    /// another project ([`Mux::follow_repo`]), or set by hand
+    /// ([`Intent::SetSessionProject`]), which nothing moves. A layout from
+    /// before has none, and an older daemon drops it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub project: Option<ProjectRef>,
@@ -45,6 +46,13 @@ pub struct Session {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
     pub work_by_hand: bool,
+    /// The GitHub repo (`owner/name`) an inferred project came from: it
+    /// follows that repo's project. `None` when set by hand (or moved by
+    /// work set by hand), or inferred before it was kept (that one stays
+    /// put).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub project_repo: Option<String>,
 }
 
 impl Session {
@@ -75,6 +83,7 @@ impl Session {
     fn take_work(&mut self, work: WorkRef, name: Option<String>) {
         if self.project.as_ref().is_none_or(|p| p.id != work.project) {
             self.project = Some(ProjectRef { id: work.project.clone(), name: name.unwrap_or_default() });
+            self.project_repo = None;
         }
         self.work = Some(work);
     }
@@ -509,15 +518,17 @@ impl Mux {
         Ok(())
     }
 
-    /// A session's project from its pane's linked repo: set only while it
-    /// has none and none was set or taken away by hand
-    /// ([`Session::inferable`]), so it stays put. Whether it was set.
-    pub fn infer_project(&mut self, session: SessionId, project: ProjectRef) -> Result<bool, Error> {
+    /// A session's project from its pane's linked repo, `repo`: set only
+    /// while it has none and none was set or taken away by hand
+    /// ([`Session::inferable`]). Whether it was set. After that only
+    /// `repo` moving it to another project changes it ([`Mux::follow_repo`]).
+    pub fn infer_project(&mut self, session: SessionId, project: ProjectRef, repo: &str) -> Result<bool, Error> {
         let s = self.session_mut(session)?;
         if !s.inferable() {
             return Ok(false);
         }
         s.project = Some(project);
+        s.project_repo = Some(repo.to_owned());
         self.rev += 1;
         Ok(true)
     }
@@ -534,6 +545,45 @@ impl Mux {
         s.take_work(work, name);
         self.rev += 1;
         Ok(true)
+    }
+
+    /// The repos inferred projects came from (`Session::project_repo`),
+    /// each once.
+    pub fn project_repos(&self) -> Vec<String> {
+        let mut repos: Vec<String> = self.sessions.iter().filter_map(|s| s.project_repo.clone()).collect();
+        repos.sort();
+        repos.dedup();
+        repos
+    }
+
+    /// `repo` is linked to `project` now: every session whose project was
+    /// inferred from it takes that one (Arugula #992). A project set by
+    /// hand stays, and so does one under work set by hand
+    /// ([`Intent::SetSessionWork`]). Inferred work in the old project
+    /// comes along, without its card: a card is in the project it came
+    /// from, as [`Mux::infer_work`] takes none from another. Only the
+    /// label changes. The sessions it moved.
+    pub fn follow_repo(&mut self, repo: &str, project: &ProjectRef) -> Vec<SessionId> {
+        let moved: Vec<SessionId> = self
+            .sessions
+            .iter_mut()
+            .filter(|s| !s.project_by_hand && s.project_repo.as_deref() == Some(repo))
+            .filter(|s| !(s.work_by_hand && s.work.is_some()))
+            .filter(|s| s.project.as_ref() != Some(project))
+            .map(|s| {
+                let old = s.project.replace(project.clone());
+                if let Some(w) = s.work.as_mut()
+                    && old.is_some_and(|o| o.id == w.project && o.id != project.id)
+                {
+                    *w = WorkRef { project: project.id.clone(), item: None };
+                }
+                s.id
+            })
+            .collect();
+        if !moved.is_empty() {
+            self.rev += 1;
+        }
+        moved
     }
 
     pub fn apply(&mut self, intent: Intent) -> Result<Vec<Effect>, Error> {
@@ -559,6 +609,7 @@ impl Mux {
                     project_by_hand: false,
                     work: None,
                     work_by_hand: false,
+                    project_repo: None,
                 });
                 let pane = self.new_pane();
                 self.add_tab(id, Node::pane(pane), None)?;
@@ -576,6 +627,7 @@ impl Mux {
                 }
                 s.project = project;
                 s.project_by_hand = true;
+                s.project_repo = None;
                 Ok(vec![])
             }
             SetSessionWork { session, work, project_name } => {

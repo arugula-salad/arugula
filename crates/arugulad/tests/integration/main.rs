@@ -112,6 +112,7 @@ mod resume;
 mod review;
 mod session_history;
 mod session_links;
+mod session_project_follow;
 // Stand-in shell scripts for Claude Code, Node and npm.
 #[cfg(unix)]
 mod setup;

@@ -1431,6 +1431,10 @@ pub struct Control {
     pub activity: watch::Sender<Option<String>>,
     /// The VM was resumed (M180): redial the relay now, not after backoff.
     resumed: tokio::sync::Notify,
+    /// Bumped each time the relay socket comes up: what changed in control
+    /// while this machine was away is caught up then (sessions' projects,
+    /// Arugula #992).
+    connects: watch::Sender<u64>,
     /// Resumes so far, for a dial that failed as one came (M182).
     resumes: std::sync::atomic::AtomicU64,
     /// The hub's keys and the machine tokens already taken (aru-141).
@@ -1747,6 +1751,7 @@ impl Control {
             resumed: tokio::sync::Notify::new(),
             resumes: Default::default(),
             tokens: Default::default(),
+            connects: watch::channel(0).0,
         });
         me.reload();
         me
@@ -1970,6 +1975,11 @@ impl Control {
             f.push_str(wire::DEV_SETTINGS);
         }
         f
+    }
+
+    /// Told each time the relay socket comes up, counting from 1.
+    pub fn on_connect(&self) -> watch::Receiver<u64> {
+        self.connects.subscribe()
     }
 
     /// Told the number of each refresh that went through, as it ends.
@@ -3453,6 +3463,7 @@ async fn relay_once(
         l.relay_error = None;
         l.seen_ms = Some(now_ms());
     });
+    control.connects.send_modify(|n| *n += 1);
     // M40: forge subscriptions out, pokes and heartbeats in. M65: guest
     // routes out, control's answers in. M168: the ops this machine knows
     // out, control's asks in, and their answers out.

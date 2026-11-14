@@ -484,14 +484,24 @@ impl Call<'_> {
     }
 }
 
-/// The project the clone at `dir` is linked to through its GitHub repo,
-/// asked of control as [`Call::chosen_project`]'s linked rule asks it.
-/// `None` when it isn't a clone of one, no project links it, or control
-/// didn't answer. A session's project is inferred with it
-/// (`session_project.rs`).
-pub async fn linked_project(control: &crate::control::Control, dir: &str) -> Option<arugula_core::ProjectRef> {
+/// The GitHub repo of the clone at `dir` and the project it's linked to
+/// ([`repo_project`]). `None` when it isn't a clone of one, no project
+/// links it, or control didn't answer. A session's project is inferred
+/// with it (`session_project.rs`).
+pub async fn linked_project(
+    control: &crate::control::Control,
+    dir: &str,
+) -> Option<(String, arugula_core::ProjectRef)> {
     let repo = github_repo_of(dir).await?;
-    let q = Rule::Linked(repo.clone()).query(&Steps { repo: Some(repo), ..Default::default() });
+    let project = repo_project(control, &repo).await?;
+    Some((repo, project))
+}
+
+/// The project a GitHub repo (`owner/name`) is linked to, asked of
+/// control as [`Call::chosen_project`]'s linked rule asks it. `None` when
+/// no project links it, or control didn't answer.
+pub async fn repo_project(control: &crate::control::Control, repo: &str) -> Option<arugula_core::ProjectRef> {
+    let q = Rule::Linked(repo.to_owned()).query(&Steps { repo: Some(repo.to_owned()), ..Default::default() });
     let v = control.cloud_now(Method::GET, &format!("{AGENT_ISSUE_HOME}?{}", query(&q)), None).await.ok()?;
     let id = v["project"].as_str().filter(|p| !p.is_empty())?;
     Some(arugula_core::ProjectRef { id: id.to_owned(), name: v["name"].as_str().unwrap_or_default().to_owned() })
