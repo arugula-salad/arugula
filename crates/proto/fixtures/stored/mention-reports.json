@@ -1,0 +1,22 @@
+[
+  {
+    "put": {
+      "room": "ch_0123456789abcdef",
+      "seq": 41,
+      "session": "wake",
+      "state": "working"
+    },
+    "at": 1794700000000
+  },
+  {
+    "put": {
+      "room": "ch_0123456789abcdef",
+      "seq": 41,
+      "session": "wake",
+      "state": {
+        "dropped": "exited"
+      }
+    },
+    "at": 1794700002000
+  }
+]

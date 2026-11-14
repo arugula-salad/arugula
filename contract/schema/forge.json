@@ -387,6 +387,20 @@
             "op"
           ],
           "type": "object"
+        },
+        {
+          "$ref": "#/$defs/MentionsHeldAsk",
+          "description": "Which of these mentions the machine was already told (Arugula #630):\ncontrol asks when the machine connects, and sends again only the\nones it wasn't. An older daemon answers `unknown`, and gets only the\nones that found it offline, as before.",
+          "properties": {
+            "op": {
+              "const": "agents.mentions_held",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -820,6 +834,44 @@
       ],
       "type": "object"
     },
+    "MentionKey": {
+      "description": "One mention as a machine was told it: the message, and the session it\nnamed ([`AgentMention::session`]), if it named one.",
+      "properties": {
+        "room": {
+          "type": "string"
+        },
+        "seq": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "session": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "room",
+        "seq"
+      ],
+      "type": "object"
+    },
+    "MentionsHeldAsk": {
+      "description": "Mentions control told a machine and has no word of their turn on\n(Arugula #630): has it got them?",
+      "properties": {
+        "mentions": {
+          "items": {
+            "$ref": "#/$defs/MentionKey"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "mentions"
+      ],
+      "type": "object"
+    },
     "OpAnswer": {
       "description": "How a machine (or control, for it) answered an op.",
       "oneOf": [
@@ -909,6 +961,26 @@
           "required": [
             "answer",
             "shared"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "An `agents.mentions_held`'s answer (Arugula #630): for each mention\nasked, in order, whether the machine was told it already.",
+          "properties": {
+            "answer": {
+              "const": "held",
+              "type": "string"
+            },
+            "held": {
+              "items": {
+                "type": "boolean"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "answer",
+            "held"
           ],
           "type": "object"
         },
