@@ -35,6 +35,7 @@ import { accountHeader, useAccount } from "./app-bar";
 import { docShareItems } from "./doc-share";
 import { needsYou, placeOf, sortNeedsYou } from "../../shared/needs-you";
 import { Chip } from "../../shared/ui/state-chip";
+import { PaneCardChip } from "./pane-card";
 import type { ComponentChildren } from "preact";
 import { ArrowIcon, AttachIcon, ChevronIcon, PipeKeyIcon, SlashKeyIcon, TildeKeyIcon } from "../../shared/ui/icons";
 
@@ -70,6 +71,12 @@ export function PhoneHeader({ client }: { client: Client }) {
           </span>
         )}
       </header>
+      {/* The pane's card, under its title: a tap opens its sheet. */}
+      {active !== undefined && client.info(active)?.session_project && (
+        <div class="phone-work">
+          <PaneCardChip client={client} pane={active} room={Math.floor((window.innerWidth - 24) / 6.5)} phone />
+        </div>
+      )}
       {open && <Sheet client={client} close={() => setOpen(false)} />}
     </>
   );

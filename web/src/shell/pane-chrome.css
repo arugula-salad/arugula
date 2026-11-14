@@ -288,3 +288,29 @@ html:root .prompt-backdrop.pane-tip-backdrop {
   border: 1px solid var(--line);
   border-radius: var(--card-radius);
 }
+
+/* The pane's card (Arugula inversion): project > #983 title, in one line,
+   the title cut by its text first (pane-card.tsx says how much fits). */
+.pane-work-wrap {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.chip-object.pane-work {
+  min-width: 0;
+  min-height: 20px;
+  white-space: nowrap;
+  font-size: var(--text-xs);
+}
+.pane-work-project {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--dim);
+}
+.pane-work-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

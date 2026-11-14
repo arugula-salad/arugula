@@ -1092,6 +1092,13 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   font-weight: 600;
 }
 
+/* The pane's card, under the phone's bar (pane-card.tsx). */
+.phone-work {
+  display: flex;
+  padding: 0 8px 4px;
+  min-width: 0;
+}
+
 .pane-count {
   color: var(--dim);
   padding: 0 8px;
