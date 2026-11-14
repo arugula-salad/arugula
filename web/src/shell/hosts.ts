@@ -74,6 +74,10 @@ export class HostDirectory {
     this.emit();
   }
   private listeners = new Set<() => void>();
+  /** Whether the machine shown is kept in the address (`?machine=NAME`):
+   * on the shell's pages. The app's address is its route (Arugula #989),
+   * which names the machine itself. */
+  keepsAddress = true;
 
   constructor() {
     // A link to a machine (`?machine=geek`) shows it, over the one this
@@ -93,6 +97,7 @@ export class HostDirectory {
    * can be linked to and survives a reload; the home daemon's own page
    * needs none. A route in the hash (#chat, #swarm…) stays. */
   private syncUrl() {
+    if (!this.keepsAddress) return;
     const name = this.control || this.shown !== null ? this.current : "";
     const params = new URLSearchParams(location.search);
     if ((params.get("machine") ?? "") === name) return;

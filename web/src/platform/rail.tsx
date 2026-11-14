@@ -14,7 +14,9 @@ import { ChatIcon, DocsIcon, Mark, PanesIcon, ProjectsIcon, SettingsIcon, SwarmI
 import { chatPath, sectionOf } from "./bar";
 import { chatTeam } from "./chat-scope";
 import { currentProject, entryPath, onCurrentProject } from "./current-project";
-import { go, useRoute } from "./router";
+import { go, pathOf, useRoute } from "./router";
+import { usePlatformApi } from "../shared/platform-api";
+import type { MachineAt } from "../shared/machine-paths";
 import { names } from "./links";
 import { controlOrigin, session } from "./session";
 import { barProject, where } from "./where";
@@ -39,20 +41,31 @@ export function PlatformRail() {
   // Projects goes to the current project while it's still one of the reader's; else the list.
   const projectsTo = entryPath("projects", inProject, names);
   const docsTo = entryPath("docs", inProject, names);
+  const { Machines } = usePlatformApi();
+  const machinesHere = r.page === "machines";
+  const swarmHere = r.page === "machines" && r.at.at === "swarm";
+  const machinesIn = (at: MachineAt) => (inProject ? pathOf({ page: "machines", project: inProject.id, at }, names) : pathOf({ page: "find", what: "machines", at }));
+  const panesTo = machinesIn({ at: "machines" });
+  const swarmTo = machinesIn({ at: "swarm" });
   const items: RailItem[] = [
     {
       label: "Projects",
       tip: "Projects: their issues, boards, runs, deploys and chat",
       // In any project and across All projects' places (the bar's), but Chat
       // and Docs are lit on their own.
-      here: !unknown && (r.page === "home" || !!project || here === "boards" || here === "inbox") && here !== "chat" && here !== "docs",
+      here: !unknown && (r.page === "home" || !!project || here === "boards" || here === "inbox") && here !== "chat" && here !== "docs" && !machinesHere,
       hook: "data-open-projects",
       icon: <ProjectsIcon />,
       href: projectsTo,
       onClick: place(projectsTo),
     },
-    { label: "Panes", tip: "Your panes, on your machines", here: false, hook: "data-open-panes", icon: <PanesIcon />, href: `${control}/` },
-    { label: "Swarm", tip: "Swarm: every agent on every machine", here: false, hook: "data-open-swarm", icon: <SwarmIcon />, href: `${control}/#swarm` },
+    // In the app, the machines are its own places (Arugula #989); else control's page.
+    Machines
+      ? { label: "Panes", tip: "Your panes, on your machines", here: machinesHere && !swarmHere, hook: "data-open-panes", icon: <PanesIcon />, href: panesTo, onClick: place(panesTo) }
+      : { label: "Panes", tip: "Your panes, on your machines", here: false, hook: "data-open-panes", icon: <PanesIcon />, href: `${control}/` },
+    Machines
+      ? { label: "Swarm", tip: "Swarm: every agent on every machine", here: swarmHere, hook: "data-open-swarm", icon: <SwarmIcon />, href: swarmTo, onClick: place(swarmTo) }
+      : { label: "Swarm", tip: "Swarm: every agent on every machine", here: false, hook: "data-open-swarm", icon: <SwarmIcon />, href: `${control}/#swarm` },
     {
       label: "Chat",
       aria: n ? `Chat, ${n} unread${mention ? ", mentioning you" : ""}` : "Chat",

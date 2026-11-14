@@ -61,9 +61,7 @@ export function QrCode({ text, label }: { text: string; label: string }) {
 /** "2d ago", or "on Oct 16" (../../shared/time.ts), in a sentence. */
 export const since = (ms: number) => ago(Math.min(ms, Date.now()), Date.now(), "on");
 
-export type Panel = "devices" | "add" | "add-device" | "teams" | "account" | "shared-docs";
-
-export const openPanel = (p: Panel) => () => dispatchEvent(new CustomEvent("arugula:control-panel", { detail: p }));
+export { openPanel, type Panel } from "../ui/control-panel";
 
 export function clearHash() {
   usedLink = "";

@@ -36,7 +36,7 @@ import { notifyBlocker, pushNow, serveCommand, subscribePush, turnOnPush } from 
 import { markSeen, seen, seenReady, subscribeSeen } from "../../shared/seen";
 import { currentAccount } from "./app-bar";
 import { keyHint } from "./keys";
-import { openPanel } from "../trust/common";
+import { openPanel } from "./control-panel";
 import { shareSession } from "./people";
 import { openSwarm } from "../swarm/route";
 import { openPalette } from "./palette";

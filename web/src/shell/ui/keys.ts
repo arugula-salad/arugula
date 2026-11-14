@@ -58,7 +58,8 @@ export const os: Os = /Mac|iPhone|iPad/.test(navigator.platform) ? "mac" : "othe
 let workspace: { client: Client; phone: boolean } | null = null;
 /** The shown machine's client, for the desktop app's keys, which work
  * without the workspace (main.tsx swaps it when the host changes). */
-let appClient: () => Client | null = () => workspace?.client ?? null;
+const workspaceClient = () => workspace?.client ?? null;
+let appClient: () => Client | null = workspaceClient;
 
 const ctrlOrCmd = (code: string) => [`Ctrl+Shift+${code}`, `Meta+Shift+${code}`];
 const mac = desktopPlatform() === "macos";
@@ -272,10 +273,15 @@ function install() {
 }
 
 /** Take the keys for the page; `client` is read on each press (main.tsx
- * swaps it when the host changes). */
-export function installKeys(client: () => Client) {
+ * swaps it when the host changes). The answer gives them back: the app
+ * (Arugula #989) holds them only while a machine's page or Swarm is shown,
+ * so its other pages keep only their own keys. */
+export function installKeys(client: () => Client): () => void {
   appClient = client;
   install();
+  return () => {
+    if (appClient === client) appClient = workspaceClient;
+  };
 }
 
 /** Add a binding while something is up (a dialog's Escape), with the

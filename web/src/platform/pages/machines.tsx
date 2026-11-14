@@ -13,7 +13,7 @@ export function MachinesPage({ project, at }: { project: string; at: MachineAt }
 }
 
 /** Control's page at `at`, in this window. */
-function OnControl({ at }: { at: MachineAt }) {
+export function OnControl({ at }: { at: MachineAt }) {
   // A machine's own place (`#overview`, `#settings=machine`) rides in the fragment.
   const here = at.at === "machines" ? (parseMachines([], new URLSearchParams(location.search), location.hash) ?? at) : at;
   const hash = controlHash(here);
