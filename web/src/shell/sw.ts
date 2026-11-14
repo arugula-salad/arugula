@@ -21,8 +21,11 @@ import { connectWith } from "./e2e/channel.ts";
 import { KEY_CACHE } from "./local-key-cache.ts";
 import type { ActRequest } from "../shared/proto";
 import { existingKeys, loadWorkerDirectory } from "./e2e/keys.ts";
-import { controlTokens } from "./e2e/machine-token.ts";
+import { controlTokens, gatedTokens } from "./e2e/machine-token.ts";
 import { chatTap, platformOf, platformTap, shareUrl, tapUrl, withShare } from "./tap.ts";
+
+/** One for the worker, so a 429 holds back all its asks. */
+const workerTokens = gatedTokens(controlTokens());
 
 /** The parts of a service worker's global scope used here (the project's
  * types are the page's). */
@@ -188,7 +191,7 @@ async function act(daemon: string | undefined, body: ActRequest): Promise<boolea
     // aru-141: with machine tokens as the page uses them (this worker is
     // on control's origin, so its session cookie goes along); else with
     // the device key.
-    const tokens = d.tokens ? controlTokens() : undefined;
+    const tokens = d.tokens ? workerTokens : undefined;
     if (!tokens && !keys) return false;
     const urls = [
       ...d.direct.map((u) => ({ url: `${u.replace(/^http/, "ws").replace(/\/$/, "")}/e2e`, timeoutMs: 1500 })),

@@ -13,7 +13,7 @@
 
 import type { E2ETarget } from "../shell/client";
 import type { DirDaemon, ForeignEntry, Phase, Team } from "../shell/control";
-import { controlTokens, NoTokenError, tokenEntry, type MachineTokens } from "../shell/e2e/machine-token.ts";
+import { controlTokens, gatedTokens, NoTokenError, tokenEntry, type MachineTokens } from "../shell/e2e/machine-token.ts";
 import type { MachineSource } from "../shell/machines";
 
 type Send = typeof fetch;
@@ -54,7 +54,7 @@ export class AppSession implements MachineSource {
     this.control = control;
     this.origin = origin;
     this.send = send;
-    const given = controlTokens("", send);
+    const given = gatedTokens(controlTokens("", send));
     this.tokens = {
       token: async (id) => {
         try {

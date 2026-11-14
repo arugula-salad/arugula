@@ -33,10 +33,76 @@ export const TOKEN_REFUSED = "machine-token";
 export class NoTokenError extends Error {
   readonly noToken = true;
   readonly status: number;
-  constructor(status: number, message: string) {
+  /** Seconds the hub said to wait (`Retry-After`), if it said. */
+  readonly retryAfter: number | undefined;
+  /** Set by `gatedTokens`: how long before a try could get a token, ms. */
+  retryMs: number | undefined;
+  constructor(status: number, message: string, retryAfter?: number) {
     super(message);
     this.status = status;
+    this.retryAfter = retryAfter;
   }
+}
+
+/** The least a page waits after control refuses a token (429 or worse). */
+export const TOKEN_BACKOFF_MS = 60_000;
+const TOKEN_BACKOFF_MAX_MS = 15 * 60_000;
+
+/** `tokens`, asked with care (the 2026-11-14 outage: pages retrying
+ * machines spent the account's 3,000 tokens an hour, and every slot freed
+ * went to the next retry). One ask per machine at a time; a 429 stops every
+ * machine's asks on this page for `Retry-After`, else a minute and growing;
+ * any other refusal (but 404, which says there are no tokens here) stops
+ * that machine's the same way. A try held back fails at once, with
+ * `retryMs`. No machine is skipped for being offline: a hosted one asleep
+ * is woken through the same connect (M182). */
+export function gatedTokens(tokens: MachineTokens, now: () => number = () => Date.now()): MachineTokens {
+  let account = { until: 0, strikes: 0 };
+  const machines = new Map<string, { until: number; strikes: number }>();
+  const asking = new Map<string, Promise<unknown>>();
+  const held = (until: number, msg: string, status: number) => {
+    const e = new NoTokenError(status, msg);
+    e.retryMs = Math.max(1000, until - now());
+    return e;
+  };
+  const limiting = (until: number) => `Arugula cloud is limiting connections; trying again in ${Math.ceil(Math.max(0, until - now()) / 1000)} s`;
+  const later = (b: { until: number; strikes: number }, e: NoTokenError) => {
+    const wait = Math.min(Math.max((e.retryAfter ?? 0) * 1000, TOKEN_BACKOFF_MS * 2 ** b.strikes), TOKEN_BACKOFF_MAX_MS);
+    return { until: now() + wait, strikes: b.strikes + 1 };
+  };
+  return {
+    async token(id) {
+      const before = asking.get(id);
+      let done!: () => void;
+      const mine = new Promise<void>((r) => (done = r));
+      asking.set(id, mine);
+      await before;
+      try {
+        if (now() < account.until) throw held(account.until, limiting(account.until), 429);
+        const m = machines.get(id);
+        if (m && now() < m.until) throw held(m.until, `Arugula cloud gave no token for this machine; trying again in ${Math.ceil((m.until - now()) / 1000)} s`, 0);
+        try {
+          const t = await tokens.token(id);
+          account = { until: 0, strikes: 0 };
+          machines.delete(id);
+          return t;
+        } catch (e) {
+          if (!(e instanceof NoTokenError) || e.status === 404) throw e;
+          if (e.status === 429) {
+            account = later(account, e);
+            throw held(account.until, limiting(account.until), 429);
+          }
+          const b = later(m ?? { until: 0, strikes: 0 }, e);
+          machines.set(id, b);
+          e.retryMs = b.until - now();
+          throw e;
+        }
+      } finally {
+        done();
+        if (asking.get(id) === mine) asking.delete(id);
+      }
+    },
+  };
 }
 
 /** Tokens from control at `origin` ("" for this page's own): what the page,
@@ -53,7 +119,8 @@ export function controlTokens(origin = "", send: typeof fetch = (i, o) => fetch(
       const j = (await res.json().catch(() => ({}))) as { token?: unknown; error?: unknown; reason?: unknown };
       if (!res.ok || typeof j.token !== "string" || !j.token) {
         const said = typeof j.error === "string" ? j.error : typeof j.reason === "string" ? j.reason : `HTTP ${res.status}`;
-        throw new NoTokenError(res.status, `Arugula cloud gave no token for this machine: ${said}`);
+        const after = Number(res.headers?.get?.("Retry-After"));
+        throw new NoTokenError(res.status, `Arugula cloud gave no token for this machine: ${said}`, Number.isFinite(after) && after > 0 ? after : undefined);
       }
       return j.token;
     },

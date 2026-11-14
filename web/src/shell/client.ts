@@ -187,6 +187,9 @@ class E2ELink implements Link {
   sock: E2ESocket | undefined;
   full: string | undefined;
   refused = false;
+  /** Machine tokens held back (`gatedTokens`): how long to wait, and the
+   * line to show meanwhile. */
+  hold: { ms: number; message: string } | undefined;
   private closed = false;
   /** Connects in the background; the Client sees it as a socket that opens
    * (or closes, and is retried). `wake` (M182): a hosted machine that's
@@ -209,8 +212,9 @@ class E2ELink implements Link {
         sock.onClose = () => this.onClose(sock.why);
         sock.start();
       },
-      (e: Error & { full?: boolean; byDaemon?: boolean }) => {
+      (e: Error & { full?: boolean; byDaemon?: boolean; retryMs?: number }) => {
         if (e.full) this.full = e.message;
+        if (e.retryMs) this.hold = { ms: e.retryMs, message: e.message };
         this.refused = !!e.byDaemon;
         this.onClose(`couldn't connect: ${e.message}`);
       },
@@ -1087,11 +1091,12 @@ export class Client {
       if (link.refused && this.e2e?.keys?.id === "link") this.revoked = true;
       // Control's relay is full (#344): say so, and wait half a minute or
       // so (spread out, as everyone's page is waiting) rather than seconds.
-      const delay = link.full ? 30_000 + Math.random() * 30_000 : Math.min(250 * 2 ** this.retry, 5000);
+      const hold = link instanceof E2ELink ? link.hold : undefined;
+      const delay = link.full ? 30_000 + Math.random() * 30_000 : hold ? hold.ms + Math.random() * 1000 : Math.min(250 * 2 ** this.retry, 5000);
       if (link.full) {
         console.warn(`relay: ${link.full}`);
         this.showError(link.full);
-      }
+      } else if (hold && /limiting/.test(hold.message)) this.showError(hold.message);
       this.retry++;
       this.emit();
       this.schedule(() => this.connect(), delay);
