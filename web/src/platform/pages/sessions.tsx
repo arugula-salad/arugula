@@ -1,8 +1,15 @@
-// `/p/:project/sessions` (Fleet 5): a project's agent sessions in one
-// list, a wave of them, beside its runs. Each row is a session's state,
-// its issue, its box, branch and HEAD, when it last pushed, who started it
-// (its asker, or their agent), and what waits on the reader: its question
-// or a permission, CI that failed again, its PR to send.
+// `/p/:project/sessions` (Fleet 5, inversion L3): every session in the
+// project, wherever it runs, a computer's or a cloud workspace's, grouped
+// by the card it works on (`sessions/by-card`), with its runs and cloud
+// workspaces at the top. A group's head names its card, its board and its
+// lane, with Open card; groups that need you come first, and Not on a card
+// (lead sessions, scratch shells, release terminals) last. Finished
+// sessions fold to a line per group. A hosted session's row is the wave's
+// (`sessions`): its state, its issue, its box, branch and HEAD, when it
+// last pushed, who started it, and what waits on the reader. A machine's
+// session opens to its panes, each with its line, Open (the pane live,
+// here) and Open on its machine. A cloud from before the by-card route
+// (404) lists the wave alone, by its issues.
 //
 // It narrows by its issue's label, by a tracker (an issue's number: the
 // issues its body names as #N, and those whose body names it), by who
@@ -11,6 +18,11 @@
 
 import { Card } from "../../shared/ui/card";
 import { useEffect, useState } from "preact/hooks";
+import { boards } from "../../shared/boards/store";
+import { MOVE_LANES } from "../../shared/boards/text";
+import { usePlatformApi } from "../../shared/platform-api";
+import { SectionHead } from "../../shared/ui/section-head";
+import { cardTitle, finished, groupsOf, panesOf, stateOfListed, waitsOn, type ByCardCard, type Group, type Listed, type SessionsByCard } from "../sessions-by-card";
 import { chat } from "../../shared/chat-store";
 import { stateOf } from "../../shared/chat/session-card";
 import type { SessionRow, SessionWave } from "../../shared/proto.gen";
@@ -43,6 +55,53 @@ async function wave(project: string, f: WaveFilter): Promise<SessionWave> {
   return j;
 }
 
+/** Every session in the project by card, or null from a cloud from before
+ * the route (404): the page lists the wave alone then. */
+async function byCard(project: string): Promise<SessionsByCard | null> {
+  const res = await platformFetch(`/api/projects/${encodeURIComponent(project)}/sessions/by-card`, { credentials: "same-origin" });
+  if (res.status === 404) return null;
+  const j = (await res.json().catch(() => ({}))) as SessionsByCard & { error?: string };
+  if (!res.ok) throw new Error(refusalOf(res.status, j, `HTTP ${res.status}`));
+  return { project: j.project, groups: Array.isArray(j.groups) ? j.groups : [] };
+}
+
+/** Where a card is on the project's boards: its board and row, its lane,
+ * and the row's words (a card that isn't an issue is named by them). */
+interface Place {
+  board: string;
+  boardTitle: string;
+  row: string;
+  lane: string;
+  words: string;
+}
+
+/** The project's boards' rows, by what they point at and by their own id,
+ * read once a page. None while they're read, or if they can't be. */
+function usePlaces(project: string): Map<string, Place> {
+  const [m, setM] = useState<Map<string, Place>>(new Map());
+  useEffect(() => {
+    let live = true;
+    void boards
+      .list(project)
+      .then((l) => Promise.all(l.boards.map((b) => boards.get(b.id).catch(() => null))))
+      .then((views) => {
+        const out = new Map<string, Place>();
+        for (const v of views)
+          for (const z of v?.zones ?? [])
+            for (const r of z.rows) {
+              const p = r.pointer;
+              const place = { board: v!.board.id, boardTitle: v!.board.title, row: r.id, lane: MOVE_LANES.find((x) => x.lane === r.lane)?.title ?? z.title, words: r.note };
+              if ("id" in p && !out.has(p.id)) out.set(p.id, place);
+              out.set(r.id, place);
+            }
+        if (live) setM(out);
+      })
+      .catch(() => {});
+    return () => void (live = false);
+  }, [project]);
+  return m;
+}
+
 const menuAt = (e: MouseEvent, items: MenuItem[]) => {
   const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
   openMenu(
@@ -71,18 +130,26 @@ export function SessionsPage({
 
 function Wave({ p, filter }: { p: PlatformProject; filter: WaveFilter }) {
   const [w, setW] = useState<SessionWave | null>(null);
+  /** Every session by card; null until read, or from a cloud without it. */
+  const [cards, setCards] = useState<SessionsByCard | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const key = JSON.stringify([p.id, filter]);
   useEffect(() => {
     let live = true;
     setError(null);
-    wave(p.id, filter).then(
-      (r) => live && setW(r),
+    // The by-card read failing leaves the wave, as a cloud without it does.
+    Promise.all([wave(p.id, filter), byCard(p.id).catch(() => null)]).then(
+      ([r, c]) => {
+        if (!live) return;
+        setCards(c);
+        setW(r);
+      },
       (e: Error) => live && setError(e.message),
     );
     return () => void (live = false);
   }, [key, tick]);
+  const places = usePlaces(p.id);
   // Each session's live event reads the wave again; so does a new one,
   // now and then, while any goes.
   const ids = (w?.sessions ?? []).map((s) => s.session).join(" ");
@@ -93,7 +160,12 @@ function Wave({ p, filter }: { p: PlatformProject; filter: WaveFilter }) {
       : [];
     return () => offs.forEach((off) => off());
   }, [ids]);
-  const going = !!w?.sessions.some((s) => !s.settled);
+  const narrowed = !!(filter.label || filter.tracker !== undefined || filter.asker);
+  const groups = w ? groupsOf(cards, w, { narrowed, going: !!filter.going }) : null;
+  const listed = groups?.flatMap((g) => g.sessions) ?? [];
+  // A hosted session goes until its turn settles; another, until it finishes.
+  const isGoing = (s: Listed) => (s.wave ? !s.wave.settled : !finished(s));
+  const going = listed.some(isGoing);
   useEffect(() => {
     if (!going) return;
     const t = setInterval(
@@ -138,17 +210,12 @@ function Wave({ p, filter }: { p: PlatformProject; filter: WaveFilter }) {
         run: () => to({ ...filter, asker: a }),
       })),
     ]);
-  const narrowed = !!(
-    filter.label ||
-    filter.tracker !== undefined ||
-    filter.asker ||
-    filter.going
-  );
+  const anyFilter = narrowed || !!filter.going;
   const askerName =
     filter.asker === "me"
       ? "me"
       : (w?.askers.find(([a]) => a === filter.asker)?.[1] ?? "one");
-  const waiting = w?.sessions.filter((s) => s.waiting).length ?? 0;
+  const waiting = listed.filter((s) => !!waitsOn(s)).length;
   const runsTo = pathOf({ page: "runs", project: p.id }, names);
   const workspacesTo = pathOf({ page: "workspaces", project: p.id }, names);
 
@@ -158,7 +225,7 @@ function Wave({ p, filter }: { p: PlatformProject; filter: WaveFilter }) {
       data-sessions={p.id}
     >
       <PageHeader
-        title="Agent sessions"
+        title="Sessions"
         // Runs and cloud workspaces left the bar (Arugula #989, decision 6): they're here.
         actions={
           <>
@@ -172,12 +239,11 @@ function Wave({ p, filter }: { p: PlatformProject; filter: WaveFilter }) {
             )}
           </>
         }
-        sub="The project's agent sessions, newest first: where each runs, its branch and last push, and what waits on you. Narrow it to a track by its issues' label, or by a tracker issue."
+        sub="Every session in the project, on a computer or in a cloud workspace, by the card it works on: where each runs, its branch and last push, and what waits on you. Narrow it to a track by its issues' label, or by a tracker issue."
         stats={
-          !!w?.sessions.length && (
+          listed.length > 0 && (
             <span class="dim" data-sessions-stats>
-              {w.sessions.filter((s) => !s.settled).length} going · {waiting}{" "}
-              waiting on you
+              {listed.filter(isGoing).length} going · {waiting} waiting on you
             </span>
           )
         }
@@ -217,7 +283,7 @@ function Wave({ p, filter }: { p: PlatformProject; filter: WaveFilter }) {
           />{" "}
           Going only
         </label>
-        {narrowed && (
+        {anyFilter && (
           <button class="link" data-sessions-clear onClick={() => to({})}>
             Clear
           </button>
@@ -233,22 +299,22 @@ function Wave({ p, filter }: { p: PlatformProject; filter: WaveFilter }) {
         )
       )}
       {w === null && !error && <ListLoading />}
-      {w?.sessions.length === 0 &&
-        (narrowed ? (
+      {groups?.length === 0 &&
+        (anyFilter ? (
           <EmptyLine data-sessions-none>No sessions match.</EmptyLine>
         ) : (
           <EmptyState
             where="page"
             data-sessions-none
-            title="No agent sessions yet."
-            why="Agent on this on an issue, or @arugula in a channel, starts one."
+            title="No sessions yet."
+            why="Agent on this on an issue, or @arugula in a channel, starts one. A session on your computer shows here once it's in this project."
           />
         ))}
-      <ul class="issues-list card-list" data-sessions-list>
-        {w?.sessions.map((s) => (
-          <Row key={s.session} p={p} s={s} />
+      <div data-sessions-list>
+        {groups?.map((g) => (
+          <CardGroup key={g.card?.id ?? ""} p={p} g={g} place={g.card ? places.get(g.card.id) : undefined} />
         ))}
-      </ul>
+      </div>
       {w?.more && <p class="dim">More match than are listed: narrow it.</p>}
     </section>
   );
@@ -296,6 +362,207 @@ function TrackerFilter({
         onInput={(e) => setText((e.currentTarget as HTMLInputElement).value)}
       />
     </form>
+  );
+}
+
+/** A card's sessions: its head (the card, its board and lane, Open card),
+ * the going ones, then the finished ones folded to a line. */
+function CardGroup({ p, g, place }: { p: PlatformProject; g: Group; place: Place | undefined }) {
+  const [open, setOpen] = useState(false);
+  const done = g.sessions.filter(finished);
+  const live = g.sessions.filter((s) => !finished(s));
+  const card = cardPath(p.id, g.card, place);
+  return (
+    <section class="sessions-group" data-sessions-group={g.card?.id ?? "none"}>
+      <SectionHead
+        title={cardTitle(g.card, place?.words)}
+        count={g.sessions.length}
+        titleData="sessions-card"
+        action={
+          <>
+            {place && (
+              <span class="dim" data-sessions-card-place>
+                {place.boardTitle} · {place.lane}
+              </span>
+            )}
+            {card && (
+              <a class="secondary small" href={card} data-sessions-open-card onClick={(e) => follow(e, card)}>
+                Open card
+              </a>
+            )}
+          </>
+        }
+      />
+      <ul class="issues-list card-list">
+        {live.map((s) => (
+          <SessionLine key={s.key} p={p} s={s} />
+        ))}
+        {done.length > 0 && !open && (
+          <li class="sessions-folded">
+            <button type="button" class="link" data-sessions-finished={done.length} onClick={() => setOpen(true)}>
+              {done.length} finished
+            </button>
+          </li>
+        )}
+        {open && done.map((s) => <SessionLine key={s.key} p={p} s={s} />)}
+      </ul>
+    </section>
+  );
+}
+
+/** Where Open card goes: the card's row on its board, whose drawer opens
+ * there, else its issue's page; nothing for Not on a card. */
+function cardPath(project: string, card: ByCardCard | null, place: Place | undefined): string | null {
+  if (!card) return null;
+  if (place) return `${pathOf({ page: "board", project, board: place.board }, names)}#row=${encodeURIComponent(place.row)}`;
+  return card.id.startsWith("iss_") ? pathOf({ page: "issue", project, issue: card.id }, names) : null;
+}
+
+function SessionLine({ p, s }: { p: PlatformProject; s: Listed }) {
+  if (s.wave) return <Row p={p} s={s.wave} />;
+  if (s.src?.kind === "hosted") return <HostedLine p={p} s={s} />;
+  return <MachineRow s={s} project={p.id} />;
+}
+
+/** A hosted session the wave hasn't listed: its name and state. */
+function HostedLine({ p, s }: { p: PlatformProject; s: Listed }) {
+  const src = s.src!;
+  const st = stateOf(stateOfListed(s), false);
+  const id = String(src.id);
+  const path = id.startsWith("ses_") ? pathOf({ page: "session", project: p.id, session: id }, names) : null;
+  return (
+    <Card as="li" class="issue-row" tone={st.tone} data-session-row={id} data-session-state={stateOfListed(s)}>
+      <div class="issue-row-main">
+        {path ? (
+          <a href={path} class="issue-row-title" onClick={(e) => follow(e, path)}>
+            {src.name}
+          </a>
+        ) : (
+          <b>{src.name}</b>
+        )}
+        <span class="issue-row-meta dim">
+          <StateChip tone={st.tone}>{st.label}</StateChip> · in a cloud workspace
+        </span>
+      </div>
+    </Card>
+  );
+}
+
+/** A pane's kind, in people's words. */
+const KIND: Record<string, string> = { agent: "Agent", terminal: "Terminal", shell: "Terminal", browser: "Browser", editor: "Editor", doc: "Doc", board: "Board" };
+
+/** A session on a computer: its state, name and panes, where it runs and
+ * whose that is, its branch, and what waits on you. A click shows its
+ * panes, each with its line, Open and Open on its machine. */
+function MachineRow({ s, project }: { s: Listed; project: string }) {
+  const api = usePlatformApi();
+  const [open, setOpen] = useState(false);
+  const [live, setLive] = useState<{ machine: string; pane: number; name: string } | null>(null);
+  const [, tick] = useState(0);
+  const src = s.src!;
+  const panes = panesOf(src);
+  // The machines' panes are read while the page shows any.
+  useEffect(() => api.panes?.watch(() => tick((n) => n + 1)), [api.panes]);
+  const on = src.on.kind === "machine" ? src.on : null;
+  const owner = on ? api.panes?.owner(on.id) : undefined;
+  const branch = panes.map((x) => api.panes?.pane(x.machine, x.pane)?.branch).find(Boolean);
+  const state = stateOfListed(s);
+  const st = stateOf(state, false);
+  const waits = waitsOn(s);
+  const goTo = (machine: string, pane: number, alone: boolean) => {
+    if (alone && api.panes) return setLive({ machine, pane, name: `${KIND[panes.find((x) => x.pane === pane)?.kind ?? ""] ?? "Pane"} %${pane}` });
+    // Its machine's page in the app, on the pane; elsewhere, wherever the page opens panes.
+    if (api.Machines) return go(pathOf({ page: "machines", project, at: { at: "machine", machine, pane } }, names));
+    api.goToPane(machine, String(pane), null);
+  };
+  const toggle = () => setOpen((o) => !o);
+  return (
+    <Card as="li" class="issue-row sessions-machine" tone={st.tone} data-session-row={s.key} data-session-state={state} aria-expanded={open}>
+      <div class="issue-row-main">
+        <button type="button" class="link issue-row-title" data-session-toggle onClick={toggle}>
+          {src.name || (src.kind === "agent" ? "Agent" : "Session")}
+        </button>
+        <span class="dim">{panes.length === 1 ? "1 pane" : `${panes.length} panes`}</span>
+        {waits && (
+          <StateChip tone="warn" data-session-waiting>
+            Waits on you: {waits}
+          </StateChip>
+        )}
+        <span class="issue-row-meta dim">
+          {state && <StateChip tone={st.tone}>{st.label}</StateChip>}
+          {on && (
+            <span data-session-where>
+              {state ? " · on " : "on "}
+              {on.name}
+              {owner === null ? ", yours" : owner ? `, ${owner}'s` : ""}
+            </span>
+          )}
+          {branch && (
+            <>
+              {" · "}
+              <code>{branch}</code>
+            </>
+          )}
+          {src.updated_at > 0 && (
+            <>
+              {" · changed "}
+              <Time at={src.updated_at} />
+            </>
+          )}
+        </span>
+        {open && (
+          <ul class="sessions-panes" data-session-panes>
+            {panes.map((x) => {
+              const seen = api.panes?.pane(x.machine, x.pane);
+              const pst = x.state ? stateOf(x.state, false) : null;
+              return (
+                <li key={x.pane} data-session-pane={x.pane}>
+                  <span class="sessions-pane-name">
+                    {KIND[x.kind] ?? x.kind} <code>%{x.pane}</code>
+                  </span>
+                  {pst && <StateChip tone={pst.tone}>{pst.label}</StateChip>}
+                  <span class="sessions-pane-line dim" data-session-pane-line>
+                    {seen?.line ?? ""}
+                  </span>
+                  <button type="button" class="primary small" data-session-open onClick={() => goTo(x.machine, x.pane, true)}>
+                    Open
+                  </button>
+                  <button type="button" class="secondary small" data-session-on-machine onClick={() => goTo(x.machine, x.pane, false)}>
+                    Open on its machine
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+      {live && api.panes && (
+        <LiveSheet name={live.name} where={on?.name ?? ""} close={() => setLive(null)} onMachine={() => (setLive(null), goTo(live.machine, live.pane, false))}>
+          <api.panes.Live machine={live.machine} pane={live.pane} />
+        </LiveSheet>
+      )}
+    </Card>
+  );
+}
+
+/** A pane live and full size over the page, with Open on its machine and
+ * Close. Escape is the pane's: Close is the button. */
+function LiveSheet({ name, where, close, onMachine, children }: { name: string; where: string; close: () => void; onMachine: () => void; children: preact.ComponentChildren }) {
+  return (
+    <div class="sessions-live" role="dialog" aria-label={`${name} on ${where}`} data-sessions-live>
+      <header class="sessions-live-head">
+        <b>{name}</b>
+        <span class="dim">on {where}</span>
+        <span class="sessions-live-gap" />
+        <button type="button" class="secondary small" data-sessions-live-machine onClick={onMachine}>
+          Open on its machine
+        </button>
+        <button type="button" class="secondary small" data-sessions-live-close onClick={close}>
+          Close
+        </button>
+      </header>
+      <div class="sessions-live-body">{children}</div>
+    </div>
   );
 }
 
