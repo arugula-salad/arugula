@@ -12,7 +12,7 @@
 // third-party cookies, and so the block's storage (#69).
 
 import { execFile, spawn, type ChildProcess } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -39,12 +39,20 @@ test.describe.configure({ mode: "serial" });
 let dir = "";
 let state = "";
 let proj = "";
-const AUTH = "crates/control/src/auth.rs";
-/** Lines of AUTH (a copy of the repo's, so they move as it changes): one
- * that says Redirect, and STATE_COOKIE's. */
-const lineOf = (re: RegExp) => readFileSync(`../${AUTH}`, "utf8").split("\n").findIndex((l) => re.test(l)) + 1;
-const AT = lineOf(/\bRedirect\b/);
-const LATER = lineOf(/^const STATE_COOKIE/);
+/** The file the tests open: a Rust source about the size of a real one,
+ * made here. It was a copy of control's auth.rs until control moved to its
+ * own repository (Arugula #928); nothing here is about what it says. */
+const AUTH = "crates/sign-in/src/auth.rs";
+/** Line AT says Redirect; line LATER is STATE_COOKIE's. */
+const AT = 31;
+const LATER = 40;
+function source(): string {
+  const lines = Array.from({ length: 960 }, (_, i) => (i % 8 === 7 ? "" : `    let step_${i + 1} = ${i + 1};`));
+  lines[0] = "//! Sign-in: a made-up module for the editor specs to open.";
+  lines[AT - 1] = "    response::{IntoResponse, Redirect, Response},";
+  lines[LATER - 1] = 'const STATE_COOKIE: &str = "ilg_oauth";';
+  return lines.join("\n") + "\n";
+}
 const sh = promisify(execFile);
 let daemon: ChildProcess | undefined;
 
@@ -98,8 +106,8 @@ test.beforeAll(async () => {
   state = join(dir, "state");
   proj = join(dir, "arugula");
   mkdirSync(join(proj, ".git"), { recursive: true });
-  mkdirSync(join(proj, "crates/control/src"), { recursive: true });
-  cpSync(`../${AUTH}`, join(proj, AUTH));
+  mkdirSync(join(proj, "crates/sign-in/src"), { recursive: true });
+  writeFileSync(join(proj, AUTH), source());
   await start();
 });
 
