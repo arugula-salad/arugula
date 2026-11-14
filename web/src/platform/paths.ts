@@ -70,12 +70,14 @@
 //
 // Routes for changes wait for step 6 rather than shipping empty.
 
+import { machinesPath, parseMachines, type MachineAt } from "../shared/machine-paths.ts";
+
 /** The first path segments the routes above start with (and `/`). The
  * platform server answers any other with this page as a 404 (UI audit
  * #193): its copy is `PAGES` in crates/platform-api/src/page.rs, which a test
  * there checks against this list and `parse`. A new top-level route goes
  * in both. */
-export const TOP = ["p", "chat", "dm", "issues", "runs", "installed", "inbox", "settings", "deploys", "boards", "docs", "design", "t"] as const;
+export const TOP = ["p", "chat", "dm", "issues", "runs", "installed", "inbox", "settings", "deploys", "boards", "docs", "design", "t", "machines"] as const;
 
 export type Route =
   /** `to`: a shell button's place, to open in the current project (./current-project). */
@@ -109,10 +111,13 @@ export type Route =
   | { page: "design" }
   | { page: "deploy"; deploy: string }
   | { page: "team"; team: string; tab: TeamTab }
+  /** The machines, a machine's page or Swarm, in a project (Arugula #989). */
+  | { page: "machines"; project: string; at: MachineAt }
   /** An id-only address, to be put where it belongs (`resolve`). */
   | { page: "find"; what: "chat"; room?: string; msg?: number; thread?: number; view?: "activity" | "saved" | "search" | "threads"; q?: string; all?: boolean }
   | { page: "find"; what: "issue"; issue: string; msg?: number }
   | { page: "find"; what: "run"; run: string; msg?: number }
+  | { page: "find"; what: "machines"; at: MachineAt }
   | { page: "missing"; path: string };
 
 /** A team page's tabs. */
@@ -235,6 +240,10 @@ export function parse(path: string, search = ""): Route {
     const room = idOf(parts[1]);
     return room ? { page: "find", what: "chat", room, ...msg, ...thread } : missing;
   }
+  if (parts[0] === "machines") {
+    const at = parseMachines(parts.slice(1), q);
+    return at ? { page: "find", what: "machines", at } : missing;
+  }
   if (parts[0] === "t" && parts.length === 3) {
     const team = TEAM.exec(parts[1])?.[1];
     const tab = TEAM_TABS.find((t) => t === parts[2]);
@@ -244,6 +253,12 @@ export function parse(path: string, search = ""): Route {
   const project = idOf(parts[1]);
   if (!project) return missing;
   if (parts.length === 2) return { page: "project", project };
+  // The Overview's own name for it, as the rail has it (Arugula #989).
+  if (parts.length === 3 && parts[2] === "overview") return { page: "project", project };
+  if (parts[2] === "machines") {
+    const at = parseMachines(parts.slice(3), q);
+    return at ? { page: "machines", project, at } : missing;
+  }
   if (parts.length === 3 && parts[2] === "settings") {
     const link = q.get("link");
     return { page: "project-settings", project, ...(link && REPO.test(link) ? { link } : {}) };
@@ -351,6 +366,12 @@ function at(r: { msg?: number; thread?: number }): string {
   return q.length ? `?${q.join("&")}` : "";
 }
 
+/** A machine's page's slug: its name, when known. */
+function machineSlug(at: MachineAt, names: Names): string | null {
+  const name = at.at === "machine" ? names(at.machine) : null;
+  return name ? slugOf(name) || null : null;
+}
+
 /** The path for a route, with each id's current slug. */
 export function pathOf(r: Route, names: Names = () => null): string {
   const s = (id: string) => encodeURI(withSlug(id, names(id)));
@@ -432,6 +453,8 @@ export function pathOf(r: Route, names: Names = () => null): string {
       return `/deploys/${r.deploy}`;
     case "team":
       return `/t/${s(r.team)}/${r.tab}`;
+    case "machines":
+      return `/p/${s(r.project)}${machinesPath(r.at, machineSlug(r.at, names))}`;
     case "find":
       if (r.what === "chat") {
         if (r.view === "activity" || r.view === "saved" || r.view === "threads") return `/chat/${r.view}`;
@@ -439,6 +462,7 @@ export function pathOf(r: Route, names: Names = () => null): string {
         return r.room ? `/chat/${s(r.room)}${at(r)}` : "/chat";
       }
       if (r.what === "issue") return `/issues/${s(r.issue)}${r.msg !== undefined ? `?msg=${r.msg}` : ""}`;
+      if (r.what === "machines") return machinesPath(r.at, machineSlug(r.at, names));
       return `/runs/${s(r.run)}${r.msg !== undefined ? `?msg=${r.msg}` : ""}`;
     case "missing":
       return r.path;
