@@ -16,10 +16,10 @@ import { ObjectChip } from "../../shared/ui/state-chip";
 import { Caret, ChevronIcon, IconButton } from "../../shared/ui/icons";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { openPlatform, platformOrigin } from "../platform-links";
-import { getControlSession } from "./people";
+import { getSignedIn } from "../signed-in";
 import { CHANGE, PUT_ON, TAKE_OFF, cardChipText, cardChoices, cardNumber, cardPath, cardPicked } from "./pane-card-text";
 
-const ready = () => getControlSession()?.phase === "ready";
+const ready = () => getSignedIn()?.phase === "ready";
 
 /** Each project's open issues and its boards' issue rows, read once a page. */
 const read = new Map<string, Promise<void>>();
@@ -99,7 +99,8 @@ export function cardItems(client: Client, pane: PaneId): MenuItem[] {
   const project = info?.session_project;
   if (!project) return [];
   const on = info?.on_issue;
-  if (!on) return [{ label: `${PUT_ON}…`, run: () => void pickCard(client, pane), attrs: { "data-card-put": "" } }];
+  // Putting a session on a card reads the project's cards as you: nothing to offer signed out.
+  if (!on) return ready() ? [{ label: `${PUT_ON}…`, run: () => void pickCard(client, pane), attrs: { "data-card-put": "" } }] : [];
   return [
     { label: `Open ${on.issue}`, run: () => goToCard(client, project.id, on.issue, on.boards?.[0]), external: true, attrs: { "data-card-open": "" } },
     { label: `${CHANGE}…`, run: () => void pickCard(client, pane), attrs: { "data-card-change": "" } },
@@ -113,14 +114,18 @@ function menuFrom(client: Client, pane: PaneId, el: HTMLElement) {
 }
 
 /** A pane's card chip, in `room` characters; nothing for a session in no
- * project, or when even its number doesn't fit. On a phone a tap opens the menu, a sheet there. */
+ * project, or when even its number doesn't fit; nor a dashed one while
+ * nobody is signed in here. On a phone a tap opens the menu, a sheet there. */
 export function PaneCardChip({ client, pane, room, phone }: { client: Client; pane: PaneId; room: number; phone?: boolean }) {
+  useSubscribe((fn) => getSignedIn()?.subscribe(fn) ?? (() => {}));
   const info = client.info(pane);
   const project = info?.session_project ?? undefined;
   useCards(project?.id);
   if (!project) return null;
   const on = info?.on_issue ?? null;
   const card = on?.issue ?? null;
+  // No card, and nobody signed in to put it on one: no chip.
+  if (!card && !ready()) return null;
   const issue = card ? issueOf(project.id, card) : undefined;
   const said = cardChipText(project.name, card, issue?.title ?? null, room);
   if (!said) return null;

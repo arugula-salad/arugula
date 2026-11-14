@@ -12,7 +12,7 @@ import { deployTitle } from "../../shared/deploys";
 import { platformFetch } from "../../shared/maintenance";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { openPlatform, platformOrigin } from "../platform-links";
-import { getControlSession } from "./people";
+import { getSignedIn } from "../signed-in";
 import { ChevronIcon } from "../../shared/ui/icons";
 
 /** What the row needs of a waiting deploy (the platform's `deploy_json`). */
@@ -46,7 +46,7 @@ export function waitingSaid(list: { project: { name: string }; environment: { na
 }
 
 export function DeploysWaitingNote() {
-  const session = getControlSession();
+  const session = getSignedIn();
   useSubscribe((fn) => session?.subscribe(fn) ?? (() => {}));
   const ready = !!session && session.phase === "ready" && !!platformOrigin();
   const [list, setList] = useState<Waiting[]>([]);

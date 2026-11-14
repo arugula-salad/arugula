@@ -11,6 +11,7 @@ import { platformFetch } from "../../shared/maintenance";
 import { projectChoices, projectPicked } from "./session-project";
 import { openSandboxes, pickApp } from "../labs-load";
 import { driveItems, getControlSession, shareSession } from "./people";
+import { getSignedIn } from "../signed-in";
 import { hasChat } from "./places";
 import { machineHandle } from "../../shared/chat/agents";
 import { openChanges, openEditor, openIssue, openPort, openPortAt, openPr, openWorkspace, pinBoard, pinChatRoom, openTeamChat } from "../blocks";
@@ -300,7 +301,7 @@ export function sessionItems(client: Client, session: SessionId, rename: () => v
 
 /** Put a session in one of the reader's projects, or in none. */
 async function pickSessionProject(client: Client, session: SessionId) {
-  if (getControlSession()?.phase !== "ready") {
+  if (getSignedIn()?.phase !== "ready") {
     return client.toast("Projects are read as you, through Arugula cloud: open this machine in Arugula cloud, signed in");
   }
   const current = client.state?.sessions.find((x) => x.id === session)?.project;

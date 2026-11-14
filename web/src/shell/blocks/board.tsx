@@ -7,8 +7,8 @@
 //
 // It reads and listens only while the block is shown (an `only_shown`
 // block, mux/blocks.rs): a pinned board in a tab nobody has open asks for
-// nothing. Without a control session on this page there is nothing to read
-// it as, and it says so.
+// nothing. Without someone signed in on this page (control's, or the app)
+// there is nothing to read it as, and it says so.
 
 import { render } from "preact";
 import type { Client } from "../client";
@@ -22,7 +22,7 @@ import { useSubscribe } from "../../shared/ui/hooks";
 import { BlockLoading, EmptyState } from "./block-states";
 import { shellPlatformApi } from "../platform-api";
 import { platformHref } from "../platform-links";
-import { getControlSession } from "../ui/people";
+import { getSignedIn } from "../signed-in";
 import { registerBlock, type BlockView } from "./view";
 
 /** The block's state: its layout entry, which the daemon says whole. */
@@ -31,7 +31,7 @@ export interface BoardState {
 }
 
 function BoardBlock({ client, id, s, shown }: { client: Client; id: PaneId; s: BoardState | null; shown: boolean }) {
-  const session = getControlSession();
+  const session = getSignedIn();
   useSubscribe((fn) => session?.subscribe(fn) ?? (() => {}));
   let body;
   if (!s) body = <BlockLoading what="the board" />;
@@ -98,7 +98,7 @@ async function boardChoices(): Promise<PromptChoice[]> {
 
 /** "Board…": a block for one of the reader's boards, beside `from`. */
 export async function pinBoard(client: Client, o: { from: PaneId }) {
-  if (getControlSession()?.phase !== "ready") {
+  if (getSignedIn()?.phase !== "ready") {
     return client.toast("A board is read as you, through Arugula cloud: open this machine in Arugula cloud, signed in");
   }
   const choices = boardChoices();

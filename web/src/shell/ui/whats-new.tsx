@@ -20,7 +20,7 @@ import { greetingDue } from "./welcome";
 import { advances, notesUrl, PREF, unshown, upTo, usable, type Need, type WhatsNewItem, type WhatsNewRelease } from "../../shared/whats-new";
 import { platformOrigin, openPlatform } from "../platform-links";
 import { COMMANDS } from "./commands";
-import { getControlSession } from "./people";
+import { getSignedIn } from "../signed-in";
 import { CloseIcon, ExternalIcon, IconButton } from "../../shared/ui/icons";
 
 /** This build's version (vite.config.ts, from Cargo.toml), and the
@@ -54,12 +54,12 @@ function onHostedList(): Promise<boolean> {
 
 /** Leave out what this person can't use, with what's known on this page. */
 async function forThem(client: Client, releases: WhatsNewRelease[]): Promise<WhatsNewRelease[]> {
-  const control = getControlSession();
-  const signedIn = control?.phase === "ready" && !!control.account;
+  const me = getSignedIn();
+  const signedIn = me?.phase === "ready" && !!me.account;
   const needsHosted = signedIn && releases.some((r) => r.items.some((it) => it.needs?.includes("hosted")));
   const isHosted = needsHosted && (await onHostedList());
   const can = (n: Need) =>
-    n === "control" ? signedIn : n === "team" ? signedIn && control!.teams.length > 0 : n === "hosted" ? isHosted : client.flag(n.slice(5) as FlagName);
+    n === "control" ? signedIn : n === "team" ? signedIn && me!.teams.length > 0 : n === "hosted" ? isHosted : client.flag(n.slice(5) as FlagName);
   return usable(releases, can);
 }
 

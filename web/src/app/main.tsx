@@ -36,6 +36,10 @@ import type { PlatformApi } from "../shared/platform-api";
 import { appMachineDocs, appMachines, appOverview, appPanes } from "./machines";
 import { appLive } from "./live";
 import { AppSession } from "./session";
+import { signedInOf } from "./signed-in";
+import { setSignedIn } from "../shell/signed-in";
+import { setPlatformHere } from "../shell/platform-links";
+import { followPlatformLinks } from "./platform-here";
 import { accountBackend, setSeenBackend } from "../shared/seen";
 import { arriveHere } from "../platform/chat-nav";
 import { PlatformPage } from "../platform/page";
@@ -54,6 +58,14 @@ followChatBadge(chat);
 setProtoOrigin(null);
 // A room or thread opened cold gets the levels above it, so Back climbs (#817).
 arriveHere();
+// Who's signed in, for the shell's blocks in a machine's pane (a board,
+// a native issue, team chat): the platform's session, as control's page
+// gives its own.
+setSignedIn(signedInOf(session));
+// The platform is this page: the shell's links to it (a card, a board's
+// row, an issue) go to its places here, in place, not to a tab of their own.
+setPlatformHere((path) => go(path));
+followPlatformLinks((path) => go(path), "[data-platform-machines]");
 // The machines through the hub, made once someone is signed in: its
 // links back to control's page need the hub's address, which the
 // platform's first answer says.
