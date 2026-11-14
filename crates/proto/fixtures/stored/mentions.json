@@ -28,5 +28,29 @@
         "fix (Sam's, laptop)"
       ]
     }
+  ],
+  "told": [
+    {
+      "key": "ch_0123456789abcdef/41/wake",
+      "routed": {
+        "step": "named",
+        "session": "wake",
+        "queued": true
+      },
+      "at": 1794700000000
+    },
+    {
+      "key": "ch_0123456789abcdef/42/",
+      "routed": {
+        "step": "inbox",
+        "asked": "docs",
+        "names": [
+          "wake",
+          "fix"
+        ],
+        "silenced": true
+      },
+      "at": 1794700001000
+    }
   ]
 }

@@ -312,6 +312,12 @@ pub enum DaemonOp {
     /// set by hand stays. It answers `done` once they have.
     #[serde(rename = "projects.repo_moved")]
     RepoMoved(RepoMoved),
+    /// Which of these mentions the machine was already told (Arugula #630):
+    /// control asks when the machine connects, and sends again only the
+    /// ones it wasn't. An older daemon answers `unknown`, and gets only the
+    /// ones that found it offline, as before.
+    #[serde(rename = "agents.mentions_held")]
+    MentionsHeld(MentionsHeldAsk),
 }
 
 impl DaemonOp {
@@ -326,6 +332,7 @@ impl DaemonOp {
             DaemonOp::MachineAgents(_) => "agents.sessions",
             DaemonOp::AgentGrantAsk(_) => "agents.grant_ask",
             DaemonOp::RepoMoved(_) => "projects.repo_moved",
+            DaemonOp::MentionsHeld(_) => "agents.mentions_held",
         }
     }
 }
@@ -434,6 +441,37 @@ pub struct AgentGrantAsk {
     /// for the card to say what the grant reaches. Empty: just the room.
     #[serde(default)]
     pub scope_name: String,
+}
+
+/// Mentions control told a machine and has no word of their turn on
+/// (Arugula #630): has it got them?
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct MentionsHeldAsk {
+    pub mentions: Vec<MentionKey>,
+}
+
+/// One mention as a machine was told it: the message, and the session it
+/// named ([`AgentMention::session`]), if it named one.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct MentionKey {
+    pub room: String,
+    pub seq: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<String>,
+}
+
+impl MentionKey {
+    /// The key of `m` as it was told.
+    pub fn of(m: &AgentMention) -> Self {
+        MentionKey { room: m.room.clone(), seq: m.seq, session: m.session.clone() }
+    }
+
+    /// As one string, the session by [`session_slug`]: `room/seq/session`.
+    pub fn text(&self) -> String {
+        format!("{}/{}/{}", self.room, self.seq, self.session.as_deref().map(session_slug).unwrap_or_default())
+    }
 }
 
 /// An agent asks which sessions of a machine it may mention (#577).
@@ -596,6 +634,9 @@ pub enum OpAnswer {
         #[serde(default)]
         sessions: Vec<MachineAgent>,
     },
+    /// An `agents.mentions_held`'s answer (Arugula #630): for each mention
+    /// asked, in order, whether the machine was told it already.
+    Held { held: Vec<bool> },
     /// It doesn't know the op (a daemon from before it).
     Unknown,
     /// It isn't on control's relay now, or didn't answer in time.
