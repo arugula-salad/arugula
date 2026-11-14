@@ -97,6 +97,12 @@ export function resolve(r: Extract<Route, { page: "find" }>): string | null {
     const i = issues.known(r.issue);
     return i ? pathOf({ page: "issue", project: i.project, issue: i.id, ...(r.msg !== undefined ? { msg: r.msg } : {}) }, names) : null;
   }
+  if (r.what === "machines") {
+    // The current project while it's still the reader's, else Personal
+    // (Arugula #989); the fragment (a machine's own place) comes along.
+    const project = session.project(currentProject())?.id ?? own;
+    return pathOf({ page: "machines", project, at: r.at }, names) + location.hash;
+  }
   // A run: its project, once the page has read it (the page asks).
   const x = runs.known(r.run);
   return x ? pathOf({ page: "run", project: x.project, run: x.id, ...(r.msg !== undefined ? { msg: r.msg } : {}) }, names) : null;

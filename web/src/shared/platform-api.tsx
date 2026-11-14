@@ -8,6 +8,7 @@
 import { createContext, type ComponentChildren, type ComponentType } from "preact";
 import { useContext } from "preact/hooks";
 import type { PaneQuote } from "./chat-store";
+import type { MachineAt } from "./machine-paths";
 
 /** A team this account is in, as the platform's views read it: control's
  * `Team` has these and more. */
@@ -100,6 +101,10 @@ export interface PlatformApi {
   machineDoc?: { here(machine: string): boolean; open(machine: string, doc: string, beside?: number): void };
   /** A live pane in a fixed slot: the shell draws its own PaneSlot; a page that can't draw one leaves it out and the drawer shows the session's state card. */
   LivePane?: ComponentType<{ machine: string; pane: string }>;
+  /** The machines, a machine's page and Swarm, in a project (Arugula
+   * #989): the app's, where it reaches machines. A page without it sends
+   * them to control's page. */
+  Machines?: ComponentType<{ project: string; at: MachineAt }>;
 }
 
 const none = () => () => {};

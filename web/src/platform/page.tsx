@@ -40,6 +40,7 @@ import { DocPage, DocsPage } from "./pages/docs";
 import { projectDocs } from "../shared/docs/store";
 import { SessionPage } from "./pages/session";
 import { TeamPage } from "./pages/team";
+import { MachinesPage } from "./pages/machines";
 import { runs } from "./runs";
 import { runTitle } from "./runs-text";
 import { titleOf } from "./titles";
@@ -128,6 +129,8 @@ function body(r: Route, lost: string | null) {
       return <DeployPage id={r.deploy} />;
     case "team":
       return <TeamPage team={r.team} tab={r.tab} />;
+    case "machines":
+      return <MachinesPage project={r.project} at={r.at} />;
     default:
       return <Missing what="Nothing's at this address." />;
   }
