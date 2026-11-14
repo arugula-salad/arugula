@@ -146,3 +146,38 @@ test("the account's prefs are read and set on /api/me/prefs", async () => {
   assert.deepEqual(h.sent.at(-1), { url: "/api/me/prefs", method: "POST", body: '{"app.project":"prj_2","tips":null}', credentials: "same-origin" });
   await assert.rejects(new AppSession(me, CONTROL, ORIGIN, hub({}).send).prefs(), /HTTP 404/);
 });
+
+test("the hub's block domain reaches every target; an older hub's 404, or a value that isn't a host, leaves none", async () => {
+  const at = async (config) => {
+    const h = hub({ "/api/directory": [200, DIR], ...(config ? { "/api/app/config": config } : {}) });
+    const s = new AppSession(me, CONTROL, ORIGIN, h.send);
+    await s.config();
+    await s.refresh();
+    return s;
+  };
+  const on = await at([200, { block_domain: "arugula.dev" }]);
+  assert.equal(on.blockDomain, "arugula.dev");
+  assert.equal(on.target("d1").blockDomain, "arugula.dev");
+  assert.equal(on.target("d2").blockDomain, "arugula.dev");
+  // A dev hub's, with its port.
+  assert.equal((await at([200, { block_domain: "block.localhost:7690" }])).target("d1").blockDomain, "block.localhost:7690");
+  for (const config of [null, [404, {}], [200, { block_domain: null }], [200, {}], [200, { block_domain: "https://evil.example/x" }], [500, { error: "down" }]]) {
+    const s = await at(config);
+    assert.equal(s.blockDomain, null, JSON.stringify(config));
+    assert.equal("blockDomain" in s.target("d1"), false, JSON.stringify(config));
+  }
+});
+
+test("start reads the config before the machines, so the first targets have it", async () => {
+  const h = hub({ "/api/app/config": [200, { block_domain: "arugula.dev" }], "/api/directory": [200, DIR] });
+  const s = new AppSession(me, CONTROL, ORIGIN, h.send);
+  const ready = new Promise((done) => s.subscribe(done));
+  const stop = s.start();
+  await ready;
+  stop();
+  assert.deepEqual(
+    h.sent.map((x) => x.url),
+    ["/api/app/config", "/api/directory"],
+  );
+  assert.equal(s.target("d1").blockDomain, "arugula.dev");
+});

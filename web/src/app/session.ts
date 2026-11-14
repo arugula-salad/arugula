@@ -8,7 +8,8 @@
 // The hub serves the directory, the tokens and the relay on the app's host
 // only once the cloud lets them through there. Until then the directory or
 // a token answers 404: `reachable` goes false, and the app keeps today's
-// links to control's page (`fallback`).
+// links to control's page (`fallback`). Blocks draw in their own origins
+// under the hub's block domain, which `/api/app/config` says.
 
 import type { E2ETarget } from "../shell/client";
 import type { DirDaemon, ForeignEntry, Phase, Team } from "../shell/control";
@@ -33,6 +34,10 @@ export class AppSession implements MachineSource {
   login = "";
   /** Whether the hub reaches machines from this host: null until known. */
   reachable: boolean | null = null;
+  /** Where blocks get origins of their own (`b-<site_key>.<this>`), as
+   * the hub's `/api/app/config` says; null from a hub that serves none, or
+   * one from before it said (blocks then don't draw here). */
+  blockDomain: string | null = null;
   private listeners = new Set<() => void>();
   private tokens: MachineTokens;
   private timer: ReturnType<typeof setInterval> | undefined;
@@ -79,14 +84,30 @@ export class AppSession implements MachineSource {
     this.emit();
   }
 
-  /** Read the machine list now, then every `REFRESH_MS`; the answer stops. */
+  /** Read the hub's config, then the machine list, and the list again
+   * every `REFRESH_MS`; the answer stops. The config comes first, so every
+   * target the page makes has its block domain. */
   start(): () => void {
-    void this.refresh();
+    void this.config().then(() => this.refresh());
     this.timer ??= setInterval(() => void this.refresh(), REFRESH_MS);
     return () => {
       clearInterval(this.timer);
       this.timer = undefined;
     };
+  }
+
+  /** What the hub says about this host (`GET /api/app/config`): its
+   * block domain. A hub from before it (404), or one that can't say, leaves
+   * none. */
+  async config() {
+    try {
+      const res = await this.send("/api/app/config", { credentials: "same-origin" });
+      const v = res.ok ? ((await res.json().catch(() => null)) as { block_domain?: unknown } | null) : null;
+      const d = v?.block_domain;
+      this.blockDomain = typeof d === "string" && /^[a-z0-9.-]+(:\d{1,5})?$/i.test(d) ? d : null;
+    } catch {
+      this.blockDomain = null;
+    }
   }
 
   /** Read the machine list again. */
@@ -134,7 +155,15 @@ export class AppSession implements MachineSource {
     if (!d) return undefined;
     const ws = this.origin.replace(/^http/, "ws");
     const hosted = d.hosted ? { project: d.hosted.project, workspace: d.hosted.workspace } : undefined;
-    return { daemon: { id: d.id, noise: d.cert.noise }, direct: [], relay: `${ws}/api/relay/c/${d.id}`, mux: `${ws}/api/relay/m`, tokens: this.tokens, hosted };
+    return {
+      daemon: { id: d.id, noise: d.cert.noise },
+      direct: [],
+      relay: `${ws}/api/relay/c/${d.id}`,
+      mux: `${ws}/api/relay/m`,
+      tokens: this.tokens,
+      ...(this.blockDomain ? { blockDomain: this.blockDomain } : {}),
+      hosted,
+    };
   }
 
   /** Today's link to control's page for `hash` (`pane=<machine>.<pane>`,
