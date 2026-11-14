@@ -93,7 +93,7 @@ test("a device falls back to its key only when tokens can't reach the machine at
 // five of them on one page, or two on a few tabs, ran past the hub's 3,000).
 // A page's reconnect loop, simulated: each machine tries, and tries again
 // after the client's backoff (250 ms doubling to 5 s) or what the gate says.
-async function simulate({ machines, offline, minutes, status = () => 200, retryAfter }) {
+async function simulate({ machines, minutes, status = () => 200, retryAfter }) {
   let clock = 0;
   let calls = 0;
   const send = async (url) => {
@@ -102,8 +102,7 @@ async function simulate({ machines, offline, minutes, status = () => 200, retryA
     if (s === 200) return new Response(JSON.stringify({ token: `jwt-${calls}` }), { status: 200 });
     return new Response("{}", { status: s, headers: retryAfter ? { "Retry-After": String(retryAfter) } : {} });
   };
-  const online = (id) => Number(id.slice(1)) >= offline;
-  const t = gatedTokens(controlTokens("", send), online, () => clock);
+  const t = gatedTokens(controlTokens("", send), () => clock);
   const next = new Map();
   const retry = new Map();
   for (let i = 0; i < machines; i++) next.set(`m${i}`, 0);
@@ -125,14 +124,9 @@ async function simulate({ machines, offline, minutes, status = () => 200, retryA
   return calls;
 }
 
-test("20 machines, 15 offline, 10 minutes: 5 token asks (was ~1,800, i.e. ~10,800/hour)", async () => {
-  const calls = await simulate({ machines: 20, offline: 15, minutes: 10 });
-  assert.equal(calls, 5, "one per online machine; none for offline ones");
-});
-
 test("a 429 holds every machine on the page back: well under 3,000/hour", async () => {
   // The hub answers 429 throughout: 20 machines, all online, 10 minutes.
-  const calls = await simulate({ machines: 20, offline: 0, minutes: 10, status: () => 429 });
+  const calls = await simulate({ machines: 20, minutes: 10, status: () => 429 });
   // 1 + backoffs of 1, 2, 4 min fit in 10: ~4 asks, ~24/hour.
   assert.ok(calls <= 5, `${calls} asks`);
 });
@@ -141,7 +135,7 @@ test("a 429 honours Retry-After when it's longer, and says so plainly", async ()
   let clock = 0;
   let calls = 0;
   const send = async () => (calls++, new Response("{}", { status: 429, headers: { "Retry-After": "300" } }));
-  const t = gatedTokens(controlTokens("", send), () => true, () => clock);
+  const t = gatedTokens(controlTokens("", send), () => clock);
   await assert.rejects(t.token("a"), (e) => e.status === 429 && e.retryMs === 300_000 && /limiting connections; trying again in 300 s/.test(e.message));
   clock = 299_000;
   await assert.rejects(t.token("b"), (e) => e.retryMs === 1000);

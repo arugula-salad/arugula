@@ -48,14 +48,15 @@ export class NoTokenError extends Error {
 export const TOKEN_BACKOFF_MS = 60_000;
 const TOKEN_BACKOFF_MAX_MS = 15 * 60_000;
 
-/** `tokens`, asked with care (the 2026-11-14 outage: pages retrying offline
+/** `tokens`, asked with care (the 2026-11-14 outage: pages retrying
  * machines spent the account's 3,000 tokens an hour, and every slot freed
- * went to the next retry). Nothing is asked for a machine `online` says is
- * offline; one ask per machine at a time; a 429 stops every machine's asks
- * on this page for `Retry-After`, else a minute and growing; any other
- * refusal (but 404, which says there are no tokens here) stops that
- * machine's the same way. A try held back fails at once, with `retryMs`. */
-export function gatedTokens(tokens: MachineTokens, online: (id: string) => boolean | undefined = () => undefined, now: () => number = () => Date.now()): MachineTokens {
+ * went to the next retry). One ask per machine at a time; a 429 stops every
+ * machine's asks on this page for `Retry-After`, else a minute and growing;
+ * any other refusal (but 404, which says there are no tokens here) stops
+ * that machine's the same way. A try held back fails at once, with
+ * `retryMs`. No machine is skipped for being offline: a hosted one asleep
+ * is woken through the same connect (M182). */
+export function gatedTokens(tokens: MachineTokens, now: () => number = () => Date.now()): MachineTokens {
   let account = { until: 0, strikes: 0 };
   const machines = new Map<string, { until: number; strikes: number }>();
   const asking = new Map<string, Promise<unknown>>();
@@ -80,7 +81,6 @@ export function gatedTokens(tokens: MachineTokens, online: (id: string) => boole
         if (now() < account.until) throw held(account.until, limiting(account.until), 429);
         const m = machines.get(id);
         if (m && now() < m.until) throw held(m.until, `Arugula cloud gave no token for this machine; trying again in ${Math.ceil((m.until - now()) / 1000)} s`, 0);
-        if (online(id) === false) throw held(now() + 5000, "This machine is offline", 0);
         try {
           const t = await tokens.token(id);
           account = { until: 0, strikes: 0 };

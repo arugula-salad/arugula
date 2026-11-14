@@ -1169,7 +1169,7 @@ export class ControlSession {
    * control, not its device key: it isn't one of the account's devices,
    * or `tokenMode` says tokens first. */
   tokens = false;
-  private machineTokens: MachineTokens = gatedTokens(controlTokens(), (id) => this.daemons.find((d) => d.id === id)?.online);
+  private machineTokens: MachineTokens = gatedTokens(controlTokens());
   /** #764: this browser's keys came from a passkey's PRF, and this is
    * the name its certificate takes ("iCloud Keychain passkey"). */
   fromPasskey: string | null = null;

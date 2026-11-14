@@ -54,8 +54,7 @@ export class AppSession implements MachineSource {
     this.control = control;
     this.origin = origin;
     this.send = send;
-    const fetched = controlTokens("", send);
-    const given = gatedTokens(fetched, (id) => this.daemons.find((d) => d.id === id)?.online);
+    const given = gatedTokens(controlTokens("", send));
     this.tokens = {
       token: async (id) => {
         try {
