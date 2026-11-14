@@ -1761,7 +1761,6 @@ pub struct FollowedUp {
     /// (#630): it goes in once they are, or when the pane's owner delivers
     /// it from its card.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    #[cfg_attr(feature = "ts", ts(optional))]
     pub held: bool,
 }
 
