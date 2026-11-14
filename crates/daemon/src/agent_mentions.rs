@@ -999,8 +999,7 @@ impl Daemon for App {
     }
 
     async fn unhooked(&self, pane: PaneId) -> bool {
-        let panes = self.mux.api(Api::Panes).await.unwrap_or_default();
-        panes.iter().any(|p| p.info.id == pane && p.info.unhooked)
+        unhooked(self, pane).await
     }
 
     async fn notice(&self, notice: Notice) {
@@ -1329,6 +1328,13 @@ async fn route(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
         Some(name) => silenced_answer(Some(name)),
         None => routed(RoutedStep::Inbox, None, None, true),
     }
+}
+
+/// Whether `pane` runs Claude Code and none of its hooks were heard there
+/// (#571): a follow-up for it waits, held.
+pub(crate) async fn unhooked(app: &App, pane: PaneId) -> bool {
+    let panes = app.mux.api(Api::Panes).await.unwrap_or_default();
+    panes.iter().any(|p| p.info.id == pane && p.info.unhooked)
 }
 
 /// The answer for a mention that waits in the inbox because the session it
