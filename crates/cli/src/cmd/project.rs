@@ -3,8 +3,9 @@
 //! makes one, and `use` puts the session this runs in in one. A member of
 //! the project who is an admin or maintainer of a repo on GitHub links it;
 //! its PRs and issues then live on the platform. Unlinking stops that at
-//! once, and its rows go within a day. Through control, as this CLI's
-//! account (`arugula login`).
+//! once, and its rows go within a day. `split` moves work out of a project
+//! into another, after a dry run. Through control, as this CLI's account
+//! (`arugula login`).
 
 use std::{path::PathBuf, sync::OnceLock, time::Duration};
 
@@ -73,6 +74,49 @@ pub enum ProjectCmd {
         #[command(flatten)]
         which: Which,
     },
+    /// Move work out of the project: into a new one (`--name`), or one
+    /// that exists (`--into`).
+    ///
+    /// Without `--yes` it only plans, and changes nothing: what to deal
+    /// with before you move, then what comes along (a repo's boards,
+    /// issues and sessions come with it; a board's issues and Docs with
+    /// the board). With `--yes` it moves, then says where the work went
+    /// and how its issues were renumbered.
+    Split(SplitArgs),
+}
+
+#[derive(clap::Args)]
+#[command(group = clap::ArgGroup::new("to").required(true).args(["name", "into"]))]
+pub struct SplitArgs {
+    /// The project to move work out of: its id or name. Default: the
+    /// current one.
+    #[arg(long)]
+    project: Option<String>,
+    /// Move it into a new project with this name.
+    #[arg(long)]
+    name: Option<String>,
+    /// The new project's owner: `personal` (the default), or a team's id
+    /// or name.
+    #[arg(long, conflicts_with = "into")]
+    owner: Option<String>,
+    /// Move it into a project that exists: its id or name.
+    #[arg(long)]
+    into: Option<String>,
+    /// A linked repo, OWNER/NAME. Repeat for more.
+    #[arg(long = "repo")]
+    repos: Vec<String>,
+    /// A board, brd_…. Repeat for more.
+    #[arg(long = "board")]
+    boards: Vec<String>,
+    /// An issue: #N, N or iss_…. Repeat for more.
+    #[arg(long = "issue")]
+    issues: Vec<String>,
+    /// A project Doc, pdc_…. Repeat for more.
+    #[arg(long = "doc")]
+    docs: Vec<String>,
+    /// Move. Without it, only plan.
+    #[arg(long)]
+    yes: bool,
 }
 
 #[derive(clap::Args)]
@@ -97,6 +141,7 @@ pub fn run(cmd: ProjectCmd, json_out: bool) -> anyhow::Result<i32> {
         ProjectCmd::List { archived } => return list(&e, archived, json_out),
         ProjectCmd::New { name, team } => return new(&e, &name, team.as_deref(), json_out),
         ProjectCmd::Use { project } => return use_(&e, &project, json_out),
+        ProjectCmd::Split(a) => return split(&e, &a, json_out),
         ProjectCmd::Repos { which } => {
             let listed = e.api("GET", &format!("/api/projects/{}/repos", project(&which)?), None)?;
             let repos = listed["repos"].as_array().cloned().unwrap_or_default();
@@ -169,15 +214,22 @@ fn list(e: &Enrolled, archived: bool, json_out: bool) -> anyhow::Result<i32> {
 /// The current project, by the order `arugula issue` and MCP go by
 /// (`issue_native::chosen`), or `None` if it can't be told.
 fn current(e: &Enrolled, projects: &Projects) -> Option<String> {
-    let asked = std::env::var("ARUGULA_PROJECT").ok().filter(|p| !p.trim().is_empty());
+    chosen(e, projects, None).ok()
+}
+
+/// `asked`, else `$ARUGULA_PROJECT`, else the rest of the order
+/// `arugula issue` and MCP go by (`issue_native::chosen`).
+fn chosen(e: &Enrolled, projects: &Projects, asked: Option<&str>) -> anyhow::Result<String> {
+    let env = std::env::var("ARUGULA_PROJECT").ok().filter(|p| !p.trim().is_empty());
     let home_of =
         |p: &str| Ok(serde_json::from_value(e.api("GET", &format!("/api/projects/{p}/issue-home"), None)?)?);
     let steps = Steps {
-        asked: asked.as_deref(),
+        asked: asked.or(env.as_deref()),
         session: &|| this_session()?.project.map(|p| p.id),
         dir: &issue_native::here_repo,
     };
-    issue_native::chosen(projects, &home_of, &steps, false).ok().flatten().map(|(id, _)| id)
+    let chosen = issue_native::chosen(projects, &home_of, &steps, false)?;
+    chosen.map(|(id, _)| id).context("no current project: name one with --project")
 }
 
 /// One owner's projects: Personal's (`team` none) or a team's.
@@ -284,6 +336,166 @@ fn use_(e: &Enrolled, want: &str, json_out: bool) -> anyhow::Result<i32> {
     Ok(0)
 }
 
+/// `project split`: the planner's plan, or with `--yes` the move. The
+/// request is the platform's (`/api/projects/{project}/split/plan` and
+/// `/split`, the web's `platform/move/plan.ts`); what comes along is the
+/// planner's to say, never worked out here.
+fn split(e: &Enrolled, a: &SplitArgs, json_out: bool) -> anyhow::Result<i32> {
+    let projects: Projects = serde_json::from_value(e.api("GET", "/api/projects", None)?)?;
+    let from = chosen(e, &projects, a.project.as_deref())?;
+    let to = match (&a.name, &a.into) {
+        (Some(name), _) => {
+            let owner = owner_of(&projects, a.owner.as_deref().filter(|o| !o.eq_ignore_ascii_case("personal")))?;
+            json!({ "kind": "new", "name": name, "owner": owner })
+        }
+        (None, Some(into)) => json!({ "kind": "project", "id": issue_native::project_id(&projects, into)? }),
+        (None, None) => bail!("say where it goes: --name for a new project, or --into one that exists"),
+    };
+    let mut issues = Vec::new();
+    for i in &a.issues {
+        issues.push(issue_id(e, &from, i)?);
+    }
+    for r in &a.repos {
+        if r.split_once('/').is_none_or(|(o, n)| o.is_empty() || n.is_empty() || n.contains('/')) {
+            bail!("--repo: OWNER/NAME, not {r}");
+        }
+    }
+    let ask = json!({ "to": to, "repos": a.repos, "boards": a.boards, "issues": issues, "docs": a.docs });
+    if !a.yes {
+        let plan = e.api("POST", &format!("/api/projects/{from}/split/plan"), Some(&ask))?;
+        if json_out {
+            print_json(&plan)
+        } else {
+            print!("{}", planned(&plan))
+        }
+        return Ok(0);
+    }
+    let (status, got) = e.api_raw("POST", &format!("/api/projects/{from}/split"), Some(&ask))?;
+    let done = match crate::http::json_answer(status, got) {
+        Ok(v) => v,
+        Err(err) if status == 409 && !err.to_string().contains("with that name") => {
+            return Err(err.context("the project changed since this was planned: run it again without --yes"));
+        }
+        Err(err) => return Err(err),
+    };
+    if json_out {
+        print_json(&done)
+    } else {
+        print!("{}", moved(&done))
+    }
+    Ok(0)
+}
+
+/// `--issue`: an `iss_` id as it is, or `#N` (or `N`) in `project`.
+fn issue_id(e: &Enrolled, project: &str, issue: &str) -> anyhow::Result<String> {
+    let issue = issue.trim();
+    if issue.starts_with("iss_") {
+        return Ok(issue.to_owned());
+    }
+    let Ok(n) = issue.trim_start_matches('#').parse::<u64>() else {
+        bail!("--issue: #N, N or iss_…, not {issue}");
+    };
+    let found = e.api("GET", &format!("/api/projects/{project}/issues/{n}"), None).with_context(|| format!("#{n}"))?;
+    found["id"].as_str().map(str::to_owned).with_context(|| format!("#{n} has no id"))
+}
+
+/// What comes along, in the plan's and the move's words: each list, or
+/// page, by its count.
+const ALONG: [(&str, &str, &str); 11] = [
+    ("repos", "repo", "repos"),
+    ("boards", "board", "boards"),
+    ("issues", "issue", "issues"),
+    ("github", "GitHub issue or PR", "GitHub issues and PRs"),
+    ("docs", "Doc", "Docs"),
+    ("machine_docs", "Doc on a machine", "Docs on machines"),
+    ("workspaces", "Cloud workspace", "Cloud workspaces"),
+    ("environments", "environment", "environments"),
+    ("runs", "run", "runs"),
+    ("sessions", "agent session", "agent sessions"),
+    ("drafts", "draft", "drafts"),
+];
+
+/// How many `v` is: a number, a page's `count`, a list's length; GitHub's
+/// issues and PRs; a machine's Docs, summed.
+fn count(key: &str, v: &Value) -> u64 {
+    match (key, v) {
+        ("github", _) => v["issues"].as_u64().unwrap_or(0) + v["prs"].as_u64().unwrap_or(0),
+        ("machine_docs", Value::Array(ms)) => ms.iter().map(|m| m["docs"].as_array().map_or(0, Vec::len) as u64).sum(),
+        (_, Value::Number(n)) => n.as_u64().unwrap_or(0),
+        (_, Value::Array(a)) => a.len() as u64,
+        (_, Value::Object(o)) => o.get("count").and_then(Value::as_u64).unwrap_or(0),
+        _ => 0,
+    }
+}
+
+/// `3 issues`, for each of `along`'s that isn't none, `links` last.
+fn counted(along: &Value) -> Vec<String> {
+    let rows = ALONG.iter().copied().chain([("links", "link", "links")]);
+    rows.filter_map(|(key, one, many)| {
+        let n = count(key, &along[key]);
+        (n > 0).then(|| format!("{n} {}", if n == 1 { one } else { many }))
+    })
+    .collect()
+}
+
+/// `Acme (prj_…)`.
+fn named(p: &Value) -> String {
+    format!("{} ({})", p["name"].as_str().unwrap_or("?"), p["id"].as_str().unwrap_or("?"))
+}
+
+/// The plan, as the web's move screen says it: where it goes, "Before you
+/// move" (the notes), then "Comes along".
+fn planned(plan: &Value) -> String {
+    let to = &plan["to"];
+    let owner = match to["owner"]["kind"].as_str() {
+        Some("team") => to["owner"]["name"].as_str().unwrap_or("a team").to_owned(),
+        _ => "Personal".into(),
+    };
+    let into = match to["id"].as_str() {
+        Some(_) => format!("{}, {owner}'s", named(to)),
+        None => format!("a new project, {}, {owner}'s", to["name"].as_str().unwrap_or("?")),
+    };
+    let first = to["first_number"].as_u64().unwrap_or(1);
+    let mut out = format!("From {} into {into}. Its issues are numbered from #{first}.\n", named(&plan["from"]));
+    if plan["empty"] == true {
+        out += "\nNothing would move: name a repo, board, issue or Doc of the project.\n";
+        return out;
+    }
+    out += "\nBefore you move\n";
+    let notes = plan["notes"].as_array().cloned().unwrap_or_default();
+    if notes.is_empty() {
+        out += "  Nothing.\n";
+    }
+    for n in &notes {
+        out += &format!("  - {}\n", n["text"].as_str().unwrap_or_default());
+    }
+    out += "\nComes along\n";
+    for c in counted(&plan["along"]) {
+        out += &format!("  {c}\n");
+    }
+    out += "\nNothing has moved: run it again with --yes to move.\n";
+    out
+}
+
+/// The move: where it went, what moved, and each issue's new number.
+fn moved(done: &Value) -> String {
+    let what = counted(&done["moved"]);
+    let what = if what.is_empty() { "nothing".to_owned() } else { what.join(", ") };
+    let mut out = format!("Moved into {}: {what}.\n", named(&done["to"]));
+    let issues = done["issues"].as_array().cloned().unwrap_or_default();
+    if !issues.is_empty() {
+        out += "Renumbered:\n";
+        for i in &issues {
+            let n = |k: &str| i[k].as_u64().map_or("?".into(), |n| n.to_string());
+            out += &format!("  #{} → #{}\n", n("from"), n("to"));
+        }
+    }
+    if let Some(id) = done["id"].as_str() {
+        out += &format!("The split is {id}.\n");
+    }
+    out
+}
+
 /// The session this runs in.
 pub struct ThisSession {
     pub id: SessionId,
@@ -385,6 +597,10 @@ mod tests {
         assert!(ok(&["arugula", "project", "use", "personal"]));
         assert!(!ok(&["arugula", "project", "use"]), "it needs a project");
         assert!(ok(&["arugula", "project", "repos", "--project", "Acme"]));
+        assert!(ok(&["arugula", "project", "split", "--name", "App", "--repo", "a/b", "--repo", "a/c", "--yes"]));
+        assert!(ok(&["arugula", "project", "split", "--into", "Web", "--issue", "#4", "--doc", "pdc_1"]));
+        assert!(!ok(&["arugula", "project", "split", "--repo", "a/b"]), "it needs somewhere to go");
+        assert!(!ok(&["arugula", "project", "split", "--into", "Web", "--owner", "Acme"]), "--owner is a new one's");
     }
 
     fn listed_projects() -> Projects {
