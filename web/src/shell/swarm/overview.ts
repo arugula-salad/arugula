@@ -9,7 +9,7 @@
 // session's card is its panes' card).
 
 import type { BoardRow, BoardView, OnIssue } from "../../shared/proto";
-import { panesOf, type SessionsByCard, type ProjectSession } from "../../shared/project-sessions.ts";
+import { hubStanding, panesOf, type SessionsByCard, type ProjectSession } from "../../shared/project-sessions.ts";
 
 /** How a card or a session stands, most urgent first: it waits on you, it
  * failed, it's quiet, it's working, or it has no one on it. */
@@ -225,15 +225,6 @@ export function overviewOf(project: string, views: BoardView[], panes: OvPane[],
 /** The pane a session's tile opens: one that needs you, else its agent, else its first. */
 function leadOf(panes: OvPane[]): OvPane {
   return panes.find((p) => p.standing === "needs") ?? panes.find((p) => p.agent) ?? panes[0];
-}
-
-/** A session the hub names but the machines don't show here, by the state it says. */
-function hubStanding(s: ProjectSession): Standing {
-  const states = s.kind === "machine" ? s.panes.map((p) => p.state ?? "") : [s.state];
-  if (states.some((x) => x === "needs_input" || x === "waiting")) return "needs";
-  if (states.some((x) => x === "failed" || x === "error")) return "failed";
-  if (states.some((x) => x === "working" || x === "running")) return "working";
-  return "quiet";
 }
 
 /** Cards that need you first, then failures, then quiet ones, then working ones; then the one that moved last. */
