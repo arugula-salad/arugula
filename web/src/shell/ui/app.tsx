@@ -58,7 +58,12 @@ import { useHoverToSwitchTabs } from "./panes/drop";
 import { currentPlace } from "./places";
 import { shellTitle } from "./titles";
 
-export function App({ client, cell }: { client: Client; cell: Cell }) {
+/** Whose frame the workspace is drawn in (Arugula #989): its own, with the
+ * shell's rail (the daemon's page, control's), or the app's, whose rail
+ * holds the places instead. */
+export type Frame = "own" | "app";
+
+export function App({ client, cell, frame = "own" }: { client: Client; cell: Cell; frame?: Frame }) {
   useSubscribe((fn) => client.subscribe(fn));
   const phone = usePhone();
   const [renaming, setRenaming] = useState<Renaming>(null);
@@ -169,7 +174,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
     const stale = !!state && !client.connected;
     return (
       <div class={stale ? "app ws frame stale" : "app ws frame"}>
-        <Rail client={client} />
+        {frame === "own" && <Rail client={client} />}
         <div class="ws-shell-body">
           <ContextHeader client={client} setRenaming={setRenaming} />
           <div class="ws-row">

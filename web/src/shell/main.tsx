@@ -5,7 +5,7 @@ import { chat } from "../shared/chat-store";
 import { shellPlatformApi } from "./platform-api";
 import { platformOrigin, setPlatformOrigin } from "./platform-links";
 import { platformPath } from "./fragments";
-import { POP_HASH, PopOutPage } from "./ui/panes/pop-out";
+import { POP_HASH } from "./ui/panes/pop-out";
 import { PlatformApiContext } from "../shared/platform-api";
 // Arugula web client: tabs and splits of terminals owned by the daemon.
 
@@ -30,9 +30,9 @@ import "../shared/buttons.css";
 import { apply as applyAppearance } from "../shared/appearance";
 import { AppearanceLayer } from "../shared/ui/appearance";
 import { Client } from "./client";
-import { Fleet, type HostRef } from "./fleet";
 import { directory } from "./hosts";
-import { App } from "./ui/app";
+import { followSource, Machines } from "./machines";
+import { Connecting, MachineView, Swarm } from "./views";
 import { openTeamChat } from "./blocks";
 import { measureCell } from "./ui/cells";
 import { currentSubscription, desktopPush, enableControlPush, registerWorker, setPushBackend, subscriptionParts } from "./push";
@@ -44,15 +44,12 @@ import { useControl } from "./trust/common";
 import { ControlGate } from "./trust/gate";
 import { NoMachines } from "./trust/machines";
 import { accountItems, ControlOverlay, controlMenuItems } from "./trust/overlay";
-import { setFleet, setHostMenuExtras } from "./ui/hosts";
-import { setControlSession, shareSession } from "./ui/people";
+import { setHostMenuExtras } from "./ui/hosts";
+import { setControlSession } from "./ui/people";
 import { unhex } from "./e2e/cert.ts";
-import { usePhone, useSubscribe } from "../shared/ui/hooks";
-import { useEffect, useState } from "preact/hooks";
-import { SwarmView } from "./swarm/view";
-import { AppBar, setAccount } from "./ui/app-bar";
+import { useSubscribe } from "../shared/ui/hooks";
+import { setAccount } from "./ui/app-bar";
 import { fakeSwarm } from "./swarm/fake";
-import { closeSwarm, onSwarmRoute, swarmRoute } from "./swarm/route";
 import { followChatBadge, setupDesktop, tauriInvoke } from "../shared/desktop";
 import { installKeys } from "./ui/keys";
 import { openDeveloper } from "./ui/developer";
@@ -176,20 +173,9 @@ if (session) {
         ),
       () => {},
     );
+  followSource(session);
   let seenAccount = "";
   session.subscribe(() => {
-    directory.setControl(
-      session.daemons.map((d) => ({
-        name: d.name,
-        id: d.id,
-        urls: d.urls,
-        transport: "control" as const,
-        added_ms: 0,
-        last_seen_ms: d.last_seen,
-        status: d.online ? "online" : "offline",
-      })),
-      session.stale,
-    );
     // M123: chat is control's, once the account is in (it asks whether
     // control's `chat` flag is on for it).
     if (session.phase === "ready" && session.account && seenAccount !== session.account) {
@@ -204,46 +190,15 @@ if (session) {
   void session.boot();
 }
 
-function makeClient(base: string): Client {
-  if (linkTarget) return new Client(`e2e:${linkTarget.daemon.id}`, linkTarget);
-  if (session && base.startsWith("e2e:")) return new Client(base, session.target(base.slice(4)));
-  return new Client(base);
-}
-
-// One client for the host shown (M4a); switching hosts closes it and opens
-// one to the other daemon, so hidden hosts hold no connection.
-let client = makeClient(directory.base());
-const swapped = new Set<() => void>();
-/** Call `done` with the shown machine's client, again on each change it
- * announces and on each swap to another, until it returns true. What the
- * page opens from its address on load needs this: on control's page the
- * client at first is a stand-in on control's own origin, there until the
- * machine list comes and `follow` swaps in the machine's (relayed) one. A
- * request through the stand-in reaches control, not the machine. */
-function untilShown(done: (c: Client) => boolean) {
-  let on: Client | null = null;
-  let off = () => {};
-  const check = () => {
-    if (done(client)) {
-      off();
-      swapped.delete(check);
-      return;
-    }
-    // Once per client: re-adding a listener while it emits would revisit it.
-    if (on === client) return;
-    off();
-    on = client;
-    off = client.subscribe(check);
-  };
-  swapped.add(check);
-  check();
-}
+// The machine shown, and every machine for the swarm (./machines).
+const machines = new Machines(session, linkTarget);
+const untilShown = (done: (c: Client) => boolean) => machines.untilShown(done);
 // Inside the desktop app: its titlebar (M46). The page's keys, the app's
 // among them (ui/keys.ts).
 setupDesktop();
 // Chat's unread on the app's Dock badge (#498).
 followChatBadge(chat);
-installKeys(() => client);
+installKeys(() => machines.client);
 /** Hand a machine of yours the teams this browser pinned (#233), and drop
  * those it has that this account isn't in now (only once the teams have
  * loaded: a failed load isn't "none"). */
@@ -262,6 +217,7 @@ async function syncPins(c: Client, session: ControlSession) {
 }
 
 const connect = () => {
+  const client = machines.client;
   // M103: the shown machine's usage reports, counted only on a page that
   // talks to its daemon directly (control's page counts its own, M104).
   // Asked there, and on control's page once the account's question is out
@@ -274,7 +230,7 @@ const connect = () => {
     directory.setPath(null);
     let pinned = false;
     c.subscribe(() => {
-      if (c !== client) return;
+      if (c !== machines.client) return;
       directory.setPath(c.connected ? c.path : null);
       // A machine of yours learns the teams this browser pinned (#233), so
       // their members can be invited there, and forgets those this account
@@ -300,8 +256,8 @@ const root = document.getElementById("root")!;
 // #497: a pane popped out into a window of its own (`#pop=<daemon>.<pane>`):
 // the page shows it alone, with no rail, tabs or other panes.
 const popAt = POP_HASH.exec(location.hash);
-const shell = () =>
-  popAt ? <PopOutPage client={client} pane={Number(popAt[2])} daemon={popAt[1]} /> : <App key={client.base} client={client} cell={cell} />;
+const pop = popAt ? { daemon: popAt[1], pane: Number(popAt[2]) } : null;
+const shell = () => <MachineView client={machines.client} cell={cell} pop={pop} />;
 
 function ControlRoot({ s }: { s: ControlSession }) {
   useControl(s);
@@ -309,7 +265,7 @@ function ControlRoot({ s }: { s: ControlSession }) {
   const body =
     s.phase !== "ready" ? (
       <ControlGate s={s} />
-    ) : client.e2e ? (
+    ) : machines.client.e2e ? (
       shell()
     ) : s.daemons.length ? (
       // Machines, but none picked yet: not "Add a machine" (#749).
@@ -325,126 +281,33 @@ function ControlRoot({ s }: { s: ControlSession }) {
   );
 }
 
-/** Between knowing the account's machines and showing one. */
-function Connecting({ name }: { name: string }) {
-  return (
-    <div class="empty" data-connecting>
-      <p>Connecting to {name || "your machine"}…</p>
-    </div>
-  );
-}
-
+// The account's usage question comes and goes with its state.
+if (!linkTarget) session?.subscribe(() => machineTelemetryChanged());
 // Every host at once (M25): a summaries-only connection to each, for the
 // swarm. The tab view above still connects for real to the one it shows.
-const fleet = new Fleet((h) => {
-  if (session) {
-    const t = h.id ? session.target(h.id) : undefined;
-    return t ? new Client(`e2e:${h.id}`, t, true) : null;
-  }
-  return new Client(directory.base(h.name), undefined, true);
-});
-const fleetHosts = (): HostRef[] =>
-  directory.names.map((name) => {
-    const h = directory.find(name);
-    const d = session?.daemons.find((x) => x.id === h?.id);
-    return {
-      name,
-      id: h?.id,
-      transport: name === directory.home ? "home" : (h?.transport ?? "tailnet"),
-      status: h?.status,
-      owner: d?.account ? (d.owner_name ?? d.account) : undefined,
-      team: d?.team ?? null,
-      ownerId: d?.account,
-      teamName: d?.team ? session?.teams.find((t) => t.team === d.team)?.roster.name : undefined,
-      hosted: !!d?.hosted,
-    };
-  });
-fleet.onOpen = (host, pane, share, reveal, missed) => {
-  directory.select(host);
-  // The host's client is made when the directory switches, then connects:
-  // show the pane once it knows it.
-  const until = Date.now() + 15_000;
-  const go = () => {
-    if (client.base === directory.base(host) && client.info(pane)) {
-      client.setActive(pane);
-      if (share) shareFrom(pane);
-      // A chat quote (M123): its lines in the pane, once it has drawn.
-      // A search hit (native #245) says so when it's scrolled out.
-      if (reveal)
-        requestAnimationFrame(() => {
-          if (!client.panes.get(pane)?.view.reveal(reveal) && missed) client.toast(missed);
-        });
-      return;
-    }
-    if (Date.now() < until) setTimeout(go, 100);
-  };
-  go();
-};
-/** #237: the share picker for a pane's session, from a card or a push,
- * once the pane is shown. Only its owner shares (as in the session menu);
- * anyone else just gets the pane. */
-const shareFrom = (pane: number) => {
-  const s = client.sessionOfPane(pane);
-  if (s !== null && !client.state?.roles) shareSession(s);
-};
-setFleet(fleet);
-if (!linkTarget) {
-  // Teams load after the directory: their names come with them (M30).
-  session?.subscribe(() => {
-    machineTelemetryChanged();
-    if (session.login) fleet.me = session.login;
-    fleet.setHosts(fleetHosts());
-  });
-  directory.subscribe(() => fleet.setHosts(fleetHosts()));
-  fleet.setHosts(fleetHosts());
-  fleet.start();
-}
+machines.startFleet();
 
-/** The swarm (M26) over the tab view, when `/#swarm` says so. */
-function Swarm({ client }: { client: Client }) {
-  const [, set] = useState(0);
-  useEffect(() => onSwarmRoute(() => set((n) => n + 1)), []);
-  // The home machine's name arrives with the directory, after a cold load.
-  useSubscribe((fn) => directory.subscribe(fn));
-  // The shared bar shows once the shown machine has answered.
-  useSubscribe((fn) => client.subscribe(fn));
-  const phone = usePhone();
-  const route = swarmRoute();
-  if (!route || linkTarget) return null;
-  if (session && session.phase !== "ready") return null;
-  const f = route.focus;
-  // A notification through control names its daemon; else it's this page's.
-  const host = f ? (f.daemon ? directory.list?.hosts.find((h) => h.id === f.daemon)?.name : (directory.home ?? directory.names[0])) : undefined;
-  const view = (bar: boolean) => <SwarmView fleet={fleet} back={closeSwarm} focus={f && host ? { host, pane: f.pane } : null} board={route.board} inBar={bar} />;
-  // The bar every place shares, over it, once a machine is shown; a phone
-  // has its own header, and the swarm its Panes button.
-  if (!client.state || phone) return view(false);
-  return (
-    <div class="swarm-shell">
-      <AppBar client={client} at="swarm" all />
-      {view(true)}
-    </div>
-  );
-}
-
-const draw = () =>
+const draw = () => {
+  const client = machines.client;
   render(
     // What a pane's thread reaches the shell through (M147).
     <PlatformApiContext.Provider value={shellPlatformApi(client)}>
       {session ? <ControlRoot key={client.base} s={session} /> : shell()}
-      {!popAt && <Swarm key={client.base} client={client} />}
+      {!popAt && <Swarm key={client.base} machines={machines} client={client} ready={() => !session || session.phase === "ready"} />}
       <AgentDialogLayer />
       <AppearanceLayer />
       <MachineTelemetryLayer />
     </PlatformApiContext.Provider>,
     root,
   );
+};
 draw();
 connect();
 
 // A link that ended goes (M30: what it showed isn't kept greyed) and stops
 // asking: the machine won't take it back.
 if (linkTarget) {
+  const client = machines.client;
   const off = client.subscribe(() => {
     if (!client.revoked) return;
     off();
@@ -454,46 +317,15 @@ if (linkTarget) {
 }
 
 // A link's page shows its one daemon: no host list.
-if (!linkTarget) {
-  const follow = () => {
-    const base = directory.base();
-    if (base === client.base) return;
-    client.close();
-    client = makeClient(base);
-    draw();
-    connect();
-    for (const check of [...swapped]) check();
-  };
-  directory.subscribe(follow);
-  // Control's machine list may have come while this module waited on the
-  // fonts above (#749): its change was announced before anyone listened,
-  // and the page would show "Add a machine" until the next refresh.
-  follow();
-  void directory.refresh();
-}
-
+machines.onSwap(() => {
+  draw();
+  connect();
+});
+machines.followDirectory();
 
 // Opened from a notification (`#pane=N`), or told to by the service
 // worker. Notifications come from the home daemon, so show it first.
-const openPane = (pane: number, daemon?: string, share = false, follow?: string) => {
-  // From a notification through control: that daemon's host first.
-  const host = daemon ? directory.list?.hosts.find((h) => h.id === daemon)?.name : undefined;
-  if (host) directory.select(host);
-  else if (directory.home !== null) directory.select(directory.home);
-  let watched = false;
-  const go = () => {
-    if (!client.info(pane)) return false;
-    client.setActive(pane);
-    if (share) shareFrom(pane);
-    // Once: watching emits, and this runs again from inside that.
-    if (follow && !watched) {
-      watched = true;
-      client.watch(follow, pane);
-    }
-    return true;
-  };
-  untilShown(go);
-};
+const openPane = (pane: number, daemon?: string, share = false, follow?: string) => machines.openPane(pane, daemon, share, follow);
 // The desktop app up to 0.26.3 names its events `arugula:…` only when the
 // page says it's from after the rename (#505); without this they arrive as
 // `illogical:…`, which nothing here hears (#708). Newer apps always send
@@ -580,11 +412,11 @@ window.addEventListener("hashchange", chatBlockAtHash);
 // cloud step, on an open page (the event) or a new one
 // (`#getting-started=cloud`).
 window.addEventListener("arugula:getting-started", (e) =>
-  openGettingStarted((e as CustomEvent<Section>).detail, client),
+  openGettingStarted((e as CustomEvent<Section>).detail, machines.client),
 );
 const startAt = /^#getting-started=(\w+)$/.exec(location.hash);
 if (startAt) {
-  openGettingStarted(startAt[1] as Section, client);
+  openGettingStarted(startAt[1] as Section, machines.client);
   history.replaceState(null, "", "/");
 }
 
@@ -612,15 +444,15 @@ window.addEventListener("hashchange", developerAtHash);
 Object.assign(window, {
   __arugula: {
     get client() {
-      return client;
+      return machines.client;
     },
     hosts: directory,
     control: session,
     /** M123: control's chat (rooms, messages, the live stream). */
     chat,
-    fleet,
+    fleet: machines.fleet,
     /** M26: made-up panes in the swarm (frame-rate check, screenshots). */
-    swarmFake: (n: number) => fakeSwarm(fleet, n),
+    swarmFake: (n: number) => fakeSwarm(machines.fleet, n),
     /** M26: the swarm's field, when it's shown. */
     get swarm() {
       return (window as unknown as { __swarm?: unknown }).__swarm ?? null;
@@ -628,20 +460,20 @@ Object.assign(window, {
     /** M23: a second connection to the same daemon that only takes
      * summaries (what the swarm and the fleet use). */
     summaries: () => {
-      const c = new Client(client.base, client.e2e, true);
+      const c = new Client(machines.client.base, machines.client.e2e, true);
       c.connect();
       return c;
     },
     cell,
-    text: (pane: number) => client.panes.get(pane)?.view.text() ?? client.blocks.get(pane)?.view.text() ?? "",
-    screen: (pane: number) => client.panes.get(pane)?.view.screen() ?? "",
+    text: (pane: number) => machines.client.panes.get(pane)?.view.text() ?? machines.client.blocks.get(pane)?.view.text() ?? "",
+    screen: (pane: number) => machines.client.panes.get(pane)?.view.screen() ?? "",
     size: (pane: number) => {
-      const v = client.panes.get(pane)?.view;
+      const v = machines.client.panes.get(pane)?.view;
       return v ? [v.cols, v.rows] : null;
     },
-    offset: (pane: number) => client.panes.get(pane)?.offset ?? null,
+    offset: (pane: number) => machines.client.panes.get(pane)?.offset ?? null,
     /** #1049: whether a terminal draws with WebGL now. */
-    webgl: (pane: number) => client.panes.get(pane)?.view.webglOn ?? null,
-    selection: (pane: number) => client.panes.get(pane)?.view.selection() ?? "",
+    webgl: (pane: number) => machines.client.panes.get(pane)?.view.webglOn ?? null,
+    selection: (pane: number) => machines.client.panes.get(pane)?.view.selection() ?? "",
   },
 });
