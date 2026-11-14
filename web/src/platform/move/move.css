@@ -46,3 +46,11 @@
 .move-said {
   margin: var(--space-4) 0 0;
 }
+
+/* After a split (split-note.tsx, Arugula #972): the note under the bar, its
+   Undo beside the words. */
+.split-note {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}

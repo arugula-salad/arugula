@@ -17,7 +17,7 @@ import { useSubscribe } from "../../shared/ui/hooks";
 import { BlockLoading, EmptyLine, EmptyState } from "../../shared/ui/block-states";
 import { Card } from "../../shared/ui/card";
 import { PageHeader } from "../../shared/ui/page-header";
-import { names } from "../links";
+import { homes, names } from "../links";
 import { follow, go, pathOf } from "../router";
 import { SectionHead } from "../../shared/ui/section-head";
 import { controlOrigin, session, type PlatformProject } from "../session";
@@ -278,6 +278,8 @@ export function BoardPage({ project, board }: { project: string; board: string }
         write={mayWrite(p)}
         platform={(path) => path}
         keepInUrl
+        // A board moved to another project (Arugula #972): the page's address goes to its new one.
+        onProject={(home) => home !== project && homes.set(board, home)}
         back={
           <p class="dim">
             {/* The swarm is the shell's, on control's page (#466). */}

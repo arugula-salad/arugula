@@ -1,6 +1,8 @@
 // What a move takes (Arugula #971), as the platform's split planner says it
 // (`POST /api/projects/{project}/split/plan`, #968), and the move itself
-// (`POST /api/projects/{project}/split`, #969), which takes the same request.
+// (`POST /api/projects/{project}/split`, #969), which takes the same request;
+// then a project's recent splits (`GET /api/projects/{project}/splits`) and
+// their undo (`POST …/splits/{id}/undo`, #972).
 // The screen draws the planner's answer and never works one out itself. The
 // rules are the planner's: work goes with its repo; picking a board picks
 // its repo; a board with no repo moves on its own; an issue with no repo goes
@@ -86,6 +88,8 @@ export interface Plan {
     boards: { id: string; title: string; repo?: string; rows: number; closed: boolean; docs: string[] }[];
     /** Issues on no repo and no board: picked one by one. */
     issues: { id: string; number: number; title: string; closed: boolean }[];
+    /** The project's Docs; `board`, the first board it's on. */
+    docs: { id: string; title: string; board?: string }[];
   };
 }
 
@@ -97,11 +101,13 @@ export interface Done {
   moved: Record<"repos" | "boards" | "issues" | "docs" | "workspaces" | "environments" | "runs" | "sessions" | "drafts" | "links", number>;
 }
 
-/** A refusal: its status and the platform's words. */
+/** A refusal: its status, the platform's words, and a 409's `reason`
+ * (`changed`, `name_taken`, `already_undone`, `too_old`, `in_the_way`). */
 export class Refused extends Error {
   constructor(
     readonly status: number,
     message: string,
+    readonly reason?: string,
   ) {
     super(message);
   }
@@ -112,10 +118,10 @@ export const PAGE_MAX = 200;
 
 const base = (project: string) => `/api/projects/${encodeURIComponent(project)}/split`;
 
-async function post<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
-  const r = await platformFetch(path, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal });
+async function post<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+  const r = await platformFetch(path, { method: "POST", credentials: "same-origin", signal, ...(body === undefined ? {} : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }) });
   const v = (await r.json().catch(() => ({}))) as T & { error?: string; reason?: string };
-  if (!r.ok) throw new Refused(r.status, refusalOf(r.status, v));
+  if (!r.ok) throw new Refused(r.status, refusalOf(r.status, v), v.reason);
   return v;
 }
 
@@ -126,8 +132,44 @@ export const plan = (project: string, ask: Ask, signal?: AbortSignal) => post<Pl
  * project's name its owner has already. */
 export const move = (project: string, ask: Ask) => post<Done>(base(project), { ...ask, limit: undefined, after: undefined });
 
+/** One of a project's splits of the last 7 days, out of it or into it. */
+export interface Split {
+  id: string;
+  direction: "out" | "in";
+  /** The project on the other side ("a project" when the reader can't read it). */
+  other: { id: string; name: string };
+  moved: Done["moved"];
+  moved_at: number;
+  undone_at?: number;
+  /** Whether the reader may undo it now. It may still be refused. */
+  may_undo: boolean;
+}
+
+/** What an undo answers. */
+export interface Undone {
+  id: string;
+  /** The project the work went back to. */
+  to: { id: string; name: string };
+  /** The project it was in was made for the split, and is gone. */
+  deleted: boolean;
+  moved: Done["moved"];
+  /** Each issue's number in the project it was split into, and again now. */
+  issues: { id: string; from: number; to: number }[];
+}
+
+/** The project's splits of the last 7 days, the latest first. */
+export async function splits(project: string): Promise<Split[]> {
+  const r = await platformFetch(`${base(project)}s`, { credentials: "same-origin" });
+  const v = (await r.json().catch(() => ({}))) as { splits?: Split[]; error?: string; reason?: string };
+  if (!r.ok) throw new Refused(r.status, refusalOf(r.status, v), v.reason);
+  return v.splits ?? [];
+}
+
+/** Undo split `id`, on `project`, the one the work left. */
+export const undo = (project: string, id: string) => post<Undone>(`${base(project)}s/${encodeURIComponent(id)}/undo`);
+
 /** A 409 that says plan again, not a name that's taken. */
-export const changed = (e: unknown) => e instanceof Refused && e.status === 409 && !/with that name/.test(e.message);
+export const changed = (e: unknown) => e instanceof Refused && e.status === 409 && e.reason === "changed";
 
 /** What the person has picked. Boards are the ones with no repo (a repo's
  * boards come with it); issues, the loose ones; `machineDocs`, a machine's
@@ -147,13 +189,9 @@ export interface Picks {
 
 export const noPicks = (owner = "personal"): Picks => ({ target: "new", name: "", owner, repos: new Set(), boards: new Set(), issues: new Set(), docs: new Set(), machineDocs: new Set() });
 
-/** The planner wants a new project's name to answer even with nothing
- * picked: this one stands in until the person types theirs. */
-const UNNAMED = "New project";
-
 /** The request for `p`. */
 export function askOf(p: Picks): Ask {
-  const to: To = p.target === "new" ? { kind: "new", name: p.name.trim() || UNNAMED, owner: p.owner === "personal" ? { kind: "personal" } : { kind: "team", id: p.owner } } : { kind: "project", id: p.target };
+  const to: To = p.target === "new" ? { kind: "new", name: p.name.trim(), owner: p.owner === "personal" ? { kind: "personal" } : { kind: "team", id: p.owner } } : { kind: "project", id: p.target };
   return { to, repos: [...p.repos], boards: [...p.boards], issues: [...p.issues], docs: [...p.docs], limit: PAGE_MAX };
 }
 

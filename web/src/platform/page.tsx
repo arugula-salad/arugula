@@ -11,7 +11,7 @@ import { MaintenanceNote } from "../shared/ui/maintenance-note";
 import { PageHeader } from "../shared/ui/page-header";
 import { PlatformBar } from "./bar";
 import { WithRail } from "./rail";
-import { names, resolve, roomElsewhere } from "./links";
+import { homes, movedHome, names, resolve, roomElsewhere } from "./links";
 import { currentProject, entryPath, type Entry } from "./current-project";
 import { slugIn } from "./paths";
 import { arrive, openingChat } from "./chat-nav";
@@ -32,6 +32,7 @@ import { InboxPage } from "./pages/inbox";
 import { Missing, ProjectHome } from "./pages/project";
 import { Installed, ProjectSettings } from "./pages/project-settings";
 import { MovePage } from "./move/move-page";
+import { SplitNote } from "./move/split-note";
 import { DesignPage } from "./pages/design";
 import { SettingsPage } from "./pages/settings";
 import { OwnerSettings } from "./pages/owner-settings";
@@ -167,6 +168,7 @@ function Shell({ children }: { children: preact.ComponentChildren }) {
       <WithRail>
         <PlatformBar />
         <MaintenanceNote />
+        <SplitNote />
         <main class="platform-main">{children}</main>
       </WithRail>
       <Toast />
@@ -312,8 +314,11 @@ function useTitle(r: Route) {
  * room of another project's goes to its own (UI audit #169). The hash stays:
  * it can name a Doc's tab. */
 function useSlug(r: Route) {
+  // An issue, Doc or board moved by a split goes to its new project's address (Arugula #972).
+  useSubscribe((fn) => homes.subscribe(fn));
+  useSubscribe((fn) => issues.subscribe(fn));
   const known = (id: string) => names(id) ?? slugIn(location.pathname, id);
-  const want = r.page === "missing" || r.page === "find" || (r.page === "home" && r.to) ? null : (roomElsewhere(r) ?? pathOf(r, known));
+  const want = r.page === "missing" || r.page === "find" || (r.page === "home" && r.to) ? null : (roomElsewhere(r) ?? movedHome(r) ?? pathOf(r, known));
   useEffect(() => {
     if (want && want !== location.pathname + location.search && session.state === "ready") go(want + location.hash, true);
   }, [want, session.state]);

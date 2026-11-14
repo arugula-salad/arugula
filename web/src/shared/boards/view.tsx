@@ -76,6 +76,7 @@ export function BoardPanel({
   back,
   write = true,
   keepInUrl = false,
+  onProject,
 }: {
   id: string;
   /** False for a block that isn't on screen: it reads nothing then. */
@@ -88,6 +89,8 @@ export function BoardPanel({
   write?: boolean;
   /** Keep the find text and the Label and Person menus in the URL's hash (#547), so a link keeps them. The shell's block keeps them in memory. */
   keepInUrl?: boolean;
+  /** The board's project, once it's read: the platform's page puts its address right after a move (Arugula #972). */
+  onProject?: (project: string) => void;
 }) {
   const { toast, teams } = usePlatformApi();
   const nameOf = (account: string) => teams().flatMap((t) => t.roster.members).find((m) => m.account === account)?.name;
@@ -172,6 +175,7 @@ export function BoardPanel({
   const project = view?.board.project;
   useEffect(() => {
     if (shown && project) void boards.plane(project).then(setPlane);
+    if (project) onProject?.(project);
   }, [project, shown]);
 
   const again = () => {
