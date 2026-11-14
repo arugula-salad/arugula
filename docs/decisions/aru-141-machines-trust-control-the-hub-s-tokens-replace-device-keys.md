@@ -121,9 +121,17 @@ A daemon takes the hub's public keys from control when it joins and refreshes
 them as they rotate (aru-106's overlapping keys). It checks the signature,
 `aud`, `exp` and `jti` itself, so a relay bug can't hand one machine's token to
 another. A client asks again before the token expires; a channel already open
-stays open until the person is removed, when the relay closes it. A read-only
-link carries a token of this kind, `viewer` for one session, with the link's
-expiry.
+stays open until the person is removed, when the relay closes it.
+
+**Read-only links keep their own keys** (amended 2026-11-13, building step 2).
+A machine token lives five minutes and is taken once, so it can't be a link
+that lasts a day and is opened many times. A link stays what it is: a one-off
+key in its fragment that the daemon lists as a viewer of one session until the
+link expires (aru-055's links, `acl.link_by_key`). It never used the account's
+device keys, so nothing about it changes.
+
+**A deploy's box refuses tokens** (#2510). It lets nobody in (M219), so the
+daemon refuses a machine token there before reading it, whatever control says.
 
 ## The guards
 
