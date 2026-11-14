@@ -1755,6 +1755,10 @@ impl Control {
     ) -> Result<arugula_control_wire::machine_token::MachineClaims, crate::machine_token::Refused> {
         use crate::machine_token::{Refused, Verifier, verify};
         let e = self.enrolled().ok_or(Refused::NoKeys)?;
+        // A deploy's box lets nobody in (M219), whatever control says.
+        if !e.admits_links_and_guests() {
+            return Err(Refused::Closed);
+        }
         let kid = Verifier::kid(token)?;
         if self.tokens.should_fetch(&kid) {
             let url =
@@ -5470,8 +5474,13 @@ pub(crate) mod tests {
         // A deploy's box (M219): nobody at all, its owners included.
         let mut deploy_saved = hosted_saved.clone();
         deploy_saved.hosted_mut().unwrap().purpose = Purpose::Deploy;
-        let e = Enrolled::build(deploy_saved, Arc::new(DeviceKeys::generate()), &acl, true);
+        let e = Enrolled::build(deploy_saved.clone(), Arc::new(DeviceKeys::generate()), &acl, true);
         assert!(e.others.is_empty() && e.drivers.is_empty() && e.trusted.devices.is_empty() && e.team_roles.is_empty());
+        // Nor by a machine token (aru-141): refused before it's read.
+        let c = Control::new(&dir, vec![], String::new(), acl.clone(), false);
+        c.install(Some(e));
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        assert_eq!(rt.block_on(c.check_machine_token("a.b.c")).unwrap_err(), crate::machine_token::Refused::Closed);
         assert_eq!(who(&team_saved, &editor), (false, Some(Role::Editor)));
 
         // M186: members' previews. A block's grant counts from the

@@ -36,6 +36,8 @@ pub enum Refused {
     Lifetime,
     Replayed,
     NoKeys,
+    /// This machine lets nobody in: a deploy's box.
+    Closed,
 }
 
 impl std::fmt::Display for Refused {
@@ -50,6 +52,7 @@ impl std::fmt::Display for Refused {
             Refused::Lifetime => "outside the lifetime control gives",
             Refused::Replayed => "already used",
             Refused::NoKeys => "this machine couldn't fetch control's keys",
+            Refused::Closed => "this machine lets nobody in",
         })
     }
 }
