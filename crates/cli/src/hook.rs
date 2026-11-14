@@ -43,9 +43,11 @@ use std::{
 use serde_json::Value;
 
 use arugula_proto::{
-    api::{Empty, HOOK_MENTIONS_TOLD, HOOK_TAKES_MENTION, HookAnswer, InboxAnswer, PermitAnswer},
+    api::{
+        Empty, FollowUpAck, HOOK_ACKS, HOOK_MENTIONS_TOLD, HOOK_TAKES_MENTION, HookAnswer, InboxAnswer, PermitAnswer,
+    },
     flags::{DOCS_STEERING, ISSUES_STEERING, MENTIONS_STEERING},
-    op::ops::{FlagsList, PaneInbox, PanePermit},
+    op::ops::{FlagsList, PaneFollowUpAck, PaneInbox, PanePermit},
 };
 
 use crate::http::{Target, call, request, request_op, send_op};
@@ -100,12 +102,19 @@ pub fn run(sock: Target) -> i32 {
         let mut hook = hook;
         if asks {
             hook[HOOK_TAKES_MENTION] = true.into();
+            hook[HOOK_ACKS] = true.into();
         }
         let answer = request(&sock, "POST", &format!("/api/panes/{pane}/hook"), Some(&hook));
-        if asks && let Some(out) = answer.ok().and_then(|r| r.parse::<HookAnswer>().ok()).and_then(mention_context) {
+        let answer = answer.ok().and_then(|r| r.parse::<HookAnswer>().ok()).filter(|_| asks);
+        let id = answer.as_ref().and_then(|a| a.follow_up.as_ref()).and_then(|f| f.id);
+        if let Some(out) = answer.and_then(mention_context) {
             let mut stdout = std::io::stdout().lock();
             let _ = writeln!(stdout, "{out}");
             let _ = stdout.flush();
+            drop(stdout);
+            if let Some(id) = id {
+                ack(&sock, pane, id, FLAGS_WAIT);
+            }
         }
         return 0;
     }
@@ -186,6 +195,19 @@ fn say_mentions_told(sock: &Target, pane: u32, mut hook: Value, wait: Duration) 
     let _ = rx.recv_timeout(wait);
 }
 
+/// Tells the daemon the follow-up `id` is printed (#630), for at most
+/// `wait`: one never acked is offered again, so a lost ack costs at most a
+/// second copy, never the follow-up.
+fn ack(sock: &Target, pane: u32, id: u64, wait: Duration) {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let sock = sock.clone();
+    std::thread::spawn(move || {
+        let _ = send_op::<PaneFollowUpAck>(&sock, &pane, &FollowUpAck { id });
+        let _ = tx.send(());
+    });
+    let _ = rx.recv_timeout(wait);
+}
+
 fn session_driven() -> bool {
     let env = |k| std::env::var(k).ok();
     driven(env("CLAUDE_CODE_SESSION_ATTENDED").as_deref(), env("CLAUDE_CODE_ENTRYPOINT").as_deref())
@@ -226,19 +248,24 @@ fn files_a_github_issue(command: &str) -> bool {
 /// `asyncRewake` wakes the agent with it), or 0 when a newer waiter takes
 /// over or there's nothing to wait for.
 pub fn inbox(sock: Target) -> i32 {
-    let Some((pane, hook)) = stdin_hook("arugula inbox") else { return 0 };
+    let Some((pane, mut hook)) = stdin_hook("arugula inbox") else { return 0 };
     if !session_driven() {
         return 0;
     }
+    hook[HOOK_ACKS] = true.into();
     loop {
         match send_op::<PaneInbox>(&sock, &pane, &hook) {
             Ok(res) if res.status == 503 => {}
             Ok(res) if res.status >= 400 => return 0,
             Ok(res) => {
-                let Ok(InboxAnswer::FollowUp { text, by }) = res.parse() else { return 0 };
+                let Ok(InboxAnswer::FollowUp { text, by, id }) = res.parse() else { return 0 };
                 let mut err = std::io::stderr().lock();
                 let _ = writeln!(err, "{}", follow_up_line(&by, &text));
                 let _ = err.flush();
+                drop(err);
+                if let Some(id) = id {
+                    ack(&sock, pane, id, FLAGS_WAIT);
+                }
                 return 2;
             }
             // The daemon is restarting: wait for the next one.

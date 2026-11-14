@@ -399,7 +399,11 @@ impl Daemon {
             }
             Api::Inbox(pane, hook, reply) => {
                 self.hook(pane, &hook);
-                let _ = reply.send(self.wait_inbox(pane));
+                let acks = hook[arugula_proto::api::HOOK_ACKS] == true;
+                let _ = reply.send(self.wait_inbox(pane, acks));
+            }
+            Api::FollowUpAck(pane, id, reply) => {
+                let _ = reply.send(self.queued.ack(pane, id));
             }
             Api::InboxGone(pane, token) => {
                 if self.inbox.get(&pane).is_some_and(|w| w.token == token) {

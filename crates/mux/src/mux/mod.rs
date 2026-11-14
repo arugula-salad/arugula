@@ -248,7 +248,9 @@ pub enum Api {
     Hook(PaneId, serde_json::Value),
     /// A tool call ended (#644): a tagged follow-up waiting for the pane, if there is
     /// one and the hook is from its own conversation.
-    TakeTagged(PaneId, serde_json::Value, oneshot::Sender<Option<(String, arugula_proto::Driver)>>),
+    TakeTagged(PaneId, serde_json::Value, oneshot::Sender<Option<(String, arugula_proto::Driver, Option<u64>)>>),
+    /// The hook printed follow-up `id` it was given (#630): it's done.
+    FollowUpAck(PaneId, u64, oneshot::Sender<bool>),
     /// The tool each pane's session last ran (#645).
     LastTools(oneshot::Sender<HashMap<PaneId, String>>),
     /// What Claude Code running in a pane says of its session from inside
@@ -416,6 +418,8 @@ pub enum InboxReply {
     FollowUp {
         text: String,
         by: Driver,
+        /// What the hook acks once it printed it (#630), if it acks.
+        id: Option<u64>,
     },
     /// A newer waiter took its place.
     Replaced,
@@ -817,6 +821,7 @@ pub fn start(
             warn!(error = %e, "could not create the first session");
         }
     }
+    d.restore_followups();
     d.sweep_machines();
     let (provider, daemon_id) = (d.config.provider.clone(), d.config.daemon_id.clone());
     tokio::spawn(d.run(rx, notices_rx));
@@ -1237,7 +1242,10 @@ impl Daemon {
                         self.shutdown();
                         let _ = done.send(());
                     }
-                    Some(cmd) => self.handle(cmd),
+                    Some(cmd) => {
+                        self.handle(cmd);
+                        self.save_followups();
+                    }
                     None => return,
                 },
                 Some(n) = notices.recv() => self.notice(n),

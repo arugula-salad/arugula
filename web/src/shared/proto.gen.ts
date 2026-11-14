@@ -6492,6 +6492,7 @@ export const OPS = {
   "pane.diff": { method: "GET", path: "/api/panes/{id}/diff" },
   "pane.drivers": { method: "GET", path: "/api/panes/{id}/drivers" },
   "pane.followup": { method: "POST", path: "/api/panes/{id}/followup" },
+  "pane.followup_ack": { method: "POST", path: "/api/panes/{id}/followup-ack" },
   "pane.inbox": { method: "POST", path: "/api/panes/{id}/inbox" },
   "pane.keys": { method: "POST", path: "/api/panes/{id}/keys" },
   "pane.mentions": { method: "POST", path: "/api/panes/{id}/mentions" },
