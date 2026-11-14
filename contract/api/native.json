@@ -35,6 +35,10 @@
       "why": "Moving a Doc to a team is on the web for now (Arugula #863)"
     },
     {
+      "match": "/split/plan$",
+      "why": "Planning a move to another project is on the web for now (Arugula #968)"
+    },
+    {
       "match": "/secrets",
       "why": "Project secrets stay on the web"
     },
