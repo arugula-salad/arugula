@@ -177,12 +177,23 @@ pub fn ops_message() -> tokio::sync::watch::Receiver<Option<String>> {
                 .chain(arugula_control_wire::forge::HOSTED_OPS)
                 .chain(arugula_control_wire::forge::AGENT_OPS)
                 .chain(arugula_control_wire::forge::PROJECT_OPS)
+                .chain(arugula_control_wire::forge::DOC_OPS)
                 .map(|s| (*s).to_owned())
                 .collect()
         },
         ..Default::default()
     };
     tokio::sync::watch::channel(serde_json::to_string(&ops).ok()).1
+}
+
+/// `docs.list` (Arugula #1023): the library's Docs, read off the runtime.
+/// `unknown` in a build without Docs.
+async fn library_docs(state: std::path::PathBuf) -> OpAnswer {
+    match crate::task::spawn_blocking(move || crate::features::library_docs(&state)).await {
+        Ok(Some(docs)) => OpAnswer::Docs { docs },
+        Ok(None) => OpAnswer::Unknown,
+        Err(e) => OpAnswer::Failed { error: e.to_string() },
+    }
 }
 
 /// A text control's socket sent, if it asks an op of this machine (M168):
@@ -207,6 +218,7 @@ pub fn op_from_control(app: &Arc<App>, text: &str, answers: &tokio::sync::mpsc::
             DaemonOp::AgentGrantAsk(a) => crate::agent_mentions::grant_ask(app.as_ref(), &a).await,
             DaemonOp::RepoMoved(m) => crate::session_project::repo_moved(&app.mux, &app.control, &m.repo).await,
             DaemonOp::MentionsHeld(a) => crate::agent_mentions::held(app.as_ref(), &a),
+            DaemonOp::DocsList(_) => library_docs(app.control.state_dir().to_owned()).await,
         };
         let _ = answers.send(serde_json::to_string(&OpDone::new(ask.id, answer)).unwrap_or_default());
     });

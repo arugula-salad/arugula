@@ -204,6 +204,9 @@ pub const AGENT_OPS: &[&str] = &["agents.mention", "agents.sessions", "agents.gr
 /// The projects' op (Arugula #992) every daemon of this build knows.
 pub const PROJECT_OPS: &[&str] = &["projects.repo_moved"];
 
+/// The Docs' op (Arugula #1023) every daemon of this build knows.
+pub const DOC_OPS: &[&str] = &["docs.list"];
+
 /// `{"t": "ops", "ops": [...]}`, daemon to control, on connecting: the
 /// [`DaemonOp`]s it knows. A daemon that never says knows none, and control
 /// answers [`OpAnswer::Unknown`] for it without asking.
@@ -226,6 +229,7 @@ impl Ops {
                 .chain(HOSTED_OPS)
                 .chain(AGENT_OPS)
                 .chain(PROJECT_OPS)
+                .chain(DOC_OPS)
                 .map(|s| (*s).to_owned())
                 .collect(),
         }
@@ -318,6 +322,12 @@ pub enum DaemonOp {
     /// ones that found it offline, as before.
     #[serde(rename = "agents.mentions_held")]
     MentionsHeld(MentionsHeldAsk),
+    /// This machine's library Docs (Arugula #1023), for "Move to
+    /// project…" to offer any of its owner's Docs, not only those linked
+    /// to a board that moves. Read-only; the daemon answers `docs`. An
+    /// older daemon answers `unknown`: it lists none.
+    #[serde(rename = "docs.list")]
+    DocsList(DocsListAsk),
 }
 
 impl DaemonOp {
@@ -333,6 +343,7 @@ impl DaemonOp {
             DaemonOp::AgentGrantAsk(_) => "agents.grant_ask",
             DaemonOp::RepoMoved(_) => "projects.repo_moved",
             DaemonOp::MentionsHeld(_) => "agents.mentions_held",
+            DaemonOp::DocsList(_) => "docs.list",
         }
     }
 }
@@ -404,6 +415,26 @@ pub struct AgentMention {
 pub struct RepoMoved {
     /// `OWNER/NAME` on github.com.
     pub repo: String,
+}
+
+/// `docs.list`'s ask (Arugula #1023): nothing yet, so the answer is every
+/// Doc in the library.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct DocsListAsk {}
+
+/// A Doc in a machine's library, as `docs.list` answers it (Arugula #1023).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct MachineDocRow {
+    /// Its id in the library: 16 lower-case hex digits, what the machine's
+    /// `doc move` takes.
+    pub id: String,
+    pub title: String,
+    /// The project it's in, or `None`. A Doc in the library is its owner's
+    /// own, in none: one moved to a team's project leaves only a pointer,
+    /// which isn't listed.
+    pub project: Option<String>,
 }
 
 /// What a machine's session is doing (#645).
@@ -637,8 +668,38 @@ pub enum OpAnswer {
     /// An `agents.mentions_held`'s answer (Arugula #630): for each mention
     /// asked, in order, whether the machine was told it already.
     Held { held: Vec<bool> },
+    /// A `docs.list`'s answer (Arugula #1023): the library's Docs, last
+    /// updated first.
+    Docs { docs: Vec<MachineDocRow> },
     /// It doesn't know the op (a daemon from before it).
     Unknown,
     /// It isn't on control's relay now, or didn't answer in time.
     Offline,
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    /// `docs.list` and its answer on the relay (Arugula #1023).
+    #[test]
+    fn the_docs_op_on_the_wire() {
+        let ask = OpAsk::new("1".into(), DaemonOp::DocsList(DocsListAsk::default()));
+        let v = serde_json::to_value(&ask).unwrap();
+        assert_eq!(v, json!({ "t": "op", "id": "1", "op": { "op": "docs.list" } }));
+        assert_eq!(serde_json::from_value::<OpAsk>(v).unwrap(), ask);
+        assert!(Ops::ours().ops.contains(&ask.op.name().to_owned()));
+
+        let row = MachineDocRow { id: "0123456789abcdef".into(), title: "Plan".into(), project: None };
+        let done = OpDone::new("1".into(), OpAnswer::Docs { docs: vec![row] });
+        let v = serde_json::to_value(&done).unwrap();
+        assert_eq!(
+            v,
+            json!({ "t": "op.done", "id": "1", "answer": { "answer": "docs",
+                "docs": [{ "id": "0123456789abcdef", "title": "Plan", "project": null }] } })
+        );
+        assert_eq!(serde_json::from_value::<OpDone>(v).unwrap(), done);
+    }
 }
