@@ -170,6 +170,7 @@
     {"method":"DELETE","path":"/api/projects/{project}/secrets/{name}","auth":"session","clients":["page"]},
     {"method":"PUT","path":"/api/projects/{project}/secrets/{name}","auth":"session","clients":["page"]},
     {"method":"GET","path":"/api/projects/{project}/sessions","auth":"session","clients":["page","native"]},
+    {"method":"GET","path":"/api/projects/{project}/sessions/by-card","auth":"session","clients":["page"]},
     {"method":"GET","path":"/api/projects/{project}/sessions/settings","auth":"session","clients":["page"]},
     {"method":"PUT","path":"/api/projects/{project}/sessions/settings","auth":"session","clients":["page"]},
     {"method":"GET","path":"/api/projects/{project}/sessions/stats","auth":"session","clients":["page"]},
