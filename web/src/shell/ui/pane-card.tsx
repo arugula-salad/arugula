@@ -113,7 +113,7 @@ function menuFrom(client: Client, pane: PaneId, el: HTMLElement) {
 }
 
 /** A pane's card chip, in `room` characters; nothing for a session in no
- * project. On a phone a tap opens the menu, a sheet there. */
+ * project, or when even its number doesn't fit. On a phone a tap opens the menu, a sheet there. */
 export function PaneCardChip({ client, pane, room, phone }: { client: Client; pane: PaneId; room: number; phone?: boolean }) {
   const info = client.info(pane);
   const project = info?.session_project ?? undefined;
@@ -123,6 +123,7 @@ export function PaneCardChip({ client, pane, room, phone }: { client: Client; pa
   const card = on?.issue ?? null;
   const issue = card ? issueOf(project.id, card) : undefined;
   const said = cardChipText(project.name, card, issue?.title ?? null, room);
+  if (!said) return null;
   const menu = (e: MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -136,10 +137,12 @@ export function PaneCardChip({ client, pane, room, phone }: { client: Client; pa
   );
   if (!card) {
     return (
-      <ObjectChip proof class="pane-work" title={`${project.name}: put this session on a card`} data-pane-card="" onClick={() => void pickCard(client, pane)}>
-        {where}
-        {PUT_ON}
-      </ObjectChip>
+      <span class="pane-work-wrap">
+        <ObjectChip proof class="pane-work" title={`${project.name}: put this session on a card`} data-pane-card="" onClick={() => void pickCard(client, pane)}>
+          {where}
+          <span class="pane-work-title">{PUT_ON}</span>
+        </ObjectChip>
+      </span>
     );
   }
   const title = `${project.name}: ${card}${issue ? ` ${issue.title}` : ""}`;

@@ -193,7 +193,7 @@ export function PaneHeader({
         </>
       }
     >
-      <PaneCardChip client={client} pane={id} room={chipRoom(rect.cols * cell.width)} />
+      <PaneCardChip client={client} pane={id} room={chipRoom(rect.cols * cell.width, title.length)} />
       {branch && (
         <span class="pane-header-branch" title={`Branch ${branch}`}>
           <BranchIcon size="xs" />

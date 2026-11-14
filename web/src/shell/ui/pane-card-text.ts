@@ -19,10 +19,15 @@ const SEP = 3;
 const GAP = 1;
 
 /** The chip in `room` characters: `Arugula › #983 Title`, the title cut
- * first, then only `#983`. Without a card, `Arugula › Put on a card`, then
- * only the words. */
-export function cardChipText(project: string, card: string | null, title: string | null, room: number): CardChipText {
-  if (!card) return { project: project.length + SEP + PUT_ON.length <= room ? project : null, card: null, title: null };
+ * first, then only `#983`; null, no chip, when even `#983` doesn't fit.
+ * Without a card, `Arugula › Put on a card`, then only the words, then
+ * nothing. */
+export function cardChipText(project: string, card: string | null, title: string | null, room: number): CardChipText | null {
+  if (!card) {
+    if (room < PUT_ON.length) return null;
+    return { project: project.length + SEP + PUT_ON.length <= room ? project : null, card: null, title: null };
+  }
+  if (room < card.length) return null;
   const head = project.length + SEP + card.length;
   const t = title?.trim() ?? "";
   if (!t) return head <= room ? { project, card, title: null } : { project: null, card, title: null };
@@ -36,10 +41,25 @@ export const PUT_ON = "Put on a card";
 export const CHANGE = "Change card";
 export const TAKE_OFF = "Take off the card";
 
-/** About how many characters fit in a pane's bar `width` px wide, beside its
- * number, glyph, title, status and buttons (11px text). */
-export function chipRoom(width: number): number {
-  return Math.max(0, Math.floor((width - 300) / 6.5));
+/** What a pane's bar takes besides its title and the chip, in px: its
+ * padding, number, glyph, status, Focus and ⋯, and the gaps between. */
+const BAR_FIXED = 200;
+/** What the chip takes besides its text: its padding and border, the ▾
+ * beside it and the gaps inside. */
+const CHIP_FIXED = 50;
+/** The title's share of a bar with a card chip (pane-chrome.css caps it
+ * there), and its least (6ch). */
+export const TITLE_SHARE = 0.4;
+const TITLE_LEAST = 45;
+/** About a character's width: 11px text in the chip, 13px in the title. */
+const CHIP_CH = 6.5;
+const TITLE_CH = 7.5;
+
+/** About how many characters of chip text fit in a pane's bar `width` px
+ * wide, beside its title (`title` characters) and the rest of the bar. */
+export function chipRoom(width: number, title: number): number {
+  const said = Math.min(Math.max(title * TITLE_CH, TITLE_LEAST), width * TITLE_SHARE);
+  return Math.max(0, Math.floor((width - BAR_FIXED - said - CHIP_FIXED) / CHIP_CH));
 }
 
 /** A card's number in its reference: `#983` → 983, else null (an `iss_`). */

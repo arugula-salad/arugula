@@ -13,7 +13,7 @@ test("the chip cuts the title first, then leaves only the card", () => {
   assert.deepEqual(cardChipText("Arugula", "#983", TITLE, 30), { project: "Arugula", card: "#983", title: "L2: the platfo…" });
   assert.deepEqual(cardChipText("Arugula", "#983", TITLE, 23), { project: "Arugula", card: "#983", title: "L2: the…" });
   assert.deepEqual(cardChipText("Arugula", "#983", TITLE, 22), { project: null, card: "#983", title: null });
-  assert.deepEqual(cardChipText("Arugula", "#983", TITLE, 0), { project: null, card: "#983", title: null });
+  assert.deepEqual(cardChipText("Arugula", "#983", TITLE, 4), { project: null, card: "#983", title: null });
 });
 
 test("a card whose title isn't known yet shows the project and number while they fit", () => {
@@ -23,12 +23,29 @@ test("a card whose title isn't known yet shows the project and number while they
 
 test("no card: the project and Put on a card, then the words alone", () => {
   assert.deepEqual(cardChipText("Arugula", null, null, 40), { project: "Arugula", card: null, title: null });
-  assert.deepEqual(cardChipText("Arugula", null, null, 10), { project: null, card: null, title: null });
+  assert.deepEqual(cardChipText("Arugula", null, null, 13), { project: null, card: null, title: null });
 });
 
-test("a pane's room grows with its width and never goes under nothing", () => {
-  assert.equal(chipRoom(200), 0);
-  assert.ok(chipRoom(1200) > chipRoom(600));
+test("no chip when even the number doesn't fit, or Put on a card's words", () => {
+  assert.equal(cardChipText("Arugula", "#983", TITLE, 3), null);
+  assert.equal(cardChipText("Arugula", "#983", null, 0), null);
+  assert.equal(cardChipText("Arugula", null, null, 12), null);
+});
+
+test("a pane's room: none in a narrow pane, so no chip there; more beside a short title", () => {
+  // A quarter of a laptop's four columns: nothing fits beside the bar's own.
+  assert.equal(chipRoom(130, 3), 0);
+  assert.equal(cardChipText("Arugula", "#983", TITLE, chipRoom(130, 3)), null);
+  assert.equal(cardChipText("Arugula", null, null, chipRoom(130, 3)), null);
+  assert.equal(chipRoom(300, 3), 0);
+  // Where #983 just fits, and its ▾ with it (the 50px the room leaves out).
+  assert.equal(chipRoom(321, 3), 4);
+  assert.deepEqual(cardChipText("Arugula", "#983", TITLE, chipRoom(321, 3)), { project: null, card: "#983", title: null });
+  assert.equal(cardChipText("Arugula", "#983", TITLE, chipRoom(320, 3)), null);
+  // A long title takes at most 40% of the bar.
+  assert.equal(chipRoom(1000, 200), chipRoom(1000, 54));
+  assert.ok(chipRoom(1000, 3) > chipRoom(1000, 40));
+  assert.ok(chipRoom(1200, 3) > chipRoom(600, 3));
 });
 
 test("a card's number", () => {
