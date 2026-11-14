@@ -7,6 +7,8 @@
 import type { Route } from "./paths";
 
 let deploy: { id: string; project: string } | null = null;
+/** The card open on the Overview, as its path names it (`#983`). */
+let card: { row: string; label: string } | null = null;
 const listeners = new Set<() => void>();
 
 export const where = {
@@ -20,6 +22,14 @@ export const where = {
     deploy = { id, project };
     listeners.forEach((fn) => fn());
   },
+  /** The Overview has read the card its address opens: its words in the path. */
+  cardIs(row: string, label: string) {
+    if (card?.row === row && card.label === label) return;
+    card = { row, label };
+    listeners.forEach((fn) => fn());
+  },
+  /** The open card's words, once the Overview has said them. */
+  cardLabel: (row: string): string | undefined => (card?.row === row ? card.label : undefined),
 };
 
 /** The project the bar shows for `r`, if any. */

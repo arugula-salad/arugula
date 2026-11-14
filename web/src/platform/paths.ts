@@ -82,7 +82,8 @@ export const TOP = ["p", "chat", "dm", "issues", "runs", "installed", "inbox", "
 export type Route =
   /** `to`: a shell button's place, to open in the current project (./current-project). */
   | { page: "home"; to?: "projects" | "docs" | "boards" | "chat" }
-  | { page: "project"; project: string }
+  /** The Overview; with `board` and `card`, that card's drawer open over it. */
+  | { page: "project"; project: string; board?: string; card?: string }
   | { page: "issues"; project: string; state?: "closed"; q?: string; label?: string; assignee?: string }
   | { page: "new-issue"; project: string }
   | { page: "issue"; project: string; issue: string; msg?: number }
@@ -149,6 +150,9 @@ export function waveQuery(f: WaveFilter): string {
 /** An id at the front of a path segment, before its slug: `prj_8f2k`,
  * `ch_…`, `dm_…`, `hw_…`, `iss_…`, `run_…`. */
 const ID = /^([a-z]{2,3}_[0-9a-f]{4,64})(?:-.*)?$/;
+/** A board's and a row's ids, as the Overview's open card names them. */
+const BOARD_ID = /^brd_[\w-]{1,64}$/;
+const ROW_ID = /^row_[\w-]{1,64}$/;
 
 /** `OWNER/NAME` on GitHub. */
 export const REPO = /^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,99}\/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,99}$/;
@@ -252,9 +256,12 @@ export function parse(path: string, search = ""): Route {
   if (parts[0] !== "p" || parts.length < 2) return missing;
   const project = idOf(parts[1]);
   if (!project) return missing;
-  if (parts.length === 2) return { page: "project", project };
   // The Overview's own name for it, as the rail has it (Arugula #989).
-  if (parts.length === 3 && parts[2] === "overview") return { page: "project", project };
+  if (parts.length === 2 || (parts.length === 3 && parts[2] === "overview")) {
+    const board = q.get("board");
+    const card = q.get("card");
+    return board && card && BOARD_ID.test(board) && ROW_ID.test(card) ? { page: "project", project, board, card } : { page: "project", project };
+  }
   if (parts[2] === "machines") {
     const at = parseMachines(parts.slice(3), q);
     return at ? { page: "machines", project, at } : missing;
@@ -379,7 +386,7 @@ export function pathOf(r: Route, names: Names = () => null): string {
     case "home":
       return "/";
     case "project":
-      return `/p/${s(r.project)}`;
+      return `/p/${s(r.project)}${r.board && r.card ? `?board=${encodeURIComponent(r.board)}&card=${encodeURIComponent(r.card)}` : ""}`;
     case "chat": {
       const base = `/p/${s(r.project)}/chat`;
       if (r.view === "activity" || r.view === "saved" || r.view === "threads") return `${base}/${r.view}`;

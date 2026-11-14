@@ -23,6 +23,7 @@ import { useInboxCount } from "./inbox-count";
 import { BellIcon, Caret, ChevronIcon } from "../shared/ui/icons";
 import { ownerKey, ownerNamed } from "./owners";
 import { Switcher } from "./switcher";
+import { boards } from "../shared/boards/store";
 
 /** The bar's place a route is under (UI audit #159): a project's cloud
  * workspaces and its deploys (Deploy… and a deploy) have places of their
@@ -122,7 +123,12 @@ function Path({ r, project }: { r: Route; project: string | undefined }) {
   if (project && p) {
     crumbs.push({ label: p.team?.name ?? "Personal", data: "owner" });
     crumbs.push({ label: p.name, to: pathOf({ page: "project", project }, names), data: "project" });
-    if (r.page === "machines") crumbs.push({ label: "Machines", to: pathOf({ page: "machines", project, at: { at: "machines" } }, names), data: "machines" });
+    if (r.page === "project" && r.board && r.card) {
+      // A card open on the Overview: each level a step up (the prototype's zoom path).
+      crumbs.push({ label: SECTION_LABEL.home, to: pathOf({ page: "project", project }, names), data: "home" });
+      crumbs.push({ label: boards.title(r.board) ?? "Board", to: pathOf({ page: "board", project, board: r.board }, names), data: "board" });
+      crumbs.push({ label: where.cardLabel(r.card) ?? "Card", data: "card" });
+    } else if (r.page === "machines") crumbs.push({ label: "Machines", to: pathOf({ page: "machines", project, at: { at: "machines" } }, names), data: "machines" });
     else if (section && section !== "home") crumbs.push({ label: SECTION_LABEL[section], to: sectionPath(section, project) ?? undefined, data: section });
   } else {
     crumbs.push({ label: project ? (session.state === "ready" ? "Unknown project" : "…") : "All projects", to: project ? undefined : "/", data: "all" });
