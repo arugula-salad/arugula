@@ -435,16 +435,6 @@ export function Drawer({ steps, r, platform, close, project, others, write, act,
       )}
       {(r.relations?.length || (write && itemId(r))) && <Relations r={r} project={project} others={others} write={write} act={act} id={id} />}
       <RowDocs r={r} project={project} platform={platform} write={write} act={act} id={id} />
-      {(r.sessions ?? []).length > 0 && (
-        <section data-board-drawer-sessions>
-          <h3>Sessions</h3>
-          {(r.sessions ?? []).map((x) => (
-            <div key={x.session} class="board-drawer-attached">
-              <SessionChip s={x} project={project} />
-            </div>
-          ))}
-        </section>
-      )}
       <NotFinishedSection r={r} nf={marks.notFinished} write={write} act={act} id={id} />
       {r.attachments.length > 0 && (
         <section data-board-drawer-attachments>
@@ -478,7 +468,7 @@ export function Drawer({ steps, r, platform, close, project, others, write, act,
   );
 }
 
-/** The drawer's Live session (Arugula iss_c62e00eee3b4b953ff054d2951827de8): the row's work session that needs the reader, else the one that moved last, with the others as chips to switch to. Its state card says its state, where it runs, and its branch and diffstat; where the page draws panes (`PlatformApi.LivePane`) and the reader steers, its pane is under it, with Hand off to me. Open on its machine goes to its pane. */
+/** The drawer's Live session (Arugula iss_c62e00eee3b4b953ff054d2951827de8): the row's work session that needs the reader, else the one that moved last, with the others as chips to switch to. A hosted session is here once (the drawer's Sessions section was folded in), and keeps its hooks: `data-board-drawer-sessions` on the section when the row has any, and `data-board-session` on its chip, or on the state card when it is the only session. Its state card says its state, where it runs, and its branch and diffstat; where the page draws panes (`PlatformApi.LivePane`) and the reader steers, its pane is under it, with Hand off to me. Open on its machine goes to its pane. */
 function LiveSession({ r, project, waiting, who }: { r: BoardRow; project: string; waiting: { words: string; mine: boolean } | null; who: "steer" | "read" }) {
   const api = usePlatformApi();
   useSubscribe(api.subscribe);
@@ -501,22 +491,31 @@ function LiveSession({ r, project, waiting, who }: { r: BoardRow; project: strin
             : null
         : null;
   const Pane = who === "steer" && s.kind === "block" && s.machine ? api.LivePane : undefined;
+  // A hosted session's hooks, as the Sessions section's chip had them: on its chip, or on the card when there are no chips.
+  const hooks = (x: LiveSession) => (x.kind === "hosted" ? { "data-board-session": x.session, "data-board-session-live": x.live ? "" : undefined } : {});
+  const sessionHref = s.kind === "hosted" ? api.sessionHref?.(project, s.session) : undefined;
   return (
-    <section data-board-drawer-live={s.key}>
+    <section data-board-drawer-live={s.key} data-board-drawer-sessions={(r.sessions ?? []).length > 0 ? "" : undefined}>
       <h3>Live session</h3>
       {all.length > 1 && (
         <div class="board-line board-chips" data-board-live-sessions>
           {all.map((x) => (
-            <ObjectChip key={x.key} pressed={x.key === s.key} fact={{ tone: x.tone, text: x.word }} data-board-live-pick={x.key} onClick={() => setPicked(x.key)}>
+            <ObjectChip key={x.key} class={x.kind === "hosted" && !x.live ? "dim" : undefined} pressed={x.key === s.key} fact={{ tone: x.tone, text: x.word }} data-board-live-pick={x.key} onClick={() => setPicked(x.key)} {...hooks(x)}>
               {name(x)}
             </ObjectChip>
           ))}
         </div>
       )}
-      <Card tone={s.needs ? "accent" : null} class="board-live-state" data-board-live-card={s.kind}>
+      <Card tone={s.needs ? "accent" : null} class={s.kind === "hosted" && !s.live ? "board-live-state dim" : "board-live-state"} data-board-live-card={s.kind} {...(all.length > 1 ? {} : hooks(s))}>
         <div class="board-line">
           <StateChip tone={s.tone}>{s.word}</StateChip>
-          <span class="board-ptr">{name(s)}</span>
+          {sessionHref ? (
+            <a class="board-ptr" href={sessionHref} target="_blank" rel="noopener noreferrer">
+              {name(s)}
+            </a>
+          ) : (
+            <span class="board-ptr">{name(s)}</span>
+          )}
           {where && <span class="dim">{where}</span>}
         </div>
         {s.facts.length > 0 && (

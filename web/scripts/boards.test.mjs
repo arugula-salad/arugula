@@ -686,6 +686,6 @@ test("a row's live session: the one that needs you first, then working, then sto
   const [held] = liveSessions({ attachments: [block("a1", "idle", { title: "Fixer", branch: "arugula/x", head: "abc1234", diffstat: { files: 2, added: 5, removed: 1 } })] }, { words: "waiting for you", mine: true });
   assert.deepEqual(held, { kind: "block", key: "a1", machine: "m1", pane: "1", name: "Fixer", word: "waiting for you", tone: "accent", facts: ["arugula/x@abc1234", "2 files, +5 −1"], needs: true });
   const [hosted] = liveSessions({ attachments: [], sessions: [ses("s9", "needs_input")] });
-  assert.deepEqual(hosted, { kind: "hosted", key: "s9", session: "s9", name: "s9-fix", word: "needs input", tone: "accent", facts: [], needs: true });
+  assert.deepEqual(hosted, { kind: "hosted", key: "s9", session: "s9", live: true, name: "s9-fix", word: "needs input", tone: "accent", facts: [], needs: true });
   assert.deepEqual(liveSessions({ attachments: [] }), []);
 });
