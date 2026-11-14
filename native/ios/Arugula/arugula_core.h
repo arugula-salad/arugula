@@ -9,6 +9,7 @@
 typedef struct AruPairing AruPairing;
 typedef struct Control AruControl;
 typedef struct AruLink AruLink;
+typedef struct AruChatLive AruChatLive;
 typedef struct AruTerm AruTerm;
 
 typedef struct {
@@ -50,6 +51,9 @@ void aru_control_free(AruControl *c);
 AruLink *aru_link_open(const AruControl *c, const char *machine, AruNotify notify, void *ctx, char **err);
 uint32_t aru_link_feed(AruLink *l, AruTerm *term, uint32_t pane);
 char *aru_link_panes(const AruLink *l);
+uint32_t aru_link_feed_many(AruLink *l, const uint32_t *panes, AruTerm *const *terms, size_t n);
+void aru_link_watch(const AruLink *l, uint32_t tab, const uint32_t *panes, size_t n, uint16_t cols, uint16_t rows);
+void aru_link_detach(const AruLink *l, const uint32_t *panes, size_t n);
 char *aru_link_closed(const AruLink *l);
 char *aru_link_said(const AruLink *l);
 void aru_link_attach(const AruLink *l, uint32_t tab, uint32_t pane, uint16_t cols, uint16_t rows);
@@ -57,6 +61,11 @@ void aru_link_view(const AruLink *l, uint32_t tab, uint32_t pane, uint16_t cols,
 void aru_link_input(const AruLink *l, uint32_t pane, const uint8_t *data, size_t len);
 char *aru_link_request(const AruLink *l, const char *method, const char *path, const char *body, char **err);
 void aru_link_free(AruLink *l);
+
+// Chat's live stream: notify fires from its thread; take events on the main one.
+AruChatLive *aru_chat_live_open(const AruControl *c, AruNotify notify, void *ctx, char **err);
+char *aru_chat_live_next(const AruChatLive *l);
+void aru_chat_live_free(AruChatLive *l);
 
 AruTerm *aru_term_new(uint16_t cols, uint16_t rows);
 void aru_term_free(AruTerm *t);

@@ -17,6 +17,11 @@ struct PairView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
+                    VStack(spacing: 4) {
+                        Text("ARUGULA").font(Face.display(56, "Black")).tracking(1)
+                        Caps("Your machines, your agents, one place")
+                    }
+                    .padding(.top, 24)
                     if let pairing {
                         waiting(pairing)
                     } else {
@@ -25,27 +30,29 @@ struct PairView: View {
                     if let problem {
                         Text(problem)
                             .font(.footnote)
-                            .foregroundStyle(.red)
+                            .foregroundStyle(Palette.danger)
                             .multilineTextAlignment(.center)
                             .accessibilityIdentifier("pair-problem")
                     }
                 }
                 .padding()
+                .frame(maxWidth: 520)
+                .frame(maxWidth: .infinity)
             }
-            .navigationTitle("Arugula")
+            .background(Palette.void)
         }
         .task(id: pairing?.code) { await waitForApproval() }
     }
 
     private var start: some View {
         VStack(spacing: 16) {
-            Text("Make this iPhone one of your devices. You'll approve it in a browser that's signed in to Arugula.")
+            Text("Make this \(device) one of your devices. You'll approve it in a browser that's signed in to Arugula.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
             Button {
                 Task { await begin() }
             } label: {
-                Text(busy ? "Asking…" : "Pair this iPhone").frame(maxWidth: .infinity)
+                Text(busy ? "Asking…" : "Pair this \(device)").frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
@@ -65,7 +72,7 @@ struct PairView: View {
 
     private func waiting(_ p: Pairing) -> some View {
         VStack(spacing: 16) {
-            Text("Approve this iPhone").font(.headline)
+            Text("Approve this \(device)").font(.headline)
             Text("Open the link in a browser that's signed in to Arugula. On another device, scan the code.")
                 .font(.subheadline)
                 .multilineTextAlignment(.center)
@@ -106,7 +113,7 @@ struct PairView: View {
         } catch {
             let said = error.localizedDescription
             problem = said.contains("a daemon certificate")
-                ? "This Arugula isn't taking the iPhone app yet. Its operator has to turn native clients on."
+                ? "This Arugula isn't taking the \(device) app yet. Its operator has to turn native clients on."
                 : said
         }
     }

@@ -12,6 +12,14 @@ final class FlowTests: XCTestCase {
         try? app.screenshot().pngRepresentation.write(to: handoff.appendingPathComponent("\(name).png"))
     }
 
+    /// A tab: in the tab bar on an iPhone, and wherever iPadOS puts it on an iPad.
+    private func tab(_ app: XCUIApplication, _ name: String) -> XCUIElement {
+        let bar = app.tabBars.buttons[name]
+        return bar.exists ? bar : app.buttons[name].firstMatch
+    }
+
+    private var iPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
+
     func testPairProjectsChatAndATerminal() throws {
         continueAfterFailure = false
         let env = ProcessInfo.processInfo.environment
@@ -28,19 +36,26 @@ final class FlowTests: XCTestCase {
         try FileManager.default.createDirectory(at: handoff, withIntermediateDirectories: true)
         try code.label.write(to: handoff.appendingPathComponent("code"), atomically: true, encoding: .utf8)
 
-        // Projects, as the signed-in account.
-        let paired = app.tabBars.buttons["Projects"].waitForExistence(timeout: 120)
+        // In a project, as the signed-in account: the personal one at first.
+        let paired = app.buttons["project-switcher"].waitForExistence(timeout: 120)
         if !paired { shot(app, "1-never-paired") }
         XCTAssertTrue(paired, "never paired: \(app.staticTexts["pair-problem"].exists ? app.staticTexts["pair-problem"].label : "still waiting")")
-        let personal = app.buttons["project-Personal"]
-        XCTAssertTrue(personal.waitForExistence(timeout: 30), "no Personal project")
+        let switcher = app.buttons["project-switcher"]
+        let deadline0 = Date().addingTimeInterval(30)
+        while !switcher.label.lowercased().contains("personal") && Date() < deadline0 { sleep(1) }
+        XCTAssertTrue(switcher.label.lowercased().contains("personal"), "not in the Personal project: \(switcher.label)")
         shot(app, "2-projects")
 
         // Chat: post to the room the script made, and see it come back.
-        app.tabBars.buttons["Chat"].tap()
+        tab(app, "Chat").tap()
         let room = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'room-'")).firstMatch
         XCTAssertTrue(room.waitForExistence(timeout: 30), "no chat room")
         room.tap()
+        // The room is live: chat's stream is open.
+        let liveMark = app.staticTexts["chat-live"]
+        let liveBy = Date().addingTimeInterval(30)
+        while !(liveMark.exists && liveMark.label == "LIVE") && Date() < liveBy { sleep(1) }
+        XCTAssertEqual(liveMark.exists ? liveMark.label : "missing", "LIVE", "chat's stream never opened")
         let draft = app.textFields["chat-draft"]
         XCTAssertTrue(draft.waitForExistence(timeout: 15))
         draft.tap()
@@ -50,10 +65,11 @@ final class FlowTests: XCTestCase {
         XCTAssertTrue(app.staticTexts[marker].waitForExistence(timeout: 20), "the message didn't come back")
         shot(app, "3-chat")
 
-        // A terminal on a machine, through the relay. Back out of the room first:
-        // its keyboard covers the tab bar.
-        app.navigationBars.buttons.firstMatch.tap()
-        app.tabBars.buttons["Machines"].tap()
+        // A terminal on a machine, through the relay. On an iPhone, back out of the
+        // room first: its keyboard covers the tab bar. On an iPad the room sits
+        // beside the list, so the tabs stay in reach.
+        if !iPad { app.navigationBars.buttons.firstMatch.tap() }
+        tab(app, "Machines").tap()
         let machine = app.buttons[env["ARUGULA_MACHINE"].map { "machine-\($0)" } ?? "machine-box-systemd"]
         XCTAssertTrue(machine.waitForExistence(timeout: 30), "machine not listed")
         machine.tap()
@@ -76,6 +92,12 @@ final class FlowTests: XCTestCase {
         }
         shot(app, "5-terminal")
         XCTAssertTrue(seen.contains("SIM-42"), "the terminal showed: \(seen)")
+
+        // Back from driving it: the machine's screen (on an iPad, its tab whole).
+        app.buttons["terminal-done"].tap()
+        sleep(3)
+        shot(app, "6-machine")
+        XCTAssertTrue(app.buttons["new-terminal"].waitForExistence(timeout: 10), "not back on the machine")
     }
 }
 

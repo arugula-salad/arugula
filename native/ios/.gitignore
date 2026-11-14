@@ -1,1 +1,3 @@
 build/
+# The swarm's fonts: build.sh fetches them (pinned, checked), so no binary is committed.
+Arugula/Fonts/

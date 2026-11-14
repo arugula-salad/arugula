@@ -11,12 +11,14 @@ set -euo pipefail
 rev=${1:-HEAD}
 max=$((1024 * 1024))
 
-# The binaries the repo needs: the desktop app's icons and the web favicon.
+# The binaries the repo needs: the desktop app's icons, the web favicon and the
+# iPhone and iPad app's icon.
 # Add one here only for something the build or the app reads.
 allowed() {
   case "$1" in
     crates/desktop/icons/*.png | crates/desktop/icons/icon.icns | crates/desktop/icons/icon.ico) return 0 ;;
     web/public/favicon.ico) return 0 ;;
+    native/ios/Arugula/Assets.xcassets/AppIcon.appiconset/AppIcon.png) return 0 ;;
   esac
   return 1
 }

@@ -29,6 +29,7 @@ use serde_json::{Value, json};
 
 use crate::{
     DeviceKeys, Pane,
+    chat_live::{ChatLive, Event as ChatEvent},
     control::{Control, Pairing, Refused},
     device,
     link::{Event, Link},
@@ -239,13 +240,16 @@ struct LinkState {
     closed: Option<String>,
 }
 
-/// What the app shows of a machine's panes.
+/// What the app shows of a machine: its terminals (`panes`), its tabs as
+/// they're laid out (`tabs`: each one's grid and every pane's rectangle in it,
+/// blocks too, so a client can draw the whole tab), and its sessions, which
+/// hold the tabs, in order.
 fn summary(s: &State) -> String {
     let panes: Vec<Value> = s
         .tabs
         .iter()
         .flat_map(|t| {
-            t.layout.panes.iter().filter_map(move |(p, _)| {
+            t.layout.panes.iter().filter_map(move |(p, r)| {
                 // Terminals only: a browser or a diff block is a web page, for
                 // later (web views).
                 let info = s.panes.iter().find(|i| i.id == *p && i.kind == BlockType::Terminal)?;
@@ -256,11 +260,43 @@ fn summary(s: &State) -> String {
                     "command": info.command,
                     "cwd": info.cwd,
                     "running": info.running,
+                    // What tells panes apart: whether it wants you and why,
+                    // what its program calls it, what it's busy with, where.
+                    "attention": info.attention,
+                    "reason": info.reason.as_ref().map(|r| json!({ "kind": r.kind, "headline": r.headline })),
+                    "title": info.title,
+                    "work": info.work,
+                    "resumes": info.resumes,
+                    "project": info.project.as_ref().map(|p| &p.name),
+                    "branch": info.branch,
+                    "last_ms": info.activity.as_ref().map(|a| a.last_ms),
+                    "rect": { "x": r.x, "y": r.y, "cols": r.cols, "rows": r.rows },
                 }))
             })
         })
         .collect();
-    json!({ "panes": panes }).to_string()
+    let tabs: Vec<Value> = s
+        .tabs
+        .iter()
+        .map(|t| {
+            let cells: Vec<Value> = t
+                .layout
+                .panes
+                .iter()
+                .map(|(p, r)| {
+                    let kind = s.panes.iter().find(|i| i.id == *p).map(|i| i.kind);
+                    json!({ "pane": p, "kind": kind, "x": r.x, "y": r.y, "cols": r.cols, "rows": r.rows })
+                })
+                .collect();
+            json!({ "id": t.id, "name": t.name, "cols": t.cols, "rows": t.rows, "cells": cells })
+        })
+        .collect();
+    let sessions: Vec<Value> = s
+        .sessions
+        .iter()
+        .map(|x| json!({ "id": x.id, "name": x.name, "project": x.project.as_ref().map(|p| &p.name), "tabs": x.tabs }))
+        .collect();
+    json!({ "panes": panes, "tabs": tabs, "sessions": sessions }).to_string()
 }
 
 /// `notify` is called from the socket's thread when there's something to look
@@ -323,7 +359,10 @@ pub unsafe extern "C" fn aru_link_feed(l: *mut AruLink, term: *mut AruTerm, pane
     flags
 }
 
-/// The newest panes: `{"panes": [{id, tab, tab_name, command, cwd, running}]}`,
+/// The newest panes: `{"panes": [{id, tab, tab_name, command, cwd, running,
+/// attention, reason, title, work, resumes, project, branch, last_ms, rect}],
+/// "tabs": [{id, name, cols, rows, cells: [{pane, kind, x, y, cols, rows}]}],
+/// "sessions": [{id, name, project, tabs}]}`,
 /// or NULL before the machine's first word.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aru_link_panes(l: *const AruLink) -> *mut c_char {
@@ -338,6 +377,77 @@ pub unsafe extern "C" fn aru_link_closed(l: *const AruLink) -> *mut c_char {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aru_link_said(l: *const AruLink) -> *mut c_char {
     unsafe { &*l }.events.lock().unwrap().said.take().map_or(ptr::null_mut(), to_c)
+}
+
+/// As `aru_link_feed`, for several panes at once: `terms[i]` takes `panes[i]`'s
+/// bytes (a NULL term takes none). Bit 1 says one of them drew something.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aru_link_feed_many(
+    l: *mut AruLink,
+    panes: *const u32,
+    terms: *const *mut AruTerm,
+    n: usize,
+) -> u32 {
+    let l = unsafe { &*l };
+    let (panes, terms) = if n == 0 {
+        (&[][..], &[][..])
+    } else {
+        unsafe { (std::slice::from_raw_parts(panes, n), std::slice::from_raw_parts(terms, n)) }
+    };
+    let term_of = |p: u32| panes.iter().position(|&x| x == p).map(|i| terms[i]).filter(|t| !t.is_null());
+    let mut st = l.events.lock().unwrap();
+    let mut flags = 0;
+    while let Ok(e) = l.link.events.lock().unwrap().try_recv() {
+        match e {
+            Event::State(s) => {
+                st.state = Some(summary(&s));
+                flags |= 2;
+            }
+            Event::Snapshot { pane, data } => {
+                if let Some(t) = term_of(pane) {
+                    unsafe { &mut *t }.pane.snapshot(&data);
+                    flags |= 1;
+                }
+            }
+            Event::Output { pane, data } => {
+                if let Some(t) = term_of(pane) {
+                    unsafe { &mut *t }.pane.output(&data);
+                    flags |= 1;
+                }
+            }
+            Event::Said(s) => {
+                st.said = Some(s);
+                flags |= 8;
+            }
+            Event::Closed(why) => {
+                st.closed = Some(why);
+                flags |= 4;
+            }
+        }
+    }
+    flags
+}
+
+/// Watch a whole tab without taking its size: `panes`' snapshots and output
+/// come, at the size the tab already is (`cols`x`rows`, its own).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aru_link_watch(
+    l: *const AruLink,
+    tab: u32,
+    panes: *const u32,
+    n: usize,
+    cols: u16,
+    rows: u16,
+) {
+    let panes = if n == 0 { Vec::new() } else { unsafe { std::slice::from_raw_parts(panes, n) }.to_vec() };
+    let _ = unsafe { &*l }.link.watch(tab, panes, cols, rows);
+}
+
+/// Stop receiving `panes`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aru_link_detach(l: *const AruLink, panes: *const u32, n: usize) {
+    let panes = if n == 0 { Vec::new() } else { unsafe { std::slice::from_raw_parts(panes, n) }.to_vec() };
+    let _ = unsafe { &*l }.link.detach(panes);
 }
 
 #[unsafe(no_mangle)]
@@ -378,6 +488,53 @@ pub unsafe extern "C" fn aru_link_request(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aru_link_free(l: *mut AruLink) {
+    if !l.is_null() {
+        drop(unsafe { Box::from_raw(l) });
+    }
+}
+
+// ---- chat's live stream
+
+pub struct AruChatLive(ChatLive);
+
+/// Chat's live stream. `notify` is called from its thread when an event is
+/// queued: `aru_chat_live_next` on the main thread then takes it. NULL, with
+/// `err`, when control refuses it.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aru_chat_live_open(
+    c: *const Control,
+    notify: AruNotify,
+    ctx: *mut c_void,
+    err: *mut *mut c_char,
+) -> *mut AruChatLive {
+    let ctx = Ctx(ctx);
+    let tell = move || {
+        let c = &ctx;
+        notify(c.0);
+    };
+    match ChatLive::open(unsafe { &*c }, tell) {
+        Ok(live) => Box::into_raw(Box::new(AruChatLive(live))),
+        Err(e) => {
+            unsafe { set_err(err, &e) };
+            ptr::null_mut()
+        }
+    }
+}
+
+/// The next event: control's JSON (`{"type": "message", ...}`), or
+/// `{"type":"closed","why":...}` once the stream has ended. NULL when none is
+/// queued.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aru_chat_live_next(l: *const AruChatLive) -> *mut c_char {
+    match unsafe { &*l }.0.next() {
+        Some(ChatEvent::Data(s)) => to_c(s),
+        Some(ChatEvent::Closed(why)) => to_c(json!({ "type": "closed", "why": why }).to_string()),
+        None => ptr::null_mut(),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aru_chat_live_free(l: *mut AruChatLive) {
     if !l.is_null() {
         drop(unsafe { Box::from_raw(l) });
     }

@@ -1,7 +1,8 @@
 #!/bin/bash
 # The app's UI test on a throwaway simulator, against the control at URL.
 # Something else approves the pairing: this writes its code to HANDOFF/code.
-# testnet's native-sim claim drives it.
+# The cloud repository's testnet native-sim claim drives it. ARUGULA_SIM_FAMILY=iPad
+# runs it on an iPad (the side-by-side layout) instead of an iPhone.
 #   native/ios/test-sim.sh URL MACHINE HANDOFF
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -10,11 +11,14 @@ export PATH="$HOME/.cargo/bin:$HOME/.local/bin:/opt/homebrew/bin:$PATH"
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$HOME/.cache/arugula-native-core-target}"
 rm -rf "$handoff"; mkdir -p "$handoff"
 ./build.sh sim >/dev/null
-pick=$(xcrun simctl list -j runtimes available | python3 -c '
-import json, sys
+pick=$(xcrun simctl list -j runtimes available | ARUGULA_SIM_FAMILY="${ARUGULA_SIM_FAMILY:-iPhone}" python3 -c '
+import json, os, sys
+family = os.environ["ARUGULA_SIM_FAMILY"]
 ios = [r for r in json.load(sys.stdin)["runtimes"] if r["platform"] == "iOS"]
-phones = [t for r in ios[-1:] for t in r["supportedDeviceTypes"] if t["productFamily"] == "iPhone"]
-print(ios[-1]["identifier"], phones[-1]["identifier"])
+kinds = [t for r in ios[-1:] for t in r["supportedDeviceTypes"] if t["productFamily"] == family]
+if not kinds:
+    sys.exit(f"no {family} simulator in the newest iOS runtime")
+print(ios[-1]["identifier"], kinds[-1]["identifier"])
 ')
 read -r runtime type <<<"$pick"
 device=$(xcrun simctl create arugula-ui-test "$type" "$runtime")
