@@ -54,9 +54,16 @@ pub enum Command {
     /// (`https://control.example.com`): prints a link to approve from a
     /// device that's signed in, and finishes once that device approves (an
     /// older control: then the account's fingerprint to check against that
-    /// device). A running daemon picks it up.
+    /// device). With `--token`, it joins at once, with no link to approve.
+    /// A running daemon picks it up.
     Join {
+        /// Control's URL [default: Arugula cloud].
+        #[arg(env = "ARUGULA_CONTROL", default_value = crate::setup::CONTROL)]
         url: String,
+        /// A join token (`ajt_…`) from a signed-in CLI, project settings
+        /// or the API: joins at once, with no browser, on control's word.
+        #[arg(long, env = "ARUGULA_JOIN_TOKEN", hide_env_values = true, conflicts_with_all = ["team", "account"])]
+        token: Option<String>,
         /// This machine's name in the directory [default: the hostname].
         #[arg(long)]
         name: Option<String>,

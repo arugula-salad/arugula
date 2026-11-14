@@ -183,9 +183,26 @@ pub enum Api {
     /// Whether a session may still get its project from a pane's linked
     /// repo ([`arugula_core::Session::inferable`]): asked before control is.
     Inferable(SessionId, oneshot::Sender<bool>),
-    /// A session's project, from its pane's linked repo: set only while it
-    /// may be ([`arugula_core::Mux::infer_project`]). Whether it was set.
-    InferProject(SessionId, arugula_core::ProjectRef, oneshot::Sender<bool>),
+    /// A session's project, from its pane's linked repo (`owner/name`):
+    /// set only while it may be ([`arugula_core::Mux::infer_project`]).
+    /// Whether it was set.
+    InferProject(SessionId, arugula_core::ProjectRef, String, oneshot::Sender<bool>),
+    /// The repos sessions' inferred projects came from
+    /// ([`arugula_core::Mux::project_repos`]).
+    ProjectRepos(oneshot::Sender<Vec<String>>),
+    /// A repo's project now: the sessions inferred from it follow
+    /// ([`arugula_core::Mux::follow_repo`]). The sessions it moved.
+    FollowRepo(String, arugula_core::ProjectRef, oneshot::Sender<Vec<SessionId>>),
+    /// Whether a session may still get its card from a pane's branch
+    /// ([`arugula_core::Session::work_inferable`]): asked before control is.
+    WorkInferable(SessionId, oneshot::Sender<bool>),
+    /// A session's card, from its pane's branch, and its project's name:
+    /// set only while it may be ([`arugula_core::Mux::infer_work`]).
+    /// Whether it was set.
+    InferWork(SessionId, arugula_core::WorkRef, Option<String>, oneshot::Sender<bool>),
+    /// A session's work set by hand ([`Intent::SetSessionWork`]), and its
+    /// project's name: why not, if it was refused.
+    SetSessionWork(SessionId, Option<arugula_core::WorkRef>, Option<String>, oneshot::Sender<Result<(), String>>),
     Run(RunRequest, oneshot::Sender<Result<PaneId, String>>),
     Pane(PaneId, oneshot::Sender<Option<PaneHandle>>),
     /// The Claude Code conversation running in a terminal now, by its id,
@@ -238,7 +255,9 @@ pub enum Api {
     Hook(PaneId, serde_json::Value),
     /// A tool call ended (#644): a tagged follow-up waiting for the pane, if there is
     /// one and the hook is from its own conversation.
-    TakeTagged(PaneId, serde_json::Value, oneshot::Sender<Option<(String, arugula_proto::Driver)>>),
+    TakeTagged(PaneId, serde_json::Value, oneshot::Sender<Option<(String, arugula_proto::Driver, Option<u64>)>>),
+    /// The hook printed follow-up `id` it was given (#630): it's done.
+    FollowUpAck(PaneId, u64, oneshot::Sender<bool>),
     /// The tool each pane's session last ran (#645).
     LastTools(oneshot::Sender<HashMap<PaneId, String>>),
     /// What Claude Code running in a pane says of its session from inside
@@ -406,6 +425,8 @@ pub enum InboxReply {
     FollowUp {
         text: String,
         by: Driver,
+        /// What the hook acks once it printed it (#630), if it acks.
+        id: Option<u64>,
     },
     /// A newer waiter took its place.
     Replaced,
@@ -807,6 +828,7 @@ pub fn start(
             warn!(error = %e, "could not create the first session");
         }
     }
+    d.restore_followups();
     d.sweep_machines();
     let (provider, daemon_id) = (d.config.provider.clone(), d.config.daemon_id.clone());
     tokio::spawn(d.run(rx, notices_rx));
@@ -1227,7 +1249,10 @@ impl Daemon {
                         self.shutdown();
                         let _ = done.send(());
                     }
-                    Some(cmd) => self.handle(cmd),
+                    Some(cmd) => {
+                        self.handle(cmd);
+                        self.save_followups();
+                    }
                     None => return,
                 },
                 Some(n) = notices.recv() => self.notice(n),

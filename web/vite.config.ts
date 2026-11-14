@@ -8,7 +8,7 @@ import { releases } from "../scripts/whats-new.mjs";
 // viewer of a shared Doc (doc.html, #1066). This is the shell, which the
 // daemon embeds: its module ids go to dist.modules.json for the bundle
 // check (`check-imports.mjs --bundle … --forbid platform`, M155), so none of
-// them may be the platform page's.
+// them may be the platform's or the app's.
 
 /** The build's module ids, for the bundle check. */
 function modules(): Plugin {

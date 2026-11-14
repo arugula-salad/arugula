@@ -7,22 +7,92 @@
 //! the hook waits, else when the hook next waits, or at the next tool call:
 //! #644) and ends at the pane's next `Stop` hook. A follow-up without a tag
 //! (a person's) is told of to no one.
+//!
+//! The queue is kept on disk (#630, [`Saved`]), so a daemon restart or an
+//! update loses none. A hook that acks ([`Hand::acks`]) gets each follow-up
+//! with an id, and it stays [`Handed`] until the hook says it printed it:
+//! one that is never acked is offered again ([`ACK_WITHIN_MS`]). Each one
+//! keeps the Claude Code session the pane had when it came; handed to
+//! another, it says so ([`EARLIER`]).
 
 use std::collections::{HashMap, VecDeque};
 
 use arugula_proto::{Driver, PaneId};
+use serde::{Deserialize, Serialize};
 
 use super::{Followups, Tag, Turn};
 
-/// A follow-up that waits: its text, whose it is, and its tag.
-type Waiting = (String, Driver, Option<Tag>);
+/// How long a follow-up handed to a hook that acks may go unacked before
+/// it is offered again: the hook printed nothing, or died first.
+pub(super) const ACK_WITHIN_MS: u64 = 30_000;
+
+/// The first line of a follow-up handed to another Claude Code session than
+/// the one the pane had when it was sent (#630).
+pub(super) const EARLIER: &str = "(This follow-up was sent to an earlier Claude Code session in this pane, \
+before /clear or a new session: it may not be about your current work.)";
+
+/// A follow-up that waits: its text, whose it is, its tag, and the Claude
+/// Code session it was for.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(super) struct Entry {
+    pub text: String,
+    pub by: Driver,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<Tag>,
+    /// The pane's Claude Code session when it came, if it had one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<String>,
+}
+
+/// Follow-ups handed to a hook as one (`id`), waiting for its ack.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(super) struct Handed {
+    pub id: u64,
+    pub at: u64,
+    pub entries: Vec<Entry>,
+}
+
+/// Who a follow-up is being handed to: the session the hook speaks for,
+/// whether it acks, and when.
+#[derive(Debug, Clone, Copy, Default)]
+pub(super) struct Hand<'a> {
+    pub session: Option<&'a str>,
+    pub acks: bool,
+    pub now: u64,
+}
+
+/// What a hook is given: the text, whose it is, and the id it acks, if it
+/// acks.
+pub(super) type Given = (String, Driver, Option<u64>);
+
+/// The queue as `followups.json` keeps it (#630).
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub(super) struct Saved {
+    #[serde(default)]
+    pub next: u64,
+    #[serde(default)]
+    pub queued: Vec<(PaneId, Vec<Entry>)>,
+    #[serde(default)]
+    pub handed: Vec<(PaneId, Vec<Handed>)>,
+    #[serde(default)]
+    pub running: Vec<(PaneId, Vec<Tag>)>,
+    /// The panes whose hooks have spoken (`PaneInfo.unhooked`), so a restart
+    /// doesn't make every pane look unhooked until its next hook.
+    #[serde(default)]
+    pub hooked: Vec<PaneId>,
+}
 
 #[derive(Default)]
 pub(super) struct Queue {
-    queued: HashMap<PaneId, VecDeque<Waiting>>,
+    queued: HashMap<PaneId, VecDeque<Entry>>,
     /// The tags whose turn is running in each pane: several when the
     /// follow-up was several joined as one (#580).
     running: HashMap<PaneId, Vec<Tag>>,
+    /// Handed to a hook that acks, and not acked yet.
+    handed: HashMap<PaneId, Vec<Handed>>,
+    next: u64,
+    /// Changed since it was last written.
+    dirty: bool,
 }
 
 impl Queue {
@@ -32,8 +102,15 @@ impl Queue {
     }
 
     /// Keep one for the hook's next wait.
+    #[cfg(test)]
     pub(super) fn push(&mut self, pane: PaneId, text: String, by: Driver, tag: Option<Tag>) {
-        self.queued.entry(pane).or_default().push_back((text, by, tag));
+        self.push_for(pane, Entry { text, by, tag, session: None });
+    }
+
+    /// [`push`](Self::push), with the session it was for.
+    pub(super) fn push_for(&mut self, pane: PaneId, entry: Entry) {
+        self.queued.entry(pane).or_default().push_back(entry);
+        self.dirty = true;
     }
 
     /// The card to raise for what is held on `pane` (#579): the oldest
@@ -41,7 +118,7 @@ impl Queue {
     /// (no tag) is never held.
     pub(super) fn held(&self, pane: PaneId) -> Option<(String, usize)> {
         let q = self.queued.get(&pane)?;
-        let mut held = q.iter().filter_map(|(_, _, tag)| tag.as_ref());
+        let mut held = q.iter().filter_map(|e| e.tag.as_ref());
         let first = held.next()?;
         Some((first.card.clone(), 1 + held.count()))
     }
@@ -50,10 +127,11 @@ impl Queue {
     /// of the queue to be typed, and its turn starts.
     pub(super) fn deliver_held(&mut self, pane: PaneId, told: &dyn Followups) -> Option<String> {
         let q = self.queued.get_mut(&pane)?;
-        let at = q.iter().position(|(_, _, tag)| tag.is_some())?;
-        let (text, _, tag) = q.remove(at)?;
-        self.started(pane, tag, told);
-        Some(text)
+        let at = q.iter().position(|e| e.tag.is_some())?;
+        let e = q.remove(at)?;
+        self.dirty = true;
+        self.started(pane, e.tag, told);
+        Some(e.text)
     }
 
     /// The owner dismissed the card (#579): the held follow-ups are dropped.
@@ -61,7 +139,8 @@ impl Queue {
     pub(super) fn drop_held(&mut self, pane: PaneId) -> usize {
         let Some(q) = self.queued.get_mut(&pane) else { return 0 };
         let before = q.len();
-        q.retain(|(_, _, tag)| tag.is_none());
+        q.retain(|e| e.tag.is_none());
+        self.dirty |= before != q.len();
         before - q.len()
     }
 
@@ -69,13 +148,25 @@ impl Queue {
     /// turn starts. When it is tagged, the others queued that the binary says
     /// go with it come as one follow-up, oldest first (#580); the rest wait
     /// for the next take, and so does a person's.
+    #[cfg(test)]
     pub(super) fn take(&mut self, pane: PaneId, told: &dyn Followups) -> Option<(String, Driver)> {
+        self.take_for(pane, Hand::default(), told).map(|(t, b, _)| (t, b))
+    }
+
+    /// [`take`](Self::take), handed as `hand` says (#630): one unacked for
+    /// too long goes first again.
+    pub(super) fn take_for(&mut self, pane: PaneId, hand: Hand<'_>, told: &dyn Followups) -> Option<Given> {
+        self.unacked(pane, hand.now);
         let q = self.queued.get_mut(&pane)?;
-        let (text, by, tag) = q.pop_front()?;
-        let Some(first) = tag else { return Some((text, by)) };
-        let (text, tags) = Self::join(q, text, first, told);
+        let first = q.pop_front()?;
+        self.dirty = true;
+        if first.tag.is_none() {
+            return Some(self.hand(pane, hand, vec![first], None));
+        }
+        let (text, entries) = Self::join(q, first, told);
+        let tags = entries.iter().filter_map(|e| e.tag.clone()).collect();
         self.started_all(pane, tags, told);
-        Some((text, by))
+        Some(self.hand(pane, hand, entries, Some(text)))
     }
 
     /// A tool call just ended in a running turn (#644): the oldest waiting
@@ -83,35 +174,105 @@ impl Queue {
     /// person's follow-up stays for the inbox hook, which starts a turn of
     /// its own, and so do the tagged ones that don't go with it, for the
     /// next tool call.
+    #[cfg(test)]
     pub(super) fn take_tagged(&mut self, pane: PaneId, told: &dyn Followups) -> Option<(String, Driver)> {
-        let q = self.queued.get_mut(&pane)?;
-        let at = q.iter().position(|(_, _, tag)| tag.is_some())?;
-        let (text, by, tag) = q.remove(at)?;
-        let (text, tags) = Self::join(q, text, tag?, told);
-        self.started_all(pane, tags, told);
-        Some((text, by))
+        self.take_tagged_for(pane, Hand::default(), told).map(|(t, b, _)| (t, b))
     }
 
-    /// The follow-up tagged `first`, with `text`, takes the others waiting
-    /// in `q` that the binary says go with it, in order; they leave `q`.
-    /// The text for all of them, and every tag taken.
-    fn join(q: &mut VecDeque<Waiting>, mut text: String, first: Tag, told: &dyn Followups) -> (String, Vec<Tag>) {
-        let mut tags = vec![first];
+    /// [`take_tagged`](Self::take_tagged), handed as `hand` says (#630).
+    pub(super) fn take_tagged_for(&mut self, pane: PaneId, hand: Hand<'_>, told: &dyn Followups) -> Option<Given> {
+        self.unacked(pane, hand.now);
+        let q = self.queued.get_mut(&pane)?;
+        let at = q.iter().position(|e| e.tag.is_some())?;
+        let first = q.remove(at)?;
+        self.dirty = true;
+        let (text, entries) = Self::join(q, first, told);
+        let tags = entries.iter().filter_map(|e| e.tag.clone()).collect();
+        self.started_all(pane, tags, told);
+        Some(self.hand(pane, hand, entries, Some(text)))
+    }
+
+    /// A follow-up goes straight to a hook that was waiting: it waits for
+    /// the hook's ack if the hook acks. Its turn starts once it's sent
+    /// ([`started`](Self::started)).
+    pub(super) fn hand_now(&mut self, pane: PaneId, entry: Entry, hand: Hand<'_>) -> Given {
+        self.hand(pane, hand, vec![entry], None)
+    }
+
+    /// The text for `entries` (`text` when several were joined), said to be
+    /// for an earlier session when it was; kept until acked when the hook
+    /// acks.
+    fn hand(&mut self, pane: PaneId, hand: Hand<'_>, entries: Vec<Entry>, text: Option<String>) -> Given {
+        let text = text.unwrap_or_else(|| entries[0].text.clone());
+        let by = entries[0].by.clone();
+        let earlier = match hand.session {
+            Some(now) => entries.iter().any(|e| e.session.as_deref().is_some_and(|s| s != now)),
+            None => false,
+        };
+        let text = if earlier { format!("{EARLIER}\n{text}") } else { text };
+        if !hand.acks {
+            return (text, by, None);
+        }
+        self.next += 1;
+        let id = self.next;
+        self.handed.entry(pane).or_default().push(Handed { id, at: hand.now, entries });
+        self.dirty = true;
+        (text, by, Some(id))
+    }
+
+    /// The hook printed follow-up `id`: it's done. Whether it was waiting.
+    pub(super) fn ack(&mut self, pane: PaneId, id: u64) -> bool {
+        let Some(h) = self.handed.get_mut(&pane) else { return false };
+        let before = h.len();
+        h.retain(|x| x.id != id);
+        let acked = h.len() != before;
+        if h.is_empty() {
+            self.handed.remove(&pane);
+        }
+        self.dirty |= acked;
+        acked
+    }
+
+    /// What was handed to `pane`'s hook and not acked within
+    /// [`ACK_WITHIN_MS`] goes back to the front of its queue, in order.
+    fn unacked(&mut self, pane: PaneId, now: u64) {
+        let Some(h) = self.handed.get_mut(&pane) else { return };
+        let (stale, kept): (Vec<Handed>, Vec<Handed>) =
+            std::mem::take(h).into_iter().partition(|x| now.saturating_sub(x.at) >= ACK_WITHIN_MS);
+        *h = kept;
+        if h.is_empty() {
+            self.handed.remove(&pane);
+        }
+        if stale.is_empty() {
+            return;
+        }
+        let q = self.queued.entry(pane).or_default();
+        for e in stale.into_iter().flat_map(|x| x.entries).rev() {
+            q.push_front(e);
+        }
+        self.dirty = true;
+    }
+
+    /// The follow-up `first`, and the others waiting in `q` that the binary
+    /// says go with it, in order; they leave `q`. The text for all of them,
+    /// and every one taken.
+    fn join(q: &mut VecDeque<Entry>, first: Entry, told: &dyn Followups) -> (String, Vec<Entry>) {
+        let mut text = first.text.clone();
+        let mut tags = vec![first.tag.clone().expect("a tagged follow-up")];
+        let mut taken = vec![first];
         let mut rest = VecDeque::new();
-        for (t, b, tag) in std::mem::take(q) {
-            match tag {
-                Some(tag) => match told.joined(&tags, &tag) {
-                    Some(joined) => {
-                        text = joined;
-                        tags.push(tag);
-                    }
-                    None => rest.push_back((t, b, Some(tag))),
-                },
-                None => rest.push_back((t, b, None)),
+        for e in std::mem::take(q) {
+            match e.tag.as_ref().and_then(|tag| told.joined(&tags, tag)) {
+                Some(joined) => {
+                    text = joined;
+                    tags.push(e.tag.clone().expect("joined is tagged"));
+                    taken.push(e);
+                }
+                None => rest.push_back(e),
             }
         }
         *q = rest;
-        (text, tags)
+        (text, taken)
     }
 
     /// A follow-up went straight to a hook that was waiting: its turn starts.
@@ -127,21 +288,95 @@ impl Queue {
             told.turn(pane, tag, Turn::Started);
         }
         // Added to, not replaced: a turn takes several follow-ups (#644),
-        // and its `Stop` ends all of them.
-        self.running.entry(pane).or_default().extend(tags);
+        // and its `Stop` ends all of them. One offered again isn't twice.
+        let running = self.running.entry(pane).or_default();
+        for tag in tags {
+            if !running.contains(&tag) {
+                running.push(tag);
+            }
+        }
+        self.dirty = true;
     }
 
     /// The pane's `Stop` hook spoke: the turn that was running has ended.
     pub(super) fn stopped(&mut self, pane: PaneId, told: &dyn Followups) {
         for tag in self.running.remove(&pane).unwrap_or_default() {
+            self.dirty = true;
             told.turn(pane, &tag, Turn::Ended);
         }
     }
 
     /// The pane closed: nothing more is said of its turn.
     pub(super) fn gone(&mut self, pane: PaneId) {
-        self.queued.remove(&pane);
-        self.running.remove(&pane);
+        let had = self.queued.remove(&pane).is_some() | self.running.remove(&pane).is_some();
+        self.dirty |= had | self.handed.remove(&pane).is_some();
+    }
+
+    /// Something kept with it changed (the panes whose hooks spoke).
+    pub(super) fn changed(&mut self) {
+        self.dirty = true;
+    }
+
+    /// Whether it changed since [`saved`](Self::saved) last said; clears it.
+    pub(super) fn take_dirty(&mut self) -> bool {
+        std::mem::take(&mut self.dirty)
+    }
+
+    /// As `followups.json` keeps it, with the panes whose hooks spoke.
+    pub(super) fn saved(&self, hooked: &std::collections::HashSet<PaneId>) -> Saved {
+        let sorted = |mut v: Vec<PaneId>| {
+            v.sort_unstable();
+            v
+        };
+        Saved {
+            next: self.next,
+            queued: sorted(self.queued.keys().copied().collect())
+                .into_iter()
+                .filter_map(|p| Some((p, self.queued.get(&p)?.iter().cloned().collect::<Vec<_>>())))
+                .filter(|(_, q)| !q.is_empty())
+                .collect(),
+            handed: sorted(self.handed.keys().copied().collect())
+                .into_iter()
+                .filter_map(|p| Some((p, self.handed.get(&p)?.clone())))
+                .collect(),
+            running: sorted(self.running.keys().copied().collect())
+                .into_iter()
+                .filter_map(|p| Some((p, self.running.get(&p)?.clone())))
+                .collect(),
+            hooked: sorted(hooked.iter().copied().collect()),
+        }
+    }
+
+    /// The queue `followups.json` kept, for the panes in `alive`; what was
+    /// handed and never acked waits again, first. The tags of panes that are
+    /// gone come back with it, each to be told it was dropped.
+    pub(super) fn restore(saved: Saved, alive: &dyn Fn(PaneId) -> bool) -> (Self, Vec<(PaneId, Tag)>) {
+        let mut q = Queue { next: saved.next, ..Default::default() };
+        let mut gone: Vec<(PaneId, Tag)> = vec![];
+        let mut lost = |pane: PaneId, tags: &mut dyn Iterator<Item = Tag>| gone.extend(tags.map(|t| (pane, t)));
+        for (pane, handed) in saved.handed {
+            let entries = handed.into_iter().flat_map(|h| h.entries);
+            if alive(pane) {
+                q.queued.entry(pane).or_default().extend(entries);
+            } else {
+                lost(pane, &mut entries.filter_map(|e| e.tag));
+            }
+        }
+        for (pane, entries) in saved.queued {
+            if alive(pane) {
+                q.queued.entry(pane).or_default().extend(entries);
+            } else {
+                lost(pane, &mut entries.into_iter().filter_map(|e| e.tag));
+            }
+        }
+        for (pane, tags) in saved.running {
+            if alive(pane) {
+                q.running.insert(pane, tags);
+            } else {
+                lost(pane, &mut tags.into_iter());
+            }
+        }
+        (q, gone)
     }
 }
 
@@ -326,5 +561,108 @@ mod tests {
         }
         assert!(f.full(4, 3) && !f.full(4, 4) && !f.full(5, 1));
         assert_eq!(f.take(4, &heard).map(|(t, _)| t).as_deref(), Some("m0"));
+    }
+
+    /// A `followups.json` with every field set loads whole, and saves back
+    /// as it was: a renamed type drops no field (#630).
+    #[test]
+    fn stored_followups_load() {
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../proto/fixtures/stored/followups.json");
+        let bytes = std::fs::read(fixture).unwrap();
+        let saved: Saved = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!((saved.queued[0].1.len(), saved.handed[0].1[0].id, saved.hooked.len()), (2, 3, 2));
+        let was: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(serde_json::to_value(&saved).unwrap(), was);
+        let (q, gone) = Queue::restore(saved, &|_| true);
+        assert!(gone.is_empty());
+        let hooked: std::collections::HashSet<PaneId> = [4, 9].into();
+        assert_eq!(q.saved(&hooked).queued[0].1.len(), 3, "the unacked one waits again, first");
+    }
+
+    fn hand(session: Option<&str>, now: u64) -> Hand<'_> {
+        Hand { session, acks: true, now }
+    }
+
+    /// A hook that acks (#630): what it's given stays until it acks; one
+    /// never acked comes again, first, after [`ACK_WITHIN_MS`], and its turn
+    /// isn't said twice; an acked one never comes again.
+    #[test]
+    fn a_follow_up_stays_until_acked_and_comes_again_if_it_isnt() {
+        let (mut f, heard) = (Queue::default(), Heard::default());
+        f.push(4, "one".into(), by(), tag(7));
+        f.push(4, "two".into(), by(), None);
+        let (text, _, id) = f.take_for(4, hand(None, 1_000), &heard).unwrap();
+        assert_eq!((text.as_str(), id.is_some()), ("one", true));
+        assert_eq!(heard.all(), [(4, 7, Turn::Started)]);
+        // Not acked, and not stale yet: the next is "two".
+        let (text, _, two) = f.take_for(4, hand(None, 2_000), &heard).unwrap();
+        assert_eq!(text, "two");
+        assert!(f.ack(4, two.unwrap()));
+        // Stale: "one" comes again, with a new id.
+        let (text, _, again) = f.take_for(4, hand(None, 1_000 + ACK_WITHIN_MS), &heard).unwrap();
+        assert_eq!(text, "one");
+        assert_ne!(again, id);
+        assert!(!f.ack(4, id.unwrap()), "the first id is gone");
+        assert!(f.ack(4, again.unwrap()));
+        assert!(f.take_for(4, hand(None, 10 * ACK_WITHIN_MS), &heard).is_none(), "acked: never again");
+        heard.all();
+        f.stopped(4, &heard);
+        assert_eq!(heard.all(), [(4, 7, Turn::Ended)], "ended once");
+        // A hook that doesn't ack is given no id, and nothing is kept.
+        f.push(4, "three".into(), by(), None);
+        let (_, _, none) = f.take_for(4, Hand { acks: false, ..hand(None, 0) }, &heard).unwrap();
+        assert_eq!(none, None);
+        assert!(f.take_for(4, hand(None, 10 * ACK_WITHIN_MS), &heard).is_none());
+    }
+
+    /// Sent to one Claude Code session, taken by another (#630): it says so
+    /// first. The same session, or one unknown, gets it as it was.
+    #[test]
+    fn a_follow_up_for_an_earlier_session_says_so() {
+        let (mut f, heard) = (Queue::default(), Heard::default());
+        let entry = |text: &str, session: Option<&str>| Entry {
+            text: text.into(),
+            by: by(),
+            tag: None,
+            session: session.map(str::to_owned),
+        };
+        f.push_for(4, entry("old", Some("s1")));
+        f.push_for(4, entry("same", Some("s2")));
+        f.push_for(4, entry("unknown", None));
+        let (text, _, _) = f.take_for(4, hand(Some("s2"), 0), &heard).unwrap();
+        assert_eq!(text, format!("{EARLIER}\nold"));
+        assert_eq!(f.take_for(4, hand(Some("s2"), 0), &heard).unwrap().0, "same");
+        assert_eq!(f.take_for(4, hand(Some("s2"), 0), &heard).unwrap().0, "unknown");
+        f.push_for(4, entry("no hook session", Some("s1")));
+        assert_eq!(f.take_for(4, hand(None, 0), &heard).unwrap().0, "no hook session");
+    }
+
+    /// The queue survives a restart (#630): what waited, what was handed
+    /// and not acked (first), the running turn, and the hooked panes come
+    /// back for panes that are still there; a gone pane's tags come back to
+    /// be told they were dropped.
+    #[test]
+    fn the_queue_is_kept_across_a_restart() {
+        let (mut f, heard) = (Queue::default(), Heard::default());
+        f.push(4, "handed".into(), by(), tag(1));
+        f.push(4, "waiting".into(), by(), None);
+        f.push(5, "gone".into(), by(), tag(2));
+        let (_, _, id) = f.take_for(4, hand(None, 0), &heard).unwrap();
+        assert!(id.is_some());
+        assert!(f.take_dirty() && !f.take_dirty());
+        let hooked: std::collections::HashSet<PaneId> = [4, 5].into();
+        let saved = serde_json::to_vec(&f.saved(&hooked)).unwrap();
+        let saved: Saved = serde_json::from_slice(&saved).unwrap();
+        assert_eq!(saved.hooked, [4, 5]);
+        let (mut back, gone) = Queue::restore(saved, &|p| p == 4);
+        assert_eq!(gone.iter().map(|(p, t)| (*p, number(t))).collect::<Vec<_>>(), [(5, 2)]);
+        heard.all();
+        let (text, _, again) = back.take_for(4, hand(None, 0), &heard).unwrap();
+        assert_eq!(text, "handed");
+        assert!(again.unwrap() > id.unwrap(), "ids go on from where they were");
+        assert_eq!(back.take_for(4, hand(None, 0), &heard).unwrap().0, "waiting");
+        heard.all();
+        back.stopped(4, &heard);
+        assert_eq!(heard.all(), [(4, 1, Turn::Ended)], "the running turn ends once after the restart");
     }
 }

@@ -2,7 +2,11 @@
 //! that make a terminal wait, questions asked in a terminal, hooks and
 //! follow-ups.
 
-use super::{AskReply, Daemon, InboxReply, Replied, SAVE_DEBOUNCE, Tag, agent_in, plain_reason};
+use super::{
+    AskReply, Daemon, InboxReply, Replied, SAVE_DEBOUNCE, Tag, agent_in,
+    followups::{Entry, Hand},
+    plain_reason,
+};
 use crate::{acl::Principal, store::now_ms};
 use arugula_proto::{
     Action, AskRef, AskWhat, Attention, BlockType, Driver, EventKind, PaneId, Policy, Reason, ReasonKind,
@@ -18,10 +22,15 @@ use tracing::{debug, info, warn};
 pub(super) struct Waiter {
     pub(super) token: u64,
     pub(super) reply: oneshot::Sender<InboxReply>,
+    /// It acks what it's given (#630).
+    pub(super) acks: bool,
 }
 
 /// How many follow-ups wait for an agent that isn't listening yet.
 const MAX_QUEUED: usize = 8;
+
+/// The follow-up queue, in the state dir (#630).
+const FOLLOWUPS_FILE: &str = "followups.json";
 
 /// The least time between two notifications a pane's status records
 /// (#720) push.
@@ -752,8 +761,66 @@ impl Daemon {
     /// questions come to cards (`PaneInfo.unhooked` is false).
     pub(super) fn heard_hook(&mut self, pane: PaneId) {
         if self.panes.contains_key(&pane) && self.hooked.insert(pane) {
+            // Kept with the queue (#630): a restart doesn't forget it.
+            self.queued.changed();
             self.mark(pane);
         }
+    }
+
+    /// The Claude Code session the pane runs now, as its hooks named it.
+    fn claude_session(&self, pane: PaneId) -> Option<String> {
+        let s = self.meta.get(&pane)?.session.as_ref()?;
+        (s.running && s.agent == "claude").then(|| s.id.clone())
+    }
+
+    /// Write `followups.json` if the queue changed (#630). A failure is
+    /// logged: the queue in memory still holds.
+    pub(super) fn save_followups(&mut self) {
+        if !self.queued.take_dirty() {
+            return;
+        }
+        let saved = self.queued.saved(&self.hooked);
+        let path = self.store.root().join(FOLLOWUPS_FILE);
+        let written = serde_json::to_vec(&saved)
+            .map_err(std::io::Error::other)
+            .and_then(|b| crate::store::write_atomic(&path, &b));
+        if let Err(e) = written {
+            warn!(error = %e, "can't keep the follow-up queue on disk");
+        }
+    }
+
+    /// The queue `followups.json` kept (#630), once the panes are back.
+    /// Tagged follow-ups of panes that are gone are told as dropped.
+    pub(super) fn restore_followups(&mut self) {
+        let path = self.store.root().join(FOLLOWUPS_FILE);
+        let saved = match std::fs::read(&path) {
+            Ok(b) => match serde_json::from_slice::<super::followups::Saved>(&b) {
+                Ok(s) => s,
+                Err(e) => {
+                    warn!(error = %e, "followups.json is unreadable; starting with no follow-ups");
+                    let _ = std::fs::rename(
+                        &path,
+                        self.store.root().join(format!("{FOLLOWUPS_FILE}.unreadable-{}", now_ms())),
+                    );
+                    return;
+                }
+            },
+            Err(_) => return,
+        };
+        let hooked: Vec<PaneId> = saved.hooked.iter().copied().filter(|p| self.panes.contains_key(p)).collect();
+        let panes = &self.panes;
+        let (queue, gone) = super::followups::Queue::restore(saved, &|p| panes.contains_key(&p));
+        self.queued = queue;
+        self.hooked.extend(hooked);
+        for (pane, tag) in gone {
+            self.config.followups.turn(pane, &tag, super::Turn::Dropped(super::DropWhy::Exited));
+        }
+        let panes: Vec<PaneId> = self.panes.keys().copied().collect();
+        for pane in panes {
+            self.refresh_held(pane);
+        }
+        self.queued.changed();
+        self.save_followups();
     }
 
     pub(super) fn hook(&mut self, pane: PaneId, hook: &serde_json::Value) {
@@ -831,21 +898,28 @@ impl Daemon {
         }
     }
 
-    /// `arugula inbox` waits for a follow-up: one queued goes now.
-    pub(super) fn wait_inbox(&mut self, pane: PaneId) -> Result<(u64, oneshot::Receiver<InboxReply>), String> {
+    /// `arugula inbox` waits for a follow-up: one queued goes now. A hook
+    /// that `acks` gets it with an id, and it's kept until acked (#630).
+    pub(super) fn wait_inbox(
+        &mut self,
+        pane: PaneId,
+        acks: bool,
+    ) -> Result<(u64, oneshot::Receiver<InboxReply>), String> {
         if !self.panes.contains_key(&pane) {
             return Err(format!("no terminal %{pane}"));
         }
         let (tx, rx) = oneshot::channel();
         let token = self.next_ask;
         self.next_ask += 1;
-        if let Some((text, by)) = self.queued.take(pane, &*self.config.followups) {
-            let _ = tx.send(InboxReply::FollowUp { text, by });
+        let session = self.claude_session(pane);
+        let hand = Hand { session: session.as_deref(), acks, now: now_ms() };
+        if let Some((text, by, id)) = self.queued.take_for(pane, hand, &*self.config.followups) {
+            let _ = tx.send(InboxReply::FollowUp { text, by, id });
             self.emit(Some(pane), EventKind::Prompted);
             self.refresh_held(pane);
             return Ok((token, rx));
         }
-        if let Some(old) = self.inbox.insert(pane, Waiter { token, reply: tx }) {
+        if let Some(old) = self.inbox.insert(pane, Waiter { token, reply: tx, acks }) {
             let _ = old.reply.send(InboxReply::Replaced);
         } else {
             self.touch(pane);
@@ -858,7 +932,11 @@ impl Daemon {
     /// turn. Only into the pane's own conversation: not a subagent's tool
     /// call, which would take it to a conversation that ends with the
     /// subagent, and not a `claude -p` run inside the pane.
-    pub(super) fn take_tagged(&mut self, pane: PaneId, hook: &serde_json::Value) -> Option<(String, Driver)> {
+    pub(super) fn take_tagged(
+        &mut self,
+        pane: PaneId,
+        hook: &serde_json::Value,
+    ) -> Option<(String, Driver, Option<u64>)> {
         let kept = self.meta.get(&pane).and_then(|m| m.session.as_ref()).filter(|s| s.running);
         let sessions = self.config.sessions.clone();
         let id = top_level(hook, kept.map(|s| s.id.as_str()), |id| sessions.nested(id))?;
@@ -867,7 +945,8 @@ impl Daemon {
         if self.midturn_told.get(&pane).map(String::as_str) != Some(id) {
             return None;
         }
-        let taken = self.queued.take_tagged(pane, &*self.config.followups)?;
+        let hand = Hand { session: Some(id), acks: hook[arugula_proto::api::HOOK_ACKS] == true, now: now_ms() };
+        let taken = self.queued.take_tagged_for(pane, hand, &*self.config.followups)?;
         self.refresh_held(pane);
         self.touch(pane);
         Some(taken)
@@ -892,29 +971,52 @@ impl Daemon {
         if tag.is_some() && self.tagged_off.contains(&pane) {
             return Err(format!("%{pane}'s owner silenced teammates' follow-ups for this session"));
         }
+        // A follow-up waits only for Claude Code's hooks (#630). A pane where
+        // nothing could ever take one (a shell, Codex) refuses it at once,
+        // rather than keep it for no one. Claude Code without its hooks
+        // keeps it, held behind the card ([`refresh_held`](Self::refresh_held)).
+        if !self.inbox.contains_key(&pane) && !self.hooked.contains(&pane) {
+            let command = self.pane_info(p).command;
+            let agent = command.as_deref().and_then(agent_in);
+            if agent.as_deref() != Some("claude") {
+                let runs = agent.map_or_else(|| "no agent".to_owned(), |a| a.to_owned());
+                return Err(format!(
+                    "%{pane} can't take follow-ups: they go to Claude Code through its hooks, and this pane runs {runs}"
+                ));
+            }
+        }
         info!(pane, who = by.who, "follow-up");
         p.note(format!("follow-up: {text}"), by.name.clone(), HistoryKind::Answer);
         self.config.acl.record(serde_json::json!({
             "at": now_ms(), "by": by.who, "name": by.name, "action": "follow_up", "pane": pane, "text": text,
         }));
+        // Kept for the session the pane runs now (#630).
+        let entry = Entry { text, by, tag, session: self.claude_session(pane) };
         let now = match self.inbox.remove(&pane) {
-            Some(w) => match w.reply.send(InboxReply::FollowUp { text: text.clone(), by: by.clone() }) {
-                Ok(()) => {
-                    self.emit(Some(pane), EventKind::Prompted);
-                    self.queued.started(pane, tag, &*self.config.followups);
-                    true
+            Some(w) => {
+                let hand = Hand { session: entry.session.as_deref(), acks: w.acks, now: now_ms() };
+                let (text, by, id) = self.queued.hand_now(pane, entry.clone(), hand);
+                match w.reply.send(InboxReply::FollowUp { text, by, id }) {
+                    Ok(()) => {
+                        self.emit(Some(pane), EventKind::Prompted);
+                        self.queued.started(pane, entry.tag, &*self.config.followups);
+                        true
+                    }
+                    // The waiter went: it waits for the next one.
+                    Err(_) => {
+                        if let Some(id) = id {
+                            self.queued.ack(pane, id);
+                        }
+                        self.queued.push_for(pane, entry);
+                        false
+                    }
                 }
-                Err(InboxReply::FollowUp { text, by }) => {
-                    self.queued.push(pane, text, by, tag);
-                    false
-                }
-                Err(_) => false,
-            },
+            }
             None => {
                 if self.queued.full(pane, MAX_QUEUED) {
                     return Err("too many follow-ups waiting: is Claude Code's inbox hook set up?".into());
                 }
-                self.queued.push(pane, text, by, tag);
+                self.queued.push_for(pane, entry);
                 false
             }
         };

@@ -95,6 +95,8 @@ export function titleOf(r: Route, k: Known): string {
       return parts(r.owner === "personal" ? "Personal settings" : "Team settings");
     case "design":
       return parts("Design reference");
+    case "machines":
+      return parts(r.at.at === "swarm" ? "Swarm" : "Machines", p);
     case "missing":
       return parts("Not found");
     case "find":

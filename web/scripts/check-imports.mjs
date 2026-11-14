@@ -1,29 +1,36 @@
-// The web client's import rule (M148, "The platform page is on
-// app.arugula.io, not on the keys' origin"): web/src is shell/, platform/
-// and shared/, and the platform page can't reach the code that holds or uses
-// device keys.
+// The web client's import rule (M147, M148): web/src is four folders.
 //
-// - platform/ imports only platform/ and shared/ (and packages);
-// - shared/ imports only shared/ (and packages);
-// - so nothing in platform/ reaches the key modules below, directly or
-//   through shared/, which is checked on the whole import graph too.
+// - shell/: the daemon client, the fleet, terminals, blocks, Swarm and
+//   control's trust pages; the daemon's page and control's;
+// - platform/: projects, boards, Docs, chat; imports only platform/ and
+//   shared/ (and packages), so its pages stay free of terminals;
+// - shared/: imports only shared/ (and packages);
+// - app/: the one app on app.arugula.io (Arugula #989), the only folder that
+//   may import platform/ and shell/ both; nothing else imports it.
+//
+// The platform page used to be fenced off from device keys too ("The
+// platform page is on app.arugula.io, not on the keys' origin", aru-079).
+// That record is superseded by aru-141 (the hub's tokens replace device
+// keys), so the app's bundle may hold the shell. It still may not hold
+// shell/trust/: signing in, passkeys and approving devices stay on
+// control.arugula.io.
 //
 // Every import counts: static, dynamic, `export … from`, `import type`,
 // TypeScript's `import("…")` types and CSS `@import`.
 //
 //   node scripts/check-imports.mjs [src]
 //     checks the source tree (default: src next to this script).
-//   node scripts/check-imports.mjs --bundle <modules.json> --forbid keys|platform [src]
-//     checks a build's module ids (a JSON list of paths, which the platform
-//     page's and the shell's builds write): `keys` refuses the key modules
-//     and anything else of the shell's, `platform` refuses platform/.
+//   node scripts/check-imports.mjs --bundle <modules.json> --forbid trust|platform [src]
+//     checks a build's module ids (a JSON list of paths, which the app's and
+//     the shell's builds write): `trust` refuses shell/trust/, `platform`
+//     refuses platform/ and app/.
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** The modules that hold or use device keys, or reach machines with them:
- * the platform page never loads one. Paths under src, a trailing "/" for
- * a folder. */
+ * platform/'s pages never load one (only app/ puts them beside the shell).
+ * Paths under src, a trailing "/" for a folder. */
 export const KEY_MODULES = {
   "shell/e2e/": "the key code: device keys, cert signing, the noise channel",
   "shell/block/": "block origins' channel, which signs with device keys",
@@ -77,8 +84,8 @@ export function checkSource(src) {
   const bad = [];
   for (const [f, deps] of Object.entries(g)) {
     const from = side(f);
-    if (!["shell", "platform", "shared"].includes(from)) {
-      bad.push(`${f}: every file is in shell/, platform/ or shared/`);
+    if (!["shell", "platform", "shared", "app"].includes(from)) {
+      bad.push(`${f}: every file is in shell/, platform/, shared/ or app/`);
       continue;
     }
     for (const d of deps) {
@@ -86,6 +93,7 @@ export function checkSource(src) {
       const to = side(d);
       if (from === "shared" && to !== "shared") bad.push(`${f} imports ${d}${why(d)}: shared/ imports neither shell/ nor platform/`);
       if (from === "platform" && to === "shell") bad.push(`${f} imports ${d}${why(d)}: platform/ imports only platform/ and shared/`);
+      if (from !== "app" && to === "app") bad.push(`${f} imports ${d}: only app/ imports app/`);
     }
   }
   // The whole graph: no platform file reaches a key module by any path.
@@ -115,8 +123,9 @@ export function checkBundle(modules, forbid, src) {
     const clean = posix(id.replace(/^\0/, "").replace(/\?.*$/, ""));
     const rel = posix(relative(src, clean));
     if (rel.startsWith("..")) continue;
-    if (forbid === "keys" && side(rel) === "shell") bad.push(`the build holds ${rel}${why(rel) || " (the shell's)"}`);
-    if (forbid === "platform" && side(rel) === "platform") bad.push(`the build holds ${rel} (the platform page's)`);
+    if (forbid === "trust" && rel.startsWith("shell/trust/")) bad.push(`the build holds ${rel} (control's trust pages: signing in, passkeys, devices)`);
+    if (forbid === "platform" && side(rel) === "platform") bad.push(`the build holds ${rel} (the platform's)`);
+    if (forbid === "platform" && side(rel) === "app") bad.push(`the build holds ${rel} (the app's)`);
   }
   return bad;
 }
@@ -132,8 +141,8 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const src = resolve(args[0] ?? join(dirname(fileURLToPath(import.meta.url)), "..", "src"));
   const bad = bundle ? checkBundle(JSON.parse(readFileSync(bundle, "utf8")), forbid, src) : checkSource(src);
   for (const b of bad) console.error(b);
-  if (bundle && !["keys", "platform"].includes(forbid)) {
-    console.error("--bundle needs --forbid keys or --forbid platform");
+  if (bundle && !["trust", "platform"].includes(forbid)) {
+    console.error("--bundle needs --forbid trust or --forbid platform");
     process.exit(2);
   }
   process.exit(bad.length ? 1 : 0);

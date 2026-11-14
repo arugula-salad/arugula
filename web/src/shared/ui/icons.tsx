@@ -98,6 +98,13 @@ export const AgentsIcon = () => (
   </Svg>
 );
 
+/** A project's deploys (Arugula #989's rail): up, and out. */
+export const DeploysIcon = () => (
+  <Svg>
+    <path d="M12 4v11M7.5 8.5L12 4l4.5 4.5M5 19.5h14" />
+  </Svg>
+);
+
 export const DocsIcon = () => (
   <Svg>
     <path d="M7 4h7l4 4v12H7z" />

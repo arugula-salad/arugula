@@ -62,6 +62,7 @@ pane.detection GET /api/panes/{id}/detection Pane(Viewer) drives=false credentia
 pane.diff GET /api/panes/{id}/diff Pane(Viewer) drives=false credential=false
 pane.drivers GET /api/panes/{id}/drivers Owner drives=false credential=false
 pane.followup POST /api/panes/{id}/followup Pane(Editor) drives=true credential=false
+pane.followup_ack POST /api/panes/{id}/followup-ack Pane(Editor) drives=true credential=false
 pane.inbox POST /api/panes/{id}/inbox Pane(Editor) drives=true credential=false
 pane.keys POST /api/panes/{id}/keys Pane(Editor) drives=true credential=false
 pane.mentions POST /api/panes/{id}/mentions Owner drives=false credential=false

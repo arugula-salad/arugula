@@ -2071,7 +2071,9 @@ async fn fake_threads(f: FakeThreads) -> String {
     let messages = move || {
         json!([
             { "seq": 1, "at": 1, "author": "a2", "name": "Sam", "text": "@geek can you look?", "quote": null,
-              "pane": null, "mentions": [me.clone()], "edited": null, "deleted": null, "imported": null, "agent": null },
+              "pane": null, "mentions": [me.clone()], "edited": null, "deleted": null, "imported": null, "agent": null,
+              "files": [{ "id": "cf_1", "name": "shot.png", "mime": "image/png", "kind": "image", "size": 18,
+                          "url": "/api/daemon/chat/rooms/ch_general/files/cf_1" }] },
             { "seq": 2, "at": 2, "author": "a1", "name": "Jake", "text": "on it", "quote": null, "pane": null,
               "mentions": [], "edited": null, "deleted": null, "imported": null,
               "agent": { "machine": "m1", "machine_name": "geek" } },
@@ -2112,6 +2114,21 @@ async fn fake_threads(f: FakeThreads) -> String {
             }),
         )
         .route(
+            // #538: a room's file, by the machine's grant; another room's
+            // refused as control refuses a room the grants don't reach.
+            "/api/daemon/chat/rooms/{id}/files/{file}",
+            get(|Path((id, file)): Path<(String, String)>| async move {
+                if (id.as_str(), file.as_str()) != ("ch_general", "cf_1") {
+                    let why = "geek has no threads.read grant over that room";
+                    return (StatusCode::FORBIDDEN, Json(json!({ "error": why, "reason": "agent_ungranted" })))
+                        .into_response();
+                }
+                let disposition = "inline; filename=\"shot.png\"; filename*=UTF-8''shot.png";
+                ([("content-type", "image/png"), ("content-disposition", disposition)], CHAT_PNG.to_vec())
+                    .into_response()
+            }),
+        )
+        .route(
             "/api/daemon/chat/replies",
             get(|| async {
                 let m = |seq: i64, text: &str, agent: Value| {
@@ -2142,6 +2159,9 @@ async fn fake_threads(f: FakeThreads) -> String {
     tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
     at
 }
+
+/// What [`fake_threads`] serves as a room's file.
+const CHAT_PNG: &[u8] = b"\x89PNG\r\n\x1a\nnot really";
 
 /// M198: an agent lists, reads (its mentions too), searches and posts in
 /// the owner's conversations through control, signed as this machine, with
@@ -2184,6 +2204,25 @@ async fn an_agent_reads_and_posts_in_conversations_through_control() {
     assert_eq!((&read["messages"][0]["seq"], &read["next_after_seq"]), (&json!(1), &json!(1)), "{read}");
     assert_eq!(read["messages"][0]["mentions_you"], true, "{read}");
     assert!(read["summary"].as_str().unwrap().contains("[1] Sam: @geek can you look?"), "{read}");
+    // #538: its file is listed by id, and saved beside the caller's pane to
+    // read; a room the grants don't reach is refused, nothing saved.
+    let said = read["summary"].as_str().unwrap();
+    assert!(said.contains("[files: shot.png (image/png, 18 bytes, file cf_1)]"), "{said}");
+    assert!(said.contains("read_thread with this room and file"), "{said}");
+    let why = refused(&s, "read_thread", json!({ "room": "ch_general", "file": "cf_1" })).await;
+    assert!(why.contains("beside your pane"), "{why}");
+    let mine = d.get("/api/panes")[0]["id"].as_u64().unwrap();
+    let inside = bridge_in(&d, Client::named("claude-code"), Some(mine)).await;
+    let saved = call(&inside, "read_thread", json!({ "room": "ch_general", "file": "cf_1" })).await;
+    let path = saved["path"].as_str().unwrap();
+    assert!(path.ends_with(".png") && path.contains(&format!("arugula-uploads/{mine}/")), "{saved}");
+    assert_eq!(std::fs::read(path).unwrap(), CHAT_PNG, "{saved}");
+    assert!(saved["summary"].as_str().unwrap().starts_with("Saved shot.png (18 bytes) from ch_general to "), "{saved}");
+    let why = refused(&inside, "read_thread", json!({ "room": "dm_ab", "file": "cf_1" })).await;
+    assert!(why.contains("no threads.read grant"), "{why}");
+    let why = refused(&inside, "read_thread", json!({ "room": "ch_general", "file": "../.." })).await;
+    assert!(why.contains("a file's id"), "{why}");
+    inside.cancel().await.unwrap();
     // #580: the unread replies to this machine's agents' posts, by thread; no room.
     let unread = call(&s, "read_thread", json!({ "replies": true })).await;
     assert_eq!(unread["threads"].as_array().map(Vec::len), Some(2), "{unread}");
@@ -2216,6 +2255,7 @@ async fn an_agent_reads_and_posts_in_conversations_through_control() {
     assert!(paths.contains(&"/api/daemon/chat/rooms/ch_general/messages?after=0&mentions=true"), "{paths:?}");
     assert!(paths.contains(&"/api/daemon/chat/search?q=on+it*&team=t1"), "{paths:?}");
     assert!(paths.contains(&"/api/daemon/chat/replies"), "{paths:?}");
+    assert!(paths.contains(&"/api/daemon/chat/rooms/ch_general/files/cf_1"), "{paths:?}");
     let post = calls.iter().find(|(p, _, _)| p == "/api/daemon/chat/rooms/iss_0123/messages").unwrap();
     assert_eq!(post.2, json!({ "text": "looking, @sam" }));
     assert!(calls.iter().all(|(_, auth, _)| auth.starts_with(&format!("v2 {} ", keys.id()))), "{calls:?}");
@@ -2563,6 +2603,55 @@ async fn every_tool_that_picks_a_project_sends_the_sessions() {
     }
     s.cancel().await.unwrap();
     s0.cancel().await.unwrap();
+}
+
+/// Arugula inversion: a session's card is read when asked, not copied
+/// when a pane opens, so one set after the pane opened is its `on_issue`
+/// and `list`'s card and project; taken away, it goes from both. A `run`
+/// naming a project and issue opens its session on them.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_card_set_after_a_pane_opened_is_its_card() {
+    use futures_util::SinkExt;
+    let d = Daemon::child_with(&[]);
+    let s = bridge(&d, Client::named("claude-code")).await;
+    let pane = call(&s, "run", json!({})).await["pane"].as_u64().unwrap();
+    let of = |pane: u64| d.get("/api/panes").as_array().unwrap().iter().find(|p| p["id"] == pane).unwrap().clone();
+    let session = of(pane)["session"].clone();
+    assert!(of(pane).get("on_issue").is_none(), "{}", of(pane));
+
+    let (mut ws, _) = tokio_tungstenite::connect_async(d.ws("/ws")).await.unwrap();
+    let mut set = async |work: Value| {
+        let intent = json!({ "op": "set_session_work", "session": session, "work": work, "project_name": "Acme" });
+        let msg = json!({ "type": "intent", "id": 1, "intent": intent });
+        ws.send(tokio_tungstenite::tungstenite::Message::Text(msg.to_string().into())).await.unwrap();
+    };
+    let until = async |what: &str, done: &dyn Fn(&Value) -> bool| {
+        let deadline = std::time::Instant::now() + Duration::from_secs(20);
+        while !done(&of(pane)) {
+            assert!(std::time::Instant::now() < deadline, "{what}: {}", of(pane));
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    };
+    set(json!({ "project": "prj_0123abcd", "item": "#982" })).await;
+    until("the card never showed", &|p| p["on_issue"]["issue"] == "#982").await;
+    let p = of(pane);
+    assert_eq!(p["on_issue"], json!({ "issue": "#982", "project": "prj_0123abcd" }));
+    assert_eq!(p["session_project"], json!({ "id": "prj_0123abcd", "name": "Acme" }), "its project is the card's");
+    let listed = call(&s, "list", json!({})).await;
+    let row = listed["panes"].as_array().unwrap().iter().find(|p| p["pane"] == pane).unwrap().clone();
+    assert_eq!((&row["project"], &row["card"]), (&json!("prj_0123abcd"), &json!("#982")), "{row}");
+
+    set(Value::Null).await;
+    until("the card never went", &|p| p.get("on_issue").is_none()).await;
+    let listed = call(&s, "list", json!({})).await;
+    let row = listed["panes"].as_array().unwrap().iter().find(|p| p["pane"] == pane).unwrap().clone();
+    assert_eq!((&row["project"], row.get("card")), (&json!("prj_0123abcd"), None), "the project stays: {row}");
+
+    // Typed on `run`: a new session, on its card from the start.
+    let other = d.post("/api/run", json!({ "session": "carded", "project": "prj_4567cdef", "issue": "#7" }));
+    let p = of(other["pane"].as_u64().unwrap());
+    assert_eq!(p["on_issue"], json!({ "issue": "#7", "project": "prj_4567cdef" }), "{p}");
+    s.cancel().await.unwrap();
 }
 
 /// A fake control's platform for M216's runs: project `prj_1` with one
@@ -3928,7 +4017,7 @@ async fn an_agent_started_on_an_issue_is_on_its_row() {
     let first = control.attached.lock().unwrap()[0].clone();
     assert_eq!(first["issue"], "#12", "{first}");
     let block: u64 = first["pane"].as_str().unwrap().parse().unwrap();
-    let work = json!({ "issue": "#12", "boards": [{ "project": "prj_1", "board": "brd_1", "title": "Launch", "row": "row_1" }] });
+    let work = json!({ "issue": "#12", "project": "prj_1", "boards": [{ "project": "prj_1", "board": "brd_1", "title": "Launch", "row": "row_1" }] });
     assert_eq!(d.state(block)["work"], work);
 
     // The answer says it, too; the report carries the block's title.

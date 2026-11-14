@@ -228,14 +228,17 @@ nothing marked `mux:` names the edge or the block kinds.
   (`access.rs`, `authz.rs`, `arugula_core::access`).
 - The daemon serves the web client itself, embedded in the binary
   (`server.rs`). That is on purpose (#387).
-- `web/src` is three folders (M147): `shell/` (keys, the daemon client,
+- `web/src` is four folders (M147): `shell/` (keys, the daemon client,
   control's trust UI, the fleet, terminals, blocks, the swarm), `platform/`
-  (chat and Cloud workspace views, projects, account settings) and
-  `shared/` (tokens, common controls, wire types, views both draw).
-  `platform/` imports only `platform/` and `shared/`, `shared/` only
-  itself, and platform views reach the page through `PlatformApi`
-  (`shared/platform-api.tsx`). `just web` refuses anything else
-  (`web/scripts/check-imports.mjs`, M148).
+  (chat and Cloud workspace views, projects, account settings),
+  `shared/` (tokens, common controls, wire types, views both draw) and
+  `app/` (the one app on `app.arugula.io`, #989, which puts the platform's
+  pages and the shell's views together). `platform/` imports only
+  `platform/` and `shared/`, `shared/` only itself, only `app/` imports
+  `app/`, and platform views reach the page through `PlatformApi`
+  (`shared/platform-api.tsx`). The app's bundle holds no `shell/trust/`,
+  and the daemon's holds no `platform/` or `app/`. `just web` refuses
+  anything else (`web/scripts/check-imports.mjs`, M148).
 
 ## Clients
 

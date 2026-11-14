@@ -201,6 +201,9 @@ pub const HOSTED_OPS: &[&str] = &["hosted.archive", "hosted.archive_blocks"];
 /// The agents' op (Arugula #394) every daemon of this build knows.
 pub const AGENT_OPS: &[&str] = &["agents.mention", "agents.sessions", "agents.grant_ask"];
 
+/// The projects' op (Arugula #992) every daemon of this build knows.
+pub const PROJECT_OPS: &[&str] = &["projects.repo_moved"];
+
 /// `{"t": "ops", "ops": [...]}`, daemon to control, on connecting: the
 /// [`DaemonOp`]s it knows. A daemon that never says knows none, and control
 /// answers [`OpAnswer::Unknown`] for it without asking.
@@ -217,7 +220,14 @@ impl Ops {
     pub fn ours() -> Self {
         Ops {
             t: OpsTag,
-            ops: OPS.iter().chain(RUN_OPS).chain(HOSTED_OPS).chain(AGENT_OPS).map(|s| (*s).to_owned()).collect(),
+            ops: OPS
+                .iter()
+                .chain(RUN_OPS)
+                .chain(HOSTED_OPS)
+                .chain(AGENT_OPS)
+                .chain(PROJECT_OPS)
+                .map(|s| (*s).to_owned())
+                .collect(),
         }
     }
 }
@@ -295,6 +305,19 @@ pub enum DaemonOp {
     /// grant itself is the owner's own act, made over their control session.
     #[serde(rename = "agents.grant_ask")]
     AgentGrantAsk(AgentGrantAsk),
+    /// A GitHub repo linked to one of the machine's owner's projects is
+    /// linked to another now, or to none (Arugula #992). The daemon asks
+    /// control the repo's project again, as it does on each connect, and
+    /// the sessions whose project was inferred from the repo take it; one
+    /// set by hand stays. It answers `done` once they have.
+    #[serde(rename = "projects.repo_moved")]
+    RepoMoved(RepoMoved),
+    /// Which of these mentions the machine was already told (Arugula #630):
+    /// control asks when the machine connects, and sends again only the
+    /// ones it wasn't. An older daemon answers `unknown`, and gets only the
+    /// ones that found it offline, as before.
+    #[serde(rename = "agents.mentions_held")]
+    MentionsHeld(MentionsHeldAsk),
 }
 
 impl DaemonOp {
@@ -308,6 +331,8 @@ impl DaemonOp {
             DaemonOp::AgentMention(_) => "agents.mention",
             DaemonOp::MachineAgents(_) => "agents.sessions",
             DaemonOp::AgentGrantAsk(_) => "agents.grant_ask",
+            DaemonOp::RepoMoved(_) => "projects.repo_moved",
+            DaemonOp::MentionsHeld(_) => "agents.mentions_held",
         }
     }
 }
@@ -364,6 +389,21 @@ pub struct AgentMention {
     /// ignores it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub from_owner: bool,
+    /// The message's files (Arugula #538), each with its url at the
+    /// machine's address, so the session is told to look before it answers.
+    /// An older daemon ignores them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<crate::chat::ChatFile>,
+}
+
+/// `projects.repo_moved`'s repo (Arugula #992). It names no project: a
+/// daemon asks control which, so an old or repeated op can't move a
+/// session back.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct RepoMoved {
+    /// `OWNER/NAME` on github.com.
+    pub repo: String,
 }
 
 /// What a machine's session is doing (#645).
@@ -401,6 +441,37 @@ pub struct AgentGrantAsk {
     /// for the card to say what the grant reaches. Empty: just the room.
     #[serde(default)]
     pub scope_name: String,
+}
+
+/// Mentions control told a machine and has no word of their turn on
+/// (Arugula #630): has it got them?
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct MentionsHeldAsk {
+    pub mentions: Vec<MentionKey>,
+}
+
+/// One mention as a machine was told it: the message, and the session it
+/// named ([`AgentMention::session`]), if it named one.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct MentionKey {
+    pub room: String,
+    pub seq: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<String>,
+}
+
+impl MentionKey {
+    /// The key of `m` as it was told.
+    pub fn of(m: &AgentMention) -> Self {
+        MentionKey { room: m.room.clone(), seq: m.seq, session: m.session.clone() }
+    }
+
+    /// As one string, the session by [`session_slug`]: `room/seq/session`.
+    pub fn text(&self) -> String {
+        format!("{}/{}/{}", self.room, self.seq, self.session.as_deref().map(session_slug).unwrap_or_default())
+    }
 }
 
 /// An agent asks which sessions of a machine it may mention (#577).
@@ -563,6 +634,9 @@ pub enum OpAnswer {
         #[serde(default)]
         sessions: Vec<MachineAgent>,
     },
+    /// An `agents.mentions_held`'s answer (Arugula #630): for each mention
+    /// asked, in order, whether the machine was told it already.
+    Held { held: Vec<bool> },
     /// It doesn't know the op (a daemon from before it).
     Unknown,
     /// It isn't on control's relay now, or didn't answer in time.

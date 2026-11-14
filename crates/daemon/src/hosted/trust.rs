@@ -30,6 +30,16 @@ use crate::control::{HostedPin, InTeam, MachineKind, Purpose, Saved, retire_memb
 ///
 /// Who gets in is the project's people: a team's members by their roles
 /// (owners as the owner), or an account's own devices.
+///
+/// A delegation control made itself (aru-141, [`Delegation::made_by_control`]:
+/// a project with no owner's live delegation) is taken on control's word:
+/// no owner signed it, so nothing checks who did, and owners' revokes and
+/// control's word that it ended aren't held for it. The certificate and the
+/// delegation must still name each other, and the certificate be signed
+/// with the delegation's key. A refresh can't swap one kind for the other:
+/// the certificate names the delegation, and it can't change.
+///
+/// [`Delegation::made_by_control`]: arugula_e2e::hosted::Delegation::made_by_control
 pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Saved>) -> anyhow::Result<Saved> {
     let hosted::Enrollment {
         url,
@@ -66,15 +76,21 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
     if let Some(p) = prev.and_then(|p| p.hosted()) {
         ensure!(p.cert == cert, "control sent another certificate for this machine");
     }
+    // Control's own (aru-141): no owner's revokes or ends to hold for it.
+    let by_control = delegation.made_by_control();
     // Removals once seen stay (a refresh adds, never takes away): control
     // leaving one out mustn't let a removed device count again.
-    let revocations = kept(revocations, prev.and_then(|p| p.hosted()).map_or(&[][..], |h| h.revocations.as_slice()));
+    let revocations = if by_control {
+        vec![]
+    } else {
+        kept(revocations, prev.and_then(|p| p.hosted()).map_or(&[][..], |h| h.revocations.as_slice()))
+    };
     // Control's word that the delegation ended: the earliest heard, held.
     let held_closed = prev.and_then(|p| p.hosted()).map_or(&[][..], |h| h.closed.as_slice());
     let closed: Vec<_> = closed
         .iter()
         .chain(held_closed)
-        .filter(|c| c.closes(&delegation))
+        .filter(|c| !by_control && c.closes(&delegation))
         .min_by_key(|c| c.at)
         .cloned()
         .into_iter()
@@ -112,7 +128,7 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
             }
             ensure!(r.team == pin.team && r.well_formed(), "the team's roster isn't well formed");
             ensure!(
-                delegation.signed_for(&Owners::Team { roster: &r, certs: &certs }),
+                by_control || delegation.signed_for(&Owners::Team { roster: &r, certs: &certs }),
                 "the delegation isn't signed by an owner of the team"
             );
             retire_members(held_roster, Some(&r), &mut certs, &mut former);
@@ -128,7 +144,7 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
             let t = trust.context("an account's project came without its account")?;
             ensure!(t.account == id, "the project's account isn't the delegation's");
             if let Some(p) = prev {
-                ensure!(p.trust.root == t.root, "control changed the account's root");
+                ensure!(p.trust().is_some_and(|r| r.root == t.root), "control changed the account's root");
             }
             let (account_certs, account_revocations) = match prev {
                 Some(p) => {
@@ -152,11 +168,12 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
                 }
             };
             ensure!(
-                delegation.signed_for(&Owners::Account {
-                    trust: &t,
-                    certs: &account_certs,
-                    revocations: &account_revocations
-                }),
+                by_control
+                    || delegation.signed_for(&Owners::Account {
+                        trust: &t,
+                        certs: &account_certs,
+                        revocations: &account_revocations
+                    }),
                 "the delegation isn't signed by the account's device"
             );
             (id, t, account_certs, account_revocations, None)
@@ -215,7 +232,7 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
     let purpose = prev.and_then(|p| p.hosted()).map_or(Purpose::People, |h| h.purpose).or(told);
     let mut out = Saved {
         url: url.trim_end_matches('/').to_owned(),
-        trust,
+        root: crate::control::Root::Pinned(trust),
         cert: own,
         certs: own_certs,
         revocations: own_revocations,
@@ -385,7 +402,7 @@ mod tests {
         let (mut got, root) = enrollment(&keys);
         let (_, phone) = approved("acct1", &root);
         got.account_certs.push(phone.clone());
-        let held = |s: &Saved| s.trust.evaluate(&s.certs, &s.revocations).get(&phone.device).is_some();
+        let held = |s: &Saved| s.own_devices().get(&phone.device).is_some();
         let first = saved_from(got.clone(), &keys, None).unwrap();
         assert!(held(&first));
         // The phone is removed; then control drops the removal.
@@ -408,7 +425,7 @@ mod tests {
         let (_, phone) = approved("acct1", &root);
         got.account_certs.extend([laptop_cert.clone(), phone.clone()]);
         got.account_revocations.push(arugula_e2e::Revocation::new("acct1", &phone.device, &laptop));
-        let held = |s: &Saved| s.trust.evaluate(&s.certs, &s.revocations).get(&phone.device).is_some();
+        let held = |s: &Saved| s.own_devices().get(&phone.device).is_some();
         let first = saved_from(got.clone(), &keys, None).unwrap();
         assert!(!held(&first));
         got.account_certs.retain(|c| c.device != laptop_cert.device);
@@ -821,7 +838,7 @@ mod tests {
         assert_eq!(saved.cert.account, "acct1");
         assert!(saved.is_hosted());
         // The account's own devices get in, as the owner.
-        assert!(saved.trust.evaluate(&saved.certs, &saved.revocations).get(&root.id()).is_some());
+        assert!(saved.own_devices().get(&root.id()).is_some());
         // And again on a refresh.
         assert!(saved_from(got.clone(), &keys, Some(&saved)).is_ok());
         // Another key's certificate, one not signed by the delegation's key,
@@ -835,5 +852,102 @@ mod tests {
         assert!(saved_from(bad, &keys, None).is_err());
         let (other, _) = enrollment(&keys);
         assert!(saved_from(other, &keys, Some(&saved)).is_err());
+    }
+
+    /// `got` under a delegation control made itself (aru-141): unsigned,
+    /// `by: "control"`, with control's hosted `key`, and the machine's
+    /// certificate made under it.
+    fn under_control(mut got: hosted::Enrollment, keys: &DeviceKeys, key: &HostedKey) -> hosted::Enrollment {
+        let d = Delegation {
+            project: got.delegation.project.clone(),
+            owner: got.delegation.owner.clone(),
+            key: key.public(),
+            at: 1,
+            by: arugula_e2e::hosted::BY_CONTROL.into(),
+            sig: String::new(),
+        };
+        let (noise, sign) = (hex::encode(keys.noise_public), hex::encode(keys.sign_public()));
+        let mut cert = HostedCert::new(&d, "hw_1", "box", &noise, &sign, 2);
+        key.sign(&mut cert);
+        got.cert = cert;
+        got.delegation = d;
+        got
+    }
+
+    /// A delegation control made itself (#1015) is taken, for an account's
+    /// project and a team's, though no owner signed it; owners' revokes of
+    /// it and control's word that it ended aren't held, then or at a
+    /// refresh. The certificate must still be made under it and signed with
+    /// its key, and a refresh can't swap it for an owner's.
+    #[test]
+    fn a_hosted_box_takes_a_delegation_control_made() {
+        let keys = DeviceKeys::generate();
+        let key = HostedKey::generate();
+        let (account, root) = enrollment(&keys);
+        let mut got = under_control(account.clone(), &keys, &key);
+        got.revocations = vec![arugula_e2e::hosted::DelegationRevoke::new(&got.delegation, 5, &root)];
+        got.closed = vec![key.close(&got.delegation, 6)];
+        let first = saved_from(got.clone(), &keys, None).expect("an account's project");
+        let pin = first.hosted().unwrap();
+        assert!(pin.delegation.made_by_control());
+        assert!(pin.revocations.is_empty() && pin.closed.is_empty(), "nothing held that would end it");
+        assert_eq!(first.cert.account, "acct1");
+        assert!(first.own_devices().get(&root.id()).is_some(), "the account's devices are its people");
+        let again = saved_from(got.clone(), &keys, Some(&first)).expect("a refresh");
+        assert!(again.hosted().unwrap().revocations.is_empty() && again.hosted().unwrap().closed.is_empty());
+
+        let t = team(&keys);
+        let saved = saved_from(under_control(t.got, &keys, &key), &keys, None).expect("a team's project");
+        assert!(saved.team().is_some_and(|t| t.roster.is_some()));
+
+        // Still checked: a certificate signed with another key, or made
+        // under another delegation.
+        let mut bad = got.clone();
+        HostedKey::generate().sign(&mut bad.cert);
+        let e = saved_from(bad, &keys, None).expect_err("another key");
+        assert!(e.to_string().contains("isn't signed with the delegation's key"), "{e}");
+        let mut other = got.clone();
+        other.delegation.at = 2;
+        let e = saved_from(other, &keys, None).expect_err("another delegation");
+        assert!(e.to_string().contains("don't name each other"), "{e}");
+
+        // A refresh can't move a box between an owner's delegation and
+        // control's, either way.
+        assert!(saved_from(account.clone(), &keys, Some(&first)).is_err());
+        let owners = saved_from(account, &keys, None).unwrap();
+        assert!(saved_from(got, &keys, Some(&owners)).is_err());
+    }
+
+    /// An owner's delegation keeps its checks (#1015): one a stranger
+    /// signed for an account's project, or a team's editor for a team's,
+    /// is refused, and the revokes and ends it's told are held.
+    #[test]
+    fn an_owners_delegation_keeps_its_checks() {
+        let keys = DeviceKeys::generate();
+        let resign = |mut got: hosted::Enrollment, by: &DeviceKeys, key: &HostedKey| {
+            got.delegation.key = key.public();
+            got.delegation.sign_with(by);
+            let (noise, sign) = (hex::encode(keys.noise_public), hex::encode(keys.sign_public()));
+            let mut cert = HostedCert::new(&got.delegation, "hw_1", "box", &noise, &sign, 2);
+            key.sign(&mut cert);
+            got.cert = cert;
+            got
+        };
+        let key = HostedKey::from_seed(&ENROLLED_KEY);
+        let (got, root) = enrollment(&keys);
+        let stranger = DeviceKeys::generate();
+        let e = saved_from(resign(got.clone(), &stranger, &key), &keys, None).expect_err("a stranger signed it");
+        assert!(e.to_string().contains("isn't signed by the account's device"), "{e}");
+
+        let mut told = got.clone();
+        told.revocations = vec![arugula_e2e::hosted::DelegationRevoke::new(&got.delegation, 5, &root)];
+        told.closed = vec![key.close(&got.delegation, 6)];
+        let held = saved_from(told, &keys, None).unwrap();
+        assert_eq!(held.hosted().unwrap().revocations.len(), 1);
+        assert_eq!(held.hosted().unwrap().closed.len(), 1);
+
+        let t = team(&keys);
+        let e = saved_from(resign(t.got, &t.e, &HostedKey::generate()), &keys, None).expect_err("an editor signed it");
+        assert!(e.to_string().contains("isn't signed by an owner of the team"), "{e}");
     }
 }

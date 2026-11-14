@@ -62,6 +62,13 @@
           "description": "Who wrote it, as people read it: a person's name, or \"Ada's agent\non geek\".",
           "type": "string"
         },
+        "files": {
+          "description": "The message's files (Arugula #538), each with its url at the\nmachine's address, so the session is told to look before it answers.\nAn older daemon ignores them.",
+          "items": {
+            "$ref": "#/$defs/ChatFile"
+          },
+          "type": "array"
+        },
         "from_owner": {
           "description": "Whether this machine's owner wrote it themselves (#665): a person's\npost, signed in as the account that owns the machine. Never set for an\nagent's post, the owner's own agents' included. The daemon tells the\nsession it's from its person; else from a teammate. An older daemon\nignores it.",
           "type": "boolean"
@@ -190,6 +197,68 @@
       ],
       "type": "string"
     },
+    "ChatFile": {
+      "description": "One attached file, as the reader sees it. `url` is control's, for the\nroom's readers only (a session cookie, or an agent's token): the same\npath with `?download=1` downloads it.",
+      "properties": {
+        "height": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ChatFileKind"
+        },
+        "mime": {
+          "description": "What the bytes were sniffed as, never what the upload said.",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "size": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "url": {
+          "type": "string"
+        },
+        "width": {
+          "description": "An image's size in pixels, when its header gave it.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "mime",
+        "kind",
+        "size",
+        "url"
+      ],
+      "type": "object"
+    },
+    "ChatFileKind": {
+      "description": "How a file is shown: `Image`, `Video` and `Audio` inline (only types\nthat are safe to render: never SVG or HTML), anything else as a card\nthat downloads.",
+      "enum": [
+        "image",
+        "video",
+        "audio",
+        "file"
+      ],
+      "type": "string"
+    },
     "DaemonOp": {
       "description": "An op control asks a machine for, by its name (`op`). Only the platform\nasks, through the hub, and only for a person's own action.",
       "oneOf": [
@@ -297,6 +366,34 @@
           "properties": {
             "op": {
               "const": "agents.grant_ask",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/RepoMoved",
+          "description": "A GitHub repo linked to one of the machine's owner's projects is\nlinked to another now, or to none (Arugula #992). The daemon asks\ncontrol the repo's project again, as it does on each connect, and\nthe sessions whose project was inferred from the repo take it; one\nset by hand stays. It answers `done` once they have.",
+          "properties": {
+            "op": {
+              "const": "projects.repo_moved",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/MentionsHeldAsk",
+          "description": "Which of these mentions the machine was already told (Arugula #630):\ncontrol asks when the machine connects, and sends again only the\nones it wasn't. An older daemon answers `unknown`, and gets only the\nones that found it offline, as before.",
+          "properties": {
+            "op": {
+              "const": "agents.mentions_held",
               "type": "string"
             }
           },
@@ -737,6 +834,44 @@
       ],
       "type": "object"
     },
+    "MentionKey": {
+      "description": "One mention as a machine was told it: the message, and the session it\nnamed ([`AgentMention::session`]), if it named one.",
+      "properties": {
+        "room": {
+          "type": "string"
+        },
+        "seq": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "session": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "room",
+        "seq"
+      ],
+      "type": "object"
+    },
+    "MentionsHeldAsk": {
+      "description": "Mentions control told a machine and has no word of their turn on\n(Arugula #630): has it got them?",
+      "properties": {
+        "mentions": {
+          "items": {
+            "$ref": "#/$defs/MentionKey"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "mentions"
+      ],
+      "type": "object"
+    },
     "OpAnswer": {
       "description": "How a machine (or control, for it) answered an op.",
       "oneOf": [
@@ -826,6 +961,26 @@
           "required": [
             "answer",
             "shared"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "An `agents.mentions_held`'s answer (Arugula #630): for each mention\nasked, in order, whether the machine was told it already.",
+          "properties": {
+            "answer": {
+              "const": "held",
+              "type": "string"
+            },
+            "held": {
+              "items": {
+                "type": "boolean"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "answer",
+            "held"
           ],
           "type": "object"
         },
@@ -1035,6 +1190,19 @@
         "delegation",
         "caps",
         "made"
+      ],
+      "type": "object"
+    },
+    "RepoMoved": {
+      "description": "`projects.repo_moved`'s repo (Arugula #992). It names no project: a\ndaemon asks control which, so an old or repeated op can't move a\nsession back.",
+      "properties": {
+        "repo": {
+          "description": "`OWNER/NAME` on github.com.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "repo"
       ],
       "type": "object"
     },

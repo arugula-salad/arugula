@@ -1,28 +1,26 @@
-// The platform page's bar (M150): where you are (the project, with a way
-// to the others) and the project's places. It's the shell's workspace head
-// (shared/frame.css, #1018), so the two pages sit in one frame. The rail
-// beside it (./rail, #377) has the wordmark's and Control's jobs and Chat;
-// on a phone, with no rail, the bar keeps them.
+// The app's bar (M150; the zoom path of Arugula #989): where you are, as a
+// path you can climb (the team, the project, the place). It's the shell's
+// workspace head (shared/frame.css, #1018), so the two pages sit in one
+// frame. The places are the rail's (./rail). On a phone, with no rail, the
+// bar has the project's switcher, the Inbox's bell and you, and the places
+// are a bar along the bottom.
 
 import type { ComponentChildren } from "preact";
 import { usePhone, useSubscribe } from "../shared/ui/hooks";
 import { useRef, useState } from "preact/hooks";
 import { openMenu, pressedShut, useMenuFrom, type MenuItem } from "../shared/ui/menu";
 import { WindowButtons } from "../shared/ui/window-buttons";
-import { chatTeam } from "./chat-scope";
-import { currentProject, entryPath } from "./current-project";
+import { currentProject } from "./current-project";
 import { follow, go, pathOf, useRoute, type Route } from "./router";
-import { controlOrigin, session } from "./session";
+import { session } from "./session";
 import { signOut } from "./signin";
 import { names } from "./links";
-import { chat } from "../shared/chat-store";
 import { AccountPicture } from "../shared/chat/avatar";
 import { presenceItems } from "../shared/chat/presence";
-import { ChatPlaceUnread, PlaceUnread } from "./thread-unread";
 import { barProject, where } from "./where";
 import { scopable, scopeOf } from "./scope";
-import { InboxCount } from "./inbox-count";
-import { Caret } from "../shared/ui/icons";
+import { useInboxCount } from "./inbox-count";
+import { BellIcon, Caret, ChevronIcon } from "../shared/ui/icons";
 import { ownerKey, ownerNamed } from "./owners";
 import { Switcher } from "./switcher";
 
@@ -80,182 +78,183 @@ export function chatPath(project: string | undefined): string {
   return project ? pathOf({ page: "chat", project }, names) : "/chat";
 }
 
-function Place({ to, here, children, data }: { to: string; here: boolean; children: ComponentChildren; data: string }) {
+/** The words for a place, in the path. */
+const SECTION_LABEL: Record<Section, string> = {
+  home: "Overview",
+  boards: "Boards",
+  docs: "Docs",
+  runs: "Runs",
+  sessions: "Sessions",
+  workspaces: "Workspaces",
+  deploys: "Deploys",
+  chat: "Chat",
+  inbox: "Inbox",
+  settings: "Settings",
+};
+
+/** A place's own page, in the project, for the path's link back to it. */
+function sectionPath(s: Section, project: string): string | null {
+  switch (s) {
+    case "home":
+      return pathOf({ page: "project", project }, names);
+    case "boards":
+    case "docs":
+    case "runs":
+    case "sessions":
+    case "workspaces":
+    case "deploys":
+      return pathOf({ page: s, project }, names);
+    case "chat":
+      return chatPath(project);
+    case "settings":
+      return pathOf({ page: "project-settings", project }, names);
+    default:
+      return null;
+  }
+}
+
+/** Where you are, as a path you can climb (Arugula #989, the prototype's
+ * zoom path): the team, the project, the place; each a level up. */
+function Path({ r, project }: { r: Route; project: string | undefined }) {
+  const p = session.project(project);
+  const section = sectionOf(r);
+  const crumbs: { label: string; to?: string; data: string }[] = [];
+  if (project && p) {
+    crumbs.push({ label: p.team?.name ?? "Personal", data: "owner" });
+    crumbs.push({ label: p.name, to: pathOf({ page: "project", project }, names), data: "project" });
+    if (r.page === "machines") crumbs.push({ label: "Machines", to: pathOf({ page: "machines", project, at: { at: "machines" } }, names), data: "machines" });
+    else if (section && section !== "home") crumbs.push({ label: SECTION_LABEL[section], to: sectionPath(section, project) ?? undefined, data: section });
+  } else {
+    crumbs.push({ label: project ? (session.state === "ready" ? "Unknown project" : "…") : "All projects", to: project ? undefined : "/", data: "all" });
+    if (section && section !== "home") crumbs.push({ label: SECTION_LABEL[section], data: section });
+  }
+  const here = location.pathname;
   return (
-    <a class={here ? "place frame-place here" : "place frame-place"} href={to} aria-current={here ? "page" : undefined} {...{ [`data-platform-${data}`]: "" }} onClick={(e) => follow(e, to)}>
-      {children}
-    </a>
+    <nav class="ws-crumbs app-path" aria-label="Where you are" data-app-path data-tauri-drag-region>
+      {crumbs.map((c, i) => {
+        const last = i === crumbs.length - 1;
+        return (
+          <span key={c.data} class="app-path-step">
+            {i > 0 && (
+              <span class="app-path-sep" aria-hidden="true">
+                <ChevronIcon dir="right" />
+              </span>
+            )}
+            {c.to && !(last && c.to.split("?")[0] === here) ? (
+              <a href={c.to} data-path={c.data} onClick={(e) => follow(e, c.to!)}>
+                {c.label}
+              </a>
+            ) : (
+              <span class={last ? "app-path-here" : "dim"} aria-current={last ? "page" : undefined} data-path={c.data}>
+                {c.label}
+              </span>
+            )}
+          </span>
+        );
+      })}
+    </nav>
+  );
+}
+
+/** You, and your account's menu: Settings, who's around, signing out. On
+ * the rail's foot (`compact`, the picture alone) or a phone's bar. */
+export function AccountButton({ compact = false }: { compact?: boolean }) {
+  useSubscribe((fn) => session.subscribe(fn));
+  const button = useRef<HTMLButtonElement>(null);
+  const open = useMenuFrom(button);
+  const me = session.me;
+  if (!me) return null;
+  const account = (e: MouseEvent) => {
+    const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const items: MenuItem[] = [
+      { header: me.login || me.name || "Signed in", name: !!(me.login || me.name) },
+      { label: "Settings", run: () => go("/settings") },
+      // Who's around (#110): chat's people see this, and only they.
+      ...presenceItems(),
+      "separator",
+      // This page only: the hub's session, on control's page, stays.
+      { label: "Sign out of this page", run: () => void signOut().then(() => location.reload()) },
+    ];
+    openMenu({ clientX: compact ? at.right + 4 : at.right, clientY: compact ? at.top : at.bottom + 4, preventDefault: () => e.preventDefault() }, items, e.currentTarget as HTMLElement);
+  };
+  return (
+    <button
+      ref={button}
+      class={compact ? "account-button platform-me ws-rail-me" : "account-button platform-me"}
+      title={me.login ? `Signed in as ${me.login}` : "Signed in"}
+      aria-label={compact ? `You: ${me.login || me.name}` : undefined}
+      aria-haspopup="menu"
+      aria-expanded={open}
+      data-signed-in-as
+      onClick={account}
+    >
+      <span class="account-avatar" aria-hidden="true">
+        {(me.login || me.name || "?").slice(0, 1).toUpperCase()}
+        <AccountPicture />
+      </span>
+      {!compact && (
+        <>
+          <span class="account-login">{me.login || me.name}</span> <Caret />
+        </>
+      )}
+    </button>
   );
 }
 
 export function PlatformBar({ children }: { children?: ComponentChildren }) {
   useSubscribe((fn) => session.subscribe(fn));
-  // Chat's rooms say what's new in issues' and runs' threads.
-  useSubscribe((fn) => chat.subscribe(fn));
   useSubscribe((fn) => where.subscribe(fn));
   const r = useRoute();
-  // A phone has no rail (#377): the bar keeps what the rail has elsewhere.
+  // A phone has no rail (#377): the bar keeps the switcher and the bell.
   const rail = !usePhone();
-  // None on a page that's no project's: the bar says "All projects".
   // The bar keeps the current project while Boards, Docs and the Inbox are scoped to it (Arugula #881).
   const project = barProject(r) ?? (scopable(r) ? scopeOf(r, currentProject(), (id) => !!session.project(id)) : undefined);
   const p = session.project(project);
-  // An id that's none of the reader's lights no place (UI audit #170): the
-  // body says it isn't one of theirs.
-  const unknown = !!project && !p && session.state === "ready";
-  const here = unknown ? null : sectionOf(r);
-  // Off a project (Inbox, All projects), Chat is still the current one's (Arugula #880).
-  const chatTo = project ? chatPath(project) : entryPath("chat", session.project(currentProject()), names);
-  // The switcher (Arugula #895) opens on the current project's owner, or a
-  // team page's team.
-  const [picking, setPicking] = useState(false);
-  const team = r.page === "team" ? ownerNamed(session.projects, r.team) : undefined;
-  const openOn = team?.key ?? (p ? ownerKey(p) : undefined);
-  const me = session.me;
-  const account = (e: MouseEvent) => {
-    const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const items: MenuItem[] = [
-      { header: me?.login || me?.name || "Signed in", name: !!(me?.login || me?.name) },
-      { label: "Settings", run: () => go("/settings") },
-      // Who's around (#110): chat's people see this, and only they.
-      ...presenceItems(),
-      // Control's one label (UI audit #184): it opens in this tab, so no ↗.
-      { label: "Open your machines", run: () => location.assign(controlOrigin()) },
-      "separator",
-      // This page only: the hub's session, on control's page, stays.
-      { label: "Sign out of this page", run: () => void signOut().then(() => location.reload()) },
-    ];
-    openMenu({ clientX: at.right, clientY: at.bottom + 4, preventDefault: () => e.preventDefault() }, items, e.currentTarget as HTMLElement);
-  };
-  // Both are menu buttons (UI audit #185): they say so, and whether theirs is open.
-  const switcher = useRef<HTMLButtonElement>(null);
-  const accountButton = useRef<HTMLButtonElement>(null);
-  const accountOpen = useMenuFrom(accountButton);
-  // An id that's none of the reader's says so, not a name.
-  const projectName = project ? (p?.name ?? (session.state === "ready" ? "Unknown project" : "…")) : (team?.name ?? "All projects");
   return (
     <header class="ws-head platform-bar" data-tauri-drag-region data-platform-bar>
-      {/* As the shell's "Arugula / Control": which page this is, and the
-          way to its overview, every project. */}
-      {!rail && (
-        <a
-          class="ws-wordmark"
-          href="/"
-          aria-label="Arugula Projects: all your projects"
-          title="All your projects"
-          aria-current={r.page === "home" ? "page" : undefined}
-          data-platform-wordmark
-          onClick={(e) => follow(e, "/")}
-        >
-          Arugula <span aria-hidden="true">/</span> <strong>Projects</strong>
-        </a>
-      )}
+      {rail ? <Path r={r} project={project} /> : <PhoneTop r={r} project={project} name={project ? (p?.name ?? "…") : "All projects"} />}
+      {children}
+      <div class="bar-fill" data-tauri-drag-region />
+      {!rail && <Bell here={r.page === "inbox"} />}
+      {!rail && <AccountButton compact />}
+      {/* In the desktop app on Linux the bar is the titlebar (M157). */}
+      <WindowButtons />
+    </header>
+  );
+}
+
+/** A phone's bar: the project's name, which opens the switcher. */
+function PhoneTop({ r, project, name }: { r: Route; project: string | undefined; name: string }) {
+  const [picking, setPicking] = useState(false);
+  const switcher = useRef<HTMLButtonElement>(null);
+  const team = r.page === "team" ? ownerNamed(session.projects, r.team) : undefined;
+  const p = session.project(project);
+  return (
+    <>
       <button
         ref={switcher}
         class="scope-label platform-project"
         data-project-switcher
         title="Your projects"
-        aria-label={`Project: ${projectName}`}
+        aria-label={`Project: ${name}`}
         aria-haspopup="dialog"
         aria-expanded={picking}
-        // A press on it shut the switcher: this click is the same tap.
         onClick={() => pressedShut(switcher.current) || setPicking(!picking)}
       >
-        <span class="platform-project-name">{projectName}</span> <Caret />
+        <span class="platform-project-name">{name}</span> <Caret />
       </button>
-      {picking && <Switcher from={switcher} project={project} owner={openOn} close={() => setPicking(false)} />}
-      <nav class="places" aria-label="Places">
-        {/* All projects is a scope like a project (Arugula #636): these are its places. */}
-        {!project && (
-          <Place to="/" here={r.page === "home"} data="projects">
-            Projects
-          </Place>
-        )}
-        {!project && (
-          <Place to="/boards" here={here === "boards"} data="boards">
-            Boards
-          </Place>
-        )}
-        {project && (
-          <Place to={pathOf({ page: "project", project }, names)} here={here === "home"} data="home">
-            Overview
-          </Place>
-        )}
-        {project && (
-          <Place to={pathOf({ page: "boards", project }, names)} here={here === "boards"} data="boards">
-            Boards
-            {chat.on !== false && <PlaceUnread project={project} prefix="iss_" />}
-          </Place>
-        )}
-        {project && (
-          <Place to={pathOf({ page: "docs", project }, names)} here={here === "docs"} data="docs">
-            Docs
-          </Place>
-        )}
-        {project && (
-          <Place to={pathOf({ page: "runs", project }, names)} here={here === "runs"} data="runs">
-            Runs
-            <PlaceUnread project={project} prefix="run_" />
-          </Place>
-        )}
-        {project && (
-          <Place to={pathOf({ page: "sessions", project }, names)} here={here === "sessions"} data="sessions">
-            Agent sessions
-          </Place>
-        )}
-        {/* Where the reader may have them (the beta's list), or is in one. */}
-        {project && (session.hosted || here === "workspaces") && (
-          <Place to={pathOf({ page: "workspaces", project }, names)} here={here === "workspaces"} data="workspaces">
-            Workspaces
-          </Place>
-        )}
-        {project && (
-          <Place to={pathOf({ page: "deploys", project }, names)} here={here === "deploys"} data="deploys">
-            Deploys
-          </Place>
-        )}
-        {!rail && (
-          <Place to={chatTo} here={here === "chat"} data="chat">
-            Chat
-            {/* An id that's none of the reader's counts nothing. */}
-            {!unknown && (!project || p) && <ChatPlaceUnread team={chatTeam(p, session.project(currentProject()))} />}
-          </Place>
-        )}
-        <Place to="/inbox" here={here === "inbox"} data="inbox">
-          Inbox
-          <InboxCount />
-        </Place>
-        {/* In a project, its settings; account settings are the account menu's. */}
-        <Place to={project ? pathOf({ page: "project-settings", project }, names) : "/settings"} here={here === "settings"} data="settings">
-          Settings
-        </Place>
-      </nav>
-      {children}
-      <div class="bar-fill" data-tauri-drag-region />
-      {!rail && (
-        <a class="place platform-shell" href={controlOrigin()} title="Your machines, terminals, devices and teams" data-platform-shell>
-          Machines
-        </a>
-      )}
-      {me && (
-        <button
-          ref={accountButton}
-          class="account-button platform-me"
-          title={me.login ? `Signed in as ${me.login}` : "Signed in"}
-          aria-haspopup="menu"
-          aria-expanded={accountOpen}
-          data-signed-in-as
-          onClick={account}
-        >
-          <span class="account-avatar" aria-hidden="true">
-            {(me.login || me.name || "?").slice(0, 1).toUpperCase()}
-            <AccountPicture />
-          </span>
-          <span class="account-login">{me.login || me.name}</span> <Caret />
-        </button>
-      )}
-      {/* In the desktop app on Linux the bar is the titlebar (M157). */}
-      <WindowButtons />
-    </header>
+      {picking && <Switcher from={switcher} project={project} owner={team?.key ?? (p ? ownerKey(p) : undefined)} close={() => setPicking(false)} />}
+    </>
+  );
+}
+
+/** The phone's Inbox: the bell, with its count. */
+function Bell({ here }: { here: boolean }) {
+  const { n, waiting, title } = useInboxCount();
+  return (
+    <a class={here ? "app-bell here" : "app-bell"} href="/inbox" title={title || "Inbox"} aria-label={n ? `Inbox, ${n}` : "Inbox"} aria-current={here ? "page" : undefined} data-phone-bell onClick={(e) => follow(e, "/inbox")}>
+      <BellIcon />
+      {n > 0 && <span class={waiting ? "ws-rail-count mention" : "ws-rail-count"}>{n > 99 ? "99+" : n}</span>}
+    </a>
   );
 }

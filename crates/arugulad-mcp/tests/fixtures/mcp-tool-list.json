@@ -47,6 +47,14 @@
               "null"
             ]
           },
+          "issue": {
+            "default": null,
+            "description": "The card its session works on: a native issue, #N in project or\niss_…. Its panes show it, and it chooses their current project.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "join": {
             "default": false,
             "description": "With split: run where that pane runs (its machine) instead of on this\nhost.",
@@ -55,6 +63,14 @@
           "policy": {
             "default": null,
             "description": "After a reboot: `shell` (default), `none`, `rerun` or `rerun-ask`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "The project its session works in: a prj_ id, or personal. Default\nwith issue: the current project.",
             "type": [
               "string",
               "null"
@@ -2008,6 +2024,14 @@
               "null"
             ]
           },
+          "project": {
+            "default": null,
+            "description": "The project it works in: a prj_ id, or personal. Its issue's #N is in it, and it is the agent's current project. Default: as for issue.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "prompt": {
             "description": "What to ask it.",
             "type": "string"
@@ -3718,7 +3742,7 @@
         "readOnlyHint": true,
         "title": "Read a conversation"
       },
-      "description": "Read a room in Arugula cloud that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. A message with replies says how many; thread (its seq) reads those replies instead of the room, and returns the message as parent. An @mention of this machine, a person's reply to you, or a post on the thread of a board your session leads, is delivered to your session, labelled as your person's or a teammate's: answer with post_thread in the same thread. One that finds no session waits unread (capabilities says so). A message of yours that @mentions another machine's agent carries a mentions list (machine, state, the session it reached, the name you asked for, the reply's seq): delivered, fell_back, queued (its hooks aren't listening: held as a card for its owner to deliver or drop, never typed in unasked), silenced (its owner silenced that session; it went to the inbox), waiting, no_such_session (the @name matched no session on that machine, so it went to the machine's inbox; names lists the sessions it has), not_granted (its agents can't read the room; the owner was asked, and it is delivered if they grant it), offline, working (the session's turn that took it is running), read (that turn ended), answered, dropped (why: stopped or exited mid-turn; it was not read); read the message again for the outcome. replies: true instead returns this machine's unread replies to your posts, by thread. machine (a name as in @machine) instead lists that machine's sessions you can @machine/name in the room: its owner decides what is shown. To find where to post: an unreached mention says why, and machine lists the sessions you can name; don't guess names from history.",
+      "description": "Read a room in Arugula cloud that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its files (name, type, size, id): file (its id) saves one here and answers its path, to Read. It starts with the room's topic and pins. A message with replies says how many; thread (its seq) reads those replies instead of the room, and returns the message as parent. An @mention of this machine, a person's reply to you, or a post on the thread of a board your session leads, is delivered to your session, labelled as your person's or a teammate's: answer with post_thread in the same thread. One that finds no session waits unread (capabilities says so). A message of yours that @mentions another machine's agent carries a mentions list (machine, state, the session it reached, the name you asked for, the reply's seq): delivered, fell_back, queued (its hooks aren't listening: held as a card for its owner to deliver or drop, never typed in unasked), silenced (its owner silenced that session; it went to the inbox), waiting, no_such_session (the @name matched no session on that machine, so it went to the machine's inbox; names lists the sessions it has), not_granted (its agents can't read the room; the owner was asked, and it is delivered if they grant it), offline, working (the session's turn that took it is running), read (that turn ended), answered, dropped (why: stopped or exited mid-turn; it was not read): read it again for the outcome. replies: true instead returns this machine's unread replies to your posts, by thread. machine (a name as in @machine) instead lists that machine's sessions you can @machine/name in the room: its owner decides what is shown. To find where to post: an unreached mention says why, and machine lists the sessions you can name; don't guess names from history.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -3737,6 +3761,14 @@
             "format": "int64",
             "type": [
               "integer",
+              "null"
+            ]
+          },
+          "file": {
+            "default": null,
+            "description": "Instead of reading the room: save one of its files on this machine\n(its id, as a message lists it) and answer its path, to read there\nwith your own tools. A screenshot reads as a picture.",
+            "type": [
+              "string",
               "null"
             ]
           },
@@ -4955,7 +4987,7 @@
         "readOnlyHint": false,
         "title": "Link work items"
       },
-      "description": "Say which work comes before which, in Arugula cloud, at once, as your person's agent on this machine: add or remove links between a project's items. A link is `from` before `to` (the default kind), or blocks, relates, duplicate_of or discovered_from. An item is #N, owner/repo#N, IDENT-N or an iss_/fi_ id. `to` may be a list, one link to each. Up to 50 links in one call; each lands on its own, and the answer is one line per link (added, already there, removed, not there, or refused and why). A cycle of before and blocks links is refused. Only blocks keeps a row out of a board's Ready line. You remove only links your machine made. Needs your person's issues.write grant over the project: with no project, the one its IDENT-N items are connected in, else the current project, the project you pass, else the one your block was started on (start_agent's issue), else your session's, else the one this clone's GitHub repo is linked to, else your person's default project. Example: {\"add\":[{\"from\":\"#506\",\"to\":\"#507\"}]}.",
+      "description": "Say which work comes before which, in Arugula cloud, at once, as your person's agent on this machine: add or remove links between a project's items. A link is `from` before `to` (the default kind), or blocks, relates, duplicate_of or discovered_from. An item is #N, owner/repo#N, IDENT-N or an iss_/fi_ id. `to` may be a list, one link to each. Up to 50 links in one call; each lands on its own, and the answer is one line per link (added, already there, removed, not there, or refused and why). A cycle of before and blocks links is refused. Only blocks keeps a row out of a board's Ready line. You remove only links your machine made. Needs your person's issues.write grant over the project: with no project, the one its IDENT-N items are connected in, else the current project, the project you pass, else the one your block was started on (start_agent's issue), else your session's, else the one this clone's GitHub repo is linked to, else your person's default project. Example: {\"add\":[{\"from\":\"#506\",\"to\":\"#507\"}]}. card puts your session on a native issue (its card), or none takes it off: its panes show it, and its project is theirs.",
       "inputSchema": {
         "$defs": {
           "LinkArg": {
@@ -5012,6 +5044,14 @@
               "$ref": "#/$defs/LinkArg"
             },
             "type": "array"
+          },
+          "card": {
+            "default": null,
+            "description": "Your session's card: a native issue, #N in the project or iss_…, or\nnone to take it off.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "project": {
             "default": null,
@@ -5092,6 +5132,14 @@
               "null"
             ]
           },
+          "issue": {
+            "default": null,
+            "description": "The card its session works on: a native issue, #N in project or\niss_…. Its panes show it, and it chooses their current project.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "join": {
             "default": false,
             "description": "With split: run where that pane runs (its machine) instead of on this\nhost.",
@@ -5108,6 +5156,14 @@
           "policy": {
             "default": null,
             "description": "After a reboot: `shell` (default), `none`, `rerun` or `rerun-ask`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "The project its session works in: a prj_ id, or personal. Default\nwith issue: the current project.",
             "type": [
               "string",
               "null"
@@ -7195,6 +7251,14 @@
               "null"
             ]
           },
+          "project": {
+            "default": null,
+            "description": "The project it works in: a prj_ id, or personal. Its issue's #N is in it, and it is the agent's current project. Default: as for issue.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "prompt": {
             "description": "What to ask it.",
             "type": "string"
@@ -8918,7 +8982,7 @@
         "readOnlyHint": true,
         "title": "Read a conversation"
       },
-      "description": "Read a room in Arugula cloud that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. A message with replies says how many; thread (its seq) reads those replies instead of the room, and returns the message as parent. An @mention of this machine, a person's reply to you, or a post on the thread of a board your session leads, is delivered to your session, labelled as your person's or a teammate's: answer with post_thread in the same thread. One that finds no session waits unread (capabilities says so). A message of yours that @mentions another machine's agent carries a mentions list (machine, state, the session it reached, the name you asked for, the reply's seq): delivered, fell_back, queued (its hooks aren't listening: held as a card for its owner to deliver or drop, never typed in unasked), silenced (its owner silenced that session; it went to the inbox), waiting, no_such_session (the @name matched no session on that machine, so it went to the machine's inbox; names lists the sessions it has), not_granted (its agents can't read the room; the owner was asked, and it is delivered if they grant it), offline, working (the session's turn that took it is running), read (that turn ended), answered, dropped (why: stopped or exited mid-turn; it was not read); read the message again for the outcome. replies: true instead returns this machine's unread replies to your posts, by thread. machine (a name as in @machine) instead lists that machine's sessions you can @machine/name in the room: its owner decides what is shown. To find where to post: an unreached mention says why, and machine lists the sessions you can name; don't guess names from history.",
+      "description": "Read a room in Arugula cloud that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its files (name, type, size, id): file (its id) saves one here and answers its path, to Read. It starts with the room's topic and pins. A message with replies says how many; thread (its seq) reads those replies instead of the room, and returns the message as parent. An @mention of this machine, a person's reply to you, or a post on the thread of a board your session leads, is delivered to your session, labelled as your person's or a teammate's: answer with post_thread in the same thread. One that finds no session waits unread (capabilities says so). A message of yours that @mentions another machine's agent carries a mentions list (machine, state, the session it reached, the name you asked for, the reply's seq): delivered, fell_back, queued (its hooks aren't listening: held as a card for its owner to deliver or drop, never typed in unasked), silenced (its owner silenced that session; it went to the inbox), waiting, no_such_session (the @name matched no session on that machine, so it went to the machine's inbox; names lists the sessions it has), not_granted (its agents can't read the room; the owner was asked, and it is delivered if they grant it), offline, working (the session's turn that took it is running), read (that turn ended), answered, dropped (why: stopped or exited mid-turn; it was not read): read it again for the outcome. replies: true instead returns this machine's unread replies to your posts, by thread. machine (a name as in @machine) instead lists that machine's sessions you can @machine/name in the room: its owner decides what is shown. To find where to post: an unreached mention says why, and machine lists the sessions you can name; don't guess names from history.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -8937,6 +9001,14 @@
             "format": "int64",
             "type": [
               "integer",
+              "null"
+            ]
+          },
+          "file": {
+            "default": null,
+            "description": "Instead of reading the room: save one of its files on this machine\n(its id, as a message lists it) and answer its path, to read there\nwith your own tools. A screenshot reads as a picture.",
+            "type": [
+              "string",
               "null"
             ]
           },
@@ -10155,7 +10227,7 @@
         "readOnlyHint": false,
         "title": "Link work items"
       },
-      "description": "Say which work comes before which, in Arugula cloud, at once, as your person's agent on this machine: add or remove links between a project's items. A link is `from` before `to` (the default kind), or blocks, relates, duplicate_of or discovered_from. An item is #N, owner/repo#N, IDENT-N or an iss_/fi_ id. `to` may be a list, one link to each. Up to 50 links in one call; each lands on its own, and the answer is one line per link (added, already there, removed, not there, or refused and why). A cycle of before and blocks links is refused. Only blocks keeps a row out of a board's Ready line. You remove only links your machine made. Needs your person's issues.write grant over the project: with no project, the one its IDENT-N items are connected in, else the current project, the project you pass, else the one your block was started on (start_agent's issue), else your session's, else the one this clone's GitHub repo is linked to, else your person's default project. Example: {\"add\":[{\"from\":\"#506\",\"to\":\"#507\"}]}.",
+      "description": "Say which work comes before which, in Arugula cloud, at once, as your person's agent on this machine: add or remove links between a project's items. A link is `from` before `to` (the default kind), or blocks, relates, duplicate_of or discovered_from. An item is #N, owner/repo#N, IDENT-N or an iss_/fi_ id. `to` may be a list, one link to each. Up to 50 links in one call; each lands on its own, and the answer is one line per link (added, already there, removed, not there, or refused and why). A cycle of before and blocks links is refused. Only blocks keeps a row out of a board's Ready line. You remove only links your machine made. Needs your person's issues.write grant over the project: with no project, the one its IDENT-N items are connected in, else the current project, the project you pass, else the one your block was started on (start_agent's issue), else your session's, else the one this clone's GitHub repo is linked to, else your person's default project. Example: {\"add\":[{\"from\":\"#506\",\"to\":\"#507\"}]}. card puts your session on a native issue (its card), or none takes it off: its panes show it, and its project is theirs.",
       "inputSchema": {
         "$defs": {
           "LinkArg": {
@@ -10212,6 +10284,14 @@
               "$ref": "#/$defs/LinkArg"
             },
             "type": "array"
+          },
+          "card": {
+            "default": null,
+            "description": "Your session's card: a native issue, #N in the project or iss_…, or\nnone to take it off.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "project": {
             "default": null,
@@ -10284,6 +10364,14 @@
               "null"
             ]
           },
+          "issue": {
+            "default": null,
+            "description": "The card its session works on: a native issue, #N in project or\niss_…. Its panes show it, and it chooses their current project.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "join": {
             "default": false,
             "description": "With split: run where that pane runs (its machine) instead of on this\nhost.",
@@ -10292,6 +10380,14 @@
           "policy": {
             "default": null,
             "description": "After a reboot: `shell` (default), `none`, `rerun` or `rerun-ask`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "The project its session works in: a prj_ id, or personal. Default\nwith issue: the current project.",
             "type": [
               "string",
               "null"
@@ -12245,6 +12341,14 @@
               "null"
             ]
           },
+          "project": {
+            "default": null,
+            "description": "The project it works in: a prj_ id, or personal. Its issue's #N is in it, and it is the agent's current project. Default: as for issue.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "prompt": {
             "description": "What to ask it.",
             "type": "string"
@@ -13955,7 +14059,7 @@
         "readOnlyHint": true,
         "title": "Read a conversation"
       },
-      "description": "Read a room in Arugula cloud that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. A message with replies says how many; thread (its seq) reads those replies instead of the room, and returns the message as parent. An @mention of this machine, a person's reply to you, or a post on the thread of a board your session leads, is delivered to your session, labelled as your person's or a teammate's: answer with post_thread in the same thread. One that finds no session waits unread (capabilities says so). A message of yours that @mentions another machine's agent carries a mentions list (machine, state, the session it reached, the name you asked for, the reply's seq): delivered, fell_back, queued (its hooks aren't listening: held as a card for its owner to deliver or drop, never typed in unasked), silenced (its owner silenced that session; it went to the inbox), waiting, no_such_session (the @name matched no session on that machine, so it went to the machine's inbox; names lists the sessions it has), not_granted (its agents can't read the room; the owner was asked, and it is delivered if they grant it), offline, working (the session's turn that took it is running), read (that turn ended), answered, dropped (why: stopped or exited mid-turn; it was not read); read the message again for the outcome. replies: true instead returns this machine's unread replies to your posts, by thread. machine (a name as in @machine) instead lists that machine's sessions you can @machine/name in the room: its owner decides what is shown. To find where to post: an unreached mention says why, and machine lists the sessions you can name; don't guess names from history.",
+      "description": "Read a room in Arugula cloud that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its files (name, type, size, id): file (its id) saves one here and answers its path, to Read. It starts with the room's topic and pins. A message with replies says how many; thread (its seq) reads those replies instead of the room, and returns the message as parent. An @mention of this machine, a person's reply to you, or a post on the thread of a board your session leads, is delivered to your session, labelled as your person's or a teammate's: answer with post_thread in the same thread. One that finds no session waits unread (capabilities says so). A message of yours that @mentions another machine's agent carries a mentions list (machine, state, the session it reached, the name you asked for, the reply's seq): delivered, fell_back, queued (its hooks aren't listening: held as a card for its owner to deliver or drop, never typed in unasked), silenced (its owner silenced that session; it went to the inbox), waiting, no_such_session (the @name matched no session on that machine, so it went to the machine's inbox; names lists the sessions it has), not_granted (its agents can't read the room; the owner was asked, and it is delivered if they grant it), offline, working (the session's turn that took it is running), read (that turn ended), answered, dropped (why: stopped or exited mid-turn; it was not read): read it again for the outcome. replies: true instead returns this machine's unread replies to your posts, by thread. machine (a name as in @machine) instead lists that machine's sessions you can @machine/name in the room: its owner decides what is shown. To find where to post: an unreached mention says why, and machine lists the sessions you can name; don't guess names from history.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -13974,6 +14078,14 @@
             "format": "int64",
             "type": [
               "integer",
+              "null"
+            ]
+          },
+          "file": {
+            "default": null,
+            "description": "Instead of reading the room: save one of its files on this machine\n(its id, as a message lists it) and answer its path, to read there\nwith your own tools. A screenshot reads as a picture.",
+            "type": [
+              "string",
               "null"
             ]
           },
@@ -15192,7 +15304,7 @@
         "readOnlyHint": false,
         "title": "Link work items"
       },
-      "description": "Say which work comes before which, in Arugula cloud, at once, as your person's agent on this machine: add or remove links between a project's items. A link is `from` before `to` (the default kind), or blocks, relates, duplicate_of or discovered_from. An item is #N, owner/repo#N, IDENT-N or an iss_/fi_ id. `to` may be a list, one link to each. Up to 50 links in one call; each lands on its own, and the answer is one line per link (added, already there, removed, not there, or refused and why). A cycle of before and blocks links is refused. Only blocks keeps a row out of a board's Ready line. You remove only links your machine made. Needs your person's issues.write grant over the project: with no project, the one its IDENT-N items are connected in, else the current project, the project you pass, else the one your block was started on (start_agent's issue), else your session's, else the one this clone's GitHub repo is linked to, else your person's default project. Example: {\"add\":[{\"from\":\"#506\",\"to\":\"#507\"}]}.",
+      "description": "Say which work comes before which, in Arugula cloud, at once, as your person's agent on this machine: add or remove links between a project's items. A link is `from` before `to` (the default kind), or blocks, relates, duplicate_of or discovered_from. An item is #N, owner/repo#N, IDENT-N or an iss_/fi_ id. `to` may be a list, one link to each. Up to 50 links in one call; each lands on its own, and the answer is one line per link (added, already there, removed, not there, or refused and why). A cycle of before and blocks links is refused. Only blocks keeps a row out of a board's Ready line. You remove only links your machine made. Needs your person's issues.write grant over the project: with no project, the one its IDENT-N items are connected in, else the current project, the project you pass, else the one your block was started on (start_agent's issue), else your session's, else the one this clone's GitHub repo is linked to, else your person's default project. Example: {\"add\":[{\"from\":\"#506\",\"to\":\"#507\"}]}. card puts your session on a native issue (its card), or none takes it off: its panes show it, and its project is theirs.",
       "inputSchema": {
         "$defs": {
           "LinkArg": {
@@ -15249,6 +15361,14 @@
               "$ref": "#/$defs/LinkArg"
             },
             "type": "array"
+          },
+          "card": {
+            "default": null,
+            "description": "Your session's card: a native issue, #N in the project or iss_…, or\nnone to take it off.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "project": {
             "default": null,
@@ -15329,6 +15449,14 @@
               "null"
             ]
           },
+          "issue": {
+            "default": null,
+            "description": "The card its session works on: a native issue, #N in project or\niss_…. Its panes show it, and it chooses their current project.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "join": {
             "default": false,
             "description": "With split: run where that pane runs (its machine) instead of on this\nhost.",
@@ -15345,6 +15473,14 @@
           "policy": {
             "default": null,
             "description": "After a reboot: `shell` (default), `none`, `rerun` or `rerun-ask`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "The project its session works in: a prj_ id, or personal. Default\nwith issue: the current project.",
             "type": [
               "string",
               "null"
@@ -17432,6 +17568,14 @@
               "null"
             ]
           },
+          "project": {
+            "default": null,
+            "description": "The project it works in: a prj_ id, or personal. Its issue's #N is in it, and it is the agent's current project. Default: as for issue.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "prompt": {
             "description": "What to ask it.",
             "type": "string"
@@ -19155,7 +19299,7 @@
         "readOnlyHint": true,
         "title": "Read a conversation"
       },
-      "description": "Read a room in Arugula cloud that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. A message with replies says how many; thread (its seq) reads those replies instead of the room, and returns the message as parent. An @mention of this machine, a person's reply to you, or a post on the thread of a board your session leads, is delivered to your session, labelled as your person's or a teammate's: answer with post_thread in the same thread. One that finds no session waits unread (capabilities says so). A message of yours that @mentions another machine's agent carries a mentions list (machine, state, the session it reached, the name you asked for, the reply's seq): delivered, fell_back, queued (its hooks aren't listening: held as a card for its owner to deliver or drop, never typed in unasked), silenced (its owner silenced that session; it went to the inbox), waiting, no_such_session (the @name matched no session on that machine, so it went to the machine's inbox; names lists the sessions it has), not_granted (its agents can't read the room; the owner was asked, and it is delivered if they grant it), offline, working (the session's turn that took it is running), read (that turn ended), answered, dropped (why: stopped or exited mid-turn; it was not read); read the message again for the outcome. replies: true instead returns this machine's unread replies to your posts, by thread. machine (a name as in @machine) instead lists that machine's sessions you can @machine/name in the room: its owner decides what is shown. To find where to post: an unreached mention says why, and machine lists the sessions you can name; don't guess names from history.",
+      "description": "Read a room in Arugula cloud that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its files (name, type, size, id): file (its id) saves one here and answers its path, to Read. It starts with the room's topic and pins. A message with replies says how many; thread (its seq) reads those replies instead of the room, and returns the message as parent. An @mention of this machine, a person's reply to you, or a post on the thread of a board your session leads, is delivered to your session, labelled as your person's or a teammate's: answer with post_thread in the same thread. One that finds no session waits unread (capabilities says so). A message of yours that @mentions another machine's agent carries a mentions list (machine, state, the session it reached, the name you asked for, the reply's seq): delivered, fell_back, queued (its hooks aren't listening: held as a card for its owner to deliver or drop, never typed in unasked), silenced (its owner silenced that session; it went to the inbox), waiting, no_such_session (the @name matched no session on that machine, so it went to the machine's inbox; names lists the sessions it has), not_granted (its agents can't read the room; the owner was asked, and it is delivered if they grant it), offline, working (the session's turn that took it is running), read (that turn ended), answered, dropped (why: stopped or exited mid-turn; it was not read): read it again for the outcome. replies: true instead returns this machine's unread replies to your posts, by thread. machine (a name as in @machine) instead lists that machine's sessions you can @machine/name in the room: its owner decides what is shown. To find where to post: an unreached mention says why, and machine lists the sessions you can name; don't guess names from history.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -19174,6 +19318,14 @@
             "format": "int64",
             "type": [
               "integer",
+              "null"
+            ]
+          },
+          "file": {
+            "default": null,
+            "description": "Instead of reading the room: save one of its files on this machine\n(its id, as a message lists it) and answer its path, to read there\nwith your own tools. A screenshot reads as a picture.",
+            "type": [
+              "string",
               "null"
             ]
           },
@@ -20392,7 +20544,7 @@
         "readOnlyHint": false,
         "title": "Link work items"
       },
-      "description": "Say which work comes before which, in Arugula cloud, at once, as your person's agent on this machine: add or remove links between a project's items. A link is `from` before `to` (the default kind), or blocks, relates, duplicate_of or discovered_from. An item is #N, owner/repo#N, IDENT-N or an iss_/fi_ id. `to` may be a list, one link to each. Up to 50 links in one call; each lands on its own, and the answer is one line per link (added, already there, removed, not there, or refused and why). A cycle of before and blocks links is refused. Only blocks keeps a row out of a board's Ready line. You remove only links your machine made. Needs your person's issues.write grant over the project: with no project, the one its IDENT-N items are connected in, else the current project, the project you pass, else the one your block was started on (start_agent's issue), else your session's, else the one this clone's GitHub repo is linked to, else your person's default project. Example: {\"add\":[{\"from\":\"#506\",\"to\":\"#507\"}]}.",
+      "description": "Say which work comes before which, in Arugula cloud, at once, as your person's agent on this machine: add or remove links between a project's items. A link is `from` before `to` (the default kind), or blocks, relates, duplicate_of or discovered_from. An item is #N, owner/repo#N, IDENT-N or an iss_/fi_ id. `to` may be a list, one link to each. Up to 50 links in one call; each lands on its own, and the answer is one line per link (added, already there, removed, not there, or refused and why). A cycle of before and blocks links is refused. Only blocks keeps a row out of a board's Ready line. You remove only links your machine made. Needs your person's issues.write grant over the project: with no project, the one its IDENT-N items are connected in, else the current project, the project you pass, else the one your block was started on (start_agent's issue), else your session's, else the one this clone's GitHub repo is linked to, else your person's default project. Example: {\"add\":[{\"from\":\"#506\",\"to\":\"#507\"}]}. card puts your session on a native issue (its card), or none takes it off: its panes show it, and its project is theirs.",
       "inputSchema": {
         "$defs": {
           "LinkArg": {
@@ -20449,6 +20601,14 @@
               "$ref": "#/$defs/LinkArg"
             },
             "type": "array"
+          },
+          "card": {
+            "default": null,
+            "description": "Your session's card: a native issue, #N in the project or iss_…, or\nnone to take it off.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "project": {
             "default": null,
@@ -22194,7 +22354,7 @@
         "readOnlyHint": true,
         "title": "Read a conversation"
       },
-      "description": "Read a room in Arugula cloud that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. A message with replies says how many; thread (its seq) reads those replies instead of the room, and returns the message as parent. An @mention of this machine, a person's reply to you, or a post on the thread of a board your session leads, is delivered to your session, labelled as your person's or a teammate's: answer with post_thread in the same thread. One that finds no session waits unread (capabilities says so). A message of yours that @mentions another machine's agent carries a mentions list (machine, state, the session it reached, the name you asked for, the reply's seq): delivered, fell_back, queued (its hooks aren't listening: held as a card for its owner to deliver or drop, never typed in unasked), silenced (its owner silenced that session; it went to the inbox), waiting, no_such_session (the @name matched no session on that machine, so it went to the machine's inbox; names lists the sessions it has), not_granted (its agents can't read the room; the owner was asked, and it is delivered if they grant it), offline, working (the session's turn that took it is running), read (that turn ended), answered, dropped (why: stopped or exited mid-turn; it was not read); read the message again for the outcome. replies: true instead returns this machine's unread replies to your posts, by thread. machine (a name as in @machine) instead lists that machine's sessions you can @machine/name in the room: its owner decides what is shown. To find where to post: an unreached mention says why, and machine lists the sessions you can name; don't guess names from history.",
+      "description": "Read a room in Arugula cloud that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its files (name, type, size, id): file (its id) saves one here and answers its path, to Read. It starts with the room's topic and pins. A message with replies says how many; thread (its seq) reads those replies instead of the room, and returns the message as parent. An @mention of this machine, a person's reply to you, or a post on the thread of a board your session leads, is delivered to your session, labelled as your person's or a teammate's: answer with post_thread in the same thread. One that finds no session waits unread (capabilities says so). A message of yours that @mentions another machine's agent carries a mentions list (machine, state, the session it reached, the name you asked for, the reply's seq): delivered, fell_back, queued (its hooks aren't listening: held as a card for its owner to deliver or drop, never typed in unasked), silenced (its owner silenced that session; it went to the inbox), waiting, no_such_session (the @name matched no session on that machine, so it went to the machine's inbox; names lists the sessions it has), not_granted (its agents can't read the room; the owner was asked, and it is delivered if they grant it), offline, working (the session's turn that took it is running), read (that turn ended), answered, dropped (why: stopped or exited mid-turn; it was not read): read it again for the outcome. replies: true instead returns this machine's unread replies to your posts, by thread. machine (a name as in @machine) instead lists that machine's sessions you can @machine/name in the room: its owner decides what is shown. To find where to post: an unreached mention says why, and machine lists the sessions you can name; don't guess names from history.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -22213,6 +22373,14 @@
             "format": "int64",
             "type": [
               "integer",
+              "null"
+            ]
+          },
+          "file": {
+            "default": null,
+            "description": "Instead of reading the room: save one of its files on this machine\n(its id, as a message lists it) and answer its path, to read there\nwith your own tools. A screenshot reads as a picture.",
+            "type": [
+              "string",
               "null"
             ]
           },
@@ -24267,7 +24435,7 @@
         "readOnlyHint": true,
         "title": "Read a conversation"
       },
-      "description": "Read a room in Arugula cloud that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). It starts with the room's topic and pins. A message with replies says how many; thread (its seq) reads those replies instead of the room, and returns the message as parent. An @mention of this machine, a person's reply to you, or a post on the thread of a board your session leads, is delivered to your session, labelled as your person's or a teammate's: answer with post_thread in the same thread. One that finds no session waits unread (capabilities says so). A message of yours that @mentions another machine's agent carries a mentions list (machine, state, the session it reached, the name you asked for, the reply's seq): delivered, fell_back, queued (its hooks aren't listening: held as a card for its owner to deliver or drop, never typed in unasked), silenced (its owner silenced that session; it went to the inbox), waiting, no_such_session (the @name matched no session on that machine, so it went to the machine's inbox; names lists the sessions it has), not_granted (its agents can't read the room; the owner was asked, and it is delivered if they grant it), offline, working (the session's turn that took it is running), read (that turn ended), answered, dropped (why: stopped or exited mid-turn; it was not read); read the message again for the outcome. replies: true instead returns this machine's unread replies to your posts, by thread. machine (a name as in @machine) instead lists that machine's sessions you can @machine/name in the room: its owner decides what is shown. To find where to post: an unreached mention says why, and machine lists the sessions you can name; don't guess names from history.",
+      "description": "Read a room in Arugula cloud that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its files (name, type, size, id): file (its id) saves one here and answers its path, to Read. It starts with the room's topic and pins. A message with replies says how many; thread (its seq) reads those replies instead of the room, and returns the message as parent. An @mention of this machine, a person's reply to you, or a post on the thread of a board your session leads, is delivered to your session, labelled as your person's or a teammate's: answer with post_thread in the same thread. One that finds no session waits unread (capabilities says so). A message of yours that @mentions another machine's agent carries a mentions list (machine, state, the session it reached, the name you asked for, the reply's seq): delivered, fell_back, queued (its hooks aren't listening: held as a card for its owner to deliver or drop, never typed in unasked), silenced (its owner silenced that session; it went to the inbox), waiting, no_such_session (the @name matched no session on that machine, so it went to the machine's inbox; names lists the sessions it has), not_granted (its agents can't read the room; the owner was asked, and it is delivered if they grant it), offline, working (the session's turn that took it is running), read (that turn ended), answered, dropped (why: stopped or exited mid-turn; it was not read): read it again for the outcome. replies: true instead returns this machine's unread replies to your posts, by thread. machine (a name as in @machine) instead lists that machine's sessions you can @machine/name in the room: its owner decides what is shown. To find where to post: an unreached mention says why, and machine lists the sessions you can name; don't guess names from history.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -24286,6 +24454,14 @@
             "format": "int64",
             "type": [
               "integer",
+              "null"
+            ]
+          },
+          "file": {
+            "default": null,
+            "description": "Instead of reading the room: save one of its files on this machine\n(its id, as a message lists it) and answer its path, to read there\nwith your own tools. A screenshot reads as a picture.",
+            "type": [
+              "string",
               "null"
             ]
           },

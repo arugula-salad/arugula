@@ -169,11 +169,12 @@ test("an issue opens from the menu, given to you; an agent's new issue is a draf
 
   // An agent's new issue: a draft on a block of its own, its text shown once
   // (as Markdown), with the actions on the block rather than a card over it.
+  // It names Forgejo: a reference that names no forge is GitHub's (#1009).
   const draftNew = (title: string) =>
     page.evaluate(
       ([repo, t, title]) =>
         window.__arugula.client
-          .request("POST", "/api/blocks", { type: "forge", config: { issue: "new", repo, title, body: "Memory grows.\n\n- **per frob**", agent: true }, split: t, local: true })
+          .request("POST", "/api/blocks", { type: "forge", config: { issue: "new", provider: "forgejo", repo, title, body: "Memory grows.\n\n- **per frob**", agent: true }, split: t, local: true })
           .then((r) => r.json<{ block: number }>()),
       [REPO, term, title] as const,
     );

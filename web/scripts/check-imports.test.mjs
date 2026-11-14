@@ -1,4 +1,4 @@
-// The import rule refuses what it should (M148): each case builds a small
+// The import rule refuses what it should (M148, Arugula #989): each case builds a small
 // web/src in a temporary folder and runs the check the build runs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -23,6 +23,7 @@ function tree(files) {
     "shared/tokens.ts": "export const tokens = {};",
     "shared/style.css": "a { color: red; }",
     "platform/chat/room.tsx": 'import { tokens } from "../../shared/tokens";\nimport "../../shared/style.css";\nexport const room = tokens;',
+    "app/main.tsx": 'import { room } from "../platform/chat/room";\nimport { fleet } from "../shell/fleet";\nimport { tokens } from "../shared/tokens";\nconsole.log(room, fleet, tokens);',
   };
   for (const [p, text] of Object.entries({ ...base, ...files })) {
     mkdirSync(dirname(join(src, p)), { recursive: true });
@@ -73,12 +74,21 @@ test("shared/ importing platform/ fails", () => {
   assert.ok(tree({ "shared/tokens.ts": 'import { room } from "../platform/chat/room";\nexport const tokens = room;' }).some((b) => b.includes("shared/ imports neither")));
 });
 
-test("a file outside the three folders fails", () => {
+test("a file outside the four folders fails", () => {
   assert.ok(tree({ "loose.ts": "export {};" }).some((b) => b.startsWith("loose.ts")));
 });
 
 test("the shell may import the platform and shared", () => {
   assert.deepEqual(tree({ "shell/other.ts": 'import { room } from "../platform/chat/room";\nexport const x = room;' }), []);
+});
+
+test("app/ may import the shell, the platform and shared; nothing else imports app/", () => {
+  assert.deepEqual(tree({ "app/frame.tsx": 'import { client } from "../shell/client";\nimport { room } from "../platform/chat/room";\nexport const x = [client, room];' }), []);
+  for (const from of ["shell/main.tsx", "platform/chat/room.tsx", "shared/tokens.ts"]) {
+    const up = "../".repeat(from.split("/").length - 1);
+    const bad = tree({ [from]: `import { x } from "${up}app/frame";\nexport const y = x;`, "app/frame.tsx": "export const x = 1;" });
+    assert.ok(bad.some((b) => b.startsWith(`${from} imports app/frame.tsx: only app/ imports app/`)), `${from}: ${bad.join("\n")}`);
+  }
 });
 
 test("the command exits 1 on a bad import and 0 on a good tree", () => {
@@ -96,11 +106,14 @@ test("the command exits 1 on a bad import and 0 on a good tree", () => {
   }
 });
 
-test("a bundle holding a key module or the shell's fails; the daemon's holding platform/ fails", () => {
+test("the app's bundle holding control's trust pages fails, and may hold the rest of the shell; the daemon's holding platform/ or app/ fails", () => {
   const src = "/w/web/src";
-  assert.deepEqual(checkBundle(["/w/web/src/platform/main.tsx", "/w/web/src/shared/proto.ts", "/w/web/node_modules/preact/dist/preact.mjs", "\0vite/preload-helper.js"], "keys", src), []);
-  assert.match(checkBundle(["/w/web/src/shell/e2e/keys.ts?used"], "keys", src)[0], /shell\/e2e\/keys\.ts \(the key code/);
-  assert.match(checkBundle(["/w/web/src/shell/ui/menu.tsx"], "keys", src)[0], /the shell's/);
+  assert.deepEqual(
+    checkBundle(["/w/web/src/app/main.tsx", "/w/web/src/platform/page.tsx", "/w/web/src/shell/client.ts", "/w/web/src/shell/e2e/machine-token.ts", "/w/web/src/shared/proto.ts", "/w/web/node_modules/preact/dist/preact.mjs", "\0vite/preload-helper.js"], "trust", src),
+    [],
+  );
+  assert.match(checkBundle(["/w/web/src/shell/trust/gate.tsx?used"], "trust", src)[0], /shell\/trust\/gate\.tsx \(control's trust pages/);
   assert.match(checkBundle(["/w/web/src/platform/pages/chat.tsx"], "platform", src)[0], /platform\/pages\/chat\.tsx/);
+  assert.match(checkBundle(["/w/web/src/app/main.tsx"], "platform", src)[0], /app\/main\.tsx \(the app's\)/);
   assert.deepEqual(checkBundle(["/w/web/src/shell/client.ts"], "platform", src), []);
 });

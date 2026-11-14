@@ -692,6 +692,8 @@
       "description": "`GET /api/daemon/trust`: the account's certificates, to evaluate against\nthe root the daemon pinned.",
       "properties": {
         "certs": {
+          "default": [],
+          "description": "Empty, or left out, for a machine joined on control's word\n(aru-141, #1016), which reads only `flags`.",
           "items": {
             "$ref": "#/$defs/Cert"
           },
@@ -721,6 +723,7 @@
           "description": "Its last move (#100), for the daemon to check and take."
         },
         "revocations": {
+          "default": [],
           "items": {
             "$ref": "#/$defs/Revocation"
           },
@@ -739,10 +742,6 @@
           "description": "Not read by daemons: they have the root they pinned."
         }
       },
-      "required": [
-        "certs",
-        "revocations"
-      ],
       "type": "object"
     }
   },

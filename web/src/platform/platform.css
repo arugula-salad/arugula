@@ -200,7 +200,10 @@ html[data-corners="square"] .platform-section {
   border-radius: 0;
 }
 
-.platform-section h2 {
+/* The page's default h2. :where() keeps it at (0,0,1) so a component's own
+   heading (.section-head h2, .board-zone-head h2, .md h2…) wins whichever
+   CSS file the build emits last. */
+:where(.platform-section) h2 {
   margin: 20px 0 8px;
   font-size: var(--text-lg);
 }
@@ -1482,82 +1485,241 @@ span.untri-title {
   white-space: nowrap;
 }
 
-/* The bar's switcher (Arugula #895, ./switcher): the owners in a column on
-   the left, the chosen one's projects on the right. On a phone the sheet
-   shows one of them at a time. */
+/* The project switcher (Arugula #895; the prototype's, #989, ./switcher):
+   one list under small headings, each project with its letter tile and a
+   count of what wants you there; the current one in the accent. */
 .menu.popover:not(.sheet):has(.switcher) {
-  width: min(520px, calc(100vw - 16px));
+  width: 280px;
 }
 
 .switcher {
   display: flex;
+  flex-direction: column;
   min-height: 0;
+  padding: var(--space-1);
 }
 
-.switcher-owners,
-.switcher-projects {
+.switcher-group {
   display: flex;
   flex-direction: column;
-  min-width: 0;
-  padding: 4px;
 }
 
-.switcher-owners {
-  flex: none;
-  width: 180px;
-  border-right: 1px solid var(--line);
-}
-
-.switcher-projects {
-  flex: 1;
-}
-
-.switcher.phone .switcher-owners,
-.switcher.phone .switcher-projects {
-  width: auto;
-  flex: 1;
-  border-right: 0;
+/* A caps label (docs/design/language.md), as the prototype's headings. */
+.switcher-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
 }
 
 .switcher .menu-item {
-  display: block;
   color: var(--fg);
   text-decoration: none;
 }
 
-.switcher-owner[aria-pressed="true"] {
-  background: var(--selected);
-  box-shadow: var(--selected-mark);
-}
-
-.switcher-project[aria-current="page"] {
-  font-weight: 600;
-}
-
-.switcher-head {
+.switcher-row {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding-right: 10px;
+  align-items: center;
+  gap: var(--space-2);
 }
 
-.switcher-links {
-  display: flex;
-  gap: 10px;
-  margin-left: auto;
-  font-size: var(--text-sm);
+.switcher-tile {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--tag-radius);
+  background: var(--bg);
+  color: var(--fg);
+  font-size: var(--text-xs);
+  font-weight: 700;
 }
 
-.switcher-links a {
+.switcher-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.switcher-row[aria-current="page"],
+.switcher-row[aria-current="page"] .switcher-tile {
   color: var(--accent);
-  text-decoration: none;
 }
 
-.switcher-links a:hover {
-  text-decoration: underline;
+.switcher-count {
+  margin-left: auto;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--on-color);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+}
+
+.switcher-new {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--dim);
 }
 
 /* A team's page (Arugula #895): its tabs under the header. */
 .team-page .team-tabs {
   margin-bottom: 16px;
+}
+
+/* The app's rail (Arugula #989): the project tile at its top (the
+   switcher), a line between the project's places and the team's, and you
+   at its foot. */
+.ws-project-tile {
+  border: 0;
+  border-bottom: 1px solid var(--line-strong);
+  background: none;
+  cursor: pointer;
+}
+
+.ws-project-initial {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--btn-radius);
+  background: var(--accent);
+  color: var(--on-color);
+  font-size: var(--text-lg);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.ws-project-tile:hover .ws-project-initial,
+.ws-project-tile[aria-expanded="true"] .ws-project-initial {
+  outline: 2px solid var(--chrome-selected-line);
+  outline-offset: 2px;
+}
+
+.ws-rail-line {
+  height: 1px;
+  margin: var(--space-1) var(--space-3);
+  background: var(--line);
+}
+
+.ws-rail .ws-rail-me {
+  justify-content: center;
+  height: 40px;
+  margin-top: var(--space-1);
+  padding: 0;
+  border-left: 0;
+  background: none;
+}
+
+.ws-rail .ws-rail-me .account-avatar {
+  width: 28px;
+  height: 28px;
+}
+
+/* The bar's path to where you are: each step a level up. */
+.app-path {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: 0 var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.app-path-step {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  white-space: nowrap;
+}
+
+.app-path a {
+  color: var(--dim);
+  text-decoration: none;
+}
+
+.app-path a:hover {
+  color: var(--fg);
+}
+
+.app-path-sep {
+  color: var(--dim);
+}
+
+.app-path-here {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+/* A phone's places, in a bar along the bottom (decision 15), and its bell. */
+.app-tabs {
+  display: none;
+}
+
+@media (max-width: 700px) {
+  .platform {
+    flex-direction: column;
+  }
+
+  .app-tabs {
+    display: flex;
+    flex: none;
+    padding-bottom: env(safe-area-inset-bottom);
+    border-top: 1px solid var(--line);
+    background: var(--surface);
+  }
+
+  .app-tab {
+    position: relative;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-height: 56px;
+    border: 0;
+    background: none;
+    color: var(--dim);
+    font-size: var(--text-xs);
+    text-decoration: none;
+  }
+
+  .app-tab.here {
+    color: var(--accent);
+  }
+
+  .app-tab .ws-rail-count {
+    top: 4px;
+    right: calc(50% - 22px);
+  }
+
+  .app-bell {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    color: var(--dim);
+  }
+
+  .app-bell.here {
+    color: var(--accent);
+  }
+
+  .app-bell .ws-rail-count {
+    top: 4px;
+    right: 2px;
+  }
 }

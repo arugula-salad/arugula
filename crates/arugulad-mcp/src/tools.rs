@@ -136,6 +136,14 @@ pub struct RunArgs {
     /// Seconds to wait before answering "still running" (default 100).
     #[serde(default)]
     pub timeout: Option<f64>,
+    /// The project its session works in: a prj_ id, or personal. Default
+    /// with issue: the current project.
+    #[serde(default)]
+    pub project: Option<String>,
+    /// The card its session works on: a native issue, #N in project or
+    /// iss_…. Its panes show it, and it chooses their current project.
+    #[serde(default)]
+    pub issue: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -413,6 +421,9 @@ pub struct StartAgentArgs {
     /// The issue it works on: `#N`, `owner/repo#N`, `IDENT-N` or a native issue's `iss_…` id. The block keeps it, and its header says it (`#N · board`). With this machine's boards.write grant over the issue's project, the block is attached to that issue's row on every board of the project, which moves the row to Doing; without it the answer says so. The project is the one that holds `#N` (of those this machine's boards grants reach; the current project if several do), else the current project: the one your block was started on, else your session's, else the one cwd's GitHub repo is linked to, else your person's default project. It is the agent's current project: its `#N`, issue_write, board_read and link calls go there. A worktree's branch, when you give none, starts with the issue's number (`feat/357-…`). Without issue, a worktree branch named `feat/N-…` (or fix, docs, chore, perf, refactor) is on `#N` when a board has a row for it. Not for a chat.
     #[serde(default)]
     pub issue: Option<String>,
+    /// The project it works in: a prj_ id, or personal. Its issue's #N is in it, and it is the agent's current project. Default: as for issue.
+    #[serde(default)]
+    pub project: Option<String>,
     /// With issue: take the row over when another machine's agent works it, or another session holds it (the one that last started an agent on it, until the issue closes or it lets go with board_write release_row). Without it, the start is refused, naming who holds it; with it, that agent is folded under "earlier agents", this session holds the row, and the session that held it is told.
     #[serde(default)]
     pub take: bool,
@@ -1901,6 +1912,35 @@ impl ToolCall<'_, '_> {
         cap_tail(&tail, 4_000)
     }
 
+    /// `run`'s `project` and `issue`, for its session's work: the project's
+    /// id (`personal` is the owner's), and the native issue as `#N` in it.
+    /// An `iss_…` names its project; a `#N` is in the one named, else the
+    /// current project.
+    async fn session_work_of(
+        &self,
+        project: Option<&str>,
+        issue: Option<&str>,
+    ) -> Result<(Option<String>, Option<String>), String> {
+        let nonempty = |s: Option<&str>| s.map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned);
+        let (project, issue) = (nonempty(project), nonempty(issue));
+        if project.is_none() && issue.is_none() {
+            return Ok((None, None));
+        }
+        let issue = issue.map(|i| arugulad_base::mcp::issues::native(&i).map(|_| i)).transpose()?;
+        if let Some(i) = issue.as_ref().filter(|i| i.starts_with("iss_")) {
+            let (p, n) = arugulad_base::board_attach::issue_project(self.app, i, None)
+                .await?
+                .ok_or_else(|| format!("issue {i}: Arugula cloud named no project"))?;
+            if let Some(named) = project.as_deref()
+                && self.current_project(Some(named)).await? != p
+            {
+                return Err(format!("issue {i} is in {p}, not {named}"));
+            }
+            return Ok((Some(p), Some(n)));
+        }
+        Ok((Some(self.current_project(project.as_deref()).await?), issue))
+    }
+
     // ------------------------------------------------------------ tools
     async fn run(&self, a: RunArgs) -> Out {
         if a.command.as_deref().is_some_and(|c| c.trim().is_empty()) {
@@ -1914,8 +1954,14 @@ impl ToolCall<'_, '_> {
             Some(p) => return Err(format!("policy {p}: shell, none, rerun or rerun-ask")),
         };
         let mut req = RunRequest { cwd: a.cwd.clone(), policy, ..Default::default() };
+        (req.project, req.issue) = self.session_work_of(a.project.as_deref(), a.issue.as_deref()).await?;
         match self.me() {
             Some(me) => {
+                if req.project.is_some() {
+                    return Err(
+                        "this agent's token can't put its session on a card: run with no project or issue".into()
+                    );
+                }
                 if a.vm || a.vm_tab || a.machine.is_some() || a.session.is_some() {
                     return Err("this agent's token reaches its own tab only: run splits a pane there (no vm, vm_tab, machine or session)".into());
                 }
@@ -2737,6 +2783,8 @@ impl ToolCall<'_, '_> {
             image: None,
             host,
             local: host.is_none(),
+            project: None,
+            issue: None,
         };
         let block = self.open(req).await?;
         let place = match beside {
@@ -2764,6 +2812,8 @@ impl ToolCall<'_, '_> {
             image: None,
             host,
             local: host.is_none(),
+            project: None,
+            issue: None,
         };
         let block = self.open(req).await?;
         // It reads in the background: wait for that, briefly.
@@ -2818,6 +2868,8 @@ impl ToolCall<'_, '_> {
             image: None,
             host,
             local: host.is_none(),
+            project: None,
+            issue: None,
         };
         let block = self.open(req).await?;
         let at = a.line.map(|l| format!(" at line {l}")).unwrap_or_default();
@@ -2842,6 +2894,8 @@ impl ToolCall<'_, '_> {
             image: None,
             host,
             local: host.is_none(),
+            project: None,
+            issue: None,
         };
         let block = self.open(req).await?;
         let what = match (&room, a.pinned) {
@@ -2865,6 +2919,8 @@ impl ToolCall<'_, '_> {
             image: None,
             host,
             local: host.is_none(),
+            project: None,
+            issue: None,
         };
         let block = self.open(req).await?;
         done(format!("Showing board {board} in block %{block}"), results::BlockOnly { block })
@@ -2907,6 +2963,8 @@ impl ToolCall<'_, '_> {
             image: None,
             host,
             local: host.is_none(),
+            project: None,
+            issue: None,
         };
         let block = self.open(req).await?;
         // Its first read takes a second or two (four chant processes).
@@ -2989,6 +3047,8 @@ impl ToolCall<'_, '_> {
             image: None,
             host: None,
             local: true,
+            project: None,
+            issue: None,
         };
         let block = self.open(req).await?;
         let deadline = Instant::now() + Duration::from_secs(30);
@@ -3270,6 +3330,9 @@ impl ToolCall<'_, '_> {
             if let Some(p) = &project {
                 config["work"]["project"] = json!(p);
             }
+        } else if let (Some(p), None) = (&project, &inferred) {
+            // A project named alone: the agent's current one.
+            config["work"] = json!({ "project": p });
         }
         if let Some(c) = &a.command {
             config["command"] = json!(c);
@@ -3316,6 +3379,8 @@ impl ToolCall<'_, '_> {
             image: None,
             host: if a.vm { None } else { host },
             local: false,
+            project: None,
+            issue: None,
         };
         // The caller's name: its session holds the row from now (Arugula
         // #765), and its own hold is no claim.
@@ -3474,21 +3539,29 @@ impl ToolCall<'_, '_> {
     /// one resolver's, `Call::chosen_project`, with the agent's `cwd` for
     /// its repo) unless only control's default chose it, which also holds
     /// the project of the issue a worktree's branch names, when there is no
-    /// `issue` and a project holds that issue.
+    /// `issue` and a project holds that issue. A `project` named is the
+    /// agent's, and holds its `#N`.
     async fn issue_of_start(
         &self,
         a: &StartAgentArgs,
         issue: Option<String>,
     ) -> Result<(Option<String>, Option<String>, Option<(String, String)>), String> {
+        let named = a.project.as_deref().map(str::trim).filter(|p| !p.is_empty());
         if issue.is_none() && a.worktree.is_none() {
-            return Ok((None, None, None));
+            return match named {
+                Some(p) => Ok((None, Some(self.current_project(Some(p)).await?), None)),
+                None => Ok((None, None, None)),
+            };
         }
         let dir = match (&a.cwd, self.own_pane()) {
             (Some(c), _) => Some(c.clone()),
             (None, Some(p)) => self.readable(p).await.ok().and_then(|p| p.info.cwd),
             (None, None) => None,
         };
-        let chosen = self.chosen_project_in(None, dir.as_deref()).await.ok();
+        let chosen = match named {
+            Some(p) => Some(self.chosen_project(Some(p)).await?),
+            None => self.chosen_project_in(None, dir.as_deref()).await.ok(),
+        };
         let current = chosen.as_ref().map(|c| c.id.clone());
         // Control's default isn't kept as the agent's project: its own
         // session and repo choose for it.
@@ -3496,13 +3569,16 @@ impl ToolCall<'_, '_> {
         let by =
             async |issue: &str| arugulad_base::board_attach::issue_project(self.app, issue, current.as_deref()).await;
         match issue {
+            Some(i) if named.is_some() && !i.starts_with("iss_") => Ok((Some(i), kept, None)),
             Some(i) => match by(&i).await? {
                 Some((p, n)) => Ok((Some(n), Some(p), None)),
                 None => Ok((Some(i), kept, None)),
             },
             None => {
                 let branch = a.worktree.as_ref().map(|w| w.branch.trim()).unwrap_or_default();
-                let Some(n) = issue_of_branch(branch) else { return Ok((None, None, None)) };
+                let Some(n) = arugulad_base::board_attach::issue_of_branch(branch) else {
+                    return Ok((None, None, None));
+                };
                 Ok(match by(&format!("#{n}")).await {
                     Ok(Some((p, i))) => (None, Some(p), Some((i, branch.to_owned()))),
                     _ => (None, None, None),
@@ -3588,6 +3664,8 @@ impl ToolCall<'_, '_> {
             image: None,
             host,
             local: false,
+            project: None,
+            issue: None,
         };
         let block = self.open(req).await?;
         done(
@@ -3943,17 +4021,6 @@ fn run_lands_on_machine(req: &RunRequest) -> bool {
     req.join || req.vm || req.vm_tab || req.sandbox.is_some()
 }
 
-/// Whether `start_agent` may start this agent ([`confine`]), and a worn
-/// recipe on this host only.
-/// The issue a branch name says it is on (#430): `feat/357-…`, with `feat`,
-/// `fix`, `docs`, `chore`, `perf` or `refactor` before the number.
-fn issue_of_branch(branch: &str) -> Option<u64> {
-    let (kind, rest) = branch.split_once('/')?;
-    ["feat", "fix", "docs", "chore", "perf", "refactor"].contains(&kind).then_some(())?;
-    let (n, _) = rest.split_once('-')?;
-    (!n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())).then(|| n.parse().ok()).flatten().filter(|n| *n > 0)
-}
-
 /// A start on `issue` that is on `boards`; `how` says where the issue came from.
 fn started_on(issue: &str, how: &str, boards: Vec<arugulad_base::board_attach::WorkBoard>) -> results::StartedOn {
     let names: Vec<_> = boards.iter().map(|b| format!("{:?}", b.title)).collect();
@@ -3979,6 +4046,8 @@ fn suggest_branch(number: u64, text: &str) -> String {
     }
 }
 
+/// Whether `start_agent` may start this agent ([`confine`]), and a worn
+/// recipe on this host only.
 fn may_start(caller_on_machine: bool, on_machine: bool, vm: bool, worn: bool) -> Result<(), String> {
     confine(caller_on_machine, on_machine || vm)?;
     if worn && (on_machine || vm) {
@@ -4079,6 +4148,8 @@ mod tests {
             image: None,
             host,
             local: host.is_none(),
+            project: None,
+            issue: None,
         };
         assert!(confine(true, open_lands_on_machine(&block(None, false))).is_err());
         assert!(confine(true, open_lands_on_machine(&block(Some(2), false))).is_ok());

@@ -6,7 +6,7 @@
 // the window, and whenever the inbox page reads them (it hands them here);
 // the threads are chat's, live.
 
-import { useEffect } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import type { InboxEntry } from "../shared/proto.gen";
 import { chat, chatStore } from "../shared/chat-store";
 import { threadNews } from "../shared/chat/unread";
@@ -54,6 +54,36 @@ async function load(scope: string | undefined) {
   if (inbox) noteInbox(inbox.entries);
 }
 
+/** What wants you, per project (Arugula #989's switcher): the unseen
+ * entries of each project's own (native issues and runs say theirs), and
+ * every unseen one for All projects. A repo's PR or issue names no
+ * project, so it counts under All projects alone. */
+export function unseenByProject(list: InboxEntry[]): { all: number; by: Map<string, number> } {
+  const by = new Map<string, number>();
+  let all = 0;
+  for (const e of list) {
+    if (e.reason === "draft" || isSeen(e)) continue;
+    all++;
+    if (e.project) by.set(e.project, (by.get(e.project) ?? 0) + 1);
+  }
+  return { all, by };
+}
+
+/** `unseenByProject` over the whole inbox, read once while it's drawn (the
+ * switcher, while it's open); empty until it's read or if it can't be. */
+export function useInboxByProject(): { all: number; by: Map<string, number> } {
+  const [counts, setCounts] = useState<{ all: number; by: Map<string, number> }>({ all: 0, by: new Map() });
+  useEffect(() => {
+    let live = true;
+    void platformFetch(inboxPath(undefined), { credentials: "same-origin" })
+      .then((r) => (r.ok ? (r.json() as Promise<{ entries: InboxEntry[] }>) : null))
+      .then((v) => live && v && setCounts(unseenByProject(v.entries)))
+      .catch(() => {});
+    return () => void (live = false);
+  }, []);
+  return counts;
+}
+
 /** Deploys waiting for the reader's approval, or 0 before it's known. */
 export const deploysWaiting = () => waiting;
 
@@ -64,9 +94,9 @@ export function inboxUnseen(): number {
   return entries.filter((e) => !isSeen(e)).length + threads;
 }
 
-/** The count, beside the bar's Inbox: nothing while nothing's unseen and
- * no deploy waits. */
-export function InboxCount() {
+/** What the Inbox's count says, read and kept current while it's drawn:
+ * how many, how many of them are deploys waiting, and in words. */
+export function useInboxCount(): { n: number; waiting: number; title: string } {
   useSubscribe((fn) => {
     listeners.add(fn);
     return () => void listeners.delete(fn);
@@ -87,10 +117,15 @@ export function InboxCount() {
     return () => document.removeEventListener("visibilitychange", back);
   }, [ready, scope]);
   const unseen = inboxUnseen();
-  const n = unseen + waiting;
-  if (!n) return null;
   const said = [waiting ? `${waiting} ${waiting === 1 ? "deploy waits" : "deploys wait"} for your approval` : "", unseen ? `${unseen} unseen in your inbox` : ""];
-  const title = said.filter(Boolean).join("; ");
+  return { n: unseen + waiting, waiting, title: said.filter(Boolean).join("; ") };
+}
+
+/** The count, beside the bar's Inbox: nothing while nothing's unseen and
+ * no deploy waits. */
+export function InboxCount() {
+  const { n, title } = useInboxCount();
+  if (!n) return null;
   return (
     <span class={waiting ? "thread-unread place-unread mention" : "thread-unread place-unread"} title={title} data-inbox-count={n} data-inbox-deploys={waiting || undefined}>
       <span class="thread-unread-dot" aria-hidden="true" />

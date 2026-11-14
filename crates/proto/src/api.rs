@@ -215,6 +215,41 @@ pub struct OpenRequest {
     #[serde(default)]
     #[cfg_attr(feature = "ts", ts(as = "Option<bool>"))]
     pub local: bool,
+    /// The project it works in (`prj_…`): an agent's own, else its
+    /// session's ([`crate::Session::work`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+    /// The card it works on (`#N` in `project`, or `iss_…`): an agent's
+    /// own (`config.work`'s `issue`), else its session's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub issue: Option<String>,
+}
+
+impl OpenRequest {
+    /// An agent's (or a chat's) typed `issue` and `project` as its
+    /// `config.work`, where the block keeps them (a project alone is the
+    /// one it works in); they win over what the config says. Another
+    /// block's are its session's, and stay.
+    pub fn work_into_config(&mut self) {
+        if !matches!(self.kind, crate::BlockType::Agent | crate::BlockType::Chat) {
+            return;
+        }
+        if self.issue.is_none() && self.project.is_none() {
+            return;
+        }
+        if !self.config.is_object() {
+            self.config = serde_json::json!({});
+        }
+        if !self.config["work"].is_object() {
+            self.config["work"] = serde_json::json!({});
+        }
+        if let Some(i) = self.issue.take() {
+            self.config["work"]["issue"] = i.into();
+        }
+        if let Some(p) = self.project.take() {
+            self.config["work"]["project"] = p.into();
+        }
+    }
 }
 
 /// What opening a block answers.
@@ -270,6 +305,13 @@ pub struct RunRequest {
     /// and working directory.
     #[serde(default)]
     pub from_pane: Option<PaneId>,
+    /// The project its session works in (`prj_…`; [`crate::Session::work`]).
+    /// With `issue` and none, the session's own project.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+    /// The card its session works on: `#N` in `project`, or `iss_…`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub issue: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1646,6 +1688,11 @@ pub enum PermitAnswer {
 /// drives (#644): it wants a mention that's waiting, if there is one.
 pub const HOOK_TAKES_MENTION: &str = "arugula_takes_mention";
 
+/// Set in the hook's input by a CLI that acks each follow-up it's given
+/// once it printed it (#630, [`PaneFollowUpAck`](crate::op::ops::PaneFollowUpAck)):
+/// until then the daemon keeps it, and offers it again if no ack comes.
+pub const HOOK_ACKS: &str = "arugula_acks";
+
 /// The field `arugula hook` adds to a `SessionStart` whose session was told
 /// how a mid-turn mention arrives (`flags::MENTIONS_STEERING`, #644). Only
 /// those sessions take one at a tool call: a session that started before
@@ -1665,6 +1712,9 @@ pub struct HookAnswer {
 pub struct HookFollowUp {
     pub text: String,
     pub by: crate::Driver,
+    /// What to ack once it's printed (#630), for a CLI that acks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<u64>,
 }
 
 /// `POST /api/panes/N/inbox` (`arugula inbox`): a follow-up for the agent,
@@ -1678,8 +1728,20 @@ pub enum InboxAnswer {
         text: String,
         #[serde(default)]
         by: crate::Driver,
+        /// What to ack once it's printed (#630), for a CLI that acks.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts", ts(optional))]
+        id: Option<u64>,
     },
     Replaced,
+}
+
+/// `POST /api/panes/N/followup-ack` (#630): the follow-up `id` the CLI was
+/// given is printed for Claude Code.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct FollowUpAck {
+    pub id: u64,
 }
 
 /// `POST /api/panes/N/followup`: the agent's next instruction.
@@ -1695,6 +1757,11 @@ pub struct FollowUpRequest {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct FollowedUp {
     pub delivered: bool,
+    /// It waits for Claude Code in a terminal whose hooks aren't installed
+    /// (#630): it goes in once they are, or when the pane's owner delivers
+    /// it from its card.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub held: bool,
 }
 
 /// What answering a question or permission card on a terminal or block
@@ -2656,12 +2723,13 @@ mod wire {
     fn inbox_followup_and_answers_as_they_did() {
         let by = driver("sam");
         same(
-            &InboxAnswer::FollowUp { text: "go on".into(), by: by.clone() },
+            &InboxAnswer::FollowUp { text: "go on".into(), by: by.clone(), id: None },
             json!({ "action": "follow_up", "text": "go on", "by": by }),
         );
         same(&InboxAnswer::Replaced, json!({ "action": "replaced" }));
-        same(&FollowedUp { delivered: true }, json!({ "delivered": true }));
-        same(&FollowedUp { delivered: false }, json!({ "delivered": false }));
+        same(&FollowedUp { delivered: true, held: false }, json!({ "delivered": true }));
+        same(&FollowedUp { delivered: false, held: false }, json!({ "delivered": false }));
+        same(&FollowedUp { delivered: false, held: true }, json!({ "delivered": false, "held": true }));
         let req: FollowUpRequest = serde_json::from_value(json!({ "text": "hi" })).unwrap();
         assert_eq!(req.text, "hi");
         assert!(serde_json::from_value::<FollowUpRequest>(json!({})).is_err());
@@ -2964,5 +3032,32 @@ mod wire {
         assert_eq!(row(json!({ "layout": "prototype" })).layout, DocLayout::Prototype);
         assert_eq!(row(json!({ "layout": "gallery" })).layout, DocLayout::Doc);
         assert_eq!(serde_json::to_value(DocLayout::Prototype).unwrap(), json!("prototype"));
+    }
+}
+
+#[cfg(test)]
+mod work_tests {
+    use super::*;
+    use serde_json::json;
+
+    /// An agent's typed issue and project are its `config.work`; another
+    /// block's stay for its session.
+    #[test]
+    fn an_agents_typed_work_is_its_config() {
+        let typed = |kind| OpenRequest {
+            kind,
+            config: json!({ "agent": "claude", "work": { "issue": "#1", "take": true } }),
+            project: Some("prj_1".into()),
+            issue: Some("#2".into()),
+            ..Default::default()
+        };
+        let mut agent = typed(crate::BlockType::Agent);
+        agent.work_into_config();
+        assert_eq!(agent.config["work"], json!({ "issue": "#2", "project": "prj_1", "take": true }));
+        assert_eq!((agent.project, agent.issue), (None, None));
+        let mut browser = typed(crate::BlockType::Browser);
+        browser.work_into_config();
+        assert_eq!(browser.config["work"]["issue"], "#1");
+        assert_eq!(browser.issue.as_deref(), Some("#2"));
     }
 }

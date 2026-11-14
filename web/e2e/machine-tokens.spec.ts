@@ -36,6 +36,8 @@ let origin = "";
 let machine = { id: "", noise: "" };
 const issuer = generateKeyPairSync("ed25519");
 let rootDevice = "";
+/** The issuer's public keys, as control publishes them. */
+const jwks = () => ({ keys: [{ kty: "OKP", crv: "Ed25519", kid: "k1", alg: "EdDSA", use: "sig", x: issuer.publicKey.export({ format: "jwk" }).x }] });
 
 test.beforeAll(async () => {
   state = labs(mkdtempSync(join(tmpdir(), "arugula-e2e-tokens-")));
@@ -57,14 +59,14 @@ test.beforeAll(async () => {
   const certs = [rootCert, cert];
 
   // Control as the daemon sees it: its issuer's key, and the account's trust.
-  const jwks = { keys: [{ kty: "OKP", crv: "Ed25519", kid: "k1", alg: "EdDSA", use: "sig", x: issuer.publicKey.export({ format: "jwk" }).x }] };
+  const keys = jwks();
   control = createServer((req, res) => {
     const path = (req.url ?? "").split("?")[0];
     const body =
       path === "/control.json"
         ? { control: true, daemon_auth: 2 }
         : path === "/.well-known/jwks.json"
-          ? jwks
+          ? keys
           : path === "/api/daemon/trust"
             ? { certs, revocations: [] }
             : path === "/api/daemon/push-subs"
@@ -103,10 +105,16 @@ test.beforeAll(async () => {
     .toBe("joined");
 });
 
+// A killed daemon can still be writing its state until it has exited: wait
+// for it before removing the directory (ENOTEMPTY otherwise).
 test.afterAll(async () => {
-  daemon?.kill();
+  if (daemon && daemon.exitCode === null && daemon.signalCode === null) {
+    const exited = new Promise((r) => daemon!.once("exit", r));
+    daemon.kill("SIGKILL");
+    await exited;
+  }
   control?.close();
-  if (state) rmSync(state, { recursive: true, force: true });
+  if (state) rmSync(state, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 });
 
 /** A machine token as the hub signs one; `ago` seconds old. */
@@ -124,6 +132,7 @@ test("a browser with no device key opens a pane with machine tokens", async ({ p
   // already (so this browser would wait to be approved), and the
   // directory lists the machine with its Noise key (#994).
   await page.route(/\/control\.json$/, (r) => r.fulfill({ json: { control: true, url: origin, github: true, passkeys: false, vapid: "" } }));
+  await page.route(/\/\.well-known\/jwks\.json$/, (r) => r.fulfill({ json: jwks() }));
   await page.route(/\/api\//, async (r) => {
     const url = new URL(r.request().url());
     const method = r.request().method();
@@ -154,4 +163,26 @@ test("a browser with no device key opens a pane with machine tokens", async ({ p
   const pane = await page.evaluate(() => window.__arugula.client.active()!);
   await ready(page, pane);
   await run(page, pane, "echo token-$((6*7))", "token-42");
+});
+
+test("with a control that signs no tokens, a new browser asks to be approved", async ({ page }) => {
+  const enrolled: string[] = [];
+  const asked: string[] = [];
+  await page.route(/\/control\.json$/, (r) => r.fulfill({ json: { control: true, url: origin, github: true, passkeys: false, vapid: "" } }));
+  await page.route(/\/\.well-known\/jwks\.json$/, (r) => r.fulfill({ status: 404, json: { error: "no issuer" } }));
+  await page.route(/\/api\//, async (r) => {
+    const url = new URL(r.request().url());
+    const method = r.request().method();
+    if (url.pathname === "/api/me") return r.fulfill({ json: { account: "a1", login: "me", name: "Me", root: rootDevice, passkeys: 0 } });
+    if (url.pathname.endsWith("/token") && method === "POST") asked.push(url.pathname);
+    if (url.pathname.startsWith("/api/devices") && method === "POST") enrolled.push(url.pathname);
+    return r.fulfill({ status: 404, json: { error: "not here" } });
+  });
+
+  await page.goto(`${origin}/`);
+  // It enrolls (here control refuses, so it goes no further), and never
+  // waits on a token.
+  await expect.poll(() => enrolled.length).toBeGreaterThan(0);
+  expect(await page.evaluate(() => !!window.__arugula.control?.tokens)).toBe(false);
+  expect(asked).toEqual([]);
 });

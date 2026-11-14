@@ -14,9 +14,11 @@ import { describeAgent } from "./account";
 import { addingPasskey } from "./adding-passkey";
 import { AddedAt, clearHash, dropHash } from "./common";
 
-/** M48: the desktop app asks to sign in as this account. Allowing hands a
- * grant to the app on this computer (its loopback port): an app elsewhere
- * that sent this link gets nothing, so there's nothing to compare (#758).
+/** M48: the desktop app asks to sign in as this account, or (#998) the
+ * CLI's `arugula login` does. Allowing hands a grant to the app on this
+ * computer (its loopback port): an app elsewhere that sent this link gets
+ * nothing, so there's nothing to compare (#758). A CLI on another computer
+ * takes the address the browser lands on, pasted by whoever ran it.
  * From a device, it also signs the app's certificate, so the app is a
  * device at once; otherwise its window asks to be approved afterwards (the
  * "New device?" prompt). An app from before #758 still shows a code. */
@@ -32,7 +34,7 @@ export function AppLoginPrompt({ s, id }: { s: ControlSession; id: string }) {
       <h2>Sign in the app?</h2>
       {err ? <p class="control-error" data-app-login-error>{err}</p> : null}
       {a?.allowed ? (
-        <p data-app-login-error>This sign-in was already allowed. Start it again in the app if it didn't finish.</p>
+        <p data-app-login-error>This sign-in was already allowed. Start it again in the app or CLI if it didn't finish.</p>
       ) : a ? (
         <>
           <p>
@@ -53,12 +55,12 @@ export function AppLoginPrompt({ s, id }: { s: ControlSession; id: string }) {
           </p>
           {a.same_network ? null : (
             <p class="control-error" data-app-login-elsewhere>
-              It asked from another network ({a.from}) than this browser's. If the app isn't on this computer, cancel.
+              It asked from another network ({a.from}) than this browser's. If you didn't start it yourself, on a computer of yours, cancel.
             </p>
           )}
           <p class="dim">
-            Only the app on this computer can finish it. If you didn't just press Sign in in the Arugula app, cancel: someone may have sent you
-            this link.
+            Only the app or CLI that asked can finish it. If you didn't just press Sign in in the Arugula app, or run <code>arugula login</code>,
+            cancel: someone may have sent you this link.
           </p>
           <div class="prompt-buttons">
             <button class="secondary" onClick={clearHash}>Cancel</button>

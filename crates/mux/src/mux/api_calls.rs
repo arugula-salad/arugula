@@ -89,14 +89,40 @@ impl Daemon {
             Api::Inferable(session, reply) => {
                 let _ = reply.send(self.mux.session(session).is_ok_and(|s| s.inferable()));
             }
-            Api::InferProject(session, project, reply) => {
+            Api::InferProject(session, project, repo, reply) => {
                 let id = project.id.clone();
-                let set = self.mux.infer_project(session, project).unwrap_or(false);
+                let set = self.mux.infer_project(session, project, &repo).unwrap_or(false);
                 if set {
-                    info!(session, project = id, "session's project inferred");
+                    info!(session, project = id, repo, "session's project inferred");
                     self.changed();
                 }
                 let _ = reply.send(set);
+            }
+            Api::WorkInferable(session, reply) => {
+                let _ = reply.send(self.mux.session(session).is_ok_and(|s| s.work_inferable()));
+            }
+            Api::InferWork(session, work, name, reply) => {
+                let item = work.item.clone();
+                let set = self.mux.infer_work(session, work, name).unwrap_or(false);
+                if set {
+                    info!(session, item, "session's card inferred");
+                    self.changed();
+                }
+                let _ = reply.send(set);
+            }
+            Api::SetSessionWork(session, work, project_name, reply) => {
+                let _ = reply.send(self.intent(None, Intent::SetSessionWork { session, work, project_name }));
+            }
+            Api::ProjectRepos(reply) => {
+                let _ = reply.send(self.mux.project_repos());
+            }
+            Api::FollowRepo(repo, project, reply) => {
+                let moved = self.mux.follow_repo(&repo, &project);
+                if !moved.is_empty() {
+                    info!(?moved, project = project.id, repo, "sessions' project followed their repo");
+                    self.changed();
+                }
+                let _ = reply.send(moved);
             }
             Api::Conversation(pane, reply) => {
                 let id = self.meta.get(&pane).and_then(|m| m.session.as_ref());
@@ -384,7 +410,11 @@ impl Daemon {
             }
             Api::Inbox(pane, hook, reply) => {
                 self.hook(pane, &hook);
-                let _ = reply.send(self.wait_inbox(pane));
+                let acks = hook[arugula_proto::api::HOOK_ACKS] == true;
+                let _ = reply.send(self.wait_inbox(pane, acks));
+            }
+            Api::FollowUpAck(pane, id, reply) => {
+                let _ = reply.send(self.queued.ack(pane, id));
             }
             Api::InboxGone(pane, token) => {
                 if self.inbox.get(&pane).is_some_and(|w| w.token == token) {

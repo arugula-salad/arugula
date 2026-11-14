@@ -316,6 +316,9 @@ test("an agent's issue is a chip on a session row and a swarm card, the first an
   assert.deepEqual(onIssueChip([null, on("#12", "Launch")]), { label: "#12", title: "#12 on Launch", path: `/p/${P}/boards/${B}#row=row_0` });
   assert.deepEqual(onIssueChip([on("#12")]), { label: "#12", title: "Started on #12", path: null });
   assert.deepEqual(onIssueChip([on("#12", "Launch"), null, on("#13"), on("#14", "Later")]), { label: "#12 +2", title: "#12 on Launch (and 2 more)", path: `/p/${P}/boards/${B}#row=row_0` });
+  // A session's card is on each of its panes: it counts once, with the board an agent's copy knows.
+  assert.deepEqual(onIssueChip([on("#12"), on("#12"), on("#12", "Launch")]), { label: "#12", title: "#12 on Launch", path: `/p/${P}/boards/${B}#row=row_0` });
+  assert.deepEqual(onIssueChip([{ issue: "#12", project: P }, { issue: "#12", project: "prj_other" }]).label, "#12 +1");
 });
 
 test("the swarm's By board groups agents by their first board, and No board goes last (#372)", () => {

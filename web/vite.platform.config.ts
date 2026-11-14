@@ -2,15 +2,16 @@ import { copyFileSync, renameSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig, type Plugin } from "vite";
 
-// The platform page (M150): its own build of app.html into dist-platform/,
-// which the platform binary embeds and serves on app.arugula.io through the
-// hub (M151). Its module ids go to dist-platform.modules.json for the
-// bundle check (`check-imports.mjs --bundle … --forbid keys`, M148): none of
-// them may be the shell's.
+// The app (M150, Arugula #989): its own build of app.html (src/app/main.tsx)
+// into dist-platform/, which the cloud embeds and serves on app.arugula.io
+// through the hub (M151). Its module ids go to dist-platform.modules.json for
+// the bundle check (`check-imports.mjs --bundle … --forbid trust`): it may
+// hold the shell (aru-141), but not control's trust pages.
 //
 // `just dev-platform` serves it on 127.0.0.1:7691 next to `just dev-control`
 // (7690), with control's paths sent there: the browser's session cookie is
-// the same host's, so signing in on control's page signs this page in.
+// the same host's, so signing in on control's page signs this page in. The
+// relay's sockets (`/api/relay/…`) go there too, for the app's panes.
 const control = process.env.DEV_CONTROL_ORIGIN ?? `http://127.0.0.1:${process.env.DEV_CONTROL_PORT ?? 7690}`;
 
 const MANIFEST = {
@@ -58,7 +59,7 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       // Control checks a session's Origin is its own.
-      "/api": { target: control, changeOrigin: true, headers: { origin: control } },
+      "/api": { target: control, changeOrigin: true, headers: { origin: control }, ws: true },
     },
   },
   build: {

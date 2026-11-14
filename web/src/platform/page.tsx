@@ -6,6 +6,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { chat } from "../shared/chat-store";
 import { useSubscribe } from "../shared/ui/hooks";
+import { usePlatformApi } from "../shared/platform-api";
 import { MaintenanceNote } from "../shared/ui/maintenance-note";
 import { PageHeader } from "../shared/ui/page-header";
 import { PlatformBar } from "./bar";
@@ -14,7 +15,8 @@ import { names, resolve, roomElsewhere } from "./links";
 import { currentProject, entryPath, type Entry } from "./current-project";
 import { slugIn } from "./paths";
 import { arrive, openingChat } from "./chat-nav";
-import { go, pathOf, useRoute, type Route } from "./router";
+import { follow, go, pathOf, useRoute, type Route } from "./router";
+import type { MachineAt } from "../shared/machine-paths";
 import { controlOrigin, session } from "./session";
 import { signIn } from "./signin";
 import { toasts } from "./toast";
@@ -40,9 +42,12 @@ import { DocPage, DocsPage } from "./pages/docs";
 import { projectDocs } from "../shared/docs/store";
 import { SessionPage } from "./pages/session";
 import { TeamPage } from "./pages/team";
+import { MachinesPage } from "./pages/machines";
 import { runs } from "./runs";
 import { runTitle } from "./runs-text";
 import { titleOf } from "./titles";
+import { lastProject, notePlace, placeOf } from "./places-kept";
+import { seenReady, subscribeSeen } from "../shared/seen";
 import { barProject, where } from "./where";
 
 export function PlatformPage() {
@@ -53,17 +58,21 @@ export function PlatformPage() {
 
 function Routed() {
   useSubscribe((fn) => session.subscribe(fn));
+  const { Machines } = usePlatformApi();
   const r = useRoute();
   useEffect(() => void session.load(), []);
   useSlug(r);
   const lost = useFind(r);
   useTitle(r);
+  useWhereIWas(r);
   const s = session.state;
   if (s === null) return <Shell><p class="platform-section dim">Loading…</p></Shell>;
   if (s === "signed-out") return <SignIn />;
   if (typeof s === "object") return <Shell><p class="platform-section control-error">{s.error}</p></Shell>;
   if (r.page === "chat") return <ChatPage project={r.project} route={{ room: r.room, msg: r.msg, thread: r.thread, view: r.view, q: r.q, all: r.all }}><Toast /></ChatPage>;
   if (r.page === "dm") return <ChatPage project={r.project} route={{ room: r.room, msg: r.msg, thread: r.thread }}><Toast /></ChatPage>;
+  // A machine's page has its own header (Arugula #989): the rail, then it.
+  if (r.page === "machines" && Machines) return <MachinesShell project={r.project} at={r.at} />;
   return <Shell>{body(r, lost)}</Shell>;
 }
 
@@ -128,6 +137,8 @@ function body(r: Route, lost: string | null) {
       return <DeployPage id={r.deploy} />;
     case "team":
       return <TeamPage team={r.team} tab={r.tab} />;
+    case "machines":
+      return <MachinesPage project={r.project} at={r.at} />;
     default:
       return <Missing what="Nothing's at this address." />;
   }
@@ -154,6 +165,34 @@ function Shell({ children }: { children: preact.ComponentChildren }) {
         <PlatformBar />
         <MaintenanceNote />
         <main class="platform-main">{children}</main>
+      </WithRail>
+      <Toast />
+    </div>
+  );
+}
+
+/** The machines' places, beside the rail. The list has the bar, with
+ * Panes and Swarm (decision 3); a machine's page and Swarm draw their own
+ * heads, and on a phone keep the bottom (a pane's key bar, Swarm's field). */
+function MachinesShell({ project, at }: { project: string; at: MachineAt }) {
+  const list = at.at === "machines" && at.pane === undefined && !at.name;
+  const swarmTo = pathOf({ page: "machines", project, at: { at: "swarm" } }, names);
+  return (
+    <div class="platform platform-machines" data-platform data-platform-machines>
+      <WithRail tabs={list}>
+        {list && (
+          <PlatformBar>
+            <nav class="places" aria-label="Machines' places" data-machines-places>
+              <span class="place frame-place here" aria-current="page" data-machines-panes>
+                Panes
+              </span>
+              <a class="place frame-place" href={swarmTo} data-machines-swarm onClick={(e) => follow(e, swarmTo)}>
+                Swarm
+              </a>
+            </nav>
+          </PlatformBar>
+        )}
+        <MachinesPage project={project} at={at} />
       </WithRail>
       <Toast />
     </div>
@@ -210,6 +249,30 @@ function useFind(r: Route): string | null {
     if (to) arrive(to);
   }, [to]);
   return lost;
+}
+
+/** The app opened at `/` (not a step to it inside the page): it goes back
+ * to where you were in your last project (Arugula #989, decision 4). */
+let reopening = location.pathname === "/" && location.search === "";
+
+/** Keep where you are, per project; and on opening the app, go back there
+ * once your prefs and projects have loaded. A project you've never opened
+ * a page of opens on its Overview; with no project kept, the list stays. */
+function useWhereIWas(r: Route) {
+  useSubscribe(subscribeSeen);
+  const ready = session.state === "ready";
+  const path = location.pathname + location.search;
+  useEffect(() => {
+    if (r.page !== "home") reopening = false;
+    notePlace(r, path);
+  }, [path]);
+  useEffect(() => {
+    if (!reopening || r.page !== "home" || r.to || !ready || !seenReady()) return;
+    reopening = false;
+    const project = lastProject();
+    if (!project || !session.project(project)) return;
+    go(placeOf(project) ?? pathOf({ page: "project", project }, names), true);
+  }, [r.page, ready, seenReady()]);
 }
 
 /** The tab's title for the route (UI audit #159), as names arrive. */

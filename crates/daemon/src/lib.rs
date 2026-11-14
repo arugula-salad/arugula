@@ -520,16 +520,15 @@ pub fn main(version: &'static str) -> anyhow::Result<()> {
         }
         Some(Command::Uninstall) => install::uninstall(),
         Some(Command::Update { yes }) => selfupdate::cli(yes, &args.run.update_url),
-        Some(Command::Join { url, name, team, account, state_dir }) => {
+        Some(Command::Join { url, token, name, team, account, state_dir }) => {
             let name = name.unwrap_or_else(|| hostname().unwrap_or_else(|| "arugula".into()));
             let dir = state_dir.unwrap_or_else(default_state_dir);
-            tokio::runtime::Runtime::new()?.block_on(control::join(
-                &url,
-                &name,
-                team.as_deref(),
-                account.as_deref(),
-                &dir,
-            ))?;
+            let rt = tokio::runtime::Runtime::new()?;
+            match token {
+                // aru-141: at once, on control's word.
+                Some(t) => rt.block_on(control::join_with_token(&url, &name, &t, &dir))?,
+                None => rt.block_on(control::join(&url, &name, team.as_deref(), account.as_deref(), &dir))?,
+            }
             if daemon_running(&dir) {
                 println!("  The running daemon picks this up within a few seconds.");
             } else {
@@ -1173,7 +1172,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         );
     }
     control.start(app.clone());
-    session_project::start(mux.clone(), control.clone());
+    session_project::start(app.clone());
     if args.hosted {
         hosted::start(&app, state_dir.clone(), args.control_url.clone());
     }

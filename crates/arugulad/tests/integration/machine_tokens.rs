@@ -57,10 +57,19 @@ struct Rig {
     d: Daemon,
     daemon: DeviceKeys,
     control: String,
+    /// The account's root and its certificates, the daemon's among them.
+    root: String,
+    certs: Vec<Cert>,
 }
 
 /// A machine joined to a control that publishes the issuer's key.
 async fn rig() -> Rig {
+    rig_with(None).await
+}
+
+/// [`rig`], with `cli` one of the account's devices too (a CLI logged in
+/// before machine tokens).
+async fn rig_with(cli: Option<&DeviceKeys>) -> Rig {
     let device = DeviceKeys::generate();
     let mut root = Cert::new(&device, "a1", Kind::Browser, "laptop");
     root.sign_with(&device);
@@ -73,7 +82,12 @@ async fn rig() -> Rig {
     let daemon = DeviceKeys::load_or_create(&d.state.join("daemon.key")).unwrap();
     let mut cert = Cert::new(&daemon, "a1", Kind::Daemon, "test");
     cert.sign_with(&device);
-    let certs = vec![root, cert.clone()];
+    let mut certs = vec![root, cert.clone()];
+    if let Some(k) = cli {
+        let mut c = Cert::new(k, "a1", Kind::Cli, "cli");
+        c.sign_with(&device);
+        certs.push(c);
+    }
     let control = fake_control(certs.clone()).await;
     let saved = json!({
         "url": control,
@@ -87,7 +101,7 @@ async fn rig() -> Rig {
     d.start();
     d.wait_for("joined", || d.get("/api/host")["control_state"]["state"] == "joined");
     d.wait_for("a session", || d.get("/api/panes")[0]["session"].is_u64());
-    Rig { d, daemon, control }
+    Rig { d, daemon, control, root: device.id(), certs }
 }
 
 fn now() -> u64 {
@@ -96,8 +110,13 @@ fn now() -> u64 {
 
 /// A token as the hub signs one, with `edit` applied to its claims.
 fn token(r: &Rig, role: &str, jti: &str, key: &SigningKey, edit: impl FnOnce(&mut Value)) -> String {
+    signed(&r.control, &r.daemon.id(), role, jti, key, edit)
+}
+
+/// A token from the hub at `iss` for machine `aud`.
+fn signed(iss: &str, aud: &str, role: &str, jti: &str, key: &SigningKey, edit: impl FnOnce(&mut Value)) -> String {
     let mut claims = json!({
-        "iss": r.control, "sub": "acct-b", "aud": r.daemon.id(), "use": USE, "role": role,
+        "iss": iss, "sub": "acct-b", "aud": aud, "use": USE, "role": role,
         "name": "bee", "iat": now(), "exp": now() + 300, "jti": jti,
     });
     edit(&mut claims);
@@ -245,4 +264,177 @@ async fn remote_input_off_makes_everyone_a_viewer() {
             && closes == 2
             && lines.iter().all(|l| l["account"] == "acct-b" && l["by"] == "token")
     });
+}
+
+// ---------------------------------------------------------------- the CLI
+
+/// The CLI, built next to the daemon (cargo builds only this package's
+/// binaries for its tests).
+fn cli_bin() -> std::path::PathBuf {
+    let bin = std::path::Path::new(env!("CARGO_BIN_EXE_arugulad")).with_file_name("arugula");
+    let status = std::process::Command::new(env!("CARGO")).args(["build", "-q", "-p", "arugula"]).status().unwrap();
+    assert!(status.success(), "building the CLI");
+    bin
+}
+
+/// What the CLI's control does for these tests.
+struct Hub {
+    /// The issuer the daemon knows (the rig's control).
+    iss: String,
+    machine: String,
+    port: u16,
+    /// The Noise key the directory gives (#994), if it gives one.
+    noise: Option<String>,
+    certs: Vec<Cert>,
+    /// Whether it gives machine tokens (a hub without an issuer key: 404).
+    tokens: bool,
+    given: std::sync::atomic::AtomicUsize,
+}
+
+/// A hub for the CLI: its directory, the account's devices and machine
+/// tokens, for a session's cookie or a device's signature.
+async fn hub(h: Hub) -> (String, std::sync::Arc<Hub>) {
+    use axum::{
+        extract::{Path, State},
+        http::{HeaderMap, StatusCode},
+        response::{IntoResponse, Response},
+        routing::post,
+    };
+    use std::sync::{Arc, atomic::Ordering};
+    fn signed_in(h: &HeaderMap) -> bool {
+        h.get("cookie").is_some_and(|c| c == "ilg_session=s3cret") || h.contains_key("x-arugula-auth")
+    }
+    async fn directory(State(h): State<Arc<Hub>>, hs: HeaderMap) -> Response {
+        if !signed_in(&hs) {
+            return StatusCode::UNAUTHORIZED.into_response();
+        }
+        let mut m = json!({ "id": h.machine, "name": "tokbox", "online": true,
+            "urls": [format!("http://127.0.0.1:{}", h.port)] });
+        if let Some(n) = &h.noise {
+            m["noise"] = json!(n);
+        }
+        Json(json!({ "daemons": [m] })).into_response()
+    }
+    async fn devices(State(h): State<Arc<Hub>>) -> Json<Value> {
+        Json(json!({ "certs": h.certs, "revocations": [] }))
+    }
+    async fn token(State(h): State<Arc<Hub>>, hs: HeaderMap, Path(id): Path<String>) -> Response {
+        if !signed_in(&hs) {
+            return StatusCode::UNAUTHORIZED.into_response();
+        }
+        if !h.tokens || id != h.machine {
+            return (StatusCode::NOT_FOUND, Json(json!({ "error": "no such machine" }))).into_response();
+        }
+        let n = h.given.fetch_add(1, Ordering::SeqCst);
+        let t = signed(&h.iss, &id, "owner", &format!("cli-{n}"), &issuer(), |_| {});
+        Json(json!({ "token": t, "expires": now() + 300, "role": "owner" })).into_response()
+    }
+    let h = Arc::new(h);
+    let app = Router::new()
+        .route("/api/directory", get(directory))
+        .route("/api/devices", get(devices))
+        .route("/api/machines/{id}/token", post(token))
+        .with_state(h.clone());
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let at = format!("http://{}", l.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+    (at, h)
+}
+
+/// `arugula --host tokbox <args>` with the config dir `config`, and no
+/// local daemon: what it printed, or why it failed.
+async fn cli_at(config: &std::path::Path, args: &[&str]) -> Result<String, String> {
+    let (config, args) = (config.to_owned(), args.iter().map(|a| a.to_string()).collect::<Vec<_>>());
+    tokio::task::spawn_blocking(move || {
+        let o = arugula_testkit::command(cli_bin())
+            .arg("--socket")
+            .arg(config.join("no-daemon.sock"))
+            .args(["--host", "tokbox"])
+            .args(&args)
+            .env("XDG_CONFIG_HOME", &config)
+            .env_remove("ARUGULA_PANE")
+            .output()
+            .unwrap();
+        let (out, err) = (String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+        if o.status.success() { Ok(out.into_owned()) } else { Err(format!("{out}{err}")) }
+    })
+    .await
+    .unwrap()
+}
+
+fn config_dir(name: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("arugula-cli-tokens-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("arugula")).unwrap();
+    dir
+}
+
+fn hex(b: &[u8]) -> String {
+    b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
+/// The remote sessions the daemon logged as opened: (by, role).
+fn opened(r: &Rig) -> Vec<(String, String)> {
+    let log = std::fs::read_to_string(r.d.state.join("remote-sessions.jsonl")).unwrap_or_default();
+    log.lines()
+        .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+        .filter(|l| l["event"] == "open")
+        .map(|l| (l["by"].as_str().unwrap_or("").to_owned(), l["role"].as_str().unwrap_or("").to_owned()))
+        .collect()
+}
+
+fn hub_for(r: &Rig, noise: Option<String>, tokens: bool) -> Hub {
+    Hub {
+        iss: r.control.clone(),
+        machine: r.daemon.id(),
+        port: r.d.port,
+        noise,
+        certs: r.certs.clone(),
+        tokens,
+        given: Default::default(),
+    }
+}
+
+/// #998: a CLI signed in with a session (no key, no certificate) reaches a
+/// machine with a machine token in a channel of a key made for it, to the
+/// Noise key the directory gives; one token per channel.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_signed_in_cli_reaches_a_machine_with_a_token() {
+    let r = rig().await;
+    let (at, h) = hub(hub_for(&r, Some(hex(&r.daemon.noise_public)), true)).await;
+    let config = config_dir("session");
+    let session = json!({ "url": at, "cookie": "ilg_session=s3cret", "account": "acct-b", "login": "bee" });
+    std::fs::write(config.join("arugula/cli-session.json"), session.to_string()).unwrap();
+    let out = cli_at(&config, &["--json", "ls"]).await.unwrap();
+    let panes: Value = serde_json::from_str(&out).unwrap_or_else(|e| panic!("{e}: {out}"));
+    assert!(panes[0]["session"].is_u64(), "{panes}");
+    assert_eq!(h.given.load(std::sync::atomic::Ordering::SeqCst), 1);
+    r.d.wait_for("the token's session in the log", || opened(&r) == [("token".into(), "owner".into())]);
+    let _ = std::fs::remove_dir_all(&config);
+}
+
+/// A CLI that's a device from before machine tokens asks for a token
+/// first, and uses its key only when the hub gives none (404, as one
+/// without an issuer key answers). With no Noise key in the directory, the
+/// machine's own certificate says it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_device_cli_uses_its_key_only_when_the_hub_gives_no_tokens() {
+    let keys = DeviceKeys::generate();
+    let config = config_dir("device");
+    keys.save(&config.join("arugula/cli-key")).unwrap();
+    for tokens in [false, true] {
+        let r = rig_with(Some(&keys)).await;
+        let (at, h) = hub(hub_for(&r, None, tokens)).await;
+        let cert = r.certs.iter().find(|c| c.device == keys.id()).unwrap();
+        let saved = json!({ "url": at, "cert": cert, "trust": { "account": "a1", "root": r.root } });
+        std::fs::write(config.join("arugula/cli-control.json"), saved.to_string()).unwrap();
+        let out = cli_at(&config, &["--json", "ls"]).await.unwrap();
+        let panes: Value = serde_json::from_str(&out).unwrap_or_else(|e| panic!("{e}: {out}"));
+        assert!(panes[0]["session"].is_u64(), "{panes}");
+        assert_eq!(h.given.load(std::sync::atomic::Ordering::SeqCst), usize::from(tokens));
+        let by = if tokens { "token" } else { "device" };
+        r.d.wait_for("the channel in the log", || opened(&r).iter().any(|(b, _)| b == by));
+        assert!(opened(&r).iter().all(|(b, _)| b == by), "{:?}", opened(&r));
+    }
+    let _ = std::fs::remove_dir_all(&config);
 }

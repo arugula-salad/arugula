@@ -1858,6 +1858,8 @@ impl ForgeBlock {
             image: None,
             host: None,
             local: self.ctx.sprite.is_none(),
+            project: None,
+            issue: None,
         };
         let block = self.ctx.open(req).await?;
         to_value(Diffed { block, worktree: wt, rev_a: mb, rev_b: format!("refs/arugula/pr/{number}") })
@@ -2412,24 +2414,17 @@ pub async fn open_config(c: &Value, state_dir: &Path) -> Result<Value, String> {
     if let Some(out) = native::open_config(c).await? {
         return Ok(out);
     }
-    let out = resolve_for(c, crate::lab_flags::BUILT).await?;
+    let out = resolve_config(c).await?;
     let provider = serde_json::from_value::<Provider>(out["provider"].clone()).unwrap_or_default();
     crate::lab_flags::forge_allowed(provider, state_dir)?;
     Ok(out)
 }
 
-/// [`resolve_for`] with Labs on, as the tests ask it.
-#[cfg(test)]
-async fn resolve_config(c: &Value) -> Result<Value, String> {
-    resolve_for(c, true).await
-}
-
 /// What [`open_config`] makes of it, before asking whether this machine may
 /// open that forge's blocks. A link is told by its look: GitHub's, GitLab's,
 /// and otherwise Forgejo's. A reference that says nothing of its forge (no
-/// host, no clone, no `provider`) is Forgejo's with Labs on, as it always was,
-/// and GitHub's (github.com) with it off, where GitHub is the only forge.
-async fn resolve_for(c: &Value, labs: bool) -> Result<Value, String> {
+/// host, no clone, no `provider`) is GitHub's (github.com), Labs or not (#1009).
+async fn resolve_config(c: &Value) -> Result<Value, String> {
     let dir = c["dir"].as_str().filter(|d| !d.is_empty()).map(str::to_owned);
     let issue = c["issue"].is_string();
     let mut out = json!({ "provider": "forgejo", "kind": if issue { "issue" } else { "pr" } });
@@ -2444,8 +2439,9 @@ async fn resolve_for(c: &Value, labs: bool) -> Result<Value, String> {
     if let (Some(repo), Some(n)) = (c["repo"].as_str(), c["number"].as_u64()) {
         out["repo"] = json!(repo);
         out["number"] = json!(n);
-        if let Some(d) = &dir {
-            out["dir"] = json!(d);
+        match &dir {
+            Some(d) => out["dir"] = json!(d),
+            None => github_by_default(&mut out, c),
         }
         return Ok(out);
     }
@@ -2457,7 +2453,7 @@ async fn resolve_for(c: &Value, labs: bool) -> Result<Value, String> {
         .ok_or("say which pull request or issue: {\"pr\" | \"issue\": URL | OWNER/REPO#N | N}")?;
     if issue && what == "new" {
         let mut out = issue::new_config(c, out, dir).await?;
-        github_by_default(&mut out, c, labs);
+        github_by_default(&mut out, c);
         return Ok(out);
     }
     // M38: a GitHub link (`…/pull/N`), on github.com or an Enterprise host.
@@ -2579,7 +2575,7 @@ async fn resolve_for(c: &Value, labs: bool) -> Result<Value, String> {
     {
         out["provider"] = json!("gitlab");
     }
-    github_by_default(&mut out, c, labs);
+    github_by_default(&mut out, c);
     if out["provider"] == "gitlab" && out["api"].is_null() {
         let host = out["host"].as_str().unwrap_or("gitlab.com").to_owned();
         out["host"] = json!(host);
@@ -2588,11 +2584,11 @@ async fn resolve_for(c: &Value, labs: bool) -> Result<Value, String> {
     Ok(out)
 }
 
-/// Where Labs is off a config that says nothing of its forge (no `provider`,
-/// no host, no clone's remote) is GitHub's, on github.com: GitHub is the only
-/// forge there. This is the one place that choice is made.
-fn github_by_default(out: &mut Value, c: &Value, labs: bool) {
-    if !labs && out["provider"] == "forgejo" && c["provider"].is_null() && out["host"].is_null() {
+/// A config that says nothing of its forge (no `provider`, no host, no clone's
+/// remote) is GitHub's, on github.com, whether Labs is on or not (#1009). This
+/// is the one place that choice is made.
+fn github_by_default(out: &mut Value, c: &Value) {
+    if out["provider"] == "forgejo" && c["provider"].is_null() && out["host"].is_null() {
         out["provider"] = json!("github");
         out["host"] = json!("github.com");
         out["api"] = json!(github::api_for("github.com"));
@@ -2795,21 +2791,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_bare_reference_is_githubs_where_labs_is_off() {
-        let off = |v: Value| async move { resolve_for(&v, false).await.unwrap() };
-        let c = off(json!({ "pr": "o/r#12" })).await;
+    async fn a_bare_reference_is_githubs() {
+        let r = |v: Value| async move { resolve_config(&v).await.unwrap() };
+        let c = r(json!({ "pr": "o/r#12" })).await;
         assert_eq!((c["provider"].as_str(), c["host"].as_str()), (Some("github"), Some("github.com")));
         assert_eq!(c["api"], "https://api.github.com");
+        // The repository and number given apart say no more of the forge.
+        let c = r(json!({ "repo": "o/r", "number": 12 })).await;
+        assert_eq!((c["provider"].as_str(), c["host"].as_str()), (Some("github"), Some("github.com")));
         assert_eq!((c["repo"].as_str(), c["number"].as_u64()), (Some("o/r"), Some(12)));
         // Not guessed for what says otherwise.
-        assert_eq!(off(json!({ "pr": "o/r#3", "host": "git.inevitable.fyi" })).await["provider"], "forgejo");
-        assert_eq!(off(json!({ "pr": "o/r#3", "provider": "forgejo" })).await["provider"], "forgejo");
-        assert_eq!(off(json!({ "pr": "g/p!3" })).await["provider"], "gitlab");
-        assert_eq!(off(json!({ "pr": "https://git.example/o/r/pulls/3" })).await["provider"], "forgejo");
-        // With Labs on it stays Forgejo's.
-        let c = resolve_for(&json!({ "pr": "o/r#12" }), true).await.unwrap();
-        assert_eq!(c["provider"], "forgejo");
-        assert!(c["host"].is_null());
+        assert_eq!(r(json!({ "pr": "o/r#3", "host": "git.inevitable.fyi" })).await["provider"], "forgejo");
+        assert_eq!(r(json!({ "pr": "o/r#3", "provider": "forgejo" })).await["provider"], "forgejo");
+        assert_eq!(r(json!({ "pr": "g/p!3" })).await["provider"], "gitlab");
+        assert_eq!(r(json!({ "pr": "https://git.example/o/r/pulls/3" })).await["provider"], "forgejo");
     }
 
     #[tokio::test]

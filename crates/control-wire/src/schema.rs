@@ -66,7 +66,7 @@ fn files() -> Vec<(&'static str, &'static [&'static str], fn(&mut SchemaGenerato
             deploys::DeploySource, deploys::DeployPlan,
         ],
         "forge" => [
-            forge::MachineAgentState, forge::ForgeWatch, forge::Standing, forge::ForgeWatching, forge::Poke, forge::ForgePoke, forge::GithubTokenRequest, forge::GithubToken, forge::Ops, forge::OpAsk, forge::OpDone, forge::DaemonOp, forge::ForgeSend, forge::AgentMention, forge::AgentGrantAsk, forge::MachineAgentsAsk, forge::MachineAgent, forge::Routed, forge::RoutedStep, forge::OpAnswer,
+            forge::MachineAgentState, forge::ForgeWatch, forge::Standing, forge::ForgeWatching, forge::Poke, forge::ForgePoke, forge::GithubTokenRequest, forge::GithubToken, forge::Ops, forge::OpAsk, forge::OpDone, forge::DaemonOp, forge::ForgeSend, forge::AgentMention, forge::AgentGrantAsk, forge::MentionsHeldAsk, forge::MentionKey, forge::RepoMoved, forge::MachineAgentsAsk, forge::MachineAgent, forge::Routed, forge::RoutedStep, forge::OpAnswer,
         ],
         "forge_ops" => [
             forge_ops::Call, forge_ops::Op, forge_ops::ItemRef, forge_ops::ItemQuery, forge_ops::TrackerRef, forge_ops::TrackerFieldsQuery, forge_ops::DraftQuery, forge_ops::InboxQuery, forge_ops::InboxMarkOn, forge_ops::DraftRef, forge_ops::CommentOn, forge_ops::ReviewOf, forge_ops::NewIssue, forge_ops::ItemView, forge_ops::Sent,
@@ -78,7 +78,7 @@ fn files() -> Vec<(&'static str, &'static [&'static str], fn(&mut SchemaGenerato
             issues::AgentIssueHomeQuery, issues::IssueGithub, issues::Issue, issues::IssueQuery, issues::IssueList, issues::NewIssue, issues::IssueListEdit, issues::IssuePatch, issues::IssueEvent, issues::IssuePatched, issues::IssueEvents, issues::IssueHome, issues::IssueHomeRule, issues::IssueHomeChange, issues::IssueExportQuery, issues::IssueComment, issues::ExportedIssue, issues::ExportedPerson, issues::IssueExport,
         ],
         "join" => [
-            join::JoinRequest, join::CliJoinRequest, join::JoinProof, join::JoinStarted, join::JoinPoll, join::PollQuery, join::JoinTeam,
+            join::JoinRequest, join::CliJoinRequest, join::JoinProof, join::JoinStarted, join::JoinPoll, join::PollQuery, join::JoinTeam, join::JoinTokenRequest, join::JoinTokenMade, join::TokenJoinRequest, join::Joined, join::JoinedTeam,
         ],
         "lib" => [
             ControlInfo, ControlAuth, ControlCliJoin, ControlJoinSecret, ControlWhere, ControlDocs, ControlJump, GuestJump, Ack, RemovedAnswer, RemovedAt, DialQuery,

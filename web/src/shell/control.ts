@@ -31,7 +31,7 @@ import {
   type WorkerDaemon,
 } from "./e2e/keys.ts";
 import { newKeyPair } from "./e2e/noise.ts";
-import { controlTokens, tokenEntry, tokenMode, type MachineTokens } from "./e2e/machine-token.ts";
+import { controlIssues, controlTokens, tokenEntry, tokenMode, type MachineTokens } from "./e2e/machine-token.ts";
 import { acceptHostedHolding, signDelegation, signRevoke, type Delegation, type DelegationRevoke, type HostedProof } from "./e2e/hosted.ts";
 import { directUrls } from "../shared/hosted.ts";
 import { expiresIn, grantBody, grantRevokeBody, newGrant, newGrantRevoke, passkeyChallenge, type GrantRevoke, type PasskeyAssertion, type ProjectGrant } from "./e2e/run-grant.ts";
@@ -1303,8 +1303,9 @@ export class ControlSession {
       // window a browser signed in, one whose passkey is a device already,
       // and one that came to approve a machine's join or use a recovery code
       // (which need a device), until joins take tokens too (#993, #1004).
+      // A control that signs no tokens leaves it to be approved as before.
       const mode = tokenMode();
-      if (!this.enrollment && mode !== "off" && me.root !== null && !this.handed && !joinInHash() && !recoverAsked()) {
+      if (!this.enrollment && mode !== "off" && me.root !== null && !this.handed && !joinInHash() && !recoverAsked() && (await controlIssues())) {
         if (!(this.fromPasskey && (await this.rejoin()))) this.tokens = true;
       }
       if (!this.enrollment && !this.tokens) await this.enroll(me.root);

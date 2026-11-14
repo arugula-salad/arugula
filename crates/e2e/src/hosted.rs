@@ -170,7 +170,17 @@ impl Delegation {
     pub fn signed_for(&self, owners: &Owners) -> bool {
         self.well_formed() && owners.may_sign(&self.owner, &self.by, &self.body(), &self.sig)
     }
+
+    /// Made by control itself, unsigned, for a project with no owner's
+    /// live delegation (aru-141): `by` is [`BY_CONTROL`]. A box takes it on
+    /// control's word; no owner signed it, so no owner's revoke ends it.
+    pub fn made_by_control(&self) -> bool {
+        self.by == BY_CONTROL
+    }
 }
+
+/// [`Delegation::by`] for one control made itself (aru-141).
+pub const BY_CONTROL: &str = "control";
 
 /// A delegation taken back: control may enroll nothing more under it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

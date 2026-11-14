@@ -1,124 +1,89 @@
-// The bar's project switcher (Arugula #895, option B of Doc
-// pdc_9640f67e1745ddbe2b7733831fe82c1f): a popover with the reader's owners
-// on the left, Personal then each team, and the chosen owner's projects on
-// the right, under that owner's own links. It opens on the current
-// project's owner. Archived projects wait behind "Show archived (n)". On a
-// phone the two stack: the owners, then one owner's projects with a way
-// back to them. New project… asks for a name and an owner.
+// The project switcher (Arugula #895; the prototype's, Arugula #989): a
+// popover hanging from the rail's project tile (or a phone's bar), one list
+// under small headings: Everything (All projects), each team's projects,
+// then yours (Just you). Each project has its letter tile and a count of
+// what wants you there (./inbox-count). The current one is lit. Archived
+// projects wait behind "Show archived (n)"; New project… asks for a name
+// and an owner. A team's own pages aren't here: its rooms are the rail's
+// Chat, and its settings and members are reached from Settings.
 
+import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
-import { usePhone, useSubscribe } from "../shared/ui/hooks";
+import { useSubscribe } from "../shared/ui/hooks";
 import { Popover } from "../shared/ui/menu";
 import { Modal } from "../shared/ui/modal";
-import { BackIcon } from "../shared/ui/icons";
+import { PlusIcon } from "../shared/ui/icons";
 import type { PlatformProject } from "../shared/proto.gen";
+import { useInboxByProject } from "./inbox-count";
 import { names } from "./links";
-import { makers, owners, PERSONAL, type Owner } from "./owners";
+import { makers, ownerKey, owners, PERSONAL, type Owner } from "./owners";
 import { follow, go, pathOf } from "./router";
 import { session } from "./session";
+import { placeOf } from "./places-kept";
 
-/** Where an owner's links go: a team's pages; Personal's, its
- * own settings page (Arugula #897). */
-function ownerLinks(o: Owner): { label: string; to: string; data: string }[] {
-  if (o.kind === "personal") return [{ label: "Settings", to: pathOf({ page: "owner-settings", owner: PERSONAL }, names), data: "settings" }];
-  return [
-    { label: "Chat", to: pathOf({ page: "team", team: o.key, tab: "chat" }, names), data: "chat" },
-    { label: "Settings", to: pathOf({ page: "team", team: o.key, tab: "settings" }, names), data: "settings" },
-    { label: "Members", to: pathOf({ page: "team", team: o.key, tab: "members" }, names), data: "members" },
-  ];
+/** A project's tile: "Me" for one of your own, else its name's first
+ * letter; "∗" for All projects. */
+export function initialsOf(p: Pick<PlatformProject, "name" | "owner" | "team"> | undefined): string {
+  if (!p) return "∗";
+  if (ownerKey(p) === PERSONAL) return "Me";
+  return (p.name.trim()[0] ?? "?").toUpperCase();
 }
 
-/** The switcher's popover, hanging from `from`. `project`: the one the bar
- * is in; `owner`: the owner it opens on. */
-export function Switcher({ from, project, owner, close }: { from: { current: HTMLElement | null }; project: string | undefined; owner: string | undefined; close: () => void }) {
+/** The switcher's popover, hanging from `from`. `project`: the one the page
+ * is in; `owner`: whose New project… asks for first. */
+export function Switcher({ from, project, owner, close, beside = false }: { from: { current: HTMLElement | null }; project: string | undefined; owner: string | undefined; close: () => void; beside?: boolean }) {
   useSubscribe((fn) => session.subscribe(fn));
-  const phone = usePhone();
+  const counts = useInboxByProject();
   const all = owners(session.projects);
-  const [chosen, choose] = useState(owner && all.some((o) => o.key === owner) ? owner : PERSONAL);
-  // A phone shows one column at a time, the owners first.
-  const [step, setStep] = useState<"owners" | "projects">("owners");
-  const [archived, setArchived] = useState(false);
+  const [archived, setArchived] = useState<string | null>(null);
   const [making, setMaking] = useState(false);
-  const o = all.find((x) => x.key === chosen) ?? all[0];
   const leave = (e: MouseEvent, to: string) => {
     follow(e, to);
     close();
   };
-  const row = (p: PlatformProject) => {
-    const to = pathOf({ page: "project", project: p.id }, names);
-    const here = p.id === project;
-    return (
-      <a key={p.id} class="menu-item switcher-project" href={to} aria-current={here ? "page" : undefined} data-switcher-project={p.id} onClick={(e) => leave(e, to)}>
-        <span class="menu-lead menu-check" aria-hidden="true">
-          {here ? "●" : ""}
+  const row = (key: string, to: string, tile: string, name: ComponentChildren, n: number, here: boolean, data: Record<string, string>) => (
+    <a key={key} class="menu-item switcher-row" href={to} aria-current={here ? "page" : undefined} {...data} onClick={(e) => leave(e, to)}>
+      <span class="switcher-tile" aria-hidden="true">
+        {tile}
+      </span>
+      <span class="switcher-name">{name}</span>
+      {n > 0 && (
+        <span class="switcher-count" title={`${n} want${n === 1 ? "s" : ""} you`}>
+          {n}
         </span>
-        {p.name}
-      </a>
-    );
-  };
-  if (making) return <NewProject owner={o.key} close={close} />;
-  const ownerList = (
-    <div class="switcher-owners" role="group" aria-label="Owners" data-switcher-owners>
-      <a class="menu-item" href="/" aria-current={!project ? "page" : undefined} data-switcher-all onClick={(e) => leave(e, "/")}>
-        All projects
-      </a>
-      <div class="menu-header">Owners</div>
-      {all.map((x) => (
-        <button
-          key={x.key}
-          class="menu-item switcher-owner"
-          aria-pressed={!phone && x.key === o.key}
-          data-switcher-owner={x.key}
-          onClick={() => {
-            choose(x.key);
-            setArchived(false);
-            setStep("projects");
-          }}
-        >
-          {x.name}
-        </button>
-      ))}
-    </div>
-  );
-  const projects = (
-    <div class="switcher-projects" data-switcher-projects={o.key}>
-      {phone && (
-        <button class="menu-item" data-switcher-back onClick={() => setStep("owners")}>
-          <span class="menu-lead" aria-hidden="true">
-            <BackIcon />
-          </span>
-          Owners
-        </button>
       )}
-      <div class="switcher-head">
-        <span class="menu-header named">{o.name}</span>
-        <span class="switcher-links">
-          {ownerLinks(o).map((l) => (
-            <a key={l.data} href={l.to} data-switcher-link={l.data} onClick={(e) => leave(e, l.to)}>
-              {l.label}
-            </a>
-          ))}
-        </span>
-      </div>
-      {o.projects.map(row)}
-      {!o.projects.length && <p class="menu-note">No projects yet.</p>}
+    </a>
+  );
+  // Where you were in it (Arugula #989), else its Overview.
+  const projectRow = (p: PlatformProject) =>
+    row(p.id, placeOf(p.id) ?? pathOf({ page: "project", project: p.id }, names), initialsOf(p), p.name, counts.by.get(p.id) ?? 0, p.id === project, { "data-switcher-project": p.id });
+  const group = (o: Owner, heading: ComponentChildren) => (
+    <div key={o.key} class="switcher-group" role="group" aria-label={o.name} data-switcher-owner={o.key}>
+      <div class="menu-header switcher-head">{heading}</div>
+      {o.projects.map(projectRow)}
       {o.archived.length > 0 && (
-        <button class="menu-item faded" aria-expanded={archived} data-switcher-archived={o.archived.length} onClick={() => setArchived(!archived)}>
-          {archived ? "Hide archived" : `Show archived (${o.archived.length})`}
+        <button class="menu-item faded" aria-expanded={archived === o.key} data-switcher-archived={o.archived.length} onClick={() => setArchived(archived === o.key ? null : o.key)}>
+          {archived === o.key ? "Hide archived" : `Show archived (${o.archived.length})`}
         </button>
       )}
-      {archived && o.archived.map(row)}
-      <div class="menu-sep" />
-      <button class="menu-item" data-switcher-new onClick={() => setMaking(true)}>
-        New project…
-      </button>
+      {archived === o.key && o.archived.map(projectRow)}
     </div>
   );
+  if (making) return <NewProject owner={owner && all.some((o) => o.key === owner) ? owner : PERSONAL} close={close} />;
+  const personal = all.find((o) => o.kind === "personal");
   return (
-    <Popover from={from} label="Projects" attrs={{ "data-switcher": true }} onClose={close}>
-      <div class={phone ? "switcher phone" : "switcher"}>
-        {(!phone || step === "owners") && ownerList}
-        {(!phone || step === "projects") && projects}
+    <Popover from={from} beside={beside} label="Projects" attrs={{ "data-switcher": true }} onClose={close}>
+      <div class="switcher">
+        <div class="switcher-group" role="group" aria-label="Everything">
+          <div class="menu-header switcher-head">Everything</div>
+          {row("all", "/", "∗", "All projects", counts.all, !project, { "data-switcher-all": "" })}
+        </div>
+        {all.filter((o) => o.kind === "team").map((o) => group(o, o.name))}
+        {personal && group(personal, "Just you")}
+        <div class="menu-sep" />
+        <button class="menu-item switcher-new" data-switcher-new onClick={() => setMaking(true)}>
+          <PlusIcon /> New project
+        </button>
       </div>
     </Popover>
   );

@@ -268,23 +268,16 @@ fn a_follow_up_wakes_the_agent_through_its_inbox() {
     });
     d.wait_for("the sender's turn", || d.get(&format!("/api/panes/{pane}/drivers")).as_array().unwrap().len() == 1);
 
-    // Sent before anything listens: it waits for the next waiter.
+    // Sent to Claude Code before anything listens: it waits for the next
+    // waiter.
     let dir = d.sessions.join("queued");
-    let stop = input(&dir, "stop.json", &fixture("s18-hook-stop.json"));
-    let pane = d.post("/api/run", json!({ "command": "sleep 2; exec bash --norc" }))["pane"].as_u64().unwrap();
+    let pane = claude_in_pane(&d, &dir, 1);
+    // Held while no hook has spoken there (#630).
     let r = d.post(&format!("/api/panes/{pane}/followup"), json!({ "text": "then open a PR" }));
-    assert_eq!(r["delivered"], false, "{r}");
-    std::thread::sleep(std::time::Duration::from_millis(2500));
-    let line = format!(
-        "{} inbox < {} 2> {}/err; echo $? > {}/exit",
-        cli_bin().display(),
-        stop.display(),
-        dir.display(),
-        dir.display()
-    );
-    d.post(&format!("/api/panes/{pane}/send"), json!({ "text": line, "enter": true }));
-    d.wait_for("the queued follow-up", || dir.join("exit").exists());
-    assert!(std::fs::read_to_string(dir.join("err")).unwrap().contains("then open a PR"));
+    assert_eq!((&r["delivered"], &r["held"]), (&json!(false), &json!(true)), "{r}");
+    std::fs::write(dir.join("go1"), "").unwrap();
+    d.wait_for("the queued follow-up", || dir.join("exit1").exists());
+    assert!(std::fs::read_to_string(dir.join("err1")).unwrap().contains("then open a PR"));
 
     // A newer waiter replaces the older, which leaves quietly.
     let a = d.sessions.join("a");
@@ -308,4 +301,75 @@ fn a_follow_up_wakes_the_agent_through_its_inbox() {
     assert_eq!(wait_exit(&d, "the first to step aside", &a), "0");
     d.post(&format!("/api/panes/{pane_a}/followup"), json!({ "text": "to the second" }));
     assert!(second.join().unwrap().contains("to the second"));
+}
+
+/// #630: a follow-up queued before a restart reaches the agent after it,
+/// once: the hook acks it, and the next wait finds nothing.
+#[test]
+fn a_queued_follow_up_survives_a_restart_and_comes_once() {
+    let mut d = Daemon::child();
+    let dir = d.sessions.join("durable");
+    let pane = claude_in_pane(&d, &dir, 2);
+    let r = d.post(&format!("/api/panes/{pane}/followup"), json!({ "text": "after the restart" }));
+    assert_eq!(r["delivered"], false, "{r}");
+    d.stop();
+    d.start();
+    d.wait_for("the pane", || !info(&d, pane).is_null());
+    // A pane comes back by its policy: a shell, where Claude Code starts
+    // again (typed into its own input, it changes nothing).
+    d.wait_for("the shell", || info(&d, pane)["running"] == true);
+    d.post(
+        &format!("/api/panes/{pane}/send"),
+        json!({ "text": dir.join("claude").display().to_string(), "enter": true }),
+    );
+    std::fs::write(dir.join("go1"), "").unwrap();
+    let code = || std::fs::read_to_string(dir.join("exit1")).unwrap_or_default().trim().to_owned();
+    d.wait_for("the kept follow-up", || !code().is_empty());
+    assert_eq!(code(), "2");
+    assert!(std::fs::read_to_string(dir.join("err1")).unwrap().contains("after the restart"));
+    // Acked: the next wait has nothing to take, and waits.
+    std::fs::write(dir.join("go2"), "").unwrap();
+    d.wait_for("the next waiter", || info(&d, pane)["inbox"] == true);
+    assert!(!dir.join("exit2").exists());
+}
+
+/// #630: a follow-up to a pane where nothing could take one (a shell) is
+/// refused at once, saying why.
+#[test]
+fn a_shell_refuses_a_follow_up_at_once() {
+    let d = Daemon::child();
+    let pane = d.post("/api/run", json!({ "command": "exec bash --norc" }))["pane"].as_u64().unwrap();
+    let (st, body) = d.raw("POST", &format!("/api/panes/{pane}/followup"), Some(json!({ "text": "hello" })));
+    assert_eq!(st, 400, "{body}");
+    assert!(body.contains("can't take follow-ups"), "{body}");
+}
+
+/// A fake `claude` in a pane, its hooks not installed: after each `dir/goN`
+/// appears (N from 1 to `waits`) it runs `arugula inbox` as Claude Code's
+/// Stop hook would, its stderr in `dir/errN` and its code in `dir/exitN`,
+/// then stays in front. The pane, once it's seen as Claude Code with no
+/// hooks.
+fn claude_in_pane(d: &Daemon, dir: &Path, waits: u32) -> u64 {
+    let _ = std::fs::remove_dir_all(dir);
+    let stop = input(dir, "stop.json", &fixture("s18-hook-stop.json"));
+    // It waits with bash's own `read`, so that it is what runs in front.
+    let mut body = format!("#!/bin/bash\nmkfifo {d}/tick; exec 9<> {d}/tick\n", d = dir.display());
+    for n in 1..=waits {
+        body += &format!(
+            "while [ ! -e {dir}/go{n} ]; do read -t 0.1 -u 9; done\n{bin} inbox < {stop} 2> {dir}/err{n}; echo $? > {dir}/exit{n}\n",
+            dir = dir.display(),
+            bin = cli_bin().display(),
+            stop = stop.display(),
+        );
+    }
+    body += "while true; do read -t 1 -u 9; done\n";
+    let script = dir.join("claude");
+    std::fs::write(&script, body).unwrap();
+    std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    // Typed into a shell, as `claude` is: what runs in front of it is seen.
+    let pane = d.post("/api/run", json!({ "command": "exec bash --norc" }))["pane"].as_u64().unwrap();
+    d.wait_for("the shell", || info(d, pane)["running"] == true);
+    d.post(&format!("/api/panes/{pane}/send"), json!({ "text": script.display().to_string(), "enter": true }));
+    d.wait_for("Claude Code with no hooks", || info(d, pane)["unhooked"] == true);
+    pane
 }

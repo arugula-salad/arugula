@@ -60,10 +60,26 @@ export function controlTokens(origin = "", send: typeof fetch = (i, o) => fetch(
   };
 }
 
-/** How this browser reaches its machines: `no-key` (the default) uses
- * tokens only when it isn't one of the account's devices; `first` uses
- * them even when it is; `off` never does, and a browser that isn't a
- * device asks to be approved, as before machine tokens. */
+/** Whether control at `origin` signs machine tokens: it publishes its
+ * issuer's keys. A control without an issuer (a self-host or a test hub
+ * started without one) answers 404, and a browser that isn't a device yet
+ * asks to be approved instead of waiting on tokens that never come. */
+export async function controlIssues(origin = "", send: typeof fetch = (i, o) => fetch(i, o)): Promise<boolean> {
+  try {
+    const res = await send(`${origin}/.well-known/jwks.json`, { credentials: "omit" });
+    if (!res.ok) return false;
+    const j = (await res.json()) as { keys?: unknown };
+    return Array.isArray(j.keys) && j.keys.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/** How this browser reaches its machines: `first` (the default since
+ * every machine runs 0.70.4 or newer, Jake 2026-11-14) uses tokens even
+ * when it's one of the account's devices; `no-key` uses them only when it
+ * isn't; `off` never does, and a browser that isn't a device asks to be
+ * approved, as before machine tokens. */
 export type TokenMode = "no-key" | "first" | "off";
 
 /** Where a person (or a test) can say which, until the device path goes
@@ -71,7 +87,7 @@ export type TokenMode = "no-key" | "first" | "off";
 export const TOKEN_MODE_KEY = "arugula.machine-tokens";
 
 /** The default for every browser that hasn't said. */
-export const TOKEN_MODE_DEFAULT: TokenMode = "no-key";
+export const TOKEN_MODE_DEFAULT: TokenMode = "first";
 
 export function tokenMode(read: () => string | null = () => localStorage.getItem(TOKEN_MODE_KEY)): TokenMode {
   try {
