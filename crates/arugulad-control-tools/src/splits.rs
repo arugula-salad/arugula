@@ -1,30 +1,28 @@
-//! Moving work out of a project from agents: `project_split` (Arugula
-//! #973). It plans unless `confirm` is true, as `arugula project split`
-//! does without `--yes`: the planner's answer says what to deal with
-//! before moving and what comes along, and nothing changes.
+//! Planning to move work out of a project, for agents: `project_split`
+//! (Arugula #973). It only plans, as `arugula project split` does without
+//! `--yes`: the planner's answer says what to deal with before moving and
+//! what comes along, and nothing changes. An agent never moves work between
+//! projects: the answer ends with the command its person runs to move it,
+//! or where on the page they do.
 //!
-//! Each call is the platform's `/api/projects/{project}/split/plan` or
-//! `/split` (the web's `platform/move/plan.ts` has their shapes), signed
-//! with this machine's key and acting as its owner. What comes along is
-//! the planner's to say: nothing here works it out. A move the project
-//! changed under since its plan is refused (409), and says to plan again.
+//! The call is the platform's `/api/projects/{project}/split/plan` (the
+//! web's `platform/move/plan.ts` has its shape), signed with this machine's
+//! key and acting as its owner. What comes along is the planner's to say:
+//! nothing here works it out.
 
 use reqwest::Method;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::{
-    control::CloudRefused,
-    mcp::{
-        issues::{self, native},
-        tools::{Call, Out, done},
-    },
+use crate::mcp::{
+    issues::native,
+    tools::{Call, Out, done},
 };
 
 pub(crate) const TOOL: &str = "project_split";
 
-pub(crate) const DESCRIPTION: &str = "Move work out of one of the user's projects in Arugula cloud (default the current one) into a new project (name, and owner: personal or a team's tm_ id) or one that exists (into, its prj_ id): linked repos (OWNER/NAME), boards (brd_…), issues (#N in the project, or iss_…) and Docs (pdc_…). A repo's boards, issues and sessions come with it; a board's issues and Docs with the board. Without confirm: true it only plans and changes nothing: it says what to deal with before moving (notes) and what comes along, with each issue's new number. Show the person the plan and move only once they agree; a move refused because the project changed since the plan needs a new plan.";
+pub(crate) const DESCRIPTION: &str = "Plan moving work out of one of the user's projects in Arugula cloud (default the current one) into a new project (name, and owner: personal or a team's tm_ id) or one that exists (into, its prj_ id): linked repos (OWNER/NAME), boards (brd_…), issues (#N in the project, or iss_…) and Docs (pdc_…). A repo's boards, issues and sessions come with it; a board's issues and Docs with the board. It only plans and changes nothing: it says what to deal with before moving (notes) and what comes along, with each issue's new number. Agents never move it: show the person the plan and the command it ends with, which they run themselves (or they use Move to project… in the project's settings).";
 
 #[derive(Deserialize, JsonSchema)]
 pub struct SplitArgs {
@@ -53,9 +51,6 @@ pub struct SplitArgs {
     /// Project Docs, pdc_….
     #[serde(default)]
     pub docs: Vec<String>,
-    /// Move. Default false: only plan.
-    #[serde(default)]
-    pub confirm: bool,
 }
 
 /// Where it goes, as the platform's request says it.
@@ -119,8 +114,45 @@ fn counted(along: &Value) -> String {
     if all.is_empty() { "nothing".into() } else { all.join(", ") }
 }
 
-/// The plan in a few sentences: where, the notes, what comes along.
-fn planned(plan: &Value) -> String {
+/// `s` as one shell word: as it is when that's safe, else in single quotes.
+fn word(s: &str) -> String {
+    if !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "_-./:@+".contains(c)) {
+        s.to_owned()
+    } else {
+        format!("'{}'", s.replace('\'', r"'\''"))
+    }
+}
+
+/// The command that moves what `a` planned out of `from`, for the person
+/// to run: the same flags, with `--yes`.
+fn command(from: &str, a: &SplitArgs) -> String {
+    let mut out = format!("arugula project split --project {}", word(from));
+    let mut flag = |name: &str, v: &str| {
+        let v = v.trim();
+        if !v.is_empty() {
+            out += &format!(" --{name} {}", word(v));
+        }
+    };
+    if let Some(n) = &a.name {
+        flag("name", n);
+    }
+    if let Some(o) = a.owner.as_deref().filter(|o| o.trim() != "personal") {
+        flag("owner", o);
+    }
+    if let Some(p) = &a.into {
+        flag("into", p);
+    }
+    for (name, all) in [("repo", &a.repos), ("board", &a.boards), ("issue", &a.issues), ("doc", &a.docs)] {
+        for v in all {
+            flag(name, v);
+        }
+    }
+    out + " --yes"
+}
+
+/// The plan in a few sentences: where, the notes, what comes along, and
+/// how the person moves it (`how`).
+fn planned(plan: &Value, how: &str) -> String {
     let to = &plan["to"];
     let name = to["name"].as_str().unwrap_or("?");
     let into = match to["id"].as_str() {
@@ -135,26 +167,9 @@ fn planned(plan: &Value) -> String {
     let notes: Vec<&str> = plan["notes"].as_array().into_iter().flatten().filter_map(|n| n["text"].as_str()).collect();
     let before = if notes.is_empty() { "nothing".to_owned() } else { notes.join(" ") };
     format!(
-        "Planned, nothing moved: from {from} into {into}, its issues numbered from #{first}. Before you move: {before} Comes along: {}. Call again with confirm: true to move, once your person agrees.",
+        "Planned, nothing moved: from {from} into {into}, its issues numbered from #{first}. Before you move: {before} Comes along: {}.\nTo move it, your person runs `{how}` or opens Move to project… in the project's settings.",
         counted(&plan["along"])
     )
-}
-
-/// The move: where it went, what moved and the issues' new numbers.
-fn moved(done: &Value) -> String {
-    let to = &done["to"];
-    let mut out = format!(
-        "Moved into {} ({}): {}.",
-        to["name"].as_str().unwrap_or("?"),
-        to["id"].as_str().unwrap_or("?"),
-        counted(&done["moved"])
-    );
-    let renumbered: Vec<String> =
-        done["issues"].as_array().into_iter().flatten().map(|i| format!("#{} is #{}", i["from"], i["to"])).collect();
-    if !renumbered.is_empty() {
-        out += &format!(" Renumbered: {}.", renumbered.join(", "));
-    }
-    out
 }
 
 pub(crate) async fn project_split(c: &Call<'_>, a: SplitArgs) -> Out {
@@ -167,19 +182,8 @@ pub(crate) async fn project_split(c: &Call<'_>, a: SplitArgs) -> Out {
         issues.push(issue["id"].as_str().ok_or_else(|| format!("{i} has no id"))?.to_owned());
     }
     let ask = json!({ "to": to, "repos": a.repos, "boards": a.boards, "issues": issues, "docs": a.docs });
-    if !a.confirm {
-        let plan = c.issues_call(Method::POST, &format!("/api/projects/{from}/split/plan"), Some(ask)).await?;
-        return done(planned(&plan), plan);
-    }
-    let v = match c.app().control.cloud(Method::POST, &format!("/api/projects/{from}/split"), Some(&ask)).await {
-        Err(CloudRefused::Said { status: 409, said, .. }) if !said.contains("with that name") => {
-            return Err(format!(
-                "{said}: the project changed since its plan; plan again (confirm false) and show your person"
-            ));
-        }
-        r => r.map_err(issues::said)?,
-    };
-    done(moved(&v), v)
+    let plan = c.issues_call(Method::POST, &format!("/api/projects/{from}/split/plan"), Some(ask)).await?;
+    done(planned(&plan, &command(&from, &a)), plan)
 }
 
 #[cfg(test)]
@@ -201,11 +205,25 @@ mod tests {
         assert!(to_of(&args(json!({ "name": "A", "into": "prj_ab" }))).is_err());
         assert!(to_of(&args(json!({ "into": "Acme" }))).is_err());
         assert!(to_of(&args(json!({ "name": "A", "owner": "Acme" }))).is_err());
-        assert!(!args(json!({ "name": "A" })).confirm, "it plans unless asked");
     }
 
     #[test]
-    fn the_plan_and_the_move_in_words() {
+    fn the_person_moves_it_with_the_same_flags() {
+        let a = args(json!({ "name": "My App", "owner": "tm_1", "repos": ["acme/app"], "issues": ["#3", "iss_x"] }));
+        assert_eq!(
+            command("prj_1", &a),
+            "arugula project split --project prj_1 --name 'My App' --owner tm_1 --repo acme/app --issue '#3' --issue iss_x --yes"
+        );
+        let a = args(json!({ "into": "prj_2", "owner": "personal", "boards": ["brd_1"], "docs": ["pdc_1"] }));
+        assert_eq!(
+            command("prj_1", &a),
+            "arugula project split --project prj_1 --into prj_2 --board brd_1 --doc pdc_1 --yes"
+        );
+        assert_eq!(word("it's"), r"'it'\''s'");
+    }
+
+    #[test]
+    fn the_plan_in_words() {
         let plan = json!({
             "from": { "id": "prj_1", "name": "Acme" },
             "to": { "name": "App", "first_number": 1, "owner": { "kind": "personal", "account": "a" } },
@@ -216,12 +234,8 @@ mod tests {
                        "workspaces": [], "sessions": 0, "links": 2 }
         });
         assert_eq!(
-            planned(&plan),
-            "Planned, nothing moved: from Acme into a new project, App, its issues numbered from #1. Before you move: Two people aren't in App. Comes along: 1 repo, 3 GitHub issues and PRs, 1 Doc on a machine, 2 links. Call again with confirm: true to move, once your person agrees."
+            planned(&plan, "arugula project split --project prj_1 --name App --repo acme/app --yes"),
+            "Planned, nothing moved: from Acme into a new project, App, its issues numbered from #1. Before you move: Two people aren't in App. Comes along: 1 repo, 3 GitHub issues and PRs, 1 Doc on a machine, 2 links.\nTo move it, your person runs `arugula project split --project prj_1 --name App --repo acme/app --yes` or opens Move to project… in the project's settings."
         );
-        let done = json!({ "id": "spl_1", "to": { "id": "prj_2", "name": "App" },
-                           "moved": { "repos": 1, "issues": 2, "runs": 0 },
-                           "issues": [{ "id": "iss_a", "from": 3, "to": 1 }] });
-        assert_eq!(moved(&done), "Moved into App (prj_2): 1 repo, 2 issues. Renumbered: #3 is #1.");
     }
 }

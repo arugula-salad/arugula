@@ -93,6 +93,7 @@ pub fn annotations_are_honest() {
         "read_run",
         "read_deploy",
         "read_session",
+        "project_split",
     ];
     want.retain(|n| crate::forges::built() || !FORGE_TOOLS.contains(n));
     assert_eq!(ro, want);

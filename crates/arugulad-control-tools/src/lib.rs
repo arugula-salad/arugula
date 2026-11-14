@@ -3,8 +3,8 @@
 //! #1094), linked repos (`forge_read`, `forge_draft`, `link_repo`, M169),
 //! conversations (`read_thread`, `search_threads`, `post_thread`, M198),
 //! native issues (`issue_write`, M200), boards (`board_read`,
-//! `board_write`), links between items (`link`, #761), moving work out of
-//! a project (`project_split`, Arugula #973), runs (`start_run`, `read_run`, M216), deploys
+//! `board_write`), links between items (`link`, #761), planning to move
+//! work out of a project (`project_split`, Arugula #973), runs (`start_run`, `read_run`, M216), deploys
 //! (`plan_deploy`, `read_deploy`, M252) and agent sessions
 //! (`session_start`, `session_reply`, `session_stop`, aru-121; `read_session`, Fleet 5),
 //! with `list`'s kinds `cloud_workspaces`, `cloud_agents`, `linked_repos`,
@@ -423,21 +423,21 @@ fn link_def() -> Def {
     }
 }
 
-// Arugula #973: moving work out of a project, planned first.
+// Arugula #973: planning to move work out of a project; the person moves it.
 fn project_split_def() -> Def {
     Def {
         name: splits::TOOL,
-        title: "Move work out of a project",
+        title: "Plan moving work out of a project",
         description: splits::DESCRIPTION,
         args: Args::One(schema_for_type::<splits::SplitArgs>),
-        read_only: false,
-        destructive: true,
-        idempotent: false,
+        read_only: true,
+        destructive: false,
+        idempotent: true,
         open_world: true,
         flag: None,
         output: None,
         human: line(
-            "move repos, boards, issues and Docs out of a project into another, after showing you its plan",
+            "plan moving repos, boards, issues and Docs out of a project into another, and give you the command that moves them",
             "Plan moving acme/app and its board out of this project into a new one called App.",
             Needs::Control,
         ),
