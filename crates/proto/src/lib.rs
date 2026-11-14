@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 pub use arugula_core::rename;
 pub use arugula_core::{
     ClientId, Dir, Edge, Intent, Layout, Node, NodeId, OptionMap, OptionScope, Options, PaneId, Preset, ProjectRef,
-    Rect, Session, SessionId, SplitRect, TabId,
+    Rect, Session, SessionId, SplitRect, TabId, WorkRef,
 };
 
 pub mod api;
@@ -1269,7 +1269,9 @@ pub struct PaneInfo {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub app: Option<String>,
     /// The issue an agent block was started on, and the boards it is on
-    /// (#372): the chip on its sidebar row and its swarm card.
+    /// (#372): the chip on its sidebar row and its swarm card. A block
+    /// without its own, and a terminal, has its session's card
+    /// ([`Session::work`]), read when asked.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_issue: Option<OnIssue>,
     /// The git worktree an agent block owns, absolute (start_agent with a
@@ -1285,6 +1287,10 @@ pub struct PaneInfo {
 pub struct OnIssue {
     /// As its starter wrote it (`#N`, `owner/repo#N` or `IDENT-N`).
     pub issue: String,
+    /// The project it's in (`prj_…`), when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub project: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub boards: Vec<OnBoard>,
 }

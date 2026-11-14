@@ -102,6 +102,8 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
         cwd,
         policy: pol.as_deref().map(policy).transpose()?,
         from_pane: env_pane(),
+        project: None,
+        issue: None,
     };
     let (RunResponse { pane }, v) = request_as(&sock, "POST", "/api/run", &body)?.parse_raw()?;
     if json_out {

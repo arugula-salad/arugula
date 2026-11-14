@@ -3257,7 +3257,7 @@ export type InboxMarked = { item: string,
  */
 marked: number, };
 
-export type Intent = { "op": "new_session", name: string | null, from_pane: number | null, } | { "op": "rename_session", session: number, name: string, } | { "op": "set_session_project", session: number, project: ProjectRef | null, } | { "op": "close_session", session: number, } | { "op": "new_tab", session: number, from_pane: number | null, cwd?: string, } | { "op": "rename_tab", tab: number, name: string | null, } | { "op": "close_tab", tab: number, } | { "op": "move_tab", tab: number, session: number, index: number, } | { "op": "split", pane: number, edge: Edge, local?: boolean, cwd?: string, } | { "op": "close_pane", pane: number, } | { "op": "move_pane", pane: number, target: number, edge: Edge, } | { "op": "break_pane", pane: number, session: number, index: number | null, } | { "op": "dock_tab", tab: number, target: number, edge: Edge, } | { "op": "resize_split", split: number, weights: Array<number>, } | { "op": "arrange", tab: number, preset: Preset, main?: number, } | { "op": "focus", tab: number, pane: number | null, } | { "op": "pop_out", pane: number, out: boolean, } | { "op": "set_option", scope: OptionScope, name: string, value: string | null, };
+export type Intent = { "op": "new_session", name: string | null, from_pane: number | null, } | { "op": "rename_session", session: number, name: string, } | { "op": "set_session_project", session: number, project: ProjectRef | null, } | { "op": "set_session_work", session: number, work: WorkRef | null, project_name?: string, } | { "op": "close_session", session: number, } | { "op": "new_tab", session: number, from_pane: number | null, cwd?: string, } | { "op": "rename_tab", tab: number, name: string | null, } | { "op": "close_tab", tab: number, } | { "op": "move_tab", tab: number, session: number, index: number, } | { "op": "split", pane: number, edge: Edge, local?: boolean, cwd?: string, } | { "op": "close_pane", pane: number, } | { "op": "move_pane", pane: number, target: number, edge: Edge, } | { "op": "break_pane", pane: number, session: number, index: number | null, } | { "op": "dock_tab", tab: number, target: number, edge: Edge, } | { "op": "resize_split", split: number, weights: Array<number>, } | { "op": "arrange", tab: number, preset: Preset, main?: number, } | { "op": "focus", tab: number, pane: number | null, } | { "op": "pop_out", pane: number, out: boolean, } | { "op": "set_option", scope: OptionScope, name: string, value: string | null, };
 
 /**
  * How an invite's push went: `sent` once a subscription took it,
@@ -4141,7 +4141,11 @@ export type OnIssue = {
 /**
  * As its starter wrote it (`#N`, `owner/repo#N` or `IDENT-N`).
  */
-issue: string, boards?: Array<OnBoard>, };
+issue: string, 
+/**
+ * The project it's in (`prj_…`), when known.
+ */
+project?: string, boards?: Array<OnBoard>, };
 
 /**
  * `POST /api/conversations/open` (M33): a Claude Code conversation as an
@@ -4195,7 +4199,17 @@ host?: number | null,
 /**
  * On this host, even split in a VM tab.
  */
-local?: boolean | null, };
+local?: boolean | null, 
+/**
+ * The project it works in (`prj_…`): an agent's own, else its
+ * session's ([`crate::Session::work`]).
+ */
+project?: string | null, 
+/**
+ * The card it works on (`#N` in `project`, or `iss_…`): an agent's
+ * own (`config.work`'s `issue`), else its session's.
+ */
+issue?: string | null, };
 
 /**
  * What opening a block answers.
@@ -4402,7 +4416,9 @@ editor?: EditorInfo | null,
 app?: string | null, 
 /**
  * The issue an agent block was started on, and the boards it is on
- * (#372): the chip on its sidebar row and its swarm card.
+ * (#372): the chip on its sidebar row and its swarm card. A block
+ * without its own, and a terminal, has its session's card
+ * ([`Session::work`]), read when asked.
  */
 on_issue?: OnIssue | null, 
 /**
@@ -5147,7 +5163,16 @@ cwd?: string | null, policy?: Policy | null,
  * Where the request comes from (`$ARUGULA_PANE`): the default session
  * and working directory.
  */
-from_pane?: number | null, };
+from_pane?: number | null, 
+/**
+ * The project its session works in (`prj_…`; [`crate::Session::work`]).
+ * With `issue` and none, the session's own project.
+ */
+project?: string | null, 
+/**
+ * The card its session works on: `#N` in `project`, or `iss_…`.
+ */
+issue?: string | null, };
 
 export type RunResponse = { pane: number, };
 
@@ -5247,7 +5272,19 @@ project?: ProjectRef,
  * Its project was set by hand, or taken away ([`Intent::SetSessionProject`]):
  * nothing infers one after, even while it has none.
  */
-project_by_hand?: boolean, };
+project_by_hand?: boolean, 
+/**
+ * What it's working on (Arugula inversion): a project and, maybe, a
+ * card in it. Its panes' card unless a block has its own. Inferred
+ * from a pane's branch ([`Mux::infer_work`]), or set by hand
+ * ([`Intent::SetSessionWork`]). Its project is the session's
+ * `project` too.
+ */
+work?: WorkRef, 
+/**
+ * Its work was set by hand, or taken away: nothing infers it after.
+ */
+work_by_hand?: boolean, };
 
 /**
  * [`SESSION_ACTIONS`]'s body: what to ask of the session's box.
@@ -6266,6 +6303,19 @@ fields: string, };
  * command the shell integration reported.
  */
 export type WorkKind = "shell" | "build" | "test" | "agent" | "server" | "logs" | "editor" | "app" | "pr" | "issue" | "managoat";
+
+/**
+ * What a session works on: a project and, maybe, its card.
+ */
+export type WorkRef = { 
+/**
+ * `prj_…`.
+ */
+project: string, 
+/**
+ * The card: a native issue, `#N` in the project or `iss_…`.
+ */
+item?: string, };
 
 /**
  * One current record of a kind the declaration names: a decision, a work

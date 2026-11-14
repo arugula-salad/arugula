@@ -11,6 +11,9 @@
 //!   isn't the project's, a link a person made) leaves the rest to land.
 //! - **Which project** is the issues' rule (`Call::chosen_project`), after
 //!   the project its `IDENT-N` items are connected in (`plane_home`).
+//! - **A session's card** (`card`): the caller's session works on a native
+//!   issue from now (`Session::work`), set by hand, so its branch no longer
+//!   infers one. Its panes show it, and it chooses their current project.
 
 use arugula_control_wire::boards::{
     LINKS_MAX, LinkBatch, LinkEnds, LinkOutcome, LinksDone, RelationKind, agent_project_relations_batch,
@@ -24,7 +27,7 @@ use crate::mcp::tools::{Call, Out, done};
 
 pub(crate) const TOOL: &str = "link";
 
-pub(crate) const DESCRIPTION: &str = "Say which work comes before which, in Arugula cloud, at once, as your person's agent on this machine: add or remove links between a project's items. A link is `from` before `to` (the default kind), or blocks, relates, duplicate_of or discovered_from. An item is #N, owner/repo#N, IDENT-N or an iss_/fi_ id. `to` may be a list, one link to each. Up to 50 links in one call; each lands on its own, and the answer is one line per link (added, already there, removed, not there, or refused and why). A cycle of before and blocks links is refused. Only blocks keeps a row out of a board's Ready line. You remove only links your machine made. Needs your person's issues.write grant over the project: with no project, the one its IDENT-N items are connected in, else the current project, the project you pass, else the one your block was started on (start_agent's issue), else your session's, else the one this clone's GitHub repo is linked to, else your person's default project. Example: {\"add\":[{\"from\":\"#506\",\"to\":\"#507\"}]}.";
+pub(crate) const DESCRIPTION: &str = "Say which work comes before which, in Arugula cloud, at once, as your person's agent on this machine: add or remove links between a project's items. A link is `from` before `to` (the default kind), or blocks, relates, duplicate_of or discovered_from. An item is #N, owner/repo#N, IDENT-N or an iss_/fi_ id. `to` may be a list, one link to each. Up to 50 links in one call; each lands on its own, and the answer is one line per link (added, already there, removed, not there, or refused and why). A cycle of before and blocks links is refused. Only blocks keeps a row out of a board's Ready line. You remove only links your machine made. Needs your person's issues.write grant over the project: with no project, the one its IDENT-N items are connected in, else the current project, the project you pass, else the one your block was started on (start_agent's issue), else your session's, else the one this clone's GitHub repo is linked to, else your person's default project. Example: {\"add\":[{\"from\":\"#506\",\"to\":\"#507\"}]}. card puts your session on a native issue (its card), or none takes it off: its panes show it, and its project is theirs.";
 
 #[derive(Deserialize, JsonSchema)]
 pub struct LinkArgs {
@@ -37,6 +40,10 @@ pub struct LinkArgs {
     /// The project's id (prj_…) or personal. Default: the current project.
     #[serde(default)]
     pub project: Option<String>,
+    /// Your session's card: a native issue, #N in the project or iss_…, or
+    /// none to take it off.
+    #[serde(default)]
+    pub card: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -117,8 +124,15 @@ pub(crate) async fn link(c: &Call<'_>, a: LinkArgs) -> Out {
     c.owners_own(TOOL).await?;
     let (add, remove) = (pairs(a.add), pairs(a.remove));
     let n = add.len() + remove.len();
+    let card = match a.card.as_deref().map(str::trim).filter(|c| !c.is_empty()) {
+        Some(card) => Some(set_card(c, a.project.as_deref(), card).await?),
+        None => None,
+    };
     if n == 0 {
-        return Err("link needs add or remove, each with a `to` (one item, or a list of them)".into());
+        return match card {
+            Some(said) => done(said, serde_json::json!({})),
+            None => Err("link needs add or remove, each with a `to` (one item, or a list of them)".into()),
+        };
     }
     if n > LINKS_MAX {
         return Err(format!("at most {LINKS_MAX} links in one call; you gave {n}"));
@@ -134,7 +148,41 @@ pub(crate) async fn link(c: &Call<'_>, a: LinkArgs) -> Out {
     let v = c.issues_call(Method::POST, &agent_project_relations_batch(&project), Some(body)).await?;
     let got: LinksDone =
         serde_json::from_value(v).map_err(|e| format!("Arugula cloud sent an answer I can't read: {e}"))?;
-    Ok(answer(&said, &got))
+    let mut out = answer(&said, &got);
+    if let Some(card) = card {
+        out["summary"] = format!("{card}\n{}", out["summary"].as_str().unwrap_or_default()).into();
+    }
+    Ok(out)
+}
+
+/// `link`'s `card`: the caller's session works on `card` from now (`none`:
+/// on no card), set by hand. `#N` is in `project`, else the current one.
+async fn set_card(c: &Call<'_>, project: Option<&str>, card: &str) -> Result<String, String> {
+    let pane = c.own_pane().ok_or("card is your session's: link from a pane in one")?;
+    let session = c.readable(pane).await?.session;
+    let (work, name, said) = if card == "none" {
+        (None, None, "Your session is on no card now".to_owned())
+    } else {
+        crate::mcp::issues::native(card)?;
+        let (chosen, item) = match card.starts_with("iss_") {
+            true => match arugulad_base::board_attach::issue_project(c.app(), card, None).await? {
+                Some((p, n)) => (c.chosen_project(Some(&p)).await?, n),
+                None => return Err(format!("card {card}: Arugula cloud named no project")),
+            },
+            false => (c.chosen_project(project).await?, card.to_owned()),
+        };
+        let said = format!(
+            "Your session is on {item} now, in {}",
+            if chosen.name.is_empty() { &chosen.id } else { &chosen.name }
+        );
+        let name = Some(chosen.name).filter(|n| !n.is_empty());
+        (Some(arugula_proto::WorkRef { project: chosen.id, item: Some(item) }), name, said)
+    };
+    match c.app().mux.api(|r| crate::mux::Api::SetSessionWork(session, work, name, r)).await {
+        Some(Ok(())) => Ok(said),
+        Some(Err(why)) => Err(format!("card: {why}")),
+        None => Err("the daemon is shutting down".into()),
+    }
 }
 
 /// One line for each link, then the count.

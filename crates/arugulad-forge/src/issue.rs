@@ -317,6 +317,8 @@ impl ForgeBlock {
             image: None,
             host: None,
             local: true,
+            project: None,
+            issue: None,
         };
         // Beside the agent; beside the issue if the agent's gone.
         let block = match self.ctx.open(open(link.block)).await {
@@ -415,6 +417,8 @@ impl ForgeBlock {
             image: None,
             host: None,
             local: true,
+            project: None,
+            issue: None,
         };
         let block = self.ctx.open(req).await?;
         let link = AgentLink {

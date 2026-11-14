@@ -52,6 +52,12 @@ pub struct PaneEntry {
     /// The git worktree an agent block owns, absolute.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub worktree: Option<String>,
+    /// The project it works in (`prj_…`): its card's, else its session's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+    /// The card it's on: its block's issue, else its session's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub card: Option<String>,
     /// Set on the caller's own pane only.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub you: Option<bool>,
@@ -323,6 +329,8 @@ mod tests {
             last: None,
             started_by: None,
             worktree: None,
+            project: None,
+            card: None,
             you: None,
         }
     }

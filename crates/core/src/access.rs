@@ -68,6 +68,7 @@ pub fn need(mux: &Mux, intent: &Intent) -> Result<Need, Error> {
         Intent::NewSession { .. } => Need::owner(),
         Intent::RenameSession { session, .. }
         | Intent::SetSessionProject { session, .. }
+        | Intent::SetSessionWork { session, .. }
         | Intent::CloseSession { session } => {
             mux.session(*session)?;
             Need::on(Owner, vec![*session])

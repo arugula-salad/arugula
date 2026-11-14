@@ -1286,12 +1286,22 @@ async fn attach(c: &Call<'_>, a: AttachArgs) -> Out {
                 AttachRoleArg::Proof => AttachRole::Proof,
             })
             .unwrap_or(role);
+        // An own block attached as work works on the row's issue.
+        let own_block = match (&pointer, role) {
+            (Pointer::Block { machine, pane }, AttachRole::Work) if own.as_deref() == Some(machine.as_str()) => {
+                Some(pane.clone())
+            }
+            _ => None,
+        };
         let body = serde_json::to_value(AttachRow { row: row.id.clone(), pointer, role, take: a.take })
             .map_err(|e| e.to_string())?;
         match boards_call(c, Method::POST, &agent_board_attachments(&a.board), Some(body)).await.and_then(view_of) {
             Err(why) => tally.did("failed", format!("{to}: failed, {why}")),
             Ok(after) => {
                 tally.did("attached", format!("{to}: attached as {} to {}", role.as_str(), row.item_label()));
+                if let Some(pane) = &own_block {
+                    work_on(c, pane, &view, &row).await;
+                }
                 view = after;
             }
         }
@@ -1300,6 +1310,23 @@ async fn attach(c: &Call<'_>, a: AttachArgs) -> Out {
     lines.extend(card_of(&view, &row.id));
     lines.push(progress(&view));
     answer(lines.join("\n"), &view, a.verbose)
+}
+
+/// A block on this machine attached as work to `row`: the row's issue is
+/// its work from now, as if it was started on it (its chip, its current
+/// project). A terminal is left be: its card is its session's.
+async fn work_on(c: &Call<'_>, pane: &str, view: &BoardView, row: &Row) {
+    let Ok(id) = pane.trim_start_matches('%').parse::<arugula_proto::PaneId>() else { return };
+    let Some(b) = c.app().mux.api(|r| Api::Block(id, r)).await.flatten() else { return };
+    let board = arugulad_base::board_attach::WorkBoard {
+        project: view.board.project.clone(),
+        board: view.board.id.clone(),
+        title: view.board.title.clone(),
+        row: row.id.clone(),
+    };
+    let args = serde_json::json!({ "issue": row.item_label(), "project": view.board.project, "boards": [board] });
+    // A block that keeps no work refuses it: it's attached all the same.
+    let _ = b.call("set_work", args).await;
 }
 
 /// The attachment of `row` that `what` names: its `att_` id, its item as

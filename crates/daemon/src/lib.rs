@@ -1172,7 +1172,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         );
     }
     control.start(app.clone());
-    session_project::start(mux.clone(), control.clone());
+    session_project::start(app.clone());
     if args.hosted {
         hosted::start(&app, state_dir.clone(), args.control_url.clone());
     }

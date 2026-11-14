@@ -521,3 +521,60 @@ fn no_project_by_hand_sticks_when_another_pane_opens() {
     let back: Mux = serde_json::from_str(&serde_json::to_string(&m).unwrap()).unwrap();
     assert!(!back.sessions[0].inferable());
 }
+
+fn work(project: &str, item: Option<&str>) -> crate::WorkRef {
+    crate::WorkRef { project: project.into(), item: item.map(str::to_owned) }
+}
+
+#[test]
+fn a_sessions_work_set_by_hand_puts_it_in_its_project_and_is_kept() {
+    let mut m = mux_with_session();
+    let set =
+        |w, name: Option<&str>| Intent::SetSessionWork { session: 1, work: w, project_name: name.map(Into::into) };
+    m.apply(set(Some(work("prj_a", Some("#7"))), Some("A"))).unwrap();
+    let s = &m.sessions[0];
+    assert_eq!(s.work, Some(work("prj_a", Some("#7"))));
+    assert_eq!(s.project, Some(crate::ProjectRef { id: "prj_a".into(), name: "A".into() }));
+    assert!(s.work_by_hand && !s.project_by_hand, "its project follows its work");
+    let back: Mux = serde_json::from_str(&serde_json::to_string(&m).unwrap()).unwrap();
+    assert_eq!(back, m);
+    // Nothing infers over it.
+    assert_eq!(m.infer_work(1, work("prj_a", Some("#8")), None), Ok(false));
+    // Taken away: the project stays, nothing infers one.
+    m.apply(set(None, None)).unwrap();
+    assert_eq!((m.sessions[0].work.as_ref(), m.sessions[0].project.is_some()), (None, true));
+    assert_eq!(m.infer_work(1, work("prj_a", Some("#8")), None), Ok(false));
+    let intent: Intent = serde_json::from_str(r#"{"op":"set_session_work","session":1,"work":null}"#).unwrap();
+    assert_eq!(intent, set(None, None));
+}
+
+#[test]
+fn a_project_set_by_hand_refuses_another_projects_work_and_drops_its_own() {
+    let mut m = mux_with_session();
+    m.apply(Intent::SetSessionProject { session: 1, project: Some(project("prj_a")) }).unwrap();
+    let set = |w| Intent::SetSessionWork { session: 1, work: Some(w), project_name: None };
+    assert!(m.apply(set(work("prj_b", Some("#1")))).is_err());
+    assert_eq!(m.sessions[0].work, None);
+    m.apply(set(work("prj_a", Some("#1")))).unwrap();
+    assert_eq!(m.sessions[0].project, Some(project("prj_a")), "its name is kept");
+    // Moved to another project by hand: its card was the old one's.
+    m.apply(Intent::SetSessionProject { session: 1, project: Some(project("prj_b")) }).unwrap();
+    assert_eq!(m.sessions[0].work, None);
+}
+
+#[test]
+fn an_inferred_card_is_set_once_in_the_sessions_project() {
+    let mut m = mux_with_session();
+    m.infer_project(1, project("prj_a")).unwrap();
+    // Another project's issue isn't this session's card.
+    assert_eq!(m.infer_work(1, work("prj_b", Some("#3")), None), Ok(false));
+    assert_eq!(m.infer_work(1, work("prj_a", Some("#3")), None), Ok(true));
+    assert_eq!(m.infer_work(1, work("prj_a", Some("#4")), None), Ok(false));
+    assert_eq!(m.sessions[0].work, Some(work("prj_a", Some("#3"))));
+    assert!(!m.sessions[0].work_by_hand);
+    // A session in no project takes the card's.
+    m.apply(Intent::NewSession { name: None, from_pane: None }).unwrap();
+    assert_eq!(m.infer_work(2, work("prj_c", Some("#1")), Some("C".into())), Ok(true));
+    assert_eq!(m.sessions[1].project, Some(crate::ProjectRef { id: "prj_c".into(), name: "C".into() }));
+    assert_eq!(m.infer_work(9, work("prj_a", None), None), Err(crate::Error::NoSession(9)));
+}

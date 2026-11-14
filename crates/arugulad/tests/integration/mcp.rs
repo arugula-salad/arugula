@@ -2565,6 +2565,55 @@ async fn every_tool_that_picks_a_project_sends_the_sessions() {
     s0.cancel().await.unwrap();
 }
 
+/// Arugula inversion: a session's card is read when asked, not copied
+/// when a pane opens, so one set after the pane opened is its `on_issue`
+/// and `list`'s card and project; taken away, it goes from both. A `run`
+/// naming a project and issue opens its session on them.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_card_set_after_a_pane_opened_is_its_card() {
+    use futures_util::SinkExt;
+    let d = Daemon::child_with(&[]);
+    let s = bridge(&d, Client::named("claude-code")).await;
+    let pane = call(&s, "run", json!({})).await["pane"].as_u64().unwrap();
+    let of = |pane: u64| d.get("/api/panes").as_array().unwrap().iter().find(|p| p["id"] == pane).unwrap().clone();
+    let session = of(pane)["session"].clone();
+    assert!(of(pane).get("on_issue").is_none(), "{}", of(pane));
+
+    let (mut ws, _) = tokio_tungstenite::connect_async(d.ws("/ws")).await.unwrap();
+    let mut set = async |work: Value| {
+        let intent = json!({ "op": "set_session_work", "session": session, "work": work, "project_name": "Acme" });
+        let msg = json!({ "type": "intent", "id": 1, "intent": intent });
+        ws.send(tokio_tungstenite::tungstenite::Message::Text(msg.to_string().into())).await.unwrap();
+    };
+    let until = async |what: &str, done: &dyn Fn(&Value) -> bool| {
+        let deadline = std::time::Instant::now() + Duration::from_secs(20);
+        while !done(&of(pane)) {
+            assert!(std::time::Instant::now() < deadline, "{what}: {}", of(pane));
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    };
+    set(json!({ "project": "prj_0123abcd", "item": "#982" })).await;
+    until("the card never showed", &|p| p["on_issue"]["issue"] == "#982").await;
+    let p = of(pane);
+    assert_eq!(p["on_issue"], json!({ "issue": "#982", "project": "prj_0123abcd" }));
+    assert_eq!(p["session_project"], json!({ "id": "prj_0123abcd", "name": "Acme" }), "its project is the card's");
+    let listed = call(&s, "list", json!({})).await;
+    let row = listed["panes"].as_array().unwrap().iter().find(|p| p["pane"] == pane).unwrap().clone();
+    assert_eq!((&row["project"], &row["card"]), (&json!("prj_0123abcd"), &json!("#982")), "{row}");
+
+    set(Value::Null).await;
+    until("the card never went", &|p| p.get("on_issue").is_none()).await;
+    let listed = call(&s, "list", json!({})).await;
+    let row = listed["panes"].as_array().unwrap().iter().find(|p| p["pane"] == pane).unwrap().clone();
+    assert_eq!((&row["project"], row.get("card")), (&json!("prj_0123abcd"), None), "the project stays: {row}");
+
+    // Typed on `run`: a new session, on its card from the start.
+    let other = d.post("/api/run", json!({ "session": "carded", "project": "prj_4567cdef", "issue": "#7" }));
+    let p = of(other["pane"].as_u64().unwrap());
+    assert_eq!(p["on_issue"], json!({ "issue": "#7", "project": "prj_4567cdef" }), "{p}");
+    s.cancel().await.unwrap();
+}
+
 /// A fake control's platform for M216's runs: project `prj_1` with one
 /// hosted box (`hw_1`, machine `dev_1`), the machine's run grants (off
 /// until `granted`), and the runs started, each of which runs on its own
@@ -3928,7 +3977,7 @@ async fn an_agent_started_on_an_issue_is_on_its_row() {
     let first = control.attached.lock().unwrap()[0].clone();
     assert_eq!(first["issue"], "#12", "{first}");
     let block: u64 = first["pane"].as_str().unwrap().parse().unwrap();
-    let work = json!({ "issue": "#12", "boards": [{ "project": "prj_1", "board": "brd_1", "title": "Launch", "row": "row_1" }] });
+    let work = json!({ "issue": "#12", "project": "prj_1", "boards": [{ "project": "prj_1", "board": "brd_1", "title": "Launch", "row": "row_1" }] });
     assert_eq!(d.state(block)["work"], work);
 
     // The answer says it, too; the report carries the block's title.
