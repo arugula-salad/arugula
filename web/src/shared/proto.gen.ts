@@ -1280,7 +1280,14 @@ export type ChatMentionStatus = { machine: string,
 /**
  * What the machine was called when it was told.
  */
-machine_name: string, state: ChatMentionState, 
+machine_name: string, 
+/**
+ * The session the message named on the machine, as `@machine/session`
+ * spells it, or none for the machine itself. With `machine`, what tells
+ * one status line from another: a post can name two sessions of one
+ * machine (#875).
+ */
+for_session?: string, state: ChatMentionState, 
 /**
  * The session it went to, when the daemon said.
  */

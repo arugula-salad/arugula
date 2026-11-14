@@ -492,6 +492,13 @@ pub struct ChatMentionStatus {
     pub machine: String,
     /// What the machine was called when it was told.
     pub machine_name: String,
+    /// The session the message named on the machine, as `@machine/session`
+    /// spells it, or none for the machine itself. With `machine`, what tells
+    /// one status line from another: a post can name two sessions of one
+    /// machine (#875).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub for_session: Option<String>,
     pub state: ChatMentionState,
     /// The session it went to, when the daemon said.
     #[serde(default, skip_serializing_if = "Option::is_none")]

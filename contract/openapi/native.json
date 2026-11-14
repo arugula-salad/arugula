@@ -8068,6 +8068,13 @@
               "null"
             ]
           },
+          "for_session": {
+            "description": "The session the message named on the machine, as `@machine/session`\nspells it, or none for the machine itself. With `machine`, what tells\none status line from another: a post can name two sessions of one\nmachine (#875).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "machine": {
             "type": "string"
           },
