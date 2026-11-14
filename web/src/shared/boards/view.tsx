@@ -195,10 +195,13 @@ export function BoardPanel({
     };
   }, [id, shown]);
 
-  // A link from a block or a session names a row, `#row=row_…` (#372).
+  // A link from a block or a session names a row, `#row=row_…` (#372):
+  // the card's drawer opens on it (decision 9), as a click on it would.
   const rowKey = view ? location.hash.match(/^#row=(row_[0-9a-f]+)/)?.[1] : undefined;
   useEffect(() => {
-    if (rowKey) document.querySelector(`[data-board-row="${rowKey}"]`)?.scrollIntoView({ block: "center" });
+    if (!rowKey) return;
+    document.querySelector(`[data-board-row="${rowKey}"]`)?.scrollIntoView({ block: "center" });
+    if (view?.zones.some((z) => z.rows.some((r) => r.id === rowKey))) setDrawer(rowKey);
   }, [rowKey, !!view]);
 
   if (missing && !view) return <BlockError inline data-board-missing title="Can't read this board." detail={missing} retry={again} />;
