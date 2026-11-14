@@ -107,6 +107,10 @@
       "why": "Not in the first app"
     },
     {
+      "match": "/sessions/by-card",
+      "why": "Not in the first app"
+    },
+    {
       "match": "/relations",
       "why": "Not in the first app"
     },
