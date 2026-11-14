@@ -35,6 +35,7 @@ import { fromControl } from "../shared/machine-paths";
 import type { PlatformApi } from "../shared/platform-api";
 import { appMachines } from "./machines";
 import { AppSession } from "./session";
+import { accountBackend, setSeenBackend } from "../shared/seen";
 import { arriveHere } from "../platform/chat-nav";
 import { PlatformPage } from "../platform/page";
 
@@ -68,6 +69,16 @@ const api: PlatformApi = {
   // Control's page's addresses, as the app's own places where it has them.
   controlHref: (hash) => (here() && fromControl(`#${hash}`)) || `${controlOrigin()}/#${hash}`,
 };
+// Your prefs (where you were, per project; hints seen) are your account's
+// once you're signed in here: the hub's `/api/me/prefs`, through the app's
+// host. Until the hub answers there, they're this browser's (shared/seen.ts).
+let prefsFor: string | null = null;
+session.subscribe(() => {
+  const account = session.state === "ready" ? (session.me?.account ?? null) : null;
+  if (!account || account === prefsFor) return;
+  prefsFor = account;
+  setSeenBackend(accountBackend(() => appSession().prefs(), (changes) => appSession().setPrefs(changes)));
+});
 render(
   <PlatformApiContext.Provider value={api}>
     <PlatformPage />

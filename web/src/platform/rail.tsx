@@ -24,6 +24,8 @@ import { ownerKey } from "./owners";
 import { go, pathOf, useRoute, type Route } from "./router";
 import { controlOrigin, session } from "./session";
 import { Switcher } from "./switcher";
+import { paneOf } from "./places-kept";
+import { subscribeSeen } from "../shared/seen";
 import { barProject, where } from "./where";
 
 /** A place on the rail or the phone's bar. */
@@ -44,6 +46,7 @@ function usePlaces() {
   useSubscribe((fn) => chat.subscribe(fn));
   useSubscribe((fn) => where.subscribe(fn));
   useSubscribe(onCurrentProject);
+  useSubscribe(subscribeSeen);
   const r = useRoute();
   const { Machines } = usePlatformApi();
   const inbox = useInboxCount();
@@ -57,7 +60,8 @@ function usePlaces() {
   const { n, mention } = !unknown ? chatUnread(chat.rooms, chatTeam(p, project)) : { n: 0, mention: false };
   const chatTo = shown ? chatPath(shown) : entryPath("chat", project, names);
   // The machines are the app's own places where it has them; else control's page.
-  const machinesTo = Machines && project ? pathOf({ page: "machines", project: project.id, at: { at: "machines" } }, names) : `${controlOrigin()}/`;
+  // Machines goes back to your last pane in this project (decision 5); the list is the path's step up.
+  const machinesTo = Machines && project ? (paneOf(project.id) ?? pathOf({ page: "machines", project: project.id, at: { at: "machines" } }, names)) : `${controlOrigin()}/`;
   const machinesHere = r.page === "machines" || section === "workspaces";
   const own: PlaceLink[] = [
     { key: "overview", label: "Overview", tip: "Overview: this project's work", icon: <ProjectsIcon />, to: at("project"), here: section === "home" },

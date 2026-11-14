@@ -13,7 +13,7 @@ import "../shell/phone-sheet.css";
 import "../shell/phone-machines.css";
 import "../shell/docs-page.css";
 import "../shell/settings-page.css";
-import { useEffect, useLayoutEffect, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { machinesPath, type MachineAt } from "../shared/machine-paths";
 import { PlatformApiContext } from "../shared/platform-api";
 import { EmptyState } from "../shared/ui/block-states";
@@ -34,6 +34,8 @@ import { current, follow, go, pathOf } from "../platform/router";
 import type { Fleet } from "../shell/fleet";
 import { ROLE_WORDS, rowsOf, sessionsLine, sortRows } from "./machine-list";
 import type { AppSession } from "./session";
+import type { Client } from "../shell/client";
+import { notePane } from "../platform/places-kept";
 
 interface Booted {
   machines: Machines;
@@ -163,11 +165,32 @@ function Place({ project, at, b: { machines, cell }, session }: { project: strin
     // What a pane's thread and blocks reach the machine through (M147).
     <PlatformApiContext.Provider value={shellPlatformApi(client)}>
       <MachineView client={client} cell={cell} pop={pop} frame="app" onSwarm={() => go(pathOf({ page: "machines", project, at: { at: "swarm" } }, names))} />
+      {!pop && <KeepPane key={client.base} project={project} client={client} asked={at.pane} />}
       {/* The machine page's own Swarm (`#swarm`), as on control's page. */}
       <Swarm machines={machines} client={client} ready={() => true} />
       <AgentDialogLayer />
     </PlatformApiContext.Provider>
   );
+}
+
+/** The pane the machine's page shows is the address, and your pane in this
+ * project (Arugula #989, decision 5): a reload, or Machines on the rail,
+ * comes back to it. Not before the pane the address `asked` for has shown
+ * (or is gone), so the one the page restored can't take its place. */
+function KeepPane({ project, client, asked }: { project: string; client: Client; asked: number | undefined }) {
+  useSubscribe((fn) => client.subscribe(fn));
+  const settled = useRef(asked === undefined);
+  const pane = client.connected && client.state ? client.active() : null;
+  if (!settled.current && pane !== null && (pane === asked || !client.info(asked!))) settled.current = true;
+  const machine = client.e2e?.daemon.id ?? directory.find(directory.current)?.id;
+  useEffect(() => {
+    if (pane === null || !settled.current) return;
+    const at: MachineAt = machine ? { at: "machine", machine, pane } : { at: "machines", pane };
+    const path = pathOf({ page: "machines", project, at }, names);
+    notePane(project, path);
+    if (current().page === "machines" && location.pathname + location.search !== path) go(path, true);
+  }, [pane, machine, settled.current]);
+  return null;
 }
 
 /** The swarm fills the window, beside the rail where there is one, as on

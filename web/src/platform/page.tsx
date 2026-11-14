@@ -46,6 +46,8 @@ import { MachinesPage } from "./pages/machines";
 import { runs } from "./runs";
 import { runTitle } from "./runs-text";
 import { titleOf } from "./titles";
+import { lastProject, notePlace, placeOf } from "./places-kept";
+import { seenReady, subscribeSeen } from "../shared/seen";
 import { barProject, where } from "./where";
 
 export function PlatformPage() {
@@ -62,6 +64,7 @@ function Routed() {
   useSlug(r);
   const lost = useFind(r);
   useTitle(r);
+  useWhereIWas(r);
   const s = session.state;
   if (s === null) return <Shell><p class="platform-section dim">Loading…</p></Shell>;
   if (s === "signed-out") return <SignIn />;
@@ -246,6 +249,30 @@ function useFind(r: Route): string | null {
     if (to) arrive(to);
   }, [to]);
   return lost;
+}
+
+/** The app opened at `/` (not a step to it inside the page): it goes back
+ * to where you were in your last project (Arugula #989, decision 4). */
+let reopening = location.pathname === "/" && location.search === "";
+
+/** Keep where you are, per project; and on opening the app, go back there
+ * once your prefs and projects have loaded. A project you've never opened
+ * a page of opens on its Overview; with no project kept, the list stays. */
+function useWhereIWas(r: Route) {
+  useSubscribe(subscribeSeen);
+  const ready = session.state === "ready";
+  const path = location.pathname + location.search;
+  useEffect(() => {
+    if (r.page !== "home") reopening = false;
+    notePlace(r, path);
+  }, [path]);
+  useEffect(() => {
+    if (!reopening || r.page !== "home" || r.to || !ready || !seenReady()) return;
+    reopening = false;
+    const project = lastProject();
+    if (!project || !session.project(project)) return;
+    go(placeOf(project) ?? pathOf({ page: "project", project }, names), true);
+  }, [r.page, ready, seenReady()]);
 }
 
 /** The tab's title for the route (UI audit #159), as names arrive. */

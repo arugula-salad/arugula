@@ -176,6 +176,43 @@ test.describe("the shell's keys", () => {
   });
 });
 
+test.describe("where you were", () => {
+  // The daemon's own page (reset's) registers its worker, which would
+  // answer `/` before the route that serves the app there.
+  test.use({ viewport: { width: 1280, height: 800 }, serviceWorkers: "block" });
+
+  test("opening the app goes back to your place in your last project; the switcher opens a project there", async ({ page }) => {
+    await openApp(page, () => `/p/${P}/boards`);
+    // The app's own `/`, too, from here on.
+    const body = await fixturePage("./app-frame-page.tsx");
+    await page.route(/^https?:\/\/[^/]+\/$/, (r) => r.fulfill({ contentType: "text/html", body }));
+    await rail(page, "docs").click();
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/docs$`));
+    // Closing the page saves it; opening the app comes back to it.
+    await page.goto("/");
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/docs$`));
+    await lit(page, "docs");
+    await page.locator(".ws-rail [data-project-switcher]").click();
+    await expect(page.locator(`[data-switcher-project="${P}"]`)).toHaveAttribute("href", new RegExp(`/p/${P}[^/]*/docs$`));
+  });
+
+  test("Machines on the rail comes back to your last pane, and a reload stays on it", async ({ page }) => {
+    const pane = await openApp(page, (p) => `/p/${P}/machines?pane=${p}`);
+    await expect(page.locator(`[data-pane="${pane}"]`)).toBeVisible();
+    const there = new RegExp(`/p/${P}[^/]*/machines(/[0-9a-f]+[^/?]*)?\\?pane=${pane}$`);
+    await expect(page).toHaveURL(there);
+    await rail(page, "boards").click();
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/boards$`));
+    await expect(rail(page, "machines")).toHaveAttribute("href", there);
+    await rail(page, "machines").click();
+    await expect(page).toHaveURL(there);
+    await expect(page.locator(`[data-pane="${pane}"]`)).toBeVisible();
+    await page.reload();
+    await expect(page.locator(`[data-pane="${pane}"]`)).toBeVisible();
+    await expect(page).toHaveURL(there);
+  });
+});
+
 test.describe("on a phone", () => {
   const { viewport, userAgent, deviceScaleFactor, isMobile, hasTouch } = devices["Pixel 7"];
   test.use({ viewport, userAgent, deviceScaleFactor, isMobile, hasTouch });
