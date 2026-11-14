@@ -180,6 +180,9 @@ impl Scope {
 /// Requests from the HTTP API and the CLI.
 pub enum Api {
     Panes(oneshot::Sender<Vec<PaneSummary>>),
+    /// Every session, with its project and work ([`arugula_core::Session`]),
+    /// panes or none: what the machine tells control of them.
+    Sessions(oneshot::Sender<Vec<arugula_core::Session>>),
     /// Whether a session may still get its project from a pane's linked
     /// repo ([`arugula_core::Session::inferable`]): asked before control is.
     Inferable(SessionId, oneshot::Sender<bool>),

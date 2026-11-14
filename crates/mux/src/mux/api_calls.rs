@@ -86,6 +86,9 @@ impl Daemon {
             Api::Panes(reply) => {
                 let _ = reply.send(self.summaries());
             }
+            Api::Sessions(reply) => {
+                let _ = reply.send(self.mux.sessions.clone());
+            }
             Api::Inferable(session, reply) => {
                 let _ = reply.send(self.mux.session(session).is_ok_and(|s| s.inferable()));
             }

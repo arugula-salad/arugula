@@ -37,6 +37,17 @@
 //!   close). A report control refuses for itself (a 400, 413 or 422) is
 //!   dropped.
 //!
+//! - **Project and card:** each report says the block's project (`prj_…`)
+//!   and card (a native issue, `#N` or `iss_…`): its own issue, else its
+//!   session's card, else its session's project alone (Arugula inversion,
+//!   L1), ids only. A control from before them refuses a report that has
+//!   them: a report with them that control refuses (any 4xx) is sent again
+//!   at once without them, and if that goes through, reports go without
+//!   them until every block is sent again, when they are tried once more
+//!   (control may have been upgraded). So no report is lost to an older
+//!   control. Beside the block states, on the same tick, goes the list of
+//!   every session on the machine ([`crate::machine_sessions`]).
+//!
 //! Rows are not added here: a person or a lead adds them (`board_write`
 //! with an agent block's pointer), and this keeps their state current.
 
@@ -47,14 +58,20 @@ use std::{
 };
 
 use arugula_control_wire::boards::{
-    AGENT_BLOCK_STATE, BLOCK_STATE_EVERY_MS, BlockState, BlockWord, Diffstat, PutBlockState,
+    AGENT_BLOCK_STATE, AGENT_MACHINE_SESSIONS, BLOCK_STATE_EVERY_MS, BlockState, BlockStateReport, BlockWord, Diffstat,
+    PutBlockState,
 };
 use arugula_proto::{Attention, BlockType, EventKind, PaneId, api::Work};
 use reqwest::Method;
 use tokio::sync::broadcast::error::RecvError;
 use tracing::{debug, warn};
 
-use crate::{control::CloudRefused, mux::Api, server::App};
+use crate::{
+    control::CloudRefused,
+    machine_sessions::{self, Pane, Place, Sessions},
+    mux::Api,
+    server::App,
+};
 
 /// How often what has changed is sent.
 const EVERY: Duration = Duration::from_secs(2);
@@ -62,7 +79,7 @@ const EVERY: Duration = Duration::from_secs(2);
 /// the flag, or a route).
 const NO_GRANT: Duration = Duration::from_secs(600);
 /// How long after control couldn't be reached or failed.
-const TROUBLE: Duration = Duration::from_secs(30);
+pub(crate) const TROUBLE: Duration = Duration::from_secs(30);
 /// The longest one request may take.
 const REQUEST: Duration = Duration::from_secs(20);
 
@@ -265,10 +282,13 @@ pub async fn keep_reporting(app: Arc<App>) {
     let mut repos: HashMap<PaneId, Repo> = HashMap::new();
     let mut quiet_until: Option<Instant> = None;
     let mut again = Again::default();
-    // Control refused a report with its age: it is from before Arugula #745,
-    // so reports go without one until every block is sent again, when it is
-    // tried once more (control may have been upgraded).
-    let mut plain = false;
+    // What control was last seen to refuse of a report, until every block
+    // is sent again.
+    let mut takes = Takes::default();
+    // Each agent block's project and card, as last read: a closed one's go
+    // with its close.
+    let mut places: HashMap<PaneId, Place> = HashMap::new();
+    let mut sessions = Sessions::default();
     let mut tick = tokio::time::interval(EVERY);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
@@ -282,6 +302,9 @@ pub async fn keep_reporting(app: Arc<App>) {
                     Err(RecvError::Lagged(_)) => continue,
                     Err(RecvError::Closed) => return,
                 };
+                if matches!(ev.kind, EventKind::Layout { .. } | EventKind::Opened | EventKind::Closed) {
+                    sessions.changed();
+                }
                 let (Some(id), Some(word)) = (ev.pane, word_of(&ev.kind)) else { continue };
                 // Not joined: nothing is kept, and joining sends every block.
                 if !enabled(&app) {
@@ -308,17 +331,23 @@ pub async fn keep_reporting(app: Arc<App>) {
                 again.joined(on, Instant::now());
                 if !on {
                     pending.0.clear();
+                    sessions.left();
                     continue;
                 }
+                tell_sessions(&app, &mut sessions).await;
                 if quiet_until.is_some_and(|t| Instant::now() < t) {
                     continue;
                 }
                 quiet_until = None;
                 if again.due(Instant::now()) {
-                    plain = false;
+                    takes = Takes::default();
+                    sessions.again();
                     send_again(&app, &mut pending, &mut agents, &mut others).await;
                 }
                 let mut failed = false;
+                if !pending.0.is_empty() {
+                    places.extend(agent_places(&app).await);
+                }
                 let mut batch = pending.take().into_iter();
                 while let Some((id, kept)) = batch.next() {
                     let repo = repos.entry(id).or_default();
@@ -328,12 +357,14 @@ pub async fn keep_reporting(app: Arc<App>) {
                         *repo = work_of(&w);
                     }
                     let state = body(kept.word, repo, title_of(&app, id).await);
+                    let place = places.get(&id).cloned().unwrap_or_default();
                     if kept.word == BlockWord::Closed {
                         agents.remove(&id);
                         repos.remove(&id);
+                        places.remove(&id);
                     }
                     let age = u64::try_from(kept.seen.elapsed().as_millis()).unwrap_or(u64::MAX);
-                    match send(&app, id, &state, age, &mut plain).await {
+                    match send(&app, id, &state, &place, age, &mut takes).await {
                         Ok(()) => debug!(pane = id, "told control a block's state"),
                         Err(Wait::Dropped(why)) => warn!(pane = id, "control refused a block's state: {why}"),
                         // This report failed: the rest go on, and it is
@@ -386,6 +417,37 @@ async fn send_again(app: &App, pending: &mut Queue, agents: &mut HashSet<PaneId>
     }
 }
 
+/// Each live agent block's project and card.
+async fn agent_places(app: &App) -> HashMap<PaneId, Place> {
+    let panes = app.mux.api(Api::Panes).await.unwrap_or_default();
+    panes.iter().filter(|p| p.info.kind == BlockType::Agent).map(|p| (p.info.id, Pane::of(p).place)).collect()
+}
+
+/// Send the list of this machine's sessions, if it's time and it changed.
+async fn tell_sessions(app: &App, sessions: &mut Sessions) {
+    let now = Instant::now();
+    if !sessions.look(now) {
+        return;
+    }
+    let (Some(all), Some(panes)) = (app.mux.api(Api::Sessions).await, app.mux.api(Api::Panes).await) else { return };
+    let panes: Vec<Pane> = panes.iter().map(Pane::of).collect();
+    let Some(report) = sessions.worth_sending(machine_sessions::report(&all, &panes), now) else { return };
+    let body = match serde_json::to_value(&report) {
+        Ok(b) => b,
+        Err(e) => return warn!("this machine's sessions: {e}"),
+    };
+    let call = app.control.cloud_now(Method::PUT, AGENT_MACHINE_SESSIONS, Some(&body));
+    match tokio::time::timeout(REQUEST, call).await {
+        Ok(answer) => {
+            if answer.is_ok() {
+                debug!("told control this machine's sessions");
+            }
+            sessions.answered(report, answer.map(|_| ()), Instant::now());
+        }
+        Err(_) => sessions.timed_out_or(Wait::For(TROUBLE, "control didn't answer".into()), report, Instant::now()),
+    }
+}
+
 /// Whether this machine reports now: it has joined control.
 fn enabled(app: &App) -> bool {
     app.control.enrolled().is_some()
@@ -408,7 +470,7 @@ async fn title_of(app: &App, id: PaneId) -> Option<String> {
 
 /// Why a report wasn't sent.
 #[derive(Debug)]
-enum Wait {
+pub(crate) enum Wait {
     /// Nothing more is sent for a while: control can't be reached, is busy,
     /// or refuses this machine.
     For(Duration, String),
@@ -421,7 +483,7 @@ enum Wait {
 }
 
 /// What a refusal means for what's kept.
-fn wait_of(e: CloudRefused) -> Wait {
+pub(crate) fn wait_of(e: CloudRefused) -> Wait {
     match e {
         // Not signed in as far as control can tell (401), no grant (403),
         // the flag off there (404), a control from before this (405), the
@@ -441,9 +503,26 @@ fn wait_of(e: CloudRefused) -> Wait {
     }
 }
 
-async fn send(app: &App, id: PaneId, state: &BlockState, age: u64, plain: &mut bool) -> Result<(), Wait> {
-    let put = |age_ms| PutBlockState { pane: id.to_string(), block: state.clone().into(), age_ms };
-    let call = |put: PutBlockState| async move {
+/// What control was seen to refuse of a block's report, until every block
+/// is sent again (when each is tried once more: control may have been
+/// upgraded).
+#[derive(Debug, Default)]
+struct Takes {
+    /// Its age: control is from before Arugula #745.
+    plain: bool,
+    /// Its project and card: control is from before Arugula inversion L2.
+    bare: bool,
+}
+
+async fn send(
+    app: &App,
+    id: PaneId,
+    state: &BlockState,
+    place: &Place,
+    age: u64,
+    takes: &mut Takes,
+) -> Result<(), Wait> {
+    let put = |put: PutBlockState| async move {
         let body = serde_json::to_value(&put).map_err(|e| Wait::Dropped(e.to_string()))?;
         let call = app.control.cloud_now(Method::PUT, AGENT_BLOCK_STATE, Some(&body));
         match tokio::time::timeout(REQUEST, call).await {
@@ -452,16 +531,66 @@ async fn send(app: &App, id: PaneId, state: &BlockState, age: u64, plain: &mut b
             Ok(Err(e)) => Err(wait_of(e)),
         }
     };
-    if *plain {
-        return call(put(None)).await;
+    send_with(put, id, state, place, age, takes).await
+}
+
+/// A block's report, through `put`, with what control is known to take of
+/// it: without its project and card, or its age, once control was seen to
+/// refuse them.
+async fn send_with<F, Fut>(
+    put: F,
+    id: PaneId,
+    state: &BlockState,
+    place: &Place,
+    age: u64,
+    takes: &mut Takes,
+) -> Result<(), Wait>
+where
+    F: Fn(PutBlockState) -> Fut,
+    Fut: Future<Output = Result<(), Wait>>,
+{
+    let report = |placed: bool| {
+        let mut block: BlockStateReport = state.clone().into();
+        if placed {
+            (block.project, block.work_item) = (place.project.clone(), place.work_item.clone());
+        }
+        block
+    };
+    if place.is_none() || takes.bare {
+        return send_aged(&put, id, report(false), age, &mut takes.plain).await;
     }
-    match call(put(Some(age))).await {
+    match send_aged(&put, id, report(true), age, &mut takes.plain).await {
+        // Any 4xx: a control from before them refuses a field it doesn't
+        // know (a 422), and one that checks them against a grant may refuse
+        // them (a 403). If the same report without them goes through, it's
+        // them.
+        Err(Wait::Dropped(_)) => {}
+        Err(Wait::For(d, _)) if d == NO_GRANT => {}
+        sent => return sent,
+    }
+    send_aged(&put, id, report(false), age, &mut takes.plain).await?;
+    takes.bare = true;
+    debug!("control takes a block's state without its project and card");
+    Ok(())
+}
+
+/// A block's report, with its age unless control was seen to refuse one.
+async fn send_aged<F, Fut>(put: &F, id: PaneId, block: BlockStateReport, age: u64, plain: &mut bool) -> Result<(), Wait>
+where
+    F: Fn(PutBlockState) -> Fut,
+    Fut: Future<Output = Result<(), Wait>>,
+{
+    let body = |age_ms| PutBlockState { pane: id.to_string(), block: block.clone(), age_ms };
+    if *plain {
+        return put(body(None)).await;
+    }
+    match put(body(Some(age))).await {
         // A control from before Arugula #745 refuses a field it doesn't
         // know: if the same report without the age goes through, it's that.
         Err(Wait::Dropped(why)) => {
             // Refused without the age too: this report. Failed or timed out:
             // kept, as any other.
-            call(put(None)).await.map_err(|e| match e {
+            put(body(None)).await.map_err(|e| match e {
                 Wait::Dropped(_) => Wait::Dropped(why),
                 e => e,
             })?;
@@ -617,6 +746,106 @@ mod tests {
         let mut words = again_words(&[(1, Attention::Done), (3, Attention::NeedsInput)], &known);
         words.sort_by_key(|(id, _)| *id);
         assert_eq!(words, [(1, BlockWord::Idle), (2, BlockWord::Closed), (3, BlockWord::NeedsInput)]);
+    }
+
+    /// A fake control for [`send_with`]: the bodies it was sent, in order,
+    /// each answered by `answer`.
+    struct Fake<A> {
+        sent: std::sync::Mutex<Vec<serde_json::Value>>,
+        answer: A,
+    }
+
+    impl<A: Fn(&serde_json::Value) -> Result<(), Wait>> Fake<A> {
+        fn new(answer: A) -> Self {
+            Fake { sent: Default::default(), answer }
+        }
+
+        async fn send(&self, place: &Place, takes: &mut Takes) -> Result<(), Wait> {
+            let state = body(BlockWord::Working, &Repo::default(), None);
+            let put = |p: PutBlockState| {
+                let v = serde_json::to_value(&p).unwrap();
+                let answer = (self.answer)(&v);
+                self.sent.lock().unwrap().push(v);
+                async move { answer }
+            };
+            send_with(put, 3, &state, place, 0, takes).await
+        }
+
+        fn sent(&self) -> Vec<serde_json::Value> {
+            std::mem::take(&mut *self.sent.lock().unwrap())
+        }
+    }
+
+    fn placed() -> Place {
+        Place { project: Some("prj_1".into()), work_item: Some("#7".into()) }
+    }
+
+    /// A block's report says its project and card, beside its state.
+    #[tokio::test]
+    async fn a_report_says_its_project_and_card() {
+        let control = Fake::new(|_| Ok(()));
+        let mut takes = Takes::default();
+        control.send(&placed(), &mut takes).await.unwrap();
+        let sent = control.sent();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(
+            sent[0],
+            serde_json::json!({ "pane": "3", "age_ms": 0,
+                "block": { "state": "working", "project": "prj_1", "work_item": "#7" } })
+        );
+        control.send(&Place::default(), &mut takes).await.unwrap();
+        assert_eq!(control.sent()[0]["block"], serde_json::json!({ "state": "working" }), "none: none said");
+    }
+
+    /// A control from before them refuses a report with a project and card
+    /// (a 422): the same report goes again at once without them, and the
+    /// next ones go without them until every block is sent again.
+    #[tokio::test]
+    async fn an_old_control_gets_the_report_without_project_and_card() {
+        let control = Fake::new(|v| match v["block"].get("project") {
+            Some(_) => Err(Wait::Dropped("unknown field `project`".into())),
+            None => Ok(()),
+        });
+        let mut takes = Takes::default();
+        control.send(&placed(), &mut takes).await.expect("not lost");
+        let sent = control.sent();
+        let last = sent.last().unwrap();
+        assert_eq!(last["block"], serde_json::json!({ "state": "working" }), "{sent:?}");
+        assert_eq!(last["age_ms"], 0, "the age wasn't what it refused: {sent:?}");
+        assert!(takes.bare && !takes.plain);
+
+        control.send(&placed(), &mut takes).await.unwrap();
+        assert_eq!(control.sent().len(), 1, "remembered: one request");
+
+        // Every block is sent again: they are tried once more.
+        let mut takes = Takes::default();
+        control.send(&placed(), &mut takes).await.unwrap();
+        assert!(control.sent()[0]["block"]["project"].is_string());
+    }
+
+    /// Any 4xx to a report with them is tried without them: a 403 for
+    /// them alone is remembered, and a 403 without them too is the
+    /// machine's (no grant), which waits as before, the report kept.
+    #[tokio::test]
+    async fn a_refusal_with_project_and_card_is_tried_without() {
+        let refused = || Wait::For(NO_GRANT, "403".into());
+        let control = Fake::new(|v| if v["block"].get("project").is_some() { Err(refused()) } else { Ok(()) });
+        let mut takes = Takes::default();
+        control.send(&placed(), &mut takes).await.expect("not lost");
+        assert_eq!(control.sent().len(), 2);
+        assert!(takes.bare);
+
+        let control = Fake::new(|_| Err(refused()));
+        let mut takes = Takes::default();
+        let sent = control.send(&placed(), &mut takes).await;
+        assert!(matches!(sent, Err(Wait::For(d, _)) if d == NO_GRANT), "{sent:?}");
+        assert!(!takes.bare, "not them");
+
+        // A 5xx isn't them: the report is kept, with them, for its retry.
+        let control = Fake::new(|_| Err(Wait::Failed("502".into())));
+        assert!(matches!(control.send(&placed(), &mut takes).await, Err(Wait::Failed(_))));
+        assert_eq!(control.sent().len(), 1);
+        assert!(!takes.bare);
     }
 
     #[test]
