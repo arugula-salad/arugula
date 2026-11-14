@@ -32,6 +32,7 @@ import { AppearanceLayer } from "../shared/ui/appearance";
 import { Client } from "./client";
 import { directory } from "./hosts";
 import { followSource, Machines } from "./machines";
+import { appAddress, type PagesFlag } from "./app-redirect";
 import { Connecting, MachineView, Swarm } from "./views";
 import { openTeamChat } from "./blocks";
 import { measureCell } from "./ui/cells";
@@ -90,6 +91,22 @@ if (moved) {
 addEventListener("hashchange", () => {
   const to = platformOrigin() ? platformPath(location.hash) : null;
   if (to) location.replace(`${platformOrigin()}${to}`);
+});
+// Arugula #989: once the cloud says this page's own places live in the app
+// (`pages: "app"`), a pane, a machine, Swarm or a machine's own place
+// opens there, now and on a later hash change. Signing in, passkeys,
+// secrets, approvals and chat stay (./app-redirect). A bare address moves
+// once someone's signed in, below.
+const bareAtLoad = !location.hash && !location.search;
+const toApp = (signedIn: boolean) => (linkMatch ? null : appAddress(info as PagesFlag | null, location.hash, location.search, signedIn));
+const early = toApp(false);
+if (early) {
+  location.replace(early);
+  await new Promise(() => {});
+}
+addEventListener("hashchange", () => {
+  const to = toApp(false);
+  if (to) location.replace(to);
 });
 const session = info && !linkMatch ? new ControlSession(info) : null;
 setControlSession(session);
@@ -174,6 +191,13 @@ if (session) {
       () => {},
     );
   followSource(session);
+  // Opened bare and signed in: the app is where the page is now. Only
+  // then, so a dialog this page opened from its address isn't cut short.
+  if (bareAtLoad)
+    session.subscribe(() => {
+      const to = session.phase === "ready" && !location.hash ? toApp(true) : null;
+      if (to) location.replace(to);
+    });
   let seenAccount = "";
   session.subscribe(() => {
     // M123: chat is control's, once the account is in (it asks whether

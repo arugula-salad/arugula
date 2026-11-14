@@ -27,6 +27,11 @@ const MACHINE = /^([0-9a-f]{6,64})(?:-.*)?$/;
 const BOARD = /^brd_[\w-]+$/;
 /** The shell's own places over a machine, as their fragments say them. */
 const LAYER = /^(?:overview(?:=\d+)?|agents(?:=team)?|settings(?:=[\w-]+)?|developer|getting-started=\w+)$/;
+/** Those of them control's page sends on to the app: the machine's own.
+ * Your account's, your devices' and the rest of Settings stay with
+ * control's sign-in and passkeys, and so does Getting started (joining a
+ * machine to control). */
+const MOVES = /^(?:overview(?:=\d+)?|agents(?:=team)?|settings=machine|developer)$/;
 
 const num = (v: string | null) => (v !== null && /^\d{1,9}$/.test(v) ? Number(v) : undefined);
 
@@ -130,6 +135,6 @@ export function fromControl(hash: string, search = ""): string | null {
   if (m) return `/p/${m[1]}`;
   if (hash === "#docs") return "/docs";
   const layer = hash.slice(1);
-  if (LAYER.test(layer)) return machinesPath({ at: "machines", layer });
+  if (MOVES.test(layer)) return machinesPath({ at: "machines", layer });
   return null;
 }
