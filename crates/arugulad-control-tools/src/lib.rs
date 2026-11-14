@@ -3,7 +3,8 @@
 //! #1094), linked repos (`forge_read`, `forge_draft`, `link_repo`, M169),
 //! conversations (`read_thread`, `search_threads`, `post_thread`, M198),
 //! native issues (`issue_write`, M200), boards (`board_read`,
-//! `board_write`), links between items (`link`, #761), runs (`start_run`, `read_run`, M216), deploys
+//! `board_write`), links between items (`link`, #761), moving work out of
+//! a project (`project_split`, Arugula #973), runs (`start_run`, `read_run`, M216), deploys
 //! (`plan_deploy`, `read_deploy`, M252) and agent sessions
 //! (`session_start`, `session_reply`, `session_stop`, aru-121; `read_session`, Fleet 5),
 //! with `list`'s kinds `cloud_workspaces`, `cloud_agents`, `linked_repos`,
@@ -30,6 +31,7 @@ mod links;
 mod plane_home;
 mod repos;
 mod runs;
+mod splits;
 mod threads;
 mod trackers;
 
@@ -59,7 +61,7 @@ use crate::{
 pub fn register() {
     /// What a tool is listed after, its row and its call.
     type Listed = (&'static str, fn() -> Def, registry::Run);
-    let tools: [Listed; 21] = [
+    let tools: [Listed; 22] = [
         ("draft", forge_read_def, run_forge_read),
         ("forge_read", forge_draft_def, run_forge_draft),
         ("device_call", read_cloud_def, run_read_cloud),
@@ -81,6 +83,7 @@ pub fn register() {
         (agent_sessions::READ_TOOL, session_stop_def, run_session_stop),
         (agent_sessions::STOP_TOOL, tracker_write_def, run_tracker_write),
         (trackers::WRITE_TOOL, link_def, run_link),
+        (links::TOOL, project_split_def, run_project_split),
     ];
     for (after, def, run) in tools {
         registry::tool(registry::Tool { after: Some(after), def, run });
@@ -186,6 +189,7 @@ one!(run_board_read, boards::board_read);
 grouped!(run_board_write, boards::WRITE_TOOL, |c, kind, args| boards::board_write(c, kind, args));
 grouped!(run_tracker_write, trackers::WRITE_TOOL, |c, kind, args| trackers::tracker_write(c, kind, args));
 one!(run_link, links::link);
+one!(run_project_split, splits::project_split);
 one!(run_start_run, runs::start_run);
 one!(run_read_run, runs::read_run);
 one!(run_plan_deploy, deploys::plan_deploy);
@@ -416,6 +420,27 @@ fn link_def() -> Def {
         flag: None,
         output: None,
         human: Human::In(boards::READ_TOOL),
+    }
+}
+
+// Arugula #973: moving work out of a project, planned first.
+fn project_split_def() -> Def {
+    Def {
+        name: splits::TOOL,
+        title: "Move work out of a project",
+        description: splits::DESCRIPTION,
+        args: Args::One(schema_for_type::<splits::SplitArgs>),
+        read_only: false,
+        destructive: true,
+        idempotent: false,
+        open_world: true,
+        flag: None,
+        output: None,
+        human: line(
+            "move repos, boards, issues and Docs out of a project into another, after showing you its plan",
+            "Plan moving acme/app and its board out of this project into a new one called App.",
+            Needs::Control,
+        ),
     }
 }
 
