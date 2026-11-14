@@ -17,7 +17,7 @@
 //
 // Built by itself into dist/sw.js as a classic worker (vite.sw.config.ts).
 
-import { E2ESocket } from "./e2e/channel.ts";
+import { connectWith } from "./e2e/channel.ts";
 import { KEY_CACHE } from "./local-key-cache.ts";
 import type { ActRequest } from "../shared/proto";
 import { existingKeys, loadWorkerDirectory } from "./e2e/keys.ts";
@@ -188,13 +188,13 @@ async function act(daemon: string | undefined, body: ActRequest): Promise<boolea
     // aru-141: with machine tokens as the page uses them (this worker is
     // on control's origin, so its session cookie goes along); else with
     // the device key.
-    const cred = d.tokens ? controlTokens() : keys;
-    if (!cred) return false;
+    const tokens = d.tokens ? controlTokens() : undefined;
+    if (!tokens && !keys) return false;
     const urls = [
       ...d.direct.map((u) => ({ url: `${u.replace(/^http/, "ws").replace(/\/$/, "")}/e2e`, timeoutMs: 1500 })),
       { url: d.relay, timeoutMs: 10_000 },
     ];
-    const sock = await E2ESocket.connect(urls, { id: d.id, noise: d.noise }, cred);
+    const sock = await connectWith(urls, { id: d.id, noise: d.noise }, tokens, keys ?? undefined);
     try {
       sock.start();
       const res = await sock.request("POST", "/api/attention/act", body);

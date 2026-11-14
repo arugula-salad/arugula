@@ -90,6 +90,31 @@ export type Credential = DeviceKeys | MachineTokens;
 
 export const usesTokens = (c: Credential): c is MachineTokens => typeof (c as MachineTokens).token === "function";
 
+/** Whether a device should reach the machine with its key after trying
+ * tokens first: control gives no tokens at all (one without an issuer key
+ * answers 404, as a dev or test control does), or the machine's daemon is
+ * from before tokens. Anything else (signed out, not let in, a refused
+ * token) the key wouldn't fix. */
+export function keyAfterTokens(e: unknown): boolean {
+  const err = e as { noToken?: boolean; status?: number; byDaemon?: boolean; code?: string };
+  return (err.noToken === true && err.status === 404) || (err.byDaemon === true && err.code === "malformed");
+}
+
+/** Open a channel with `tokens` when given, and with this device's `keys`
+ * if tokens can't reach it ([`keyAfterTokens`]) or there are none. */
+export async function connectWith(urls: Route[], daemon: DaemonRef, tokens: MachineTokens | undefined, keys: DeviceKeys | undefined): Promise<E2ESocket> {
+  if (tokens) {
+    try {
+      return await E2ESocket.connect(urls, daemon, tokens);
+    } catch (e) {
+      if (keys && keyAfterTokens(e)) return E2ESocket.connect(urls, daemon, keys);
+      throw e;
+    }
+  }
+  if (keys) return E2ESocket.connect(urls, daemon, keys);
+  throw new Error("no device key and no token to reach it with");
+}
+
 export interface Response {
   status: number;
   ok: boolean;
