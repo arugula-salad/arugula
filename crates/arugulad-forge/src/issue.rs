@@ -873,7 +873,11 @@ mod tests {
             resolve_config(&json!({ "issue": "new", "title": "T", "repo": "https://git.example/o/r" })).await.unwrap();
         assert_eq!((c["provider"].as_str(), c["host"].as_str()), (Some("forgejo"), Some("git.example")), "{c}");
         let c = resolve_config(&json!({ "issue": "new", "title": "T", "repo": "o/r" })).await.unwrap();
-        assert_eq!((c["provider"].as_str(), c["host"].as_str()), (Some("forgejo"), None), "a bare one, as before");
+        assert_eq!(
+            (c["provider"].as_str(), c["host"].as_str()),
+            (Some("github"), Some("github.com")),
+            "a bare one (#1009)"
+        );
         let e = resolve_config(&json!({ "issue": "new", "title": "T", "repo": "https://github.com/o" })).await;
         assert!(e.unwrap_err().contains("not a repository"));
         // An issue by its link, or a PR link given as an issue's.
