@@ -232,8 +232,8 @@ export function blockFacts(b: BoardBlockState): string[] {
 /** One of a row's work sessions, as the drawer's Live session picks among them (Arugula iss_c62e00eee3b4b953ff054d2951827de8): an agent block on a machine (`machine` blank when the reader isn't told which), or a session on a hosted box. `word` and `tone` are its state; `facts` its branch and the rest, short. */
 export type LiveSession = { key: string; name: string; word: string; tone: Tone; facts: string[]; needs: boolean } & ({ kind: "block"; machine: string; pane: string } | { kind: "hosted"; session: string; live: boolean });
 
-/** A row's work sessions, the one to show first first: one that needs a person, then one working, then one stopped, then those that no longer move the row. Nothing says when each last moved, so among equals the one attached last comes first. `waiting` is the row's open ask (`waitingOf`): the agent that holds the row waits with it. */
-export function liveSessions(r: Pick<BoardRow, "attachments"> & Partial<Pick<BoardRow, "sessions">>, waiting?: { words: string; mine: boolean } | null): LiveSession[] {
+/** A row's work sessions, the one to show first first: one that needs a person, then one working, then one stopped, then those that no longer move the row. Nothing says when each last moved, so among equals the one attached last comes first. `waiting` is the row's open ask (`waitingOf`): the agent that holds the row waits with it; `stalled`, the row's stall (`marksOf`), which it says while it waits on no one. */
+export function liveSessions(r: Pick<BoardRow, "attachments"> & Partial<Pick<BoardRow, "sessions">>, waiting?: { words: string; mine: boolean } | null, stalled?: string | null): LiveSession[] {
   const out: (LiveSession & { rank: number; at: number })[] = [];
   r.attachments.forEach((a, at) => {
     const p = a.pointer;
@@ -242,9 +242,10 @@ export function liveSessions(r: Pick<BoardRow, "attachments"> & Partial<Pick<Boa
     const holds = holdsRow(a);
     const asks = !!waiting && holds;
     const needs = b?.state === "needs_input" || (asks && waiting!.mine);
-    const word = asks ? waiting!.words : b ? BLOCK_LABEL[b.state] : "not reported";
+    const stall = !asks && holds && !needs && !!stalled;
+    const word = asks ? waiting!.words : stall ? stalled! : b ? BLOCK_LABEL[b.state] : "not reported";
     const rank = needs ? 0 : !holds ? 3 : b!.state === "working" ? 1 : 2;
-    out.push({ kind: "block", key: a.id, machine: p.machine, pane: p.pane, name: b?.title?.trim() || pointerLabel(p, a.live), word, tone: needs ? "accent" : "muted", facts: b ? blockFacts(b) : [], needs, rank, at });
+    out.push({ kind: "block", key: a.id, machine: p.machine, pane: p.pane, name: b?.title?.trim() || pointerLabel(p, a.live), word, tone: needs ? "accent" : stall ? "warn" : "muted", facts: b ? blockFacts(b) : [], needs, rank, at });
   });
   (r.sessions ?? []).forEach((x: BoardRowSession, i) => {
     const needs = x.live && x.state === "needs_input";

@@ -997,3 +997,13 @@
 .board-live-state {
   margin: 6px 0;
 }
+
+/* A drawer with a live pane, on a phone: the whole screen, so the pane has room (Arugula iss_c62e00eee3b4b953ff054d2951827de8). */
+@media (max-width: 600px) {
+  .side-sheet.board-drawer-live {
+    height: 100%;
+    max-height: none;
+    border-top: 0;
+    border-radius: 0;
+  }
+}

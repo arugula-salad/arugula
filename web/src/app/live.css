@@ -1,0 +1,29 @@
+/* A board card's live pane in the app (live-pane.tsx): a fixed slot under
+   the drawer's state card. The pane keeps its size in cells; the slot
+   scrolls. Outlined while you drive. */
+.live-pane .live-slot {
+  position: relative;
+  height: 320px;
+  margin: 8px 0;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
+  background: var(--bg);
+}
+
+.live-pane .live-slot .term-host,
+.live-pane .live-slot .xterm {
+  height: 100%;
+}
+
+.live-pane.driving .live-slot {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+/* On a phone the drawer fills the screen (boards.css): the pane takes most of it. */
+@media (max-width: 600px) {
+  .board-drawer-live .live-pane .live-slot {
+    height: 55vh;
+  }
+}
