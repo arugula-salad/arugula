@@ -971,6 +971,20 @@ impl Daemon {
         if tag.is_some() && self.tagged_off.contains(&pane) {
             return Err(format!("%{pane}'s owner silenced teammates' follow-ups for this session"));
         }
+        // A follow-up waits only for Claude Code's hooks (#630). A pane where
+        // nothing could ever take one (a shell, Codex) refuses it at once,
+        // rather than keep it for no one. Claude Code without its hooks
+        // keeps it, held behind the card ([`refresh_held`](Self::refresh_held)).
+        if !self.inbox.contains_key(&pane) && !self.hooked.contains(&pane) {
+            let command = self.pane_info(p).command;
+            let agent = command.as_deref().and_then(agent_in);
+            if agent.as_deref() != Some("claude") {
+                let runs = agent.map_or_else(|| "no agent".to_owned(), |a| a.to_owned());
+                return Err(format!(
+                    "%{pane} can't take follow-ups: they go to Claude Code through its hooks, and this pane runs {runs}"
+                ));
+            }
+        }
         info!(pane, who = by.who, "follow-up");
         p.note(format!("follow-up: {text}"), by.name.clone(), HistoryKind::Answer);
         self.config.acl.record(serde_json::json!({

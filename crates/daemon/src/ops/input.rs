@@ -108,7 +108,9 @@ impl Handle for PaneMentions {
 /// A follow-up for the agent in a pane (M29), from whoever may drive it:
 /// an agent block's next prompt, or Claude Code's in a terminal (through
 /// its inbox hook, never typed). Recorded as theirs. `delivered`: it went
-/// straight in (else it waits for the agent).
+/// straight in (else it waits for the agent); `held`: it waits for hooks
+/// that aren't installed (#630). A pane where nothing can take one (a
+/// shell, Codex) refuses it.
 impl Handle for PaneFollowUp {
     async fn handle(cx: &Cx<'_>, id: PaneId, req: FollowUpRequest) -> Result<FollowedUp, OpError> {
         let app = cx.app;
@@ -116,10 +118,13 @@ impl Handle for PaneFollowUp {
         if let Some(b) = app.mux.api(|r| Api::Block(id, r)).await.flatten() {
             let name = (by.who != "owner").then_some(by.name.as_str());
             b.call_by("send", serde_json::json!({ "text": req.text }), name).await.map_err(bad)?;
-            return Ok(FollowedUp { delivered: true });
+            return Ok(FollowedUp { delivered: true, held: false });
         }
         match app.mux.api(|r| Api::FollowUp(id, req.text, by, None, r)).await {
-            Some(Ok(now)) => Ok(FollowedUp { delivered: now }),
+            Some(Ok(now)) => {
+                let held = !now && crate::agent_mentions::unhooked(app, id).await;
+                Ok(FollowedUp { delivered: now, held })
+            }
             Some(Err(e)) => Err(bad(e).into()),
             None => Err(shutting_down().into()),
         }

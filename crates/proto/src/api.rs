@@ -1757,6 +1757,12 @@ pub struct FollowUpRequest {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct FollowedUp {
     pub delivered: bool,
+    /// It waits for Claude Code in a terminal whose hooks aren't installed
+    /// (#630): it goes in once they are, or when the pane's owner delivers
+    /// it from its card.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub held: bool,
 }
 
 /// What answering a question or permission card on a terminal or block
@@ -2722,8 +2728,9 @@ mod wire {
             json!({ "action": "follow_up", "text": "go on", "by": by }),
         );
         same(&InboxAnswer::Replaced, json!({ "action": "replaced" }));
-        same(&FollowedUp { delivered: true }, json!({ "delivered": true }));
-        same(&FollowedUp { delivered: false }, json!({ "delivered": false }));
+        same(&FollowedUp { delivered: true, held: false }, json!({ "delivered": true }));
+        same(&FollowedUp { delivered: false, held: false }, json!({ "delivered": false }));
+        same(&FollowedUp { delivered: false, held: true }, json!({ "delivered": false, "held": true }));
         let req: FollowUpRequest = serde_json::from_value(json!({ "text": "hi" })).unwrap();
         assert_eq!(req.text, "hi");
         assert!(serde_json::from_value::<FollowUpRequest>(json!({})).is_err());
