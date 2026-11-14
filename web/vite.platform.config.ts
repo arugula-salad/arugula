@@ -10,7 +10,8 @@ import { defineConfig, type Plugin } from "vite";
 //
 // `just dev-platform` serves it on 127.0.0.1:7691 next to `just dev-control`
 // (7690), with control's paths sent there: the browser's session cookie is
-// the same host's, so signing in on control's page signs this page in.
+// the same host's, so signing in on control's page signs this page in. The
+// relay's sockets (`/api/relay/…`) go there too, for the app's panes.
 const control = process.env.DEV_CONTROL_ORIGIN ?? `http://127.0.0.1:${process.env.DEV_CONTROL_PORT ?? 7690}`;
 
 const MANIFEST = {
@@ -58,7 +59,7 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       // Control checks a session's Origin is its own.
-      "/api": { target: control, changeOrigin: true, headers: { origin: control } },
+      "/api": { target: control, changeOrigin: true, headers: { origin: control }, ws: true },
     },
   },
   build: {
