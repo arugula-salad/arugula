@@ -57,9 +57,10 @@ export function chatLastTests(device: Record<string, unknown>, phone: boolean) {
   test("a reload comes back to it too", async ({ page }) => {
     await open(page);
     await pick(page, BETA);
-    // The room's address, and then the list's: both are beta.
     await page.reload();
     await expect(view(page, BETA)).toBeVisible();
+    // A computer's list address shows beta; a phone's page load is the list.
+    if (phone) return;
     await open(page);
     await expect(view(page, BETA)).toBeVisible();
     await frames(page);
@@ -104,13 +105,48 @@ export function chatLastTests(device: Record<string, unknown>, phone: boolean) {
     if (phone) await onList(page);
     else await expect(view(page, ALPHA)).toBeVisible();
     await pick(page, GAMMA);
-    await open(page, `${CHAT}?me=acct_a`);
+    // Opened from the app, as a phone's page load is the list.
+    const again = async (me: string) => {
+      await open(page, `${CHAT}?me=${me}`);
+      if (phone) {
+        await onList(page);
+        await awayAndBack(page);
+      }
+    };
+    await again("acct_a");
     await expect(view(page, BETA)).toBeVisible();
-    await open(page, `${CHAT}?me=acct_b`);
+    await again("acct_b");
     await expect(view(page, GAMMA)).toBeVisible();
   });
 
   if (phone) {
+    test("a reload of the list stays the list", async ({ page }) => {
+      await open(page);
+      await pick(page, BETA);
+      // The list's own address, with beta the room kept.
+      await open(page);
+      await onList(page);
+      await page.reload();
+      await onList(page);
+      await frames(page);
+      await onList(page);
+    });
+
+    test("a page load of /chat is the list, and the rail's Chat (openChat) then opens the kept room", async ({ page }) => {
+      await open(page);
+      await pick(page, BETA);
+      // A fresh load of the list address, beta being the one kept.
+      await open(page);
+      await onList(page);
+      await frames(page);
+      await onList(page);
+      await awayAndBack(page);
+      await expect(view(page, BETA)).toBeVisible();
+      // With the list beneath it, so Back climbs.
+      await page.goBack();
+      await onList(page);
+    });
+
     test("Back from the room it opened in is the list, and stays the list", async ({ page }) => {
       await open(page);
       await pick(page, BETA);

@@ -77,6 +77,30 @@ export function arrive(path: string, hash = "") {
   go(path); // renders; same path, so no new entry
 }
 
+// Chat opened from inside the app (the rail's Chat, the Chat tab, the
+// shell's hand-over) resumes the room last open (#965); a page load or reload
+// of `/chat` is the list, as the address says. A cold list isn't marked, so
+// the opening says so: `openedInApp` is set just before the navigation and
+// read once by the chat page that mounts for it.
+let inApp = false;
+
+/** Chat is about to open from inside the app, not from the address. A
+ * chat already open stays as it is: nothing would read it. */
+export function openingChat() {
+  inApp = chatLevel() === null;
+}
+
+/** Whether this opening of chat came from inside the app; asks once. */
+export function openedInApp(): boolean {
+  const was = inApp;
+  inApp = false;
+  return was;
+}
+// A navigation that never reached chat leaves nothing behind.
+onRoute(() => {
+  if (chatLevel() === null) inApp = false;
+});
+
 /** The page's first route, if it's a room or thread arrived at cold. */
 export function arriveHere() {
   const level = chatLevel();

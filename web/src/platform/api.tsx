@@ -5,7 +5,7 @@
 
 import { noMachines, type PlatformApi, type PlatformTeam } from "../shared/platform-api";
 import { PlatformBar } from "./bar";
-import { arrive, chatGo, leaveChatTo, swipeDown, swipeGo, swipeUp } from "./chat-nav";
+import { arrive, chatGo, leaveChatTo, openedInApp, openingChat, swipeDown, swipeGo, swipeUp } from "./chat-nav";
 import { chatProject, currentProject, lastTeamProject } from "./current-project";
 import { names, roomPath } from "./links";
 import { current, go, pathOf, type Route } from "./router";
@@ -28,6 +28,7 @@ export const platformApi: PlatformApi = {
   nav: {
     openChat() {
       const r = chatIn();
+      if (r) openingChat();
       go(r ? pathOf(r, names) : "/");
     },
     closeChat() {
@@ -36,6 +37,7 @@ export const platformApi: PlatformApi = {
       else go("/");
     },
     openRoom: (room, msg, thread) => chatGo(roomPath(room, msg, thread)),
+    openedInApp,
     resume: (room, thread) => arrive(roomPath(room, undefined, thread)),
     up: () => swipeUp(),
     down: () => swipeDown(),
