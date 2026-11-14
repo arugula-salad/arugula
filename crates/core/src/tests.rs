@@ -618,7 +618,7 @@ fn an_inferred_card_is_set_once_in_the_sessions_project() {
 }
 
 #[test]
-fn inferred_work_follows_its_repo_without_its_card_and_work_set_by_hand_stays() {
+fn inferred_work_follows_its_repo_with_an_iss_card_and_work_set_by_hand_stays() {
     let mut m = mux_with_session();
     for _ in 0..3 {
         m.apply(Intent::NewSession { name: None, from_pane: None }).unwrap();
@@ -626,9 +626,10 @@ fn inferred_work_follows_its_repo_without_its_card_and_work_set_by_hand_stays() 
     for s in 1..=4 {
         m.infer_project(s, project("prj_a"), "acme/app").unwrap();
     }
-    // 1: a card from its branch. 2: work by hand. 3: work taken away by
-    // hand. 4: no work.
+    // 1: a `#N` card from its branch. 2: work by hand. 3: work taken away
+    // by hand. 4: an `iss_…` card.
     m.infer_work(1, work("prj_a", Some("#3")), None).unwrap();
+    m.infer_work(4, work("prj_a", Some("iss_77")), None).unwrap();
     m.apply(Intent::SetSessionWork { session: 2, work: Some(work("prj_a", Some("#5"))), project_name: None }).unwrap();
     m.apply(Intent::SetSessionWork { session: 3, work: None, project_name: None }).unwrap();
 
@@ -637,12 +638,13 @@ fn inferred_work_follows_its_repo_without_its_card_and_work_set_by_hand_stays() 
     assert_eq!(
         at,
         [
-            // The card was prj_a's: its work comes along without it.
+            // `#3` is numbered again in prj_b: its work comes along without it.
             (Some("prj_b"), Some(work("prj_b", None))),
             // Work set by hand keeps the session where it is.
             (Some("prj_a"), Some(work("prj_a", Some("#5")))),
             (Some("prj_b"), None),
-            (Some("prj_b"), None),
+            // The issue moved with the repo: the same card in prj_b.
+            (Some("prj_b"), Some(work("prj_b", Some("iss_77")))),
         ]
     );
     assert!(!m.sessions[0].work_by_hand && m.sessions[1].work_by_hand && m.sessions[2].work_by_hand);

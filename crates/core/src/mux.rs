@@ -560,9 +560,10 @@ impl Mux {
     /// inferred from it takes that one (Arugula #992). A project set by
     /// hand stays, and so does one under work set by hand
     /// ([`Intent::SetSessionWork`]). Inferred work in the old project
-    /// comes along, without its card: a card is in the project it came
-    /// from, as [`Mux::infer_work`] takes none from another. Only the
-    /// label changes. The sessions it moved.
+    /// comes along, and its card with it, as the repo's issues move too:
+    /// an `iss_…` card is the same one in the new project, but a `#N` is
+    /// numbered again there, so that one is dropped. Only the label
+    /// changes. The sessions it moved.
     pub fn follow_repo(&mut self, repo: &str, project: &ProjectRef) -> Vec<SessionId> {
         let moved: Vec<SessionId> = self
             .sessions
@@ -575,7 +576,8 @@ impl Mux {
                 if let Some(w) = s.work.as_mut()
                     && old.is_some_and(|o| o.id == w.project && o.id != project.id)
                 {
-                    *w = WorkRef { project: project.id.clone(), item: None };
+                    w.project = project.id.clone();
+                    w.item.take_if(|i| !i.starts_with("iss_"));
                 }
                 s.id
             })
