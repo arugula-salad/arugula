@@ -7,8 +7,10 @@
 //!   (`arugulad join`); the answer is the code and where to approve it,
 //!   and the daemon waits for the approval in the background. The link
 //!   carries a join secret (#760), so an approval whose MAC checks out is
-//!   saved at once. With an older control (no secret), the page shows the
-//!   account's fingerprint to check against the approving device, and
+//!   saved at once, as is one a signed-in person added with one click,
+//!   which control answers with where the machine went (aru-141). With an
+//!   older control (no secret), the page shows the account's fingerprint
+//!   to check against the approving device, and
 //!   `POST /api/setup/control/confirm` (`{"same": true}`) saves the join;
 //!   `false` drops it. On a machine control dropped (#325), the same
 //!   button joins again: the old enrollment is set aside first.
@@ -408,7 +410,7 @@ fn control_status(app: &App) -> ControlStatus {
     let (pending, error) = JOIN.lock().unwrap().clone();
     ControlStatus {
         joined: saved.map(|s| s.url.clone()),
-        team: saved.and_then(|s| s.team()).map(|t| t.roster.as_ref().map_or(t.pin.team.clone(), |r| r.name.clone())),
+        team: saved.and_then(|s| s.team_name()),
         pending: pending.filter(|p| p.expires_ms > now_ms() && saved.is_none()),
         confirm: APPROVED.lock().unwrap().as_ref().filter(|_| saved.is_none()).map(|a| Confirm {
             account: a.joined.account.clone(),
@@ -502,12 +504,14 @@ async fn start_join(app: &Arc<App>, url: &str, team: Option<&str>) -> Value {
             let app = app.clone();
             crate::task::spawn(async move {
                 let r = crate::control::join_finish(p).await;
-                // The approving device answered the link's secret (#760),
-                // or it's back in the account it was removed from (the
-                // person checked that one when it first joined): saved.
+                // A signed-in person added it (aru-141: control's word is
+                // the trust now), the approving device answered the link's
+                // secret (#760), or it's back in the account it was
+                // removed from (the person checked that one when it first
+                // joined): saved, with nothing to confirm.
                 let r = match r {
                     Ok(a)
-                        if a.check == AccountCheck::Proven
+                        if matches!(a.check, AccountCheck::Control | AccountCheck::Proven)
                             || rejoining.as_deref().is_some_and(|root| a.is_account(root)) =>
                     {
                         let saved = a.save(app.control.state_dir()).map(|_| ());

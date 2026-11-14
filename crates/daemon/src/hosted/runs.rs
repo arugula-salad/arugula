@@ -129,7 +129,7 @@ pub fn owners(saved: &Saved) -> Option<Owners<'_>> {
             Some(Owners::Team { roster: team.roster.as_ref()?, certs: &team.certs })
         }
         Owner::Account(_) => {
-            Some(Owners::Account { trust: &saved.trust, certs: &saved.certs, revocations: &saved.revocations })
+            Some(Owners::Account { trust: saved.trust()?, certs: &saved.certs, revocations: &saved.revocations })
         }
     }
 }

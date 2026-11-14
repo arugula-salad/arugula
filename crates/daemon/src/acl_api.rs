@@ -116,7 +116,10 @@ pub(crate) async fn set(app: &App, b: AclSetRequest) -> Result<Value, ApiError> 
     // Account ids are as control made them; logins aren't case-sensitive.
     let principal =
         if b.principal.starts_with("tailnet:") { b.principal.to_ascii_lowercase() } else { b.principal.clone() };
-    if (principal.starts_with("account:") || principal.starts_with("team:"))
+    // Joined on control's word (aru-141), an account's people get in with
+    // control's tokens, not by certificates chained to a root: none needed.
+    let by_control = app.control.enrolled().is_some_and(|e| e.saved.by_control().is_some());
+    if (principal.starts_with("team:") || (principal.starts_with("account:") && !by_control))
         && b.role.is_some()
         && b.root.is_none()
         && app.acl.list().iter().all(|g| g.principal != principal)

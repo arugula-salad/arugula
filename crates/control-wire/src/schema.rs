@@ -78,7 +78,7 @@ fn files() -> Vec<(&'static str, &'static [&'static str], fn(&mut SchemaGenerato
             issues::AgentIssueHomeQuery, issues::IssueGithub, issues::Issue, issues::IssueQuery, issues::IssueList, issues::NewIssue, issues::IssueListEdit, issues::IssuePatch, issues::IssueEvent, issues::IssuePatched, issues::IssueEvents, issues::IssueHome, issues::IssueHomeRule, issues::IssueHomeChange, issues::IssueExportQuery, issues::IssueComment, issues::ExportedIssue, issues::ExportedPerson, issues::IssueExport,
         ],
         "join" => [
-            join::JoinRequest, join::CliJoinRequest, join::JoinProof, join::JoinStarted, join::JoinPoll, join::PollQuery, join::JoinTeam,
+            join::JoinRequest, join::CliJoinRequest, join::JoinProof, join::JoinStarted, join::JoinPoll, join::PollQuery, join::JoinTeam, join::JoinTokenRequest, join::JoinTokenMade, join::TokenJoinRequest, join::Joined, join::JoinedTeam,
         ],
         "lib" => [
             ControlInfo, ControlAuth, ControlCliJoin, ControlJoinSecret, ControlWhere, ControlDocs, ControlJump, GuestJump, Ack, RemovedAnswer, RemovedAt, DialQuery,

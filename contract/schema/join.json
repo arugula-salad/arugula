@@ -89,7 +89,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "default": null
         },
         "certs": {
           "default": [],
@@ -97,6 +98,18 @@
             "$ref": "#/$defs/Cert"
           },
           "type": "array"
+        },
+        "joined": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Joined"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Added by a signed-in person with no device certificate (aru-141):\nwhere the machine went, on control's word. Then `cert`, `trust`\nand the rest are absent, and the daemon pins no root."
         },
         "mac": {
           "default": null,
@@ -140,7 +153,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "default": null
         }
       },
       "required": [
@@ -272,6 +286,89 @@
       ],
       "type": "object"
     },
+    "JoinTokenMade": {
+      "description": "A join token, made: `ajt_…`, good once, until `expires`.",
+      "properties": {
+        "expires": {
+          "description": "When it stops working (seconds since the epoch).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "token": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "token",
+        "expires"
+      ],
+      "type": "object"
+    },
+    "JoinTokenRequest": {
+      "description": "`POST /api/join-tokens`, by a signed-in person: a join token for their\naccount (`{}`), or for a team (aru-141). The daemon doesn't make them;\nthe CLI, project settings and scripts do.",
+      "properties": {
+        "team": {
+          "description": "The team the machine joins; none for the person's own account.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "Joined": {
+      "description": "Where a machine went, on control's word (aru-141): a join token's\nanswer, and a person's one-click approval in [`JoinPoll`]. The daemon\npins no root: control decides who reaches it.",
+      "properties": {
+        "account": {
+          "description": "The account it's in: its owner.",
+          "type": "string"
+        },
+        "login": {
+          "description": "That account's login.",
+          "type": "string"
+        },
+        "machine": {
+          "description": "The machine's id: its key's.",
+          "type": "string"
+        },
+        "team": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/JoinedTeam"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The team it joined, when it's a team's."
+        }
+      },
+      "required": [
+        "account",
+        "login",
+        "machine"
+      ],
+      "type": "object"
+    },
+    "JoinedTeam": {
+      "description": "The team a [`Joined`] machine is in.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
     "Kind": {
       "oneOf": [
         {
@@ -339,6 +436,38 @@
         "at",
         "by",
         "sig"
+      ],
+      "type": "object"
+    },
+    "TokenJoinRequest": {
+      "description": "`POST /api/join/token`, with no session (aru-141): a daemon joins with\na join token, at once, answered [`Joined`]. `cert` and `proof` are as\nfor [`JoinRequest`]: the key the machine signs its calls with, and\nthat it holds it. A used, expired or unknown token is a 410 with\n`{\"error\"}`.",
+      "properties": {
+        "cert": {
+          "$ref": "#/$defs/Cert"
+        },
+        "features": {
+          "default": "",
+          "description": "What the daemon understands, comma-separated.",
+          "type": "string"
+        },
+        "join_token": {
+          "type": "string"
+        },
+        "proof": {
+          "$ref": "#/$defs/JoinProof"
+        },
+        "urls": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "cert",
+        "proof",
+        "join_token"
       ],
       "type": "object"
     },
