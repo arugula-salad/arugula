@@ -1294,10 +1294,21 @@ it came from.
   carries input, method calls or intents. A block's channel carries its
   grant there instead ([Block channels](#block-channels)), and a public
   preview's its public grant ([Public previews](#public-previews)), which
-  only say who may open the channel.
+  only say who may open the channel. A channel opened with a machine token
+  (aru-141) carries `{"machine_token": "<jwt>"}` there (`TokenHello`),
+  under a static key made for that channel, which the daemon ignores. The
+  web shell does this when the browser isn't one of the account's devices
+  (or `localStorage["arugula.machine-tokens"]` is `first`; `off` never
+  does): it takes each machine's Noise key from the directory's `noise`,
+  else the certificate listed beside it, and asks control for a token
+  (`POST /api/machines/{id}/token`) for every try that sends message 1,
+  since the daemon takes each `jti` once. A `machine-token` refusal
+  (expired, already used) gets a fresh token and one more try on the same
+  way (`web/src/shell/e2e/channel.ts`, `E2ESocket.connect`).
 - **Message 2's payload** on a device's own channel is the daemon's clock,
   `{"now": <ms>}` (`Welcome`), or a refusal,
-  `{"ok":false,"refused":"unknown-device","message":"…"}`. The `hello` tree
+  `{"ok":false,"refused":"unknown-device","message":"…"}` (`machine-token`
+  for a token it won't take). The `hello` tree
   comes after the handshake, as the first message on the channel.
 
 **Framing.**

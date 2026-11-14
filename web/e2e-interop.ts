@@ -471,6 +471,51 @@ try {
     () => true,
   );
   check("wrong daemon refused", wrong);
+
+  // 4b. Machine tokens (aru-141): message 1 carries the token, under a
+  // static key made for the channel; a token the daemon refused is
+  // replaced by a fresh one, once, on the same way; and a way that never
+  // got as far as message 1 leaves its token for the next.
+  const asked: string[] = [];
+  const tokens = (...give: string[]) => ({
+    token: async (d: string) => {
+      asked.push(d);
+      const t = give.shift();
+      if (!t) throw new Error("no more tokens");
+      return t;
+    },
+  });
+  const via = async (cred: ReturnType<typeof tokens>, routes = [{ url: `ws://${addr}/`, timeoutMs: 2000 }]) => {
+    const s = await E2ESocket.connect(routes, { id, noise }, cred);
+    const j = (await s.request("GET", "/who")).json<{ token: string | null; who: string }>();
+    s.close();
+    return j;
+  };
+  const one = await via(tokens("tok-1"));
+  check("a token channel carries its token in message 1", one.token === "tok-1" && asked.length === 1 && asked[0] === id, JSON.stringify(one));
+  check("…under a key that isn't this device's", one.who !== phone.noisePub);
+  const two = await via(tokens("tok-2"));
+  check("…and a new key for each channel", two.who !== one.who && two.token === "tok-2");
+  asked.length = 0;
+  const again = await via(tokens("spent-1", "tok-3"));
+  check("a refused token is replaced and tried again", again.token === "tok-3" && asked.length === 2, JSON.stringify({ again, asked }));
+  const twice = await E2ESocket.connect([{ url: `ws://${addr}/`, timeoutMs: 2000 }], { id, noise }, tokens("spent-1", "spent-2", "tok-4")).then(
+    () => "let in",
+    (e: Error & { code?: string; byDaemon?: boolean }) => (e.byDaemon && e.code === "machine-token" ? "refused" : e.message),
+  );
+  check("…once: refused again, it stops for now", twice === "refused", twice);
+  asked.length = 0;
+  const dead = { url: "ws://127.0.0.1:9/", timeoutMs: 500 };
+  const kept = await via(tokens("tok-5", "tok-6"), [dead, { url: `ws://${addr}/`, timeoutMs: 2000 }]);
+  check("a way that never sent message 1 leaves its token for the next", kept.token === "tok-5" && asked.length === 1, JSON.stringify({ kept, asked }));
+  const none = await E2ESocket.connect([{ url: `ws://${addr}/`, timeoutMs: 2000 }], { id, noise }, {
+    token: () => Promise.reject(Object.assign(new Error("signed out"), { noToken: true })),
+  }).then(
+    () => "let in",
+    (e: Error) => e.message,
+  );
+  check("no token from control: no way is tried", none === "signed out", none);
+  check("a refusal's code is read", readWelcome(new TextEncoder().encode('{"ok":false,"refused":"machine-token","message":"expired"}'), 0).code === "machine-token");
 } finally {
   child.kill();
 }

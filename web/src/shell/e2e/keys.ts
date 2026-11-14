@@ -347,6 +347,8 @@ export interface WorkerDaemon {
   noise: string;
   direct: string[];
   relay: string;
+  /** aru-141: reached with machine tokens, as the page reaches it. */
+  tokens?: boolean;
 }
 
 export async function saveWorkerDirectory(daemons: WorkerDaemon[]): Promise<void> {

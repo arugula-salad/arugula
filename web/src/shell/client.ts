@@ -50,6 +50,7 @@ import { makeBlockView, type BlockView } from "./blocks";
 import { E2ESocket, type DaemonClock, type DaemonRef } from "./e2e/channel.ts";
 import type { WakeSaid } from "./e2e/relaymux.ts";
 import type { DeviceKeys } from "./e2e/keys.ts";
+import type { MachineTokens } from "./e2e/machine-token.ts";
 import { pick, upload } from "./upload";
 import { offered } from "./hints/attach";
 import { factChanged } from "./hints/facts";
@@ -118,7 +119,12 @@ export interface E2ETarget {
    * when set, the relayed way is a channel inside the page's one socket to
    * control, not a socket of its own. */
   mux?: string;
-  keys: DeviceKeys;
+  /** This browser's device keys, when it's one of the account's devices:
+   * its channels open with them unless `tokens` is set, and block grants
+   * are signed with them (M50). A read-only link's one-off key (`link`). */
+  keys?: DeviceKeys;
+  /** aru-141: open channels with machine tokens from control instead. */
+  tokens?: MachineTokens;
   /** M50: control's block domain, when control serves blocks' origins:
    * this daemon's port and editor blocks are framed there. */
   blockDomain?: string;
@@ -192,7 +198,8 @@ class E2ELink implements Link {
       // A control without the shared socket: one of its own.
       ...(target.mux ? [{ url: target.relay, timeoutMs: 10_000, ifNoMux: true }] : []),
     ];
-    E2ESocket.connect(urls, target.daemon, target.keys).then(
+    const cred = target.tokens ?? target.keys;
+    (cred ? E2ESocket.connect(urls, target.daemon, cred) : Promise.reject(new Error("no device key and no token to reach it with"))).then(
       (sock) => {
         if (this.closed) return sock.close();
         this.sock = sock;
@@ -1078,7 +1085,7 @@ export class Client {
       this.asked = 0;
       // A read-only link's key is either live on its machine or over: there's
       // no certificate on its way, as there may be for a device (#913).
-      if (link.refused && this.e2e?.keys.id === "link") this.revoked = true;
+      if (link.refused && this.e2e?.keys?.id === "link") this.revoked = true;
       // Control's relay is full (#344): say so, and wait half a minute or
       // so (spread out, as everyone's page is waiting) rather than seconds.
       const delay = link.full ? 30_000 + Math.random() * 30_000 : Math.min(250 * 2 ** this.retry, 5000);

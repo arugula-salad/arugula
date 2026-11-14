@@ -191,7 +191,7 @@ export interface BlockClient {
   /** Control's block domain, when this page reaches the daemon through a
    * control that serves block origins. */
   blockDomain(): string | null;
-  e2e?: { daemon: DaemonRef; keys: DeviceKeys };
+  e2e?: { daemon: DaemonRef; keys?: DeviceKeys };
   /** The daemon's clock, from this page's channel to it. */
   daemonClock(): DaemonClock | undefined;
   /** The daemon's own `wss://…/e2e`, when this page reached it directly. */
@@ -206,6 +206,8 @@ export async function credsFor(c: BlockClient, block: string, ua = navigator.use
   if (!clock) throw new Error("this machine isn't connected, or its Arugula is too old to show blocks here: update it");
   const direct = c.directE2E();
   const route = direct && !isWebKit(ua, touchMac) ? direct : "relay";
+  // A block's grant is signed with a device key (#1001 moves it to tokens).
+  if (!c.e2e.keys) throw new Error("this browser reaches the machine with a token from Arugula cloud, and blocks shown here still need it to be one of your devices");
   return mint({ keys: c.e2e.keys, daemon: c.e2e.daemon, block, now: daemonNow(clock), route });
 }
 

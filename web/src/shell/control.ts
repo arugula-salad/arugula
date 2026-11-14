@@ -28,8 +28,10 @@ import {
   signText,
   type DeviceKeys,
   type Enrollment,
+  type WorkerDaemon,
 } from "./e2e/keys.ts";
 import { newKeyPair } from "./e2e/noise.ts";
+import { controlTokens, tokenEntry, tokenMode, type MachineTokens } from "./e2e/machine-token.ts";
 import { acceptHostedHolding, signDelegation, signRevoke, type Delegation, type DelegationRevoke, type HostedProof } from "./e2e/hosted.ts";
 import { directUrls } from "../shared/hosted.ts";
 import { expiresIn, grantBody, grantRevokeBody, newGrant, newGrantRevoke, passkeyChallenge, type GrantRevoke, type PasskeyAssertion, type ProjectGrant } from "./e2e/run-grant.ts";
@@ -119,6 +121,9 @@ export interface DirDaemon {
   urls: string[];
   online: boolean;
   last_seen: number | null;
+  /** Its certificate, checked against the account's root; with machine
+   * tokens (aru-141), one made of what control's directory says, checked
+   * by nothing but control. */
   cert: Cert;
   /** Someone else's (M19): its owner account and their login, and the
    * team it belongs to, if any. */
@@ -133,9 +138,12 @@ export interface DirDaemon {
 /** Another account's machine as the directory lists it, with that account's
  * certificates to check it by; or a hosted machine (M178), with its
  * certificate and its project's delegation. */
-interface ForeignEntry extends Omit<DirDaemon, "cert" | "hosted"> {
+export interface ForeignEntry extends Omit<DirDaemon, "cert" | "hosted"> {
   chain?: { trust: { account: string; root: string } | null; certs: Cert[]; revocations: Revocation[] };
   hosted?: HostedProof;
+  /** #994: its Noise key, hex, for every machine the account reaches: what
+   * a channel with a machine token opens to (aru-141). */
+  noise?: string;
 }
 
 export interface JoinRequest {
@@ -1126,6 +1134,16 @@ export interface ShareOffer {
   owner_login: string;
 }
 
+/** The recovery code is on its way (`cameToRecover`, which this doesn't
+ * spend): the browser means to be a device again. */
+function recoverAsked(): boolean {
+  try {
+    return sessionStorage.getItem(RECOVER_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 export class ControlSession {
   phase: Phase = "loading";
   error = "";
@@ -1147,6 +1165,11 @@ export class ControlSession {
   /** Asks again after a turn-down. */
   private askAgain: (() => void) | null = null;
   keys!: DeviceKeys;
+  /** aru-141: this browser reaches its machines with machine tokens from
+   * control, not its device key: it isn't one of the account's devices,
+   * or `tokenMode` says tokens first. */
+  tokens = false;
+  private machineTokens: MachineTokens = controlTokens();
   /** #764: this browser's keys came from a passkey's PRF, and this is
    * the name its certificate takes ("iCloud Keychain passkey"). */
   fromPasskey: string | null = null;
@@ -1249,8 +1272,10 @@ export class ControlSession {
       if (this.enrollment && this.enrollment.cert.device !== this.keys.id) {
         // #94: the key this browser enrolled with didn't come back from
         // its storage (WebKit loses X25519 keys there), so it would sign
-        // approvals nobody trusts. Say so, not fail later.
-        return this.set("lost-key");
+        // approvals nobody trusts. Say so, not fail later; with machine
+        // tokens (aru-141), work without it.
+        if (tokenMode() === "off") return this.set("lost-key");
+        this.enrollment = undefined;
       }
       const me = await api<{ account: string; login: string; name?: string; root: string | null; passkeys: number }>("/api/me").catch((e) => {
         if (e instanceof HttpError && e.status === 401) return null;
@@ -1272,8 +1297,19 @@ export class ControlSession {
         // account. Start over as a new device of this one.
         this.enrollment = undefined;
       }
-      if (!this.enrollment) await this.enroll(me.root);
-      if (!this.enrollment) return;
+      // aru-141: a browser that would wait for another device's approval
+      // reaches its machines with machine tokens instead. One that becomes
+      // a device at once still does: the account's first browser, the app's
+      // window a browser signed in, one whose passkey is a device already,
+      // and one that came to approve a machine's join or use a recovery code
+      // (which need a device), until joins take tokens too (#993, #1004).
+      const mode = tokenMode();
+      if (!this.enrollment && mode !== "off" && me.root !== null && !this.handed && !joinInHash() && !recoverAsked()) {
+        if (!(this.fromPasskey && (await this.rejoin()))) this.tokens = true;
+      }
+      if (!this.enrollment && !this.tokens) await this.enroll(me.root);
+      if (!this.enrollment && !this.tokens) return;
+      if (mode === "first") this.tokens = true;
       if (this.usedRecovery) {
         // Spent: nobody gets in with it again.
         await this.revoke(this.usedRecovery).catch(() => {});
@@ -1281,7 +1317,7 @@ export class ControlSession {
       }
       // Which device this sign-in is, for Sign-in and Devices to name
       // it the same (a control without the route says 404).
-      void api("/api/me/sessions/device", { device: this.keys.id }).catch(() => {});
+      if (this.enrollment) void api("/api/me/sessions/device", { device: this.keys.id }).catch(() => {});
       await this.refresh();
       // #327: a browser the account no longer trusts says so at once.
       this.set(this.phase === "untrusted" ? "untrusted" : "ready");
@@ -1740,7 +1776,7 @@ export class ControlSession {
   /** Devices and the directory, checked against the pinned root. */
   async refresh() {
     const e = this.enrollment;
-    if (!e) return;
+    if (!e) return this.tokens ? this.refreshForTokens() : undefined;
     try {
       const [devs, dir] = await Promise.all([
         api<{
@@ -1829,10 +1865,7 @@ export class ControlSession {
       }
       // The service worker answers notifications over the same channels
       // (M29), from what this page checked.
-      const ws = this.info.url.replace(/^http/, "ws");
-      void saveWorkerDirectory(
-        this.daemons.map((d) => ({ id: d.id, noise: d.cert.noise, direct: directUrls(d), relay: `${ws}/api/relay/c/${d.id}` })),
-      ).catch(() => {});
+      void saveWorkerDirectory(this.workerDirectory()).catch(() => {});
     } catch (err) {
       if (err instanceof HttpError && err.status === 401) {
         window.clearInterval(this.timer);
@@ -2419,6 +2452,53 @@ export class ControlSession {
     return api<Record<string, unknown>>("/api/me/prefs", changes);
   }
 
+  /** What the service worker answers notifications to (M29), and with
+   * what: machine tokens when this page uses them. */
+  private workerDirectory(): WorkerDaemon[] {
+    const ws = this.info.url.replace(/^http/, "ws");
+    return this.daemons.map((d) => ({ id: d.id, noise: d.cert.noise, direct: directUrls(d), relay: `${ws}/api/relay/c/${d.id}`, ...(this.tokens ? { tokens: true } : {}) }));
+  }
+
+  /** aru-141: the directory for a browser that reaches machines with
+   * machine tokens: every machine control lists, by the Noise key control
+   * gives (#994), else the one in the certificate it lists beside it,
+   * checked against nothing: control decides who reaches a machine now. */
+  private async refreshForTokens() {
+    try {
+      const dir = await api<{ daemons: ForeignEntry[]; offers?: ShareOffer[] }>("/api/directory");
+      // A control from before #994: the machines' certificates, as control
+      // keeps them for the account.
+      const needCerts = dir.daemons.some((d) => !d.noise && !d.hosted && !d.chain?.certs.some((c) => c.device === d.id));
+      const own = needCerts ? await api<{ certs: Cert[] }>("/api/devices").catch(() => ({ certs: [] as Cert[] })) : { certs: [] as Cert[] };
+      this.offers = dir.offers ?? [];
+      await this.loadTeams();
+      this.daemons = dir.daemons.flatMap((d) => {
+        const entry = tokenEntry(d, own.certs, this.account, this.teams);
+        return entry ? [entry] : [];
+      });
+      await this.loadBilling();
+      this.stale = false;
+      try {
+        localStorage.setItem(DIR_KEY, JSON.stringify(this.daemons));
+      } catch {
+        // not remembered
+      }
+      void saveWorkerDirectory(this.workerDirectory()).catch(() => {});
+    } catch (err) {
+      if (err instanceof HttpError && err.status === 401) {
+        window.clearInterval(this.timer);
+        return this.set("signed-out");
+      }
+      this.stale = true;
+      try {
+        this.daemons = (JSON.parse(localStorage.getItem(DIR_KEY) ?? "[]") as DirDaemon[]).map((d) => ({ ...d, online: false }));
+      } catch {
+        // nothing saved
+      }
+    }
+    this.emit();
+  }
+
   /** How a Client reaches daemon `id`. */
   target(id: string): E2ETarget | undefined {
     const d = this.daemons.find((x) => x.id === id);
@@ -2429,7 +2509,11 @@ export class ControlSession {
     // M50: blocks on control's block origins, where control serves them.
     const blockDomain = this.info.block_domain;
     const hosted = d.hosted ? { project: d.hosted.project, workspace: d.hosted.workspace } : undefined;
-    return { daemon: { id: d.id, noise: d.cert.noise }, direct: directUrls(d), relay: `${ws}/api/relay/c/${d.id}`, mux, keys: this.keys, blockDomain, hosted };
+    // aru-141: machine tokens, or this browser's device key. A device
+    // keeps its key for what's still signed with one (blocks' grants).
+    const keys = this.enrollment ? this.keys : undefined;
+    const tokens = this.tokens ? this.machineTokens : undefined;
+    return { daemon: { id: d.id, noise: d.cert.noise }, direct: directUrls(d), relay: `${ws}/api/relay/c/${d.id}`, mux, keys, tokens, blockDomain, hosted };
   }
 
   /** A read-only link to a session on daemon `id` (M19): a one-off key, its
