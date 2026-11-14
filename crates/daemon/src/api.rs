@@ -20,9 +20,10 @@ use arugula_proto::{
     op::ops::{
         AdapterInstall, AdaptersList, AgentsGet, AgentsRefresh, ClosePane, FlagSet, FlagsList, ListPanes, MachineReset,
         MachinesList, NotifyGet, NotifySet, PaneAsk, PaneAskWithdraw, PaneAttention, PaneDetection, PaneDiffOf,
-        PaneDrivers, PaneFollowUp, PaneInbox, PaneKeys, PaneMentions, PaneMouse, PaneNvimOpen, PanePermit, PanePorts,
-        PaneProcess, PanePrompt, PaneSend, PaneWait, PushKeyGet, PushSubscribe, PushTest, RuleForget, RulesForgetAll,
-        RulesList, SharingGet, SharingSet, ShellEnvGet, ShellEnvRefresh, TelemetryGet, TelemetryNote, TelemetrySet,
+        PaneDrivers, PaneFollowUp, PaneFollowUpAck, PaneInbox, PaneKeys, PaneMentions, PaneMouse, PaneNvimOpen,
+        PanePermit, PanePorts, PaneProcess, PanePrompt, PaneSend, PaneWait, PushKeyGet, PushSubscribe, PushTest,
+        RuleForget, RulesForgetAll, RulesList, SharingGet, SharingSet, ShellEnvGet, ShellEnvRefresh, TelemetryGet,
+        TelemetryNote, TelemetrySet,
     },
 };
 use axum::{
@@ -68,6 +69,7 @@ pub fn routes() -> Router<Arc<App>> {
         .op::<PanePermit>()
         .route("/api/panes/{id}/hook", post(hook))
         .op::<PaneInbox>()
+        .op::<PaneFollowUpAck>()
         .op::<PaneFollowUp>()
         .op::<ClosePane>()
         .route("/api/panes/{id}/capture", get(capture))
@@ -560,7 +562,7 @@ async fn hook(
         Some(hook) => app.mux.api(|r| Api::TakeTagged(id, hook, r)).await.flatten(),
         None => None,
     };
-    Ok(Json(HookAnswer { follow_up: follow_up.map(|(text, by)| HookFollowUp { text, by }) }))
+    Ok(Json(HookAnswer { follow_up: follow_up.map(|(text, by, id)| HookFollowUp { text, by, id }) }))
 }
 
 /// Whether a block is an agent's invites (#234): the owner's to answer,

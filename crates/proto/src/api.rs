@@ -1688,6 +1688,11 @@ pub enum PermitAnswer {
 /// drives (#644): it wants a mention that's waiting, if there is one.
 pub const HOOK_TAKES_MENTION: &str = "arugula_takes_mention";
 
+/// Set in the hook's input by a CLI that acks each follow-up it's given
+/// once it printed it (#630, [`PaneFollowUpAck`](crate::op::ops::PaneFollowUpAck)):
+/// until then the daemon keeps it, and offers it again if no ack comes.
+pub const HOOK_ACKS: &str = "arugula_acks";
+
 /// The field `arugula hook` adds to a `SessionStart` whose session was told
 /// how a mid-turn mention arrives (`flags::MENTIONS_STEERING`, #644). Only
 /// those sessions take one at a tool call: a session that started before
@@ -1707,6 +1712,9 @@ pub struct HookAnswer {
 pub struct HookFollowUp {
     pub text: String,
     pub by: crate::Driver,
+    /// What to ack once it's printed (#630), for a CLI that acks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<u64>,
 }
 
 /// `POST /api/panes/N/inbox` (`arugula inbox`): a follow-up for the agent,
@@ -1720,8 +1728,20 @@ pub enum InboxAnswer {
         text: String,
         #[serde(default)]
         by: crate::Driver,
+        /// What to ack once it's printed (#630), for a CLI that acks.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts", ts(optional))]
+        id: Option<u64>,
     },
     Replaced,
+}
+
+/// `POST /api/panes/N/followup-ack` (#630): the follow-up `id` the CLI was
+/// given is printed for Claude Code.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct FollowUpAck {
+    pub id: u64,
 }
 
 /// `POST /api/panes/N/followup`: the agent's next instruction.
@@ -2698,7 +2718,7 @@ mod wire {
     fn inbox_followup_and_answers_as_they_did() {
         let by = driver("sam");
         same(
-            &InboxAnswer::FollowUp { text: "go on".into(), by: by.clone() },
+            &InboxAnswer::FollowUp { text: "go on".into(), by: by.clone(), id: None },
             json!({ "action": "follow_up", "text": "go on", "by": by }),
         );
         same(&InboxAnswer::Replaced, json!({ "action": "replaced" }));

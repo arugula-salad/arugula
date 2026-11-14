@@ -309,3 +309,35 @@ fn a_follow_up_wakes_the_agent_through_its_inbox() {
     d.post(&format!("/api/panes/{pane_a}/followup"), json!({ "text": "to the second" }));
     assert!(second.join().unwrap().contains("to the second"));
 }
+
+/// #630: a follow-up queued before a restart reaches the agent after it,
+/// once: the hook acks it, and the next wait finds nothing.
+#[test]
+fn a_queued_follow_up_survives_a_restart_and_comes_once() {
+    let mut d = Daemon::child();
+    let dir = d.sessions.join("durable");
+    let stop = input(&dir, "stop.json", &fixture("s18-hook-stop.json"));
+    let pane = d.post("/api/run", json!({ "command": "exec bash --norc" }))["pane"].as_u64().unwrap();
+    let r = d.post(&format!("/api/panes/{pane}/followup"), json!({ "text": "after the restart" }));
+    assert_eq!(r["delivered"], false, "{r}");
+    d.stop();
+    d.start();
+    d.wait_for("the pane", || !info(&d, pane).is_null());
+    let line = |n: u32| {
+        format!(
+            "{} inbox < {} 2> {dir}/err{n}; echo $? > {dir}/exit{n}",
+            cli_bin().display(),
+            stop.display(),
+            dir = dir.display()
+        )
+    };
+    d.post(&format!("/api/panes/{pane}/send"), json!({ "text": line(1), "enter": true }));
+    let code = || std::fs::read_to_string(dir.join("exit1")).unwrap_or_default().trim().to_owned();
+    d.wait_for("the kept follow-up", || !code().is_empty());
+    assert_eq!(code(), "2");
+    assert!(std::fs::read_to_string(dir.join("err1")).unwrap().contains("after the restart"));
+    // Acked: the next wait has nothing to take, and waits.
+    d.post(&format!("/api/panes/{pane}/send"), json!({ "text": line(2), "enter": true }));
+    d.wait_for("the next waiter", || info(&d, pane)["inbox"] == true);
+    assert!(!dir.join("exit2").exists());
+}

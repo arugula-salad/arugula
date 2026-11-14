@@ -7,8 +7,8 @@
 
 use arugula_proto::{
     PaneId,
-    api::{AskAnswer, AskRequest, Empty, InboxAnswer, PermitAnswer, PermitRequest, WithdrawRequest},
-    op::ops::{PaneAsk, PaneAskWithdraw, PaneInbox, PanePermit},
+    api::{AskAnswer, AskRequest, Empty, FollowUpAck, InboxAnswer, PermitAnswer, PermitRequest, WithdrawRequest},
+    op::ops::{PaneAsk, PaneAskWithdraw, PaneFollowUpAck, PaneInbox, PanePermit},
 };
 use axum::http::StatusCode;
 
@@ -175,10 +175,22 @@ impl Handle for PaneInbox {
         };
         let _guard = InboxGuard { mux: app.mux.clone(), pane: id, token };
         Ok(match rx.await {
-            Ok(InboxReply::FollowUp { text, by }) => InboxAnswer::FollowUp { text, by },
+            Ok(InboxReply::FollowUp { text, by, id }) => InboxAnswer::FollowUp { text, by, id },
             Ok(InboxReply::Replaced) => InboxAnswer::Replaced,
             Err(_) => return Err(shutting_down().into()),
         })
+    }
+}
+
+/// `arugula inbox` or `arugula hook` printed a follow-up it was given
+/// (#630): the mux stops keeping it. One it doesn't have (acked already, or
+/// offered again elsewhere) is no error.
+impl Handle for PaneFollowUpAck {
+    async fn handle(cx: &Cx<'_>, id: PaneId, ack: FollowUpAck) -> Result<Empty, OpError> {
+        match cx.app.mux.api(|r| Api::FollowUpAck(id, ack.id, r)).await {
+            Some(_) => Ok(Empty {}),
+            None => Err(shutting_down().into()),
+        }
     }
 }
 

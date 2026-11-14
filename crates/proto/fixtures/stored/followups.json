@@ -1,0 +1,41 @@
+{
+  "next": 3,
+  "queued": [
+    [
+      4,
+      [
+        {
+          "text": "Messages in Device keys, in the thread \"Who approves a new machine?\":\nAaron's agent on mini (boards, a teammate): ship it",
+          "by": { "who": "agent-mention", "name": "Aaron's agent on mini" },
+          "tag": { "data": "{\"room\":\"ch_x\",\"seq\":9}", "card": "Aaron's agent on mini in Device keys: ship it" },
+          "session": "5f0c2a54-7d0e-4c38-9a0e-2b8f6d1e9c11"
+        },
+        {
+          "text": "now run the tests",
+          "by": { "who": "owner", "name": "Jake" }
+        }
+      ]
+    ]
+  ],
+  "handed": [
+    [
+      4,
+      [
+        {
+          "id": 3,
+          "at": 1794700000000,
+          "entries": [
+            {
+              "text": "Messages in Device keys: a teammate asks",
+              "by": { "who": "agent-mention", "name": "Aaron's agent on mini" },
+              "tag": { "data": "{\"room\":\"ch_x\",\"seq\":7}", "card": "Aaron's agent on mini in Device keys" },
+              "session": "5f0c2a54-7d0e-4c38-9a0e-2b8f6d1e9c11"
+            }
+          ]
+        }
+      ]
+    ]
+  ],
+  "running": [[4, [{ "data": "{\"room\":\"ch_x\",\"seq\":7}", "card": "Aaron's agent on mini in Device keys" }]]],
+  "hooked": [4, 9]
+}

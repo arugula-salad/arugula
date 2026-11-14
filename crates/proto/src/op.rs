@@ -166,6 +166,8 @@ impl Request for serde_json::Value {}
 
 impl Request for crate::api::FollowUpRequest {}
 
+impl Request for crate::api::FollowUpAck {}
+
 impl Request for crate::api::IdeDiffsRequest {}
 
 impl Request for crate::api::IdeMentionRequest {}
@@ -310,6 +312,7 @@ macro_rules! every_op {
         $m!($crate::op::ops::PaneAskWithdraw);
         $m!($crate::op::ops::PanePermit);
         $m!($crate::op::ops::PaneInbox);
+        $m!($crate::op::ops::PaneFollowUpAck);
         $m!($crate::op::ops::PaneProcess);
         $m!($crate::op::ops::PanePorts);
         $m!($crate::op::ops::PaneDetection);
@@ -397,7 +400,7 @@ pub mod ops {
             AccessView, AclSetRequest, Adapters, AgentCan, AgentsInventory, AskAnswer, AskRequest, AttentionRequest,
             ConversationList, ConversationsQuery, DetectionAnswer, DocAsset, DocContent, DocLinkUrl, DocMoveRequest,
             DocMoved, DocOpenRequest, DocOpened, DocPreview, DocRow, DocShareRequest, DocTeams, DriverEntry, Empty,
-            FollowUpRequest, FollowedUp, FollowerLinkRequest, GuestInvite, GuestInviteRequest, IdeDiffs,
+            FollowUpAck, FollowUpRequest, FollowedUp, FollowerLinkRequest, GuestInvite, GuestInviteRequest, IdeDiffs,
             IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned, InboxAnswer, InstallAdapterRequest,
             InviteRequest, Invited, KeysRequest, LinkRequest, LinksQuery, McpTokenRequest, MentionsRequest,
             MouseRequest, NotifyPref, NotifyRequest, NvimBlockOpened, NvimBlockRequest, NvimHelpRequest,
@@ -964,6 +967,22 @@ pub mod ops {
         type Path = PaneId;
         type Req = serde_json::Value;
         type Res = InboxAnswer;
+    }
+
+    /// `POST /api/panes/N/followup-ack` (#630, `arugula inbox` and `arugula
+    /// hook`): a follow-up the CLI was given is printed for Claude Code, so
+    /// the daemon stops keeping it.
+    pub struct PaneFollowUpAck;
+
+    impl Op for PaneFollowUpAck {
+        const NAME: &'static str = "pane.followup_ack";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/panes/{id}/followup-ack";
+        const ACCESS: Access = Access::Pane(Role::Editor);
+        const DRIVES: bool = true;
+        type Path = PaneId;
+        type Req = FollowUpAck;
+        type Res = Empty;
     }
 
     /// `GET /api/panes/N/process`: a pane's foreground process (`arugula
