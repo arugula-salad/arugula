@@ -26,6 +26,9 @@ import { appMachines, appOverview, appPanes } from "../src/app/machines";
 import { appLive } from "../src/app/live";
 import { chat } from "../src/shared/chat-store";
 import { localBackend, setSeenBackend } from "../src/shared/seen";
+import { session } from "../src/platform/session";
+import { signedInOf } from "../src/app/signed-in";
+import { setSignedIn } from "../src/shell/signed-in";
 
 // The daemon's page key on this page's requests, as its own page has.
 await startPageKey();
@@ -59,6 +62,10 @@ window.fetch = async (input, init) => {
 
 // The spec seeds chat's rooms (the unread on Boards and Sessions) through this.
 (window as unknown as { __chat: typeof chat }).__chat = chat;
+
+// Who's signed in, for the shell's blocks in a machine's pane: the
+// platform's session (sam), as app/main.tsx says.
+setSignedIn(signedInOf(session));
 
 // Prefs (where you were) are this browser's here, as the app's are until
 // the hub answers on its host.

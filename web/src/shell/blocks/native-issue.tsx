@@ -5,7 +5,7 @@
 // (../../shared/issues/view), the way a Cloud workspace block once drew
 // control's views: the view reads through `IssueApiContext`.
 //
-// - On control's page, signed in, the view reads and writes as the person
+// - On control's page or in the app, signed in, the view reads and writes as the person
 //   looking, through control, as the platform page does: the timeline and
 //   every change, and its thread and live changes while chat is on for
 //   them.
@@ -34,7 +34,7 @@ import { platformFetch } from "../../shared/maintenance";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { platformHref } from "../platform-links";
 import { BlockLoading } from "./block-states";
-import { getControlSession } from "../ui/people";
+import { getSignedIn } from "../signed-in";
 
 /** What the daemon says of it to everyone who sees the pane. */
 export interface NativeIssueState {
@@ -125,7 +125,7 @@ function blockApi(issue: NativeIssue): IssueApi {
 type Reader = { as: "me"; place: IssuePlace } | { as: "block" } | null;
 
 function useReader(s: NativeIssueState, project: string | null | undefined): Reader {
-  const session = getControlSession();
+  const session = getSignedIn();
   useSubscribe((fn) => session?.subscribe(fn) ?? (() => {}));
   const [reader, setReader] = useState<Reader>(null);
   const signedIn = session?.phase === "ready";
@@ -221,7 +221,7 @@ export function NativeIssueBlock({ client, block, s, refresh }: { client: Client
 /** What the daemon read for its owner, read only; or why there's nothing
  * (for anyone else: `#N`, and that it can't be read here), in one line. */
 function FromBlock({ s, owners, what }: { s: NativeIssueState; owners: OwnersRead | null | undefined; what?: string }) {
-  const session = getControlSession();
+  const session = getSignedIn();
   const issue = owners?.issue;
   if (!issue) {
     const why =

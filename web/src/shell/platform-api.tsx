@@ -15,7 +15,7 @@ import { openDoc } from "./ui/docs-route";
 import { openPlatform, platformHref } from "./platform-links";
 import { getFleet } from "./ui/hosts";
 import { LiveSlot } from "./ui/panes/live-slot";
-import { getControlSession } from "./ui/people";
+import { getSignedIn } from "./signed-in";
 import { openChat, openChatView, openRoom } from "./ui/places";
 import { closeRoomDrawer } from "./ui/threads";
 import type { PaneQuote } from "../shared/chat-store";
@@ -50,9 +50,9 @@ function build(client: Client): PlatformApi {
     return !!h && h.state === "connected" && isThisMachine(client.base, () => directory.base(h.name));
   };
   return {
-    teams: () => getControlSession()?.teams ?? [],
+    teams: () => getSignedIn()?.teams ?? [],
     subscribe(fn) {
-      const offs = [getFleet()?.subscribe(fn), getControlSession()?.subscribe(fn)];
+      const offs = [getFleet()?.subscribe(fn), getSignedIn()?.subscribe(fn)];
       return () => offs.forEach((off) => off?.());
     },
     toast,

@@ -10,6 +10,7 @@ import { roleLabel } from "./roles";
 import type { MenuItem } from "../../shared/ui/menu";
 import { keyChanged, keyChangeSeen, personPin, pinPerson, verifyPerson, type ControlSession } from "../control";
 import { readVerifyCode, verifyWords } from "../e2e/words.ts";
+import { setSignedIn } from "../signed-in";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { Time } from "../../shared/ui/time";
 import { CopyText } from "../../shared/ui/copy";
@@ -21,11 +22,13 @@ import { ShareLinks } from "./share-links";
 import { secretsWarned, shareOpen } from "../hints/private";
 import { CheckIcon, EditIcon } from "../../shared/ui/icons";
 
-/** Control mode (M19): people are accounts there, and links go through it. */
+/** Control mode (M19): people are accounts there, and links go through it.
+ * Control's page only: who's signed in, anywhere, is `getSignedIn`. */
 let control: ControlSession | null = null;
 export const getControlSession = () => control;
 export function setControlSession(s: ControlSession | null) {
   control = s;
+  setSignedIn(s);
 }
 
 /** A steady colour per person (chat's avatars share it). */

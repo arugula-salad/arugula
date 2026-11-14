@@ -35,7 +35,7 @@ import { useSubscribe } from "../../shared/ui/hooks";
 import { QuotePicker, shellPlatformApi } from "../platform-api";
 import { setRoomAsBlock } from "../ui/threads";
 import { useControlState } from "../ui/control-state";
-import { getControlSession } from "../ui/people";
+import { getSignedIn } from "../signed-in";
 import { openGettingStarted } from "../ui/welcome";
 import { registerBlock, type BlockView } from "./view";
 import { BlockLoading } from "./block-states";
@@ -186,7 +186,7 @@ function useNarrow(box: { current: HTMLElement | null }): boolean {
 }
 
 function TeamChatBlock({ client, id, s, shown }: { client: Client; id: PaneId; s: TeamChatState | null; shown: boolean }) {
-  const session = getControlSession();
+  const session = getSignedIn();
   useSubscribe((fn) => session?.subscribe(fn) ?? (() => {}));
   useSubscribe((fn) => chat.subscribe(fn));
   const owned = useControlState(client);
