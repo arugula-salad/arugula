@@ -183,9 +183,16 @@ pub enum Api {
     /// Whether a session may still get its project from a pane's linked
     /// repo ([`arugula_core::Session::inferable`]): asked before control is.
     Inferable(SessionId, oneshot::Sender<bool>),
-    /// A session's project, from its pane's linked repo: set only while it
-    /// may be ([`arugula_core::Mux::infer_project`]). Whether it was set.
-    InferProject(SessionId, arugula_core::ProjectRef, oneshot::Sender<bool>),
+    /// A session's project, from its pane's linked repo (`owner/name`):
+    /// set only while it may be ([`arugula_core::Mux::infer_project`]).
+    /// Whether it was set.
+    InferProject(SessionId, arugula_core::ProjectRef, String, oneshot::Sender<bool>),
+    /// The repos sessions' inferred projects came from
+    /// ([`arugula_core::Mux::project_repos`]).
+    ProjectRepos(oneshot::Sender<Vec<String>>),
+    /// A repo's project now: the sessions inferred from it follow
+    /// ([`arugula_core::Mux::follow_repo`]). The sessions it moved.
+    FollowRepo(String, arugula_core::ProjectRef, oneshot::Sender<Vec<SessionId>>),
     Run(RunRequest, oneshot::Sender<Result<PaneId, String>>),
     Pane(PaneId, oneshot::Sender<Option<PaneHandle>>),
     /// The Claude Code conversation running in a terminal now, by its id,

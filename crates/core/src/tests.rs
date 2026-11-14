@@ -482,21 +482,59 @@ fn a_session_keeps_its_project_through_a_save_and_a_layout_from_before_has_none(
 }
 
 #[test]
-fn an_inferred_project_is_set_once_and_never_moved() {
+fn an_inferred_project_isnt_moved_by_another_panes_repo() {
     let mut m = mux_with_session();
-    assert_eq!(m.infer_project(1, project("prj_a")), Ok(true));
+    assert_eq!(m.infer_project(1, project("prj_a"), "acme/app"), Ok(true));
     let rev = m.rev;
     // A later pane in another repo, or the repo linked elsewhere since.
-    assert_eq!(m.infer_project(1, project("prj_b")), Ok(false));
+    assert_eq!(m.infer_project(1, project("prj_b"), "acme/web"), Ok(false));
     assert_eq!(m.sessions[0].project, Some(project("prj_a")));
     assert_eq!(m.rev, rev);
-    assert_eq!(m.infer_project(9, project("prj_a")), Err(crate::Error::NoSession(9)));
+    assert_eq!(m.infer_project(9, project("prj_a"), "acme/app"), Err(crate::Error::NoSession(9)));
+}
+
+#[test]
+fn an_inferred_project_follows_its_repo_and_one_set_by_hand_stays() {
+    let mut m = mux_with_session();
+    for _ in 0..3 {
+        m.apply(Intent::NewSession { name: None, from_pane: None }).unwrap();
+    }
+    m.infer_project(1, project("prj_a"), "acme/app").unwrap();
+    m.infer_project(2, project("prj_a"), "acme/app").unwrap();
+    m.infer_project(3, project("prj_a"), "acme/web").unwrap();
+    // Inferred from acme/app, then put back in prj_a by hand.
+    m.infer_project(4, project("prj_a"), "acme/app").unwrap();
+    m.apply(Intent::SetSessionProject { session: 4, project: Some(project("prj_a")) }).unwrap();
+    assert_eq!(m.sessions[3].project_repo, None);
+    assert_eq!(m.project_repos(), ["acme/app", "acme/web"]);
+
+    // acme/app moves to prj_b: its two inferred sessions follow, and
+    // nothing else changes.
+    let before = m.clone();
+    assert_eq!(m.follow_repo("acme/app", &project("prj_b")), vec![1, 2]);
+    let at: Vec<_> = m.sessions.iter().map(|s| s.project.as_ref().map(|p| p.id.as_str())).collect();
+    assert_eq!(at, [Some("prj_b"), Some("prj_b"), Some("prj_a"), Some("prj_a")]);
+    assert_eq!((&m.tabs, &m.sessions[0].tabs), (&before.tabs, &before.sessions[0].tabs));
+    assert!(m.rev > before.rev);
+    // Asked again (a reconnect, or the same move twice): nothing to do.
+    let rev = m.rev;
+    assert_eq!(m.follow_repo("acme/app", &project("prj_b")), Vec::<crate::SessionId>::new());
+    assert_eq!(m.rev, rev);
+
+    // Kept through a save, so it follows after a restart too.
+    let mut back: Mux = serde_json::from_str(&serde_json::to_string(&m).unwrap()).unwrap();
+    assert_eq!(back.sessions[0].project_repo.as_deref(), Some("acme/app"));
+    assert_eq!(back.follow_repo("acme/app", &project("prj_c")), vec![1, 2]);
+    // Taken away by hand: it stays in none.
+    back.apply(Intent::SetSessionProject { session: 2, project: None }).unwrap();
+    assert_eq!(back.follow_repo("acme/app", &project("prj_a")), vec![1]);
+    assert_eq!(back.sessions[1].project, None);
 }
 
 #[test]
 fn a_project_set_by_hand_replaces_an_inferred_one_and_clears() {
     let mut m = mux_with_session();
-    m.infer_project(1, project("prj_a")).unwrap();
+    m.infer_project(1, project("prj_a"), "acme/app").unwrap();
     m.apply(Intent::SetSessionProject { session: 1, project: Some(project("prj_b")) }).unwrap();
     assert_eq!(m.sessions[0].project, Some(project("prj_b")));
     m.apply(Intent::SetSessionProject { session: 1, project: None }).unwrap();
@@ -509,13 +547,13 @@ fn a_project_set_by_hand_replaces_an_inferred_one_and_clears() {
 #[test]
 fn no_project_by_hand_sticks_when_another_pane_opens() {
     let mut m = mux_with_session();
-    m.infer_project(1, project("prj_a")).unwrap();
+    m.infer_project(1, project("prj_a"), "acme/app").unwrap();
     m.apply(Intent::SetSessionProject { session: 1, project: None }).unwrap();
     assert!(!m.sessions[0].inferable());
     // Another pane opens in a linked clone: the session stays in none.
     let fx = m.apply(Intent::Split { pane: 1, edge: Edge::Right, local: false, cwd: None }).unwrap();
     assert_eq!(fx, vec![Effect::Spawn { pane: 2, cwd_from: Some(1), cwd: None }]);
-    assert_eq!(m.infer_project(1, project("prj_b")), Ok(false));
+    assert_eq!(m.infer_project(1, project("prj_b"), "acme/web"), Ok(false));
     assert_eq!(m.sessions[0].project, None);
     // And it's kept through a save.
     let back: Mux = serde_json::from_str(&serde_json::to_string(&m).unwrap()).unwrap();
