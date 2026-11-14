@@ -218,9 +218,9 @@ enum Command {
     /// Its port, and which IDE gets Claude Code's diffs (`--diffs arugula`, or
     /// another IDE's name as it registered, e.g. "Visual Studio Code").
     Ide(cmd::ide::Args),
-    /// Docs on this machine: `doc move` gives them to a team.
+    /// Docs on this machine: `doc move` gives them to a project.
     ///
-    /// The team owns a moved Doc, and this machine keeps only a pointer to it,
+    /// The project holds a moved Doc, and this machine keeps only a pointer to it,
     /// which a block showing it and `doc open` follow.
     Doc {
         #[command(subcommand)]

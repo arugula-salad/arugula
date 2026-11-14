@@ -1,4 +1,5 @@
-//! `arugula doc move`: Docs on this machine given to a team (Arugula #863).
+//! `arugula doc move`: Docs on this machine given to a project (Arugula #863,
+//! #1026).
 
 use std::io::{IsTerminal, Write};
 
@@ -13,17 +14,17 @@ use arugula_proto::{
 
 #[derive(clap::Subcommand)]
 pub enum DocCmd {
-    /// Give Docs on this machine to a team's project.
+    /// Give Docs on this machine to a project: a team's, or your personal one.
     ///
-    /// The team owns each one from then on: it leaves this machine's Docs,
-    /// and a block showing it and `doc open` of its id go on with the team's
-    /// Doc. A link shared before the move keeps working,
+    /// The project holds each one from then on: it leaves this machine's
+    /// Docs, and a block showing it and `doc open` of its id go on with the
+    /// project's Doc. A link shared before the move keeps working,
     /// frozen as it was. Asks once, for all of them; `--yes` doesn't ask.
     Move {
         /// The Docs' ids (the Docs page and MCP's `doc list` have them).
         #[arg(required = true)]
         ids: Vec<String>,
-        /// The team's project (a prj_ id) [default: the current project, which must be a team's].
+        /// The project (a prj_ id): a team's, or your personal one [default: the current project, when it's a team's].
         #[arg(long)]
         project: Option<String>,
         /// Don't ask.
@@ -43,7 +44,7 @@ pub fn run(cmd: DocCmd, ctx: Ctx) -> anyhow::Result<i32> {
             match t.team {
                 Some(t) => (t.project, t.name),
                 None => bail!(
-                    "{}: name a team's project with --project",
+                    "{}: name a project with --project",
                     t.why.unwrap_or_else(|| "the current project isn't a team's".into())
                 ),
             }
@@ -81,7 +82,7 @@ pub fn run(cmd: DocCmd, ctx: Ctx) -> anyhow::Result<i32> {
     Ok(i32::from(failed))
 }
 
-/// Ask once whether the team should own them; anywhere but a terminal,
+/// Ask once whether the project should hold them; anywhere but a terminal,
 /// stop and say `--yes`.
 fn confirm(n: usize, team: &str) -> anyhow::Result<bool> {
     let what = if n == 1 { "this Doc".to_owned() } else { format!("these {n} Docs") };

@@ -703,7 +703,7 @@ mod tests {
     }
 
     fn chosen(team: bool, rule: arugulad_base::mcp::issues::Rule) -> Chosen {
-        Chosen { id: "prj_1".into(), name: "Acme".into(), team, rule }
+        Chosen { id: "prj_1".into(), name: "Acme".into(), team, person: None, rule }
     }
 
     /// aru-139: a team's project is the Doc's home; a personal one never is
