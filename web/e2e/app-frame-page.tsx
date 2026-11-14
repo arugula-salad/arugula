@@ -29,6 +29,8 @@ import { localBackend, setSeenBackend } from "../src/shared/seen";
 import { session } from "../src/platform/session";
 import { signedInOf } from "../src/app/signed-in";
 import { setSignedIn } from "../src/shell/signed-in";
+import { setPlatformHere } from "../src/shell/platform-links";
+import { followPlatformLinks } from "../src/app/platform-here";
 
 // The daemon's page key on this page's requests, as its own page has.
 await startPageKey();
@@ -66,6 +68,9 @@ window.fetch = async (input, init) => {
 // Who's signed in, for the shell's blocks in a machine's pane: the
 // platform's session (sam), as app/main.tsx says.
 setSignedIn(signedInOf(session));
+// And the platform is this page, as there: its links stay in it.
+setPlatformHere((path) => go(path));
+followPlatformLinks((path) => go(path), "[data-platform-machines]");
 
 // Prefs (where you were) are this browser's here, as the app's are until
 // the hub answers on its host.
