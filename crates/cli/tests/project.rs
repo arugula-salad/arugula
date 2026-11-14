@@ -1,6 +1,8 @@
 //! `arugula project list`, `new` and `use` against a fake platform and a
 //! fake daemon, and the order `--project`, `$ARUGULA_PROJECT`, the
-//! session's project, a clone's linked repo and the default go in.
+//! session's project, a clone's linked repo and the default go in; and
+//! `project split`'s dry run, then its move, against the platform's split
+//! routes as the fake has them.
 
 // The fake daemon is on a Unix socket.
 #![cfg(unix)]
@@ -33,6 +35,8 @@ struct State {
     session_project: Option<String>,
     /// The daemon refuses intents.
     refuse: bool,
+    /// The split answers 409: something changed since the plan.
+    stale: bool,
 }
 
 fn projects() -> Value {
@@ -45,6 +49,33 @@ fn projects() -> Value {
         { "id": prj(3), "name": "Web", "team": null, "owner": acme },
         { "id": prj(4), "name": "Old", "team": null, "owner": personal, "archived": true },
     ] })
+}
+
+fn iss(n: u8) -> String {
+    format!("iss_{n:032x}")
+}
+
+/// The planner's answer for Acme's acme/app, its board and #4: a note, and
+/// what comes along. A new project's has no id.
+fn plan(ask: &Value) -> Value {
+    let to = match ask["to"]["kind"].as_str() {
+        Some("new") => json!({ "name": ask["to"]["name"], "first_number": 1,
+                               "owner": { "kind": "team", "id": "tm_1", "name": "Acme" } }),
+        _ => json!({ "id": ask["to"]["id"], "name": "Web", "first_number": 12,
+                     "owner": { "kind": "team", "id": "tm_1", "name": "Acme" } }),
+    };
+    let page = |n: u64| json!({ "count": n, "items": [] });
+    json!({
+        "from": { "id": prj(2), "name": "Acme" }, "to": to, "empty": false,
+        "notes": [{ "key": "secrets:prod", "text": "prod's secrets stay: set them again in the new project." }],
+        "along": {
+            "repos": page(1), "boards": page(1), "docs": page(1),
+            "issues": { "count": 2, "items": [{ "id": iss(4), "number": 4, "to": 2, "title": "Loose", "closed": false }] },
+            "github": { "issues": 5, "prs": 2, "repos": [] },
+            "machine_docs": [], "workspaces": [], "environments": [{ "id": "env_1", "name": "prod", "deploys": 4 }],
+            "sessions": 3, "drafts": 0, "links": 1
+        }
+    })
 }
 
 /// One HTTP request: its first line, headers (lowercase names) and body.
@@ -99,6 +130,24 @@ fn control(st: &Mutex<State>, mut s: TcpStream) {
         }
         ("GET", ["api", "projects", p, "issues"]) => {
             answer(&mut s, 200, &json!({ "project": p, "issues": [], "more": false }))
+        }
+        // Acme's #4.
+        ("GET", ["api", "projects", p, "issues", "4"]) if *p == prj(2) => {
+            answer(&mut s, 200, &json!({ "id": iss(4), "number": 4, "title": "Loose" }))
+        }
+        ("POST", ["api", "projects", _, "split", "plan"]) => answer(&mut s, 200, &plan(&body)),
+        ("POST", ["api", "projects", _, "split"]) if st.lock().unwrap().stale => {
+            answer(&mut s, 409, &json!({ "error": "the project changed since the plan" }))
+        }
+        ("POST", ["api", "projects", _, "split"]) => {
+            let to = match body["to"]["kind"].as_str() {
+                Some("new") => json!({ "id": prj(9), "name": body["to"]["name"] }),
+                _ => json!({ "id": body["to"]["id"], "name": "Web" }),
+            };
+            let moved = json!({ "repos": 1, "boards": 1, "issues": 2, "docs": 1, "workspaces": 0, "environments": 0,
+                                "runs": 0, "sessions": 3, "drafts": 0, "links": 1 });
+            let issues = json!([{ "id": iss(3), "from": 3, "to": 1 }, { "id": iss(4), "from": 4, "to": 2 }]);
+            answer(&mut s, 200, &json!({ "id": "spl_1", "to": to, "moved": moved, "issues": issues }))
         }
         _ => answer(&mut s, 404, &json!({ "error": format!("the fake has no {method} {target}") })),
     }
@@ -323,4 +372,66 @@ fn the_current_project_s_order() {
     // A session's project that isn't yours any more is skipped.
     rig.state.lock().unwrap().session_project = Some(prj(8));
     assert_eq!(rig.listed_in("app", true, &[], &[]), prj(2));
+}
+
+/// The dry run plans and changes nothing; `--yes` moves, and says where
+/// and how the issues were renumbered; a plan gone stale says to plan again.
+#[test]
+fn split_plans_then_moves() {
+    let rig = Rig::new("split");
+    let args = |extra: &[&'static str]| {
+        let mut a = vec!["project", "split", "--project", "acme", "--name", "App", "--owner", "acme"];
+        a.extend_from_slice(&["--repo", "acme/app", "--board", "brd_1", "--issue", "#4", "--doc", "pdc_1"]);
+        a.extend_from_slice(extra);
+        a
+    };
+    let out = rig.ok(false, &args(&[]));
+    assert_eq!(
+        out,
+        format!(
+            "From Acme ({}) into a new project, App, Acme's. Its issues are numbered from #1.\n\n\
+             Before you move\n  - prod's secrets stay: set them again in the new project.\n\n\
+             Comes along\n  1 repo\n  1 board\n  2 issues\n  7 GitHub issues and PRs\n  1 Doc\n  \
+             1 environment\n  3 agent sessions\n  1 link\n\n\
+             Nothing has moved: run it again with --yes to move.\n",
+            prj(2)
+        )
+    );
+    let asked = rig.state.lock().unwrap().asked.clone();
+    let posts: Vec<_> = asked.iter().filter(|(m, ..)| m == "POST").collect();
+    assert_eq!(posts.len(), 1, "the dry run only plans: {posts:?}");
+    assert_eq!(posts[0].1, format!("/api/projects/{}/split/plan", prj(2)));
+    let want = json!({ "to": { "kind": "new", "name": "App", "owner": { "kind": "team", "id": "tm_1" } },
+                       "repos": ["acme/app"], "boards": ["brd_1"], "issues": [iss(4)], "docs": ["pdc_1"] });
+    assert_eq!(posts[0].2, want, "#4 goes as its id");
+
+    rig.state.lock().unwrap().asked.clear();
+    let out = rig.ok(false, &args(&["--yes"]));
+    assert_eq!(
+        out,
+        format!(
+            "Moved into App ({}): 1 repo, 1 board, 2 issues, 1 Doc, 3 agent sessions, 1 link.\n\
+             Renumbered:\n  #3 → #1\n  #4 → #2\nThe split is spl_1.\n",
+            prj(9)
+        )
+    );
+    let asked = rig.state.lock().unwrap().asked.clone();
+    let posts: Vec<_> = asked.iter().filter(|(m, ..)| m == "POST").collect();
+    assert_eq!(posts.len(), 1, "--yes moves, with no plan first");
+    assert_eq!((posts[0].1.as_str(), &posts[0].2), (format!("/api/projects/{}/split", prj(2)).as_str(), &want));
+
+    // Into a project that exists, by name; --json gives the platform's answer.
+    let into = ["project", "split", "--project", "acme", "--into", "web", "--repo", "acme/app"];
+    let v: Value = serde_json::from_str(&rig.ok(false, &[&["--json"][..], &into[..]].concat())).unwrap();
+    assert_eq!((v["to"]["id"].clone(), v["to"]["first_number"].clone()), (json!(prj(3)), json!(12)));
+
+    rig.state.lock().unwrap().stale = true;
+    let out = rig.run("work", false, &[], &args(&["--yes"]));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success() && err.contains("run it again without --yes"), "{err}");
+    // Somewhere to go is needed, and only one.
+    let out = rig.run("work", false, &[], &["project", "split", "--repo", "acme/app"]);
+    assert!(!out.status.success());
+    let out = rig.run("work", false, &[], &["project", "split", "--name", "A", "--into", "web"]);
+    assert!(!out.status.success());
 }

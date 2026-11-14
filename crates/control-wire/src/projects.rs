@@ -243,6 +243,20 @@ pub struct ProjectMember {
 /// a project's id, or `personal` for the caller's own.
 pub const PROJECT_REPOS: &str = "/api/projects/{project}/repos";
 
+/// `POST /api/daemon/projects/{project}/split/plan` (Arugula #973): the
+/// split planner's `/api/projects/{project}/split/plan` for a machine's
+/// agents, acting as its owner with the machine's read grant over the
+/// project. It only plans: moving work between projects is the person's
+/// (the CLI's `--yes`, or the page), so there's no machine route for the
+/// move. The body and answer are the planner's (the web's
+/// `platform/move/plan.ts`).
+pub const AGENT_SPLIT_PLAN: &str = "/api/daemon/projects/{project}/split/plan";
+
+/// [`AGENT_SPLIT_PLAN`] for `project`.
+pub fn agent_split_plan(project: &str) -> String {
+    format!("/api/daemon/projects/{project}/split/plan")
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]

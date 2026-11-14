@@ -18,6 +18,8 @@ and acting as its owner through their grants; nothing is kept here.
 - `src/boards.rs`: boards (`board_read`, `board_write`);
 - `src/runs.rs`: runs (`start_run`, `read_run`, `wait` with `run`, M216);
 - `src/deploys.rs`: deploys (`plan_deploy`, `read_deploy`, M252);
+- `src/splits.rs`: planning to move work out of a project, which the
+  person then moves (`project_split`, Arugula #973);
 - `src/agent_sessions.rs`: agent sessions (`session_start`,
   `session_reply`, `session_stop`, `read_session`, `list` kind
   `agent_sessions`, aru-121).

@@ -49,6 +49,7 @@ arugula project use "Web app"             # this session's project: an id, perso
 arugula project repos                     # your personal project's linked repos
 arugula project link acme/app             # --project <id or name> for another
 arugula project unlink acme/app
+arugula project split --name App --repo acme/app   # plans; --yes moves; --into <project>, --board, --issue, --doc
 ```
 
 A linked repo's PRs and issues read and act through control, as you:

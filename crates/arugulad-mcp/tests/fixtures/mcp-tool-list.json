@@ -5074,6 +5074,89 @@
       },
       "name": "link",
       "title": "Link work items"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Plan moving work out of a project"
+      },
+      "description": "Plan moving work out of one of the user's projects in Arugula cloud (default the current one) into a new project (name, and owner: personal or a team's tm_ id) or one that exists (into, its prj_ id): linked repos (OWNER/NAME), boards (brd_…), issues (#N in the project, or iss_…) and Docs (pdc_…). A repo's boards, issues and sessions come with it; a board's issues and Docs with the board. It only plans and changes nothing: it says what to deal with before moving (notes) and what comes along, with each issue's new number. Agents never move it: show the person the plan and the command it ends with, which they run themselves (or they use Move to project… in the project's settings).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "boards": {
+            "default": [],
+            "description": "Boards, brd_….",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "docs": {
+            "default": [],
+            "description": "Project Docs, pdc_….",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "into": {
+            "default": null,
+            "description": "Move it into a project that exists: its id (prj_…).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "issues": {
+            "default": [],
+            "description": "Issues: \"#N\" (in the project) or \"iss_…\".",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "default": null,
+            "description": "Move it into a new project with this name.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "owner": {
+            "default": null,
+            "description": "The new project's owner: personal (the default) or a team's id (tm_…).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "The project to move work out of: its id (prj_…) or personal.\nDefault: the current project.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repos": {
+            "default": [],
+            "description": "Linked repos, OWNER/NAME.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "title": "SplitArgs",
+        "type": "object"
+      },
+      "name": "project_split",
+      "title": "Plan moving work out of a project"
     }
   ],
   "block, labs true": [
@@ -10314,6 +10397,89 @@
       },
       "name": "link",
       "title": "Link work items"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Plan moving work out of a project"
+      },
+      "description": "Plan moving work out of one of the user's projects in Arugula cloud (default the current one) into a new project (name, and owner: personal or a team's tm_ id) or one that exists (into, its prj_ id): linked repos (OWNER/NAME), boards (brd_…), issues (#N in the project, or iss_…) and Docs (pdc_…). A repo's boards, issues and sessions come with it; a board's issues and Docs with the board. It only plans and changes nothing: it says what to deal with before moving (notes) and what comes along, with each issue's new number. Agents never move it: show the person the plan and the command it ends with, which they run themselves (or they use Move to project… in the project's settings).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "boards": {
+            "default": [],
+            "description": "Boards, brd_….",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "docs": {
+            "default": [],
+            "description": "Project Docs, pdc_….",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "into": {
+            "default": null,
+            "description": "Move it into a project that exists: its id (prj_…).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "issues": {
+            "default": [],
+            "description": "Issues: \"#N\" (in the project) or \"iss_…\".",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "default": null,
+            "description": "Move it into a new project with this name.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "owner": {
+            "default": null,
+            "description": "The new project's owner: personal (the default) or a team's id (tm_…).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "The project to move work out of: its id (prj_…) or personal.\nDefault: the current project.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repos": {
+            "default": [],
+            "description": "Linked repos, OWNER/NAME.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "title": "SplitArgs",
+        "type": "object"
+      },
+      "name": "project_split",
+      "title": "Plan moving work out of a project"
     }
   ],
   "full, labs false": [
@@ -15391,6 +15557,89 @@
       },
       "name": "link",
       "title": "Link work items"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Plan moving work out of a project"
+      },
+      "description": "Plan moving work out of one of the user's projects in Arugula cloud (default the current one) into a new project (name, and owner: personal or a team's tm_ id) or one that exists (into, its prj_ id): linked repos (OWNER/NAME), boards (brd_…), issues (#N in the project, or iss_…) and Docs (pdc_…). A repo's boards, issues and sessions come with it; a board's issues and Docs with the board. It only plans and changes nothing: it says what to deal with before moving (notes) and what comes along, with each issue's new number. Agents never move it: show the person the plan and the command it ends with, which they run themselves (or they use Move to project… in the project's settings).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "boards": {
+            "default": [],
+            "description": "Boards, brd_….",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "docs": {
+            "default": [],
+            "description": "Project Docs, pdc_….",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "into": {
+            "default": null,
+            "description": "Move it into a project that exists: its id (prj_…).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "issues": {
+            "default": [],
+            "description": "Issues: \"#N\" (in the project) or \"iss_…\".",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "default": null,
+            "description": "Move it into a new project with this name.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "owner": {
+            "default": null,
+            "description": "The new project's owner: personal (the default) or a team's id (tm_…).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "The project to move work out of: its id (prj_…) or personal.\nDefault: the current project.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repos": {
+            "default": [],
+            "description": "Linked repos, OWNER/NAME.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "title": "SplitArgs",
+        "type": "object"
+      },
+      "name": "project_split",
+      "title": "Plan moving work out of a project"
     }
   ],
   "full, labs true": [
@@ -20631,6 +20880,89 @@
       },
       "name": "link",
       "title": "Link work items"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Plan moving work out of a project"
+      },
+      "description": "Plan moving work out of one of the user's projects in Arugula cloud (default the current one) into a new project (name, and owner: personal or a team's tm_ id) or one that exists (into, its prj_ id): linked repos (OWNER/NAME), boards (brd_…), issues (#N in the project, or iss_…) and Docs (pdc_…). A repo's boards, issues and sessions come with it; a board's issues and Docs with the board. It only plans and changes nothing: it says what to deal with before moving (notes) and what comes along, with each issue's new number. Agents never move it: show the person the plan and the command it ends with, which they run themselves (or they use Move to project… in the project's settings).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "boards": {
+            "default": [],
+            "description": "Boards, brd_….",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "docs": {
+            "default": [],
+            "description": "Project Docs, pdc_….",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "into": {
+            "default": null,
+            "description": "Move it into a project that exists: its id (prj_…).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "issues": {
+            "default": [],
+            "description": "Issues: \"#N\" (in the project) or \"iss_…\".",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "default": null,
+            "description": "Move it into a new project with this name.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "owner": {
+            "default": null,
+            "description": "The new project's owner: personal (the default) or a team's id (tm_…).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "The project to move work out of: its id (prj_…) or personal.\nDefault: the current project.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repos": {
+            "default": [],
+            "description": "Linked repos, OWNER/NAME.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "title": "SplitArgs",
+        "type": "object"
+      },
+      "name": "project_split",
+      "title": "Plan moving work out of a project"
     }
   ],
   "read, labs false": [
@@ -22706,6 +23038,89 @@
       },
       "name": "read_session",
       "title": "Read an agent session"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Plan moving work out of a project"
+      },
+      "description": "Plan moving work out of one of the user's projects in Arugula cloud (default the current one) into a new project (name, and owner: personal or a team's tm_ id) or one that exists (into, its prj_ id): linked repos (OWNER/NAME), boards (brd_…), issues (#N in the project, or iss_…) and Docs (pdc_…). A repo's boards, issues and sessions come with it; a board's issues and Docs with the board. It only plans and changes nothing: it says what to deal with before moving (notes) and what comes along, with each issue's new number. Agents never move it: show the person the plan and the command it ends with, which they run themselves (or they use Move to project… in the project's settings).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "boards": {
+            "default": [],
+            "description": "Boards, brd_….",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "docs": {
+            "default": [],
+            "description": "Project Docs, pdc_….",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "into": {
+            "default": null,
+            "description": "Move it into a project that exists: its id (prj_…).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "issues": {
+            "default": [],
+            "description": "Issues: \"#N\" (in the project) or \"iss_…\".",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "default": null,
+            "description": "Move it into a new project with this name.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "owner": {
+            "default": null,
+            "description": "The new project's owner: personal (the default) or a team's id (tm_…).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "The project to move work out of: its id (prj_…) or personal.\nDefault: the current project.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repos": {
+            "default": [],
+            "description": "Linked repos, OWNER/NAME.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "title": "SplitArgs",
+        "type": "object"
+      },
+      "name": "project_split",
+      "title": "Plan moving work out of a project"
     }
   ],
   "read, labs true": [
@@ -24787,6 +25202,89 @@
       },
       "name": "read_session",
       "title": "Read an agent session"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Plan moving work out of a project"
+      },
+      "description": "Plan moving work out of one of the user's projects in Arugula cloud (default the current one) into a new project (name, and owner: personal or a team's tm_ id) or one that exists (into, its prj_ id): linked repos (OWNER/NAME), boards (brd_…), issues (#N in the project, or iss_…) and Docs (pdc_…). A repo's boards, issues and sessions come with it; a board's issues and Docs with the board. It only plans and changes nothing: it says what to deal with before moving (notes) and what comes along, with each issue's new number. Agents never move it: show the person the plan and the command it ends with, which they run themselves (or they use Move to project… in the project's settings).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "boards": {
+            "default": [],
+            "description": "Boards, brd_….",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "docs": {
+            "default": [],
+            "description": "Project Docs, pdc_….",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "into": {
+            "default": null,
+            "description": "Move it into a project that exists: its id (prj_…).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "issues": {
+            "default": [],
+            "description": "Issues: \"#N\" (in the project) or \"iss_…\".",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "default": null,
+            "description": "Move it into a new project with this name.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "owner": {
+            "default": null,
+            "description": "The new project's owner: personal (the default) or a team's id (tm_…).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "The project to move work out of: its id (prj_…) or personal.\nDefault: the current project.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repos": {
+            "default": [],
+            "description": "Linked repos, OWNER/NAME.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "title": "SplitArgs",
+        "type": "object"
+      },
+      "name": "project_split",
+      "title": "Plan moving work out of a project"
     }
   ]
 }
