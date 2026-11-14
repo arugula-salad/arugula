@@ -63,6 +63,32 @@ export function roomElsewhere(r: Route): string | null {
   return x && listedInChat(x) && projectOfRoom(x.id) !== r.project ? roomPath(x.id, r.msg, r.thread) : null;
 }
 
+/** The project a Doc or board the page has read is in now, when that isn't
+ * the one its address names: a split moved it (Arugula #972). An issue's
+ * is the issue's own `project`. */
+const moved = new Map<string, string>();
+const movedListeners = new Set<() => void>();
+export const homes = {
+  /** `id`, read from the platform, is in `project`. */
+  set(id: string, project: string) {
+    if (moved.get(id) === project) return;
+    moved.set(id, project);
+    movedListeners.forEach((fn) => fn());
+  },
+  subscribe(fn: () => void) {
+    movedListeners.add(fn);
+    return () => void movedListeners.delete(fn);
+  },
+};
+
+/** The address of an issue, Doc or board page in the project it's in now,
+ * when the route names another: null otherwise. The slug's rewrite goes
+ * there, so an old address lands on the new one in one step. */
+export function movedHome(r: Route): string | null {
+  const at = r.page === "issue" ? issues.known(r.issue)?.project : r.page === "doc" ? moved.get(r.doc) : r.page === "board" ? moved.get(r.board) : undefined;
+  return at && "project" in r && at !== r.project ? pathOf({ ...r, project: at } as Route, names) : null;
+}
+
 /** Each id's name now, for its slug. */
 export function names(id: string): string | undefined {
   if (id.startsWith("prj_")) return session.project(id)?.name;

@@ -118,7 +118,8 @@ test("an old issue address lands on the issue in its new project", async ({ page
   await open(page, `/p/${ME}`, () => back);
   await expect(note(page)).toBeVisible();
   await page.goto(`/p/${ME}/issues/${ISSUE}`);
-  await expect(page).toHaveURL(new RegExp(`/p/${RHYTHM}[^/]*/issues/${ISSUE}`));
+  // The new project, with the title's slug: one address, whichever comes first.
+  await expect(page).toHaveURL(new RegExp(`/p/${RHYTHM}[^/]*/issues/${ISSUE}-rhythm-dogfood-on-android$`));
   await expect(page.getByText(issue.title).first()).toBeVisible();
   await expect(page.getByText("That issue is in another project.")).toHaveCount(0);
   // In its place in history: Back skips the old address.

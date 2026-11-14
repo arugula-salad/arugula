@@ -34,7 +34,7 @@ import { modeOf } from "../../shared/docs/docs-mode";
 import { noImages, projectItem, shapeOf, stateOf, useProjectDoc, useProjectDocs } from "../../shared/docs/project-docs";
 import { moveDocsToTeam, resultWords, type MoveResult } from "../../shared/docs/move-docs";
 import "../../shared/docs/docs.css";
-import { names } from "../links";
+import { homes, names } from "../links";
 import { follow, go, pathOf } from "../router";
 import { SectionHead } from "../../shared/ui/section-head";
 import { session, type PlatformProject } from "../session";
@@ -391,8 +391,8 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
     projectDocs.get(project, doc).then(
       (v) => {
         if (n !== seen.current) return;
-        // A Doc moved to another project (Arugula #972): its old address lands on its new one.
-        if (v.doc.project !== project) return go(pathOf({ page: "doc", project: v.doc.project, doc }, names) + location.hash, true);
+        // A Doc moved to another project (Arugula #972): the page's address goes to its new one.
+        if (v.doc.project !== project) return homes.set(doc, v.doc.project);
         show(v);
       },
       (e: Error) => n === seen.current && setMissing(e instanceof DocError && e.status === 404 ? "it isn't there, or isn't yours to read" : e.message),
