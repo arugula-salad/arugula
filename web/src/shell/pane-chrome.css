@@ -277,3 +277,14 @@ html:root .prompt-backdrop.pane-tip-backdrop {
   .pane-tip > .prompt-buttons :is(.primary, .secondary) { min-height: 24px; padding: 3px 8px; font-size: var(--text-sm); }
   .prompt .pane-tip-never { order: 1; flex-basis: 100%; justify-content: center; margin-right: 0; font-size: var(--text-xs); }
 }
+
+/* A pane in a fixed slot outside the grid (ui/panes/live-slot.tsx): a board
+   row's Live session. The pane keeps its size in cells; the slot scrolls. */
+.live-slot {
+  position: relative;
+  height: 320px;
+  margin: 8px 0;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
+}
