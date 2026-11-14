@@ -304,6 +304,20 @@
             "op"
           ],
           "type": "object"
+        },
+        {
+          "$ref": "#/$defs/RepoMoved",
+          "description": "A GitHub repo linked to one of the machine's owner's projects is\nlinked to another now, or to none (Arugula #992). The daemon asks\ncontrol the repo's project again, as it does on each connect, and\nthe sessions whose project was inferred from the repo take it; one\nset by hand stays. It answers `done` once they have.",
+          "properties": {
+            "op": {
+              "const": "projects.repo_moved",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -1035,6 +1049,19 @@
         "delegation",
         "caps",
         "made"
+      ],
+      "type": "object"
+    },
+    "RepoMoved": {
+      "description": "`projects.repo_moved`'s repo (Arugula #992). It names no project: a\ndaemon asks control which, so an old or repeated op can't move a\nsession back.",
+      "properties": {
+        "repo": {
+          "description": "`OWNER/NAME` on github.com.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "repo"
       ],
       "type": "object"
     },

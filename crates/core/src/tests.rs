@@ -653,7 +653,10 @@ fn inferred_work_follows_its_repo_without_its_card_and_work_set_by_hand_stays() 
     m.infer_work(1, work("prj_a", Some("#3")), None).unwrap();
     let renamed = crate::ProjectRef { id: "prj_a".into(), name: "A2".into() };
     assert_eq!(m.follow_repo("acme/app", &renamed), vec![1]);
-    assert_eq!((m.sessions[0].project.as_ref(), m.sessions[0].work.clone()), (Some(&renamed), Some(work("prj_a", Some("#3")))));
+    assert_eq!(
+        (m.sessions[0].project.as_ref(), m.sessions[0].work.clone()),
+        (Some(&renamed), Some(work("prj_a", Some("#3"))))
+    );
 
     // Work set by hand in another project moved the session there: it no
     // longer follows the repo.
