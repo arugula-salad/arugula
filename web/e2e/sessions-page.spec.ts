@@ -2,7 +2,9 @@
 // project, wherever it runs, grouped by its card, with the groups that need
 // you first and Not on a card last; finished sessions folded; a computer's
 // session opening to its panes, each with its line, Open (live, over the
-// page) and Open on its machine; Open card to the card's drawer on its
+// page) and Open on its machine; each card's board and lane, and each
+// session's branch, from the by-card answer, with the boards read only for
+// a cloud from before it said them; Open card to the card's drawer on its
 // board; and, from a cloud without the by-card route, the hosted wave alone.
 // On the app's frame fixture (app-frame-page.tsx), with the cloud's
 // answers from sessions-fixture.ts and a real pane of the suite's daemon.
@@ -34,13 +36,19 @@ const board = {
   docs: [],
 };
 
-/** A fresh pane, the cloud's answers, then the app at the project's Sessions. */
-async function openSessions(page: Page, cards: "by-card" | "not yet" = "by-card"): Promise<number> {
+/** Reads of the project's boards since the page opened. */
+let boardReads = 0;
+
+/** A fresh pane, the cloud's answers, then the app at the project's
+ * Sessions. "older" is a by-card answer from before its cards' boards and
+ * lanes and its sessions' branches. */
+async function openSessions(page: Page, cards: "by-card" | "older" | "not yet" = "by-card"): Promise<number> {
   await reset(page);
   const [pane] = await panes(page);
-  await page.route(`**/api/projects/${P}/sessions/by-card`, (r) => (cards === "by-card" ? r.fulfill({ json: byCard(M, pane) }) : r.fulfill({ status: 404, json: { error: "not found" } })));
+  boardReads = 0;
+  await page.route(`**/api/projects/${P}/sessions/by-card`, (r) => (cards === "not yet" ? r.fulfill({ status: 404, json: { error: "not found" } }) : r.fulfill({ json: byCard(M, pane, cards === "by-card") })));
   await page.route(new RegExp(`/api/projects/${P}/sessions(\\?.*)?$`), (r) => r.fulfill({ json: wave("sams-laptop") }));
-  await page.route(`**/api/projects/${P}/boards`, (r) => r.fulfill({ json: { project: P, boards: [board.board] } }));
+  await page.route(`**/api/projects/${P}/boards`, (r) => (boardReads++, r.fulfill({ json: { project: P, boards: [board.board] } })));
   await page.route("**/api/boards/brd_00e2e0", (r) => r.fulfill({ json: board }));
   const body = await fixturePage("./app-frame-page.tsx");
   await page.route(new RegExp(`/p/${P}`), (r) => r.fulfill({ contentType: "text/html", body }));
@@ -57,7 +65,7 @@ test.describe("on a computer", () => {
     await openSessions(page);
     await expect(groups(page)).toHaveCount(4);
     expect(await groups(page).evaluateAll((gs) => gs.map((g) => (g as HTMLElement).dataset.sessionsGroup))).toEqual(["iss_985", "iss_970", "iss_990", "none"]);
-    // A card's head: its board and lane, and Open card to its row.
+    // A card's head: its board and lane, as the answer says them, and Open card to its row.
     const first = groups(page).nth(0);
     await expect(first.locator("[data-sessions-card]")).toHaveText("#985 A project's Sessions page");
     await expect(first.locator("[data-sessions-card-place]")).toHaveText("Launch · Doing");
@@ -65,6 +73,9 @@ test.describe("on a computer", () => {
     // A hosted session and a computer's on the same card, as rows alike.
     const rail = page.locator('[data-sessions-group="iss_970"]');
     await expect(rail.locator('[data-session-row="machine:7"]')).toContainText("on sams-laptop, yours");
+    // Its branch, as the answer says it; #970 is on no board.
+    await expect(rail.locator('[data-session-row="machine:7"] [data-session-branch]')).toHaveText("arugula/0970-rail-pane");
+    await expect(rail.locator("[data-sessions-card-place]")).toHaveCount(0);
     // Finished sessions fold to a line per group; one whose turn ended
     // (`done`) isn't finished, and stays.
     await expect(rail.locator('[data-session-row="ses_0971dddd"]')).toBeVisible();
@@ -80,6 +91,8 @@ test.describe("on a computer", () => {
     await expect(page.locator("[data-sessions-runs]")).toBeVisible();
     await expect(page.locator("[data-sessions-label]")).toBeVisible();
     await expect(page.locator("[data-sessions-asker]")).toBeVisible();
+    // The answer placed every card: no board was read for it.
+    expect(boardReads).toBe(0);
     await page.screenshot({ path: info.outputPath("sessions-by-card.png") });
   });
 
@@ -111,6 +124,16 @@ test.describe("on a computer", () => {
     await openSessions(page);
     await page.locator('[data-sessions-group="iss_985"] [data-sessions-open-card]').click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/boards/brd_00e2e0`));
+    await expect(page.locator('[data-board-drawer="row_0985"]')).toBeVisible();
+  });
+
+  test("from a cloud whose by-card answer doesn't place its cards, the boards do", async ({ page }) => {
+    await openSessions(page, "older");
+    const first = page.locator('[data-sessions-group="iss_985"]');
+    await expect(first.locator("[data-sessions-card-place]")).toHaveText("Launch · Doing");
+    expect(boardReads).toBeGreaterThan(0);
+    await expect(page.locator('[data-session-row="machine:7"] [data-session-branch]')).toHaveCount(0);
+    await first.locator("[data-sessions-open-card]").click();
     await expect(page.locator('[data-board-drawer="row_0985"]')).toBeVisible();
   });
 

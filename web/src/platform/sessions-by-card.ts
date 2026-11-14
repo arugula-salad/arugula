@@ -118,3 +118,30 @@ export function panesShown(src: ProjectSession | null): { machine: string; pane:
   if (src.kind === "agent") return [{ machine, pane: src.id, kind: "agent", state: src.state }];
   return [];
 }
+
+/** A session's branch, as the by-card answer says it: its own, else its
+ * first pane's that says one; null when it isn't said (a cloud from
+ * before the field, or a session on none). */
+export function branchOf(src: ProjectSession | null): string | null {
+  if (!src) return null;
+  if (src.branch) return src.branch;
+  if (src.kind === "machine") return src.panes.map((p) => p.branch).find((b) => !!b) ?? null;
+  return null;
+}
+
+const LANE: Record<string, string> = { next: "Next", doing: "Doing", review: "Review", done: "Done" };
+
+/** Where a card sits, as the by-card answer says it: its board and its
+ * lane's title (empty when it has none). Null when it's on no board, or
+ * when the answer doesn't say (a cloud from before the fields). */
+export function cardPlace(card: SessionCard | null): { board: string; boardTitle: string; lane: string } | null {
+  if (!card?.board) return null;
+  return { board: card.board.id, boardTitle: card.board.title, lane: card.lane ? LANE[card.lane] : "" };
+}
+
+/** Whether the page must read the project's boards to place its groups:
+ * the wave alone (no by-card answer), or an answer whose cards don't say
+ * their board (a cloud from before the field). */
+export function readsBoards(byCard: SessionsByCard | null): boolean {
+  return !byCard || byCard.groups.some((g) => !!g.card && g.card.board === undefined);
+}

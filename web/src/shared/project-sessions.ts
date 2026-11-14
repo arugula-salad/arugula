@@ -10,31 +10,39 @@
 import { platformFetch } from "./maintenance.ts";
 
 /** The card a group of sessions works on: a native issue's number and
- * title, or its id alone for a card that isn't an issue. */
+ * title, or its id alone for a card that isn't an issue. `board` and
+ * `lane` are where it sits (null: on no board, or no lane); a cloud from
+ * before them sends neither. */
 export interface SessionCard {
   id: string;
   number?: number;
   title?: string;
+  board?: { id: string; title: string } | null;
+  lane?: "next" | "doing" | "review" | "done" | null;
 }
 
 /** Where a session runs: one of the team's machines, or Arugula cloud. */
 export type SessionOn = { kind: "machine"; id: string; name: string } | { kind: "hosted" };
 
 /** One pane of a session on a machine. `work_item` is the pane's own card
- * when it has one (an `iss_…`); `state` may not be known. */
+ * when it has one (an `iss_…`); `state` and `branch` may not be known. */
 export interface SessionPane {
   pane: number;
   kind: string;
   work_item: string | null;
   state: string | null;
+  branch?: string | null;
 }
 
 /** A session: a set of tabs and panes on a machine, an agent block, or a
- * session in a cloud workspace. `updated_at` is in ms (0: not known). */
+ * session in a cloud workspace. `updated_at` is in ms (0: not known).
+ * `branch`, and a hosted session's `settled` (its turn ended and nothing
+ * is queued, which isn't finished: it may wait on a person), are
+ * optional: a cloud from before them doesn't send them. */
 export type ProjectSession =
-  | { kind: "machine"; id: string; name: string; on: SessionOn; panes: SessionPane[]; updated_at: number }
-  | { kind: "agent"; id: number; name: string; on: SessionOn; state: string; updated_at: number }
-  | { kind: "hosted"; id: string; name: string; on: SessionOn; state: string; updated_at: number };
+  | { kind: "machine"; id: string; name: string; on: SessionOn; panes: SessionPane[]; branch?: string | null; updated_at: number }
+  | { kind: "agent"; id: number; name: string; on: SessionOn; state: string; branch?: string | null; updated_at: number }
+  | { kind: "hosted"; id: string; name: string; on: SessionOn; state: string; settled?: boolean; branch?: string; updated_at: number };
 
 export interface SessionGroup {
   /** null: Not on a card, which comes last. */
