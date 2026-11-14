@@ -386,7 +386,11 @@ nothing else of the above. What they get:
   labelled with the machine, and apart from the owner's own.
 - Files: `post_thread`'s `files` (paths the agent may read, at most 10 of
   100 MB, or less if control's limit is lower), and `read_thread` lists each
-  message's attachments with name, type, size and control's address.
+  message's attachments with name, type, size and id. `read_thread`'s `file`
+  (an id) fetches one as the machine, under the same `threads.read` check as
+  the room's messages, and saves it where `attach` keeps the caller's pane's
+  uploads (at most 20 MB, kept a day): the agent reads the path it answers. A
+  delivered mention names its files and says to look before answering.
 - Pins: `post_thread`'s `pin_seq` (and `remove`). `read_thread` begins with
   the room's topic, description and pins, marks pinned messages, and shows
   system lines as `* alice set the topic: …` (the platform's own as
