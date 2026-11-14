@@ -389,7 +389,12 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
       () => n === seen.current && setOnBoards([]),
     );
     projectDocs.get(project, doc).then(
-      (v) => n === seen.current && show(v),
+      (v) => {
+        if (n !== seen.current) return;
+        // A Doc moved to another project (Arugula #972): its old address lands on its new one.
+        if (v.doc.project !== project) return go(pathOf({ page: "doc", project: v.doc.project, doc }, names) + location.hash, true);
+        show(v);
+      },
       (e: Error) => n === seen.current && setMissing(e instanceof DocError && e.status === 404 ? "it isn't there, or isn't yours to read" : e.message),
     );
   };

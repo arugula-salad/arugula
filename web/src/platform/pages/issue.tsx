@@ -3,14 +3,23 @@
 // M203), as the reader, with the way back to the project's list. Only here
 // does it open on GitHub (M205).
 
+import { useEffect } from "preact/hooks";
 import { issues, linkedRepos, openOnGithub } from "../../shared/issues/store";
 import { IssueApiContext, IssueView, type IssueApi } from "../../shared/issues/view";
 import { names } from "../links";
-import { follow, pathOf } from "../router";
+import { useSubscribe } from "../../shared/ui/hooks";
+import { follow, go, pathOf } from "../router";
 import { mayWrite, membersOf, useIssuesOn } from "./issues";
 import { Missing } from "./project";
 
 export function IssuePage({ project, issue, msg }: { project: string; issue: string; msg?: number }) {
+  // An issue moved to another project (Arugula #972): its old address
+  // lands on its new one, in its place in history.
+  useSubscribe((fn) => issues.subscribe(fn));
+  const home = issues.known(issue)?.project;
+  useEffect(() => {
+    if (home && home !== project) go(pathOf({ page: "issue", project: home, issue, msg }, names), true);
+  }, [home, project]);
   const on = useIssuesOn(project);
   if ("show" in on) return on.show;
   const p = on.p;

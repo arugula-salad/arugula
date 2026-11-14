@@ -278,6 +278,8 @@ export function BoardPage({ project, board }: { project: string; board: string }
         write={mayWrite(p)}
         platform={(path) => path}
         keepInUrl
+        // A board moved to another project (Arugula #972): its old address lands on its new one.
+        onProject={(home) => home !== project && go(pathOf({ page: "board", project: home, board }, names) + location.hash, true)}
         back={
           <p class="dim">
             {/* The swarm is the shell's, on control's page (#466). */}

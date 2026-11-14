@@ -14,9 +14,7 @@
 // group says where they move from, with a link there.
 
 import { useEffect, useRef, useState } from "preact/hooks";
-import type { ProjectDoc } from "../../shared/proto.gen";
 import { usePlatformApi } from "../../shared/platform-api";
-import { projectDocs } from "../../shared/docs/store";
 import { Card } from "../../shared/ui/card";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { ArrowIcon } from "../../shared/ui/icons";
@@ -67,17 +65,6 @@ function Mover({ p }: { p: PlatformProject }) {
   const [err, setErr] = useState("");
   const [said, setSaid] = useState("");
   const [busy, setBusy] = useState(false);
-  // The project's Docs, by title: the list alone, not each one read.
-  const [docs, setDocs] = useState<ProjectDoc[] | null>(null);
-  useEffect(() => {
-    let live = true;
-    projectDocs.list(p.id).then(
-      (l) => live && setDocs(l.docs),
-      () => live && setDocs([]),
-    );
-    return () => void (live = false);
-  }, [p.id]);
-
   // Ask the planner again once the picks settle; an older answer is dropped.
   const ask = askOf(picks);
   const key = JSON.stringify(ask);
@@ -257,10 +244,10 @@ function Mover({ p }: { p: PlatformProject }) {
                 <PickList
                   label="Docs"
                   data-move-docs
-                  groups={docGroups(p.id, src.boards, docs ?? [], out!, moving, picks, q.docs, here)}
+                  groups={docGroups(p.id, src.boards, src.docs, out!, moving, picks, q.docs, here)}
                   toggle={(k, on) => set((n) => flip(k.includes("/") ? n.machineDocs : n.docs, k, on))}
                   search={(() => {
-                    const keys = (docs ?? []).filter((d) => !onMoving(d.id, src.boards, moving) && matches(d.title, q.docs)).map((d) => d.id);
+                    const keys = src.docs.filter((d) => !onMoving(d.id, src.boards, moving) && matches(d.title, q.docs)).map((d) => d.id);
                     return {
                       query: q.docs,
                       setQuery: (v: string) => setQ({ ...q, docs: v }),
@@ -407,10 +394,10 @@ const onMoving = (id: string, boards: Plan["source"]["boards"], moving: Set<stri
 /** The Docs, in groups: the project's by the board they're on (the first,
  * with no board last), then each machine's that a moving board links, which
  * only that machine moves. */
-function docGroups(project: string, boards: Plan["source"]["boards"], docs: ProjectDoc[], out: Plan, moving: Set<string>, picks: Picks, q: string, here: (machine: string) => boolean): PickGroup[] {
+function docGroups(project: string, boards: Plan["source"]["boards"], docs: Plan["source"]["docs"], out: Plan, moving: Set<string>, picks: Picks, q: string, here: (machine: string) => boolean): PickGroup[] {
   const shown = docs.filter((d) => matches(d.title, q));
   const placed = new Set<string>();
-  const pick = (d: ProjectDoc): Pick => ({ key: d.id, title: d.title, on: picks.docs.has(d.id), why: onMoving(d.id, boards, moving) ? "with its board" : null });
+  const pick = (d: Plan["source"]["docs"][number]): Pick => ({ key: d.id, title: d.title, on: picks.docs.has(d.id), why: onMoving(d.id, boards, moving) ? "with its board" : null });
   const groups: PickGroup[] = [];
   for (const b of boards) {
     const items = shown.filter((d) => b.docs.includes(d.id) && !placed.has(d.id));

@@ -32,11 +32,12 @@ const SOURCE = {
     { id: "brd_ideas", title: "Ideas", rows: 2, closed: false, docs: [] },
   ],
   issues: [{ id: "iss_loose", number: 1, title: "Docs list: share Docs without opening them", closed: true }],
+  docs: [
+    { id: "pdc_rhythm", title: "Rhythm plan", board: "brd_rhythm" },
+    { id: "pdc_pricing", title: "Pricing" },
+  ],
 };
-const DOCS = [
-  { id: "pdc_rhythm", title: "Rhythm plan" },
-  { id: "pdc_pricing", title: "Pricing" },
-];
+const DOCS = SOURCE.docs;
 const MAC_DOC = "d0c0ffee00000001";
 
 type Ask = { to: { kind: "new"; name: string; owner: { kind: string; id?: string } } | { kind: "project"; id: string }; repos: string[]; boards: string[]; issues: string[]; docs: string[] };
@@ -100,7 +101,6 @@ async function open(page: Page, path: string, move: (ask: Ask, n: number) => { s
   // What this spec doesn't answer, nobody does.
   await page.route(/\/api\//, (r) => json(r, { error: "not here" }, 404));
   await page.route(/\/api\/projects$/, (r) => json(r, { me: { account: "acct_a", login: "sam", name: "Sam" }, projects: projects(made), hosted: false }));
-  await page.route(new RegExp(`/api/projects/${ME}/docs$`), (r) => json(r, { docs: DOCS.map((d) => ({ ...d, layout: "doc", rev: 1, created_at: 1, updated_at: 1 })) }));
   await page.route(new RegExp(`/api/projects/${ME}/split/plan$`), (r) => {
     const ask = r.request().postDataJSON() as Ask;
     seen.plans.push(ask);
@@ -177,7 +177,7 @@ test("a board, its repo and a Doc move into a new team project, and a machine's 
 });
 
 test("something changed since the plan: nothing moves, and the new plan shows", async ({ page }) => {
-  const seen = await open(page, `/p/${ME}/settings/move`, () => ({ status: 409, body: { error: "alecraso/rhythm: it changed since the plan, so nothing moved. Plan it again." } }));
+  const seen = await open(page, `/p/${ME}/settings/move`, () => ({ status: 409, body: { error: "alecraso/rhythm: it changed since the plan, so nothing moved. Plan it again.", reason: "changed" } }));
   await page.locator("[data-move-name]").fill("Rhythm");
   await tick(page, "repos", RHYTHM);
   await expect(page.locator("[data-move-along-issues]")).toContainText("2 issues");

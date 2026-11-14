@@ -32,6 +32,7 @@ import { InboxPage } from "./pages/inbox";
 import { Missing, ProjectHome } from "./pages/project";
 import { Installed, ProjectSettings } from "./pages/project-settings";
 import { MovePage } from "./move/move-page";
+import { SplitNote } from "./move/split-note";
 import { DesignPage } from "./pages/design";
 import { SettingsPage } from "./pages/settings";
 import { OwnerSettings } from "./pages/owner-settings";
@@ -167,6 +168,7 @@ function Shell({ children }: { children: preact.ComponentChildren }) {
       <WithRail>
         <PlatformBar />
         <MaintenanceNote />
+        <SplitNote />
         <main class="platform-main">{children}</main>
       </WithRail>
       <Toast />
