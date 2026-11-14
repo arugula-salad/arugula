@@ -19,6 +19,7 @@ import { names } from "./links";
 import { makers, ownerKey, owners, PERSONAL, type Owner } from "./owners";
 import { follow, go, pathOf } from "./router";
 import { session } from "./session";
+import { placeOf } from "./places-kept";
 
 /** A project's tile: "Me" for one of your own, else its name's first
  * letter; "∗" for All projects. */
@@ -53,8 +54,9 @@ export function Switcher({ from, project, owner, close, beside = false }: { from
       )}
     </a>
   );
+  // Where you were in it (Arugula #989), else its Overview.
   const projectRow = (p: PlatformProject) =>
-    row(p.id, pathOf({ page: "project", project: p.id }, names), initialsOf(p), p.name, counts.by.get(p.id) ?? 0, p.id === project, { "data-switcher-project": p.id });
+    row(p.id, placeOf(p.id) ?? pathOf({ page: "project", project: p.id }, names), initialsOf(p), p.name, counts.by.get(p.id) ?? 0, p.id === project, { "data-switcher-project": p.id });
   const group = (o: Owner, heading: ComponentChildren) => (
     <div key={o.key} class="switcher-group" role="group" aria-label={o.name} data-switcher-owner={o.key}>
       <div class="menu-header switcher-head">{heading}</div>

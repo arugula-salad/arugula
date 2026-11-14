@@ -22,6 +22,7 @@ import { MenuLayer, PromptLayer } from "../src/shared/ui/menu";
 import { platformApi } from "../src/platform/api";
 import { PlatformPage } from "../src/platform/page";
 import { appMachines } from "../src/app/machines";
+import { localBackend, setSeenBackend } from "../src/shared/seen";
 
 // The daemon's page key on this page's requests, as its own page has.
 await startPageKey();
@@ -52,6 +53,10 @@ window.fetch = async (input, init) => {
   if (url.pathname.startsWith("/api/chat") || url.pathname.startsWith("/api/notify")) return json({ error: "not here" }, 404);
   return realFetch(input, init);
 };
+
+// Prefs (where you were) are this browser's here, as the app's are until
+// the hub answers on its host.
+setSeenBackend(localBackend());
 
 // In the frame, as app.html's root is (shared/frame.css).
 const root = document.getElementById("root")!;
