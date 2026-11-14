@@ -217,12 +217,16 @@ pub async fn upload(
     store(&app, id, q, body).await.map(Json)
 }
 
+/// A name for a file the daemon writes itself: 16 hex digits.
+fn tag() -> String {
+    use std::hash::{BuildHasher, RandomState};
+    format!("{:016x}", RandomState::new().hash_one(std::time::SystemTime::now()))
+}
+
 /// A whole file from an agent through MCP (M71's `attach`): its path, as
 /// the route would answer it.
 pub async fn store_whole(app: &App, id: PaneId, ext: &str, body: Vec<u8>) -> Res<String> {
-    use std::hash::{BuildHasher, RandomState};
-    let tag = format!("{:016x}", RandomState::new().hash_one(std::time::SystemTime::now()));
-    let q = UploadQuery { id: tag, ext: ext.to_owned(), offset: 0, last: true };
+    let q = UploadQuery { id: tag(), ext: ext.to_owned(), offset: 0, last: true };
     let out = store(app, id, q, body.into()).await?;
     Ok(out["path"].as_str().unwrap_or_default().to_owned())
 }
@@ -268,6 +272,115 @@ async fn store(app: &App, id: PaneId, q: UploadQuery, body: Bytes) -> Res<serde_
         _ => path.to_string_lossy().into_owned(),
     };
     Ok(serde_json::json!({ "path": path, "done": last }))
+}
+
+/// The most a file saved for `pane` a chunk at a time ([`Incoming`]) may
+/// be: chat's limit here, but [`FILE_MAX`] for a VM pane's, which goes on
+/// to its machine whole.
+pub async fn incoming_max(app: &App, pane: PaneId) -> u64 {
+    let vm = agent(app, pane).await.is_none() && app.mux.api(|r| Api::MachineOf(pane, r)).await.flatten().is_some();
+    if vm { FILE_MAX } else { arugula_control_wire::chat::MAX_FILE_BYTES as u64 }
+}
+
+/// How much [`Incoming`] holds before it writes.
+const INCOMING_BUF: usize = 1 << 20;
+
+/// A file saved in a pane's uploads as it arrives (`read_thread`'s file,
+/// #538), so the daemon holds at most a megabyte of it: up to the caller's
+/// limit ([`incoming_max`]), within the host's quota. Dropped before
+/// [`finish`](Self::finish), what was written goes.
+pub struct Incoming {
+    pane: PaneId,
+    path: PathBuf,
+    file: Option<fs::File>,
+    buf: Vec<u8>,
+    written: u64,
+}
+
+impl Incoming {
+    /// A new file in `pane`'s uploads, named by the daemon, with `ext`.
+    pub async fn new(app: &App, id: PaneId, ext: &str) -> Res<Self> {
+        if agent(app, id).await.is_none() {
+            pane(app, id).await?;
+        }
+        let ext = ext.to_ascii_lowercase();
+        if ext.len() > 8 || !ext.bytes().all(|b| b.is_ascii_alphanumeric()) {
+            return Err(err(StatusCode::BAD_REQUEST, "ext: up to 8 letters and digits"));
+        }
+        let name = if ext.is_empty() { tag() } else { format!("{}.{ext}", tag()) };
+        let (path, file) = crate::task::spawn_blocking(move || -> Result<_, ApiError> {
+            let dir = folder(id).map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            let path = dir.join(name);
+            let file = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .custom_flags(nix::libc::O_NOFOLLOW)
+                .open(&path)
+                .map_err(|e| err(StatusCode::CONFLICT, e.to_string()))?;
+            Ok((path, file))
+        })
+        .await
+        .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))??;
+        Ok(Self { pane: id, path, file: Some(file), buf: Vec::with_capacity(INCOMING_BUF), written: 0 })
+    }
+
+    /// The next of it.
+    pub async fn write(&mut self, chunk: &[u8]) -> Res<()> {
+        self.buf.extend_from_slice(chunk);
+        if self.buf.len() >= INCOMING_BUF { self.flush().await } else { Ok(()) }
+    }
+
+    async fn flush(&mut self) -> Res<()> {
+        if self.buf.is_empty() {
+            return Ok(());
+        }
+        let (mut file, buf, dir) = (self.file.take(), std::mem::take(&mut self.buf), self.path.clone());
+        let (file, mut buf) = crate::task::spawn_blocking(move || -> Result<_, ApiError> {
+            let root = dir.parent().and_then(FsPath::parent).unwrap_or(&dir);
+            if used(root) + buf.len() as u64 > QUOTA {
+                return Err(err(
+                    StatusCode::INSUFFICIENT_STORAGE,
+                    "uploads on this host are at their 200 MB: close panes with old ones, or wait a day",
+                ));
+            }
+            let f = file.as_mut().ok_or_else(|| err(StatusCode::CONFLICT, "the file was refused already"))?;
+            f.write_all(&buf).map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            Ok((file, buf))
+        })
+        .await
+        .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))??;
+        self.written += buf.len() as u64;
+        buf.clear();
+        (self.file, self.buf) = (file, buf);
+        Ok(())
+    }
+
+    /// All of it is here: its path (on its machine, for a VM pane's) and
+    /// its size.
+    pub async fn finish(mut self, app: &App) -> Res<(String, u64)> {
+        self.flush().await?;
+        self.file = None;
+        let machine = match agent(app, self.pane).await {
+            Some(_) => None,
+            None => app.mux.api(|r| Api::MachineOf(self.pane, r)).await.flatten(),
+        };
+        let saved = match machine {
+            Some(m) => to_machine(app, self.pane, &m.sprite, &self.path).await?,
+            None => self.path.to_string_lossy().into_owned(),
+        };
+        // Kept: it's saved.
+        self.path = PathBuf::new();
+        Ok((saved, self.written))
+    }
+}
+
+impl Drop for Incoming {
+    fn drop(&mut self) {
+        if !self.path.as_os_str().is_empty() {
+            let _ = fs::remove_file(&self.path);
+        }
+    }
 }
 
 /// On a machine: `~/.cache/arugula/uploads/<pane>`, `0700`, made by
