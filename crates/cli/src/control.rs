@@ -1,20 +1,31 @@
-//! The CLI as a device of your account on Arugula control (M49).
+//! The CLI as a client of your account on Arugula control.
 //!
-//! `arugula login` makes this CLI a `cli` device: it asks control to join
-//! the account the way a daemon does (`arugulad join`), shows a code, and
-//! waits while a signed-in device approves it. It pins the account's root
-//! from the approval, as a daemon does, and keeps its key and the pin in
-//! the config dir (`cli-key`, `cli-control.json`).
+//! `arugula login` (aru-141, #998) signs this CLI in the way the desktop
+//! app signs in (control's `/auth/app`): it makes a verifier it keeps,
+//! listens on a loopback port and prints control's link. A signed-in
+//! browser that clicks Allow hands a one-time grant to that port (or the
+//! person pastes the address the browser lands on, when it's on another
+//! computer), and the CLI swaps the grant and its verifier for a session of
+//! the account, kept in the config dir (`cli-session.json`). No key and no
+//! certificate: control decides who reaches a machine.
 //!
 //! Then `--host NAME` finds names that aren't in the local daemon's host
-//! list in control's directory, checks the machine's certificate, and opens
-//! a Noise channel to it with the CLI's key: straight to a URL the machine
-//! lists, else through control's relay. The account's own machines are
-//! checked against the pinned root; a team's or a shared machine of another
-//! account against that account's root, pinned the first time this CLI sees
-//! it (as a browser does) and refused if control later says otherwise.
-//! Requests to control are signed with the key (`x-arugula-auth`, as
-//! daemons sign theirs), so there's no session to keep or expire.
+//! list in control's directory, and opens a Noise channel to the machine
+//! with a key made for that channel alone and a machine token from control
+//! (`POST /api/machines/{id}/token`) in its first message: straight to a URL
+//! the machine lists, else through control's relay. The daemon checks the
+//! token and nothing else about the CLI. The machine's Noise key is the one
+//! control's directory gives (#994), else the certificate listed beside it.
+//!
+//! A CLI logged in before that is a `cli` device of the account (M49, with
+//! `cli-key` and `cli-control.json`): it signs its requests to control with
+//! its key (`x-arugula-auth`, as daemons sign theirs) and asks for machine
+//! tokens the same way. Only when control gives no tokens at all (404: no
+//! issuer key, as a dev control has none) or the machine's daemon is from
+//! before them does it open the channel with its key, checked against the
+//! account's pinned root (another account's machine against that account's
+//! root, pinned the first time this CLI sees it), as before. `arugula login
+//! --device` still makes one, until the key code goes (#1007).
 //!
 //! Each HTTP connection the commands make is a request carried over that
 //! one channel ([`Link::stream`]), so `run`, `ls`, `capture` and the rest
@@ -44,7 +55,11 @@ use std::{
 };
 
 use anyhow::{Context, bail};
-use arugula_control_wire::{self as wire, maintenance};
+use arugula_control_wire::{
+    self as wire,
+    machine_token::{TokenHello, token_path},
+    maintenance,
+};
 use arugula_e2e::{
     Cert, DeviceKeys, Kind, Revocation, Trust,
     cert::{join_proof_body, request_auth},
@@ -61,6 +76,8 @@ use crate::http::{Stream, Target, Url, json_answer, send_on};
 
 const KEY_FILE: &str = "cli-key";
 const STATE_FILE: &str = "cli-control.json";
+/// A session from a browser's Allow (aru-141).
+const SESSION_FILE: &str = "cli-session.json";
 /// How long a direct URL gets before the relay is tried.
 const DIRECT_TIMEOUT: Duration = Duration::from_secs(3);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(15);
@@ -69,7 +86,7 @@ fn config_dir() -> PathBuf {
     arugula_proto::dirs::config_dir().unwrap_or_else(|| PathBuf::from(".config/arugula"))
 }
 
-/// What `arugula login` pinned.
+/// What `arugula login --device` pinned.
 #[derive(Serialize, Deserialize)]
 struct Saved {
     url: String,
@@ -87,24 +104,57 @@ struct Saved {
 
 impl Saved {
     fn write(&self) -> anyhow::Result<()> {
-        let dir = config_dir();
-        fs::create_dir_all(&dir)?;
-        let tmp = dir.join(format!("{STATE_FILE}.tmp"));
-        let mut file = fs::OpenOptions::new();
-        file.write(true).create(true).truncate(true);
-        #[cfg(unix)]
-        std::os::unix::fs::OpenOptionsExt::mode(&mut file, 0o600);
-        file.open(&tmp)?.write_all(serde_json::to_string_pretty(self)?.as_bytes())?;
-        fs::rename(&tmp, dir.join(STATE_FILE))?;
-        Ok(())
+        write_private(STATE_FILE, self)
     }
 }
 
-/// This CLI, enrolled.
+/// What `arugula login` keeps since aru-141: a session of the account,
+/// from a browser that allowed it, as the desktop app's window has one.
+#[derive(Serialize, Deserialize)]
+struct SavedSession {
+    url: String,
+    /// The session's cookie, `name=value`, as control set it.
+    cookie: String,
+    account: String,
+    #[serde(default)]
+    login: String,
+}
+
+/// `value` as JSON in the config dir's `file`, readable by this user only.
+fn write_private<T: Serialize>(file: &str, value: &T) -> anyhow::Result<()> {
+    let dir = config_dir();
+    fs::create_dir_all(&dir)?;
+    let tmp = dir.join(format!("{file}.tmp"));
+    let mut f = fs::OpenOptions::new();
+    f.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut f, 0o600);
+    f.open(&tmp)?.write_all(serde_json::to_string_pretty(value)?.as_bytes())?;
+    fs::rename(&tmp, dir.join(file))?;
+    Ok(())
+}
+
+/// This CLI, logged in.
 pub struct Enrolled {
     /// The control it's logged in to (Arugula #681: `arugula access` asks
     /// it for a machine's powers only when the machine is joined there).
     pub(crate) url: String,
+    account: String,
+    how: How,
+}
+
+/// How this CLI is signed in.
+enum How {
+    /// A session from a browser's Allow (aru-141): its cookie.
+    Session(String),
+    /// A `cli` device of the account (M49), from before: its key signs
+    /// requests to control, and opens a channel when tokens can't (#1007
+    /// removes it).
+    Device(Box<Device>),
+}
+
+/// A `cli` device's key and what it pinned.
+struct Device {
     cert: Cert,
     trust: Trust,
     pins: BTreeMap<String, String>,
@@ -118,9 +168,82 @@ fn debug_http() -> bool {
     std::env::var("ARUGULA_DEBUG_HTTP").is_ok_and(|v| !v.is_empty() && v != "0")
 }
 
+/// Control gave no machine token: signed out, not let in to the machine,
+/// or (404) a control that gives none at all or doesn't know the machine.
+#[derive(Debug)]
+struct NoToken {
+    status: u16,
+    said: String,
+}
+
+impl std::fmt::Display for NoToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Arugula cloud gave no token for this machine: {}", self.said)
+    }
+}
+
+impl std::error::Error for NoToken {}
+
+/// The machine's answer to a channel opened with a machine token: a
+/// refusal, with its code (`machine-token`: the token wasn't taken;
+/// `malformed`: a daemon from before machine tokens).
+#[derive(Debug)]
+struct Refused {
+    code: String,
+    message: String,
+}
+
+impl std::fmt::Display for Refused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.code == "malformed" {
+            write!(f, "the machine's arugulad is older than machine tokens (0.70.4): update it there")
+        } else {
+            write!(f, "the machine refused its token: {}", self.message)
+        }
+    }
+}
+
+impl std::error::Error for Refused {}
+
+/// Whether a device should reach the machine with its key after trying a
+/// token, as the page decides (`keyAfterTokens`): control gives no tokens
+/// at all, or the machine's daemon is from before them. Anything else
+/// (signed out, not let in, a refused token) the key wouldn't fix.
+fn key_after_tokens(e: &anyhow::Error) -> bool {
+    e.downcast_ref::<NoToken>().is_some_and(|n| n.status == 404)
+        || e.downcast_ref::<Refused>().is_some_and(|r| r.code == "malformed")
+}
+
+/// The machine (or control for it) answered, so no other route would do
+/// better.
+fn answered(e: &anyhow::Error) -> bool {
+    e.downcast_ref::<NoToken>().is_some() || e.downcast_ref::<Refused>().is_some()
+}
+
+/// Request headers this CLI adds, by name.
+type Headers = Vec<(&'static str, String)>;
+
+/// A Noise public key in hex, as control lists one.
+fn noise_key(hex: &str) -> Option<[u8; 32]> {
+    let hex = hex.trim();
+    if hex.len() != 64 {
+        return None;
+    }
+    let mut out = [0u8; 32];
+    for (i, b) in out.iter_mut().enumerate() {
+        *b = u8::from_str_radix(hex.get(2 * i..2 * i + 2)?, 16).ok()?;
+    }
+    Some(out)
+}
+
 impl Enrolled {
     pub fn load() -> anyhow::Result<Option<Self>> {
         let dir = config_dir();
+        if let Ok(text) = fs::read_to_string(dir.join(SESSION_FILE)) {
+            let s: SavedSession =
+                serde_json::from_str(&text).with_context(|| format!("reading {}", dir.join(SESSION_FILE).display()))?;
+            return Ok(Some(Self { url: s.url, account: s.account, how: How::Session(s.cookie) }));
+        }
         let Ok(text) = fs::read_to_string(dir.join(STATE_FILE)) else { return Ok(None) };
         let s: Saved =
             serde_json::from_str(&text).with_context(|| format!("reading {}", dir.join(STATE_FILE).display()))?;
@@ -128,7 +251,39 @@ impl Enrolled {
         if keys.id() != s.cert.device {
             bail!("{} and {} don't match: `arugula logout`, then log in again", KEY_FILE, STATE_FILE);
         }
-        Ok(Some(Self { url: s.url, cert: s.cert, trust: s.trust, pins: s.pins, closed: s.closed, keys }))
+        Ok(Some(Self::device(s.url, Device { cert: s.cert, trust: s.trust, pins: s.pins, closed: s.closed, keys })))
+    }
+
+    fn device(url: String, d: Device) -> Self {
+        Self { url, account: d.trust.account.clone(), how: How::Device(Box::new(d)) }
+    }
+
+    /// This CLI's key and pins, if it's a device of the account.
+    fn dev(&self) -> Option<&Device> {
+        match &self.how {
+            How::Device(d) => Some(d),
+            How::Session(_) => None,
+        }
+    }
+
+    fn dev_mut(&mut self) -> Option<&mut Device> {
+        match &mut self.how {
+            How::Device(d) => Some(d),
+            How::Session(_) => None,
+        }
+    }
+
+    /// Save what a device pinned since it was loaded.
+    fn save_device(&self) -> anyhow::Result<()> {
+        let Some(d) = self.dev() else { return Ok(()) };
+        Saved {
+            url: self.url.clone(),
+            cert: d.cert.clone(),
+            trust: d.trust.clone(),
+            pins: d.pins.clone(),
+            closed: d.closed.clone(),
+        }
+        .write()
     }
 
     fn url(&self) -> anyhow::Result<Url> {
@@ -140,14 +295,22 @@ impl Enrolled {
     #[cfg(test)]
     pub(crate) fn for_tests(url: String) -> Self {
         let keys = DeviceKeys::generate();
-        Self {
+        Self::device(
             url,
-            cert: Cert::new(&keys, "a", Kind::Cli, "cli"),
-            trust: Trust { account: "a".into(), root: String::new() },
-            pins: BTreeMap::new(),
-            closed: Default::default(),
-            keys,
-        }
+            Device {
+                cert: Cert::new(&keys, "a", Kind::Cli, "cli"),
+                trust: Trust { account: "a".into(), root: String::new() },
+                pins: BTreeMap::new(),
+                closed: Default::default(),
+                keys,
+            },
+        )
+    }
+
+    /// A CLI signed in at `url` with a session's `cookie`, for a test.
+    #[cfg(test)]
+    pub(crate) fn for_tests_session(url: String, cookie: &str) -> Self {
+        Self { url, account: "a".into(), how: How::Session(cookie.into()) }
     }
 
     /// Control's URL, as this CLI logged in to it.
@@ -157,15 +320,37 @@ impl Enrolled {
 
     /// The account this CLI is logged in as.
     pub fn account(&self) -> &str {
-        &self.trust.account
+        &self.account
     }
 
-    /// A request to control, signed with this CLI's key. It waits out a
-    /// maintenance window on control's chat and Cloud routes (M141, `grants`
-    /// is one) for up to five minutes, saying so on stderr; which 503s are
-    /// sent again is [`maintenance::may_retry`]'s.
+    /// Control's origin, as its own page sends it: what a request riding on
+    /// a session's cookie says it's from.
+    fn origin(&self) -> String {
+        self.url.trim_end_matches('/').to_owned()
+    }
+
+    /// Who's asking, for a request to control: the session's cookie (and
+    /// control's own origin, which a change made with a cookie needs), or
+    /// the device's signature over the request.
+    fn auth_headers(&self, method: &str, path: &str, body: &[u8]) -> Headers {
+        match &self.how {
+            How::Session(cookie) => vec![("Cookie", cookie.clone()), ("Origin", self.origin())],
+            How::Device(d) => vec![("x-arugula-auth", request_auth(&d.keys, method, path, body))],
+        }
+    }
+
+    /// A request to control, as this CLI. It waits out a maintenance window
+    /// on control's chat and Cloud routes (M141, `grants` is one) for up to
+    /// five minutes, saying so on stderr; which 503s are sent again is
+    /// [`maintenance::may_retry`]'s.
     pub(crate) fn api(&self, method: &str, path: &str, body: Option<&Value>) -> anyhow::Result<Value> {
         let (status, got) = self.api_raw(method, path, body)?;
+        if status == 401 && matches!(self.how, How::Session(_)) {
+            bail!(
+                "this CLI's sign-in to Arugula cloud at {} has ended: `arugula logout`, then `arugula login` again",
+                self.url
+            );
+        }
         json_answer(status, got).map_err(|e| e.context(format!("control at {}", self.url)))
     }
 
@@ -177,20 +362,18 @@ impl Enrolled {
         let mut waits = maintenance::Waits::new(maintenance::Patience::AGENT);
         loop {
             // Signed afresh each try: a signature's nonce counts once.
-            let auth = request_auth(&self.keys, method, path, bytes.as_bytes());
+            let auth = self.auth_headers(method, path, bytes.as_bytes());
+            // It reads the desktop app's `app` certificates (control
+            // leaves them out for CLIs from before them).
+            let mut headers = vec![("Content-Type", "application/json"), (wire::FEATURES_HEADER, wire::APP_DEVICES)];
+            headers.extend(auth.iter().map(|(k, v)| (*k, v.as_str())));
             let began = std::time::Instant::now();
             let res = send_on(
                 u.connect(Some(Duration::from_secs(10)))?,
                 method,
                 path,
                 &u.authority,
-                // It reads the desktop app's `app` certificates (control
-                // leaves them out for CLIs from before them).
-                &[
-                    ("Content-Type", "application/json"),
-                    ("x-arugula-auth", &auth),
-                    (wire::FEATURES_HEADER, wire::APP_DEVICES),
-                ],
+                &headers,
                 bytes.as_bytes(),
             )
             .with_context(|| format!("asking control at {}", self.url))?;
@@ -221,75 +404,65 @@ impl Enrolled {
         }
     }
 
-    /// The machines control lists: the account's own, and its teams' and
-    /// those shared with it that check out against their account's root
-    /// (pinned here on first sight).
+    /// The machines control lists: the account's own, its teams', those
+    /// shared with it and the cloud workspaces of its projects. Control
+    /// decides who reaches them (aru-141), so each is listed as control
+    /// gives it, with its Noise key: nothing is checked against a root
+    /// unless a device has to use its key ([`open`](Self::open)).
     pub fn directory(&mut self) -> anyhow::Result<Vec<Listed>> {
         let v = self.api("GET", "/api/directory", None)?;
-        let mut out = Vec::new();
-        let mut pinned = false;
-        let mut teams: Option<Vec<Value>> = None;
-        for d in v["daemons"].as_array().into_iter().flatten() {
-            let Some((mut m, hosted)) = listed(d) else { continue };
-            if hosted {
-                // A hosted machine (M178, M180): for its project only, as
-                // this CLI's checks of the project say, never control's word.
-                match self.accept_hosted(&d["hosted"], &mut teams, &mut pinned) {
-                    Ok(cert) => {
-                        m.cert = Some(cert);
-                        out.push(m);
-                    }
-                    Err(why) => {
-                        if debug_http() {
-                            eprintln!("arugula: not trusting the cloud workspace {}: {why:#}", m.name);
-                        }
-                    }
-                }
-                continue;
-            }
-            if let Some(account) = m.account.clone() {
-                let Ok(chain) = serde_json::from_value::<Chain>(d["chain"].clone()) else { continue };
-                let Some(trust) = chain.trust.filter(|t| t.account == account) else { continue };
-                match self.pins.get(&account) {
-                    Some(root) if *root != trust.root => {
-                        eprintln!(
-                            "arugula: control says {}'s account is {} now, not {} as first seen here: not trusting {}",
-                            m.owner(),
-                            fingerprint(&trust.root),
-                            fingerprint(root),
-                            m.name
-                        );
-                        continue;
-                    }
-                    Some(_) => {}
-                    None => {
-                        self.pins.insert(account.clone(), trust.root.clone());
-                        pinned = true;
-                    }
-                }
-                let cert = trust.evaluate(&chain.certs, &chain.revocations).get(&m.id).cloned();
-                let Some(cert) = cert.filter(|c| c.kind == Kind::Daemon) else { continue };
-                m.cert = Some(cert);
-            }
-            out.push(m);
+        Ok(v["daemons"].as_array().into_iter().flatten().filter_map(listed).collect())
+    }
+
+    /// A device's checks of a machine, before it opens a channel with its
+    /// key: another account's machine against that account's root (pinned
+    /// here on first sight), a hosted one against its project
+    /// ([`accept_hosted`](Self::accept_hosted)). The certificate to open it
+    /// with, or none for one of the account's own, which is checked against
+    /// the account's devices when it's opened.
+    fn check(&mut self, m: &Listed) -> anyhow::Result<Option<Cert>> {
+        let mut changed = false;
+        let checked = self.check_entry(m, &mut changed);
+        if changed {
+            self.save_device()?;
         }
-        if pinned {
-            let saved = Saved {
-                url: self.url.clone(),
-                cert: self.cert.clone(),
-                trust: self.trust.clone(),
-                pins: self.pins.clone(),
-                closed: self.closed.clone(),
-            };
-            saved.write()?;
+        checked
+    }
+
+    fn check_entry(&mut self, m: &Listed, changed: &mut bool) -> anyhow::Result<Option<Cert>> {
+        let d = &m.entry;
+        if m.hosted {
+            // A hosted machine (M178, M180): for its project only, as this
+            // CLI's checks of the project say, never control's word.
+            return self.accept_hosted(&d["hosted"], &mut None, changed).map(Some);
         }
-        Ok(out)
+        let Some(account) = m.account.clone() else { return Ok(None) };
+        let chain =
+            serde_json::from_value::<Chain>(d["chain"].clone()).context("control sent no certificates for it")?;
+        let trust = chain.trust.filter(|t| t.account == account).context("control sent no root for its account")?;
+        let owner = m.owner();
+        let dev = self.dev_mut().context("not one of the account's devices")?;
+        match dev.pins.get(&account) {
+            Some(root) if *root != trust.root => bail!(
+                "control says {owner}'s account is {} now, not {} as first seen here",
+                fingerprint(&trust.root),
+                fingerprint(root)
+            ),
+            Some(_) => {}
+            None => {
+                dev.pins.insert(account.clone(), trust.root.clone());
+                *changed = true;
+            }
+        }
+        let cert = trust.evaluate(&chain.certs, &chain.revocations).get(&m.id).cloned();
+        cert.filter(|c| c.kind == Kind::Daemon).context("its certificate doesn't chain to its account").map(Some)
     }
 
     /// A hosted machine's certificate, made into the one its channel is
     /// opened with, if this CLI accepts it (`arugula_e2e::hosted::accept`):
     /// against its team's roster (that team's founder pinned here on first
-    /// sight, as the page does) or this account's own devices.
+    /// sight, as the page does) or this account's own devices. A device's
+    /// only, for its key: a channel opened with a machine token never asks.
     fn accept_hosted(&mut self, v: &Value, teams: &mut Option<Vec<Value>>, pinned: &mut bool) -> anyhow::Result<Cert> {
         use arugula_e2e::{
             hosted::{Owner, Owners, accept_holding, ends_listed, read_cert, read_delegation},
@@ -298,8 +471,10 @@ impl Enrolled {
         let cert = read_cert(&v["cert"])?;
         let d = read_delegation(&v["delegation"])?;
         let (revokes, closed) = ends_listed(v);
-        let me = self.cert.account.clone();
-        let mut held = self.closed.clone();
+        let (me, mut held, trust) = {
+            let dev = self.dev().context("not one of the account's devices")?;
+            (dev.cert.account.clone(), dev.closed.clone(), dev.trust.clone())
+        };
         let ok = match d.owner().context("no owner")? {
             Owner::Team(id) => {
                 if teams.is_none() {
@@ -312,11 +487,12 @@ impl Enrolled {
                 let certs: AccountCerts = serde_json::from_value(t["certs"].clone()).unwrap_or_default();
                 let founder = format!("{}.{}", pin.founder, pin.founder_root);
                 let key = format!("team:{id}");
-                match self.pins.get(&key) {
+                let pins = &mut self.dev_mut().context("not one of the account's devices")?.pins;
+                match pins.get(&key) {
                     Some(f) if *f != founder => bail!("control says the team's founder is someone else now"),
                     Some(_) => {}
                     None => {
-                        self.pins.insert(key, founder);
+                        pins.insert(key, founder);
                         *pinned = true;
                     }
                 }
@@ -340,13 +516,14 @@ impl Enrolled {
                     &d,
                     &revokes,
                     &closed,
-                    &Owners::Account { trust: &self.trust, certs: &certs, revocations: &revs },
+                    &Owners::Account { trust: &trust, certs: &certs, revocations: &revs },
                     &mut held,
                 )
             }
         };
-        if held != self.closed {
-            self.closed = held;
+        let dev = self.dev_mut().context("not one of the account's devices")?;
+        if held != dev.closed {
+            dev.closed = held;
             *pinned = true;
         }
         ok.map_err(|r| anyhow::anyhow!("refused: {}", r.code()))?;
@@ -366,49 +543,144 @@ impl Enrolled {
     }
 
     /// The account's devices that chain to the pinned root.
-    fn trusted(&self) -> anyhow::Result<arugula_e2e::cert::Trusted> {
+    fn trusted(&self, dev: &Device) -> anyhow::Result<arugula_e2e::cert::Trusted> {
         let v = self.api("GET", "/api/devices", None)?;
         let certs: Vec<Cert> = serde_json::from_value(v["certs"].clone()).unwrap_or_default();
         let revs: Vec<Revocation> = serde_json::from_value(v["revocations"].clone()).unwrap_or_default();
-        Ok(self.trust.evaluate(&certs, &revs))
+        Ok(dev.trust.evaluate(&certs, &revs))
     }
 
-    /// A channel to `machine` (by name or id): direct first, then through
-    /// the relay.
-    pub fn open(&self, machine: &Listed) -> anyhow::Result<Link> {
-        let trusted = self.trusted()?;
-        if trusted.get(&self.cert.device).is_none() {
+    /// The Noise key of one of the account's own machines, from the
+    /// certificates control lists for it: for a directory from before
+    /// control gave each machine's key (#994).
+    fn own_noise(&self, id: &str) -> anyhow::Result<Option<String>> {
+        let v = self.api("GET", "/api/devices", None)?;
+        let certs: Vec<Cert> = serde_json::from_value(v["certs"].clone()).unwrap_or_default();
+        Ok(certs.into_iter().find(|c| c.device == id && c.kind == Kind::Daemon).map(|c| c.noise))
+    }
+
+    /// A machine token for machine `id`, fresh: the daemon takes each once.
+    fn machine_token(&self, id: &str) -> anyhow::Result<String> {
+        let (status, body) = self.api_raw("POST", &token_path(id), Some(&json!({})))?;
+        let v = serde_json::from_slice::<Value>(&body).unwrap_or(Value::Null);
+        match v["token"].as_str() {
+            Some(t) if status == 200 && !t.is_empty() => Ok(t.to_owned()),
+            _ => {
+                let said = v["error"].as_str().or(v["reason"].as_str()).map_or(format!("HTTP {status}"), str::to_owned);
+                Err(NoToken { status, said }.into())
+            }
+        }
+    }
+
+    /// The relay's WebSocket for machine `id`, and how to ask for it.
+    fn relay(&self, id: &str) -> anyhow::Result<(Url, String, Headers)> {
+        let c = self.url()?;
+        let path = format!("/api/relay/c/{id}");
+        let ws = format!("{}://{}{path}", if c.tls { "wss" } else { "ws" }, c.authority);
+        let mut headers = self.auth_headers("GET", &path, b"");
+        // A cookie's WebSocket comes from control's own page; a signature
+        // says it anyway.
+        headers.retain(|(k, _)| *k != "Origin");
+        headers.push(("origin", self.origin()));
+        // A hosted machine that's asleep is woken (M182): the CLI opens a
+        // machine only when someone asks it to.
+        headers.push(("x-arugula-wake", "1".into()));
+        Ok((c, ws, headers))
+    }
+
+    /// A channel to `machine`: with a machine token (aru-141), direct first,
+    /// then through the relay. A device uses its key instead when tokens
+    /// can't reach the machine ([`key_after_tokens`]).
+    pub fn open(&mut self, machine: &Listed) -> anyhow::Result<Link> {
+        let noise = match &machine.noise {
+            Some(n) => Some(n.clone()),
+            None => self.own_noise(&machine.id)?,
+        };
+        let tried = noise.as_deref().and_then(noise_key).map(|key| self.open_token(machine, key));
+        let failed = match tried {
+            Some(Ok(l)) => return Ok(l),
+            Some(Err(e)) => Some(e),
+            None => None,
+        };
+        if self.dev().is_none() {
+            return Err(match failed {
+                Some(e) => e.context(format!("can't reach {}", machine.name)),
+                None => anyhow::anyhow!("control lists {}, but gives no key to reach it with", machine.name),
+            });
+        }
+        if let Some(e) = failed {
+            if !key_after_tokens(&e) {
+                return Err(e.context(format!("can't reach {}", machine.name)));
+            }
+            if verbose() {
+                eprintln!("arugula: {}: {e:#}; using this CLI's key", machine.name);
+            }
+        }
+        self.open_device(machine)
+    }
+
+    /// [`open`](Self::open) with a machine token, each try with a new one.
+    fn open_token(&self, machine: &Listed, noise: [u8; 32]) -> anyhow::Result<Link> {
+        let daemon = Daemon { id: &machine.id, noise };
+        let token = || self.machine_token(&machine.id);
+        let mut errors = Vec::new();
+        for u in &machine.urls {
+            let Ok(url) = Url::parse(u) else { continue };
+            let ws = format!("{}://{}/e2e", if url.tls { "wss" } else { "ws" }, url.authority);
+            let route = format!("direct {u}, with a machine token");
+            match Link::connect(&url, &ws, &[], &daemon, Hello::Token(&token), Some(DIRECT_TIMEOUT), route) {
+                Ok(l) => return Ok(l),
+                Err(e) if answered(&e) => return Err(e),
+                Err(e) => errors.push(format!("{u}: {e:#}")),
+            }
+        }
+        let (c, ws, headers) = self.relay(&machine.id)?;
+        let headers: Vec<(&str, &str)> = headers.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        let route = "relayed through control, with a machine token".to_owned();
+        match Link::connect(&c, &ws, &headers, &daemon, Hello::Token(&token), None, route) {
+            Ok(l) => Ok(l),
+            Err(e) if answered(&e) => Err(e),
+            Err(e) => {
+                errors.push(format!("the relay: {e:#}"));
+                bail!("can't reach {} ({})", machine.name, errors.join("; "))
+            }
+        }
+    }
+
+    /// [`open`](Self::open) with this device's key, as before machine tokens.
+    fn open_device(&mut self, machine: &Listed) -> anyhow::Result<Link> {
+        let checked = self.check(machine).with_context(|| format!("not trusting {}", machine.name))?;
+        let dev = self.dev().context("not one of the account's devices")?;
+        let trusted = self.trusted(dev)?;
+        if trusted.get(&dev.cert.device).is_none() {
             bail!(
                 "this CLI isn't one of the account's devices any more (revoked?): `arugula logout`, then log in again"
             );
         }
-        let cert = match &machine.cert {
-            // Another account's, checked by `directory`.
-            Some(c) => c.clone(),
+        let cert = match checked {
+            // Another account's or a hosted one, checked just now.
+            Some(c) => c,
             None => trusted
                 .get(&machine.id)
                 .filter(|c| c.kind == Kind::Daemon)
                 .with_context(|| format!("control lists {}, but it isn't a machine your account trusts", machine.name))?
                 .clone(),
         };
+        let daemon = Daemon { id: &cert.device, noise: cert.noise_key() };
         let mut errors = Vec::new();
         for u in &machine.urls {
             let Ok(url) = Url::parse(u) else { continue };
             let ws = format!("{}://{}/e2e", if url.tls { "wss" } else { "ws" }, url.authority);
-            match Link::connect(&url, &ws, &[], &cert, &self.keys, Some(DIRECT_TIMEOUT), format!("direct {u}")) {
+            let hello = Hello::Key(&dev.keys);
+            match Link::connect(&url, &ws, &[], &daemon, hello, Some(DIRECT_TIMEOUT), format!("direct {u}")) {
                 Ok(l) => return Ok(l),
                 Err(e) => errors.push(format!("{u}: {e:#}")),
             }
         }
-        let c = self.url()?;
-        let path = format!("/api/relay/c/{}", machine.id);
-        let ws = format!("{}://{}{path}", if c.tls { "wss" } else { "ws" }, c.authority);
-        let auth = request_auth(&self.keys, "GET", &path, b"");
-        let origin = self.url.trim_end_matches('/').to_owned();
-        // A hosted machine that's asleep is woken (M182): the CLI opens a
-        // machine only when someone asks it to.
-        let headers = [("x-arugula-auth", auth.as_str()), ("origin", origin.as_str()), ("x-arugula-wake", "1")];
-        match Link::connect(&c, &ws, &headers, &cert, &self.keys, None, "relayed through control".into()) {
+        let (c, ws, headers) = self.relay(&machine.id)?;
+        let headers: Vec<(&str, &str)> = headers.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        let hello = Hello::Key(&dev.keys);
+        match Link::connect(&c, &ws, &headers, &daemon, hello, None, "relayed through control".into()) {
             Ok(l) => Ok(l),
             Err(e) => {
                 errors.push(format!("the relay: {e:#}"));
@@ -435,10 +707,20 @@ pub struct Listed {
     /// The team it's in, if any.
     #[serde(default)]
     pub team: Option<String>,
-    /// Another account's machine's certificate, checked against that
-    /// account's pinned root.
+    /// Its Noise key, hex, as control gives it (#994), else from the
+    /// certificate listed beside it (a hosted machine's, or another
+    /// account's chain): what a channel with a machine token is opened to.
+    /// None for one of the account's own from an older control: its
+    /// certificate in `/api/devices` says it.
+    #[serde(default)]
+    pub noise: Option<String>,
+    /// A cloud workspace's machine (M178): through the relay only.
     #[serde(skip)]
-    pub cert: Option<Cert>,
+    pub hosted: bool,
+    /// The entry as control sent it, for a device's checks before it uses
+    /// its key ([`Enrolled::check`]).
+    #[serde(skip)]
+    entry: Value,
 }
 
 impl Listed {
@@ -452,16 +734,31 @@ impl Listed {
     }
 }
 
-/// A directory entry, and whether it's a hosted machine (M178). A hosted
-/// machine is reached only through the relay: whatever the entry says,
-/// it has no direct URLs here.
-fn listed(d: &Value) -> Option<(Listed, bool)> {
+/// A directory entry. A hosted machine (M178) is reached only through the
+/// relay: whatever the entry says, it has no direct URLs here.
+fn listed(d: &Value) -> Option<Listed> {
     let mut m = serde_json::from_value::<Listed>(d.clone()).ok()?;
     let hosted = d.get("hosted").is_some_and(|h| !h.is_null());
+    m.hosted = hosted;
+    m.entry = d.clone();
     if hosted {
         m.urls.clear();
     }
-    Some((m, hosted))
+    if m.noise.is_none() {
+        // Control's word for its key, as the page takes it (`tokenEntry`).
+        m.noise = if hosted {
+            d["hosted"]["cert"]["noise"].as_str().map(str::to_owned)
+        } else {
+            d["chain"]["certs"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .find(|c| c["device"] == m.id.as_str() && c["kind"] == "daemon")
+                .and_then(|c| c["noise"].as_str())
+                .map(str::to_owned)
+        };
+    }
+    Some(m)
 }
 
 /// Another account's certificates, as the directory sends them.
@@ -502,18 +799,196 @@ pub fn listing() -> anyhow::Result<Option<(String, Vec<Listed>)>> {
 
 /// Whether this CLI is logged in to a control.
 pub fn logged_in() -> bool {
-    config_dir().join(STATE_FILE).exists()
+    let dir = config_dir();
+    dir.join(SESSION_FILE).exists() || dir.join(STATE_FILE).exists()
 }
 
 // ---------------------------------------------------------------- login
 
-/// `arugula login`: join the account at `url` as a `cli` device. Shows
-/// the link to approve on a signed-in device and waits; then checks the
+/// Where a browser that allowed the sign-in hands this CLI its grant, on
+/// the loopback port it listens on (control's `app_login.rs`).
+const LOOPBACK_PATH: &str = "/arugula-signin";
+
+/// `arugula login`: a session of the account at `url`, from a browser
+/// that allows it (aru-141), the way the desktop app signs in: a verifier
+/// this CLI keeps, a ticket from control for it, and the grant the browser
+/// hands to this CLI's loopback port once someone signed in clicks Allow.
+/// Only this CLI can swap the grant, since only it holds the verifier.
+pub fn login(url: &str, name: &str) -> anyhow::Result<()> {
+    let url = url.trim_end_matches('/').to_owned();
+    match Enrolled::load()? {
+        Some(e) if e.dev().is_some() => {
+            bail!("this CLI is already logged in to {} as one of the account's devices (`arugula logout` first)", e.url)
+        }
+        // One whose session has ended is signed in again.
+        Some(e) if e.api_raw("GET", "/api/me", None).is_ok_and(|(s, _)| s != 401) => {
+            bail!("this CLI is already logged in to {} (`arugula logout` first)", e.url)
+        }
+        _ => {}
+    }
+    let s = sign_in(&url, name, |link, secs| {
+        println!();
+        println!("  To sign this terminal ({name}) in, open");
+        println!();
+        println!("    {link}");
+        println!();
+        println!("  in a browser that's signed in to Arugula cloud, and click Allow there.");
+        println!("  If that browser is on another computer, it can't reach this one afterwards:");
+        println!("  copy the address it shows then, and paste it here.");
+        println!();
+        println!("  Waiting (the link lasts {} minutes)…", secs / 60);
+        let _ = std::io::stdout().flush();
+        if std::io::stdout().is_terminal() {
+            crate::util::open_in_browser(link);
+        }
+    })?;
+    write_private(SESSION_FILE, &s)?;
+    println!();
+    let who = if s.login.is_empty() { String::new() } else { format!(" as {}", s.login) };
+    println!("  Signed in{who}. `arugula hosts` lists your machines; `--host NAME` reaches one.");
+    Ok(())
+}
+
+/// [`login`]'s exchange with control: a ticket, its link (`show` says it,
+/// with how many seconds it lasts), the grant, and the session it's
+/// swapped for, with the account it's of.
+fn sign_in(url: &str, name: &str, show: impl FnOnce(&str, u64)) -> anyhow::Result<SavedSession> {
+    use sha2::{Digest, Sha256};
+    let u = Url::parse(url)?;
+    if !u.tls && !private_host(&u.host) {
+        bail!("control's URL must be https:// (or http on loopback or a private network, for testing)");
+    }
+    let verifier = hex(&arugula_e2e::random::<32>());
+    let challenge = hex(&Sha256::digest(verifier.as_bytes()));
+    let listener =
+        std::net::TcpListener::bind("127.0.0.1:0").context("can't listen on this computer for the sign-in")?;
+    let port = listener.local_addr()?.port();
+    let ask = json!({ "name": name, "challenge": challenge, "port": port, "features": ["no-code"] }).to_string();
+    let res = send_on(
+        u.connect(Some(Duration::from_secs(10))).with_context(|| format!("can't reach control at {url}"))?,
+        "POST",
+        "/auth/app",
+        &u.authority,
+        &[("Content-Type", "application/json")],
+        ask.as_bytes(),
+    )?;
+    let t =
+        json_answer(res.status, res.bytes()?).with_context(|| format!("control at {url} didn't start a sign-in"))?;
+    let ticket = t["ticket"].as_str().filter(|t| !t.is_empty() && t.bytes().all(|c| c.is_ascii_hexdigit()));
+    let ticket = ticket.context("control's answer has no ticket")?.to_owned();
+    let link = t["url"].as_str().filter(|l| l.starts_with("https://") || l.starts_with("http://"));
+    let link = link.context("control's answer has no link")?;
+    let secs = t["expires_in_secs"].as_u64().unwrap_or(600);
+    show(link, secs);
+    let grant = await_grant(&listener, &ticket, Instant::now() + Duration::from_secs(secs))?;
+    let body = json!({ "grant": grant, "verifier": verifier }).to_string();
+    let res = send_on(
+        u.connect(Some(Duration::from_secs(10)))?,
+        "POST",
+        &format!("/auth/app/{ticket}/redeem"),
+        &u.authority,
+        // As control's own page sends it: the only place it takes one from.
+        &[("Content-Type", "application/json"), ("Origin", url)],
+        body.as_bytes(),
+    )?;
+    let set = res.header("set-cookie").and_then(|c| c.split(';').next()).map(str::trim).map(str::to_owned);
+    let status = res.status;
+    if !(200..300).contains(&status) {
+        json_answer(status, res.bytes()?).context("control didn't sign this CLI in")?;
+    }
+    let cookie = set.filter(|c| c.contains('=')).context("control signed this CLI in, but sent no session")?;
+    let e = Enrolled { url: url.to_owned(), account: String::new(), how: How::Session(cookie.clone()) };
+    let me = e.api("GET", "/api/me", None).context("reading who this CLI is signed in as")?;
+    let account = me["account"].as_str().filter(|a| !a.is_empty()).context("control didn't say which account")?;
+    let login = me["login"].as_str().filter(|l| !l.is_empty()).or(me["name"].as_str()).unwrap_or_default();
+    Ok(SavedSession { url: url.to_owned(), cookie, account: account.to_owned(), login: login.to_owned() })
+}
+
+/// The grant for `ticket`, when the browser that allowed it brings it to
+/// the loopback port (`GET /arugula-signin?ticket=…&grant=…`), or when the
+/// person pastes the address it went to; none past `deadline`.
+fn await_grant(listener: &std::net::TcpListener, ticket: &str, deadline: Instant) -> anyhow::Result<String> {
+    listener.set_nonblocking(true)?;
+    let pasted = std::io::stdin().is_terminal().then(|| {
+        let (tx, rx) = mpsc::channel::<String>();
+        std::thread::spawn(move || {
+            for line in std::io::stdin().lock().lines() {
+                let Ok(line) = line else { return };
+                if tx.send(line).is_err() {
+                    return;
+                }
+            }
+        });
+        rx
+    });
+    loop {
+        if Instant::now() > deadline {
+            bail!("nobody allowed it in time; run `arugula login` again for a new link");
+        }
+        if let Some(rx) = &pasted
+            && let Ok(line) = rx.try_recv()
+        {
+            match grant_in(&line, ticket) {
+                Some(g) => return Ok(g),
+                None if line.trim().is_empty() => {}
+                None => println!("  That isn't this sign-in's address: paste the whole address the browser went to."),
+            }
+        }
+        let conn = match listener.accept() {
+            Ok((c, _)) => c,
+            Err(e) if e.kind() == ErrorKind::WouldBlock => {
+                std::thread::sleep(Duration::from_millis(100));
+                continue;
+            }
+            Err(e) => return Err(e).context("listening for the sign-in"),
+        };
+        let _ = conn.set_nonblocking(false);
+        let _ = conn.set_read_timeout(Some(Duration::from_secs(5)));
+        let mut line = String::new();
+        if BufReader::new(&conn).read_line(&mut line).is_err() {
+            continue;
+        }
+        let target = line.split_whitespace().nth(1).unwrap_or_default();
+        let grant = target.starts_with(&format!("{LOOPBACK_PATH}?")).then(|| grant_in(target, ticket)).flatten();
+        let reply = match &grant {
+            Some(_) => {
+                let page = "<!doctype html><meta charset=utf-8><title>Arugula CLI</title>\
+                            <p style=\"font:16px system-ui;margin:3em\">Signed in. You can close this tab and go back to the terminal.</p>";
+                format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{page}",
+                    page.len()
+                )
+            }
+            None => "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_owned(),
+        };
+        let _ = (&conn).write_all(reply.as_bytes());
+        if let Some(g) = grant {
+            return Ok(g);
+        }
+    }
+}
+
+/// The grant in an address the browser was sent to for `ticket`: the
+/// loopback request's target, or the whole address as pasted.
+fn grant_in(address: &str, ticket: &str) -> Option<String> {
+    let query = address.trim().split_once('?')?.1;
+    let query = query.split(['#', ' ']).next().unwrap_or_default();
+    let param = |k: &str| query.split('&').find_map(|kv| kv.strip_prefix(k)?.strip_prefix('='));
+    if param("ticket")? != ticket {
+        return None;
+    }
+    let grant = param("grant")?;
+    (!grant.is_empty() && grant.len() <= 256 && grant.bytes().all(|c| c.is_ascii_hexdigit())).then(|| grant.to_owned())
+}
+
+/// `arugula login --device`: join the account at `url` as a `cli` device,
+/// as before machine tokens (aru-141; it goes with the key code, #1007).
+/// Shows the link to approve on a signed-in device and waits; then checks the
 /// account before pinning it. The link carries a join secret (#760) when
 /// control passes its MAC on: the approving device's MAC under it says
 /// which account, with nothing to compare. Otherwise (an older control)
 /// `account`, the fingerprint the approving device shows, or asking.
-pub fn login(url: &str, name: &str, account: Option<&str>) -> anyhow::Result<()> {
+pub fn login_device(url: &str, name: &str, account: Option<&str>) -> anyhow::Result<()> {
     let url = url.trim_end_matches('/').to_owned();
     if let Some(e) = Enrolled::load()? {
         bail!("this CLI is already logged in to {} (`arugula logout` first)", e.url);
@@ -670,19 +1145,27 @@ fn confirm(approver: &str, fp: &str, root: &str) -> anyhow::Result<()> {
     bail!("not logging in. If the fingerprints differ, control isn't telling the truth about your account")
 }
 
-/// `arugula logout`: forget the key and the pin. The device stays on the
-/// account's list until a device revokes it.
+/// `arugula logout`: end the session (control too, if it's reached), or
+/// forget a device's key and pin. A device stays on the account's list
+/// until a device revokes it.
 pub fn logout() -> anyhow::Result<()> {
     let dir = config_dir();
     let Some(e) = Enrolled::load()? else {
         println!("Not logged in.");
         return Ok(());
     };
+    let Some(dev) = e.dev() else {
+        // Best effort: the file goes whatever control says.
+        let _ = e.api_raw("POST", "/auth/logout", None);
+        fs::remove_file(dir.join(SESSION_FILE))?;
+        println!("Logged out of {}.", e.url);
+        return Ok(());
+    };
     fs::remove_file(dir.join(STATE_FILE))?;
     fs::remove_file(dir.join(KEY_FILE))?;
     println!(
         "Logged out of {}. This terminal ({}) is still listed on the account: remove it under Devices and machines… to revoke it.",
-        e.url, e.cert.name
+        e.url, dev.cert.name
     );
     Ok(())
 }
@@ -740,6 +1223,21 @@ pub struct Link {
     pub route: String,
 }
 
+/// The machine a channel is opened to: its id (the prologue's) and its
+/// Noise key.
+struct Daemon<'a> {
+    id: &'a str,
+    noise: [u8; 32],
+}
+
+/// What a channel's first message says about who's asking.
+enum Hello<'a> {
+    /// A device of the account, by its key (M49; #1007 removes it).
+    Key(&'a DeviceKeys),
+    /// Control's word (aru-141): a fresh machine token from this.
+    Token(&'a dyn Fn() -> anyhow::Result<String>),
+}
+
 impl std::fmt::Debug for Link {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Link({})", self.route)
@@ -751,11 +1249,13 @@ impl Link {
         at: &Url,
         ws_url: &str,
         headers: &[(&str, &str)],
-        cert: &Cert,
-        keys: &DeviceKeys,
+        daemon: &Daemon,
+        hello: Hello,
         connect_timeout: Option<Duration>,
         route: String,
     ) -> anyhow::Result<Self> {
+        let token = matches!(hello, Hello::Token(_));
+        let why = if token { "" } else { " (not an approved device?)" };
         use tungstenite::client::IntoClientRequest;
         let stream = at.connect(connect_timeout.or(Some(Duration::from_secs(10))))?;
         stream.set_timeout(Some(HANDSHAKE_TIMEOUT))?;
@@ -775,25 +1275,37 @@ impl Link {
             tungstenite::HandshakeError::Failure(e) => anyhow::Error::from(e).context("websocket handshake"),
             tungstenite::HandshakeError::Interrupted(_) => anyhow::anyhow!("websocket handshake interrupted"),
         })?;
-        // Noise IK, the CLI the initiator.
-        let (init, m1) = Initiator::start(keys, &cert.noise_key(), &prologue(&cert.device))?;
+        // Noise IK, the CLI the initiator: with this device's key, or with
+        // a key made for this channel alone and a machine token (aru-141),
+        // asked for only now that the socket is there, since the daemon
+        // takes each token once.
+        let (init, m1) = match hello {
+            Hello::Key(keys) => Initiator::start(keys, &daemon.noise, &prologue(daemon.id))?,
+            Hello::Token(next) => {
+                let hello = TokenHello { machine_token: next()? }.encode();
+                Initiator::start_with(&DeviceKeys::generate(), &daemon.noise, &prologue(daemon.id), &hello)?
+            }
+        };
         ws.send(Message::Binary(m1.into()))?;
         let m2 = loop {
             match ws.read() {
                 Ok(Message::Binary(b)) => break b,
-                Ok(Message::Close(_)) => bail!("closed during the handshake (not an approved device?)"),
+                Ok(Message::Close(_)) => bail!("closed during the handshake{why}"),
                 Ok(_) => {}
                 Err(tungstenite::Error::Io(e)) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
                     bail!("no answer to the handshake")
                 }
                 Err(e) => {
-                    return Err(anyhow::Error::from(e).context("closed during the handshake (not an approved device?)"));
+                    return Err(anyhow::Error::from(e).context(format!("closed during the handshake{why}")));
                 }
             }
         };
         let (said, ch) = init.finish(&m2)?;
         if let Some(r) = Refusal::decode(&said) {
-            bail!("the machine refused: {} (not an approved device?)", r.message);
+            if token {
+                return Err(Refused { code: r.refused, message: r.message }.into());
+            }
+            bail!("the machine refused: {}{why}", r.message);
         }
         ws.get_ref().set_timeout(None)?;
         ws.get_mut().set_nonblocking(true)?;
@@ -1176,15 +1688,7 @@ mod tests {
             }
             auths
         });
-        let keys = DeviceKeys::generate();
-        let e = Enrolled {
-            url,
-            cert: Cert::new(&keys, "a", Kind::Cli, "cli"),
-            trust: Trust { account: "a".into(), root: String::new() },
-            pins: BTreeMap::new(),
-            closed: Default::default(),
-            keys,
-        };
+        let e = Enrolled::for_tests(url);
         let restore = json!({ "daemon": "d1", "power": "cloud.drive" });
         assert_eq!(e.api("POST", "/api/grants", Some(&restore)).unwrap(), json!({ "grants": [] }));
         let err = e.api("POST", "/api/grants", Some(&restore)).unwrap_err();
@@ -1200,18 +1704,17 @@ mod tests {
     #[test]
     fn a_hosted_machine_has_no_direct_urls() {
         let joined = json!({ "id": "d1", "name": "geek", "urls": ["http://geek:7681"] });
-        let (m, hosted) = listed(&joined).unwrap();
-        assert_eq!((m.urls, hosted), (vec!["http://geek:7681".to_owned()], false));
+        let m = listed(&joined).unwrap();
+        assert_eq!((m.urls, m.hosted), (vec!["http://geek:7681".to_owned()], false));
         let hosted = json!({
             "id": "h1", "name": "hosted box", "urls": ["http://10.0.0.5:7681"],
             "hosted": { "cert": {}, "delegation": {}, "revocations": [] },
         });
-        let (m, is_hosted) = listed(&hosted).unwrap();
-        assert!(is_hosted);
+        let m = listed(&hosted).unwrap();
+        assert!(m.hosted);
         assert!(m.urls.is_empty(), "{:?}", m.urls);
-        let (m, is_hosted) =
-            listed(&json!({ "id": "d2", "name": "box", "urls": ["http://box:7681"], "hosted": null })).unwrap();
-        assert!(!is_hosted && m.urls.len() == 1);
+        let m = listed(&json!({ "id": "d2", "name": "box", "urls": ["http://box:7681"], "hosted": null })).unwrap();
+        assert!(!m.hosted && m.urls.len() == 1);
     }
 
     /// This CLI keeps control's word that a delegation ended: a machine it
@@ -1261,14 +1764,16 @@ mod tests {
         let as_cert = Cert::new(&boxk, "a", Kind::Daemon, "box");
         let mut cert = HostedCert::new(&d, "hw_1", "box", &as_cert.noise, &as_cert.sign, 40);
         key.sign(&mut cert);
-        let mut e = Enrolled {
+        let mut e = Enrolled::device(
             url,
-            cert: me.clone(),
-            trust: Trust { account: "a".into(), root: me.device.clone() },
-            pins: BTreeMap::new(),
-            closed: Default::default(),
-            keys,
-        };
+            Device {
+                cert: me.clone(),
+                trust: Trust { account: "a".into(), root: me.device.clone() },
+                pins: BTreeMap::new(),
+                closed: Default::default(),
+                keys,
+            },
+        );
         let plain = json!({ "cert": cert, "delegation": d, "revocations": [] });
         let told = json!({ "cert": cert, "delegation": d, "revocations": [], "closed": [key.close(&d, 30), {}] });
         let (mut teams, mut changed) = (None, false);
@@ -1278,15 +1783,16 @@ mod tests {
         assert!(changed, "there's something to save");
         assert!(e.accept_hosted(&plain, &mut teams, &mut changed).is_err(), "control left it out");
         server.join().unwrap();
+        let dev = e.dev().unwrap();
         let saved = Saved {
             url: e.url.clone(),
-            cert: e.cert.clone(),
-            trust: e.trust.clone(),
+            cert: dev.cert.clone(),
+            trust: dev.trust.clone(),
             pins: BTreeMap::new(),
-            closed: e.closed.clone(),
+            closed: dev.closed.clone(),
         };
         let back: Saved = serde_json::from_str(&serde_json::to_string(&saved).unwrap()).unwrap();
-        assert_eq!(back.closed, e.closed);
+        assert_eq!(back.closed, dev.closed);
     }
 
     #[test]
@@ -1297,5 +1803,215 @@ mod tests {
         for no in ["control.arugula.io", "8.8.8.8"] {
             assert!(!private_host(no), "{no}");
         }
+    }
+
+    /// One HTTP request as a test's control reads it.
+    struct Asked {
+        method: String,
+        path: String,
+        headers: Vec<(String, String)>,
+        body: Vec<u8>,
+    }
+
+    impl Asked {
+        fn header(&self, name: &str) -> Option<&str> {
+            self.headers.iter().find(|(k, _)| k == name).map(|(_, v)| v.as_str())
+        }
+    }
+
+    /// A control of the test's own on `l`: each request in turn, answered by
+    /// `answer` with a status, extra header lines and a body, until it says
+    /// it's done (`None`).
+    fn control(
+        l: std::net::TcpListener,
+        mut answer: impl FnMut(&Asked) -> Option<(u16, String, String)> + Send + 'static,
+    ) -> std::thread::JoinHandle<()> {
+        std::thread::spawn(move || {
+            for sock in l.incoming() {
+                let sock = sock.unwrap();
+                let mut r = BufReader::new(sock.try_clone().unwrap());
+                let mut line = String::new();
+                r.read_line(&mut line).unwrap();
+                let mut words = line.split_whitespace();
+                let (method, path) = (words.next().unwrap_or("").to_owned(), words.next().unwrap_or("").to_owned());
+                let mut headers = Vec::new();
+                loop {
+                    line.clear();
+                    r.read_line(&mut line).unwrap();
+                    if line.trim().is_empty() {
+                        break;
+                    }
+                    let (k, v) = line.split_once(':').unwrap();
+                    headers.push((k.trim().to_ascii_lowercase(), v.trim().to_owned()));
+                }
+                let len = headers.iter().find(|(k, _)| k == "content-length").map_or(0, |(_, v)| v.parse().unwrap());
+                let mut body = vec![0; len];
+                r.read_exact(&mut body).unwrap();
+                let Some((status, extra, body)) = answer(&Asked { method, path, headers, body }) else { return };
+                let mut sock = sock;
+                write!(
+                    sock,
+                    "HTTP/1.1 {status} X\r\n{extra}Connection: close\r\nContent-Length: {}\r\n\r\n{body}",
+                    body.len()
+                )
+                .unwrap();
+            }
+        })
+    }
+
+    /// `arugula login` (aru-141): control's link, a browser's Allow that
+    /// hands the grant to this CLI's loopback port (one for another sign-in
+    /// is turned away first), and a session for the verifier only this CLI
+    /// holds, swapped from control's own origin; then whose session it is.
+    #[test]
+    fn a_cli_signs_in_from_a_browser_with_its_own_verifier() {
+        use sha2::{Digest, Sha256};
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", l.local_addr().unwrap());
+        let at = url.clone();
+        let ticket = "ab".repeat(16);
+        let challenge = Arc::new(Mutex::new(String::new()));
+        let server = control(l, move |a| {
+            Some(match (a.method.as_str(), a.path.as_str()) {
+                ("POST", "/auth/app") => {
+                    let ask: Value = serde_json::from_slice(&a.body).unwrap();
+                    assert_eq!(ask["name"], "Arugula CLI on test");
+                    assert_eq!(ask["features"], json!(["no-code"]));
+                    assert!(ask.get("device").is_none(), "no device keys: it isn't a device");
+                    *challenge.lock().unwrap() = ask["challenge"].as_str().unwrap().to_owned();
+                    let port = ask["port"].as_u64().unwrap();
+                    // The browser, once someone clicks Allow.
+                    let mine = ticket.clone();
+                    std::thread::spawn(move || {
+                        let hand = |t: &str| {
+                            let mut s = std::net::TcpStream::connect(("127.0.0.1", port as u16)).unwrap();
+                            write!(s, "GET /arugula-signin?ticket={t}&grant=cafe HTTP/1.1\r\nHost: x\r\n\r\n").unwrap();
+                            let mut got = String::new();
+                            let _ = s.read_to_string(&mut got);
+                            got
+                        };
+                        assert!(hand(&"cd".repeat(16)).starts_with("HTTP/1.1 404"), "another sign-in's grant");
+                        assert!(hand(&mine).contains("Signed in."));
+                    });
+                    let link = format!("{at}/#app={ticket}");
+                    (200, String::new(), json!({ "ticket": ticket, "url": link, "expires_in_secs": 60 }).to_string())
+                }
+                ("POST", p) if p == format!("/auth/app/{ticket}/redeem") => {
+                    assert_eq!(a.header("origin"), Some(at.as_str()), "from control's own origin");
+                    let b: Value = serde_json::from_slice(&a.body).unwrap();
+                    assert_eq!(b["grant"], "cafe");
+                    let v = b["verifier"].as_str().unwrap();
+                    let sha: String = Sha256::digest(v.as_bytes()).iter().map(|x| format!("{x:02x}")).collect();
+                    assert_eq!(sha, *challenge.lock().unwrap(), "the verifier the challenge was made from");
+                    (204, "Set-Cookie: ilg_session=s3cret; Path=/; HttpOnly\r\n".into(), String::new())
+                }
+                ("GET", "/api/me") => {
+                    assert_eq!(a.header("cookie"), Some("ilg_session=s3cret"));
+                    assert!(a.header("x-arugula-auth").is_none());
+                    let me = json!({ "account": "acc_me", "login": "me", "name": "Me" });
+                    (200, String::new(), me.to_string())
+                }
+                other => panic!("unexpected {other:?}"),
+            })
+        });
+        let mut shown = None;
+        let s = sign_in(&url, "Arugula CLI on test", |link, secs| shown = Some((link.to_owned(), secs))).unwrap();
+        assert_eq!(shown, Some((format!("{url}/#app={}", "ab".repeat(16)), 60)));
+        assert_eq!((s.cookie.as_str(), s.account.as_str(), s.login.as_str()), ("ilg_session=s3cret", "acc_me", "me"));
+        drop(server);
+    }
+
+    /// The grant in what the loopback port is asked, or in an address a
+    /// person pastes: only for this sign-in's ticket, and only hex.
+    #[test]
+    fn a_grant_is_read_only_for_its_ticket() {
+        let t = "ab12";
+        assert_eq!(grant_in("/arugula-signin?ticket=ab12&grant=00ff", t).as_deref(), Some("00ff"));
+        assert_eq!(
+            grant_in("  http://127.0.0.1:5000/arugula-signin?grant=00ff&ticket=ab12 \n", t).as_deref(),
+            Some("00ff")
+        );
+        assert_eq!(grant_in("/arugula-signin?ticket=ab12&grant=00ff HTTP/1.1", t).as_deref(), Some("00ff"));
+        assert_eq!(grant_in("/arugula-signin?ticket=ffff&grant=00ff", t), None, "another sign-in's");
+        assert_eq!(grant_in("/arugula-signin?ticket=ab12&grant=<script>", t), None);
+        assert_eq!(grant_in("/arugula-signin?ticket=ab12&grant=", t), None);
+        assert_eq!(grant_in("no address", t), None);
+    }
+
+    /// A signed-in CLI asks control with its session's cookie and control's
+    /// origin, never a signature, and says how to sign in again once the
+    /// session has ended; a device signs.
+    #[test]
+    fn a_session_asks_with_its_cookie() {
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", l.local_addr().unwrap());
+        let at = url.clone();
+        let mut n = 0;
+        let server = control(l, move |a| {
+            n += 1;
+            match n {
+                1 => {
+                    assert_eq!(a.header("cookie"), Some("ilg_session=s"));
+                    assert_eq!(a.header("origin"), Some(at.as_str()));
+                    assert!(a.header("x-arugula-auth").is_none());
+                    Some((200, String::new(), r#"{"daemons":[]}"#.into()))
+                }
+                2 => Some((401, String::new(), r#"{"error":"sign in again"}"#.into())),
+                3 => {
+                    assert!(a.header("cookie").is_none());
+                    assert!(a.header("x-arugula-auth").is_some());
+                    Some((200, String::new(), "{}".into()))
+                }
+                _ => None,
+            }
+        });
+        let e = Enrolled::for_tests_session(url.clone(), "ilg_session=s");
+        assert_eq!(e.api("GET", "/api/directory", None).unwrap(), json!({ "daemons": [] }));
+        let err = e.api("GET", "/api/directory", None).unwrap_err();
+        assert!(format!("{err:#}").contains("`arugula login` again"), "{err:#}");
+        Enrolled::for_tests(url).api("GET", "/api/directory", None).unwrap();
+        drop(server);
+    }
+
+    /// The page's rule (`keyAfterTokens`): a device uses its key only when
+    /// control gives no tokens at all (404) or the daemon is from before
+    /// them; signed out, not let in or a refused token, the key wouldn't fix.
+    #[test]
+    fn a_device_falls_back_to_its_key_only_where_tokens_cant_work() {
+        let no = |status| anyhow::Error::from(NoToken { status, said: "x".into() });
+        let refused = |code: &str| anyhow::Error::from(Refused { code: code.into(), message: "x".into() });
+        assert!(key_after_tokens(&no(404)));
+        assert!(key_after_tokens(&refused("malformed").context("can't reach geek")));
+        assert!(!key_after_tokens(&no(401)));
+        assert!(!key_after_tokens(&no(429)));
+        assert!(!key_after_tokens(&refused("machine-token")));
+        assert!(!key_after_tokens(&anyhow::anyhow!("connection refused")));
+        assert!(answered(&no(401)) && answered(&refused("machine-token")));
+        assert!(!answered(&anyhow::anyhow!("timed out")));
+    }
+
+    /// Each entry's Noise key as control gives it (#994), else from the
+    /// certificate beside it: a hosted machine's, or another account's.
+    #[test]
+    fn a_machines_noise_key_is_controls_word() {
+        let key = "ab".repeat(32);
+        let given = json!({ "id": "d1", "name": "geek", "noise": key });
+        assert_eq!(listed(&given).unwrap().noise.as_deref(), Some(key.as_str()));
+        let hosted = json!({ "id": "h1", "name": "box", "hosted": { "cert": { "noise": key } } });
+        assert_eq!(listed(&hosted).unwrap().noise.as_deref(), Some(key.as_str()));
+        let theirs = json!({
+            "id": "d2", "name": "theirs", "account": "b",
+            "chain": { "certs": [
+                { "device": "other", "kind": "daemon", "noise": "00".repeat(32) },
+                { "device": "d2", "kind": "browser", "noise": "11".repeat(32) },
+                { "device": "d2", "kind": "daemon", "noise": key },
+            ] },
+        });
+        assert_eq!(listed(&theirs).unwrap().noise.as_deref(), Some(key.as_str()));
+        let own = json!({ "id": "d3", "name": "mine" });
+        assert_eq!(listed(&own).unwrap().noise, None, "from /api/devices when it's opened");
+        assert_eq!(noise_key(&key), Some([0xab; 32]));
+        assert_eq!(noise_key("abc"), None);
+        assert_eq!(noise_key(&"zz".repeat(32)), None);
     }
 }

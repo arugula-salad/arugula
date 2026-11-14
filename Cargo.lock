@@ -178,6 +178,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_urlencoded",
+ "sha2 0.11.0",
  "tungstenite 0.30.0",
  "webpki-root-certs",
  "windows-sys 0.60.2",

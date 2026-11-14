@@ -40,7 +40,7 @@ only an account's first passkey may be vouched for by one of its browsers
 | Kind | What it is | Reaches your machines | First device | May approve a new |
 |---|---|---|---|---|
 | `browser` | control's page in a browser or on a phone, including keys a passkey re-derives ([aru-061](decisions/aru-061-a-passkey-with-prf-is-a-device-one-wherever-it-syncs.md)) | yes | yes | anything |
-| `cli` | `arugula login` in a terminal | yes | older accounts only | CLI, machine |
+| `cli` | `arugula login --device` in a terminal (plain `arugula login` signs in with a session since #998, and isn't a device) | yes | older accounts only | CLI, machine |
 | `app` | the desktop app's window | yes | no | app, CLI, machine |
 | `recovery` | a code on paper from your first sign-in | no | no | one browser, CLI or app, then it's spent; never a machine |
 | `daemon` | a machine | it's what's reached | no | nothing |
