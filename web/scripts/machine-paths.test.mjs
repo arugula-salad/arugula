@@ -38,19 +38,20 @@ test("each of control's page addresses has its place in the app, project-less", 
     ["#agents=team", "", "/machines#agents=team"],
     ["#settings=machine", "", "/machines#settings=machine"],
     ["#developer", "", "/machines#developer"],
-    ["#getting-started=cloud", "", "/machines#getting-started=cloud"],
   ];
   for (const [hash, search, path] of rows) assert.equal(fromControl(hash, search), path, `${hash}${search}`);
 });
 
 test("what stays on control's page never moves: secrets, signing in, passkeys, approvals, the platform's own", () => {
-  const moves = new Set(["#swarm", "#overview", "#agents", "#docs", "#pane=", "#pop=", "#machine=", "#getting-started=", "#developer"]);
+  const moves = new Set(["#swarm", "#overview", "#agents", "#docs", "#pane=", "#pop=", "#machine=", "#developer"]);
   for (const f of FRAGMENTS) {
     const sample = f.route.endsWith("=") ? `${f.route}${f.route === "#pane=" || f.route === "#pop=" ? `${D}.1` : f.route === "#machine=" ? D : f.route === "#getting-started=" ? "cloud" : "c2VjcmV0.abc"}` : f.route;
     const to = fromControl(sample);
     if (moves.has(f.route)) assert.notEqual(to, null, sample);
     else assert.equal(to, null, `${sample} stays on control's page`);
   }
+  // Settings but the machine's (your account, passkeys, devices), and Getting started, stay too.
+  for (const h of ["#settings", "#settings=account", "#settings=device", "#settings=all-devices", "#getting-started=cloud"]) assert.equal(fromControl(h), null, h);
   for (const h of ["#chat", "#chat=ch_0123456789abcdef", "#deploy=dep_0123", "#teams", "#lend=on", "#nonsense", "#pane=x", "#machine=../x", `#swarm=board:../x`])
     assert.equal(fromControl(h), null, h);
 });
