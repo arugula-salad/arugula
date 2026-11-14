@@ -128,7 +128,7 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
             let t = trust.context("an account's project came without its account")?;
             ensure!(t.account == id, "the project's account isn't the delegation's");
             if let Some(p) = prev {
-                ensure!(p.trust.root == t.root, "control changed the account's root");
+                ensure!(p.trust().is_some_and(|r| r.root == t.root), "control changed the account's root");
             }
             let (account_certs, account_revocations) = match prev {
                 Some(p) => {
@@ -215,7 +215,7 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
     let purpose = prev.and_then(|p| p.hosted()).map_or(Purpose::People, |h| h.purpose).or(told);
     let mut out = Saved {
         url: url.trim_end_matches('/').to_owned(),
-        trust,
+        root: crate::control::Root::Pinned(trust),
         cert: own,
         certs: own_certs,
         revocations: own_revocations,
@@ -385,7 +385,7 @@ mod tests {
         let (mut got, root) = enrollment(&keys);
         let (_, phone) = approved("acct1", &root);
         got.account_certs.push(phone.clone());
-        let held = |s: &Saved| s.trust.evaluate(&s.certs, &s.revocations).get(&phone.device).is_some();
+        let held = |s: &Saved| s.own_devices().get(&phone.device).is_some();
         let first = saved_from(got.clone(), &keys, None).unwrap();
         assert!(held(&first));
         // The phone is removed; then control drops the removal.
@@ -408,7 +408,7 @@ mod tests {
         let (_, phone) = approved("acct1", &root);
         got.account_certs.extend([laptop_cert.clone(), phone.clone()]);
         got.account_revocations.push(arugula_e2e::Revocation::new("acct1", &phone.device, &laptop));
-        let held = |s: &Saved| s.trust.evaluate(&s.certs, &s.revocations).get(&phone.device).is_some();
+        let held = |s: &Saved| s.own_devices().get(&phone.device).is_some();
         let first = saved_from(got.clone(), &keys, None).unwrap();
         assert!(!held(&first));
         got.account_certs.retain(|c| c.device != laptop_cert.device);
@@ -821,7 +821,7 @@ mod tests {
         assert_eq!(saved.cert.account, "acct1");
         assert!(saved.is_hosted());
         // The account's own devices get in, as the owner.
-        assert!(saved.trust.evaluate(&saved.certs, &saved.revocations).get(&root.id()).is_some());
+        assert!(saved.own_devices().get(&root.id()).is_some());
         // And again on a refresh.
         assert!(saved_from(got.clone(), &keys, Some(&saved)).is_ok());
         // Another key's certificate, one not signed by the delegation's key,

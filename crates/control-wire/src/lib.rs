@@ -93,7 +93,10 @@ pub mod telemetry;
 pub mod transcripts;
 pub mod work;
 
-pub use join::{CliJoinRequest, JoinPoll, JoinProof, JoinRequest, JoinStarted, JoinTeam, PollQuery};
+pub use join::{
+    CliJoinRequest, JoinPoll, JoinProof, JoinRequest, JoinStarted, JoinTeam, JoinTokenMade, JoinTokenRequest, Joined,
+    JoinedTeam, PollQuery, TokenJoinRequest,
+};
 pub use push::{PushAnswer, PushRequest, PushSubs};
 pub use team::{
     AccessList, CHAT_HEARD, DEV_SETTINGS, FLAG_ALIASES, Features, Flags, LOCAL_ONLY_FLAGS, PeerCerts, PeersQuery,
@@ -107,6 +110,12 @@ pub const JOIN: &str = "/api/join";
 /// The route a daemon polls for its approval (`GET /api/join/{code}`),
 /// answered [`JoinPoll`].
 pub const JOIN_POLL: &str = "/api/join/{code}";
+/// A daemon joins with a join token (`POST`, no session, aru-141),
+/// [`TokenJoinRequest`], answered [`Joined`].
+pub const JOIN_TOKEN: &str = "/api/join/token";
+/// A signed-in person makes a join token (`POST`), [`JoinTokenRequest`],
+/// answered [`JoinTokenMade`].
+pub const JOIN_TOKENS: &str = "/api/join-tokens";
 /// The account's certificates (`GET`), [`TrustAnswer`].
 pub const TRUST: &str = "/api/daemon/trust";
 /// A daemon leaves (`POST`, no body).

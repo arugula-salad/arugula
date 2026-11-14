@@ -31,6 +31,13 @@
 //! When control is down, the last certificates it sent keep working.
 //! `arugulad leave` tells control and removes the file.
 //!
+//! **Joined on control's word** (aru-141, [`Root::Control`]): `arugulad
+//! join --token`, or a join a signed-in person added with one click, pins
+//! no root. Control decides who reaches the machine: no device gets in,
+//! only channels with control's machine tokens (`e2e.rs`'s `serve_token`)
+//! and read-only links, and a refresh asks for no certificates, rosters
+//! or peers.
+//!
 //! While running, the daemon keeps its standing with control ([`State`],
 //! `/api/host`'s `control_state`, #325): not joined, joined (connected or
 //! not, and the last thing that went wrong), or dropped. Dropped is control
@@ -141,7 +148,13 @@ const DROPPED_RETRY: Duration = Duration::from_secs(600);
 #[serde(try_from = "OnDisk", into = "OnDisk")]
 pub struct Saved {
     pub url: String,
-    pub trust: Trust,
+    /// The account's root this machine pinned when it joined, or none:
+    /// joined on control's word (aru-141).
+    pub root: Root,
+    /// This machine's own certificate: as its account approved it, or,
+    /// joined on control's word, the unsigned one it joined with, with the
+    /// account control put it in. Its `account` is the owner's either way,
+    /// and its `device` this machine's key's id.
     pub cert: Cert,
     pub certs: Vec<Cert>,
     pub revocations: Vec<Revocation>,
@@ -170,6 +183,31 @@ pub struct Saved {
     pub login: String,
     /// When the last move it took was made (#100): older ones are replays.
     pub moved_at: u64,
+}
+
+/// Whose word a machine joined on (aru-141).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Root {
+    /// The account's root device, pinned at join (aru-055): the account's
+    /// devices get in as their certificates chain back to it, and control
+    /// can't add one.
+    Pinned(Trust),
+    /// Joined on control's word, pinning no root (aru-141): `arugulad join
+    /// --token`, or one-click approval. No device gets in; machine-token
+    /// channels and read-only links do.
+    Control(ByControl),
+}
+
+/// A join on control's word ([`Root::Control`]): what it said, and when.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ByControl {
+    /// When it joined (ms since the epoch): with the key, this enrollment
+    /// ([`Saved::enrollment`]).
+    pub at: u64,
+    /// The team control said it joined, for what to call it; nothing here
+    /// is checked against it, and it lets nobody in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub team: Option<wire::JoinedTeam>,
 }
 
 /// What a machine is (#672, docs/data-model.md "Machines and compute"):
@@ -349,6 +387,46 @@ impl MachineKind {
 }
 
 impl Saved {
+    /// The account root pinned at join; none when it joined on control's
+    /// word (aru-141).
+    pub fn trust(&self) -> Option<&Trust> {
+        match &self.root {
+            Root::Pinned(t) => Some(t),
+            Root::Control(_) => None,
+        }
+    }
+
+    pub fn trust_mut(&mut self) -> Option<&mut Trust> {
+        match &mut self.root {
+            Root::Pinned(t) => Some(t),
+            Root::Control(_) => None,
+        }
+    }
+
+    /// Joined on control's word (aru-141): no root, so no devices.
+    pub fn by_control(&self) -> Option<&ByControl> {
+        match &self.root {
+            Root::Control(b) => Some(b),
+            Root::Pinned(_) => None,
+        }
+    }
+
+    /// What tells this enrollment from another, for what control said of
+    /// it ([`Dropped::cert`]) and telemetry: the certificate's signature,
+    /// or, joined on control's word, the key and when it joined.
+    pub fn enrollment(&self) -> String {
+        match &self.root {
+            Root::Pinned(_) => self.cert.sig.clone(),
+            Root::Control(b) => format!("control:{}:{}", self.cert.device, b.at),
+        }
+    }
+
+    /// The account's own devices, as they check out against the pinned
+    /// root: none when it joined on control's word.
+    pub fn own_devices(&self) -> Trusted {
+        self.trust().map(|t| t.evaluate(&self.certs, &self.revocations)).unwrap_or_default()
+    }
+
     /// The team this machine checks: a team machine's own, or the team
     /// whose project a hosted machine is enrolled under. None for a
     /// personal machine, and for a hosted machine of an account's project.
@@ -358,6 +436,17 @@ impl Saved {
 
     pub fn team_mut(&mut self) -> Option<&mut InTeam> {
         self.kind.team_mut()
+    }
+
+    /// What to call the team it's in, if it's a team's: the roster's
+    /// name, else the pinned id; or, joined on control's word, the name
+    /// control gave.
+    pub fn team_name(&self) -> Option<String> {
+        match (self.team(), self.by_control()) {
+            (Some(t), _) => Some(t.roster.as_ref().map_or(t.pin.team.clone(), |r| r.name.clone())),
+            (None, Some(b)) => b.team.as_ref().map(|t| t.name.clone()),
+            (None, None) => None,
+        }
     }
 
     /// The team's pin, when there is a team.
@@ -402,8 +491,15 @@ impl Saved {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct OnDisk {
     url: String,
-    trust: Trust,
+    /// Required by every daemon from before aru-141: a file joined on
+    /// control's word leaves it out, so they refuse it rather than read it
+    /// as an account's with no devices.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    trust: Option<Trust>,
     cert: Cert,
+    /// Joined on control's word (aru-141), with no `trust`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    by_control: Option<ByControl>,
     #[serde(default)]
     certs: Vec<Cert>,
     #[serde(default)]
@@ -474,6 +570,30 @@ impl TryFrom<OnDisk> for Saved {
 
     fn try_from(d: OnDisk) -> anyhow::Result<Self> {
         use arugula_e2e::hosted::Owner;
+        let root = match (d.trust, d.by_control) {
+            (Some(t), None) => Root::Pinned(t),
+            (None, Some(b)) => {
+                // Control's word lets nobody in by certificate: a team, a
+                // hosted pin, certificates or peers beside it are a file
+                // something else wrote.
+                anyhow::ensure!(
+                    d.team.is_none()
+                        && d.hosted.is_none()
+                        && d.certs.is_empty()
+                        && d.revocations.is_empty()
+                        && d.peers.is_empty()
+                        && d.shared_teams.is_empty(),
+                    "control.json joined on control's word also holds a team, a hosted pin or certificates; not loading it: {NOT_LOADED}"
+                );
+                Root::Control(b)
+            }
+            (Some(_), Some(_)) => {
+                bail!("control.json both pins a root and joined on control's word; not loading it: {NOT_LOADED}")
+            }
+            (None, None) => {
+                bail!("control.json pins no root and didn't join on control's word; not loading it: {NOT_LOADED}")
+            }
+        };
         let team = match d.team {
             Some(pin) => Some(InTeam {
                 pin,
@@ -530,7 +650,7 @@ impl TryFrom<OnDisk> for Saved {
         };
         Ok(Self {
             url: d.url,
-            trust: d.trust,
+            root,
             cert: d.cert,
             certs: d.certs,
             revocations: d.revocations,
@@ -570,10 +690,15 @@ impl From<Saved> for OnDisk {
             Some(t) => (Some(t.pin), t.roster, t.certs, t.former, t.names, t.locked, t.lock),
             None => (None, None, Default::default(), Default::default(), Default::default(), false, None),
         };
+        let (trust, by_control) = match s.root {
+            Root::Pinned(t) => (Some(t), None),
+            Root::Control(b) => (None, Some(b)),
+        };
         Self {
             url: s.url,
-            trust: s.trust,
+            trust,
             cert: s.cert,
+            by_control,
             certs: s.certs,
             revocations: s.revocations,
             team,
@@ -645,7 +770,7 @@ fn take_move(saved: &mut Saved, m: Move) {
         warn!(by = m.by, "a move from control reached a hosted machine; ignoring it");
         return;
     }
-    let trusted = saved.trust.evaluate(&saved.certs, &saved.revocations);
+    let trusted = saved.own_devices();
     let own = trusted.get(&m.by).is_some_and(|by| m.signed_for(&saved.cert.device, by));
     let owner_out = saved
         .team()
@@ -671,8 +796,10 @@ fn take_move(saved: &mut Saved, m: Move) {
 /// device this machine holds removed back in are refused
 /// ([`checkpoint::refresh_account`]).
 fn take_own(saved: &mut Saved, certs: Vec<Cert>, revocations: Vec<Revocation>, now: u64) {
+    // Joined on control's word: no root to check them against.
+    let Some(trust) = saved.trust().cloned() else { return };
     let (certs, revocations, refused) = checkpoint::refresh_account(
-        &saved.trust,
+        &trust,
         (certs, revocations),
         (&saved.certs, &saved.revocations),
         &mut saved.seen,
@@ -970,7 +1097,24 @@ impl Enrolled {
                 push: Vec::new(),
             };
         }
-        let trusted = saved.trust.evaluate(&saved.certs, &saved.revocations);
+        // Joined on control's word (aru-141): no device gets in, only
+        // machine-token channels (`e2e.rs`'s `serve_token`, which control
+        // decides) and read-only links ([`Control::device`]).
+        if saved.by_control().is_some() {
+            return Self {
+                saved,
+                keys,
+                trusted: Default::default(),
+                others: vec![],
+                agent_callers: Default::default(),
+                drivers: vec![],
+                open_agents,
+                team_roles: HashMap::new(),
+                shared_roles: HashMap::new(),
+                push: Vec::new(),
+            };
+        }
+        let trusted = saved.own_devices();
         let mut others = Vec::new();
         let mut team_roles = HashMap::new();
         // A hosted workspace's editors have full use of it, as its owners do
@@ -1133,8 +1277,10 @@ impl Enrolled {
     /// checked roster names for a member (its team's, or a team the owner
     /// pinned). An account it knows no other way isn't trusted.
     pub fn known_root(&self, account: &str) -> Option<String> {
-        if account == self.saved.trust.account {
-            return Some(self.saved.trust.root.clone());
+        if let Some(t) = self.saved.trust()
+            && account == t.account
+        {
+            return Some(t.root.clone());
         }
         let rosters = self.saved.roster().into_iter().chain(self.saved.shared_teams.values().map(|t| &t.roster));
         rosters.filter_map(|r| r.member(account)).map(|m| m.root.clone()).next()
@@ -1327,15 +1473,15 @@ pub use arugula_proto::hosts::ControlState as State;
 
 /// Who a saved enrollment belongs to: `account` or `team`, and its name.
 fn kind_name(s: &Saved) -> (&'static str, String) {
-    match s.team() {
-        Some(t) => ("team", t.roster.as_ref().map_or(t.pin.team.clone(), |r| r.name.clone())),
+    match s.team_name() {
+        Some(t) => ("team", t),
         None => ("account", s.login.clone()),
     }
 }
 
 /// The state from what's saved and how the link is going.
 fn state_of(saved: Option<&Saved>, link: &Link, no_relay: bool) -> State {
-    let dropped = link.dropped.as_ref().filter(|d| saved.is_none_or(|s| s.cert.sig == d.cert));
+    let dropped = link.dropped.as_ref().filter(|d| saved.is_none_or(|s| s.enrollment() == d.cert));
     if let Some(d) = dropped {
         return State {
             state: "dropped".into(),
@@ -1516,7 +1662,7 @@ pub fn read_saved(dir: &Path) -> anyhow::Result<Option<Saved>> {
 /// The control `control.json` in `dir` joins, and its enrolment's
 /// certificate signature, for telemetry's report from another process.
 pub fn joined_in(dir: &Path) -> Option<(String, String)> {
-    read_saved(dir).ok().flatten().map(|s| (s.url.trim_end_matches('/').to_owned(), s.cert.sig))
+    read_saved(dir).ok().flatten().map(|s| (s.url.trim_end_matches('/').to_owned(), s.enrollment()))
 }
 
 /// Telemetry's reports (M101) are signed as this daemon, when it's joined
@@ -1524,7 +1670,7 @@ pub fn joined_in(dir: &Path) -> Option<(String, String)> {
 impl crate::telemetry::Signer for Control {
     fn joined(&self) -> Option<(String, String)> {
         let e = self.enrolled()?;
-        Some((e.saved.url.trim_end_matches('/').to_owned(), e.saved.cert.sig.clone()))
+        Some((e.saved.url.trim_end_matches('/').to_owned(), e.saved.enrollment()))
     }
 
     fn sign_post(&self, path: &str, body: &[u8]) -> Option<String> {
@@ -1673,7 +1819,7 @@ impl Control {
             name,
             said,
             at_ms: now_ms(),
-            cert: e.saved.cert.sig.clone(),
+            cert: e.saved.enrollment(),
         };
         let mut l = self.link.lock().unwrap();
         if l.dropped.as_ref().is_some_and(|o| o.cert == d.cert) {
@@ -2371,7 +2517,7 @@ impl Control {
         };
         if let Some(e) = &next {
             let mut l = self.link.lock().unwrap();
-            if l.dropped.as_ref().is_some_and(|d| d.cert != e.saved.cert.sig) {
+            if l.dropped.as_ref().is_some_and(|d| d.cert != e.saved.enrollment()) {
                 // A new join: what control said of the last one is past.
                 l.dropped = None;
                 let _ = std::fs::remove_file(self.state_dir.join(DROPPED_FILE));
@@ -2379,7 +2525,8 @@ impl Control {
             drop(l);
             info!(
                 control = e.saved.url,
-                account = e.saved.trust.account,
+                account = e.saved.cert.account,
+                by_control = e.saved.by_control().is_some(),
                 devices = e.trusted.devices.len(),
                 others = e.others.len(),
                 "enrolled in control"
@@ -2524,6 +2671,32 @@ impl Control {
         Ok(wrote)
     }
 
+    /// The refresh of a machine joined on control's word (aru-141): no
+    /// certificates, rosters or peers to fetch (`/api/daemon/trust`,
+    /// `/teams` and `/peers`), since none of them lets anyone in here, and
+    /// no own certificate to check. It follows control if it moved, tells
+    /// it who gets in (read-only links), and fetches the push
+    /// subscriptions, whose answer is also how it hears it was dropped.
+    async fn refresh_by_control(&self, e: &Enrolled, number: u64) -> anyhow::Result<bool> {
+        let took = std::time::Instant::now();
+        let mut saved = e.saved.clone();
+        if let Some(to) = self.where_control_is(&e.saved.url).await {
+            info!(from = saved.url, to, "control moved; following it");
+            saved.url = to;
+        }
+        let changed = saved.url != e.saved.url;
+        let wrote = (changed || self.unsaved.load(std::sync::atomic::Ordering::SeqCst)) && self.save_or_say(&saved);
+        let mut next = Enrolled::build(saved, e.keys.clone(), &self.acl, self.open_agents());
+        self.publish(&next).await;
+        let subs: wire::PushSubs = self.get(&next, wire::PUSH_SUBS).await?;
+        next.push = Self::verified_subs(&next, subs);
+        let took_ms = took.elapsed().as_millis() as u64;
+        info!(changed, took_ms, "refreshed (joined on control's word)");
+        self.install(Some(next));
+        self.refreshed.send_modify(|n| *n = (*n).max(number));
+        Ok(wrote)
+    }
+
     /// [`Control::save_refreshed`], for a refresh: what it found is taken
     /// in memory either way (new removals count at once, and later
     /// refreshes build on them), so a failure to save is said loudly
@@ -2563,6 +2736,9 @@ impl Control {
         let number = self.started.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
         if e.saved.is_hosted() {
             return self.refresh_hosted(&e, number).await;
+        }
+        if e.saved.by_control().is_some() {
+            return self.refresh_by_control(&e, number).await;
         }
         let took = std::time::Instant::now();
         let moved_to = self.where_control_is(&e.saved.url).await;
@@ -2964,6 +3140,12 @@ impl Control {
     /// a device we trust signed them.
     async fn push_subs(&self, e: &Enrolled) -> Vec<(Principal, PushSub)> {
         let Ok(got) = self.get::<wire::PushSubs>(e, wire::PUSH_SUBS).await else { return Vec::new() };
+        Self::verified_subs(e, got)
+    }
+
+    /// Those of `got` a device we trust signed, and whose they are. Joined
+    /// on control's word there are no such devices yet, so none.
+    fn verified_subs(e: &Enrolled, got: wire::PushSubs) -> Vec<(Principal, PushSub)> {
         got.subs
             .into_iter()
             .filter_map(|s| {
@@ -3378,7 +3560,7 @@ fn retire(state_dir: &Path, r: &mut Removed) -> anyhow::Result<()> {
         r.old_key = fingerprint(&k.id());
     }
     if let Ok(Some(s)) = read_saved(state_dir) {
-        r.root = Some(s.trust.root);
+        r.root = s.trust().map(|t| t.root.clone());
     }
     let kept = state_dir.join(format!("{KEY_FILE}.removed-{ms}"));
     std::fs::rename(&key, &kept).with_context(|| format!("setting {} aside", key.display()))?;
@@ -3400,9 +3582,11 @@ fn retire(state_dir: &Path, r: &mut Removed) -> anyhow::Result<()> {
 /// Why control refuses this machine's signature, if it does: what it said
 /// ("this machine's account was deleted", or that it left or was
 /// revoked). `None` when control still knows it, or can't be asked.
+/// Joined on control's word, it asks for the push subscriptions, as its
+/// refreshes do, not the certificates it has no root for.
 async fn forgotten(s: &Saved, keys: &DeviceKeys) -> Option<Forgot> {
     let http = control_http().timeout(Duration::from_secs(10)).build().ok()?;
-    let path = wire::TRUST;
+    let path = if s.by_control().is_some() { wire::PUSH_SUBS } else { wire::TRUST };
     let res =
         http.get(format!("{}{path}", s.url)).header(AUTH, auth_header(keys, "GET", path, b"")).send().await.ok()?;
     if res.status() == reqwest::StatusCode::GONE {
@@ -3427,8 +3611,8 @@ enum Forgot {
 
 /// Who a saved enrollment belongs to, in words.
 fn whose(s: &Saved) -> String {
-    match s.team() {
-        Some(t) => format!("the team {}", t.roster.as_ref().map_or(&t.pin.team, |r| &r.name)),
+    match s.team_name() {
+        Some(t) => format!("the team {t}"),
         None if !s.login.is_empty() => format!("{}'s account", s.login),
         None => "an account".into(),
     }
@@ -3610,6 +3794,10 @@ pub enum AccountCheck {
     /// No secret was made (an older control): the person compares the
     /// account's fingerprint, as before.
     Unasked,
+    /// A signed-in person added it with no device certificate (aru-141):
+    /// control's word is what decides who reaches a machine now, so
+    /// there's nothing to check, and no root is pinned.
+    Control,
 }
 
 /// A finished join: where this machine went, and who approved it.
@@ -3664,7 +3852,7 @@ impl Approved {
     /// Whether `typed` is this account's fingerprint (any case, with or
     /// without the dashes).
     pub fn is_account(&self, typed: &str) -> bool {
-        same_fingerprint(&self.saved.trust.root, typed)
+        self.saved.trust().is_some_and(|t| same_fingerprint(&t.root, typed))
     }
 
     /// Pin the account and save `control.json` (a running daemon picks it
@@ -3709,10 +3897,7 @@ pub async fn join_start(
     state_dir: &Path,
     by: &str,
 ) -> anyhow::Result<JoinPending> {
-    let url = url.trim_end_matches('/').to_owned();
-    if !url.starts_with("https://") && !private_http(&url) {
-        bail!("control's URL must be https:// (or http on loopback or a private network, for testing)");
-    }
+    let url = join_url(url)?;
     let mut keys = DeviceKeys::load_or_create(&state_dir.join(KEY_FILE))?;
     if let Some(s) = read_saved(state_dir)? {
         // Control may have forgotten it (its account deleted, or it was
@@ -3829,6 +4014,12 @@ pub async fn join_finish(p: JoinPending) -> anyhow::Result<Approved> {
             break p;
         }
     };
+    // Added by a signed-in person (aru-141): saved on control's word, with
+    // no root to pin and nothing to compare.
+    if let Some(j) = &got.joined {
+        let (saved, joined) = saved_by_control(&url, &ask, j)?;
+        return Ok(Approved { saved, joined, check: AccountCheck::Control });
+    }
     let (cert, trust) = got.cert.zip(got.trust).context("control approved it but sent no certificate")?;
     if !cert.same_request(&ask) {
         bail!("control sent back a certificate for a different key; not joining");
@@ -3873,7 +4064,7 @@ pub async fn join_finish(p: JoinPending) -> anyhow::Result<Approved> {
     };
     let saved = Saved {
         url: url.clone(),
-        trust: trust.clone(),
+        root: Root::Pinned(trust.clone()),
         cert: cert.clone(),
         certs: all,
         revocations: got.revocations,
@@ -3897,6 +4088,116 @@ pub async fn join_finish(p: JoinPending) -> anyhow::Result<Approved> {
         account: fingerprint(&trust.root),
     };
     Ok(Approved { saved, joined, check })
+}
+
+/// A join on control's word (aru-141): what to save for `j`, the answer
+/// to `ask` (this machine's unsigned certificate), and what to say. No
+/// root is pinned; the owner is the account control names.
+fn saved_by_control(url: &str, ask: &Cert, j: &wire::Joined) -> anyhow::Result<(Saved, Joined)> {
+    // Machine tokens name this key's id; a machine control knows by
+    // another wouldn't be reachable.
+    if j.machine != ask.device {
+        bail!("control added a machine ({}) that isn't this one ({}); not joining", j.machine, ask.device);
+    }
+    if j.account.is_empty() {
+        bail!("control added this machine to no account; not joining");
+    }
+    let saved = Saved {
+        url: url.to_owned(),
+        root: Root::Control(ByControl { at: now_ms(), team: j.team.clone() }),
+        cert: Cert { account: j.account.clone(), ..ask.clone() },
+        certs: vec![],
+        revocations: vec![],
+        kind: MachineKind::Personal,
+        seen: Default::default(),
+        peers: Default::default(),
+        shared_teams: Default::default(),
+        held_teams: Default::default(),
+        held_peers: Default::default(),
+        login: j.login.clone(),
+        moved_at: 0,
+    };
+    let joined = Joined {
+        place: match &j.team {
+            Some(t) => format!("the team {}", t.name),
+            None if !j.login.is_empty() => format!("{}'s account", j.login),
+            None => "your account".into(),
+        },
+        approver: String::new(),
+        not_team: None,
+        key: fingerprint(&ask.device),
+        account: if j.login.is_empty() { j.account.clone() } else { j.login.clone() },
+    };
+    Ok((saved, joined))
+}
+
+/// Control's URL as a join takes it: https, or http to a private address
+/// for testing; without a trailing slash.
+fn join_url(url: &str) -> anyhow::Result<String> {
+    let url = url.trim_end_matches('/').to_owned();
+    if !url.starts_with("https://") && !private_http(&url) {
+        bail!("control's URL must be https:// (or http on loopback or a private network, for testing)");
+    }
+    Ok(url)
+}
+
+/// `arugulad join URL --token ajt_…` (aru-141): join at once with a join
+/// token a signed-in person made, with no code and no browser, and save
+/// the join on control's word ([`Root::Control`]). A used, expired or
+/// unknown token is refused, and nothing is saved.
+pub async fn join_token(url: &str, name: &str, token: &str, state_dir: &Path) -> anyhow::Result<Joined> {
+    let url = join_url(url)?;
+    let token = token.trim();
+    if token.is_empty() {
+        bail!("the join token is empty");
+    }
+    let keys = DeviceKeys::load_or_create(&state_dir.join(KEY_FILE))?;
+    if let Some(s) = read_saved(state_dir)? {
+        match forgotten(&s, &keys).await {
+            Some(Forgot::Removed) => bail!(
+                "this machine's key was removed from {} on {}; run `arugulad leave` to forget that here, then join again",
+                whose(&s),
+                s.url
+            ),
+            Some(Forgot::Said(why)) => bail!(
+                "this machine was in {} on {}, but control doesn't know it any more ({why}); run `arugulad leave` to forget that here, then join again",
+                whose(&s),
+                s.url
+            ),
+            None => bail!("{}", already_in(&s, None)),
+        }
+    }
+    let _lock = JoinLock::take(state_dir, "`arugulad join --token`")?;
+    let http = control_http().timeout(Duration::from_secs(20)).build()?;
+    let ask = Cert { account: String::new(), ..Cert::new(&keys, "", Kind::Daemon, name) };
+    let ms = now_ms();
+    let proof = wire::JoinProof { ms, sig: hex::encode(keys.signature(cert::join_proof_body(&ask, ms).as_bytes())) };
+    let feats = features().split(',').filter(|f| *f != cert::JOIN_SECRET).collect::<Vec<_>>().join(",");
+    let res = http
+        .post(format!("{url}{}", wire::JOIN_TOKEN))
+        .json(&wire::TokenJoinRequest {
+            cert: ask.clone(),
+            proof,
+            join_token: token.to_owned(),
+            urls: vec![],
+            features: feats,
+        })
+        .send()
+        .await
+        .with_context(|| format!("can't reach control at {url}"))?;
+    if res.status() == reqwest::StatusCode::GONE {
+        bail!(
+            "{}: the join token was used already, has expired, or isn't one this control made; make a new one",
+            control_said(res).await
+        );
+    }
+    if !res.status().is_success() {
+        bail!("{}", control_said(res).await);
+    }
+    let j: wire::Joined = res.json().await.context("control's answer to the join token")?;
+    let (saved, joined) = saved_by_control(&url, &ask, &j)?;
+    write_saved(state_dir, &saved)?;
+    Ok(joined)
 }
 
 /// `arugulad join URL [--team ID] [--account FINGERPRINT]`: ask, show
@@ -3943,6 +4244,9 @@ pub async fn join(
     let a = join_finish(p).await?;
     let fp = a.joined.account.clone();
     let checked = match &account {
+        // Added by a signed-in person (aru-141): control's word decides who
+        // reaches a machine now, so there's no root to compare.
+        _ if a.check == AccountCheck::Control => Ok(()),
         Some(want) if !a.is_account(want) => Err(anyhow::anyhow!(
             "control approved this machine into the account {fp}, not {}; not joining",
             fingerprint(want)
@@ -3962,13 +4266,31 @@ pub async fn join(
         a.refuse(state_dir).await;
         return Err(e);
     }
+    let by_control = a.check == AccountCheck::Control;
     let j = a.save(state_dir)?;
     println!();
-    println!("  Joined. This machine is in {}, approved on \"{}\".", j.place, j.approver);
-    if let Some(t) = &j.not_team {
-        println!("  (Not the team {t}: the approver kept it to their account.)");
+    if by_control {
+        println!("  Joined. This machine is in {}.", j.place);
+        println!("  Its key is {}.", j.key);
+    } else {
+        println!("  Joined. This machine is in {}, approved on \"{}\".", j.place, j.approver);
+        if let Some(t) = &j.not_team {
+            println!("  (Not the team {t}: the approver kept it to their account.)");
+        }
+        println!("  Its key is {}; the account is {}.", j.key, j.account);
     }
-    println!("  Its key is {}; the account is {}.", j.key, j.account);
+    println!("  Open {url}; it's in the host menu.");
+    Ok(())
+}
+
+/// `arugulad join URL --token ajt_…` (aru-141), for the person: join, and
+/// say where it went.
+pub async fn join_with_token(url: &str, name: &str, token: &str, state_dir: &Path) -> anyhow::Result<()> {
+    let j = join_token(url, name, token, state_dir).await?;
+    let url = url.trim_end_matches('/');
+    println!();
+    println!("  Joined. This machine ({name}) is in {}.", j.place);
+    println!("  Its key is {}.", j.key);
     println!("  Open {url}; it's in the host menu.");
     Ok(())
 }
@@ -4269,7 +4591,7 @@ pub(crate) mod tests {
         let (_, dcert) = device("a1", Kind::Daemon);
         let mut s = Saved {
             url: "https://c.example".into(),
-            trust: Trust { account: "a1".into(), root: root.device.clone() },
+            root: Root::Pinned(Trust { account: "a1".into(), root: root.device.clone() }),
             cert: dcert,
             certs: vec![root],
             revocations: vec![],
@@ -4376,7 +4698,7 @@ pub(crate) mod tests {
         assert!(!a.is_account(&mine) && a.is_account(&fingerprint(&root.device)));
 
         join(&url, "box", None, Some(&fingerprint(&root.device)), &dir).await.unwrap();
-        assert_eq!(read_saved(&dir).unwrap().unwrap().trust.root, root.device);
+        assert_eq!(read_saved(&dir).unwrap().unwrap().trust().unwrap().root, root.device);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -4494,7 +4816,126 @@ pub(crate) mod tests {
         let a = join_finish(p).await.unwrap();
         assert_eq!(a.check, AccountCheck::Proven);
         a.save(&dir).unwrap();
-        assert_eq!(read_saved(&dir).unwrap().unwrap().trust.root, proot.device);
+        assert_eq!(read_saved(&dir).unwrap().unwrap().trust().unwrap().root, proot.device);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A machine joined on control's word (aru-141), as `join --token` and
+    /// one-click approval save it.
+    fn by_control(team: Option<wire::JoinedTeam>) -> (DeviceKeys, Saved) {
+        let keys = DeviceKeys::generate();
+        let ask = Cert { account: String::new(), ..Cert::new(&keys, "", Kind::Daemon, "box") };
+        let j = wire::Joined { account: "acct1".into(), login: "sam".into(), machine: keys.id(), team };
+        let (saved, joined) = saved_by_control("https://control.example", &ask, &j).unwrap();
+        assert_eq!(joined.key, fingerprint(&keys.id()));
+        (keys, saved)
+    }
+
+    /// aru-141: a join on control's word saves no root. Its file has no
+    /// `trust`, so a daemon from before refuses it rather than read it as
+    /// an account with no devices yet; it loads back as it was, its owner
+    /// the account control named, its machine id this key's. A file from
+    /// before loads and is written exactly as it was. A file that both
+    /// pins a root and says control's word, or holds a team or
+    /// certificates beside control's word, doesn't load.
+    #[test]
+    fn a_join_on_controls_word_pins_no_root() {
+        let (keys, saved) = by_control(None);
+        let v = serde_json::to_value(&saved).unwrap();
+        assert!(v.get("trust").is_none(), "{v}");
+        assert!(v["by_control"]["at"].as_u64().is_some_and(|at| at > 0), "{v}");
+        assert!(v["by_control"].get("team").is_none(), "{v}");
+
+        // What every daemon before this one read the file as: `trust` and
+        // `cert` required.
+        #[derive(Deserialize)]
+        #[allow(dead_code)]
+        struct Before {
+            url: String,
+            trust: Trust,
+            cert: Cert,
+        }
+        let e = serde_json::from_value::<Before>(v.clone()).err().expect("an older daemon refuses it");
+        assert!(e.to_string().contains("missing field `trust`"), "{e}");
+
+        let back: Saved = serde_json::from_value(v.clone()).unwrap();
+        assert_eq!(back.root, saved.root);
+        assert!(back.trust().is_none() && back.by_control().is_some());
+        assert_eq!((back.cert.account.as_str(), back.cert.device.as_str()), ("acct1", keys.id().as_str()));
+        assert!(back.cert.sig.is_empty(), "nobody signed it");
+        assert_eq!(back.login, "sam");
+        assert_eq!(serde_json::to_value(&back).unwrap(), v, "written as read");
+        assert_eq!(back.enrollment(), format!("control:{}:{}", keys.id(), back.by_control().unwrap().at));
+        assert!(back.own_devices().devices.is_empty());
+        assert_eq!(kind_name(&back), ("account", "sam".to_owned()));
+
+        // A team control named, for what to call it; still nobody checked.
+        let (_, team) = by_control(Some(wire::JoinedTeam { id: "t1".into(), name: "Crew".into() }));
+        let back: Saved = serde_json::from_value(serde_json::to_value(&team).unwrap()).unwrap();
+        assert_eq!(back.team_name().as_deref(), Some("Crew"));
+        assert!(back.team().is_none() && matches!(back.kind, MachineKind::Personal));
+        assert_eq!(whose(&back), "the team Crew");
+
+        // An old daemon's file: loads pinned, and is written back unchanged.
+        let old = saved_for("https://control.example", "lex00");
+        let ov = serde_json::to_value(&old).unwrap();
+        assert!(ov.get("by_control").is_none() && ov.get("trust").is_some(), "{ov}");
+        let mut text = ov.clone();
+        text.as_object_mut().unwrap().remove("seen");
+        let loaded: Saved = serde_json::from_value(text).unwrap();
+        assert_eq!(loaded.root, old.root);
+        assert_eq!(loaded.enrollment(), old.cert.sig);
+        assert_eq!(serde_json::to_value(&loaded).unwrap(), ov);
+
+        // Neither, both, or control's word beside what only a root checks.
+        let refused = |v: serde_json::Value| serde_json::from_value::<Saved>(v).expect_err("refused").to_string();
+        let mut none = ov.clone();
+        none.as_object_mut().unwrap().remove("trust");
+        assert!(refused(none).contains("pins no root"));
+        let mut both = ov.clone();
+        both["by_control"] = v["by_control"].clone();
+        assert!(refused(both).contains("both pins a root"));
+        let mut certs = v.clone();
+        certs["certs"] = serde_json::json!([old.certs[0]]);
+        assert!(refused(certs).contains("on control's word also holds"));
+        let mut team = v.clone();
+        team["team"] = serde_json::json!({ "team": "t1", "founder": "f", "founder_root": "r" });
+        assert!(refused(team).contains("on control's word also holds"));
+
+        // Control adding some other machine isn't joined.
+        let ask = Cert::new(&keys, "", Kind::Daemon, "box");
+        let other = wire::Joined { account: "a".into(), login: "".into(), machine: "elsewhere".into(), team: None };
+        assert!(saved_by_control("https://c", &ask, &other).is_err());
+    }
+
+    /// aru-141: joined on control's word, no device gets in, not even the
+    /// account's own browser, and nor do the people sessions are shared
+    /// with; a read-only link's key does (machine tokens are `e2e.rs`'s).
+    #[tokio::test]
+    async fn joined_on_controls_word_admits_only_links() {
+        let dir = std::env::temp_dir().join(format!("arugula-by-control-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (keys, saved) = by_control(None);
+        let acl = Arc::new(Acl::open(&dir));
+        // A session shared with another account, as an older page would.
+        let (_, friend) = account_root("friend");
+        acl.set_full(1, "account:friend", "Friend", Some(Role::Editor), "owner", None, Some(friend.device.clone()))
+            .unwrap();
+        let link = [7u8; 32];
+        acl.add_link(1, &hex::encode(link), now_ms() + 600_000, None).unwrap();
+        let c = Control::new(&dir, vec![], String::new(), acl.clone(), false);
+        c.install(Some(Enrolled::build(saved, Arc::new(keys), &acl, false)));
+        let e = c.enrolled().expect("enrolled");
+        assert!(e.trusted.devices.is_empty() && e.others.is_empty() && e.drivers.is_empty());
+        assert!(e.agent_callers.is_empty() && e.team_roles.is_empty() && e.accounts().is_empty());
+        assert_eq!(c.account().as_deref(), Some("acct1"));
+        let (_, browser) = device("acct1", Kind::Browser);
+        let noise = |c: &Cert| hex::decode(&c.noise).unwrap();
+        assert!(c.device(&noise(&browser)).is_none(), "the account's own browser isn't let in");
+        assert!(c.device(&noise(&friend)).is_none(), "nor someone a session is shared with");
+        let (_, who) = c.device(&link).expect("a link's key is");
+        assert!(matches!(who, Principal::User { .. }));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -4651,7 +5092,7 @@ pub(crate) mod tests {
         dkeys.save(&dir.join(KEY_FILE)).unwrap();
         let saved = Saved {
             url,
-            trust: Trust { account: "a1".into(), root: aroot.device.clone() },
+            root: Root::Pinned(Trust { account: "a1".into(), root: aroot.device.clone() }),
             cert: dcert,
             certs: vec![aroot],
             revocations: vec![],
@@ -5020,10 +5461,7 @@ pub(crate) mod tests {
         std::fs::write(r.dir.join(FILE), before).unwrap();
         c.refresh().await.unwrap();
         let restarted = read_saved(&r.dir).unwrap().unwrap();
-        assert!(
-            restarted.trust.evaluate(&restarted.certs, &restarted.revocations).get(&phone.device).is_none(),
-            "a restart brings back the removed phone"
-        );
+        assert!(restarted.own_devices().get(&phone.device).is_none(), "a restart brings back the removed phone");
         let _ = std::fs::remove_dir_all(&r.dir);
     }
 
@@ -5123,7 +5561,7 @@ pub(crate) mod tests {
         old_cert.sign_with(&root_keys);
         let saved = Saved {
             url: String::new(),
-            trust: Trust { account: "a".into(), root: root.device.clone() },
+            root: Root::Pinned(Trust { account: "a".into(), root: root.device.clone() }),
             cert: old_cert,
             certs: vec![root.clone()],
             revocations: vec![],
@@ -5218,7 +5656,7 @@ pub(crate) mod tests {
         join(&url, "box", None, None, &dir).await.unwrap();
         let now = read_saved(&dir).unwrap().unwrap();
         assert_ne!(now.cert.device, old.id());
-        assert_eq!(now.trust.root, root.device);
+        assert_eq!(now.trust().unwrap().root, root.device);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -5275,7 +5713,7 @@ pub(crate) mod tests {
         let (mkeys, mallory) = device("m", Kind::Browser);
         let mut saved = Saved {
             url: String::new(),
-            trust: Trust { account: "a".into(), root: root.device.clone() },
+            root: Root::Pinned(Trust { account: "a".into(), root: root.device.clone() }),
             cert: daemon.clone(),
             certs: vec![root.clone()],
             revocations: vec![],
@@ -5339,7 +5777,7 @@ pub(crate) mod tests {
         let pin = TeamPin { team: "t1".into(), founder: "o".into(), founder_root: owner.device.clone() };
         let mut saved = Saved {
             url: String::new(),
-            trust: Trust { account: "m".into(), root: root.device.clone() },
+            root: Root::Pinned(Trust { account: "m".into(), root: root.device.clone() }),
             cert: daemon.clone(),
             certs: vec![root],
             revocations: vec![],
@@ -5413,7 +5851,7 @@ pub(crate) mod tests {
         };
         let team_saved = Saved {
             url: String::new(),
-            trust: Trust { account: "o".into(), root: owner.device.clone() },
+            root: Root::Pinned(Trust { account: "o".into(), root: owner.device.clone() }),
             cert: this,
             certs: vec![],
             revocations: vec![],
@@ -5548,7 +5986,7 @@ pub(crate) mod tests {
         };
         let team_saved = Saved {
             url: String::new(),
-            trust: Trust { account: "o".into(), root: owner.device.clone() },
+            root: Root::Pinned(Trust { account: "o".into(), root: owner.device.clone() }),
             cert: this,
             certs: vec![],
             revocations: vec![],
@@ -5657,7 +6095,7 @@ pub(crate) mod tests {
         };
         let saved = Saved {
             url: String::new(),
-            trust: Trust { account: "m".into(), root: m_root.device.clone() },
+            root: Root::Pinned(Trust { account: "m".into(), root: m_root.device.clone() }),
             cert: this,
             certs: vec![m_root.clone(), m_other.clone()],
             revocations: vec![],
@@ -5740,7 +6178,7 @@ pub(crate) mod tests {
         };
         let saved = Saved {
             url: String::new(),
-            trust: Trust { account: "m".into(), root: root.device.clone() },
+            root: Root::Pinned(Trust { account: "m".into(), root: root.device.clone() }),
             cert: daemon,
             certs: vec![root.clone()],
             revocations: vec![],
@@ -5879,7 +6317,7 @@ pub(crate) mod tests {
         };
         let personal = Saved {
             url: String::new(),
-            trust: Trust { account: "m".into(), root: root.device.clone() },
+            root: Root::Pinned(Trust { account: "m".into(), root: root.device.clone() }),
             cert: daemon,
             certs: vec![root.clone()],
             revocations: vec![],
@@ -6042,7 +6480,7 @@ pub(crate) mod tests {
         };
         let saved = Saved {
             url: String::new(),
-            trust: Trust { account: "m".into(), root: root.device.clone() },
+            root: Root::Pinned(Trust { account: "m".into(), root: root.device.clone() }),
             cert: daemon,
             certs: vec![root.clone()],
             revocations: vec![],
@@ -6134,7 +6572,7 @@ pub(crate) mod tests {
         };
         let mut saved = Saved {
             url: String::new(),
-            trust: Trust { account: "a".into(), root: root.device.clone() },
+            root: Root::Pinned(Trust { account: "a".into(), root: root.device.clone() }),
             cert: daemon,
             certs: vec![root.clone()],
             revocations: vec![],
@@ -6174,7 +6612,7 @@ pub(crate) mod tests {
         let (_, daemon) = device("a", Kind::Daemon);
         Saved {
             url: url.into(),
-            trust: Trust { account: "a".into(), root: root.device.clone() },
+            root: Root::Pinned(Trust { account: "a".into(), root: root.device.clone() }),
             cert: daemon,
             certs: vec![root],
             revocations: vec![],
@@ -6320,12 +6758,12 @@ pub(crate) mod tests {
         let mut s = saved_for("https://c.example", "sam");
         let mut rc = Cert::new(&rk, "a", Kind::Browser, "laptop");
         rc.sign_with(&rk);
-        s.trust.root = rc.device.clone();
+        s.trust_mut().unwrap().root = rc.device.clone();
         let (lk, lc) = approved_by("a", &rk, "laptop2");
         let (_, pc) = approved_by("a", &rk, "phone");
         let all = vec![rc.clone(), lc.clone(), pc.clone()];
         take_own(&mut s, all.clone(), vec![arugula_e2e::Revocation::new("a", &pc.device, &lk)], 1);
-        let phone_in = |s: &Saved| s.trust.evaluate(&s.certs, &s.revocations).get(&pc.device).is_some();
+        let phone_in = |s: &Saved| s.own_devices().get(&pc.device).is_some();
         assert!(!phone_in(&s));
         take_own(&mut s, all.clone(), vec![], 1);
         assert!(!phone_in(&s), "a removal control left out");
@@ -6336,7 +6774,7 @@ pub(crate) mod tests {
         more.push(nc.clone());
         take_own(&mut s, more, vec![], 1);
         assert!(!phone_in(&s));
-        assert!(s.trust.evaluate(&s.certs, &s.revocations).get(&nc.device).is_some(), "a new device is taken");
+        assert!(s.own_devices().get(&nc.device).is_some(), "a new device is taken");
     }
 
     /// A certificate a removed device's key signs, dated before its
@@ -6348,7 +6786,7 @@ pub(crate) mod tests {
         let mut s = saved_for("https://c.example", "sam");
         let mut rc = Cert::new(&rk, "a", Kind::Browser, "laptop");
         rc.sign_with(&rk);
-        s.trust.root = rc.device.clone();
+        s.trust_mut().unwrap().root = rc.device.clone();
         let (lk, lc) = approved_by("a", &rk, "laptop2");
         let removal = arugula_e2e::Revocation::new("a", &lc.device, &rk);
         take_own(&mut s, vec![rc.clone(), lc.clone()], vec![removal.clone()], 10);
@@ -6359,10 +6797,7 @@ pub(crate) mod tests {
         late.created = removal.at.saturating_sub(1000);
         late.sign_with(&lk);
         take_own(&mut s, vec![rc.clone(), lc.clone(), late.clone()], vec![removal], 20);
-        assert!(
-            s.trust.evaluate(&s.certs, &s.revocations).get(&late.device).is_none(),
-            "a removed device's backdated certificate counts"
-        );
+        assert!(s.own_devices().get(&late.device).is_none(), "a removed device's backdated certificate counts");
     }
 
     /// A team's lock: control alone can't unlock it, nor can an editor;

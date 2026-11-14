@@ -199,7 +199,15 @@ pub(crate) fn accept_hosted(
             &d,
             &revokes,
             &closed,
-            &Owners::Account { trust: &e.saved.trust, certs: &e.saved.certs, revocations: &e.saved.revocations },
+            &Owners::Account {
+                // Joined on control's word (aru-141): no root to check a
+                // delegation against.
+                trust: e.saved.trust().ok_or_else(|| {
+                    anyhow::anyhow!("this machine joined on control's word and pins no account root to check it against")
+                })?,
+                certs: &e.saved.certs,
+                revocations: &e.saved.revocations,
+            },
             held,
         ),
     }

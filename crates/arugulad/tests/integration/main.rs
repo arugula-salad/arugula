@@ -87,6 +87,8 @@ mod hosts;
 #[cfg(feature = "editor")]
 mod ide;
 mod invite;
+#[cfg(unix)]
+mod join_tokens;
 mod local_auth;
 #[cfg(unix)]
 mod machine_tokens;
