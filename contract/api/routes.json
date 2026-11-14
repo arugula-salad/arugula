@@ -176,6 +176,7 @@
     {"method":"GET","path":"/api/projects/{project}/sessions/stats","auth":"session","clients":["page"]},
     {"method":"GET","path":"/api/projects/{project}/settings","auth":"session","clients":["page","cli"]},
     {"method":"PUT","path":"/api/projects/{project}/settings","auth":"session","clients":["page","cli"]},
+    {"method":"POST","path":"/api/projects/{project}/split","auth":"session","clients":["page"]},
     {"method":"POST","path":"/api/projects/{project}/split/plan","auth":"session","clients":["page"]},
     {"method":"GET","path":"/api/projects/{project}/tracker-writes","auth":"session","clients":["page"]},
     {"method":"PATCH","path":"/api/projects/{project}/tracker-writes/{write}","auth":"session","clients":["page"]},
