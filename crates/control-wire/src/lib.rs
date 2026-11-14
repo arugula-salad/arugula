@@ -78,6 +78,7 @@ pub mod hosted;
 pub mod issues;
 pub mod join;
 pub mod machine;
+pub mod machine_token;
 pub mod maintenance;
 pub mod project_docs;
 pub mod projects;

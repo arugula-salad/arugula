@@ -109,6 +109,9 @@ pub struct Acl {
     /// Members of teams sessions were shared with (M30), by team, each with
     /// their role in it, from rosters this daemon verified.
     shared_teams: RwLock<std::collections::HashMap<String, std::collections::HashMap<String, Role>>>,
+    /// Machine-wide roles from the machine tokens of channels open now
+    /// (aru-141), by principal id, each with how many channels hold it.
+    tokens: RwLock<std::collections::HashMap<String, (Role, u32)>>,
     /// Who wants "needs you" notifications about what (M29), by principal
     /// id; in `notify.json`.
     notify_path: PathBuf,
@@ -133,6 +136,7 @@ impl Acl {
             grants: RwLock::new(grants),
             team: Default::default(),
             shared_teams: Default::default(),
+            tokens: Default::default(),
             notify_path,
             notify: RwLock::new(notify),
         }
@@ -193,7 +197,7 @@ impl Acl {
                     .iter()
                     .find(|g| g.session == session && &g.principal == id)
                     .map(|g| g.role);
-                let team = self.team.read().unwrap().get(id).copied();
+                let team = self.team.read().unwrap().get(id).copied().max(self.token_role(id));
                 // Shared with a team they're in: the grant's role, at most
                 // their role in the team.
                 let teams = self.shared_teams.read().unwrap();
@@ -224,7 +228,32 @@ impl Acl {
     }
 
     pub fn team_role(&self, p: &Principal) -> Option<Role> {
-        self.team.read().unwrap().get(p.id()).copied()
+        self.team.read().unwrap().get(p.id()).copied().max(self.token_role(p.id()))
+    }
+
+    /// A channel opened with a machine token (aru-141) gives `id` `role`
+    /// on every session while it's open; [`Acl::drop_token_role`] when it
+    /// closes. Two channels with different roles: the higher one holds.
+    pub fn hold_token_role(&self, id: &str, role: Role) {
+        let mut t = self.tokens.write().unwrap();
+        let e = t.entry(id.to_owned()).or_insert((role, 0));
+        e.0 = e.0.max(role);
+        e.1 += 1;
+    }
+
+    /// One of `id`'s token channels closed.
+    pub fn drop_token_role(&self, id: &str) {
+        let mut t = self.tokens.write().unwrap();
+        if let Some(e) = t.get_mut(id) {
+            e.1 = e.1.saturating_sub(1);
+            if e.1 == 0 {
+                t.remove(id);
+            }
+        }
+    }
+
+    fn token_role(&self, id: &str) -> Option<Role> {
+        self.tokens.read().unwrap().get(id).map(|(r, _)| *r)
     }
 
     /// Until when read-only links may reach this daemon (M19).

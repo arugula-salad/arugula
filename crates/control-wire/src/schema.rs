@@ -89,6 +89,9 @@ fn files() -> Vec<(&'static str, &'static [&'static str], fn(&mut SchemaGenerato
         "machine" => [
             machine::MachineRename,
         ],
+        "machine_token" => [
+            machine_token::TokenRole, machine_token::MachineClaims, machine_token::MachineTokenResponse, machine_token::TokenHello, machine_token::Jwk, machine_token::Jwks,
+        ],
         "projects" => [
             projects::Projects, projects::Me, projects::Project, projects::ProjectOwner, projects::ProjectOwnerRef, projects::ProjectCreate, projects::ProjectPatch, projects::ProjectTeam, projects::ProjectMember, projects::LinkedRepos, projects::LinkedRepo, projects::RepoSettings, projects::LinkRepo, projects::TrackerConnections, projects::TrackerConnection, projects::CiAlerts, projects::CiAlertOpen, projects::CiAlertsSettings, projects::CiAlertsKey, projects::ConnectTracker, projects::TrackerSettings, projects::TrackerWritePolicy, projects::TrackerClose, projects::TrackerWrite, projects::TrackerWriteDone, projects::TrackerFields, projects::TrackerFieldState, projects::TrackerFieldName, projects::TrackerPendingWrite, projects::TrackerPendingWrites, projects::TrackerHistory, projects::TrackerEvent, projects::TrackerReach, projects::TrackerReachProject, projects::TrackerReachConnection, projects::ForgeItems, projects::WithheldRepo, projects::ForgeItem, projects::ForgeChecks, projects::ForgeCheck, projects::ForgeEvents, projects::ForgeEvent, projects::ForgeContent, projects::ForgeText, projects::ForgeRepo, projects::NewDraft, projects::DraftCreated, projects::DraftDiscarded, projects::ForgeDrafts, projects::ForgeDraft, projects::Inbox, projects::InboxEntry, projects::InboxMark, projects::InboxMarked, projects::SendDraft, projects::DraftSent, projects::MachineSending,
         ],

@@ -51,6 +51,7 @@ arugula-testkit = { path = "../testkit" }
 arugula-vt = { workspace = true }
 axum = { workspace = true, features = ["ws"] }
 base64 = { workspace = true }
+ed25519-dalek = { workspace = true }
 futures-util = { workspace = true }
 hex = { workspace = true }
 hkdf = { workspace = true }

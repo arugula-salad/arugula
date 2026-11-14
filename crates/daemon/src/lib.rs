@@ -56,7 +56,9 @@ pub mod lab_flags;
 pub mod lab_hooks;
 mod listening;
 mod localauth;
+mod machine_token;
 pub mod mcp;
+mod remote_log;
 use arugula_mux::mux;
 pub mod ops;
 use arugula_mux::osc;
@@ -645,6 +647,7 @@ fn sharing_cli(
     let about = "Invite a guest with only OpenSSH to a pane (`arugula share --guest`).";
     let mentions_about = "A teammate's `@<machine>` or reply in a thread reaches this machine's agents.";
     let sessions_about = "What a teammate's agent learns of this machine's sessions: `work`, `names` or `none`.";
+    let remote_about = "People reaching this machine through control may type and act here; off, they only watch.";
     // `on`/`off` are for the switches; `work`/`names`/`none` for agent-sessions.
     let words = switch.is_some_and(|s| !matches!(s, args::OnOff::On | args::OnOff::Off));
     if words != (name == Some(args::SharingSetting::AgentSessions)) && switch.is_some() {
@@ -655,6 +658,18 @@ fn sharing_cli(
             println!("guest-ssh  {:3}  {about}", state(sharing::guest_ssh(dir)));
             println!("agent-mentions  {:3}  {mentions_about}", state(sharing::agent_mentions(dir)));
             println!("agent-sessions  {:5}  {sessions_about}", sharing::agent_sessions(dir).word());
+            println!("remote-input  {:3}  {remote_about}", state(sharing::remote_input(dir)));
+        }
+        (Some(args::SharingSetting::RemoteInput), None) => println!("{}", state(sharing::remote_input(dir))),
+        (Some(args::SharingSetting::RemoteInput), Some(s)) => {
+            let on = s == args::OnOff::On;
+            sharing::set_remote_input(dir, on).map_err(|e| anyhow::anyhow!("{e}"))?;
+            println!("remote-input is {}", state(on));
+            if daemon_running(dir) {
+                println!(
+                    "  The running daemon follows within seconds: open channels that could type close and come back as viewers."
+                );
+            }
         }
         (Some(args::SharingSetting::AgentMentions), None) => println!("{}", state(sharing::agent_mentions(dir))),
         (Some(args::SharingSetting::AgentMentions), Some(s)) => {

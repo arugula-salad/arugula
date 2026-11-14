@@ -175,13 +175,18 @@ async fn serve(
 ) -> anyhow::Result<()> {
     // Before anyone's looked up: a change from here on is one this channel
     // sees, however soon it comes.
-    let mut changed = app.control.changed.subscribe();
+    let changed = app.control.changed.subscribe();
     let m1 = tokio::time::timeout(std::time::Duration::from_secs(15), inbound.recv())
         .await
         .map_err(|_| anyhow::anyhow!("no handshake"))?
         .ok_or_else(|| anyhow::anyhow!("closed before the handshake"))?;
     let enrolled = app.control.enrolled().ok_or_else(|| anyhow::anyhow!("not enrolled in control"))?;
     let (responder, who, payload) = Responder::read(&enrolled.keys, &prologue(&enrolled.keys.id()), &m1)?;
+    // A machine token (aru-141): control's word for who this is, not a
+    // device's key. Before the others, whose payloads are JSON too.
+    if let Some(hello) = arugula_control_wire::machine_token::TokenHello::decode(&payload) {
+        return serve_token(app, &enrolled, responder, hello, inbound, out, relayed, changed).await;
+    }
     // A public preview (M187): control, for a stranger, with a grant
     // signed with its hosted key for one public port.
     if let Ok(hello) = arugula_e2e::preview::PublicHello::decode(&payload) {
@@ -213,39 +218,207 @@ async fn serve(
         let full = app.control.drives(&who);
         return serve_machine(app, inbound, out, who, device, principal, caller, full, changed).await;
     }
-    let ch = out.ch.clone();
+    let recheck_who = who;
+    let recheck_was = principal.clone();
+    let still = move |app: &App| no_longer(app.control.device(&recheck_who).map(|(_, p)| p), &recheck_was);
+    let log = Opened {
+        account: device.account.clone(),
+        name: device.name.clone(),
+        role: "device".into(),
+        by: "device",
+        token_role: None,
+    };
+    let hands = (device.device.clone(), device.name.clone());
+    run_client(app, inbound, out, principal, caller, hands, log, relayed, changed, false, still).await
+}
 
+/// How often a token channel checks the machine's remote-input switch,
+/// which `sharing.json` holds and nothing announces.
+const RECHECK: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// A channel opened with a machine token (aru-141): let in as the token's
+/// role says, capped to a viewer's while remote input is off here.
+#[allow(clippy::too_many_arguments)]
+async fn serve_token(
+    app: Arc<App>,
+    enrolled: &crate::control::Enrolled,
+    responder: Responder,
+    hello: arugula_control_wire::machine_token::TokenHello,
+    inbound: mpsc::Receiver<Vec<u8>>,
+    out: mpsc::Sender<Vec<u8>>,
+    relayed: bool,
+    changed: tokio::sync::watch::Receiver<u64>,
+) -> anyhow::Result<()> {
+    let claims = match app.control.check_machine_token(&hello.machine_token).await {
+        Ok(c) => c,
+        Err(why) => {
+            warn!(%why, "refused a channel's machine token");
+            let refusal = Refusal { ok: false, refused: "machine-token".into(), message: why.to_string() };
+            let (m2, _) = responder.finish(&refusal.encode())?;
+            out.send(m2).await?;
+            anyhow::bail!("machine token refused: {why}");
+        }
+    };
+    let input = arugula_proto::sharing::remote_input(app.control.state_dir());
+    let grant = token_grant(&claims, enrolled.saved.is_hosted(), input);
+    let (m2, ch) = responder.finish(&Welcome { now: arugula_e2e::now_ms() }.encode())?;
+    out.send(m2).await?;
+    let out = Arc::new(Out::new(ch, out));
+    let id = format!("account:{}", claims.sub);
+    if let Some(r) = grant.role {
+        app.acl.hold_token_role(&id, r);
+    }
+    let caller = Caller { account: claims.sub.clone(), device: id.clone(), name: claims.name.clone() };
+    let log = Opened {
+        account: claims.sub.clone(),
+        name: claims.name.clone(),
+        role: grant.shown.into(),
+        by: "token",
+        token_role: grant.role.map(|_| id.clone()),
+    };
+    // A role that could type ends when remote input goes off here; the
+    // client opens a new channel and gets a viewer's.
+    let could_type = grant.could_type;
+    let still = move |app: &App| {
+        (could_type && !arugula_proto::sharing::remote_input(app.control.state_dir()))
+            .then_some("remote input turned off")
+    };
+    run_client(
+        app,
+        inbound,
+        out,
+        grant.principal,
+        caller,
+        (id, claims.name.clone()),
+        log,
+        relayed,
+        changed,
+        true,
+        still,
+    )
+    .await
+}
+
+/// What a machine token gives on this machine.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct TokenGrant {
+    pub(crate) principal: crate::acl::Principal,
+    /// The role on every session the ACL holds for the channel, if any.
+    pub(crate) role: Option<arugula_core::Role>,
+    /// The role to log.
+    pub(crate) shown: &'static str,
+    /// Whether it may type or act (more than watch).
+    pub(crate) could_type: bool,
+}
+
+/// What `claims` give here. The owner is this machine's owner; on a hosted
+/// machine an editor is too, as a team roster's editor is (M184). With
+/// remote input off, nobody through control is more than a viewer.
+pub(crate) fn token_grant(
+    claims: &arugula_control_wire::machine_token::MachineClaims,
+    hosted: bool,
+    remote_input: bool,
+) -> TokenGrant {
+    use arugula_control_wire::machine_token::TokenRole;
+    use arugula_core::Role;
+    let user =
+        || crate::acl::Principal::User { id: format!("account:{}", claims.sub), name: claims.name.clone(), pic: None };
+    let types = matches!(claims.role, TokenRole::Owner | TokenRole::Editor);
+    if types && !remote_input {
+        return TokenGrant { principal: user(), role: Some(Role::Viewer), shown: "viewer", could_type: false };
+    }
+    match claims.role {
+        TokenRole::Owner => {
+            TokenGrant { principal: crate::acl::Principal::Owner, role: None, shown: "owner", could_type: true }
+        }
+        TokenRole::Editor if hosted => {
+            TokenGrant { principal: crate::acl::Principal::Owner, role: None, shown: "editor", could_type: true }
+        }
+        TokenRole::Editor => {
+            TokenGrant { principal: user(), role: Some(Role::Editor), shown: "editor", could_type: true }
+        }
+        TokenRole::Viewer => {
+            TokenGrant { principal: user(), role: Some(Role::Viewer), shown: "viewer", could_type: false }
+        }
+        // Only what's shared with `account:<sub>`.
+        TokenRole::Guest => TokenGrant { principal: user(), role: None, shown: "guest", could_type: false },
+    }
+}
+
+/// What the remote sessions log says of a channel, and the token role to
+/// let go of when it closes.
+struct Opened {
+    account: String,
+    name: String,
+    role: String,
+    by: &'static str,
+    token_role: Option<String>,
+}
+
+/// A client's channel once it's let in, as `principal`: the mux's client
+/// and the daemon's API, until the socket ends or `still` says why it no
+/// longer may (checked when access changes, before each request, and with
+/// `poll` every [`RECHECK`]).
+#[allow(clippy::too_many_arguments)]
+async fn run_client(
+    app: Arc<App>,
+    mut inbound: mpsc::Receiver<Vec<u8>>,
+    out: Arc<Out>,
+    principal: crate::acl::Principal,
+    caller: Caller,
+    hands: (String, String),
+    log: Opened,
+    relayed: bool,
+    mut changed: tokio::sync::watch::Receiver<u64>,
+    poll: bool,
+    still: impl Fn(&App) -> Option<&'static str>,
+) -> anyhow::Result<()> {
+    let ch = out.ch.clone();
     // An owner here through control has a name of their own (M30).
     let name = caller.owner_name(&app, &principal);
     let client = app.new_client_id();
     info!(
-        device = device.device,
-        account = device.account,
-        name = device.name,
+        device = hands.0,
+        account = caller.account,
+        name = hands.1,
         who = principal.id(),
+        by = log.by,
         client,
         "channel open"
     );
     let (data_tx, mut data_rx) = client_queue();
     let (ctrl_tx, mut ctrl_rx) = mpsc::unbounded_channel();
-    app.hands.connect(
-        client,
-        ctrl_tx.clone(),
-        principal.is_owner(),
-        Some((device.device.clone(), device.name.clone())),
-    );
+    app.hands.connect(client, ctrl_tx.clone(), principal.is_owner(), Some(hands.clone()));
     app.mux.send(Cmd::Connect {
         sub: Subscriber { client, data: data_tx, ctrl: ctrl_tx, principal: principal.clone(), name },
     });
+    let path = if relayed { "relay" } else { "direct" };
+    crate::remote_log::append(
+        app.control.state_dir(),
+        &crate::remote_log::Entry {
+            event: "open",
+            at: arugula_e2e::now_ms(),
+            client,
+            account: &log.account,
+            name: &log.name,
+            role: &log.role,
+            path,
+            by: log.by,
+            secs: None,
+        },
+    );
     // The callers drop this future when the socket's reader ends first,
     // which is how most channels end: leave the mux and the hands then too.
-    let _left = Leave { app: app.clone(), client, device: device.device.clone(), opened: std::time::Instant::now() };
+    let _left =
+        Leave { app: app.clone(), client, device: hands.0.clone(), opened: std::time::Instant::now(), log, path };
     let router = crate::server::channel_router(app.clone());
     // Its requests (a follow can run for as long as the channel does) end
     // with it: dropping the set aborts them.
     let mut requests = tokio::task::JoinSet::new();
     // When this relayed channel last sent pane output (#856).
     let mut last_output: Option<tokio::time::Instant> = None;
+    let mut tick = tokio::time::interval(RECHECK);
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
         tokio::select! {
             Some(_) = requests.join_next(), if !requests.is_empty() => {}
@@ -266,7 +439,7 @@ async fn serve(
                     Ok(Some(Msg::Request { id, head, body })) => {
                         // By what's true now, not at the handshake: the mux's
                         // word that access went may still be on its way here.
-                        if no_longer(app.control.device(&who).map(|(_, p)| p), &principal).is_some() {
+                        if still(&app).is_some() {
                             break Ok(());
                         }
                         requests.spawn(answer(router.clone(), out.clone(), id, head, body, principal.clone(), caller.clone()));
@@ -305,8 +478,8 @@ async fn serve(
                 if let Some(r) = end { break r }
             }
             Ok(()) = changed.changed() => {
-                if let Some(why) = no_longer(app.control.device(&who).map(|(_, p)| p), &principal) {
-                    info!(device = device.device, "{why}: closing its channel");
+                if let Some(why) = still(&app) {
+                    info!(device = hands.0, "{why}: closing its channel");
                     // Say why, as the mux does when a grant goes (M30): the
                     // page drops what it showed instead of keeping it greyed.
                     // Someone whose standing changed just reconnects.
@@ -315,6 +488,12 @@ async fn serve(
                         let m = Msg::Text(serde_json::to_string(&arugula_proto::ServerMsg::Error { id: None, message }).expect("serialize"));
                         let _ = out.put(&m).await;
                     }
+                    break Ok(());
+                }
+            }
+            _ = tick.tick(), if poll => {
+                if let Some(why) = still(&app) {
+                    info!(device = hands.0, "{why}: closing its channel");
                     break Ok(());
                 }
             }
@@ -434,14 +613,34 @@ struct Leave {
     /// So "channel closed" says how long it lasted: a device that keeps
     /// reopening its channel stands out in the log (#369).
     opened: std::time::Instant,
+    /// For the remote sessions log, and the token role to let go of.
+    log: Opened,
+    path: &'static str,
 }
 
 impl Drop for Leave {
     fn drop(&mut self) {
         self.app.mux.send(Cmd::Disconnect { client: self.client });
         self.app.hands.disconnect(self.client);
+        if let Some(id) = &self.log.token_role {
+            self.app.acl.drop_token_role(id);
+        }
         let lasted_ms = self.opened.elapsed().as_millis() as u64;
         info!(device = self.device, client = self.client, lasted_ms, "channel closed");
+        crate::remote_log::append(
+            self.app.control.state_dir(),
+            &crate::remote_log::Entry {
+                event: "close",
+                at: arugula_e2e::now_ms(),
+                client: self.client,
+                account: &self.log.account,
+                name: &self.log.name,
+                role: &self.log.role,
+                path: self.path,
+                by: self.log.by,
+                secs: Some(lasted_ms / 1000),
+            },
+        );
     }
 }
 
@@ -752,5 +951,47 @@ mod tests {
         ] {
             assert!(!agents_only(no), "{no}");
         }
+    }
+}
+
+#[cfg(test)]
+mod token_grants {
+    use arugula_control_wire::machine_token::{MachineClaims, TokenRole, USE};
+    use arugula_core::Role;
+
+    use super::token_grant;
+    use crate::acl::Principal;
+
+    fn claims(role: TokenRole) -> MachineClaims {
+        MachineClaims {
+            iss: "i".into(),
+            sub: "acct".into(),
+            aud: "m".into(),
+            use_: USE.into(),
+            role,
+            name: "bee".into(),
+            iat: 0,
+            exp: 300,
+            jti: "j".into(),
+        }
+    }
+
+    #[test]
+    fn each_role_gives_what_it_says() {
+        let user = Principal::User { id: "account:acct".into(), name: "bee".into(), pic: None };
+        let g = |r, hosted, input| {
+            let g = token_grant(&claims(r), hosted, input);
+            (g.principal, g.role, g.could_type)
+        };
+        assert_eq!(g(TokenRole::Owner, false, true), (Principal::Owner, None, true));
+        assert_eq!(g(TokenRole::Editor, false, true), (user.clone(), Some(Role::Editor), true));
+        // A hosted machine's editors have full use of it (M184).
+        assert_eq!(g(TokenRole::Editor, true, true), (Principal::Owner, None, true));
+        assert_eq!(g(TokenRole::Viewer, false, true), (user.clone(), Some(Role::Viewer), false));
+        assert_eq!(g(TokenRole::Guest, false, true), (user.clone(), None, false));
+        // Remote input off: nobody through control types.
+        assert_eq!(g(TokenRole::Owner, false, false), (user.clone(), Some(Role::Viewer), false));
+        assert_eq!(g(TokenRole::Editor, true, false), (user.clone(), Some(Role::Viewer), false));
+        assert_eq!(g(TokenRole::Guest, false, false), (user, None, false));
     }
 }

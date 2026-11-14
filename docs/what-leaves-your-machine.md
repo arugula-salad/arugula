@@ -329,6 +329,7 @@ These run only there; a person's machine doesn't send them
 | Relay socket | `--no-relay` | `crates/daemon/src/args.rs` |
 | Chat readers | chat off for the account or team, in control | `crates/daemon/src/chat_readers.rs` |
 | Agent mentions | `arugulad sharing agent-mentions off` (`agent_mentions: false` in `sharing.json`) | `crates/proto/src/sharing.rs`, `agent_mentions` |
+| Typing through control (machine tokens, aru-141) | `arugulad sharing remote-input off` (`remote_input: false` in `sharing.json`): people who come through control can only watch; who came is in `remote-sessions.jsonl` | `crates/proto/src/sharing.rs`, `remote_input`; `crates/daemon/src/e2e.rs`, `token_grant` |
 | Boards state | `arugulad leave`, or take away the machine's `boards.write` grant (`arugula grants`) | `crates/daemon/src/board_state.rs`, `enabled`; `crates/platform/src/grants.rs` |
 | Agents' control tools | the machine's grants (`arugula grants`) | `crates/platform/src/grants.rs` |
 | VM panes (loam) | no `--loam-url`, or the `sandbox-providers` flag off | `crates/daemon/src/lib.rs`, `open_provider`; `crates/daemon/src/provider_gate.rs` |
