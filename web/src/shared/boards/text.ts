@@ -334,9 +334,15 @@ export function workChip(issue: string, on?: { project: string; board: string; t
   return { label: `${issue} · ${on.title}`, path };
 }
 
-/** The chip of the work on a session row or a swarm card (#372): the first agent's issue, `#12 +2` when two more are on issues too, with its board in the tooltip, and the board's row for its link. `null` when none is on an issue. */
+/** The chip of the work on a session row or a swarm card (#372): the first agent's issue, `#12 +2` when two more are on other issues, with its board in the tooltip, and the board's row for its link. Panes on the same card (a session's, which each of its panes carries) count once. `null` when none is on an issue. */
 export function onIssueChip(works: (OnIssue | null | undefined)[]): { label: string; title: string; path: string | null } | null {
-  const on = works.filter((w): w is OnIssue => !!w);
+  const by = new Map<string, OnIssue>();
+  for (const w of works) {
+    if (!w) continue;
+    const key = `${w.project ?? ""} ${w.issue}`;
+    if (!by.get(key)?.boards?.length) by.set(key, w);
+  }
+  const on = [...by.values()];
   if (!on.length) return null;
   const board = on[0].boards?.[0];
   const more = on.length - 1;

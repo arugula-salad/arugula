@@ -14,6 +14,8 @@ import { BranchIcon, FocusIcon, MoreIcon, PaneTypeIcon } from "../../../shared/u
 import { HintChip } from "../hints";
 import { ContextStrip } from "../../blocks/agent-context";
 import { Bar, BarTitle, BarWhere } from "../../../shared/ui/bar";
+import { PaneCardChip } from "../pane-card";
+import { chipRoom } from "../pane-card-text";
 
 /** What kind of pane it is, in a word. */
 export function paneType(info: PaneInfo | undefined): string {
@@ -73,7 +75,7 @@ function hostOf(client: Client, id: PaneId): string | null {
 
 /** What names a pane, above it, and its handle (M110): its number, kind,
  * what it's running (its title, without the spinner a program puts in
- * front), status, host, repo and branch, which pane has the keys, a click
+ * front), status, host, repo, its card and branch, which pane has the keys, a click
  * to give it the keys, a drag to move it, Focus and its menu. It's one
  * reserved pixel row above the pane, outside its terminal cells. */
 export function PaneHeader({
@@ -191,6 +193,7 @@ export function PaneHeader({
         </>
       }
     >
+      <PaneCardChip client={client} pane={id} room={chipRoom(rect.cols * cell.width, title.length)} />
       {branch && (
         <span class="pane-header-branch" title={`Branch ${branch}`}>
           <BranchIcon size="xs" />
