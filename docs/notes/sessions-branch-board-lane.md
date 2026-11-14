@@ -1,6 +1,6 @@
 ---
 section: Changed
-title: Sessions shows each session's branch and each card's board and lane from the cloud
+title: Sessions shows branches, and cards' boards and lanes
 line: On Sessions, a session on a computer or in a cloud workspace shows its branch, and each card's group its board and lane, without reading every board of the project.
 headline: no
 ---
