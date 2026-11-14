@@ -56,6 +56,7 @@ pub mod lab_flags;
 pub mod lab_hooks;
 mod listening;
 mod localauth;
+mod machine_sessions;
 mod machine_token;
 pub mod mcp;
 mod remote_log;
