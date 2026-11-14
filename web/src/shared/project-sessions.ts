@@ -79,11 +79,14 @@ export function panesOf(sessions: ProjectSession[]): { machine: string; pane: nu
 
 /** A person is waited on: a question, a permission. */
 const NEEDS = new Set(["needs_input", "waiting", "asks", "permission"]);
-const FAILED = new Set(["failed", "error"]);
+/** `unresponsive` is a hosted session whose box stopped answering. */
+const FAILED = new Set(["failed", "error", "unresponsive"]);
 const WORKING = new Set(["working", "running"]);
 /** It ended and does nothing more on its own. A failure isn't among
- * them: it stays in sight. */
-const FINISHED = new Set(["done", "stopped", "ended", "exited", "closed", "finished", "merged"]);
+ * them: it stays in sight. Nor is a hosted session's `done`, which only
+ * says its turn ended: it may still wait on a person, and `stopped` is
+ * the one that ended (a block's `closed` did end). */
+const FINISHED = new Set(["stopped", "ended", "exited", "closed", "finished", "merged"]);
 
 /** How a session the hub names stands, by its states: what waits on you
  * first, then a failure, then working, else quiet. */
