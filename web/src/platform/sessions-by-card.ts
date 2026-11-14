@@ -6,67 +6,27 @@
 // the filters. Pure, so scripts/sessions-by-card.test.mjs reads it.
 
 import type { SessionRow, SessionWave } from "../shared/proto.gen";
-
-/** A card a group works on: an issue's id, number and title, or `{ id }`
- * alone for a card that isn't an issue. */
-export interface ByCardCard {
-  id: string;
-  number?: number;
-  title?: string;
-}
-
-/** A pane of a machine's session. `work_item` and `state` may be null. */
-export interface ByCardPane {
-  pane: number;
-  kind: string;
-  work_item: string | null;
-  state: string | null;
-}
-
-export type ByCardOn = { kind: "machine"; id: string; name: string } | { kind: "hosted" };
-
-export type ByCardSession =
-  | { kind: "machine"; id: string; name: string; on: ByCardOn; panes: ByCardPane[]; updated_at: number }
-  | { kind: "agent"; id: number; name: string; on: ByCardOn; state: string | null; updated_at: number }
-  | { kind: "hosted"; id: string; name: string; on: ByCardOn; state: string | null; updated_at: number };
-
-/** `card` null is Not on a card, always last. */
-export interface ByCardGroup {
-  card: ByCardCard | null;
-  sessions: ByCardSession[];
-}
-
-export interface SessionsByCard {
-  project: string;
-  groups: ByCardGroup[];
-}
+import { finishedStates, statesOf, waitsOnYou, type ProjectSession, type SessionCard, type SessionsByCard } from "../shared/project-sessions.ts";
 
 /** A session on the page: the by-card answer's, the wave's row for a
  * hosted one, or both. */
 export interface Listed {
   key: string;
-  src: ByCardSession | null;
+  src: ProjectSession | null;
   wave: SessionRow | null;
 }
 
 export interface Group {
-  card: ByCardCard | null;
+  card: SessionCard | null;
   sessions: Listed[];
 }
-
-/** States that mean a person is waited on. */
-const NEEDS = new Set(["needs_input", "waiting", "asks", "permission"]);
-/** States a session has finished in: it does nothing more on its own. */
-const FINISHED = new Set(["done", "failed", "stopped", "ended", "exited", "closed", "finished", "merged"]);
 
 /** Its state as one word: a hosted session's (the wave's first), an
  * agent's, or a machine session's busiest pane's. */
 export function stateOfListed(s: Listed): string {
   if (s.wave) return s.wave.state;
-  const src = s.src!;
-  if (src.kind !== "machine") return src.state ?? "";
-  const states = src.panes.map((p) => p.state ?? "");
-  return states.find((x) => NEEDS.has(x)) ?? states.find((x) => x && !FINISHED.has(x)) ?? states.find(Boolean) ?? "";
+  const states = statesOf(s.src!);
+  return states.find(waitsOnYou) ?? states.find((x) => x && !finishedStates([x])) ?? states.find(Boolean) ?? "";
 }
 
 /** What waits on you, in a few words, or null. */
@@ -74,19 +34,17 @@ export function waitsOn(s: Listed): string | null {
   if (s.wave) return s.wave.waiting;
   const src = s.src!;
   if (src.kind === "machine") {
-    const n = src.panes.filter((p) => p.state && NEEDS.has(p.state)).length;
+    const n = src.panes.filter((p) => waitsOnYou(p.state)).length;
     return n === 0 ? null : n === 1 ? "a pane's question" : `${n} panes' questions`;
   }
-  return src.state && NEEDS.has(src.state) ? "its question" : null;
+  return waitsOnYou(src.state) ? "its question" : null;
 }
 
-/** Whether it has finished: it ended, and nothing waits on you. A machine
- * session with no pane state known is going. */
+/** Whether it has finished: it ended, and nothing waits on you. A hosted
+ * session's state is the wave's when it has one. */
 export function finished(s: Listed): boolean {
   if (waitsOn(s)) return false;
-  const src = s.src;
-  if (src?.kind === "machine" && !s.wave) return src.panes.length > 0 && src.panes.every((p) => !!p.state && FINISHED.has(p.state));
-  return FINISHED.has(stateOfListed(s));
+  return finishedStates(s.wave ? [s.wave.state] : statesOf(s.src!));
 }
 
 /** When it last changed, for the order in a group: newest first. */
@@ -104,7 +62,7 @@ export function groupsOf(byCard: SessionsByCard | null, wave: SessionWave | null
   const rows = new Map((wave?.sessions ?? []).map((r) => [r.session, r]));
   const used = new Set<string>();
   const groups = new Map<string, Group>();
-  const groupOf = (card: ByCardCard | null) => {
+  const groupOf = (card: SessionCard | null) => {
     const k = card?.id ?? "";
     let g = groups.get(k);
     if (!g) groups.set(k, (g = { card, sessions: [] }));
@@ -145,7 +103,7 @@ export function groupsOf(byCard: SessionsByCard | null, wave: SessionWave | null
 
 /** A group's heading: `#985 Title`, a card that isn't an issue by its
  * board row's words or its id, or Not on a card. */
-export function cardTitle(card: ByCardCard | null, rowWords?: string): string {
+export function cardTitle(card: SessionCard | null, rowWords?: string): string {
   if (!card) return "Not on a card";
   if (card.number !== undefined) return `#${card.number}${card.title ? ` ${card.title}` : ""}`;
   return card.title || rowWords || card.id;
@@ -153,7 +111,7 @@ export function cardTitle(card: ByCardCard | null, rowWords?: string): string {
 
 /** The panes a session shows when its row opens: a machine session's,
  * or an agent's own pane. A hosted one has none here. */
-export function panesOf(src: ByCardSession | null): { machine: string; pane: number; kind: string; state: string | null }[] {
+export function panesShown(src: ProjectSession | null): { machine: string; pane: number; kind: string; state: string | null }[] {
   if (!src || src.on.kind !== "machine") return [];
   const machine = src.on.id;
   if (src.kind === "machine") return src.panes.map((p) => ({ machine, pane: p.pane, kind: p.kind, state: p.state }));

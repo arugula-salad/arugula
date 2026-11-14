@@ -22,7 +22,8 @@ import { boards } from "../../shared/boards/store";
 import { MOVE_LANES } from "../../shared/boards/text";
 import { usePlatformApi } from "../../shared/platform-api";
 import { SectionHead } from "../../shared/ui/section-head";
-import { cardTitle, finished, groupsOf, panesOf, stateOfListed, waitsOn, type ByCardCard, type Group, type Listed, type SessionsByCard } from "../sessions-by-card";
+import { BY_CARD_EVERY_MS, sessionsByCard, type SessionCard, type SessionsByCard } from "../../shared/project-sessions";
+import { cardTitle, finished, groupsOf, panesShown, stateOfListed, waitsOn, type Group, type Listed } from "../sessions-by-card";
 import { chat } from "../../shared/chat-store";
 import { stateOf } from "../../shared/chat/session-card";
 import type { SessionRow, SessionWave } from "../../shared/proto.gen";
@@ -53,16 +54,6 @@ async function wave(project: string, f: WaveFilter): Promise<SessionWave> {
   };
   if (!res.ok) throw new Error(refusalOf(res.status, j, `HTTP ${res.status}`));
   return j;
-}
-
-/** Every session in the project by card, or null from a cloud from before
- * the route (404): the page lists the wave alone then. */
-async function byCard(project: string): Promise<SessionsByCard | null> {
-  const res = await platformFetch(`/api/projects/${encodeURIComponent(project)}/sessions/by-card`, { credentials: "same-origin" });
-  if (res.status === 404) return null;
-  const j = (await res.json().catch(() => ({}))) as SessionsByCard & { error?: string };
-  if (!res.ok) throw new Error(refusalOf(res.status, j, `HTTP ${res.status}`));
-  return { project: j.project, groups: Array.isArray(j.groups) ? j.groups : [] };
 }
 
 /** Where a card is on the project's boards: its board and row, its lane,
@@ -130,25 +121,37 @@ export function SessionsPage({
 
 function Wave({ p, filter }: { p: PlatformProject; filter: WaveFilter }) {
   const [w, setW] = useState<SessionWave | null>(null);
-  /** Every session by card; null until read, or from a cloud without it. */
-  const [cards, setCards] = useState<SessionsByCard | null>(null);
+  /** Every session by card: undefined until first read, null from a cloud
+   * without the route (or a read that failed), when the wave is the list. */
+  const [cards, setCards] = useState<SessionsByCard | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const key = JSON.stringify([p.id, filter]);
   useEffect(() => {
     let live = true;
     setError(null);
-    // The by-card read failing leaves the wave, as a cloud without it does.
-    Promise.all([wave(p.id, filter), byCard(p.id).catch(() => null)]).then(
-      ([r, c]) => {
-        if (!live) return;
-        setCards(c);
-        setW(r);
-      },
+    wave(p.id, filter).then(
+      (r) => live && setW(r),
       (e: Error) => live && setError(e.message),
     );
     return () => void (live = false);
   }, [key, tick]);
+  // The by-card list, as the Overview reads it: at most every
+  // BY_CARD_EVERY_MS while the page is seen (the hub allows 600 reads an
+  // hour), not on each hosted session's event.
+  const [cardsTick, setCardsTick] = useState(0);
+  useEffect(() => {
+    let live = true;
+    sessionsByCard(p.id).then(
+      (c) => live && setCards(c),
+      () => live && setCards((was) => was ?? null),
+    );
+    return () => void (live = false);
+  }, [p.id, cardsTick]);
+  useEffect(() => {
+    const t = setInterval(() => document.visibilityState === "visible" && setCardsTick((n) => n + 1), BY_CARD_EVERY_MS);
+    return () => clearInterval(t);
+  }, [p.id]);
   const places = usePlaces(p.id);
   // Each session's live event reads the wave again; so does a new one,
   // now and then, while any goes.
@@ -161,11 +164,12 @@ function Wave({ p, filter }: { p: PlatformProject; filter: WaveFilter }) {
     return () => offs.forEach((off) => off());
   }, [ids]);
   const narrowed = !!(filter.label || filter.tracker !== undefined || filter.asker);
-  const groups = w ? groupsOf(cards, w, { narrowed, going: !!filter.going }) : null;
+  const groups = w && cards !== undefined ? groupsOf(cards, w, { narrowed, going: !!filter.going }) : null;
   const listed = groups?.flatMap((g) => g.sessions) ?? [];
   // A hosted session goes until its turn settles; another, until it finishes.
   const isGoing = (s: Listed) => (s.wave ? !s.wave.settled : !finished(s));
-  const going = listed.some(isGoing);
+  // The wave is read again now and then while a hosted session goes.
+  const going = listed.some((s) => !!s.wave && isGoing(s));
   useEffect(() => {
     if (!going) return;
     const t = setInterval(
@@ -290,7 +294,7 @@ function Wave({ p, filter }: { p: PlatformProject; filter: WaveFilter }) {
         )}
       </div>
       {w === null && error ? (
-        <BlockError inline title="Can't read this project's sessions." detail={error} retry={() => setTick((n) => n + 1)} />
+        <BlockError inline title="Can't read this project's sessions." detail={error} retry={() => (setTick((n) => n + 1), setCardsTick((n) => n + 1))} />
       ) : (
         error && (
           <p class="control-error" role="alert">
@@ -298,7 +302,7 @@ function Wave({ p, filter }: { p: PlatformProject; filter: WaveFilter }) {
           </p>
         )
       )}
-      {w === null && !error && <ListLoading />}
+      {groups === null && !error && <ListLoading />}
       {groups?.length === 0 &&
         (anyFilter ? (
           <EmptyLine data-sessions-none>No sessions match.</EmptyLine>
@@ -412,7 +416,7 @@ function CardGroup({ p, g, place }: { p: PlatformProject; g: Group; place: Place
 
 /** Where Open card goes: the card's row on its board, whose drawer opens
  * there, else its issue's page; nothing for Not on a card. */
-function cardPath(project: string, card: ByCardCard | null, place: Place | undefined): string | null {
+function cardPath(project: string, card: SessionCard | null, place: Place | undefined): string | null {
   if (!card) return null;
   if (place) return `${pathOf({ page: "board", project, board: place.board }, names)}#row=${encodeURIComponent(place.row)}`;
   return card.id.startsWith("iss_") ? pathOf({ page: "issue", project, issue: card.id }, names) : null;
@@ -421,7 +425,7 @@ function cardPath(project: string, card: ByCardCard | null, place: Place | undef
 function SessionLine({ p, s }: { p: PlatformProject; s: Listed }) {
   if (s.wave) return <Row p={p} s={s.wave} />;
   if (s.src?.kind === "hosted") return <HostedLine p={p} s={s} />;
-  return <MachineRow s={s} project={p.id} />;
+  return <MachineRow s={s} />;
 }
 
 /** A hosted session the wave hasn't listed: its name and state. */
@@ -454,13 +458,14 @@ const KIND: Record<string, string> = { agent: "Agent", terminal: "Terminal", she
 /** A session on a computer: its state, name and panes, where it runs and
  * whose that is, its branch, and what waits on you. A click shows its
  * panes, each with its line, Open and Open on its machine. */
-function MachineRow({ s, project }: { s: Listed; project: string }) {
+function MachineRow({ s }: { s: Listed }) {
   const api = usePlatformApi();
   const [open, setOpen] = useState(false);
   const [live, setLive] = useState<{ machine: string; pane: number; name: string } | null>(null);
+  const Live = api.LivePane;
   const [, tick] = useState(0);
   const src = s.src!;
-  const panes = panesOf(src);
+  const panes = panesShown(src);
   // The machines' panes are read while the page shows any.
   useEffect(() => api.panes?.watch(() => tick((n) => n + 1)), [api.panes]);
   const on = src.on.kind === "machine" ? src.on : null;
@@ -469,10 +474,11 @@ function MachineRow({ s, project }: { s: Listed; project: string }) {
   const state = stateOfListed(s);
   const st = stateOf(state, false);
   const waits = waitsOn(s);
+  // Open: the pane live over the page, where the page draws panes (the
+  // app's LivePane, as the card drawer's); else, and Open on its machine,
+  // its machine's page on it.
   const goTo = (machine: string, pane: number, alone: boolean) => {
-    if (alone && api.panes) return setLive({ machine, pane, name: `${KIND[panes.find((x) => x.pane === pane)?.kind ?? ""] ?? "Pane"} %${pane}` });
-    // Its machine's page in the app, on the pane; elsewhere, wherever the page opens panes.
-    if (api.Machines) return go(pathOf({ page: "machines", project, at: { at: "machine", machine, pane } }, names));
+    if (alone && Live) return setLive({ machine, pane, name: `${KIND[panes.find((x) => x.pane === pane)?.kind ?? ""] ?? "Pane"} %${pane}` });
     api.goToPane(machine, String(pane), null);
   };
   const toggle = () => setOpen((o) => !o);
@@ -536,9 +542,9 @@ function MachineRow({ s, project }: { s: Listed; project: string }) {
           </ul>
         )}
       </div>
-      {live && api.panes && (
+      {live && Live && (
         <LiveSheet name={live.name} where={on?.name ?? ""} close={() => setLive(null)} onMachine={() => (setLive(null), goTo(live.machine, live.pane, false))}>
-          <api.panes.Live machine={live.machine} pane={live.pane} />
+          <Live machine={live.machine} pane={String(live.pane)} />
         </LiveSheet>
       )}
     </Card>

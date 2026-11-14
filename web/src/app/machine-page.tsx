@@ -36,7 +36,6 @@ import type { Fleet, FleetHost } from "../shell/fleet";
 import { ROLE_WORDS, rowsOf, sessionsLine, sortRows } from "./machine-list";
 import type { AppSession } from "./session";
 import type { Client } from "../shell/client";
-import { LiveSlot } from "../shell/ui/panes/live-slot";
 import { notePane } from "../platform/places-kept";
 
 export interface Booted {
@@ -212,40 +211,6 @@ function Place({ project, at, b: { machines, cell }, session }: { project: strin
       {/* The machine page's own Swarm (`#swarm`), as on control's page. */}
       <Swarm machines={machines} client={client} ready={() => true} />
       <AgentDialogLayer />
-    </PlatformApiContext.Provider>
-  );
-}
-
-/** A pane live, at its own size, for a project's Sessions (Open): its
- * machine is the one shown, as on its own page, and the pane moves into
- * this slot until it closes. */
-export function LiveHere({ session, machine, pane }: { session: AppSession | null; machine: string; pane: number }) {
-  const [b, setB] = useState<Booted | null>(up);
-  useEffect(() => {
-    let live = true;
-    void boot(session).then((x) => live && setB(x));
-    return () => void (live = false);
-  }, []);
-  useSubscribe((fn) => directory.subscribe(fn));
-  useSubscribe((fn) => b?.machines.fleet.subscribe(fn) ?? (() => {}));
-  const [, tick] = useState(0);
-  useEffect(() => b?.machines.onSwap(() => tick((n) => n + 1)), [b]);
-  const host = b ? hostById(machine, session) : undefined;
-  useEffect(() => {
-    if (host && directory.current !== host.name) directory.select(host.name);
-  }, [host?.name]);
-  if (!b) return <p class="dim" data-live-loading>Reaching your machines…</p>;
-  if (!host) return <p class="dim" data-live-missing>That machine isn't one this page reaches.</p>;
-  return <ClientLive key={b.machines.client.base} client={b.machines.client} pane={pane} />;
-}
-
-function ClientLive({ client, pane }: { client: Client; pane: number }) {
-  useSubscribe((fn) => client.subscribe(fn));
-  if (!client.connected || !client.state) return <p class="dim" data-live-loading>Reaching the machine…</p>;
-  if (!client.info(pane)) return <p class="dim" data-live-missing>That pane has closed.</p>;
-  return (
-    <PlatformApiContext.Provider value={shellPlatformApi(client)}>
-      <LiveSlot client={client} pane={pane} />
     </PlatformApiContext.Provider>
   );
 }

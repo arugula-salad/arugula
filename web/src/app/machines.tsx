@@ -65,16 +65,6 @@ export function appPanes(session: () => AppSession | null): NonNullable<Platform
     },
     owner: (machine) => page?.ownerOf(machine, session()),
     pane: (machine, pane) => page?.paneOf(machine, pane, session()),
-    Live({ machine, pane }) {
-      const [p, setP] = useState<Page | null>(page);
-      useEffect(() => {
-        let live = true;
-        void load().then((x) => live && setP(() => x));
-        return () => void (live = false);
-      }, []);
-      if (!p) return <p class="dim" data-live-loading>Reaching your machines…</p>;
-      return <p.LiveHere session={session()} machine={machine} pane={pane} />;
-    },
   };
 }
 

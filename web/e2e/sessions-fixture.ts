@@ -5,7 +5,7 @@
 // (`GET /api/projects/{p}/sessions`) beside it. Typed, so a change to
 // either shape fails the typecheck here.
 
-import type { SessionsByCard } from "../src/platform/sessions-by-card";
+import type { SessionsByCard } from "../src/shared/project-sessions";
 import type { SessionRow, SessionWave } from "../src/shared/proto.gen";
 
 export const PROJECT = "prj_aaaa0002";

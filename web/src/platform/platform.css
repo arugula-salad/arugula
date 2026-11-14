@@ -1801,8 +1801,15 @@ span.untri-title {
   padding: 12px 16px;
 }
 
-/* The slot takes the sheet, not a drawer's 320px. */
-.sessions-live-body .live-slot {
+/* The app's live pane (app/live.css) takes the sheet, not a drawer's 320px. */
+.sessions-live-body .live-pane {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.sessions-live-body .live-pane .live-slot {
   flex: 1;
   height: auto;
   min-height: 0;

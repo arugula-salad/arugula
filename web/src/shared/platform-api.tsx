@@ -116,8 +116,6 @@ export interface PlatformApi {
     watch(fn: () => void): () => void;
     owner(machine: string): string | null | undefined;
     pane(machine: string, pane: number): { line: string; branch: string | null } | undefined;
-    /** A pane live, at its own size, its machine shown for it. */
-    Live: ComponentType<{ machine: string; pane: number }>;
   };
   /** A project's Overview (Arugula inversion, L6): its boards' cards in
    * flight with the sessions on them, and Needs you, where the page reaches

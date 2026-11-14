@@ -2,7 +2,8 @@
 // `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cardTitle, finished, groupsOf, panesOf, waitsOn } from "../src/platform/sessions-by-card.ts";
+import { cardTitle, finished, groupsOf, panesShown, waitsOn } from "../src/platform/sessions-by-card.ts";
+import { finishedStates, hubStanding, stateStanding } from "../src/shared/project-sessions.ts";
 import { DANA, byCard, wave } from "../e2e/sessions-fixture.ts";
 
 const M = "d00d0001";
@@ -53,12 +54,25 @@ test("finished: ended and waiting on no one", () => {
 
 test("a row's panes: a machine session's, an agent's own, a hosted one's none", () => {
   const b = byCard(M, 4);
-  assert.deepEqual(panesOf(b.groups[0].sessions[0]), [{ machine: M, pane: 4, kind: "terminal", state: "working" }]);
-  assert.deepEqual(panesOf(b.groups[2].sessions[1]), [{ machine: DANA, pane: 9, kind: "agent", state: "exited" }]);
-  assert.deepEqual(panesOf(b.groups[1].sessions[0]), []);
+  assert.deepEqual(panesShown(b.groups[0].sessions[0]), [{ machine: M, pane: 4, kind: "terminal", state: "working" }]);
+  assert.deepEqual(panesShown(b.groups[2].sessions[1]), [{ machine: DANA, pane: 9, kind: "agent", state: "exited" }]);
+  assert.deepEqual(panesShown(b.groups[1].sessions[0]), []);
 });
 
 test("a card that isn't an issue is named by its row's words, else its id", () => {
   assert.equal(cardTitle({ id: "row_1" }, "Ship it"), "Ship it");
   assert.equal(cardTitle({ id: "fi_2" }), "fi_2");
+});
+
+test("the Overview and Sessions read states alike: what waits on you, failures, working, finished", () => {
+  assert.equal(stateStanding(["working", "needs_input"]), "needs");
+  assert.equal(stateStanding(["permission"]), "needs");
+  assert.equal(stateStanding(["error", "working"]), "failed");
+  assert.equal(stateStanding(["running"]), "working");
+  assert.equal(stateStanding(["", "idle"]), "quiet");
+  assert.equal(hubStanding(byCard(M, 4).groups[1].sessions[0]), "needs");
+  assert.equal(finishedStates(["exited", "done"]), true);
+  assert.equal(finishedStates(["exited", null]), false, "a pane not said isn't finished");
+  assert.equal(finishedStates(["failed"]), false, "a failure stays in sight");
+  assert.equal(finishedStates([]), false);
 });
