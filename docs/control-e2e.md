@@ -2111,9 +2111,9 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 185 tables in two planes ("Two planes, two trust rules"):
+Control's database has 186 tables in two planes ("Two planes, two trust rules"):
 
-- **The machine plane** (56 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
+- **The machine plane** (57 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
 - **The platform plane** (129 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people or their agents wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
@@ -2147,7 +2147,8 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `revocations` | metadata | A signed revocation of a device's or machine's key. | yes |  |
 | `recovery_uses` | metadata | Which device each recovery code let in (their ids), recorded once, when control first takes an approval by the code. | yes |  |
 | `joins` | metadata | A machine asking to join: its certificate, a hash of its poll token, its addresses, the approval. | yes |  |
-| `daemons` | metadata | The directory: a joined machine's id, name, addresses, team, last seen, and the version, OS and arch it runs. | yes | PostHog |
+| `join_tokens` | metadata | A one-time join token (aru-141): a hash of the token, the account and team it joins a machine to, when it runs out, and the machine that used it. | yes |  |
+| `daemons` | metadata | The directory: a joined machine's id, name, addresses, team, last seen, and the version, OS and arch it runs; for one that joined with a token or in one click (aru-141), its public keys. | yes | PostHog |
 | `daemon_access` | metadata | The accounts a machine says it lets in, for routing (the machine checks for itself). | yes |  |
 | `daemon_agent_access` | metadata | The accounts whose machines a machine lets in for its agents, for routing. | yes |  |
 | `daemon_offers` | metadata | A machine shared with an account that hasn't said yes yet. | yes |  |
