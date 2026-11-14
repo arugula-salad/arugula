@@ -309,6 +309,7 @@ fn file_id(file: &str) -> Option<&str> {
 
 /// The extension a saved file gets: an image's by its bytes (as `attach`
 /// does), else its name's when that is a plain one, so a reader knows it.
+#[cfg_attr(not(unix), allow(dead_code))]
 fn saved_ext(name: Option<&str>, bytes: &[u8]) -> String {
     if let Some(m) = arugulad_base::agent::images::sniff(bytes) {
         return m.trim_start_matches("image/").replace("jpeg", "jpg");
@@ -320,15 +321,14 @@ fn saved_ext(name: Option<&str>, bytes: &[u8]) -> String {
 /// `read_thread` with `file` (#538): one of the room's files, fetched as
 /// this machine under its threads.read grant (control asks it again, as
 /// for the room's messages), and saved where `attach` keeps the caller's
-/// pane's uploads (a VM pane's on its machine), for the agent to read.
+/// pane's uploads (a VM pane's on its machine), for the agent to read. It
+/// is written as it comes, so a file as big as chat takes is never whole
+/// in the daemon's memory.
 async fn save_file(c: &Call<'_>, room: &str, file: &str) -> Out {
     let id = file_id(file).ok_or("file: a file's id, as read_thread lists it (file cf_…)")?;
     let pane = c.own_pane().ok_or("read_thread file saves it beside your pane: call it from a session in Arugula")?;
     let path = format!("{}/{id}", agent_files(room));
-    let (bytes, name) = c.app().control.cloud_file(&path, upload_max()).await.map_err(said)?;
-    let ext = saved_ext(name.as_deref(), &bytes);
-    let size = bytes.len();
-    let saved = store(c, pane, &ext, bytes).await?;
+    let (saved, size, name) = save(c, pane, &path).await?;
     let name = name.unwrap_or_else(|| id.to_owned());
     done(
         format!("Saved {name} ({size} bytes) from {room} to {saved}: read it there"),
@@ -336,23 +336,36 @@ async fn save_file(c: &Call<'_>, room: &str, file: &str) -> Out {
     )
 }
 
+/// How much of a file is read before it is named: enough to tell an
+/// image by its bytes.
 #[cfg(unix)]
-fn upload_max() -> u64 {
-    arugulad_base::upload::FILE_MAX
-}
+const SNIFF: usize = 64;
 
+/// Fetch control's file at `path` into the pane's uploads: where it is,
+/// its size, and the name control gave it.
 #[cfg(unix)]
-async fn store(c: &Call<'_>, pane: arugula_proto::PaneId, ext: &str, bytes: Vec<u8>) -> Result<String, String> {
-    arugulad_base::upload::store_whole(c.app(), pane, ext, bytes).await.map_err(|e| e.1)
+async fn save(c: &Call<'_>, pane: arugula_proto::PaneId, path: &str) -> Result<(String, u64, Option<String>), String> {
+    use arugulad_base::upload::{Incoming, incoming_max};
+    let (mut body, name) = c.app().control.cloud_file(path, incoming_max(c.app(), pane).await).await.map_err(said)?;
+    let mut head = Vec::new();
+    let mut more = true;
+    while more && head.len() < SNIFF {
+        match body.chunk().await.map_err(said)? {
+            Some(chunk) => head.extend_from_slice(&chunk),
+            None => more = false,
+        }
+    }
+    let mut saving = Incoming::new(c.app(), pane, &saved_ext(name.as_deref(), &head)).await.map_err(|e| e.1)?;
+    saving.write(&head).await.map_err(|e| e.1)?;
+    while more && let Some(chunk) = body.chunk().await.map_err(said)? {
+        saving.write(&chunk).await.map_err(|e| e.1)?;
+    }
+    let (saved, size) = saving.finish(c.app()).await.map_err(|e| e.1)?;
+    Ok((saved, size, name))
 }
 
 #[cfg(not(unix))]
-fn upload_max() -> u64 {
-    0
-}
-
-#[cfg(not(unix))]
-async fn store(_: &Call<'_>, _: arugula_proto::PaneId, _: &str, _: Vec<u8>) -> Result<String, String> {
+async fn save(_: &Call<'_>, _: arugula_proto::PaneId, _: &str) -> Result<(String, u64, Option<String>), String> {
     Err("read_thread file isn't on this platform yet".into())
 }
 

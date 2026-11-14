@@ -3062,11 +3062,12 @@ impl Control {
         self.cloud_raw(Some(Patience::AGENT), method, path_and_query, bytes, Some("application/octet-stream")).await
     }
 
-    /// A file's bytes from control (a chat file's, #538), and the name
-    /// control gave it (`Content-Disposition`'s, plain ASCII): refused past
-    /// `max` bytes before it's read. Waits out a maintenance window as an
+    /// A file from control (a chat file's, #538), to read a chunk at a
+    /// time, and the name control gave it (`Content-Disposition`'s, plain
+    /// ASCII): refused past `max` bytes, before it's read when control says
+    /// its length, else as it comes. Waits out a maintenance window as an
     /// agent's call does.
-    pub async fn cloud_file(&self, path: &str, max: u64) -> Result<(Vec<u8>, Option<String>), CloudRefused> {
+    pub async fn cloud_file(&self, path: &str, max: u64) -> Result<(CloudFile, Option<String>), CloudRefused> {
         let e = self.enrolled().ok_or(CloudRefused::NotJoined)?;
         let mut waits = maintenance::Waits::new(Patience::AGENT);
         loop {
@@ -3080,19 +3081,14 @@ impl Control {
             let status = res.status().as_u16();
             if (200..300).contains(&status) {
                 if let Some(n) = res.content_length().filter(|n| *n > max) {
-                    return Err(CloudRefused::Said {
-                        status,
-                        said: format!("the file is {n} bytes: at most {max} can be saved here"),
-                        reason: None,
-                    });
+                    return Err(CloudFile::too_big(status, &n.to_string(), max));
                 }
                 let name = res
                     .headers()
                     .get(reqwest::header::CONTENT_DISPOSITION)
                     .and_then(|v| v.to_str().ok())
                     .and_then(disposition_name);
-                let bytes = res.bytes().await.map_err(|e| CloudRefused::Unreachable(format!("{e:#}")))?;
-                return Ok((bytes.to_vec(), name));
+                return Ok((CloudFile { res, max, read: 0 }, name));
             }
             let asked =
                 maintenance::retry_after(res.headers().get(reqwest::header::RETRY_AFTER).and_then(|v| v.to_str().ok()));
@@ -3548,6 +3544,37 @@ pub enum CloudRefused {
     /// Control's platform is down for a maintenance window (M141), and it
     /// outlasted the call's patience.
     Maintenance,
+}
+
+/// A file control is sending ([`Control::cloud_file`]), read a chunk
+/// at a time so it is never whole in memory, and refused once it passes
+/// its `max`.
+pub struct CloudFile {
+    res: reqwest::Response,
+    max: u64,
+    read: u64,
+}
+
+impl CloudFile {
+    /// Its next chunk: None at its end.
+    pub async fn chunk(&mut self) -> Result<Option<axum::body::Bytes>, CloudRefused> {
+        let Some(c) = self.res.chunk().await.map_err(|e| CloudRefused::Unreachable(format!("{e:#}")))? else {
+            return Ok(None);
+        };
+        self.read += c.len() as u64;
+        if self.read > self.max {
+            return Err(Self::too_big(self.res.status().as_u16(), &format!("over {}", self.max), self.max));
+        }
+        Ok(Some(c))
+    }
+
+    fn too_big(status: u16, size: &str, max: u64) -> CloudRefused {
+        CloudRefused::Said {
+            status,
+            said: format!("the file is {size} bytes: at most {max} can be saved here"),
+            reason: None,
+        }
+    }
 }
 
 /// The plain-ASCII name in a `Content-Disposition` (`filename="…"`), as
@@ -4544,6 +4571,20 @@ pub(crate) mod tests {
         assert_eq!(disposition_name("attachment"), None);
         assert_eq!(disposition_name("inline; filename=\"\""), None);
         assert_eq!(disposition_name("inline; filename=\"cut"), None);
+    }
+
+    /// #1028: a file that says no length is refused once it passes the
+    /// most it may be, not read to its end first.
+    #[tokio::test]
+    async fn a_file_past_its_most_is_refused_as_it_comes() {
+        let res = reqwest::Response::from(axum::http::Response::new(vec![1u8; 25]));
+        let mut f = CloudFile { res, max: 10, read: 0 };
+        let Err(CloudRefused::Said { said, .. }) = f.chunk().await else { panic!("not refused") };
+        assert_eq!(said, "the file is over 10 bytes: at most 10 can be saved here");
+        let res = reqwest::Response::from(axum::http::Response::new(vec![1u8; 10]));
+        let mut f = CloudFile { res, max: 10, read: 0 };
+        assert_eq!(f.chunk().await.ok().flatten().map(|c| c.len()), Some(10));
+        assert!(matches!(f.chunk().await, Ok(None)));
     }
 
     fn device(account: &str, kind: Kind) -> (DeviceKeys, Cert) {

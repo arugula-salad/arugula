@@ -2118,6 +2118,13 @@ async fn fake_threads(f: FakeThreads) -> String {
             // refused as control refuses a room the grants don't reach.
             "/api/daemon/chat/rooms/{id}/files/{file}",
             get(|Path((id, file)): Path<(String, String)>| async move {
+                // #1028: bigger than an upload, as chat takes it, in chunks
+                // with no length said.
+                if (id.as_str(), file.as_str()) == ("ch_general", "cf_big") {
+                    let chunks = (0..CHAT_BIG / CHAT_BIG_CHUNK)
+                        .map(|_| Ok::<_, std::io::Error>(axum::body::Bytes::from(vec![7u8; CHAT_BIG_CHUNK])));
+                    return axum::body::Body::from_stream(futures_util::stream::iter(chunks)).into_response();
+                }
                 if (id.as_str(), file.as_str()) != ("ch_general", "cf_1") {
                     let why = "geek has no threads.read grant over that room";
                     return (StatusCode::FORBIDDEN, Json(json!({ "error": why, "reason": "agent_ungranted" })))
@@ -2162,6 +2169,10 @@ async fn fake_threads(f: FakeThreads) -> String {
 
 /// What [`fake_threads`] serves as a room's file.
 const CHAT_PNG: &[u8] = b"\x89PNG\r\n\x1a\nnot really";
+/// The size of [`fake_threads`]' big file, `cf_big`, past an upload's 20
+/// MB, and of each chunk it comes in.
+const CHAT_BIG: usize = 25 << 20;
+const CHAT_BIG_CHUNK: usize = 64 << 10;
 
 /// M198: an agent lists, reads (its mentions too), searches and posts in
 /// the owner's conversations through control, signed as this machine, with
@@ -2218,6 +2229,12 @@ async fn an_agent_reads_and_posts_in_conversations_through_control() {
     assert!(path.ends_with(".png") && path.contains(&format!("arugula-uploads/{mine}/")), "{saved}");
     assert_eq!(std::fs::read(path).unwrap(), CHAT_PNG, "{saved}");
     assert!(saved["summary"].as_str().unwrap().starts_with("Saved shot.png (18 bytes) from ch_general to "), "{saved}");
+    // #1028: a file as big as chat takes is saved as it comes.
+    let big = call(&inside, "read_thread", json!({ "room": "ch_general", "file": "cf_big" })).await;
+    assert_eq!(big["bytes"], CHAT_BIG, "{big}");
+    let path = big["path"].as_str().unwrap();
+    assert_eq!(std::fs::metadata(path).unwrap().len(), CHAT_BIG as u64, "{big}");
+    std::fs::remove_file(path).unwrap();
     let why = refused(&inside, "read_thread", json!({ "room": "dm_ab", "file": "cf_1" })).await;
     assert!(why.contains("no threads.read grant"), "{why}");
     let why = refused(&inside, "read_thread", json!({ "room": "ch_general", "file": "../.." })).await;
