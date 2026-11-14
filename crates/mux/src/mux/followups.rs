@@ -563,6 +563,22 @@ mod tests {
         assert_eq!(f.take(4, &heard).map(|(t, _)| t).as_deref(), Some("m0"));
     }
 
+    /// A `followups.json` with every field set loads whole, and saves back
+    /// as it was: a renamed type drops no field (#630).
+    #[test]
+    fn stored_followups_load() {
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../proto/fixtures/stored/followups.json");
+        let bytes = std::fs::read(fixture).unwrap();
+        let saved: Saved = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!((saved.queued[0].1.len(), saved.handed[0].1[0].id, saved.hooked.len()), (2, 3, 2));
+        let was: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(serde_json::to_value(&saved).unwrap(), was);
+        let (q, gone) = Queue::restore(saved, &|_| true);
+        assert!(gone.is_empty());
+        let hooked: std::collections::HashSet<PaneId> = [4, 9].into();
+        assert_eq!(q.saved(&hooked).queued[0].1.len(), 3, "the unacked one waits again, first");
+    }
+
     fn hand(session: Option<&str>, now: u64) -> Hand<'_> {
         Hand { session, acks: true, now }
     }
