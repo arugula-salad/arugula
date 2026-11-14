@@ -22,6 +22,7 @@ import { MenuLayer, PromptLayer } from "../src/shared/ui/menu";
 import { platformApi } from "../src/platform/api";
 import { PlatformPage } from "../src/platform/page";
 import { appMachines } from "../src/app/machines";
+import { chat } from "../src/shared/chat-store";
 import { localBackend, setSeenBackend } from "../src/shared/seen";
 
 // The daemon's page key on this page's requests, as its own page has.
@@ -53,6 +54,9 @@ window.fetch = async (input, init) => {
   if (url.pathname.startsWith("/api/chat") || url.pathname.startsWith("/api/notify")) return json({ error: "not here" }, 404);
   return realFetch(input, init);
 };
+
+// The spec seeds chat's rooms (the unread on Boards and Sessions) through this.
+(window as unknown as { __chat: typeof chat }).__chat = chat;
 
 // Prefs (where you were) are this browser's here, as the app's are until
 // the hub answers on its host.

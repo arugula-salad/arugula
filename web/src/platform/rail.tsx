@@ -9,7 +9,7 @@
 import type { ComponentChildren } from "preact";
 import { useRef, useState } from "preact/hooks";
 import { chat } from "../shared/chat-store";
-import { chatUnread } from "../shared/chat/unread";
+import { chatUnread, projectUnread } from "../shared/chat/unread";
 import { usePlatformApi } from "../shared/platform-api";
 import { usePhone, useSubscribe } from "../shared/ui/hooks";
 import { BellIcon, BoardsIcon, ChatIcon, DeploysIcon, DocsIcon, MachineIcon, MoreIcon, ProjectsIcon, SessionsIcon, SettingsIcon } from "../shared/ui/icons";
@@ -63,11 +63,15 @@ function usePlaces() {
   // Machines goes back to your last pane in this project (decision 5); the list is the path's step up.
   const machinesTo = Machines && project ? (paneOf(project.id) ?? pathOf({ page: "machines", project: project.id, at: { at: "machines" } }, names)) : `${controlOrigin()}/`;
   const machinesHere = r.page === "machines" || section === "workspaces";
+  // What's new in the threads on the project's issues (Boards) and runs (Sessions, which holds Runs).
+  const none = { n: 0, mention: false };
+  const issues = !unknown && project && chat.on !== false ? projectUnread(chat.rooms, project.id, "iss_") : none;
+  const runs = !unknown && project ? projectUnread(chat.rooms, project.id, "run_") : none;
   const own: PlaceLink[] = [
     { key: "overview", label: "Overview", tip: "Overview: this project's work", icon: <ProjectsIcon />, to: at("project"), here: section === "home" },
-    { key: "boards", label: "Boards", tip: "Boards: this project's boards and tickets", icon: <BoardsIcon />, to: at("boards"), here: section === "boards" && !!shown },
+    { key: "boards", label: "Boards", tip: "Boards: this project's boards and tickets", icon: <BoardsIcon />, to: at("boards"), here: section === "boards" && !!shown, count: issues },
     // A run is a session in a cloud workspace (decision 6): Runs is under Sessions.
-    { key: "sessions", label: "Sessions", tip: "Sessions: this project's sessions and runs", icon: <SessionsIcon />, to: at("sessions"), here: section === "sessions" || section === "runs" },
+    { key: "sessions", label: "Sessions", tip: "Sessions: this project's sessions and runs", icon: <SessionsIcon />, to: at("sessions"), here: section === "sessions" || section === "runs", count: runs },
     { key: "docs", label: "Docs", tip: "Docs: this project's Docs", icon: <DocsIcon />, to: at("docs"), here: section === "docs" },
     { key: "deploys", label: "Deploys", tip: "Deploys: this project's deploys", icon: <DeploysIcon />, to: at("deploys"), here: section === "deploys" },
   ];
@@ -151,7 +155,7 @@ export function PhoneTabs() {
         <a key={p.key} class={p.here ? "app-tab here" : "app-tab"} href={p.to} aria-current={p.here ? "page" : undefined} {...{ [`data-tab-${p.key}`]: "" }} onClick={(e) => (e.preventDefault(), go(p.to))}>
           {p.icon}
           <span>{p.label}</span>
-          {!!p.count?.n && <span class={p.count.mention ? "ws-rail-count mention" : "ws-rail-count"}>{p.count.n}</span>}
+          {!!p.count?.n && <span class={p.count.mention ? "ws-rail-count mention" : "ws-rail-count"}>{p.count.mention ? `@${p.count.n}` : p.count.n}</span>}
         </a>
       ))}
       <button class={rest.some((p) => p.here) ? "app-tab here" : "app-tab"} aria-haspopup="menu" data-tab-more onClick={more}>

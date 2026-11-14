@@ -26,6 +26,20 @@ async function openApp(page: Page, path: (pane: number) => string): Promise<numb
   return pane;
 }
 
+/** Put what's new in an issue's and a run's thread in chat's rooms, as the stream would. */
+async function seedThreads(page: Page) {
+  // The page awaits its key before it renders, and chat's first ask (the fixture has no chat to
+  // answer it) clears the rooms when it fails: seed after it.
+  await page.waitForFunction(() => (window as unknown as { __chat?: { on: boolean | null } }).__chat?.on === false);
+  await page.evaluate((project) => {
+    const c = (window as unknown as { __chat: { on: boolean | null; rooms: unknown[]; emit(): void } }).__chat;
+    const room = (target: string, unread: number, mentions: number) => ({ id: `room_${target}`, kind: "object", team: null, name: target, machine: null, machine_name: null, target, project, with: null, others: [], private: false, last: 9, read: 0, unread, mentions, wants: unread, muted: false, level: "all", level_own: false, archived: false, writable: true, topic: "", description: "", pins: 0, topic_writable: true });
+    c.on = true;
+    c.rooms = [room("iss_1", 2, 0), room("iss_2", 1, 0), room("run_1", 4, 1)];
+    c.emit();
+  }, P);
+}
+
 const rail = (page: Page, place: string) => page.locator(`.ws-rail [data-open-${place}]`);
 const lit = (page: Page, place: string) => expect(rail(page, place)).toHaveAttribute("aria-current", "page");
 
@@ -61,6 +75,14 @@ test.describe("on a computer", () => {
     await page.locator("[data-sessions-runs]").click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/runs$`));
     await lit(page, "sessions");
+  });
+
+  test("what's new in the issues' and runs' threads is a count on Boards and on Sessions", async ({ page }) => {
+    await openApp(page, () => `/p/${P}`);
+    await seedThreads(page);
+    await expect(rail(page, "boards").locator(".ws-rail-count")).toHaveText("3");
+    await expect(rail(page, "sessions").locator(".ws-rail-count")).toHaveText("@4");
+    await expect(rail(page, "docs").locator(".ws-rail-count")).toHaveCount(0);
   });
 
   test("a team's settings and members are two clicks: Settings, then the link in sight", async ({ page }) => {
@@ -242,6 +264,13 @@ test.describe("on a phone", () => {
     await expect(tabs.locator("[data-tab-more]")).toHaveClass(/here/);
   });
 
+
+  test("what's new in the issues' and runs' threads is a count on the Boards and Sessions tabs", async ({ page }) => {
+    await openApp(page, () => `/p/${P}`);
+    await seedThreads(page);
+    await expect(page.locator("[data-tab-boards] .ws-rail-count")).toHaveText("3");
+    await expect(page.locator("[data-tab-sessions] .ws-rail-count")).toHaveText("@4");
+  });
 
   test("Machines is a simple list, and a row opens its machine", async ({ page }, info) => {
     await openApp(page, () => `/p/${P}/machines`);
