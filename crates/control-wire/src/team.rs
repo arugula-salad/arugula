@@ -18,7 +18,11 @@ pub struct TrustAnswer {
     /// Not read by daemons: they have the root they pinned.
     #[serde(default)]
     pub trust: Option<Trust>,
+    /// Empty, or left out, for a machine joined on control's word
+    /// (aru-141, #1016), which reads only `flags`.
+    #[serde(default)]
     pub certs: Vec<Cert>,
+    #[serde(default)]
     pub revocations: Vec<Revocation>,
     /// Its last move (#100), for the daemon to check and take.
     #[serde(default)]

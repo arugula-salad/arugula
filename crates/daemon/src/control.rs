@@ -35,8 +35,8 @@
 //! join --token`, or a join a signed-in person added with one click, pins
 //! no root. Control decides who reaches the machine: no device gets in,
 //! only channels with control's machine tokens (`e2e.rs`'s `serve_token`)
-//! and read-only links, and a refresh asks for no certificates, rosters
-//! or peers.
+//! and read-only links, and a refresh takes no certificates, rosters or
+//! peers: only control's Labs flags from `/api/daemon/trust` (#1016).
 //!
 //! While running, the daemon keeps its standing with control ([`State`],
 //! `/api/host`'s `control_state`, #325): not joined, joined (connected or
@@ -2671,14 +2671,50 @@ impl Control {
         Ok(wrote)
     }
 
+    /// `/api/daemon/trust` with what this machine reads and is: its
+    /// features, and its version, OS and arch (M100), which control keeps
+    /// on its row (an older control ignores them).
+    fn trust_query(&self) -> String {
+        format!(
+            "{}&version={}&os={}&arch={}",
+            wire::Features::path(&self.features()),
+            arugula_core::version::get().replace('+', "%2B"),
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+        )
+    }
+
+    /// The Labs flags its account and team set (#347), under this
+    /// machine's own, chat's on or off among them; a control from before
+    /// them says nothing, and what's kept stays.
+    fn take_flags(&self, flags: Option<&wire::Flags>) {
+        let Some(f) = flags else { return };
+        let pushed = arugula_proto::flags::Pushed { account: f.account.clone(), team: f.team.clone() };
+        match arugula_proto::flags::write_control(&self.state_dir, &pushed) {
+            Ok(true) => info!(account = ?f.account, team = ?f.team, "Labs flags from control changed"),
+            Ok(false) => {}
+            Err(e) => warn!(error = %e, "can't keep the Labs flags control sent"),
+        }
+    }
+
     /// The refresh of a machine joined on control's word (aru-141): no
-    /// certificates, rosters or peers to fetch (`/api/daemon/trust`,
-    /// `/teams` and `/peers`), since none of them lets anyone in here, and
-    /// no own certificate to check. It follows control if it moved, tells
-    /// it who gets in (read-only links), and fetches the push
-    /// subscriptions, whose answer is also how it hears it was dropped.
+    /// certificates, rosters or peers to take (`/teams` and `/peers` aren't
+    /// asked), since none of them lets anyone in here, and no own
+    /// certificate to check. It asks `/api/daemon/trust` only for control's
+    /// Labs flags (chat's on/off with them) and to report its version, OS
+    /// and arch (#1016), ignoring any certificates or move in the answer;
+    /// a control that doesn't answer that for such a machine yet (a 404, or
+    /// anything but a refusal) is passed over. It follows control if it
+    /// moved, tells it who gets in (read-only links), and fetches the push
+    /// subscriptions. A 401 or 410 from either is how it hears it was
+    /// dropped.
     async fn refresh_by_control(&self, e: &Enrolled, number: u64) -> anyhow::Result<bool> {
         let took = std::time::Instant::now();
+        match self.get::<wire::TrustAnswer>(e, &self.trust_query()).await {
+            Ok(own) => self.take_flags(own.flags.as_ref()),
+            Err(err) if err.is::<Refused>() || err.is::<Removed>() => return Err(err),
+            Err(err) => tracing::debug!(error = %err, "no flags from control for a machine joined on its word"),
+        }
         let mut saved = e.saved.clone();
         if let Some(to) = self.where_control_is(&e.saved.url).await {
             info!(from = saved.url, to, "control moved; following it");
@@ -2744,25 +2780,8 @@ impl Control {
         let moved_to = self.where_control_is(&e.saved.url).await;
         // This machine's version, OS and arch (M100): control keeps them on
         // its row. An older control ignores them.
-        let pq = format!(
-            "{}&version={}&os={}&arch={}",
-            wire::Features::path(&self.features()),
-            arugula_core::version::get().replace('+', "%2B"),
-            std::env::consts::OS,
-            std::env::consts::ARCH,
-        );
-        let own: wire::TrustAnswer = self.get(&e, &pq).await?;
-        // The Labs flags its account and team set (#347), under this
-        // machine's own; a control from before them says nothing, and
-        // what's kept stays.
-        if let Some(f) = &own.flags {
-            let pushed = arugula_proto::flags::Pushed { account: f.account.clone(), team: f.team.clone() };
-            match arugula_proto::flags::write_control(&self.state_dir, &pushed) {
-                Ok(true) => info!(account = ?f.account, team = ?f.team, "Labs flags from control changed"),
-                Ok(false) => {}
-                Err(e) => warn!(error = %e, "can't keep the Labs flags control sent"),
-            }
-        }
+        let own: wire::TrustAnswer = self.get(&e, &self.trust_query()).await?;
+        self.take_flags(own.flags.as_ref());
         let mut saved = e.saved.clone();
         if let Some(to) = moved_to {
             info!(from = saved.url, to, "control moved; following it");

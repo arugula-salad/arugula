@@ -2,7 +2,9 @@
 //! control's `/api/join/token`, and a join a signed-in person adds with one
 //! click from Getting started. Either saves a join that pins no root: a
 //! channel with control's machine token gets in, a device's doesn't, and
-//! the machine never asks control for certificates, rosters or peers.
+//! the machine never asks control for rosters or peers. It asks
+//! `/api/daemon/trust` only for control's Labs flags and to say its
+//! version (#1016), passing over a control that doesn't answer that yet.
 
 // Over the daemon's Unix socket; Windows gets its named pipe in M56 (#219).
 #![cfg(unix)]
@@ -21,7 +23,7 @@ use arugula_e2e::{
 use arugula_testkit::{Daemon, arugulad};
 use axum::{
     Json, Router,
-    extract::State,
+    extract::{RawQuery, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
@@ -52,8 +54,13 @@ struct Seen {
     asked: Option<Cert>,
     /// The join token was taken.
     used: bool,
-    /// Asked for certificates, a roster or peers: never, joined this way.
+    /// Asked for a roster or peers: never, joined this way.
     pinned_asks: Vec<String>,
+    /// How `/api/daemon/trust` answers: none is a control from before
+    /// #1016 (a 404); else this status and body.
+    trust: Option<(StatusCode, Value)>,
+    /// The query each `/api/daemon/trust` came with.
+    trust_asks: Vec<String>,
     /// `/api/daemon/push-subs` asks: the refreshes.
     refreshes: usize,
 }
@@ -100,6 +107,14 @@ async fn fake_control(fake: Fake) -> String {
             StatusCode::INTERNAL_SERVER_ERROR
         })
     };
+    let trust = get(|State(f): State<Fake>, RawQuery(q): RawQuery| async move {
+        let mut f = f.lock().unwrap();
+        f.trust_asks.push(q.unwrap_or_default());
+        match f.trust.clone() {
+            Some((status, body)) => (status, Json(body)).into_response(),
+            None => (StatusCode::NOT_FOUND, Json(json!({ "error": "no such route" }))).into_response(),
+        }
+    });
     let subs = get(|State(f): State<Fake>| async move {
         f.lock().unwrap().refreshes += 1;
         Json(json!({ "subs": [] }))
@@ -110,7 +125,7 @@ async fn fake_control(fake: Fake) -> String {
         .route("/api/join/token", token)
         .route("/api/join", start)
         .route("/api/join/{code}", poll)
-        .route("/api/daemon/trust", pinned("trust"))
+        .route("/api/daemon/trust", trust)
         .route("/api/daemon/team", pinned("team"))
         .route("/api/daemon/teams", pinned("teams"))
         .route("/api/daemon/peers", pinned("peers"))
@@ -123,11 +138,12 @@ async fn fake_control(fake: Fake) -> String {
     at
 }
 
-fn daemon(tag: &str, control: &str) -> Daemon {
+fn daemon(tag: &str, control: &str, args: &[&str]) -> Daemon {
     let d = arugulad!(tag)
         .no_provider()
         .no_tailscale()
         .args(["--direct-url", "http://127.0.0.1:0", "--control", control])
+        .args(args)
         .wait_secs(30)
         .start();
     d.wait_for("a session", || d.get("/api/panes")[0]["session"].is_u64());
@@ -222,7 +238,7 @@ async fn ask(ws: &mut Ws, ch: &Channel, id: u32, method: &str, path: &str) -> u1
 async fn a_join_token_lets_in_tokens_and_no_devices() {
     let fake = Fake::default();
     let control = fake_control(fake.clone()).await;
-    let d = daemon("jointoken", &control);
+    let d = daemon("jointoken", &control, &[]);
 
     let (ok, said) = join_with(&d, &control, "ajt_wrong");
     assert!(!ok && said.contains("join token was used already, has expired"), "{said}");
@@ -272,7 +288,7 @@ async fn a_join_token_lets_in_tokens_and_no_devices() {
 async fn one_click_approval_joins_with_nothing_to_confirm() {
     let fake = Fake::default();
     let control = fake_control(fake.clone()).await;
-    let d = daemon("joinclick", &control);
+    let d = daemon("joinclick", &control, &[]);
 
     let started = d.post("/api/setup/control", json!({ "url": control }));
     assert!(started["pending"]["approve"].as_str().is_some_and(|a| a.starts_with(&control)), "{started}");
@@ -288,4 +304,60 @@ async fn one_click_approval_joins_with_nothing_to_confirm() {
     assert!(Welcome::decode(&said).is_some(), "the token's channel is welcomed");
     d.wait_for("a refresh", || fake.lock().unwrap().refreshes > 0);
     assert_eq!(fake.lock().unwrap().pinned_asks, Vec::<String>::new());
+}
+
+/// #1016: joined on control's word, a refresh still says the machine's
+/// version, OS and arch and takes control's Labs flags (chat's on/off with
+/// them) from `/api/daemon/trust`, and nothing else of the answer. A
+/// control that doesn't answer that yet (a 404) is passed over: still
+/// joined, not dropped. A 410 there is a removal, as on any machine.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_token_joined_machine_still_takes_controls_flags() {
+    let fake = Fake::default();
+    let control = fake_control(fake.clone()).await;
+    // No relay: it looks at control every ten seconds.
+    let d = daemon("joinflags", &control, &["--no-relay"]);
+    let (ok, said) = join_with(&d, &control, GOOD);
+    assert!(ok, "{said}");
+    let state = || d.get("/api/host")["control_state"].clone();
+    d.wait_for("joined", || state()["state"] == "joined");
+
+    // A control from before: no answer there, and the rest goes on.
+    d.wait_for("a refresh", || fake.lock().unwrap().refreshes > 0);
+    let asked = fake.lock().unwrap().trust_asks.clone();
+    assert!(
+        asked.iter().any(|q| q.contains("version=") && q.contains(&format!("os={}", std::env::consts::OS))),
+        "{asked:?}"
+    );
+    assert_eq!(state()["state"], "joined", "{}", state());
+    assert!(!d.state.join("flags.control.json").exists());
+
+    // Control answers, with flags and (ignored) certificates of its own.
+    let (stranger, mut cert) = {
+        let k = DeviceKeys::generate();
+        let c = Cert::new(&k, "a1", Kind::Browser, "theirs");
+        (k, c)
+    };
+    cert.sign_with(&stranger);
+    fake.lock().unwrap().trust = Some((
+        StatusCode::OK,
+        json!({ "certs": [cert], "revocations": [], "flags": { "account": { "studio": true }, "team": { "chat": true } } }),
+    ));
+    d.wait_for("control's flags", || {
+        let f: Value = std::fs::read(d.state.join("flags.control.json"))
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+            .unwrap_or_default();
+        f["team"]["chat"] == true && f["account"]["studio"] == true
+    });
+    let saved: Value = serde_json::from_slice(&std::fs::read(d.state.join("control.json")).unwrap()).unwrap();
+    assert!(saved.get("certs").is_none_or(|c| c.as_array().is_some_and(Vec::is_empty)), "{saved}");
+    let (_ws, _ch, said) = open(&d, &DeviceKeys::load(&d.state.join("daemon.key")).unwrap(), &stranger, &[]).await;
+    assert_eq!(Refusal::decode(&said), Some(Refusal::unknown_device()), "a certificate in the answer lets nobody in");
+    assert_eq!(fake.lock().unwrap().pinned_asks, Vec::<String>::new());
+
+    // Removed: dropped, as any machine would be.
+    fake.lock().unwrap().trust =
+        Some((StatusCode::GONE, json!({ "error": "this machine's key was removed", "at": 1, "by": "laptop" })));
+    d.wait_for("dropped", || state()["state"] == "dropped");
 }
