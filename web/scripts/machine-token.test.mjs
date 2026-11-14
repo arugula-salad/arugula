@@ -5,7 +5,7 @@
 // `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { controlTokens, NoTokenError, tokenEntry, tokenHello, tokenMode } from "../src/shell/e2e/machine-token.ts";
+import { controlTokens, gatedTokens, NoTokenError, tokenEntry, tokenHello, tokenMode } from "../src/shell/e2e/machine-token.ts";
 
 const K = (c) => c.repeat(64);
 
@@ -86,4 +86,84 @@ test("a device falls back to its key only when tokens can't reach the machine at
   assert.equal(keyAfterTokens(new NoTokenError(403, "not yours")), false);
   assert.equal(keyAfterTokens(Object.assign(new Error("used"), { byDaemon: true, code: "machine-token" })), false);
   assert.equal(keyAfterTokens(new Error("socket closed")), false);
+});
+
+// The 2026-11-14 outage: a page retrying offline machines every ≤5 s asked
+// for a token on every try (12 a minute per offline machine, 720 an hour:
+// five of them on one page, or two on a few tabs, ran past the hub's 3,000).
+// A page's reconnect loop, simulated: each machine tries, and tries again
+// after the client's backoff (250 ms doubling to 5 s) or what the gate says.
+async function simulate({ machines, offline, minutes, status = () => 200, retryAfter }) {
+  let clock = 0;
+  let calls = 0;
+  const send = async (url) => {
+    calls++;
+    const s = status(clock);
+    if (s === 200) return new Response(JSON.stringify({ token: `jwt-${calls}` }), { status: 200 });
+    return new Response("{}", { status: s, headers: retryAfter ? { "Retry-After": String(retryAfter) } : {} });
+  };
+  const online = (id) => Number(id.slice(1)) >= offline;
+  const t = gatedTokens(controlTokens("", send), online, () => clock);
+  const next = new Map();
+  const retry = new Map();
+  for (let i = 0; i < machines; i++) next.set(`m${i}`, 0);
+  const end = minutes * 60_000;
+  while (true) {
+    const [id, at] = [...next].reduce((a, b) => (b[1] < a[1] ? b : a));
+    if (at > end) break;
+    clock = at;
+    const r = retry.get(id) ?? 0;
+    try {
+      await t.token(id);
+      // An online machine connects and stays: no more tries.
+      next.set(id, Infinity);
+    } catch (e) {
+      next.set(id, clock + (e.retryMs ?? Math.min(250 * 2 ** r, 5000)));
+      retry.set(id, r + 1);
+    }
+  }
+  return calls;
+}
+
+test("20 machines, 15 offline, 10 minutes: 5 token asks (was ~1,800, i.e. ~10,800/hour)", async () => {
+  const calls = await simulate({ machines: 20, offline: 15, minutes: 10 });
+  assert.equal(calls, 5, "one per online machine; none for offline ones");
+});
+
+test("a 429 holds every machine on the page back: well under 3,000/hour", async () => {
+  // The hub answers 429 throughout: 20 machines, all online, 10 minutes.
+  const calls = await simulate({ machines: 20, offline: 0, minutes: 10, status: () => 429 });
+  // 1 + backoffs of 1, 2, 4 min fit in 10: ~4 asks, ~24/hour.
+  assert.ok(calls <= 5, `${calls} asks`);
+});
+
+test("a 429 honours Retry-After when it's longer, and says so plainly", async () => {
+  let clock = 0;
+  let calls = 0;
+  const send = async () => (calls++, new Response("{}", { status: 429, headers: { "Retry-After": "300" } }));
+  const t = gatedTokens(controlTokens("", send), () => true, () => clock);
+  await assert.rejects(t.token("a"), (e) => e.status === 429 && e.retryMs === 300_000 && /limiting connections; trying again in 300 s/.test(e.message));
+  clock = 299_000;
+  await assert.rejects(t.token("b"), (e) => e.retryMs === 1000);
+  assert.equal(calls, 1, "another machine waits too");
+  clock = 300_000;
+  await assert.rejects(t.token("b"));
+  assert.equal(calls, 2);
+});
+
+test("one ask per machine at a time; a 404 isn't held", async () => {
+  let open = 0;
+  let most = 0;
+  const send = async (url) => {
+    if (url.includes("none")) return new Response("{}", { status: 404 });
+    most = Math.max(most, ++open);
+    await new Promise((r) => setTimeout(r, 5));
+    open--;
+    return new Response(JSON.stringify({ token: "t" }), { status: 200 });
+  };
+  const t = gatedTokens(controlTokens("", send));
+  await Promise.all([t.token("a"), t.token("a"), t.token("a")]);
+  assert.equal(most, 1);
+  await assert.rejects(t.token("none"), (e) => e.status === 404 && e.retryMs === undefined);
+  await assert.rejects(t.token("none"), (e) => e.status === 404);
 });

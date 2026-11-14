@@ -31,7 +31,7 @@ import {
   type WorkerDaemon,
 } from "./e2e/keys.ts";
 import { newKeyPair } from "./e2e/noise.ts";
-import { controlIssues, controlTokens, tokenEntry, tokenMode, type MachineTokens } from "./e2e/machine-token.ts";
+import { controlIssues, controlTokens, gatedTokens, tokenEntry, tokenMode, type MachineTokens } from "./e2e/machine-token.ts";
 import { acceptHostedHolding, signDelegation, signRevoke, type Delegation, type DelegationRevoke, type HostedProof } from "./e2e/hosted.ts";
 import { directUrls } from "../shared/hosted.ts";
 import { expiresIn, grantBody, grantRevokeBody, newGrant, newGrantRevoke, passkeyChallenge, type GrantRevoke, type PasskeyAssertion, type ProjectGrant } from "./e2e/run-grant.ts";
@@ -1169,7 +1169,7 @@ export class ControlSession {
    * control, not its device key: it isn't one of the account's devices,
    * or `tokenMode` says tokens first. */
   tokens = false;
-  private machineTokens: MachineTokens = controlTokens();
+  private machineTokens: MachineTokens = gatedTokens(controlTokens(), (id) => this.daemons.find((d) => d.id === id)?.online);
   /** #764: this browser's keys came from a passkey's PRF, and this is
    * the name its certificate takes ("iCloud Keychain passkey"). */
   fromPasskey: string | null = null;

@@ -102,10 +102,16 @@ test("a token route that isn't there makes it unreachable, once; another refusal
   const t = s.target("d1");
   await assert.rejects(t.tokens.token("d1"), (e) => e instanceof NoTokenError && e.status === 403);
   assert.equal(s.reachable, true);
+  // A refusal holds that machine's asks back a minute (the 429 outage).
+  await assert.rejects(t.tokens.token("d1"), (e) => e instanceof NoTokenError && e.retryMs > 0);
   tokenAnswer = [404, {}];
-  await assert.rejects(t.tokens.token("d1"), (e) => e instanceof NoTokenError && e.status === 404);
-  await assert.rejects(t.tokens.token("d1"), (e) => e instanceof NoTokenError);
-  assert.equal(s.reachable, false);
+  const s2 = new AppSession(me, CONTROL, ORIGIN, h.send);
+  await s2.refresh();
+  s2.subscribe(() => heard++);
+  const t2 = s2.target("d1");
+  await assert.rejects(t2.tokens.token("d1"), (e) => e instanceof NoTokenError && e.status === 404);
+  await assert.rejects(t2.tokens.token("d1"), (e) => e instanceof NoTokenError);
+  assert.equal(s2.reachable, false);
   assert.equal(heard, 1);
 });
 
