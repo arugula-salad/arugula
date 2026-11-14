@@ -87,7 +87,7 @@ function body(r: Route, lost: string | null) {
     case "home":
       return r.to ? <Entering to={r.to} /> : <Home />;
     case "project":
-      return <ProjectHome id={r.project} />;
+      return <ProjectHome id={r.project} board={r.board} card={r.card} />;
     case "issues":
       return <IssuesPage project={r.project} filter={{ state: r.state, q: r.q, label: r.label, assignee: r.assignee }} />;
     case "new-issue":

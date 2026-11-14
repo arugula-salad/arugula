@@ -37,7 +37,7 @@ import type { AppSession } from "./session";
 import type { Client } from "../shell/client";
 import { notePane } from "../platform/places-kept";
 
-interface Booted {
+export interface Booted {
   machines: Machines;
   cell: Cell;
 }
@@ -45,7 +45,7 @@ interface Booted {
 let booted: Promise<Booted> | null = null;
 
 /** The page's machines, made once. */
-function boot(session: AppSession | null): Promise<Booted> {
+export function boot(session: AppSession | null): Promise<Booted> {
   return (booted ??= (async () => {
     // The route names the machine shown, not `?machine=`.
     directory.keepsAddress = false;

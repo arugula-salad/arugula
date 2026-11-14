@@ -62,6 +62,13 @@ test("each route parses", () => {
   assert.deepEqual(parse(`/p/${P}/deploys/new`, "?env=production"), { page: "new-deploy", project: P }, "an id only");
 });
 
+test("the Overview names an open card by its board and row, both or neither", () => {
+  assert.deepEqual(parse(`/p/${P}`, "?board=brd_0a1b&card=row_2c3d"), { page: "project", project: P, board: "brd_0a1b", card: "row_2c3d" });
+  assert.deepEqual(parse(`/p/${P}/overview`, "?board=brd_0a1b&card=row_2c3d"), { page: "project", project: P, board: "brd_0a1b", card: "row_2c3d" });
+  assert.deepEqual(parse(`/p/${P}`, "?card=row_2c3d"), { page: "project", project: P });
+  assert.deepEqual(parse(`/p/${P}`, "?board=iss_0a1b&card=row_2c3d"), { page: "project", project: P });
+});
+
 test("anything else is missing, never a guess", () => {
   for (const p of ["/p", "/p/arugula", `/p/${P}/nope`, "/dm/sam", `/p/${P}/workspaces/app`, `/p/${P}/workspaces/cw_0123abcd`, `/p/${P}/workspaces/hw_0123456789abcdef0123456789abcdef/tab`, `/p/${P}/past/run_00ff11ee`, "/settings/x", "/t/team_1", "/t/team_1/nope", "/chats", `/p/${P}/deploys/old`, `/p/${P}/deploys/new/x`]) {
     assert.equal(parse(p).page, "missing", p);
@@ -74,6 +81,7 @@ test("links carry the current slug, and read back as the same route", () => {
     { page: "home" },
     { page: "project", project: P },
     { page: "chat", project: P, room: "ch_0123456789abcdef", msg: 4 },
+    { page: "project", project: P, board: "brd_0a1b", card: "row_2c3d" },
     { page: "chat", project: P, view: "search", q: "has:quote deploy" },
     { page: "chat", project: P, view: "search", q: "deploy", all: true },
     { page: "dm", project: P, room: "dm_00aa11bb22cc33dd" },
