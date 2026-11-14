@@ -1,19 +1,21 @@
-// The platform page's entry (M150): projects, chat and hosted workspaces at
-// real paths, on an origin of its own (app.arugula.io, served through the
-// hub, M151) that never loads the shell's key code ("The platform page is
-// on app.arugula.io, not on the keys' origin"; web/scripts/check-imports.mjs).
+// The app's entry (Arugula #989): one app on app.arugula.io, served through
+// the hub, rooted at the project. It puts the platform's pages (projects,
+// boards, Docs, chat) and, as the inversion lands, the shell's machine page
+// and Swarm in one frame. app/ is the only folder that may import both
+// platform/ and shell/ (web/scripts/check-imports.mjs); for now it draws the
+// platform's pages alone.
 
 import { render } from "preact";
 import "../shared/fonts.css";
 import "../shared/style.css";
 import "../shared/frame.css";
-import "./platform.css";
+import "../platform/platform.css";
 // The lists in the swarm's language, over platform.css's.
-import "./swarm.css";
+import "../platform/swarm.css";
 // /settings: its sections, the agents' matrices and the switches.
 import "../shared/ui/settings-section.css";
-import "./settings.css";
-import "./finish.css";
+import "../platform/settings.css";
+import "../platform/finish.css";
 // The one button set (UI audit #158), last: what it draws, it draws everywhere.
 import "../shared/buttons.css";
 import { apply as applyAppearance } from "../shared/appearance";
@@ -24,9 +26,9 @@ import "../shared/ui/prototype-storage";
 import { PlatformApiContext } from "../shared/platform-api";
 import { AppearanceLayer } from "../shared/ui/appearance";
 import { MenuLayer, PromptLayer } from "../shared/ui/menu";
-import { platformApi } from "./api";
-import { arriveHere } from "./chat-nav";
-import { PlatformPage } from "./page";
+import { platformApi } from "../platform/api";
+import { arriveHere } from "../platform/chat-nav";
+import { PlatformPage } from "../platform/page";
 
 // This device's palette and finish, before anything draws: on
 // app.arugula.io, the one picked on control's page too (the cookie,
