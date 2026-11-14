@@ -45,7 +45,7 @@
 //! | POST | `/api/docs/open` | `DocOpenRequest`: a Doc `id` or a shared `link`'s id | `DocOpened`: the Doc's block, the one that has it open or a new one |
 //! | POST | `/api/docs/ID/share` | `DocShareRequest`: `update` for a Doc that has a link | `DocLinkUrl`: the Doc's link, made or updated, whether or not a block shows it (the owner's, never an agent's) |
 //! | DELETE | `/api/docs/ID` | | `Empty`: unshared first, then removed (the owner's, never an agent's) |
-//! | POST | `/api/docs/ID/move` | `DocMoveRequest`: the team `project`, else the current one | `DocMoved`: the team Doc it is now; the library keeps a hidden pointer (the owner's) |
+//! | POST | `/api/docs/ID/move` | `DocMoveRequest`: the `project` (a team's or the owner's personal one), else the current one | `DocMoved`: the team Doc it is now; the library keeps a hidden pointer (the owner's) |
 //! | GET | `/api/docs/team` | | `DocTeams`: the team a Doc here would move to, if any (the owner's) |
 //! | GET | `/api/agent-can` | | `[AgentCan]`: what an agent here can do for the person, in their words (the owner's) |
 //! | GET | `/api/fs/…`, POST `/api/panes/N/cd` | | files on a host: see [`crate::fs`] |

@@ -748,7 +748,7 @@ pub mod ops {
     }
 
     /// `POST /api/docs/ID/move` (Arugula #863): give a Doc to a team's
-    /// project. The team Doc is made from it, its copy on the platform comes
+    /// project, or the owner's personal one (Arugula #1026). The project's Doc is made from it, its copy on the platform comes
     /// down, and the library keeps a hidden pointer that open blocks, `doc
     /// open` and old links follow. The owner's, and their own agents'.
     pub struct DocMove;

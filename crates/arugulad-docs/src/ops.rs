@@ -40,6 +40,7 @@ use crate::{
     },
     mcp::{
         Caller, Scope,
+        issues::Chosen,
         ops::{McpOp, Surface},
         tools::{Call, ListArgs, Out, done},
     },
@@ -52,7 +53,7 @@ use crate::{
 pub const DELETE_OWNER_ONLY: &str = "only the owner can delete a Doc";
 /// Said to a team's other owner, a guest, or a guest's agent who asks to
 /// move one.
-pub const MOVE_OWNER_ONLY: &str = "only the owner and their own agents can move a Doc to a team";
+pub const MOVE_OWNER_ONLY: &str = "only the owner and their own agents can move a Doc to a project";
 /// How much of a Doc its list's preview shows.
 const PREVIEW_PARAGRAPHS: usize = 4;
 
@@ -308,14 +309,21 @@ impl Handle<Docs> for DocDelete {
     }
 }
 
-/// The team's project a Doc moves to: the one named, else the current one,
-/// by the one rule MCP's tools choose by (`Call::chosen_project`); for an
-/// agent, with its own pane's session and clone. A personal project is
-/// refused: a Doc moves to a team.
+/// The project a Doc moves to: the one named, else the current one, by the
+/// one rule MCP's tools choose by (`Call::chosen_project`); for an agent,
+/// with its own pane's session and clone. A Doc goes where its project goes
+/// (Arugula #1026): a team's, or the machine's owner's personal one, not
+/// another account's.
 async fn target(cx: &Cx<'_>, project: Option<&str>) -> Result<Target, OpError> {
+    let chosen = chosen(cx, project).await?;
+    let owner = cx.app.control.account();
+    may_take(chosen, owner.as_deref()).map_err(|e| OpError::Status(StatusCode::BAD_REQUEST, e))
+}
+
+async fn chosen(cx: &Cx<'_>, project: Option<&str>) -> Result<Chosen, OpError> {
     let chosen = match &cx.via {
         Via::Mcp(call) => {
-            call.owners_own("moving a Doc to a team").await.map_err(OpError::Forbidden)?;
+            call.owners_own("moving a Doc to a project").await.map_err(OpError::Forbidden)?;
             call.chosen_project(project).await
         }
         Via::Http { .. } => {
@@ -323,15 +331,19 @@ async fn target(cx: &Cx<'_>, project: Option<&str>) -> Result<Target, OpError> {
             Call::detached(cx.app, caller, "the owner".into()).chosen_project(project).await
         }
     };
-    let chosen = chosen.map_err(|e| OpError::Status(StatusCode::BAD_GATEWAY, e))?;
-    if !chosen.team {
-        let name = if chosen.name.is_empty() { chosen.id } else { chosen.name };
-        return Err(OpError::Status(
-            StatusCode::BAD_REQUEST,
-            format!("{name} is a personal project: a Doc moves to a team's, so name one"),
-        ));
+    chosen.map_err(|e| OpError::Status(StatusCode::BAD_GATEWAY, e))
+}
+
+/// [`target`]'s rule: a team's project, or `owner`'s own personal one.
+fn may_take(chosen: Chosen, owner: Option<&str>) -> Result<Target, String> {
+    if chosen.team || (owner.is_some() && chosen.person.as_deref() == owner) {
+        return Ok(Target { project: chosen.id, name: chosen.name });
     }
-    Ok(Target { project: chosen.id, name: chosen.name })
+    let name = if chosen.name.is_empty() { chosen.id } else { chosen.name };
+    Err(match chosen.person {
+        None => format!("Arugula cloud didn't say whose personal project {name} is, so the Doc stays here"),
+        Some(_) => format!("{name} is someone else's personal project: a Doc moves to a team's project or your own"),
+    })
 }
 
 impl Handle<Docs> for DocMove {
@@ -349,7 +361,7 @@ impl Handle<Docs> for DocMove {
         let machine = cx.app.control.enrolled().map(|e| e.saved.cert.device.clone()).ok_or_else(|| {
             OpError::Status(
                 StatusCode::SERVICE_UNAVAILABLE,
-                "this machine hasn't joined Arugula cloud: a team's Docs are there".into(),
+                "this machine hasn't joined Arugula cloud: a project's Docs are there".into(),
             )
         })?;
         let cloud: Arc<dyn Cloud> = cx.app.control.clone();
@@ -364,9 +376,9 @@ impl Handle<Docs> for DocMove {
 /// `doc move`'s arguments.
 #[derive(serde::Deserialize, schemars::JsonSchema)]
 pub struct DocMoveArgs {
-    /// The Doc's id (doc list has them). Move one only when the user asks: its block, doc fill on it and doc open of this id go on with the team's Doc.
+    /// The Doc's id (doc list has them). Move one only when the user asks: its block, doc fill on it and doc open of this id go on with the project's Doc.
     pub doc: String,
-    /// The team's project (a prj_ id). Default: the current project, refused when that's a personal one.
+    /// The project (a prj_ id): a team's, or the user's personal one. Default: the current project.
     #[serde(default)]
     pub project: Option<String>,
 }
@@ -375,7 +387,7 @@ impl McpOp<Docs> for DocMove {
     const SURFACE: Surface = Surface::Kind {
         tool: "doc",
         kind: "move",
-        description: "Give a Doc to a team's project: the team owns it; it leaves this list.",
+        description: "Give a Doc to a project (a team's, or the user's own): it leaves this list.",
     };
     type Args = DocMoveArgs;
     type Answer = serde_json::Value;
@@ -386,7 +398,10 @@ impl McpOp<Docs> for DocMove {
 
     fn answer(_: &Call<'_>, a: &DocMoveArgs, _: &String, m: DocMoved) -> Out {
         done(
-            format!("Moved Doc {} to {}: it is the team's Doc {} now; doc open {} shows it", a.doc, m.name, m.id, m.id),
+            format!(
+                "Moved Doc {} to {}: it is the project's Doc {} now; doc open {} shows it",
+                a.doc, m.name, m.id, m.id
+            ),
             serde_json::json!({ "doc": a.doc, "project": m.project, "project_name": m.name, "id": m.id, "link": m.link }),
         )
     }
@@ -394,14 +409,50 @@ impl McpOp<Docs> for DocMove {
 
 impl Handle<Docs> for DocsTeam {
     /// What the Docs page offers Move to: the current project when it's a
-    /// team's. Control out of reach is no team, with why.
+    /// team's (a personal one is named with `project`). Control out of reach is no team, with why.
     async fn handle(cx: &Cx<'_>, _: (), _: Empty) -> Result<DocTeams, OpError> {
         if cx.co_owner() {
             return Ok(DocTeams::default());
         }
-        Ok(match target(cx, None).await {
-            Ok(t) => DocTeams { team: Some(DocTeam { project: t.project, name: t.name }), why: None },
+        Ok(match chosen(cx, None).await {
+            Ok(c) if c.team => DocTeams { team: Some(DocTeam { project: c.id, name: c.name }), why: None },
+            Ok(c) => {
+                let name = if c.name.is_empty() { c.id } else { c.name };
+                DocTeams { team: None, why: Some(format!("{name} is a personal project, not a team's")) }
+            }
             Err(e) => DocTeams { team: None, why: Some(e.sentence()) },
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use arugulad_base::mcp::issues::Rule;
+
+    use super::*;
+
+    fn chosen(team: bool, person: Option<&str>) -> Chosen {
+        Chosen { id: "prj_1".into(), name: "Rhythm".into(), team, person: person.map(Into::into), rule: Rule::Asked }
+    }
+
+    /// Arugula #1026: a Doc goes where its project goes, a team's or the
+    /// machine's owner's personal one, and never another account's.
+    #[test]
+    fn a_doc_moves_to_a_team_or_its_owners_personal_project() {
+        let to = Target { project: "prj_1".into(), name: "Rhythm".into() };
+        assert_eq!(may_take(chosen(true, None), Some("acct_a")), Ok(to.clone()));
+        assert_eq!(may_take(chosen(false, Some("acct_a")), Some("acct_a")), Ok(to));
+        assert_eq!(
+            may_take(chosen(false, Some("acct_b")), Some("acct_a")),
+            Err("Rhythm is someone else's personal project: a Doc moves to a team's project or your own".into())
+        );
+        assert_eq!(
+            may_take(chosen(false, None), Some("acct_a")),
+            Err("Arugula cloud didn't say whose personal project Rhythm is, so the Doc stays here".into())
+        );
+        assert!(
+            may_take(chosen(false, Some("acct_a")), None).is_err(),
+            "a machine not in the cloud has no owner to match"
+        );
     }
 }

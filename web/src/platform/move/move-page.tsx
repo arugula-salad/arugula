@@ -9,8 +9,8 @@
 //
 // A machine's Docs on a moving board are its library's, which only it moves
 // (`doc move`): where the page reaches that machine (the app, on the
-// reader's own machine that answers) and the target is a team's, they can be
-// picked, and the machine moves them once the rest has; anywhere else the
+// reader's own machine that answers), they can be picked, whoever owns the
+// target, and the machine moves them once the rest has; anywhere else the
 // group says where they move from, with a link there.
 
 import { useEffect, useRef, useState } from "preact/hooks";
@@ -22,7 +22,7 @@ import { PageHeader } from "../../shared/ui/page-header";
 import { CountList, PickList, type Pick, type PickGroup } from "../../shared/ui/pick-list";
 import { Section } from "../../shared/ui/settings-section";
 import { names } from "../links";
-import { makers, ownerKey, owners, PERSONAL } from "../owners";
+import { makers, ownerKey, owners } from "../owners";
 import { Missing } from "../pages/project";
 import { follow, go, pathOf } from "../router";
 import { session, type PlatformProject } from "../session";
@@ -116,9 +116,7 @@ function Mover({ p }: { p: PlatformProject }) {
 
   const isNew = picks.target === "new";
   const target = isNew ? null : targets.find((t) => t.id === picks.target);
-  // A machine gives its Docs only to a team's project.
-  const toTeam = isNew ? picks.owner !== PERSONAL : !!target && ownerKey(target) !== PERSONAL;
-  const here = (machine: string) => toTeam && !!api.machineDocs?.here(machine);
+  const here = (machine: string) => !!api.machineDocs?.here(machine);
   const to = isNew ? picks.name.trim() || "the new project" : (target?.name ?? out?.to.name ?? "");
   const src = out?.source;
   const moving = new Set(out?.along.boards.items.map((b) => b.id));

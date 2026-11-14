@@ -176,6 +176,21 @@ test("a board, its repo and a Doc move into a new team project, and a machine's 
   expect(await page.evaluate(() => (window as unknown as { __movedDocs: unknown }).__movedDocs)).toEqual([["m_mac", MAC_DOC, NEW]]);
 });
 
+test("into a new personal project, the reader's own machine gives its Doc too (Arugula #1026)", async ({ page }) => {
+  const seen = await open(page, `/p/${ME}/settings/move`, () => moved);
+  await page.locator("[data-move-name]").fill("Rhythm");
+  await tick(page, "boards", "brd_rhythm");
+  // As for a team's: a machine this page reaches gives its Doc; another says where to go.
+  await expect(page.locator('[data-pick-group="machine-m_jake"]')).toContainText("These move from jakes-laptop.");
+  await expect(row(page, "docs", `m_jake/d0c0ffee00000002`).locator("input")).toHaveCount(0);
+  await tick(page, "docs", `m_mac/${MAC_DOC}`);
+  await expect.poll(() => seen.plans.at(-1)).toMatchObject({ to: { kind: "new", name: "Rhythm", owner: { kind: "personal" } }, repos: [RHYTHM] });
+
+  await page.locator("[data-move-go]").click();
+  await expect(page).toHaveURL(new RegExp(`/p/${NEW}`));
+  expect(await page.evaluate(() => (window as unknown as { __movedDocs: unknown }).__movedDocs)).toEqual([["m_mac", MAC_DOC, NEW]]);
+});
+
 test("something changed since the plan: nothing moves, and the new plan shows", async ({ page }) => {
   const seen = await open(page, `/p/${ME}/settings/move`, () => ({ status: 409, body: { error: "alecraso/rhythm: it changed since the plan, so nothing moved. Plan it again.", reason: "changed" } }));
   await page.locator("[data-move-name]").fill("Rhythm");

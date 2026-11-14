@@ -6,7 +6,7 @@ here rebuilds this crate and the binary, not the daemon:
 - `src/docs/`: the Doc block, its library (`library.rs`), its pictures
   (`assets.rs`), the fenced charts, tiles and drawings it checks
   (`embeds.rs`), sharing a link (`link.rs`), an agent's ask to share
-  (`ask.rs`), a team's Doc (`team.rs`) and moving a Doc to a team, leaving a
+  (`ask.rs`), a team's Doc (`team.rs`) and moving a Doc to a project (a team's or the owner's personal one), leaving a
   pointer (`moving.rs`).
 - `src/ops.rs` and `src/links.rs`: the operations (`docs.list`, `doc.open`,
   `doc.delete`, `doc.preview`, `doc.read`, `doc.asset`, `doc.move`, `docs.team`, `doc_link.get`, `doc_link.delete`), as `Handle<Docs>`.
