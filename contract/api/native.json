@@ -43,6 +43,10 @@
       "why": "Moving work to another project is on the web for now (Arugula #969)"
     },
     {
+      "match": "/splits$",
+      "why": "A project's recent moves to and from other projects are on the web for now (Arugula #1022)"
+    },
+    {
       "match": "/splits/\\{id\\}/undo$",
       "why": "Undoing a move to another project is on the web for now (Arugula #970)"
     },
