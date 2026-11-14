@@ -3,7 +3,7 @@
 // the board routes' paths. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { closedWithLine, heldChip, holdsRow, stalledFor, settledFacts, LANE_GLYPH, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, waitingOf, notFinishedLine, readyCount, relationLine, UNSEEN_BLOCKER, needsDot, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip, onIssueChip, boardGroup, clusterOrder, NO_BOARD, sourceLine, sourceLinked, leftOutLine, docWords, docHref, onBoardWords, pointerText, doneRefusal, laneOfZone, laneSetLine, closeName, rowMatches, findLine, boardMatches, rowHasLabel, rowHasPerson, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, topAndMore, initialsOf } from "../src/shared/boards/text.ts";
+import { closedWithLine, heldChip, holdsRow, stalledFor, settledFacts, LANE_GLYPH, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, waitingOf, notFinishedLine, readyCount, relationLine, UNSEEN_BLOCKER, needsDot, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip, onIssueChip, boardGroup, clusterOrder, NO_BOARD, sourceLine, sourceLinked, leftOutLine, docWords, docHref, onBoardWords, pointerText, doneRefusal, laneOfZone, laneSetLine, closeName, rowMatches, findLine, boardMatches, rowHasLabel, rowHasPerson, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, topAndMore, initialsOf, liveSessions } from "../src/shared/boards/text.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
@@ -669,4 +669,23 @@ test("a row waiting on a person says who, and a stall doesn't colour it (#764)",
   assert.equal(chipOf({ ...block, block: { state: "needs_input" } }, null, waitingOf({ ask })).state, "waiting on Sam");
   assert.equal(chipOf({ ...block, released: true }, null, waitingOf({ ask })).state, "idle", "an agent taken off the row doesn't carry it");
   assert.equal(chipOf(block, "stalled 2h", null).state, "stalled 2h");
+});
+
+test("a row's live session: the one that needs you first, then working, then stopped, then those that no longer move the row; the latest attached first among equals", () => {
+  const block = (id, state, extra = {}) => ({ id, role: "work", pointer: { kind: "block", machine: "m1", pane: id.slice(-1) }, block: { state, ...extra } });
+  const ses = (session, state, live = true) => ({ session, state, live, branch: `arugula/${session}-fix` });
+  const keys = (r, w) => liveSessions(r, w).map((s) => s.key);
+  assert.deepEqual(keys({ attachments: [block("a1", "idle"), block("a2", "working"), block("a3", "idle")] }), ["a2", "a3", "a1"]);
+  assert.deepEqual(keys({ attachments: [block("a1", "working"), block("a2", "needs_input")], sessions: [ses("s1", "working")] }), ["a2", "s1", "a1"]);
+  // Closed, released and stopped ones come last; proof and other pointers aren't sessions.
+  assert.deepEqual(
+    keys({ attachments: [block("a1", "closed"), { ...block("a2", "working"), released: true }, { ...block("a3", "idle"), role: "proof" }, { id: "a4", role: "work", pointer: { kind: "issue", id: "iss_1" } }, block("a5", "idle")], sessions: [ses("s1", "done", false)] }),
+    ["a5", "s1", "a2", "a1"],
+  );
+  // The agent that holds the row waits with its open ask.
+  const [held] = liveSessions({ attachments: [block("a1", "idle", { title: "Fixer", branch: "arugula/x", head: "abc1234", diffstat: { files: 2, added: 5, removed: 1 } })] }, { words: "waiting for you", mine: true });
+  assert.deepEqual(held, { kind: "block", key: "a1", machine: "m1", pane: "1", name: "Fixer", word: "waiting for you", tone: "accent", facts: ["arugula/x@abc1234", "2 files, +5 −1"], needs: true });
+  const [hosted] = liveSessions({ attachments: [], sessions: [ses("s9", "needs_input")] });
+  assert.deepEqual(hosted, { kind: "hosted", key: "s9", session: "s9", live: true, name: "s9-fix", word: "needs input", tone: "accent", facts: [], needs: true });
+  assert.deepEqual(liveSessions({ attachments: [] }), []);
 });

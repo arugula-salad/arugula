@@ -3,7 +3,7 @@
 // typed as a pointer. Plain functions, for the view and its tests
 // (scripts/boards.test.mjs).
 
-import type { BoardSource, BoardAsk, BoardAttachment, BoardBlockState, BoardBlockWord, BoardGroup, BoardLane, BoardMark, BoardProgress, BoardLive, BoardLiveState, BoardPointer, BoardProof, BoardRow, BoardRowRelation, BoardView, BoardWorkItem, BoardZone, ProjectBoard, RelationKind, OnIssue } from "../proto";
+import type { BoardSource, BoardAsk, BoardAttachment, BoardBlockState, BoardBlockWord, BoardGroup, BoardLane, BoardMark, BoardProgress, BoardLive, BoardLiveState, BoardPointer, BoardProof, BoardRow, BoardRowRelation, BoardRowSession, BoardView, BoardWorkItem, BoardZone, ProjectBoard, RelationKind, OnIssue } from "../proto";
 import type { Tone } from "../ui/state-chip";
 
 /** A row's lane as its glyph. A row asking for input shows `?` instead. */
@@ -227,6 +227,31 @@ export function blockFacts(b: BoardBlockState): string[] {
   const d = b.diffstat;
   if (d) out.push(`${d.files} file${d.files === 1 ? "" : "s"}, +${d.added} −${d.removed}`);
   return out;
+}
+
+/** One of a row's work sessions, as the drawer's Live session picks among them (Arugula iss_c62e00eee3b4b953ff054d2951827de8): an agent block on a machine (`machine` blank when the reader isn't told which), or a session on a hosted box. `word` and `tone` are its state; `facts` its branch and the rest, short. */
+export type LiveSession = { key: string; name: string; word: string; tone: Tone; facts: string[]; needs: boolean } & ({ kind: "block"; machine: string; pane: string } | { kind: "hosted"; session: string; live: boolean });
+
+/** A row's work sessions, the one to show first first: one that needs a person, then one working, then one stopped, then those that no longer move the row. Nothing says when each last moved, so among equals the one attached last comes first. `waiting` is the row's open ask (`waitingOf`): the agent that holds the row waits with it. */
+export function liveSessions(r: Pick<BoardRow, "attachments"> & Partial<Pick<BoardRow, "sessions">>, waiting?: { words: string; mine: boolean } | null): LiveSession[] {
+  const out: (LiveSession & { rank: number; at: number })[] = [];
+  r.attachments.forEach((a, at) => {
+    const p = a.pointer;
+    if (a.role !== "work" || p.kind !== "block") return;
+    const b = a.block;
+    const holds = holdsRow(a);
+    const asks = !!waiting && holds;
+    const needs = b?.state === "needs_input" || (asks && waiting!.mine);
+    const word = asks ? waiting!.words : b ? BLOCK_LABEL[b.state] : "not reported";
+    const rank = needs ? 0 : !holds ? 3 : b!.state === "working" ? 1 : 2;
+    out.push({ kind: "block", key: a.id, machine: p.machine, pane: p.pane, name: b?.title?.trim() || pointerLabel(p, a.live), word, tone: needs ? "accent" : "muted", facts: b ? blockFacts(b) : [], needs, rank, at });
+  });
+  (r.sessions ?? []).forEach((x: BoardRowSession, i) => {
+    const needs = x.live && x.state === "needs_input";
+    const rank = needs ? 0 : !x.live ? 3 : x.state === "working" || x.state === "queued" ? 1 : 2;
+    out.push({ kind: "hosted", key: x.session, session: x.session, live: x.live, name: x.branch.replace(/^arugula\//, ""), word: x.state.replace(/_/g, " "), tone: needs ? "accent" : "muted", facts: [], needs, rank, at: r.attachments.length + i });
+  });
+  return out.sort((a, b) => a.rank - b.rank || b.at - a.at).map(({ rank: _r, at: _a, ...s }) => s as LiveSession);
 }
 
 /** A lane's rows, and how many of them are proven (only the Done lane has

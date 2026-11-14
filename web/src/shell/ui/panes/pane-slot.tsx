@@ -20,7 +20,7 @@ import { px } from "./geometry";
 import { Chip } from "../../../shared/ui/state-chip";
 
 /** Where hidden panes' terminals live: off the page but still alive. */
-const parking = document.createElement("div");
+export const parking = document.createElement("div");
 parking.id = "parking";
 document.body.appendChild(parking);
 

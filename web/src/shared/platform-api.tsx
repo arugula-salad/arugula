@@ -98,6 +98,8 @@ export interface PlatformApi {
   sessionHref?(project: string, ses: string): string;
   /** Docs kept on a machine (#517): the shell opens one in a block when it is on that machine (`here`), beside the board block's pane when `beside` is given, and the platform page omits this. */
   machineDoc?: { here(machine: string): boolean; open(machine: string, doc: string, beside?: number): void };
+  /** A live pane in a fixed slot: the shell draws its own PaneSlot; a page that can't draw one leaves it out and the drawer shows the session's state card. */
+  LivePane?: ComponentType<{ machine: string; pane: string }>;
 }
 
 const none = () => () => {};

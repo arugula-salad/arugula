@@ -992,3 +992,8 @@
   box-sizing: border-box;
   margin-bottom: 12px;
 }
+
+/* The drawer's Live session: its state card, above the pane where the page draws one. */
+.board-live-state {
+  margin: 6px 0;
+}

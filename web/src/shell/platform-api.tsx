@@ -14,6 +14,7 @@ import { isThisMachine } from "./this-machine";
 import { openDoc } from "./ui/docs-route";
 import { openPlatform, platformHref } from "./platform-links";
 import { getFleet } from "./ui/hosts";
+import { LiveSlot } from "./ui/panes/live-slot";
 import { getControlSession } from "./ui/people";
 import { openChat, openChatView, openRoom } from "./ui/places";
 import { closeRoomDrawer } from "./ui/threads";
@@ -43,6 +44,11 @@ function fleetPane(machine: string | null | undefined, pane: number | string): F
 
 function build(client: Client): PlatformApi {
   const toast = (s: string) => client.toast(s);
+  /** Whether `machine` is the one this page's client is, and up. */
+  const here = (machine: string) => {
+    const h = getFleet()?.hostById(machine);
+    return !!h && h.state === "connected" && isThisMachine(client.base, () => directory.base(h.name));
+  };
   return {
     teams: () => getControlSession()?.teams ?? [],
     subscribe(fn) {
@@ -99,13 +105,11 @@ function build(client: Client): PlatformApi {
     },
     // A Doc on this machine opens in a block here; one on another stays where it is.
     machineDoc: {
-      here: (machine) => {
-        const fleet = getFleet();
-        const h = fleet?.hostById(machine);
-        return !!h && h.state === "connected" && isThisMachine(client.base, () => directory.base(h.name));
-      },
+      here,
       open: (_machine, doc, beside) => void openDoc(client, doc, beside).then((why) => why && toast(`Couldn't open the Doc: ${why}`)),
     },
+    // A pane of this machine, in a board drawer's Live session; another machine's opens there.
+    LivePane: ({ machine, pane }) => (here(machine) ? <LiveSlot client={client} pane={Number(pane)} /> : null),
     // Chat's page, which draws the bar, isn't the shell's (M155).
     Bar: ({ children }) => <>{children}</>,
     quote: { can: () => (getFleet()?.list.length ?? 0) > 0, Picker: QuotePicker },
