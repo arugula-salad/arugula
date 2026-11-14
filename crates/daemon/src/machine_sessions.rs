@@ -109,7 +109,7 @@ pub(crate) fn report(sessions: &[Session], panes: &[Pane]) -> MachineSessionsRep
                 .filter(|p| p.session == s.id)
                 .filter_map(|p| {
                     Some(MachineSessionPane {
-                        pane: u32::try_from(p.id).ok()?,
+                        pane: p.id,
                         kind: serde_json::to_value(p.kind).ok()?.as_str()?.to_owned(),
                         work_item: p.place.work_item.clone().filter(|w| own.work_item.as_ref() != Some(w)),
                     })
@@ -168,7 +168,7 @@ impl Sessions {
     }
 
     /// The list as it is now: what to send of it, if anything.
-    pub fn to_send(&mut self, now: MachineSessionsReport, at: Instant) -> Option<MachineSessionsReport> {
+    pub fn worth_sending(&mut self, now: MachineSessionsReport, at: Instant) -> Option<MachineSessionsReport> {
         self.looked = Some(at);
         self.dirty = false;
         (self.force || self.last.as_ref() != Some(&now)).then_some(now)
@@ -294,20 +294,20 @@ mod tests {
         let two = report(&[session(1, Some("prj_1"), Some("#7"))], &[]);
         let mut s = Sessions::default();
         assert!(s.look(t), "at first");
-        let sent = s.to_send(one.clone(), t).expect("the first list");
+        let sent = s.worth_sending(one.clone(), t).expect("the first list");
         s.answered(sent, Ok(()), t);
         assert!(!s.look(t + Duration::from_secs(2)), "nothing changed, and it's not time to look");
         s.changed();
         s.changed();
         assert!(s.look(t + Duration::from_secs(2)));
-        assert_eq!(s.to_send(one.clone(), t + Duration::from_secs(2)), None, "the same list isn't sent again");
+        assert_eq!(s.worth_sending(one.clone(), t + Duration::from_secs(2)), None, "the same list isn't sent again");
         assert!(!s.look(t + Duration::from_secs(4)), "two changes, one look");
         assert!(s.look(t + Duration::from_secs(2) + LOOK), "looked at after a while");
-        assert_eq!(s.to_send(two.clone(), t + LOOK), Some(two.clone()), "a changed list goes");
+        assert_eq!(s.worth_sending(two.clone(), t + LOOK), Some(two.clone()), "a changed list goes");
         s.answered(two.clone(), Ok(()), t + LOOK);
         s.again();
         assert!(s.look(t + LOOK));
-        assert_eq!(s.to_send(two.clone(), t + LOOK), Some(two), "whole when every block is sent again");
+        assert_eq!(s.worth_sending(two.clone(), t + LOOK), Some(two), "whole when every block is sent again");
     }
 
     /// A control without the route answers 404: nothing more is sent until
@@ -317,7 +317,7 @@ mod tests {
         let t = Instant::now();
         let one = report(&[session(1, None, None)], &[]);
         let mut s = Sessions::default();
-        let sent = s.to_send(one.clone(), t).unwrap();
+        let sent = s.worth_sending(one.clone(), t).unwrap();
         let not_found = CloudRefused::Said { status: 404, said: "not found".into(), reason: None };
         s.answered(sent, Err(not_found), t);
         s.changed();
@@ -332,14 +332,14 @@ mod tests {
         let t = Instant::now();
         let one = report(&[session(1, None, None)], &[]);
         let mut s = Sessions::default();
-        let sent = s.to_send(one.clone(), t).unwrap();
+        let sent = s.worth_sending(one.clone(), t).unwrap();
         s.answered(sent, Err(CloudRefused::Unreachable("down".into())), t);
         s.changed();
         assert!(!s.look(t + Duration::from_secs(2)), "waits");
         assert!(s.look(t + TROUBLE));
-        assert_eq!(s.to_send(one.clone(), t + TROUBLE), Some(one.clone()), "the same list, again");
+        assert_eq!(s.worth_sending(one.clone(), t + TROUBLE), Some(one.clone()), "the same list, again");
         let refused = CloudRefused::Said { status: 422, said: "no".into(), reason: None };
         s.answered(one.clone(), Err(refused), t + TROUBLE);
-        assert_eq!(s.to_send(one, t + TROUBLE + LOOK), None);
+        assert_eq!(s.worth_sending(one, t + TROUBLE + LOOK), None);
     }
 }

@@ -431,7 +431,7 @@ async fn tell_sessions(app: &App, sessions: &mut Sessions) {
     }
     let (Some(all), Some(panes)) = (app.mux.api(Api::Sessions).await, app.mux.api(Api::Panes).await) else { return };
     let panes: Vec<Pane> = panes.iter().map(Pane::of).collect();
-    let Some(report) = sessions.to_send(machine_sessions::report(&all, &panes), now) else { return };
+    let Some(report) = sessions.worth_sending(machine_sessions::report(&all, &panes), now) else { return };
     let body = match serde_json::to_value(&report) {
         Ok(b) => b,
         Err(e) => return warn!("this machine's sessions: {e}"),
