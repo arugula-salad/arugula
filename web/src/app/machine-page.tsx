@@ -159,7 +159,7 @@ function Place({ project, at, b: { machines, cell } }: { project: string; at: Ma
   return (
     // What a pane's thread and blocks reach the machine through (M147).
     <PlatformApiContext.Provider value={shellPlatformApi(client)}>
-      <MachineView client={client} cell={cell} pop={pop} frame="app" />
+      <MachineView client={client} cell={cell} pop={pop} frame="app" onSwarm={() => go(pathOf({ page: "machines", project, at: { at: "swarm" } }, names))} />
       {/* The machine page's own Swarm (`#swarm`), as on control's page. */}
       <Swarm machines={machines} client={client} ready={() => true} />
       <AgentDialogLayer />

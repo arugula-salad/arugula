@@ -98,11 +98,29 @@ export function Overrides({ p }: { p: PlatformProject }) {
     setBusy(false);
   };
   const defaults = pathOf({ page: "owner-settings", owner }, names);
+  const members = team ? pathOf({ page: "team", team: owner, tab: "members" }, names) : null;
   return (
     <Section
       id="overrides"
       title="Overrides"
-      lede={`Each setting follows ${team ? `${team}'s` : "your"} default unless this project chooses its own.`}
+      lede={
+        <>
+          Each setting follows {team ? `${team}'s` : "your"} default unless this project chooses its own.
+          {/* A team's settings and roster, which the project switcher linked before (Arugula #989): in sight, not behind More. */}
+          {members && (
+            <>
+              {" "}
+              <a href={defaults} data-overrides-team-settings onClick={(e) => follow(e, defaults)}>
+                {team}'s settings
+              </a>
+              {" · "}
+              <a href={members} data-overrides-members onClick={(e) => follow(e, members)}>
+                {team}'s members
+              </a>
+            </>
+          )}
+        </>
+      }
       more={
         <p>
           The defaults are in{" "}

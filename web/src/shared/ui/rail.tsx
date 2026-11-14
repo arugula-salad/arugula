@@ -26,15 +26,20 @@ export type RailItem = {
   target?: string;
 };
 
-export function Rail({ brand, items, bottom, label = "Places" }: { brand: ComponentChildren; items: RailItem[]; bottom: RailItem[]; label?: string }) {
+/** A line between groups of places (the app's: the project's, then the
+ * team's, Arugula #989). */
+export const RAIL_LINE = "line" as const;
+
+export function Rail({ brand, items, bottom, foot, label = "Places" }: { brand: ComponentChildren; items: (RailItem | typeof RAIL_LINE)[]; bottom: RailItem[]; foot?: ComponentChildren; label?: string }) {
   return (
     <nav class="ws-rail" aria-label={label}>
       {brand}
-      {items.map((item) => <RailButton key={item.hook} item={item} />)}
+      {items.map((item, i) => (item === RAIL_LINE ? <div key={`line-${i}`} class="ws-rail-line" role="separator" /> : <RailButton key={item.hook} item={item} />))}
       <div class="ws-rail-fill" />
       {bottom.map((item) => (
         <RailButton key={item.hook} item={item} />
       ))}
+      {foot}
     </nav>
   );
 }

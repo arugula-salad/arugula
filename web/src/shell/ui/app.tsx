@@ -63,7 +63,8 @@ import { shellTitle } from "./titles";
  * holds the places instead. */
 export type Frame = "own" | "app";
 
-export function App({ client, cell, frame = "own" }: { client: Client; cell: Cell; frame?: Frame }) {
+/** `onSwarm`: the app's Swarm, offered among the machine's places. */
+export function App({ client, cell, frame = "own", onSwarm }: { client: Client; cell: Cell; frame?: Frame; onSwarm?: () => void }) {
   useSubscribe((fn) => client.subscribe(fn));
   const phone = usePhone();
   const [renaming, setRenaming] = useState<Renaming>(null);
@@ -176,7 +177,7 @@ export function App({ client, cell, frame = "own" }: { client: Client; cell: Cel
       <div class={stale ? "app ws frame stale" : "app ws frame"}>
         {frame === "own" && <Rail client={client} />}
         <div class="ws-shell-body">
-          <ContextHeader client={client} setRenaming={setRenaming} />
+          <ContextHeader client={client} setRenaming={setRenaming} onSwarm={onSwarm} />
           <div class="ws-row">
             <SessionSidebar client={client} renaming={renaming} setRenaming={setRenaming} />
             <div class="ws-work">

@@ -33,19 +33,34 @@ window.fetch = async (input, init) => {
   if (url.pathname === "/api/projects")
     return json({
       me: { account: "acct_a", login: "sam", name: "Sam" },
-      projects: [{ id: "prj_aaaa0002", name: "Team", team: { id: "tm_1", name: "Team", role: "owner", members: [] } }],
+      projects: [
+        { id: "prj_aaaa0001", name: "Personal", owner: { kind: "personal" }, team: null },
+        { id: "prj_aaaa0002", name: "Arugula", owner: { kind: "team", id: "tm_1", name: "Arugula team" }, team: { id: "tm_1", name: "Arugula team", role: "owner", members: [] } },
+        { id: "prj_aaaa0003", name: "Site", owner: { kind: "team", id: "tm_1", name: "Arugula team" }, team: null },
+      ],
       hosted: false,
     });
+  // What wants you: three things in Arugula, and a PR of a repo's (no project's).
+  if (url.pathname === "/api/inbox") {
+    const entry = (n: number, project: string | null) => ({ item: `iss_${n}`, reason: "assigned", repo: "acme/app", number: n, kind: "issue", state: "open", title: `Thing ${n}`, author: null, url: "", project, seen_at: null });
+    return json({ entries: [entry(1, "prj_aaaa0002"), entry(2, "prj_aaaa0002"), entry(3, "prj_aaaa0002"), entry(4, null)] });
+  }
+  if (url.pathname === "/api/deploys/waiting") return json({ deploys: [] });
+  // A project's settings and its owner's defaults: none set.
+  if (/^\/api\/(projects|owners)\/[^/]+\/settings$/.test(url.pathname)) return json([]);
   // The platform's chat and settings aren't this page's to show.
   if (url.pathname.startsWith("/api/chat") || url.pathname.startsWith("/api/notify")) return json({ error: "not here" }, 404);
   return realFetch(input, init);
 };
 
+// In the frame, as app.html's root is (shared/frame.css).
+const root = document.getElementById("root")!;
+root.classList.add("frame");
 render(
   <PlatformApiContext.Provider value={{ ...platformApi, Machines: appMachines(() => null) }}>
     <PlatformPage />
     <MenuLayer />
     <PromptLayer />
   </PlatformApiContext.Provider>,
-  document.getElementById("root")!,
+  root,
 );

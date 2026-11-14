@@ -25,7 +25,8 @@ export function ChatPage({ project, route, children }: { project: string; route:
   const scope: ChatScope | undefined = p ? { team: p.team?.id ?? null, name: p.name } : undefined;
   return (
     <div class="platform platform-chat" data-platform-chat>
-      <WithRail>
+      {/* On a phone, the places' bar is under the rooms, not a room's composer. */}
+      <WithRail tabs={!route.room && !route.view}>
         <ChatApp route={route} scope={scope} />
       </WithRail>
       <ChatArrival />

@@ -149,6 +149,8 @@ function Wave({ p, filter }: { p: PlatformProject; filter: WaveFilter }) {
       ? "me"
       : (w?.askers.find(([a]) => a === filter.asker)?.[1] ?? "one");
   const waiting = w?.sessions.filter((s) => s.waiting).length ?? 0;
+  const runsTo = pathOf({ page: "runs", project: p.id }, names);
+  const workspacesTo = pathOf({ page: "workspaces", project: p.id }, names);
 
   return (
     <section
@@ -157,6 +159,19 @@ function Wave({ p, filter }: { p: PlatformProject; filter: WaveFilter }) {
     >
       <PageHeader
         title="Agent sessions"
+        // Runs and cloud workspaces left the bar (Arugula #989, decision 6): they're here.
+        actions={
+          <>
+            <a class="secondary" href={runsTo} data-sessions-runs onClick={(e) => follow(e, runsTo)}>
+              Runs
+            </a>
+            {session.hosted && (
+              <a class="secondary" href={workspacesTo} data-sessions-workspaces onClick={(e) => follow(e, workspacesTo)}>
+                Workspaces
+              </a>
+            )}
+          </>
+        }
         sub="The project's agent sessions, newest first: where each runs, its branch and last push, and what waits on you. Narrow it to a track by its issues' label, or by a tracker issue."
         stats={
           !!w?.sessions.length && (
