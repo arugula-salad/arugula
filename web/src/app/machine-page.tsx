@@ -24,6 +24,7 @@ import { Chip, StateChip } from "../shared/ui/state-chip";
 import { directory } from "../shell/hosts";
 import { followSource, Machines } from "../shell/machines";
 import { shellPlatformApi } from "../shell/platform-api";
+import { whatItDoes } from "../shell/swarm/model";
 import { SwarmView } from "../shell/swarm/view";
 import { AgentDialogLayer, startAgent } from "../shell/ui/agent-dialog";
 import { measureCell, type Cell } from "../shell/ui/cells";
@@ -31,10 +32,11 @@ import { installKeys } from "../shell/ui/keys";
 import { MachineView, Swarm } from "../shell/views";
 import { names } from "../platform/links";
 import { current, follow, go, pathOf } from "../platform/router";
-import type { Fleet } from "../shell/fleet";
+import type { Fleet, FleetHost } from "../shell/fleet";
 import { ROLE_WORDS, rowsOf, sessionsLine, sortRows } from "./machine-list";
 import type { AppSession } from "./session";
 import type { Client } from "../shell/client";
+import { LiveSlot } from "../shell/ui/panes/live-slot";
 import { notePane } from "../platform/places-kept";
 
 interface Booted {
@@ -43,6 +45,8 @@ interface Booted {
 }
 
 let booted: Promise<Booted> | null = null;
+/** The machines, once booted: what `panes` reads. */
+let up: Booted | null = null;
 
 /** The page's machines, made once. */
 function boot(session: AppSession | null): Promise<Booted> {
@@ -87,8 +91,47 @@ function boot(session: AppSession | null): Promise<Booted> {
     const fit = () => document.documentElement.style.setProperty("--app-height", `${vv?.height ?? innerHeight}px`);
     vv?.addEventListener("resize", fit);
     fit();
-    return { machines, cell: await measureCell() };
+    up = { machines, cell: await measureCell() };
+    return up;
   })());
+}
+
+/** `PlatformApi.panes`' reads (a project's Sessions, Arugula inversion
+ * L3): the machines booted as for their own places, and every machine's
+ * panes from the fleet's summaries. */
+export function watchPanes(session: AppSession | null, fn: () => void): () => void {
+  let off: (() => void) | null = null;
+  let live = true;
+  void boot(session).then(({ machines }) => {
+    if (!live) return;
+    const offs = [machines.fleet.subscribe(fn), directory.subscribe(fn), session?.subscribe(fn) ?? (() => {})];
+    off = () => offs.forEach((o) => o());
+    fn();
+  });
+  return () => {
+    live = false;
+    off?.();
+  };
+}
+
+/** A machine by control's id. On a daemon's own page (no session) its
+ * hosts carry no ids: the page's own daemon stands in, as `openPane` does. */
+function hostById(id: string, session: AppSession | null): FleetHost | undefined {
+  const fleet = up?.machines.fleet;
+  return fleet?.hostById(id) ?? (session ? undefined : fleet?.list.find((h) => h.name === directory.home));
+}
+
+/** Whose a machine is: its owner's name, null for the reader's own. */
+export function ownerOf(id: string, session: AppSession | null): string | null | undefined {
+  const h = hostById(id, session);
+  return h ? (h.owner ?? null) : undefined;
+}
+
+/** What a pane says it's doing (a swarm card's line), and its branch. */
+export function paneOf(id: string, pane: number, session: AppSession | null): { line: string; branch: string | null } | undefined {
+  const h = hostById(id, session);
+  const p = h && up?.machines.fleet.panes.find((x) => x.host === h.name && x.id === pane);
+  return p ? { line: whatItDoes(p), branch: p.info.branch ?? null } : undefined;
 }
 
 /** Once the session has first said what it has. */
@@ -169,6 +212,40 @@ function Place({ project, at, b: { machines, cell }, session }: { project: strin
       {/* The machine page's own Swarm (`#swarm`), as on control's page. */}
       <Swarm machines={machines} client={client} ready={() => true} />
       <AgentDialogLayer />
+    </PlatformApiContext.Provider>
+  );
+}
+
+/** A pane live, at its own size, for a project's Sessions (Open): its
+ * machine is the one shown, as on its own page, and the pane moves into
+ * this slot until it closes. */
+export function LiveHere({ session, machine, pane }: { session: AppSession | null; machine: string; pane: number }) {
+  const [b, setB] = useState<Booted | null>(up);
+  useEffect(() => {
+    let live = true;
+    void boot(session).then((x) => live && setB(x));
+    return () => void (live = false);
+  }, []);
+  useSubscribe((fn) => directory.subscribe(fn));
+  useSubscribe((fn) => b?.machines.fleet.subscribe(fn) ?? (() => {}));
+  const [, tick] = useState(0);
+  useEffect(() => b?.machines.onSwap(() => tick((n) => n + 1)), [b]);
+  const host = b ? hostById(machine, session) : undefined;
+  useEffect(() => {
+    if (host && directory.current !== host.name) directory.select(host.name);
+  }, [host?.name]);
+  if (!b) return <p class="dim" data-live-loading>Reaching your machines…</p>;
+  if (!host) return <p class="dim" data-live-missing>That machine isn't one this page reaches.</p>;
+  return <ClientLive key={b.machines.client.base} client={b.machines.client} pane={pane} />;
+}
+
+function ClientLive({ client, pane }: { client: Client; pane: number }) {
+  useSubscribe((fn) => client.subscribe(fn));
+  if (!client.connected || !client.state) return <p class="dim" data-live-loading>Reaching the machine…</p>;
+  if (!client.info(pane)) return <p class="dim" data-live-missing>That pane has closed.</p>;
+  return (
+    <PlatformApiContext.Provider value={shellPlatformApi(client)}>
+      <LiveSlot client={client} pane={pane} />
     </PlatformApiContext.Provider>
   );
 }

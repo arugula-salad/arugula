@@ -7,6 +7,7 @@
 import type { ComponentType } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import type { MachineAt } from "../shared/machine-paths";
+import type { PlatformApi } from "../shared/platform-api";
 import { useSubscribe } from "../shared/ui/hooks";
 import { OnControl } from "../platform/pages/machines";
 import type { AppSession } from "./session";
@@ -36,5 +37,40 @@ export function appMachines(session: () => AppSession | null): Place {
     if (!reachable) return <OnControl at={at} />;
     if (!page) return <p class="platform-section dim" data-machines-loading>Reaching your machines…</p>;
     return <page.MachinesPlace project={project} at={at} session={s} />;
+  };
+}
+
+/** `PlatformApi.panes` over `session`: the machine page's chunk, loaded
+ * and its machines booted once a view watches, while the hub reaches
+ * machines from this host. Until then, nothing is known. */
+export function appPanes(session: () => AppSession | null): NonNullable<PlatformApi["panes"]> {
+  let page: Page | null = null;
+  return {
+    watch(fn) {
+      const s = session();
+      if (s && s.reachable === false) return () => {};
+      let off: (() => void) | null = null;
+      let live = true;
+      void load().then((p) => {
+        page = p;
+        if (live) off = p.watchPanes(s, fn);
+      });
+      return () => {
+        live = false;
+        off?.();
+      };
+    },
+    owner: (machine) => page?.ownerOf(machine, session()),
+    pane: (machine, pane) => page?.paneOf(machine, pane, session()),
+    Live({ machine, pane }) {
+      const [p, setP] = useState<Page | null>(page);
+      useEffect(() => {
+        let live = true;
+        void load().then((x) => live && setP(() => x));
+        return () => void (live = false);
+      }, []);
+      if (!p) return <p class="dim" data-live-loading>Reaching your machines…</p>;
+      return <p.LiveHere session={session()} machine={machine} pane={pane} />;
+    },
   };
 }
