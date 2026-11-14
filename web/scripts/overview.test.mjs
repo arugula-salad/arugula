@@ -86,6 +86,13 @@ test("a pane finds its card by its agent's card number, by a row's attachment, a
   assert.equal(o.loose.length, 0);
 });
 
+test("a terminal in an agent's session is on the agent's card, though its session names no project", () => {
+  const on = { issue: "#1", boards: [{ project: P, board: "brd_a", title: "A", row: "r1" }] };
+  const panes = [pane("workstation", 1, { project: null, on_issue: on, agent: true }), pane("workstation", 2, { project: null })];
+  const o = overviewOf(P, [view("brd_a", "A", [row("r1", "doing", 1)])], panes, null, hostOf);
+  assert.deepEqual(o.boards[0].doing[0].sessions[0].panes.map((p) => p.key), ["workstation:1", "workstation:2"]);
+});
+
 test("Not on a card: the project's sessions that work on none, each a tile", () => {
   const panes = [pane("workstation", 1, { name: "Lead agent", agent: true, session: { id: 1, name: "Project Inversion" } }), pane("workstation", 2, { session: { id: 2, name: "scratch" }, name: "just check" }), pane("workstation", 3, { session: { id: 2, name: "scratch" } })];
   const o = overviewOf(P, [], panes, null, hostOf);

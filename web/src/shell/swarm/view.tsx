@@ -858,7 +858,9 @@ function Watching({ fleet, panes }: { fleet: Fleet; panes: FleetPane[] }) {
   );
 }
 
-function Card({
+/** One card of the rail: Swarm's, and the project Overview's Needs you
+ * (Arugula inversion, L6), which names the card its panes work on. */
+export function Card({
   b,
   fleet,
   focus,
@@ -868,9 +870,12 @@ function Card({
   follow,
   acted,
   back,
+  work,
 }: {
   b: Bundle;
   fleet: Fleet;
+  /** The card its panes work on, as the Overview names it (`#983 · Title`). */
+  work?: string | null;
   focus?: { host: string; pane: number } | null;
   show: () => void;
   open: () => void;
@@ -941,6 +946,11 @@ function Card({
         {n === 1 ? whatItDoes(first) : `${n} panes`} · {session ? `${session} · ` : ""}
         {machines.length > 1 ? `${machines.length} machines` : shortHost(machines[0])} · {project}
       </div>
+      {work && (
+        <div class="cm" data-card-work>
+          {work}
+        </div>
+      )}
       {diff ? null : ask?.kind === "permission" ? (
         <PermissionBody ask={ask} />
       ) : (

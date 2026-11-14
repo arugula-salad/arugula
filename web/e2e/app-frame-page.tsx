@@ -21,7 +21,7 @@ import { PlatformApiContext } from "../src/shared/platform-api";
 import { MenuLayer, PromptLayer } from "../src/shared/ui/menu";
 import { platformApi } from "../src/platform/api";
 import { PlatformPage } from "../src/platform/page";
-import { appMachines } from "../src/app/machines";
+import { appMachines, appOverview } from "../src/app/machines";
 import { chat } from "../src/shared/chat-store";
 import { localBackend, setSeenBackend } from "../src/shared/seen";
 
@@ -66,7 +66,7 @@ setSeenBackend(localBackend());
 const root = document.getElementById("root")!;
 root.classList.add("frame");
 render(
-  <PlatformApiContext.Provider value={{ ...platformApi, Machines: appMachines(() => null) }}>
+  <PlatformApiContext.Provider value={{ ...platformApi, Machines: appMachines(() => null), Overview: appOverview(() => null) }}>
     <PlatformPage />
     <MenuLayer />
     <PromptLayer />

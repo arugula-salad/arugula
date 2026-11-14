@@ -34,10 +34,12 @@ import { ProjectDocs } from "./docs";
 import { ProjectIssues } from "./issues";
 import { SessionNumbers } from "../session-stats";
 import { Count } from "../../shared/ui/state-chip";
+import { usePlatformApi } from "../../shared/platform-api";
 
 const ROLE: Record<string, string> = { owner: "Owner", editor: "Editor", viewer: "Viewer" };
 
-export function ProjectHome({ id }: { id: string }) {
+export function ProjectHome({ id, board, card }: { id: string; board?: string; card?: string }) {
+  const { Overview } = usePlatformApi();
   useSubscribe((fn) => session.subscribe(fn));
   useSubscribe((fn) => chat.subscribe(fn));
   const workspaces = useHostedWorkspaces(id);
@@ -45,12 +47,10 @@ export function ProjectHome({ id }: { id: string }) {
   const p = session.project(id);
   if (!p) return <Missing what="That project isn't one of yours (or it's gone)." />;
   const rooms = chat.on ? chat.rooms.filter((r) => (p.team ? r.team === p.team.id : !r.team) && (r.kind === "channel" || r.kind === "dm")) : [];
-  const boardsOn = boards !== null;
   const chatPath = pathOf({ page: "chat", project: p.id }, names);
   const settingsPath = pathOf({ page: "project-settings", project: p.id }, names);
   const workspacesPath = pathOf({ page: "workspaces", project: p.id }, names);
-  const nameOf = (account: string) =>
-    account === session.me?.account ? "you" : (p.team?.members.find((m) => m.account === account)?.name ?? "someone who left");
+  const sections = <HomeSections p={p} boards={boards} workspaces={workspaces} rooms={rooms} chatPath={chatPath} workspacesPath={workspacesPath} />;
   return (
     <section class="platform-section sw-page" data-project-home={p.id}>
       <PageHeader
@@ -62,8 +62,27 @@ export function ProjectHome({ id }: { id: string }) {
           </a>
         }
       />
-      {/* A project of one has no members beside it: its lists take the
-          page's width (UI audit #162). */}
+      {Overview ? (
+        <Overview project={p.id} board={board} card={card}>
+          {sections}
+        </Overview>
+      ) : (
+        sections
+      )}
+    </section>
+  );
+}
+
+/** What the project's page showed before the Overview, below it now: its
+ * drafts, chat, boards, issues, Docs, runs, repos, environments, cloud
+ * workspaces and people. */
+function HomeSections({ p, boards, workspaces, rooms, chatPath, workspacesPath }: { p: PlatformProject; boards: ReturnType<typeof useBoards>; workspaces: ReturnType<typeof useHostedWorkspaces>; rooms: typeof chat.rooms; chatPath: string; workspacesPath: string }) {
+  const boardsOn = boards !== null;
+  const nameOf = (account: string) =>
+    account === session.me?.account ? "you" : (p.team?.members.find((m) => m.account === account)?.name ?? "someone who left");
+  return (
+      /* A project of one has no members beside it: its lists take the
+          page's width (UI audit #162). */
       <div class={p.team ? "platform-columns" : "platform-columns solo"}>
         <div>
           <ProjectDrafts project={p.id} nameOf={nameOf} />
@@ -103,7 +122,6 @@ export function ProjectHome({ id }: { id: string }) {
         </div>
         {p.team && <Members p={p} />}
       </div>
-    </section>
   );
 }
 

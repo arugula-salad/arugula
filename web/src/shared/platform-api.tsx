@@ -105,6 +105,12 @@ export interface PlatformApi {
    * #989): the app's, where it reaches machines. A page without it sends
    * them to control's page. */
   Machines?: ComponentType<{ project: string; at: MachineAt }>;
+  /** A project's Overview (Arugula inversion, L6): its boards' cards in
+   * flight with the sessions on them, and Needs you, where the page reaches
+   * machines; `board` and `card` name the card whose drawer is open. Its
+   * children are what the project's page shows besides. A page without it
+   * shows those alone. */
+  Overview?: ComponentType<{ project: string; board?: string; card?: string; children?: ComponentChildren }>;
 }
 
 const none = () => () => {};

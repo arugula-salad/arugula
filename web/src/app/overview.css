@@ -1,0 +1,220 @@
+/* The project's Overview (./overview.tsx): the field of boards on the left,
+   Needs you on the right; on a phone, one list with Needs you on top. The
+   tiles are Cards; Needs you holds Swarm's own rail cards. */
+
+.ov {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: var(--space-3);
+  align-items: start;
+}
+.ov.phone {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.ov-field {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.ov-stats {
+  margin: 0;
+}
+
+.ov-board {
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
+  background: var(--bg);
+  padding: var(--space-3);
+}
+.ov-board-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.ov-board-head b {
+  font: 600 var(--text-md) var(--f-ui);
+}
+.ov-board-open {
+  margin-left: auto;
+  font-size: var(--text-sm);
+}
+.ov-progress {
+  height: 3px;
+  margin: var(--space-2) 0 var(--space-3);
+  border-radius: 2px;
+  background: var(--raised);
+  overflow: hidden;
+}
+.ov-progress i {
+  display: block;
+  height: 100%;
+  background: var(--ok);
+}
+
+.ov-lanes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+.ov-lane {
+  flex: 1 1 260px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.ov-lane h3 {
+  margin: 0;
+  font: 600 var(--text-xs) var(--f-ui);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+  color: var(--subtle);
+}
+
+.ov-tile {
+  cursor: pointer;
+}
+.ov-tile-top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+}
+.ov-tile-top > :last-child {
+  margin-left: auto;
+}
+.ov-tile-title {
+  display: block;
+  width: 100%;
+  margin: var(--space-1) 0 var(--space-2);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: 600 var(--text-md) / 1.3 var(--f-ui);
+  text-align: left;
+  cursor: pointer;
+}
+.ov-tile-title:hover {
+  text-decoration: underline;
+}
+
+/* A card that waits on you pulses. */
+.ov-pulse {
+  animation: ov-pulse 1.8s infinite;
+}
+@keyframes ov-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+/* A rail card's Find: the tile it's about, for a moment. */
+.ov-found {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ov-pulse {
+    animation: none;
+  }
+}
+
+.ov-sessions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.ov-loose .ov-sessions {
+  margin-top: var(--space-2);
+}
+.ov-session {
+  --c: var(--muted);
+  flex: 1 1 160px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--c);
+  border-radius: var(--field-radius);
+  background: var(--surface);
+  color: inherit;
+  font: var(--text-xs) var(--f-ui);
+  text-align: left;
+  cursor: pointer;
+}
+.ov-session:hover:not(:disabled) {
+  background: var(--raised);
+}
+.ov-session:disabled {
+  cursor: default;
+}
+.ov-session b {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ov-session.tone-accent {
+  --c: var(--accent);
+}
+.ov-session.tone-danger {
+  --c: var(--danger);
+}
+.ov-session.tone-warn {
+  --c: var(--warn);
+}
+.ov-session.tone-ok {
+  --c: var(--ok);
+}
+.ov-line {
+  font: var(--text-xs) / 1.35 var(--f-mono);
+  color: var(--subtle);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ov-more {
+  border-top: 1px solid var(--line);
+  padding-top: var(--space-3);
+}
+
+.ov-needs {
+  position: sticky;
+  top: 0;
+  max-height: calc(100vh - 80px);
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--line);
+  min-width: 0;
+}
+.ov.phone .ov-needs {
+  position: static;
+  max-height: none;
+  border-left: 0;
+}
+.ov-needs header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-3);
+}
+.ov-needs h2 {
+  margin: 0;
+  font: 600 var(--text-lg) var(--f-ui);
+}
+.ov-needs header span {
+  font: 500 var(--text-xs) var(--f-mono);
+  color: var(--subtle);
+}

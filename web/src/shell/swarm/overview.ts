@@ -111,7 +111,6 @@ export function overviewOf(project: string, views: BoardView[], panes: OvPane[],
         if (id && !byIssue.has(id)) byIssue.set(id, at);
         if (r.pointer.kind === "issue" && r.live?.kind === "native" && !byNumber.has(r.live.number)) byNumber.set(r.live.number, at);
       }
-  const byKey = new Map(panes.map((p) => [p.key, p]));
   const byBlock = new Map(panes.map((p) => [`${p.host}:${p.id}`, p.key]));
   const cardOf = new Map<string, { board: string; row: BoardRow } | null>();
   // 1. An agent's own: the board and row its `on_issue` names, else the card by its number.
@@ -151,15 +150,15 @@ export function overviewOf(project: string, views: BoardView[], panes: OvPane[],
       if (!keys.length) unseen.push({ card: at, s });
     }
   }
-  // Only the project's panes: its sessions', or those on its cards or in its list.
-  const mine = panes.filter((p) => p.project === project || p.on_issue?.project === project || !!cardOf.get(p.key) || listed.has(p.key));
   // 4. A session's card is its panes' card: a pane with none takes its session's.
   const sessionOf = (p: OvPane) => (p.session ? `${p.host}#${p.session.id}` : p.key);
   const sessionCard = new Map<string, { board: string; row: BoardRow }>();
-  for (const p of mine) {
+  for (const p of panes) {
     const at = cardOf.get(p.key);
     if (at && !sessionCard.has(sessionOf(p))) sessionCard.set(sessionOf(p), at);
   }
+  // Only the project's panes: its sessions', or those on its cards (or in a session on one) or in its list.
+  const mine = panes.filter((p) => p.project === project || p.on_issue?.project === project || !!cardOf.get(p.key) || sessionCard.has(sessionOf(p)) || listed.has(p.key));
   for (const p of mine) if (!cardOf.get(p.key)) cardOf.set(p.key, sessionCard.get(sessionOf(p)) ?? null);
 
   // The sessions: one tile per session per card, holding its panes on that card.
