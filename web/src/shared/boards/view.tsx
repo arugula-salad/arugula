@@ -195,11 +195,13 @@ export function BoardPanel({
     };
   }, [id, shown]);
 
-  // A link from a block or a session names a row, `#row=row_…` (#372):
-  // the card's drawer opens on it (decision 9), as a click on it would.
-  // Read as the board opens: keeping the filter in the URL replaces the hash.
-  const [named] = useState(() => location.hash.match(/^#row=(row_[0-9a-f]+)/)?.[1]);
-  const rowKey = view ? named : undefined;
+  // A link from a block or a session names a row, `#row=row_…` (#372),
+  // or what it points at (`#row=iss_…`, from Sessions, which knows a
+  // card's board but not its row): the card's drawer opens on it
+  // (decision 9), as a click on it would. Read as the board opens:
+  // keeping the filter in the URL replaces the hash.
+  const [named] = useState(() => location.hash.match(/^#row=([A-Za-z0-9_-]+)/)?.[1]);
+  const rowKey = view && named ? (view.zones.flatMap((z) => z.rows).find((r) => r.id === named || ("id" in r.pointer && r.pointer.id === named))?.id ?? named) : undefined;
   useEffect(() => {
     if (!rowKey) return;
     document.querySelector(`[data-board-row="${rowKey}"]`)?.scrollIntoView({ block: "center" });

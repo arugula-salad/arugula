@@ -23,7 +23,7 @@ import { MOVE_LANES } from "../../shared/boards/text";
 import { usePlatformApi } from "../../shared/platform-api";
 import { SectionHead } from "../../shared/ui/section-head";
 import { BY_CARD_EVERY_MS, sessionsByCard, type SessionCard, type SessionsByCard } from "../../shared/project-sessions";
-import { cardTitle, finished, groupsOf, panesShown, stateOfListed, waitsOn, type Group, type Listed } from "../sessions-by-card";
+import { branchOf, cardPlace, cardTitle, finished, groupsOf, panesShown, readsBoards, stateOfListed, waitsOn, type Group, type Listed } from "../sessions-by-card";
 import { chat } from "../../shared/chat-store";
 import { stateOf } from "../../shared/chat/session-card";
 import type { SessionRow, SessionWave } from "../../shared/proto.gen";
@@ -57,7 +57,9 @@ async function wave(project: string, f: WaveFilter): Promise<SessionWave> {
 }
 
 /** Where a card is on the project's boards: its board and row, its lane,
- * and the row's words (a card that isn't an issue is named by them). */
+ * and the row's words (a card that isn't an issue is named by them). From
+ * the by-card answer, `row` is the card's own id, which the board finds
+ * its row by, and there are no words. */
 interface Place {
   board: string;
   boardTitle: string;
@@ -67,10 +69,13 @@ interface Place {
 }
 
 /** The project's boards' rows, by what they point at and by their own id,
- * read once a page. None while they're read, or if they can't be. */
-function usePlaces(project: string): Map<string, Place> {
+ * read once a page, and only when `read`: the by-card answer places its
+ * cards itself, so this is for a cloud from before it said so. None while
+ * they're read, or if they can't be. */
+function usePlaces(project: string, read: boolean): Map<string, Place> {
   const [m, setM] = useState<Map<string, Place>>(new Map());
   useEffect(() => {
+    if (!read) return;
     let live = true;
     void boards
       .list(project)
@@ -89,7 +94,7 @@ function usePlaces(project: string): Map<string, Place> {
       })
       .catch(() => {});
     return () => void (live = false);
-  }, [project]);
+  }, [project, read]);
   return m;
 }
 
@@ -152,7 +157,14 @@ function Wave({ p, filter }: { p: PlatformProject; filter: WaveFilter }) {
     const t = setInterval(() => document.visibilityState === "visible" && setCardsTick((n) => n + 1), BY_CARD_EVERY_MS);
     return () => clearInterval(t);
   }, [p.id]);
-  const places = usePlaces(p.id);
+  // The boards are read only to place groups the by-card answer doesn't.
+  const places = usePlaces(p.id, cards !== undefined && readsBoards(cards));
+  const placeOf = (card: SessionCard | null): Place | undefined => {
+    if (!card) return undefined;
+    if (card.board === undefined) return places.get(card.id);
+    const at = cardPlace(card);
+    return at ? { ...at, row: card.id, words: "" } : undefined;
+  };
   // Each session's live event reads the wave again; so does a new one,
   // now and then, while any goes.
   const ids = (w?.sessions ?? []).map((s) => s.session).join(" ");
@@ -316,7 +328,7 @@ function Wave({ p, filter }: { p: PlatformProject; filter: WaveFilter }) {
         ))}
       <div data-sessions-list>
         {groups?.map((g) => (
-          <CardGroup key={g.card?.id ?? ""} p={p} g={g} place={g.card ? places.get(g.card.id) : undefined} />
+          <CardGroup key={g.card?.id ?? ""} p={p} g={g} place={placeOf(g.card)} />
         ))}
       </div>
       {w?.more && <p class="dim">More match than are listed: narrow it.</p>}
@@ -386,7 +398,8 @@ function CardGroup({ p, g, place }: { p: PlatformProject; g: Group; place: Place
           <>
             {place && (
               <span class="dim" data-sessions-card-place>
-                {place.boardTitle} · {place.lane}
+                {place.boardTitle}
+                {place.lane && ` · ${place.lane}`}
               </span>
             )}
             {card && (
@@ -433,6 +446,7 @@ function HostedLine({ p, s }: { p: PlatformProject; s: Listed }) {
   const src = s.src!;
   const st = stateOf(stateOfListed(s), false);
   const id = String(src.id);
+  const branch = branchOf(src);
   const path = id.startsWith("ses_") ? pathOf({ page: "session", project: p.id, session: id }, names) : null;
   return (
     <Card as="li" class="issue-row" tone={st.tone} data-session-row={id} data-session-state={stateOfListed(s)}>
@@ -446,6 +460,12 @@ function HostedLine({ p, s }: { p: PlatformProject; s: Listed }) {
         )}
         <span class="issue-row-meta dim">
           <StateChip tone={st.tone}>{st.label}</StateChip> · in a cloud workspace
+          {branch && (
+            <>
+              {" · "}
+              <code data-session-branch>{branch}</code>
+            </>
+          )}
         </span>
       </div>
     </Card>
@@ -470,7 +490,8 @@ function MachineRow({ s }: { s: Listed }) {
   useEffect(() => api.panes?.watch(() => tick((n) => n + 1)), [api.panes]);
   const on = src.on.kind === "machine" ? src.on : null;
   const owner = on ? api.panes?.owner(on.id) : undefined;
-  const branch = panes.map((x) => api.panes?.pane(x.machine, x.pane)?.branch).find(Boolean);
+  // Its branch as the cloud says it, else as its machine's panes do.
+  const branch = branchOf(src) ?? panes.map((x) => api.panes?.pane(x.machine, x.pane)?.branch).find(Boolean);
   const state = stateOfListed(s);
   const st = stateOf(state, false);
   const waits = waitsOn(s);
@@ -506,7 +527,7 @@ function MachineRow({ s }: { s: Listed }) {
           {branch && (
             <>
               {" · "}
-              <code>{branch}</code>
+              <code data-session-branch>{branch}</code>
             </>
           )}
           {src.updated_at > 0 && (

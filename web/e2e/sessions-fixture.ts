@@ -51,7 +51,7 @@ export const wave = (machine: string): SessionWave => ({
   sessions: [
     hosted("ses_0985aaaa", { issue: issue("iss_985", 985, "A project's Sessions page"), branch: "arugula/0985-sessions", state: "needs_input", settled: true, waiting: "its question", question: "Which lane?" }),
     hosted("ses_0970bbbb", { issue: issue("iss_970", 970, "The rail"), branch: "arugula/0970-rail", state: "stopped", settled: true }),
-    hosted("ses_0971dddd", { issue: issue("iss_970", 970, "The rail"), branch: "arugula/0970-rail-turn", state: "done", pushed_at: 1794000200000 }),
+    hosted("ses_0971dddd", { issue: issue("iss_970", 970, "The rail"), branch: "arugula/0970-rail-turn", state: "done", settled: true, pushed_at: 1794000200000 }),
     hosted("ses_0990cccc", { issue: issue("iss_990", 990, "Fold finished"), branch: "arugula/0990-fold", started_by: `Sam's agent on ${machine}` }),
   ],
   labels: ["inversion"],
@@ -62,42 +62,50 @@ export const wave = (machine: string): SessionWave => ({
 
 /** Every session in the project: `machine` is the reader's own computer,
  * whose pane `pane` is an agent on #970; Dana's computer has a release
- * terminal on no card. */
-export const byCard = (machine: string, pane: number): SessionsByCard => ({
-  project: PROJECT,
-  groups: [
-    {
-      card: { id: "iss_970", number: 970, title: "The rail" },
-      sessions: [
-        {
-          kind: "machine",
-          id: "7",
-          name: "rail-work",
-          on: { kind: "machine", id: machine, name: "sams-laptop" },
-          panes: [{ pane, kind: "terminal", work_item: "iss_970", state: "working" }],
-          updated_at: 1794000500000,
-        },
-        { kind: "hosted", id: "ses_0970bbbb", name: "arugula/0970-rail", on: { kind: "hosted" }, state: "stopped", updated_at: 1794000000000 },
-        { kind: "hosted", id: "ses_0971dddd", name: "arugula/0970-rail-turn", on: { kind: "hosted" }, state: "done", updated_at: 1794000200000 },
-      ],
-    },
-    {
-      card: { id: "iss_985", number: 985, title: "A project's Sessions page" },
-      sessions: [{ kind: "hosted", id: "ses_0985aaaa", name: "arugula/0985-sessions", on: { kind: "hosted" }, state: "needs_input", updated_at: 1794000000000 }],
-    },
-    {
-      card: null,
-      sessions: [
-        {
-          kind: "machine",
-          id: "2",
-          name: "release",
-          on: { kind: "machine", id: DANA, name: "danas-mini" },
-          panes: [{ pane: 3, kind: "terminal", work_item: null, state: null }],
-          updated_at: 1794000100000,
-        },
-        { kind: "agent", id: 9, name: "lead", on: { kind: "machine", id: DANA, name: "danas-mini" }, state: "exited", updated_at: 1794000000000 },
-      ],
-    },
-  ],
-});
+ * terminal on no card. #985 is on the board Launch, in Doing; #970 is on
+ * no board. `fields` false is a cloud from before the answer said cards'
+ * boards and lanes, sessions' branches and hosted ones' `settled`. */
+export const byCard = (machine: string, pane: number, fields = true): SessionsByCard => {
+  const answer: SessionsByCard = {
+    project: PROJECT,
+    groups: [
+      {
+        card: { id: "iss_970", number: 970, title: "The rail", board: null, lane: null },
+        sessions: [
+          {
+            kind: "machine",
+            id: "7",
+            name: "rail-work",
+            on: { kind: "machine", id: machine, name: "sams-laptop" },
+            panes: [{ pane, kind: "terminal", work_item: "iss_970", state: "working", branch: "arugula/0970-rail-pane" }],
+            branch: null,
+            updated_at: 1794000500000,
+          },
+          { kind: "hosted", id: "ses_0970bbbb", name: "arugula/0970-rail", on: { kind: "hosted" }, state: "stopped", settled: true, branch: "arugula/0970-rail", updated_at: 1794000000000 },
+          { kind: "hosted", id: "ses_0971dddd", name: "arugula/0970-rail-turn", on: { kind: "hosted" }, state: "done", settled: true, branch: "arugula/0970-rail-turn", updated_at: 1794000200000 },
+        ],
+      },
+      {
+        card: { id: "iss_985", number: 985, title: "A project's Sessions page", board: { id: "brd_00e2e0", title: "Launch" }, lane: "doing" },
+        sessions: [{ kind: "hosted", id: "ses_0985aaaa", name: "arugula/0985-sessions", on: { kind: "hosted" }, state: "needs_input", settled: true, branch: "arugula/0985-sessions", updated_at: 1794000000000 }],
+      },
+      {
+        card: null,
+        sessions: [
+          {
+            kind: "machine",
+            id: "2",
+            name: "release",
+            on: { kind: "machine", id: DANA, name: "danas-mini" },
+            panes: [{ pane: 3, kind: "terminal", work_item: null, state: null, branch: null }],
+            branch: null,
+            updated_at: 1794000100000,
+          },
+          { kind: "agent", id: 9, name: "lead", on: { kind: "machine", id: DANA, name: "danas-mini" }, state: "exited", branch: "main", updated_at: 1794000000000 },
+        ],
+      },
+    ],
+  };
+  if (fields) return answer;
+  return JSON.parse(JSON.stringify(answer, (k, v) => (["board", "lane", "branch", "settled"].includes(k) ? undefined : v)));
+};

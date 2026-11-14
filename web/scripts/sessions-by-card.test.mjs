@@ -2,7 +2,7 @@
 // `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cardTitle, finished, groupsOf, panesShown, waitsOn } from "../src/platform/sessions-by-card.ts";
+import { branchOf, cardPlace, cardTitle, finished, groupsOf, panesShown, readsBoards, waitsOn } from "../src/platform/sessions-by-card.ts";
 import { finishedStates, hubStanding, stateStanding } from "../src/shared/project-sessions.ts";
 import { DANA, byCard, wave } from "../e2e/sessions-fixture.ts";
 
@@ -52,6 +52,34 @@ test("finished: ended and waiting on no one", () => {
   assert.equal(finished(s("hosted:ses_0971dddd")), false, "a hosted done is a turn ended, not finished");
   assert.equal(finished(s(`agent:${DANA}.9`)), true);
   assert.equal(finished(s("machine:7")), false);
+});
+
+test("a hosted session whose turn ended and settled isn't finished: settled isn't ended", () => {
+  const src = { kind: "hosted", id: "ses_1", name: "arugula/1", on: { kind: "hosted" }, state: "done", settled: true, branch: "arugula/1", updated_at: 0 };
+  assert.equal(finished({ key: "hosted:ses_1", src, wave: null }), false);
+  const gs = groupsOf({ project: "p", groups: [{ card: null, sessions: [src] }] }, null, { narrowed: false, going: true });
+  assert.deepEqual(gs.flatMap((g) => g.sessions.map((s) => s.key)), ["hosted:ses_1"]);
+  assert.equal(finished({ key: "hosted:ses_1", src: { ...src, state: "stopped" }, wave: null }), true);
+});
+
+test("a session's branch: its own, else its panes', else not said", () => {
+  const b = byCard(M, 4);
+  assert.equal(branchOf(b.groups[0].sessions[0]), "arugula/0970-rail-pane");
+  assert.equal(branchOf(b.groups[0].sessions[2]), "arugula/0970-rail-turn");
+  assert.equal(branchOf(b.groups[2].sessions[1]), "main");
+  assert.equal(branchOf(b.groups[2].sessions[0]), null);
+  assert.equal(branchOf(byCard(M, 4, false).groups[0].sessions[0]), null, "a cloud from before branches");
+});
+
+test("a card's board and lane from the answer; the boards are read only when it doesn't say them", () => {
+  const b = byCard(M, 4);
+  assert.deepEqual(cardPlace(b.groups[1].card), { board: "brd_00e2e0", boardTitle: "Launch", lane: "Doing" });
+  assert.equal(cardPlace(b.groups[0].card), null, "on no board");
+  assert.equal(cardPlace(null), null);
+  assert.deepEqual(cardPlace({ id: "row_1", board: { id: "brd_1", title: "B" }, lane: null }), { board: "brd_1", boardTitle: "B", lane: "" });
+  assert.equal(readsBoards(b), false);
+  assert.equal(readsBoards(byCard(M, 4, false)), true, "a cloud from before the fields");
+  assert.equal(readsBoards(null), true, "the wave alone");
 });
 
 test("a row's panes: a machine session's, an agent's own, a hosted one's none", () => {
