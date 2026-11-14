@@ -2071,7 +2071,9 @@ async fn fake_threads(f: FakeThreads) -> String {
     let messages = move || {
         json!([
             { "seq": 1, "at": 1, "author": "a2", "name": "Sam", "text": "@geek can you look?", "quote": null,
-              "pane": null, "mentions": [me.clone()], "edited": null, "deleted": null, "imported": null, "agent": null },
+              "pane": null, "mentions": [me.clone()], "edited": null, "deleted": null, "imported": null, "agent": null,
+              "files": [{ "id": "cf_1", "name": "shot.png", "mime": "image/png", "kind": "image", "size": 18,
+                          "url": "/api/daemon/chat/rooms/ch_general/files/cf_1" }] },
             { "seq": 2, "at": 2, "author": "a1", "name": "Jake", "text": "on it", "quote": null, "pane": null,
               "mentions": [], "edited": null, "deleted": null, "imported": null,
               "agent": { "machine": "m1", "machine_name": "geek" } },
@@ -2112,6 +2114,21 @@ async fn fake_threads(f: FakeThreads) -> String {
             }),
         )
         .route(
+            // #538: a room's file, by the machine's grant; another room's
+            // refused as control refuses a room the grants don't reach.
+            "/api/daemon/chat/rooms/{id}/files/{file}",
+            get(|Path((id, file)): Path<(String, String)>| async move {
+                if (id.as_str(), file.as_str()) != ("ch_general", "cf_1") {
+                    let why = "geek has no threads.read grant over that room";
+                    return (StatusCode::FORBIDDEN, Json(json!({ "error": why, "reason": "agent_ungranted" })))
+                        .into_response();
+                }
+                let disposition = "inline; filename=\"shot.png\"; filename*=UTF-8''shot.png";
+                ([("content-type", "image/png"), ("content-disposition", disposition)], CHAT_PNG.to_vec())
+                    .into_response()
+            }),
+        )
+        .route(
             "/api/daemon/chat/replies",
             get(|| async {
                 let m = |seq: i64, text: &str, agent: Value| {
@@ -2142,6 +2159,9 @@ async fn fake_threads(f: FakeThreads) -> String {
     tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
     at
 }
+
+/// What [`fake_threads`] serves as a room's file.
+const CHAT_PNG: &[u8] = b"\x89PNG\r\n\x1a\nnot really";
 
 /// M198: an agent lists, reads (its mentions too), searches and posts in
 /// the owner's conversations through control, signed as this machine, with
@@ -2184,6 +2204,25 @@ async fn an_agent_reads_and_posts_in_conversations_through_control() {
     assert_eq!((&read["messages"][0]["seq"], &read["next_after_seq"]), (&json!(1), &json!(1)), "{read}");
     assert_eq!(read["messages"][0]["mentions_you"], true, "{read}");
     assert!(read["summary"].as_str().unwrap().contains("[1] Sam: @geek can you look?"), "{read}");
+    // #538: its file is listed by id, and saved beside the caller's pane to
+    // read; a room the grants don't reach is refused, nothing saved.
+    let said = read["summary"].as_str().unwrap();
+    assert!(said.contains("[files: shot.png (image/png, 18 bytes, file cf_1)]"), "{said}");
+    assert!(said.contains("read_thread with this room and file"), "{said}");
+    let why = refused(&s, "read_thread", json!({ "room": "ch_general", "file": "cf_1" })).await;
+    assert!(why.contains("beside your pane"), "{why}");
+    let mine = d.get("/api/panes")[0]["id"].as_u64().unwrap();
+    let inside = bridge_in(&d, Client::named("claude-code"), Some(mine)).await;
+    let saved = call(&inside, "read_thread", json!({ "room": "ch_general", "file": "cf_1" })).await;
+    let path = saved["path"].as_str().unwrap();
+    assert!(path.ends_with(".png") && path.contains(&format!("arugula-uploads/{mine}/")), "{saved}");
+    assert_eq!(std::fs::read(path).unwrap(), CHAT_PNG, "{saved}");
+    assert!(saved["summary"].as_str().unwrap().starts_with("Saved shot.png (18 bytes) from ch_general to "), "{saved}");
+    let why = refused(&inside, "read_thread", json!({ "room": "dm_ab", "file": "cf_1" })).await;
+    assert!(why.contains("no threads.read grant"), "{why}");
+    let why = refused(&inside, "read_thread", json!({ "room": "ch_general", "file": "../.." })).await;
+    assert!(why.contains("a file's id"), "{why}");
+    inside.cancel().await.unwrap();
     // #580: the unread replies to this machine's agents' posts, by thread; no room.
     let unread = call(&s, "read_thread", json!({ "replies": true })).await;
     assert_eq!(unread["threads"].as_array().map(Vec::len), Some(2), "{unread}");
@@ -2216,6 +2255,7 @@ async fn an_agent_reads_and_posts_in_conversations_through_control() {
     assert!(paths.contains(&"/api/daemon/chat/rooms/ch_general/messages?after=0&mentions=true"), "{paths:?}");
     assert!(paths.contains(&"/api/daemon/chat/search?q=on+it*&team=t1"), "{paths:?}");
     assert!(paths.contains(&"/api/daemon/chat/replies"), "{paths:?}");
+    assert!(paths.contains(&"/api/daemon/chat/rooms/ch_general/files/cf_1"), "{paths:?}");
     let post = calls.iter().find(|(p, _, _)| p == "/api/daemon/chat/rooms/iss_0123/messages").unwrap();
     assert_eq!(post.2, json!({ "text": "looking, @sam" }));
     assert!(calls.iter().all(|(_, auth, _)| auth.starts_with(&format!("v2 {} ", keys.id()))), "{calls:?}");

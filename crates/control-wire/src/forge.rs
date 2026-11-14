@@ -364,6 +364,11 @@ pub struct AgentMention {
     /// ignores it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub from_owner: bool,
+    /// The message's files (Arugula #538), each with its url at the
+    /// machine's address, so the session is told to look before it answers.
+    /// An older daemon ignores them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<crate::chat::ChatFile>,
 }
 
 /// What a machine's session is doing (#645).

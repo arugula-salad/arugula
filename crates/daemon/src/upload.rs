@@ -54,7 +54,7 @@ use crate::{
 /// The most one request carries; bigger files come in chunks.
 pub const CHUNK_MAX: usize = 4 << 20;
 /// The most one file may be.
-const FILE_MAX: u64 = 20 << 20;
+pub const FILE_MAX: u64 = 20 << 20;
 /// The most all the uploads on this host may come to.
 const QUOTA: u64 = 200 << 20;
 /// How long an upload is kept.

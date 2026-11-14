@@ -3052,6 +3052,56 @@ impl Control {
         self.cloud_raw(Some(Patience::AGENT), method, path_and_query, bytes, Some("application/octet-stream")).await
     }
 
+    /// A file's bytes from control (a chat file's, #538), and the name
+    /// control gave it (`Content-Disposition`'s, plain ASCII): refused past
+    /// `max` bytes before it's read. Waits out a maintenance window as an
+    /// agent's call does.
+    pub async fn cloud_file(&self, path: &str, max: u64) -> Result<(Vec<u8>, Option<String>), CloudRefused> {
+        let e = self.enrolled().ok_or(CloudRefused::NotJoined)?;
+        let mut waits = maintenance::Waits::new(Patience::AGENT);
+        loop {
+            let res = self
+                .http
+                .get(format!("{}{path}", e.saved.url))
+                .header(AUTH, self.sign(&e, "GET", path, &[]))
+                .send()
+                .await
+                .map_err(|e| CloudRefused::Unreachable(format!("{:#}", anyhow::Error::from(e))))?;
+            let status = res.status().as_u16();
+            if (200..300).contains(&status) {
+                if let Some(n) = res.content_length().filter(|n| *n > max) {
+                    return Err(CloudRefused::Said {
+                        status,
+                        said: format!("the file is {n} bytes: at most {max} can be saved here"),
+                        reason: None,
+                    });
+                }
+                let name = res
+                    .headers()
+                    .get(reqwest::header::CONTENT_DISPOSITION)
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(disposition_name);
+                let bytes = res.bytes().await.map_err(|e| CloudRefused::Unreachable(format!("{e:#}")))?;
+                return Ok((bytes.to_vec(), name));
+            }
+            let asked =
+                maintenance::retry_after(res.headers().get(reqwest::header::RETRY_AFTER).and_then(|v| v.to_str().ok()));
+            let got = res.bytes().await.map(|b| b.to_vec()).unwrap_or_default();
+            if maintenance::may_retry("GET", status, &got)
+                && let Some(wait) = waits.next(asked)
+            {
+                tokio::time::sleep(wait).await;
+                continue;
+            }
+            if maintenance::is_maintenance(status, &got) {
+                return Err(CloudRefused::Maintenance);
+            }
+            let v: serde_json::Value = serde_json::from_slice(&got).unwrap_or_default();
+            let said = v["error"].as_str().map_or_else(|| format!("control answered {status}"), str::to_owned);
+            return Err(CloudRefused::Said { status, said, reason: v["reason"].as_str().map(str::to_owned) });
+        }
+    }
+
     async fn cloud_raw(
         &self,
         patience: Option<Patience>,
@@ -3487,6 +3537,14 @@ pub enum CloudRefused {
     /// Control's platform is down for a maintenance window (M141), and it
     /// outlasted the call's patience.
     Maintenance,
+}
+
+/// The plain-ASCII name in a `Content-Disposition` (`filename="…"`), as
+/// control writes it for a chat file: None without one.
+fn disposition_name(v: &str) -> Option<String> {
+    let at = v.find("filename=\"")? + "filename=\"".len();
+    let name = &v[at..at + v[at..].find('"')?];
+    (!name.is_empty()).then(|| name.to_owned())
 }
 
 impl std::fmt::Display for CloudRefused {
@@ -4467,6 +4525,15 @@ pub(crate) mod tests {
     use arugula_e2e::{DeviceKeys, Kind};
 
     use super::*;
+
+    #[test]
+    fn a_files_name_is_the_ascii_one_control_gave() {
+        let v = "inline; filename=\"pasted 1.png\"; filename*=UTF-8''pasted%201.png";
+        assert_eq!(disposition_name(v).as_deref(), Some("pasted 1.png"));
+        assert_eq!(disposition_name("attachment"), None);
+        assert_eq!(disposition_name("inline; filename=\"\""), None);
+        assert_eq!(disposition_name("inline; filename=\"cut"), None);
+    }
 
     fn device(account: &str, kind: Kind) -> (DeviceKeys, Cert) {
         let keys = DeviceKeys::generate();

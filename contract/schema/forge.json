@@ -62,6 +62,13 @@
           "description": "Who wrote it, as people read it: a person's name, or \"Ada's agent\non geek\".",
           "type": "string"
         },
+        "files": {
+          "description": "The message's files (Arugula #538), each with its url at the\nmachine's address, so the session is told to look before it answers.\nAn older daemon ignores them.",
+          "items": {
+            "$ref": "#/$defs/ChatFile"
+          },
+          "type": "array"
+        },
         "from_owner": {
           "description": "Whether this machine's owner wrote it themselves (#665): a person's\npost, signed in as the account that owns the machine. Never set for an\nagent's post, the owner's own agents' included. The daemon tells the\nsession it's from its person; else from a teammate. An older daemon\nignores it.",
           "type": "boolean"
@@ -187,6 +194,68 @@
       "enum": [
         "added",
         "removed"
+      ],
+      "type": "string"
+    },
+    "ChatFile": {
+      "description": "One attached file, as the reader sees it. `url` is control's, for the\nroom's readers only (a session cookie, or an agent's token): the same\npath with `?download=1` downloads it.",
+      "properties": {
+        "height": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ChatFileKind"
+        },
+        "mime": {
+          "description": "What the bytes were sniffed as, never what the upload said.",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "size": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "url": {
+          "type": "string"
+        },
+        "width": {
+          "description": "An image's size in pixels, when its header gave it.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "mime",
+        "kind",
+        "size",
+        "url"
+      ],
+      "type": "object"
+    },
+    "ChatFileKind": {
+      "description": "How a file is shown: `Image`, `Video` and `Audio` inline (only types\nthat are safe to render: never SVG or HTML), anything else as a card\nthat downloads.",
+      "enum": [
+        "image",
+        "video",
+        "audio",
+        "file"
       ],
       "type": "string"
     },
