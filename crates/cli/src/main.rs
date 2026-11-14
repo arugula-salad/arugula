@@ -406,10 +406,11 @@ enum Command {
     /// daemon kept running after you log out); its code shows here, to approve from
     /// a signed-in device. Without: this machine.
     Join(cmd::join::Args),
-    /// Sign this CLI in to Arugula cloud, from a browser.
+    /// Sign this CLI in to Arugula cloud.
     ///
     /// So `--host NAME` reaches every machine on your account, directly or through
-    /// control's relay. Prints a link: click Allow on it in a browser that's signed in.
+    /// control's relay. Shows a code to approve from a signed-in device; `--browser`
+    /// prints a link to click Allow on in a signed-in browser instead.
     Login(cmd::login::Args),
     /// Sign this CLI out of Arugula cloud (or forget its device key).
     Logout,

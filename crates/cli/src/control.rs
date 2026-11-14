@@ -347,7 +347,7 @@ impl Enrolled {
         let (status, got) = self.api_raw(method, path, body)?;
         if status == 401 && matches!(self.how, How::Session(_)) {
             bail!(
-                "this CLI's sign-in to Arugula cloud at {} has ended: `arugula logout`, then `arugula login` again",
+                "this CLI's sign-in to Arugula cloud at {} has ended: `arugula logout`, then `arugula login --browser` again",
                 self.url
             );
         }
@@ -809,7 +809,7 @@ pub fn logged_in() -> bool {
 /// the loopback port it listens on (control's `app_login.rs`).
 const LOOPBACK_PATH: &str = "/arugula-signin";
 
-/// `arugula login`: a session of the account at `url`, from a browser
+/// `arugula login --browser`: a session of the account at `url`, from a browser
 /// that allows it (aru-141), the way the desktop app signs in: a verifier
 /// this CLI keeps, a ticket from control for it, and the grant the browser
 /// hands to this CLI's loopback port once someone signed in clicks Allow.
@@ -923,7 +923,7 @@ fn await_grant(listener: &std::net::TcpListener, ticket: &str, deadline: Instant
     });
     loop {
         if Instant::now() > deadline {
-            bail!("nobody allowed it in time; run `arugula login` again for a new link");
+            bail!("nobody allowed it in time; run `arugula login --browser` again for a new link");
         }
         if let Some(rx) = &pasted
             && let Ok(line) = rx.try_recv()
@@ -981,7 +981,7 @@ fn grant_in(address: &str, ticket: &str) -> Option<String> {
     (!grant.is_empty() && grant.len() <= 256 && grant.bytes().all(|c| c.is_ascii_hexdigit())).then(|| grant.to_owned())
 }
 
-/// `arugula login --device`: join the account at `url` as a `cli` device,
+/// `arugula login` (the default; `--device` is kept as a hidden no-op): join the account at `url` as a `cli` device,
 /// as before machine tokens (aru-141; it goes with the key code, #1007).
 /// Shows the link to approve on a signed-in device and waits; then checks the
 /// account before pinning it. The link carries a join secret (#760) when
@@ -1968,7 +1968,7 @@ mod tests {
         let e = Enrolled::for_tests_session(url.clone(), "ilg_session=s");
         assert_eq!(e.api("GET", "/api/directory", None).unwrap(), json!({ "daemons": [] }));
         let err = e.api("GET", "/api/directory", None).unwrap_err();
-        assert!(format!("{err:#}").contains("`arugula login` again"), "{err:#}");
+        assert!(format!("{err:#}").contains("`arugula login --browser` again"), "{err:#}");
         Enrolled::for_tests(url).api("GET", "/api/directory", None).unwrap();
         drop(server);
     }
