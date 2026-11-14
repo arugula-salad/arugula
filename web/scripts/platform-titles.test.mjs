@@ -24,7 +24,7 @@ test("each route has a title of its own", () => {
   assert.equal(t("/p/prj_aaaa-acme"), "Acme · Arugula");
   assert.equal(t("/p/prj_aaaa/runs"), "Runs · Acme · Arugula");
   assert.equal(t("/p/prj_aaaa/runs/run_cccc"), "ci.test · Acme · Arugula");
-  assert.equal(t("/p/prj_aaaa/sessions"), "Agent sessions · Acme · Arugula");
+  assert.equal(t("/p/prj_aaaa/sessions"), "Sessions · Acme · Arugula");
   assert.equal(t("/p/prj_aaaa/issues"), "Issues · Acme · Arugula");
   assert.equal(t("/p/prj_aaaa/issues/iss_bbbb-m265"), "#142 M265 the bar · Acme · Arugula");
   assert.equal(t("/p/prj_aaaa/issues/new"), "New issue · Acme · Arugula");

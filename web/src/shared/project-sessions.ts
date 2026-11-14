@@ -72,3 +72,42 @@ export function panesOf(sessions: ProjectSession[]): { machine: string; pane: nu
   }
   return out;
 }
+
+// What the hub's states mean, in one place, so the Overview and the
+// Sessions page agree on what waits on you and what has finished. The
+// daemons' words aren't settled yet: a word not listed reads as quiet.
+
+/** A person is waited on: a question, a permission. */
+const NEEDS = new Set(["needs_input", "waiting", "asks", "permission"]);
+const FAILED = new Set(["failed", "error"]);
+const WORKING = new Set(["working", "running"]);
+/** It ended and does nothing more on its own. A failure isn't among
+ * them: it stays in sight. */
+const FINISHED = new Set(["done", "stopped", "ended", "exited", "closed", "finished", "merged"]);
+
+/** How a session the hub names stands, by its states: what waits on you
+ * first, then a failure, then working, else quiet. */
+export type HubStanding = "needs" | "failed" | "working" | "quiet";
+
+/** A session's states: a machine session's panes' (unknown ones as ""),
+ * an agent's or a hosted session's own. */
+export function statesOf(s: ProjectSession): string[] {
+  return s.kind === "machine" ? s.panes.map((p) => p.state ?? "") : [s.state ?? ""];
+}
+
+export const waitsOnYou = (state: string | null | undefined): boolean => !!state && NEEDS.has(state);
+
+export function stateStanding(states: (string | null | undefined)[]): HubStanding {
+  if (states.some((x) => !!x && NEEDS.has(x))) return "needs";
+  if (states.some((x) => !!x && FAILED.has(x))) return "failed";
+  if (states.some((x) => !!x && WORKING.has(x))) return "working";
+  return "quiet";
+}
+
+export const hubStanding = (s: ProjectSession): HubStanding => stateStanding(statesOf(s));
+
+/** Whether every state says it has finished; none known (no panes, or
+ * states not said) isn't finished. */
+export function finishedStates(states: (string | null | undefined)[]): boolean {
+  return states.length > 0 && states.every((x) => !!x && FINISHED.has(x));
+}

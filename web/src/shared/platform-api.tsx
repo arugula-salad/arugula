@@ -107,6 +107,16 @@ export interface PlatformApi {
    * #989): the app's, where it reaches machines. A page without it sends
    * them to control's page. */
   Machines?: ComponentType<{ project: string; at: MachineAt }>;
+  /** Every machine's panes, where the page reaches machines (the app's,
+   * for a project's Sessions): `watch` reads them, calling `fn` as they
+   * change, until its answer is called. `owner` is whose a machine is (null:
+   * the reader's; undefined: not known), `pane` what a pane says it's doing
+   * and its branch. A page without it names machines alone. */
+  panes?: {
+    watch(fn: () => void): () => void;
+    owner(machine: string): string | null | undefined;
+    pane(machine: string, pane: number): { line: string; branch: string | null } | undefined;
+  };
   /** A project's Overview (Arugula inversion, L6): its boards' cards in
    * flight with the sessions on them, and Needs you, where the page reaches
    * machines; `board` and `card` name the card whose drawer is open. Its

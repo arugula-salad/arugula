@@ -61,7 +61,7 @@ export function titleOf(r: Route, k: Known): string {
     case "run":
       return parts(k.run(r.run) ?? "Run", p);
     case "sessions":
-      return parts("Agent sessions", p);
+      return parts("Sessions", p);
     case "session":
       return parts("Agent session", p);
     case "chat":
