@@ -103,10 +103,16 @@ test.beforeAll(async () => {
     .toBe("joined");
 });
 
+// A killed daemon can still be writing its state until it has exited: wait
+// for it before removing the directory (ENOTEMPTY otherwise).
 test.afterAll(async () => {
-  daemon?.kill();
+  if (daemon && daemon.exitCode === null && daemon.signalCode === null) {
+    const exited = new Promise((r) => daemon!.once("exit", r));
+    daemon.kill("SIGKILL");
+    await exited;
+  }
   control?.close();
-  if (state) rmSync(state, { recursive: true, force: true });
+  if (state) rmSync(state, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 });
 
 /** A machine token as the hub signs one; `ago` seconds old. */
