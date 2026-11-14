@@ -6,6 +6,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { chat } from "../shared/chat-store";
 import { useSubscribe } from "../shared/ui/hooks";
+import { usePlatformApi } from "../shared/platform-api";
 import { MaintenanceNote } from "../shared/ui/maintenance-note";
 import { PageHeader } from "../shared/ui/page-header";
 import { PlatformBar } from "./bar";
@@ -54,6 +55,7 @@ export function PlatformPage() {
 
 function Routed() {
   useSubscribe((fn) => session.subscribe(fn));
+  const { Machines } = usePlatformApi();
   const r = useRoute();
   useEffect(() => void session.load(), []);
   useSlug(r);
@@ -65,6 +67,8 @@ function Routed() {
   if (typeof s === "object") return <Shell><p class="platform-section control-error">{s.error}</p></Shell>;
   if (r.page === "chat") return <ChatPage project={r.project} route={{ room: r.room, msg: r.msg, thread: r.thread, view: r.view, q: r.q, all: r.all }}><Toast /></ChatPage>;
   if (r.page === "dm") return <ChatPage project={r.project} route={{ room: r.room, msg: r.msg, thread: r.thread }}><Toast /></ChatPage>;
+  // A machine's page has its own header (Arugula #989): the rail, then it.
+  if (r.page === "machines" && Machines) return <MachinesShell><MachinesPage project={r.project} at={r.at} /></MachinesShell>;
   return <Shell>{body(r, lost)}</Shell>;
 }
 
@@ -158,6 +162,17 @@ function Shell({ children }: { children: preact.ComponentChildren }) {
         <MaintenanceNote />
         <main class="platform-main">{children}</main>
       </WithRail>
+      <Toast />
+    </div>
+  );
+}
+
+/** The machines' places, beside the rail, with no bar: the machine page,
+ * Swarm and the list draw their own heads. */
+function MachinesShell({ children }: { children: preact.ComponentChildren }) {
+  return (
+    <div class="platform platform-machines" data-platform data-platform-machines>
+      <WithRail>{children}</WithRail>
       <Toast />
     </div>
   );

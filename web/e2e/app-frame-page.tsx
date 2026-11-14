@@ -1,0 +1,51 @@
+// The fixture page for the app's frame (Arugula #989): the app's own pages
+// (the platform's router, rail and pages) with its machine places
+// (`appMachines`), over the suite's daemon instead of the hub: the app's
+// machines with no session are a daemon's own page's, reached directly.
+// Only the platform's project list is made up. app-frame.spec.ts builds
+// this with Vite and serves it at /p/prj_aaaa0002/… on the daemon's
+// origin, so its requests and sockets reach the daemon.
+
+import { render } from "preact";
+import "../src/shared/fonts.css";
+import "../src/shared/style.css";
+import "../src/shared/frame.css";
+import "../src/platform/platform.css";
+import "../src/platform/swarm.css";
+import "../src/shared/ui/settings-section.css";
+import "../src/platform/settings.css";
+import "../src/platform/finish.css";
+import "../src/shared/buttons.css";
+import { startPageKey } from "../src/shell/local-key";
+import { PlatformApiContext } from "../src/shared/platform-api";
+import { MenuLayer, PromptLayer } from "../src/shared/ui/menu";
+import { platformApi } from "../src/platform/api";
+import { PlatformPage } from "../src/platform/page";
+import { appMachines } from "../src/app/machines";
+
+// The daemon's page key on this page's requests, as its own page has.
+await startPageKey();
+
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+const realFetch = window.fetch.bind(window);
+window.fetch = async (input, init) => {
+  const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.href);
+  if (url.pathname === "/api/projects")
+    return json({
+      me: { account: "acct_a", login: "sam", name: "Sam" },
+      projects: [{ id: "prj_aaaa0002", name: "Team", team: { id: "tm_1", name: "Team", role: "owner", members: [] } }],
+      hosted: false,
+    });
+  // The platform's chat and settings aren't this page's to show.
+  if (url.pathname.startsWith("/api/chat") || url.pathname.startsWith("/api/notify")) return json({ error: "not here" }, 404);
+  return realFetch(input, init);
+};
+
+render(
+  <PlatformApiContext.Provider value={{ ...platformApi, Machines: appMachines(() => null) }}>
+    <PlatformPage />
+    <MenuLayer />
+    <PromptLayer />
+  </PlatformApiContext.Provider>,
+  document.getElementById("root")!,
+);

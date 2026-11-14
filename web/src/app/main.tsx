@@ -2,8 +2,9 @@
 // the hub, rooted at the project. It puts the platform's pages (projects,
 // boards, Docs, chat) and, as the inversion lands, the shell's machine page
 // and Swarm in one frame. app/ is the only folder that may import both
-// platform/ and shell/ (web/scripts/check-imports.mjs); for now it draws the
-// platform's pages alone.
+// platform/ and shell/ (web/scripts/check-imports.mjs). The machines are
+// its own places (./machines), reached through the hub with machine tokens
+// (./session), and open on control's page while the hub can't from here.
 
 import { render } from "preact";
 import "../shared/fonts.css";
@@ -27,6 +28,13 @@ import { PlatformApiContext } from "../shared/platform-api";
 import { AppearanceLayer } from "../shared/ui/appearance";
 import { MenuLayer, PromptLayer } from "../shared/ui/menu";
 import { platformApi } from "../platform/api";
+import { names } from "../platform/links";
+import { go, pathOf } from "../platform/router";
+import { controlOrigin, session } from "../platform/session";
+import { fromControl } from "../shared/machine-paths";
+import type { PlatformApi } from "../shared/platform-api";
+import { appMachines } from "./machines";
+import { AppSession } from "./session";
 import { arriveHere } from "../platform/chat-nav";
 import { PlatformPage } from "../platform/page";
 
@@ -44,8 +52,24 @@ followChatBadge(chat);
 setProtoOrigin(null);
 // A room or thread opened cold gets the levels above it, so Back climbs (#817).
 arriveHere();
+// The machines through the hub, made once someone is signed in: its
+// links back to control's page need the hub's address, which the
+// platform's first answer says.
+let machines: AppSession | null = null;
+const appSession = () => (machines ??= new AppSession(() => (session.me ? { account: session.me.account, login: session.me.login } : null), controlOrigin()));
+/** Whether the machines open here: not once the hub has said it can't. */
+const here = () => appSession().reachable !== false;
+const api: PlatformApi = {
+  ...platformApi,
+  Machines: appMachines(appSession),
+  goToPane: (machine, pane, quote) =>
+    here() ? go(pathOf({ page: "find", what: "machines", at: { at: "machine", machine, pane: Number(pane) } }, names)) : platformApi.goToPane(machine, pane, quote),
+  goToSession: (machine) => (here() ? go(pathOf({ page: "find", what: "machines", at: { at: "machine", machine } }, names)) : platformApi.goToSession(machine)),
+  // Control's page's addresses, as the app's own places where it has them.
+  controlHref: (hash) => (here() && fromControl(`#${hash}`)) || `${controlOrigin()}/#${hash}`,
+};
 render(
-  <PlatformApiContext.Provider value={platformApi}>
+  <PlatformApiContext.Provider value={api}>
     <PlatformPage />
     {/* Menus and the questions they ask (a new channel's name…). */}
     <MenuLayer />

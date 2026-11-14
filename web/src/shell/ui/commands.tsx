@@ -40,7 +40,7 @@ import { watchingNote } from "./shell/live";
 import { bigTipsOn, setBigTips, setTips, tipsOn } from "../../shared/seen";
 import { clientTarget, EDITORS, editorShown, openInEditor, setEditorPref } from "../open-in-editor";
 import { openWhatsNew } from "./whats-new";
-import { openPanel } from "../trust/common";
+import { openPanel } from "./control-panel";
 import { addPlugin, NVIM_DOCS, openHelp, openHelpCard, removePlugin, runsNvim, useNvim } from "../hints/nvim";
 import { type Tone } from "../../shared/ui/state-chip";
 
