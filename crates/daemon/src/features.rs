@@ -10,6 +10,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use arugula_control_wire::forge::MachineDocRow;
 use arugula_proto::api::SearchHit;
 use axum::Router;
 use futures_util::future::BoxFuture;
@@ -62,6 +63,11 @@ pub trait Feature: Send + Sync + 'static {
         _limit: usize,
     ) -> BoxFuture<'static, Vec<SearchHit>> {
         Box::pin(async { vec![] })
+    }
+    /// `docs.list`'s answer (Arugula #1023): the Docs it keeps in the state
+    /// directory, or `None` when it keeps none.
+    fn library_docs(&self, _state_dir: &Path) -> Option<Vec<MachineDocRow>> {
+        None
     }
 }
 
@@ -117,4 +123,10 @@ pub async fn search(app: &Arc<App>, re: regex::Regex, since_ms: Option<u64>, lim
         out.extend(f.search(app.clone(), re.clone(), since_ms, limit - out.len()).await);
     }
     out
+}
+
+/// The library's Docs, from the feature that keeps them, or `None` in a
+/// build without one.
+pub fn library_docs(state_dir: &Path) -> Option<Vec<MachineDocRow>> {
+    all().into_iter().find_map(|f| f.library_docs(state_dir))
 }

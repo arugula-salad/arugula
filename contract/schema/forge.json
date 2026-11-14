@@ -401,8 +401,26 @@
             "op"
           ],
           "type": "object"
+        },
+        {
+          "$ref": "#/$defs/DocsListAsk",
+          "description": "This machine's library Docs (Arugula #1023), for \"Move to\nproject…\" to offer any of its owner's Docs, not only those linked\nto a board that moves. Read-only; the daemon answers `docs`. An\nolder daemon answers `unknown`: it lists none.",
+          "properties": {
+            "op": {
+              "const": "docs.list",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
         }
       ]
+    },
+    "DocsListAsk": {
+      "description": "`docs.list`'s ask (Arugula #1023): nothing yet, so the answer is every\nDoc in the library.",
+      "type": "object"
     },
     "Event": {
       "additionalProperties": false,
@@ -834,6 +852,30 @@
       ],
       "type": "object"
     },
+    "MachineDocRow": {
+      "description": "A Doc in a machine's library, as `docs.list` answers it (Arugula #1023).",
+      "properties": {
+        "id": {
+          "description": "Its id in the library: 16 lower-case hex digits, what the machine's\n`doc move` takes.",
+          "type": "string"
+        },
+        "project": {
+          "description": "The project it's in, or `None`. A Doc in the library is its owner's\nown, in none: one moved to a team's project leaves only a pointer,\nwhich isn't listed.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title"
+      ],
+      "type": "object"
+    },
     "MentionKey": {
       "description": "One mention as a machine was told it: the message, and the session it\nnamed ([`AgentMention::session`]), if it named one.",
       "properties": {
@@ -981,6 +1023,26 @@
           "required": [
             "answer",
             "held"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A `docs.list`'s answer (Arugula #1023): the library's Docs, last\nupdated first.",
+          "properties": {
+            "answer": {
+              "const": "docs",
+              "type": "string"
+            },
+            "docs": {
+              "items": {
+                "$ref": "#/$defs/MachineDocRow"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "answer",
+            "docs"
           ],
           "type": "object"
         },

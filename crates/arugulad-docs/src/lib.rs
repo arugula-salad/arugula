@@ -17,6 +17,7 @@ mod tool;
 
 use std::{path::Path, sync::Arc};
 
+use arugula_control_wire::forge::MachineDocRow;
 use arugula_proto::{
     BlockType,
     api::SearchHit,
@@ -95,5 +96,9 @@ impl arugulad_base::features::Feature for Docs {
         limit: usize,
     ) -> BoxFuture<'static, Vec<SearchHit>> {
         Box::pin(async move { doc_ops::search_library(&app, re, since_ms, limit).await })
+    }
+
+    fn library_docs(&self, state_dir: &Path) -> Option<Vec<MachineDocRow>> {
+        Some(docs::library::rows(state_dir))
     }
 }

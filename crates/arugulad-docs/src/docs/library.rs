@@ -45,6 +45,7 @@ use std::{
     sync::Mutex,
 };
 
+use arugula_control_wire::forge::MachineDocRow;
 use arugula_core::PaneId;
 use arugula_proto::api::{DocLayout, SearchHit};
 use regex::Regex;
@@ -243,6 +244,13 @@ pub fn list(state_dir: &Path) -> Vec<Meta> {
         .collect();
     out.sort_by(|a, b| b.updated.cmp(&a.updated).then(b.made.cmp(&a.made)).then(a.id.cmp(&b.id)));
     out
+}
+
+/// `docs.list`'s rows (Arugula #1023): each Doc [`list`] has, in no project
+/// (a library Doc is its owner's own; one moved to a team is a pointer, and
+/// left out).
+pub fn rows(state_dir: &Path) -> Vec<MachineDocRow> {
+    list(state_dir).into_iter().map(|m| MachineDocRow { id: m.id, title: m.title, project: None }).collect()
 }
 
 /// In the library, from when Docs were copied up: the copies' queue, the
@@ -607,6 +615,19 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("arugula-library-{name}-{}-{}", std::process::id(), now_ms()));
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    /// `docs.list` (Arugula #1023) answers each library Doc, in no project,
+    /// and leaves out one moved to a team: its folder is only a pointer.
+    #[test]
+    fn rows_list_the_docs_and_skip_a_moved_one() {
+        let state = temp("rows");
+        let kept = make(&state, "Plan", "test").unwrap().id;
+        let moved = make(&state, "Notes", "test").unwrap().id;
+        let to = MovedTo { project: "prj_1".into(), name: "Team".into(), id: "pd_1".into(), link: None, at: 1 };
+        point(&dir(&state, &moved).unwrap(), to).unwrap();
+        assert_eq!(rows(&state), [MachineDocRow { id: kept, title: "Plan".into(), project: None }]);
+        std::fs::remove_dir_all(state).unwrap();
     }
 
     /// What copying Docs up kept beside the Docs goes at start, and the
