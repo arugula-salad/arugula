@@ -3977,7 +3977,7 @@ async fn an_agent_started_on_an_issue_is_on_its_row() {
     let first = control.attached.lock().unwrap()[0].clone();
     assert_eq!(first["issue"], "#12", "{first}");
     let block: u64 = first["pane"].as_str().unwrap().parse().unwrap();
-    let work = json!({ "issue": "#12", "boards": [{ "project": "prj_1", "board": "brd_1", "title": "Launch", "row": "row_1" }] });
+    let work = json!({ "issue": "#12", "project": "prj_1", "boards": [{ "project": "prj_1", "board": "brd_1", "title": "Launch", "row": "row_1" }] });
     assert_eq!(d.state(block)["work"], work);
 
     // The answer says it, too; the report carries the block's title.
