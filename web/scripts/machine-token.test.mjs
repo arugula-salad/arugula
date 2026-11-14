@@ -167,3 +167,28 @@ test("one ask per machine at a time; a 404 isn't held", async () => {
   await assert.rejects(t.token("none"), (e) => e.status === 404 && e.retryMs === undefined);
   await assert.rejects(t.token("none"), (e) => e.status === 404);
 });
+
+test("reconnects to an offline machine reuse one token until it's sent (keymaster's fix)", async () => {
+  const { E2ESocket } = await import("../src/shell/e2e/channel.ts");
+  let asked = 0;
+  const tokens = { token: async () => `jwt-${++asked}` };
+  // Nothing listens here: message 1 never goes, as to an offline machine.
+  const urls = [{ url: "ws://127.0.0.1:9/e2e", timeoutMs: 1000 }];
+  const daemon = { id: "offline-1", noise: "a".repeat(64) };
+  for (let i = 0; i < 5; i++) await assert.rejects(E2ESocket.connect(urls, daemon, tokens));
+  assert.equal(asked, 1, "5 reconnects, 1 token (was 5: 720/hour per offline machine per page at the 5 s retry)");
+});
+
+test("a kept token is taken once, and not within 30 s of expiring", async () => {
+  const { keepUnspent, takeUnspent } = await import("../src/shell/e2e/channel.ts");
+  const jwt = (exp) => `h.${Buffer.from(JSON.stringify({ exp })).toString("base64url")}.s`;
+  keepUnspent("m", jwt(1000), 0);
+  assert.equal(takeUnspent("m", 969_000), jwt(1000));
+  assert.equal(takeUnspent("m", 0), null, "taken: no other try sends it too");
+  keepUnspent("m", jwt(1000), 0);
+  assert.equal(takeUnspent("m", 970_000), null, "too close to its expiry");
+  keepUnspent("m", "opaque", 0);
+  assert.equal(takeUnspent("m", 59_000), "opaque");
+  keepUnspent("m", "opaque", 0);
+  assert.equal(takeUnspent("m", 60_000), null, "one with no exp is kept a minute");
+});

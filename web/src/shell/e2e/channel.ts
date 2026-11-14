@@ -199,6 +199,38 @@ export function readWelcome(payload: Uint8Array, at: number): { clock?: DaemonCl
   return {};
 }
 
+/** Tokens asked for but never sent (message 1 didn't go: an offline
+ * machine, a relay that couldn't reach it), by machine id, with when to stop
+ * offering them (30 s before they expire). A reconnect takes this before
+ * asking control for another: each try asked anew, and pages retrying
+ * offline machines spent the account's tokens an hour (2026-11-14). */
+const unspentTokens = new Map<string, { token: string; until: number }>();
+
+/** A JWT's `exp`, in ms; none if it can't be read. */
+function tokenExpiry(token: string): number | undefined {
+  try {
+    const b = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    const exp = (JSON.parse(atob(b.padEnd(b.length + ((4 - (b.length % 4)) % 4), "="))) as { exp?: unknown }).exp;
+    return typeof exp === "number" && Number.isFinite(exp) ? exp * 1000 : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Keep `token` for machine `id`'s next try. One that can't be read is
+ * kept a minute. */
+export function keepUnspent(id: string, token: string, now = Date.now()) {
+  const exp = tokenExpiry(token);
+  unspentTokens.set(id, { token, until: exp === undefined ? now + 60_000 : exp - 30_000 });
+}
+
+/** Machine `id`'s kept token, taken (so no other try sends it too). */
+export function takeUnspent(id: string, now = Date.now()): string | null {
+  const kept = unspentTokens.get(id);
+  unspentTokens.delete(id);
+  return kept && now < kept.until ? kept.token : null;
+}
+
 export class E2ESocket {
   onText: (t: string) => void = () => {};
   onBinary: (b: Uint8Array) => void = () => {};
@@ -248,55 +280,61 @@ export class E2ESocket {
   /** Try each URL in order (direct ones first, the relay last). With
    * machine tokens (aru-141), a try that sends message 1 spends its token
    * (the daemon takes each once), so the next try asks control for
-   * another; one that never got that far leaves its token for the next. A
+   * another; one that never got that far leaves its token for the next,
+   * and for the next connect to that machine (`keepUnspent`). A
    * token the daemon refused (expired, already used) is replaced and tried
    * once more on the same way. */
   static async connect(urls: Route[], daemon: DaemonRef, cred: Credential): Promise<E2ESocket> {
     let last: unknown = new Error("no way to reach it");
     let refused = false;
     const tokens = usesTokens(cred) ? cred : null;
-    let unspent: string | null = null;
-    for (const route of urls) {
-      if (route.ifNoMux && refused) continue;
-      for (let tries = 1; ; tries++) {
-        let sent = false;
-        try {
-          // Asked for before the way is opened: without one, no way would
-          // do. A failure says `noToken`.
-          const token = tokens ? (unspent ??= await tokens.token(daemon.id)) : null;
-          const ws = await openRoute(route, daemon.id);
+    let unspent: string | null = tokens ? takeUnspent(daemon.id) : null;
+    try {
+      for (const route of urls) {
+        if (route.ifNoMux && refused) continue;
+        for (let tries = 1; ; tries++) {
+          let sent = false;
           try {
-            // The daemon ignores a token channel's static key: one made for
-            // it, so nothing ties this channel to another.
-            const s = token === null ? (cred as DeviceKeys).noise : await deviceKey();
-            const payload = token === null ? new Uint8Array() : tokenHello(token);
-            return await E2ESocket.handshake(ws, daemon, s, payload, route.timeoutMs, () => {
-              sent = true;
-              unspent = null;
-            });
+            // Asked for before the way is opened: without one, no way would
+            // do. A failure says `noToken`.
+            const token = tokens ? (unspent ??= await tokens.token(daemon.id)) : null;
+            const ws = await openRoute(route, daemon.id);
+            try {
+              // The daemon ignores a token channel's static key: one made for
+              // it, so nothing ties this channel to another.
+              const s = token === null ? (cred as DeviceKeys).noise : await deviceKey();
+              const payload = token === null ? new Uint8Array() : tokenHello(token);
+              return await E2ESocket.handshake(ws, daemon, s, payload, route.timeoutMs, () => {
+                sent = true;
+                unspent = null;
+              });
+            } catch (e) {
+              ws.close();
+              throw e;
+            }
           } catch (e) {
-            ws.close();
-            throw e;
+            last = e;
+            const err = e as { byDaemon?: boolean; code?: string; refused?: unknown; noToken?: boolean };
+            // Control gave no token (signed out, or not let in to it).
+            if (err.noToken) throw e;
+            // The daemon refused the token: a new one, once, the same way.
+            if (tokens && sent && err.byDaemon && err.code === TOKEN_REFUSED && tries < 2) continue;
+            // The daemon itself said no (#913: it doesn't trust this device
+            // yet, say). Every way reaches the same daemon, so another one
+            // would only hear the same, or, a moment later, be let in on a
+            // worse way than the first and stay there: try again later, from
+            // the first.
+            if (err.byDaemon) throw e;
+            if (route.mux && err.refused) refused = true;
+            break;
           }
-        } catch (e) {
-          last = e;
-          const err = e as { byDaemon?: boolean; code?: string; refused?: unknown; noToken?: boolean };
-          // Control gave no token (signed out, or not let in to it).
-          if (err.noToken) throw e;
-          // The daemon refused the token: a new one, once, the same way.
-          if (tokens && sent && err.byDaemon && err.code === TOKEN_REFUSED && tries < 2) continue;
-          // The daemon itself said no (#913: it doesn't trust this device
-          // yet, say). Every way reaches the same daemon, so another one
-          // would only hear the same, or, a moment later, be let in on a
-          // worse way than the first and stay there: try again later, from
-          // the first.
-          if (err.byDaemon) throw e;
-          if (route.mux && err.refused) refused = true;
-          break;
         }
       }
+      throw last;
+    } finally {
+      // Never sent: the next try (this page's next reconnect) sends it.
+      if (unspent) keepUnspent(daemon.id, unspent);
     }
-    throw last;
   }
 
   /** Noise IK with static key `s`, `payload` in message 1 (a token's
