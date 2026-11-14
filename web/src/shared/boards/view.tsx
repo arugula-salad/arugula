@@ -197,7 +197,9 @@ export function BoardPanel({
 
   // A link from a block or a session names a row, `#row=row_…` (#372):
   // the card's drawer opens on it (decision 9), as a click on it would.
-  const rowKey = view ? location.hash.match(/^#row=(row_[0-9a-f]+)/)?.[1] : undefined;
+  // Read as the board opens: keeping the filter in the URL replaces the hash.
+  const [named] = useState(() => location.hash.match(/^#row=(row_[0-9a-f]+)/)?.[1]);
+  const rowKey = view ? named : undefined;
   useEffect(() => {
     if (!rowKey) return;
     document.querySelector(`[data-board-row="${rowKey}"]`)?.scrollIntoView({ block: "center" });
