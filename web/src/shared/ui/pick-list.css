@@ -1,0 +1,173 @@
+/* Picking several things in a form, and a count that opens into its rows
+   (pick-list.tsx, Arugula #971). Rows are flat and dense: the box, the
+   title, why it's in as a tag, and a dim detail. */
+
+.pick-list {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.pick-search {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.pick-search .field {
+  width: 100%;
+}
+
+.pick-search-acts {
+  display: flex;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.pick-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+  color: var(--dim);
+  font: 600 var(--text-xs)/1.3 var(--f-ui);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+}
+
+.pick-group-n {
+  font: 500 var(--text-xs)/1.3 var(--f-mono);
+  letter-spacing: 0;
+}
+
+.pick-group-note {
+  margin: var(--space-1) 0;
+  color: var(--dim);
+  font-size: var(--text-sm);
+}
+
+.pick-rows,
+.count-list-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pick-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+}
+
+.pick-row input[type="checkbox"] {
+  flex: none;
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+}
+
+.pick-box-none {
+  flex: none;
+  width: 13px;
+}
+
+.pick-text {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px var(--space-2);
+  min-width: 0;
+  font-size: var(--text-md);
+  line-height: 18px;
+}
+
+.pick-text[for] {
+  cursor: pointer;
+}
+
+.pick-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.pick-detail {
+  flex-basis: 100%;
+  color: var(--dim);
+  font-size: var(--text-sm);
+  line-height: 16px;
+}
+
+.pick-more {
+  justify-self: start;
+  font-size: var(--text-sm);
+}
+
+.pick-none {
+  margin: 0;
+}
+
+.count-list {
+  display: grid;
+  padding: var(--space-1) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.count-list-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) 0;
+  border: 0;
+  background: none;
+  color: var(--fg);
+  font: 600 var(--text-md)/18px var(--f-ui);
+  text-align: left;
+  cursor: pointer;
+}
+
+.count-list-head.still {
+  padding-left: 16px;
+  cursor: default;
+}
+
+.count-list-head:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--tag-radius);
+}
+
+.count-list-n {
+  font-family: var(--f-mono);
+}
+
+.count-list-note {
+  margin: 0 0 var(--space-1) 16px;
+  color: var(--dim);
+  font-size: var(--text-sm);
+}
+
+.count-list-rows {
+  padding: 0 0 var(--space-1) 16px;
+}
+
+.count-list-rows li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 2px 0;
+  font-size: var(--text-sm);
+}
+
+.count-list-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.count-list-meta {
+  flex: none;
+  color: var(--dim);
+  font-family: var(--f-mono);
+}
+
+.count-list .pick-more {
+  margin: 0 0 var(--space-1) 16px;
+}

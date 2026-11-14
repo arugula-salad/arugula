@@ -66,6 +66,7 @@ export function sectionOf(r: Route): Section | null {
     case "settings":
     case "owner-settings":
     case "project-settings":
+    case "move":
     case "installed":
       return "settings";
     default:

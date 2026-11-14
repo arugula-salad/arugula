@@ -31,6 +31,7 @@ import { DeploysPage } from "./pages/deploys";
 import { InboxPage } from "./pages/inbox";
 import { Missing, ProjectHome } from "./pages/project";
 import { Installed, ProjectSettings } from "./pages/project-settings";
+import { MovePage } from "./move/move-page";
 import { DesignPage } from "./pages/design";
 import { SettingsPage } from "./pages/settings";
 import { OwnerSettings } from "./pages/owner-settings";
@@ -116,6 +117,8 @@ function body(r: Route, lost: string | null) {
       return <HostedWorkspaces project={r.project} />;
     case "project-settings":
       return <ProjectSettings id={r.project} link={r.link} />;
+    case "move":
+      return <MovePage project={r.project} />;
     case "deploys":
       return <DeploysPage project={r.project} />;
     case "new-deploy":

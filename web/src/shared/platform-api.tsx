@@ -99,6 +99,13 @@ export interface PlatformApi {
   sessionHref?(project: string, ses: string): string;
   /** Docs kept on a machine (#517): the shell opens one in a block when it is on that machine (`here`), beside the board block's pane when `beside` is given, and the platform page omits this. */
   machineDoc?: { here(machine: string): boolean; open(machine: string, doc: string, beside?: number): void };
+  /** A machine's library Docs, which only that machine moves (its `doc
+   * move`, Arugula #971), where the page reaches the reader's own machines
+   * (the app's): `watch` reads them, calling `fn` as they change, until its
+   * answer is called; `here` says whether the page reaches `machine` now;
+   * `move` gives one Doc to a team's project, and says why not when it
+   * can't. A page without it sends the person to the machine. */
+  machineDocs?: { watch(fn: () => void): () => void; here(machine: string): boolean; move(machine: string, doc: string, project: string): Promise<string | null> };
   /** A live pane in a fixed slot: the shell draws its own PaneSlot; a page that can't draw one leaves it out and the drawer shows the session's state card. */
   LivePane?: ComponentType<{ machine: string; pane: string }>;
   /** A pane's question and its choices, answered in place as Swarm's cards answer them; nothing while it asks none. Where the page reaches machines itself (the app): a board drawer draws it at its top, and with it says when a row has no session yet. Control's page leaves it out. */

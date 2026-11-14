@@ -1,0 +1,48 @@
+/* "Move to project…" (move-page.tsx, Arugula #971): two columns, one on a
+   phone. Layout only; the pieces bring their own look. */
+
+.move-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+}
+
+@media (max-width: 600px) {
+  .move-cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.move-col .settings-sec:first-child {
+  margin-top: var(--space-4);
+}
+
+.move-fields {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 420px;
+}
+
+.move-fields label {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.move-sub {
+  margin: var(--space-4) 0 var(--space-2);
+  font-size: var(--text-md);
+}
+
+.move-notes {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.move-go {
+  margin: var(--space-4) 0;
+}
+
+.move-said {
+  margin: var(--space-4) 0 0;
+}

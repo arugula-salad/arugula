@@ -68,6 +68,22 @@ export function appPanes(session: () => AppSession | null): NonNullable<Platform
   };
 }
 
+/** `PlatformApi.machineDocs` over `session` (Arugula #971): the machines
+ * booted as `panes` boots them, and a machine's Docs moved by asking it.
+ * While the hub can't reach machines from this host, none is here. */
+export function appMachineDocs(session: () => AppSession | null): NonNullable<PlatformApi["machineDocs"]> {
+  const panes = appPanes(session);
+  let page: Page | null = null;
+  return {
+    watch(fn) {
+      void load().then((p) => void (page = p));
+      return panes.watch(fn);
+    },
+    here: (machine) => !!page?.docsHere(machine, session()),
+    move: async (machine, doc, project) => (await load()).moveDoc(machine, doc, project, session()),
+  };
+}
+
 /** `PlatformApi.Overview` over `session` (Arugula inversion, L6): the
  * project's Overview, in a chunk of its own with the machine page's. While
  * the hub can't reach machines from this host, the project's page as it

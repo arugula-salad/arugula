@@ -40,6 +40,8 @@
 //   /p/:project/workspaces/:id     a hosted workspace (`hw_…`)
 //   /p/:project/settings           its settings: linked repos (`?link=OWNER/REPO`
 //                                  fills in one to link), environments (M252)
+//   /p/:project/settings/move      "Move to project…" (Arugula #971): some of
+//                                  its work into a new or existing project
 //   /p/:project/deploys            its deploys, newest first (Discovery 5)
 //   /p/:project/deploys/new        "Deploy…" (M252): plan a deploy and ask for
 //                                  its approval (`?env=env_…` picks one)
@@ -101,6 +103,7 @@ export type Route =
   | { page: "workspaces"; project: string }
   | { page: "workspace"; project: string; workspace: string }
   | { page: "project-settings"; project: string; link?: string }
+  | { page: "move"; project: string }
   | { page: "deploys"; project: string }
   | { page: "new-deploy"; project: string; env?: string }
   | { page: "installed"; project?: string; repo?: string }
@@ -270,6 +273,7 @@ export function parse(path: string, search = ""): Route {
     const link = q.get("link");
     return { page: "project-settings", project, ...(link && REPO.test(link) ? { link } : {}) };
   }
+  if (parts.length === 4 && parts[2] === "settings" && parts[3] === "move") return { page: "move", project };
   if (parts.length === 3 && parts[2] === "deploys") return { page: "deploys", project };
   if (parts.length === 4 && parts[2] === "deploys" && parts[3] === "new") {
     const env = q.get("env");
@@ -440,6 +444,8 @@ export function pathOf(r: Route, names: Names = () => null): string {
       return `/p/${s(r.project)}/workspaces/${s(r.workspace)}`;
     case "project-settings":
       return `/p/${s(r.project)}/settings${r.link ? `?link=${encodeURIComponent(r.link)}` : ""}`;
+    case "move":
+      return `/p/${s(r.project)}/settings/move`;
     case "deploys":
       return `/p/${s(r.project)}/deploys`;
     case "new-deploy":
