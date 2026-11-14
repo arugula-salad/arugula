@@ -18,8 +18,8 @@ test("groups that need you come first, then the cloud's order, and Not on a card
 test("a hosted session is one row, with the wave's words; machine sessions sit beside it", () => {
   const gs = groupsOf(byCard(M, 4), wave(M), all);
   const rail = gs.find((g) => g.card?.number === 970);
-  assert.deepEqual(rail.sessions.map((s) => s.key), ["machine:7", "hosted:ses_0970bbbb"]);
-  assert.equal(rail.sessions[1].wave.branch, "arugula/0970-rail");
+  assert.deepEqual(rail.sessions.map((s) => s.key), ["machine:7", "hosted:ses_0971dddd", "hosted:ses_0970bbbb"]);
+  assert.equal(rail.sessions[2].wave.branch, "arugula/0970-rail");
   assert.equal(waitsOn(gs[0].sessions[0]), "its question");
 });
 
@@ -40,6 +40,7 @@ test("Going only leaves finished sessions out, on every kind", () => {
   const keys = gs.flatMap((g) => g.sessions.map((s) => s.key));
   assert.ok(!keys.includes("hosted:ses_0970bbbb"));
   assert.ok(!keys.includes(`agent:${DANA}.9`));
+  assert.ok(keys.includes("hosted:ses_0971dddd"), "a hosted session whose turn ended is going");
   assert.ok(keys.includes("machine:2"), "a pane with no state known is going");
 });
 
@@ -48,6 +49,7 @@ test("finished: ended and waiting on no one", () => {
   const s = (key) => gs.flatMap((g) => g.sessions).find((x) => x.key === key);
   assert.equal(finished(s("hosted:ses_0970bbbb")), true);
   assert.equal(finished(s("hosted:ses_0985aaaa")), false);
+  assert.equal(finished(s("hosted:ses_0971dddd")), false, "a hosted done is a turn ended, not finished");
   assert.equal(finished(s(`agent:${DANA}.9`)), true);
   assert.equal(finished(s("machine:7")), false);
 });
@@ -71,7 +73,9 @@ test("the Overview and Sessions read states alike: what waits on you, failures, 
   assert.equal(stateStanding(["running"]), "working");
   assert.equal(stateStanding(["", "idle"]), "quiet");
   assert.equal(hubStanding(byCard(M, 4).groups[1].sessions[0]), "needs");
-  assert.equal(finishedStates(["exited", "done"]), true);
+  assert.equal(stateStanding(["unresponsive"]), "failed", "a hosted session that stopped answering failed");
+  assert.equal(finishedStates(["exited", "stopped", "closed"]), true);
+  assert.equal(finishedStates(["done"]), false, "a hosted done only says its turn ended");
   assert.equal(finishedStates(["exited", null]), false, "a pane not said isn't finished");
   assert.equal(finishedStates(["failed"]), false, "a failure stays in sight");
   assert.equal(finishedStates([]), false);

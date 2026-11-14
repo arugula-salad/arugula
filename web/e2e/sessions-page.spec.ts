@@ -65,7 +65,9 @@ test.describe("on a computer", () => {
     // A hosted session and a computer's on the same card, as rows alike.
     const rail = page.locator('[data-sessions-group="iss_970"]');
     await expect(rail.locator('[data-session-row="machine:7"]')).toContainText("on sams-laptop, yours");
-    // Finished sessions fold to a line per group.
+    // Finished sessions fold to a line per group; one whose turn ended
+    // (`done`) isn't finished, and stays.
+    await expect(rail.locator('[data-session-row="ses_0971dddd"]')).toBeVisible();
     await expect(rail.locator('[data-session-row="ses_0970bbbb"]')).toHaveCount(0);
     await rail.locator('[data-sessions-finished="1"]').click();
     await expect(rail.locator('[data-session-row="ses_0970bbbb"]')).toBeVisible();
