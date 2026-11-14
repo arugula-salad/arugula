@@ -5261,11 +5261,12 @@ export type ServerMsg = { "type": "hello", version: string, client: number, stat
 
 export type Session = { id: number, name: string, tabs: Array<number>, 
 /**
- * The project it's in (Arugula projects RFC): inferred once, from the
- * repo of the first pane whose clone is linked to one
- * ([`Mux::infer_project`]), or set by hand
- * ([`Intent::SetSessionProject`]). Never moved after that by a repo's
- * link. A layout from before has none, and an older daemon drops it.
+ * The project it's in (Arugula projects RFC): inferred from the repo
+ * of the first pane whose clone is linked to one
+ * ([`Mux::infer_project`]), following that repo when it moves to
+ * another project ([`Mux::follow_repo`]), or set by hand
+ * ([`Intent::SetSessionProject`]), which nothing moves. A layout from
+ * before has none, and an older daemon drops it.
  */
 project?: ProjectRef, 
 /**
@@ -5284,7 +5285,14 @@ work?: WorkRef,
 /**
  * Its work was set by hand, or taken away: nothing infers it after.
  */
-work_by_hand?: boolean, };
+work_by_hand?: boolean, 
+/**
+ * The GitHub repo (`owner/name`) an inferred project came from: it
+ * follows that repo's project. `None` when set by hand (or moved by
+ * work set by hand), or inferred before it was kept (that one stays
+ * put).
+ */
+project_repo?: string, };
 
 /**
  * [`SESSION_ACTIONS`]'s body: what to ask of the session's box.

@@ -201,6 +201,9 @@ pub const HOSTED_OPS: &[&str] = &["hosted.archive", "hosted.archive_blocks"];
 /// The agents' op (Arugula #394) every daemon of this build knows.
 pub const AGENT_OPS: &[&str] = &["agents.mention", "agents.sessions", "agents.grant_ask"];
 
+/// The projects' op (Arugula #992) every daemon of this build knows.
+pub const PROJECT_OPS: &[&str] = &["projects.repo_moved"];
+
 /// `{"t": "ops", "ops": [...]}`, daemon to control, on connecting: the
 /// [`DaemonOp`]s it knows. A daemon that never says knows none, and control
 /// answers [`OpAnswer::Unknown`] for it without asking.
@@ -217,7 +220,14 @@ impl Ops {
     pub fn ours() -> Self {
         Ops {
             t: OpsTag,
-            ops: OPS.iter().chain(RUN_OPS).chain(HOSTED_OPS).chain(AGENT_OPS).map(|s| (*s).to_owned()).collect(),
+            ops: OPS
+                .iter()
+                .chain(RUN_OPS)
+                .chain(HOSTED_OPS)
+                .chain(AGENT_OPS)
+                .chain(PROJECT_OPS)
+                .map(|s| (*s).to_owned())
+                .collect(),
         }
     }
 }
@@ -295,6 +305,13 @@ pub enum DaemonOp {
     /// grant itself is the owner's own act, made over their control session.
     #[serde(rename = "agents.grant_ask")]
     AgentGrantAsk(AgentGrantAsk),
+    /// A GitHub repo linked to one of the machine's owner's projects is
+    /// linked to another now, or to none (Arugula #992). The daemon asks
+    /// control the repo's project again, as it does on each connect, and
+    /// the sessions whose project was inferred from the repo take it; one
+    /// set by hand stays. It answers `done` once they have.
+    #[serde(rename = "projects.repo_moved")]
+    RepoMoved(RepoMoved),
 }
 
 impl DaemonOp {
@@ -308,6 +325,7 @@ impl DaemonOp {
             DaemonOp::AgentMention(_) => "agents.mention",
             DaemonOp::MachineAgents(_) => "agents.sessions",
             DaemonOp::AgentGrantAsk(_) => "agents.grant_ask",
+            DaemonOp::RepoMoved(_) => "projects.repo_moved",
         }
     }
 }
@@ -369,6 +387,16 @@ pub struct AgentMention {
     /// An older daemon ignores them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub files: Vec<crate::chat::ChatFile>,
+}
+
+/// `projects.repo_moved`'s repo (Arugula #992). It names no project: a
+/// daemon asks control which, so an old or repeated op can't move a
+/// session back.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct RepoMoved {
+    /// `OWNER/NAME` on github.com.
+    pub repo: String,
 }
 
 /// What a machine's session is doing (#645).

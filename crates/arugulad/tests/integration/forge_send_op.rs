@@ -203,7 +203,8 @@ fn a_machine_sends_its_persons_draft_when_control_asks() {
             "hosted.archive_blocks",
             "agents.mention",
             "agents.sessions",
-            "agents.grant_ask"
+            "agents.grant_ask",
+            "projects.repo_moved"
         ])
     );
     assert_eq!(

@@ -112,6 +112,9 @@ mod resume;
 mod review;
 mod session_history;
 mod session_links;
+// `Daemon::stop` (to enroll it with the fake control) is unix-only.
+#[cfg(unix)]
+mod session_project_follow;
 // Stand-in shell scripts for Claude Code, Node and npm.
 #[cfg(unix)]
 mod setup;

@@ -482,21 +482,59 @@ fn a_session_keeps_its_project_through_a_save_and_a_layout_from_before_has_none(
 }
 
 #[test]
-fn an_inferred_project_is_set_once_and_never_moved() {
+fn an_inferred_project_isnt_moved_by_another_panes_repo() {
     let mut m = mux_with_session();
-    assert_eq!(m.infer_project(1, project("prj_a")), Ok(true));
+    assert_eq!(m.infer_project(1, project("prj_a"), "acme/app"), Ok(true));
     let rev = m.rev;
     // A later pane in another repo, or the repo linked elsewhere since.
-    assert_eq!(m.infer_project(1, project("prj_b")), Ok(false));
+    assert_eq!(m.infer_project(1, project("prj_b"), "acme/web"), Ok(false));
     assert_eq!(m.sessions[0].project, Some(project("prj_a")));
     assert_eq!(m.rev, rev);
-    assert_eq!(m.infer_project(9, project("prj_a")), Err(crate::Error::NoSession(9)));
+    assert_eq!(m.infer_project(9, project("prj_a"), "acme/app"), Err(crate::Error::NoSession(9)));
+}
+
+#[test]
+fn an_inferred_project_follows_its_repo_and_one_set_by_hand_stays() {
+    let mut m = mux_with_session();
+    for _ in 0..3 {
+        m.apply(Intent::NewSession { name: None, from_pane: None }).unwrap();
+    }
+    m.infer_project(1, project("prj_a"), "acme/app").unwrap();
+    m.infer_project(2, project("prj_a"), "acme/app").unwrap();
+    m.infer_project(3, project("prj_a"), "acme/web").unwrap();
+    // Inferred from acme/app, then put back in prj_a by hand.
+    m.infer_project(4, project("prj_a"), "acme/app").unwrap();
+    m.apply(Intent::SetSessionProject { session: 4, project: Some(project("prj_a")) }).unwrap();
+    assert_eq!(m.sessions[3].project_repo, None);
+    assert_eq!(m.project_repos(), ["acme/app", "acme/web"]);
+
+    // acme/app moves to prj_b: its two inferred sessions follow, and
+    // nothing else changes.
+    let before = m.clone();
+    assert_eq!(m.follow_repo("acme/app", &project("prj_b")), vec![1, 2]);
+    let at: Vec<_> = m.sessions.iter().map(|s| s.project.as_ref().map(|p| p.id.as_str())).collect();
+    assert_eq!(at, [Some("prj_b"), Some("prj_b"), Some("prj_a"), Some("prj_a")]);
+    assert_eq!((&m.tabs, &m.sessions[0].tabs), (&before.tabs, &before.sessions[0].tabs));
+    assert!(m.rev > before.rev);
+    // Asked again (a reconnect, or the same move twice): nothing to do.
+    let rev = m.rev;
+    assert_eq!(m.follow_repo("acme/app", &project("prj_b")), Vec::<crate::SessionId>::new());
+    assert_eq!(m.rev, rev);
+
+    // Kept through a save, so it follows after a restart too.
+    let mut back: Mux = serde_json::from_str(&serde_json::to_string(&m).unwrap()).unwrap();
+    assert_eq!(back.sessions[0].project_repo.as_deref(), Some("acme/app"));
+    assert_eq!(back.follow_repo("acme/app", &project("prj_c")), vec![1, 2]);
+    // Taken away by hand: it stays in none.
+    back.apply(Intent::SetSessionProject { session: 2, project: None }).unwrap();
+    assert_eq!(back.follow_repo("acme/app", &project("prj_a")), vec![1]);
+    assert_eq!(back.sessions[1].project, None);
 }
 
 #[test]
 fn a_project_set_by_hand_replaces_an_inferred_one_and_clears() {
     let mut m = mux_with_session();
-    m.infer_project(1, project("prj_a")).unwrap();
+    m.infer_project(1, project("prj_a"), "acme/app").unwrap();
     m.apply(Intent::SetSessionProject { session: 1, project: Some(project("prj_b")) }).unwrap();
     assert_eq!(m.sessions[0].project, Some(project("prj_b")));
     m.apply(Intent::SetSessionProject { session: 1, project: None }).unwrap();
@@ -509,13 +547,13 @@ fn a_project_set_by_hand_replaces_an_inferred_one_and_clears() {
 #[test]
 fn no_project_by_hand_sticks_when_another_pane_opens() {
     let mut m = mux_with_session();
-    m.infer_project(1, project("prj_a")).unwrap();
+    m.infer_project(1, project("prj_a"), "acme/app").unwrap();
     m.apply(Intent::SetSessionProject { session: 1, project: None }).unwrap();
     assert!(!m.sessions[0].inferable());
     // Another pane opens in a linked clone: the session stays in none.
     let fx = m.apply(Intent::Split { pane: 1, edge: Edge::Right, local: false, cwd: None }).unwrap();
     assert_eq!(fx, vec![Effect::Spawn { pane: 2, cwd_from: Some(1), cwd: None }]);
-    assert_eq!(m.infer_project(1, project("prj_b")), Ok(false));
+    assert_eq!(m.infer_project(1, project("prj_b"), "acme/web"), Ok(false));
     assert_eq!(m.sessions[0].project, None);
     // And it's kept through a save.
     let back: Mux = serde_json::from_str(&serde_json::to_string(&m).unwrap()).unwrap();
@@ -565,7 +603,7 @@ fn a_project_set_by_hand_refuses_another_projects_work_and_drops_its_own() {
 #[test]
 fn an_inferred_card_is_set_once_in_the_sessions_project() {
     let mut m = mux_with_session();
-    m.infer_project(1, project("prj_a")).unwrap();
+    m.infer_project(1, project("prj_a"), "acme/app").unwrap();
     // Another project's issue isn't this session's card.
     assert_eq!(m.infer_work(1, work("prj_b", Some("#3")), None), Ok(false));
     assert_eq!(m.infer_work(1, work("prj_a", Some("#3")), None), Ok(true));
@@ -577,4 +615,56 @@ fn an_inferred_card_is_set_once_in_the_sessions_project() {
     assert_eq!(m.infer_work(2, work("prj_c", Some("#1")), Some("C".into())), Ok(true));
     assert_eq!(m.sessions[1].project, Some(crate::ProjectRef { id: "prj_c".into(), name: "C".into() }));
     assert_eq!(m.infer_work(9, work("prj_a", None), None), Err(crate::Error::NoSession(9)));
+}
+
+#[test]
+fn inferred_work_follows_its_repo_with_an_iss_card_and_work_set_by_hand_stays() {
+    let mut m = mux_with_session();
+    for _ in 0..3 {
+        m.apply(Intent::NewSession { name: None, from_pane: None }).unwrap();
+    }
+    for s in 1..=4 {
+        m.infer_project(s, project("prj_a"), "acme/app").unwrap();
+    }
+    // 1: a `#N` card from its branch. 2: work by hand. 3: work taken away
+    // by hand. 4: an `iss_…` card.
+    m.infer_work(1, work("prj_a", Some("#3")), None).unwrap();
+    m.infer_work(4, work("prj_a", Some("iss_77")), None).unwrap();
+    m.apply(Intent::SetSessionWork { session: 2, work: Some(work("prj_a", Some("#5"))), project_name: None }).unwrap();
+    m.apply(Intent::SetSessionWork { session: 3, work: None, project_name: None }).unwrap();
+
+    assert_eq!(m.follow_repo("acme/app", &project("prj_b")), vec![1, 3, 4]);
+    let at: Vec<_> = m.sessions.iter().map(|s| (s.project.as_ref().map(|p| p.id.as_str()), s.work.clone())).collect();
+    assert_eq!(
+        at,
+        [
+            // `#3` is numbered again in prj_b: its work comes along without it.
+            (Some("prj_b"), Some(work("prj_b", None))),
+            // Work set by hand keeps the session where it is.
+            (Some("prj_a"), Some(work("prj_a", Some("#5")))),
+            (Some("prj_b"), None),
+            // The issue moved with the repo: the same card in prj_b.
+            (Some("prj_b"), Some(work("prj_b", Some("iss_77")))),
+        ]
+    );
+    assert!(!m.sessions[0].work_by_hand && m.sessions[1].work_by_hand && m.sessions[2].work_by_hand);
+
+    // Only its name changed: the work, and its card, stay.
+    let mut m = mux_with_session();
+    m.infer_project(1, project("prj_a"), "acme/app").unwrap();
+    m.infer_work(1, work("prj_a", Some("#3")), None).unwrap();
+    let renamed = crate::ProjectRef { id: "prj_a".into(), name: "A2".into() };
+    assert_eq!(m.follow_repo("acme/app", &renamed), vec![1]);
+    assert_eq!(
+        (m.sessions[0].project.as_ref(), m.sessions[0].work.clone()),
+        (Some(&renamed), Some(work("prj_a", Some("#3"))))
+    );
+
+    // Work set by hand in another project moved the session there: it no
+    // longer follows the repo.
+    m.apply(Intent::SetSessionWork { session: 1, work: Some(work("prj_c", Some("#1"))), project_name: None }).unwrap();
+    assert_eq!(m.sessions[0].project_repo, None);
+    m.apply(Intent::SetSessionWork { session: 1, work: None, project_name: None }).unwrap();
+    assert_eq!(m.follow_repo("acme/app", &project("prj_b")), Vec::<crate::SessionId>::new());
+    assert_eq!(m.sessions[0].project.as_ref().map(|p| p.id.as_str()), Some("prj_c"));
 }
