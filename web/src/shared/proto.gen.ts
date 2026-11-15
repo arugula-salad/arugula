@@ -6313,6 +6313,44 @@ state: string,
 fields: string, };
 
 /**
+ * One watch as a teammate sees it (Arugula #1036): whose agent waits, on
+ * what, and until when. The session's name only as its owner's
+ * `agent_sessions` setting shows it, asked of its machine (aru-133).
+ */
+export type WatchShown = { 
+/**
+ * `wch_…`.
+ */
+id: string, 
+/**
+ * The account whose agent made it, and its name as people read it.
+ */
+owner: string, owner_name: string, 
+/**
+ * The session's name, when its owner shows it; else none, and it's
+ * "their agent".
+ */
+session?: string, 
+/**
+ * What it waits for here, in words: "merged", "checks_failed", "a
+ * reply from Ada".
+ */
+waits: string, 
+/**
+ * When it ends without firing, in ms since the epoch.
+ */
+expires_ms: number, 
+/**
+ * Whether it's the reader's own, which they may cancel.
+ */
+yours: boolean, };
+
+/**
+ * The live watches on a PR or a thread, the soonest to expire first.
+ */
+export type WatchesOn = { watches: Array<WatchShown>, };
+
+/**
  * What a pane is busy with (M23), for drawing and grouping it without
  * attaching: from the foreground process's command line, else the
  * command the shell integration reported.

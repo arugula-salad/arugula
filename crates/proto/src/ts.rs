@@ -113,6 +113,8 @@ fn generate() -> String {
         c.visit::<ChatRooms>();
         c.visit::<ChatRoomDetail>();
         c.visit::<ChatThreadAgents>();
+        // What a PR or a thread shows of agents' watches on it (Arugula #1036).
+        c.visit::<arugula_control_wire::watch::WatchesOn>();
         c.visit::<ChatPostTarget>();
         c.visit::<ChatMessages>();
         c.visit::<ChatNewChannel>();

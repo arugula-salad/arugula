@@ -32,6 +32,7 @@ import { ItemBlock, type ItemFact, type ItemSource, type ItemState, type ItemTab
 import { Chip, StateChip, type Tone } from "../../shared/ui/state-chip";
 import { Bar } from "../../shared/ui/bar";
 import { Caret, ExternalIcon } from "../../shared/ui/icons";
+import { WatchesOn } from "../../shared/watches-on";
 
 /** "Open pull request…": a link, OWNER/REPO#N, or N in `dir`'s repository,
  * beside `split` or in a new tab of `session`. */
@@ -802,6 +803,8 @@ function PrBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState 
               )
             }
           />
+          {/* Agents waiting on it (Arugula #1036): only a PR the mirror has, read as you from control. */}
+          {s.pin?.kind === "pr" && <WatchesOn path={`/api/forge/items/${encodeURIComponent(s.pin.global_id)}/watches`} />}
         </div>
       )}
     </div>
