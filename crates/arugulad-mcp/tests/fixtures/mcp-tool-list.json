@@ -5166,7 +5166,7 @@
         "readOnlyHint": false,
         "title": "Watch for something to happen"
       },
-      "description": "Wake this session later, when something happens, without polling or holding your turn open: create a watch, then end your turn. When it fires, you get a follow-up saying what happened (ids and states only), as a chat mention arrives. It fires once. It expires after 24 hours unless you say (expires, at most 7d), and then you get one message saying it ended without firing. Targets: a pull request (OWNER/REPO#N or its link) until merged, closed, checks_done, checks_failed or ready (checks green and it can merge cleanly), in a repo linked to Arugula's GitHub App; for a repo without it, or to block now, use wait with pr. If it has already happened, create says so and makes no watch. A watch belongs to this Claude Code session: a new session in this pane doesn't get it. Works from a terminal with Arugula's hooks installed, or an agent block. list shows this session's watches; cancel takes one by id, or all.\n- create {pr, expires?, until?}: Wake this session when a PR merges, closes, finishes or fails its checks, or is ready. End your turn after.\n- list {all?}: This session's live watches (all: every session's on this machine).\n- cancel {all?, id?}: Cancel one of this session's watches by id, or all of them.",
+      "description": "Wake this session later, when something happens, without polling or holding your turn open: create a watch, then end your turn. When it fires, you get a follow-up saying what happened (ids and states only), as a chat mention arrives. It fires once. It expires after 24 hours unless you say (expires, at most 7d), and then you get one message saying it ended without firing. Targets, any of which fires it: pr (OWNER/REPO#N or its link) until merged, closed, checks_done, checks_failed or ready (checks green and it can merge cleanly), in a repo linked to Arugula's GitHub App (else use wait with pr); session (a hosted agent session, ses_) until it settles; run (run_ or dep_) until it ends; room (a chat room's id, with parent for one thread and from for one person) until a reply you didn't write. If it has already happened, create says so and makes no watch. A watch belongs to this Claude Code session: a new session in this pane doesn't get it. Works from a terminal with Arugula's hooks installed, or an agent block. list shows this session's watches; cancel takes one by id, or all.\n- create {expires?, from?, parent?, pr?, room?, run?, session?, until?}: Wake this session when a PR, a hosted session, a thread, a run or a deploy gets somewhere. End your turn after.\n- list {all?}: This session's live watches (all: every session's on this machine).\n- cancel {all?, id?}: Cancel one of this session's watches by id, or all of them.",
       "inputSchema": {
         "$defs": {
           "PrList": {
@@ -5181,7 +5181,7 @@
                 "type": "array"
               }
             ],
-            "description": "One pull request, or several."
+            "description": "One id, or several. Whichever target happens first fires the watch."
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -5194,6 +5194,14 @@
           "expires": {
             "default": null,
             "description": "create: How long to wait before it ends without firing: 30m, 6h, 3d. Default\n24h, at most 7d.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "from": {
+            "default": null,
+            "description": "create: With room: only a reply by this person (login or name).",
             "type": [
               "string",
               "null"
@@ -5216,9 +5224,55 @@
             ],
             "type": "string"
           },
+          "parent": {
+            "default": null,
+            "description": "create: With room: only a reply under this thread (its root message's\nnumber).",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "pr": {
-            "$ref": "#/$defs/PrList",
-            "description": "create: The pull request: OWNER/REPO#N, or its link on github.com. Several:\nwhichever happens first fires the watch."
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PrList"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "create: A pull request: OWNER/REPO#N, or its link on github.com, or several."
+          },
+          "room": {
+            "default": null,
+            "description": "create: A chat room (its id, as read_thread gives it): until a reply in it\nthat this session didn't write.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "run": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PrList"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "create: A run (run_…) or a deploy (dep_…), or several: until it ends."
+          },
+          "session": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PrList"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "create: A hosted agent session (ses_…), or several: until it settles (done,\nwaiting for input, failed or stopped)."
           },
           "until": {
             "default": null,
@@ -10568,7 +10622,7 @@
         "readOnlyHint": false,
         "title": "Watch for something to happen"
       },
-      "description": "Wake this session later, when something happens, without polling or holding your turn open: create a watch, then end your turn. When it fires, you get a follow-up saying what happened (ids and states only), as a chat mention arrives. It fires once. It expires after 24 hours unless you say (expires, at most 7d), and then you get one message saying it ended without firing. Targets: a pull request (OWNER/REPO#N or its link) until merged, closed, checks_done, checks_failed or ready (checks green and it can merge cleanly), in a repo linked to Arugula's GitHub App; for a repo without it, or to block now, use wait with pr. If it has already happened, create says so and makes no watch. A watch belongs to this Claude Code session: a new session in this pane doesn't get it. Works from a terminal with Arugula's hooks installed, or an agent block. list shows this session's watches; cancel takes one by id, or all.\n- create {pr, expires?, until?}: Wake this session when a PR merges, closes, finishes or fails its checks, or is ready. End your turn after.\n- list {all?}: This session's live watches (all: every session's on this machine).\n- cancel {all?, id?}: Cancel one of this session's watches by id, or all of them.",
+      "description": "Wake this session later, when something happens, without polling or holding your turn open: create a watch, then end your turn. When it fires, you get a follow-up saying what happened (ids and states only), as a chat mention arrives. It fires once. It expires after 24 hours unless you say (expires, at most 7d), and then you get one message saying it ended without firing. Targets, any of which fires it: pr (OWNER/REPO#N or its link) until merged, closed, checks_done, checks_failed or ready (checks green and it can merge cleanly), in a repo linked to Arugula's GitHub App (else use wait with pr); session (a hosted agent session, ses_) until it settles; run (run_ or dep_) until it ends; room (a chat room's id, with parent for one thread and from for one person) until a reply you didn't write. If it has already happened, create says so and makes no watch. A watch belongs to this Claude Code session: a new session in this pane doesn't get it. Works from a terminal with Arugula's hooks installed, or an agent block. list shows this session's watches; cancel takes one by id, or all.\n- create {expires?, from?, parent?, pr?, room?, run?, session?, until?}: Wake this session when a PR, a hosted session, a thread, a run or a deploy gets somewhere. End your turn after.\n- list {all?}: This session's live watches (all: every session's on this machine).\n- cancel {all?, id?}: Cancel one of this session's watches by id, or all of them.",
       "inputSchema": {
         "$defs": {
           "PrList": {
@@ -10583,7 +10637,7 @@
                 "type": "array"
               }
             ],
-            "description": "One pull request, or several."
+            "description": "One id, or several. Whichever target happens first fires the watch."
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -10596,6 +10650,14 @@
           "expires": {
             "default": null,
             "description": "create: How long to wait before it ends without firing: 30m, 6h, 3d. Default\n24h, at most 7d.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "from": {
+            "default": null,
+            "description": "create: With room: only a reply by this person (login or name).",
             "type": [
               "string",
               "null"
@@ -10618,9 +10680,55 @@
             ],
             "type": "string"
           },
+          "parent": {
+            "default": null,
+            "description": "create: With room: only a reply under this thread (its root message's\nnumber).",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "pr": {
-            "$ref": "#/$defs/PrList",
-            "description": "create: The pull request: OWNER/REPO#N, or its link on github.com. Several:\nwhichever happens first fires the watch."
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PrList"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "create: A pull request: OWNER/REPO#N, or its link on github.com, or several."
+          },
+          "room": {
+            "default": null,
+            "description": "create: A chat room (its id, as read_thread gives it): until a reply in it\nthat this session didn't write.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "run": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PrList"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "create: A run (run_…) or a deploy (dep_…), or several: until it ends."
+          },
+          "session": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PrList"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "create: A hosted agent session (ses_…), or several: until it settles (done,\nwaiting for input, failed or stopped)."
           },
           "until": {
             "default": null,
@@ -15807,7 +15915,7 @@
         "readOnlyHint": false,
         "title": "Watch for something to happen"
       },
-      "description": "Wake this session later, when something happens, without polling or holding your turn open: create a watch, then end your turn. When it fires, you get a follow-up saying what happened (ids and states only), as a chat mention arrives. It fires once. It expires after 24 hours unless you say (expires, at most 7d), and then you get one message saying it ended without firing. Targets: a pull request (OWNER/REPO#N or its link) until merged, closed, checks_done, checks_failed or ready (checks green and it can merge cleanly), in a repo linked to Arugula's GitHub App; for a repo without it, or to block now, use wait with pr. If it has already happened, create says so and makes no watch. A watch belongs to this Claude Code session: a new session in this pane doesn't get it. Works from a terminal with Arugula's hooks installed, or an agent block. list shows this session's watches; cancel takes one by id, or all.\n- create {pr, expires?, until?}: Wake this session when a PR merges, closes, finishes or fails its checks, or is ready. End your turn after.\n- list {all?}: This session's live watches (all: every session's on this machine).\n- cancel {all?, id?}: Cancel one of this session's watches by id, or all of them.",
+      "description": "Wake this session later, when something happens, without polling or holding your turn open: create a watch, then end your turn. When it fires, you get a follow-up saying what happened (ids and states only), as a chat mention arrives. It fires once. It expires after 24 hours unless you say (expires, at most 7d), and then you get one message saying it ended without firing. Targets, any of which fires it: pr (OWNER/REPO#N or its link) until merged, closed, checks_done, checks_failed or ready (checks green and it can merge cleanly), in a repo linked to Arugula's GitHub App (else use wait with pr); session (a hosted agent session, ses_) until it settles; run (run_ or dep_) until it ends; room (a chat room's id, with parent for one thread and from for one person) until a reply you didn't write. If it has already happened, create says so and makes no watch. A watch belongs to this Claude Code session: a new session in this pane doesn't get it. Works from a terminal with Arugula's hooks installed, or an agent block. list shows this session's watches; cancel takes one by id, or all.\n- create {expires?, from?, parent?, pr?, room?, run?, session?, until?}: Wake this session when a PR, a hosted session, a thread, a run or a deploy gets somewhere. End your turn after.\n- list {all?}: This session's live watches (all: every session's on this machine).\n- cancel {all?, id?}: Cancel one of this session's watches by id, or all of them.",
       "inputSchema": {
         "$defs": {
           "PrList": {
@@ -15822,7 +15930,7 @@
                 "type": "array"
               }
             ],
-            "description": "One pull request, or several."
+            "description": "One id, or several. Whichever target happens first fires the watch."
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -15835,6 +15943,14 @@
           "expires": {
             "default": null,
             "description": "create: How long to wait before it ends without firing: 30m, 6h, 3d. Default\n24h, at most 7d.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "from": {
+            "default": null,
+            "description": "create: With room: only a reply by this person (login or name).",
             "type": [
               "string",
               "null"
@@ -15857,9 +15973,55 @@
             ],
             "type": "string"
           },
+          "parent": {
+            "default": null,
+            "description": "create: With room: only a reply under this thread (its root message's\nnumber).",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "pr": {
-            "$ref": "#/$defs/PrList",
-            "description": "create: The pull request: OWNER/REPO#N, or its link on github.com. Several:\nwhichever happens first fires the watch."
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PrList"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "create: A pull request: OWNER/REPO#N, or its link on github.com, or several."
+          },
+          "room": {
+            "default": null,
+            "description": "create: A chat room (its id, as read_thread gives it): until a reply in it\nthat this session didn't write.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "run": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PrList"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "create: A run (run_…) or a deploy (dep_…), or several: until it ends."
+          },
+          "session": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PrList"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "create: A hosted agent session (ses_…), or several: until it settles (done,\nwaiting for input, failed or stopped)."
           },
           "until": {
             "default": null,
@@ -21209,7 +21371,7 @@
         "readOnlyHint": false,
         "title": "Watch for something to happen"
       },
-      "description": "Wake this session later, when something happens, without polling or holding your turn open: create a watch, then end your turn. When it fires, you get a follow-up saying what happened (ids and states only), as a chat mention arrives. It fires once. It expires after 24 hours unless you say (expires, at most 7d), and then you get one message saying it ended without firing. Targets: a pull request (OWNER/REPO#N or its link) until merged, closed, checks_done, checks_failed or ready (checks green and it can merge cleanly), in a repo linked to Arugula's GitHub App; for a repo without it, or to block now, use wait with pr. If it has already happened, create says so and makes no watch. A watch belongs to this Claude Code session: a new session in this pane doesn't get it. Works from a terminal with Arugula's hooks installed, or an agent block. list shows this session's watches; cancel takes one by id, or all.\n- create {pr, expires?, until?}: Wake this session when a PR merges, closes, finishes or fails its checks, or is ready. End your turn after.\n- list {all?}: This session's live watches (all: every session's on this machine).\n- cancel {all?, id?}: Cancel one of this session's watches by id, or all of them.",
+      "description": "Wake this session later, when something happens, without polling or holding your turn open: create a watch, then end your turn. When it fires, you get a follow-up saying what happened (ids and states only), as a chat mention arrives. It fires once. It expires after 24 hours unless you say (expires, at most 7d), and then you get one message saying it ended without firing. Targets, any of which fires it: pr (OWNER/REPO#N or its link) until merged, closed, checks_done, checks_failed or ready (checks green and it can merge cleanly), in a repo linked to Arugula's GitHub App (else use wait with pr); session (a hosted agent session, ses_) until it settles; run (run_ or dep_) until it ends; room (a chat room's id, with parent for one thread and from for one person) until a reply you didn't write. If it has already happened, create says so and makes no watch. A watch belongs to this Claude Code session: a new session in this pane doesn't get it. Works from a terminal with Arugula's hooks installed, or an agent block. list shows this session's watches; cancel takes one by id, or all.\n- create {expires?, from?, parent?, pr?, room?, run?, session?, until?}: Wake this session when a PR, a hosted session, a thread, a run or a deploy gets somewhere. End your turn after.\n- list {all?}: This session's live watches (all: every session's on this machine).\n- cancel {all?, id?}: Cancel one of this session's watches by id, or all of them.",
       "inputSchema": {
         "$defs": {
           "PrList": {
@@ -21224,7 +21386,7 @@
                 "type": "array"
               }
             ],
-            "description": "One pull request, or several."
+            "description": "One id, or several. Whichever target happens first fires the watch."
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -21237,6 +21399,14 @@
           "expires": {
             "default": null,
             "description": "create: How long to wait before it ends without firing: 30m, 6h, 3d. Default\n24h, at most 7d.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "from": {
+            "default": null,
+            "description": "create: With room: only a reply by this person (login or name).",
             "type": [
               "string",
               "null"
@@ -21259,9 +21429,55 @@
             ],
             "type": "string"
           },
+          "parent": {
+            "default": null,
+            "description": "create: With room: only a reply under this thread (its root message's\nnumber).",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "pr": {
-            "$ref": "#/$defs/PrList",
-            "description": "create: The pull request: OWNER/REPO#N, or its link on github.com. Several:\nwhichever happens first fires the watch."
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PrList"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "create: A pull request: OWNER/REPO#N, or its link on github.com, or several."
+          },
+          "room": {
+            "default": null,
+            "description": "create: A chat room (its id, as read_thread gives it): until a reply in it\nthat this session didn't write.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "run": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PrList"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "create: A run (run_…) or a deploy (dep_…), or several: until it ends."
+          },
+          "session": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PrList"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "create: A hosted agent session (ses_…), or several: until it settles (done,\nwaiting for input, failed or stopped)."
           },
           "until": {
             "default": null,

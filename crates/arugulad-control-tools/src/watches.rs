@@ -31,13 +31,13 @@ use crate::mcp::tools::{Call, Kind, Out, done, parse};
 
 pub(crate) const TOOL: &str = "watch";
 
-pub(crate) const DESCRIPTION: &str = "Wake this session later, when something happens, without polling or holding your turn open: create a watch, then end your turn. When it fires, you get a follow-up saying what happened (ids and states only), as a chat mention arrives. It fires once. It expires after 24 hours unless you say (expires, at most 7d), and then you get one message saying it ended without firing. Targets: a pull request (OWNER/REPO#N or its link) until merged, closed, checks_done, checks_failed or ready (checks green and it can merge cleanly), in a repo linked to Arugula's GitHub App; for a repo without it, or to block now, use wait with pr. If it has already happened, create says so and makes no watch. A watch belongs to this Claude Code session: a new session in this pane doesn't get it. Works from a terminal with Arugula's hooks installed, or an agent block. list shows this session's watches; cancel takes one by id, or all.";
+pub(crate) const DESCRIPTION: &str = "Wake this session later, when something happens, without polling or holding your turn open: create a watch, then end your turn. When it fires, you get a follow-up saying what happened (ids and states only), as a chat mention arrives. It fires once. It expires after 24 hours unless you say (expires, at most 7d), and then you get one message saying it ended without firing. Targets, any of which fires it: pr (OWNER/REPO#N or its link) until merged, closed, checks_done, checks_failed or ready (checks green and it can merge cleanly), in a repo linked to Arugula's GitHub App (else use wait with pr); session (a hosted agent session, ses_) until it settles; run (run_ or dep_) until it ends; room (a chat room's id, with parent for one thread and from for one person) until a reply you didn't write. If it has already happened, create says so and makes no watch. A watch belongs to this Claude Code session: a new session in this pane doesn't get it. Works from a terminal with Arugula's hooks installed, or an agent block. list shows this session's watches; cancel takes one by id, or all.";
 
 /// `watch`'s kinds.
 pub(crate) const KINDS: &[Kind] = &[
     Kind {
         name: "create",
-        description: "Wake this session when a PR merges, closes, finishes or fails its checks, or is ready. End your turn after.",
+        description: "Wake this session when a PR, a hosted session, a thread, a run or a deploy gets somewhere. End your turn after.",
         schema: schema_for_type::<CreateArgs>,
         flag: None,
     },
@@ -57,9 +57,27 @@ pub(crate) const KINDS: &[Kind] = &[
 
 #[derive(Deserialize, JsonSchema)]
 pub struct CreateArgs {
-    /// The pull request: OWNER/REPO#N, or its link on github.com. Several:
-    /// whichever happens first fires the watch.
-    pub pr: PrList,
+    /// A pull request: OWNER/REPO#N, or its link on github.com, or several.
+    #[serde(default)]
+    pub pr: Option<PrList>,
+    /// A hosted agent session (ses_…), or several: until it settles (done,
+    /// waiting for input, failed or stopped).
+    #[serde(default)]
+    pub session: Option<PrList>,
+    /// A run (run_…) or a deploy (dep_…), or several: until it ends.
+    #[serde(default)]
+    pub run: Option<PrList>,
+    /// A chat room (its id, as read_thread gives it): until a reply in it
+    /// that this session didn't write.
+    #[serde(default)]
+    pub room: Option<String>,
+    /// With room: only a reply under this thread (its root message's
+    /// number).
+    #[serde(default)]
+    pub parent: Option<i64>,
+    /// With room: only a reply by this person (login or name).
+    #[serde(default)]
+    pub from: Option<String>,
     /// merged (the default), closed (merged or not), checks_done (none
     /// queued or running), checks_failed, or ready (checks green and it can
     /// merge cleanly).
@@ -71,7 +89,7 @@ pub struct CreateArgs {
     pub expires: Option<String>,
 }
 
-/// One pull request, or several.
+/// One id, or several. Whichever target happens first fires the watch.
 #[derive(Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum PrList {
@@ -172,14 +190,35 @@ fn when(ms: i64) -> String {
 
 async fn create(c: &Call<'_>, a: CreateArgs) -> Out {
     let until = until(a.until.as_deref())?;
-    let prs = match a.pr {
-        PrList::One(p) => vec![p],
-        PrList::Many(ps) => ps,
+    let list = |l: Option<PrList>| match l {
+        None => vec![],
+        Some(PrList::One(p)) => vec![p],
+        Some(PrList::Many(ps)) => ps,
     };
-    if prs.is_empty() {
-        return Err("create needs a pr: OWNER/REPO#N".into());
-    }
+    let prs = list(a.pr);
     let mut targets = vec![];
+    for id in list(a.session) {
+        let id = id.trim().to_owned();
+        if !id.starts_with("ses_") {
+            return Err(format!("session {id}: a hosted agent session's id, ses_…"));
+        }
+        targets.push(WatchTarget::Session { id });
+    }
+    for id in list(a.run) {
+        let id = id.trim().to_owned();
+        if !id.starts_with("run_") && !id.starts_with("dep_") {
+            return Err(format!("run {id}: a run's id (run_…) or a deploy's (dep_…)"));
+        }
+        targets.push(WatchTarget::Run { id });
+    }
+    match a.room.map(|r| r.trim().to_owned()).filter(|r| !r.is_empty()) {
+        Some(room) => targets.push(WatchTarget::Thread { room, parent: a.parent, from: a.from }),
+        None if a.parent.is_some() || a.from.is_some() => return Err("parent and from go with a room".into()),
+        None => {}
+    }
+    if prs.is_empty() && targets.is_empty() {
+        return Err("create needs something to watch: pr, session, run, or room".into());
+    }
     for p in &prs {
         let r = PrRef::parse(p).ok_or_else(|| format!("pr {p}: OWNER/REPO#N, or its link on github.com"))?;
         if r.host != "github.com" {

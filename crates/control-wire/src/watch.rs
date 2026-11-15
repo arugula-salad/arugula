@@ -1,6 +1,7 @@
 //! Watches (Arugula #631): an agent asks control to wake its session when
 //! something happens (a PR merges or closes, its checks finish or fail, or
-//! it's ready to merge), then ends its turn. Control
+//! it's ready to merge; a hosted session settles; a thread gets a reply; a
+//! run or deploy ends), then ends its turn. Control
 //! evaluates the watch where the facts are, and a firing reaches the session
 //! as an `agents.mention` that carries [`WatchTag`], held, sent again and
 //! acked like a teammate's mention. A watch fires once. One that expires
@@ -40,6 +41,23 @@ pub enum WatchTarget {
         number: u64,
         until: PrUntil,
     },
+    /// A hosted agent session (`ses_…`, Arugula #1034), until it settles as
+    /// `wait` with `agent_session` says: done with nothing queued, waiting
+    /// for input, failed or stopped.
+    Session { id: String },
+    /// A reply in a chat thread: a message in `room` under `parent` (its
+    /// root's number), or any message in the room without one, that the
+    /// session that made the watch didn't write. With `from`, only one by
+    /// that person (their login or name, any case).
+    Thread {
+        room: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parent: Option<i64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        from: Option<String>,
+    },
+    /// A run (`run_…`) or a deploy (`dep_…`), until it ends however it ends.
+    Run { id: String },
 }
 
 /// What a watch on a pull request waits for.
