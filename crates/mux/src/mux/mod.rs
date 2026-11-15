@@ -206,6 +206,9 @@ pub enum Api {
     /// A session's work set by hand ([`Intent::SetSessionWork`]), and its
     /// project's name: why not, if it was refused.
     SetSessionWork(SessionId, Option<arugula_core::WorkRef>, Option<String>, oneshot::Sender<Result<(), String>>),
+    /// A session's card back to the one its branch gives (Arugula #1019,
+    /// [`arugula_core::Mux::unset_work`]): why not, if there's no session.
+    UnsetWork(SessionId, oneshot::Sender<Result<(), String>>),
     Run(RunRequest, oneshot::Sender<Result<PaneId, String>>),
     Pane(PaneId, oneshot::Sender<Option<PaneHandle>>),
     /// The Claude Code conversation running in a terminal now, by its id,

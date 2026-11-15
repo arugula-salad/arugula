@@ -187,6 +187,15 @@ pub const AGENT_BLOCK_STATE: &str = "/api/daemon/block-state";
 /// sessions across machines. The list replaces the machine's last one; the
 /// machine is the one that signed the request, never a field of the body.
 pub const AGENT_MACHINE_SESSIONS: &str = "/api/daemon/machine-sessions";
+/// `PUT` [`SessionCardSet`]: a person puts one of the project's sessions
+/// on a card, or takes it back to the one its branch gives (Arugula
+/// #1019). `{kind}` and `{id}` are the session's in the project's sessions
+/// by card (`GET /api/projects/{project}/sessions/by-card`): `machine` and
+/// the session's id on the machine (the machine is the body's), or
+/// `hosted` and the session's `ses_…`. A machine's session is set by its
+/// machine, asked over the relay ([`crate::forge::DaemonOp::SessionCard`]);
+/// a hosted one's card is its issue.
+pub const PROJECT_SESSION_CARD: &str = "/api/projects/{project}/sessions/{kind}/{id}/card";
 /// `POST` [`AttachBlock`]: a machine's agent block was started on an issue
 /// (`start_agent`'s `issue`): attach it, as work, to that issue's row on
 /// every board of the project; answered [`BlockAttached`]. Needs the
@@ -1438,6 +1447,23 @@ pub struct MachineSessionPane {
     /// The card this pane works on, when it isn't its session's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_item: Option<String>,
+}
+
+/// [`PROJECT_SESSION_CARD`]'s body (Arugula #1019).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct SessionCardSet {
+    /// The card: a native issue of the project, its `iss_…` id (or `#N`).
+    /// `None`: back to the card its branch gives, or none.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(optional = nullable))]
+    pub card: Option<String>,
+    /// The machine a `machine` session runs on: its id, as the sessions by
+    /// card say it (`on.id`). None for a hosted one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub machine: Option<String>,
 }
 
 /// A question on a row that a person answers on the board (Arugula #367):

@@ -2848,6 +2848,27 @@
       ],
       "type": "object"
     },
+    "SessionCardSet": {
+      "description": "[`PROJECT_SESSION_CARD`]'s body (Arugula #1019).",
+      "properties": {
+        "card": {
+          "default": null,
+          "description": "The card: a native issue of the project, its `iss_…` id (or `#N`).\n`None`: back to the card its branch gives, or none.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "machine": {
+          "description": "The machine a `machine` session runs on: its id, as the sessions by\ncard say it (`on.id`). None for a hosted one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "SessionHold": {
       "description": "The session that holds an issue's row (Arugula #765): the one that last\nstarted an agent on it, or took it. It is the issue's, so a row on two\nboards shows the same holder, and it lasts until the issue closes or the\nsession lets it go. The same shape as [`BoardLead`].",
       "properties": {

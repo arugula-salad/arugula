@@ -587,6 +587,25 @@ fn a_sessions_work_set_by_hand_puts_it_in_its_project_and_is_kept() {
 }
 
 #[test]
+fn work_unset_goes_back_to_what_a_branch_gives() {
+    let mut m = mux_with_session();
+    m.infer_work(1, work("prj_a", Some("#3")), None).unwrap();
+    m.apply(Intent::SetSessionWork { session: 1, work: Some(work("prj_a", Some("#7"))), project_name: None }).unwrap();
+    assert_eq!(m.infer_work(1, work("prj_a", Some("#3")), None), Ok(false), "set by hand: nothing infers over it");
+    assert_eq!(m.unset_work(1), Ok(true));
+    assert_eq!((m.sessions[0].work.as_ref(), m.sessions[0].work_by_hand), (None, false));
+    assert!(m.sessions[0].project.is_some(), "its project stays");
+    assert_eq!(m.infer_work(1, work("prj_a", Some("#3")), None), Ok(true), "its branch's card again");
+    // Taken away by hand: unset, a branch may give it one again.
+    m.apply(Intent::SetSessionWork { session: 1, work: None, project_name: None }).unwrap();
+    assert!(!m.sessions[0].work_inferable());
+    assert_eq!(m.unset_work(1), Ok(true));
+    assert!(m.sessions[0].work_inferable());
+    assert_eq!(m.unset_work(1), Ok(false), "nothing to take back");
+    assert_eq!(m.unset_work(9), Err(crate::Error::NoSession(9)));
+}
+
+#[test]
 fn a_project_set_by_hand_refuses_another_projects_work_and_drops_its_own() {
     let mut m = mux_with_session();
     m.apply(Intent::SetSessionProject { session: 1, project: Some(project("prj_a")) }).unwrap();

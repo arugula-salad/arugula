@@ -547,6 +547,20 @@ impl Mux {
         Ok(true)
     }
 
+    /// A session's card back to the one its branch gives (Arugula #1019):
+    /// its work goes, set by hand or not, and a pane's branch may give it
+    /// one again ([`Session::work_inferable`]). Its project stays. Whether
+    /// it had work, or work set by hand, to take back.
+    pub fn unset_work(&mut self, session: SessionId) -> Result<bool, Error> {
+        let s = self.session_mut(session)?;
+        if s.work.is_none() && !s.work_by_hand {
+            return Ok(false);
+        }
+        (s.work, s.work_by_hand) = (None, false);
+        self.rev += 1;
+        Ok(true)
+    }
+
     /// The repos inferred projects came from (`Session::project_repo`),
     /// each once.
     pub fn project_repos(&self) -> Vec<String> {

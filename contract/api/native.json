@@ -127,6 +127,10 @@
       "why": "Not in the first app"
     },
     {
+      "match": "/sessions/\\{kind\\}/\\{id\\}/card$",
+      "why": "Not in the first app"
+    },
+    {
       "match": "/relations",
       "why": "Not in the first app"
     },

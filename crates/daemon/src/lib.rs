@@ -85,6 +85,7 @@ pub mod roots;
 pub mod rules;
 mod selfupdate;
 pub mod server;
+mod session_card;
 mod session_project;
 mod setup;
 mod share;
