@@ -39,6 +39,7 @@ import type { Client } from "../shell/client";
 import { OPS, opPath } from "../shell/ops";
 import type { DocMoveRequest } from "../shared/proto.gen";
 import { notePane } from "../platform/places-kept";
+import { popOutIn } from "../shell/ui/panes/pop-out";
 
 export interface Booted {
   machines: Machines;
@@ -54,6 +55,7 @@ export function boot(session: AppSession | null): Promise<Booted> {
   return (booted ??= (async () => {
     // The route names the machine shown, not `?machine=`.
     directory.keepsAddress = false;
+    popOutIn.app = true;
     if (session) {
       followSource(session);
       session.start();
@@ -225,7 +227,8 @@ function Place({ project, at, b: { machines, cell }, session }: { project: strin
       </main>
     );
   const client = machines.client;
-  const pop = at.at === "machine" && at.pop && at.pane !== undefined ? { daemon: at.machine, pane: at.pane } : null;
+  // The home machine's has no daemon: the pop-out page takes it from the directory.
+  const pop = at.pop && at.pane !== undefined ? { daemon: at.at === "machine" ? at.machine : undefined, pane: at.pane } : null;
   return (
     // What a pane's thread and blocks reach the machine through (M147).
     <PlatformApiContext.Provider value={shellPlatformApi(client)}>

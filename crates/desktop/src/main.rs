@@ -809,9 +809,15 @@ fn open_window(app: &AppHandle, url: WebviewUrl) -> tauri::Result<tauri::Webview
     Ok(w)
 }
 
-/// A pane popped out into a window of its own (#497): the page's `#pop=`.
+/// A pane popped out into a window of its own (#497): control's page's
+/// `#pop=`, or the app's `?pop` on a machine's page (#1032).
 fn pop_out(url: &tauri::Url) -> bool {
-    url.fragment().is_some_and(|f| f.starts_with("pop="))
+    let in_app = url.path_segments().is_some_and(|mut s| s.any(|s| s == "machines"));
+    if in_app {
+        url.query_pairs().any(|(k, _)| k == "pop")
+    } else {
+        url.fragment().is_some_and(|f| f.starts_with("pop="))
+    }
 }
 
 /// macOS: a new window opens as a tab of the window in front, whatever the
@@ -1623,6 +1629,22 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use arugula_proto::service::{APP_ID, APP_LABEL};
+
+    /// A pane popped out is a window of its own, from control's page and
+    /// from the app; nothing else is (#1032).
+    #[test]
+    fn a_popped_out_pane_is_its_own_window() {
+        let pop = |u: &str| super::pop_out(&tauri::Url::parse(u).unwrap());
+        assert!(pop("https://control.arugula.io/#pop=da5b.9"));
+        assert!(pop("https://control.arugula.io/#pop=9"));
+        assert!(pop("https://app.arugula.io/machines/da5b786733ac?pane=9&pop"));
+        assert!(pop("https://app.arugula.io/machines?pane=9&pop"));
+        assert!(pop("https://app.arugula.io/p/prj_1234/machines/da5b786733ac-mini?pane=9&pop"));
+        assert!(!pop("https://app.arugula.io/machines/da5b786733ac?pane=9"));
+        assert!(!pop("https://app.arugula.io/machines?pane=9&popular"));
+        assert!(pop("https://app.arugula.io/#pop=9"));
+        assert!(!pop("https://control.arugula.io/#pane=da5b.9"));
+    }
 
     fn file(p: &str) -> String {
         std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(p)).unwrap()

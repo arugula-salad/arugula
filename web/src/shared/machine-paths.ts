@@ -11,8 +11,10 @@ export type MachineAt =
   /** The machines. `pane` (a notification's, naming no machine) opens on
    * the home or last machine; `name`, a machine by name (control's old
    * `?machine=NAME`). `layer`: one of the shell's own places over the
-   * machine shown (`overview`, `agents`, `settings=machine`…). */
-  | { at: "machines"; pane?: number; name?: string; layer?: string }
+   * machine shown (`overview`, `agents`, `settings=machine`…). `pop`: the
+   * pane alone in its window, on the home machine, which this address
+   * can't name (#1032). */
+  | { at: "machines"; pane?: number; name?: string; layer?: string; pop?: true }
   /** A machine's page, with a pane to show: shared from (`share`), a person
    * to follow there (`follow`), alone in its window (`pop`); or with
    * Start an agent open (`agent`). */
@@ -41,7 +43,7 @@ export function parseMachines(rest: string[], q: URLSearchParams, hash = ""): Ma
     const pane = num(q.get("pane"));
     const name = q.get("machine");
     const layer = hash.replace(/^#/, "");
-    return { at: "machines", ...(pane !== undefined ? { pane } : {}), ...(name ? { name } : {}), ...(LAYER.test(layer) ? { layer } : {}) };
+    return { at: "machines", ...(pane !== undefined ? { pane } : {}), ...(name ? { name } : {}), ...(LAYER.test(layer) ? { layer } : {}), ...(pane !== undefined && q.has("pop") ? { pop: true } : {}) };
   }
   if (rest.length !== 1) return null;
   if (rest[0] === "swarm") {
@@ -82,7 +84,7 @@ export function machinesPath(m: MachineAt, slug?: string | null): string {
     if (m.follow) q.set("follow", m.follow);
   }
   // Flags as bare words, as the shell's fragments have them.
-  const flags = m.at === "machine" ? (["share", "pop", "agent"] as const).filter((k) => m[k]) : [];
+  const flags = m.at === "machine" ? (["share", "pop", "agent"] as const).filter((k) => m[k]) : m.at === "machines" && m.pop ? ["pop"] : [];
   const qs = [q.toString(), ...flags].filter(Boolean).join("&");
   const layer = m.at === "machines" && m.layer ? `#${m.layer}` : "";
   return `${path}${qs ? `?${qs}` : ""}${layer}`;
@@ -95,10 +97,18 @@ export function controlHash(m: MachineAt): string {
     if (m.board) return `swarm=board:${m.board}`;
     return m.focus ? `swarm=${m.focus.machine ? `${m.focus.machine}.` : ""}${m.focus.pane}` : "swarm";
   }
-  if (m.at === "machines") return m.layer ?? (m.pane !== undefined ? `pane=${m.pane}` : "");
+  if (m.at === "machines") return m.layer ?? (m.pane !== undefined ? `${m.pop ? "pop" : "pane"}=${m.pane}` : "");
   if (m.pop && m.pane !== undefined) return `pop=${m.machine}.${m.pane}`;
   if (m.pane !== undefined) return `pane=${m.machine}.${m.pane}${m.share ? "&share" : ""}${m.follow ? `&follow=${encodeURIComponent(m.follow)}` : ""}`;
   return `machine=${m.machine}${m.agent ? "&agent" : ""}`;
+}
+
+/** The address that opens `pane` alone in a window of its own (#497),
+ * `daemon` naming its machine (none: the home machine). In the app it's the
+ * machine's page with `pop`; on control's page, the fragment `#pop=`. */
+export function popAddress(pane: number, daemon?: string, app = true): string {
+  if (!app) return `/#pop=${daemon ? `${daemon}.` : ""}${pane}`;
+  return machinesPath(daemon ? { at: "machine", machine: daemon, pane, pop: true } : { at: "machines", pane, pop: true });
 }
 
 /** Where one of control's page addresses lives in the app, project-less
@@ -130,7 +140,7 @@ export function fromControl(hash: string, search = ""): string | null {
   m = /^#swarm(?:=(?:board:(brd_[\w-]+)|(?:([0-9a-f]+)\.)?(\d+)))?$/.exec(hash);
   if (m) return machinesPath({ at: "swarm", ...(m[1] ? { board: m[1] } : {}), ...(m[3] ? { focus: { ...(m[2] ? { machine: m[2] } : {}), pane: Number(m[3]) } } : {}) });
   m = /^#pop=(?:([0-9a-f]+)\.)?(\d+)$/.exec(hash);
-  if (m) return m[1] ? machinesPath({ at: "machine", machine: m[1], pane: Number(m[2]), pop: true }) : machinesPath({ at: "machines", pane: Number(m[2]) });
+  if (m) return popAddress(Number(m[2]), m[1]);
   m = /^#project=(prj_[0-9a-f]{4,64})$/.exec(hash);
   if (m) return `/p/${m[1]}`;
   if (hash === "#docs") return "/docs";
