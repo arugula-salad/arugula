@@ -219,6 +219,14 @@
   font-size: var(--text-sm);
 }
 
+/* Open, Silence and Stop, for the agent's owner (#653). */
+.thread-agent-detail .thread-agent-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
 /* How far each agent has read. */
 .thread-seen {
   display: flex;

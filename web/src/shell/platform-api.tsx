@@ -101,7 +101,25 @@ function build(client: Client): PlatformApi {
       const slug = sessionSlug(session);
       if (!h || !slug) return undefined;
       const p = getFleet()?.panes.find((x) => x.host === h.name && !x.stale && sessionSlug(cleanTitle(x.info.title ?? "")) === slug);
-      return p ? { pane: String(p.id), up: h.state === "connected" } : undefined;
+      return p ? { pane: String(p.id), up: h.state === "connected", mentionsOff: !!p.info.mentions_off } : undefined;
+    },
+    async agentAct(machine, pane, act) {
+      const h = hostOf(machine);
+      const fleet = getFleet();
+      if (!fleet || !h) return "That machine isn't one of yours";
+      if (h.state !== "connected") return `${h.name} is asleep`;
+      // Escape stops Claude Code's turn in a terminal, as it does at the
+      // keyboard; an agent block cancels its turn, as its own Stop does.
+      const block = fleetPane(machine, pane)?.info.type === "agent";
+      const stop: [string, unknown] = block ? [`/api/blocks/${pane}/call/cancel`, {}] : [`/api/panes/${pane}/keys`, { keys: ["Escape"] }];
+      const [path, body] = act === "stop" ? stop : [`/api/panes/${pane}/mentions`, { on: act === "allow" }];
+      try {
+        const res = await fleet.request(h.name, "POST", path, body);
+        if (res.ok) return null;
+        return (await res.json<{ error?: string }>().catch(() => null))?.error ?? `${h.name} said ${res.status}`;
+      } catch (e) {
+        return String((e as Error).message ?? e);
+      }
     },
     // A Doc on this machine opens in a block here; one on another stays where it is.
     machineDoc: {
