@@ -1,7 +1,8 @@
 // Pop a pane out into a window of its own (Arugula #497): chat, a board, a
 // Doc on a second monitor, out of the crowded panes.
 //
-// - Pop out (the pane menu, ⇧⌘O) opens `/#pop=<daemon>.<pane>`: a new
+// - Pop out (the pane menu, ⇧⌘O) opens `/#pop=<daemon>.<pane>` (in the app, the machine's page with
+//   `?pop`): a new
 //   window in the desktop app (crates/desktop keeps it out of the main
 //   window's native tabs), a new tab in a browser.
 // - That page shows only the pane. Once it's connected it sends the
@@ -16,11 +17,16 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Client } from "../../client";
 import type { PaneId } from "../../../shared/proto";
+import { popAddress } from "../../../shared/machine-paths";
 import { directory } from "../../hosts";
 import { useSubscribe } from "../../../shared/ui/hooks";
 
 /** `#pop=<daemon>.<pane>`, or `#pop=<pane>` on this page's own machine. */
 export const POP_HASH = /^#pop=(?:([0-9a-f]+)\.)?(\d+)$/;
+
+/** Where Pop out opens: the app sets `app` (its machines are at paths, not
+ * `#pop=`; #1032). */
+export const popOutIn = { app: false };
 
 /** Whether `pane` can pop out: a block, on a screen that shows panes side
  * by side, and not out already. */
@@ -37,9 +43,11 @@ export function isPopped(client: Client, pane: PaneId): boolean {
 /** Open `pane` in a window of its own. */
 export function popOut(client: Client, pane: PaneId) {
   const daemon = directory.list?.hosts.find((h) => h.name === directory.current)?.id;
-  const hash = `#pop=${daemon && directory.current !== directory.home ? `${daemon}.` : ""}${pane}`;
+  // In the app the daemon is named even for the home machine: its address
+  // has no way to leave it out (#1032).
+  const named = popOutIn.app || directory.current !== directory.home ? daemon : undefined;
   // A name per pane: Pop out again on the same pane brings its window forward.
-  window.open(`${location.origin}/${hash}`, `arugula-pop-${daemon ?? "home"}-${pane}`);
+  window.open(`${location.origin}${popAddress(pane, named, popOutIn.app)}`, `arugula-pop-${daemon ?? "home"}-${pane}`);
   client.setActive(pane);
 }
 

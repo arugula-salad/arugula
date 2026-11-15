@@ -5,7 +5,7 @@
 // machines from the app's host. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { controlHash, fromControl, machinesPath, parseMachines } from "../src/shared/machine-paths.ts";
+import { controlHash, fromControl, machinesPath, parseMachines, popAddress } from "../src/shared/machine-paths.ts";
 import { FRAGMENTS } from "../src/shell/fragments.ts";
 import { TOP, parse, pathOf } from "../src/platform/paths.ts";
 
@@ -29,7 +29,7 @@ test("each of control's page addresses has its place in the app, project-less", 
     ["#swarm=4", "", "/machines/swarm?focus=4"],
     [`#swarm=board:${B}`, "", `/machines/swarm?board=${B}`],
     [`#pop=${D}.9`, "", `/machines/${D}?pane=9&pop`],
-    ["#pop=9", "", "/machines?pane=9"],
+    ["#pop=9", "", "/machines?pane=9&pop"],
     [`#project=${P}`, "", `/p/${P}`],
     ["#docs", "", "/docs"],
     ["#overview", "", "/machines#overview"],
@@ -89,4 +89,21 @@ test("the machines live in the project: list, a machine's page with its slug, Sw
   // The Overview, by its rail name too.
   assert.deepEqual(parse(`/p/${P}/overview`), { page: "project", project: P });
   assert.equal(machinesPath({ at: "machine", machine: D, pane: 1, pop: true, agent: true }), `/machines/${D}?pane=1&pop&agent`);
+  // Home machine popped out (#1032): no daemon to name, and it round-trips.
+  assert.equal(machinesPath({ at: "machines", pane: 9, pop: true }), "/machines?pane=9&pop");
+  assert.deepEqual(parse("/machines", "?pane=9&pop"), { page: "find", what: "machines", at: { at: "machines", pane: 9, pop: true } });
+  assert.equal(parse("/machines", "?pop").at.pop, undefined);
+  assert.equal(controlHash({ at: "machines", pane: 9, pop: true }), "pop=9");
+});
+
+test("Pop out opens the pane alone, in the app and on control's page (#1032)", () => {
+  // The app names the daemon, even for the home machine: no overview between.
+  assert.equal(popAddress(9, D), `/machines/${D}?pane=9&pop`);
+  assert.equal(popAddress(9, undefined), "/machines?pane=9&pop");
+  // Control's page keeps its fragment.
+  assert.equal(popAddress(9, D, false), `/#pop=${D}.9`);
+  assert.equal(popAddress(9, undefined, false), "/#pop=9");
+  // What the app opens is what an old `#pop=` becomes there.
+  assert.equal(fromControl(`#pop=${D}.9`), popAddress(9, D));
+  assert.equal(fromControl("#pop=9"), popAddress(9));
 });
