@@ -49,7 +49,7 @@ impl Place {
 }
 
 /// A `prj_…` id, or none.
-fn project_id(p: &str) -> Option<String> {
+pub(crate) fn project_id(p: &str) -> Option<String> {
     p.strip_prefix("prj_")
         .is_some_and(|h| !h.is_empty() && h.bytes().all(|b| b.is_ascii_alphanumeric()))
         .then(|| p.to_owned())

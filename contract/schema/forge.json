@@ -426,6 +426,20 @@
             "op"
           ],
           "type": "object"
+        },
+        {
+          "$ref": "#/$defs/SessionCardAsk",
+          "description": "A person put one of this machine's sessions on a card, or took it\nback to the one its branch gives (Arugula #1019): Put on a card on\nthe project's Sessions page. The machine's owner's own act, through\nthe hub. The daemon answers `done` once the session (and every\npane that has no card of its own) is on it, `failed` when it can't\nbe. An older daemon answers `unknown`.",
+          "properties": {
+            "op": {
+              "const": "sessions.set_card",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -1429,6 +1443,38 @@
           "type": "string"
         }
       ]
+    },
+    "SessionCardAsk": {
+      "description": "`sessions.set_card`'s ask (Arugula #1019).",
+      "properties": {
+        "card": {
+          "description": "The card: a native issue, `#N` in the project or its `iss_…` id.\n`None`: the session goes back to the card its branch gives, or to\nnone, and a branch may give it one again.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "project": {
+          "description": "The project the card is in: `prj_…`.",
+          "type": "string"
+        },
+        "project_name": {
+          "description": "What the person sees it called, for a session that wasn't in it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "session": {
+          "description": "The session's id on the machine, as its sessions report says it.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session",
+        "project"
+      ],
+      "type": "object"
     },
     "Standing": {
       "description": "Whether a repository's events reach a daemon, and why not.",

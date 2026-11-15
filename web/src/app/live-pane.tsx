@@ -18,6 +18,8 @@ import { StateChip } from "../shared/ui/state-chip";
 import { PermissionBody, PermissionButtons, VIEWER_NOTE } from "../shell/ui/answer-card";
 import { drawsItsOwn, mayAnswer } from "../shell/ui/term-ask";
 import { KeyBar } from "../shell/ui/phone";
+import { pickCard } from "../shell/ui/pane-card";
+import { usePlatformApi } from "../shared/platform-api";
 import type { AppSession } from "./session";
 
 /** How the app reaches a machine by control's id for it: the session's
@@ -221,5 +223,38 @@ export function LiveAsk({ machine, pane, reach }: { machine: string; pane: strin
       )}
       {err && <p class="board-bad">{err}</p>}
     </section>
+  );
+}
+
+/** The drawer's last line (Arugula #1019): why the pane's session is on
+ * this card, where its machine says (put there by hand, else its card
+ * found from a branch: the pane's), and Change card, the pane chip's
+ * picker on that session. Nothing while its machine isn't reached, or for
+ * a session in no project. */
+export function CardWhy({ machine, pane, reach }: { machine: string; pane: string; reach: Reach }) {
+  const api = usePlatformApi();
+  const c = useLive(machine, reach);
+  const client = c === "unreachable" ? null : c;
+  const id = Number(pane);
+  const info = client?.connected ? client.info(id) : undefined;
+  if (!client || !info?.session_project) return null;
+  const sid = client.sessionOfPane(id);
+  const session = client.state?.sessions.find((s) => s.id === sid);
+  // A block on an issue of its own keeps it whatever its session's card: changing that wouldn't move this one.
+  if (info.on_issue && info.on_issue.issue !== session?.work?.item) return null;
+  const branch = !session?.work_by_hand && session?.work?.item ? info.branch : null;
+  return (
+    <p class="dim" data-board-drawer-why>
+      {session?.work_by_hand ? (
+        "On this card because you put it here. "
+      ) : branch ? (
+        <>
+          On this card because its branch is <code>{branch}</code>.{" "}
+        </>
+      ) : null}
+      <button type="button" class="link" data-board-drawer-change-card onClick={() => void pickCard(client, id, api.toast)}>
+        Change card
+      </button>
+    </p>
   );
 }

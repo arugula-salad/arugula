@@ -207,6 +207,9 @@ pub const PROJECT_OPS: &[&str] = &["projects.repo_moved"];
 /// The Docs' op (Arugula #1023) every daemon of this build knows.
 pub const DOC_OPS: &[&str] = &["docs.list"];
 
+/// The sessions' op (Arugula #1019) every daemon of this build knows.
+pub const SESSION_OPS: &[&str] = &["sessions.set_card"];
+
 /// `{"t": "ops", "ops": [...]}`, daemon to control, on connecting: the
 /// [`DaemonOp`]s it knows. A daemon that never says knows none, and control
 /// answers [`OpAnswer::Unknown`] for it without asking.
@@ -230,6 +233,7 @@ impl Ops {
                 .chain(AGENT_OPS)
                 .chain(PROJECT_OPS)
                 .chain(DOC_OPS)
+                .chain(SESSION_OPS)
                 .map(|s| (*s).to_owned())
                 .collect(),
         }
@@ -328,6 +332,14 @@ pub enum DaemonOp {
     /// older daemon answers `unknown`: it lists none.
     #[serde(rename = "docs.list")]
     DocsList(DocsListAsk),
+    /// A person put one of this machine's sessions on a card, or took it
+    /// back to the one its branch gives (Arugula #1019): Put on a card on
+    /// the project's Sessions page. The machine's owner's own act, through
+    /// the hub. The daemon answers `done` once the session (and every
+    /// pane that has no card of its own) is on it, `failed` when it can't
+    /// be. An older daemon answers `unknown`.
+    #[serde(rename = "sessions.set_card")]
+    SessionCard(SessionCardAsk),
 }
 
 impl DaemonOp {
@@ -344,6 +356,7 @@ impl DaemonOp {
             DaemonOp::RepoMoved(_) => "projects.repo_moved",
             DaemonOp::MentionsHeld(_) => "agents.mentions_held",
             DaemonOp::DocsList(_) => "docs.list",
+            DaemonOp::SessionCard(_) => "sessions.set_card",
         }
     }
 }
@@ -420,6 +433,23 @@ pub struct AgentMention {
 pub struct RepoMoved {
     /// `OWNER/NAME` on github.com.
     pub repo: String,
+}
+
+/// `sessions.set_card`'s ask (Arugula #1019).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct SessionCardAsk {
+    /// The session's id on the machine, as its sessions report says it.
+    pub session: String,
+    /// The project the card is in: `prj_…`.
+    pub project: String,
+    /// What the person sees it called, for a session that wasn't in it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_name: Option<String>,
+    /// The card: a native issue, `#N` in the project or its `iss_…` id.
+    /// `None`: the session goes back to the card its branch gives, or to
+    /// none, and a branch may give it one again.
+    pub card: Option<String>,
 }
 
 /// `docs.list`'s ask (Arugula #1023): nothing yet, so the answer is every
@@ -710,5 +740,28 @@ mod tests {
                 "docs": [{ "id": "0123456789abcdef", "title": "Plan", "project": null }] } })
         );
         assert_eq!(serde_json::from_value::<OpDone>(v).unwrap(), done);
+    }
+
+    /// `sessions.set_card` on the relay (Arugula #1019): a card, or `null`
+    /// for the branch's, said either way.
+    #[test]
+    fn the_session_card_op_on_the_wire() {
+        let card = SessionCardAsk {
+            session: "3".into(),
+            project: "prj_1".into(),
+            project_name: None,
+            card: Some("#7".into()),
+        };
+        let ask = OpAsk::new("1".into(), DaemonOp::SessionCard(card));
+        let v = serde_json::to_value(&ask).unwrap();
+        assert_eq!(
+            v,
+            json!({ "t": "op", "id": "1", "op": { "op": "sessions.set_card", "session": "3", "project": "prj_1", "card": "#7" } })
+        );
+        assert_eq!(serde_json::from_value::<OpAsk>(v).unwrap(), ask);
+        assert!(Ops::ours().ops.contains(&ask.op.name().to_owned()));
+        let back = json!({ "t": "op", "id": "2", "op": { "op": "sessions.set_card", "session": "3", "project": "prj_1", "card": null } });
+        let DaemonOp::SessionCard(c) = serde_json::from_value::<OpAsk>(back).unwrap().op else { panic!() };
+        assert_eq!(c.card, None);
     }
 }

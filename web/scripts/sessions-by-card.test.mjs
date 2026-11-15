@@ -2,8 +2,8 @@
 // `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { branchOf, cardPlace, cardTitle, finished, groupsOf, panesShown, readsBoards, waitsOn } from "../src/platform/sessions-by-card.ts";
-import { finishedStates, hubStanding, stateStanding } from "../src/shared/project-sessions.ts";
+import { MOVE_KEPT_MS, branchOf, cardPlace, cardTitle, finished, groupsOf, keptMoves, movable, panesShown, readsBoards, undoMove, waitsOn, withMoves } from "../src/platform/sessions-by-card.ts";
+import { finishedStates, hubStanding, setSessionCard, stateStanding } from "../src/shared/project-sessions.ts";
 import { DANA, byCard, wave } from "../e2e/sessions-fixture.ts";
 
 const M = "d00d0001";
@@ -107,4 +107,85 @@ test("the Overview and Sessions read states alike: what waits on you, failures, 
   assert.equal(finishedStates(["exited", null]), false, "a pane not said isn't finished");
   assert.equal(finishedStates(["failed"]), false, "a failure stays in sight");
   assert.equal(finishedStates([]), false);
+});
+
+// Put on a card (Arugula #1019): the move shows at once and is kept over
+// reads that don't say it yet; a refusal takes it back.
+const release = (answer) => answer.groups.find((g) => !g.card).sessions.find((s) => s.kind === "machine");
+const rail = { id: "iss_970", number: 970, title: "The rail", board: null, lane: null };
+const fresh = { id: "iss_1019", number: 1019, title: "Put a session on a card" };
+const where = (answer, id) => answer.groups.find((g) => g.sessions.some((s) => s.kind === "machine" && s.id === id))?.card?.id ?? null;
+
+test("only a machine's session is put on a card from the page", () => {
+  const a = byCard(M, 4);
+  assert.equal(movable(release(a)), true);
+  assert.equal(movable(a.groups.find((g) => !g.card).sessions.find((s) => s.kind === "agent")), false);
+  assert.equal(movable(a.groups[1].sessions[0]), false);
+  assert.equal(movable(null), false);
+});
+
+test("a move shows at once: off Not on a card and onto its card's group, made when no session was on it", () => {
+  const a = byCard(M, 4);
+  const onRail = withMoves(a, [{ session: release(a), from: null, to: rail, at: 1 }]);
+  assert.equal(where(onRail, "2"), "iss_970");
+  assert.equal(onRail.groups.find((g) => g.card?.id === "iss_970").sessions.length, 4);
+  // The answer itself is left as it was.
+  assert.equal(where(a, "2"), null);
+  const made = withMoves(a, [{ session: release(a), from: null, to: fresh, at: 1 }]);
+  assert.deepEqual(made.groups.find((g) => g.card?.id === "iss_1019"), { card: fresh, sessions: [release(a)] });
+  // Its new group is before Not on a card, which keeps the lead.
+  assert.deepEqual(made.groups.map((g) => g.card?.id ?? null), ["iss_970", "iss_985", "iss_1019", null]);
+  assert.deepEqual(titles(groupsOf(made, wave(M), all)), ["#985 A project's Sessions page", "#970 The rail", "#1019 Put a session on a card", "#990 Fold finished", "Not on a card"]);
+  // Back to Not on a card, and a group left empty goes.
+  const back = withMoves(made, [{ session: release(a), from: fresh, to: null, at: 2 }]);
+  assert.equal(where(back, "2"), null);
+  assert.equal(back.groups.some((g) => g.card?.id === "iss_1019"), false);
+  // No by-card answer: nothing to move.
+  assert.equal(withMoves(null, [{ session: release(a), from: null, to: rail, at: 1 }]), null);
+});
+
+test("a move is kept over a read that doesn't say it yet, and dropped once one does, or after a while", () => {
+  const a = byCard(M, 4);
+  const m = { session: release(a), from: null, to: fresh, at: 1_000 };
+  // The 60s re-read, from before the machine reported: kept, and still shown.
+  const kept = keptMoves(a, [m], 61_000);
+  assert.deepEqual(kept, [m]);
+  assert.equal(where(withMoves(a, kept), "2"), "iss_1019");
+  // A read that agrees: the answer alone says it now.
+  const agreed = withMoves(a, [m]);
+  assert.deepEqual(keptMoves(agreed, [m], 61_000), []);
+  // Nobody agreed in time: the cloud's answer is the page's again.
+  assert.deepEqual(keptMoves(a, [m], 1_000 + MOVE_KEPT_MS + 1), []);
+  // Not on a card agrees once it's off the card it was on, whatever its branch gives.
+  const off = { session: release(a), from: rail, to: null, at: 1_000 };
+  const onRail = withMoves(a, [{ session: release(a), from: null, to: rail, at: 0 }]);
+  assert.deepEqual(keptMoves(onRail, [off], 2_000), [off]);
+  assert.deepEqual(keptMoves(a, [off], 2_000), []);
+  assert.deepEqual(keptMoves(withMoves(a, [{ session: release(a), from: null, to: fresh, at: 0 }]), [off], 2_000), []);
+});
+
+test("a refused move is undone: the session is back where the answer has it", () => {
+  const a = byCard(M, 4);
+  const m = { session: release(a), from: null, to: rail, at: 1 };
+  const other = { session: a.groups[0].sessions[0], from: rail, to: fresh, at: 1 };
+  const left = undoMove([m, other], m);
+  assert.deepEqual(left, [other]);
+  assert.equal(where(withMoves(a, left), "2"), null);
+  assert.equal(where(withMoves(a, left), "7"), "iss_1019");
+});
+
+test("setSessionCard puts the session's card, and says why not", async () => {
+  const a = byCard(M, 4);
+  const sent = [];
+  const answer = (status, body) => async (url, init) => (sent.push({ url, init }), new Response(body === undefined ? null : JSON.stringify(body), { status }));
+  await setSessionCard("prj_aaaa0002", release(a), "iss_1019", answer(204));
+  assert.equal(sent[0].url, "/api/projects/prj_aaaa0002/sessions/machine/2/card");
+  assert.equal(sent[0].init.method, "PUT");
+  assert.deepEqual(JSON.parse(sent[0].init.body), { card: "iss_1019", machine: DANA });
+  await setSessionCard("prj_aaaa0002", release(a), null, answer(200, {}));
+  assert.deepEqual(JSON.parse(sent[1].init.body), { card: null, machine: DANA });
+  await assert.rejects(setSessionCard("prj_aaaa0002", release(a), "iss_1019", answer(409, { error: "danas-mini is offline" })), /danas-mini is offline/);
+  await assert.rejects(setSessionCard("prj_aaaa0002", release(a), "iss_1019", answer(404, { error: "not found" })), /can't move sessions/);
+  await assert.rejects(setSessionCard("prj_aaaa0002", release(a), "iss_1019", answer(404, { error: "no such session" })), /no such session/);
+  await assert.rejects(setSessionCard("prj_aaaa0002", release(a), "iss_1019", answer(422)), /HTTP 422/);
 });

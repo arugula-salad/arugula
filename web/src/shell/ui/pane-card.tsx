@@ -73,19 +73,21 @@ export function goToCard(client: Client, project: string, card: string, on?: OnB
   openPlatform(pathOf(project, card, on));
 }
 
-/** Put a pane's session on a card, or another, from the project's open issues. */
-async function pickCard(client: Client, pane: PaneId) {
+/** Put a pane's session on a card, or another, from the project's open
+ * issues. `say` tells the person why not (the pane's own toast; a board
+ * drawer's page gives its own). */
+export async function pickCard(client: Client, pane: PaneId, say: (why: string) => void = (why) => client.toast(why)) {
   const info = client.info(pane);
   const project = info?.session_project;
   const session = client.sessionOfPane(pane);
   if (!project || session === null) return;
-  if (!ready()) return client.toast("Cards are read as you, through Arugula cloud: open this machine in Arugula cloud, signed in");
+  if (!ready()) return say("Cards are read as you, through Arugula cloud: open this machine in Arugula cloud, signed in");
   const open = issues.list(project.id, {}, undefined, 100).then((l) => l.issues);
   const answer = await askText(info?.on_issue ? CHANGE : PUT_ON, "", "#number or title", open.then((l) => cardChoices(l, info?.on_issue?.issue ?? null)));
   if (answer === null || !answer.trim()) return;
   const card = cardPicked(answer, await open.catch(() => []));
-  if (!card) return client.toast(`No open card in ${project.name} matches "${answer.trim()}"`);
-  client.intent({ op: "set_session_work", session, work: { project: project.id, item: card }, project_name: project.name }, (why) => client.toast(why));
+  if (!card) return say(`No open card in ${project.name} matches "${answer.trim()}"`);
+  client.intent({ op: "set_session_work", session, work: { project: project.id, item: card }, project_name: project.name }, say);
 }
 
 function takeOff(client: Client, pane: PaneId) {

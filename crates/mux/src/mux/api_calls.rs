@@ -116,6 +116,14 @@ impl Daemon {
             Api::SetSessionWork(session, work, project_name, reply) => {
                 let _ = reply.send(self.intent(None, Intent::SetSessionWork { session, work, project_name }));
             }
+            Api::UnsetWork(session, reply) => {
+                let unset = self.mux.unset_work(session).map_err(|e| e.to_string());
+                if unset == Ok(true) {
+                    info!(session, "session's card back to its branch's");
+                    self.changed();
+                }
+                let _ = reply.send(unset.map(|_| ()));
+            }
             Api::ProjectRepos(reply) => {
                 let _ = reply.send(self.mux.project_repos());
             }

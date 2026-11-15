@@ -1,8 +1,9 @@
 // A pane's card chip (Arugula inversion): what it says, cut to the room a
 // pane's bar has, the picker's choices and what an answer picks. Plain
 // functions, for the chip and its tests (scripts/pane-card.test.mjs).
-import type { NativeIssue } from "../../shared/proto";
-import type { PromptChoice } from "../../shared/ui/menu";
+// The picker's choices and answers are shared/card-pick.ts's (the Sessions
+// page asks with them too), kept here for the chip and its tests.
+export { cardChoices, cardNumber, cardPicked } from "../../shared/card-pick.ts";
 
 /** What the chip says: the project (left out when there's no room), the
  * card (`#983`, null for none) and its title (null when cut away). */
@@ -60,34 +61,6 @@ const TITLE_CH = 7.5;
 export function chipRoom(width: number, title: number): number {
   const said = Math.min(Math.max(title * TITLE_CH, TITLE_LEAST), width * TITLE_SHARE);
   return Math.max(0, Math.floor((width - BAR_FIXED - said - CHIP_FIXED) / CHIP_CH));
-}
-
-/** A card's number in its reference: `#983` → 983, else null (an `iss_`). */
-export function cardNumber(card: string): number | null {
-  const m = /^#?(\d+)$/.exec(card.trim());
-  return m ? Number(m[1]) : null;
-}
-
-/** The project's open issues as the picker's choices, newest first, the
- * pane's own card marked and first. */
-export function cardChoices(open: Pick<NativeIssue, "number" | "title">[], current: string | null): PromptChoice[] {
-  const now = current ? cardNumber(current) : null;
-  const choices = open.map((i) => ({ value: `#${i.number}`, label: `#${i.number} ${i.title}`, strong: i.number === now }));
-  choices.sort((a, b) => Number(b.strong) - Number(a.strong));
-  return choices;
-}
-
-/** The card an answer names: one chosen, a number typed (`983`, `#983`),
- * an `iss_` id, or the one open issue whose title has the words. Null when
- * it names none, or more than one. */
-export function cardPicked(answer: string, open: Pick<NativeIssue, "id" | "number" | "title">[]): string | null {
-  const a = answer.trim();
-  if (!a) return null;
-  const n = cardNumber(a);
-  if (n !== null) return `#${n}`;
-  if (/^iss_[0-9a-f]+$/i.test(a)) return a.toLowerCase();
-  const hits = open.filter((i) => i.title.toLowerCase().includes(a.toLowerCase()));
-  return hits.length === 1 ? `#${hits[0].number}` : null;
 }
 
 /** The board page's address of a card's row (its drawer opens there), else

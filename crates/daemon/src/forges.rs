@@ -178,6 +178,7 @@ pub fn ops_message() -> tokio::sync::watch::Receiver<Option<String>> {
                 .chain(arugula_control_wire::forge::AGENT_OPS)
                 .chain(arugula_control_wire::forge::PROJECT_OPS)
                 .chain(arugula_control_wire::forge::DOC_OPS)
+                .chain(arugula_control_wire::forge::SESSION_OPS)
                 .map(|s| (*s).to_owned())
                 .collect()
         },
@@ -219,6 +220,7 @@ pub fn op_from_control(app: &Arc<App>, text: &str, answers: &tokio::sync::mpsc::
             DaemonOp::RepoMoved(m) => crate::session_project::repo_moved(&app.mux, &app.control, &m.repo).await,
             DaemonOp::MentionsHeld(a) => crate::agent_mentions::held(app.as_ref(), &a),
             DaemonOp::DocsList(_) => library_docs(app.control.state_dir().to_owned()).await,
+            DaemonOp::SessionCard(c) => crate::session_card::set(app.as_ref(), &c).await,
         };
         let _ = answers.send(serde_json::to_string(&OpDone::new(ask.id, answer)).unwrap_or_default());
     });
