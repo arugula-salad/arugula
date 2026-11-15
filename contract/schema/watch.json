@@ -1,0 +1,312 @@
+{
+  "$defs": {
+    "PrUntil": {
+      "description": "What a watch on a pull request waits for.",
+      "oneOf": [
+        {
+          "const": "merged",
+          "description": "It merged.",
+          "type": "string"
+        },
+        {
+          "const": "closed",
+          "description": "It closed, merged or not.",
+          "type": "string"
+        }
+      ]
+    },
+    "WatchCancel": {
+      "additionalProperties": false,
+      "description": "`POST /api/daemon/watches/cancel`: one of a session's watches, or all of\nthem.",
+      "properties": {
+        "all": {
+          "default": false,
+          "type": "boolean"
+        },
+        "id": {
+          "default": null,
+          "description": "The watch (`wch_…`). None: with `all`, every one of the session's.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "session": {
+          "description": "The session whose watches these are: a session cancels only its own.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session"
+      ],
+      "type": "object"
+    },
+    "WatchCancelled": {
+      "description": "What [`WatchCancel`] cancelled, by id. The session that asked is told\nby this answer, and gets no message for them.",
+      "properties": {
+        "cancelled": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "cancelled"
+      ],
+      "type": "object"
+    },
+    "WatchCreate": {
+      "additionalProperties": false,
+      "description": "`POST /api/daemon/watches`: a watch for one Claude Code session on the\nmachine.",
+      "properties": {
+        "expires_in_ms": {
+          "default": null,
+          "description": "How long it lives, in milliseconds. None: [`EXPIRES_DEFAULT_MS`];\nat most [`EXPIRES_MAX_MS`].",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "session": {
+          "description": "The Claude Code session to wake, by its id.",
+          "type": "string"
+        },
+        "session_name": {
+          "default": null,
+          "description": "The session's name as people read it, when it has one: for lists,\nnever for routing.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "targets": {
+          "description": "Any one of these fires it: at least one, at most\n[`TARGETS_MAX`].",
+          "items": {
+            "$ref": "#/$defs/WatchTarget"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "session",
+        "targets"
+      ],
+      "type": "object"
+    },
+    "WatchList": {
+      "description": "The machine's live watches, the newest first.",
+      "properties": {
+        "watches": {
+          "items": {
+            "$ref": "#/$defs/WatchRow"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "watches"
+      ],
+      "type": "object"
+    },
+    "WatchListQuery": {
+      "description": "`GET /api/daemon/watches`: which of the machine's live watches.",
+      "properties": {
+        "session": {
+          "description": "Only this Claude Code session's. None: every session's on the\nmachine.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "WatchMade": {
+      "description": "What [`WatchCreate`] made.",
+      "properties": {
+        "expires_ms": {
+          "default": null,
+          "description": "When it expires, in ms since the epoch.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "id": {
+          "default": null,
+          "description": "`wch_…`; none when it was [`WatchState::AlreadyMet`].",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "met": {
+          "default": null,
+          "description": "What happened already, for [`WatchState::AlreadyMet`]: ids and\nstates only (\"arugula-salad/arugula#2095 merged by aaron at …\").",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "$ref": "#/$defs/WatchState"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "type": "object"
+    },
+    "WatchRow": {
+      "description": "One watch, as a list shows it.",
+      "properties": {
+        "created_ms": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "expires_ms": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "session": {
+          "description": "The Claude Code session it wakes.",
+          "type": "string"
+        },
+        "session_name": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "$ref": "#/$defs/WatchState"
+        },
+        "targets": {
+          "description": "Each target in words (\"arugula-salad/arugula#2095 until merged\"), so\na reader that doesn't know a newer kind still shows it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "session",
+        "targets",
+        "state",
+        "created_ms",
+        "expires_ms"
+      ],
+      "type": "object"
+    },
+    "WatchState": {
+      "anyOf": [
+        {
+          "oneOf": [
+            {
+              "enum": [
+                "cancelled"
+              ],
+              "type": "string"
+            },
+            {
+              "const": "live",
+              "description": "Waiting.",
+              "type": "string"
+            },
+            {
+              "const": "already_met",
+              "description": "What it waits for had already happened when it was asked: no watch\nwas made.",
+              "type": "string"
+            },
+            {
+              "const": "fired",
+              "description": "It happened, and the session was told.",
+              "type": "string"
+            },
+            {
+              "const": "expired",
+              "description": "Its time ran out.",
+              "type": "string"
+            },
+            {
+              "const": "ended",
+              "description": "It can't fire any more: a target can't be read now, or the session\nis gone.",
+              "type": "string"
+            },
+            {
+              "const": "other",
+              "description": "A state this side doesn't know yet.",
+              "type": "string"
+            }
+          ]
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "description": "Where a watch is."
+    },
+    "WatchTag": {
+      "description": "On an `agents.mention` that is a watch's message (fired, or ended\nwithout firing): which watch, and the one Claude Code session it is for.\nThe daemon gives it to that session alone, framed as Arugula's word and\nnot a teammate's, past the owner's switch for teammates' mentions (the\nowner's own agent asked for it).",
+      "properties": {
+        "id": {
+          "description": "`wch_…`.",
+          "type": "string"
+        },
+        "session": {
+          "description": "The Claude Code session's id.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "session"
+      ],
+      "type": "object"
+    },
+    "WatchTarget": {
+      "description": "What a watch waits for: one of these happening fires it.",
+      "oneOf": [
+        {
+          "description": "A pull request on github.com, in a repo linked through Arugula's\nGitHub App.",
+          "properties": {
+            "kind": {
+              "const": "pr",
+              "type": "string"
+            },
+            "number": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "repo": {
+              "description": "`OWNER/NAME`.",
+              "type": "string"
+            },
+            "until": {
+              "$ref": "#/$defs/PrUntil"
+            }
+          },
+          "required": [
+            "kind",
+            "repo",
+            "number",
+            "until"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "arugula_control_wire::watch"
+}

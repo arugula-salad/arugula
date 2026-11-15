@@ -132,6 +132,17 @@
         },
         "text": {
           "type": "string"
+        },
+        "watch": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WatchTag"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A watch's message (Arugula #631): for the one Claude Code session\nthat made the watch, and no other. `text` is Arugula's, ids and\nstates only. Control sends it only to a daemon that reads it."
         }
       },
       "required": [
@@ -1331,6 +1342,11 @@
           "const": "inbox",
           "description": "No session took it: the machine's inbox.",
           "type": "string"
+        },
+        {
+          "const": "away",
+          "description": "A watch's message (Arugula #631) whose session is in none of the\nmachine's panes now: nothing took it and nothing kept it, so control\nsends it again later. Only ever for a watch.",
+          "type": "string"
         }
       ]
     },
@@ -1433,6 +1449,24 @@
           ]
         }
       },
+      "type": "object"
+    },
+    "WatchTag": {
+      "description": "On an `agents.mention` that is a watch's message (fired, or ended\nwithout firing): which watch, and the one Claude Code session it is for.\nThe daemon gives it to that session alone, framed as Arugula's word and\nnot a teammate's, past the owner's switch for teammates' mentions (the\nowner's own agent asked for it).",
+      "properties": {
+        "id": {
+          "description": "`wch_…`.",
+          "type": "string"
+        },
+        "session": {
+          "description": "The Claude Code session's id.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "session"
+      ],
       "type": "object"
     }
   },
