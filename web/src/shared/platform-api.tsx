@@ -82,7 +82,12 @@ export interface PlatformApi {
    * machine this page reaches; undefined when the page can't open it (not
    * the reader's, not shared with them, or no such tab now). `up` says
    * whether the machine answers. */
-  agentPane(machine: string, session: string): { pane: string; up: boolean } | undefined;
+  agentPane(machine: string, session: string): { pane: string; up: boolean; mentionsOff?: boolean } | undefined;
+  /** Act on the reader's own agent's pane (#653), through this page's own
+   * connection to its machine: silence mentions of it,
+   * allow them again, or stop its turn. Says why not when it can't. A page
+   * with no machines leaves it out. */
+  agentAct?(machine: string, pane: string, act: "silence" | "allow" | "stop"): Promise<string | null>;
   /** The page's bar, with what a view puts in it. */
   Bar: ComponentType<{ children?: ComponentChildren }>;
   /** Pick lines from one of the reader's panes to quote, where the page

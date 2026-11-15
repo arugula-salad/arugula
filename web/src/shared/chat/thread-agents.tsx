@@ -13,6 +13,7 @@ import { machineHandle, sessionSlug } from "./agents";
 import "./thread-agents.css";
 import { Chip, ObjectChip } from "../ui/state-chip";
 import { CheckIcon, ChevronIcon } from "../ui/icons";
+import { useSubscribe } from "../ui/hooks";
 
 /** How often an open thread asks again. */
 const EVERY_MS = 15_000;
@@ -87,22 +88,65 @@ function Now({ a }: { a: ChatThreadAgent }) {
 
 function Detail({ a }: { a: ChatThreadAgent }) {
   const api = usePlatformApi();
+  useSubscribe((fn) => api.subscribe(fn));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
   const mine = a.owner === chat.me;
   const who = a.hosted
     ? `The project's agent on ${a.machine_name}. Its owners and editors can stop it.`
     : mine
       ? `Your agent on ${a.machine_name}. Only you can stop it.`
       : `${a.owner_name || "A teammate"}'s agent on ${a.machine_name}. Anyone here can message it, but only they can stop it.`;
+  // Silence and Stop (#653) act on its pane through this page's own
+  // connection to the machine, so the pane's id never crosses control.
+  const pane = mine && !a.hosted && a.name && api.agentAct ? api.agentPane(a.id, a.name) : undefined;
+  const act = async (what: "silence" | "allow" | "stop") => {
+    setBusy(true);
+    const why = await api.agentAct!(a.id, pane!.pane, what);
+    setBusy(false);
+    setErr(why);
+    if (!why && what === "stop") api.toast(`Stopped ${agentName(a)}'s turn`);
+  };
   return (
     <div class="thread-agent-detail" data-thread-agent-detail>
       <p>{who}</p>
       {mine && !a.hosted && api.machine(a.id) && (
-        <p>
-          <button class="btn" data-thread-agent-open onClick={() => api.goToSession(a.id)}>
+        <p class="thread-agent-acts">
+          <button class="secondary small" data-thread-agent-open onClick={() => api.goToSession(a.id)}>
             Open on {a.machine_name}
           </button>
+          {pane && (
+            <>
+              {pane.mentionsOff ? (
+                <button
+                  class="secondary small"
+                  disabled={busy || !pane.up}
+                  title="Let mentions reach it again"
+                  data-thread-agent-allow
+                  onClick={() => void act("allow")}
+                >
+                  Allow mentions
+                </button>
+              ) : (
+                <button
+                  class="secondary small"
+                  disabled={busy || !pane.up}
+                  title="Mentions of it aren't delivered until you allow them again"
+                  data-thread-agent-silence
+                  onClick={() => void act("silence")}
+                >
+                  Silence
+                </button>
+              )}
+              <button class="secondary small danger" disabled={busy || !pane.up} title="Stop its turn under way: the session goes on" data-thread-agent-stop onClick={() => void act("stop")}>
+                Stop
+              </button>
+            </>
+          )}
         </p>
       )}
+      {mine && !a.hosted && pane?.mentionsOff && <p class="dim" data-thread-agent-silenced>Mentions aren't delivered to it until you allow them.</p>}
+      {err && <p class="thread-error">{err}</p>}
     </div>
   );
 }
