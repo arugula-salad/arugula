@@ -447,7 +447,7 @@ fn project_split_def() -> Def {
     }
 }
 
-// Arugula #631: wake this session when a PR merges or closes.
+// Arugula #631: wake this session when something happens to a PR.
 fn watch_def() -> Def {
     Def {
         name: watches::TOOL,
@@ -461,7 +461,7 @@ fn watch_def() -> Def {
         flag: None,
         output: None,
         human: line(
-            "wake your agent when a PR merges or closes, after it has stopped, without it polling",
+            "wake your agent when a PR merges, closes, finishes its checks or is ready, after it has stopped, without it polling",
             "Watch acme/app#7 and tell me when it merges.",
             Needs::Control,
         ),

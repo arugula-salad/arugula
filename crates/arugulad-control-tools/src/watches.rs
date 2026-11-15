@@ -31,13 +31,13 @@ use crate::mcp::tools::{Call, Kind, Out, done, parse};
 
 pub(crate) const TOOL: &str = "watch";
 
-pub(crate) const DESCRIPTION: &str = "Wake this session later, when something happens, without polling or holding your turn open: create a watch, then end your turn. When it fires, you get a follow-up saying what happened (ids and states only), as a chat mention arrives. It fires once. It expires after 24 hours unless you say (expires, at most 7d), and then you get one message saying it ended without firing. Targets: a pull request (OWNER/REPO#N or its link) until merged or closed, in a repo linked to Arugula's GitHub App; for a repo without it, or to block now, use wait with pr. If it has already happened, create says so and makes no watch. A watch belongs to this Claude Code session: a new session in this pane doesn't get it. Works from a terminal with Arugula's hooks installed, or an agent block. list shows this session's watches; cancel takes one by id, or all.";
+pub(crate) const DESCRIPTION: &str = "Wake this session later, when something happens, without polling or holding your turn open: create a watch, then end your turn. When it fires, you get a follow-up saying what happened (ids and states only), as a chat mention arrives. It fires once. It expires after 24 hours unless you say (expires, at most 7d), and then you get one message saying it ended without firing. Targets: a pull request (OWNER/REPO#N or its link) until merged, closed, checks_done, checks_failed or ready (checks green and it can merge cleanly), in a repo linked to Arugula's GitHub App; for a repo without it, or to block now, use wait with pr. If it has already happened, create says so and makes no watch. A watch belongs to this Claude Code session: a new session in this pane doesn't get it. Works from a terminal with Arugula's hooks installed, or an agent block. list shows this session's watches; cancel takes one by id, or all.";
 
 /// `watch`'s kinds.
 pub(crate) const KINDS: &[Kind] = &[
     Kind {
         name: "create",
-        description: "Wake this session when a PR merges or closes. End your turn after.",
+        description: "Wake this session when a PR merges, closes, finishes or fails its checks, or is ready. End your turn after.",
         schema: schema_for_type::<CreateArgs>,
         flag: None,
     },
@@ -60,7 +60,9 @@ pub struct CreateArgs {
     /// The pull request: OWNER/REPO#N, or its link on github.com. Several:
     /// whichever happens first fires the watch.
     pub pr: PrList,
-    /// merged (the default) or closed (merged or not).
+    /// merged (the default), closed (merged or not), checks_done (none
+    /// queued or running), checks_failed, or ready (checks green and it can
+    /// merge cleanly).
     #[serde(default)]
     pub until: Option<String>,
     /// How long to wait before it ends without firing: 30m, 6h, 3d. Default
@@ -137,7 +139,10 @@ fn until(word: Option<&str>) -> Result<PrUntil, String> {
     match word.map(str::trim).unwrap_or("merged") {
         "" | "merged" => Ok(PrUntil::Merged),
         "closed" => Ok(PrUntil::Closed),
-        w => Err(format!("until {w}: a watch on a PR waits until merged or closed")),
+        "checks_done" => Ok(PrUntil::ChecksDone),
+        "checks_failed" => Ok(PrUntil::ChecksFailed),
+        "ready" => Ok(PrUntil::Ready),
+        w => Err(format!("until {w}: a watch on a PR waits until merged, closed, checks_done, checks_failed or ready")),
     }
 }
 
@@ -263,10 +268,12 @@ mod tests {
     }
 
     #[test]
-    fn until_is_merged_unless_closed() {
+    fn until_is_merged_unless_said() {
         assert_eq!(until(None), Ok(PrUntil::Merged));
         assert_eq!(until(Some("closed")), Ok(PrUntil::Closed));
-        assert!(until(Some("ready")).is_err());
+        assert_eq!(until(Some("ready")), Ok(PrUntil::Ready));
+        assert_eq!(until(Some("checks_failed")), Ok(PrUntil::ChecksFailed));
+        assert!(until(Some("green")).is_err());
     }
 
     #[test]
