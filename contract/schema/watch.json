@@ -318,6 +318,70 @@
             "until"
           ],
           "type": "object"
+        },
+        {
+          "description": "A hosted agent session (`ses_…`, Arugula #1034), until it settles as\n`wait` with `agent_session` says: done with nothing queued, waiting\nfor input, failed or stopped.",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "session",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A reply in a chat thread: a message in `room` under `parent` (its\nroot's number), or any message in the room without one, that the\nsession that made the watch didn't write. With `from`, only one by\nthat person (their login or name, any case).",
+          "properties": {
+            "from": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "kind": {
+              "const": "thread",
+              "type": "string"
+            },
+            "parent": {
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "room": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "room"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A run (`run_…`) or a deploy (`dep_…`), until it ends however it ends.",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "run",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
         }
       ]
     }
