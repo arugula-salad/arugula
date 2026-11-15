@@ -1772,6 +1772,14 @@ span.untri-title {
   text-overflow: ellipsis;
 }
 
+/* An open session's own actions, under its panes: Move to another card. */
+.sessions-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 .sessions-live {
   position: fixed;
   inset: 0;

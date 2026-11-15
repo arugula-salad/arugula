@@ -11,7 +11,7 @@
 import { devices, expect, test, type Page } from "@playwright/test";
 import { fixturePage } from "./fixture-page";
 import { panes, reset } from "./helpers";
-import { PROJECT as P, byCard, wave } from "./sessions-fixture";
+import { DANA, PROJECT as P, byCard, wave } from "./sessions-fixture";
 
 /** The reader's computer, as the cloud names it: the fixture page reaches
  * `m_suite` (the suite's daemon) for a live pane, and on the daemon's own
@@ -135,6 +135,34 @@ test.describe("on a computer", () => {
     await expect(page.locator('[data-session-row="machine:7"] [data-session-branch]')).toHaveCount(0);
     await first.locator("[data-sessions-open-card]").click();
     await expect(page.locator('[data-board-drawer="row_0985"]')).toBeVisible();
+  });
+
+  test("Put on a card: the release terminal moves to the card it's put on, as the cloud is asked", async ({ page }) => {
+    await openSessions(page);
+    // The project's open issues, for the picker.
+    const issue = (id: string, number: number, title: string) => ({ id, project: P, number, title, body: "", state: "open", labels: [], assignees: [], author: "acct_a", created_at: 1, updated_at: 1 });
+    await page.route(new RegExp(`/api/projects/${P}/issues\\?`), (r) =>
+      r.fulfill({ json: { project: P, issues: [issue("iss_1019", 1019, "Put a session on a card"), issue("iss_985", 985, "A project's Sessions page")] } }),
+    );
+    const puts: unknown[] = [];
+    await page.route(`**/api/projects/${P}/sessions/machine/2/card`, (r) => (puts.push(r.request().postDataJSON()), r.fulfill({ status: 204 })));
+    const none = page.locator('[data-sessions-group="none"]');
+    // A machine's session in Not on a card has Put on a card; an agent's doesn't.
+    await expect(none.locator('[data-sessions-put="machine:2"]')).toBeVisible();
+    await expect(none.locator("[data-sessions-put]")).toHaveCount(1);
+    await none.locator('[data-sessions-put="machine:2"]').click();
+    const picker = page.getByRole("dialog", { name: "Put release on a card" });
+    await expect(picker.getByPlaceholder("Find a card by number or words")).toBeVisible();
+    // Not on a card is offered only to a session on one.
+    await expect(picker.getByRole("button", { name: "Not on a card" })).toHaveCount(0);
+    await picker.getByRole("button", { name: "#1019 Put a session on a card" }).click();
+    await expect.poll(() => puts).toEqual([{ card: "iss_1019", machine: DANA }]);
+    // Its row is in that card's group now, made for it, and gone from Not on a card.
+    const card = page.locator('[data-sessions-group="iss_1019"]');
+    await expect(card.locator("[data-sessions-card]")).toHaveText("#1019 Put a session on a card");
+    await expect(card.locator('[data-session-row="machine:2"]')).toBeVisible();
+    await expect(none.locator('[data-session-row="machine:2"]')).toHaveCount(0);
+    await expect(card.locator("[data-sessions-put]")).toHaveCount(0);
   });
 
   test("from a cloud without the by-card route, the hosted sessions by their issues, with the filters", async ({ page }) => {

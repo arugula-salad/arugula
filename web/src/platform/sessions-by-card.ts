@@ -145,3 +145,79 @@ export function cardPlace(card: SessionCard | null): { board: string; boardTitle
 export function readsBoards(byCard: SessionsByCard | null): boolean {
   return !byCard || byCard.groups.some((g) => !!g.card && g.card.board === undefined);
 }
+
+// Putting a session on a card (Arugula #1019): the page moves it at once,
+// then asks the cloud, which asks its machine. The by-card answer says so
+// only once the machine has reported, so the move is kept over each read
+// until a read agrees with it, or for MOVE_KEPT_MS; a refusal takes it back.
+
+/** A session put on a card here, ahead of the by-card answer. `to` null is
+ * Not on a card (back to what its branch gives); `from` is where it was. */
+export interface Move {
+  session: ProjectSession;
+  from: SessionCard | null;
+  to: SessionCard | null;
+  /** When it was put there, in ms. */
+  at: number;
+}
+
+/** How long a move is kept with no read agreeing: then the cloud's answer is the page's again. */
+export const MOVE_KEPT_MS = 120_000;
+
+/** Which session a move is: its kind, its machine and its id. */
+export const moveKey = (s: ProjectSession): string => `${s.kind}:${s.on.kind === "machine" ? s.on.id : ""}:${s.id}`;
+
+/** Only a machine's session is put on a card from here: a hosted one's card
+ * is its issue's, an agent's its block's own. */
+export const movable = (s: ProjectSession | null): s is Extract<ProjectSession, { kind: "machine" }> => !!s && s.kind === "machine" && s.on.kind === "machine";
+
+/** The card group a read has the session in: undefined when it isn't in the answer. */
+function cardIn(byCard: SessionsByCard, key: string): SessionCard | null | undefined {
+  for (const g of byCard.groups) if (g.sessions.some((s) => moveKey(s) === key)) return g.card;
+  return undefined;
+}
+
+/** The answer with each move made: the session taken out of its group and
+ * put in its card's, which is made (last, before Not on a card) when no
+ * session was on it. Groups left empty go. A cloud without the by-card
+ * answer (null) moves nothing. */
+export function withMoves(byCard: SessionsByCard | null, moves: Move[]): SessionsByCard | null {
+  if (!byCard || moves.length === 0) return byCard;
+  let groups = byCard.groups.map((g) => ({ ...g, sessions: [...g.sessions] }));
+  for (const m of moves) {
+    const key = moveKey(m.session);
+    let session = m.session;
+    for (const g of groups) {
+      const i = g.sessions.findIndex((s) => moveKey(s) === key);
+      if (i >= 0) [session] = g.sessions.splice(i, 1);
+    }
+    const id = m.to?.id ?? null;
+    let to = groups.find((g) => (g.card?.id ?? null) === id);
+    if (!to) {
+      to = { card: m.to, sessions: [] };
+      const none = groups.findIndex((g) => !g.card);
+      if (m.to && none >= 0) groups.splice(none, 0, to);
+      else groups.push(to);
+    }
+    to.sessions.push(session);
+  }
+  groups = groups.filter((g) => g.sessions.length > 0);
+  return { ...byCard, groups };
+}
+
+/** The moves still to keep over a new read: not those it agrees with (the
+ * session on the card it was put on; for Not on a card, off the one it was
+ * on, since its branch may give it another), nor those older than
+ * MOVE_KEPT_MS. */
+export function keptMoves(byCard: SessionsByCard | null, moves: Move[], now: number): Move[] {
+  return moves.filter((m) => {
+    if (now - m.at > MOVE_KEPT_MS) return false;
+    if (!byCard) return true;
+    const at = cardIn(byCard, moveKey(m.session));
+    if (at === undefined) return true;
+    return m.to ? at?.id !== m.to.id : at?.id === m.from?.id;
+  });
+}
+
+/** The moves without one the cloud refused: the session goes back. */
+export const undoMove = (moves: Move[], m: Move): Move[] => moves.filter((x) => x !== m);

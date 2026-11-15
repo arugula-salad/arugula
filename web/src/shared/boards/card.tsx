@@ -475,6 +475,7 @@ export function Drawer({ steps, r, platform, close, project, others, write, act,
           ))}
         </section>
       )}
+      {api.CardWhy && shown?.kind === "block" && shown.machine && <api.CardWhy key={shown.key} machine={shown.machine} pane={shown.pane} />}
     </SideSheet>
   );
 }

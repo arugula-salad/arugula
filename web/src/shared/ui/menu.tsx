@@ -743,6 +743,8 @@ export interface PromptChoice {
   title?: string;
   /** Shown first and marked (the pane's own port). */
   strong?: boolean;
+  /** Shown whatever is typed (a card picker's last item, Not on a card). */
+  always?: boolean;
 }
 
 let prompt: OpenPrompt | null = null;
@@ -780,10 +782,10 @@ export function tellSetup(title: string, text: string, link: { label: string; hr
 }
 
 /** The choices the input leaves: those whose label or hint has what was
- * typed, any case. */
+ * typed, any case, and those always shown. */
 function shownChoices(p: OpenPrompt): PromptChoice[] {
   const q = p.value.trim().toLowerCase();
-  return (p.choices ?? []).filter((c) => !q || `${c.label} ${c.hint ?? ""}`.toLowerCase().includes(q));
+  return (p.choices ?? []).filter((c) => !q || c.always || `${c.label} ${c.hint ?? ""}`.toLowerCase().includes(q));
 }
 
 /** Answer the open prompt (null: cancelled). */

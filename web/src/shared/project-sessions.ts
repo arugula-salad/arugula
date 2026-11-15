@@ -7,7 +7,7 @@
 // the Sessions page both read it through here. The cloud's route isn't
 // everywhere yet: a hub without it answers 404, which reads as null.
 
-import { platformFetch } from "./maintenance.ts";
+import { platformFetch, refusalOf } from "./maintenance.ts";
 
 /** The card a group of sessions works on: a native issue's number and
  * title, or its id alone for a card that isn't an issue. `board` and
@@ -67,6 +67,26 @@ export async function sessionsByCard(project: string, send: (url: string, init: 
   const j = (await res.json().catch(() => null)) as (SessionsByCard & { error?: string }) | null;
   if (!res.ok || !j || !Array.isArray(j.groups)) throw new Error(j?.error ?? `HTTP ${res.status}`);
   return j;
+}
+
+/** Put a session on a card (`iss_…`), or (null) back to what its branch
+ * gives: the hub's `PUT /api/projects/{project}/sessions/{kind}/{id}/card`,
+ * which asks its machine. Throws with the hub's words when it isn't taken;
+ * a 404 from a hub without the route says it can't move sessions yet. */
+export async function setSessionCard(project: string, session: ProjectSession, card: string | null, send: (url: string, init: RequestInit) => Promise<Response> = platformFetch): Promise<void> {
+  const body: { card: string | null; machine?: string } = { card };
+  if (session.on.kind === "machine") body.machine = session.on.id;
+  const res = await send(`/api/projects/${encodeURIComponent(project)}/sessions/${encodeURIComponent(session.kind)}/${encodeURIComponent(String(session.id))}/card`, {
+    method: "PUT",
+    credentials: "same-origin",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (res.ok) return;
+  const j = ((await res.json().catch(() => null)) ?? {}) as { error?: string; reason?: string };
+  // A hub without the route answers its plain not found; the route's own 404 names what it didn't find.
+  if (res.status === 404 && (!j.error || /^not found\.?$/i.test(j.error))) throw new Error("Arugula cloud can't move sessions between cards yet");
+  throw new Error(refusalOf(res.status, j, `HTTP ${res.status}`));
 }
 
 /** The panes on machines a group's sessions name, as `machine id → pane

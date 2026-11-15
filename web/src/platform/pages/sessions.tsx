@@ -22,15 +22,17 @@ import { boards } from "../../shared/boards/store";
 import { MOVE_LANES } from "../../shared/boards/text";
 import { usePlatformApi } from "../../shared/platform-api";
 import { SectionHead } from "../../shared/ui/section-head";
-import { BY_CARD_EVERY_MS, sessionsByCard, type SessionCard, type SessionsByCard } from "../../shared/project-sessions";
-import { branchOf, cardPlace, cardTitle, finished, groupsOf, panesShown, readsBoards, stateOfListed, waitsOn, type Group, type Listed } from "../sessions-by-card";
+import { BY_CARD_EVERY_MS, sessionsByCard, setSessionCard, type ProjectSession, type SessionCard, type SessionsByCard } from "../../shared/project-sessions";
+import { branchOf, cardPlace, cardTitle, finished, groupsOf, keptMoves, movable, moveKey, panesShown, readsBoards, stateOfListed, undoMove, waitsOn, withMoves, type Group, type Listed, type Move } from "../sessions-by-card";
+import { cardChoices, cardPicked } from "../../shared/card-pick";
+import { issues } from "../../shared/issues/store";
 import { chat } from "../../shared/chat-store";
 import { stateOf } from "../../shared/chat/session-card";
 import type { SessionRow, SessionWave } from "../../shared/proto.gen";
 import { platformFetch, refusalOf } from "../../shared/maintenance";
 import { BlockError, EmptyLine, EmptyState } from "../../shared/ui/block-states";
 import { useSubscribe } from "../../shared/ui/hooks";
-import { openMenu, type MenuItem } from "../../shared/ui/menu";
+import { askText, openMenu, type MenuItem, type PromptChoice } from "../../shared/ui/menu";
 import { PageHeader } from "../../shared/ui/page-header";
 import { StateChip } from "../../shared/ui/state-chip";
 import { Time } from "../../shared/ui/time";
@@ -98,6 +100,9 @@ function usePlaces(project: string, read: boolean): Map<string, Place> {
   return m;
 }
 
+/** The card picker's Not on a card: no one types it. */
+const NOT_ON_A_CARD = "\u0000none";
+
 const menuAt = (e: MouseEvent, items: MenuItem[]) => {
   const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
   openMenu(
@@ -125,6 +130,7 @@ export function SessionsPage({
 }
 
 function Wave({ p, filter }: { p: PlatformProject; filter: WaveFilter }) {
+  const api = usePlatformApi();
   const [w, setW] = useState<SessionWave | null>(null);
   /** Every session by card: undefined until first read, null from a cloud
    * without the route (or a read that failed), when the wave is the list. */
@@ -145,10 +151,18 @@ function Wave({ p, filter }: { p: PlatformProject; filter: WaveFilter }) {
   // BY_CARD_EVERY_MS while the page is seen (the hub allows 600 reads an
   // hour), not on each hosted session's event.
   const [cardsTick, setCardsTick] = useState(0);
+  /** Sessions put on a card here, ahead of the cloud's answer (Arugula #1019). */
+  const [moves, setMoves] = useState<Move[]>([]);
+  const [moveError, setMoveError] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
     sessionsByCard(p.id).then(
-      (c) => live && setCards(c),
+      (c) => {
+        if (!live) return;
+        setCards(c);
+        // A move stays until a read agrees with it (or MOVE_KEPT_MS passes).
+        setMoves((ms) => keptMoves(c, ms, Date.now()));
+      },
       () => live && setCards((was) => was ?? null),
     );
     return () => void (live = false);
@@ -176,7 +190,7 @@ function Wave({ p, filter }: { p: PlatformProject; filter: WaveFilter }) {
     return () => offs.forEach((off) => off());
   }, [ids]);
   const narrowed = !!(filter.label || filter.tracker !== undefined || filter.asker);
-  const groups = w && cards !== undefined ? groupsOf(cards, w, { narrowed, going: !!filter.going }) : null;
+  const groups = w && cards !== undefined ? groupsOf(withMoves(cards, moves), w, { narrowed, going: !!filter.going }) : null;
   const listed = groups?.flatMap((g) => g.sessions) ?? [];
   // A hosted session goes until its turn settles; another, until it finishes.
   const isGoing = (s: Listed) => (s.wave ? !s.wave.settled : !finished(s));
@@ -233,6 +247,40 @@ function Wave({ p, filter }: { p: PlatformProject; filter: WaveFilter }) {
       : (w?.askers.find(([a]) => a === filter.asker)?.[1] ?? "one");
   const waiting = listed.filter((s) => !!waitsOn(s)).length;
   const runsTo = pathOf({ page: "runs", project: p.id }, names);
+  // Put on a card (Arugula #1019): the session moves at once, the cloud asks
+  // its machine, and a refusal moves it back and says why.
+  const put = async (src: ProjectSession, from: SessionCard | null) => {
+    const open = issues.list(p.id, {}, undefined, 100).then((l) => l.issues);
+    const lanes = new Map((cards?.groups ?? []).flatMap((g) => (g.card ? [[g.card.id, cardPlace(g.card)?.lane ?? ""] as const] : [])));
+    const choices = open.then((l): PromptChoice[] => {
+      const others = l.filter((i) => i.id !== from?.id);
+      const byNumber = new Map(others.map((i) => [`#${i.number}`, i.id]));
+      const list: PromptChoice[] = cardChoices(others, null).map((c) => ({ ...c, hint: lanes.get(byNumber.get(c.value) ?? "") || undefined }));
+      return from ? [...list, { value: NOT_ON_A_CARD, label: "Not on a card", always: true }] : list;
+    });
+    const name = src.name || "Session";
+    const answer = await askText(`Put ${name} on a card`, "", "Find a card by number or words", choices);
+    if (answer === null || !answer.trim()) return;
+    let to: SessionCard | null = null;
+    if (answer !== NOT_ON_A_CARD) {
+      const l = await open.catch(() => []);
+      const picked = cardPicked(answer, l);
+      const issue = picked && l.find((i) => (picked.startsWith("#") ? `#${i.number}` === picked : i.id === picked));
+      if (!picked || (!issue && !picked.startsWith("iss_"))) return api.toast(`No open card in ${p.name} matches "${answer.trim()}"`);
+      to = issue ? { id: issue.id, number: issue.number, title: issue.title } : { id: picked };
+    }
+    if ((to?.id ?? null) === (from?.id ?? null)) return;
+    const m: Move = { session: src, from, to, at: Date.now() };
+    setMoves((ms) => [...ms.filter((x) => moveKey(x.session) !== moveKey(src)), m]);
+    setMoveError(null);
+    try {
+      await setSessionCard(p.id, src, to?.id ?? null);
+      api.toast(to ? `${name} is on ${to.number !== undefined ? `#${to.number}` : cardTitle(to)} now.` : `${name} is in Not on a card now.`);
+    } catch (e) {
+      setMoves((ms) => undoMove(ms, m));
+      setMoveError(`Couldn't put ${name} ${to ? `on ${cardTitle(to)}` : "in Not on a card"}: ${(e as Error).message}`);
+    }
+  };
   const workspacesTo = pathOf({ page: "workspaces", project: p.id }, names);
 
   return (
@@ -314,6 +362,11 @@ function Wave({ p, filter }: { p: PlatformProject; filter: WaveFilter }) {
           </p>
         )
       )}
+      {moveError && (
+        <p class="control-error" role="alert" data-sessions-move-error>
+          {moveError}
+        </p>
+      )}
       {groups === null && !error && <ListLoading />}
       {groups?.length === 0 &&
         (anyFilter ? (
@@ -328,7 +381,7 @@ function Wave({ p, filter }: { p: PlatformProject; filter: WaveFilter }) {
         ))}
       <div data-sessions-list>
         {groups?.map((g) => (
-          <CardGroup key={g.card?.id ?? ""} p={p} g={g} place={placeOf(g.card)} />
+          <CardGroup key={g.card?.id ?? ""} p={p} g={g} place={placeOf(g.card)} put={(src) => void put(src, g.card)} />
         ))}
       </div>
       {w?.more && <p class="dim">More match than are listed: narrow it.</p>}
@@ -383,7 +436,7 @@ function TrackerFilter({
 
 /** A card's sessions: its head (the card, its board and lane, Open card),
  * the going ones, then the finished ones folded to a line. */
-function CardGroup({ p, g, place }: { p: PlatformProject; g: Group; place: Place | undefined }) {
+function CardGroup({ p, g, place, put }: { p: PlatformProject; g: Group; place: Place | undefined; put: (src: ProjectSession) => void }) {
   const [open, setOpen] = useState(false);
   const done = g.sessions.filter(finished);
   const live = g.sessions.filter((s) => !finished(s));
@@ -412,7 +465,7 @@ function CardGroup({ p, g, place }: { p: PlatformProject; g: Group; place: Place
       />
       <ul class="issues-list card-list">
         {live.map((s) => (
-          <SessionLine key={s.key} p={p} s={s} />
+          <SessionLine key={s.key} p={p} s={s} onCard={!!g.card} put={put} />
         ))}
         {done.length > 0 && !open && (
           <li class="sessions-folded">
@@ -421,7 +474,7 @@ function CardGroup({ p, g, place }: { p: PlatformProject; g: Group; place: Place
             </button>
           </li>
         )}
-        {open && done.map((s) => <SessionLine key={s.key} p={p} s={s} />)}
+        {open && done.map((s) => <SessionLine key={s.key} p={p} s={s} onCard={!!g.card} put={put} />)}
       </ul>
     </section>
   );
@@ -435,10 +488,12 @@ function cardPath(project: string, card: SessionCard | null, place: Place | unde
   return card.id.startsWith("iss_") ? pathOf({ page: "issue", project, issue: card.id }, names) : null;
 }
 
-function SessionLine({ p, s }: { p: PlatformProject; s: Listed }) {
+function SessionLine({ p, s, onCard, put }: { p: PlatformProject; s: Listed; onCard: boolean; put: (src: ProjectSession) => void }) {
   if (s.wave) return <Row p={p} s={s.wave} />;
   if (s.src?.kind === "hosted") return <HostedLine p={p} s={s} />;
-  return <MachineRow s={s} />;
+  // Only a machine's session is put on a card here: an agent's card is its block's own.
+  const src = s.src;
+  return <MachineRow s={s} onCard={onCard} put={movable(src) ? () => put(src) : undefined} />;
 }
 
 /** A hosted session the wave hasn't listed: its name and state. */
@@ -478,7 +533,7 @@ const KIND: Record<string, string> = { agent: "Agent", terminal: "Terminal", she
 /** A session on a computer: its state, name and panes, where it runs and
  * whose that is, its branch, and what waits on you. A click shows its
  * panes, each with its line, Open and Open on its machine. */
-function MachineRow({ s }: { s: Listed }) {
+function MachineRow({ s, onCard, put }: { s: Listed; onCard: boolean; put?: () => void }) {
   const api = usePlatformApi();
   const [open, setOpen] = useState(false);
   const [live, setLive] = useState<{ machine: string; pane: number; name: string } | null>(null);
@@ -562,7 +617,19 @@ function MachineRow({ s }: { s: Listed }) {
             })}
           </ul>
         )}
+        {open && put && onCard && (
+          <div class="sessions-row-actions">
+            <button type="button" class="secondary small" data-sessions-move={s.key} onClick={put}>
+              Move to another card
+            </button>
+          </div>
+        )}
       </div>
+      {put && !onCard && (
+        <button type="button" class="secondary small" data-sessions-put={s.key} onClick={put}>
+          Put on a card
+        </button>
+      )}
       {live && Live && (
         <LiveSheet name={live.name} where={on?.name ?? ""} close={() => setLive(null)} onMachine={() => (setLive(null), goTo(live.machine, live.pane, false))}>
           <Live machine={live.machine} pane={String(live.pane)} />
