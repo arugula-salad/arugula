@@ -1,5 +1,6 @@
 //! Watches (Arugula #631): an agent asks control to wake its session when
-//! something happens (a PR merges or closes), then ends its turn. Control
+//! something happens (a PR merges or closes, its checks finish or fail, or
+//! it's ready to merge), then ends its turn. Control
 //! evaluates the watch where the facts are, and a firing reaches the session
 //! as an `agents.mention` that carries [`WatchTag`], held, sent again and
 //! acked like a teammate's mention. A watch fires once. One that expires
@@ -50,6 +51,12 @@ pub enum PrUntil {
     Merged,
     /// It closed, merged or not.
     Closed,
+    /// No check on its head commit is queued or running (Arugula #1033).
+    ChecksDone,
+    /// A check on its head commit failed: once, however often it flips.
+    ChecksFailed,
+    /// Its checks passed and GitHub says it can merge cleanly.
+    Ready,
 }
 
 /// `POST /api/daemon/watches`: a watch for one Claude Code session on the

@@ -12,6 +12,21 @@
           "const": "closed",
           "description": "It closed, merged or not.",
           "type": "string"
+        },
+        {
+          "const": "checks_done",
+          "description": "No check on its head commit is queued or running (Arugula #1033).",
+          "type": "string"
+        },
+        {
+          "const": "checks_failed",
+          "description": "A check on its head commit failed: once, however often it flips.",
+          "type": "string"
+        },
+        {
+          "const": "ready",
+          "description": "Its checks passed and GitHub says it can merge cleanly.",
+          "type": "string"
         }
       ]
     },

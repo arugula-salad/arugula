@@ -5166,7 +5166,7 @@
         "readOnlyHint": false,
         "title": "Watch for something to happen"
       },
-      "description": "Wake this session later, when something happens, without polling or holding your turn open: create a watch, then end your turn. When it fires, you get a follow-up saying what happened (ids and states only), as a chat mention arrives. It fires once. It expires after 24 hours unless you say (expires, at most 7d), and then you get one message saying it ended without firing. Targets: a pull request (OWNER/REPO#N or its link) until merged or closed, in a repo linked to Arugula's GitHub App; for a repo without it, or to block now, use wait with pr. If it has already happened, create says so and makes no watch. A watch belongs to this Claude Code session: a new session in this pane doesn't get it. Works from a terminal with Arugula's hooks installed, or an agent block. list shows this session's watches; cancel takes one by id, or all.\n- create {pr, expires?, until?}: Wake this session when a PR merges or closes. End your turn after.\n- list {all?}: This session's live watches (all: every session's on this machine).\n- cancel {all?, id?}: Cancel one of this session's watches by id, or all of them.",
+      "description": "Wake this session later, when something happens, without polling or holding your turn open: create a watch, then end your turn. When it fires, you get a follow-up saying what happened (ids and states only), as a chat mention arrives. It fires once. It expires after 24 hours unless you say (expires, at most 7d), and then you get one message saying it ended without firing. Targets: a pull request (OWNER/REPO#N or its link) until merged, closed, checks_done, checks_failed or ready (checks green and it can merge cleanly), in a repo linked to Arugula's GitHub App; for a repo without it, or to block now, use wait with pr. If it has already happened, create says so and makes no watch. A watch belongs to this Claude Code session: a new session in this pane doesn't get it. Works from a terminal with Arugula's hooks installed, or an agent block. list shows this session's watches; cancel takes one by id, or all.\n- create {pr, expires?, until?}: Wake this session when a PR merges, closes, finishes or fails its checks, or is ready. End your turn after.\n- list {all?}: This session's live watches (all: every session's on this machine).\n- cancel {all?, id?}: Cancel one of this session's watches by id, or all of them.",
       "inputSchema": {
         "$defs": {
           "PrList": {
@@ -5222,7 +5222,7 @@
           },
           "until": {
             "default": null,
-            "description": "create: merged (the default) or closed (merged or not).",
+            "description": "create: merged (the default), closed (merged or not), checks_done (none\nqueued or running), checks_failed, or ready (checks green and it can\nmerge cleanly).",
             "type": [
               "string",
               "null"
@@ -10568,7 +10568,7 @@
         "readOnlyHint": false,
         "title": "Watch for something to happen"
       },
-      "description": "Wake this session later, when something happens, without polling or holding your turn open: create a watch, then end your turn. When it fires, you get a follow-up saying what happened (ids and states only), as a chat mention arrives. It fires once. It expires after 24 hours unless you say (expires, at most 7d), and then you get one message saying it ended without firing. Targets: a pull request (OWNER/REPO#N or its link) until merged or closed, in a repo linked to Arugula's GitHub App; for a repo without it, or to block now, use wait with pr. If it has already happened, create says so and makes no watch. A watch belongs to this Claude Code session: a new session in this pane doesn't get it. Works from a terminal with Arugula's hooks installed, or an agent block. list shows this session's watches; cancel takes one by id, or all.\n- create {pr, expires?, until?}: Wake this session when a PR merges or closes. End your turn after.\n- list {all?}: This session's live watches (all: every session's on this machine).\n- cancel {all?, id?}: Cancel one of this session's watches by id, or all of them.",
+      "description": "Wake this session later, when something happens, without polling or holding your turn open: create a watch, then end your turn. When it fires, you get a follow-up saying what happened (ids and states only), as a chat mention arrives. It fires once. It expires after 24 hours unless you say (expires, at most 7d), and then you get one message saying it ended without firing. Targets: a pull request (OWNER/REPO#N or its link) until merged, closed, checks_done, checks_failed or ready (checks green and it can merge cleanly), in a repo linked to Arugula's GitHub App; for a repo without it, or to block now, use wait with pr. If it has already happened, create says so and makes no watch. A watch belongs to this Claude Code session: a new session in this pane doesn't get it. Works from a terminal with Arugula's hooks installed, or an agent block. list shows this session's watches; cancel takes one by id, or all.\n- create {pr, expires?, until?}: Wake this session when a PR merges, closes, finishes or fails its checks, or is ready. End your turn after.\n- list {all?}: This session's live watches (all: every session's on this machine).\n- cancel {all?, id?}: Cancel one of this session's watches by id, or all of them.",
       "inputSchema": {
         "$defs": {
           "PrList": {
@@ -10624,7 +10624,7 @@
           },
           "until": {
             "default": null,
-            "description": "create: merged (the default) or closed (merged or not).",
+            "description": "create: merged (the default), closed (merged or not), checks_done (none\nqueued or running), checks_failed, or ready (checks green and it can\nmerge cleanly).",
             "type": [
               "string",
               "null"
@@ -15807,7 +15807,7 @@
         "readOnlyHint": false,
         "title": "Watch for something to happen"
       },
-      "description": "Wake this session later, when something happens, without polling or holding your turn open: create a watch, then end your turn. When it fires, you get a follow-up saying what happened (ids and states only), as a chat mention arrives. It fires once. It expires after 24 hours unless you say (expires, at most 7d), and then you get one message saying it ended without firing. Targets: a pull request (OWNER/REPO#N or its link) until merged or closed, in a repo linked to Arugula's GitHub App; for a repo without it, or to block now, use wait with pr. If it has already happened, create says so and makes no watch. A watch belongs to this Claude Code session: a new session in this pane doesn't get it. Works from a terminal with Arugula's hooks installed, or an agent block. list shows this session's watches; cancel takes one by id, or all.\n- create {pr, expires?, until?}: Wake this session when a PR merges or closes. End your turn after.\n- list {all?}: This session's live watches (all: every session's on this machine).\n- cancel {all?, id?}: Cancel one of this session's watches by id, or all of them.",
+      "description": "Wake this session later, when something happens, without polling or holding your turn open: create a watch, then end your turn. When it fires, you get a follow-up saying what happened (ids and states only), as a chat mention arrives. It fires once. It expires after 24 hours unless you say (expires, at most 7d), and then you get one message saying it ended without firing. Targets: a pull request (OWNER/REPO#N or its link) until merged, closed, checks_done, checks_failed or ready (checks green and it can merge cleanly), in a repo linked to Arugula's GitHub App; for a repo without it, or to block now, use wait with pr. If it has already happened, create says so and makes no watch. A watch belongs to this Claude Code session: a new session in this pane doesn't get it. Works from a terminal with Arugula's hooks installed, or an agent block. list shows this session's watches; cancel takes one by id, or all.\n- create {pr, expires?, until?}: Wake this session when a PR merges, closes, finishes or fails its checks, or is ready. End your turn after.\n- list {all?}: This session's live watches (all: every session's on this machine).\n- cancel {all?, id?}: Cancel one of this session's watches by id, or all of them.",
       "inputSchema": {
         "$defs": {
           "PrList": {
@@ -15863,7 +15863,7 @@
           },
           "until": {
             "default": null,
-            "description": "create: merged (the default) or closed (merged or not).",
+            "description": "create: merged (the default), closed (merged or not), checks_done (none\nqueued or running), checks_failed, or ready (checks green and it can\nmerge cleanly).",
             "type": [
               "string",
               "null"
@@ -21209,7 +21209,7 @@
         "readOnlyHint": false,
         "title": "Watch for something to happen"
       },
-      "description": "Wake this session later, when something happens, without polling or holding your turn open: create a watch, then end your turn. When it fires, you get a follow-up saying what happened (ids and states only), as a chat mention arrives. It fires once. It expires after 24 hours unless you say (expires, at most 7d), and then you get one message saying it ended without firing. Targets: a pull request (OWNER/REPO#N or its link) until merged or closed, in a repo linked to Arugula's GitHub App; for a repo without it, or to block now, use wait with pr. If it has already happened, create says so and makes no watch. A watch belongs to this Claude Code session: a new session in this pane doesn't get it. Works from a terminal with Arugula's hooks installed, or an agent block. list shows this session's watches; cancel takes one by id, or all.\n- create {pr, expires?, until?}: Wake this session when a PR merges or closes. End your turn after.\n- list {all?}: This session's live watches (all: every session's on this machine).\n- cancel {all?, id?}: Cancel one of this session's watches by id, or all of them.",
+      "description": "Wake this session later, when something happens, without polling or holding your turn open: create a watch, then end your turn. When it fires, you get a follow-up saying what happened (ids and states only), as a chat mention arrives. It fires once. It expires after 24 hours unless you say (expires, at most 7d), and then you get one message saying it ended without firing. Targets: a pull request (OWNER/REPO#N or its link) until merged, closed, checks_done, checks_failed or ready (checks green and it can merge cleanly), in a repo linked to Arugula's GitHub App; for a repo without it, or to block now, use wait with pr. If it has already happened, create says so and makes no watch. A watch belongs to this Claude Code session: a new session in this pane doesn't get it. Works from a terminal with Arugula's hooks installed, or an agent block. list shows this session's watches; cancel takes one by id, or all.\n- create {pr, expires?, until?}: Wake this session when a PR merges, closes, finishes or fails its checks, or is ready. End your turn after.\n- list {all?}: This session's live watches (all: every session's on this machine).\n- cancel {all?, id?}: Cancel one of this session's watches by id, or all of them.",
       "inputSchema": {
         "$defs": {
           "PrList": {
@@ -21265,7 +21265,7 @@
           },
           "until": {
             "default": null,
-            "description": "create: merged (the default) or closed (merged or not).",
+            "description": "create: merged (the default), closed (merged or not), checks_done (none\nqueued or running), checks_failed, or ready (checks green and it can\nmerge cleanly).",
             "type": [
               "string",
               "null"
