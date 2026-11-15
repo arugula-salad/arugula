@@ -18,29 +18,27 @@
 
 .watch-on {
   display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+/* Who, what, until: wraps on a narrow screen; the button keeps its line. */
+.watch-on-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: 0 8px;
-  padding: 2px 0;
+}
+
+.watch-on button {
+  flex: none;
 }
 
 .watch-on-who {
   font-weight: 600;
-}
-
-.watch-on-cancel {
-  margin-left: auto;
-  font: inherit;
-  color: var(--muted);
-  background: none;
-  border: 1px solid var(--line);
-  border-radius: var(--field-radius);
-  padding: 0 8px;
-  cursor: pointer;
-}
-
-.watch-on-cancel:hover {
-  color: var(--fg);
 }
 
 .watch-on-error {

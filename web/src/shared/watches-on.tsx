@@ -60,13 +60,15 @@ export function WatchesOn({ path, compact }: { path: string | null; compact?: bo
       <h4>Watched by</h4>
       {watches.map((w) => (
         <div key={w.id} class="watch-on" data-watch-on={w.id}>
-          <span class="watch-on-who">{watcher(w)}</span>
-          <span class="watch-on-what">waits for {w.waits}</span>
-          <span class="watch-on-until dim">
-            until <Time at={w.expires_ms} />
+          <span class="watch-on-text">
+            <span class="watch-on-who">{watcher(w)}</span>
+            <span class="watch-on-what">waits for {w.waits}</span>
+            <span class="watch-on-until dim">
+              until <Time at={w.expires_ms} />
+            </span>
           </span>
           {w.yours && (
-            <button type="button" class="watch-on-cancel" data-watch-cancel={w.id} onClick={() => cancel(w)}>
+            <button type="button" class="secondary small" data-watch-cancel={w.id} onClick={() => cancel(w)}>
               Cancel
             </button>
           )}
