@@ -1,10 +1,10 @@
 // Pop a pane out into a window of its own (Arugula #497): chat, a board, a
 // Doc on a second monitor, out of the crowded panes.
 //
-// - Pop out (the pane menu, ⇧⌘O) opens `/#pop=<daemon>.<pane>` (in the app, the machine's page with
-//   `?pop`): a new
-//   window in the desktop app (crates/desktop keeps it out of the main
-//   window's native tabs), a new tab in a browser.
+// - Pop out (the pane menu, ⇧⌘O) opens `/#pop=<daemon>.<pane>` (in the
+//   app, the machine's page with `?pop`; #1032): a new window in the
+//   desktop app (crates/desktop keeps it out of the main window's native
+//   tabs), a new tab in a browser.
 // - That page shows only the pane. Once it's connected it sends the
 //   daemon's `pop_out` intent, so it holds the pop: its client going away
 //   (the window closing) brings the pane back, as a focus ends with its
