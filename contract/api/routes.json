@@ -55,6 +55,7 @@
     {"method":"GET","path":"/api/chat/rooms/{id}/threads/{seq}/agents","auth":"session","clients":["page"]},
     {"method":"POST","path":"/api/chat/rooms/{id}/threads/{seq}/follow","auth":"session","clients":["page","native"]},
     {"method":"POST","path":"/api/chat/rooms/{id}/threads/{seq}/read","auth":"session","clients":["page","native"]},
+    {"method":"GET","path":"/api/chat/rooms/{id}/threads/{seq}/watches","auth":"session","clients":["page"]},
     {"method":"PUT","path":"/api/chat/rooms/{id}/topic","auth":"session","clients":["page","native"]},
     {"method":"POST","path":"/api/chat/rooms/{id}/typing","auth":"session","clients":["page","native"]},
     {"method":"POST","path":"/api/chat/rooms/{id}/unread","auth":"session","clients":["page","native"]},
