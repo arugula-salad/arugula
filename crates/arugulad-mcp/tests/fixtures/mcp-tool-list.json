@@ -5157,6 +5157,85 @@
       },
       "name": "project_split",
       "title": "Plan moving work out of a project"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Watch for something to happen"
+      },
+      "description": "Wake this session later, when something happens, without polling or holding your turn open: create a watch, then end your turn. When it fires, you get a follow-up saying what happened (ids and states only), as a chat mention arrives. It fires once. It expires after 24 hours unless you say (expires, at most 7d), and then you get one message saying it ended without firing. Targets: a pull request (OWNER/REPO#N or its link) until merged or closed, in a repo linked to Arugula's GitHub App; for a repo without it, or to block now, use wait with pr. If it has already happened, create says so and makes no watch. A watch belongs to this Claude Code session: a new session in this pane doesn't get it. Works from a terminal with Arugula's hooks installed, or an agent block. list shows this session's watches; cancel takes one by id, or all.\n- create {pr, expires?, until?}: Wake this session when a PR merges or closes. End your turn after.\n- list {all?}: This session's live watches (all: every session's on this machine).\n- cancel {all?, id?}: Cancel one of this session's watches by id, or all of them.",
+      "inputSchema": {
+        "$defs": {
+          "PrList": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "description": "One pull request, or several."
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "all": {
+            "default": false,
+            "description": "list: Every session's watches on this machine, not only this session's. cancel: All of this session's watches.",
+            "type": "boolean"
+          },
+          "expires": {
+            "default": null,
+            "description": "create: How long to wait before it ends without firing: 30m, 6h, 3d. Default\n24h, at most 7d.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "default": null,
+            "description": "cancel: The watch's id (wch_…).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "description": "Which one (see the tool's description).",
+            "enum": [
+              "create",
+              "list",
+              "cancel"
+            ],
+            "type": "string"
+          },
+          "pr": {
+            "$ref": "#/$defs/PrList",
+            "description": "create: The pull request: OWNER/REPO#N, or its link on github.com. Several:\nwhichever happens first fires the watch."
+          },
+          "until": {
+            "default": null,
+            "description": "create: merged (the default) or closed (merged or not).",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "name": "watch",
+      "title": "Watch for something to happen"
     }
   ],
   "block, labs true": [
@@ -10480,6 +10559,85 @@
       },
       "name": "project_split",
       "title": "Plan moving work out of a project"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Watch for something to happen"
+      },
+      "description": "Wake this session later, when something happens, without polling or holding your turn open: create a watch, then end your turn. When it fires, you get a follow-up saying what happened (ids and states only), as a chat mention arrives. It fires once. It expires after 24 hours unless you say (expires, at most 7d), and then you get one message saying it ended without firing. Targets: a pull request (OWNER/REPO#N or its link) until merged or closed, in a repo linked to Arugula's GitHub App; for a repo without it, or to block now, use wait with pr. If it has already happened, create says so and makes no watch. A watch belongs to this Claude Code session: a new session in this pane doesn't get it. Works from a terminal with Arugula's hooks installed, or an agent block. list shows this session's watches; cancel takes one by id, or all.\n- create {pr, expires?, until?}: Wake this session when a PR merges or closes. End your turn after.\n- list {all?}: This session's live watches (all: every session's on this machine).\n- cancel {all?, id?}: Cancel one of this session's watches by id, or all of them.",
+      "inputSchema": {
+        "$defs": {
+          "PrList": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "description": "One pull request, or several."
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "all": {
+            "default": false,
+            "description": "list: Every session's watches on this machine, not only this session's. cancel: All of this session's watches.",
+            "type": "boolean"
+          },
+          "expires": {
+            "default": null,
+            "description": "create: How long to wait before it ends without firing: 30m, 6h, 3d. Default\n24h, at most 7d.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "default": null,
+            "description": "cancel: The watch's id (wch_…).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "description": "Which one (see the tool's description).",
+            "enum": [
+              "create",
+              "list",
+              "cancel"
+            ],
+            "type": "string"
+          },
+          "pr": {
+            "$ref": "#/$defs/PrList",
+            "description": "create: The pull request: OWNER/REPO#N, or its link on github.com. Several:\nwhichever happens first fires the watch."
+          },
+          "until": {
+            "default": null,
+            "description": "create: merged (the default) or closed (merged or not).",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "name": "watch",
+      "title": "Watch for something to happen"
     }
   ],
   "full, labs false": [
@@ -15640,6 +15798,85 @@
       },
       "name": "project_split",
       "title": "Plan moving work out of a project"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Watch for something to happen"
+      },
+      "description": "Wake this session later, when something happens, without polling or holding your turn open: create a watch, then end your turn. When it fires, you get a follow-up saying what happened (ids and states only), as a chat mention arrives. It fires once. It expires after 24 hours unless you say (expires, at most 7d), and then you get one message saying it ended without firing. Targets: a pull request (OWNER/REPO#N or its link) until merged or closed, in a repo linked to Arugula's GitHub App; for a repo without it, or to block now, use wait with pr. If it has already happened, create says so and makes no watch. A watch belongs to this Claude Code session: a new session in this pane doesn't get it. Works from a terminal with Arugula's hooks installed, or an agent block. list shows this session's watches; cancel takes one by id, or all.\n- create {pr, expires?, until?}: Wake this session when a PR merges or closes. End your turn after.\n- list {all?}: This session's live watches (all: every session's on this machine).\n- cancel {all?, id?}: Cancel one of this session's watches by id, or all of them.",
+      "inputSchema": {
+        "$defs": {
+          "PrList": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "description": "One pull request, or several."
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "all": {
+            "default": false,
+            "description": "list: Every session's watches on this machine, not only this session's. cancel: All of this session's watches.",
+            "type": "boolean"
+          },
+          "expires": {
+            "default": null,
+            "description": "create: How long to wait before it ends without firing: 30m, 6h, 3d. Default\n24h, at most 7d.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "default": null,
+            "description": "cancel: The watch's id (wch_…).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "description": "Which one (see the tool's description).",
+            "enum": [
+              "create",
+              "list",
+              "cancel"
+            ],
+            "type": "string"
+          },
+          "pr": {
+            "$ref": "#/$defs/PrList",
+            "description": "create: The pull request: OWNER/REPO#N, or its link on github.com. Several:\nwhichever happens first fires the watch."
+          },
+          "until": {
+            "default": null,
+            "description": "create: merged (the default) or closed (merged or not).",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "name": "watch",
+      "title": "Watch for something to happen"
     }
   ],
   "full, labs true": [
@@ -20963,6 +21200,85 @@
       },
       "name": "project_split",
       "title": "Plan moving work out of a project"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Watch for something to happen"
+      },
+      "description": "Wake this session later, when something happens, without polling or holding your turn open: create a watch, then end your turn. When it fires, you get a follow-up saying what happened (ids and states only), as a chat mention arrives. It fires once. It expires after 24 hours unless you say (expires, at most 7d), and then you get one message saying it ended without firing. Targets: a pull request (OWNER/REPO#N or its link) until merged or closed, in a repo linked to Arugula's GitHub App; for a repo without it, or to block now, use wait with pr. If it has already happened, create says so and makes no watch. A watch belongs to this Claude Code session: a new session in this pane doesn't get it. Works from a terminal with Arugula's hooks installed, or an agent block. list shows this session's watches; cancel takes one by id, or all.\n- create {pr, expires?, until?}: Wake this session when a PR merges or closes. End your turn after.\n- list {all?}: This session's live watches (all: every session's on this machine).\n- cancel {all?, id?}: Cancel one of this session's watches by id, or all of them.",
+      "inputSchema": {
+        "$defs": {
+          "PrList": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "description": "One pull request, or several."
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "all": {
+            "default": false,
+            "description": "list: Every session's watches on this machine, not only this session's. cancel: All of this session's watches.",
+            "type": "boolean"
+          },
+          "expires": {
+            "default": null,
+            "description": "create: How long to wait before it ends without firing: 30m, 6h, 3d. Default\n24h, at most 7d.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "default": null,
+            "description": "cancel: The watch's id (wch_…).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "description": "Which one (see the tool's description).",
+            "enum": [
+              "create",
+              "list",
+              "cancel"
+            ],
+            "type": "string"
+          },
+          "pr": {
+            "$ref": "#/$defs/PrList",
+            "description": "create: The pull request: OWNER/REPO#N, or its link on github.com. Several:\nwhichever happens first fires the watch."
+          },
+          "until": {
+            "default": null,
+            "description": "create: merged (the default) or closed (merged or not).",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "name": "watch",
+      "title": "Watch for something to happen"
     }
   ],
   "read, labs false": [

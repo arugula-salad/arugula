@@ -405,6 +405,11 @@ pub struct AgentMention {
     /// An older daemon ignores them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub files: Vec<crate::chat::ChatFile>,
+    /// A watch's message (Arugula #631): for the one Claude Code session
+    /// that made the watch, and no other. `text` is Arugula's, ids and
+    /// states only. Control sends it only to a daemon that reads it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub watch: Option<crate::watch::WatchTag>,
 }
 
 /// `projects.repo_moved`'s repo (Arugula #992). It names no project: a
@@ -638,6 +643,10 @@ pub enum RoutedStep {
     Room,
     /// No session took it: the machine's inbox.
     Inbox,
+    /// A watch's message (Arugula #631) whose session is in none of the
+    /// machine's panes now: nothing took it and nothing kept it, so control
+    /// sends it again later. Only ever for a watch.
+    Away,
 }
 
 /// How a machine (or control, for it) answered an op.

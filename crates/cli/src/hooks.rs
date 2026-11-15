@@ -182,6 +182,7 @@ const ACTING_RULES: &[&str] = &[
     "mcp__arugula__session_stop",
     "mcp__arugula__tracker_write",
     "mcp__arugula__link",
+    "mcp__arugula__watch",
 ];
 
 #[derive(Subcommand)]

@@ -34,6 +34,7 @@ mod runs;
 mod splits;
 mod threads;
 mod trackers;
+mod watches;
 
 use std::time::Duration;
 
@@ -61,7 +62,7 @@ use crate::{
 pub fn register() {
     /// What a tool is listed after, its row and its call.
     type Listed = (&'static str, fn() -> Def, registry::Run);
-    let tools: [Listed; 22] = [
+    let tools: [Listed; 23] = [
         ("draft", forge_read_def, run_forge_read),
         ("forge_read", forge_draft_def, run_forge_draft),
         ("device_call", read_cloud_def, run_read_cloud),
@@ -84,6 +85,7 @@ pub fn register() {
         (agent_sessions::STOP_TOOL, tracker_write_def, run_tracker_write),
         (trackers::WRITE_TOOL, link_def, run_link),
         (links::TOOL, project_split_def, run_project_split),
+        (splits::TOOL, watch_def, run_watch),
     ];
     for (after, def, run) in tools {
         registry::tool(registry::Tool { after: Some(after), def, run });
@@ -189,6 +191,7 @@ one!(run_board_read, boards::board_read);
 grouped!(run_board_write, boards::WRITE_TOOL, |c, kind, args| boards::board_write(c, kind, args));
 grouped!(run_tracker_write, trackers::WRITE_TOOL, |c, kind, args| trackers::tracker_write(c, kind, args));
 one!(run_link, links::link);
+grouped!(run_watch, watches::TOOL, |c, kind, args| watches::watch(c, kind, args));
 one!(run_project_split, splits::project_split);
 one!(run_start_run, runs::start_run);
 one!(run_read_run, runs::read_run);
@@ -439,6 +442,27 @@ fn project_split_def() -> Def {
         human: line(
             "plan moving repos, boards, issues and Docs out of a project into another, and give you the command that moves them",
             "Plan moving acme/app and its board out of this project into a new one called App.",
+            Needs::Control,
+        ),
+    }
+}
+
+// Arugula #631: wake this session when a PR merges or closes.
+fn watch_def() -> Def {
+    Def {
+        name: watches::TOOL,
+        title: "Watch for something to happen",
+        description: watches::DESCRIPTION,
+        args: Args::Kinds { kinds: table(watches::KINDS), default: None },
+        read_only: false,
+        destructive: false,
+        idempotent: false,
+        open_world: true,
+        flag: None,
+        output: None,
+        human: line(
+            "wake your agent when a PR merges or closes, after it has stopped, without it polling",
+            "Watch acme/app#7 and tell me when it merges.",
             Needs::Control,
         ),
     }

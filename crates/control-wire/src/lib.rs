@@ -91,6 +91,7 @@ pub mod sessions;
 pub mod team;
 pub mod telemetry;
 pub mod transcripts;
+pub mod watch;
 pub mod work;
 
 pub use join::{
