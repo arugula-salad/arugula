@@ -16,6 +16,7 @@ import { newFrom, repliesOf } from "./threads";
 import { Bar, BarTitle, BarWhere } from "../ui/bar";
 import { savedAnchor, useAnchor } from "./use-anchor";
 import { SeenMarks, ThreadAgents, useThreadAgents } from "./thread-agents";
+import { WatchesOn } from "../watches-on";
 import { ArrowIcon, ChevronIcon, CloseIcon, IconButton } from "../ui/icons";
 
 /** The head's width under which Follow goes into ⋯ (Close stays). Measured:
@@ -157,6 +158,7 @@ export function ThreadPanel({ store, room, parent, phone, focus, close }: { stor
         }
       />
       <ThreadAgents agents={agents} newest={newest} phone={phone} />
+      <WatchesOn compact path={`/api/chat/rooms/${encodeURIComponent(room.id)}/threads/${parent}/watches`} />
       <div class="thread-list thread-replies" ref={list} onScroll={() => anchor.onScroll()}>
         {t === undefined && !error && <BlockLoading inline what="the thread" />}
         {error && <p class="thread-error">{error}</p>}

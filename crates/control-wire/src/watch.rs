@@ -212,3 +212,63 @@ pub struct WatchTag {
     /// The Claude Code session's id.
     pub session: String,
 }
+
+/// `GET`: the live watches on a mirrored PR (`fi_…`, Arugula #1036), for a
+/// person in the project of its repo who can read it: [`WatchesOn`].
+pub const ITEM_WATCHES: &str = "/api/forge/items/{id}/watches";
+/// `GET`: the live watches on a reply in a thread (its root's number `seq`),
+/// or in its whole room, for a person who can read the room: [`WatchesOn`].
+pub const THREAD_WATCHES: &str = "/api/chat/rooms/{id}/threads/{seq}/watches";
+/// `POST`: the person who owns a watch cancels it (its session is told),
+/// answered [`WatchCancelled`].
+pub const WATCH_CANCEL: &str = "/api/watches/{id}/cancel";
+
+/// [`ITEM_WATCHES`]' path for one PR.
+pub fn item_watches(id: &str) -> String {
+    ITEM_WATCHES.replace("{id}", id)
+}
+
+/// [`THREAD_WATCHES`]' path for one thread.
+pub fn thread_watches(room: &str, seq: i64) -> String {
+    THREAD_WATCHES.replace("{id}", room).replace("{seq}", &seq.to_string())
+}
+
+/// [`WATCH_CANCEL`]'s path for one watch.
+pub fn watch_cancel(id: &str) -> String {
+    WATCH_CANCEL.replace("{id}", id)
+}
+
+/// The live watches on a PR or a thread, the soonest to expire first.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct WatchesOn {
+    pub watches: Vec<WatchShown>,
+}
+
+/// One watch as a teammate sees it (Arugula #1036): whose agent waits, on
+/// what, and until when. The session's name only as its owner's
+/// `agent_sessions` setting shows it, asked of its machine (aru-133).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct WatchShown {
+    /// `wch_…`.
+    pub id: String,
+    /// The account whose agent made it, and its name as people read it.
+    pub owner: String,
+    pub owner_name: String,
+    /// The session's name, when its owner shows it; else none, and it's
+    /// "their agent".
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub session: Option<String>,
+    /// What it waits for here, in words: "merged", "checks_failed", "a
+    /// reply from Ada".
+    pub waits: String,
+    /// When it ends without firing, in ms since the epoch.
+    pub expires_ms: i64,
+    /// Whether it's the reader's own, which they may cancel.
+    #[serde(default)]
+    pub yours: bool,
+}

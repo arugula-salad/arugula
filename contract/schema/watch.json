@@ -222,6 +222,52 @@
       ],
       "type": "object"
     },
+    "WatchShown": {
+      "description": "One watch as a teammate sees it (Arugula #1036): whose agent waits, on\nwhat, and until when. The session's name only as its owner's\n`agent_sessions` setting shows it, asked of its machine (aru-133).",
+      "properties": {
+        "expires_ms": {
+          "description": "When it ends without firing, in ms since the epoch.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "id": {
+          "description": "`wch_…`.",
+          "type": "string"
+        },
+        "owner": {
+          "description": "The account whose agent made it, and its name as people read it.",
+          "type": "string"
+        },
+        "owner_name": {
+          "type": "string"
+        },
+        "session": {
+          "default": null,
+          "description": "The session's name, when its owner shows it; else none, and it's\n\"their agent\".",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "waits": {
+          "description": "What it waits for here, in words: \"merged\", \"checks_failed\", \"a\nreply from Ada\".",
+          "type": "string"
+        },
+        "yours": {
+          "default": false,
+          "description": "Whether it's the reader's own, which they may cancel.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "owner",
+        "owner_name",
+        "waits",
+        "expires_ms"
+      ],
+      "type": "object"
+    },
     "WatchState": {
       "anyOf": [
         {
@@ -384,6 +430,21 @@
           "type": "object"
         }
       ]
+    },
+    "WatchesOn": {
+      "description": "The live watches on a PR or a thread, the soonest to expire first.",
+      "properties": {
+        "watches": {
+          "items": {
+            "$ref": "#/$defs/WatchShown"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "watches"
+      ],
+      "type": "object"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",

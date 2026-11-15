@@ -1,0 +1,48 @@
+/* Agents' watches on a PR or a thread (#1036): one quiet line each, who
+   waits, for what, until when. Palette tokens only. */
+
+.watches-on {
+  font-size: var(--text-md);
+}
+
+.watches-on.compact {
+  flex: none;
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.watches-on h4 {
+  margin: 0 0 4px;
+}
+
+.watch-on {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 8px;
+  padding: 2px 0;
+}
+
+.watch-on-who {
+  font-weight: 600;
+}
+
+.watch-on-cancel {
+  margin-left: auto;
+  font: inherit;
+  color: var(--muted);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: var(--field-radius);
+  padding: 0 8px;
+  cursor: pointer;
+}
+
+.watch-on-cancel:hover {
+  color: var(--fg);
+}
+
+.watch-on-error {
+  color: var(--danger);
+}
