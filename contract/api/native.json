@@ -15,6 +15,10 @@
       "why": "The strip of a thread's agents is on the web for now (Arugula #646)"
     },
     {
+      "match": "/threads/{seq}/watches",
+      "why": "Agents' watches on a thread are shown on the web for now (Arugula #1036)"
+    },
+    {
       "match": "/docs/trash$",
       "why": "The Trash of team Docs is on the web for now (Arugula #866)"
     },
