@@ -58,7 +58,8 @@ jobs:
 
   # What the pull request means for people using Arugula: a note in docs/notes/, or
   # a commit saying none is needed (#722; scripts/pr-notes-check). A release's notes
-  # are built from them.
+  # are built from them. check.yml's lint reads the notes again on the merge
+  # group, with the group's scripts.
   notes:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest

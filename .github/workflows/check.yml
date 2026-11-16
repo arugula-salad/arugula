@@ -109,6 +109,13 @@ jobs:
       - name: No secrets
         # The whole history; a pull request's quick job scans its own commits.
         run: scripts/ci-gitleaks
+      # binaries.yml's notes runs only on the pull request, so a note that
+      # passed there can stop reading once main changes the limits (#2341
+      # held the train 6.5 h that way). On a group, its notes are read again
+      # with the group's scripts; lint is a phase chant-verdict needs.
+      - name: The pull request's notes still read (merge group)
+        if: github.event_name == 'merge_group'
+        run: scripts/pr-notes-check --notes-only "${{ github.event.merge_group.base_sha }}" "${{ github.event.merge_group.head_sha }}"
 
   # The debug binaries, web/dist embedded (debug-embed: the specs run them
   # from other checkouts), for the specs.

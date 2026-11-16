@@ -188,6 +188,16 @@ echo x >web/e2e/a.spec.ts
 echo x >.github/workflows/w.yml
 git add -A && git commit -qm "Tests"
 passes "tests and CI alone: need none"
+# In a merge group (--notes-only): only that its notes read.
+pr group-says-nothing
+echo x >web/src/g.ts
+git add -A && git commit -qm "A change"
+if scripts/pr-notes-check --notes-only "$main" HEAD >"$tmp/out" 2>&1; then ok "in a group, a change with no note passes (its pull request judged that)"; else bad "group, no note: $(cat "$tmp/out")"; fi
+pr group-bad-note
+echo x >web/src/g.ts
+note group-bad "$(printf 'x%.0s' {1..61})"
+git add -A && git commit -qm "A title too long for a headline"
+if scripts/pr-notes-check --notes-only "$main" HEAD >"$tmp/out" 2>&1; then bad "in a group, a note that doesn't read should fail: $(cat "$tmp/out")"; else ok "in a group, a note that doesn't read fails"; fi
 git switch -q main
 
 # The train. A fake release: `last-green` prints the commit, `bump` records itself.

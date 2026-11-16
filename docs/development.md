@@ -680,7 +680,9 @@ It's a secret of the `ci-green` environment, which only `main` reaches
 repository, so every job that uses it names its environment. `chant ci
 workflow` doesn't write `environment: ci-green` into `chant-ci-green.yml`:
 keep that line when regenerating the file, or the tick gets no token and
-tags nothing. The merge queue's `chant-verdict` uses only the run's own
+tags nothing. With `mergeQueue.retries` at 0 it doesn't write
+`--timeout-minutes 115` on `chant-merge-queue.yml`'s verdict either: keep
+that too, so the verdict gives up with a message inside the job's 120. The merge queue's `chant-verdict` uses only the run's own
 token.
 
 A daemon release needs more than `ci/green` (#305). test-postgres, core,
