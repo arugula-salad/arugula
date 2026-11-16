@@ -1,31 +1,35 @@
 // The project's Overview (Arugula inversion, L6): Swarm for this project,
-// the view the app opens on. The field on the left is the project's boards,
-// each with its cards in Doing and Review as one-line rows, the worst first
-// (Next and Done are counts in its header, with its progress); a row's
-// preview, on hover or focus, shows the sessions on it (./overview-row.tsx).
-// Not on a card is the last group. Needs you on the right
-// is Swarm's rail, scoped to the project, its cards naming their card. A
+// the view the app opens on, the window's width (#1085). The field is the
+// project's open boards, one hairline row each: its title, its lane bar,
+// its count (`13/18`) and what's going on in words. A board that asks you
+// is open; a click opens any other, to its cards in Doing and Review as
+// one-line rows, the worst first; a row's preview, on hover or focus, shows
+// the sessions on it (./overview-row.tsx). Not on a card is the last
+// group. Needs you on the right (first on a phone; one quiet line when
+// nothing does) is Swarm's rail, scoped to the project, its cards naming
+// their card. The old home's lists aren't here (#1088): only where there
+// is no Overview (./machines.tsx). A
 // card opens the board's own drawer over the page (its address names it,
 // so the path and Esc climb back); a session opens on its machine's page,
 // on its pane. The grouping is ../shell/swarm/overview.ts; the machines are
 // the machine page's (./machine-page), booted once.
 
 import "./overview.css";
-import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { BoardLane, BoardRow, BoardView } from "../shared/proto";
 import { boards, BoardError } from "../shared/boards/store";
 import { Drawer } from "../shared/boards/card";
-import { isCard, pointerLabel } from "../shared/boards/text";
+import { epicLine, isCard, pointerLabel } from "../shared/boards/text";
 import { chat } from "../shared/chat-store";
 import { NEEDS_YOU, needsYou, needsYouRank } from "../shared/needs-you";
 import { usePlatformApi } from "../shared/platform-api";
 import { BY_CARD_EVERY_MS, sessionsByCard, type SessionsByCard } from "../shared/project-sessions";
 import { EmptyLine, EmptyState } from "../shared/ui/block-states";
 import { usePhone, useSubscribe } from "../shared/ui/hooks";
+import { ChevronIcon } from "../shared/ui/icons";
 import type { Fleet, FleetPane } from "../shell/fleet";
 import { activityOf, holdStill, kindOf, readableCommand, shownNow, whatItDoes } from "../shell/swarm/model";
-import { boardLine, inFlight, overviewOf, statsLine, type OvBoard, type OvCard, type OvPane, type OvSession, type Standing } from "../shell/swarm/overview";
+import { asksYou, boardSays, inFlight, overviewOf, statsLine, type OvBoard, type OvCard, type OvPane, type OvSession, type Standing } from "../shell/swarm/overview";
 import { Card as RailCard, bundlesOf, type Bundle } from "../shell/swarm/view";
 import { names } from "../platform/links";
 import { mayWrite } from "../platform/pages/issues";
@@ -34,10 +38,10 @@ import { follow, go, pathOf } from "../platform/router";
 import { session as platform } from "../platform/session";
 import { where } from "../platform/where";
 import { boot, type Booted } from "./machine-page";
-import { CardRow, SessionRow } from "./overview-row";
+import { CardRow, SessionRow, Word } from "./overview-row";
 import type { AppSession } from "./session";
 
-export function OverviewPlace({ project, board, card, session, children }: { project: string; board?: string; card?: string; session: AppSession | null; children?: ComponentChildren }) {
+export function OverviewPlace({ project, board, card, session }: { project: string; board?: string; card?: string; session: AppSession | null }) {
   const [b, setB] = useState<Booted | null>(null);
   useEffect(() => {
     let live = true;
@@ -46,18 +50,11 @@ export function OverviewPlace({ project, board, card, session, children }: { pro
   }, []);
   if (!b)
     return (
-      <>
-        <p class="dim" data-overview-loading>
-          Reaching your machines…
-        </p>
-        {children}
-      </>
+      <p class="dim" data-overview-loading>
+        Reaching your machines…
+      </p>
     );
-  return (
-    <OverviewBody project={project} board={board} card={card} fleet={b.machines.fleet}>
-      {children}
-    </OverviewBody>
-  );
+  return <OverviewBody project={project} board={board} card={card} fleet={b.machines.fleet} />;
 }
 
 /** A pane as the Overview groups it. */
@@ -154,7 +151,30 @@ function useByCard(project: string): SessionsByCard | null {
   return v;
 }
 
-function OverviewBody({ project, board, card, fleet, children }: { project: string; board?: string; card?: string; fleet: Fleet; children?: ComponentChildren }) {
+/** The boards the reader opened or closed on this project's Overview, kept for the tab. */
+function useOpened(project: string): [Map<string, boolean>, (board: string, open: boolean) => void] {
+  const key = `arugula.ov-open:${project}`;
+  const [m, setM] = useState<Map<string, boolean>>(() => {
+    try {
+      return new Map(JSON.parse(sessionStorage.getItem(key) ?? "[]") as [string, boolean][]);
+    } catch {
+      return new Map();
+    }
+  });
+  const set = (board: string, open: boolean) =>
+    setM((was) => {
+      const next = new Map(was).set(board, open);
+      try {
+        sessionStorage.setItem(key, JSON.stringify([...next]));
+      } catch {
+        // Not kept: it holds for this page.
+      }
+      return next;
+    });
+  return [m, set];
+}
+
+function OverviewBody({ project, board, card, fleet }: { project: string; board?: string; card?: string; fleet: Fleet }) {
   useSubscribe((fn) => fleet.subscribe(fn));
   useSubscribe((fn) => platform.subscribe(fn));
   const api = usePlatformApi();
@@ -186,13 +206,26 @@ function OverviewBody({ project, board, card, fleet, children }: { project: stri
     if (s.lead) paneAt(s.lead);
     else if (s.hosted) go(api.sessionHref?.(project, s.hosted) ?? pathOf({ page: "session", project, session: s.hosted }, names));
   };
-  // A rail card's Find: the tile its pane is in, brought into view.
+  // A board's row is open when the reader opened it, else when it asks
+  // them (and stays so once answered, so the row answered doesn't go), or
+  // holds the card the address opens.
+  const [toggled, setOpen] = useOpened(project);
+  const asked = useRef(new Set<string>());
+  for (const b of o.boards) if (asksYou(b)) asked.current.add(b.id);
+  const isOpen = (b: OvBoard) => toggled.get(b.id) ?? (asked.current.has(b.id) || b.id === board);
+  // A rail card's Find: the row its pane is on (its board opened), brought into view.
   const show = (key: string) => {
-    const tile = document.querySelector<HTMLElement>(`[data-ov-panes~="${CSS.escape(key)}"]`);
-    tile?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    tile?.classList.remove("ov-found");
-    void tile?.offsetWidth;
-    tile?.classList.add("ov-found");
+    const on = o.cardOf.get(key);
+    const ob = on && o.boards.find((b) => b.id === on.board);
+    if (ob && !isOpen(ob)) setOpen(ob.id, true);
+    requestAnimationFrame(() => {
+      const at = `[data-ov-panes~="${CSS.escape(key)}"]`;
+      const tile = document.querySelector<HTMLElement>(`.ov-row${at}`) ?? document.querySelector<HTMLElement>(at);
+      tile?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      tile?.classList.remove("ov-found");
+      void tile?.offsetWidth;
+      tile?.classList.add("ov-found");
+    });
   };
 
   // The card the address opens: the board's drawer, over the page.
@@ -227,19 +260,19 @@ function OverviewBody({ project, board, card, fleet, children }: { project: stri
   // An assignee's picture: a native issue names them, a member by that name (or login) has one.
   const faceOf = (name: string) => (chat.on ? p?.team?.members.find((m) => m.name === name || m.account === name)?.account : undefined);
 
-  const flight = o.boards.length > 0 || o.loose.length > 0;
+  const any = o.boards.length > 0 || o.loose.length > 0;
   const field = (
     <div class="ov-field" data-ov-field>
       <p class="dim ov-stats" data-ov-stats>
         {statsLine(o, needs)}
       </p>
       {views === null && <p class="dim">Loading…</p>}
-      {views !== null && !flight && (
+      {views !== null && !any && (
         <EmptyState
           where="page"
           data-ov-empty
           title="Nothing in flight."
-          why="A card in Doing or Review shows here, with the sessions working on it. So do the project's sessions that aren't on a card."
+          why="The project's open boards show here, each a row, with their cards in Doing and Review and the sessions working on them. So do the project's sessions that aren't on a card."
           action={
             <a class="secondary" href={pathOf({ page: "boards", project }, names)} onClick={(e) => follow(e, pathOf({ page: "boards", project }, names))}>
               Boards
@@ -247,12 +280,16 @@ function OverviewBody({ project, board, card, fleet, children }: { project: stri
           }
         />
       )}
-      {o.boards.map((b) => (
-        <BoardGroup key={b.id} b={b} project={project} fleet={fleet} openCard={openCard} openSession={openSession} opened={card} faceOf={faceOf} />
-      ))}
+      {o.boards.length > 0 && (
+        <ul class="ov-boards" data-ov-boards>
+          {o.boards.map((b) => (
+            <BoardRow key={b.id} b={b} open={isOpen(b)} setOpen={(v) => setOpen(b.id, v)} project={project} fleet={fleet} openCard={openCard} openSession={openSession} opened={card} faceOf={faceOf} />
+          ))}
+        </ul>
+      )}
       {o.loose.length > 0 && (
-        <section class="ov-board ov-loose" data-ov-loose>
-          <header class="ov-board-head">
+        <section class="ov-loose" data-ov-loose>
+          <header class="ov-loose-head">
             <b>Not on a card</b>
             <span class="dim">Sessions in this project that aren't working on a card</span>
           </header>
@@ -263,21 +300,20 @@ function OverviewBody({ project, board, card, fleet, children }: { project: stri
           </ul>
         </section>
       )}
-      {children && (
-        <div class="ov-more" data-ov-more>
-          {children}
-        </div>
-      )}
     </div>
   );
-  const rail = (
+  // Nothing needs you: one quiet line, not a column.
+  const rail = railed.length === 0 ? (
+    <aside class="ov-needs ov-needs-none" aria-label={NEEDS_YOU} data-ov-needs>
+      <EmptyLine data-ov-needs-none>Nothing needs you.</EmptyLine>
+    </aside>
+  ) : (
     <aside class="ov-needs" aria-label={NEEDS_YOU} data-ov-needs>
       <header>
         <h2>{NEEDS_YOU}</h2>
         {needs > 0 && <span data-ov-needs-count>{needs}</span>}
       </header>
       <div class="swarm-cards" onPointerEnter={() => setHeld(true)} onPointerLeave={() => setHeld(false)}>
-        {railed.length === 0 && <EmptyLine>Nothing needs you. Answered cards fade, then clear.</EmptyLine>}
         {railed.map((b) => {
           const first = b.panes[0];
           const at = o.cardOf.get(first.key);
@@ -321,34 +357,55 @@ function OverviewBody({ project, board, card, fleet, children }: { project: stri
   );
 }
 
-/** A board: its title, what's in flight, next and done, and its progress;
- * then its cards in flight, one line each, the worst first, up to four,
- * and how many more (to the board). */
-function BoardGroup({ b, project, fleet, openCard, openSession, opened, faceOf }: { b: OvBoard; project: string; fleet: Fleet; openCard: (c: OvCard) => void; openSession: (s: OvSession) => void; opened?: string; faceOf: (name: string) => string | undefined }) {
+/** A board, one hairline row: the way to open it (when it has cards in
+ * flight), its title (the board), its lane bar, its count and what's going
+ * on in words; open, its cards in flight, one line each, the worst first,
+ * up to eight, and how many more (to the board). */
+function BoardRow({ b, open, setOpen, project, fleet, openCard, openSession, opened, faceOf }: { b: OvBoard; open: boolean; setOpen: (open: boolean) => void; project: string; fleet: Fleet; openCard: (c: OvCard) => void; openSession: (s: OvSession) => void; opened?: string; faceOf: (name: string) => string | undefined }) {
   const to = pathOf({ page: "board", project, board: b.id }, names);
-  const pct = b.total ? Math.round((b.done / b.total) * 100) : 0;
-  const { shown, more } = inFlight(b);
+  const e = epicLine({ done: b.done, total: b.total, proven: b.proven, review: b.review.length, doing: b.doing.length });
+  const flight = b.doing.length + b.review.length > 0;
+  const shown = flight && open;
+  const { shown: rows, more } = inFlight(b, 8);
+  const id = `ov-board-${b.id}`;
   return (
-    <section class="ov-board" data-ov-board={b.id}>
-      <header class="ov-board-head">
-        <b data-ov-board-title>{b.title}</b>
-        <span class="dim" data-ov-board-line>
-          {boardLine(b)}
-        </span>
-      </header>
-      <div class="ov-progress" role="progressbar" aria-label={`${b.done} of ${b.total} done`} aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
-        <i style={{ width: `${pct}%` }} />
-      </div>
-      <ul class="ov-rows">
-        {shown.map((c) => (
-          <CardRow key={c.row.id} c={c} fleet={fleet} open={() => openCard(c)} openSession={openSession} current={opened === c.row.id} faceOf={faceOf} />
-        ))}
-      </ul>
-      {more > 0 && (
-        <a class="ov-more-rows" href={to} onClick={(e) => follow(e, to)} data-ov-more-rows>
-          {more} more in flight
+    <li class={`ov-board${shown ? " ov-board-open" : ""}${flight ? "" : " ov-board-still"}`} data-ov-board={b.id} data-ov-open={shown ? "" : undefined} data-ov-standing={b.standing} data-ov-panes={[...b.doing, ...b.review].flatMap((c) => c.sessions.flatMap((s) => s.panes.map((p) => p.key))).join(" ")}>
+      {/* The row opens with a click anywhere on it but its title, which is the board. */}
+      <div class="ov-board-line" onClick={(ev) => flight && !(ev.target as Element).closest("a, button") && setOpen(!open)}>
+        <button type="button" class="ov-board-toggle" disabled={!flight} aria-expanded={flight ? shown : undefined} aria-controls={shown ? id : undefined} aria-label={shown ? `Close ${b.title}` : `Open ${b.title}`} data-ov-board-toggle onClick={() => setOpen(!open)}>
+          {flight && <ChevronIcon dir={shown ? "down" : "right"} size="sm" />}
+        </button>
+        <a class="ov-board-title" href={to} onClick={(ev) => follow(ev, to)} data-ov-board-title>
+          {b.title}
         </a>
+        <div class="board-bar" role="progressbar" aria-valuemin={0} aria-valuemax={b.total} aria-valuenow={b.done} aria-label={e.words}>
+          {e.segments.map((s) => (
+            <i key={s.lane} data-lane={s.lane} style={{ width: `${s.pct}%` }} />
+          ))}
+        </div>
+        <span class="ov-board-count" title={e.words} data-ov-board-count>
+          {b.total ? `${b.done}/${b.total}` : "–"}
+        </span>
+        <span class="ov-board-says" data-ov-board-says>
+          {boardSays(b).map((x) => (
+            <Word key={x.standing} standing={x.standing} words={x.words} />
+          ))}
+        </span>
+      </div>
+      {shown && (
+        <div class="ov-board-rows" id={id}>
+          <ul class="ov-rows">
+            {rows.map((c) => (
+              <CardRow key={c.row.id} c={c} fleet={fleet} open={() => openCard(c)} openSession={openSession} current={opened === c.row.id} faceOf={faceOf} />
+            ))}
+          </ul>
+          {more > 0 && (
+            <a class="ov-more-rows" href={to} onClick={(ev) => follow(ev, to)} data-ov-more-rows>
+              {more} more in flight
+            </a>
+          )}
+        </div>
       )}
-    </section>
+    </li>
   );
 }

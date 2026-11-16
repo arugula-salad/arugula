@@ -1,7 +1,10 @@
 // `/p/:project`: a project's home (M150): its channels and direct
 // messages, its issues, its last runs, its cloud workspaces and its agent
 // sessions in numbers (M265), its drafts waiting on linked repos (M170),
-// and who's in its team. Membership shows read only: rosters change in the
+// and who's in its team. Where the page reaches machines the Overview is
+// the home instead, and none of those lists are (#1088): the header has
+// the team's faces, each with who's around, while chat is on. Membership
+// shows read only: rosters change in the
 // shell, signed by a device ("The platform page is on app.arugula.io, not
 // on the keys' origin"), so the link goes there. A section with nothing
 // in it says what it's for and offers the next step as a button
@@ -52,7 +55,7 @@ export function ProjectHome({ id, board, card }: { id: string; board?: string; c
   const sections = <HomeSections p={p} boards={boards} workspaces={workspaces} rooms={rooms} chatPath={chatPath} workspacesPath={workspacesPath} />;
   return (
     <section class="platform-section sw-page" data-project-home={p.id}>
-      <PageHeader title={p.name} named />
+      <PageHeader title={p.name} named actions={chat.on && p.team ? <Faces p={p} /> : undefined} />
       {Overview ? (
         <Overview project={p.id} board={board} card={card}>
           {sections}
@@ -64,9 +67,9 @@ export function ProjectHome({ id, board, card }: { id: string; board?: string; c
   );
 }
 
-/** What the project's page showed before the Overview, below it now: its
- * drafts, chat, boards, issues, Docs, runs, repos, environments, cloud
- * workspaces and people. */
+/** What the project's page showed before the Overview, and still shows
+ * where there is none: its drafts, chat, boards, issues, Docs, runs,
+ * repos, environments, cloud workspaces and people. */
 function HomeSections({ p, boards, workspaces, rooms, chatPath, workspacesPath }: { p: PlatformProject; boards: ReturnType<typeof useBoards>; workspaces: ReturnType<typeof useHostedWorkspaces>; rooms: typeof chat.rooms; chatPath: string; workspacesPath: string }) {
   const boardsOn = boards !== null;
   const nameOf = (account: string) =>
@@ -339,6 +342,20 @@ function Members({ p }: { p: PlatformProject }) {
         </p>
       )}
     </aside>
+  );
+}
+
+/** The team's faces in the header (#1088), each with its dot (who's
+ * around, ../../shared/chat/presence.ts): drawn only while chat is on. */
+function Faces({ p }: { p: PlatformProject }) {
+  return (
+    <ul class="project-faces" aria-label={`${p.team!.name}'s people`} data-project-faces>
+      {p.team!.members.map((m) => (
+        <li key={m.account} title={m.name} data-project-face={m.account}>
+          <MsgAvatar who={m.account} name={m.name} account={m.account} dot />
+        </li>
+      ))}
+    </ul>
   );
 }
 

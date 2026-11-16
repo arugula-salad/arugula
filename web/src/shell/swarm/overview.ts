@@ -1,6 +1,7 @@
 // A project's Overview (Arugula inversion, L6): Swarm for one project,
-// grouped by board, then the cards in flight (Doing and Review), each card
-// one tile holding the sessions on it, and the sessions on no card last.
+// one row per open board (#1085), then the cards in flight (Doing and
+// Review) under it, each holding the sessions on it, and the sessions on no
+// card last.
 // Plain functions from the project's boards, the panes the machines report
 // and the hub's sessions by card, for the app's view and its test
 // (scripts/overview.test.mjs). A pane finds its card as a board's focus
@@ -82,15 +83,16 @@ export interface OvBoard {
   title: string;
   doing: OvCard[];
   review: OvCard[];
-  /** How many cards are in Next, and Done, of `total`. */
+  /** How many cards are in Next; how many with an issue or a PR are in Done (`proven` of them), of `total`. */
   next: number;
   done: number;
+  proven: number;
   total: number;
   standing: Standing;
 }
 
 export interface Overview {
-  /** The boards with cards in flight, the most urgent first. */
+  /** The open boards, the most urgent first, those with nothing in flight last. */
   boards: OvBoard[];
   /** Not on a card: the project's sessions that work on none. */
   loose: OvSession[];
@@ -207,6 +209,7 @@ export function overviewOf(project: string, views: BoardView[], panes: OvPane[],
   const boards: OvBoard[] = [];
   for (const v of open) {
     const all = v.zones.flatMap((z) => z.rows);
+    const work = all.filter((r) => r.pointer.kind === "issue" || r.pointer.kind === "forge_item");
     const cards = (lane: "doing" | "review") =>
       sortCards(
         all
@@ -218,19 +221,21 @@ export function overviewOf(project: string, views: BoardView[], panes: OvPane[],
       );
     const doing = cards("doing");
     const review = cards("review");
-    if (!doing.length && !review.length) continue;
     boards.push({
       id: v.board.id,
       title: v.board.title,
       doing,
       review,
       next: all.filter((r) => r.lane === "next").length,
-      done: all.filter((r) => r.lane === "done").length,
-      total: all.length,
+      // Done and the total count what the Boards page's bar does: the rows with an issue or a PR.
+      done: work.filter((r) => r.lane === "done").length,
+      proven: work.filter((r) => r.lane === "done" && r.proof).length,
+      total: work.length,
       standing: worst([...doing, ...review].map((c) => c.standing)),
     });
   }
-  boards.sort((a, b) => rank(a.standing) - rank(b.standing) || a.title.localeCompare(b.title));
+  const still = (b: OvBoard) => Number(!b.doing.length && !b.review.length);
+  boards.sort((a, b) => still(a) - still(b) || rank(a.standing) - rank(b.standing) || a.title.localeCompare(b.title));
   return { boards, loose: sortSessions(loose), cardOf };
 }
 
@@ -272,9 +277,25 @@ function sortSessions(s: OvSession[]): OvSession[] {
   return [...s].sort((a, b) => rank(a.standing) - rank(b.standing) || (b.lead?.last ?? 0) - (a.lead?.last ?? 0) || a.name.localeCompare(b.name));
 }
 
-/** The board's header line: `2 in flight · 5 next · 3 of 10 done`. */
-export function boardLine(b: Pick<OvBoard, "doing" | "review" | "next" | "done" | "total">): string {
-  return `${b.doing.length + b.review.length} in flight · ${b.next} next · ${b.done} of ${b.total} done`;
+/** What's going on on a board, in words, for its row: how many of its
+ * cards in flight stand each way, the worst first (`1 needs you · 2
+ * working`); cards nothing says of, as how many are in flight; nothing in
+ * flight, so. */
+export function boardSays(b: Pick<OvBoard, "doing" | "review">): { standing: Standing; words: string }[] {
+  const all = [...b.doing, ...b.review];
+  if (!all.length) return [{ standing: "idle", words: "nothing in flight" }];
+  const says: { standing: Standing; words: string }[] = STANDING_ORDER.filter((s) => s !== "idle")
+    .map((standing) => ({ standing, n: all.filter((c) => c.standing === standing).length }))
+    .filter((x) => x.n > 0)
+    .map(({ standing, n }) => ({ standing, words: `${n} ${STATE_WORD[standing]}` }));
+  const idle = all.filter((c) => c.standing === "idle").length;
+  if (idle) says.push({ standing: "idle", words: says.length ? `${idle} more in flight` : `${idle} in flight` });
+  return says;
+}
+
+/** Whether a board asks something of the reader: a card in flight on it needs them, or asks them. Its row opens by itself. */
+export function asksYou(b: Pick<OvBoard, "standing">): boolean {
+  return b.standing === "needs" || b.standing === "asks";
 }
 
 /** The bar's line: `7 cards in flight · 4 sessions working · 2 need you`. */

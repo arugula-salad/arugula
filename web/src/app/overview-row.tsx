@@ -4,7 +4,7 @@
 // card, one line too. Hovering a row, or focusing it from the keyboard,
 // opens its preview under it: each session on it, where it runs and its
 // pane's last line, read from its machine only while the preview is open.
-// A board's card holds them today; a board's row (#1085) can hold the same.
+// An open board's row (#1085) holds them.
 
 import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
@@ -75,9 +75,10 @@ export function OvRow({ line, open, disabled, title, current, preview, class: cl
   );
 }
 
-/** A row's one word, in its colour; nothing when nothing says. */
-function Word({ standing, ...attrs }: { standing: Standing } & Data) {
-  const word = STATE_WORD[standing];
+/** A row's one word, in its colour; nothing when nothing says. `words`
+ * says it otherwise, in the same colour (a board's row: `2 working`). */
+export function Word({ standing, words, ...attrs }: { standing: Standing; words?: string } & Data) {
+  const word = words ?? STATE_WORD[standing];
   if (!word) return null;
   return (
     <span class={`ov-word tone-${TONE[standing] ?? "plain"}`} {...attrs}>
