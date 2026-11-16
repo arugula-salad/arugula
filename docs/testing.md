@@ -175,9 +175,10 @@ clippy, and 5 a spec that imported a file nobody committed.
   systemd user manager (`ARUGULA_REQUIRE_SYSTEMD=1`). The tests on the
   Docker test stack (`ssh::`, `reboot::`: they need the box's static
   binaries), the doctests and e2e-interop are left to the queue.
-- **pr-specs**: `playwright test --list` over `E2E_SET=rest`, both
-  projects, so a spec that can't load fails in seconds whatever pr-plan
-  picked. It needs web's packages and nothing built.
+- **pr-specs**: `playwright test --list` over every set (rest, stack and
+  perf), both projects, so a spec that can't load fails in seconds
+  whatever pr-plan picked, the nightlies' included. It needs web's
+  packages and nothing built.
 - **pr-build** (the debug binaries, as check.yml's build:
   `.github/actions/build-debug`) and **pr-e2e (N)** run the specs pr-plan
   picked (`.github/actions/e2e-shard`, which check.yml's e2e runs too). A

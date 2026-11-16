@@ -745,9 +745,12 @@ daemon as a service run as they did on geek. check.yml's `test` and
 rare-nightly.yml's `core` set `ARUGULA_REQUIRE_SYSTEMD=1`, which fails those tests instead of
 skipping them if a runner ever comes up without one (on GitHub's, the setup
 action's `user-manager` starts one for `core` and quarantine-nightly.yml). Pods ask for 2.5 CPUs
-and 3.5 GiB, and up to 24 run at once, on two amd64 nodes with about 85
-GiB between them for runners; a heavy job (a cargo build) uses 5 to 7 GB,
-more than it asks for, so the scheduler doesn't stop in time. On
+and 3.5 GiB, and up to 8 run at once (`maxRunners`), on two amd64 nodes
+with about 85 GiB between them for runners; a heavy job (a cargo build)
+uses 5 to 7 GB, more than it asks for, so the scheduler alone wouldn't
+stop in time. The cap was 24 and is 8 on purpose, so the jobs that start
+finish: more room comes from GitHub's runners or a redesigned pool, not
+from raising it. On
 2026-10-27 four full runs at once put 23 builds there and the nodes lost
 pods with no logs (#1676). Two full runs was the most that fit at six pods a
 run (it's three a run now), and since
