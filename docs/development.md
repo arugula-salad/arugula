@@ -22,9 +22,16 @@ release tarballs in `dist/`.
 One Cargo workspace (`Cargo.toml`): the daemon, the CLI, the mux, the VT
 engine and the crates the hosted control shares with them
 (`arugula-control-wire`, `arugula-e2e`, `arugula-forge-github`,
-`arugula-proto` and `arugula-core`). Control and its platform left for
+`arugula-prices`, `arugula-proto` and `arugula-core`). Control and its platform left for
 their own repository, which builds against this one at a pinned commit;
 `just workspace-guard` checks that none of their crates comes back.
+`native/core` and the desktop app (`crates/desktop`) are workspaces of
+their own. `just crate-boundary` (`scripts/crate-boundary.mjs`, in CI's
+lint) fails when a crate crosses between the three, or a shared crate
+needs one that isn't shared, except through the shared list:
+`arugula-control-wire`, `arugula-core`, `arugula-e2e`,
+`arugula-forge-github`, `arugula-prices` and `arugula-proto`. The cloud's
+repository runs it from `open/` on its own crates.
 
 The repository is a chant workspace too (`chant.workspace.json`: its
 members, decision records and CI's green tags). `npm install` at the root

@@ -47,6 +47,7 @@ or an account skip without it and name what's missing
 | `just forges`, `just testnet-editors` | real forges and VS Code over Remote-SSH, in Docker ([below](#real-forges-two-hosts-vs-code-over-remote-ssh)) | the forges nightly (`forges-nightly.yml`) |
 | `just macos <test>` | the tart VM's checks: `tools` (launchd with no GUI session, [below](#a-fresh-mac-the-tart-vm-harness)), `journey-j3`: the app installed by hand over an older daemon, and `journey-j4`: an agent installing over ssh, all graphed ([below](#a-new-users-journeys)) | no |
 | `just desktop-check` | rustfmt and clippy for `crates/desktop` | Linux |
+| `just crate-boundary` | only the shared crates cross between the daemon's workspace, `native/core`'s and the desktop app's, and the shared ones build without the daemon's (`scripts/crate-boundary.mjs`, #809; the cloud's repo runs it on its crates) | Linux and macOS |
 | `just native-check` | rustfmt, clippy, tests and the smoke test for `native/core` | Linux |
 | `just native-ios` | Builds `native/core` and the iPhone app for iOS, and runs the core's smoke test on a simulator when there is one | no, nightly on jake-mini (`macos-vm.yml`), which has Xcode's iOS SDK |
 | `just desktop-xvfb` | the Linux desktop app under Xvfb in a container (`packaging/desktop/xvfb/`): `join` (#204), `app` (`bare`, `links` and `nautilus` among its claims), `stale` (#317) and `platform` (M157) (see [The desktop app's tests](#the-desktop-apps-tests)) | Linux |
@@ -59,7 +60,8 @@ or an account skip without it and name what's missing
 CI (`.github/workflows/check.yml`) runs on pushes, every job it can at
 once (#287); a new push to a branch cancels that branch's run:
 - **lint** (GitHub's runners): rustfmt (`just fmt-check`), shellcheck,
-  `just test-scripts` and gitleaks (`scripts/ci-gitleaks`).
+  `just test-scripts`, `just crate-boundary` and gitleaks
+  (`scripts/ci-gitleaks`).
 - On GitHub's runners (`ubuntu-24.04`), except **static**, **test** and
   **test-2**, on the home cloud's (`arugula-amd64`, a fresh pod per job;
   [development.md](development.md#ci)):

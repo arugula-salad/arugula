@@ -43,3 +43,6 @@ runs:
     - name: The release notes' headline sections (docs/releases/, What's new)
       shell: bash
       run: just whats-new
+    - name: Only the shared crates cross between the cloud, daemon and native workspaces
+      shell: bash
+      run: just crate-boundary

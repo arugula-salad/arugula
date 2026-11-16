@@ -822,6 +822,7 @@ test-scripts:
     scripts/tests/ci-velocity.sh
     scripts/tests/capabilities.sh
     scripts/tests/data-model-check.sh
+    scripts/tests/crate-boundary.sh
     scripts/tests/install.sh
     scripts/tests/release-targets.sh
     scripts/tests/release-workflows.sh
@@ -852,6 +853,13 @@ workspace-guard:
       if grep -qx "$crate" <<<"$root"; then echo "workspace-guard: the root workspace builds $crate: it belongs to the cloud's repository" >&2; status=1; fi
     done
     exit $status
+
+# The cloud, the daemon and the native clients are Cargo workspaces of their
+# own, and only the shared crates cross between them (Arugula #809):
+# scripts/crate-boundary.mjs, from `cargo metadata`, no build. The cloud's
+# repo runs it from open/ on its own crates (`--cloud .`).
+crate-boundary:
+    node scripts/crate-boundary.mjs
 
 # arugula-mux names no integration (DECISIONS.md, "The mux names no
 # integration"): none of these crates may be in its dependency tree, with or
@@ -897,7 +905,7 @@ mux-guard:
     exit $status
 
 # What CI runs.
-check: test mux-guard workspace-guard
+check: test mux-guard workspace-guard crate-boundary
     just web-imports
     cd web && pnpm run paths
     just proto-ts check
@@ -972,6 +980,7 @@ rollup-check:
     step lint api-contract just api-contract check
     step lint decisions just decisions check
     step lint whats-new just whats-new
+    step lint crate-boundary just crate-boundary
     step lint gitleaks scripts/ci-gitleaks
     # The rest of `just check`'s.
     step checks web just web
