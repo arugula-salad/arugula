@@ -90,7 +90,7 @@ export function AppBar({
         <HostButton />
       )}
       {!rail && <Places client={client} at={at} />}
-      {rail && !all && <MachinePlaces client={client} at={at} />}
+      {rail && <MachinePlaces client={client} at={at} />}
       {children}
       <div class="bar-fill" data-tauri-drag-region />
       {client.state && <CommandsButton client={client} />}

@@ -140,7 +140,7 @@ test("a viewer's workspace hides what they can't do, or says why it's off", asyn
   }
   // Docs are the owner's (#1494): a guest has no page.
   await expect(owner.locator("[data-machine-docs]")).toBeVisible();
-  await expect(friend.locator("[data-open-docs]")).toHaveCount(0);
+  await expect(friend.locator("[data-machine-docs]")).toHaveCount(0);
   await friend.evaluate(() => (location.hash = "docs"));
   await friend.waitForTimeout(300);
   await expect(friend.locator("[data-docs-page]")).toHaveCount(0);

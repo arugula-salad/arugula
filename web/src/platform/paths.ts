@@ -5,9 +5,10 @@
 // written with the current slug. Secrets never ride in these paths ("Secrets
 // stay in fragments"): they stay in the shell's fragments.
 //
-//   /                              the projects (`?to=docs`, `boards`, `chat` or
-//                                  `projects`: the shell's buttons, on to that
-//                                  place in the current project)
+//   /                              the projects (`?to=docs`, `boards`, `chat`,
+//                                  `machines` or `projects`: the shell's
+//                                  buttons, on to that place in the current
+//                                  project)
 //   /p/:project                    a project's home
 //   /p/:project/chat               its chat
 //   /p/:project/chat/:room         a room in it (`?msg=N`: at that message)
@@ -83,7 +84,7 @@ export const TOP = ["p", "chat", "dm", "issues", "runs", "installed", "inbox", "
 
 export type Route =
   /** `to`: a shell button's place, to open in the current project (./current-project). */
-  | { page: "home"; to?: "projects" | "docs" | "boards" | "chat" }
+  | { page: "home"; to?: "projects" | "docs" | "boards" | "chat" | "machines" }
   /** The Overview; with `board` and `card`, that card's drawer open over it. */
   | { page: "project"; project: string; board?: string; card?: string }
   | { page: "issues"; project: string; state?: "closed"; q?: string; label?: string; assignee?: string }
@@ -209,7 +210,7 @@ export function parse(path: string, search = ""): Route {
   const missing: Route = { page: "missing", path };
   if (parts.length === 0) {
     const to = q.get("to");
-    return to === "projects" || to === "docs" || to === "boards" || to === "chat" ? { page: "home", to } : { page: "home" };
+    return to === "projects" || to === "docs" || to === "boards" || to === "chat" || to === "machines" ? { page: "home", to } : { page: "home" };
   }
   // `?all=1` opens these across every project, not the current one's (Arugula #881).
   const all = q.get("all") === "1" ? { all: true as const } : {};

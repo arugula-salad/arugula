@@ -121,6 +121,29 @@ export const SettingsIcon = () => (
   </Svg>
 );
 
+/** The rail's three spaces (Arugula #1080): Plan, a page of lines;
+ * Build, a prompt; Talk, two bubbles. */
+export const PlanIcon = () => (
+  <Svg>
+    <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
+    <path d="M7.5 9.5h1.5M11 9.5h5.5M7.5 14.5h1.5M11 14.5h5.5" />
+  </Svg>
+);
+
+export const BuildIcon = () => (
+  <Svg>
+    <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
+    <path d="M7.5 10l3 2-3 2M12.5 15h4.5" />
+  </Svg>
+);
+
+export const TalkIcon = () => (
+  <Svg>
+    <path d="M3.5 5.5h11.5v8H8.5l-4 3v-3h-1z" />
+    <path d="M17.5 9.5h3v8l-3-2h-6v-2" />
+  </Svg>
+);
+
 /** Projects: a grid of four. */
 export const ProjectsIcon = () => (
   <Svg>

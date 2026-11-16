@@ -1,10 +1,11 @@
-// The app's rail (#377; the project-rooted rail of Arugula #989): the same
-// one as the panes page's (shared/ui/rail), down the left on a computer.
-// The project tile at the top is the switcher. Then the project's places
-// (Overview, Boards, Sessions, Docs), a line, the team's (Chat,
-// Machines), and at the foot the Inbox, Settings and you. The bar beside
-// it (./bar) is the path to where you are. A phone has no rail: the same
-// places are a bar along the bottom (`PhoneTabs`).
+// The app's rail (#377; the project-rooted rail of Arugula #989; three
+// spaces since Arugula #1080): the same one as a machine's own page's
+// (shared/ui/rail), down the left on a computer. The project tile at the
+// top is the switcher. Then the three kinds of work: Plan (Overview,
+// Boards, Docs), Build (Panes, Swarm, Machines) and Talk (Chat); at the
+// foot the Inbox, Settings and you. A space's places are the bar's
+// (`SpacePlaces`), beside the path to where you are (./bar). A phone has no
+// rail: the spaces and the Inbox are a bar along the bottom (`PhoneTabs`).
 
 import type { ComponentChildren } from "preact";
 import { useRef, useState } from "preact/hooks";
@@ -12,35 +13,43 @@ import { chat } from "../shared/chat-store";
 import { chatUnread, projectUnread } from "../shared/chat/unread";
 import { usePlatformApi } from "../shared/platform-api";
 import { usePhone, useSubscribe } from "../shared/ui/hooks";
-import { BellIcon, BoardsIcon, ChatIcon, DocsIcon, MachineIcon, MoreIcon, ProjectsIcon, SessionsIcon, SettingsIcon } from "../shared/ui/icons";
-import { openMenu, pressedShut, type MenuItem } from "../shared/ui/menu";
-import { Rail, RAIL_LINE, type RailItem } from "../shared/ui/rail";
+import { BellIcon, BuildIcon, PlanIcon, SettingsIcon, TalkIcon } from "../shared/ui/icons";
+import { pressedShut } from "../shared/ui/menu";
+import { Rail, type RailItem } from "../shared/ui/rail";
+import { Count } from "../shared/ui/state-chip";
 import { AccountButton, chatPath, sectionOf } from "./bar";
 import { chatTeam } from "./chat-scope";
 import { currentProject, entryPath, onCurrentProject } from "./current-project";
 import { useInboxCount } from "./inbox-count";
 import { names } from "./links";
 import { ownerKey } from "./owners";
-import { go, pathOf, useRoute, type Route } from "./router";
+import { follow, go, pathOf, useRoute, type Route } from "./router";
 import { controlOrigin, session } from "./session";
 import { Switcher } from "./switcher";
 import { paneOf } from "./places-kept";
 import { subscribeSeen } from "../shared/seen";
 import { barProject, where } from "./where";
 
-/** A place on the rail or the phone's bar. */
+/** A space on the rail or the phone's bar, or a place in a space's bar. */
 interface PlaceLink {
   key: string;
   label: string;
   tip: string;
-  icon: ComponentChildren;
+  icon?: ComponentChildren;
   to: string;
   here: boolean;
   count?: { n: number; mention: boolean };
 }
 
-/** The places, for the project the page is in (else the current one, else
- * Personal's), as both the rail and the phone's bar draw them. */
+/** The three kinds of work (Arugula #1080). */
+export type Space = "plan" | "build" | "talk";
+
+const none = { n: 0, mention: false };
+const sum = (...cs: { n: number; mention: boolean }[]) => ({ n: cs.reduce((t, c) => t + c.n, 0), mention: cs.some((c) => c.mention && c.n > 0) });
+
+/** The spaces and their places, for the project the page is in (else the
+ * current one, else Personal's), as the rail, the bar and the phone's bar
+ * draw them. */
 function usePlaces() {
   useSubscribe((fn) => session.subscribe(fn));
   useSubscribe((fn) => chat.subscribe(fn));
@@ -57,57 +66,95 @@ function usePlaces() {
   const section = unknown ? null : sectionOf(r);
   const project = p ?? session.project(currentProject()) ?? session.personal();
   const at = (page: "project" | "boards" | "sessions" | "docs" | "project-settings") => (project ? pathOf({ page, project: project.id } as Route, names) : "/");
-  const { n, mention } = !unknown ? chatUnread(chat.rooms, chatTeam(p, project)) : { n: 0, mention: false };
+  const talk = !unknown ? chatUnread(chat.rooms, chatTeam(p, project)) : none;
   const chatTo = shown ? chatPath(shown) : entryPath("chat", project, names);
-  // The machines are the app's own places where it has them; else control's page.
-  // Machines goes back to your last pane in this project (decision 5); the list is the path's step up.
-  const machinesTo = Machines && project ? (paneOf(project.id) ?? pathOf({ page: "machines", project: project.id, at: { at: "machines" } }, names)) : `${controlOrigin()}/`;
-  const machinesHere = r.page === "machines" || section === "workspaces";
   // What's new in the threads on the project's issues (Boards) and runs (Sessions, which holds Runs).
-  const none = { n: 0, mention: false };
   const issues = !unknown && project && chat.on !== false ? projectUnread(chat.rooms, project.id, "iss_") : none;
   const runs = !unknown && project ? projectUnread(chat.rooms, project.id, "run_") : none;
-  const own: PlaceLink[] = [
-    { key: "overview", label: "Overview", tip: "Overview: this project's work", icon: <ProjectsIcon />, to: at("project"), here: section === "home" },
-    { key: "boards", label: "Boards", tip: "Boards: this project's boards and tickets", icon: <BoardsIcon />, to: at("boards"), here: section === "boards" && !!shown, count: issues },
-    // A run is a session in a cloud workspace (decision 6): Runs is under Sessions.
-    { key: "sessions", label: "Sessions", tip: "Sessions: this project's sessions and runs", icon: <SessionsIcon />, to: at("sessions"), here: section === "sessions" || section === "runs", count: runs },
-    { key: "docs", label: "Docs", tip: "Docs: this project's Docs", icon: <DocsIcon />, to: at("docs"), here: section === "docs" },
-    // No Deploys for v1 (Arugula #1078): its page still opens from a link, and
-    // deploys waiting for you are in the Inbox.
+
+  const plan: PlaceLink[] = [
+    { key: "overview", label: "Overview", tip: "Overview: this project's work", to: at("project"), here: section === "home" },
+    { key: "boards", label: "Boards", tip: "Boards: this project's boards and tickets", to: at("boards"), here: section === "boards" && !!shown, count: issues },
+    { key: "docs", label: "Docs", tip: "Docs: this project's Docs", to: at("docs"), here: section === "docs" },
+    // Not a space's of its own (Arugula #1050): here until a card's row and
+    // Panes show its sessions (#1082). A run is a session in a cloud
+    // workspace (decision 6): Runs is under Sessions.
+    { key: "sessions", label: "Sessions", tip: "Sessions: this project's sessions and runs", to: at("sessions"), here: section === "sessions" || section === "runs", count: runs },
   ];
-  const team: PlaceLink[] = [
-    { key: "chat", label: "Chat", tip: "Chat: your team's rooms", icon: <ChatIcon />, to: chatTo, here: section === "chat", count: { n, mention } },
-    { key: "machines", label: "Machines", tip: "Machines: your team's computers and cloud workspaces", icon: <MachineIcon size="lg" />, to: machinesTo, here: machinesHere },
+  // The machines are the app's own places where it has them; else control's page.
+  const m = r.page === "machines" ? r.at : null;
+  const list = !!m && m.at === "machines" && m.pane === undefined && !m.name;
+  const machinesList = project ? pathOf({ page: "machines", project: project.id, at: { at: "machines" } }, names) : "/";
+  // Panes goes back to your last pane in this project (decision 5); the list is the path's step up.
+  const panesTo = Machines && project ? (paneOf(project.id) ?? machinesList) : `${controlOrigin()}/`;
+  const build: PlaceLink[] = !Machines || !project
+    ? []
+    : [
+        { key: "panes", label: "Panes", tip: "Panes: back to your last pane in this project", to: panesTo, here: !!m && !list && m.at !== "swarm" },
+        { key: "swarm", label: "Swarm", tip: "Swarm: every pane on every machine", to: pathOf({ page: "machines", project: project.id, at: { at: "swarm" } }, names), here: m?.at === "swarm" },
+        { key: "machines", label: "Machines", tip: "Machines: your team's computers and cloud workspaces", to: machinesList, here: list || section === "workspaces" },
+      ];
+  // Deploys is hidden for v1 (Arugula #1078) but its page still opens from a link: it's planning's.
+  const inPlan = !!section && ["home", "boards", "docs", "sessions", "runs", "deploys"].includes(section);
+  const spaces: (PlaceLink & { key: Space; places: PlaceLink[] })[] = [
+    { key: "plan", label: "Plan", tip: "Plan: this project's overview, boards and Docs", icon: <PlanIcon />, to: at("project"), here: inPlan, count: sum(issues, runs), places: plan },
+    { key: "build", label: "Build", tip: "Build: your panes, the swarm and your team's machines", icon: <BuildIcon />, to: panesTo, here: r.page === "machines" || section === "workspaces", places: build },
+    { key: "talk", label: "Talk", tip: "Talk: your team's rooms", icon: <TalkIcon />, to: chatTo, here: section === "chat", count: talk, places: [] },
   ];
   const foot: PlaceLink[] = [
     { key: "inbox", label: "Inbox", tip: inbox.title || "Inbox: what wants you, across your projects", icon: <BellIcon />, to: "/inbox", here: section === "inbox", count: { n: inbox.n, mention: inbox.waiting > 0 } },
     // A project's settings; account settings are the avatar's menu.
     { key: "settings", label: "Settings", tip: "Settings: this project's", icon: <SettingsIcon />, to: shown ? at("project-settings") : "/settings", here: section === "settings" },
   ];
-  return { own, team, foot, project, shown };
+  return { spaces, foot, project, shown };
 }
 
-const railItem = (p: PlaceLink): RailItem => {
-  const external = /^https?:/.test(p.to);
-  return {
-    label: p.label,
-    tip: p.tip,
-    aria: p.count?.n ? `${p.label}, ${p.count.n}${p.count.mention ? ", for you" : ""}` : undefined,
-    here: p.here,
-    hook: `data-open-${p.key}`,
-    icon: p.icon,
-    count: p.count,
-    href: p.to,
-    // Control's page is a page load; the rest are this page's.
-    onClick: external ? undefined : () => go(p.to),
-  };
-};
+const external = (to: string) => /^https?:/.test(to);
+
+const railItem = (p: PlaceLink): RailItem => ({
+  label: p.label,
+  tip: p.tip,
+  aria: p.count?.n ? `${p.label}, ${p.count.n}${p.count.mention ? ", for you" : ""}` : undefined,
+  here: p.here,
+  hook: `data-open-${p.key}`,
+  icon: p.icon,
+  count: p.count,
+  href: p.to,
+  // Control's page is a page load; the rest are this page's.
+  onClick: external(p.to) ? undefined : () => go(p.to),
+});
 
 export function PlatformRail() {
-  const { own, team, foot, project, shown } = usePlaces();
+  const { spaces, foot, project, shown } = usePlaces();
   const brand = <ProjectTile project={project} shown={shown} />;
-  return <Rail brand={brand} items={[...own.map(railItem), RAIL_LINE, ...team.map(railItem)]} bottom={foot.map(railItem)} foot={<AccountButton compact />} />;
+  return <Rail brand={brand} items={spaces.map(railItem)} bottom={foot.map(railItem)} foot={<AccountButton compact />} />;
+}
+
+/** The space you're in's places, in the bar (Arugula #1080), as a
+ * machine's page has its own (shell/ui/places' MachinePlaces). Talk has
+ * none: Chat is the whole of it. */
+export function SpacePlaces() {
+  const { spaces } = usePlaces();
+  const space = spaces.find((s) => s.here && s.places.length);
+  if (!space) return null;
+  return (
+    <nav class="places" aria-label={`${space.label}'s places`} data-space-places={space.key}>
+      {space.places.map((p) => (
+        <a
+          key={p.key}
+          class={p.here ? "place frame-place here" : "place frame-place"}
+          href={p.to}
+          title={p.tip}
+          aria-current={p.here ? "page" : undefined}
+          {...{ [`data-space-${p.key}`]: "" }}
+          onClick={(e) => !external(p.to) && follow(e, p.to)}
+        >
+          {p.label}
+          {!!p.count?.n && <Count for={p.count.mention ? "mention" : "you"} class="count-after">{p.count.mention ? `@${p.count.n}` : p.count.n}</Count>}
+        </a>
+      ))}
+    </nav>
+  );
 }
 
 /** The project tile at the top of the rail: the project you're in, and the
@@ -139,30 +186,21 @@ function ProjectTile({ project, shown }: { project: ReturnType<typeof session.pr
   );
 }
 
-/** The phone's bar along the bottom (decision 15): Overview, Boards,
- * Sessions, Chat, and More for the rest. */
+/** The phone's bar along the bottom (decision 15; Arugula #1080): Plan,
+ * Build, Talk and the Inbox. A space's places are the top bar's; Settings
+ * is under your picture. */
 export function PhoneTabs() {
-  const { own, team, foot } = usePlaces();
-  const by = (k: string) => [...own, ...team, ...foot].find((p) => p.key === k)!;
-  const tabs = ["overview", "boards", "sessions", "chat"].map(by);
-  const rest = ["docs", "machines", "settings"].map(by);
-  const more = (e: MouseEvent) => {
-    const items: MenuItem[] = rest.map((p) => ({ label: p.label, current: p.here, run: () => (/^https?:/.test(p.to) ? location.assign(p.to) : go(p.to)) }));
-    openMenu(e, items, e.currentTarget as HTMLElement);
-  };
+  const { spaces, foot } = usePlaces();
+  const tabs = [...spaces, foot.find((p) => p.key === "inbox")!];
   return (
     <nav class="app-tabs" aria-label="Places" data-phone-tabs>
       {tabs.map((p) => (
-        <a key={p.key} class={p.here ? "app-tab here" : "app-tab"} href={p.to} aria-current={p.here ? "page" : undefined} {...{ [`data-tab-${p.key}`]: "" }} onClick={(e) => (e.preventDefault(), go(p.to))}>
+        <a key={p.key} class={p.here ? "app-tab here" : "app-tab"} href={p.to} aria-current={p.here ? "page" : undefined} {...{ [`data-tab-${p.key}`]: "" }} onClick={(e) => !external(p.to) && (e.preventDefault(), go(p.to))}>
           {p.icon}
           <span>{p.label}</span>
           {!!p.count?.n && <span class={p.count.mention ? "ws-rail-count mention" : "ws-rail-count"}>{p.count.mention ? `@${p.count.n}` : p.count.n}</span>}
         </a>
       ))}
-      <button class={rest.some((p) => p.here) ? "app-tab here" : "app-tab"} aria-haspopup="menu" data-tab-more onClick={more}>
-        <MoreIcon />
-        <span>More</span>
-      </button>
     </nav>
   );
 }
