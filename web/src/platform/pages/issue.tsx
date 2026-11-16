@@ -10,7 +10,7 @@ import { follow, pathOf } from "../router";
 import { mayWrite, membersOf, useIssuesOn } from "./issues";
 import { Missing } from "./project";
 
-export function IssuePage({ project, issue, msg }: { project: string; issue: string; msg?: number }) {
+export function IssuePage({ project, issue, msg, thread }: { project: string; issue: string; msg?: number; thread?: number }) {
   const on = useIssuesOn(project);
   if ("show" in on) return on.show;
   const p = on.p;
@@ -18,7 +18,7 @@ export function IssuePage({ project, issue, msg }: { project: string; issue: str
   const back = { href: list, label: "Issues", onClick: (e: MouseEvent) => follow(e, list), data: "issue-back" };
   return (
     <IssueApiContext.Provider value={here}>
-      <IssueView key={issue} class="platform-section sw-page" place={{ project: p.id, members: membersOf(p), writer: mayWrite(p) }} id={issue} msg={msg} back={back} Missing={Missing} />
+      <IssueView key={issue} class="platform-section sw-page" place={{ project: p.id, members: membersOf(p), writer: mayWrite(p) }} id={issue} msg={msg} thread={thread} back={back} Missing={Missing} />
     </IssueApiContext.Provider>
   );
 }

@@ -201,3 +201,35 @@
     opacity: 1;
   }
 }
+
+/* A thread over a page that draws a room in it (./thread-beside): an
+   issue's comments, a run's. Over the page's right edge under its bar,
+   as the pane drawer's; the whole screen on a phone. */
+.thread-beside {
+  position: fixed;
+  z-index: 45;
+  top: var(--bar-h);
+  right: 0;
+  bottom: 0;
+  width: min(420px, 100vw);
+  display: flex;
+  box-shadow: var(--shadow-md);
+}
+
+.thread-beside .chat-details.chat-thread-panel {
+  flex: 1;
+  width: auto;
+  background: var(--surface);
+}
+
+.thread-beside.phone {
+  z-index: 80;
+  inset: 0;
+  width: auto;
+  box-shadow: none;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+.thread-beside.phone .chat-details.chat-thread-panel {
+  border-left: 0;
+}

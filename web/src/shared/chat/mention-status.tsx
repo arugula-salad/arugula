@@ -79,7 +79,7 @@ export function mentionStatusText(s: ChatMentionStatus): string {
 }
 
 /** The lines under a message: nothing for one that mentions no machine. An
- * answer is a link to the thread, where the reply is. */
+ * answer is a link to the reply it names, in the thread. */
 export function MentionStatus({ room, m }: { room: ChatRoom; m: ChatMessage }) {
   const { nav } = usePlatformApi();
   const lines = m.mention_status ?? [];
@@ -90,7 +90,7 @@ export function MentionStatus({ room, m }: { room: ChatRoom; m: ChatMessage }) {
         <div key={`${s.machine}/${s.for_session ?? ""}`} class={`mention-line ${s.state}`} data-mention-status={s.state} data-machine={s.machine} data-session={s.for_session} title={s.reply ? `Reply ${s.reply}` : undefined}>
           <MachineIcon size="xs" />
           {s.state === "answered" ? (
-            <Chip tone={mentionTone(s.state)} dot class="mention-link" onClick={() => nav.openRoom(room.id, undefined, m.parent ?? m.seq)}>
+            <Chip tone={mentionTone(s.state)} dot class="mention-link" onClick={() => nav.openRoom(room.id, s.reply, m.parent ?? m.seq)}>
               {mentionStatusText(s)} <ChevronIcon dir="right" />
             </Chip>
           ) : (

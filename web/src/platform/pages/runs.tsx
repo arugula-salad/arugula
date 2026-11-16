@@ -20,6 +20,7 @@ import { Card } from "../../shared/ui/card";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { chat } from "../../shared/chat-store";
 import { RoomBody } from "../../shared/chat/room";
+import { ThreadBeside } from "../../shared/chat/thread-beside";
 import type { ChatRoom } from "../../shared/proto";
 import type { RunEventView } from "../../shared/proto.gen";
 import { BlockError, EmptyLine, EmptyState } from "../../shared/ui/block-states";
@@ -669,10 +670,10 @@ function AddTrigger({ p, spec, act }: { p: PlatformProject; spec: RunSpec; act: 
 
 // ---- One run
 
-export function RunPage({ project, run, msg }: { project: string; run: string; msg?: number }) {
+export function RunPage({ project, run, msg, thread }: { project: string; run: string; msg?: number; thread?: number }) {
   const p = useProject(project);
   if (!p) return <Missing what="That project isn't one of yours (or it's gone)." />;
-  return <RunDetail key={run} p={p} id={run} msg={msg} />;
+  return <RunDetail key={run} p={p} id={run} msg={msg} thread={thread} />;
 }
 
 /** The run, kept current: read now, then (while it goes) again each time
@@ -706,7 +707,7 @@ function useRun(id: string): { run: RunView | null; missing: string | null } {
   return { run, missing };
 }
 
-function RunDetail({ p, id, msg }: { p: PlatformProject; id: string; msg?: number }) {
+function RunDetail({ p, id, msg, thread }: { p: PlatformProject; id: string; msg?: number; thread?: number }) {
   const { run, missing } = useRun(id);
   const [specs] = useSpecs(p.id);
   const workspaces = useWorkspaces(p.id) ?? [];
@@ -863,7 +864,7 @@ function RunDetail({ p, id, msg }: { p: PlatformProject; id: string; msg?: numbe
           <TimelineRow key={e.seq} e={e} by={by} />
         ))}
       </ol>
-      <RunThread run={run} msg={msg} />
+      <RunThread run={run} msg={msg} thread={thread} />
     </section>
   );
 }
@@ -1028,7 +1029,7 @@ function Artifacts({ p, run }: { p: PlatformProject; run: RunView }) {
 
 /** Its thread (M196's object room on the run's id): its project's people
  * talk it over. Threads come with chat. */
-function RunThread({ run, msg }: { run: RunView; msg?: number }) {
+function RunThread({ run, msg, thread }: { run: RunView; msg?: number; thread?: number }) {
   useSubscribe((fn) => chat.subscribe(fn));
   const phone = usePhone();
   const [room, setRoom] = useState<ChatRoom | null>(null);
@@ -1051,12 +1052,13 @@ function RunThread({ run, msg }: { run: RunView; msg?: number }) {
       ) : (
         <div class="issue-thread chat-thread" data-run-thread={room?.id}>
           {room ? (
-            <RoomBody room={room} phone={phone} focus={msg} embedded name={`run ${short(run.id)}`} empty={{ title: "Nothing said about this run yet.", why: "Everyone in the project reads it. Write @name to notify someone." }} />
+            <RoomBody room={room} phone={phone} focus={thread === undefined ? msg : undefined} embedded name={`run ${short(run.id)}`} empty={{ title: "Nothing said about this run yet.", why: "Everyone in the project reads it. Write @name to notify someone." }} />
           ) : (
             <p class="thread-note">{error ? `The thread didn't load: ${error}` : "Loading the thread…"}</p>
           )}
         </div>
       )}
+      {room && thread !== undefined && <ThreadBeside room={room} parent={thread} focus={msg} phone={phone} />}
     </div>
   );
 }

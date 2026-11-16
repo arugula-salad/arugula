@@ -46,11 +46,12 @@ export function roomPath(room: string, msg?: number, thread?: number): string {
     const project = projectOfRoom(room);
     return project ? pathOf({ page: "dm", project, room, msg, thread }, names) : "/";
   }
-  // An issue's thread (M196) is on its issue's page.
+  // An issue's thread (M196) is on its issue's page, with a comment's
+  // replies beside it.
   const r = chat.room(room);
-  if (r?.kind === "object" && r.project && r.target?.startsWith("iss_")) return pathOf({ page: "issue", project: r.project, issue: r.target, msg }, names);
+  if (r?.kind === "object" && r.project && r.target?.startsWith("iss_")) return pathOf({ page: "issue", project: r.project, issue: r.target, msg, thread }, names);
   // And a run's (M215) on its run's.
-  if (r?.kind === "object" && r.project && r.target?.startsWith("run_")) return pathOf({ page: "run", project: r.project, run: r.target, msg }, names);
+  if (r?.kind === "object" && r.project && r.target?.startsWith("run_")) return pathOf({ page: "run", project: r.project, run: r.target, msg, thread }, names);
   const project = projectOfRoom(room);
   return project ? pathOf({ page: "chat", project, room, msg, thread }, names) : "/";
 }
@@ -121,7 +122,7 @@ export function resolve(r: Extract<Route, { page: "find" }>): string | null {
   if (r.what === "issue") {
     // Its project, once the page has read it (the page asks).
     const i = issues.known(r.issue);
-    return i ? pathOf({ page: "issue", project: i.project, issue: i.id, ...(r.msg !== undefined ? { msg: r.msg } : {}) }, names) : null;
+    return i ? pathOf({ page: "issue", project: i.project, issue: i.id, msg: r.msg, thread: r.thread }, names) : null;
   }
   if (r.what === "machines") {
     // The current project while it's still the reader's, else Personal
@@ -131,5 +132,5 @@ export function resolve(r: Extract<Route, { page: "find" }>): string | null {
   }
   // A run: its project, once the page has read it (the page asks).
   const x = runs.known(r.run);
-  return x ? pathOf({ page: "run", project: x.project, run: x.id, ...(r.msg !== undefined ? { msg: r.msg } : {}) }, names) : null;
+  return x ? pathOf({ page: "run", project: x.project, run: x.id, msg: r.msg, thread: r.thread }, names) : null;
 }
