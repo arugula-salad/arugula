@@ -79,3 +79,37 @@ export function sessionsLine(r: Pick<Row, "sessions" | "needsYou">): string {
   const n = `${r.sessions} ${r.sessions === 1 ? "session" : "sessions"}`;
   return r.needsYou ? `${n} · ${r.needsYou} ${r.needsYou === 1 ? "needs" : "need"} you` : n;
 }
+
+/** One machine's panes in Build's list (Arugula #1083). */
+export interface PaneGroup {
+  name: string;
+  id?: string;
+  online: boolean;
+  /** A cloud workspace, not someone's computer. */
+  cloud: boolean;
+  /** Whose it is when it isn't yours. */
+  owner?: string;
+  panes: FleetPane[];
+}
+
+/** Every machine's panes, by machine, or only `machine`'s (by its id or,
+ * without one, its name): the machines with something that needs you
+ * first, then the online ones, then by name; in each, what needs you
+ * first, then by session and pane. An editor that only joined (no tab) is
+ * no pane to open. */
+export function paneGroups(hosts: FleetHost[], panes: FleetPane[], machine?: string): PaneGroup[] {
+  const groups = hosts
+    .filter((h) => !machine || h.id === machine || (!h.id && h.name === machine))
+    .map((h) => ({
+      name: h.name,
+      id: h.id,
+      online: h.status ? h.status !== "offline" : h.state === "connected",
+      cloud: !!h.hosted,
+      owner: h.owner,
+      panes: panes
+        .filter((p) => p.host === h.name && !(p.info.type === "editor" && p.session === null))
+        .sort((a, b) => Number(needsYou(b.info)) - Number(needsYou(a.info)) || (a.session?.id ?? 0) - (b.session?.id ?? 0) || a.id - b.id),
+    }));
+  const asks = (g: PaneGroup) => Number(g.panes.some((p) => needsYou(p.info)));
+  return groups.sort((a, b) => asks(b) - asks(a) || Number(b.online) - Number(a.online) || a.name.localeCompare(b.name));
+}

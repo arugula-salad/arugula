@@ -21,12 +21,17 @@ export type MachineAt =
   | { at: "machine"; machine: string; pane?: number; share?: true; follow?: string; pop?: true; agent?: true }
   /** Every pane on every machine (decision 3: under Machines), at a pane's
    * card (`focus`) or on one board's agents. */
-  | { at: "swarm"; focus?: { machine?: string; pane: number }; board?: string };
+  | { at: "swarm"; focus?: { machine?: string; pane: number }; board?: string }
+  /** Build's home (Arugula #1083): every machine's panes in one list, by
+   * machine, or one `machine`'s. */
+  | { at: "panes"; machine?: string };
 
 /** A machine's id at the front of a path segment, before its slug: a
  * daemon's id is hex. */
 const MACHINE = /^([0-9a-f]{6,64})(?:-.*)?$/;
 const BOARD = /^brd_[\w-]+$/;
+/** A machine's name, as a host is called. */
+const NAME = /^[\w.-]{1,253}$/;
 /** The shell's own places over a machine, as their fragments say them. */
 const LAYER = /^(?:overview(?:=\d+)?|agents(?:=team)?|settings(?:=[\w-]+)?|developer|getting-started=\w+)$/;
 /** Those of them control's page sends on to the app: the machine's own.
@@ -50,6 +55,11 @@ export function parseMachines(rest: string[], q: URLSearchParams, hash = ""): Ma
     const f = /^(?:([0-9a-f]+)\.)?(\d{1,9})$/.exec(q.get("focus") ?? "");
     const board = q.get("board");
     return { at: "swarm", ...(f ? { focus: { ...(f[1] ? { machine: f[1] } : {}), pane: Number(f[2]) } } : {}), ...(board && BOARD.test(board) ? { board } : {}) };
+  }
+  if (rest[0] === "panes") {
+    // A machine's id, or a name where it has none (a daemon's own hosts).
+    const machine = q.get("machine");
+    return { at: "panes", ...(machine && NAME.test(machine) ? { machine } : {}) };
   }
   const machine = MACHINE.exec(rest[0])?.[1];
   if (!machine) return null;
@@ -78,6 +88,9 @@ export function machinesPath(m: MachineAt, slug?: string | null): string {
     path += "/swarm";
     if (m.focus) q.set("focus", `${m.focus.machine ? `${m.focus.machine}.` : ""}${m.focus.pane}`);
     if (m.board) q.set("board", m.board);
+  } else if (m.at === "panes") {
+    path += "/panes";
+    if (m.machine) q.set("machine", m.machine);
   } else {
     path += `/${slug ? `${m.machine}-${slug}` : m.machine}`;
     if (m.pane !== undefined) q.set("pane", String(m.pane));
@@ -97,6 +110,8 @@ export function controlHash(m: MachineAt): string {
     if (m.board) return `swarm=board:${m.board}`;
     return m.focus ? `swarm=${m.focus.machine ? `${m.focus.machine}.` : ""}${m.focus.pane}` : "swarm";
   }
+  // Control's page has no list of every machine's panes: a machine's, or its own.
+  if (m.at === "panes") return m.machine ? `machine=${m.machine}` : "";
   if (m.at === "machines") return m.layer ?? (m.pane !== undefined ? `${m.pop ? "pop" : "pane"}=${m.pane}` : "");
   if (m.pop && m.pane !== undefined) return `pop=${m.machine}.${m.pane}`;
   if (m.pane !== undefined) return `pane=${m.machine}.${m.pane}${m.share ? "&share" : ""}${m.follow ? `&follow=${encodeURIComponent(m.follow)}` : ""}`;
