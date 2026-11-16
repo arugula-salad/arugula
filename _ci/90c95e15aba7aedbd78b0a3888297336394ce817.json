@@ -2,8 +2,8 @@
   "schema": 1,
   "commit": "90c95e15aba7aedbd78b0a3888297336394ce817",
   "branch": "main",
-  "state": "pending",
-  "at": "2026-11-16T06:50:09Z",
+  "state": "green",
+  "at": "2026-11-16T06:53:41Z",
   "phases": {
     "lint": {
       "verdict": "pass",
@@ -72,7 +72,7 @@
       ]
     },
     "e2e": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
@@ -120,7 +120,7 @@
         {
           "name": "e2e (5)",
           "id": 133138840111,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/43818248952/job/133138840111"
         },
         {
@@ -132,7 +132,7 @@
         {
           "name": "e2e (7)",
           "id": 133138840068,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/43818248952/job/133138840068"
         },
         {
