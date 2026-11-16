@@ -16,8 +16,8 @@
 //!   days) with one last message saying it ended without firing.
 
 use arugula_control_wire::watch::{
-    AGENT_WATCHES, AGENT_WATCHES_CANCEL, EXPIRES_MAX_MS, PrUntil, WatchCancel, WatchCancelled, WatchCreate, WatchList,
-    WatchMade, WatchState, WatchTarget,
+    AGENT_WATCHES, AGENT_WATCHES_CANCEL, WatchCancel, WatchCancelled, WatchCreate, WatchList, WatchMade, WatchState,
+    WatchTarget, expires_ms as expires, until_word_parse as until,
 };
 use arugulad_base::forge_wait::PrRef;
 use reqwest::Method;
@@ -152,36 +152,6 @@ async fn session(c: &Call<'_>) -> Result<(String, Option<String>), String> {
     Ok((id, name))
 }
 
-/// `until`'s word.
-fn until(word: Option<&str>) -> Result<PrUntil, String> {
-    match word.map(str::trim).unwrap_or("merged") {
-        "" | "merged" => Ok(PrUntil::Merged),
-        "closed" => Ok(PrUntil::Closed),
-        "checks_done" => Ok(PrUntil::ChecksDone),
-        "checks_failed" => Ok(PrUntil::ChecksFailed),
-        "ready" => Ok(PrUntil::Ready),
-        w => Err(format!("until {w}: a watch on a PR waits until merged, closed, checks_done, checks_failed or ready")),
-    }
-}
-
-/// `expires`' words, in ms: `30m`, `6h`, `3d`.
-fn expires(word: &str) -> Result<u64, String> {
-    let w = word.trim();
-    let (n, unit) = w.split_at(w.find(|c: char| !c.is_ascii_digit()).unwrap_or(w.len()));
-    let n: u64 = n.parse().map_err(|_| format!("expires {w}: a number and m, h or d, like 6h"))?;
-    let ms = match unit.trim() {
-        "m" => n * 60_000,
-        "h" => n * 3_600_000,
-        "d" => n * 86_400_000,
-        _ => return Err(format!("expires {w}: a number and m, h or d, like 6h")),
-    };
-    match ms {
-        0 => Err("expires: more than nothing".into()),
-        ms if ms > EXPIRES_MAX_MS => Err(format!("expires {w}: at most 7d")),
-        ms => Ok(ms),
-    }
-}
-
 /// When, as people read it: UTC to the minute, `2026-11-14T10:42Z`.
 fn when(ms: i64) -> String {
     let t = arugula_e2e::deploy::chant::timestamp(u64::try_from(ms).unwrap_or(0));
@@ -294,6 +264,7 @@ async fn cancel(c: &Call<'_>, a: CancelArgs) -> Out {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arugula_control_wire::watch::{EXPIRES_MAX_MS, PrUntil};
 
     #[test]
     fn expires_reads_minutes_hours_and_days_up_to_a_week() {

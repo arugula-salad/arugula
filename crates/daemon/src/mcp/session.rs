@@ -13,6 +13,7 @@ pub const CREATE: &str = "create_session_issue";
 pub const CREATE_DOC: &str = "create_session_doc";
 pub const FILL_DOC: &str = "fill_session_doc";
 pub const READ_DOC: &str = "read_project_doc";
+pub const WATCH: &str = "watch";
 
 static URL: OnceLock<String> = OnceLock::new();
 

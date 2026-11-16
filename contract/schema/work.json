@@ -1924,6 +1924,36 @@
         }
       ]
     },
+    "PrUntil": {
+      "description": "What a watch on a pull request waits for.",
+      "oneOf": [
+        {
+          "const": "merged",
+          "description": "It merged.",
+          "type": "string"
+        },
+        {
+          "const": "closed",
+          "description": "It closed, merged or not.",
+          "type": "string"
+        },
+        {
+          "const": "checks_done",
+          "description": "No check on its head commit is queued or running (Arugula #1033).",
+          "type": "string"
+        },
+        {
+          "const": "checks_failed",
+          "description": "A check on its head commit failed: once, however often it flips.",
+          "type": "string"
+        },
+        {
+          "const": "ready",
+          "description": "Its checks passed and GitHub says it can merge cleanly.",
+          "type": "string"
+        }
+      ]
+    },
     "ProjectGrant": {
       "description": "A project owner saying the platform may start and instruct runs on\n`project`'s hosted workspaces, under `delegation`.",
       "properties": {
@@ -3200,7 +3230,7 @@
           "type": "string"
         },
         "source": {
-          "description": "`member` (a project member's, in the thread) or `github` (text from\nGitHub: a PR's review, a check's log).",
+          "description": "`member` (a project member's, in the thread), `github` (text from\nGitHub: a PR's review, a check's log) or `arugula` (Arugula's own\nword to the session: a watch it made fired or ended, Arugula #1035).",
           "type": "string"
         },
         "text": {
@@ -3266,6 +3296,484 @@
         "sig"
       ],
       "type": "object"
+    },
+    "SessionWatchAsk": {
+      "description": "[`WORK_SESSION_WATCH`]'s body: which session asks, and what. The watch\nis the session's own, and its asker's: a session sees and cancels no\nother's.",
+      "oneOf": [
+        {
+          "description": "Wake this session when any of `targets` gets there.",
+          "properties": {
+            "expires_in_ms": {
+              "default": null,
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "op": {
+              "const": "create",
+              "type": "string"
+            },
+            "targets": {
+              "items": {
+                "$ref": "#/$defs/WatchTarget"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "op",
+            "targets"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Its live watches.",
+          "properties": {
+            "op": {
+              "const": "list",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "One of them by id, or all.",
+          "properties": {
+            "all": {
+              "default": false,
+              "type": "boolean"
+            },
+            "id": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "op": {
+              "const": "cancel",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        }
+      ],
+      "properties": {
+        "session": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session"
+      ],
+      "type": "object"
+    },
+    "SessionWatchGiven": {
+      "description": "[`WORK_SESSION_WATCH`]'s answer.",
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "const": "made",
+              "type": "string"
+            },
+            "made": {
+              "$ref": "#/$defs/WatchMade"
+            }
+          },
+          "required": [
+            "kind",
+            "made"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "list",
+              "type": "string"
+            },
+            "list": {
+              "$ref": "#/$defs/WatchList"
+            }
+          },
+          "required": [
+            "kind",
+            "list"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "cancelled": {
+              "$ref": "#/$defs/WatchCancelled"
+            },
+            "kind": {
+              "const": "cancelled",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "cancelled"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "refused",
+              "type": "string"
+            },
+            "why": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "why"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "SessionWatchOp": {
+      "description": "What a session's agent does with its watches.",
+      "oneOf": [
+        {
+          "description": "Wake this session when any of `targets` gets there.",
+          "properties": {
+            "expires_in_ms": {
+              "default": null,
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "op": {
+              "const": "create",
+              "type": "string"
+            },
+            "targets": {
+              "items": {
+                "$ref": "#/$defs/WatchTarget"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "op",
+            "targets"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Its live watches.",
+          "properties": {
+            "op": {
+              "const": "list",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "One of them by id, or all.",
+          "properties": {
+            "all": {
+              "default": false,
+              "type": "boolean"
+            },
+            "id": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "op": {
+              "const": "cancel",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "WatchCancelled": {
+      "description": "What [`WatchCancel`] cancelled, by id. The session that asked is told\nby this answer, and gets no message for them.",
+      "properties": {
+        "cancelled": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "cancelled"
+      ],
+      "type": "object"
+    },
+    "WatchList": {
+      "description": "The machine's live watches, the newest first.",
+      "properties": {
+        "watches": {
+          "items": {
+            "$ref": "#/$defs/WatchRow"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "watches"
+      ],
+      "type": "object"
+    },
+    "WatchMade": {
+      "description": "What [`WatchCreate`] made.",
+      "properties": {
+        "expires_ms": {
+          "default": null,
+          "description": "When it expires, in ms since the epoch.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "id": {
+          "default": null,
+          "description": "`wch_…`; none when it was [`WatchState::AlreadyMet`].",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "met": {
+          "default": null,
+          "description": "What happened already, for [`WatchState::AlreadyMet`]: ids and\nstates only (\"arugula-salad/arugula#2095 merged by aaron at …\").",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "$ref": "#/$defs/WatchState"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "type": "object"
+    },
+    "WatchRow": {
+      "description": "One watch, as a list shows it.",
+      "properties": {
+        "created_ms": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "expires_ms": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "session": {
+          "description": "The Claude Code session it wakes.",
+          "type": "string"
+        },
+        "session_name": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "$ref": "#/$defs/WatchState"
+        },
+        "targets": {
+          "description": "Each target in words (\"arugula-salad/arugula#2095 until merged\"), so\na reader that doesn't know a newer kind still shows it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "session",
+        "targets",
+        "state",
+        "created_ms",
+        "expires_ms"
+      ],
+      "type": "object"
+    },
+    "WatchState": {
+      "anyOf": [
+        {
+          "oneOf": [
+            {
+              "enum": [
+                "cancelled"
+              ],
+              "type": "string"
+            },
+            {
+              "const": "live",
+              "description": "Waiting.",
+              "type": "string"
+            },
+            {
+              "const": "already_met",
+              "description": "What it waits for had already happened when it was asked: no watch\nwas made.",
+              "type": "string"
+            },
+            {
+              "const": "fired",
+              "description": "It happened, and the session was told.",
+              "type": "string"
+            },
+            {
+              "const": "expired",
+              "description": "Its time ran out.",
+              "type": "string"
+            },
+            {
+              "const": "ended",
+              "description": "It can't fire any more: a target can't be read now, or the session\nis gone.",
+              "type": "string"
+            },
+            {
+              "const": "other",
+              "description": "A state this side doesn't know yet.",
+              "type": "string"
+            }
+          ]
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "description": "Where a watch is."
+    },
+    "WatchTarget": {
+      "description": "What a watch waits for: one of these happening fires it.",
+      "oneOf": [
+        {
+          "description": "A pull request on github.com, in a repo linked through Arugula's\nGitHub App.",
+          "properties": {
+            "kind": {
+              "const": "pr",
+              "type": "string"
+            },
+            "number": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "repo": {
+              "description": "`OWNER/NAME`.",
+              "type": "string"
+            },
+            "until": {
+              "$ref": "#/$defs/PrUntil"
+            }
+          },
+          "required": [
+            "kind",
+            "repo",
+            "number",
+            "until"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A hosted agent session (`ses_…`, Arugula #1034), until it settles as\n`wait` with `agent_session` says: done with nothing queued, waiting\nfor input, failed or stopped.",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "session",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A reply in a chat thread: a message in `room` under `parent` (its\nroot's number), or any message in the room without one, that the\nsession that made the watch didn't write. With `from`, only one by\nthat person (their login or name, any case).",
+          "properties": {
+            "from": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "kind": {
+              "const": "thread",
+              "type": "string"
+            },
+            "parent": {
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "room": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "room"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A run (`run_…`) or a deploy (`dep_…`), until it ends however it ends.",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "run",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "Work": {
       "description": "[`WORK`]'s answer.",

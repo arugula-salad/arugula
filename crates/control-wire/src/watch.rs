@@ -272,3 +272,34 @@ pub struct WatchShown {
     #[serde(default)]
     pub yours: bool,
 }
+
+/// `until`'s word for a PR, as the `watch` tools take it: `merged` when
+/// none.
+pub fn until_word_parse(word: Option<&str>) -> Result<PrUntil, String> {
+    match word.map(str::trim).unwrap_or("merged") {
+        "" | "merged" => Ok(PrUntil::Merged),
+        "closed" => Ok(PrUntil::Closed),
+        "checks_done" => Ok(PrUntil::ChecksDone),
+        "checks_failed" => Ok(PrUntil::ChecksFailed),
+        "ready" => Ok(PrUntil::Ready),
+        w => Err(format!("until {w}: a watch on a PR waits until merged, closed, checks_done, checks_failed or ready")),
+    }
+}
+
+/// `expires`' words, in ms: `30m`, `6h`, `3d`, at most [`EXPIRES_MAX_MS`].
+pub fn expires_ms(word: &str) -> Result<u64, String> {
+    let w = word.trim();
+    let (n, unit) = w.split_at(w.find(|c: char| !c.is_ascii_digit()).unwrap_or(w.len()));
+    let n: u64 = n.parse().map_err(|_| format!("expires {w}: a number and m, h or d, like 6h"))?;
+    let ms = match unit.trim() {
+        "m" => n * 60_000,
+        "h" => n * 3_600_000,
+        "d" => n * 86_400_000,
+        _ => return Err(format!("expires {w}: a number and m, h or d, like 6h")),
+    };
+    match ms {
+        0 => Err("expires: more than nothing".into()),
+        ms if ms > EXPIRES_MAX_MS => Err(format!("expires {w}: at most 7d")),
+        ms => Ok(ms),
+    }
+}

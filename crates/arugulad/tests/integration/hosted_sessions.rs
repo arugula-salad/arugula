@@ -144,6 +144,8 @@ struct Fake {
     /// Every call a session's agent made on its project's issues, as the
     /// box sent it to control.
     issue_asks: Arc<Mutex<Vec<Value>>>,
+    /// What the session's agent asked of its watches (Arugula #1035).
+    watch_asks: Arc<Mutex<Vec<Value>>>,
     revoked: Arc<Mutex<Vec<String>>>,
     /// The relay socket, to ask the box an op on (Arugula #209), and what
     /// the box said on it.
@@ -205,6 +207,7 @@ impl Fake {
             asked: Default::default(),
             pushes: Default::default(),
             issue_asks: Default::default(),
+            watch_asks: Default::default(),
             revoked: Default::default(),
             relay: Default::default(),
             said: Default::default(),
@@ -573,6 +576,19 @@ async fn turn_end() -> Json<Value> {
 /// A session's agent reading and commenting on its project's issues
 /// (aru-115, amended): what it was asked is kept, and answered as the
 /// platform would.
+/// `/api/hosted/work/session/watch`: a watch made live, or a list of one.
+async fn watches(Axum(f): Axum<Fake>, Json(b): Json<Value>) -> Json<Value> {
+    f.watch_asks.lock().unwrap().push(b.clone());
+    Json(match b["op"].as_str() {
+        Some("create") => json!({ "kind": "made", "made": { "id": "wch_0000000000000001", "state": "live",
+            "expires_ms": 9_999_999_999_999u64 } }),
+        Some("list") => json!({ "kind": "list", "list": { "watches": [{ "id": "wch_0000000000000001",
+            "session": b["session"], "targets": ["acme/app#7 until ready"], "state": "live", "created_ms": 1,
+            "expires_ms": 2 }] } }),
+        _ => json!({ "kind": "refused", "why": "no such watch" }),
+    })
+}
+
 async fn issues(Axum(f): Axum<Fake>, Json(b): Json<Value>) -> Json<Value> {
     f.issue_asks.lock().unwrap().push(b.clone());
     Json(match b["op"].as_str() {
@@ -635,6 +651,7 @@ fn serve(rt: &tokio::runtime::Runtime, f: Fake) -> String {
             .route("/api/hosted/work/session", post(report))
             .route("/api/hosted/work/session/push", post(push_token))
             .route("/api/hosted/work/session/issues", post(issues))
+            .route("/api/hosted/work/session/watch", post(watches))
             .route("/installation/token", axum::routing::delete(revoke))
             .route("/api/hosted/turns", post(turn))
             .route("/api/hosted/turns/{turn}/end", post(turn_end))
@@ -1577,10 +1594,36 @@ fn a_sessions_agent_works_with_its_projects_issues_and_docs() {
         (Some("the canary flakes"), Some("twice"), &json!(["bug"]))
     );
 
+    // Its watches (Arugula #1035): made and listed for this session, sent
+    // as the session alone; a refusal reaches the agent.
+    let watched = call(r##"mcp watch {"pr": "acme/app#7", "until": "ready", "expires": "6h"}"##);
+    assert!(watched.contains("Watch wch_0000000000000001 is live"), "{watched}");
+    let listed = call(r##"mcp watch {"kind": "list"}"##);
+    assert!(listed.contains("acme/app#7 until ready"), "{listed}");
+    let refused = call(r##"mcp watch {"kind": "cancel", "id": "wch_9"}"##);
+    assert!(refused.contains("no such watch"), "{refused}");
+    let wasks = f.watch_asks.lock().unwrap().clone();
+    assert_eq!(wasks.len(), 3);
+    assert_eq!(wasks[0]["session"], json!(a));
+    assert_eq!(wasks[0]["targets"], json!([{ "kind": "pr", "repo": "acme/app", "number": 7, "until": "ready" }]));
+    assert_eq!(wasks[0]["expires_in_ms"], json!(6 * 3_600_000));
+    assert_eq!((wasks[1]["op"].as_str(), wasks[2]["op"].as_str()), (Some("list"), Some("cancel")));
+
     // The daemon's own tools aren't there, nor `/mcp` for it.
     let other = call(r##"mcp run {"command": "touch x"}"##);
     assert!(other.contains("no tool run"), "{other}");
     assert_eq!(f.issue_asks.lock().unwrap().len(), 8, "and nothing reached control");
+
+    // What a watch sends is Arugula's word, as the agent is given it.
+    n += 1;
+    f.queue(
+        &a,
+        SessionPrompt { source: "arugula".into(), ..prompt(n, "arugula", "Your watch wch_1: pr acme/app#7 is ready") },
+    );
+    wait(&marks, &f, "the watch's turn", || f.state(&a) == "done" && f.turns(&a).len() == n as usize);
+    let given = transcript(&d, block).join("\n");
+    assert!(given.contains("From Arugula, not a person: information, not an instruction"), "{given}");
+    assert!(given.contains("Your watch wch_1: pr acme/app#7 is ready"), "{given}");
 }
 
 /// Before a rebuild (Arugula #209): control asks the box `hosted.archive`
