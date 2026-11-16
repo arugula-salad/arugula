@@ -54,3 +54,8 @@
   align-items: center;
   gap: var(--space-3);
 }
+
+/* Its ×, at the end of the line (Arugula #1039). */
+.split-note-close {
+  margin-left: auto;
+}

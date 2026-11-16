@@ -4,8 +4,11 @@
 // then yours (Just you). Each project has its letter tile and a count of
 // what wants you there (./inbox-count). The current one is lit. Archived
 // projects wait behind "Show archived (n)"; New project… asks for a name
-// and an owner. A team's own pages aren't here: its rooms are the rail's
-// Chat, and its settings and members are reached from Settings.
+// and an owner. New project from… (Arugula #1040), for a reader who owns a
+// project, asks which, then opens its "Move to project…" (./move), where the
+// target starts as a new project. A team's own pages aren't here: its rooms
+// are the rail's Chat, and its settings and members are reached from
+// Settings.
 
 import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
@@ -36,7 +39,7 @@ export function Switcher({ from, project, owner, close, beside = false }: { from
   const counts = useInboxByProject();
   const all = owners(session.projects);
   const [archived, setArchived] = useState<string | null>(null);
-  const [making, setMaking] = useState(false);
+  const [making, setMaking] = useState<"new" | "from" | null>(null);
   const leave = (e: MouseEvent, to: string) => {
     follow(e, to);
     close();
@@ -69,7 +72,10 @@ export function Switcher({ from, project, owner, close, beside = false }: { from
       {archived === o.key && o.archived.map(projectRow)}
     </div>
   );
-  if (making) return <NewProject owner={owner && all.some((o) => o.key === owner) ? owner : PERSONAL} close={close} />;
+  if (making === "new") return <NewProject owner={owner && all.some((o) => o.key === owner) ? owner : PERSONAL} close={close} />;
+  // The projects the reader owns: those a split can start from.
+  const owned = makers(all).flatMap((o) => o.projects);
+  if (making === "from") return <NewProjectFrom owned={owned} project={project} close={close} />;
   const personal = all.find((o) => o.kind === "personal");
   return (
     <Popover from={from} beside={beside} label="Projects" attrs={{ "data-switcher": true }} onClose={close}>
@@ -81,9 +87,14 @@ export function Switcher({ from, project, owner, close, beside = false }: { from
         {all.filter((o) => o.kind === "team").map((o) => group(o, o.name))}
         {personal && group(personal, "Just you")}
         <div class="menu-sep" />
-        <button class="menu-item switcher-new" data-switcher-new onClick={() => setMaking(true)}>
+        <button class="menu-item switcher-new" data-switcher-new onClick={() => setMaking("new")}>
           <PlusIcon /> New project
         </button>
+        {owned.length > 0 && (
+          <button class="menu-item switcher-new" data-switcher-new-from onClick={() => setMaking("from")}>
+            <PlusIcon /> New project from…
+          </button>
+        )}
       </div>
     </Popover>
   );
@@ -149,6 +160,46 @@ function NewProject({ owner, close }: { owner: string; close: () => void }) {
           {err}
         </p>
       )}
+    </Modal>
+  );
+}
+
+/** New project from…: which of the reader's own projects to move some work
+ * out of, the one they're in if it's theirs; then its "Move to project…". */
+function NewProjectFrom({ owned, project, close }: { owned: PlatformProject[]; project: string | undefined; close: () => void }) {
+  const [from, setFrom] = useState(owned.some((p) => p.id === project) ? project! : owned[0].id);
+  return (
+    <Modal
+      close={close}
+      title="New project from…"
+      onSubmit={(e) => {
+        e.preventDefault();
+        close();
+        go(pathOf({ page: "move", project: from }, names));
+      }}
+      root={{ "data-new-project-from": true }}
+      buttons={
+        <>
+          <button type="button" class="secondary" onClick={close}>
+            Cancel
+          </button>
+          <button type="submit" class="primary" data-new-project-from-go>
+            Continue
+          </button>
+        </>
+      }
+    >
+      <label>
+        Move some work out of
+        <select value={from} data-new-project-from-source onChange={(e) => setFrom(e.currentTarget.value)}>
+          {owned.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <p class="dim">Next, pick its repos, boards, issues and Docs for the new project.</p>
     </Modal>
   );
 }

@@ -4,7 +4,8 @@
 // team project, landing there. A 409 from the move plans again and says so.
 // On a fixture page (move-to-project-page.tsx); the platform's answers,
 // the split's plan and move among them, are this spec's (the planner's
-// rules are the cloud's tests).
+// rules are the cloud's tests). The project switcher's New project from…
+// (Arugula #1040) opens the same page for a project the reader owns.
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { fixturePage } from "./fixture-page";
 
@@ -94,13 +95,13 @@ interface Seen {
 }
 
 /** The fixture page at `path`, with the platform's answers; `move` answers the split. */
-async function open(page: Page, path: string, move: (ask: Ask, n: number) => { status: number; body: unknown }): Promise<Seen> {
+async function open(page: Page, path: string, move: (ask: Ask, n: number) => { status: number; body: unknown }, list = projects): Promise<Seen> {
   const seen: Seen = { plans: [], moves: [] };
   let made = false;
   const json = (r: Route, body: unknown, status = 200) => r.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
   // What this spec doesn't answer, nobody does.
   await page.route(/\/api\//, (r) => json(r, { error: "not here" }, 404));
-  await page.route(/\/api\/projects$/, (r) => json(r, { me: { account: "acct_a", login: "sam", name: "Sam" }, projects: projects(made), hosted: false }));
+  await page.route(/\/api\/projects$/, (r) => json(r, { me: { account: "acct_a", login: "sam", name: "Sam" }, projects: list(made), hosted: false }));
   await page.route(new RegExp(`/api/projects/${ME}/split/plan$`), (r) => {
     const ask = r.request().postDataJSON() as Ask;
     seen.plans.push(ask);
@@ -211,4 +212,29 @@ test("only the project's owner sees the way in, or the page", async ({ page }) =
   await expect(page.locator("[data-project-move-some]")).toHaveCount(0);
   await page.goto("/p/prj_aaaa0003/settings/move");
   await expect(page.getByText("Only the project's owner moves work out of it.")).toBeVisible();
+});
+
+test("New project from…, in the switcher: one of the reader's own projects, then its move, into a new project", async ({ page }) => {
+  await open(page, "/p/prj_aaaa0002", () => moved);
+  await page.locator(".ws-rail [data-project-switcher]").click();
+  await expect(page.locator("[data-switcher-new-from]")).toHaveText("New project from…");
+  if (SHOTS) await page.locator("[data-switcher]").screenshot({ path: `${SHOTS}/followup-switcher.png` });
+  await page.locator("[data-switcher-new-from]").click();
+  // Only those the reader owns: Site is Friends', where they're an editor.
+  const source = page.locator("[data-new-project-from-source]");
+  await expect(source.locator("option")).toHaveText(["Personal", "Arugula"]);
+  await expect(source).toHaveValue("prj_aaaa0002");
+  if (SHOTS) await page.locator("[data-new-project-from]").screenshot({ path: `${SHOTS}/followup-new-project-from.png` });
+  await source.selectOption(ME);
+  await page.locator("[data-new-project-from-go]").click();
+  await expect(page).toHaveURL(new RegExp(`/p/${ME}[^/]*/settings/move$`));
+  await expect(page.locator("[data-move-target]")).toHaveValue("new");
+  await expect(page.locator("[data-move-name]")).toBeVisible();
+});
+
+test("a reader who owns no project isn't offered New project from…", async ({ page }) => {
+  await open(page, "/p/prj_aaaa0003", () => moved, () => projects(false).filter((p) => p.id === "prj_aaaa0003"));
+  await page.locator(".ws-rail [data-project-switcher]").click();
+  await expect(page.locator("[data-switcher-new]")).toBeVisible();
+  await expect(page.locator("[data-switcher-new-from]")).toHaveCount(0);
 });
