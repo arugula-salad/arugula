@@ -220,6 +220,23 @@ fn answered(e: &anyhow::Error) -> bool {
     e.downcast_ref::<NoToken>().is_some() || e.downcast_ref::<Refused>().is_some()
 }
 
+/// The machine refused the token itself (`machine-token`), so a new one may
+/// do: as the page does, ask once more. A machine refuses a token issued
+/// before it started, which right after a restart can be a fresh one when
+/// control's clock is behind the machine's.
+fn token_refused(e: &anyhow::Error) -> bool {
+    e.downcast_ref::<Refused>().is_some_and(|r| r.code == "machine-token")
+}
+
+/// `connect` once, and again with a new token if the machine refused the
+/// first ([`token_refused`]).
+fn with_new_token<T>(mut connect: impl FnMut() -> anyhow::Result<T>) -> anyhow::Result<T> {
+    match connect() {
+        Err(e) if token_refused(&e) => connect(),
+        r => r,
+    }
+}
+
 /// Request headers this CLI adds, by name.
 type Headers = Vec<(&'static str, String)>;
 
@@ -628,7 +645,9 @@ impl Enrolled {
             let Ok(url) = Url::parse(u) else { continue };
             let ws = format!("{}://{}/e2e", if url.tls { "wss" } else { "ws" }, url.authority);
             let route = format!("direct {u}, with a machine token");
-            match Link::connect(&url, &ws, &[], &daemon, Hello::Token(&token), Some(DIRECT_TIMEOUT), route) {
+            match with_new_token(|| {
+                Link::connect(&url, &ws, &[], &daemon, Hello::Token(&token), Some(DIRECT_TIMEOUT), route.clone())
+            }) {
                 Ok(l) => return Ok(l),
                 Err(e) if answered(&e) => return Err(e),
                 Err(e) => errors.push(format!("{u}: {e:#}")),
@@ -637,7 +656,7 @@ impl Enrolled {
         let (c, ws, headers) = self.relay(&machine.id)?;
         let headers: Vec<(&str, &str)> = headers.iter().map(|(k, v)| (*k, v.as_str())).collect();
         let route = "relayed through control, with a machine token".to_owned();
-        match Link::connect(&c, &ws, &headers, &daemon, Hello::Token(&token), None, route) {
+        match with_new_token(|| Link::connect(&c, &ws, &headers, &daemon, Hello::Token(&token), None, route.clone())) {
             Ok(l) => Ok(l),
             Err(e) if answered(&e) => Err(e),
             Err(e) => {
@@ -1988,6 +2007,38 @@ mod tests {
         assert!(!key_after_tokens(&anyhow::anyhow!("connection refused")));
         assert!(answered(&no(401)) && answered(&refused("machine-token")));
         assert!(!answered(&anyhow::anyhow!("timed out")));
+        assert!(token_refused(&refused("machine-token")) && !token_refused(&refused("malformed")));
+    }
+
+    #[test]
+    fn a_refused_token_is_tried_once_more_with_a_new_one() {
+        let refused = || anyhow::Error::from(Refused { code: "machine-token".into(), message: "x".into() });
+        let mut tries = 0;
+        let r: anyhow::Result<()> = with_new_token(|| {
+            tries += 1;
+            if tries == 1 { Err(refused()) } else { Ok(()) }
+        });
+        assert!(r.is_ok() && tries == 2);
+        // Only once more.
+        let mut tries = 0;
+        assert!(
+            with_new_token::<()>(|| {
+                tries += 1;
+                Err(refused())
+            })
+            .is_err()
+        );
+        assert_eq!(tries, 2);
+        // Anything else isn't tried again.
+        let mut tries = 0;
+        assert!(
+            with_new_token::<()>(|| {
+                tries += 1;
+                Err(anyhow::anyhow!("timed out"))
+            })
+            .is_err()
+        );
+        assert_eq!(tries, 1);
     }
 
     /// Each entry's Noise key as control gives it (#994), else from the
