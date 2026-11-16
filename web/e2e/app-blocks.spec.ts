@@ -2,7 +2,7 @@
 // (Arugula #989): a Board block in a machine's pane draws its board, not
 // "Open this machine in Arugula cloud, signed in", which it said before the
 // app gave the shell its platform session. And the platform is the app's
-// own page there: a board row's link and the pane's card chip go to the
+// own page there: a board row's link and the session menu's card go to the
 // app's own `/p/…` places, in place, not to a tab of their own. On the
 // app's fixture page (app-frame-page.tsx), signed in as sam; the block is a
 // real one of the suite's daemon, the board and issue it names made up.
@@ -75,7 +75,7 @@ test("a board row's link in a block goes to the issue in the app, in place", asy
   await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines`));
 });
 
-test("the pane's card chip goes to its card in the app, in place", async ({ page }) => {
+test("the session menu's Open #N goes to its card in the app, in place", async ({ page }) => {
   await openApp(page, () =>
     page.evaluate(
       ([project, item]) => {
@@ -87,11 +87,14 @@ test("the pane's card chip goes to its card in the app, in place", async ({ page
       [P, ISSUE] as const,
     ),
   );
-  const chip = page.locator(`[data-pane-card="${ISSUE}"]`);
-  await expect(chip).toBeVisible();
+  // #1090: the card is in the session's menu, not on the pane's bar.
+  await page.locator("[data-crumb-menu]").click();
+  const open = page.locator("[data-card-open]");
+  await expect(open).toHaveText(new RegExp(`Open ${ISSUE}`));
+  await expect(page.locator(".pane-header [data-pane-card]")).toHaveCount(0);
   const tabs = page.context().pages().length;
   await page.evaluate(() => ((window as unknown as { stayed: boolean }).stayed = true));
-  await chip.click();
+  await open.click();
   await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/issues/${ISSUE}[^/]*$`));
   expect(page.context().pages().length).toBe(tabs);
   // In place: the same page, not a reload.

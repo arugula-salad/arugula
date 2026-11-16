@@ -12,6 +12,7 @@ import { projectChoices, projectPicked } from "./session-project";
 import { openSandboxes, pickApp } from "../labs-load";
 import { driveItems, getControlSession, shareSession } from "./people";
 import { getSignedIn } from "../signed-in";
+import { cardItems } from "./pane-card";
 import { hasChat } from "./places";
 import { machineHandle } from "../../shared/chat/agents";
 import { openChanges, openEditor, openIssue, openPort, openPortAt, openPr, openWorkspace, pinBoard, pinChatRoom, openTeamChat } from "../blocks";
@@ -280,6 +281,8 @@ export function sessionItems(client: Client, session: SessionId, rename: () => v
       run: () => void pickSessionProject(client, session),
       attrs: { "data-session-project": true },
     },
+    // #1090: the session's card, here rather than on each pane's bar.
+    ...sessionCardItems(client, session),
     // M61: the people's conversation about this session.
     ...sessionThreadItems(client, session),
     // Sharing is the daemon's owner's (M13).
@@ -297,6 +300,15 @@ export function sessionItems(client: Client, session: SessionId, rename: () => v
     "separator",
     { label: "Close session", danger: true, run: () => client.intent({ op: "close_session", session }) },
   ];
+}
+
+/** The session's card: put it on one, or go to it, change it or take it
+ * off (pane-card.tsx's), through one of its panes, the active one first. */
+function sessionCardItems(client: Client, session: SessionId): MenuItem[] {
+  const active = client.active();
+  const tabs = client.state?.tabs.filter((t) => client.sessionOfTab(t.id) === session) ?? [];
+  const pane = active !== undefined && client.sessionOfPane(active) === session ? active : tabs.flatMap(paneIds)[0];
+  return pane === undefined ? [] : cardItems(client, pane);
 }
 
 /** Put a session in one of the reader's projects, or in none. */
@@ -327,6 +339,7 @@ export function sessionMenuHint(items: MenuItem[]): string {
   const words = [
     has(/^Rename/) && "rename",
     has(/^Project/) && "its project",
+    has(/card/) && "its card",
     has(/thread/) && "its thread",
     has(/^Share/) && "share",
     has(/^Notify/) && "notifications",

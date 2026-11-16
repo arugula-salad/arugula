@@ -1,5 +1,5 @@
-// A pane's card chip (Arugula inversion): what it says, cut to the room a
-// pane's bar has, the picker's choices and what an answer picks. Plain
+// A pane's card chip (Arugula inversion, on a phone): what it says, cut to
+// the room it has, the picker's choices and what an answer picks. Plain
 // functions, for the chip and its tests (scripts/pane-card.test.mjs).
 // The picker's choices and answers are shared/card-pick.ts's (the Sessions
 // page asks with them too), kept here for the chip and its tests.
@@ -41,27 +41,6 @@ export function cardChipText(project: string, card: string | null, title: string
 export const PUT_ON = "Put on a card";
 export const CHANGE = "Change card";
 export const TAKE_OFF = "Take off the card";
-
-/** What a pane's bar takes besides its title and the chip, in px: its
- * padding, number, glyph, status, Focus and ⋯, and the gaps between. */
-const BAR_FIXED = 200;
-/** What the chip takes besides its text: its padding and border, the ▾
- * beside it and the gaps inside. */
-const CHIP_FIXED = 50;
-/** The title's share of a bar with a card chip (pane-chrome.css caps it
- * there), and its least (6ch). */
-export const TITLE_SHARE = 0.4;
-const TITLE_LEAST = 45;
-/** About a character's width: 11px text in the chip, 13px in the title. */
-const CHIP_CH = 6.5;
-const TITLE_CH = 7.5;
-
-/** About how many characters of chip text fit in a pane's bar `width` px
- * wide, beside its title (`title` characters) and the rest of the bar. */
-export function chipRoom(width: number, title: number): number {
-  const said = Math.min(Math.max(title * TITLE_CH, TITLE_LEAST), width * TITLE_SHARE);
-  return Math.max(0, Math.floor((width - BAR_FIXED - said - CHIP_FIXED) / CHIP_CH));
-}
 
 /** The board page's address of a card's row (its drawer opens there), else
  * its issue's page, else the project's issues. */

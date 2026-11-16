@@ -1,9 +1,10 @@
-// The card a pane points back to (Arugula inversion): a chip in its bar
-// (under the title on a phone) naming its session's project and card,
-// `Arugula > #983 Title`. A click goes to the card's row on its board,
-// whose drawer opens there; its menu changes the card or takes the session
-// off it. A session in a project with no card has a dashed chip that puts
-// it on one. A session in no project has no chip. The card is the
+// The card a pane points back to (Arugula inversion): on a phone, a chip
+// under the bar naming its session's project and card, `Arugula > #983
+// Title`; a tap opens its menu, which goes to the card's row on its board
+// (whose drawer opens there), changes the card or takes the session off
+// it. A session in a project with no card has a dashed chip that puts it
+// on one. A session in no project has no chip. On a desktop the same menu
+// is in the session's ⋯ menu (commands.tsx' sessionItems, #1090). The card is the
 // session's (`Intent::SetSessionWork`); its title and board row are read
 // from Arugula cloud as the person looking, once per project.
 
@@ -13,7 +14,7 @@ import { boards } from "../../shared/boards/store";
 import { issues } from "../../shared/issues/store";
 import { askText, openMenu, type MenuItem } from "../../shared/ui/menu";
 import { ObjectChip } from "../../shared/ui/state-chip";
-import { Caret, ChevronIcon, IconButton } from "../../shared/ui/icons";
+import { ChevronIcon } from "../../shared/ui/icons";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { openPlatform, platformOrigin } from "../platform-links";
 import { getSignedIn } from "../signed-in";
@@ -95,7 +96,7 @@ function takeOff(client: Client, pane: PaneId) {
   if (session !== null) client.intent({ op: "set_session_work", session, work: null }, (why) => client.toast(why));
 }
 
-/** The chip's menu: go to the card, change it, take the session off it; or put it on one. */
+/** The card's menu: go to the card, change it, take the session off it; or put it on one. */
 export function cardItems(client: Client, pane: PaneId): MenuItem[] {
   const info = client.info(pane);
   const project = info?.session_project;
@@ -115,10 +116,10 @@ function menuFrom(client: Client, pane: PaneId, el: HTMLElement) {
   openMenu({ clientX: r.left, clientY: r.bottom, preventDefault() {} }, cardItems(client, pane), { from: el, label: "Card", attrs: { "data-card-menu": "" } });
 }
 
-/** A pane's card chip, in `room` characters; nothing for a session in no
- * project, or when even its number doesn't fit; nor a dashed one while
- * nobody is signed in here. On a phone a tap opens the menu, a sheet there. */
-export function PaneCardChip({ client, pane, room, phone }: { client: Client; pane: PaneId; room: number; phone?: boolean }) {
+/** A phone pane's card chip, in `room` characters; nothing for a session in
+ * no project, or when even its number doesn't fit; nor a dashed one while
+ * nobody is signed in here. A tap opens the menu, a sheet there. */
+export function PaneCardChip({ client, pane, room }: { client: Client; pane: PaneId; room: number }) {
   useSubscribe((fn) => getSignedIn()?.subscribe(fn) ?? (() => {}));
   const info = client.info(pane);
   const project = info?.session_project ?? undefined;
@@ -157,20 +158,15 @@ export function PaneCardChip({ client, pane, room, phone }: { client: Client; pa
     <span class="pane-work-wrap">
       <ObjectChip
         class="pane-work"
-        title={phone ? title : `${title}: go to the card`}
+        title={title}
         data-pane-card={card}
-        onClick={(e: MouseEvent) => (phone ? menu(e) : goToCard(client, project.id, card, on?.boards?.[0]))}
+        onClick={menu}
         onContextMenu={menu}
       >
         {where}
         <code class="chip-object-id">{card}</code>
         {said.title && <span class="pane-work-title">{said.title}</span>}
       </ObjectChip>
-      {!phone && (
-        <IconButton class="pane-header-button bar-btn sq" label="Card menu" title={`${CHANGE}, or take it off`} data-pane-card-menu={pane} onClick={menu}>
-          <Caret />
-        </IconButton>
-      )}
     </span>
   );
 }
