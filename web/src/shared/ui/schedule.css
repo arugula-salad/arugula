@@ -1,0 +1,126 @@
+/* Weekdays and TimeRange (./schedule.tsx, Arugula #1101), in the kit's quiet
+   hairline: outlined on the page, the accent line and a halo when it's
+   yours. */
+
+/* Weekdays: seven toggles, one row. A day that's on is the accent's tint,
+   as the segmented control's pressed button is (shared/buttons.css .seg). */
+.weekdays {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.weekdays > button {
+  all: unset;
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 28px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--btn-radius);
+  color: var(--subtle);
+  font: 600 var(--text-sm) / 1 var(--f-ui);
+  cursor: pointer;
+  transition:
+    border-color 0.12s,
+    background-color 0.12s,
+    color 0.12s;
+}
+
+.weekdays > button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--fg);
+}
+
+.weekdays > button[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 18%, var(--bg));
+  color: var(--accent);
+}
+
+.weekdays > button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.weekdays > button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* TimeRange: from and to in one outlined field, so neither reads as off. */
+.time-range-wrap {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+
+.time-range {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 32px;
+  padding: 0 4px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--field-radius);
+  background: var(--bg);
+  transition:
+    border-color 0.12s,
+    box-shadow 0.12s;
+}
+
+.time-range:hover:not([data-disabled]):not(:focus-within) {
+  border-color: color-mix(in srgb, var(--fg) 35%, var(--surface));
+}
+
+.time-range:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.time-range[data-disabled] {
+  opacity: 0.5;
+}
+
+.time-range > input {
+  all: unset;
+  box-sizing: border-box;
+  width: 96px;
+  padding: 0 4px;
+  color: var(--fg);
+  font: 500 var(--t-field) var(--f-mono);
+}
+
+.time-range > input::-webkit-calendar-picker-indicator {
+  opacity: 0.45;
+  cursor: pointer;
+}
+
+.time-range-to {
+  padding: 0 2px;
+  color: var(--dim);
+  font-size: var(--text-sm);
+}
+
+.time-range-note {
+  color: var(--dim);
+  font-size: var(--text-sm);
+}
+
+@media (pointer: coarse) {
+  .weekdays > button {
+    width: 40px;
+    height: 40px;
+  }
+
+  .time-range {
+    min-height: 40px;
+  }
+
+  .time-range > input {
+    width: 112px;
+  }
+}
