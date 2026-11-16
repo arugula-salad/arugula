@@ -15,7 +15,7 @@ import { homes, movedHome, names, resolve, roomElsewhere } from "./links";
 import { currentProject, entryPath, type Entry } from "./current-project";
 import { slugIn } from "./paths";
 import { arrive, openingChat } from "./chat-nav";
-import { follow, go, pathOf, useRoute, type Route } from "./router";
+import { follow, go, pathOf, popCount, useRoute, type Route } from "./router";
 import type { MachineAt } from "../shared/machine-paths";
 import { controlOrigin, session } from "./session";
 import { signIn } from "./signin";
@@ -232,9 +232,6 @@ function Toast() {
   ) : null;
 }
 
-/** The address the page is at now. */
-const address = () => location.pathname + location.search;
-
 /** An id-only address (`/chat/:room`…) goes where it belongs as soon as
  * the page can say, in its place in history. */
 function useFind(r: Route): string | null {
@@ -253,12 +250,12 @@ function useFind(r: Route): string | null {
     if (ask) (ask.startsWith("run_") ? runs.get(ask) : issues.get(ask)).catch(() => live && setLost(ask));
     return () => void (live = false);
   }, [ask]);
-  // Only from the address it was found for: an effect runs after the paint,
-  // and a Back before then has left it (Arugula #1074).
-  const at = address();
+  // Not after a Back: an effect runs after the paint, and a Back before
+  // then has left the page it was found for (Arugula #1074).
+  const pops = popCount();
   useEffect(() => {
-    if (to && address() === at) arrive(to);
-  }, [to, at]);
+    if (to && popCount() === pops) arrive(to);
+  }, [to, pops]);
   return lost;
 }
 
@@ -325,11 +322,11 @@ function useSlug(r: Route) {
   useSubscribe((fn) => issues.subscribe(fn));
   const known = (id: string) => names(id) ?? slugIn(location.pathname, id);
   const want = r.page === "missing" || r.page === "find" || (r.page === "home" && r.to) ? null : (roomElsewhere(r) ?? movedHome(r) ?? pathOf(r, known));
-  // Only the address it was worked out for: the effect runs after the
-  // paint, and a Back before then would have it replace the entry Back
-  // went to with this page's (Arugula #1074).
-  const at = address();
+  // Not after a Back: the effect runs after the paint, and a Back before
+  // then would have it replace the entry Back went to with this page's
+  // (Arugula #1074).
+  const pops = popCount();
   useEffect(() => {
-    if (want && want !== at && address() === at && session.state === "ready") go(want + location.hash, true);
-  }, [want, at, session.state]);
+    if (want && want !== location.pathname + location.search && popCount() === pops && session.state === "ready") go(want + location.hash, true);
+  }, [want, pops, session.state]);
 }
