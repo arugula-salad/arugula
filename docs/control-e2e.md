@@ -2162,7 +2162,7 @@ sleeps, and control pushes and searches them itself.
 
 Control's database has 192 tables in two planes ("Two planes, two trust rules"):
 
-- **The machine plane** (58 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
+- **The machine plane** (58 tables) is what control needs to decide who reaches a machine and to route to it: ids, names, addresses, public keys and signed statements. What moves between a client and a machine passes through control's relay, which can read it and is built to keep none of it ([What control can do to your machines](#what-control-can-do-to-your-machines)).
 - **The platform plane** (134 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people or their agents wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
@@ -2383,8 +2383,8 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 
 ### Never stored
 
-- private keys of any device or machine: Noise, signing, passkeys
-- terminal bytes, snapshots, logs, scrollback; the lines of a pane nobody quoted into chat. One exception: a run on a hosted workspace sends its log to the run-log bucket (below), which the platform reads
+- private keys of any device or machine, and passkeys
+- terminal bytes, snapshots, logs, scrollback; the lines of a pane nobody quoted into chat. The relay can read what it carries as it passes, and writes none of it down. One exception: a run on a hosted workspace sends its log to the run-log bucket (below), which the platform reads
 - link keys (a link's fragment), and Shared Docs' keys
 - the push payloads machines send, in the clear
 - a person's own credentials: GitHub's OAuth token (used once at sign-in), the one-use user token a send is made with (used for one call, then revoked), forge tokens
