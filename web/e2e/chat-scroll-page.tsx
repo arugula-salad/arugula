@@ -9,6 +9,7 @@
 import { render } from "preact";
 import { useState } from "preact/hooks";
 import "../src/shared/style.css";
+import "../src/shared/fields.css";
 import "../src/shared/buttons.css";
 import { chat } from "../src/shared/chat-store";
 import { RoomBody } from "../src/shared/chat/room";

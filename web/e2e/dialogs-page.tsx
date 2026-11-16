@@ -7,6 +7,7 @@
 import { render } from "preact";
 import { useState } from "preact/hooks";
 import "../src/shared/style.css";
+import "../src/shared/fields.css";
 import "../src/shared/buttons.css";
 import "../src/shell/interaction-chrome.css";
 import { Modal } from "../src/shared/ui/modal";

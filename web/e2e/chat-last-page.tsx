@@ -8,6 +8,7 @@
 import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import "../src/shared/style.css";
+import "../src/shared/fields.css";
 import "../src/shared/buttons.css";
 import { chat } from "../src/shared/chat-store";
 import { ChatApp } from "../src/shared/chat/app";

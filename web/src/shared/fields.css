@@ -1,0 +1,132 @@
+/* Fields (#1097, Doc "Form controls: one kit"): every text box, select and
+   textarea in one look, the quiet hairline. A field is outlined on the
+   page's background; on focus its line goes accent with a halo. Buttons
+   stay filled (./buttons.css), so the shape says type here or press here.
+
+   It's drawn through `:where(...)`, no specificity, so a bare `<input>` and
+   one with its own class both get it, and any place rule still wins over
+   it (those come out area by area, #1102). Checkboxes, radios and the rest
+   of the non-text inputs aren't fields: #1098 draws them. `.field` is the
+   same look as a class, for a place whose own rule would otherwise win. */
+
+:root {
+  /* 32 on a page, 24 in a bar; 40 and 32 on touch (below). */
+  --field-h: 32px;
+  --field-h-bar: 24px;
+  --field-line: var(--line-strong);
+  --field-line-hover: color-mix(in srgb, var(--fg) 35%, var(--surface));
+  --field-ring: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+  /* The select's caret: two halves of a 5px square, from the right edge. */
+  --field-caret:
+    linear-gradient(45deg, transparent 50%, var(--dim) 50%),
+    linear-gradient(-45deg, transparent 50%, var(--dim) 50%);
+}
+
+@media (pointer: coarse), (max-width: 600px) {
+  :root {
+    --field-h: 40px;
+    --field-h-bar: 32px;
+  }
+}
+
+/* What a field is: a text-like input, a select, a textarea. The list is
+   written out in each rule below, as CSS can't name it once. */
+
+:where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="hidden"], [type="button"], [type="submit"], [type="reset"], [type="image"]), select, textarea),
+.field {
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 0 10px;
+  border: 1px solid var(--field-line);
+  border-radius: var(--field-radius);
+  background-color: var(--bg);
+  color: var(--fg);
+  font-family: inherit;
+  font-size: var(--t-field);
+  outline: none;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+/* WebKit (the desktop app, Safari, iOS) draws a search box and an inset
+   shadow of its own unless told not to. */
+:where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="hidden"], [type="button"], [type="submit"], [type="reset"], [type="image"]), textarea),
+:where(input, textarea).field {
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+:where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="hidden"], [type="button"], [type="submit"], [type="reset"], [type="image"]), select),
+:where(input, select).field {
+  height: var(--field-h);
+}
+
+/* In a bar, the bar's height. */
+:where(.hbar, .browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) :where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="hidden"], [type="button"], [type="submit"], [type="reset"], [type="image"]), select),
+:where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="hidden"], [type="button"], [type="submit"], [type="reset"], [type="image"]).small, select.small),
+.field.small {
+  height: var(--field-h-bar);
+  padding: 0 8px;
+  font-size: var(--text-sm);
+}
+
+:where(textarea),
+textarea.field {
+  padding: 7px 10px;
+  line-height: var(--lh-prose);
+  resize: vertical;
+}
+
+:where(input, textarea)::placeholder {
+  color: var(--dim);
+  opacity: 1;
+}
+
+:where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="hidden"], [type="button"], [type="submit"], [type="reset"], [type="image"]), select, textarea):hover:not(:disabled, :focus),
+.field:hover:not(:disabled, :focus) {
+  border-color: var(--field-line-hover);
+}
+
+:where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="hidden"], [type="button"], [type="submit"], [type="reset"], [type="image"]), select, textarea):focus,
+.field:focus {
+  border-color: var(--accent);
+  box-shadow: var(--field-ring);
+}
+
+:where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="hidden"], [type="button"], [type="submit"], [type="reset"], [type="image"]), select, textarea)[aria-invalid="true"],
+.field[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+:where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="hidden"], [type="button"], [type="submit"], [type="reset"], [type="image"]), select, textarea):disabled,
+.field:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* A select draws the kit's caret, so it's the same on every system (no
+   macOS ⇕). A place rule that sets `background` (the shorthand) drops it:
+   set `background-color`. A list box (multiple, size) keeps its own. */
+:where(select:not([multiple], [size])),
+select.field {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 28px;
+  background-image: var(--field-caret);
+  background-position: right 14px top 50%, right 9px top 50%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+
+/* A time reads in the mono. Its picker's glyph is drawn for the root's dark
+   color-scheme in either palette: mid-grey reads on both. */
+:where(input[type="time"]) {
+  padding-right: 6px;
+  font-family: var(--f-mono);
+  font-size: var(--text-sm);
+}
+
+:where(input[type="time"])::-webkit-calendar-picker-indicator {
+  filter: invert(0.5);
+  cursor: pointer;
+}

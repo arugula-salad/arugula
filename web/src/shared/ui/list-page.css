@@ -115,7 +115,10 @@ button.list-count:hover {
 .list-sort {
   flex: none;
   width: auto;
-  padding: var(--space-1) var(--space-2);
+  /* As tall as the search beside it, and room for the kit's caret
+     (shared/fields.css, #1097). */
+  height: auto;
+  padding: var(--space-1) 28px var(--space-1) var(--space-2);
   font-size: inherit;
 }
 
@@ -124,6 +127,9 @@ button.list-count:hover {
 }
 
 .list-search input {
+  /* The box around it is the field: not the kit's (shared/fields.css). */
+  height: auto;
+  box-shadow: none;
   flex: 1;
   min-width: 0;
   padding: 0;
