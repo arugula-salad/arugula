@@ -1,7 +1,7 @@
 // The app's rail (#377; the project-rooted rail of Arugula #989): the same
 // one as the panes page's (shared/ui/rail), down the left on a computer.
 // The project tile at the top is the switcher. Then the project's places
-// (Overview, Boards, Sessions, Docs, Deploys), a line, the team's (Chat,
+// (Overview, Boards, Sessions, Docs), a line, the team's (Chat,
 // Machines), and at the foot the Inbox, Settings and you. The bar beside
 // it (./bar) is the path to where you are. A phone has no rail: the same
 // places are a bar along the bottom (`PhoneTabs`).
@@ -12,7 +12,7 @@ import { chat } from "../shared/chat-store";
 import { chatUnread, projectUnread } from "../shared/chat/unread";
 import { usePlatformApi } from "../shared/platform-api";
 import { usePhone, useSubscribe } from "../shared/ui/hooks";
-import { BellIcon, BoardsIcon, ChatIcon, DeploysIcon, DocsIcon, MachineIcon, MoreIcon, ProjectsIcon, SessionsIcon, SettingsIcon } from "../shared/ui/icons";
+import { BellIcon, BoardsIcon, ChatIcon, DocsIcon, MachineIcon, MoreIcon, ProjectsIcon, SessionsIcon, SettingsIcon } from "../shared/ui/icons";
 import { openMenu, pressedShut, type MenuItem } from "../shared/ui/menu";
 import { Rail, RAIL_LINE, type RailItem } from "../shared/ui/rail";
 import { AccountButton, chatPath, sectionOf } from "./bar";
@@ -56,7 +56,7 @@ function usePlaces() {
   const unknown = !!shown && !p && session.state === "ready";
   const section = unknown ? null : sectionOf(r);
   const project = p ?? session.project(currentProject()) ?? session.personal();
-  const at = (page: "project" | "boards" | "sessions" | "docs" | "deploys" | "project-settings") => (project ? pathOf({ page, project: project.id } as Route, names) : "/");
+  const at = (page: "project" | "boards" | "sessions" | "docs" | "project-settings") => (project ? pathOf({ page, project: project.id } as Route, names) : "/");
   const { n, mention } = !unknown ? chatUnread(chat.rooms, chatTeam(p, project)) : { n: 0, mention: false };
   const chatTo = shown ? chatPath(shown) : entryPath("chat", project, names);
   // The machines are the app's own places where it has them; else control's page.
@@ -73,7 +73,8 @@ function usePlaces() {
     // A run is a session in a cloud workspace (decision 6): Runs is under Sessions.
     { key: "sessions", label: "Sessions", tip: "Sessions: this project's sessions and runs", icon: <SessionsIcon />, to: at("sessions"), here: section === "sessions" || section === "runs", count: runs },
     { key: "docs", label: "Docs", tip: "Docs: this project's Docs", icon: <DocsIcon />, to: at("docs"), here: section === "docs" },
-    { key: "deploys", label: "Deploys", tip: "Deploys: this project's deploys", icon: <DeploysIcon />, to: at("deploys"), here: section === "deploys" },
+    // No Deploys for v1 (Arugula #1078): its page still opens from a link, and
+    // deploys waiting for you are in the Inbox.
   ];
   const team: PlaceLink[] = [
     { key: "chat", label: "Chat", tip: "Chat: your team's rooms", icon: <ChatIcon />, to: chatTo, here: section === "chat", count: { n, mention } },
@@ -144,7 +145,7 @@ export function PhoneTabs() {
   const { own, team, foot } = usePlaces();
   const by = (k: string) => [...own, ...team, ...foot].find((p) => p.key === k)!;
   const tabs = ["overview", "boards", "sessions", "chat"].map(by);
-  const rest = ["docs", "deploys", "machines", "settings"].map(by);
+  const rest = ["docs", "machines", "settings"].map(by);
   const more = (e: MouseEvent) => {
     const items: MenuItem[] = rest.map((p) => ({ label: p.label, current: p.here, run: () => (/^https?:/.test(p.to) ? location.assign(p.to) : go(p.to)) }));
     openMenu(e, items, e.currentTarget as HTMLElement);

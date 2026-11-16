@@ -53,7 +53,7 @@ test.describe("on a computer", () => {
     const order = await page.locator(".ws-rail > *").evaluateAll((els) =>
       els.map((e) => (e.classList.contains("ws-rail-line") ? "line" : ([...e.attributes].find((a) => a.name.startsWith("data-open-"))?.name.slice(10) ?? ""))).filter(Boolean),
     );
-    expect(order).toEqual(["overview", "boards", "sessions", "docs", "deploys", "line", "chat", "machines", "inbox", "settings"]);
+    expect(order).toEqual(["overview", "boards", "sessions", "docs", "line", "chat", "machines", "inbox", "settings"]);
     await lit(page, "boards");
     await expect(page.locator(".ws-rail [data-signed-in-as]")).toBeVisible();
     // The path: the team, the project (a link up), the place.
@@ -257,7 +257,9 @@ test.describe("on a phone", () => {
     await expect(page.locator("[data-switcher]")).toHaveCount(0);
     // More: the rest of the places.
     await tabs.locator("[data-tab-more]").click();
-    for (const label of ["Docs", "Deploys", "Machines", "Settings"]) await expect(page.locator(".menu-item", { hasText: label }).first()).toBeVisible();
+    for (const label of ["Docs", "Machines", "Settings"]) await expect(page.locator(".menu-item", { hasText: label }).first()).toBeVisible();
+    // No Deploys for v1 (Arugula #1078).
+    await expect(page.locator(".menu-item", { hasText: "Deploys" })).toHaveCount(0);
     await page.screenshot({ path: info.outputPath("frame-phone-more.png") });
     await page.locator(".menu-item", { hasText: "Docs" }).first().click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/docs$`));
