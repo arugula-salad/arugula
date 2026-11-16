@@ -6,8 +6,9 @@
    It's drawn through `:where(...)`, no specificity, so a bare `<input>` and
    one with its own class both get it, and any place rule still wins over
    it (those come out area by area, #1102). Checkboxes, radios and the rest
-   of the non-text inputs aren't fields: #1098 draws them. `.field` is the
-   same look as a class, for a place whose own rule would otherwise win. */
+   of the non-text inputs aren't fields (boxes and dots are at the end,
+   #1098). `.field` is the same look as a class, for a place whose own
+   rule would otherwise win. */
 
 :root {
   /* 32 on a page, 24 in a bar; 40 and 32 on touch (below). */
@@ -129,4 +130,116 @@ select.field {
 :where(input[type="time"])::-webkit-calendar-picker-indicator {
   filter: invert(0.5);
   cursor: pointer;
+}
+
+/* Boxes and dots (#1098): a checkbox and a radio drawn by the kit, so
+   they're the same on every system. Off, the field's hairline on the
+   page's background; on, the accent, with a tick (a dot for a radio) in
+   the colour that reads on it. A checkbox the code marks indeterminate
+   (some of a list picked) shows a bar. Through `:where(...)` like the
+   fields: a place rule that sets `background` (the shorthand), `width:
+   auto` or a field's padding takes the look away, so keep those to
+   fields (`:not([type="checkbox"], [type="radio"])`).
+
+   Which to use: a switch (`.sw-switch`, #1099) when it takes effect now;
+   a box when you pick, then press a button; a dot for one of a few that
+   each need words; segments (`.seg`) for one of two to four, short. */
+
+:root {
+  /* 20 on touch (below), as buttons.css's tap rule has it. */
+  --choice-size: 16px;
+  /* The tick and the bar, drawn as masks so they take --on-color. */
+  --choice-tick: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%23000' stroke-width='2'%3E%3Cpath d='m2.5 6.2 2.3 2.3 4.7-5'/%3E%3C/svg%3E");
+  --choice-bar: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M3 6h6'/%3E%3C/svg%3E");
+}
+
+@media (pointer: coarse), (max-width: 600px) {
+  :root {
+    --choice-size: 20px;
+  }
+}
+
+:where(input[type="checkbox"]:not(.sw-switch), input[type="radio"]) {
+  appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
+  display: inline-grid;
+  place-content: center;
+  flex: none;
+  width: var(--choice-size);
+  height: var(--choice-size);
+  padding: 0;
+  border: 1px solid var(--field-line);
+  border-radius: var(--tag-radius);
+  background-color: var(--bg);
+  color: var(--on-color);
+  vertical-align: middle;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.12s, background-color 0.12s, box-shadow 0.12s;
+}
+
+:where(input[type="radio"]) {
+  border-radius: 50%;
+}
+
+/* The tick, the bar and the dot: one ::before, shown when on. */
+:where(input[type="checkbox"]:not(.sw-switch), input[type="radio"])::before {
+  content: "";
+  width: 11px;
+  height: 11px;
+  background-color: currentColor;
+  mask: var(--choice-tick) center / contain no-repeat;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+:where(input[type="checkbox"]:indeterminate:not(.sw-switch))::before {
+  mask-image: var(--choice-bar);
+}
+
+:where(input[type="radio"])::before {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  mask: none;
+}
+
+@media (pointer: coarse), (max-width: 600px) {
+  :where(input[type="checkbox"]:not(.sw-switch))::before {
+    width: 14px;
+    height: 14px;
+  }
+
+  :where(input[type="radio"])::before {
+    width: 8px;
+    height: 8px;
+  }
+}
+
+:where(input[type="checkbox"]:not(.sw-switch), input[type="radio"]):is(:checked, :indeterminate) {
+  border-color: var(--accent);
+  background-color: var(--accent);
+}
+
+:where(input[type="checkbox"]:not(.sw-switch), input[type="radio"]):is(:checked, :indeterminate)::before {
+  opacity: 1;
+}
+
+:where(input[type="checkbox"]:not(.sw-switch), input[type="radio"]):hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+:where(input[type="checkbox"]:not(.sw-switch), input[type="radio"]):focus-visible {
+  border-color: var(--accent);
+  box-shadow: var(--field-ring);
+}
+
+:where(input[type="checkbox"]:not(.sw-switch), input[type="radio"])[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+:where(input[type="checkbox"]:not(.sw-switch), input[type="radio"]):disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
