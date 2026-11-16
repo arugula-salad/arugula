@@ -39,12 +39,19 @@ const EVERY_SPEC = [
   /^scripts\/pr-plan$/,
 ];
 
+// Files whose names say nothing of what they reach, and the specs that do
+// reach them. web/src/platform's own files are the app's frame (its router,
+// page, rail and bar), which every page goes through and the app-* specs walk:
+// #2584 changed page.tsx and router.ts, ran none of them, and broke
+// app-frame.spec.ts in six merge groups (Arugula #718).
+const REACHES = [{ path: /^web\/src\/platform\/[^/]+$/, specs: /^app-/ }];
+
 // The specs that walk the product end to end: every run takes them, about one shard.
 const ALWAYS = ["journey-j1", "journey-j2a", "journey-j5", "journey-j6", "blocks-control", "layout", "restore", "platform", "chrome"].map((s) => `${s}.spec.ts`);
 
 // Words in paths that say nothing about which spec cares.
 const STOP = new Set(
-  "api app apps arugula arugulad base client common control core crates css daemon dialog e2e github index lib main mod page pages platform rs scripts server shared shell spec src state steps style test tests ts tsx types ui utils web cases".split(" "),
+  "api app apps arugula arugulad base client common control core crates css daemon dialog e2e github index lib main mod page pages platform rs scripts server shared shell spec src state steps style test tests ts tsx types ui utils web webkit cases".split(" "),
 );
 
 // A file's words: its directories and its name, in lower case, a plural as its singular.
@@ -63,8 +70,9 @@ export function select(changed, specs, durations) {
 
   const chosen = new Set(ALWAYS.filter((s) => specs.includes(s)));
   const wanted = new Set(files.flatMap(words));
+  const reached = REACHES.filter((r) => files.some((f) => r.path.test(f)));
   for (const spec of specs) {
-    if (files.includes(`web/e2e/${spec}`) || words(spec).some((w) => wanted.has(w))) chosen.add(spec);
+    if (files.includes(`web/e2e/${spec}`) || words(spec).some((w) => wanted.has(w)) || reached.some((r) => r.specs.test(spec))) chosen.add(spec);
   }
   const seconds = (s) => durations[s] ?? UNKNOWN_SECONDS;
   const total = [...chosen].reduce((a, s) => a + seconds(s), 0);
@@ -75,7 +83,10 @@ export function select(changed, specs, durations) {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const specs = readdirSync("e2e").filter((f) => f.endsWith(".spec.ts") && !f.endsWith(".webkit.spec.ts"));
+  // The WebKit specs too: the shards run both projects (E2E_SET=rest). Left
+  // out, a changed *.webkit.spec.ts never ran before the queue (#2414's
+  // failed seven groups, Arugula #718).
+  const specs = readdirSync("e2e").filter((f) => f.endsWith(".spec.ts"));
   const durations = existsSync("e2e/durations.json") ? JSON.parse(readFileSync("e2e/durations.json", "utf8")) : {};
   const changed = readFileSync(0, "utf8").split("\n").map((l) => l.trim());
   console.log(JSON.stringify(select(changed, specs, durations)));

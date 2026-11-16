@@ -22,7 +22,7 @@ cd "$w"
 mkdir -p scripts web/scripts web/e2e web/src docs crates/platform-chat/src crates/control-wire/src
 cp "$src/scripts/pr-plan" scripts/
 cp "$src/web/scripts/e2e-select.mjs" web/scripts/
-for s in journey-j1 layout board-find board-labels chat-block control; do : >"web/e2e/$s.spec.ts"; done
+for s in journey-j1 layout board-find board-labels chat-block control app-frame; do : >"web/e2e/$s.spec.ts"; done
 : >web/e2e/board-find.webkit.spec.ts
 : >web/e2e/helpers.ts
 cat >web/e2e/durations.json <<'JSON'
@@ -68,7 +68,18 @@ only_has "the specs named like the change" board-find.spec.ts
 only_has "a plural in a path finds them too" board-labels.spec.ts
 only_has "the ones that always run" journey-j1.spec.ts
 only_lacks "not the rest" chat-block.spec.ts
-only_lacks "not a WebKit spec" webkit
+only_has "and the WebKit spec named like it" board-find.webkit.spec.ts
+only_lacks "not the app's frame" app-frame.spec.ts
+
+plan web/e2e/board-find.webkit.spec.ts
+only_has "a changed WebKit spec runs" board-find.webkit.spec.ts
+
+plan web/src/platform/router.ts
+only_has "the app's frame: the app-* specs" app-frame.spec.ts
+only_lacks "and not every spec" chat-block.spec.ts
+
+plan web/src/platform/pages/chat.tsx
+only_lacks "a page isn't the frame" app-frame.spec.ts
 
 plan crates/platform-chat/src/rooms.rs
 only_has "a crate's name counts" chat-block.spec.ts
