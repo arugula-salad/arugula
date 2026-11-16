@@ -145,5 +145,5 @@ export const presence = new PresenceStore();
 export function presenceItems(): MenuItem[] {
   if (!presence.on) return [];
   const item = (label: string, mode: PresenceMode): MenuItem => ({ label, checked: presence.mode === mode, run: () => void presence.setMode(mode) });
-  return [{ header: "Your presence" }, item("Automatic", "auto"), item("Away", "away"), item("Appear offline", "offline"), "separator"];
+  return [{ header: "Your presence" }, item("Automatic", "auto"), item("Away", "away"), item("Appear offline", "offline")];
 }

@@ -21,7 +21,6 @@ import { UpdateChip } from "./update";
 import { WindowButtons } from "../../shared/ui/window-buttons";
 import { countView } from "../../shared/telemetry";
 import { AccountPicture } from "../../shared/chat/avatar";
-import { presenceItems } from "../../shared/chat/presence";
 import { Caret, SearchIcon } from "../../shared/ui/icons";
 
 /** Who is signed in, through control: their name and their account's
@@ -144,7 +143,8 @@ export function AccountButton({ client }: { client: Client | null }) {
     const mine: MenuItem[] = account ? [{ header: accountHeader(login), name: !!login }, ...account.items(), "separator"] : [];
     const settings: MenuItem[] = rail ? [{ label: "Settings", run: () => openSettings() }] : settingsItems(client);
     if (!rail) countView("settings");
-    const items: MenuItem[] = [...mine, ...presenceItems(), ...settings];
+    // Your presence is Chat's "you" row (Arugula #1079), not this menu's.
+    const items: MenuItem[] = [...mine, ...settings];
     if (account) items.push("separator", { label: "Sign out", run: () => account!.signOut() });
     // Right-aligned under the button; the menu keeps itself on screen.
     openMenu({ clientX: r.right, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() }, items, e.currentTarget as HTMLElement);
