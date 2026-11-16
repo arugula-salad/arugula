@@ -14,7 +14,7 @@
 #   ARUGULA_RELEASE_TRAIN is on (a repository variable)
 #   no release.yml run is going, and no `scripts/release bump` tagged the commit
 #   the last release.yml run (the train's or a hand cut's) started at least
-#   ARUGULA_TRAIN_GAP_MINUTES ago (default 120; the workflow's manual run passes 0)
+#   ARUGULA_TRAIN_GAP_MINUTES ago (default 60; the workflow's manual run passes 0)
 #   the commit is newer than the last v* tag, and something in between added a note
 #
 # Minor and major versions stay a person's: `just release minor COMMIT --notes FILE`.
@@ -45,7 +45,7 @@ if [ "$going" != 0 ]; then
   say "a release is already going: not starting another"
   exit 0
 fi
-gap=${ARUGULA_TRAIN_GAP_MINUTES:-120}
+gap=${ARUGULA_TRAIN_GAP_MINUTES:-60}
 if [ -n "${started:-}" ] && [ "$gap" != 0 ]; then
   ago=$(node -e 'console.log(Math.floor((Date.now() - Date.parse(process.argv[1])) / 60000))' "$started")
   if [ "$ago" -lt "$gap" ]; then

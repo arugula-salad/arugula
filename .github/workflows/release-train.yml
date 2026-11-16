@@ -2,10 +2,11 @@ name: release-train
 
 # The daemon's release, when something's worth telling people
 # (scripts/release-train). It starts when chant's tick finishes on main, so a
-# commit that turns green is looked at within minutes, and the script keeps 2
-# hours between releases. The cron is only a backstop: from Nov 7 to Nov 9
-# GitHub ran 12 of ~280 of the tick's scheduled runs and 9 of ~17 of this
-# one's, while the tick's workflow_run fired 188 times (Arugula #794). The
+# commit that turns green is looked at within minutes, and the script keeps an
+# hour between releases (two until 2026-11-16). The cron is only a
+# backstop: from Nov 7 to Nov 9 GitHub ran 12 of ~280 of the tick's
+# scheduled runs and 9 of ~17 of this one's, while the tick's workflow_run
+# fired 188 times (Arugula #794). The
 # repository variable ARUGULA_RELEASE_TRAIN=on turns it on. A manual run does
 # the same without the gap, and is how to send one now.
 on:
@@ -56,4 +57,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           ARUGULA_RELEASE_TRAIN: ${{ vars.ARUGULA_RELEASE_TRAIN }}
-          ARUGULA_TRAIN_GAP_MINUTES: ${{ github.event_name == 'workflow_dispatch' && '0' || '120' }}
+          ARUGULA_TRAIN_GAP_MINUTES: ${{ github.event_name == 'workflow_dispatch' && '0' || '60' }}
