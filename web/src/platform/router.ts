@@ -76,12 +76,20 @@ const changed = (popped = false) => {
 /** Where the page is now, to come back to when leaving is refused. */
 let here = location.pathname + location.search;
 
+// How many times Back (or Forward) has moved the page: an effect worked out
+// before one acts on a page it no longer shows (Arugula #1074).
+let pops = 0;
+/** The count of Back and Forward moves so far, to tell whether one came
+ * between a render and its effect. */
+export const popCount = () => pops;
+
 addEventListener("popstate", () => {
   // Back, with changes not saved and kept: the address goes back to them.
   if (holding && !holding()) {
     history.pushState(null, "", here);
     return;
   }
+  pops++;
   before = null;
   changed(true);
 });

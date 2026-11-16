@@ -15,7 +15,7 @@ import { homes, movedHome, names, resolve, roomElsewhere } from "./links";
 import { currentProject, entryPath, type Entry } from "./current-project";
 import { slugIn } from "./paths";
 import { arrive, openingChat } from "./chat-nav";
-import { follow, go, pathOf, useRoute, type Route } from "./router";
+import { follow, go, pathOf, popCount, useRoute, type Route } from "./router";
 import type { MachineAt } from "../shared/machine-paths";
 import { controlOrigin, session } from "./session";
 import { signIn } from "./signin";
@@ -250,9 +250,12 @@ function useFind(r: Route): string | null {
     if (ask) (ask.startsWith("run_") ? runs.get(ask) : issues.get(ask)).catch(() => live && setLost(ask));
     return () => void (live = false);
   }, [ask]);
+  // Not after a Back: an effect runs after the paint, and a Back before
+  // then has left the page it was found for (Arugula #1074).
+  const pops = popCount();
   useEffect(() => {
-    if (to) arrive(to);
-  }, [to]);
+    if (to && popCount() === pops) arrive(to);
+  }, [to, pops]);
   return lost;
 }
 
@@ -319,7 +322,11 @@ function useSlug(r: Route) {
   useSubscribe((fn) => issues.subscribe(fn));
   const known = (id: string) => names(id) ?? slugIn(location.pathname, id);
   const want = r.page === "missing" || r.page === "find" || (r.page === "home" && r.to) ? null : (roomElsewhere(r) ?? movedHome(r) ?? pathOf(r, known));
+  // Not after a Back: the effect runs after the paint, and a Back before
+  // then would have it replace the entry Back went to with this page's
+  // (Arugula #1074).
+  const pops = popCount();
   useEffect(() => {
-    if (want && want !== location.pathname + location.search && session.state === "ready") go(want + location.hash, true);
-  }, [want, session.state]);
+    if (want && want !== location.pathname + location.search && popCount() === pops && session.state === "ready") go(want + location.hash, true);
+  }, [want, pops, session.state]);
 }
