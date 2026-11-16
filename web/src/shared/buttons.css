@@ -449,50 +449,6 @@ html .secondary:is(.on, [aria-pressed="true"]):hover:not(:disabled) {
   color: var(--accent);
 }
 
-/* -- A field (a text box, a select, a time) outside a dialog: the dialogs'
-      fields' look (style.css's .prompt input), from the same corners.
-      Checkboxes on the platform's pages are its switches (settings.css's
-      .sw-switch). */
-
-.field {
-  box-sizing: border-box;
-  min-height: 32px;
-  padding: 6px 8px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--field-radius);
-  background: var(--letterbox);
-  color: var(--fg);
-  font: inherit;
-  outline: none;
-}
-
-.field:focus {
-  border-color: var(--accent);
-}
-
-.field:disabled {
-  opacity: 0.5;
-}
-
-.field.small {
-  min-height: 24px;
-  padding: 2px 6px;
-  font-size: var(--text-sm);
-}
-
-/* A select draws its own caret, so it looks the same everywhere. */
-select.field {
-  appearance: none;
-  -webkit-appearance: none;
-  padding-right: 26px;
-  background:
-    linear-gradient(45deg, transparent 50%, var(--dim) 50%) right 13px top 50% / 5px 5px no-repeat,
-    linear-gradient(-45deg, transparent 50%, var(--dim) 50%) right 8px top 50% / 5px 5px no-repeat,
-    var(--letterbox);
-  cursor: pointer;
-}
-
-input[type="time"].field::-webkit-calendar-picker-indicator {
-  filter: invert(0.5);
-  cursor: pointer;
-}
+/* -- A field: ./fields.css draws every input, select and textarea, and
+      `.field` is its alias (#1097). Checkboxes on the platform's pages are
+      its switches (settings.css's .sw-switch). */

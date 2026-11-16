@@ -7,6 +7,7 @@
 import { render } from "preact";
 import { useRef, useState } from "preact/hooks";
 import "../src/shared/style.css";
+import "../src/shared/fields.css";
 import "../src/shared/buttons.css";
 import { Svg } from "../src/shared/ui/icons";
 import {

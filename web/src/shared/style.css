@@ -2594,9 +2594,14 @@ button.agent-image {
   font: var(--text-md) var(--f-mono);
   padding: 8px;
   color: var(--fg);
-  background: var(--letterbox);
+  background-color: var(--letterbox);
   border: 1px solid var(--line-strong);
   border-radius: var(--field-radius);
+}
+
+/* Room for the kit's caret (shared/fields.css, #1097). */
+.agent-dialog select {
+  padding-right: 28px;
 }
 
 .agent-dialog label.check {
@@ -2645,10 +2650,12 @@ button.agent-image {
 
 .chat-block-model {
   max-width: 40%;
-  padding: 2px 6px;
+  /* Its own height, and room for the kit's caret (shared/fields.css). */
+  height: auto;
+  padding: 2px 22px 2px 6px;
   font-size: var(--text-sm);
   color: var(--fg);
-  background: var(--bg);
+  background-color: var(--bg);
   border: 1px solid var(--line);
   border-radius: var(--field-radius);
 }
@@ -3551,6 +3558,9 @@ button.agent-image {
 }
 
 .control-rest-field input {
+  /* The box around it is the field: not the kit's (shared/fields.css). */
+  height: auto;
+  box-shadow: none;
   width: 20ch;
   min-width: 0;
   padding: 6px 8px 6px 1px;
@@ -4097,9 +4107,9 @@ button.agent-image {
 }
 
 .share-dialog select {
-  padding: 4px;
+  padding: 4px 28px 4px 4px;
   color: var(--fg);
-  background: var(--letterbox);
+  background-color: var(--letterbox);
   border: 1px solid var(--line-strong);
   border-radius: var(--field-radius);
 }
@@ -5399,7 +5409,9 @@ button.diff-why-run {
 .ws-env {
   min-width: 0;
   max-width: 14em;
-  background: var(--raised);
+  /* Room for the kit's caret (shared/fields.css, #1097). */
+  padding: 0 24px 0 6px;
+  background-color: var(--raised);
   color: var(--fg);
   border: 0;
   border-radius: var(--tag-radius);
@@ -7341,8 +7353,13 @@ html[data-scheme="light"] .doc {
   padding: 4px 8px;
   border-radius: var(--field-radius);
   border: 1px solid var(--line);
-  background: var(--bg);
+  background-color: var(--bg);
   color: var(--fg);
+}
+
+/* Room for the kit's caret (shared/fields.css, #1097). */
+.agents-field select {
+  padding-right: 28px;
 }
 
 .agents-field textarea {
@@ -8319,6 +8336,8 @@ button.thread-quote:hover {
 }
 
 .thread-compose textarea {
+  /* The box around it is the field: no halo of the kit's (shared/fields.css). */
+  box-shadow: none;
   resize: none;
   min-height: 1.45em;
   padding: 10px 12px;
@@ -8878,6 +8897,9 @@ input.chat-search {
 }
 
 .chat-switcher input {
+  /* The box around it is the field: not the kit's (shared/fields.css). */
+  height: auto;
+  box-shadow: none;
   box-sizing: border-box;
   width: 100%;
   padding: 14px 16px;
@@ -9316,9 +9338,9 @@ input.chat-search {
 }
 
 .conv-dialog select {
-  padding: 6px 8px;
+  padding: 6px 28px 6px 8px;
   color: var(--fg);
-  background: var(--letterbox);
+  background-color: var(--letterbox);
   border: 1px solid var(--line-strong);
   border-radius: var(--field-radius);
 }
@@ -10762,6 +10784,9 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 }
 
 .ws-search input {
+  /* The box around it is the field: not the kit's (shared/fields.css). */
+  height: auto;
+  box-shadow: none;
   flex: 1;
   min-width: 0;
   border: 0;
@@ -12086,7 +12111,7 @@ html[data-workspace="new"] .thread-panel {
   box-sizing: border-box;
   border: 1px solid var(--line);
   border-radius: var(--field-radius);
-  background: var(--bg);
+  background-color: var(--bg);
   color: var(--fg);
   font: inherit;
 }

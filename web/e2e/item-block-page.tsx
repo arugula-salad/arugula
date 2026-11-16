@@ -4,6 +4,7 @@
 
 import { render } from "preact";
 import "../src/shared/style.css";
+import "../src/shared/fields.css";
 import "../src/shared/buttons.css";
 import { ItemBlock, type ItemFact } from "../src/shared/ui/item-block";
 

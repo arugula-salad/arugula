@@ -25,6 +25,8 @@ import "./phone-machines.css";
 import "./docs-page.css";
 import "../shared/ui/settings-section.css";
 import "./settings-page.css";
+// Every input, select and textarea (#1097), at no specificity.
+import "../shared/fields.css";
 // The one button set (UI audit #158), last: what it draws, it draws everywhere.
 import "../shared/buttons.css";
 import { apply as applyAppearance } from "../shared/appearance";

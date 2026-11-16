@@ -728,10 +728,10 @@ html[data-corners="square"] .platform-section {
 .run-start select {
   box-sizing: border-box;
   height: 28px;
-  padding: 4px 8px;
+  padding: 4px 28px 4px 8px;
   border: 1px solid var(--line-strong);
   border-radius: var(--field-radius);
-  background: var(--letterbox);
+  background-color: var(--letterbox);
   color: var(--fg);
   font: inherit;
 }
@@ -1074,9 +1074,14 @@ html[data-corners="square"] .platform-section {
   padding: 4px 8px;
   border: 1px solid var(--line-strong);
   border-radius: var(--field-radius);
-  background: var(--letterbox);
+  background-color: var(--letterbox);
   color: var(--fg);
   font: inherit;
+}
+
+/* Room for the kit's caret (shared/fields.css, #1097). */
+.deploy-form select {
+  padding-right: 28px;
 }
 
 .deploy-form .deploy-commit {

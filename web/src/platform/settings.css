@@ -229,11 +229,13 @@
 
 .platform .agent-level {
   font: 500 var(--text-xs)/1.2 var(--f-mono);
-  padding: 3px 6px;
+  /* Its own height, and room for the kit's caret (shared/fields.css). */
+  height: auto;
+  padding: 3px 22px 3px 6px;
   max-width: 100%;
   border-radius: 6px;
   border: 1px solid var(--line);
-  background: none;
+  background-color: transparent;
   color: var(--dim);
   cursor: pointer;
 }
@@ -934,7 +936,7 @@
 
 .platform .defaults-table .defaults-own,
 .platform .defaults-table .defaults-own select {
-  background: var(--raised);
+  background-color: var(--raised);
   font-weight: 600;
 }
 
