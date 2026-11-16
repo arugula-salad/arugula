@@ -104,10 +104,10 @@ jobs:
   # Every spec, listed (#917): Playwright loads each spec file to list it,
   # so one that imports a file nobody committed fails here in seconds, not
   # in all twelve of the queue's shards (#2414 imported web/e2e/doc-share-rig
-  # and failed five groups). Whatever pr-plan picked: E2E_SET=rest, the set
-  # the queue's shards run, in both projects (chrome, and webkit for the
-  # *.webkit.spec.ts files). Not the nightly sets (stack, perf): the queue
-  # doesn't run them either, so a pull request isn't held for them.
+  # and failed five groups). Whatever pr-plan picked: every set, the
+  # queue's (rest) and the nightlies' (stack, perf), in both projects
+  # (chrome, and webkit for the *.webkit.spec.ts files). A nightly spec
+  # that can't load is found here, not the next morning (Arugula #928).
   # E2E_BASE_URL leaves Playwright's webServer out: listing needs no
   # daemon, so this job builds nothing.
   specs:
@@ -128,7 +128,6 @@ jobs:
       - name: Every spec loads
         run: cd web && pnpm exec playwright test --list
         env:
-          E2E_SET: rest
           E2E_BASE_URL: http://127.0.0.1:9
 
   # check.yml's clippy, the root workspace's half (#917): 10 of the 40

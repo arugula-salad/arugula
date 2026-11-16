@@ -91,7 +91,8 @@ GitHub had failed their jobs, and jobs waiting only on `build` (done
 between 23:04 and 23:12.
 
 **The pool** (home-cloud `platform/arc/runner-scale-set-arugula-amd64.yaml`):
-maxRunners 24, minRunners 0; the runner requests 1 CPU / 3Gi at the time
+maxRunners 24 then (8 since, on purpose: see development.md's CI section),
+minRunners 0; the runner requests 1 CPU / 3Gi at the time
 (2 CPU since home-cloud 7c2c5867, 2026-10-28 01:48Z), limit 16Gi, no CPU
 limit; dind 0.5 CPU / 512Mi, limit 4Gi; PriorityClass `ci-runner` (-100,
 evicted first); spread across nodes only since 7c2c5867. The amd64 nodes
@@ -126,7 +127,7 @@ that day), 2026-10-24 (four), and 2026-10-28 02:08 (all seven jobs of
   heavy job running. `build: newest` (section 1) also does it, one run at
   a time per ref, if that lands first.
 - Ours: docs/development.md says "2.5 CPUs and 5 GB … up to eight run at
-  once"; the pool is 24 runners at 2.5 CPU / 3.5Gi, and `scripts/ci-slot`
+  once"; the pool was 24 runners (8 now) at 2.5 CPU / 3.5Gi, and `scripts/ci-slot`
   limits nothing across pods (each has its own filesystem).
 - home-cloud's, as findings: a runner memory request of about 6Gi makes the
   scheduler stop near 13 to 14 heavy pods (85 / 6.5) and leave the rest
