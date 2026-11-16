@@ -48,20 +48,11 @@ export function ProjectHome({ id, board, card }: { id: string; board?: string; c
   if (!p) return <Missing what="That project isn't one of yours (or it's gone)." />;
   const rooms = chat.on ? chat.rooms.filter((r) => (p.team ? r.team === p.team.id : !r.team) && (r.kind === "channel" || r.kind === "dm")) : [];
   const chatPath = pathOf({ page: "chat", project: p.id }, names);
-  const settingsPath = pathOf({ page: "project-settings", project: p.id }, names);
   const workspacesPath = pathOf({ page: "workspaces", project: p.id }, names);
   const sections = <HomeSections p={p} boards={boards} workspaces={workspaces} rooms={rooms} chatPath={chatPath} workspacesPath={workspacesPath} />;
   return (
     <section class="platform-section sw-page" data-project-home={p.id}>
-      <PageHeader
-        title={p.name}
-        named
-        sub={
-          <a href={settingsPath} data-project-settings onClick={(e) => follow(e, settingsPath)}>
-            Project settings
-          </a>
-        }
-      />
+      <PageHeader title={p.name} named />
       {Overview ? (
         <Overview project={p.id} board={board} card={card}>
           {sections}
