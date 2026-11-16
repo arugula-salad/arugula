@@ -88,14 +88,14 @@ export type Route =
   | { page: "project"; project: string; board?: string; card?: string }
   | { page: "issues"; project: string; state?: "closed"; q?: string; label?: string; assignee?: string }
   | { page: "new-issue"; project: string }
-  | { page: "issue"; project: string; issue: string; msg?: number }
+  | { page: "issue"; project: string; issue: string; msg?: number; thread?: number }
   | { page: "triage"; project: string }
   | { page: "boards"; project: string }
   | { page: "board"; project: string; board: string }
   | { page: "docs"; project?: string; all?: true }
   | { page: "doc"; project: string; doc: string }
   | { page: "runs"; project: string; state?: string; trigger?: string; spec?: string }
-  | { page: "run"; project: string; run: string; msg?: number }
+  | { page: "run"; project: string; run: string; msg?: number; thread?: number }
   | { page: "sessions"; project: string; label?: string; tracker?: number; asker?: string; going?: boolean }
   | { page: "session"; project: string; session: string }
   | { page: "chat"; project: string; room?: string; msg?: number; thread?: number; view?: "activity" | "saved" | "search" | "threads"; q?: string; all?: boolean }
@@ -119,8 +119,8 @@ export type Route =
   | { page: "machines"; project: string; at: MachineAt }
   /** An id-only address, to be put where it belongs (`resolve`). */
   | { page: "find"; what: "chat"; room?: string; msg?: number; thread?: number; view?: "activity" | "saved" | "search" | "threads"; q?: string; all?: boolean }
-  | { page: "find"; what: "issue"; issue: string; msg?: number }
-  | { page: "find"; what: "run"; run: string; msg?: number }
+  | { page: "find"; what: "issue"; issue: string; msg?: number; thread?: number }
+  | { page: "find"; what: "run"; run: string; msg?: number; thread?: number }
   | { page: "find"; what: "machines"; at: MachineAt }
   | { page: "missing"; path: string };
 
@@ -229,11 +229,11 @@ export function parse(path: string, search = ""): Route {
   }
   if (parts[0] === "issues" && parts.length === 2) {
     const issue = idOf(parts[1]);
-    return issue?.startsWith("iss_") ? { page: "find", what: "issue", issue, ...msg } : missing;
+    return issue?.startsWith("iss_") ? { page: "find", what: "issue", issue, ...msg, ...thread } : missing;
   }
   if (parts[0] === "runs" && parts.length === 2) {
     const run = idOf(parts[1]);
-    return run?.startsWith("run_") ? { page: "find", what: "run", run, ...msg } : missing;
+    return run?.startsWith("run_") ? { page: "find", what: "run", run, ...msg, ...thread } : missing;
   }
   if (parts.length === 1 && parts[0] === "installed") {
     // The state linking handed GitHub: `<project>:<OWNER/NAME>`.
@@ -291,7 +291,7 @@ export function parse(path: string, search = ""): Route {
     const room = idOf(parts[3]);
     return room ? { page: "dm", project, room, ...msg, ...thread } : missing;
   }
-  if (parts[2] === "issues") return issueRoute(project, parts.slice(3), q, msg) ?? missing;
+  if (parts[2] === "issues") return issueRoute(project, parts.slice(3), q, { ...msg, ...thread }) ?? missing;
   if (parts[2] === "triage" && parts.length === 3) return { page: "triage", project };
   if (parts[2] === "boards" && parts.length === 3) return { page: "boards", project };
   if (parts[2] === "boards" && parts.length === 4) {
@@ -312,7 +312,7 @@ export function parse(path: string, search = ""): Route {
   }
   if (parts[2] === "runs" && parts.length === 4) {
     const run = idOf(parts[3]);
-    return run?.startsWith("run_") ? { page: "run", project, run, ...msg } : missing;
+    return run?.startsWith("run_") ? { page: "run", project, run, ...msg, ...thread } : missing;
   }
   if (parts[2] === "sessions" && parts.length === 3) {
     const t = q.get("tracker");
@@ -338,7 +338,7 @@ export function parse(path: string, search = ""): Route {
 }
 
 /** `/p/:project/issues…`, past the project, or null. */
-function issueRoute(project: string, rest: string[], q: URLSearchParams, msg: { msg?: number }): Route | null {
+function issueRoute(project: string, rest: string[], q: URLSearchParams, msg: { msg?: number; thread?: number }): Route | null {
   if (rest.length === 0) {
     const filters = {
       ...(q.get("state") === "closed" ? { state: "closed" as const } : {}),
@@ -371,7 +371,8 @@ function searchQuery(r: { q?: string; all?: boolean }): string {
   return parts.length ? `?${parts.join("&")}` : "";
 }
 
-/** A room's `?msg=N&thread=P`: the message to show, and the thread beside it (#106). */
+/** A room's `?msg=N&thread=P`: the message to show, and the thread beside it
+ * (#106); an issue's or a run's comments too. */
 function at(r: { msg?: number; thread?: number }): string {
   const q = [r.msg !== undefined ? `msg=${r.msg}` : "", r.thread !== undefined ? `thread=${r.thread}` : ""].filter(Boolean);
   return q.length ? `?${q.join("&")}` : "";
@@ -427,7 +428,7 @@ export function pathOf(r: Route, names: Names = () => null): string {
       return `/p/${s(r.project)}/runs${qs ? `?${qs}` : ""}`;
     }
     case "run":
-      return `/p/${s(r.project)}/runs/${s(r.run)}${r.msg !== undefined ? `?msg=${r.msg}` : ""}`;
+      return `/p/${s(r.project)}/runs/${s(r.run)}${at(r)}`;
     case "sessions": {
       const qs = waveQuery(r);
       return `/p/${s(r.project)}/sessions${qs ? `?${qs}` : ""}`;
@@ -435,7 +436,7 @@ export function pathOf(r: Route, names: Names = () => null): string {
     case "session":
       return `/p/${s(r.project)}/sessions/${r.session}`;
     case "issue":
-      return `/p/${s(r.project)}/issues/${s(r.issue)}${r.msg !== undefined ? `?msg=${r.msg}` : ""}`;
+      return `/p/${s(r.project)}/issues/${s(r.issue)}${at(r)}`;
     case "dm":
       return `/p/${s(r.project)}/dm/${s(r.room)}${at(r)}`;
     case "workspaces":
@@ -474,9 +475,9 @@ export function pathOf(r: Route, names: Names = () => null): string {
         if (r.view === "search") return `/chat/search${searchQuery(r)}`;
         return r.room ? `/chat/${s(r.room)}${at(r)}` : "/chat";
       }
-      if (r.what === "issue") return `/issues/${s(r.issue)}${r.msg !== undefined ? `?msg=${r.msg}` : ""}`;
+      if (r.what === "issue") return `/issues/${s(r.issue)}${at(r)}`;
       if (r.what === "machines") return machinesPath(r.at, machineSlug(r.at, names));
-      return `/runs/${s(r.run)}${r.msg !== undefined ? `?msg=${r.msg}` : ""}`;
+      return `/runs/${s(r.run)}${at(r)}`;
     case "missing":
       return r.path;
   }

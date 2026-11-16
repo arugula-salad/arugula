@@ -24,6 +24,7 @@ import { agentWhere, isCi } from "../agent-label";
 import { chat } from "../chat-store";
 import { MsgAvatar } from "../chat/avatar";
 import { RoomBody, type Between } from "../chat/room";
+import { ThreadBeside } from "../chat/thread-beside";
 import { Time } from "../ui/time";
 import { usePlatformApi } from "../platform-api";
 import { Markdown } from "../ui/markdown";
@@ -139,6 +140,7 @@ export function IssueView({
   place,
   id,
   msg,
+  thread,
   back,
   foot,
   refresh,
@@ -149,6 +151,8 @@ export function IssueView({
   id: string;
   /** A comment to land on. */
   msg?: number;
+  /** A comment whose replies are open beside it (`msg` is then one of them). */
+  thread?: number;
   /** Over the title: the way back to a list. */
   back?: BackLink;
   /** Under the thread: where it's read from. */
@@ -366,7 +370,7 @@ export function IssueView({
           </article>
           <div class="issue-thread chat-thread" data-issue-thread={room?.id}>
             {room ? (
-              <RoomBody room={room} phone={phone} focus={msg} embedded name={`#${issue.number}`} between={between} empty={{ title: "No comments yet" }} />
+              <RoomBody room={room} phone={phone} focus={thread === undefined ? msg : undefined} embedded name={`#${issue.number}`} between={between} empty={{ title: "No comments yet" }} />
             ) : (
               <>
                 {between.map((b) => (
@@ -379,6 +383,7 @@ export function IssueView({
             )}
           </div>
           {foot && <p class="issue-foot dim">{foot}</p>}
+          {room && thread !== undefined && <ThreadBeside room={room} parent={thread} focus={msg} phone={phone} />}
         </div>
       </div>
     </section>

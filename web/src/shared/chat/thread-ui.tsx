@@ -28,6 +28,14 @@ export function threads(room: ChatRoom): boolean {
   return room.kind === "channel" || room.kind === "dm" || room.kind === "pane" || room.kind === "session";
 }
 
+/** Whether a message's replies show under it: in a room that takes them,
+ * and in an issue's or a run's comments, where an agent answers a mention
+ * in the comment's thread (read in a Thread panel over the page, as a
+ * channel's are). No one starts a thread there. */
+export function showsReplies(room: ChatRoom): boolean {
+  return threads(room) || room.kind === "object";
+}
+
 messageHooks.thread = {
   run: ({ room, m }) => nav?.openRoom(room.id, undefined, rootOf(m)),
   when: ({ room, m }) => threads(room) && room.writable && m.deleted === null && m.imported === null,
@@ -38,7 +46,7 @@ messageHooks.thread = {
 export function ThreadFooter({ room, m }: { room: ChatRoom; m: ChatMessage }) {
   const { nav } = usePlatformApi();
   const t = m.thread;
-  if (!t || !threads(room)) return null;
+  if (!t || !showsReplies(room)) return null;
   const unread = t.following ? t.unread : 0;
   return (
     <button

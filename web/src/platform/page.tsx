@@ -95,7 +95,7 @@ function body(r: Route, lost: string | null) {
     case "new-issue":
       return <NewIssuePage project={r.project} />;
     case "issue":
-      return <IssuePage project={r.project} issue={r.issue} msg={r.msg} />;
+      return <IssuePage project={r.project} issue={r.issue} msg={r.msg} thread={r.thread} />;
     case "triage":
       return <BoardsPage project={r.project} scroll />;
     case "boards":
@@ -109,7 +109,7 @@ function body(r: Route, lost: string | null) {
     case "runs":
       return <RunsPage project={r.project} filter={{ state: r.state, trigger: r.trigger, spec: r.spec }} />;
     case "run":
-      return <RunPage project={r.project} run={r.run} msg={r.msg} />;
+      return <RunPage project={r.project} run={r.run} msg={r.msg} thread={r.thread} />;
     case "sessions":
       return <SessionsPage project={r.project} filter={{ label: r.label, tracker: r.tracker, asker: r.asker, going: r.going }} />;
     case "session":
