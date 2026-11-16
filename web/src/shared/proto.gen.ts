@@ -1269,7 +1269,7 @@ export type ChatLive = { "type": "hello", stream: string, } | { "type": "message
 /**
  * How far a [`ChatMentionStatus`] has got.
  */
-export type ChatMentionState = "sending" | "delivered" | "fell_back" | "waiting" | "queued" | "silenced" | "no_such_session" | "offline" | "answered" | "chain" | "working" | "read" | "dropped" | "not_granted";
+export type ChatMentionState = "sending" | "delivered" | "fell_back" | "waiting" | "queued" | "silenced" | "no_such_session" | "offline" | "mentions_off" | "answered" | "chain" | "working" | "read" | "dropped" | "not_granted";
 
 /**
  * Where a message's `@machine` mention got to (#502), as control knows it:

@@ -548,6 +548,10 @@ pub enum ChatMentionState {
     NoSuchSession,
     /// The machine is offline, or didn't answer.
     Offline,
+    /// The machine's owner turned agent mentions off on it (`arugulad
+    /// sharing agent-mentions off`): it refused the mention and kept
+    /// nothing. Final: it isn't sent again when the machine connects.
+    MentionsOff,
     /// The machine's agent replied in the thread (`reply`).
     Answered,
     /// Not delivered (#575): an agent's post, in a chain of agents' replies

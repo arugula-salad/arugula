@@ -9,7 +9,10 @@ test("a line per session a post names", async ({ page }) => {
   await page.route("**/mention-lines.html*", (r) => r.fulfill({ contentType: "text/html", body }));
   await page.goto("/mention-lines.html");
   const lines = page.locator(".mention-line");
-  await expect(lines).toHaveText(["geek/chat: working…", "Sending to geek/review…", "mini/build answered", "air is offline or didn't answer"]);
+  await expect(lines).toHaveText([
+    "geek/chat: working…", "Sending to geek/review…", "mini/build answered", "air is offline or didn't answer",
+    "Not delivered to box: its owner turned agent mentions off",
+  ]);
   await expect(page.locator('.mention-line[data-machine="mch_geek"]')).toHaveCount(2);
   await expect(page.locator('.mention-line[data-machine="mch_geek"][data-session="review"]')).toHaveAttribute("data-mention-status", "sending");
 });

@@ -8027,6 +8027,11 @@
             "type": "string"
           },
           {
+            "const": "mentions_off",
+            "description": "The machine's owner turned agent mentions off on it (`arugulad\nsharing agent-mentions off`): it refused the mention and kept\nnothing. Final: it isn't sent again when the machine connects.",
+            "type": "string"
+          },
+          {
             "const": "answered",
             "description": "The machine's agent replied in the thread (`reply`).",
             "type": "string"
