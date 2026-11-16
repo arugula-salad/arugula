@@ -218,12 +218,14 @@
 /* AppKit's overlay buttons occupy a ~78px-wide, 28px-high strip: they
    cannot fit above a 56px rail. Reserve it across the entire workspace,
    keeping the brand and its hover target below the native controls.
-   Native tabs already reserve their measured titlebar height. */
-html[data-desktop="macos"]:not([data-native-tabs]) .app.ws {
+   Native tabs already reserve their measured titlebar height. Inside the
+   app's frame (the Machines page) the frame's own strip is the one
+   (platform.css), so the workspace skips its own (Arugula #1089). */
+html[data-desktop="macos"]:not([data-native-tabs]) .app.ws:not(.platform .app.ws) {
   padding-top: 28px;
   box-sizing: border-box;
 }
-html[data-desktop="macos"]:not([data-native-tabs]) .app.ws::before {
+html[data-desktop="macos"]:not([data-native-tabs]) .app.ws:not(.platform .app.ws)::before {
   content: "";
   position: absolute;
   inset: 0 0 auto;

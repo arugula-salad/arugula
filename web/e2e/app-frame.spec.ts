@@ -147,6 +147,15 @@ test.describe("on a computer", () => {
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines/swarm$`));
   });
 
+  test("on macOS a machine's page has one window-button strip: its bar is 28px down, not 56px (Arugula #1089)", async ({ page }) => {
+    await openApp(page, (p) => `/p/${P}/machines?pane=${p}`);
+    const frame = page.locator("[data-platform-machines]");
+    await expect(frame.locator(".app.ws .ws-head")).toBeVisible();
+    await page.evaluate(() => { document.documentElement.dataset.desktop = "macos"; });
+    expect((await frame.locator(".app.ws .ws-head").boundingBox())!.y).toBe(28);
+    expect(await frame.locator(".app.ws").evaluate((el) => getComputedStyle(el, "::before").content)).toBe("none");
+  });
+
   test("Machines lists the machines, with Panes and Swarm in the bar; Swarm sits beside the rail", async ({ page }, info) => {
     await openApp(page, () => `/p/${P}/boards`);
     await rail(page, "machines").click();
