@@ -208,7 +208,8 @@ function Shell({ page, children }: { page?: string; children: preact.ComponentCh
  * places (Arugula #1080); a machine's page and Swarm draw their own heads,
  * and on a phone keep the bottom (a pane's key bar, Swarm's field). */
 function MachinesShell({ project, at, page }: { project: string; at: MachineAt; page: string }) {
-  const list = at.at === "machines" && at.pane === undefined && !at.name;
+  // The lists (the machines, Build's panes) sit under the platform's bar.
+  const list = (at.at === "machines" && at.pane === undefined && !at.name) || at.at === "panes";
   return (
     <div class="platform platform-machines" data-platform data-platform-machines>
       <WithRail tabs={list}>

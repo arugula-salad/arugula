@@ -96,6 +96,19 @@ test("the machines live in the project: list, a machine's page with its slug, Sw
   assert.equal(controlHash({ at: "machines", pane: 9, pop: true }), "pop=9");
 });
 
+test("Build's home is every machine's panes, with a machine as its filter (#1083)", () => {
+  assert.deepEqual(parse(`/p/${P}/machines/panes`), { page: "machines", project: P, at: { at: "panes" } });
+  assert.deepEqual(parse(`/p/${P}/machines/panes`, `?machine=${D}`), { page: "machines", project: P, at: { at: "panes", machine: D } });
+  assert.equal(pathOf({ page: "machines", project: P, at: { at: "panes", machine: D } }), `/p/${P}/machines/panes?machine=${D}`);
+  assert.deepEqual(parse("/machines/panes"), { page: "find", what: "machines", at: { at: "panes" } });
+  // A host with no id, by its name; nothing else.
+  assert.deepEqual(parse(`/p/${P}/machines/panes`, "?machine=build-01.local").at, { at: "panes", machine: "build-01.local" });
+  assert.deepEqual(parse(`/p/${P}/machines/panes`, "?machine=../x").at, { at: "panes" });
+  // Control's page has no such list: the machine's, or its own.
+  assert.equal(controlHash({ at: "panes" }), "");
+  assert.equal(controlHash({ at: "panes", machine: D }), `machine=${D}`);
+});
+
 test("Pop out opens the pane alone, in the app and on control's page (#1032)", () => {
   // The app names the daemon, even for the home machine: no overview between.
   assert.equal(popAddress(9, D), `/machines/${D}?pane=9&pop`);

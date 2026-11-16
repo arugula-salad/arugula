@@ -3,7 +3,7 @@
 // machine's sessions. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { roleOf, rowsOf, sessionsLine, sortRows } from "../src/app/machine-list.ts";
+import { paneGroups, roleOf, rowsOf, sessionsLine, sortRows } from "../src/app/machine-list.ts";
 
 const row = (name, o = {}) => ({ name, online: true, cloud: false, role: "owner", sessions: 0, needsYou: 0, projects: [], ...o });
 
@@ -43,4 +43,19 @@ test("rows from the fleet: sessions, those asking, their projects, cloud and onl
   const [a, b] = rowsOf([host, cloud], [ask, ask, quiet, elsewhere], (id) => (id === "ee99ff" ? "editor" : undefined));
   assert.deepEqual([a.sessions, a.needsYou, a.projects, a.online, a.cloud, a.role], [3, 1, ["App", "Site"], true, false, "owner"]);
   assert.deepEqual([b.sessions, b.online, b.cloud, b.role, b.projects], [null, false, true, "editor", []]);
+});
+
+test("Build's panes: by machine, what needs you first; a machine filters; an editor that only joined isn't one (#1083)", () => {
+  const host = (name, o = {}) => ({ name, id: `${name}0000`, transport: "relay", state: "connected", lastSeen: null, summary: null, path: null, ...o });
+  const pane = (h, id, o = {}) => ({ key: `${h}:${id}`, host: h, id, info: { type: "terminal", ...o.info }, session: { id: o.session ?? 1, name: "main" }, stale: false, person: { kind: "me" }, driver: null, watchers: [], unread: 0, mention: false, ...o.extra });
+  const hosts = [host("zed"), host("amy", { state: "offline", status: "offline" }), host("bob"), host("cat")];
+  const panes = [pane("bob", 3), pane("bob", 1, { session: 2 }), pane("cat", 5), pane("cat", 2, { info: { attention: "needs_input" } }), pane("zed", 1, { extra: { session: null }, info: { type: "editor" } })];
+  const g = paneGroups(hosts, panes);
+  assert.deepEqual(g.map((x) => x.name), ["cat", "bob", "zed", "amy"]);
+  assert.deepEqual(g[0].panes.map((p) => p.id), [2, 5]);
+  assert.deepEqual(g[1].panes.map((p) => p.id), [3, 1]);
+  assert.deepEqual(g[2].panes, []);
+  assert.equal(g[3].online, false);
+  assert.deepEqual(paneGroups(hosts, panes, "bob0000").map((x) => x.name), ["bob"]);
+  assert.deepEqual(paneGroups([host("solo", { id: undefined })], [], "solo").map((x) => x.name), ["solo"]);
 });

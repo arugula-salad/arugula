@@ -1,8 +1,8 @@
 // The app's frame (Arugula #989): the project-rooted rail (the project
 // tile and its switcher, then three spaces: Plan, Build, Talk, #1080), the
 // path and the space's places in the bar, the machines inside the frame (a
-// real pane of the suite's daemon, the machines' list with Build's places,
-// Swarm beside the rail), the shell's keys only on a machine's page, and on
+// real pane of the suite's daemon, Build's home of every machine's panes
+// (#1083), the machines' list with Build's places, Swarm beside the rail), the shell's keys only on a machine's page, and on
 // a phone the spaces and the Inbox in a bar along the bottom. On a fixture page (app-frame-page.tsx) served on the
 // daemon's origin; the hub's leg (tokens through the relay on the app's
 // host) is the cloud's spec.
@@ -174,6 +174,47 @@ test.describe("on a computer", () => {
     // Swarm, one click from the machine's page.
     await frame.locator("[data-machine-swarm]").click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines/swarm$`));
+    // Panes, from a machine's page, is every machine's (Arugula #1083).
+    await page.goBack();
+    await frame.locator("[data-machine-panes]").click();
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines/panes$`));
+    await expect(page.locator(`[data-panes-list] [data-panes-pane="${pane}"]`)).toBeVisible();
+  });
+
+  test("Build opens on every machine's panes, by machine, with the machine a filter (Arugula #1083)", async ({ page }, info) => {
+    const pane = await openApp(page, () => `/p/${P}/boards`);
+    await rail(page, "build").click();
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines/panes$`));
+    await lit(page, "build");
+    await here(page, "panes");
+    await expect(page.locator("[data-app-path]")).toHaveText(/Arugula team\s*Arugula\s*Panes/);
+    const list = page.locator("[data-panes-list]");
+    // No machine's page leads: no machine picker, a list with a section per machine.
+    await expect(page.locator("[data-platform-machines] .app.ws")).toHaveCount(0);
+    const group = list.locator("[data-panes-group]");
+    await expect(group).toHaveCount(1);
+    const row = group.locator(`[data-panes-pane="${pane}"]`);
+    await expect(row).toBeVisible();
+    // The machine is a filter, beside room for more.
+    const filter = list.locator("[data-panes-machine]");
+    await expect(filter).toHaveText(/Every machine/);
+    await expect(filter).toHaveAttribute("aria-pressed", "false");
+    await page.screenshot({ path: info.outputPath("frame-panes.png") });
+    await filter.click();
+    await page.locator(".menu-item").nth(1).click();
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines/panes\\?machine=[\\w.-]+$`));
+    await expect(filter).toHaveAttribute("aria-pressed", "true");
+    await expect(filter).toHaveText(/^On /);
+    await expect(row).toBeVisible();
+    await filter.click();
+    await page.locator(".menu-item", { hasText: "Every machine" }).click();
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines/panes$`));
+    // A row opens the pane on its machine's page, under Panes.
+    await row.click();
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines(/[0-9a-f]+[^/?]*)?\\?pane=${pane}$`));
+    await expect(page.locator(`[data-pane="${pane}"]`)).toBeVisible();
+    await lit(page, "build");
+    await expect(page.locator("[data-platform-machines] [data-machine-panes]")).toHaveAttribute("aria-current", "page");
   });
 
   test("on macOS a machine's page has one window-button strip: its bar is 28px down, not 56px (Arugula #1089)", async ({ page }) => {
@@ -187,8 +228,8 @@ test.describe("on a computer", () => {
 
   test("Build's Machines lists the machines, with Build's places in the bar; Swarm sits beside the rail", async ({ page }, info) => {
     await openApp(page, () => `/p/${P}/boards`);
-    // No pane yet in this project: Build opens on the list.
     await rail(page, "build").click();
+    await place(page, "machines").click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines$`));
     const list = page.locator("[data-machines-list]");
     await expect(list.locator("[data-machine-link]")).toHaveCount(1);
@@ -208,8 +249,10 @@ test.describe("on a computer", () => {
     await lit(page, "build");
     expect((await page.locator("[data-app-swarm] .swarm").boundingBox())!.x).toBeGreaterThan(0);
     await page.screenshot({ path: info.outputPath("frame-swarm.png") });
-    // Back to the list by the rail, and the machine from it.
+    // Back by the rail, to Build's panes; the list by the bar, and the machine from it.
     await rail(page, "build").click();
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines/panes$`));
+    await place(page, "machines").click();
     await list.locator("[data-machine-link]").click();
     await expect(page.locator("[data-platform-machines] .app.ws")).toBeVisible();
     // The machine's bar has Machines, back to the list.
@@ -263,15 +306,18 @@ test.describe("where you were", () => {
     await expect(page.locator(`[data-switcher-project="${P}"]`)).toHaveAttribute("href", new RegExp(`/p/${P}[^/]*/docs$`));
   });
 
-  test("Build on the rail comes back to your last pane, and a reload stays on it", async ({ page }) => {
+  test("Build's panes mark the one you had open last; it opens again, and a reload stays on it", async ({ page }) => {
     const pane = await openApp(page, (p) => `/p/${P}/machines?pane=${p}`);
     await expect(page.locator(`[data-pane="${pane}"]`)).toBeVisible();
     const there = new RegExp(`/p/${P}[^/]*/machines(/[0-9a-f]+[^/?]*)?\\?pane=${pane}$`);
     await expect(page).toHaveURL(there);
     await rail(page, "plan").click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*$`));
-    await expect(rail(page, "build")).toHaveAttribute("href", there);
+    await expect(rail(page, "build")).toHaveAttribute("href", new RegExp(`/p/${P}[^/]*/machines/panes$`));
     await rail(page, "build").click();
+    const last = page.locator("[data-panes-list] [data-panes-last]");
+    await expect(last).toHaveAttribute("data-panes-pane", String(pane));
+    await last.click();
     await expect(page).toHaveURL(there);
     await expect(page.locator(`[data-pane="${pane}"]`)).toBeVisible();
     await page.reload();
@@ -318,6 +364,17 @@ test.describe("on a phone", () => {
     await openApp(page, () => `/p/${P}`);
     await seedThreads(page);
     await expect(page.locator("[data-tab-plan] .ws-rail-count")).toHaveText("@7");
+  });
+
+  test("Build's tab opens every machine's panes; a row opens its pane", async ({ page }, info) => {
+    const pane = await openApp(page, () => `/p/${P}/boards`);
+    await page.locator("[data-phone-tabs] [data-tab-build]").click();
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines/panes$`));
+    const row = page.locator(`[data-panes-list] [data-panes-pane="${pane}"]`);
+    await expect(row).toBeVisible();
+    await page.screenshot({ path: info.outputPath("frame-phone-panes.png") });
+    await row.click();
+    await expect(page.locator(`[data-pane="${pane}"]`)).toBeVisible();
   });
 
   test("Machines is a simple list, and a row opens its machine", async ({ page }, info) => {

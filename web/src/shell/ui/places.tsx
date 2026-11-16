@@ -12,7 +12,8 @@ import { closeDocsPage, docsRoute, openDocsPage } from "./docs-route";
 import { getFleet } from "./hosts";
 import { closeThread } from "./threads";
 import { chat, chatStore } from "../../shared/chat-store";
-import { openPlatform, platformHref, platformOrigin } from "../platform-links";
+import { openPlatform, platformHere, platformHref, platformOrigin } from "../platform-links";
+import { machinesPath } from "../../shared/machine-paths";
 import { Count } from "../../shared/ui/state-chip";
 
 // ---- chat, on the platform page
@@ -35,6 +36,8 @@ export const BOARDS_TO = "/?to=boards";
 export const DOCS_TO = "/?to=docs";
 export const PROJECTS_TO = "/?to=projects";
 export const MACHINES_TO = "/?to=machines";
+/** Build's home in the app (Arugula #1083), which only the app has. */
+const PANES_TO = machinesPath({ at: "panes" });
 
 /** Chat, on the platform page (M153): the current project's team's. */
 export function openChat() {
@@ -232,6 +235,7 @@ export function MachinePlaces({ client, at, onSwarm }: { client: Client; at: Pla
   const recipes = client.flag("agent-delegation") && owner;
   const panes = at === "panes" || at === "overview";
   const machines = !!platformHref(MACHINES_TO);
+  const home = platformHere();
   const docs = owner && !platformHref(DOCS_TO);
   const item = (name: string, hook: string, here: boolean, title: string, go: () => void) => (
     <button
@@ -246,8 +250,10 @@ export function MachinePlaces({ client, at, onSwarm }: { client: Client; at: Pla
   );
   return (
     <nav class="places" aria-label="Build's places" data-machine-places>
-      {item("Panes", "panes", panes, "Your panes: back to this session's last tab and pane", () => {
+      {/* In the app, Panes is every machine's (Arugula #1083), a step up from here. */}
+      {item("Panes", "panes", panes, home ? "Panes: every pane on every machine, by machine" : "Your panes: back to this session's last tab and pane", () => {
         if (at !== "panes") closePlace(at);
+        else if (home) openPlatform(PANES_TO);
         else client.viewOf(client.active() ?? -1)?.focus();
       })}
       {/* In the app (Arugula #989), Swarm is its route; here, this page's. */}

@@ -7,7 +7,7 @@
 // - `app.pane.<project>`: the machine and pane you last had open in it.
 //
 // Opening the app goes back to the last project's place; the switcher opens
-// a project at its place; Machines on the rail opens your last pane. Chat,
+// a project at its place; Build's list of panes marks your last one (#1083). Chat,
 // account settings and the design reference are no project's place, as
 // the router's own memory has it (./router.ts).
 

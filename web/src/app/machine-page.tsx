@@ -40,6 +40,7 @@ import { OPS, opPath } from "../shell/ops";
 import type { DocMoveRequest } from "../shared/proto.gen";
 import { notePane } from "../platform/places-kept";
 import { popOutIn } from "../shell/ui/panes/pop-out";
+import { PanesList } from "./panes-list";
 
 export interface Booted {
   machines: Machines;
@@ -185,7 +186,8 @@ export function MachinesPlace({ project, at, session }: { project: string; at: M
 
 function Place({ project, at, b: { machines, cell }, session }: { project: string; at: MachineAt; b: Booted; session: AppSession | null }) {
   useSubscribe((fn) => directory.subscribe(fn));
-  const list = at.at === "machines" && at.pane === undefined && !at.name;
+  // A list in the platform's panel: the machines, or Build's home, every machine's panes (Arugula #1083).
+  const list = (at.at === "machines" && at.pane === undefined && !at.name) || at.at === "panes";
   // The shell's keys while a machine's page or Swarm is shown, and only then.
   useEffect(() => (list ? undefined : installKeys(() => machines.client)), [list]);
   const [, tick] = useState(0);
@@ -194,9 +196,9 @@ function Place({ project, at, b: { machines, cell }, session }: { project: strin
   const known = !!directory.list;
   const machine = at.at === "machine" ? at.machine : undefined;
   const name = at.at === "machines" ? at.name : undefined;
-  const pane = at.at === "swarm" ? undefined : at.pane;
+  const pane = at.at === "swarm" || at.at === "panes" ? undefined : at.pane;
   useEffect(() => {
-    if (at.at === "swarm" || list || !known) return;
+    if (at.at === "swarm" || at.at === "panes" || list || !known) return;
     if (name && directory.find(name)) directory.select(name);
     if (pane !== undefined) machines.openPane(pane, machine, at.at === "machine" && !!at.share, at.at === "machine" ? at.follow : undefined);
     else if (machine && hostOf(machine)) directory.select(hostOf(machine)!);
@@ -211,7 +213,7 @@ function Place({ project, at, b: { machines, cell }, session }: { project: strin
   if (at.at === "swarm") {
     const f = at.focus;
     const host = f ? (f.machine ? hostOf(f.machine) : (directory.home ?? directory.names[0])) : undefined;
-    const back = () => go(pathOf({ page: "machines", project, at: { at: "machines" } }, names));
+    const back = () => go(pathOf({ page: "machines", project, at: { at: "panes" } }, names));
     return (
       <div class="app-swarm" data-app-swarm>
         <BesideRail />
@@ -223,7 +225,7 @@ function Place({ project, at, b: { machines, cell }, session }: { project: strin
     return (
       // In the panel the project's other pages sit in.
       <main class="platform-main">
-        <MachinesList project={project} fleet={machines.fleet} session={session} />
+        {at.at === "panes" ? <PanesList project={project} fleet={machines.fleet} machine={at.machine} /> : <MachinesList project={project} fleet={machines.fleet} session={session} />}
       </main>
     );
   const client = machines.client;

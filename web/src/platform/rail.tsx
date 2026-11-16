@@ -26,7 +26,6 @@ import { ownerKey } from "./owners";
 import { follow, go, pathOf, useRoute, type Route } from "./router";
 import { controlOrigin, session } from "./session";
 import { Switcher } from "./switcher";
-import { paneOf } from "./places-kept";
 import { subscribeSeen } from "../shared/seen";
 import { barProject, where } from "./where";
 
@@ -85,12 +84,12 @@ function usePlaces() {
   const m = r.page === "machines" ? r.at : null;
   const list = !!m && m.at === "machines" && m.pane === undefined && !m.name;
   const machinesList = project ? pathOf({ page: "machines", project: project.id, at: { at: "machines" } }, names) : "/";
-  // Panes goes back to your last pane in this project (decision 5); the list is the path's step up.
-  const panesTo = Machines && project ? (paneOf(project.id) ?? machinesList) : `${controlOrigin()}/`;
+  // Build opens on every machine's panes, by machine (Arugula #1083); a pane opens on its machine's page, still Panes'.
+  const panesTo = Machines && project ? pathOf({ page: "machines", project: project.id, at: { at: "panes" } }, names) : `${controlOrigin()}/`;
   const build: PlaceLink[] = !Machines || !project
     ? []
     : [
-        { key: "panes", label: "Panes", tip: "Panes: back to your last pane in this project", to: panesTo, here: !!m && !list && m.at !== "swarm" },
+        { key: "panes", label: "Panes", tip: "Panes: every pane on every machine, by machine", to: panesTo, here: !!m && !list && m.at !== "swarm" },
         { key: "swarm", label: "Swarm", tip: "Swarm: every pane on every machine", to: pathOf({ page: "machines", project: project.id, at: { at: "swarm" } }, names), here: m?.at === "swarm" },
         { key: "machines", label: "Machines", tip: "Machines: your team's computers and cloud workspaces", to: machinesList, here: list || section === "workspaces" },
       ];
