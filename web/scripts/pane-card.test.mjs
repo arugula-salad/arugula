@@ -1,9 +1,9 @@
-// A pane's card chip (Arugula inversion): its words in the room a pane's
-// bar has, the picker's choices and answers, and where a click goes. Run
+// A pane's card chip (Arugula inversion, on a phone): its words in the
+// room it has, the picker's choices and answers, and where a click goes. Run
 // with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cardChipText, cardChoices, cardNumber, cardPath, cardPicked, chipRoom } from "../src/shell/ui/pane-card-text.ts";
+import { cardChipText, cardChoices, cardNumber, cardPath, cardPicked } from "../src/shell/ui/pane-card-text.ts";
 
 const TITLE = "L2: the platform knows which session is on a card";
 
@@ -30,22 +30,6 @@ test("no chip when even the number doesn't fit, or Put on a card's words", () =>
   assert.equal(cardChipText("Arugula", "#983", TITLE, 3), null);
   assert.equal(cardChipText("Arugula", "#983", null, 0), null);
   assert.equal(cardChipText("Arugula", null, null, 12), null);
-});
-
-test("a pane's room: none in a narrow pane, so no chip there; more beside a short title", () => {
-  // A quarter of a laptop's four columns: nothing fits beside the bar's own.
-  assert.equal(chipRoom(130, 3), 0);
-  assert.equal(cardChipText("Arugula", "#983", TITLE, chipRoom(130, 3)), null);
-  assert.equal(cardChipText("Arugula", null, null, chipRoom(130, 3)), null);
-  assert.equal(chipRoom(300, 3), 0);
-  // Where #983 just fits, and its ▾ with it (the 50px the room leaves out).
-  assert.equal(chipRoom(321, 3), 4);
-  assert.deepEqual(cardChipText("Arugula", "#983", TITLE, chipRoom(321, 3)), { project: null, card: "#983", title: null });
-  assert.equal(cardChipText("Arugula", "#983", TITLE, chipRoom(320, 3)), null);
-  // A long title takes at most 40% of the bar.
-  assert.equal(chipRoom(1000, 200), chipRoom(1000, 54));
-  assert.ok(chipRoom(1000, 3) > chipRoom(1000, 40));
-  assert.ok(chipRoom(1200, 3) > chipRoom(600, 3));
 });
 
 test("a card's number", () => {

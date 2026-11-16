@@ -289,11 +289,10 @@ html:root .prompt-backdrop.pane-tip-backdrop {
   border-radius: var(--card-radius);
 }
 
-/* The pane's card (Arugula inversion): project > #983 title, in one line.
-   pane-card.tsx says how much text fits and leaves the chip out when even
-   #983 and its menu button don't; past that guess, the chip gives way
-   inside the bar (the project and title first, then the number) and never
-   pushes the pane's own buttons out. Its menu button stays whole. */
+/* The pane's card under a phone's bar (Arugula inversion): project > #983
+   title, in one line. pane-card.tsx says how much text fits and leaves the
+   chip out when even #983 doesn't; past that guess, the chip gives way (the
+   project and title first, then the number). */
 .pane-work-wrap {
   display: inline-flex;
   align-items: center;
@@ -310,12 +309,6 @@ html:root .prompt-backdrop.pane-tip-backdrop {
   white-space: nowrap;
   font-size: var(--text-xs);
 }
-/* The chip on a pane's bar sits on the chrome's panel, where the proof
-   shape's --divider doesn't show: the line that has to show on a fill. */
-.grid.pane-chrome .chip-object.pane-work.proof {
-  --c: var(--line-strong);
-}
-.pane-work-wrap > .bar-btn,
 .chip-object.pane-work .chip-object-id {
   flex: none;
 }
@@ -333,9 +326,4 @@ html:root .prompt-backdrop.pane-tip-backdrop {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-/* With a card, the title takes at most this share of the bar
-   (pane-card-text.ts' TITLE_SHARE), so the chip has the room it was given. */
-.grid.pane-chrome .pane-header:has(.pane-work-wrap) .pane-header-title {
-  max-width: 40%;
 }
