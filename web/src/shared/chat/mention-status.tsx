@@ -28,6 +28,7 @@ export function mentionTone(state: ChatMentionStatus["state"]): Tone {
     case "offline":
     case "chain":
     case "not_granted":
+    case "mentions_off":
       return "warn";
     case "sending":
     case "delivered":
@@ -69,6 +70,8 @@ export function mentionStatusText(s: ChatMentionStatus): string {
       return `${at}: dropped: ${s.why === "stopped" ? "the session was stopped" : "the session ended mid-turn"}`;
     case "offline":
       return s.for_session ? `${named}: ${who} is offline or didn't answer` : `${who} is offline or didn't answer`;
+    case "mentions_off":
+      return `Not delivered to ${named}: its owner turned agent mentions off`;
     case "answered":
       return `${named} answered`;
     case "chain":
