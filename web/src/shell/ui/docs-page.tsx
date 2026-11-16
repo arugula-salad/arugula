@@ -198,12 +198,19 @@ function Library({ client, title, back }: { client: Client; title?: string; back
   /** The team a Doc here moves to, if the machine knows one. */
   const [team, setTeam] = useState<DocTeam | null>(null);
   const [filter, setFilter] = useState("all");
+  /** The machine's daemon is older than Docs: it has none to list. */
+  const [older, setOlder] = useState(false);
   /** The Docs read so far, by id. */
   const reads = useRef(new Map<string, Read>());
 
   const load = async () => {
     try {
       const res = await client.request(OPS["docs.list"].method, opPath("docs.list"));
+      // A daemon from before Docs: 0.42 is still in the supported window (#807).
+      if (res.status === 404) {
+        setOlder(true);
+        return setRows([]);
+      }
       const v = await res.json<DocRow[] & { error?: string }>().catch(() => null);
       if (!res.ok || !Array.isArray(v)) throw new Error(v?.error ?? `HTTP ${res.status}`);
       // Control serves its newest page to every machine, and a daemon before
@@ -291,26 +298,35 @@ function Library({ client, title, back }: { client: Client; title?: string; back
         narrow={filter === "all" ? undefined : { test: (r) => (filter === "open" ? isOpen(r) : !!r.shared), none: filter === "open" ? "No Doc is open in a pane." : "No Doc is shared." }}
         loading={!error && <BlockLoading inline data-docs-loading what="this machine's Docs" />}
         empty={
-          <EmptyState
-            where="page"
-            data-docs-empty
-            title="No Docs yet."
-            why="Docs your agents write show up here. Ask any agent for a Doc (a write-up, a plan, a comparison) and it keeps it here."
-            action={
-              <button
-                class="primary"
-                data-docs-start-agent
-                onClick={() => {
-                  closeDocsPage();
-                  startAgent(client, { session: client.session ?? undefined });
-                }}
-              >
-                Start an agent
-              </button>
-            }
-          >
-            <AgentCanCard client={client} only="doc" />
-          </EmptyState>
+          older ? (
+            <EmptyState
+              where="page"
+              data-docs-older
+              title="No Docs on this machine yet."
+              why="Its Arugula is older than Docs. Update it (arugulad update), and the Docs its agents write show up here."
+            />
+          ) : (
+            <EmptyState
+              where="page"
+              data-docs-empty
+              title="No Docs yet."
+              why="Docs your agents write show up here. Ask any agent for a Doc (a write-up, a plan, a comparison) and it keeps it here."
+              action={
+                <button
+                  class="primary"
+                  data-docs-start-agent
+                  onClick={() => {
+                    closeDocsPage();
+                    startAgent(client, { session: client.session ?? undefined });
+                  }}
+                >
+                  Start an agent
+                </button>
+              }
+            >
+              <AgentCanCard client={client} only="doc" />
+            </EmptyState>
+          )
         }
         notice={
           error && (

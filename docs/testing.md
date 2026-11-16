@@ -43,6 +43,7 @@ or an account skip without it and name what's missing
 | `just e2e` | the Playwright specs in `web/e2e/` against throwaway daemons (`just e2e <url>` tests a running one): the `chrome` project, and `webkit` for `*.webkit.spec.ts` | Linux (Playwright's Chromium and WebKit) |
 | `just journey [j1\|j2a\|j2b\|j2c\|j5\|j6]` | a new user's journeys ([below](#a-new-users-journeys)): one person from no account to a terminal, two people linking up, someone who won't read docs, and two people on a tailnet with no control; each ends with an annotated graph in `web/journey-reports/` (local, never committed) | Linux, in the e2e shards (they're specs in `web/e2e/`) |
 | `just e2e-webkit` | only the `webkit` project: Safari's engine, for device keys (#94) and the one-click invite (#137) | macOS |
+| `just older-daemons [VERSION...]` | this checkout's page against released daemons ([below](#the-page-against-released-daemons)): by default the oldest and the newest release of the last 30 days | no (#808 asks for it) |
 | `just testnet up`, `test`, `break` (`ssh`) | the Docker test stack's claims ([testnet/README.md](../testnet/README.md)), then each claim under `BREAK=1`, where it must fail | Linux |
 | `just forges`, `just testnet-editors` | real forges and VS Code over Remote-SSH, in Docker ([below](#real-forges-two-hosts-vs-code-over-remote-ssh)) | the forges nightly (`forges-nightly.yml`) |
 | `just macos <test>` | the tart VM's checks: `tools` (launchd with no GUI session, [below](#a-fresh-mac-the-tart-vm-harness)), `journey-j3`: the app installed by hand over an older daemon, and `journey-j4`: an agent installing over ssh, all graphed ([below](#a-new-users-journeys)) | no |
@@ -804,6 +805,38 @@ of `just e2e`. When the checkout's Playwright wants a Chromium newer than
 the box's setup installed ("Executable doesn't exist"), install it for
 yourself: `cd web && PLAYWRIGHT_BROWSERS_PATH=~/.cache/ms-playwright pnpm
 exec playwright install chromium`, and run with that variable set.
+
+### The page against released daemons
+
+Control serves its newest page to every machine, and a machine runs
+whatever it last updated to: 0.66.12's Docs page read a field 0.66.10's
+rows didn't have and sat on "Reading this machine's Docs…" until each
+machine updated (#615). `just e2e` runs the page and the daemon at the same
+commit, so it can't see that. `just older-daemons` (#808) runs this
+checkout's `web/dist` in front of released daemons: the oldest and the
+newest daemon release of the last 30 days, the supported window (#807), or
+the versions named (`just older-daemons 0.66.10 0.70.23`).
+`scripts/older-daemons.mjs` downloads each from GitHub's releases for this
+machine, checks it against the release's SHA256SUMS, and keeps it in
+`~/.cache/arugula/older-daemons/`; it builds no daemon. Set `GH_TOKEN` if
+GitHub's anonymous limit runs out.
+
+`web/playwright.older.config.ts` makes a project per daemon, and
+`web/e2e/older-daemon.ts` starts each with a state directory and a home of
+its own, signs in by the link `arugula web` opens (0.42 has no page key),
+and answers every request for one of the page's files from `web/dist`, so
+the API and the socket reach the daemon as they would from control's page.
+The specs (`web/e2e/*.older.ts`, which `just e2e` doesn't pick up) open
+the panes, Docs, the swarm, the overview, both Agents tabs, the activity
+drawer, and Settings with each machine dialog that reads the daemon's rows.
+Each must show its content: not its loading state, not the note that it
+failed to draw (`data-page-failed`), and nothing thrown. A page may instead
+say the daemon is too old for it, which is the page coping. A run takes
+about 20 seconds.
+
+It doesn't cover control's page or the platform's against older daemons,
+or `native/core`, which reaches a machine only through control's relay:
+those are the cloud repository's to run.
 
 ### Spike: blocks through control (S27)
 

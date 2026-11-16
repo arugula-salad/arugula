@@ -672,6 +672,17 @@ e2e-durations run:
     cd web && node scripts/e2e-durations.mjs "$d"/*/e2e-timings.json > e2e/durations.json
     echo "web/e2e/durations.json: $(grep -c '": ' e2e/durations.json) files"
 
+# The page at HEAD against released daemons (Arugula #808): web/dist in
+# front of the oldest and the newest daemon release of the last 30 days
+# (#807), from GitHub, or the VERSIONS named (`just older-daemons 0.66.10`).
+# Each page that lists a daemon's rows must show them, not an error or its
+# loading state (web/e2e/older-daemons.older.ts). Builds no daemon.
+older-daemons *versions: _web-deps web
+    #!/usr/bin/env bash
+    set -euo pipefail
+    daemons=$(node scripts/older-daemons.mjs {{versions}})
+    cd web && OLDER_DAEMONS="$daemons" {{suite_lock}} pnpm exec playwright test -c playwright.older.config.ts
+
 # Only the WebKit specs (`*.webkit.spec.ts`), as the macOS runner runs them.
 e2e-webkit: web e2e-build
     cd web && {{suite_lock}} pnpm exec playwright test --project=webkit
