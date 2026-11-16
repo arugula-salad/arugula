@@ -14,13 +14,14 @@
 // it is for, where it is imported from), the job of each type size, and the
 // sample props of the pieces that need data.
 
-import { Component, type ComponentChildren, type FunctionComponent } from "preact";
+import type { ComponentChildren, FunctionComponent } from "preact";
 import { useEffect, useMemo, useState } from "preact/hooks";
 import { apply as applyAppearance, legible, palette, PALETTES } from "../../shared/appearance";
 import { Bar, BarTitle, BarWhere } from "../../shared/ui/bar";
 import { EmptyLine, EmptyState, BlockError, BlockLoading } from "../../shared/ui/block-states";
 import { Card } from "../../shared/ui/card";
 import { ConfirmRemove } from "../../shared/ui/confirm";
+import { Guard } from "../../shared/ui/guard";
 import * as iconModule from "../../shared/ui/icons";
 import { CloseIcon, IconButton, LinkIcon, PaneTypeIcon, PlusIcon, SearchIcon } from "../../shared/ui/icons";
 import { ListPage, ListPreview } from "../../shared/ui/list-page";
@@ -450,17 +451,6 @@ function Cards() {
   );
 }
 
-/** Draws an icon, or says it needs props to (so the page can't break on one). */
-class Guard extends Component<{ children: ComponentChildren }, { bad: boolean }> {
-  state = { bad: false };
-  componentDidCatch() {
-    this.setState({ bad: true });
-  }
-  render() {
-    return this.state.bad ? <span class="design-icon-bad">needs props: add it to NEEDS in pages/design.tsx</span> : this.props.children;
-  }
-}
-
 function Icons() {
   // Every export of icons.tsx but the two wrappers: a new icon appears here by being added there.
   const icons = useMemo(
@@ -472,7 +462,8 @@ function Icons() {
       <div class="design-icons" data-design-icons={icons.length}>
         {icons.map(([name, Icon]) => (
           <div key={name} class="design-icon" data-design-icon={name}>
-            <Guard>
+            {/* An icon that needs props says so, so the page can't break on one. */}
+            <Guard failed={() => <span class="design-icon-bad">needs props: add it to NEEDS in pages/design.tsx</span>}>
               <Icon size="md" {...NEEDS[name]} />
             </Guard>
             <code class="design-token">{name}</code>

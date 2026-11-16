@@ -4332,6 +4332,10 @@ button.agent-image {
 .swarm * {
   box-sizing: border-box;
 }
+/* A swarm that threw while drawing: the note, centred where it was (#615). */
+.swarm > .block-error {
+  height: 100%;
+}
 .swarm button {
   font: inherit;
   color: inherit;

@@ -8,6 +8,7 @@ import { chat } from "../shared/chat-store";
 import { useSubscribe } from "../shared/ui/hooks";
 import { usePlatformApi } from "../shared/platform-api";
 import { MaintenanceNote } from "../shared/ui/maintenance-note";
+import { PageGuard } from "../shared/ui/guard";
 import { PageHeader } from "../shared/ui/page-header";
 import { PlatformBar } from "./bar";
 import { SpacePlaces, WithRail } from "./rail";
@@ -55,7 +56,13 @@ import { barProject, where } from "./where";
 export function PlatformPage() {
   // The design reference needs no one signed in and no project, so nothing of
   // the session is loaded for it (#693).
-  return useRoute().page === "design" ? <DesignPage /> : <Routed />;
+  return useRoute().page === "design" ? (
+    <PageGuard at="design">
+      <DesignPage />
+    </PageGuard>
+  ) : (
+    <Routed />
+  );
 }
 
 function Routed() {
@@ -68,14 +75,30 @@ function Routed() {
   useTitle(r);
   useWhereIWas(r);
   const s = session.state;
+  // Each page in a guard (Arugula #615): one that throws while drawing says
+  // so in its place, and the rail goes on working. Its address without
+  // slugs: putting a slug right isn't another page.
+  const at = pathOf(r);
   if (s === null) return <Shell><p class="platform-section dim">Loading…</p></Shell>;
   if (s === "signed-out") return <SignIn />;
   if (typeof s === "object") return <Shell><p class="platform-section control-error">{s.error}</p></Shell>;
-  if (r.page === "chat") return <ChatPage project={r.project} route={{ room: r.room, msg: r.msg, thread: r.thread, view: r.view, q: r.q, all: r.all }}><Toast /></ChatPage>;
-  if (r.page === "dm") return <ChatPage project={r.project} route={{ room: r.room, msg: r.msg, thread: r.thread }}><Toast /></ChatPage>;
+  // Chat draws its own frame, so a failure is drawn in the others'.
+  const inShell = (note: preact.ComponentChildren) => <Shell>{note}</Shell>;
+  if (r.page === "chat")
+    return (
+      <PageGuard at={at} frame={inShell}>
+        <ChatPage project={r.project} route={{ room: r.room, msg: r.msg, thread: r.thread, view: r.view, q: r.q, all: r.all }}><Toast /></ChatPage>
+      </PageGuard>
+    );
+  if (r.page === "dm")
+    return (
+      <PageGuard at={at} frame={inShell}>
+        <ChatPage project={r.project} route={{ room: r.room, msg: r.msg, thread: r.thread }}><Toast /></ChatPage>
+      </PageGuard>
+    );
   // A machine's page has its own header (Arugula #989): the rail, then it.
-  if (r.page === "machines" && Machines) return <MachinesShell project={r.project} at={r.at} />;
-  return <Shell>{body(r, lost)}</Shell>;
+  if (r.page === "machines" && Machines) return <MachinesShell project={r.project} at={r.at} page={at} />;
+  return <Shell page={at}>{body(r, lost)}</Shell>;
 }
 
 /** `lost`: the issue or run an id-only address names, when it couldn't be
@@ -162,7 +185,8 @@ function Entering({ to }: { to: Entry }) {
   return <p class="platform-section dim">Finding it…</p>;
 }
 
-function Shell({ children }: { children: preact.ComponentChildren }) {
+/** `page`: the page's address, for its guard. */
+function Shell({ page, children }: { page?: string; children: preact.ComponentChildren }) {
   return (
     <div class="platform" data-platform>
       <WithRail>
@@ -171,7 +195,9 @@ function Shell({ children }: { children: preact.ComponentChildren }) {
         </PlatformBar>
         <MaintenanceNote />
         <SplitNote />
-        <main class="platform-main">{children}</main>
+        <main class="platform-main">
+          <PageGuard at={page}>{children}</PageGuard>
+        </main>
       </WithRail>
       <Toast />
     </div>
@@ -181,7 +207,7 @@ function Shell({ children }: { children: preact.ComponentChildren }) {
 /** Build's places, beside the rail. The list has the bar, with Build's
  * places (Arugula #1080); a machine's page and Swarm draw their own heads,
  * and on a phone keep the bottom (a pane's key bar, Swarm's field). */
-function MachinesShell({ project, at }: { project: string; at: MachineAt }) {
+function MachinesShell({ project, at, page }: { project: string; at: MachineAt; page: string }) {
   const list = at.at === "machines" && at.pane === undefined && !at.name;
   return (
     <div class="platform platform-machines" data-platform data-platform-machines>
@@ -191,7 +217,9 @@ function MachinesShell({ project, at }: { project: string; at: MachineAt }) {
             <SpacePlaces />
           </PlatformBar>
         )}
-        <MachinesPage project={project} at={at} />
+        <PageGuard at={page}>
+          <MachinesPage project={project} at={at} />
+        </PageGuard>
       </WithRail>
       <Toast />
     </div>
