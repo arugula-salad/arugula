@@ -79,6 +79,12 @@ export function countView(v: View) {
   counts.views[v] = (counts.views[v] ?? 0) + 1;
 }
 
+/** One more error our code hit that never reached `onError` (a page that
+ * threw while drawing, caught by its guard: shared/ui/guard.tsx). */
+export function countError() {
+  if (send) counts.web_errors++;
+}
+
 /** The view a route in the address (`#swarm`, `#chat…`, `#agents…`) is. */
 function routeView(hash: string): View | null {
   if (/^#swarm(=|$)/.test(hash)) return "swarm";

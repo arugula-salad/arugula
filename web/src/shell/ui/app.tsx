@@ -4,6 +4,9 @@
 // the layers over them (menus, dialogs, the palette).
 
 import { EmptyState } from "../../shared/ui/block-states";
+import { PageGuard } from "../../shared/ui/guard";
+import { AppBar } from "./app-bar";
+import type { Place } from "./places";
 import { useEffect, useLayoutEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
 import type { Cell } from "./cells";
@@ -125,13 +128,16 @@ export function App({ client, cell, frame = "own", onSwarm }: { client: Client; 
   const overviewOpen = ws && !!overview && !!state;
   const main = (
     <main class="main" inert={overviewOpen}>
-      {!state ? (
-        <HostPicker />
-      ) : state.sessions.length === 0 ? (
-        <NoSessions client={client} phone={phone} />
-      ) : tab ? (
-        <TabArea client={client} tab={tab} cell={cell} phone={phone} />
-      ) : null}
+      {/* Its own guard (Arugula #615): the panes failing leaves the pages and the rail. */}
+      <PageGuard at={`${client.session}:${client.tab}`}>
+        {!state ? (
+          <HostPicker />
+        ) : state.sessions.length === 0 ? (
+          <NoSessions client={client} phone={phone} />
+        ) : tab ? (
+          <TabArea client={client} tab={tab} cell={cell} phone={phone} />
+        ) : null}
+      </PageGuard>
     </main>
   );
   const layers = (
@@ -348,7 +354,11 @@ function AgentsPageLayer({ client }: { client: Client }) {
     return () => window.removeEventListener("hashchange", fn);
   }, []);
   if (!agentsRoute()) return null;
-  return <InLabs on={client.flag("agent-delegation")}>{(l) => <l.AgentsPage client={client} />}</InLabs>;
+  return (
+    <PlaceGuard client={client} at="agents">
+      <InLabs on={client.flag("agent-delegation")}>{(l) => <l.AgentsPage client={client} />}</InLabs>
+    </PlaceGuard>
+  );
 }
 
 /** The Settings page (Arugula #695), while its route is up. */
@@ -359,7 +369,11 @@ function SettingsPageLayer({ client }: { client: Client }) {
     window.addEventListener("hashchange", fn);
     return () => window.removeEventListener("hashchange", fn);
   }, []);
-  return settingsRoute() ? <SettingsPage client={client} /> : null;
+  return settingsRoute() ? (
+    <PlaceGuard client={client} at="settings">
+      <SettingsPage client={client} />
+    </PlaceGuard>
+  ) : null;
 }
 
 /** The Docs page (#1494): a chunk of its own, fetched while its route is
@@ -377,5 +391,29 @@ function DocsPageLayer({ client, inWorkspace }: { client: Client; inWorkspace?: 
     if (on && !page) import("./docs-page").then(setPage, (e) => console.error("The Docs page didn't load", e));
   }, [on]);
   if (!on || !page) return null;
-  return <page.DocsPage client={client} inWorkspace={inWorkspace} />;
+  return (
+    <PlaceGuard client={client} at="docs" inWorkspace={inWorkspace}>
+      <page.DocsPage client={client} inWorkspace={inWorkspace} />
+    </PlaceGuard>
+  );
+}
+
+/** A page over the panes in its guard (Arugula #615): one that throws while
+ * drawing says so where it would have been, under the bar (the way out on a
+ * phone), and the panes, the rail and the other pages go on working. In the
+ * workspace, the Docs page sits beside the rail with no bar of its own. */
+function PlaceGuard({ client, at, inWorkspace, children }: { client: Client; at: Place; inWorkspace?: boolean; children: preact.ComponentChildren }) {
+  return (
+    <PageGuard
+      at={location.hash}
+      frame={(note) => (
+        <div class={inWorkspace ? "chat agents-page ws-page" : "chat agents-page"} data-page-failed-at={at}>
+          {!inWorkspace && <AppBar client={client} at={at} />}
+          {note}
+        </div>
+      )}
+    >
+      {children}
+    </PageGuard>
+  );
 }
