@@ -12,7 +12,7 @@ import { closeDocsPage, docsRoute, openDocsPage } from "./docs-route";
 import { getFleet } from "./hosts";
 import { closeThread } from "./threads";
 import { chat, chatStore } from "../../shared/chat-store";
-import { openPlatform, platformOrigin } from "../platform-links";
+import { openPlatform, platformHref, platformOrigin } from "../platform-links";
 import { Count } from "../../shared/ui/state-chip";
 
 // ---- chat, on the platform page
@@ -34,6 +34,7 @@ export const CHAT_TO = "/?to=chat";
 export const BOARDS_TO = "/?to=boards";
 export const DOCS_TO = "/?to=docs";
 export const PROJECTS_TO = "/?to=projects";
+export const MACHINES_TO = "/?to=machines";
 
 /** Chat, on the platform page (M153): the current project's team's. */
 export function openChat() {
@@ -221,13 +222,17 @@ export function Places({ client, at }: { client: Client; at: Place }) {
   );
 }
 
-/** A machine's own places, in the bar on a computer (Arugula #637): the bar is
- * what you're in, the machine, then what it has, as a project's is. Docs and
- * Recipes are offered as the phone's Places are. */
+/** Build's places, in a machine's bar on a computer (Arugula #637, #1080):
+ * the bar is what you're in, the machine, then Panes, Swarm and Machines,
+ * as the app's Build is. Machines is the app's list, where control has a
+ * platform page; a machine's own Docs are Plan's Docs there, so only a
+ * machine on its own keeps a Docs place. Recipes is this machine's. */
 export function MachinePlaces({ client, at, onSwarm }: { client: Client; at: Place; onSwarm?: () => void }) {
   const owner = !client.state?.roles;
   const recipes = client.flag("agent-delegation") && owner;
   const panes = at === "panes" || at === "overview";
+  const machines = !!platformHref(MACHINES_TO);
+  const docs = owner && !platformHref(DOCS_TO);
   const item = (name: string, hook: string, here: boolean, title: string, go: () => void) => (
     <button
       class={here ? "place frame-place here" : "place frame-place"}
@@ -240,14 +245,15 @@ export function MachinePlaces({ client, at, onSwarm }: { client: Client; at: Pla
     </button>
   );
   return (
-    <nav class="places" aria-label="This machine's places" data-machine-places>
+    <nav class="places" aria-label="Build's places" data-machine-places>
       {item("Panes", "panes", panes, "Your panes: back to this session's last tab and pane", () => {
         if (at !== "panes") closePlace(at);
         else client.viewOf(client.active() ?? -1)?.focus();
       })}
-      {/* In the app (Arugula #989), Swarm is under Machines, beside Panes (decision 3). */}
-      {onSwarm && item("Swarm", "swarm", false, "Swarm: every pane on every machine", onSwarm)}
-      {owner && item("Docs", "docs", at === "docs", "Docs: the Docs your agents wrote on this machine, to open again", () => at !== "docs" && openDocsPage())}
+      {/* In the app (Arugula #989), Swarm is its route; here, this page's. */}
+      {item("Swarm", "swarm", at === "swarm", `Swarm: ${SWARM_ABOUT}`, () => at !== "swarm" && (onSwarm ? onSwarm() : openSwarm()))}
+      {machines && item("Machines", "machines", false, "Machines: your team's computers and cloud workspaces", () => openPlatform(MACHINES_TO))}
+      {docs && item("Docs", "docs", at === "docs", "Docs: the Docs your agents wrote on this machine, to open again", () => at !== "docs" && openDocsPage())}
       {recipes && item("Recipes", "recipes", at === "agents", "Recipes: this machine's recipes and your team's agents", () => at !== "agents" && openAgentsPage())}
     </nav>
   );

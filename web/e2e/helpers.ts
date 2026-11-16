@@ -289,6 +289,6 @@ export async function settingsRow(page: Page, name: string) {
 
 /** Back to the panes from the Settings page. */
 export async function closeSettingsPage(page: Page) {
-  await page.locator(".ws-rail [data-open-panes]").click();
+  await page.locator(".ws-rail [data-open-build]").click();
   await expect(page.locator("[data-settings-page]")).toHaveCount(0);
 }

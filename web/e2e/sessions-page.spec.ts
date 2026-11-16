@@ -183,7 +183,9 @@ test.describe("on a phone", () => {
   test("the groups fit the screen, a row opens to its panes, and Open fills the screen with the pane live", async ({ page }, info) => {
     const pane = await openSessions(page);
     await expect(groups(page)).toHaveCount(4);
-    await expect(page.locator("[data-phone-tabs] [data-tab-sessions]")).toBeVisible();
+    // Sessions is Plan's until it folds away (Arugula #1082).
+    await expect(page.locator("[data-phone-tabs] [data-tab-plan]")).toHaveAttribute("aria-current", "page");
+    await expect(page.locator("[data-platform-bar] [data-space-sessions]")).toHaveAttribute("aria-current", "page");
     // Nothing runs off the side.
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     const row = page.locator('[data-session-row="machine:7"]');

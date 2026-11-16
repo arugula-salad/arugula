@@ -306,8 +306,8 @@ test.describe("a board focus on a phone", () => {
 
 test("Panes and Escape lead back to the panes (#551)", async ({ page }) => {
   await swarm(page);
-  // The rail beside the swarm: its Panes.
-  await page.locator(".ws-rail").getByRole("button", { name: "Panes", exact: true }).click();
+  // The rail beside the swarm: its Build, back to the panes.
+  await page.locator(".ws-rail").getByRole("button", { name: "Build", exact: true }).click();
   await expect(page.locator(".swarm")).toBeHidden();
   expect(new URL(page.url()).hash).toBe("");
   await page.goto("/#swarm");

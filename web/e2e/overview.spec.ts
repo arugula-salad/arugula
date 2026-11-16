@@ -152,7 +152,8 @@ test.describe("on a computer", () => {
     expect(order).toEqual(["board", "loose", "more"]);
     // What the project's page showed before is still there, below.
     await expect(page.locator("[data-ov-more] [data-project-rooms]")).toBeAttached();
-    await expect(page.locator(".ws-rail [data-open-overview]")).toHaveAttribute("aria-current", "page");
+    await expect(page.locator(".ws-rail [data-open-plan]")).toHaveAttribute("aria-current", "page");
+    await expect(page.locator("[data-space-places=plan] [data-space-overview]")).toHaveAttribute("aria-current", "page");
     await page.screenshot({ path: info.outputPath("overview.png") });
   });
 
@@ -179,8 +180,8 @@ test.describe("on a computer", () => {
     await tile(page, "row_b").locator("[data-ov-session]").click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines.*pane=${agent}`));
     await expect(page.locator(`[data-pane="${agent}"]`)).toBeVisible();
-    // Overview on the rail, back.
-    await page.locator(".ws-rail [data-open-overview]").click();
+    // Plan on the rail opens on the Overview, back.
+    await page.locator(".ws-rail [data-open-plan]").click();
     await expect(page.locator("[data-overview]")).toBeVisible();
   });
 
@@ -272,7 +273,8 @@ test.describe("on a phone", () => {
     const first = await ov.locator("> *").first().evaluate((e) => [...e.attributes].map((a) => a.name));
     expect(first).toContain("data-ov-needs");
     await expect(tile(page, "row_b")).toBeVisible();
-    await expect(page.locator("[data-phone-tabs] [data-tab-overview]")).toHaveAttribute("aria-current", "page");
+    await expect(page.locator("[data-phone-tabs] [data-tab-plan]")).toHaveAttribute("aria-current", "page");
+    await expect(page.locator("[data-platform-bar] [data-space-overview]")).toHaveAttribute("aria-current", "page");
     await page.screenshot({ path: info.outputPath("overview-phone.png") });
   });
 });

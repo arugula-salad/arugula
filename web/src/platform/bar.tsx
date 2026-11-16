@@ -1,9 +1,9 @@
 // The app's bar (M150; the zoom path of Arugula #989): where you are, as a
 // path you can climb (the team, the project, the place). It's the shell's
 // workspace head (shared/frame.css, #1018), so the two pages sit in one
-// frame. The places are the rail's (./rail). On a phone, with no rail, the
-// bar has the project's switcher, the Inbox's bell and you, and the places
-// are a bar along the bottom.
+// frame. The space you're in's places follow it (./rail's SpacePlaces). On
+// a phone, with no rail, the bar has the project's switcher, those places
+// and you, and the spaces and the Inbox are a bar along the bottom.
 
 import type { ComponentChildren } from "preact";
 import { usePhone, useSubscribe } from "../shared/ui/hooks";
@@ -18,8 +18,7 @@ import { names } from "./links";
 import { AccountPicture } from "../shared/chat/avatar";
 import { barProject, where } from "./where";
 import { scopable, scopeOf } from "./scope";
-import { useInboxCount } from "./inbox-count";
-import { BellIcon, Caret, ChevronIcon } from "../shared/ui/icons";
+import { Caret, ChevronIcon } from "../shared/ui/icons";
 import { ownerKey, ownerNamed } from "./owners";
 import { Switcher } from "./switcher";
 import { boards } from "../shared/boards/store";
@@ -210,7 +209,7 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
   useSubscribe((fn) => session.subscribe(fn));
   useSubscribe((fn) => where.subscribe(fn));
   const r = useRoute();
-  // A phone has no rail (#377): the bar keeps the switcher and the bell.
+  // A phone has no rail (#377): the bar keeps the switcher; the Inbox is a tab.
   const rail = !usePhone();
   // The bar keeps the current project while Boards, Docs and the Inbox are scoped to it (Arugula #881).
   const project = barProject(r) ?? (scopable(r) ? scopeOf(r, currentProject(), (id) => !!session.project(id)) : undefined);
@@ -220,7 +219,6 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
       {rail ? <Path r={r} project={project} /> : <PhoneTop r={r} project={project} name={project ? (p?.name ?? "…") : "All projects"} />}
       {children}
       <div class="bar-fill" data-tauri-drag-region />
-      {!rail && <Bell here={r.page === "inbox"} />}
       {!rail && <AccountButton compact />}
       {/* In the desktop app on Linux the bar is the titlebar (M157). */}
       <WindowButtons />
@@ -250,16 +248,5 @@ function PhoneTop({ r, project, name }: { r: Route; project: string | undefined;
       </button>
       {picking && <Switcher from={switcher} project={project} owner={team?.key ?? (p ? ownerKey(p) : undefined)} close={() => setPicking(false)} />}
     </>
-  );
-}
-
-/** The phone's Inbox: the bell, with its count. */
-function Bell({ here }: { here: boolean }) {
-  const { n, waiting, title } = useInboxCount();
-  return (
-    <a class={here ? "app-bell here" : "app-bell"} href="/inbox" title={title || "Inbox"} aria-label={n ? `Inbox, ${n}` : "Inbox"} aria-current={here ? "page" : undefined} data-phone-bell onClick={(e) => follow(e, "/inbox")}>
-      <BellIcon />
-      {n > 0 && <span class={waiting ? "ws-rail-count mention" : "ws-rail-count"}>{n > 99 ? "99+" : n}</span>}
-    </a>
   );
 }

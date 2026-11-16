@@ -1607,12 +1607,6 @@ span.untri-title {
   outline-offset: 2px;
 }
 
-.ws-rail-line {
-  height: 1px;
-  margin: var(--space-1) var(--space-3);
-  background: var(--line);
-}
-
 .ws-rail .ws-rail-me {
   justify-content: center;
   height: 40px;
@@ -1662,7 +1656,7 @@ span.untri-title {
   font-weight: 600;
 }
 
-/* A phone's places, in a bar along the bottom (decision 15), and its bell. */
+/* A phone's spaces and Inbox, in a bar along the bottom (decision 15, Arugula #1080). */
 .app-tabs {
   display: none;
 }
@@ -1703,24 +1697,6 @@ span.untri-title {
   .app-tab .ws-rail-count {
     top: 4px;
     right: calc(50% - 22px);
-  }
-
-  .app-bell {
-    position: relative;
-    display: grid;
-    place-items: center;
-    width: 44px;
-    height: 44px;
-    color: var(--dim);
-  }
-
-  .app-bell.here {
-    color: var(--accent);
-  }
-
-  .app-bell .ws-rail-count {
-    top: 4px;
-    right: 2px;
   }
 }
 

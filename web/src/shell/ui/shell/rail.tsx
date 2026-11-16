@@ -1,23 +1,25 @@
-// The rail down the left of the workspace (M108, #1023): the whole app, with
-// the same places as the platform page's (Arugula #640). Arugula's mark (this
-// machine's sessions), Panes, Swarm, Chat (on the platform page, M153) and
-// Settings, with Projects (the platform page's `/`) above them all (#376). A
-// machine's Docs and Recipes are its bar's (MachinePlaces).
+// The rail down the left of a machine's own page (M108, #1023): control's
+// page and a daemon's. The app's three spaces (Arugula #1081, as the app's
+// rail: platform/rail.tsx): Plan and Talk are the app's (the platform page's
+// Overview and Chat, M153), and Build is this page, its places the bar's
+// (MachinePlaces: Panes, Swarm, Machines). Arugula's mark (this machine's
+// sessions) is above them, Settings at the foot. Plan and Talk are only
+// where control has a platform page.
 // It stays while the swarm or agents cover the panes, so the way back is
-// always in one place, and Panes goes back to the session's last tab and
+// always in one place, and Build goes back to the session's last tab and
 // pane (the routes never change the selection). The rail itself is
-// shared/ui/rail.tsx; this builds the panes page's items.
+// shared/ui/rail.tsx; this builds this page's items.
 
 import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../../client";
 import { directory } from "../../hosts";
-import { SWARM_ABOUT, onSwarmRoute, openSwarm } from "../../swarm/route";
+import { onSwarmRoute } from "../../swarm/route";
 import { openSettings } from "../settings-route";
 import { Rail as SharedRail, type RailItem } from "../../../shared/ui/rail";
 import { openPlatform, platformHref } from "../../platform-links";
-import { DOCS_TO, PROJECTS_TO, chatUnread, closePlace, currentPlace, hasChat, openChat, openOverview, useChatTick, type Place } from "../places";
+import { PROJECTS_TO, chatUnread, closePlace, currentPlace, hasChat, openChat, openOverview, useChatTick, type Place } from "../places";
 import { countView } from "../../../shared/telemetry";
-import { ChatIcon, DocsIcon, Mark, PanesIcon, ProjectsIcon, SettingsIcon, SwarmIcon } from "../../../shared/ui/icons";
+import { BuildIcon, Mark, PlanIcon, SettingsIcon, TalkIcon } from "../../../shared/ui/icons";
 import { focusSessionSearch } from "./prefs";
 
 /** Re-render on any route change, the swarm's too (it closes without a
@@ -42,11 +44,10 @@ export function Rail({ client }: { client: Client }) {
   const threads = hasChat();
   const { n, mention } = threads ? chatUnread() : { n: 0, mention: false };
   const host = directory.current || "this machine";
-  // The current project, which the platform page knows (Arugula #880), or the
-  // list on a first visit.
-  const projects = platformHref(PROJECTS_TO);
-  const teamDocs = platformHref(DOCS_TO);
-  const panes = () => {
+  // The current project's Overview, which the platform page knows (Arugula
+  // #880), or the list on a first visit.
+  const plan = platformHref(PROJECTS_TO);
+  const build = () => {
     if (at !== "panes") closePlace(at);
     else client.viewOf(client.active() ?? -1)?.focus();
   };
@@ -57,48 +58,27 @@ export function Rail({ client }: { client: Client }) {
   const items: (RailItem | false)[] = [
     // Only where control has a platform page. Its own tab, or this window in
     // the app (openPlatform); a modified click is the browser's.
-    !!projects && {
-      label: "Projects",
-      tip: "Projects: their issues, boards, runs, deploys and chat",
+    !!plan && {
+      label: "Plan",
+      tip: "Plan: your project's overview, boards and Docs",
       here: false,
-      hook: "data-open-projects",
-      icon: <ProjectsIcon />,
-      href: projects,
+      hook: "data-open-plan",
+      icon: <PlanIcon />,
+      href: plan,
       target: "arugula-platform",
       onClick: () => openPlatform(PROJECTS_TO),
     },
-    // A machine's Docs light the rail's Docs, or Panes where there's none (Arugula #796).
-    { label: "Panes", tip: "Your panes: back to this session's last tab and pane", here: at === "panes" || at === "agents" || (at === "docs" && !teamDocs), hook: "data-open-panes", icon: <PanesIcon />, onClick: panes },
-    {
-      label: "Swarm",
-      aria: `Swarm: ${SWARM_ABOUT}`,
-      tip: `Swarm: ${SWARM_ABOUT}. Panes brings you back here.`,
-      here: at === "swarm",
-      hook: "data-open-swarm",
-      icon: <SwarmIcon />,
-      onClick: () => at !== "swarm" && openSwarm(),
-    },
+    // This page: the panes, the swarm, this machine's Docs and recipes.
+    { label: "Build", tip: "Build: your panes, the swarm and your team's machines", here: at !== "settings", hook: "data-open-build", icon: <BuildIcon />, onClick: build },
     threads && {
-      label: "Chat",
-      aria: n ? `Chat, ${n} unread${mention ? ", mentioning you" : ""}` : "Chat",
-      tip: "Chat: every thread, on every machine",
+      label: "Talk",
+      aria: n ? `Talk, ${n} unread${mention ? ", mentioning you" : ""}` : "Talk",
+      tip: "Talk: your team's rooms, and every thread on every machine",
       here: false,
-      hook: "data-open-chat",
-      icon: <ChatIcon />,
+      hook: "data-open-talk",
+      icon: <TalkIcon />,
       count: { n, mention },
       onClick: () => openChat(),
-    },
-    // The platform's Docs: the current project's, or the team's and the reader's
-    // from every machine. This machine's own are its bar's.
-    !!teamDocs && {
-      label: "Docs",
-      tip: "Docs: your team's Docs, and yours from your machines",
-      here: at === "docs",
-      hook: "data-open-docs-all",
-      icon: <DocsIcon />,
-      href: teamDocs,
-      target: "arugula-platform",
-      onClick: () => openPlatform(DOCS_TO),
     },
   ];
   const brand = (

@@ -1,6 +1,7 @@
-// The rail down the left (M108, #376): the mark, the places and Settings.
-// It's drawn here from its items, so the panes page's (shell/ui/shell/rail.tsx)
-// and the platform page's are one component. It knows nothing of either
+// The rail down the left (M108, #376): the brand, the three spaces (Plan,
+// Build, Talk: Arugula #1080) and the foot. It's drawn here from its items,
+// so a machine's own page's (shell/ui/shell/rail.tsx) and the app's are one
+// component, with the same spaces. It knows nothing of either
 // page's state: each builds its items and says which is lit.
 
 import type { ComponentChildren } from "preact";
@@ -26,15 +27,13 @@ export type RailItem = {
   target?: string;
 };
 
-/** A line between groups of places (the app's: the project's, then the
- * team's, Arugula #989). */
-export const RAIL_LINE = "line" as const;
-
-export function Rail({ brand, items, bottom, foot, label = "Places" }: { brand: ComponentChildren; items: (RailItem | typeof RAIL_LINE)[]; bottom: RailItem[]; foot?: ComponentChildren; label?: string }) {
+export function Rail({ brand, items, bottom, foot, label = "Places" }: { brand: ComponentChildren; items: RailItem[]; bottom: RailItem[]; foot?: ComponentChildren; label?: string }) {
   return (
     <nav class="ws-rail" aria-label={label}>
       {brand}
-      {items.map((item, i) => (item === RAIL_LINE ? <div key={`line-${i}`} class="ws-rail-line" role="separator" /> : <RailButton key={item.hook} item={item} />))}
+      {items.map((item) => (
+        <RailButton key={item.hook} item={item} />
+      ))}
       <div class="ws-rail-fill" />
       {bottom.map((item) => (
         <RailButton key={item.hook} item={item} />
