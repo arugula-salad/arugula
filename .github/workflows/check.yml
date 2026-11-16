@@ -401,8 +401,15 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           rust: "false"
+      # GHCR sometimes answers `denied` to a good token (#1076): try again,
+      # and without it the recipe builds the image (and doesn't push it).
       - name: GHCR, for the test image
-        run: echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+        run: |
+          for n in 1 2 3; do
+            echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin && exit 0
+            sleep $((n * 10))
+          done
+          echo "::warning::couldn't log in to ghcr.io: building the test image"
       # Starts beside static and waits for its binaries here (#1680).
       - name: Wait for static
         run: scripts/ci-wait-job static
