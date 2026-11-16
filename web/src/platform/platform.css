@@ -1217,10 +1217,9 @@ html[data-corners="square"] .platform-section {
   margin-bottom: 8px;
 }
 
-.untri-tools input[type="search"] {
+.untri-search {
   flex: 1 1 180px;
   max-width: 360px;
-  min-width: 0;
 }
 
 .untri-labels {

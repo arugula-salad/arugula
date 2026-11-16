@@ -18,11 +18,12 @@ import { openFresh } from "../open-fresh";
 import { closePlace, currentPlace, openOverview } from "../places";
 import { openAttention } from "./attention-drawer";
 import { sessionUnread } from "../threads";
-import { BranchIcon, Caret, MoreIcon, PanesIcon, PlusIcon, SearchIcon, TabsIcon } from "../../../shared/ui/icons";
+import { BranchIcon, Caret, MoreIcon, PanesIcon, PlusIcon, TabsIcon } from "../../../shared/ui/icons";
 import { setSidebarOpen, setSidebarWidth, takeSearchFocus, useSidebar } from "./prefs";
 import { offlineWhy } from "./live";
 import { RenameInput, type Renaming } from "./rename-input";
 import type { MenuItem } from "../../../shared/ui/menu";
+import { SearchField } from "../../../shared/ui/search-field";
 import { Time } from "../../../shared/ui/time";
 import { ObjectChip } from "../../../shared/ui/state-chip";
 
@@ -200,26 +201,23 @@ export function SessionSidebar({
           </button>
         )}
       </div>
-      <label class="ws-search">
-        <SearchIcon size="sm" />
-        <input
-          ref={search}
-          type="search"
-          placeholder="Search sessions"
-          aria-label="Search sessions"
-          aria-controls="ws-session-list"
-          aria-activedescendant={q && hiId !== undefined ? `ws-session-${hiId}` : undefined}
-          value={query}
-          data-session-search
-          onInput={(e) => {
-            // A new search starts at its first match (here, not in an
-            // effect, which can run after the next key).
-            setHi(null);
-            setQuery((e.currentTarget as HTMLInputElement).value);
-          }}
-          onKeyDown={onKey}
-        />
-      </label>
+      <SearchField
+        class="ws-search"
+        inputRef={search}
+        label="Search sessions"
+        aria-controls="ws-session-list"
+        aria-activedescendant={q && hiId !== undefined ? `ws-session-${hiId}` : undefined}
+        value={query}
+        slash
+        data-session-search
+        onValue={(v) => {
+          // A new search starts at its first match (here, not in an
+          // effect, which can run after the next key).
+          setHi(null);
+          setQuery(v);
+        }}
+        onKeyDown={onKey}
+      />
       <div class="ws-session-list" id="ws-session-list" aria-label="Sessions">
         {GROUPS.map((g) => {
           const rows = shown.filter((r) => r.group === g.id);

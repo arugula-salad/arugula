@@ -15,6 +15,7 @@ import { BlockError, EmptyLine, EmptyState, LOADING_DELAY_MS, useAfter } from ".
 import { useSubscribe } from "../../shared/ui/hooks";
 import { openMenu, type MenuItem } from "../../shared/ui/menu";
 import { PageHeader } from "../../shared/ui/page-header";
+import { SearchField } from "../../shared/ui/search-field";
 import { StateChip } from "../../shared/ui/state-chip";
 import { Section } from "../../shared/ui/settings-section";
 import { issues, type IssueFilter } from "../../shared/issues/store";
@@ -202,7 +203,7 @@ function IssueList({ p, filter }: { p: PlatformProject; filter: IssueFilter }) {
             Closed
           </button>
         </div>
-        <input type="search" class="issues-search" placeholder="Search issues" aria-label="Search issues" value={typed} data-issues-search onInput={(e) => search(e.currentTarget.value)} />
+        <SearchField class="issues-search" label="Search issues" value={typed} onValue={search} slash data-issues-search />
         <button class="secondary" aria-pressed={!!filter.label} data-issues-label onClick={labelMenu}>
           {filter.label ? `Label: ${filter.label}` : "Label"} <Caret />
         </button>

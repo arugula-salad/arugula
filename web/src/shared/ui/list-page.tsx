@@ -27,6 +27,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { Bar } from "./bar";
 import { ChevronIcon } from "./icons";
 import { menuBelow, openMenu } from "./menu";
+import { SearchField } from "./search-field";
 import "./list-page.css";
 
 /** Under this, the list stands alone (as in ./list-page.css). */
@@ -335,19 +336,10 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, sort,
       if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented || covered()) return;
       const s = live.current;
       const searching = e.target === box.current;
-      if (e.key === "/" && !inField(e.target)) {
-        e.preventDefault();
-        box.current?.focus();
-        return;
-      }
       if (e.key === "Escape") {
         if (!searching && s.selectable && s.ticked.size > 0) {
           e.preventDefault();
           s.clearTicks();
-        } else if (searching) {
-          e.preventDefault();
-          s.setQuery("");
-          list.current?.focus({ preventScroll: true });
         } else if (s.detail) {
           e.preventDefault();
           setDetail(false);
@@ -520,22 +512,25 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, sort,
           <div class="list-head">{header}</div>
           {above && <div class="list-above">{above}</div>}
           <div class="list-tools">
-            <label class="list-search">
-              <input
-                ref={box}
-                type="search"
-                placeholder={searchLabel}
-                aria-label={searchLabel}
-                autoComplete="off"
-                value={query}
-                data-list-search
-                onInput={(e) => {
-                  setQuery(e.currentTarget.value);
-                  setPicked(null);
-                }}
-              />
-              <kbd aria-hidden="true">/</kbd>
-            </label>
+            <SearchField
+              class="list-search"
+              inputRef={box}
+              label={searchLabel}
+              value={query}
+              slash
+              data-list-search
+              onValue={(v) => {
+                setQuery(v);
+                setPicked(null);
+              }}
+              onKeyDown={(e) => {
+                // Esc clears it and goes back to the rows.
+                if (e.key !== "Escape") return;
+                e.preventDefault();
+                setQuery("");
+                list.current?.focus({ preventScroll: true });
+              }}
+            />
             {sort && narrow && (
               <button
                 type="button"
