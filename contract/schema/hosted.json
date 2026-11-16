@@ -1048,7 +1048,7 @@
         },
         "reason": {
           "default": "",
-          "description": "Why a failed setup stopped, as a fixed code ([`SETUP_REASONS`]):\nnever the pane's text, which stays end to end (\"Two planes, two\ntrust rules\"): a client reads it from the box.",
+          "description": "Why a failed setup stopped, as a fixed code ([`SETUP_REASONS`]):\nnever the pane's text, which stays on the machine (\"Two planes, two\ntrust rules\"): a client reads it from the box.",
           "type": "string"
         },
         "spec_hash": {

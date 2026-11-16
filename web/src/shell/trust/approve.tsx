@@ -261,7 +261,7 @@ export function JoinPrompt({ s, code: whole, from, device }: { s: ControlSession
               {/* #778: someone already in a team, before they pick: what each
                   place means, and the way to work with several teams. */}
               <p class="dim" data-join-place>
-                A machine is in one place: <b>Just me</b> (only your devices see its panes, and the sessions you share) or one team (everyone in it sees
+                A machine is in one place: <b>Just me</b> (only you see its panes, and the sessions you share) or one team (everyone in it sees
                 them, and the team's owners count as its owners too). To work with more than one team, pick Just me, then share a session with each team
                 (<i>Share</i>, beside the session's name).
               </p>
@@ -295,8 +295,8 @@ export function JoinPrompt({ s, code: whole, from, device }: { s: ControlSession
             <p class="dim" data-join-grants>
               {team
                 ? `Everyone in ${team.roster.name} sees it and reaches it by their role: owners and editors drive its terminals, viewers watch. Its owners also see private panes, and can take it out of the team. It stays yours.`
-                : "Only your devices reach it, and they can drive its terminals. You're its only owner."}{" "}
-              Arugula cloud relays the connection but can't read it.
+                : "Only you reach it, and you can drive its terminals. You're its only owner."}{" "}
+              Arugula cloud decides who reaches it and relays the connection: it can read what it relays, and keeps none of it.
             </p>
           )}
         </>
@@ -510,7 +510,7 @@ function AppJoin({ s, j, cancel, refused, failed, sealed, secret, whole }: Devic
         </>
       )}
       {whole}
-      <p class="dim">It reaches your machines (directly or through Arugula cloud's relay, end-to-end encrypted), your chat, projects, issues and boards.</p>
+      <p class="dim">It reaches your machines (directly or through Arugula cloud's relay), your chat, projects, issues and boards.</p>
       <div class="prompt-buttons">
         <button class="secondary" data-cancel-join onClick={cancel}>
           {refused ? "Close" : "Cancel"}
@@ -575,7 +575,7 @@ function CliJoin({ s, j, cancel, refused, failed, sealed, secret, whole }: Devic
           . Once you approve, it shows its account's fingerprint: check it's this one there.
         </p>
       ) : null}
-      <p class="dim">It reaches your machines (directly or through Arugula cloud's relay, end-to-end encrypted) and can approve devices, as this one can.</p>
+      <p class="dim">It reaches your machines (directly or through Arugula cloud's relay) and can approve devices, as this one can.</p>
       <div class="prompt-buttons">
         <button class="secondary" data-cancel-join onClick={cancel}>
           {refused ? "Close" : "Cancel"}

@@ -769,7 +769,8 @@ and the recipe form takes the preview's place. `/` searches, and arrows and
   `<state>/agent-catalog.json` and asked again once it's a minute old.
 - **How it's read:** this daemon asks each machine's `GET /api/a2a/agents`
   itself, through control's relay, signed with its own key (`peer.rs`).
-  Control never sees a card. Another account's machine is trusted only
+  The relay can read a card as it passes, and is built to keep none.
+  Another account's machine is trusted only
   through the root a checked team roster gives for that account.
 - **Who gets in:** a machine lets in other machines' daemons as their
   account, never as the owner, for `/api/a2a/` and nothing else. Those are

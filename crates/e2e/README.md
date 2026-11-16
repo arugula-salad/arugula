@@ -1,8 +1,10 @@
 # arugula-e2e
 
 End-to-end encryption between client devices and daemons, for the control
-track: control introduces them and relays, but can't read. The design is in
-[docs/control-e2e.md](../../docs/control-e2e.md).
+track. It was built so control could relay but not read; since aru-141 the
+hub's machine tokens decide who reaches a machine instead, control can read
+what it relays, and the device-key parts of this crate are to be deleted
+(#1007). The design is in [docs/control-e2e.md](../../docs/control-e2e.md).
 
 Depends on no other workspace crate.
 

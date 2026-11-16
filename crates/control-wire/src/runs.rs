@@ -219,7 +219,7 @@ pub struct RunView {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chant_ledger: Option<String>,
     /// The pane it runs in on its machine (its `running` event says): its
-    /// live view, which the project's people watch end to end.
+    /// live view, which the project's people watch.
     #[serde(default)]
     pub pane: Option<u64>,
     /// Its hosted workspace's name, deleted or not (UI audit #145): pages

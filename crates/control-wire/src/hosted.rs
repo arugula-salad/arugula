@@ -374,7 +374,7 @@ pub struct SetupReport {
     #[serde(default)]
     pub step: String,
     /// Why a failed setup stopped, as a fixed code ([`SETUP_REASONS`]):
-    /// never the pane's text, which stays end to end ("Two planes, two
+    /// never the pane's text, which stays on the machine ("Two planes, two
     /// trust rules"): a client reads it from the box.
     #[serde(default)]
     pub reason: String,

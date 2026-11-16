@@ -13131,7 +13131,7 @@
           },
           "pane": {
             "default": null,
-            "description": "The pane it runs in on its machine (its `running` event says): its\nlive view, which the project's people watch end to end.",
+            "description": "The pane it runs in on its machine (its `running` event says): its\nlive view, which the project's people watch.",
             "format": "uint64",
             "minimum": 0,
             "type": [

@@ -5234,7 +5234,7 @@ grant: string | null, last_seq: number, created_at: number, started_at: number |
 chant_ledger?: string | null, 
 /**
  * The pane it runs in on its machine (its `running` event says): its
- * live view, which the project's people watch end to end.
+ * live view, which the project's people watch.
  */
 pane: number | null, 
 /**

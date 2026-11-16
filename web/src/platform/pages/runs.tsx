@@ -840,7 +840,7 @@ function RunDetail({ p, id, msg, thread }: { p: PlatformProject; id: string; msg
             <a href={live} target="_blank" rel="noopener" data-run-pane>
               Watch pane %{run.pane} on your machines <ExternalIcon size="xs" />
             </a>
-            <span class="dim"> This page doesn't show machines; that one shows the pane end to end.</span>
+            <span class="dim"> This page doesn't show machines; that one shows the pane live.</span>
           </>
         ) : going ? (
           <span class="dim">Waiting for its cloud workspace to take it.</span>

@@ -1,16 +1,79 @@
 # Arugula control: keys, channels and the relay
 
-Written 2026-10-01, from the control spike ([spikes/s15-control](../spikes/s15-control/README.md)).
-This is the design the control track builds: accounts and devices, the
-end-to-end relay, teams and push. It turns the control track's promise
-(plan-archive.md, "Control track") into mechanisms: **control can refuse service,
-but it can't read.** That promise has limits, set out in
-[What holds against control](#what-holds-against-control): the client code
-control serves, and the first account a machine joins, are trusted.
-And it covers the machine plane only: the platform plane, what has to exist
-while every machine is asleep (chat, Cloud workspaces, Shared Docs,
-billing), is held in control, much of it in plain text. [What control
-stores](#what-control-stores) lists every table of both.
+Written 2026-10-01, from the control spike ([spikes/s15-control](../spikes/s15-control/README.md)),
+as the design of accounts and devices, the relay, teams and push. Its
+promise was **control can refuse service, but it can't read.** That promise
+is gone: since
+[aru-141](decisions/aru-141-machines-trust-control-the-hub-s-tokens-replace-device-keys.md)
+(2026-11-13), control decides who reaches a machine.
+[What control can do to your machines](#what-control-can-do-to-your-machines)
+says what's true now. The sections after it describe device keys, which are
+still in the code and still let older clients in until they're deleted
+(#1007); nothing in them keeps control out any more. The platform plane,
+what has to exist while every machine is asleep (chat, Cloud workspaces,
+Shared Docs, billing), is held in control, much of it in plain text.
+[What control stores](#what-control-stores) lists every table.
+
+## What control can do to your machines
+
+**Control can read the terminal traffic it relays, and it can let anyone,
+itself included, open a shell on any machine an account reaches.** So can
+whoever runs control, breaks into it or steals a signed-in session. Every
+page and the CLI reach a machine with a **machine token** that control
+signs: it names a person's account, one machine and one role, and the
+machine lets in whoever presents it. Today the channel is still encrypted
+to the machine's key, but control hands that key out, so the encryption
+doesn't keep control out; once the device-key code is deleted (#1007),
+terminal traffic is TLS to the relay.
+
+- **What control keeps.** It's built to keep none of the terminal bytes it
+  relays: they pass through its memory and aren't written to its database,
+  its logs or a bucket ([Never stored](#never-stored)). It does keep who
+  connected to which machine, and when. Two things from a pane are stored,
+  by choice: the lines a person quotes into chat ([Chat](#chat)), and a
+  hosted workspace's run logs ([Who else sees it](#who-else-sees-it)).
+- **What a machine checks itself**
+  (`crates/daemon/src/machine_token.rs`, `verify` and `Verifier::take`;
+  the claims in `crates/control-wire/src/machine_token.rs`):
+  - control's signature, against the keys control publishes;
+  - that the token is for this machine and no other;
+  - its life: control makes tokens for five minutes, and the machine
+    refuses one made to last more than ten;
+  - that it hasn't been used before: each token opens one channel;
+  - the role: a viewer's token can't type on any machine
+    (`crates/daemon/src/e2e.rs`, `token_grant`).
+
+  A deploy's box refuses every token, whatever control says (#2510).
+- **What the machine keeps for you.** Each remote session it accepts, by
+  token or device key, through the relay or a direct path, is a line in
+  `remote-sessions.jsonl` in its state directory: the account and login,
+  the role, the path, when it opened, and how long it lasted
+  (`crates/daemon/src/remote_log.rs`). For now it's only the file: the
+  machine's page and the CLI don't show it yet.
+- **What only the machine can turn off.** `arugulad sharing remote-input
+  off`, run on the machine, makes everyone who comes with a machine token
+  a viewer; a channel that could type closes and comes back as a viewer's.
+  It's in `sharing.json` (`remote_input`), and nothing that comes through
+  control can turn it back on (`crates/proto/src/sharing.rs`,
+  `remote_input`). It's set from the command line only for now; the
+  machine's page has no switch for it yet.
+- **What still needs you, not control.** Passkeys approve deploys, standing
+  run grants and owner changes: a user-verified assertion over the
+  action's bytes ([aru-126](decisions/aru-126-device-keys-are-the-machine-plane-s-passkeys-approve.md)).
+  An agent holds no passkey, so it never approves them.
+- **Read-only links keep their own keys:** a one-off key in the link's
+  fragment, which the machine lists as a viewer of one session until the
+  link expires ([Read-only links](#read-only-links)). Control never gets
+  that key; what the link shows passes through the relay like any other
+  channel.
+- **Keeping control out.** A daemon's own page (`http://127.0.0.1:7681`, or
+  its tailnet name) and `arugula attach` on the machine don't go through
+  control. A machine that never joined, or that ran `arugulad leave`, has
+  nothing to do with it.
+
+These limit a stolen token or session; they don't stop control. That's the
+trade aru-141 made: signing in is enough to reach your machines, with no
+device to approve, in exchange for trusting control with them.
 
 ## Device keys
 
@@ -85,6 +148,9 @@ The rest of this page has the details.
 
 ## Summary
 
+Of the device-key design; for what holds for every machine now, see
+[What control can do to your machines](#what-control-can-do-to-your-machines).
+
 - **One channel type:** every client–daemon stream through control, or
   from one machine to another, is a Noise channel,
   `Noise_IK_25519_AESGCM_SHA256`, on the relay *and* on direct paths.
@@ -118,8 +184,9 @@ The rest of this page has the details.
     shows, scanned or typed on a device you already use
     ([Approving a new device](#approving-a-new-browser-or-phone-the-code-it-shows)).
 - **Relay:** control keeps each enrolled daemon's relay socket (the daemon's
-  mux, `relay_ws.rs`) and splices clients onto it. It sees connection metadata
-  and byte counts only.
+  mux, `relay_ws.rs`) and splices clients onto it. It keeps connection
+  metadata and byte counts. With machine tokens it can read what it splices
+  (see above).
 - **Read-only links:** a link carries a one-off device key in its fragment
   (`#link=…`). The daemon lists that key as a viewer of one session until the
   link expires.
@@ -1071,7 +1138,7 @@ an agent, and a directory, for one hosted machine.
     ports on loopback (nftables or iptables rules the daemon makes before the first
     run; until they're in, nothing runs).
   When a run ends, or is stopped, everything `runner` runs is killed.
-- **In a pane.** A new pane in the `runs` session, an ordinary end-to-end
+- **In a pane.** A new pane in the `runs` session, an ordinary
   pane its project's people watch as any. Its first lines and its tab say
   which run it is, the operation's hash and the exact command, with
   anything that wouldn't print as itself escaped.
@@ -1221,56 +1288,36 @@ send, merge or approve a PR for anyone.
 
 ## What holds against control
 
-Who can read your terminals, depending on what control (the hosted service,
-or whoever runs yours) does:
+Since aru-141, not much: control decides who reaches a machine, so a
+control that turns malicious, is broken into, or has a session stolen from
+it can read your terminals and type into them on every machine the account
+reaches ([What control can do to your machines](#what-control-can-do-to-your-machines)).
+The device-key design below held against a copied database and a relay
+that logged everything; machine tokens don't, and once #1007 deletes the
+device keys nothing on this page will.
+
+What limits it:
 
 | Control… | Your terminals |
 |---|---|
-| relays and stores honestly | only your devices and the people you share with read them |
-| has its database or relay copied, or logs everything it sees | still unreadable: it holds certificates and ciphertext, never a private key |
-| turns malicious **after** your machines and devices are set up, without changing the page it serves | can't add a reader: daemons check every device against the root they pinned and every roster against the last one they checked, keep every revocation they've seen, and refuse a certificate first seen after its approver's removal; a team's lock changes only by an owner's signed word. It can withhold revocations and lock changes a machine hasn't seen yet, lock a team, and refuse service |
-| lies at **join** about which account a machine joins | refused by the machine: the approving device's answer to the secret in its link doesn't match (an older daemon or CLI: caught by the account fingerprint, if you compare it) |
-| lies about which account a **new browser or phone** is approved into | refused by that device: the approving device's answer to the code it showed doesn't match (approved from a page from before codes: it shows the account fingerprint to check) |
-| lies about who **@name** is when you share with them | believed on the first share unless you verify them; after that the share stops, saying their key changed |
-| enrolls a **hosted machine** into a project an owner delegated | can read what runs in it: it runs the box (labelled "Hosted · operator can read"). Only that project's people reach it, through the relay alone. Revoking the delegation stops every certificate made after it; a machine certified before it stays accepted until an owner removes it or the workspace is deleted or rebuilt |
-| enrolls a hosted machine into a project nobody delegated | refused by every client: no owner's device signed for that project |
-| starts runs or agent sessions on a project's hosted workspaces | only under an owner's standing grant, confirmed with their passkey (signed by their browser before DK6), which each machine checks; refused once a machine has heard it revoked, and by every machine once it expires. A revoke that stops running work stops the sessions under way too |
-| serves a **modified web client** | can read what that client shows and use its keys while it runs |
+| relays honestly | it reads what it relays only in memory and keeps none of it |
+| mints a token for someone, or for itself | they get the role it names on that one machine, for a few minutes; each token opens one channel; the machine logs the session in `remote-sessions.jsonl` |
+| mints owner or editor tokens on a machine with remote input off | they come in as viewers: only `arugulad sharing remote-input on`, on the machine, lets them type again |
+| asks a deploy's box to let someone in | refused by the box, whatever the token says |
+| wants a deploy, a standing run grant or an owner change | needs a passkey assertion from a person, over the action's bytes; an agent holds no passkey |
+| serves a **modified web client** | can read and do whatever that client can, as it could before |
+| runs a **hosted machine** | can read what runs in it: it runs the box (labelled "Hosted · operator can read") |
 
-The last row is the important limit. The browser client at control's
-address is JavaScript that control serves, and a page can't check its own
-code. A modified page could send keys or plaintext anywhere. That applies
-to:
+The last two rows were the limits of the old promise too. The browser
+client at control's address is JavaScript that control serves, and a page
+can't check its own code. That applies to any browser or phone that opens
+control's page, and to the desktop app once it's joined. It doesn't apply
+to a daemon's own page (`http://127.0.0.1:7681`, or its tailnet name), the
+desktop app before it's joined, `arugulad` or the CLI. The platform page on
+`app.arugula.io` holds no key and reads what control holds anyway.
 
-- any browser or phone that opens control's page;
-- **the desktop app once it's joined**: its window then loads
-  control's page, signed in through your browser;
-- not to a daemon's own page (`http://127.0.0.1:7681`, or its tailnet
-  name) or the desktop app before it's joined: the daemon serves those from
-  its own binary;
-- not to `arugulad` or the CLI.
-
-The platform page is apart from it (step 3, "The platform page is on
-app.arugula.io, not on the keys' origin"). Projects, chat and Cloud
-workspaces are on `app.arugula.io`, an origin of its own that the hub serves
-from the platform's binary. It holds no device key, and its build provably
-loads none of the code that does: CI refuses any import of the key code,
-the daemon client, control's trust client or the fleet from it, and checks
-its build's modules (`web/scripts/check-imports.mjs`). A modified platform
-page could read what it shows, which is the platform plane's plaintext that
-control holds anyway (chat, Cloud workspaces), but it can't use a device key
-or reach a terminal. Its session is its own host's, made by the hub from
-yours and ended with it. A passkey prompt on it is a deploy approval: the
-platform page asks for that itself, over bytes it chose, so a modified
-platform page could word an approval as it likes. Standing grants, and
-everything that changes who's in an account, are signed on control's page
-alone.
-
-So the promise is end to end encryption against the relay and against
-anyone who gets control's data, with the client code and the join trusted.
-To avoid trusting control's page, reach your machines from their own pages
-(over the tailnet, or `--direct-url`): a daemon's page talks to the daemon
-it came from.
+To keep control out of a machine altogether, don't join it to control, or
+run `arugulad leave`, and reach it from its own page over your tailnet.
 
 ## Channels
 
@@ -1476,8 +1523,10 @@ The host chip says "direct" or "relayed" either way.
 - An owner of the machine revokes a link (`DELETE /api/links/{id}`), and
   that, or its expiry, removes the principal and closes its channels.
 - **Control sees** that a link to that daemon was opened
-  (`/api/relay/link/<daemon id>`), not which link, and never the key or the
-  content. Fragments are never sent in requests.
+  (`/api/relay/link/<daemon id>`), not which link, and never the key:
+  fragments are never sent in requests. What the link shows still passes
+  through the relay, and the daemon's key in the link came from control
+  when it was made, so don't count on a link to keep control out.
 - **Link previews:** an unfurler that ran the page's script would see the
   fragment. The spike's share page reports what a script-running fetcher saw:
 
@@ -2014,21 +2063,21 @@ Every WebAuthn ceremony is refused from inside another site's frame
 ## Chat
 
 Since M122 (S41, #978), chat is control's, in plain text: this is the
-exception to "control can't read". A team's channels and DMs, the threads
+place control stores what people write. A team's channels and DMs, the threads
 about a pane or a session, and since step 6 (#1263) a project's native
 issues and the threads on objects, live in control's database with their
 read marks and a full-text index, so people talk while every machine
 sleeps, and control pushes and searches them itself.
 
 - **What enters control:** what people type, and the lines they choose to
-  quote from a pane (the page reads the pane end to end, and the person
-  picks the lines). Nothing else of the pane does: its output, input and
-  scrollback stay on the end-to-end channels above. Also what
+  quote from a pane (the page reads the pane, and the person picks the
+  lines). Nothing else of the pane is stored: its output, input and
+  scrollback pass through the relay, which keeps none of them. Also what
   people attach (files and images, up to 100 MB each, their bytes in a
   bucket of control's that only the platform reads: Arugula #125), the
   emoji they react with, a channel's topic and pins, and their sidebar,
   notification settings, keywords, saved messages and when their pages were
-  last open: tables below say which is which. None of it is end to end.
+  last open: tables below say which is which. Control reads all of it.
 - **What control fetches from outside** (#108, #112), the only fetches chat
   makes from the web, from the platform process and never from a reader's
   browser: the Open Graph page and image of a web link in a message (public

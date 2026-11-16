@@ -127,16 +127,44 @@ and `post_signed`).
   (`crates/daemon/src/control.rs`, `relay_once`; `crates/daemon/src/lib.rs`).
   `--no-relay` leaves it closed (`crates/daemon/src/args.rs`).
 
-### Your terminals: relayed, not readable
+### Your terminals: relayed, and control can read them
 
-- **Panes, keystrokes and everything else a client asks the daemon** travel
-  in end-to-end channels (Noise IK) between your device and the daemon;
-  control relays bytes it can't read, and the keys it hands out are signed
-  by your own devices, which the daemon checks itself
-  (`crates/control/src/lib.rs`, module docs;
-  `crates/daemon/src/control.rs`, module docs;
-  `crates/e2e/src/cert.rs`, `Trust::evaluate`; [docs/control-e2e.md](control-e2e.md)). What control does
-  see is who connects to which machine, and when.
+Control decides who reaches a joined machine
+([aru-141](decisions/aru-141-machines-trust-control-the-hub-s-tokens-replace-device-keys.md)).
+Say so plainly: **control can read the terminal traffic it relays, and it
+can let anyone, itself included, open a shell on any machine an account
+reaches.** So can whoever runs control, breaks into it or steals a
+signed-in session.
+
+- **Panes, keystrokes and everything else a client asks the daemon**
+  travel between your browser or CLI and the daemon through control's
+  relay, or straight to the machine on a direct path. A client gets in with
+  a machine token control signs (`crates/control-wire/src/machine_token.rs`;
+  `crates/daemon/src/machine_token.rs`, `verify`). The channel is still
+  encrypted to the daemon's key, but control is the one that hands that key
+  out, so the encryption doesn't keep control out. Control is built to keep
+  none of what it relays: it holds it in memory on the way through
+  ([docs/control-e2e.md](control-e2e.md#what-control-can-do-to-your-machines)).
+  It also sees who connects to which machine, and when.
+- **What the machine checks itself:** that the token is signed by control,
+  for this machine, within its life (control makes them for five minutes;
+  the machine refuses any longer than ten) and not used before; and the
+  role it names, so a viewer's token can't type
+  (`crates/daemon/src/machine_token.rs`; `crates/daemon/src/e2e.rs`,
+  `token_grant`). A deploy's box refuses every token.
+- **What the machine keeps for you:** each remote session it accepts, with
+  who, the role, relay or direct, and when it opened and closed, in
+  `remote-sessions.jsonl` in the state directory
+  (`crates/daemon/src/remote_log.rs`). Only the file for now: no page or
+  command shows it yet.
+- **What only the machine can turn off:** typing through control.
+  `arugulad sharing remote-input off`, run on the machine, makes everyone
+  who comes with a machine token a viewer
+  (`crates/proto/src/sharing.rs`, `remote_input`). Nothing through control
+  can turn it back on.
+- **Not through control:** a daemon's own page on the machine or your
+  tailnet, and `arugula attach` on the machine, talk to the daemon
+  directly. `arugulad leave` takes the machine out of control altogether.
 - **Push through control** (a device away from the tailnet): each
   notification is encrypted for the device's browser before it goes; control
   sees the push endpoint and ciphertext (`POST /api/daemon/push`;
@@ -156,7 +184,7 @@ and `post_signed`).
   `crates/proto/src/flags.rs`).
 - **What people write in chat** goes from their browser to control, not
   through the daemon (`crates/daemon/src/team_chat.rs`, module docs).
-  Control keeps chat in plain text: it's the exception to end-to-end
+  Control keeps chat in plain text, and stores it
   (`crates/control/src/lib.rs`, module docs).
 - **An agent's answer to a mention** is how it was routed: which step
   took it, the session's name, and, when no session has the name the
@@ -245,9 +273,9 @@ some send the GitHub repo of the agent's clone (`GET
   keys to a box, by search, not by proof.
 - **Driving one** (an agent's `cloud` and `read_cloud` tools): the tool
   call, with the prompts, text and paths it holds, goes to the box's daemon
-  in an end-to-end channel through control's relay
-  (`crates/daemon/src/mcp/hosted.rs`, `on_workspace`;
-  `crates/daemon/src/peer.rs`). Control can't read it. Needs the
+  through control's relay (`crates/daemon/src/mcp/hosted.rs`,
+  `on_workspace`; `crates/daemon/src/peer.rs`), which can read it on the
+  way, as it can anything it relays. Control runs the box anyway. Needs the
   `cloud.drive` grant (`crates/platform/src/grants.rs`).
 
 ### From the box, to control
@@ -294,14 +322,18 @@ These run only there; a person's machine doesn't send them
   (`crates/daemon/src/lib.rs`, `open_provider`;
   `crates/daemon/src/provider_gate.rs`).
 - **Agent delegation (`agent-delegation`):** a prompt to a teammate's or
-  your other machine's agent, end to end through control's relay
-  (`crates/daemon/src/peer.rs`; `crates/arugulad-labs/src/agents/delegate.rs`).
+  your other machine's agent, through control's relay, which can read it on
+  the way (`crates/daemon/src/peer.rs`;
+  `crates/arugulad-labs/src/agents/delegate.rs`).
 
 ## What never leaves
 
-- **Your terminals' contents and keystrokes, to control:** only in
-  end-to-end channels it relays (above). Chat is the exception, for what
-  people and agents post there, and quoted lines (`crates/control/src/lib.rs`).
+- **Your terminals' contents and keystrokes, to control's storage:** they
+  pass through control's relay, which can read them, and control is built
+  not to keep them (above). Chat is different: what people and agents post
+  there, and the lines they quote from a pane, control stores
+  (`crates/control/src/lib.rs`). So is a hosted run's log
+  ([From the box](#from-the-box-to-control)).
 - **Your `gh` token:** used by this machine to call GitHub, never sent
   (`crates/arugulad-forge/src/github.rs`, `TOKENS`;
   `crates/arugulad-forge/src/send_op.rs`).
@@ -329,7 +361,8 @@ These run only there; a person's machine doesn't send them
 | Relay socket | `--no-relay` | `crates/daemon/src/args.rs` |
 | Chat readers | chat off for the account or team, in control | `crates/daemon/src/chat_readers.rs` |
 | Agent mentions | `arugulad sharing agent-mentions off` (`agent_mentions: false` in `sharing.json`) | `crates/proto/src/sharing.rs`, `agent_mentions` |
-| Typing through control (machine tokens, aru-141) | `arugulad sharing remote-input off` (`remote_input: false` in `sharing.json`): people who come through control can only watch; who came is in `remote-sessions.jsonl` | `crates/proto/src/sharing.rs`, `remote_input`; `crates/daemon/src/e2e.rs`, `token_grant` |
+| Typing through control (machine tokens, aru-141) | `arugulad sharing remote-input off` (`remote_input: false` in `sharing.json`), on the machine only: people who come through control can only watch | `crates/proto/src/sharing.rs`, `remote_input`; `crates/daemon/src/e2e.rs`, `token_grant` |
+| Who came (not a switch: always on) | `remote-sessions.jsonl` in the state directory, one line per remote session opened and closed | `crates/daemon/src/remote_log.rs` |
 | Boards state | `arugulad leave`, or take away the machine's `boards.write` grant (`arugula grants`) | `crates/daemon/src/board_state.rs`, `enabled`; `crates/platform/src/grants.rs` |
 | Agents' control tools | the machine's grants (`arugula grants`) | `crates/platform/src/grants.rs` |
 | VM panes (loam) | no `--loam-url`, or the `sandbox-providers` flag off | `crates/daemon/src/lib.rs`, `open_provider`; `crates/daemon/src/provider_gate.rs` |

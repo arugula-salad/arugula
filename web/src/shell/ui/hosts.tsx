@@ -75,7 +75,7 @@ export function machinePlace(team: string | null | undefined, owner?: string): s
 export function placeMeans(team: string | null | undefined, owner?: string): string {
   if (team) return `everyone in ${team} sees its panes, except private ones, and ${team}'s owners count as its owners too.`;
   if (owner) return `you see what ${owner} shares with you.`;
-  return "only your devices see its panes (and whoever you share a session with), and you're its only owner.";
+  return "only you see its panes (and whoever you share a session with), and you're its only owner.";
 }
 
 /** A machine's place from the fleet, when control says whose it is. */
@@ -219,7 +219,7 @@ export function HostButton({ path = true }: { path?: boolean } = {}) {
     <button ref={ref} class="host-button" title="Hosts" aria-haspopup="menu" aria-expanded={expanded} data-host={directory.current} onClick={open} onContextMenu={open}>
       {directory.current}
       {path && directory.path ? (
-        <span class={`host-path ${directory.path}`} data-path={directory.path} title={directory.path === "relayed" ? "Through Arugula cloud's relay (end-to-end encrypted)" : "Straight to the machine"}>
+        <span class={`host-path ${directory.path}`} data-path={directory.path} title={directory.path === "relayed" ? "Through Arugula cloud's relay, which can read what it carries and keeps none of it" : "Straight to the machine"}>
           {directory.path}
         </span>
       ) : null}{" "}
