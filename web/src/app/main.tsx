@@ -13,8 +13,10 @@ import "../shared/frame.css";
 import "../platform/platform.css";
 // The lists in the swarm's language, over platform.css's.
 import "../platform/swarm.css";
-// /settings: its sections, the agents' matrices and the switches.
+// /settings: its sections and the agents' matrices.
 import "../shared/ui/settings-section.css";
+// A switch, one look on every page and in every dialog (#1099).
+import "../shared/switch.css";
 import "../platform/settings.css";
 import "../platform/finish.css";
 // The one button set (UI audit #158), last: what it draws, it draws everywhere.

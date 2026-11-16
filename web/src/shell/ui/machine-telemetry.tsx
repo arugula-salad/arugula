@@ -211,6 +211,7 @@ function MachineTelemetrySettings({ client, close }: { client: Client; close: ()
               <input
                 type="checkbox"
                 role="switch"
+                class="sw-switch"
                 data-machine-telemetry-switch
                 checked={t.on}
                 disabled={!!kept}
