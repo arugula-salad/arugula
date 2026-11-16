@@ -186,8 +186,10 @@ clippy, and 5 a spec that imported a file nobody committed.
   picked (`.github/actions/e2e-shard`, which check.yml's e2e runs too). A
   change to docs alone runs neither. Otherwise it takes the journeys and a
   few others, any spec it changes, and any spec whose name shares a word
-  with a changed path; `web/scripts/e2e-select.mjs` has the lists, and what
-  every spec reads (`helpers.ts`, Playwright's config) runs them all.
+  with a changed path, WebKit's (`*.webkit.spec.ts`) included; a change to
+  `web/src/platform`'s own files (the app's frame) takes the `app-*` specs.
+  `web/scripts/e2e-select.mjs` has the lists, and what every spec reads
+  (`helpers.ts`, Playwright's config) runs them all.
 - **pr-gate**: the verdict, failing when any job above failed.
 
 So a green pr-gate doesn't mean the group will pass: the merge queue runs
