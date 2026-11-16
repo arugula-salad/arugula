@@ -1,7 +1,8 @@
 // Build's home (Arugula #1083): every machine's panes in one list, a
 // section per machine, read from the fleet's summaries as Swarm's are.
-// The machine is a filter over it, not where it starts; a row opens the
-// pane on its machine's page. Opinionated: no options but the filter.
+// The machine is a filter over it, not where it starts, and Agents only
+// another (#1082: where the Sessions page's agents went); a row opens the
+// pane on its machine's page. Opinionated: no options but the filters.
 
 import "./panes-list.css";
 import { parseMachines, type MachineAt } from "../shared/machine-paths";
@@ -45,28 +46,34 @@ function machineAt(g: Pick<PaneGroup, "id" | "name">, pane?: number): MachineAt 
   return pane !== undefined ? { at: "machines", pane, ...(g.name !== home() ? { name: g.name } : {}) } : { at: "machines", name: g.name };
 }
 
-export function PanesList({ project, fleet, machine }: { project: string; fleet: Fleet; machine?: string }) {
+const isAgent = (p: FleetPane) => kindOf(p) === "agent";
+
+/** `agents`: only the panes an agent is in. */
+export function PanesList({ project, fleet, machine, agents }: { project: string; fleet: Fleet; machine?: string; agents: boolean }) {
   useSubscribe((fn) => directory.subscribe(fn));
   useSubscribe((fn) => fleet.subscribe(fn));
   const phone = usePhone();
   const to = (at: MachineAt) => pathOf({ page: "machines", project, at }, names);
+  // This list, filtered so: the machine's and Agents only's links keep each other.
+  const here = (f: { machine?: string; agents: boolean }) => to({ at: "panes", ...(f.machine ? { machine: f.machine } : {}), ...(f.agents ? { agents: true } : {}) });
   const all = paneGroups(fleet.list, fleet.panes);
-  const groups = machine ? all.filter((g) => g.id === machine || (!g.id && g.name === machine)) : all;
-  const picked = machine ? groups[0] : undefined;
+  const mine = machine ? all.filter((g) => g.id === machine || (!g.id && g.name === machine)) : all;
+  const picked = machine ? mine[0] : undefined;
+  // Agents only drops the machines with none, unless you picked that one.
+  const groups = agents ? mine.map((g) => ({ ...g, panes: g.panes.filter(isAgent) })).filter((g) => machine || g.panes.length) : mine;
   const panes = groups.reduce((n, g) => n + g.panes.length, 0);
   const asking = groups.reduce((n, g) => n + g.panes.filter((p) => needsYou(p.info)).length, 0);
-  // The filters sit in a row (an agents' one comes beside it, #1082).
   const pick = (e: MouseEvent) =>
     openMenu(
       menuBelow(e.currentTarget as HTMLElement),
       [
-        { label: "Every machine", checked: !machine, run: () => go(to({ at: "panes" }), true) },
+        { label: "Every machine", checked: !machine, run: () => go(here({ agents }), true) },
         ...all.map((g) => ({
           label: shortHost(g.name),
           detail: `${g.panes.length} ${g.panes.length === 1 ? "pane" : "panes"}${g.online ? "" : " · offline"}`,
           faded: !g.online,
           checked: !!picked && picked.name === g.name,
-          run: () => go(to({ at: "panes", machine: g.id ?? g.name }), true),
+          run: () => go(here({ machine: g.id ?? g.name, agents }), true),
         })),
       ],
       { from: e.currentTarget as HTMLElement, label: "Machine" },
@@ -78,7 +85,7 @@ export function PanesList({ project, fleet, machine }: { project: string; fleet:
         stats={
           panes > 0 && (
             <span class="dim" data-panes-stats>
-              {panes} {panes === 1 ? "pane" : "panes"}
+              {panes} {agents ? (panes === 1 ? "agent" : "agents") : panes === 1 ? "pane" : "panes"}
               {asking > 0 && ` · ${asking} ${asking === 1 ? "needs" : "need"} you`}
             </span>
           )
@@ -88,31 +95,46 @@ export function PanesList({ project, fleet, machine }: { project: string; fleet:
         <button class="secondary" aria-pressed={!!machine} data-panes-machine={machine ?? ""} onClick={pick}>
           {picked ? `On ${shortHost(picked.name)}` : machine ? "On a machine" : "Every machine"} <Caret />
         </button>
+        <button class="secondary" aria-pressed={agents} data-panes-agents onClick={() => go(here({ machine, agents: !agents }), true)}>
+          Agents only
+        </button>
       </div>
       {directory.list === null ? (
         <p class="dim">Loading…</p>
       ) : !all.length ? (
         <EmptyState where="page" title="No machines yet." why="A machine's panes show here once it has joined your team." data-panes-empty />
-      ) : !groups.length ? (
+      ) : !mine.length ? (
         <EmptyState
           where="page"
           title="That machine isn't one you can reach."
           action={
-            <a class="secondary" href={to({ at: "panes" })} data-panes-every onClick={(e) => follow(e, to({ at: "panes" }))}>
+            <a class="secondary" href={here({ agents })} data-panes-every onClick={(e) => follow(e, here({ agents }))}>
               Every machine's panes
             </a>
           }
           data-panes-unknown
         />
+      ) : !groups.length ? (
+        <EmptyState
+          where="page"
+          title="No agents on your machines."
+          why="A pane with an agent in it shows here."
+          action={
+            <a class="secondary" href={here({ agents: false })} data-panes-all onClick={(e) => follow(e, here({ agents: false }))}>
+              Every pane
+            </a>
+          }
+          data-panes-no-agents
+        />
       ) : (
-        groups.map((g) => <Group key={g.name} g={g} to={to} last={lastPane(project)} phone={phone} />)
+        groups.map((g) => <Group key={g.name} g={g} to={to} last={lastPane(project)} phone={phone} agents={agents} />)
       )}
     </section>
   );
 }
 
 /** `last`: the pane you last had open in the project. */
-function Group({ g, to, last, phone }: { g: PaneGroup; to: (at: MachineAt) => string; last: { machine?: string; pane: number } | null; phone: boolean }) {
+function Group({ g, to, last, phone, agents }: { g: PaneGroup; to: (at: MachineAt) => string; last: { machine?: string; pane: number } | null; phone: boolean; agents: boolean }) {
   const page = to(machineAt(g));
   return (
     <section class="panes-machine" data-panes-group={g.id ?? g.name} aria-label={shortHost(g.name)}>
@@ -131,7 +153,7 @@ function Group({ g, to, last, phone }: { g: PaneGroup; to: (at: MachineAt) => st
           ))}
         </ul>
       ) : (
-        <p class="dim panes-none">{g.online ? "No panes open." : "No panes heard from it yet."}</p>
+        <p class="dim panes-none">{agents ? "No agents on it." : g.online ? "No panes open." : "No panes heard from it yet."}</p>
       )}
     </section>
   );

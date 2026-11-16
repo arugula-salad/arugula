@@ -1,0 +1,100 @@
+// The Sessions page folded away (Arugula #1082): each card's sessions on
+// its board row and in its drawer, from the hub's sessions by card (a
+// computer's session put on the card, a hosted one), less what the row
+// holds already and what has finished; a computer's session opens its pane
+// in Build. Build's list of panes has Agents only, beside its machine
+// filter. On the app's frame fixture (app-frame-page.tsx), with the
+// cloud's answers from sessions-fixture.ts and a real pane of the suite's
+// daemon.
+import { expect, test, type Page } from "@playwright/test";
+import { fixturePage } from "./fixture-page";
+import { panes, reset } from "./helpers";
+import { PROJECT as P, byCard } from "./sessions-fixture";
+
+/** The reader's computer, as the cloud names it: the fixture page reaches
+ * `m_suite` (the suite's daemon) for a live pane. */
+const M = "m_suite";
+
+test.use({ permissions: ["local-network-access"], viewport: { width: 1280, height: 800 } });
+
+const row = (id: string, issue: string, number: number, title: string) => ({ id, rev: 1, pointer: { kind: "issue", id: issue }, note: "", status: "none", lane: "doing", attachments: [], live: { state: "open", kind: "native", number, title }, created_at: 1, updated_at: 1 });
+
+const board = {
+  board: { id: "brd_00e2e0", project: P, title: "Launch", goal: "", created_by: "", created_at: 1, updated_at: 1, done_note: "", closed_by: "", progress: { done: 0, total: 2, proven: 0, review: 0, doing: 2 } },
+  zones: (["next", "doing", "review", "done"] as const).map((lane) => ({
+    id: `lane_${lane}`,
+    rev: 1,
+    title: lane[0].toUpperCase() + lane.slice(1),
+    kind: "lane",
+    rows: lane === "doing" ? [row("row_0985", "iss_985", 985, "A project's Sessions page"), row("row_0970", "iss_970", 970, "The rail")] : [],
+  })),
+  groups: [],
+  docs: [],
+};
+
+/** A fresh pane, the cloud's answers, then the app at `path`. */
+async function openApp(page: Page, path: (pane: number) => string): Promise<number> {
+  await reset(page);
+  const [pane] = await panes(page);
+  await page.route(`**/api/projects/${P}/sessions/by-card`, (r) => r.fulfill({ json: byCard(M, pane) }));
+  await page.route(`**/api/projects/${P}/boards`, (r) => r.fulfill({ json: { project: P, boards: [board.board] } }));
+  await page.route("**/api/boards/brd_00e2e0", (r) => r.fulfill({ json: board }));
+  const body = await fixturePage("./app-frame-page.tsx");
+  await page.route(new RegExp(`/p/${P}`), (r) => r.fulfill({ contentType: "text/html", body }));
+  await page.goto(path(pane));
+  return pane;
+}
+
+test("a card's sessions are on its row: what needs you first, finished ones left out; one opens its pane", async ({ page }, info) => {
+  const pane = await openApp(page, () => `/p/${P}/boards/brd_00e2e0`);
+  // Lanes, where a row draws its chips.
+  await page.locator('[data-board-view="lanes"]').click();
+  const rail = page.locator('[data-board-row="row_0970"]');
+  // The computer's session put on #970, and the hosted one whose turn ended; not the stopped one.
+  await expect(rail.locator("[data-board-card-session]")).toHaveCount(2);
+  await expect(rail.locator(`[data-board-card-session="machine:${M}:7"]`)).toContainText("rail-work");
+  await expect(rail.locator(`[data-board-card-session="machine:${M}:7"]`)).toContainText("working");
+  await expect(rail.locator('[data-board-card-session="hosted::ses_0970bbbb"]')).toHaveCount(0);
+  // #985's hosted session waits on you.
+  const sessions = page.locator('[data-board-row="row_0985"] [data-board-card-session]');
+  await expect(sessions).toHaveCount(1);
+  await expect(sessions).toHaveAttribute("data-board-card-session-needs", "");
+  await expect(sessions).toContainText("needs input");
+  await page.screenshot({ path: info.outputPath("board-card-sessions.png") });
+  // The drawer says them too.
+  await rail.locator("[data-board-ptr]").click();
+  const drawer = page.locator('[data-board-drawer="row_0970"] [data-board-drawer-card-sessions]');
+  await expect(drawer.locator("[data-board-card-session]")).toHaveCount(2);
+  // A computer's session opens its pane, in Build.
+  await drawer.locator(`[data-board-card-session="machine:${M}:7"] [data-board-card-session-open]`).click();
+  await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines(/[0-9a-f]+[^/?]*)?\\?pane=${pane}$`));
+  await expect(page.locator(`[data-pane="${pane}"]`)).toBeVisible();
+});
+
+test("Build's panes list has Agents only beside its machine filter; it says when there are none", async ({ page }, info) => {
+  const pane = await openApp(page, () => `/p/${P}/machines/panes`);
+  const list = page.locator("[data-panes-list]");
+  await expect(list.locator(`[data-panes-pane="${pane}"]`)).toBeVisible();
+  const filter = list.locator("[data-panes-agents]");
+  await expect(filter).toHaveAttribute("aria-pressed", "false");
+  // The suite's panes are terminals: no agent on any machine.
+  await filter.click();
+  await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines/panes\\?agents$`));
+  await expect(filter).toHaveAttribute("aria-pressed", "true");
+  await expect(list.locator("[data-panes-pane]")).toHaveCount(0);
+  await expect(list.locator("[data-panes-no-agents]")).toContainText("No agents on your machines.");
+  await page.screenshot({ path: info.outputPath("panes-agents-only.png") });
+  // With a machine picked, the two keep each other: its section says it has none.
+  await list.locator("[data-panes-machine]").click();
+  await page.locator(".menu-item").nth(1).click();
+  await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines/panes\\?machine=[\\w.-]+&agents$`));
+  await expect(list.locator("[data-panes-group] .panes-none")).toHaveText("No agents on it.");
+  await filter.click();
+  await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines/panes\\?machine=[\\w.-]+$`));
+  await expect(list.locator(`[data-panes-pane="${pane}"]`)).toBeVisible();
+  // Every pane, from the empty list, is the list unfiltered.
+  await page.goto(`/p/${P}/machines/panes?agents`);
+  await page.locator("[data-panes-no-agents]").getByRole("link", { name: "Every pane" }).click();
+  await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines/panes$`));
+  await expect(list.locator(`[data-panes-pane="${pane}"]`)).toBeVisible();
+});

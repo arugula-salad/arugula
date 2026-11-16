@@ -22,7 +22,7 @@ import { MenuLayer, PromptLayer } from "../src/shared/ui/menu";
 import { platformApi } from "../src/platform/api";
 import { PlatformPage } from "../src/platform/page";
 import { go } from "../src/platform/router";
-import { appMachines, appOverview, appPanes } from "../src/app/machines";
+import { appMachines, appOverview } from "../src/app/machines";
 import { appLive } from "../src/app/live";
 import { chat } from "../src/shared/chat-store";
 import { localBackend, setSeenBackend } from "../src/shared/seen";
@@ -62,7 +62,7 @@ window.fetch = async (input, init) => {
   return realFetch(input, init);
 };
 
-// The spec seeds chat's rooms (the unread on Boards and Sessions) through this.
+// The spec seeds chat's rooms (the unread on Boards and Machines) through this.
 (window as unknown as { __chat: typeof chat }).__chat = chat;
 
 // Who's signed in, for the shell's blocks in a machine's pane: the
@@ -82,7 +82,7 @@ root.classList.add("frame");
 render(
   // A board card's session (board-live.spec.ts, overview.spec.ts): the machine `m_suite` is the suite's daemon, this page's origin.
   <PlatformApiContext.Provider
-    value={{ ...platformApi, Machines: appMachines(() => null), Overview: appOverview(() => null), panes: appPanes(() => null), ...appLive(() => null, (m) => (m === "m_suite" ? "" : undefined)), goToPane: (_machine, pane) => go(`/p/prj_aaaa0002/machines?pane=${pane}`) }}
+    value={{ ...platformApi, Machines: appMachines(() => null), Overview: appOverview(() => null), ...appLive(() => null, (m) => (m === "m_suite" ? "" : undefined)), goToPane: (_machine, pane) => go(`/p/prj_aaaa0002/machines?pane=${pane}`) }}
   >
     <PlatformPage />
     <MenuLayer />

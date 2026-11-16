@@ -2,10 +2,12 @@
 // tile and its switcher, then three spaces: Plan, Build, Talk, #1080), the
 // path and the space's places in the bar, the machines inside the frame (a
 // real pane of the suite's daemon, Build's home of every machine's panes
-// (#1083), the machines' list with Build's places, Swarm beside the rail), the shell's keys only on a machine's page, and on
-// a phone the spaces and the Inbox in a bar along the bottom. On a fixture page (app-frame-page.tsx) served on the
-// daemon's origin; the hub's leg (tokens through the relay on the app's
-// host) is the cloud's spec.
+// (#1083), the machines' list with Build's places, Swarm beside the rail),
+// the shell's keys only on a machine's page, and on a phone the spaces and
+// the Inbox in a bar along the bottom; the Sessions page folded away
+// (#1082), its old address on to Boards, Runs under Build. On a fixture
+// page (app-frame-page.tsx) served on the daemon's origin; the hub's leg
+// (tokens through the relay on the app's host) is the cloud's spec.
 import { devices, expect, test, type Page } from "@playwright/test";
 import { fixturePage } from "./fixture-page";
 import { panes, reset } from "./helpers";
@@ -60,9 +62,9 @@ test.describe("on a computer", () => {
     // The path: the team, the project (a link up), the place.
     await expect(page.locator("[data-app-path]")).toHaveText(/Arugula team\s*Arugula\s*Boards/);
     await expect(page.locator("[data-app-path] [data-path=project]")).toHaveAttribute("href", new RegExp(`^/p/${P}`));
-    // Plan's places, in the bar; Sessions is Plan's until it folds away (#1082).
+    // Plan's places, in the bar; Sessions folded into the boards' rows (#1082).
     const order2 = await page.locator("[data-space-places=plan] > *").evaluateAll((els) => els.map((e) => [...e.attributes].find((a) => a.name.startsWith("data-space-"))?.name.slice(11) ?? ""));
-    expect(order2).toEqual(["overview", "boards", "docs", "sessions"]);
+    expect(order2).toEqual(["overview", "boards", "docs"]);
     await here(page, "boards");
     await page.screenshot({ path: info.outputPath("frame-boards.png") });
     // Each place is a step of the bar, in Plan.
@@ -77,13 +79,13 @@ test.describe("on a computer", () => {
     await place(page, "boards").click();
     await rail(page, "plan").click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*$`));
-    // Runs left the bar: Sessions has them.
-    await place(page, "sessions").click();
-    await here(page, "sessions");
-    await page.locator("[data-sessions-runs]").click();
-    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/runs$`));
-    await here(page, "sessions");
+    // An old link to Sessions goes on to Boards, in its place in the history.
+    await page.goto(`/p/${P}/sessions?label=ui`);
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/boards$`));
+    await here(page, "boards");
     await lit(page, "plan");
+    await page.goBack();
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*$`));
     // Talk is Chat, with no places of its own.
     await rail(page, "talk").click();
     await expect(page).toHaveURL(/\/chat/);
@@ -91,13 +93,13 @@ test.describe("on a computer", () => {
     await expect(page.locator("[data-space-places]")).toHaveCount(0);
   });
 
-  test("what's new in the issues' and runs' threads is a count on Boards and on Sessions, and on Plan", async ({ page }) => {
+  test("what's new in the issues' threads is a count on Boards and Plan; the runs', on Build (Arugula #1082)", async ({ page }) => {
     await openApp(page, () => `/p/${P}`);
     await seedThreads(page);
     await expect(place(page, "boards").locator(".count-after")).toHaveText("3");
-    await expect(place(page, "sessions").locator(".count-after")).toHaveText("@4");
     await expect(place(page, "docs").locator(".count-after")).toHaveCount(0);
-    await expect(rail(page, "plan").locator(".ws-rail-count")).toHaveText("@7");
+    await expect(rail(page, "plan").locator(".ws-rail-count")).toHaveText("3");
+    await expect(rail(page, "build").locator(".ws-rail-count")).toHaveText("@4");
   });
 
   test("a team's settings and members are two clicks: Settings, then the link in sight", async ({ page }) => {
@@ -195,7 +197,7 @@ test.describe("on a computer", () => {
     await expect(group).toHaveCount(1);
     const row = group.locator(`[data-panes-pane="${pane}"]`);
     await expect(row).toBeVisible();
-    // The machine is a filter, beside room for more.
+    // The machine is a filter, Agents only beside it (board-sessions.spec.ts).
     const filter = list.locator("[data-panes-machine]");
     await expect(filter).toHaveText(/Every machine/);
     await expect(filter).toHaveAttribute("aria-pressed", "false");
@@ -243,6 +245,14 @@ test.describe("on a computer", () => {
     await expect(row).toContainText("You own it");
     await expect(row.locator("[data-machine-sessions]")).toHaveText(/^\d+ sessions?/);
     await page.screenshot({ path: info.outputPath("frame-machines.png") });
+    // Runs are Machines' (Arugula #1082): a run is a session in a cloud
+    // workspace. No Workspaces for a reader off the hosted list.
+    await expect(list.locator("[data-machines-workspaces]")).toHaveCount(0);
+    await list.locator("[data-machines-runs]").click();
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/runs$`));
+    await here(page, "machines");
+    await lit(page, "build");
+    await page.goBack();
     await place(page, "swarm").click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines/swarm$`));
     await expect(page.locator("[data-app-swarm] .swarm")).toBeVisible();
@@ -360,10 +370,11 @@ test.describe("on a phone", () => {
     await expect(tabs.locator("[data-tab-inbox]")).toHaveAttribute("aria-current", "page");
   });
 
-  test("what's new in the issues' and runs' threads is a count on the Plan tab", async ({ page }) => {
+  test("what's new in the issues' threads is a count on the Plan tab; the runs', on Build", async ({ page }) => {
     await openApp(page, () => `/p/${P}`);
     await seedThreads(page);
-    await expect(page.locator("[data-tab-plan] .ws-rail-count")).toHaveText("@7");
+    await expect(page.locator("[data-tab-plan] .ws-rail-count")).toHaveText("3");
+    await expect(page.locator("[data-tab-build] .ws-rail-count")).toHaveText("@4");
   });
 
   test("Build's tab opens every machine's panes; a row opens its pane", async ({ page }, info) => {

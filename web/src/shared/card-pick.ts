@@ -1,6 +1,6 @@
 // Picking a card for a session (Arugula inversion): the project's open
-// issues as a picker's choices, and the card an answer names. The pane
-// chip (shell/ui/pane-card.tsx) and the Sessions page both ask with them.
+// issues as a picker's choices, and the card an answer names. The
+// session's ⋯ menu (shell/ui/pane-card.tsx) asks with them.
 // Plain functions, for their tests (scripts/pane-card.test.mjs).
 import type { NativeIssue } from "./proto";
 import type { PromptChoice } from "./ui/menu";

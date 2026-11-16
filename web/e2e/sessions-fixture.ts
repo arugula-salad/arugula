@@ -1,64 +1,13 @@
 // A project's sessions as the cloud answers them (Arugula inversion L3),
-// for scripts/sessions-by-card.test.mjs and sessions-page.spec.ts: the
-// by-card route (`GET /api/projects/{p}/sessions/by-card`, merged in the
-// cloud but not deployed when this was written) and the hosted wave
-// (`GET /api/projects/{p}/sessions`) beside it. Typed, so a change to
-// either shape fails the typecheck here.
+// for scripts/row-sessions.test.mjs and board-sessions.spec.ts: the
+// by-card route (`GET /api/projects/{p}/sessions/by-card`). Typed, so a
+// change to its shape fails the typecheck here.
 
 import type { SessionsByCard } from "../src/shared/project-sessions";
-import type { SessionRow, SessionWave } from "../src/shared/proto.gen";
 
 export const PROJECT = "prj_aaaa0002";
 /** A teammate's computer. */
 export const DANA = "beefcafe01";
-
-const issue = (id: string, number: number, title: string) => ({ id, number, title, labels: ["inversion"], state: "open" });
-
-const hosted = (session: string, over: Partial<SessionRow>): SessionRow => ({
-  session,
-  project: PROJECT,
-  room: `room_${session}`,
-  parent: 1,
-  state: "working",
-  settled: false,
-  role: "thread",
-  issue: null,
-  asker: "acct_a",
-  asker_name: "Sam",
-  started_by: null,
-  agent: null,
-  workspace: "ws_1",
-  workspace_name: "arugula-dev",
-  repo: "arugula-salad/arugula",
-  branch: "arugula/aaaa-work",
-  head: "abc1234",
-  pushed_at: 1794000000000,
-  waiting: null,
-  question: null,
-  pr: null,
-  merged_at: null,
-  reason: null,
-  created_at: 1794000000000,
-  updated_at: 1794000000000,
-  ...over,
-});
-
-/** The hosted wave: one waiting on you on #985, one finished and one whose
- * turn ended (`done`, not finished) on #970, and one on #990 the by-card
- * answer hasn't yet. */
-export const wave = (machine: string): SessionWave => ({
-  project: PROJECT,
-  sessions: [
-    hosted("ses_0985aaaa", { issue: issue("iss_985", 985, "A project's Sessions page"), branch: "arugula/0985-sessions", state: "needs_input", settled: true, waiting: "its question", question: "Which lane?" }),
-    hosted("ses_0970bbbb", { issue: issue("iss_970", 970, "The rail"), branch: "arugula/0970-rail", state: "stopped", settled: true }),
-    hosted("ses_0971dddd", { issue: issue("iss_970", 970, "The rail"), branch: "arugula/0970-rail-turn", state: "done", settled: true, pushed_at: 1794000200000 }),
-    hosted("ses_0990cccc", { issue: issue("iss_990", 990, "Fold finished"), branch: "arugula/0990-fold", started_by: `Sam's agent on ${machine}` }),
-  ],
-  labels: ["inversion"],
-  askers: [["acct_a", "Sam"]],
-  tracker: null,
-  more: false,
-});
 
 /** Every session in the project: `machine` is the reader's own computer,
  * whose pane `pane` is an agent on #970; Dana's computer has a release

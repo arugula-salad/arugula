@@ -44,7 +44,6 @@ interface PlaceLink {
 export type Space = "plan" | "build" | "talk";
 
 const none = { n: 0, mention: false };
-const sum = (...cs: { n: number; mention: boolean }[]) => ({ n: cs.reduce((t, c) => t + c.n, 0), mention: cs.some((c) => c.mention && c.n > 0) });
 
 /** The spaces and their places, for the project the page is in (else the
  * current one, else Personal's), as the rail, the bar and the phone's bar
@@ -64,10 +63,10 @@ function usePlaces() {
   const unknown = !!shown && !p && session.state === "ready";
   const section = unknown ? null : sectionOf(r);
   const project = p ?? session.project(currentProject()) ?? session.personal();
-  const at = (page: "project" | "boards" | "sessions" | "docs" | "project-settings") => (project ? pathOf({ page, project: project.id } as Route, names) : "/");
+  const at = (page: "project" | "boards" | "docs" | "project-settings") => (project ? pathOf({ page, project: project.id } as Route, names) : "/");
   const talk = !unknown ? chatUnread(chat.rooms, chatTeam(p, project)) : none;
   const chatTo = shown ? chatPath(shown) : entryPath("chat", project, names);
-  // What's new in the threads on the project's issues (Boards) and runs (Sessions, which holds Runs).
+  // What's new in the threads on the project's issues (Boards) and runs (Machines, which holds Runs).
   const issues = !unknown && project && chat.on !== false ? projectUnread(chat.rooms, project.id, "iss_") : none;
   const runs = !unknown && project ? projectUnread(chat.rooms, project.id, "run_") : none;
 
@@ -75,10 +74,6 @@ function usePlaces() {
     { key: "overview", label: "Overview", tip: "Overview: this project's work", to: at("project"), here: section === "home" },
     { key: "boards", label: "Boards", tip: "Boards: this project's boards and tickets", to: at("boards"), here: section === "boards" && !!shown, count: issues },
     { key: "docs", label: "Docs", tip: "Docs: this project's Docs", to: at("docs"), here: section === "docs" },
-    // Not a space's of its own (Arugula #1050): here until a card's row and
-    // Panes show its sessions (#1082). A run is a session in a cloud
-    // workspace (decision 6): Runs is under Sessions.
-    { key: "sessions", label: "Sessions", tip: "Sessions: this project's sessions and runs", to: at("sessions"), here: section === "sessions" || section === "runs", count: runs },
   ];
   // The machines are the app's own places where it has them; else control's page.
   const m = r.page === "machines" ? r.at : null;
@@ -91,13 +86,14 @@ function usePlaces() {
     : [
         { key: "panes", label: "Panes", tip: "Panes: every pane on every machine, by machine", to: panesTo, here: !!m && !list && m.at !== "swarm" },
         { key: "swarm", label: "Swarm", tip: "Swarm: every pane on every machine", to: pathOf({ page: "machines", project: project.id, at: { at: "swarm" } }, names), here: m?.at === "swarm" },
-        { key: "machines", label: "Machines", tip: "Machines: your team's computers and cloud workspaces", to: machinesList, here: list || section === "workspaces" },
+        // A run is a session in a cloud workspace (decision 6): Runs and Workspaces are under Machines (Arugula #1082).
+        { key: "machines", label: "Machines", tip: "Machines: your team's computers, cloud workspaces and runs", to: machinesList, here: list || section === "workspaces" || section === "runs", count: runs },
       ];
   // Deploys is hidden for v1 (Arugula #1078) but its page still opens from a link: it's planning's.
-  const inPlan = !!section && ["home", "boards", "docs", "sessions", "runs", "deploys"].includes(section);
+  const inPlan = !!section && ["home", "boards", "docs", "deploys"].includes(section);
   const spaces: (PlaceLink & { key: Space; places: PlaceLink[] })[] = [
-    { key: "plan", label: "Plan", tip: "Plan: this project's overview, boards and Docs", icon: <PlanIcon />, to: at("project"), here: inPlan, count: sum(issues, runs), places: plan },
-    { key: "build", label: "Build", tip: "Build: your panes, the swarm and your team's machines", icon: <BuildIcon />, to: panesTo, here: r.page === "machines" || section === "workspaces", places: build },
+    { key: "plan", label: "Plan", tip: "Plan: this project's overview, boards and Docs", icon: <PlanIcon />, to: at("project"), here: inPlan, count: issues, places: plan },
+    { key: "build", label: "Build", tip: "Build: your panes, the swarm and your team's machines", icon: <BuildIcon />, to: panesTo, here: r.page === "machines" || section === "workspaces" || section === "runs", count: runs, places: build },
     { key: "talk", label: "Talk", tip: "Talk: your team's rooms", icon: <TalkIcon />, to: chatTo, here: section === "chat", count: talk, places: [] },
   ];
   const foot: PlaceLink[] = [

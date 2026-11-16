@@ -26,7 +26,7 @@ import { boards } from "../shared/boards/store";
 /** The bar's place a route is under (UI audit #159): a project's cloud
  * workspaces and its deploys (Deploy… and a deploy) have places of their
  * own (Discovery 5). */
-type Section = "home" | "boards" | "docs" | "runs" | "sessions" | "workspaces" | "deploys" | "chat" | "inbox" | "settings";
+type Section = "home" | "boards" | "docs" | "runs" | "workspaces" | "deploys" | "chat" | "inbox" | "settings";
 export function sectionOf(r: Route): Section | null {
   switch (r.page) {
     case "project":
@@ -43,6 +43,10 @@ export function sectionOf(r: Route): Section | null {
     case "issue":
     case "new-issue":
     case "triage":
+    // The Sessions page folded into the boards' rows (Arugula #1082); a
+    // session's page is a card's.
+    case "sessions":
+    case "session":
     case "boards":
     case "board":
     case "all-boards":
@@ -53,9 +57,6 @@ export function sectionOf(r: Route): Section | null {
     case "runs":
     case "run":
       return "runs";
-    case "sessions":
-    case "session":
-      return "sessions";
     case "chat":
     case "dm":
       return "chat";
@@ -84,7 +85,6 @@ const SECTION_LABEL: Record<Section, string> = {
   boards: "Boards",
   docs: "Docs",
   runs: "Runs",
-  sessions: "Sessions",
   workspaces: "Workspaces",
   deploys: "Deploys",
   chat: "Chat",
@@ -100,7 +100,6 @@ function sectionPath(s: Section, project: string): string | null {
     case "boards":
     case "docs":
     case "runs":
-    case "sessions":
     case "workspaces":
     case "deploys":
       return pathOf({ page: s, project }, names);

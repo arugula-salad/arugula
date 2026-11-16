@@ -24,13 +24,13 @@ import { Chip, StateChip } from "../shared/ui/state-chip";
 import { directory } from "../shell/hosts";
 import { followSource, Machines } from "../shell/machines";
 import { shellPlatformApi } from "../shell/platform-api";
-import { whatItDoes } from "../shell/swarm/model";
 import { SwarmView } from "../shell/swarm/view";
 import { AgentDialogLayer, startAgent } from "../shell/ui/agent-dialog";
 import { measureCell, type Cell } from "../shell/ui/cells";
 import { installKeys } from "../shell/ui/keys";
 import { MachineView, Swarm } from "../shell/views";
 import { names } from "../platform/links";
+import { session as platform } from "../platform/session";
 import { current, follow, go, pathOf } from "../platform/router";
 import type { Fleet, FleetHost } from "../shell/fleet";
 import { ROLE_WORDS, rowsOf, sessionsLine, sortRows } from "./machine-list";
@@ -100,10 +100,9 @@ export function boot(session: AppSession | null): Promise<Booted> {
   })());
 }
 
-/** `PlatformApi.panes`' reads (a project's Sessions, Arugula inversion
- * L3): the machines booted as for their own places, and every machine's
- * panes from the fleet's summaries. */
-export function watchPanes(session: AppSession | null, fn: () => void): () => void {
+/** The machines booted as for their own places, calling `fn` as they and
+ * their panes change (`PlatformApi.machineDocs`' watch). */
+export function watchMachines(session: AppSession | null, fn: () => void): () => void {
   let off: (() => void) | null = null;
   let live = true;
   void boot(session).then(({ machines }) => {
@@ -123,19 +122,6 @@ export function watchPanes(session: AppSession | null, fn: () => void): () => vo
 function hostById(id: string, session: AppSession | null): FleetHost | undefined {
   const fleet = up?.machines.fleet;
   return fleet?.hostById(id) ?? (session ? undefined : fleet?.list.find((h) => h.name === directory.home));
-}
-
-/** Whose a machine is: its owner's name, null for the reader's own. */
-export function ownerOf(id: string, session: AppSession | null): string | null | undefined {
-  const h = hostById(id, session);
-  return h ? (h.owner ?? null) : undefined;
-}
-
-/** What a pane says it's doing (a swarm card's line), and its branch. */
-export function paneOf(id: string, pane: number, session: AppSession | null): { line: string; branch: string | null } | undefined {
-  const h = hostById(id, session);
-  const p = h && up?.machines.fleet.panes.find((x) => x.host === h.name && x.id === pane);
-  return p ? { line: whatItDoes(p), branch: p.info.branch ?? null } : undefined;
 }
 
 /** Whether the reader's own machine `id` answers now, so it can be asked
@@ -225,7 +211,7 @@ function Place({ project, at, b: { machines, cell }, session }: { project: strin
     return (
       // In the panel the project's other pages sit in.
       <main class="platform-main">
-        {at.at === "panes" ? <PanesList project={project} fleet={machines.fleet} machine={at.machine} /> : <MachinesList project={project} fleet={machines.fleet} session={session} />}
+        {at.at === "panes" ? <PanesList project={project} fleet={machines.fleet} machine={at.machine} agents={!!at.agents} /> : <MachinesList project={project} fleet={machines.fleet} session={session} />}
       </main>
     );
   const client = machines.client;
@@ -277,16 +263,35 @@ function BesideRail() {
 
 /** The team's machines: each one's state, whose it is and what you may do
  * there, its sessions and the projects they serve, and its page one click
- * on. Cloud workspaces are among them, marked. */
+ * on. Cloud workspaces are among them, marked; the project's Runs and
+ * Workspaces are its header's (Arugula #1082). */
 function MachinesList({ project, fleet, session }: { project: string; fleet: Fleet; session: AppSession | null }) {
   useSubscribe((fn) => directory.subscribe(fn));
   useSubscribe((fn) => fleet.subscribe(fn));
   useSubscribe((fn) => session?.subscribe(fn) ?? (() => {}));
+  useSubscribe((fn) => platform.subscribe(fn));
   const phone = usePhone();
   const rows = sortRows(rowsOf(fleet.list, fleet.panes, (id) => session?.daemons.find((d) => d.id === id)?.hosted?.role));
+  // The project's runs and cloud workspaces are here, under Build (Arugula #1082): a run is a session in a cloud workspace.
+  const runs = pathOf({ page: "runs", project }, names);
+  const workspaces = pathOf({ page: "workspaces", project }, names);
   return (
     <section class="platform-section sw-page" data-machines-list>
-      <PageHeader title="Machines" />
+      <PageHeader
+        title="Machines"
+        actions={
+          <>
+            <a class="secondary" href={runs} data-machines-runs onClick={(e) => follow(e, runs)}>
+              Runs
+            </a>
+            {platform.hosted && (
+              <a class="secondary" href={workspaces} data-machines-workspaces onClick={(e) => follow(e, workspaces)}>
+                Workspaces
+              </a>
+            )}
+          </>
+        }
+      />
       {directory.list === null ? (
         <p class="dim">Loading…</p>
       ) : rows.length ? (

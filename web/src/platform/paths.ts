@@ -32,9 +32,8 @@
 //                                  `?spec=…` narrow it
 //   /p/:project/runs/:run          a run (`?msg=N`: at that message in its
 //                                  thread)
-//   /p/:project/sessions           its agent sessions, a wave (Fleet 5):
-//                                  `?label=…`, `?tracker=N`, `?asker=…`,
-//                                  `?going=true` narrow it
+//   /p/:project/sessions           its Boards: the Sessions page folded
+//                                  into the boards' rows (Arugula #1082)
 //   /p/:project/sessions/:ses      an agent session (M257): its card and
 //                                  history
 //   /p/:project/workspaces         its hosted workspaces
@@ -97,7 +96,7 @@ export type Route =
   | { page: "doc"; project: string; doc: string }
   | { page: "runs"; project: string; state?: string; trigger?: string; spec?: string }
   | { page: "run"; project: string; run: string; msg?: number; thread?: number }
-  | { page: "sessions"; project: string; label?: string; tracker?: number; asker?: string; going?: boolean }
+  | { page: "sessions"; project: string }
   | { page: "session"; project: string; session: string }
   | { page: "chat"; project: string; room?: string; msg?: number; thread?: number; view?: "activity" | "saved" | "search" | "threads"; q?: string; all?: boolean }
   | { page: "dm"; project: string; room: string; msg?: number; thread?: number }
@@ -132,24 +131,6 @@ export type TeamTab = (typeof TEAM_TABS)[number];
 /** A team's id at the front of a path segment, before its slug: a team's
  * id has no prefix (docs/data-model.md). */
 const TEAM = /^([A-Za-z0-9_]{1,64})(?:-.*)?$/;
-
-/** What narrows a wave, as its address says it. */
-export interface WaveFilter {
-  label?: string;
-  tracker?: number;
-  asker?: string;
-  going?: boolean;
-}
-
-/** The query `f` sends. */
-export function waveQuery(f: WaveFilter): string {
-  const q = new URLSearchParams();
-  if (f.label) q.set("label", f.label);
-  if (f.tracker !== undefined) q.set("tracker", String(f.tracker));
-  if (f.asker) q.set("asker", f.asker);
-  if (f.going) q.set("going", "true");
-  return q.toString();
-}
 
 /** An id at the front of a path segment, before its slug: `prj_8f2k`,
  * `ch_…`, `dm_…`, `hw_…`, `iss_…`, `run_…`. */
@@ -315,17 +296,8 @@ export function parse(path: string, search = ""): Route {
     const run = idOf(parts[3]);
     return run?.startsWith("run_") ? { page: "run", project, run, ...msg, ...thread } : missing;
   }
-  if (parts[2] === "sessions" && parts.length === 3) {
-    const t = q.get("tracker");
-    return {
-      page: "sessions",
-      project,
-      ...(q.get("label") ? { label: q.get("label")! } : {}),
-      ...(t && /^\d{1,9}$/.test(t) ? { tracker: Number(t) } : {}),
-      ...(q.get("asker") ? { asker: q.get("asker")! } : {}),
-      ...(q.get("going") === "true" ? { going: true } : {}),
-    };
-  }
+  // An old link to the Sessions page: the page sends it on to Boards.
+  if (parts[2] === "sessions" && parts.length === 3) return { page: "sessions", project };
   if (parts[2] === "sessions" && parts.length === 4) {
     const session = idOf(parts[3]);
     return session?.startsWith("ses_") ? { page: "session", project, session } : missing;
@@ -430,10 +402,8 @@ export function pathOf(r: Route, names: Names = () => null): string {
     }
     case "run":
       return `/p/${s(r.project)}/runs/${s(r.run)}${at(r)}`;
-    case "sessions": {
-      const qs = waveQuery(r);
-      return `/p/${s(r.project)}/sessions${qs ? `?${qs}` : ""}`;
-    }
+    case "sessions":
+      return `/p/${s(r.project)}/sessions`;
     case "session":
       return `/p/${s(r.project)}/sessions/${r.session}`;
     case "issue":
