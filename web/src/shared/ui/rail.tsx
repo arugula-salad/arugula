@@ -48,7 +48,7 @@ export function RailButton({ item }: { item: RailItem }) {
   const { label, aria, tip, here, hook, count, onClick, href, target, icon } = item;
   const inner = (
     <>
-      {icon}
+      <span class="ws-rail-pill">{icon}</span>
       {count && count.n > 0 && <span class={count.mention ? "ws-rail-count mention" : "ws-rail-count"}>{count.mention ? `@${count.n}` : count.n}</span>}
       <span class="ws-rail-label" aria-hidden="true">
         {label}

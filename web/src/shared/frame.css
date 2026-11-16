@@ -59,8 +59,9 @@
 }
 
 /* The place you're in, the same on the shell's rail and in the platform
-   page's head. */
-.ws-rail-button.here,
+   page's head. On the rail it's the pill around the icon that lights, not
+   the whole button (Arugula #1077). */
+.ws-rail-button.here .ws-rail-pill,
 .frame-place.here {
   background: var(--chrome-selected);
   border-color: var(--chrome-selected-line);
@@ -101,8 +102,33 @@
   border-radius: var(--btn-radius);
 }
 
+/* The button itself stays unlit, lit or hovered: the pill shows it, and the
+   label under it, in the accent colour, has the rail's width (#1077). */
+.ws-rail-button.here,
+.ws-rail-button:hover {
+  background: none;
+}
+
+.ws-rail-button.here {
+  color: var(--accent);
+}
+
 .ws-rail-button.here::before {
   display: none;
+}
+
+.ws-rail-pill {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 26px;
+  box-sizing: border-box;
+  border: 1px solid transparent;
+  border-radius: 13px;
+}
+
+.ws-rail-button:not(.here):hover .ws-rail-pill {
+  background: var(--raised);
 }
 
 /* The platform page's icons don't shrink (`.app.ws .icon`'s job on the
