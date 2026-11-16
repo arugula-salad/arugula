@@ -3,13 +3,15 @@
 // Anyone who may write it renames it; only its owner archives or moves it,
 // and a move needs the reader to own the new owner too. A move asks first:
 // its people change, and the grants over it go. Its owner also moves some of
-// its work elsewhere: "Move to project…" (Arugula #971, ../move).
+// its work elsewhere: "Move to project…" (Arugula #971, ../move). Under it,
+// the week's moves into and out of it, with their Undo (Arugula #1039).
 
 import { useEffect, useState } from "preact/hooks";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { Section } from "../../shared/ui/settings-section";
 import { names } from "../links";
+import { RecentSplits } from "../move/split-note";
 import { makers, ownerKey, owners, PERSONAL } from "../owners";
 import { follow, pathOf } from "../router";
 import { session, type PlatformProject } from "../session";
@@ -101,6 +103,7 @@ export function General({ p }: { p: PlatformProject }) {
       ) : (
         <p class="dim">Its owners archive it and move it.</p>
       )}
+      <RecentSplits project={p.id} />
       {err && (
         <p class="control-error" data-project-general-error>
           {err}

@@ -1,7 +1,8 @@
 // After a split (Arugula #972): both projects say so under the bar for a
 // week, with Undo while the reader may; an undo says where the work went
-// back to, and a refused one says why. An old issue address lands on the
-// issue in its new project. On #971's fixture page (move-to-project-page.tsx);
+// back to, and a refused one says why. Its × closes it for this reader, and
+// the week's moves keep their Undo in Settings › General (Arugula #1039).
+// An old issue address lands on the issue in its new project. On #971's fixture page (move-to-project-page.tsx);
 // the platform's answers are this spec's.
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { fixturePage } from "./fixture-page";
@@ -11,6 +12,8 @@ const RHYTHM = "prj_aaaa0009";
 const ISSUE = "iss_0000c0de";
 /** Where `SPLIT_SHOTS=dir` puts the notes' pictures. */
 const SHOTS = process.env.SPLIT_SHOTS;
+/** "· Nov 15": the day a move is listed with in settings. */
+const ON_A_DAY = / · [A-Z][a-z]{2} \d{1,2}$/;
 
 const projects = [
   { id: ME, name: "Personal", owner: { kind: "personal" }, team: null },
@@ -112,6 +115,66 @@ test("a refused undo says why, in the note's place", async ({ page }) => {
   await page.locator("[data-split-undo]").click();
   await expect(note(page)).toHaveAttribute("data-split-note", "refused");
   await expect(note(page)).toHaveText("That split is undone already.");
+});
+
+test("its × closes it for this reader, for good, and Undo stays in Settings › General", async ({ page }) => {
+  const seen = await open(page, `/p/${ME}`, () => back);
+  await expect(note(page)).toHaveAttribute("data-split-note", "out");
+  await expect(page.locator("[data-split-close]")).toHaveAttribute("aria-label", "Close");
+  if (SHOTS) await note(page).screenshot({ path: `${SHOTS}/followup-banner.png` });
+  await page.locator("[data-split-close]").click();
+  await expect(note(page)).toHaveCount(0);
+  // Still closed on the next load, once the splits are read.
+  const read = page.waitForResponse(new RegExp(`/api/projects/${ME}/splits$`));
+  await page.reload();
+  await read;
+  await expect(page.locator(`[data-project-home="${ME}"]`)).toBeVisible();
+  await expect(note(page)).toHaveCount(0);
+
+  await page.goto(`/p/${ME}/settings`);
+  const row = page.locator('[data-recent-split="spl_1"]');
+  await expect(row.locator("span")).toHaveText(/^25 issues, 1 board and 2 Docs moved to Rhythm · /);
+  await expect(row.locator("span")).toHaveText(ON_A_DAY);
+  if (SHOTS) await page.locator("[data-project-general]").screenshot({ path: `${SHOTS}/followup-settings.png` });
+  await row.locator("[data-recent-split-undo]").click();
+  await expect(page.locator("[data-recent-split-said]")).toHaveText("Moved back to Personal.");
+  await expect(page.locator("[data-recent-splits]")).toHaveCount(0);
+  expect(seen.undos).toEqual([`/api/projects/${ME}/splits/spl_1/undo`]);
+});
+
+test("in settings, a refused undo says why; a project with no moves lists none", async ({ page }) => {
+  await open(page, `/p/${RHYTHM}/settings`, () => ({ status: 409, body: { error: "something's in the way", reason: "in_the_way" } }));
+  await expect(page.locator('[data-recent-split="spl_1"] span')).toHaveText(/^Moved here from Personal · /);
+  await page.locator("[data-recent-split-undo]").click();
+  await expect(page.locator("[data-recent-split-said]")).toHaveAttribute("data-recent-split-said", "refused");
+  await expect(page.locator("[data-recent-split-said]")).toHaveText("Something's in the way.");
+  // Still there to try again.
+  await expect(page.locator('[data-recent-split="spl_1"]')).toBeVisible();
+
+  await page.route(/\/api\/projects\/[^/]+\/splits$/, (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify({ splits: [] }) }));
+  await page.reload();
+  await expect(page.locator("[data-project-general]")).toBeVisible();
+  await expect(page.locator("[data-recent-splits]")).toHaveCount(0);
+});
+
+test("without storage, the note shows and closes for the page", async ({ page }) => {
+  // Storage refuses the note's keys (the rest of the page needs its own).
+  await page.addInitScript(() => {
+    const { getItem, setItem } = Storage.prototype;
+    const refused = (k: string) => k.startsWith("arugula.split-note-closed.");
+    Storage.prototype.getItem = function (k: string) {
+      if (refused(k)) throw new DOMException("no storage", "SecurityError");
+      return getItem.call(this, k);
+    };
+    Storage.prototype.setItem = function (k: string, v: string) {
+      if (refused(k)) throw new DOMException("no storage", "SecurityError");
+      return setItem.call(this, k, v);
+    };
+  });
+  await open(page, `/p/${ME}`, () => back);
+  await expect(note(page)).toHaveAttribute("data-split-note", "out");
+  await page.locator("[data-split-close]").click();
+  await expect(note(page)).toHaveCount(0);
 });
 
 test("an old issue address lands on the issue in its new project", async ({ page }) => {
