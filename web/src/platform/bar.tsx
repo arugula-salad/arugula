@@ -16,7 +16,6 @@ import { session } from "./session";
 import { signOut } from "./signin";
 import { names } from "./links";
 import { AccountPicture } from "../shared/chat/avatar";
-import { presenceItems } from "../shared/chat/presence";
 import { barProject, where } from "./where";
 import { scopable, scopeOf } from "./scope";
 import { useInboxCount } from "./inbox-count";
@@ -163,8 +162,9 @@ function Path({ r, project }: { r: Route; project: string | undefined }) {
   );
 }
 
-/** You, and your account's menu: Settings, who's around, signing out. On
- * the rail's foot (`compact`, the picture alone) or a phone's bar. */
+/** You, and your account's menu: your account (Settings) and signing out;
+ * your presence is Chat's (Arugula #1079). On the rail's foot (`compact`,
+ * the picture alone) or a phone's bar. */
 export function AccountButton({ compact = false }: { compact?: boolean }) {
   useSubscribe((fn) => session.subscribe(fn));
   const button = useRef<HTMLButtonElement>(null);
@@ -175,9 +175,7 @@ export function AccountButton({ compact = false }: { compact?: boolean }) {
     const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const items: MenuItem[] = [
       { header: me.login || me.name || "Signed in", name: !!(me.login || me.name) },
-      { label: "Settings", run: () => go("/settings") },
-      // Who's around (#110): chat's people see this, and only they.
-      ...presenceItems(),
+      { label: "Your account…", run: () => go("/settings") },
       "separator",
       // This page only: the hub's session, on control's page, stays.
       { label: "Sign out of this page", run: () => void signOut().then(() => location.reload()) },

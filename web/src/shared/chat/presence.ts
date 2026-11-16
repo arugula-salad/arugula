@@ -139,10 +139,11 @@ class PresenceStore {
 
 export const presence = new PresenceStore();
 
-/** The account menu's lines for the reader's own presence, when chat is
- * on: automatic, away by hand, or always appearing offline. */
+/** The lines for the reader's own presence, when chat is on: automatic,
+ * away by hand, or always appearing offline. Chat's "you" row opens them
+ * (Arugula #1079). */
 export function presenceItems(): MenuItem[] {
   if (!presence.on) return [];
   const item = (label: string, mode: PresenceMode): MenuItem => ({ label, checked: presence.mode === mode, run: () => void presence.setMode(mode) });
-  return [{ header: "Your presence" }, item("Automatic", "auto"), item("Away", "away"), item("Appear offline", "offline"), "separator"];
+  return [{ header: "Your presence" }, item("Automatic", "auto"), item("Away", "away"), item("Appear offline", "offline")];
 }
