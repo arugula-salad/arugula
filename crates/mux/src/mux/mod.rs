@@ -538,8 +538,9 @@ struct Daemon {
     /// Terminals one of Arugula's Claude Code hooks has spoken from, while
     /// Claude Code runs there (`PaneInfo.unhooked`).
     hooked: std::collections::HashSet<PaneId>,
-    /// Terminals whose owner silenced tagged follow-ups (#579), for as
-    /// long as the pane lives (`PaneInfo.mentions_off`).
+    /// Terminals and agent blocks whose owner silenced tagged follow-ups
+    /// (#579, #1070), for as long as the pane lives
+    /// (`PaneInfo.mentions_off`).
     tagged_off: std::collections::HashSet<PaneId>,
     /// The session in each pane that heard how a mid-turn follow-up
     /// arrives (#644). Not kept across a restart: until its next

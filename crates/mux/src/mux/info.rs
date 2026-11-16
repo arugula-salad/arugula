@@ -321,7 +321,7 @@ impl Daemon {
             answered: self.answered.get(&id).cloned(),
             inbox: false,
             unhooked: false,
-            mentions_off: false,
+            mentions_off: self.tagged_off.contains(&id),
             // The mod in an agent block's Claude Code, if it has one.
             live: self.live.get(&id).cloned().map(Box::new),
             link: None,
