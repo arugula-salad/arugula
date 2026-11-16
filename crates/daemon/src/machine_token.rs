@@ -1,7 +1,8 @@
 //! Machine tokens (aru-141): the daemon's side. A channel that opens with
 //! a [`TokenHello`] is let in by what the hub's token says, checked here:
 //! signed by a key the hub publishes, by this hub, for this machine, a
-//! machine token, within its lifetime, and not used before.
+//! machine token, within its lifetime, issued since this daemon started,
+//! and not used before.
 //!
 //! The hub's keys come from its `/.well-known/jwks.json`, fetched once and
 //! again when a token names a key this daemon hasn't seen (at most every
@@ -35,6 +36,9 @@ pub enum Refused {
     Expired,
     Lifetime,
     Replayed,
+    /// Issued before this daemon started: it may have been taken before a
+    /// restart, which the in-memory replay check doesn't remember.
+    BeforeStart,
     NoKeys,
     /// This machine lets nobody in: a deploy's box.
     Closed,
@@ -51,6 +55,7 @@ impl std::fmt::Display for Refused {
             Refused::Expired => "expired: ask control for a new one",
             Refused::Lifetime => "outside the lifetime control gives",
             Refused::Replayed => "already used",
+            Refused::BeforeStart => "issued before this machine started: ask control for a new one",
             Refused::NoKeys => "this machine couldn't fetch control's keys",
             Refused::Closed => "this machine lets nobody in",
         })
@@ -141,14 +146,31 @@ pub fn verify(
 }
 
 /// The hub's keys as last fetched, and the tokens already taken.
-#[derive(Default)]
 pub struct Verifier {
     keys: Mutex<Option<(Jwks, Instant)>>,
     /// Each token's `jti` until it expires.
     seen: Mutex<HashMap<String, u64>>,
+    /// When this daemon started (seconds since the epoch): a token issued
+    /// earlier is refused. `seen` lives only in memory, so this is what
+    /// keeps a token taken before a restart from being taken again after
+    /// it, without writing anything down.
+    started: u64,
+}
+
+impl Default for Verifier {
+    fn default() -> Self {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
+        Self::started_at(now)
+    }
 }
 
 impl Verifier {
+    /// A verifier for a daemon that started at `started` (seconds). The
+    /// daemon makes one, with its control state, once per process.
+    pub fn started_at(started: u64) -> Self {
+        Self { keys: Mutex::new(None), seen: Mutex::new(HashMap::new()), started }
+    }
+
     /// The keys held now, if any.
     pub fn keys(&self) -> Option<Jwks> {
         self.keys.lock().unwrap().as_ref().map(|(k, _)| k.clone())
@@ -167,8 +189,20 @@ impl Verifier {
         *self.keys.lock().unwrap() = Some((k, Instant::now()));
     }
 
-    /// Take `claims`' token, once: Replayed if it was taken before.
+    /// Take `claims`' token, once: Replayed if it was taken before, and
+    /// BeforeStart if it was issued before this daemon started.
+    ///
+    /// No allowance for clock skew here: if control's clock is behind this
+    /// machine's, a token it issued just after a restart can carry an `iat`
+    /// before `started` and be refused. The client asks for a new one on a
+    /// `machine-token` refusal, so that costs a few seconds; widening the
+    /// window by CLOCK_SKEW_SECS would let a token taken just before the
+    /// restart through again. `iat` is whole seconds, so a token issued in
+    /// the second this daemon started is taken.
     pub fn take(&self, claims: &MachineClaims, now: u64) -> Result<(), Refused> {
+        if claims.iat < self.started {
+            return Err(Refused::BeforeStart);
+        }
         let mut seen = self.seen.lock().unwrap();
         seen.retain(|_, exp| *exp > now);
         if seen.contains_key(&claims.jti) {
@@ -265,11 +299,29 @@ pub(crate) mod tests {
     fn a_token_is_taken_once() {
         let (k, jwks) = key();
         let c = verify(&sign(&k, "k1", &claims("viewer", "m1", 1000)), &jwks, ISS, "m1", 1010).unwrap();
-        let v = Verifier::default();
+        let v = Verifier::started_at(1000);
         assert_eq!(v.take(&c, 1010), Ok(()));
         assert_eq!(v.take(&c, 1011), Err(Refused::Replayed));
         // Forgotten once it can't be used anyway.
         assert_eq!(v.take(&c, 1301), Ok(()));
+    }
+
+    #[test]
+    fn a_token_from_before_the_daemon_started_is_refused() {
+        let (k, jwks) = key();
+        let c = verify(&sign(&k, "k1", &claims("viewer", "m1", 1000)), &jwks, ISS, "m1", 1010).unwrap();
+        // Taken, then the daemon restarts: the new one has no `seen`.
+        let before = Verifier::started_at(990);
+        assert_eq!(before.take(&c, 1010), Ok(()));
+        let after = Verifier::started_at(1005);
+        assert_eq!(after.take(&c, 1011), Err(Refused::BeforeStart));
+        // A token issued since then is taken.
+        let mut fresh = claims("viewer", "m1", 1006);
+        fresh["jti"] = serde_json::json!("j2");
+        let c = verify(&sign(&k, "k1", &fresh), &jwks, ISS, "m1", 1010).unwrap();
+        assert_eq!(after.take(&c, 1011), Ok(()));
+        // One issued in the second it started is taken too.
+        assert_eq!(Verifier::started_at(1006).take(&c, 1011), Ok(()));
     }
 
     #[test]

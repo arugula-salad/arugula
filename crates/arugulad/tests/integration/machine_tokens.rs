@@ -237,6 +237,28 @@ async fn a_bad_token_is_refused_and_says_why() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_token_taken_before_a_restart_is_refused_after_it() {
+    let mut r = rig().await;
+    let k = issuer();
+    let t = token(&r, "editor", "before", &k, |_| {});
+    let (_ws, _ch, said) = open(&r, t.clone()).await;
+    assert!(refused(&said).is_none());
+    // `iat` is whole seconds: let the next one start in a later second.
+    tokio::time::sleep(Duration::from_millis(1100)).await;
+    r.d.stop();
+    r.d.start();
+    r.d.wait_for("joined", || r.d.get("/api/host")["control_state"]["state"] == "joined");
+    // The new daemon never saw it taken, and refuses it anyway.
+    let (_ws, _ch, said) = open(&r, t).await;
+    let no = refused(&said).expect("a token from before the restart");
+    assert_eq!(no.refused, "machine-token");
+    assert!(no.message.contains("before this machine started"), "{}", no.message);
+    // A new one gets in.
+    let (_ws, _ch, said) = open(&r, token(&r, "editor", "after", &k, |_| {})).await;
+    assert!(refused(&said).is_none());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn remote_input_off_makes_everyone_a_viewer() {
     let r = rig().await;
     let k = issuer();
