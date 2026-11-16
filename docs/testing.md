@@ -113,11 +113,12 @@ sha=SHA`, which `just release --rare` runs):
   tests with the `labs` feature off (#452);
 - testnet: the test stack's ssh profile (its claims
   under `BREAK=1` are testnet-break.yml's, nightly);
-- stack: the specs on the test stack (`E2E_SET=stack`);
 - webkit: `just e2e-webkit` on our Macs.
 
-It builds what testnet and stack need itself (rare-build and rare-static,
-copies of check.yml's build and static). When every job passes, its last
+It builds what testnet needs itself (rare-build and rare-static, copies
+of check.yml's build and static). Its stack job, the specs on the test
+stack, left on 2026-11-16 with nothing left to run (the netem spec moved
+to arugula-salad/cloud with control). When every job passes, its last
 job tags the commit `ci/rare/<sha>`, and a daemon release refuses a commit
 without that tag (development.md, "Releasing"). A break these jobs would
 catch now shows up at the nightly or the release candidate, after its

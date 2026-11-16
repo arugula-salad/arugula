@@ -8,6 +8,11 @@
 #
 # which `just release --rare` does for the newest green commit, and waits
 # for. When every job passes, the last one tags the commit ci/rare/<sha>.
+# The stack job (the specs on the test stack) left on 2026-11-16, when it
+# ran nothing: team-swarm-phones moved to arugula-salad/cloud with control
+# (#2387), testnet-hosts went with remote blocks (#2197), and
+# editor-remote-ssh skips without ARUGULA_TESTNET_EDITORS=1 (`just
+# testnet-editors` runs it).
 # ci/green doesn't count this run, so a daemon release checks that tag
 # instead: `scripts/release bump` and `check-version` refuse a commit
 # without it (docs/development.md, "Releasing"). The run's name carries the
@@ -60,7 +65,7 @@ env:
 
 jobs:
   # check.yml's build: the debug binaries, web/dist embedded, for testnet's
-  # CLI and stack's specs.
+  # CLI.
   rare-build:
     runs-on: ubuntu-24.04
     steps:
@@ -177,43 +182,6 @@ jobs:
         if: always()
         run: just testnet down
 
-  # The specs on the test stack (team-swarm-phones' box behind netem).
-  stack:
-    needs: [rare-build, rare-static]
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.sha || github.sha }}
-      - uses: ./.github/actions/setup
-        with:
-          rust: "false"
-          fetch: run-debug run-static
-          claude-code: "true"
-      - run: scripts/ci-env use
-      - run: scripts/ci-env testnet
-      - run: just bootstrap
-      # team-swarm-phones' phones are WebKit's.
-      - name: Playwright's browsers
-        run: just browsers
-      - name: The Playwright specs on the test stack
-        run: port=$(scripts/free-port) && cd web && E2E_PORT=$port pnpm exec playwright test
-        env:
-          E2E_CHROMIUM: "1"
-          E2E_SET: stack
-      # A failed spec's screenshot (playwright.config.ts), kept a week.
-      - name: Failed specs' screenshots
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: stack-failures
-          path: web/test-results/
-          retention-days: 7
-          if-no-files-found: ignore
-      - name: Take the test stack down
-        if: always()
-        run: just testnet down
-
   # The WebKit specs (Safari's engine) on our Macs: check.yml's macos job's
   # other half until #305, set up the same way (.github/actions/macos-setup).
   # Not named macos: ci.green requires check.yml's macos (test).
@@ -250,7 +218,7 @@ jobs:
   # tags are; this job checks out nothing, so the token never meets the
   # commit's code.
   rare-passed:
-    needs: [core, testnet, stack, webkit]
+    needs: [core, testnet, webkit]
     runs-on: ubuntu-latest
     # CI_GREEN_TOKEN is the ci-green environment's, which only main reaches.
     environment: ci-green
