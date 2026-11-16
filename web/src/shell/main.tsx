@@ -24,6 +24,8 @@ import "./phone-sheet.css";
 import "./phone-machines.css";
 import "./docs-page.css";
 import "../shared/ui/settings-section.css";
+// A switch, one look on every page and in every dialog (#1099).
+import "../shared/switch.css";
 import "./settings-page.css";
 // The one button set (UI audit #158), last: what it draws, it draws everywhere.
 import "../shared/buttons.css";

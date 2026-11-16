@@ -86,6 +86,7 @@ function SharingDialog({ client, close }: { client: Client; close: () => void })
           <input
             type="checkbox"
             role="switch"
+            class="sw-switch"
             data-sharing-guest-ssh
             checked={sharing.guest_ssh}
             onChange={(e) => void set({ guest_ssh: e.currentTarget.checked })}
@@ -102,6 +103,7 @@ function SharingDialog({ client, close }: { client: Client; close: () => void })
           <input
             type="checkbox"
             role="switch"
+            class="sw-switch"
             data-sharing-agent-mentions
             checked={sharing.agent_mentions ?? true}
             onChange={(e) => void set({ agent_mentions: e.currentTarget.checked })}
