@@ -167,6 +167,30 @@ html[data-native-tabs] .platform {
   }
 }
 
+/* The project's Overview takes the window's width (#1085): its boards are
+   rows that read across it, Needs you a rail at its right. Without the
+   Overview, the page as it was keeps the reading column. */
+@media (min-width: 701px) {
+  .platform-section[data-project-home]:has([data-overview]) {
+    padding-inline: 24px;
+  }
+}
+
+/* The team's faces in a project's header, each with who's around (#1088). */
+.project-faces {
+  display: flex;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.project-faces .msg-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  font-size: var(--text-xs);
+}
+
 /* Chat in the page's frame (UI audit #169): the bar, then the rooms in a
    panel inset as a page's section is, not drawn over the window as the
    shell's chat is. A phone's chat keeps the whole screen. */

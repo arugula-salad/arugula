@@ -1,11 +1,12 @@
 /* The project's Overview (./overview.tsx): the field of boards on the left,
-   Needs you on the right; on a phone, one list with Needs you on top. A
-   board's cards are one-line rows; Needs you holds Swarm's own rail cards. */
+   the window's width, Needs you on the right; on a phone, one list with
+   Needs you on top. A board is a hairline row, open to its cards' one-line
+   rows; Needs you holds Swarm's own rail cards, or one quiet line. */
 
 .ov {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  gap: var(--space-3);
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-4);
   align-items: start;
 }
 .ov.phone {
@@ -22,32 +23,109 @@
   margin: 0;
 }
 
-.ov-board {
-  border: 1px solid var(--line);
-  border-radius: var(--card-radius);
-  background: var(--bg);
-  padding: var(--space-3);
+/* A board: one hairline row. Its toggle, title, lane bar, count and words
+   line up down the list, as columns do. */
+.ov-boards {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line);
 }
-.ov-board-head {
+.ov-board {
+  border-bottom: 1px solid var(--line);
+}
+.ov-board-line {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1.3fr) minmax(80px, 1fr) 52px minmax(0, 1.6fr);
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-2) var(--space-1);
+}
+.ov-board:not(.ov-board-still) > .ov-board-line {
+  cursor: pointer;
+}
+.ov-board:not(.ov-board-still) > .ov-board-line:hover {
+  background: var(--surface);
+}
+.ov-board-toggle {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--field-radius);
+  background: none;
+  color: var(--dim);
+  cursor: pointer;
+}
+.ov-board-toggle:disabled {
+  cursor: default;
+}
+/* A title, not a link's colour: the row is the board's, its title the way to it. */
+.ov .ov-board-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 600 var(--text-md) var(--f-ui);
+  color: var(--fg);
+  text-decoration: none;
+}
+.ov .ov-board-title:hover {
+  text-decoration: underline;
+}
+.ov .ov-board-still .ov-board-title {
+  font-weight: 500;
+  color: var(--dim);
+}
+.ov-board-line .board-bar {
+  height: 4px;
+}
+.ov-board-count {
+  font: 500 var(--text-xs) var(--f-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--dim);
+}
+.ov-board-says {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-3);
+}
+.ov-board-says .tone-plain {
+  color: var(--dim);
+}
+.ov-board-rows {
+  padding: 0 var(--space-1) var(--space-2) calc(20px + var(--space-3));
+}
+
+/* Not on a card: the sessions that work on none, after the boards. */
+.ov-loose-head {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: var(--space-2);
 }
-.ov-board-head b {
+.ov-loose-head b {
   font: 600 var(--text-md) var(--f-ui);
 }
-.ov-progress {
-  height: 3px;
-  margin: var(--space-2) 0 var(--space-3);
-  border-radius: 2px;
-  background: var(--raised);
-  overflow: hidden;
+
+/* On a phone, a board's row is two lines: its title and count, then its bar and words. */
+.ov.phone .ov-board-line {
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  gap: var(--space-1) var(--space-2);
 }
-.ov-progress i {
-  display: block;
-  height: 100%;
-  background: var(--ok);
+.ov.phone .ov-board-line .board-bar {
+  grid-column: 2 / -1;
+  grid-row: 2;
+}
+.ov.phone .ov-board-says {
+  grid-column: 2 / -1;
+  grid-row: 3;
+}
+.ov.phone .ov-board-rows {
+  padding-left: 0;
 }
 
 /* A board's rows (./overview-row.tsx): one line each, the preview under it. */
@@ -59,7 +137,7 @@
   flex-direction: column;
 }
 .ov-loose .ov-rows {
-  margin-top: var(--space-2);
+  margin-top: var(--space-1);
 }
 .ov-row {
   position: relative;
@@ -217,12 +295,8 @@ button.ov-peek:disabled {
   text-overflow: ellipsis;
 }
 
-.ov-more {
-  border-top: 1px solid var(--line);
-  padding-top: var(--space-3);
-}
-
 .ov-needs {
+  width: 300px;
   position: sticky;
   top: 0;
   max-height: calc(100vh - 80px);
@@ -231,7 +305,15 @@ button.ov-peek:disabled {
   border-left: 1px solid var(--line);
   min-width: 0;
 }
+.ov-needs.ov-needs-none {
+  width: auto;
+  border-left: 0;
+}
+.ov-needs.ov-needs-none p {
+  margin: 0;
+}
 .ov.phone .ov-needs {
+  width: auto;
   position: static;
   max-height: none;
   border-left: 0;

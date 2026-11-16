@@ -1,11 +1,12 @@
-// A project's Overview (Arugula inversion, L6): its boards with cards in
-// flight, the most urgent first; each card's sessions, found by an agent's
+// A project's Overview (Arugula inversion, L6): its open boards, a row
+// each, the most urgent first and those with nothing in flight last; what
+// each says in words; each card's sessions, found by an agent's
 // `on_issue`, a row's attachment, the hub's sessions by card or the pane's
 // session; and Not on a card last. And the hub's by-card route, 404 being
 // "not yet". Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { boardLine, inFlight, overviewOf, STATE_WORD, statsLine } from "../src/shell/swarm/overview.ts";
+import { asksYou, boardSays, inFlight, overviewOf, STATE_WORD, statsLine } from "../src/shell/swarm/overview.ts";
 import { panesOf, sessionsByCard } from "../src/shared/project-sessions.ts";
 import { BY_CARD, PROJECT } from "./project-sessions.fixture.ts";
 
@@ -21,14 +22,19 @@ const pane = (host, id, extra = {}) => ({ key: `${host}:${id}`, host, id, sessio
 const hosts = { m_ws: "workstation", m_b1: "build-01" };
 const hostOf = (m) => hosts[m];
 
-test("only Doing and Review are drawn, Next and Done are counts, and a board with nothing in flight isn't there", () => {
-  const launch = view("brd_l", "Launch", [row("r1", "next", 1), row("r2", "doing", 2), row("r3", "review", 3), row("r4", "done", 4), row("r5", "done", 5)]);
-  const later = view("brd_x", "Later", [row("r6", "next", 6)]);
-  const o = overviewOf(P, [launch, later], [], null, hostOf);
-  assert.deepEqual(o.boards.map((b) => b.title), ["Launch"]);
+test("every open board is a row, those with nothing in flight last; only Doing and Review are cards, Next and Done are counts", () => {
+  const launch = view("brd_l", "Launch", [row("r1", "next", 1), row("r2", "doing", 2), row("r3", "review", 3), row("r4", "done", 4, { proof: { by: "ci" } }), row("r5", "done", 5)]);
+  const later = view("brd_x", "A later board", [row("r6", "next", 6)]);
+  const o = overviewOf(P, [later, launch], [], null, hostOf);
+  assert.deepEqual(o.boards.map((b) => b.title), ["Launch", "A later board"]);
   const b = o.boards[0];
   assert.deepEqual([b.doing.map((c) => c.row.id), b.review.map((c) => c.row.id)], [["r2"], ["r3"]]);
-  assert.equal(boardLine(b), "2 in flight · 1 next · 2 of 5 done");
+  assert.deepEqual([b.next, b.done, b.proven, b.total], [1, 2, 1, 5]);
+  assert.deepEqual(boardSays(b).map((x) => x.words), ["1 in review", "1 more in flight"]);
+  assert.deepEqual(boardSays(o.boards[1]), [{ standing: "idle", words: "nothing in flight" }]);
+  // A note row isn't counted, as the Boards page's bar doesn't count it.
+  const noted = overviewOf(P, [view("brd_n", "N", [row("r1", "done", 1), { ...row("r2", "next", 2), pointer: { kind: "none" } }])], [], null, hostOf).boards[0];
+  assert.deepEqual([noted.done, noted.total], [1, 1]);
   // A card no one is on says nothing ("no one on it" is gone); one in Review is in review.
   assert.equal(b.doing[0].standing, "idle");
   assert.equal(STATE_WORD[b.doing[0].standing], "");
@@ -61,7 +67,7 @@ test("a row's own data says its word: its question for you, its PR's checks and 
   assert.deepEqual(b.doing.map((c) => [c.row.id, c.standing]), [["rf", "checks_failing"], ["rr", "working"]]);
 });
 
-test("a board's card lists four rows, Doing and Review together, the worst first, then how many more", () => {
+test("a board lists four rows, Doing and Review together, the worst first, then how many more", () => {
   const rows = [row("r1", "doing", 1), row("r2", "doing", 2, { marks: [{ kind: "stalled", since: 1 }] }), row("r3", "review", 3), row("r4", "doing", 4), row("r5", "review", 5), row("r6", "doing", 6)];
   const b = overviewOf(P, [view("brd_a", "A", rows)], [], null, hostOf).boards[0];
   const { shown, more } = inFlight(b);
@@ -89,6 +95,9 @@ test("cards that need you come first, then failures, then quiet ones, then worki
   assert.deepEqual(o.boards.map((b) => b.title), ["A", "B"]);
   assert.deepEqual(o.boards[0].doing.map((c) => c.row.id), ["rn", "rf", "rq", "rw"]);
   assert.deepEqual(o.boards[0].doing.map((c) => c.standing), ["needs", "failed", "quiet", "working"]);
+  // A's row says each, the worst first, and opens by itself: a card on it needs you. B's doesn't.
+  assert.deepEqual(boardSays(o.boards[0]).map((x) => x.words), ["1 needs you", "1 failed", "1 quiet", "1 working"]);
+  assert.deepEqual(o.boards.map(asksYou), [true, false]);
   assert.equal(statsLine(o, 1), "5 cards in flight · 1 session working · 1 needs you");
 });
 

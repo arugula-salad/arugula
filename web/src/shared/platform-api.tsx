@@ -131,11 +131,12 @@ export interface PlatformApi {
     owner(machine: string): string | null | undefined;
     pane(machine: string, pane: number): { line: string; branch: string | null } | undefined;
   };
-  /** A project's Overview (Arugula inversion, L6): its boards' cards in
-   * flight with the sessions on them, and Needs you, where the page reaches
-   * machines; `board` and `card` name the card whose drawer is open. Its
-   * children are what the project's page shows besides. A page without it
-   * shows those alone. */
+  /** A project's Overview (Arugula inversion, L6): its open boards, a row
+   * each, with their cards in flight and the sessions on them, and Needs
+   * you, where the page reaches machines; `board` and `card` name the card
+   * whose drawer is open. Its children are the project's page as it was,
+   * shown only where there is no Overview (the page doesn't reach
+   * machines, #1088). A page without it shows those alone. */
   Overview?: ComponentType<{ project: string; board?: string; card?: string; children?: ComponentChildren }>;
 }
 

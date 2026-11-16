@@ -86,8 +86,8 @@ export function appMachineDocs(session: () => AppSession | null): NonNullable<Pl
 
 /** `PlatformApi.Overview` over `session` (Arugula inversion, L6): the
  * project's Overview, in a chunk of its own with the machine page's. While
- * the hub can't reach machines from this host, the project's page as it
- * was (its children). */
+ * the hub can't reach machines from this host there is no Overview: the
+ * project's page as it was (its children) is, and only then (#1088). */
 export function appOverview(session: () => AppSession | null): ComponentType<{ project: string; board?: string; card?: string; children?: ComponentChildren }> {
   return function Overview({ project, board, card, children }) {
     const s = session();
@@ -103,17 +103,10 @@ export function appOverview(session: () => AppSession | null): ComponentType<{ p
     if (!reachable) return <>{children}</>;
     if (!page)
       return (
-        <>
-          <p class="dim" data-overview-loading>
-            Reaching your machines…
-          </p>
-          {children}
-        </>
+        <p class="dim" data-overview-loading>
+          Reaching your machines…
+        </p>
       );
-    return (
-      <page.OverviewPlace project={project} board={board} card={card} session={s}>
-        {children}
-      </page.OverviewPlace>
-    );
+    return <page.OverviewPlace project={project} board={board} card={card} session={s} />;
   };
 }

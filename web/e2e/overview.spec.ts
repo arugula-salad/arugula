@@ -1,7 +1,10 @@
 // The project's Overview (Arugula inversion, L6), in the app's frame over
-// the suite's daemon (app-frame-page.tsx): the project's boards with only
-// their cards in Doing and Review drawn, one line each with one word for how
-// it stands, Next and Done as counts; a card's preview, on hover or keyboard
+// the suite's daemon (app-frame-page.tsx): the project's open boards, one
+// row each with its count and what's going on in words, the window's width;
+// a board opened by a click, or by itself when it asks you, with only its
+// cards in Doing and Review drawn, one line each with one word for how it
+// stands; none of the old home's lists, and the team's faces in the header
+// only while chat is on; a card's preview, on hover or keyboard
 // focus, showing the session on it (an agent block on the card, with the
 // terminal in its session) and its last line, and Not on a card last; a card opening the
 // board's drawer, its address and the path in the bar, Esc and the path
@@ -105,17 +108,36 @@ async function overview(page: Page, byCard: unknown = null, live = false): Promi
 }
 
 const tile = (page: Page, row: string) => page.locator(`[data-ov-card="${row}"]`);
+/** Open Launch's row, to its cards in flight. */
+async function openLaunch(page: Page) {
+  await page.locator(`[data-ov-board="${B}"] [data-ov-board-toggle]`).click();
+  await expect(page.locator(`[data-ov-board="${B}"]`)).toHaveAttribute("data-ov-open", "");
+}
 
 test.describe("on a computer", () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 
-  test("boards, then the cards in Doing and Review, a line each; a card's preview holds its sessions; Not on a card last", async ({ page }, info) => {
+  test("a row per board, opened to the cards in Doing and Review, a line each; a card's preview holds its sessions; Not on a card last", async ({ page }, info) => {
     const { term, agent } = await overview(page);
+    // The page takes the window's width, not the reading column.
+    const width = await page.locator("[data-overview]").evaluate((e) => e.getBoundingClientRect().width);
+    expect(width).toBeGreaterThan(1000);
     const launch = page.locator(`[data-ov-board="${B}"]`);
     await expect(launch.locator("[data-ov-board-title]")).toHaveText("Launch");
-    await expect(launch.locator("[data-ov-board-line]")).toHaveText("3 in flight · 1 next · 1 of 5 done");
-    // A board with nothing in flight isn't drawn; Next and Done are counts, not tiles.
-    await expect(page.locator(`[data-ov-board="${LATER}"]`)).toHaveCount(0);
+    await expect(launch.locator("[data-ov-board-count]")).toHaveText("1/5");
+    await expect(launch.locator("[data-ov-board-says]")).toContainText("1 in review");
+    await expect(launch.locator(".board-bar i")).not.toHaveCount(0);
+    // A board with nothing in flight is a row too, last, and doesn't open.
+    const later = page.locator(`[data-ov-board="${LATER}"]`);
+    await expect(later.locator("[data-ov-board-count]")).toHaveText("0/1");
+    await expect(later.locator("[data-ov-board-says]")).toHaveText("nothing in flight");
+    await expect(later.locator("[data-ov-board-toggle]")).toBeDisabled();
+    await expect.poll(() => page.locator("[data-ov-board]").evaluateAll((els) => els.map((e) => e.getAttribute("data-ov-board")))).toEqual([B, LATER]);
+    // Nothing asks you, so Launch is closed; a click on its row opens it, its title is the board.
+    await expect(launch.locator("[data-ov-card]")).toHaveCount(0);
+    await expect(launch.locator("[data-ov-board-title]")).toHaveAttribute("href", new RegExp(`/boards/${B}`));
+    await launch.locator("[data-ov-board-says]").click();
+    await expect(launch).toHaveAttribute("data-ov-open", "");
     // Doing and Review in one list, no lane headings, no Open board link; under four, so no "more".
     await expect(launch.locator("[data-ov-card]")).toHaveCount(3);
     await expect(launch.locator("[data-ov-board-open], [data-ov-more-rows]")).toHaveCount(0);
@@ -148,10 +170,12 @@ test.describe("on a computer", () => {
     await expect(page.locator("[data-ov-preview]")).toHaveCount(0);
     // Not on a card: the scratch session, after the boards.
     await expect(page.locator("[data-ov-loose] [data-ov-session]")).toHaveCount(1);
-    const order = await page.locator("[data-ov-field] > *").evaluateAll((els) => els.map((e) => (e.hasAttribute("data-ov-board") ? "board" : e.hasAttribute("data-ov-loose") ? "loose" : e.hasAttribute("data-ov-more") ? "more" : "")).filter(Boolean));
-    expect(order).toEqual(["board", "loose", "more"]);
-    // What the project's page showed before is still there, below.
-    await expect(page.locator("[data-ov-more] [data-project-rooms]")).toBeAttached();
+    const order = await page.locator("[data-ov-field] > *").evaluateAll((els) => els.map((e) => (e.hasAttribute("data-ov-boards") ? "boards" : e.hasAttribute("data-ov-loose") ? "loose" : "")).filter(Boolean));
+    expect(order).toEqual(["boards", "loose"]);
+    // None of the old home's lists: no chat, no people, no issues, runs, repos or workspaces.
+    await expect(page.locator("[data-project-rooms], [data-chat-off], [data-project-members], [data-project-runs], [data-project-repos], [data-project-envs], [data-project-boards], [data-ov-more]")).toHaveCount(0);
+    // Chat is off here: no faces in the header.
+    await expect(page.locator("[data-project-faces]")).toHaveCount(0);
     await expect(page.locator(".ws-rail [data-open-plan]")).toHaveAttribute("aria-current", "page");
     await expect(page.locator("[data-space-places=plan] [data-space-overview]")).toHaveAttribute("aria-current", "page");
     await page.screenshot({ path: info.outputPath("overview.png") });
@@ -159,6 +183,7 @@ test.describe("on a computer", () => {
 
   test("a card opens the board's drawer; Esc and the path climb back; a session opens on its machine", async ({ page }, info) => {
     const { agent } = await overview(page);
+    await openLaunch(page);
     await tile(page, "row_b").locator("[data-ov-row-open]").click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/?]*\\?board=${B}&card=row_b$`));
     const drawer = page.locator('[data-board-drawer="row_b"]');
@@ -197,8 +222,10 @@ test.describe("on a computer", () => {
     );
     const card = needs.locator('.swarm-card[data-kind="ask"]');
     await expect(card).toHaveCount(1, { timeout: 20_000 });
-    // It names its card, and the card waits on you.
+    // It names its card, and the card waits on you: its board opens by itself.
     await expect(card.locator("[data-card-work]")).toHaveText("#12 · Fix the installer");
+    await expect(page.locator(`[data-ov-board="${B}"]`)).toHaveAttribute("data-ov-open", "");
+    await expect(page.locator(`[data-ov-board="${B}"] [data-ov-board-says] .tone-accent`)).toHaveText("1 needs you");
     await expect(tile(page, "row_b")).toHaveAttribute("data-ov-standing", "needs");
     await expect(tile(page, "row_b")).toHaveClass(/ov-pulse/);
     await expect(needs.locator("[data-ov-needs-count]")).toHaveText("1");
@@ -220,6 +247,7 @@ test.describe("on a computer", () => {
 
   test("the card's drawer draws its session live, and its question at the top, as on the board", async ({ page }, info) => {
     const { term } = await overview(page, null, true);
+    await openLaunch(page);
     await tile(page, "row_b").locator("[data-ov-row-open]").click();
     const drawer = page.locator('[data-board-drawer="row_b"]');
     const live = drawer.locator("[data-board-drawer-live]");
@@ -250,6 +278,7 @@ test.describe("on a computer", () => {
       ],
     };
     await overview(page, byCard);
+    await openLaunch(page);
     await tile(page, "row_c").hover();
     const hosted = tile(page, "row_c").locator('[data-ov-session="hosted:hs_e2e"]');
     await expect(hosted).toContainText("arugula/13-tidy-docs");
@@ -262,6 +291,20 @@ test.describe("on a computer", () => {
   });
 });
 
+test("the team's faces are in the header while chat is on", async ({ page }) => {
+  await overview(page);
+  await expect(page.locator("[data-project-faces]")).toHaveCount(0);
+  await page.waitForFunction(() => (window as unknown as { __chat?: { on: boolean | null } }).__chat?.on === false);
+  await page.evaluate(() => {
+    const c = (window as unknown as { __chat: { on: boolean | null; emit(): void } }).__chat;
+    c.on = true;
+    c.emit();
+  });
+  const faces = page.locator(`[data-project-home="${P}"] [data-page-head] [data-project-faces]`);
+  await expect(faces.locator("[data-project-face]")).toHaveCount(2);
+  await expect(faces.locator('[data-project-face="acct_b"]')).toHaveAttribute("title", "Jo");
+});
+
 test.describe("on a phone", () => {
   const { viewport, userAgent, deviceScaleFactor, isMobile, hasTouch } = devices["Pixel 7"];
   test.use({ viewport, userAgent, deviceScaleFactor, isMobile, hasTouch });
@@ -272,6 +315,7 @@ test.describe("on a phone", () => {
     await expect(ov).toHaveClass(/phone/);
     const first = await ov.locator("> *").first().evaluate((e) => [...e.attributes].map((a) => a.name));
     expect(first).toContain("data-ov-needs");
+    await openLaunch(page);
     await expect(tile(page, "row_b")).toBeVisible();
     await expect(page.locator("[data-phone-tabs] [data-tab-plan]")).toHaveAttribute("aria-current", "page");
     await expect(page.locator("[data-platform-bar] [data-space-overview]")).toHaveAttribute("aria-current", "page");
