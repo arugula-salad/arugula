@@ -718,8 +718,9 @@ function Cloud({
     <section class="start-step">
       <h2 data-start-cloud-title>{joined ? "Use it from anywhere" : dropped ? `Put ${name} back in your account or team` : `Add ${name} to your account or team`}</h2>
       <p class="start-lede">
-        Arugula cloud reaches this machine from any browser, with no tailnet, and lets your team in on the sessions you share. Your terminals stay here:
-        the cloud passes encrypted traffic, and only your devices hold the keys.
+        Arugula cloud reaches this machine from any browser, with no tailnet, and lets your team in on the sessions you share. It decides who reaches
+        this machine, and it can read the terminal traffic it relays, though it keeps none of it. To let people who come through it only watch, run{" "}
+        <code>arugulad sharing remote-input off</code> here.
       </p>
       {manual ? (
         <>

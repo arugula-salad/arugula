@@ -53,7 +53,7 @@ export function ControlGate({ s }: { s: ControlSession }) {
           Arugula
         </h1>
         <WhyHere />
-        <p>Your terminals, on every machine, from any device. End-to-end encrypted: this service introduces your devices to your machines and relays for them, but can't read what they say.</p>
+        <p>Your terminals, on every machine, from any device. This service decides who reaches your machines and relays for them: it can read what it relays, and keeps none of it.</p>
         <div class="control-signins">
           {s.info.github ? (
             <a class="primary control-signin" href={`/auth/github?next=${next}`} data-signin="github">

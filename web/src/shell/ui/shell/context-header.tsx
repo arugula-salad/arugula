@@ -28,7 +28,7 @@ export type Connection = "direct" | "relayed" | "reconnecting" | "offline" | "wa
 export function connection(client: Client): { state: Connection; why: string } {
   if (client.connected) {
     return client.path === "relayed"
-      ? { state: "relayed", why: "Through Arugula cloud's relay (end-to-end encrypted)" }
+      ? { state: "relayed", why: "Through Arugula cloud's relay, which can read what it carries and keeps none of it" }
       : { state: "direct", why: "Straight to the machine" };
   }
   const name = directory.current;

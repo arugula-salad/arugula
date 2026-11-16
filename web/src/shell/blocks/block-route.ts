@@ -57,7 +57,7 @@ export function blockRoutesLabel(all: Iterable<BlockRoute> = [...routes.values()
 
 /** The block's own pill's tooltip. */
 export function routeTitle(r: BlockRoute): string {
-  if (r === "relayed") return "Through Arugula cloud's relay (end-to-end encrypted)";
-  if (r === "direct") return "Straight to the machine (end-to-end encrypted)";
+  if (r === "relayed") return "Through Arugula cloud's relay, which can read what it carries and keeps none of it";
+  if (r === "direct") return "Straight to the machine";
   return "Via the machine's own block site: this browser couldn't open it through Arugula cloud";
 }

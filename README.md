@@ -36,11 +36,12 @@ you've connected.
   on your own machines or servers you manage, on Linux, macOS and
   Windows. Reach it over your own [Tailscale](https://tailscale.com)
   tailnet, or through [Arugula control](https://docs.arugula.io/control/)
-  from a browser or phone without a VPN. Connections to your machines
-  are end-to-end encrypted; control relays them and can't read them.
-  Control serves the web client, so you trust that client not to read
-  or alter your session
-  ([what it can and can't see](https://docs.arugula.io/control/#what-it-can-and-cant-see)).
+  from a browser or phone without a VPN. Control decides who reaches a
+  joined machine: it can read the terminal traffic it relays (it's built
+  to store none of it), and it can open a shell on any machine your
+  account reaches, so you trust it with them. Each machine logs who came
+  in, and can turn typing through control off
+  ([what control can do](docs/control-e2e.md#what-control-can-do-to-your-machines)).
   Self-hosting control isn't supported yet.
 - **Scriptable.** Any MCP client can run commands in panes you watch
   (`arugula mcp`); after installing Arugula, the Claude Code plugin
@@ -149,8 +150,8 @@ For working on Arugula itself:
 - [docs/development.md](docs/development.md): building from source, testing, releasing, and the
   code's layout.
 - [docs/testing.md](docs/testing.md): the test suites.
-- [docs/control-e2e.md](docs/control-e2e.md): how control's end-to-end encryption keeps it out of
-  your terminals.
+- [docs/control-e2e.md](docs/control-e2e.md): what control can do to your machines, and the
+  design of its keys, channels and relay.
 - [DECISIONS.md](DECISIONS.md): the decisions that still hold, an index of the records in
   [docs/decisions/](docs/decisions/).
 - [docs/plan-archive.md](docs/plan-archive.md): the original plan and every milestone.

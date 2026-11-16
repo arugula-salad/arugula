@@ -9,10 +9,10 @@ split are in this repository's history, under MIT OR Apache-2.0.
 Using control (signing in, devices, joining machines, teams) is on
 **[docs.arugula.io/control](https://docs.arugula.io/control/)**. What
 crosses the line between a daemon and control (the wire, the native API) is
-the published contract in [`contract/`](../contract/), and the end-to-end
-encryption between your devices and your machines is in
-[control-e2e.md](control-e2e.md). This page lists what the CLI and a
-machine's agents do with control.
+the published contract in [`contract/`](../contract/), and what control
+can do to your machines (it decides who reaches them, and can read what it
+relays) is in [control-e2e.md](control-e2e.md#what-control-can-do-to-your-machines).
+This page lists what the CLI and a machine's agents do with control.
 
 ## Grants: what a machine's agents may do
 

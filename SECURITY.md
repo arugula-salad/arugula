@@ -70,16 +70,20 @@ hosted machines' run and deploy engines; Windows-specific behaviour and
 depth; release workflows and CI secrets; cryptographic verification and
 dependencies; fuzzing or any live testing.
 
-**What still assumes an honest control** is set out in
-[docs/control-e2e.md](docs/control-e2e.md#what-holds-against-control). In
-short: control serves the web client, so you trust that page (a daemon's
-own page and the CLI don't come from control); a few things are trusted
-the first time they're seen, such as an account's first device; control can
-withhold or delay what a machine hasn't received yet, lock a team, or
-refuse service, but it can't undo what a machine already holds, unlock a
-team, or add a reader no owner's device signed for; hosted machines are run
-by the operator; and the platform plane (chat, Cloud workspaces, Docs,
-billing) is stored in plain text.
+**What assumes an honest control** has grown since the review: in
+November 2026 control became the one that decides who reaches a machine
+([aru-141](docs/decisions/aru-141-machines-trust-control-the-hub-s-tokens-replace-device-keys.md)).
+Control can read the terminal traffic it relays, and it, or anyone who
+breaks into it or steals a signed-in session, can open a shell on any
+machine an account reaches. What limits that is in
+[docs/control-e2e.md](docs/control-e2e.md#what-control-can-do-to-your-machines):
+tokens for one machine and one role that last five minutes and open one
+channel, a log of remote sessions on each machine, and a switch on the
+machine that makes everyone through control a viewer. Control also serves
+the web client, so you trust that page (a daemon's own page and the CLI
+don't come from control); hosted machines are run by the operator; and the
+platform plane (chat, Cloud workspaces, Docs, billing) is stored in plain
+text.
 
 **Known and accepted:** the update to 0.66.0 doesn't rotate the local
 sign-in token, so a token that could have reached another local port

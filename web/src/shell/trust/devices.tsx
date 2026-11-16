@@ -112,7 +112,7 @@ function MoveMachine({ s, c, team, online }: { s: ControlSession; c: Cert; team:
         <p class="dim control-explain" data-move-explain>
           {to
             ? `Everyone in ${name(to)} sees ${c.name} and reaches it by their role${team ? `, and ${name(team)}'s members lose it` : ""}; its owners also see private panes. It stays yours, and you can take it out again.`
-            : `${name(team)}'s members lose ${c.name} at once; only your devices reach it.`}
+            : `${name(team)}'s members lose ${c.name} at once; only you reach it.`}
           {/* #778: a machine is in one team at a time; sharing reaches the
               other team without taking it from this one. */}
           {to && team ? ` To work with both, keep it in ${name(team)} and share a session with ${name(to)} instead (Share, beside the session's name).` : ""}
