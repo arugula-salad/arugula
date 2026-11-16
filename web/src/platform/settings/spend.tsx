@@ -57,7 +57,12 @@ export function ClaudeSpend({ p }: { p: PlatformProject }) {
       })
       .catch((e: Error) => setErr(e.message));
   }, [p.id]);
-  if (err) return <p class="control-error">{err}</p>;
+  if (err)
+    return (
+      <Section id="spend" title="Claude spend" summary="Couldn't load">
+        <p class="control-error">{err}</p>
+      </Section>
+    );
   if (!v) return null;
   const none = v.lines.length === 0 && v.hosted.turns === 0;
   const name = nameIn(p);
@@ -66,6 +71,7 @@ export function ClaudeSpend({ p }: { p: PlatformProject }) {
     <Section
       id="spend"
       title="Claude spend"
+      summary={none ? `Nothing in ${monthName(v.month)}` : `${dollars(v.usd)} in ${monthName(v.month)}`}
       hooks={{ "data-claude-spend": v.month }}
       lede={`What this project's Claude calls through Arugula cost in ${monthName(v.month)} (UTC).`}
       more={

@@ -1,6 +1,7 @@
-// An owner's settings (Arugula #897): a team's at `/t/:team/settings`,
-// Personal's at `/settings/personal`. One scrolling page with the section
-// index beside it, as the account's and a project's settings are: General
+// An owner's settings (Arugula #897): Settings' Team and billing scope
+// (Arugula #1104), a team's at `/settings/team/:team`, Personal's at
+// `/settings/team/personal` (they were `/t/:team/settings` and
+// `/settings/personal`). Its sections, as every scope's are: General
 // (its default project), Members, Machines, Chat (the team chat's
 // owners-only switches, from a project's settings), Plan and billing (from
 // the account's settings), Labs, and Project defaults.
@@ -13,14 +14,12 @@
 // which failed, Cancel drops them, and leaving asks first. A team's
 // viewers read it; only its owners choose its default project.
 
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import type { SessionSettings } from "../../shared/proto";
 import { platformFetch } from "../../shared/maintenance";
 import { useSubscribe } from "../../shared/ui/hooks";
-import { PageHeader } from "../../shared/ui/page-header";
-import { Section, SectionIndex } from "../../shared/ui/settings-section";
-import { names } from "../links";
-import { follow, pathOf, useHoldLeaving } from "../router";
+import { Section } from "../../shared/ui/settings-section";
+import { useHoldLeaving } from "../router";
 import { runs, type HostedWorkspace } from "../runs";
 import { controlOrigin, session, type PlatformProject } from "../session";
 import { TeamChat } from "../settings/chat-alerts";
@@ -53,7 +52,7 @@ import {
   type Value,
   type Write,
 } from "../settings/overrides";
-import { Missing } from "./project";
+import { joined, plural } from "../settings/summary";
 
 /** A call to the platform: its JSON, or its `{error}` thrown, with the status. */
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -82,25 +81,28 @@ function roleIn(owner: string): string | undefined {
   return session.projects.find((p) => p.team?.id === owner)?.team?.role;
 }
 
-/** `inTeam`: inside the team page (./team), whose header names the team. */
-export function OwnerSettings({ owner, inTeam }: { owner: string; inTeam?: boolean }) {
+export function OwnerSettings({ owner }: { owner: string }) {
   useSubscribe((fn) => session.subscribe(fn));
-  const body = useRef<HTMLDivElement>(null);
   const projects = projectsOf(owner);
   const team = owner === "personal" ? null : session.projects.find((p) => p.team?.id === owner)?.team ?? null;
   const name = owner === "personal" ? "Personal" : (team?.name ?? (projects[0] && ownerOf(projects[0]).name) ?? "Team");
   const role = roleIn(owner);
-  if (owner !== "personal" && !team && projects.length === 0) return <Missing what="That team isn't one of yours (or it's gone)." />;
-  const account = pathOf({ page: "settings" }, names);
+  if (owner !== "personal" && !team && projects.length === 0)
+    return (
+      <Section id="general" title="General" summary="Not one of yours">
+        <p class="dim">That team isn't one of yours (or it's gone).</p>
+      </Section>
+    );
   return (
-    <section class="platform-section sw-page settings-page" data-owner-settings={owner}>
-      <div class="settings-layout">
-        <SectionIndex body={body} />
-        <div class="settings-body" ref={body}>
-          {!inTeam && <PageHeader title={`${name} settings`} back={{ href: account, label: "Your settings", onClick: (e) => follow(e, account) }} />}
+    <>
           <General owner={owner} projects={projects} role={role} />
           {team && (
-            <Section id="members" title="Members" count={team.members.length} lede={`Who's in ${name}, and their role.`} hooks={{ "data-owner-members": owner }}>
+            <Section
+              id="members"
+              title="Members"
+              summary={joined(plural(team.members.length, "person", "people"), plural(team.members.filter((m) => m.role === "owner").length, "owner"))}
+              count={team.members.length}
+              lede={`Who's in ${name}, and their role.`} hooks={{ "data-owner-members": owner }}>
               <ul class="platform-list settings-rows">
                 {team.members.map((m) => (
                   <li key={m.account} data-owner-member={m.account}>
@@ -118,7 +120,7 @@ export function OwnerSettings({ owner, inTeam }: { owner: string; inTeam?: boole
               </p>
             </Section>
           )}
-          <Section id="machines" title="Machines" lede={team ? `The machines shared with ${name}, and what they may do, are on your machines page.` : "Your machines are on your machines page."}>
+          <Section id="machines" title="Machines" summary="On your machines page" lede={team ? `The machines shared with ${name}, and what they may do, are on your machines page.` : "Your machines are on your machines page."}>
             <p>
               <a href={`${controlOrigin()}/`} data-settings-control>
                 Your machines
@@ -127,7 +129,7 @@ export function OwnerSettings({ owner, inTeam }: { owner: string; inTeam?: boole
           </Section>
           {team && <TeamChat team={owner} name={name} role={role} />}
           <PlanAndBilling team={team ? owner : undefined} />
-          <Section id="labs" title="Labs" lede="Labs features are turned on per machine, in its Developer settings.">
+          <Section id="labs" title="Labs" summary="Per machine, on its page" lede="Labs features are turned on per machine, in its Developer settings.">
             <p>
               <a href={`${controlOrigin()}/#settings=machine`} data-settings-control>
                 This machine's settings
@@ -135,9 +137,7 @@ export function OwnerSettings({ owner, inTeam }: { owner: string; inTeam?: boole
             </p>
           </Section>
           <ProjectDefaults owner={owner} name={name} projects={projects} role={role} />
-        </div>
-      </div>
-    </section>
+    </>
   );
 }
 
@@ -175,7 +175,11 @@ function General({ owner, projects, role }: { owner: string; projects: PlatformP
   };
   const nameOf = (id: string) => session.project(id)?.name;
   return (
-    <Section id="general" title="General" lede="Its default project: where its new things go when nothing says which.">
+    <Section
+      id="general"
+      title="General"
+      summary={read ? `Default project: ${words("default_project", saved, nameOf)}` : err ? "Couldn't load" : undefined}
+      lede="Its default project: where its new things go when nothing says which.">
       {read && (
         <form class="settings-row" onSubmit={save} data-default-project-form>
           <label>
@@ -269,6 +273,7 @@ function ProjectDefaults({ owner, name, projects, role }: { owner: string; name:
     <Section
       id="defaults"
       title="Project defaults"
+      summary={layers ? defaultsSummary(layers, projects) : err ? "Couldn't load" : undefined}
       lede={`What ${owner === "personal" ? "your projects use" : `every project in ${name} uses`} unless it overrides it.`}
       more={<p>A highlighted cell is a project's own value. Choose Default in it to follow the default again. Changes wait for Save.</p>}
       hooks={{ "data-project-defaults": owner }}
@@ -370,6 +375,14 @@ function ProjectDefaults({ owner, name, projects, role }: { owner: string; name:
       )}
     </Section>
   );
+}
+
+/** What the list says of the defaults: how many are set, and how many
+ * projects set their own. */
+function defaultsSummary(layers: Layers, projects: PlatformProject[]): string {
+  const set = KEYS.filter((info) => ownerCell(layers, {}, info.key).overridden).length;
+  const own = projects.filter((p) => KEYS.some((info) => projectCell(layers, {}, p.id, info.key).overridden)).length;
+  return joined(set ? `${set} set here` : "Built-in defaults", own > 0 && `${plural(own, "project")} set their own`);
 }
 
 const cellClass = (c: Cell) => ["defaults-cell", c.overridden && "defaults-own", c.staged && "defaults-staged"].filter(Boolean).join(" ");

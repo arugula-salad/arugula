@@ -7,6 +7,7 @@ import type { BoardSettings as Settings } from "../../shared/proto.gen";
 import { platformFetch } from "../../shared/maintenance";
 import type { PlatformProject } from "../session";
 import { Section } from "../../shared/ui/settings-section";
+import { span } from "./summary";
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const r = await platformFetch(path, {
@@ -54,6 +55,7 @@ export function BoardSettings({ p }: { p: PlatformProject }) {
     <Section
       id="boards"
       title="Boards"
+      summary={minutes !== null ? `Stalled after ${span(minutes)} idle` : "Couldn't load"}
       lede="When a row counts as stalled."
       more={<p>A row in Doing whose agents have all sat idle for longer than this, with no pull request on it, is marked stalled on its board, and waits in the Needs you of whoever owns the agent.</p>}
       hooks={{ "data-board-settings": p.id }}

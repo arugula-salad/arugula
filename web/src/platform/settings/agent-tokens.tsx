@@ -18,6 +18,8 @@ import { session } from "../session";
 import { roleIn } from "./environments";
 import { hasWorkOnBoards, VIEWER_REFUSED, withWorkOnBoards } from "./grants";
 import { Section } from "../../shared/ui/settings-section";
+import { ago } from "../../shared/time";
+import { joined, plural } from "./summary";
 
 type TokenGrant = {
   id: string;
@@ -38,6 +40,13 @@ export type AgentToken = {
   live: boolean;
   grants: TokenGrant[];
 };
+/** What the list says of them: how many are live, and when one was last used. */
+export function tokensSummary(tokens: AgentToken[]): string {
+  const live = tokens.filter((t) => t.live);
+  if (live.length === 0) return "None";
+  const last = Math.max(...live.map((t) => t.last_used_at ?? 0));
+  return joined(plural(live.length, "token"), last > 0 && `last used ${ago(last, Date.now(), "long")}`);
+}
 /** Powers the platform left out of a token over a project the minter
  * only views (Arugula #683). */
 type LeftOut = { project: string; name: string; powers: string[] };
@@ -173,7 +182,12 @@ export function AgentTokens() {
       (e: Error) => setErr(e.message),
     );
   useEffect(() => void load(), []);
-  if (tokens === null) return err ? <p class="control-error">{err}</p> : null;
+  if (tokens === null)
+    return err ? (
+      <Section id="tokens" title="Your agent tokens" summary="Couldn't load">
+        <p class="control-error">{err}</p>
+      </Section>
+    ) : null;
   const toggle = (list: string[], v: string, on: boolean) => (on ? [...list.filter((x) => x !== v), v] : list.filter((x) => x !== v));
   const mint = async (e: Event) => {
     e.preventDefault();
@@ -204,6 +218,7 @@ export function AgentTokens() {
     <Section
       id="tokens"
       title="Your agent tokens"
+      summary={tokensSummary(tokens)}
       count={tokens.length}
       more={
         <p>

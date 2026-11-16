@@ -78,7 +78,12 @@ export function Overrides({ p }: { p: PlatformProject }) {
   }, [p.id]);
   const n = changes(staged);
   useHoldLeaving(n > 0);
-  if (!layers) return err ? <p class="control-error">{err}</p> : null;
+  if (!layers)
+    return err ? (
+      <Section id="overrides" title="Overrides" summary="Couldn't load">
+        <p class="control-error">{err}</p>
+      </Section>
+    ) : null;
   const writer = !p.team || p.team.role !== "viewer";
   const team = owner === "personal" ? null : name;
   const workspaceName = (id: string) => spaces.find((w) => w.id === id)?.name;
@@ -97,12 +102,15 @@ export function Overrides({ p }: { p: PlatformProject }) {
     setStaged(r.left);
     setBusy(false);
   };
-  const defaults = pathOf({ page: "owner-settings", owner }, names);
+  const defaults = pathOf({ page: "settings", scope: "team", owner }, names);
+  const table = pathOf({ page: "settings", scope: "team", owner, section: "defaults" }, names);
+  const own = KEYS.filter((info) => overrideLine(settingOf(layers.projects[p.id], info.key), info.key, team, workspaceName).overridden).length;
   const members = team ? pathOf({ page: "team", team: owner, tab: "members" }, names) : null;
   return (
     <Section
       id="overrides"
       title="Overrides"
+      summary={own ? `${own} set here, the rest ${team ? `${team}'s` : "your"} defaults` : `Follows ${team ? `${team}'s` : "your"} defaults`}
       lede={
         <>
           Each setting follows {team ? `${team}'s` : "your"} default unless this project chooses its own.
@@ -124,7 +132,7 @@ export function Overrides({ p }: { p: PlatformProject }) {
       more={
         <p>
           The defaults are in{" "}
-          <a href={`${defaults}#defaults`} onClick={(e) => follow(e, `${defaults}#defaults`)}>
+          <a href={table} onClick={(e) => follow(e, table)}>
             {name}'s settings
           </a>
           , with every project's choices side by side.

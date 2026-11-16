@@ -71,7 +71,8 @@ async function open(page: Page, path: string, undo: () => { status: number; body
   });
   await page.route(new RegExp(`/api/issues/${ISSUE}$`), (r) => json(r, issue));
   const body = await fixturePage("./move-to-project-page.tsx");
-  await page.route(/\/p\/prj_/, (r) => (r.request().resourceType() === "document" ? r.fulfill({ contentType: "text/html", body }) : r.fallback()));
+  // A project's settings are Settings' Project scope now (Arugula #1104): its address too.
+  await page.route(/\/(p|settings\/project)\/prj_/, (r) => (r.request().resourceType() === "document" ? r.fulfill({ contentType: "text/html", body }) : r.fallback()));
   await page.goto(path);
   return seen;
 }

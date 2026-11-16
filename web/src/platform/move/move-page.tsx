@@ -156,7 +156,7 @@ function Mover({ p }: { p: PlatformProject }) {
     }
   };
 
-  const settings = pathOf({ page: "project-settings", project: p.id }, names);
+  const settings = pathOf({ page: "settings", scope: "project", project: p.id }, names);
   const repoRows = (src?.repos ?? []).filter((r) => matches(r.name, q.repos));
   const boardRows = (src?.boards ?? []).filter((b) => matches(b.title, q.boards));
   const along = out?.along;

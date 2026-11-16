@@ -43,6 +43,15 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
   return v as T;
 }
 
+/** What the list says: the one size, or how many of each. */
+function sizesSummary(list: Workspace[]): string {
+  const sizes = list.map((w) => sizeOf(w.spec));
+  const large = sizes.filter((s) => s === "large").length;
+  if (large > 0 && large < sizes.length) return `${large} large, ${sizes.length - large} small`;
+  const one = SIZES.find((x) => x.size === sizes[0])!;
+  return `${one.size === "large" ? "Large" : "Small"}, ${one.box}${sizes.length > 1 ? ` · all ${sizes.length}` : ""}`;
+}
+
 export function WorkspaceSize({ p }: { p: PlatformProject }) {
   const [list, setList] = useState<Workspace[] | null>(null);
   const [draft, setDraft] = useState<Record<string, Size>>({});
@@ -81,6 +90,7 @@ export function WorkspaceSize({ p }: { p: PlatformProject }) {
     <Section
       id="size"
       title="Workspace size"
+      summary={sizesSummary(list)}
       lede="How big each cloud workspace's box is. Changing it takes a rebuild."
       more={
         <>

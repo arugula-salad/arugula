@@ -10,6 +10,7 @@ import type { ChatTeamSettings } from "../../shared/proto";
 import { keywords, setKeywords, setTeamSettings, teamSettings } from "../../shared/chat/alerts";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { Section } from "../../shared/ui/settings-section";
+import { some } from "./summary";
 
 function Words({ words, setWords }: { words: string[]; setWords: (w: string[]) => void }) {
   const [draft, setDraft] = useState("");
@@ -61,12 +62,14 @@ function Words({ words, setWords }: { words: string[]; setWords: (w: string[]) =
   );
 }
 
-function OwnersOnly({ team, name }: { team: string; name: string }) {
-  const [s, setS] = useState<ChatTeamSettings | null>(null);
-  const [err, setErr] = useState("");
-  useEffect(() => {
-    teamSettings(team).then(setS, (e: Error) => setErr(e.message));
-  }, [team]);
+/** What the list says of a team's chat: what only its owners may do. */
+function ownersOnlySummary(s: ChatTeamSettings | null): string | undefined {
+  if (!s) return undefined;
+  if (!s.broadcast_owners && !s.topic_owners) return "Everyone may @channel and set topics";
+  return `Owners only: ${[s.broadcast_owners && "@channel", s.topic_owners && "topics"].filter(Boolean).join(" and ")}`;
+}
+
+function OwnersOnly({ team, name, s, setS, err, setErr }: { team: string; name: string; s: ChatTeamSettings | null; setS: (s: ChatTeamSettings) => void; err: string; setErr: (e: string) => void }) {
   if (s === null) return err ? <p class="control-error">{err}</p> : null;
   // The two switches are one record on the server: each sends both.
   const flip = (change: Partial<ChatTeamSettings>) => void setTeamSettings(team, { ...s, ...change }).then(setS, (e: Error) => setErr(e.message));
@@ -115,11 +118,17 @@ function Alerts() {
       (e: Error) => setErr(e.message),
     );
   }, []);
-  if (words === null) return err ? <p class="control-error">{err}</p> : null;
+  if (words === null)
+    return err ? (
+      <Section id="chat-alerts" title="Chat alerts" summary="Couldn't load">
+        <p class="control-error">{err}</p>
+      </Section>
+    ) : null;
   return (
     <Section
       id="chat-alerts"
       title="Chat alerts"
+      summary={words.length ? some(words) : "No words"}
       count={words.length}
       more={<p class="dim">A word counts when a message has it whole, in any case: "deploy" doesn't match "redeployed". Rooms you muted stay quiet.</p>}
       hooks={{ "data-chat-alerts": "" }}
@@ -133,16 +142,23 @@ function Alerts() {
  * may notify a whole room, and set a channel's topic. */
 export function TeamChat({ team, name, role }: { team: string; name: string; role: string | undefined }) {
   useSubscribe((fn) => chat.subscribe(fn));
-  if (chat.on !== true || role !== "owner") return null;
+  const [s, setS] = useState<ChatTeamSettings | null>(null);
+  const [err, setErr] = useState("");
+  const shown = chat.on === true && role === "owner";
+  useEffect(() => {
+    if (shown) teamSettings(team).then(setS, (e: Error) => setErr(e.message));
+  }, [team, shown]);
+  if (!shown) return null;
   return (
     <Section
       id="team-chat"
       title="Chat"
+      summary={err && !s ? "Couldn't load" : ownersOnlySummary(s)}
       lede={`Who in ${name || "this team"} may notify a whole room, and set a channel's topic.`}
       more={<p>Everyone in the team may, until you turn these on. @channel notifies everyone in a room; @here, those active now.</p>}
       hooks={{ "data-team-chat": team }}
     >
-      <OwnersOnly team={team} name={name || "the team"} />
+      <OwnersOnly team={team} name={name || "the team"} s={s} setS={setS} err={err} setErr={setErr} />
     </Section>
   );
 }

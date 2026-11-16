@@ -17,6 +17,7 @@ import { platformFetch } from "../../shared/maintenance";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { Time } from "../../shared/ui/time";
 import { Section } from "../../shared/ui/settings-section";
+import { some } from "./summary";
 
 export type ProductLink = {
   client: string;
@@ -87,11 +88,17 @@ export function LinkedProducts() {
     await load();
     setBusy("");
   };
-  if (links === null) return err ? <p class="control-error">{err}</p> : null;
+  if (links === null)
+    return err ? (
+      <Section id="linked" title="Linked products" summary="Couldn't load">
+        <p class="control-error">{err}</p>
+      </Section>
+    ) : null;
   return (
     <Section
       id="linked"
       title="Linked products"
+      summary={links.length ? some(links.map((l) => l.product)) : "None"}
       count={links.length}
       more={
         <p>

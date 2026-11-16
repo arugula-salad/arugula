@@ -12,9 +12,9 @@ const Q = "prj_00000000000000000000000000000001";
 const D = "da5b786733ac68a9";
 
 test("a project's pages are its places; chat, settings, the inbox and the lists aren't", () => {
-  for (const path of [`/p/${P}`, `/p/${P}/boards`, `/p/${P}/docs`, `/p/${P}/sessions`, `/p/${P}/runs`, `/p/${P}/machines/${D}?pane=3`, `/p/${P}/machines/swarm`, `/p/${P}/settings`])
+  for (const path of [`/p/${P}`, `/p/${P}/boards`, `/p/${P}/docs`, `/p/${P}/sessions`, `/p/${P}/runs`, `/p/${P}/machines/${D}?pane=3`, `/p/${P}/machines/swarm`])
     assert.equal(placeIn(parse(...path.split(/(?=\?)/))), P, path);
-  for (const path of ["/", "/inbox", "/boards", "/settings", "/design", `/p/${P}/chat`, `/p/${P}/dm/dm_00aa11bb22cc33dd`, "/machines", "/nowhere"]) assert.equal(placeIn(parse(path)), null, path);
+  for (const path of ["/", "/inbox", "/boards", "/settings", `/settings/project/${P}`, `/p/${P}/settings`, "/design", `/p/${P}/chat`, `/p/${P}/dm/dm_00aa11bb22cc33dd`, "/machines", "/nowhere"]) assert.equal(placeIn(parse(path)), null, path);
 });
 
 test("a kept path is only ever one of this origin's pages of its own project", () => {

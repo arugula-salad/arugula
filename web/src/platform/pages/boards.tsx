@@ -181,7 +181,7 @@ function useBlindMachines(project: string, may: boolean): string[] {
 function BlindMachines({ project, may }: { project: string; may: boolean }) {
   const line = blindLine(useBlindMachines(project, may));
   if (!line) return null;
-  const to = `${pathOf({ page: "settings" }, names)}#agents`;
+  const to = pathOf({ page: "settings", scope: "you", section: "agents" }, names);
   return (
     <p class="dim" data-boards-blind>
       {line}{" "}
