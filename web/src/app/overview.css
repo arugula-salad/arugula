@@ -1,6 +1,6 @@
 /* The project's Overview (./overview.tsx): the field of boards on the left,
-   Needs you on the right; on a phone, one list with Needs you on top. The
-   tiles are Cards; Needs you holds Swarm's own rail cards. */
+   Needs you on the right; on a phone, one list with Needs you on top. A
+   board's cards are one-line rows; Needs you holds Swarm's own rail cards. */
 
 .ov {
   display: grid;
@@ -37,10 +37,6 @@
 .ov-board-head b {
   font: 600 var(--text-md) var(--f-ui);
 }
-.ov-board-open {
-  margin-left: auto;
-  font-size: var(--text-sm);
-}
 .ov-progress {
   height: 3px;
   margin: var(--space-2) 0 var(--space-3);
@@ -54,52 +50,137 @@
   background: var(--ok);
 }
 
-.ov-lanes {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-}
-.ov-lane {
-  flex: 1 1 260px;
-  min-width: 0;
+/* A board's rows (./overview-row.tsx): one line each, the preview under it. */
+.ov-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
 }
-.ov-lane h3 {
-  margin: 0;
-  font: 600 var(--text-xs) var(--f-ui);
-  letter-spacing: var(--track-caps);
-  text-transform: uppercase;
-  color: var(--subtle);
+.ov-loose .ov-rows {
+  margin-top: var(--space-2);
 }
-
-.ov-tile {
-  cursor: pointer;
+.ov-row {
+  position: relative;
+  border-radius: var(--field-radius);
 }
-.ov-tile-top {
+.ov-row-line {
+  width: 100%;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  font-size: var(--text-xs);
-}
-.ov-tile-top > :last-child {
-  margin-left: auto;
-}
-.ov-tile-title {
-  display: block;
-  width: 100%;
-  margin: var(--space-1) 0 var(--space-2);
-  padding: 0;
+  padding: var(--space-1) var(--space-2);
   border: 0;
+  border-radius: var(--field-radius);
   background: none;
   color: inherit;
-  font: 600 var(--text-md) / 1.3 var(--f-ui);
+  font: var(--text-sm) / 1.4 var(--f-ui);
   text-align: left;
   cursor: pointer;
 }
-.ov-tile-title:hover {
-  text-decoration: underline;
+.ov-row-line:hover:not(:disabled),
+.ov-row-open .ov-row-line,
+.ov-row-current .ov-row-line {
+  background: var(--raised);
+}
+.ov-row-line:disabled {
+  cursor: default;
+}
+.ov-row-num,
+.ov-row-where {
+  flex: none;
+  font: var(--text-xs) var(--f-mono);
+  color: var(--subtle);
+}
+.ov-row-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ov-word {
+  flex: none;
+  font: 500 var(--text-xs) var(--f-ui);
+  color: var(--muted);
+}
+.ov-word.tone-accent {
+  color: var(--accent);
+}
+.ov-word.tone-danger {
+  color: var(--danger);
+}
+.ov-word.tone-warn {
+  color: var(--warn);
+}
+.ov-row-who {
+  flex: none;
+  display: flex;
+  gap: 2px;
+}
+.ov-row-who .msg-avatar {
+  width: 18px;
+  height: 18px;
+  font-size: 9px; /* off-scale: avatar initials */
+}
+.ov-more-rows {
+  display: inline-block;
+  margin: var(--space-1) var(--space-2) 0;
+  font-size: var(--text-xs);
+}
+
+/* A row's preview: its sessions, where they run and their last lines. On
+   the row's right, so the rows under it can still be reached on their left. */
+.ov-preview {
+  position: absolute;
+  z-index: 5;
+  top: 100%;
+  right: 0;
+  width: min(28rem, 75%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+}
+.ov-peek {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--field-radius);
+  background: none;
+  color: inherit;
+  font: var(--text-xs) var(--f-ui);
+  text-align: left;
+}
+button.ov-peek {
+  cursor: pointer;
+}
+button.ov-peek:hover:not(:disabled) {
+  background: var(--raised);
+}
+button.ov-peek:disabled {
+  cursor: default;
+}
+.ov-peek-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.ov-peek-head b {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* A card that waits on you pulses. */
@@ -117,7 +198,7 @@
     box-shadow: 0 0 0 0 transparent;
   }
 }
-/* A rail card's Find: the tile it's about, for a moment. */
+/* A rail card's Find: the row it's about, for a moment. */
 .ov-found {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -128,55 +209,6 @@
   }
 }
 
-.ov-sessions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-.ov-loose .ov-sessions {
-  margin-top: var(--space-2);
-}
-.ov-session {
-  --c: var(--muted);
-  flex: 1 1 160px;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  padding: var(--space-1) var(--space-2);
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--c);
-  border-radius: var(--field-radius);
-  background: var(--surface);
-  color: inherit;
-  font: var(--text-xs) var(--f-ui);
-  text-align: left;
-  cursor: pointer;
-}
-.ov-session:hover:not(:disabled) {
-  background: var(--raised);
-}
-.ov-session:disabled {
-  cursor: default;
-}
-.ov-session b {
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ov-session.tone-accent {
-  --c: var(--accent);
-}
-.ov-session.tone-danger {
-  --c: var(--danger);
-}
-.ov-session.tone-warn {
-  --c: var(--warn);
-}
-.ov-session.tone-ok {
-  --c: var(--ok);
-}
 .ov-line {
   font: var(--text-xs) / 1.35 var(--f-mono);
   color: var(--subtle);
