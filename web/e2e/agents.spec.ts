@@ -409,6 +409,10 @@ test.describe("phone", () => {
     mkdirSync("/tmp/claude-arugula-813", { recursive: true });
     await page.locator(".keybar").screenshot({ path: "/tmp/claude-arugula-813/keybar.png" });
     await page.evaluate((id) => window.__arugula.client.setActive(id), id);
+    // Its tab was sized to the wider phone while hidden: until the daemon
+    // takes this one's size it's drawn scaled down to fit, buttons and all
+    // (Arugula #1074).
+    await expect(page.locator(".tab-area.scaled")).toHaveCount(0);
     const approve = block.getByRole("button", { name: "Approve" });
     await expect(approve).toBeVisible();
     const box = (await approve.boundingBox())!;

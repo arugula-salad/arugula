@@ -232,6 +232,9 @@ function Toast() {
   ) : null;
 }
 
+/** The address the page is at now. */
+const address = () => location.pathname + location.search;
+
 /** An id-only address (`/chat/:room`…) goes where it belongs as soon as
  * the page can say, in its place in history. */
 function useFind(r: Route): string | null {
@@ -250,9 +253,12 @@ function useFind(r: Route): string | null {
     if (ask) (ask.startsWith("run_") ? runs.get(ask) : issues.get(ask)).catch(() => live && setLost(ask));
     return () => void (live = false);
   }, [ask]);
+  // Only from the address it was found for: an effect runs after the paint,
+  // and a Back before then has left it (Arugula #1074).
+  const at = address();
   useEffect(() => {
-    if (to) arrive(to);
-  }, [to]);
+    if (to && address() === at) arrive(to);
+  }, [to, at]);
   return lost;
 }
 
@@ -319,7 +325,11 @@ function useSlug(r: Route) {
   useSubscribe((fn) => issues.subscribe(fn));
   const known = (id: string) => names(id) ?? slugIn(location.pathname, id);
   const want = r.page === "missing" || r.page === "find" || (r.page === "home" && r.to) ? null : (roomElsewhere(r) ?? movedHome(r) ?? pathOf(r, known));
+  // Only the address it was worked out for: the effect runs after the
+  // paint, and a Back before then would have it replace the entry Back
+  // went to with this page's (Arugula #1074).
+  const at = address();
   useEffect(() => {
-    if (want && want !== location.pathname + location.search && session.state === "ready") go(want + location.hash, true);
-  }, [want, session.state]);
+    if (want && want !== at && address() === at && session.state === "ready") go(want + location.hash, true);
+  }, [want, at, session.state]);
 }
