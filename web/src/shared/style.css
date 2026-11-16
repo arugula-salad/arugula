@@ -9068,6 +9068,22 @@ input.chat-search {
   box-shadow: var(--selected-mark);
 }
 
+/* You, at the rooms' foot (Arugula #1079): your picture, dot and
+   presence; a click changes it. */
+.chat-row.chat-you {
+  flex: none;
+  gap: 8px;
+  margin-block: 4px 8px;
+  color: var(--dim);
+}
+
+.chat-you .msg-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-size: 9px; /* off-scale: avatar initials */
+}
+
 .chat-sigil {
   flex: none;
   width: 12px;

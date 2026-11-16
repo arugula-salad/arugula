@@ -102,6 +102,16 @@ test.describe("on a computer", () => {
     await expect(page.locator('[data-team-page="tm_1"][data-team-tab="members"]')).toBeVisible();
   });
 
+  test("your picture's menu is your name, Your account… and Sign out; presence is Chat's (Arugula #1079)", async ({ page }) => {
+    await openApp(page, () => `/p/${P}/boards`);
+    await page.locator(".ws-rail [data-signed-in-as]").click();
+    const items = page.locator(".menu-item");
+    await expect(items).toHaveText(["Your account…", "Sign out of this page"]);
+    await expect(page.locator(".menu", { hasText: "Your presence" })).toHaveCount(0);
+    await items.first().click();
+    await expect(page).toHaveURL(/\/settings$/);
+  });
+
   test("the project tile opens the switcher: Everything, each team's projects, then yours, with what wants you", async ({ page }, info) => {
     await openApp(page, () => `/p/${P}/boards`);
     await expect(page.locator("[data-app-path]")).toHaveText(/Arugula team\s*Arugula\s*Boards/);

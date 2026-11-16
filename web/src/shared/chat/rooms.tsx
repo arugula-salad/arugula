@@ -20,11 +20,12 @@ import type { ChatRoom } from "../proto";
 import { MaintenanceNote } from "../ui/maintenance-note";
 import { Modal } from "../ui/modal";
 import { usePhone, useSubscribe } from "../ui/hooks";
-import { askText, openMenu, type MenuItem } from "../ui/menu";
+import { askText, openMenu, useMenuFrom, type MenuItem } from "../ui/menu";
 import type { ChatRoute } from "./route";
 import { SavedView } from "./saved";
 import { RoomActivityView, RoomSearchView, SearchField } from "./find";
 import { MsgAvatar } from "./avatar";
+import { presence, presenceItems } from "./presence";
 import { WebPreviewsSwitch } from "./previews";
 import { AboutButton, editDescription, editTopic, PinsButton, pinsItem, TopicLine } from "./pins-ui";
 import { ThreadPanel } from "./thread-panel";
@@ -36,7 +37,7 @@ import { AgentsChip } from "./agents-chip";
 import { newSection, openGroupMenu, openRoomMenu, RoomOptionsButton, RoomStarButton, starItem, toggleGroup } from "./sections";
 import { inScope, ordered, place, placed, present, sortOf, STARRED, type ChatScope } from "./sidebar";
 import { BookmarkIcon, ChevronIcon, CloseIcon, IconButton, MoreIcon, SearchIcon, ThreadIcon } from "../ui/icons";
-import type { ChatSort } from "../proto";
+import type { ChatSort, PresenceMode } from "../proto";
 import { fuzzy } from "../fuzzy";
 import { usePlatformApi, type ChatNav, type PlatformApi, type PlatformTeam } from "../platform-api";
 import { Count } from "../ui/state-chip";
@@ -560,6 +561,7 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
           }
         />
         {list}
+        <YouRow />
       </>
     );
     const card = (
@@ -628,6 +630,7 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
             }
           />
           {list}
+          <YouRow />
           <div class="chat-resize" role="separator" aria-orientation="vertical" title="Drag to resize" onPointerDown={resize} />
         </aside>
         {view ?? (
@@ -641,6 +644,42 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
         )}
       </div>
     </div>
+  );
+}
+
+const MODE: Record<PresenceMode, string> = { auto: "Automatic", away: "Away", offline: "Appear offline" };
+
+/** You, at the rooms' foot (Arugula #1079): your picture, your dot and
+ * your presence's mode, which a click changes. While presence runs (chat
+ * is on). */
+function YouRow() {
+  useSubscribe((fn) => presence.subscribe(fn));
+  const button = useRef<HTMLButtonElement>(null);
+  const open = useMenuFrom(button);
+  if (!presence.on || !chat.me) return null;
+  const state = presence.mode === "auto" ? (presence.of(chat.me) ?? "active") : presence.mode;
+  const mode = MODE[presence.mode];
+  const pick = (e: MouseEvent) => {
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    openMenu({ clientX: r.left, clientY: r.top, preventDefault: () => e.preventDefault() }, presenceItems(), e.currentTarget as HTMLElement);
+  };
+  return (
+    <button
+      ref={button}
+      class="chat-row chat-you"
+      title="Your presence: click to change it"
+      aria-label={`Your presence: ${mode}`}
+      aria-haspopup="menu"
+      aria-expanded={open}
+      data-chat-you={presence.mode}
+      onClick={pick}
+    >
+      <span class="avatar-wrap">
+        <MsgAvatar who={chat.me} name={chat.myNames[0] ?? "?"} account={chat.me} />
+        <span class={`presence-dot presence-${state}`} data-presence={state} aria-hidden="true" />
+      </span>
+      <span class="chat-label">{mode}</span>
+    </button>
   );
 }
 
