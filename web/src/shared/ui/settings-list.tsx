@@ -20,6 +20,9 @@ import { ChevronIcon } from "./icons";
 import { SectionListContext, type ListedSection, type SectionList } from "./settings-section";
 import "./list-page.css";
 
+/** Under this, the list stands alone (as in ./list-page.css). */
+const NARROW = 760;
+
 /** The rows in the page's order. */
 const inOrder = (secs: Iterable<ListedSection>) => [...secs].sort((a, b) => (a.el.compareDocumentPosition(b.el) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
 
@@ -69,6 +72,18 @@ export function SettingsList({
   // The address's section, else the first: a wide page always shows one.
   const shown = section && secs.has(section) ? section : (rows[0]?.id ?? null);
   const list: SectionList = useMemo(() => ({ shown, asked: section ?? null, tell, forget }), [shown, section, tell, forget]);
+  // Too narrow for both, by the room the page has: with no section
+  // chosen, nothing is shown beside the list, so no row is marked.
+  const root = useRef<HTMLDivElement>(null);
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const el = root.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const seen = new ResizeObserver(() => setNarrow(el.clientWidth <= NARROW));
+    seen.observe(el);
+    return () => seen.disconnect();
+  }, []);
+  const marked = section || !narrow ? shown : null;
   // A new section starts at its top.
   const detail = useRef<HTMLDivElement>(null);
   useEffect(() => detail.current?.scrollTo?.({ top: 0 }), [shown]);
@@ -82,7 +97,7 @@ export function SettingsList({
   }
   const shownRow = rows.find((r) => r.id === shown);
   return (
-    <div class={section ? "list-page settings-list detail" : "list-page settings-list"} data-list-page data-settings-list {...attrs}>
+    <div ref={root} class={section ? "list-page settings-list detail" : "list-page settings-list"} data-list-page data-settings-list {...attrs}>
       <div class="list-split">
         <section class="list-pane" aria-label={label}>
           <div class="list-head">{header}</div>
@@ -98,7 +113,7 @@ export function SettingsList({
                   {g.rows.map((r) => {
                     const href = hrefOf(r.id);
                     return (
-                      <Card as="a" key={r.id} class="list-row" href={href} selected={r.id === shown} data-settings-row={r.id} onClick={(e: MouseEvent) => open(e, href)}>
+                      <Card as="a" key={r.id} class="list-row" href={href} selected={r.id === marked} data-settings-row={r.id} onClick={(e: MouseEvent) => open(e, href)}>
                         <div class="list-row-top">
                           <span class="list-row-title">{r.title}</span>
                         </div>

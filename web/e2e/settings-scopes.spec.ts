@@ -112,6 +112,8 @@ test.describe("on a phone", () => {
     await open(page, "/settings");
     await expect(row(page, "quiet-hours")).toBeVisible();
     await expect(page.locator("[data-settings-detail]")).toBeHidden();
+    // Nothing is beside the list, so no row looks chosen.
+    await expect(page.locator("[data-settings-row][aria-current]")).toHaveCount(0);
     await row(page, "quiet-hours").click();
     await expect(page).toHaveURL(/\/settings\/you\/quiet-hours$/);
     await expect(section(page, "quiet-hours")).toBeVisible();
@@ -119,5 +121,6 @@ test.describe("on a phone", () => {
     await page.locator("[data-settings-back]").click();
     await expect(page).toHaveURL(/\/settings$/);
     await expect(row(page, "quiet-hours")).toBeVisible();
+    await expect(page.locator("[data-settings-row][aria-current]")).toHaveCount(0);
   });
 });
