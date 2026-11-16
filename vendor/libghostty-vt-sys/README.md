@@ -39,6 +39,12 @@ Zig's caches between builds in place of `OUT_DIR`, so a fresh target
 directory (CI's, #868) doesn't clone and compile Ghostty again: on a warm
 cache the Zig step takes seconds instead of a minute.
 
+The downloads (the clone, then Zig's packages with `zig build --fetch`
+before the build) get three tries each: github.com and
+deps.files.ghostty.org drop a connection now and then, and a build that
+starts cold fetches everything. Zig 0.16 keeps the packages in the
+checkout's `zig-pkg/`, so a cached checkout builds without the network.
+
 - `0001-no-signal-stack.patch`: no 256 KiB threadlocal signal stack, which
   glibc allocated for every thread in the daemon (S9, M9).
 
