@@ -8,7 +8,8 @@
 //! What it gets instead is this: a loopback listener that serves only
 //! [`READ`], [`COMMENT`], [`CREATE`], [`CREATE_DOC`], [`FILL_DOC`] and
 //! [`READ_DOC`], each a call to control's `POST
-//! /api/hosted/work/session/issues` for the agent's session.
+//! /api/hosted/work/session/issues` for the agent's session, and [`WATCH`]
+//! (Arugula #1035), its `POST /api/hosted/work/session/watch`.
 //!
 //! - **Who is calling is the socket's owner, not a secret.** The listener
 //!   finds the uid that owns the client end of the connection
@@ -35,7 +36,11 @@ use std::{
 
 use arugula_control_wire::{
     project_docs::{DocView, DocWrite, NewDoc, NewSection},
-    work::{SessionIssuesAsk, SessionIssuesGiven, SessionIssuesOp, WORK_SESSION_ISSUES},
+    watch::{WatchState, WatchTarget, expires_ms, until_word_parse},
+    work::{
+        SessionIssuesAsk, SessionIssuesGiven, SessionIssuesOp, SessionWatchAsk, SessionWatchGiven, SessionWatchOp,
+        WORK_SESSION_ISSUES, WORK_SESSION_WATCH,
+    },
 };
 use axum::{
     Json, Router,
@@ -62,7 +67,7 @@ use serde_json::{Value, json};
 use tracing::{info, warn};
 
 use crate::mcp::{
-    session::{COMMENT, CREATE, CREATE_DOC, FILL_DOC, READ, READ_DOC},
+    session::{COMMENT, CREATE, CREATE_DOC, FILL_DOC, READ, READ_DOC, WATCH},
     tools::{Out, done, parse},
 };
 use crate::server::App;
@@ -71,7 +76,7 @@ use crate::server::App;
 const COMMENTS_IN_CHAT: &str =
     "its comments are in chat, which is off for the person who asked you, so they aren't shown";
 
-const INSTRUCTIONS: &str = "You are an agent session of an Arugula project. read_session_issues lists the project's own (native) issues, or reads one with its timeline and newest comments; comment_session_issue comments on one (mention a person by @login when you need them to decide or answer: a comment that names nobody reaches no one's inbox); create_session_issue opens one and returns its link. create_session_doc makes a Doc in the project (a title and its sections, each a heading and its markdown, or an intent for later) and returns its link; fill_session_doc writes a section of a Doc you made, or adds one; read_project_doc lists the project's Docs or reads one. When someone asks for a native Doc, make one with create_session_doc and post its link. They act with the rights of the person who asked you, in this project only, and a comment, issue or Doc you make is this session's own; an issue is its number, #N, and a Doc its id, pdc_ and 32 hex digits.";
+const INSTRUCTIONS: &str = "You are an agent session of an Arugula project. read_session_issues lists the project's own (native) issues, or reads one with its timeline and newest comments; comment_session_issue comments on one (mention a person by @login when you need them to decide or answer: a comment that names nobody reaches no one's inbox); create_session_issue opens one and returns its link. create_session_doc makes a Doc in the project (a title and its sections, each a heading and its markdown, or an intent for later) and returns its link; fill_session_doc writes a section of a Doc you made, or adds one; read_project_doc lists the project's Docs or reads one. When someone asks for a native Doc, make one with create_session_doc and post its link. They act with the rights of the person who asked you, in this project only, and a comment, issue or Doc you make is this session's own; an issue is its number, #N, and a Doc its id, pdc_ and 32 hex digits. watch wakes this session later, when a PR merges or its checks get somewhere, another session settles, a thread gets a reply, or a run or deploy ends: create one, end your turn, and Arugula sends you what happened as your next prompt, once.";
 
 #[derive(Deserialize, JsonSchema)]
 pub struct ReadArgs {
@@ -160,6 +165,91 @@ pub struct ReadDocArgs {
     pub doc: Option<String>,
 }
 
+/// One id, or several.
+#[derive(Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum Ids {
+    One(String),
+    Many(Vec<String>),
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct WatchArgs {
+    /// create (the default), list or cancel.
+    #[serde(default)]
+    pub kind: Option<String>,
+    /// create: a pull request, OWNER/REPO#N or its link, or several.
+    #[serde(default)]
+    pub pr: Option<Ids>,
+    /// create, with pr: merged (the default), closed, checks_done,
+    /// checks_failed or ready.
+    #[serde(default)]
+    pub until: Option<String>,
+    /// create: another agent session (ses_…), or several: until it settles.
+    #[serde(default)]
+    pub agent_session: Option<Ids>,
+    /// create: a run (run_…) or a deploy (dep_…), or several: until it ends.
+    #[serde(default)]
+    pub run: Option<Ids>,
+    /// create: a chat room's id: until a reply in it that you didn't write.
+    #[serde(default)]
+    pub room: Option<String>,
+    /// create, with room: only under this thread (its root message's number).
+    #[serde(default)]
+    pub parent: Option<i64>,
+    /// create, with room: only a reply by this person (login or name).
+    #[serde(default)]
+    pub from: Option<String>,
+    /// create: how long before it ends without firing: 30m, 6h, 3d. Default
+    /// 24h, at most 7d.
+    #[serde(default)]
+    pub expires: Option<String>,
+    /// cancel: the watch's id (wch_…).
+    #[serde(default)]
+    pub id: Option<String>,
+    /// cancel: all of this session's watches.
+    #[serde(default)]
+    pub all: bool,
+}
+
+/// What `watch create` waits for, from its arguments.
+fn watch_targets(a: &WatchArgs) -> Result<Vec<WatchTarget>, String> {
+    let until = until_word_parse(a.until.as_deref())?;
+    let ids = |i: &Option<Ids>| match i {
+        None => vec![],
+        Some(Ids::One(s)) => vec![s.trim().to_owned()],
+        Some(Ids::Many(v)) => v.iter().map(|s| s.trim().to_owned()).collect(),
+    };
+    let mut out = vec![];
+    for p in ids(&a.pr) {
+        let r = arugulad_base::forge_wait::PrRef::parse(&p)
+            .filter(|r| r.host == "github.com")
+            .ok_or_else(|| format!("pr {p}: OWNER/REPO#N, or its link on github.com"))?;
+        out.push(WatchTarget::Pr { repo: r.repo, number: r.number, until });
+    }
+    for id in ids(&a.agent_session) {
+        if !id.starts_with("ses_") {
+            return Err(format!("agent_session {id}: an agent session's id, ses_…"));
+        }
+        out.push(WatchTarget::Session { id });
+    }
+    for id in ids(&a.run) {
+        if !id.starts_with("run_") && !id.starts_with("dep_") {
+            return Err(format!("run {id}: a run's id (run_…) or a deploy's (dep_…)"));
+        }
+        out.push(WatchTarget::Run { id });
+    }
+    match a.room.as_deref().map(str::trim).filter(|r| !r.is_empty()) {
+        Some(room) => out.push(WatchTarget::Thread { room: room.to_owned(), parent: a.parent, from: a.from.clone() }),
+        None if a.parent.is_some() || a.from.is_some() => return Err("parent and from go with a room".into()),
+        None => {}
+    }
+    if out.is_empty() {
+        return Err("watch create needs something to watch: pr, agent_session, run or room".into());
+    }
+    Ok(out)
+}
+
 fn tools() -> Vec<Tool> {
     let read = ToolAnnotations::with_title("Read the project's issues").read_only(true).open_world(false);
     let comment =
@@ -169,6 +259,10 @@ fn tools() -> Vec<Tool> {
     let fill_doc =
         ToolAnnotations::with_title("Write a section of a Doc").read_only(false).destructive(false).open_world(false);
     let read_doc = ToolAnnotations::with_title("Read the project's Docs").read_only(true).open_world(false);
+    let watch = ToolAnnotations::with_title("Watch for something to happen")
+        .read_only(false)
+        .destructive(false)
+        .open_world(true);
     vec![
         Tool::new(
             READ,
@@ -212,6 +306,13 @@ fn tools() -> Vec<Tool> {
         )
         .with_title("Read the project's Docs")
         .with_annotations(read_doc),
+        Tool::new(
+            WATCH,
+            "Wake this session later, when something happens, without polling or holding your turn open: create a watch (kind create), then end your turn; what happened (ids and states only) comes as your next prompt, from Arugula, once. Targets, any of which fires it: pr (OWNER/REPO#N, in a repo linked to Arugula's GitHub App) until merged, closed, checks_done, checks_failed or ready; agent_session (another ses_) until it settles; run (run_ or dep_) until it ends; room (a chat room's id, with parent for one thread and from for one person) until a reply you didn't write. It expires after 24 hours unless you say (expires, at most 7d), and then you're told it ended without firing. If it has happened already, create says so and makes none. kind list shows this session's watches; kind cancel takes one by id, or all.",
+            schema_for_type::<WatchArgs>(),
+        )
+        .with_title("Watch for something to happen")
+        .with_annotations(watch),
     ]
 }
 
@@ -230,6 +331,64 @@ struct Server {
 struct Caller(String);
 
 impl Server {
+    /// `watch`: make, list or cancel this session's watches.
+    async fn watch(&self, session: &str, args: Value) -> Out {
+        let a: WatchArgs = parse(args)?;
+        let op = match a.kind.as_deref().map(str::trim).unwrap_or("create") {
+            "" | "create" => SessionWatchOp::Create {
+                targets: watch_targets(&a)?,
+                expires_in_ms: a.expires.as_deref().map(expires_ms).transpose()?,
+            },
+            "list" => SessionWatchOp::List,
+            "cancel" => {
+                let id = a.id.as_deref().map(str::trim).filter(|i| !i.is_empty()).map(str::to_owned);
+                if id.is_none() && !a.all {
+                    return Err("cancel needs an id (wch_…), or all".into());
+                }
+                SessionWatchOp::Cancel { id, all: a.all }
+            }
+            k => return Err(format!("watch kind {k}: create, list or cancel")),
+        };
+        let ask = SessionWatchAsk { session: session.to_owned(), op };
+        let got: SessionWatchGiven = self
+            .app
+            .control
+            .post_signed(WORK_SESSION_WATCH, &ask)
+            .await
+            .map_err(|e| format!("asking Arugula cloud: {e:#}"))?;
+        match got {
+            SessionWatchGiven::Refused { why } => Err(why),
+            SessionWatchGiven::Made { made } => {
+                let text = match (made.state, &made.id) {
+                    (WatchState::AlreadyMet, _) => {
+                        format!("It has already happened: {}. No watch was made.", made.met.as_deref().unwrap_or("met"))
+                    }
+                    (_, Some(id)) => format!(
+                        "Watch {id} is live. End your turn now: what happens comes as your next prompt, or word that it ended without firing."
+                    ),
+                    (_, None) => "Arugula cloud made no watch, and said nothing of why".into(),
+                };
+                done(text, made)
+            }
+            SessionWatchGiven::List { list } => {
+                let lines: Vec<String> =
+                    list.watches.iter().map(|w| format!("{}: {}", w.id, w.targets.join(" or "))).collect();
+                let text = match lines.len() {
+                    0 => "No live watches".to_owned(),
+                    n => format!("{n} live watch{}:\n{}", if n == 1 { "" } else { "es" }, lines.join("\n")),
+                };
+                done(text, list)
+            }
+            SessionWatchGiven::Cancelled { cancelled } => {
+                let text = match cancelled.cancelled.as_slice() {
+                    [] => "No live watch of this session's was cancelled".to_owned(),
+                    ids => format!("Cancelled {}", ids.join(", ")),
+                };
+                done(text, cancelled)
+            }
+        }
+    }
+
     async fn ask(&self, session: &str, op: SessionIssuesOp) -> Result<SessionIssuesGiven, String> {
         let ask = SessionIssuesAsk { session: session.to_owned(), op };
         let got: SessionIssuesGiven = self
@@ -437,6 +596,7 @@ impl ServerHandler for Server {
             CREATE_DOC => self.create_doc(&session, args).await,
             FILL_DOC => self.fill_doc(&session, args).await,
             READ_DOC => self.read_doc(&session, args).await,
+            WATCH => self.watch(&session, args).await,
             other => Err(format!("no tool {other}")),
         };
         let res = match out {
@@ -597,6 +757,7 @@ mod tests {
                 "create_session_doc",
                 "fill_session_doc",
                 "read_project_doc",
+                "watch",
             ]
         );
         for t in &t {
