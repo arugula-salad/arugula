@@ -451,7 +451,10 @@ impl Daemon {
                 let _ = reply.send(n);
             }
             Api::SilenceTagged(pane, on, reply) => {
-                let known = self.panes.contains_key(&pane);
+                // A terminal's Claude Code, or an agent block's session
+                // (#1070): both are mentioned by name.
+                let known =
+                    self.panes.contains_key(&pane) || self.blocks.get(&pane).is_some_and(|b| b.kind().prompted());
                 if known {
                     if on {
                         self.tagged_off.remove(&pane);

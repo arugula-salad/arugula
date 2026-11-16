@@ -294,3 +294,36 @@ fn replies_waiting_on_an_agent_block_are_one_prompt_per_thread() {
     drop(d);
     let _ = std::fs::remove_dir_all(&sessions);
 }
+
+/// #1070: the owner silences an agent block as a terminal: a mention naming
+/// it waits in the inbox and the answer says it's silenced; allowed again,
+/// the next one is its prompt.
+#[test]
+fn a_silenced_agent_block_is_not_reached_until_allowed() {
+    let (_rt, f, d, block, sessions) = boot("mentionsilence", "stream 20 150");
+    let off = || {
+        let panes = d.get("/api/panes");
+        panes.as_array().unwrap().iter().find(|p| p["id"] == block).unwrap()["mentions_off"].clone()
+    };
+
+    d.post(&format!("/api/panes/{block}/mentions"), json!({ "on": false }));
+    assert_eq!(off(), true);
+    f.outbox.lock().unwrap().push(mention("m1", 7, "slowly"));
+    d.wait_for("the daemon's answer", || answer(&f, "m1").is_some());
+    let a = answer(&f, "m1").unwrap();
+    assert_eq!((a["routed"]["step"].as_str(), a["routed"]["silenced"].as_bool()), (Some("inbox"), Some(true)), "{a}");
+    assert_eq!(a["routed"]["asked"], "worker", "{a}");
+    let queued = d.get(&format!("/api/blocks/{block}"))["state"]["queued"].clone();
+    assert!(queued.as_array().is_none_or(Vec::is_empty), "nothing handed to it: {queued}");
+
+    d.post(&format!("/api/panes/{block}/mentions"), json!({ "on": true }));
+    assert_eq!(off(), Value::Null);
+    f.outbox.lock().unwrap().push(mention("m2", 8, "slowly"));
+    d.wait_for("the daemon's answer", || answer(&f, "m2").is_some());
+    let a = answer(&f, "m2").unwrap();
+    assert_eq!(a["routed"]["step"], "named", "{a}");
+    assert_eq!(a["routed"]["session"], "Worker", "{a}");
+
+    drop(d);
+    let _ = std::fs::remove_dir_all(&sessions);
+}
