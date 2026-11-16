@@ -117,12 +117,14 @@ if (!external) process.env.ARUGULA_FORGE_HOOK_BASE ??= `http://127.0.0.1:${port}
 // E2E_DAEMON_LOG=/path/to/file keeps the test daemon's debug log.
 const log = process.env.E2E_DAEMON_LOG ? ` >>${process.env.E2E_DAEMON_LOG} 2>&1` : "";
 
-// CI splits the specs (#287): E2E_SET=stack runs only those on the Docker
-// test stack, E2E_SET=perf only those that time things (the frame rates,
-// and editors.spec's times to a file, reported against 3 s), on a host with nothing else of
-// the run on it, E2E_SET=rest everything else, sharded across runners.
+// CI splits the specs (#287): E2E_SET=perf runs only those that time things
+// (the frame rates, and editors.spec's times to a file, reported against
+// 3 s), on a host with nothing else of the run on it, E2E_SET=rest
+// everything else, sharded across runners. E2E_SET=stack is the spec that
+// needs a test stack box of its own, which only `just testnet-editors`
+// runs (by path): kept out of rest, where it would only skip.
 const SETS: Record<string, RegExp> = {
-  stack: /(team-swarm-phones|testnet-hosts|editor-remote-ssh)\.spec\.ts$/,
+  stack: /editor-remote-ssh\.spec\.ts$/,
   perf: /(swarm-fps|editors)\.spec\.ts$/,
 };
 const set = process.env.E2E_SET;
