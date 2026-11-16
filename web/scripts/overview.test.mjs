@@ -5,7 +5,7 @@
 // "not yet". Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { boardLine, overviewOf, statsLine } from "../src/shell/swarm/overview.ts";
+import { boardLine, inFlight, overviewOf, STATE_WORD, statsLine } from "../src/shell/swarm/overview.ts";
 import { panesOf, sessionsByCard } from "../src/shared/project-sessions.ts";
 import { BY_CARD, PROJECT } from "./project-sessions.fixture.ts";
 
@@ -29,8 +29,45 @@ test("only Doing and Review are drawn, Next and Done are counts, and a board wit
   const b = o.boards[0];
   assert.deepEqual([b.doing.map((c) => c.row.id), b.review.map((c) => c.row.id)], [["r2"], ["r3"]]);
   assert.equal(boardLine(b), "2 in flight · 1 next · 2 of 5 done");
-  // A card no one is on.
+  // A card no one is on says nothing ("no one on it" is gone); one in Review is in review.
   assert.equal(b.doing[0].standing, "idle");
+  assert.equal(STATE_WORD[b.doing[0].standing], "");
+  assert.equal(b.review[0].standing, "review");
+});
+
+test("a row's own data says its word: its question for you, its PR's checks and review, its stalled mark", () => {
+  const pr = (state) => ({ id: "att", role: "work", pointer: { kind: "pr", repo: "o/r", number: 7 }, live: { state, kind: "pr", repo: "o/r", number: 7, title: "PR" } });
+  const ask = (who, mine) => ({ id: "ask_1", who, who_name: "Aaron", question: "Ship it?", options: [], asked_by: "Claude", raised: false, mine, can_answer: true, created_at: 1 });
+  const rows = [
+    row("r_ask", "doing", 1, { ask: ask("acc_me", true) }),
+    // A question for someone else, or one the board raised, isn't "asks you".
+    row("r_other", "doing", 2, { ask: ask("acc_them", false) }),
+    row("r_raised", "doing", 3, { ask: ask("", true) }),
+    row("r_fail", "doing", 4, { attachments: [pr("checks_failed")] }),
+    row("r_run", "doing", 5, { attachments: [pr("checks_running")] }),
+    row("r_open", "doing", 6, { attachments: [pr("open")] }),
+    row("r_merged", "doing", 7, { attachments: [pr("merged")] }),
+    row("r_stalled", "doing", 8, { marks: [{ kind: "stalled", since: 1 }] }),
+  ];
+  const o = overviewOf(P, [view("brd_a", "A", rows)], [], null, hostOf);
+  const by = Object.fromEntries(o.boards[0].doing.map((c) => [c.row.id, c.standing]));
+  assert.deepEqual(by, { r_ask: "asks", r_other: "idle", r_raised: "idle", r_fail: "checks_failing", r_run: "checks_running", r_open: "review", r_merged: "idle", r_stalled: "quiet" });
+  assert.deepEqual(o.boards[0].doing.map((c) => STATE_WORD[c.standing]).filter(Boolean), ["asks you", "checks failing", "quiet", "checks running", "in review"]);
+  // A working session doesn't hide failing checks; checks running don't hide it working.
+  const on = (r) => ({ issue: "#1", boards: [{ project: P, board: "brd_b", title: "B", row: r }] });
+  const two = [row("rf", "doing", 1, { attachments: [pr("checks_failed")] }), row("rr", "doing", 2, { attachments: [pr("checks_running")] })];
+  const panes = [pane("workstation", 1, { on_issue: on("rf"), standing: "working", agent: true }), pane("workstation", 2, { on_issue: on("rr"), standing: "working", agent: true, session: { id: 2, name: "s2" } })];
+  const b = overviewOf(P, [view("brd_b", "B", two)], panes, null, hostOf).boards[0];
+  assert.deepEqual(b.doing.map((c) => [c.row.id, c.standing]), [["rf", "checks_failing"], ["rr", "working"]]);
+});
+
+test("a board's card lists four rows, Doing and Review together, the worst first, then how many more", () => {
+  const rows = [row("r1", "doing", 1), row("r2", "doing", 2, { marks: [{ kind: "stalled", since: 1 }] }), row("r3", "review", 3), row("r4", "doing", 4), row("r5", "review", 5), row("r6", "doing", 6)];
+  const b = overviewOf(P, [view("brd_a", "A", rows)], [], null, hostOf).boards[0];
+  const { shown, more } = inFlight(b);
+  assert.deepEqual(shown.map((c) => c.row.id), ["r2", "r5", "r3", "r6"]);
+  assert.equal(more, 2);
+  assert.equal(inFlight(b, 10).more, 0);
 });
 
 test("a closed board isn't drawn", () => {

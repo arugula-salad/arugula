@@ -11,10 +11,24 @@
 import type { BoardRow, BoardView, OnIssue } from "../../shared/proto";
 import { hubStanding, panesOf, type SessionsByCard, type ProjectSession } from "../../shared/project-sessions.ts";
 
-/** How a card or a session stands, most urgent first: it waits on you, it
- * failed, it's quiet, it's working, or it has no one on it. */
-export type Standing = "needs" | "failed" | "quiet" | "working" | "idle";
-export const STANDING_ORDER: Standing[] = ["needs", "failed", "quiet", "working", "idle"];
+/** How a card or a session stands, most urgent first: a session waits on
+ * you, the row's question asks you, a session failed, its PR's checks fail,
+ * it's quiet, it's working, its PR's checks run, it's in review; or nothing
+ * says (`idle`). A session only ever needs you, failed, is quiet or works. */
+export type Standing = "needs" | "asks" | "failed" | "checks_failing" | "quiet" | "working" | "checks_running" | "review" | "idle";
+export const STANDING_ORDER: Standing[] = ["needs", "asks", "failed", "checks_failing", "quiet", "working", "checks_running", "review", "idle"];
+/** The one word a row says of how it stands; nothing for `idle`. */
+export const STATE_WORD: Record<Standing, string> = {
+  needs: "needs you",
+  asks: "asks you",
+  failed: "failed",
+  checks_failing: "checks failing",
+  quiet: "quiet",
+  working: "working",
+  checks_running: "checks running",
+  review: "in review",
+  idle: "",
+};
 const rank = (s: Standing) => STANDING_ORDER.indexOf(s);
 const worst = (all: Standing[], none: Standing = "idle"): Standing => (all.length ? all.reduce((a, b) => (rank(b) < rank(a) ? b : a)) : none);
 
@@ -199,9 +213,7 @@ export function overviewOf(project: string, views: BoardView[], panes: OvPane[],
           .filter((r) => r.lane === lane)
           .map((r): OvCard => {
             const sessions = sortSessions(onCard.get(`${v.board.id}/${r.id}`) ?? []);
-            const stalled = r.marks?.some((m) => m.kind === "stalled");
-            const own = sessions.map((s) => s.standing);
-            return { board: v.board.id, row: r, sessions, standing: worst(stalled ? [...own, "quiet"] : own, sessions.length ? "quiet" : "idle") };
+            return { board: v.board.id, row: r, sessions, standing: worst([...sessions.map((s) => s.standing), ...rowSays(r)]) };
           }),
       );
     const doing = cards("doing");
@@ -222,12 +234,36 @@ export function overviewOf(project: string, views: BoardView[], panes: OvPane[],
   return { boards, loose: sortSessions(loose), cardOf };
 }
 
+/** What a row says of itself, besides its sessions: its question for you
+ * (`ask.who`, the reader's), its stalled mark, its PRs' checks and review
+ * (the row's own PR, and the PRs attached as its work), and its lane. */
+function rowSays(r: BoardRow): Standing[] {
+  const says: Standing[] = [];
+  if (r.ask?.who && r.ask.mine) says.push("asks");
+  if (r.marks?.some((m) => m.kind === "stalled")) says.push("quiet");
+  const prs = [r.live, ...r.attachments.filter((a) => a.role === "work" && !a.released).map((a) => a.live)].filter((l) => l?.kind === "pr");
+  for (const l of prs) {
+    if (l!.state === "checks_failed") says.push("checks_failing");
+    else if (l!.state === "checks_running") says.push("checks_running");
+    else if (l!.state === "open") says.push("review");
+  }
+  if (r.lane === "review") says.push("review");
+  return says;
+}
+
+/** A board's cards in flight as its card lists them: Doing and Review
+ * together, the worst first, up to `max`; and how many more there are. */
+export function inFlight(b: Pick<OvBoard, "doing" | "review">, max = 4): { shown: OvCard[]; more: number } {
+  const all = sortCards([...b.doing, ...b.review]);
+  return { shown: all.slice(0, max), more: Math.max(0, all.length - max) };
+}
+
 /** The pane a session's tile opens: one that needs you, else its agent, else its first. */
 function leadOf(panes: OvPane[]): OvPane {
   return panes.find((p) => p.standing === "needs") ?? panes.find((p) => p.agent) ?? panes[0];
 }
 
-/** Cards that need you first, then failures, then quiet ones, then working ones; then the one that moved last. */
+/** Cards by how they stand (`STANDING_ORDER`), the worst first; then the one that moved last. */
 export function sortCards(cards: OvCard[]): OvCard[] {
   return [...cards].sort((a, b) => rank(a.standing) - rank(b.standing) || b.row.updated_at - a.row.updated_at);
 }

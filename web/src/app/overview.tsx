@@ -1,9 +1,9 @@
 // The project's Overview (Arugula inversion, L6): Swarm for this project,
 // the view the app opens on. The field on the left is the project's boards,
-// each with the cards in Doing and Review as tiles (Next and Done are
-// counts in its header, with its progress), each tile holding the sessions
-// on that card side by side: their agent and title, where they run and
-// their last line. Not on a card is the last group. Needs you on the right
+// each with its cards in Doing and Review as one-line rows, the worst first
+// (Next and Done are counts in its header, with its progress); a row's
+// preview, on hover or focus, shows the sessions on it (./overview-row.tsx).
+// Not on a card is the last group. Needs you on the right
 // is Swarm's rail, scoped to the project, its cards naming their card. A
 // card opens the board's own drawer over the page (its address names it,
 // so the path and Esc climb back); a session opens on its machine's page,
@@ -22,12 +22,10 @@ import { NEEDS_YOU, needsYou, needsYouRank } from "../shared/needs-you";
 import { usePlatformApi } from "../shared/platform-api";
 import { BY_CARD_EVERY_MS, sessionsByCard, type SessionsByCard } from "../shared/project-sessions";
 import { EmptyLine, EmptyState } from "../shared/ui/block-states";
-import { Card } from "../shared/ui/card";
 import { usePhone, useSubscribe } from "../shared/ui/hooks";
-import { StateChip, type Tone } from "../shared/ui/state-chip";
 import type { Fleet, FleetPane } from "../shell/fleet";
-import { activityOf, holdStill, kindOf, readableCommand, shortHost, shownNow, whatItDoes } from "../shell/swarm/model";
-import { boardLine, overviewOf, statsLine, type OvBoard, type OvCard, type OvPane, type OvSession, type Standing } from "../shell/swarm/overview";
+import { activityOf, holdStill, kindOf, readableCommand, shownNow, whatItDoes } from "../shell/swarm/model";
+import { boardLine, inFlight, overviewOf, statsLine, type OvBoard, type OvCard, type OvPane, type OvSession, type Standing } from "../shell/swarm/overview";
 import { Card as RailCard, bundlesOf, type Bundle } from "../shell/swarm/view";
 import { names } from "../platform/links";
 import { mayWrite } from "../platform/pages/issues";
@@ -36,19 +34,8 @@ import { follow, go, pathOf } from "../platform/router";
 import { session as platform } from "../platform/session";
 import { where } from "../platform/where";
 import { boot, type Booted } from "./machine-page";
+import { CardRow, SessionRow } from "./overview-row";
 import type { AppSession } from "./session";
-
-/** How often a session's last line is read again, while the page is shown. */
-const LINE_EVERY_MS = 6000;
-
-/** How each standing reads on a card or a session, and its tone. */
-const STANDING: Record<Standing, { word: string; tone: Tone }> = {
-  needs: { word: "waiting on you", tone: "accent" },
-  failed: { word: "failed", tone: "danger" },
-  quiet: { word: "quiet", tone: "warn" },
-  working: { word: "working", tone: "ok" },
-  idle: { word: "no one on it", tone: "muted" },
-};
 
 export function OverviewPlace({ project, board, card, session, children }: { project: string; board?: string; card?: string; session: AppSession | null; children?: ComponentChildren }) {
   const [b, setB] = useState<Booted | null>(null);
@@ -237,6 +224,8 @@ function OverviewBody({ project, board, card, fleet, children }: { project: stri
     void act(() => boards.setLane(board, row, lane));
   };
   const nameOf = (account: string) => p?.team?.members.find((m) => m.account === account)?.name;
+  // An assignee's picture: a native issue names them, a member by that name (or login) has one.
+  const faceOf = (name: string) => (chat.on ? p?.team?.members.find((m) => m.name === name || m.account === name)?.account : undefined);
 
   const flight = o.boards.length > 0 || o.loose.length > 0;
   const field = (
@@ -259,7 +248,7 @@ function OverviewBody({ project, board, card, fleet, children }: { project: stri
         />
       )}
       {o.boards.map((b) => (
-        <BoardGroup key={b.id} b={b} project={project} fleet={fleet} openCard={openCard} openSession={openSession} opened={card} />
+        <BoardGroup key={b.id} b={b} project={project} fleet={fleet} openCard={openCard} openSession={openSession} opened={card} faceOf={faceOf} />
       ))}
       {o.loose.length > 0 && (
         <section class="ov-board ov-loose" data-ov-loose>
@@ -267,11 +256,11 @@ function OverviewBody({ project, board, card, fleet, children }: { project: stri
             <b>Not on a card</b>
             <span class="dim">Sessions in this project that aren't working on a card</span>
           </header>
-          <div class="ov-sessions">
+          <ul class="ov-rows">
             {o.loose.map((s) => (
-              <SessionTile key={s.key} s={s} fleet={fleet} open={() => openSession(s)} />
+              <SessionRow key={s.key} s={s} fleet={fleet} open={() => openSession(s)} />
             ))}
-          </div>
+          </ul>
         </section>
       )}
       {children && (
@@ -332,10 +321,13 @@ function OverviewBody({ project, board, card, fleet, children }: { project: stri
   );
 }
 
-/** A board: its title (to the board), what's in flight, next and done, its progress, then Doing and Review. */
-function BoardGroup({ b, project, fleet, openCard, openSession, opened }: { b: OvBoard; project: string; fleet: Fleet; openCard: (c: OvCard) => void; openSession: (s: OvSession) => void; opened?: string }) {
+/** A board: its title, what's in flight, next and done, and its progress;
+ * then its cards in flight, one line each, the worst first, up to four,
+ * and how many more (to the board). */
+function BoardGroup({ b, project, fleet, openCard, openSession, opened, faceOf }: { b: OvBoard; project: string; fleet: Fleet; openCard: (c: OvCard) => void; openSession: (s: OvSession) => void; opened?: string; faceOf: (name: string) => string | undefined }) {
   const to = pathOf({ page: "board", project, board: b.id }, names);
   const pct = b.total ? Math.round((b.done / b.total) * 100) : 0;
+  const { shown, more } = inFlight(b);
   return (
     <section class="ov-board" data-ov-board={b.id}>
       <header class="ov-board-head">
@@ -343,126 +335,20 @@ function BoardGroup({ b, project, fleet, openCard, openSession, opened }: { b: O
         <span class="dim" data-ov-board-line>
           {boardLine(b)}
         </span>
-        <a class="ov-board-open" href={to} onClick={(e) => follow(e, to)} data-ov-board-open>
-          Open board
-        </a>
       </header>
       <div class="ov-progress" role="progressbar" aria-label={`${b.done} of ${b.total} done`} aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
         <i style={{ width: `${pct}%` }} />
       </div>
-      <div class="ov-lanes">
-        {(
-          [
-            ["Doing", b.doing],
-            ["Review", b.review],
-          ] as const
-        )
-          .filter(([, cards]) => cards.length)
-          .map(([name, cards]) => (
-            <div key={name} class="ov-lane" data-ov-lane={name}>
-              <h3>
-                {name} · {cards.length}
-              </h3>
-              {cards.map((c) => (
-                <CardTile key={c.row.id} c={c} fleet={fleet} open={() => openCard(c)} openSession={openSession} opened={opened === c.row.id} />
-              ))}
-            </div>
-          ))}
-      </div>
-    </section>
-  );
-}
-
-/** One card: its number and how it stands, its title, and the sessions on it side by side. A card waiting on you pulses. */
-function CardTile({ c, fleet, open, openSession, opened }: { c: OvCard; fleet: Fleet; open: () => void; openSession: (s: OvSession) => void; opened: boolean }) {
-  const r = c.row;
-  const st = STANDING[c.standing];
-  const label = pointerLabel(r.pointer, r.live);
-  const title = isCard(r.live) ? r.live.title : r.note.split("\n").find((l) => l.trim()) ?? label;
-  return (
-    <Card
-      as="article"
-      tone={st.tone}
-      selected={opened}
-      class={c.standing === "needs" ? "ov-tile ov-pulse" : "ov-tile"}
-      data-ov-card={r.id}
-      data-ov-standing={c.standing}
-      data-ov-panes={c.sessions.flatMap((s) => s.panes.map((p) => p.key)).join(" ")}
-      onClick={open}
-    >
-      <div class="ov-tile-top">
-        {label && <span class="dim">{label}</span>}
-        <StateChip tone={st.tone} data-ov-card-state>
-          {st.word}
-        </StateChip>
-      </div>
-      <button type="button" class="ov-tile-title" data-ov-card-open onClick={(e) => (e.stopPropagation(), open())}>
-        {title}
-      </button>
-      {c.sessions.length > 0 && (
-        <div class="ov-sessions">
-          {c.sessions.map((s) => (
-            <SessionTile key={s.key} s={s} fleet={fleet} open={() => openSession(s)} />
-          ))}
-        </div>
+      <ul class="ov-rows">
+        {shown.map((c) => (
+          <CardRow key={c.row.id} c={c} fleet={fleet} open={() => openCard(c)} openSession={openSession} current={opened === c.row.id} faceOf={faceOf} />
+        ))}
+      </ul>
+      {more > 0 && (
+        <a class="ov-more-rows" href={to} onClick={(e) => follow(e, to)} data-ov-more-rows>
+          {more} more in flight
+        </a>
       )}
-    </Card>
-  );
-}
-
-/** A session: its agent and title, where it runs and its last line. It opens full size, on its machine. */
-function SessionTile({ s, fleet, open }: { s: OvSession; fleet: Fleet; open: () => void }) {
-  const st = STANDING[s.standing];
-  const can = !!s.lead || !!s.hosted;
-  return (
-    <button
-      type="button"
-      class={`ov-session tone-${st.tone}`}
-      disabled={!can}
-      title={can ? `${s.name}: open it` : `${s.name}, on ${s.where}: not reachable from here`}
-      data-ov-session={s.key}
-      data-ov-session-standing={s.standing}
-      data-ov-panes={s.panes.map((p) => p.key).join(" ")}
-      onClick={(e) => (e.stopPropagation(), open())}
-    >
-      <b>{s.name}</b>
-      <span class="dim" data-ov-where>
-        {shortHost(s.where)}
-      </span>
-      {s.lead ? <LastLine fleet={fleet} pane={s.lead} /> : <span class="ov-line dim">{st.word}</span>}
-    </button>
-  );
-}
-
-/** A pane's last line, read from its machine every few seconds while the page is shown. */
-function LastLine({ fleet, pane }: { fleet: Fleet; pane: OvPane }) {
-  const p = fleet.panes.find((x) => x.key === pane.key);
-  const fallback = p?.info.reason?.headline ?? p?.info.current?.text ?? "";
-  const [line, setLine] = useState<string | null>(null);
-  useLayoutEffect(() => setLine(null), [pane.key]);
-  useEffect(() => {
-    let live = true;
-    const read = async () => {
-      if (document.visibilityState !== "visible") return;
-      try {
-        const res = await fleet.request(pane.host, "GET", `/api/panes/${pane.id}/capture?format=text`);
-        const text = res.ok && res.text ? await res.text() : "";
-        const last = text.split("\n").map((l) => l.trimEnd()).filter(Boolean).pop();
-        if (live && last) setLine(last);
-      } catch {
-        // Its machine isn't reachable now: the line it had stays.
-      }
-    };
-    void read();
-    const t = setInterval(() => void read(), LINE_EVERY_MS);
-    return () => {
-      live = false;
-      clearInterval(t);
-    };
-  }, [pane.key]);
-  return (
-    <span class="ov-line" data-ov-line>
-      {line ?? fallback}
-    </span>
+    </section>
   );
 }

@@ -1,11 +1,12 @@
 // The project's Overview (Arugula inversion, L6), in the app's frame over
 // the suite's daemon (app-frame-page.tsx): the project's boards with only
-// their cards in Doing and Review drawn, Next and Done as counts; a card's
-// tile holding the session on it (an agent block on the card, with the
-// terminal in its session), and Not on a card last; a card opening the
+// their cards in Doing and Review drawn, one line each with one word for how
+// it stands, Next and Done as counts; a card's preview, on hover or keyboard
+// focus, showing the session on it (an agent block on the card, with the
+// terminal in its session) and its last line, and Not on a card last; a card opening the
 // board's drawer, its address and the path in the bar, Esc and the path
 // climbing back; a session opening on its machine's page; a question in a
-// card's session pulsing its tile and answered in place on Needs you; the
+// card's session pulsing its row and answered in place on Needs you; the
 // card's drawer drawing its session live with its question (#987's, as on
 // the board); the hub's sessions by card adding a cloud workspace's
 // session; and on a phone, one list with Needs you on top. The platform's boards and the
@@ -108,25 +109,43 @@ const tile = (page: Page, row: string) => page.locator(`[data-ov-card="${row}"]`
 test.describe("on a computer", () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 
-  test("boards, then the cards in Doing and Review, each holding its sessions; Not on a card last", async ({ page }, info) => {
+  test("boards, then the cards in Doing and Review, a line each; a card's preview holds its sessions; Not on a card last", async ({ page }, info) => {
     const { term, agent } = await overview(page);
     const launch = page.locator(`[data-ov-board="${B}"]`);
     await expect(launch.locator("[data-ov-board-title]")).toHaveText("Launch");
     await expect(launch.locator("[data-ov-board-line]")).toHaveText("3 in flight · 1 next · 1 of 5 done");
     // A board with nothing in flight isn't drawn; Next and Done are counts, not tiles.
     await expect(page.locator(`[data-ov-board="${LATER}"]`)).toHaveCount(0);
-    await expect(launch.locator("[data-ov-lane]")).toHaveCount(2);
-    await expect(launch.locator('[data-ov-lane="Doing"] [data-ov-card]')).toHaveCount(2);
-    await expect(launch.locator('[data-ov-lane="Review"] [data-ov-card]')).toHaveCount(1);
+    // Doing and Review in one list, no lane headings, no Open board link; under four, so no "more".
+    await expect(launch.locator("[data-ov-card]")).toHaveCount(3);
+    await expect(launch.locator("[data-ov-board-open], [data-ov-more-rows]")).toHaveCount(0);
     for (const r of ["row_a", "row_d"]) await expect(tile(page, r)).toHaveCount(0);
-    // #12 has the agent's session, its terminal in it, and comes before #13, which no one is on.
-    const s = tile(page, "row_b").locator("[data-ov-session]");
+    await expect(tile(page, "row_b").locator("[data-ov-card-title]")).toHaveText("Fix the installer");
+    // #13, which no one is on, says nothing; #14, in Review, says so.
+    await expect(tile(page, "row_c")).toHaveAttribute("data-ov-standing", "idle");
+    await expect(tile(page, "row_c").locator("[data-ov-card-state]")).toHaveCount(0);
+    await expect(tile(page, "row_r").locator("[data-ov-card-state]")).toHaveText("in review");
+    // #12 comes first; its sessions show only in its preview, and no last line is read until then.
+    await expect(launch.locator("[data-ov-card]").first()).toHaveAttribute("data-ov-card", "row_b");
+    await expect(page.locator("[data-ov-preview], [data-ov-line]")).toHaveCount(0);
+    // Hovering #12 opens it: the agent's session, its terminal in it, where it runs and its last line.
+    await tile(page, "row_b").hover();
+    const s = tile(page, "row_b").locator("[data-ov-preview] [data-ov-session]");
     await expect(s).toHaveCount(1, { timeout: 20_000 });
     await expect.poll(async () => ((await s.getAttribute("data-ov-panes")) ?? "").split(" ").map((k) => Number(k.split(":").pop())).sort()).toEqual([term, agent].sort());
     await expect(s.locator("[data-ov-where]")).not.toBeEmpty();
-    await expect(launch.locator('[data-ov-lane="Doing"] [data-ov-card]').first()).toHaveAttribute("data-ov-card", "row_b");
-    await expect(tile(page, "row_c")).toHaveAttribute("data-ov-standing", "idle");
-    await expect(tile(page, "row_c").locator("[data-ov-card-state]")).toHaveText("no one on it");
+    await expect(s.locator("[data-ov-line]")).toBeAttached();
+    await page.screenshot({ path: info.outputPath("overview-preview.png") });
+    // Off it, it closes; keyboard focus opens it too, and Esc closes it.
+    await page.mouse.move(1, 1);
+    await expect(page.locator("[data-ov-preview]")).toHaveCount(0);
+    // (Worst first: #12, then #14 in review, then #13.)
+    await expect.poll(() => launch.locator("[data-ov-card]").evaluateAll((els) => els.map((e) => e.getAttribute("data-ov-card")))).toEqual(["row_b", "row_r", "row_c"]);
+    await tile(page, "row_r").locator("[data-ov-row-open]").focus();
+    await page.keyboard.press("Shift+Tab");
+    await expect(tile(page, "row_b").locator("[data-ov-preview]")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.locator("[data-ov-preview]")).toHaveCount(0);
     // Not on a card: the scratch session, after the boards.
     await expect(page.locator("[data-ov-loose] [data-ov-session]")).toHaveCount(1);
     const order = await page.locator("[data-ov-field] > *").evaluateAll((els) => els.map((e) => (e.hasAttribute("data-ov-board") ? "board" : e.hasAttribute("data-ov-loose") ? "loose" : e.hasAttribute("data-ov-more") ? "more" : "")).filter(Boolean));
@@ -139,7 +158,7 @@ test.describe("on a computer", () => {
 
   test("a card opens the board's drawer; Esc and the path climb back; a session opens on its machine", async ({ page }, info) => {
     const { agent } = await overview(page);
-    await tile(page, "row_b").locator("[data-ov-card-open]").click();
+    await tile(page, "row_b").locator("[data-ov-row-open]").click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/?]*\\?board=${B}&card=row_b$`));
     const drawer = page.locator('[data-board-drawer="row_b"]');
     await expect(drawer).toBeVisible();
@@ -149,13 +168,14 @@ test.describe("on a computer", () => {
     await page.keyboard.press("Escape");
     await expect(drawer).toHaveCount(0);
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/?]*$`));
-    // The path's Overview is a level up too; its board's name, the board.
-    await tile(page, "row_c").click();
+    // The path's Overview is a level up too; its board's name, the board. (#12, focused again, shows its preview on the right.)
+    await tile(page, "row_c").locator("[data-ov-row-open]").click({ position: { x: 12, y: 8 } });
     await expect(page.locator('[data-board-drawer="row_c"]')).toBeVisible();
     await expect(page.locator("[data-app-path] [data-path=board]")).toHaveAttribute("href", new RegExp(`/p/${P}[^/]*/boards/${B}`));
     await page.locator("[data-app-path] [data-path=home]").click();
     await expect(page.locator("[data-board-drawer]")).toHaveCount(0);
-    // A session, in one click: its machine's page, on its pane.
+    // A session, from its card's preview: its machine's page, on its pane.
+    await tile(page, "row_b").hover();
     await tile(page, "row_b").locator("[data-ov-session]").click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines.*pane=${agent}`));
     await expect(page.locator(`[data-pane="${agent}"]`)).toBeVisible();
@@ -164,7 +184,7 @@ test.describe("on a computer", () => {
     await expect(page.locator("[data-overview]")).toBeVisible();
   });
 
-  test("a question in a card's session pulses its tile, and is answered in place on Needs you", async ({ page }, info) => {
+  test("a question in a card's session pulses its row, and is answered in place on Needs you", async ({ page }, info) => {
     const { term } = await overview(page);
     const needs = page.locator("[data-ov-needs]");
     // The agent finishing may put a Finished card there (Swarm's rail does); nothing asks yet.
@@ -182,7 +202,9 @@ test.describe("on a computer", () => {
     await expect(tile(page, "row_b")).toHaveClass(/ov-pulse/);
     await expect(needs.locator("[data-ov-needs-count]")).toHaveText("1");
     await expect(card).toBeVisible();
+    await expect(tile(page, "row_b").locator("[data-ov-card-state]")).toHaveText("needs you");
     // The session is named by its agent, though it's the terminal that asks.
+    await tile(page, "row_b").hover();
     await expect(tile(page, "row_b").locator("[data-ov-session] b")).toHaveText("Agent");
     await page.waitForTimeout(400);
     await page.screenshot({ path: info.outputPath("overview-needs.png") });
@@ -197,7 +219,7 @@ test.describe("on a computer", () => {
 
   test("the card's drawer draws its session live, and its question at the top, as on the board", async ({ page }, info) => {
     const { term } = await overview(page, null, true);
-    await tile(page, "row_b").locator("[data-ov-card-open]").click();
+    await tile(page, "row_b").locator("[data-ov-row-open]").click();
     const drawer = page.locator('[data-board-drawer="row_b"]');
     const live = drawer.locator("[data-board-drawer-live]");
     await expect(live.locator(`[data-live-slot="${term}"] .xterm`)).toBeVisible({ timeout: 20_000 });
@@ -227,6 +249,7 @@ test.describe("on a computer", () => {
       ],
     };
     await overview(page, byCard);
+    await tile(page, "row_c").hover();
     const hosted = tile(page, "row_c").locator('[data-ov-session="hosted:hs_e2e"]');
     await expect(hosted).toContainText("arugula/13-tidy-docs");
     await expect(hosted.locator("[data-ov-where]")).toHaveText("Arugula cloud");
@@ -234,7 +257,7 @@ test.describe("on a computer", () => {
     // A machine this page doesn't reach: named, on no card, and not a link.
     const far = page.locator("[data-ov-loose] [data-ov-session]", { hasText: "release" });
     await expect(far.locator("[data-ov-where]")).toHaveText("far-away");
-    await expect(far).toBeDisabled();
+    await expect(far.locator("[data-ov-row-open]")).toBeDisabled();
   });
 });
 
