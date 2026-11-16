@@ -44,7 +44,8 @@ import { BoardError, STALE_ORDER, STALE_REV, boards } from "./store";
 import { StepsView } from "./steps-view";
 import { loadDone, loadLinks, loadMode, saveDone, saveLinks, saveMode, stepPlace, type BoardMode, type Reorder } from "./steps";
 import { DocLink, DocPicker } from "./docs";
-import { AttachmentChip, Drawer, Labels, Owners, SessionChip, notFinishedTitle, type Act } from "./card";
+import { AttachmentChip, CardSessions, Drawer, Labels, Owners, RowSessionChip, SessionChip, notFinishedTitle, useRowSessions, type Act } from "./card";
+import { BY_CARD_EVERY_MS, sessionsByCard, type SessionsByCard } from "../project-sessions";
 import "./bar.css";
 import "./boards.css";
 import { groupFold, groupLaneFold, isFolded, laneFold, loadFolds, saveFolds, type Folds } from "./folds";
@@ -77,6 +78,7 @@ export function BoardPanel({
   write = true,
   keepInUrl = false,
   onProject,
+  cardSessions = false,
 }: {
   id: string;
   /** False for a block that isn't on screen: it reads nothing then. */
@@ -91,6 +93,8 @@ export function BoardPanel({
   keepInUrl?: boolean;
   /** The board's project, once it's read: the platform's page puts its address right after a move (Arugula #972). */
   onProject?: (project: string) => void;
+  /** Read the project's sessions by card, and show each card's on its row and in its drawer (Arugula #1082): the platform's page, which the Sessions page folded into. */
+  cardSessions?: boolean;
 }) {
   const { toast, teams } = usePlatformApi();
   const nameOf = (account: string) => teams().flatMap((t) => t.roster.members).find((m) => m.account === account)?.name;
@@ -177,6 +181,7 @@ export function BoardPanel({
     if (shown && project) void boards.plane(project).then(setPlane);
     if (project) onProject?.(project);
   }, [project, shown]);
+  const byCard = useByCard(project, cardSessions && shown);
 
   const again = () => {
     const n = ++seen.current;
@@ -200,8 +205,8 @@ export function BoardPanel({
   }, [id, shown]);
 
   // A link from a block or a session names a row, `#row=row_…` (#372),
-  // or what it points at (`#row=iss_…`, from Sessions, which knows a
-  // card's board but not its row): the card's drawer opens on it
+  // or what it points at (`#row=iss_…`, from a link that knows a card's
+  // board but not its row): the card's drawer opens on it
   // (decision 9), as a click on it would. Read as the board opens:
   // keeping the filter in the URL replaces the hash.
   const [named] = useState(() => location.hash.match(/^#row=([A-Za-z0-9_-]+)/)?.[1]);
@@ -333,6 +338,7 @@ export function BoardPanel({
   const opened = drawer ? view.zones.flatMap((z) => z.rows).find((r) => r.id === drawer) : undefined;
 
   return (
+    <CardSessions.Provider value={byCard}>
     <div class="board" data-board={id}>
       <BoardHead
         view={view}
@@ -540,7 +546,32 @@ export function BoardPanel({
       )}
       {opened && <Drawer steps={mode === "steps" && write ? { place: stepPlace(view, opened.id), move: (m) => void reorderRow(opened, m) } : undefined} r={opened} platform={platform} close={() => setDrawer(null)} project={view.board.project} others={view.zones.flatMap((z) => z.rows)} write={write} act={act} id={id} moveLane={moveLane} nameOf={nameOf} />}
     </div>
+    </CardSessions.Provider>
   );
+}
+
+/** The project's sessions by card while the board is shown, read again a
+ * minute later (the hub allows 600 reads an hour); null when `on` is
+ * false, before it answers, or where it can't. */
+function useByCard(project: string | undefined, on: boolean): SessionsByCard | null {
+  const [v, setV] = useState<SessionsByCard | null>(null);
+  useEffect(() => {
+    setV(null);
+    if (!on || !project) return;
+    let live = true;
+    const read = () =>
+      sessionsByCard(project).then(
+        (x) => live && setV(x),
+        () => {},
+      );
+    void read();
+    const t = setInterval(() => document.visibilityState === "visible" && void read(), BY_CARD_EVERY_MS);
+    return () => {
+      live = false;
+      clearInterval(t);
+    };
+  }, [project, on]);
+  return v;
 }
 
 /** The board's header, as a Doc's (#929): the title and, at its right, Copy link, Open in browser and ⋯; when it was made and last edited; the goal with the Docs beside it; and the progress as its bottom rule. The panel doesn't know whether the person may write (the pin block has no project), so without `write` the controls still show and the platform's refusal comes back as `act`'s toast. */
@@ -1028,6 +1059,8 @@ function Row({
   const earlier = r.attachments.filter((a) => marks.earlier.has(a.id));
   const current = r.attachments.filter((a) => !marks.earlier.has(a.id));
   const held = heldChip(r);
+  // The card's sessions the row doesn't hold (Arugula #1082): a shell put on it, an agent not attached.
+  const cardSessions = useRowSessions(r);
   const tone = cardTone(r);
   // Proof attached to the row is its "Proof" link (`AttachmentChip`); the tag stands for proof that has none (a merged PR, CI), and for none.
   const proofLink = mark && (!mark.proven || !r.attachments.some((a) => a.role === "proof")) && (
@@ -1153,7 +1186,7 @@ function Row({
               {closedWithLine(r.live)}
             </div>
           )}
-          {(current.length > 0 || (r.sessions ?? []).length > 0 || held) && (
+          {(current.length > 0 || (r.sessions ?? []).length > 0 || cardSessions.length > 0 || held) && (
             <div class="board-line board-chips" data-board-attachments>
               {current.map((a) => (
                 <AttachmentChip key={a.id} a={a} platform={platform} stalled={stalledWords} waiting={waiting} />
@@ -1165,6 +1198,9 @@ function Row({
               )}
               {(r.sessions ?? []).map((x) => (
                 <SessionChip key={x.session} s={x} project={project} />
+              ))}
+              {cardSessions.map((x) => (
+                <RowSessionChip key={x.key} s={x} project={project} />
               ))}
             </div>
           )}

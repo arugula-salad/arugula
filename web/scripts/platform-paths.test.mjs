@@ -205,9 +205,11 @@ test("an agent session (M257)", () => {
   assert.deepEqual(parse(`/p/${P}/sessions/${S}`), { page: "session", project: P, session: S });
   assert.deepEqual(parse(pathOf({ page: "session", project: P, session: S })), { page: "session", project: P, session: S });
   for (const p of [`/p/${P}/sessions/run_00ff11ee`, `/p/${P}/sessions/${S}/x`]) assert.equal(parse(p).page, "missing", p);
-  // The project's sessions as a wave (#267).
+  // The Sessions page's old address, which goes on to Boards (#1082).
   assert.deepEqual(parse(pathOf(parse(`/p/${P}/sessions`))), parse(`/p/${P}/sessions`));
   assert.equal(parse(`/p/${P}/sessions`).page, "sessions");
+  // Its old filters are dropped with it.
+  assert.deepEqual(parse(`/p/${P}/sessions`, "?label=ui&going=true"), { page: "sessions", project: P });
 });
 
 test("a project's Docs and one Doc (aru-118)", () => {

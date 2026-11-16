@@ -43,10 +43,11 @@ export function appMachines(session: () => AppSession | null): Place {
   };
 }
 
-/** `PlatformApi.panes` over `session`: the machine page's chunk, loaded
- * and its machines booted once a view watches, while the hub reaches
- * machines from this host. Until then, nothing is known. */
-export function appPanes(session: () => AppSession | null): NonNullable<PlatformApi["panes"]> {
+/** `PlatformApi.machineDocs` over `session` (Arugula #971): the machine
+ * page's chunk, loaded and its machines booted once a view watches, and a
+ * machine's Docs moved by asking it. While the hub can't reach machines
+ * from this host, none is here. */
+export function appMachineDocs(session: () => AppSession | null): NonNullable<PlatformApi["machineDocs"]> {
   let page: Page | null = null;
   return {
     watch(fn) {
@@ -56,28 +57,12 @@ export function appPanes(session: () => AppSession | null): NonNullable<Platform
       let live = true;
       void load().then((p) => {
         page = p;
-        if (live) off = p.watchPanes(s, fn);
+        if (live) off = p.watchMachines(s, fn);
       });
       return () => {
         live = false;
         off?.();
       };
-    },
-    owner: (machine) => page?.ownerOf(machine, session()),
-    pane: (machine, pane) => page?.paneOf(machine, pane, session()),
-  };
-}
-
-/** `PlatformApi.machineDocs` over `session` (Arugula #971): the machines
- * booted as `panes` boots them, and a machine's Docs moved by asking it.
- * While the hub can't reach machines from this host, none is here. */
-export function appMachineDocs(session: () => AppSession | null): NonNullable<PlatformApi["machineDocs"]> {
-  const panes = appPanes(session);
-  let page: Page | null = null;
-  return {
-    watch(fn) {
-      void load().then((p) => void (page = p));
-      return panes.watch(fn);
     },
     here: (machine) => !!page?.docsHere(machine, session()),
     move: async (machine, doc, project) => (await load()).moveDoc(machine, doc, project, session()),

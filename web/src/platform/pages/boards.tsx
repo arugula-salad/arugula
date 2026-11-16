@@ -278,6 +278,8 @@ export function BoardPage({ project, board }: { project: string; board: string }
         write={mayWrite(p)}
         platform={(path) => path}
         keepInUrl
+        // Each card's sessions on its row: the Sessions page folded into the board (Arugula #1082).
+        cardSessions
         // A board moved to another project (Arugula #972): the page's address goes to its new one.
         onProject={(home) => home !== project && homes.set(board, home)}
         back={

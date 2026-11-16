@@ -106,6 +106,10 @@ test("Build's home is every machine's panes, with a machine as its filter (#1083
   assert.deepEqual(parse(`/p/${P}/machines/panes`, "?machine=../x").at, { at: "panes" });
   // Control's page has no such list: the machine's, or its own.
   assert.equal(controlHash({ at: "panes" }), "");
+  // Agents only, a flag beside the machine (#1082).
+  assert.deepEqual(parse(`/p/${P}/machines/panes`, `?machine=${D}&agents`).at, { at: "panes", machine: D, agents: true });
+  assert.equal(pathOf({ page: "machines", project: P, at: { at: "panes", machine: D, agents: true } }), `/p/${P}/machines/panes?machine=${D}&agents`);
+  assert.equal(pathOf({ page: "machines", project: P, at: { at: "panes", agents: true } }), `/p/${P}/machines/panes?agents`);
   assert.equal(controlHash({ at: "panes", machine: D }), `machine=${D}`);
 });
 

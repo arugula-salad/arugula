@@ -23,8 +23,8 @@ export type MachineAt =
    * card (`focus`) or on one board's agents. */
   | { at: "swarm"; focus?: { machine?: string; pane: number }; board?: string }
   /** Build's home (Arugula #1083): every machine's panes in one list, by
-   * machine, or one `machine`'s. */
-  | { at: "panes"; machine?: string };
+   * machine, or one `machine`'s; `agents`, only the agents' (#1082). */
+  | { at: "panes"; machine?: string; agents?: true };
 
 /** A machine's id at the front of a path segment, before its slug: a
  * daemon's id is hex. */
@@ -59,7 +59,7 @@ export function parseMachines(rest: string[], q: URLSearchParams, hash = ""): Ma
   if (rest[0] === "panes") {
     // A machine's id, or a name where it has none (a daemon's own hosts).
     const machine = q.get("machine");
-    return { at: "panes", ...(machine && NAME.test(machine) ? { machine } : {}) };
+    return { at: "panes", ...(machine && NAME.test(machine) ? { machine } : {}), ...(q.has("agents") ? { agents: true } : {}) };
   }
   const machine = MACHINE.exec(rest[0])?.[1];
   if (!machine) return null;
@@ -97,7 +97,7 @@ export function machinesPath(m: MachineAt, slug?: string | null): string {
     if (m.follow) q.set("follow", m.follow);
   }
   // Flags as bare words, as the shell's fragments have them.
-  const flags = m.at === "machine" ? (["share", "pop", "agent"] as const).filter((k) => m[k]) : m.at === "machines" && m.pop ? ["pop"] : [];
+  const flags = m.at === "machine" ? (["share", "pop", "agent"] as const).filter((k) => m[k]) : m.at === "machines" && m.pop ? ["pop"] : m.at === "panes" && m.agents ? ["agents"] : [];
   const qs = [q.toString(), ...flags].filter(Boolean).join("&");
   const layer = m.at === "machines" && m.layer ? `#${m.layer}` : "";
   return `${path}${qs ? `?${qs}` : ""}${layer}`;

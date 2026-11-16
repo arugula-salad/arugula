@@ -9,7 +9,8 @@
 // The drawer is drawn by both bundles, so it imports nothing of the shell's:
 // a live pane comes through `PlatformApi.LivePane`, where the page has one.
 
-import { useEffect, useState } from "preact/hooks";
+import { createContext } from "preact";
+import { useContext, useEffect, useState } from "preact/hooks";
 import type { RelationKind, BoardLane, BoardAttachment, BoardRow, BoardRowSession, BoardView, ForgeText } from "../proto";
 import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
@@ -23,6 +24,8 @@ import { day } from "../time";
 import { boards, type ForgeChecks } from "./store";
 import { nudge, type Reorder, type stepPlace } from "./steps";
 import { DocLink, DocPicker } from "./docs";
+import { rowSessions, type RowSession } from "./row-sessions";
+import type { SessionsByCard } from "../project-sessions";
 import { MOVE_LANES, closedWithLine, laneSetLine, checkTone, checkWord, liveTone, prsOf, assigneesLine, blockFacts, BLOCK_LABEL, chipOf, settledFacts, holdsRow, isCard, liveWord, queueChip, marksOf, waitingOf, notFinishedLine, type NotFinished, pointerHref, pointerLabel, relationLine, RELATION_KINDS, liveSessions, type LiveSession, topAndMore, initialsOf } from "./text";
 
 export type Act = (write: () => Promise<BoardView>) => Promise<boolean>;
@@ -47,6 +50,38 @@ export function SessionChip({ s, project }: { s: BoardRowSession; project: strin
         </a>
       ) : (
         <span class="board-ptr">{branch}</span>
+      )}
+    </ObjectChip>
+  );
+}
+
+/** The project's sessions by card, where the board is drawn with them (the platform's board page, Arugula #1082): a row and its drawer show its card's. */
+export const CardSessions = createContext<SessionsByCard | null>(null);
+
+/** The row's card's sessions it doesn't show otherwise (`rowSessions`), as chips. */
+export function useRowSessions(r: BoardRow): RowSession[] {
+  return rowSessions(r, useContext(CardSessions));
+}
+
+/** One of the card's sessions the row doesn't hold as an attachment (Arugula #1082): its name and state, a link to its pane (or its page, a hosted one), and where it runs. */
+export function RowSessionChip({ s, project }: { s: RowSession; project: string }) {
+  const api = usePlatformApi();
+  const o = s.open;
+  const href = o?.kind === "hosted" ? api.sessionHref?.(project, o.session) : undefined;
+  // The app opens its pane in Build; the platform page says where panes open.
+  const go = o?.kind === "pane" ? () => api.goToPane(o.machine, o.pane, null) : null;
+  return (
+    <ObjectChip title={s.where ? `On ${s.where}` : "In a cloud workspace"} fact={s.state ? { tone: s.needs ? "accent" : "muted", text: s.state } : null} data-board-card-session={s.key} data-board-card-session-needs={s.needs ? "" : undefined}>
+      {go ? (
+        <a class="board-ptr" href="#" title="Open its pane" data-board-card-session-open onClick={(e) => (e.preventDefault(), go())}>
+          {s.name}
+        </a>
+      ) : href ? (
+        <a class="board-ptr" href={href} target="_blank" rel="noopener noreferrer">
+          {s.name}
+        </a>
+      ) : (
+        <span class="board-ptr">{s.name}</span>
       )}
     </ObjectChip>
   );
@@ -302,6 +337,8 @@ export function Drawer({ steps, r, platform, close, project, others, write, act,
   const full = !!api.LiveAsk && !!api.LivePane && who === "steer" && shown?.kind === "block" && !!shown.machine;
   // The agent blocks are in Live session: Attached keeps the PRs, runs and the rest.
   const attached = r.attachments.filter((a) => !(a.role === "work" && a.pointer.kind === "block"));
+  // The card's other sessions, from the project's by-card list (Arugula #1082).
+  const cardSessions = useRowSessions(r);
   return (
     <SideSheet title={title} close={close} class={full ? "board-drawer board-drawer-live" : "board-drawer"} root={{ "data-board-drawer": r.id }} titleAttrs={{ "data-board-drawer-title": true }} closeAttrs={{ "data-board-drawer-close": true }}>
       {Ask && shown?.kind === "block" && <Ask key={shown.key} machine={shown.machine} pane={shown.pane} />}
@@ -447,6 +484,16 @@ export function Drawer({ steps, r, platform, close, project, others, write, act,
       {(r.relations?.length || (write && itemId(r))) && <Relations r={r} project={project} others={others} write={write} act={act} id={id} />}
       <RowDocs r={r} project={project} platform={platform} write={write} act={act} id={id} />
       <NotFinishedSection r={r} nf={marks.notFinished} write={write} act={act} id={id} />
+      {cardSessions.length > 0 && (
+        <section data-board-drawer-card-sessions>
+          <h3>Its sessions</h3>
+          <div class="board-line board-chips">
+            {cardSessions.map((x) => (
+              <RowSessionChip key={x.key} s={x} project={project} />
+            ))}
+          </div>
+        </section>
+      )}
       {attached.length > 0 && (
         <section data-board-drawer-attachments>
           <h3>Attached</h3>

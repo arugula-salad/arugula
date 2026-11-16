@@ -39,7 +39,6 @@ import { SettingsPage } from "./pages/settings";
 import { OwnerSettings } from "./pages/owner-settings";
 import { HostedWorkspacePage, HostedWorkspaces } from "./pages/hosted-workspace";
 import { RunPage, RunsPage } from "./pages/runs";
-import { SessionsPage } from "./pages/sessions";
 import { AllBoardsPage, BoardPage, BoardsPage } from "./pages/boards";
 import { DocPage, DocsPage } from "./pages/docs";
 import { projectDocs } from "../shared/docs/store";
@@ -134,7 +133,8 @@ function body(r: Route, lost: string | null) {
     case "run":
       return <RunPage project={r.project} run={r.run} msg={r.msg} thread={r.thread} />;
     case "sessions":
-      return <SessionsPage project={r.project} filter={{ label: r.label, tracker: r.tracker, asker: r.asker, going: r.going }} />;
+      // Folded into each card's row (Arugula #1082): an old link goes on to Boards.
+      return <Moved to={pathOf({ page: "boards", project: r.project }, names)} />;
     case "session":
       return <SessionPage project={r.project} session={r.session} />;
     case "workspaces":
@@ -183,6 +183,14 @@ function Entering({ to }: { to: Entry }) {
     go(entryPath(to, session.project(currentProject()), names), true);
   }, [ready]);
   return <p class="platform-section dim">Finding it…</p>;
+}
+
+/** A page that moved: on to `to`, in its place in the history. */
+function Moved({ to }: { to: string }) {
+  useEffect(() => {
+    go(to + location.hash, true);
+  }, [to]);
+  return null;
 }
 
 /** `page`: the page's address, for its guard. */
