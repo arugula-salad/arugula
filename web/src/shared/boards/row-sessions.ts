@@ -65,3 +65,18 @@ export function rowSessions(r: Pick<BoardRow, "id" | "pointer" | "attachments"> 
   }
   return out.sort((a, b) => a.rank - b.rank).map(({ rank: _r, ...s }) => s);
 }
+
+/** The hosted sessions whose live event (`chat.onObject(ses)`, the
+ * platform's push as a session's state moves, Arugula #1117) changes what
+ * `rows` draw: `board`, those a row holds itself (`sessions`, which the
+ * board's own read says), and `cards`, those the by-card list has on a
+ * row's card. Finished ones too: a session asked again goes again. */
+export function pushedSessions(rows: (Pick<BoardRow, "id" | "pointer"> & Partial<Pick<BoardRow, "sessions">>)[], byCard: SessionsByCard | null): { board: string[]; cards: string[] } {
+  const board = rows.flatMap((r) => (r.sessions ?? []).map((x) => x.session));
+  const cards = (byCard?.groups ?? []).flatMap((g) => {
+    const card = g.card;
+    if (!card || !rows.some((r) => isRow(r, card.id))) return [];
+    return g.sessions.flatMap((s) => (s.kind === "hosted" ? [s.id] : []));
+  });
+  return { board: [...new Set(board)].sort(), cards: [...new Set(cards)].sort() };
+}
