@@ -1,8 +1,8 @@
 // M52 from phones (testnet/test.sh's relay claim): a Pixel 7 in Chrome and an
-// iPhone in WebKit sign in to the test stack's control as the approving
-// device's account (device.ts, kept in --state), are approved by it as new
-// devices, open the joined box's pane and type a marker into it, with ssh
-// out of the picture. Then `docker restart` of the box (--restart): the
+// iPhone in WebKit sign in to the test stack's control as the device's
+// account (device.ts, kept in --state), open the joined box's pane and
+// type a marker into it, with ssh out of the picture. Then `docker
+// restart` of the box (--restart): the
 // same pages, still open, reach it again through the relay and a second
 // marker is typed. Each marker is read back from the box's pane by the
 // device over the relay, not by the phone that typed it.
@@ -124,22 +124,30 @@ interface Phone {
   page: Page;
 }
 
-/** Sign a phone in, have the device approve it, and wait until it's in. */
+/** Sign a phone in and wait until it's in. A hub with an issuer key (the
+ * test stack's, aru-141) hands a new browser machine tokens, so it's in
+ * once signed in; one without asks the device to approve it first (#761:
+ * with the code the phone shows, as scanning it would). */
 async function signIn(d: Device, browser: Browser, name: string, options: BrowserContextOptions, local: string): Promise<Phone> {
   const ctx = await browser.newContext({ ...options, baseURL: local });
   const page = await ctx.newPage();
   page.on("pageerror", (e) => log(`${name}: page error: ${e.message}`));
   await page.goto("/");
   await page.locator("[data-signin=github]").tap();
-  await until(`${name} to ask to be approved`, () => page.evaluate(() => window.__arugula?.control?.phase === "waiting"), 30_000);
-  const { asked, code } = await page.evaluate(() => {
-    const s = window.__arugula.control as unknown as { request: unknown; deviceCode: string | null };
-    return { asked: s.request, code: s.deviceCode };
-  });
-  // #761: with the code the phone shows, as scanning it would.
-  await d.approveRequest(asked as Parameters<Device["approveRequest"]>[0], code);
-  await until(`${name} to be approved`, () => page.evaluate(() => window.__arugula.control?.phase === "ready"), 30_000);
-  log(`${name}: signed in and approved`);
+  const phase = await until(
+    `${name} to be signed in`,
+    () => page.evaluate(() => (["ready", "waiting"] as const).find((p) => window.__arugula?.control?.phase === p)),
+    30_000,
+  );
+  if (phase === "waiting") {
+    const { asked, code } = await page.evaluate(() => {
+      const s = window.__arugula.control as unknown as { request: unknown; deviceCode: string | null };
+      return { asked: s.request, code: s.deviceCode };
+    });
+    await d.approveRequest(asked as Parameters<Device["approveRequest"]>[0], code);
+    await until(`${name} to be approved`, () => page.evaluate(() => window.__arugula.control?.phase === "ready"), 30_000);
+  }
+  log(`${name}: signed in${phase === "waiting" ? " and approved" : ""}`);
   return { name, page };
 }
 
