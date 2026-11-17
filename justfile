@@ -79,6 +79,14 @@ contract-schema mode="write":
 api-contract mode="write":
     node scripts/api-contract.mjs {{ if mode == "write" { "" } else { "--check" } }}
 
+# The contract's compatibility rule (contract/README.md, "Compatibility",
+# Arugula #807): contract/ here against its merge-base with origin/main.
+# Fails on a removed route, operation, type, field or value, a field made
+# required or a changed type, unless a commit message on the branch names it
+# (`Contract-break: ID, WHY`). Fetch origin/main first for main's verdict.
+contract-compat *args:
+    node scripts/contract-compat.mjs {{args}}
+
 # Write DECISIONS.md, the index of the decision records in docs/decisions/,
 # and docs/capabilities/README.md, the index of the feature records. Without
 # `write`, check they're current, and that no standing decision names a path
@@ -834,6 +842,7 @@ test-scripts:
     scripts/tests/capabilities.sh
     scripts/tests/data-model-check.sh
     scripts/tests/crate-boundary.sh
+    scripts/tests/contract-compat.sh
     scripts/tests/install.sh
     scripts/tests/release-targets.sh
     scripts/tests/release-workflows.sh
@@ -923,6 +932,7 @@ check: test mux-guard workspace-guard crate-boundary
     just proto-ts check
     just contract-schema check
     just api-contract check
+    just contract-compat
     just decisions check
     just whats-new
     scripts/check-binaries

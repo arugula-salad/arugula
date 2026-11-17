@@ -18,6 +18,60 @@ and the principal header's JSON). Only those two send it, so its messages,
 schema and examples live in `crates/control-common` (`src/port/`, `port/`),
 checked by that crate's tests the same way.
 
+## Compatibility
+
+The sides of the contract don't upgrade together: control deploys on its
+own, a daemon (and its CLI) when its owner updates it, a native app when its
+build ships. So the contract has to work for every **supported version**
+(Arugula #807, decided 2026-11-16):
+
+- any daemon released in the last 30 days. The train releases about five
+  times a day, so "the current release and the one before" would cover
+  hours;
+- the current and the previous build of each native app.
+
+**Changes are additive.** A new route, operation, type, optional field or
+enum value is fine. A route, operation, type, field or value is removed, a
+field made required (a new required field on a type that's already there
+included), or a field's type changed (made nullable included), only once no
+supported version reads or sends it.
+
+**Removing something** takes two steps:
+
+1. Deprecate it: nothing new relies on it, but it's still sent and still
+   read. Its doc comment says so, with the release from which nothing needs
+   it.
+2. Remove it once the window has passed: the last daemon release that needs
+   it is more than 30 days old, and neither native build in support reads or
+   sends it. A line in the commit message names what goes, and why that's
+   safe now:
+
+   ```
+   Contract-break: chat.ChatRoom.archived, last read by 0.70.3 (released 2026-11-14)
+   ```
+
+**Checking it:** `just contract-compat` (`scripts/contract-compat.mjs`)
+compares `contract/` in the working tree with `contract/` at its merge-base
+with origin/main. It fails on a removed route (or a client a route stops
+serving), a removed operation or one that now takes or answers another type,
+a removed type, field, enum value or variant, a field that became required
+or was added as required, and a changed type (its JSON types, `$ref` or
+`format`). Additions pass. It names each finding by an id: `chat.ChatRoom.archived`,
+`chat.ChatLive<type=hello>`, `GET /api/chat/rooms`. A `Contract-break:` line
+in any commit message on the branch allows the finding it names and
+everything under it (`chat.ChatRoom` covers its fields). `just check` runs
+it; CI doesn't yet (Arugula #1139). Its tests are
+`scripts/tests/contract-compat.sh`.
+
+The schema can't say everything: a change can keep every field and still
+break an older peer (a field it now needs set, a route whose meaning
+changed). `just older-daemons` (`scripts/older-daemons.mjs`, Arugula #808)
+runs this checkout's page against the oldest and the newest daemon release
+of the window.
+
+One addition has an order: a field on a closed schema (`additionalProperties:
+false`, below) ships in control and deploys before any daemon sends it.
+
 ## schema/
 
 One file per module of `crates/control-wire`: `chat.json` is

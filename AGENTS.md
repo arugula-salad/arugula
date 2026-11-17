@@ -224,6 +224,10 @@ nothing marked `mux:` names the edge or the block kinds.
 - The contract's JSON Schema is generated too: after changing a type in
   `crates/control-wire`, run `just contract-schema`. CI fails if
   `contract/schema/` is stale (`contract/README.md`).
+- Contract changes are additive: a field, route or value is removed, or a
+  field made required, only once no daemon of the last 30 days and no
+  native build in support reads or sends it. `just contract-compat` checks
+  (`contract/README.md`, "Compatibility").
 - Every request passes the access checks before it reaches the mux
   (`access.rs`, `authz.rs`, `arugula_core::access`).
 - The daemon serves the web client itself, embedded in the binary
