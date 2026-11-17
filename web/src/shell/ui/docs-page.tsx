@@ -34,7 +34,7 @@ import { ConfirmRemove } from "../../shared/ui/confirm";
 import { ListCounts, ListPreview, type ListCount } from "../../shared/ui/list-page";
 import { openMenu } from "../../shared/ui/menu";
 import { IconButton, LinkIcon, MoreIcon } from "../../shared/ui/icons";
-import { DocsList, goToSection, Outline } from "../../shared/docs/docs-list";
+import { docFacts, DocsList, Outline } from "../../shared/docs/docs-list";
 import { keptLine, machineMode, PERSONAL, type DocsMode } from "../../shared/docs/docs-mode";
 import type { BackLink } from "../../shared/ui/page-header";
 import type { ComponentChildren } from "preact";
@@ -85,7 +85,6 @@ const wordsOf = (r: DocRow) => r.sections.reduce((n, s) => n + s.words, 0);
 const figuresOf = (r: DocRow) => r.sections.reduce((n, s) => n + s.figures, 0);
 const isOpen = (r: DocRow) => r.open !== null && r.open !== undefined;
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
-const READ_WPM = 230;
 
 /** Whose Docs the machine's are, and who reads them: its team's project
  * when it's a team's machine (`GET /api/access` says its team) and the
@@ -428,6 +427,7 @@ function TeamPreview({ project, doc, open, fail }: { project: string; doc: Proje
   return (
     <ListPreview
       data-doc-preview={doc.id}
+      facts={view && docFacts(shapeOf(view.sections))}
       factsTip={`${doc.written} of ${doc.sections} written`}
       actions={
         <>
@@ -437,7 +437,7 @@ function TeamPreview({ project, doc, open, fail }: { project: string; doc: Proje
           <DocActions none={!link} copy={copy} open={() => link && openTab(link)} hooks={{ copy: { "data-doc-copy-link": "" } }} />
         </>
       }
-      aside={view && shapeOf(view.sections).length > 0 && <Outline sections={shapeOf(view.sections)} go={(i) => goToSection(reader.current, i)} />}
+      aside={view && shapeOf(view.sections).length > 0 && <Outline sections={shapeOf(view.sections)} reader={reader} />}
     >
       <div ref={reader} class="docs-reader" data-doc-reader>
         <DocBlock id={0} docKey={doc.id} s={state} fresh={NO_FRESH} load={noImages} />
@@ -541,8 +541,8 @@ function Preview({ client, doc, busy, reads, open, share, ask, team, moveTo, fai
   return (
     <ListPreview
       data-doc-preview={doc.id}
-      facts={words > 0 && <span>{Math.max(1, Math.round(words / READ_WPM))} min read</span>}
-      factsTip={[plural(doc.sections.length, "section"), plural(words, "word"), figures > 0 && plural(figures, "figure"), madeBy(doc.by)].filter(Boolean).join(" · ")}
+      facts={docFacts(doc.sections)}
+      factsTip={[plural(words, "word"), figures > 0 && plural(figures, "figure"), madeBy(doc.by)].filter(Boolean).join(" · ")}
       hint={
         <span class="list-preview-hint" aria-hidden="true">
           <kbd>↵</kbd> open <kbd>↑</kbd>
@@ -579,7 +579,7 @@ function Preview({ client, doc, busy, reads, open, share, ask, team, moveTo, fai
           </IconButton>
         </>
       }
-      aside={doc.sections.length > 0 && <Outline sections={doc.sections} go={(i) => goToSection(reader.current, i)} />}
+      aside={doc.sections.length > 0 && <Outline sections={doc.sections} reader={reader} />}
     >
       <div ref={reader} class="docs-reader" data-doc-reader>
         <DocBlock id={0} docKey={doc.id} s={state} fresh={NO_FRESH} load={load} cached={kept.images} />

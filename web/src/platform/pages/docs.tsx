@@ -34,7 +34,7 @@ import { ListPreview, type ListRowParts, type ListTicked } from "../../shared/ui
 import { Modal } from "../../shared/ui/modal";
 import { Time } from "../../shared/ui/time";
 import { DocBlock } from "../../shared/docs/doc-render";
-import { DocsList, goToSection, Outline } from "../../shared/docs/docs-list";
+import { docFacts, DocsList, Outline } from "../../shared/docs/docs-list";
 import { modeOf } from "../../shared/docs/docs-mode";
 import { noImages, projectItem, shapeOf, stateOf, useProjectDoc, useProjectDocs } from "../../shared/docs/project-docs";
 import { moveDocsToTeam, resultWords, type MoveResult } from "../../shared/docs/move-docs";
@@ -348,6 +348,7 @@ function Preview({ p, doc, reload }: { p: PlatformProject; doc: ProjectDoc; relo
   return (
     <ListPreview
       data-doc-preview={doc.id}
+      facts={view && docFacts(shapeOf(view.sections))}
       factsTip={`${team ? p.name : "Yours, private"} · ${doc.written} of ${doc.sections} written · made by ${whoLabel(doc.author, doc.agent, nameOf(p))}`}
       actions={
         <>
@@ -357,7 +358,7 @@ function Preview({ p, doc, reload }: { p: PlatformProject; doc: ProjectDoc; relo
           <PlatformDocActions p={p} doc={doc} reload={reload} menu deleter={mayWrite(p)} gone={reload} writer={mayWrite(p)} />
         </>
       }
-      aside={view && shapeOf(view.sections).length > 0 && <Outline sections={shapeOf(view.sections)} go={(i) => goToSection(reader.current, i)} />}
+      aside={view && shapeOf(view.sections).length > 0 && <Outline sections={shapeOf(view.sections)} reader={reader} />}
     >
       <div ref={reader} class="docs-reader" data-doc-reader>
         <DocBlock id={0} docKey={doc.id} s={state} fresh={NO_FRESH} load={noImages} />

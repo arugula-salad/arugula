@@ -619,57 +619,26 @@ button.list-count:hover {
   }
 }
 
-/* A Doc's row has no second line: its title, facts and mark share one. */
+/* A Doc's row has no second line: its title and time share one (#1134). */
 .list-row[data-doc] {
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
 }
 
-.list-row[data-doc] .list-row-detail {
-  display: none;
-}
-
+.list-row[data-doc] .list-row-detail,
 .list-row[data-doc] .list-row-mark {
-  grid-area: 1 / 3;
+  display: none;
 }
 
 /* A row's own button (a Doc's ⋯, Arugula #820) ends the line. */
 .list-row-actions {
-  grid-area: 1 / 4;
+  grid-area: 1 / 3;
   align-self: center;
   display: flex;
 }
 
-@container list-page (max-width: 480px) {
-  .list-row[data-doc] {
-    grid-template-columns: minmax(0, 1fr) auto auto;
-  }
-
-  .list-row-actions {
-    grid-area: 1 / 3;
-  }
-}
-
-/* A Doc's mark and outline (shell/ui/docs-page.tsx): grey, brighter where a
-   section has a figure. Accent stays for what's live. */
-.doc-shape {
-  display: flex;
-  align-items: stretch;
-  gap: 1px;
-  height: 9px;
-}
-
-.doc-shape i {
-  display: block;
-  min-width: 2px;
-  border-radius: 1px;
-  background: color-mix(in srgb, var(--fg) 30%, transparent);
-}
-
-.doc-shape i.fig {
-  background: var(--fg);
-}
-
+/* A Doc's outline (#1135): its headings, the one being read marked, and ◧
+   on a section that holds a figure. */
 .doc-outline {
   list-style: none;
   margin: 0;
@@ -677,28 +646,27 @@ button.list-count:hover {
 }
 
 .doc-outline li {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 44px;
+  display: flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 0;
+  min-width: 0;
+  padding-left: 8px;
+  border-left: 2px solid transparent;
 }
 
-.doc-outline span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.doc-outline li[data-doc-outline-at] {
+  border-left-color: var(--accent);
 }
 
-.doc-outline i {
-  display: block;
-  height: 4px;
-  border-radius: 2px;
-  background: color-mix(in srgb, var(--fg) 30%, transparent);
+.doc-outline li[data-doc-outline-at] .doc-outline-go {
+  color: var(--fg);
+  font-weight: 600;
 }
 
-.doc-outline i.fig {
-  background: var(--fg);
+.doc-outline-fig {
+  flex: none;
+  color: var(--dim);
+  font-size: var(--text-xs);
 }
 
 /* A row's ⋯ is a mouse target, not a button (a row is one option): the same

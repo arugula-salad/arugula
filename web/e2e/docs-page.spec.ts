@@ -242,7 +242,7 @@ test.describe("the list", () => {
     return { short, big };
   };
 
-  test("a row is one line with its shape, and a long Doc's is longer", async ({ page }) => {
+  test("a row is its title and time, one line, with no mark (Arugula #1134)", async ({ page }) => {
     await seed(page);
     const big = row(page, "Long plan");
     // The opening isn't under the title; the row is one line, not the 52px it was with it.
@@ -250,11 +250,9 @@ test.describe("the list", () => {
     await expect(row(page, "Short note")).not.toContainText("The opening line of the note.");
     await expect(big).not.toContainText("Opening of the plan.");
     expect((await row(page, "Short note").boundingBox())!.height).toBeLessThan(40);
-    const w = async (t: string) => (await row(page, t).locator("[data-doc-shape]").boundingBox())!.width;
-    expect(await w("Long plan")).toBeGreaterThan(await w("Short note"));
-    // Its section with a figure is drawn as one, and only that one.
-    await expect(big.locator("[data-doc-shape] i.fig")).toHaveCount(1);
-    await expect(row(page, "Short note").locator("[data-doc-shape] i.fig")).toHaveCount(0);
+    // No shape: the title and the time are all a row says.
+    await expect(big.locator(".list-row-mark")).toBeHidden();
+    await expect(big.locator(".list-row-age")).toBeVisible();
     // Reading a closed Doc's preview doesn't open it.
     await expect((await preview(page, "Short note")).locator(".list-preview-words")).toContainText("The opening line of the note.");
     await expect(row(page, "Short note")).toHaveAttribute("data-open", "");
@@ -341,7 +339,7 @@ test.describe("the list", () => {
     // A 34px column bar: the facts at the left, then the primary, link and ⋯, last.
     const bar = p.locator(".list-preview-bar");
     expect((await bar.boundingBox())!.height).toBe(34);
-    await expect(bar.locator(".list-preview-bar-facts")).toHaveText(/^\d+ min read$/);
+    await expect(bar.locator(".list-preview-bar-facts")).toHaveText(/^\d+ sections? · \d+ min read$/);
     const buttons = bar.locator("button");
     await expect(buttons.first()).toHaveAttribute("data-open-doc", /.*/);
     await expect(buttons.last()).toHaveAttribute("data-doc-more", /.*/);
@@ -642,6 +640,27 @@ test.describe("the reader", () => {
     const top = await reader(page).locator('[data-section="s3"]').evaluate((e) => e.getBoundingClientRect().top);
     const edge = await body.evaluate((b) => b.getBoundingClientRect().top);
     expect(Math.abs(top - edge)).toBeLessThan(40);
+  });
+
+  test("the outline is plain headings, marks the one being read as it scrolls, and ◧ a figure's (Arugula #1135)", async ({ page }) => {
+    await page.setViewportSize({ width: 1400, height: 700 });
+    await seed(page);
+    await preview(page, "Read me");
+    const items = page.locator("[data-doc-outline] li");
+    // No bars: a heading and, only on a section with a figure (the second's picture and prototype), ◧.
+    await expect(page.locator("[data-doc-outline] i")).toHaveCount(0);
+    await expect(page.locator("[data-doc-outline-fig]")).toHaveCount(1);
+    await expect(items.nth(1).locator("[data-doc-outline-fig]")).toHaveText("◧");
+    // At the top, the first is the one being read.
+    await expect(items.nth(0)).toHaveAttribute("data-doc-outline-at", "");
+    await expect(page.locator("[data-doc-outline-go][aria-current]")).toHaveCount(1);
+    await page.locator("[data-doc-outline-go]").nth(2).click();
+    await expect(items.nth(2)).toHaveAttribute("data-doc-outline-at", "");
+    await expect(page.locator("[data-doc-outline-go]").nth(2)).toHaveAttribute("aria-current", "location");
+    await expect(page.locator("[data-doc-outline-at]")).toHaveCount(1);
+    // Scrolled back by hand, the mark follows.
+    await page.locator("[data-list-preview] .list-preview-body").evaluate((b) => b.scrollTo(0, 0));
+    await expect(items.nth(0)).toHaveAttribute("data-doc-outline-at", "");
   });
 
   test("a fill while it's open shows when the window is back, and the scroll stays", async ({ page }) => {
