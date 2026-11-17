@@ -68,6 +68,9 @@
 #                                  the publish fills and publishes it
 #   release notes TAG              print TAG's notes, read the same way
 #   release check-latest           releases/latest is still a daemon release
+#   release app-latest TAG         after an app release's publish: app-latest is
+#                                  titled "Arugula app (latest)" and holds only
+#                                  what TAG's release does, and latest.json
 #
 # Both lanes:
 #   release check-green TAG [LANE] TAG's commit passed CI: GitHub has its
@@ -119,7 +122,8 @@
 #
 # GH_TOKEN (bump --rare) starts and watches a run of rare-nightly.yml;
 # GH_TOKEN (draft, check-latest, sidecars) reads and writes releases (in CI,
-# the job token with contents: write; by hand, your gh login).
+# the job token with contents: write; by hand, your gh login). app-latest's
+# is TAG_TOKEN's, which chant's tauri-updater target writes that release with.
 set -euo pipefail
 
 repo=${GITHUB_REPOSITORY:-arugula-salad/arugula}
@@ -188,6 +192,39 @@ check_latest() {
     v*) echo "releases/latest is still $t" ;;
     *) echo "releases/latest is $t, not a daemon release: fix it with gh release edit vX.Y.Z --latest" >&2; exit 1 ;;
   esac
+}
+
+# app_latest TAG: the rolling app-latest release, after chant's tauri-updater
+# target swapped it for TAG's (#868). chant titles it "app-latest X.Y.Z" and has
+# no setting for that, so the title is set here. chant's swap holds only the
+# declared files, but the old scripts' publish left 18 files from before the
+# rename beside them, so anything TAG's own release doesn't hold goes too,
+# except latest.json, which only app-latest has. It reads TAG's release first
+# and deletes nothing when that has no assets.
+app_latest_title="Arugula app (latest)"
+app_latest() {
+  local tag=$1 id name keep held a
+  keep=$(gh api "repos/$repo/releases/tags/$tag" --jq '.assets[].name') || return 1
+  if [ -z "$keep" ]; then
+    echo "release app-latest: $tag's release has no assets, so nothing on app-latest is checked against it" >&2
+    return 1
+  fi
+  keep=$(printf '%s\nlatest.json\n' "$keep")
+  id=$(gh api "repos/$repo/releases/tags/app-latest" --jq .id) || return 1
+  name=$(gh api "repos/$repo/releases/$id" --jq .name) || return 1
+  if [ "$name" != "$app_latest_title" ]; then
+    gh api -X PATCH "repos/$repo/releases/$id" -f name="$app_latest_title" >/dev/null || return 1
+    echo "app-latest: titled \"$app_latest_title\" (was \"$name\")"
+  fi
+  held=$(gh api "repos/$repo/releases/$id/assets" --paginate --jq '.[] | "\(.id)\t\(.name)"') || return 1
+  while IFS=$'\t' read -r a name; do
+    [ -n "$a" ] || continue
+    if ! grep -qxF -- "$name" <<<"$keep"; then
+      gh api -X DELETE "repos/$repo/releases/assets/$a" >/dev/null || return 1
+      echo "app-latest: deleted $name, which $tag's release doesn't have"
+    fi
+  done <<<"$held"
+  echo "app-latest: \"$app_latest_title\", with $tag's files"
 }
 
 # A release starts from a commit CI passed (#503, docs/development.md). The
@@ -988,6 +1025,9 @@ case "${1:-}" in
     ;;
   check-latest)
     check_latest
+    ;;
+  app-latest)
+    app_latest "${2:?usage: release app-latest TAG}"
     ;;
   formula)
     # The formula's template for chant's homebrew target (release/daemon):

@@ -842,6 +842,7 @@ test-scripts:
     scripts/tests/suite-lock.sh
     scripts/tests/release-bump.sh
     scripts/tests/release-notes.sh
+    scripts/tests/release-app-latest.sh
     scripts/tests/hosted-supervisor.sh
     scripts/tests/hosted-template.sh
     scripts/tests/hosted-tools.sh
