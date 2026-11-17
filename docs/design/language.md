@@ -118,6 +118,14 @@ phone's tabs, Slate/Latte). `role="group"` with `aria-pressed` for a filter,
 (32), `.touch` (40). A row of actions (the pane presets) is a group of bar
 buttons, not a segmented control, because nothing in it is ever on.
 
+### Days and times
+
+`shared/ui/schedule.tsx`. Any of the seven days is `Weekdays`: a row of
+toggle buttons (M T W T F S S, each `aria-pressed`, the "on" tint). They're
+buttons, not chips. A from-to time is `TimeRange`: two time fields in one
+outlined field, never drawn as disabled, saying "into the next morning" when
+it ends before it starts. Settings' quiet hours use both.
+
 ## Headers
 
 Two, and nothing else.
