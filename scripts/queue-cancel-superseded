@@ -1,0 +1,155 @@
+#!/usr/bin/env bash
+# Cancel the runs of merge groups GitHub has thrown away (Arugula #1125).
+# When a group ahead fails, a pull request leaves the queue or the queue
+# rebuilds, GitHub builds a new group for each pull request behind, but the
+# old group's runs, on its gh-readonly-queue/<branch>/pr-N-<base> ref, keep
+# going. queue-cancel-superseded.yml runs this on every new group.
+#
+#   scripts/queue-cancel-superseded [--dry-run]
+#
+# A merge_group run still queued or running is cancelled only when all three
+# hold:
+#   1. its pull request N (the ref's pr-N: GitHub names a group's ref after
+#      its last pull request) has another group now: the queue's entry for N
+#      names another head commit, or N merged as another commit;
+#   2. that group has merge_group runs, all made after this run;
+#   3. the run's ref no longer points at its commit (gone, or reused by the
+#      newer group on the same base).
+# A pull request is in at most one live group, so a run that passes these is
+# in a group that can't merge, and the live group's verdict (chant ci verdict)
+# reads only its own commit's check runs. A run whose pull request left the
+# queue without merging, or waits in it with no group built yet, is left alone.
+# Its ref still there (3) is looked at again once after $QUEUE_CANCEL_SETTLE
+# seconds (60), in case GitHub hasn't deleted it yet.
+#
+# Takes GITHUB_REPOSITORY from Actions; gh needs `actions: write`,
+# `contents: read` and `pull-requests: read` on the job's token.
+set -euo pipefail
+# A failed look at the API inside $(...) stops the script; it never reads as "gone".
+shopt -s inherit_errexit
+
+dry=0
+case "${1:-}" in
+  --dry-run) dry=1 ;;
+  '') ;;
+  *) echo "usage: scripts/queue-cancel-superseded [--dry-run]" >&2; exit 2 ;;
+esac
+repo=${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is owner/name}
+settle=${QUEUE_CANCEL_SETTLE:-60}
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+# Every merge_group run not yet completed: id, workflow, ref, commit, made.
+for status in queued in_progress waiting pending requested; do
+  gh api --paginate "repos/$repo/actions/runs?event=merge_group&status=$status&per_page=100" \
+    --jq '.workflow_runs[] | [.id, .name, .head_branch, .head_sha, .created_at] | @tsv'
+done | sort -u >"$tmp/active"
+[ -s "$tmp/active" ] || { echo "No merge_group run is queued or running."; exit 0; }
+
+# The queue's entries of each branch with active runs: pull request, head
+# commit (empty while it waits for a group).
+queue() {
+  local branch=$1
+  if [ ! -e "$tmp/queue-$branch" ]; then
+    # shellcheck disable=SC2016 # GraphQL variables, not the shell's.
+    gh api graphql -f owner="${repo%%/*}" -f name="${repo#*/}" -f branch="$branch" -f query='
+      query($owner: String!, $name: String!, $branch: String!) {
+        repository(owner: $owner, name: $name) {
+          mergeQueue(branch: $branch) { entries(first: 100) { nodes { pullRequest { number } headCommit { oid } } } }
+        }
+      }' --jq '(.data.repository.mergeQueue.entries.nodes // [])[] | [.pullRequest.number, (.headCommit.oid // "")] | @tsv' \
+      >"$tmp/queue-$branch"
+  fi
+  cat "$tmp/queue-$branch"
+}
+
+# The commit of pull request N's current group, or nothing when it has none.
+current() {
+  local branch=$1 pr=$2 line
+  line=$(queue "$branch" | awk -F'\t' -v pr="$pr" '$1 == pr')
+  if [ -n "$line" ]; then
+    printf '%s\n' "${line#*$'\t'}"
+    return
+  fi
+  if [ ! -e "$tmp/pr-$pr" ]; then
+    gh api "repos/$repo/pulls/$pr" --jq 'if .merged then .merge_commit_sha else "" end' >"$tmp/pr-$pr"
+  fi
+  cat "$tmp/pr-$pr"
+}
+
+# When the first merge_group run on a commit was made, or nothing.
+made() {
+  local sha=$1
+  if [ ! -e "$tmp/made-$sha" ]; then
+    gh api --paginate "repos/$repo/actions/runs?head_sha=$sha&event=merge_group&per_page=100" \
+      --jq '.workflow_runs[].created_at' | sort | head -n 1 >"$tmp/made-$sha"
+  fi
+  cat "$tmp/made-$sha"
+}
+
+# The commit a ref points at, or nothing when it's gone.
+points() {
+  local ref=$1 out
+  if out=$(gh api "repos/$repo/git/ref/heads/$ref" --jq .object.sha 2>"$tmp/err"); then
+    printf '%s\n' "$out"
+  elif grep -q 'HTTP 404' "$tmp/err"; then
+    :
+  else
+    cat "$tmp/err" >&2
+    return 1
+  fi
+}
+
+cancel() {
+  local id=$1 name=$2 ref=$3 why=$4
+  if [ "$dry" = 1 ]; then
+    echo "Would cancel $name run $id on $ref: $why"
+    return
+  fi
+  if gh api -X POST "repos/$repo/actions/runs/$id/cancel" --silent 2>"$tmp/err"; then
+    echo "Cancelled $name run $id on $ref: $why"
+  elif grep -q 'HTTP 409' "$tmp/err"; then
+    echo "$name run $id on $ref finished before it could be cancelled"
+  else
+    cat "$tmp/err" >&2
+    return 1
+  fi
+}
+
+: >"$tmp/held"
+while IFS=$'\t' read -r -u 3 id name ref sha created; do
+  if ! [[ $ref =~ ^gh-readonly-queue/(.+)/pr-([0-9]+)-[0-9a-f]+$ ]]; then
+    echo "Left $name run $id alone: $ref isn't a queue ref"
+    continue
+  fi
+  branch=${BASH_REMATCH[1]} pr=${BASH_REMATCH[2]}
+  now=$(current "$branch" "$pr")
+  if [ -z "$now" ]; then
+    echo "Left $name run $id on $ref alone: #$pr has no group now"
+    continue
+  fi
+  [ "$now" != "$sha" ] || continue
+  newer=$(made "$now")
+  if [ -z "$newer" ] || ! [[ $newer > $created ]]; then
+    echo "Left $name run $id on $ref alone: #$pr's group ${now:0:10} has no runs made after it"
+    continue
+  fi
+  at=$(points "$ref")
+  if [ "$at" = "$sha" ]; then
+    printf '%s\t%s\t%s\t%s\t%s\n' "$id" "$name" "$ref" "$sha" "#$pr's group is ${now:0:10} now" >>"$tmp/held"
+    continue
+  fi
+  cancel "$id" "$name" "$ref" "#$pr's group is ${now:0:10} now"
+done 3<"$tmp/active"
+
+[ -s "$tmp/held" ] || exit 0
+echo "Some refs are still there; looking again in ${settle}s."
+sleep "$settle"
+while IFS=$'\t' read -r -u 3 id name ref sha why; do
+  at=$(points "$ref")
+  if [ "$at" = "$sha" ]; then
+    echo "Left $name run $id alone: $ref still points at ${sha:0:10}"
+  else
+    cancel "$id" "$name" "$ref" "$why"
+  fi
+done 3<"$tmp/held"
