@@ -2,8 +2,8 @@ name: queue-cancel-superseded
 
 # When GitHub throws a merge group away (a group ahead failed, a pull request
 # left the queue, the queue rebuilt), the old group's runs on its
-# gh-readonly-queue ref keep going: in the week to Nov 17, 206 of 519 groups
-# were superseded so, on the home cloud's pods and GitHub's runners alike
+# gh-readonly-queue ref keep going: 177 groups in the week to Nov 17, about
+# 196 pool-min and 1,270 hosted min a day after their replacement existed
 # (Arugula #1125). Each new group cancels the runs of the groups it replaced:
 # scripts/queue-cancel-superseded says how it tells them apart from a live
 # group, and leaves a run alone when it can't. Not a concurrency group keyed
