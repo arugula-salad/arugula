@@ -5631,6 +5631,16 @@ pub(crate) mod tests {
             ],
             "a signature that doesn't check is control's word; a guest is their account"
         );
+
+        // Joined on control's word, no device is trusted: control's word is all.
+        let (bk, bsaved) = by_control(None);
+        let be = Enrolled::build(bsaved, Arc::new(bk), &Acl::open(&dir), false);
+        let subs = vec![sub("acct1", "https://push.test/own"), sub("other", "https://push.test/other")];
+        let got = Control::taken_subs(&be, wire::PushSubs { subs: subs.clone(), roles: Default::default() });
+        assert!(got.is_empty(), "today's control: none");
+        let roles = [("acct1".to_owned(), TokenRole::Owner)].into();
+        let got = Control::taken_subs(&be, wire::PushSubs { subs, roles });
+        assert_eq!(ends(&got), [("owner".into(), "https://push.test/own".into())]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
