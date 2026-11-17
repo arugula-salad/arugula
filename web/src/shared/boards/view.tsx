@@ -86,6 +86,7 @@ export function BoardPanel({
   write = true,
   keepInUrl = false,
   onProject,
+  onBoard,
   cardSessions = false,
   placement = "column",
   tools,
@@ -103,6 +104,8 @@ export function BoardPanel({
   keepInUrl?: boolean;
   /** The board's project, once it's read: the platform's page puts its address right after a move (Arugula #972). */
   onProject?: (project: string) => void;
+  /** A write here changed what a list of boards shows of it (its title, whether it's closed, its progress): the Boards page reads its list again (Arugula #1159). */
+  onBoard?: (b: ProjectBoard) => void;
   /** Read the project's sessions by card, and show each card's on its row and in its drawer (Arugula #1082): the platform's page, which the Sessions page folded into. */
   cardSessions?: boolean;
   /** Where the controls go (Arugula #1129): `column`, over the lanes (the board block's); `aside`, a column at the right that a row's drawer takes while open (the Boards page's). */
@@ -232,8 +235,11 @@ export function BoardPanel({
   /** Run a write; on 409 read again and say so. */
   const act = async (write: () => Promise<BoardView>): Promise<boolean> => {
     try {
-      setView(await write());
+      const was = view.board;
+      const now = await write();
+      setView(now);
       setStale(false);
+      if (listed(was) !== listed(now.board)) onBoard?.(now.board);
       return true;
     } catch (e) {
       if (e instanceof BoardError && e.reason === STALE_REV) {
@@ -640,6 +646,9 @@ export function BoardPanel({
     </CardSessions.Provider>
   );
 }
+
+/** What a list of boards shows of one: a write that changes it is told to the list. */
+const listed = (b: ProjectBoard) => JSON.stringify([b.title, b.closed_at ?? null, b.progress]);
 
 /** Under this many pixels across, the aside goes under the board (as `.list-preview-body`'s, ../ui/list-page.css). */
 const ASIDE_ROOM = 900;

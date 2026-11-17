@@ -8,7 +8,9 @@
 // board its first row, and a row opens in its place. The board's controls are
 // in the right column, and a row's drawer takes it while open (Arugula #1129);
 // with too little room the column goes under the board and the drawer is a
-// sheet. On the app's frame fixture (app-frame-page.tsx), with the cloud's
+// sheet. A rename, close or reopen in the middle moves the board's row
+// (Arugula #1159), and on a phone Escape on a row's menu stays on the board
+// (Arugula #1160). On the app's frame fixture (app-frame-page.tsx), with the cloud's
 // answers made up here.
 import { devices, expect, test, type Page } from "@playwright/test";
 import { fixturePage } from "./fixture-page";
@@ -153,6 +155,47 @@ test.describe("on a computer", () => {
   });
 });
 
+// Arugula #1159: a write in the middle that changes what the board's row
+// shows (its title, whether it's closed) moves the row, without a reload.
+test.describe("the list follows the board in the middle", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("renamed, its row's title; closed, its row goes to Done; reopened, back", async ({ page }) => {
+    await openApp(page, `/p/${P}/boards/brd_0a01`);
+    // Launch as the platform has it now: each write changes it, and the list reads it.
+    const launch: Record<string, unknown> = { ...BOARDS[0] };
+    const now = () => launch as (typeof BOARDS)[number];
+    await page.route(`**/api/projects/${P}/boards`, (r) => (r.request().method() === "GET" ? r.fulfill({ json: { project: P, boards: BOARDS.map((b) => (b.id === "brd_0a01" ? now() : b)) } }) : r.fallback()));
+    await page.route(/\/api\/boards\/brd_0a01(\/close|\/reopen)?$/, (r) => {
+      const url = r.request().url();
+      if (url.endsWith("/close")) Object.assign(launch, { closed_at: 3, done_note: r.request().postDataJSON().done_note });
+      else if (url.endsWith("/reopen")) delete launch.closed_at;
+      else if (r.request().method() === "PATCH") Object.assign(launch, r.request().postDataJSON());
+      return r.fulfill({ json: view(now()) });
+    });
+    const middle = page.locator('[data-list-preview] [data-board-page="brd_0a01"]');
+    await expect(middle.locator('[data-board-row="row_brd_0a01"]')).toBeVisible();
+
+    await middle.locator("[data-board-more]").click();
+    await page.locator("[data-board-rename]").click();
+    await page.locator(".prompt input").fill("Launch 1.0");
+    await page.locator(".prompt input").press("Enter");
+    await expect(item(page, "brd_0a01").locator("[data-board-title]")).toHaveText("Launch 1.0");
+
+    await middle.locator("[data-board-more]").click();
+    await page.locator("[data-board-close]").click();
+    await middle.locator("[data-board-close-note]").fill("Shipped.");
+    await middle.locator("[data-board-close-save]").click();
+    await expect(page.locator('[data-boards-done] [data-board-item="brd_0a01"]')).toBeVisible();
+    await expect(page.locator("[data-boards-done] .list-group-n")).toHaveText("2");
+
+    await middle.locator("[data-board-reopen]").click();
+    await expect(page.locator('[data-boards-done] [data-board-item="brd_0a01"]')).toHaveCount(0);
+    await expect(item(page, "brd_0a01")).toBeVisible();
+    await expect(page.locator("[data-boards-done] .list-group-n")).toHaveText("1");
+  });
+});
+
 test.describe("a board's controls on the right (Arugula #1129)", () => {
   const box = async (page: Page, sel: string) => (await page.locator(sel).boundingBox())!;
 
@@ -240,6 +283,22 @@ test.describe("on a phone", () => {
     await loose.click();
     await expect(page.locator('[data-boards-loose-pane] [data-triage-row="#41"]')).toBeVisible();
     await expect(page.locator("[data-list-back]")).toBeVisible();
+  });
+
+  test("Escape on a row's menu closes the menu and stays on the board (Arugula #1160)", async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem("arugula.board.view", "lanes"));
+    await openApp(page, `/p/${P}/boards/brd_0a01`);
+    const row = page.locator('[data-board-page="brd_0a01"] [data-board-row="row_brd_0a01"]');
+    await expect(row).toBeVisible();
+    await row.locator("[data-board-row-menu]").click();
+    await expect(page.getByRole("menu")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("menu")).toHaveCount(0);
+    await expect(row).toBeVisible();
+    await expect(page.locator("[data-list-back]")).toBeVisible();
+    // A second Escape, with no menu, is the list's: back to the boards.
+    await page.keyboard.press("Escape");
+    await expect(item(page, "brd_0a01")).toBeVisible();
   });
 
   test("a board's link opens that board", async ({ page }) => {

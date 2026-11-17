@@ -32,7 +32,7 @@ import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { Bar } from "./bar";
 import { ChevronIcon, IconButton } from "./icons";
-import { menuBelow, openMenu } from "./menu";
+import { escapeTaken, menuBelow, openMenu } from "./menu";
 import { SearchField } from "./search-field";
 import "./list-page.css";
 
@@ -373,6 +373,8 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, sort,
       const s = live.current;
       const searching = e.target === box.current;
       if (e.key === "Escape") {
+        // A menu's Escape closed the menu (Arugula #1160): the row stays open.
+        if (escapeTaken(e)) return;
         if (!searching && s.selectable && s.ticked.size > 0) {
           e.preventDefault();
           s.clearTicks();
