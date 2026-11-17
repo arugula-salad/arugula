@@ -24,6 +24,24 @@ const MAX_HEADLINES = 5;
 
 const git = (...args) => execFileSync("git", args, { encoding: "utf8", maxBuffer: 64 << 20 });
 
+// A value written as YAML would quote it, as for a line that starts with a
+// backtick: "…" (JSON's escapes) or '…' ('' for a quote), read as what's
+// inside. Unquoted, the marks went out in a release's notes and What's new
+// (0.70.7, 0.70.9, 0.70.33). One that only starts and ends with a quoted
+// word, such as "Add" now says "Allow", stays as it is.
+export function unquote(v) {
+  if (/^".*"$/.test(v)) {
+    try {
+      const s = JSON.parse(v);
+      if (typeof s === "string") return s;
+    } catch {
+      // Not one quoted string.
+    }
+  }
+  const single = v.match(/^'((?:[^']|'')*)'$/);
+  return single ? single[1].replaceAll("''", "'") : v;
+}
+
 // One note's file: flat `key: value` lines between `---` fences, then its body.
 export function parseNote(name, text) {
   const id = name.replace(/\.md$/, "");
@@ -35,7 +53,7 @@ export function parseNote(name, text) {
     if (!line.trim()) continue;
     const kv = line.match(/^([a-z]+):\s*(.*)$/);
     if (!kv) throw new Error(`docs/notes/${name}: can't read the line "${line}"`);
-    fields[kv[1]] = kv[2].trim();
+    fields[kv[1]] = unquote(kv[2].trim());
   }
   const { section, title, line } = fields;
   if (!SECTIONS.includes(section)) throw new Error(`docs/notes/${name}: section is one of ${SECTIONS.join(", ")}, not ${section}`);

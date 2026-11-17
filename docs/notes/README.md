@@ -22,6 +22,8 @@ The longer version for the release's page, if the line isn't enough. Markdown.
 - `section`: Added, Changed, Fixed or Removed.
 - `title`: a few words, at most 60 characters. `line`: one sentence on what it
   means for someone using Arugula, at most 200. Both show in What's new.
+- Quotes around a value, as YAML writes one that starts with a backtick, aren't
+  part of it: `"…"` or `'…'` is read as what's inside.
 - `try`, `needs` (optional): what *Try it* opens and who may use it, as
   `scripts/whats-new.mjs` describes.
 - `headline: no` (optional): only in the release's notes, not in What's new. Use it

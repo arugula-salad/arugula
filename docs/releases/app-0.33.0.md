@@ -15,9 +15,8 @@
   and its description say Arugula cloud where they said Arugula control.
 
 - **Camera and microphone prompts** (#2324). With People blocks gone, the
-  app asks for the camera only to scan a QR code (approving a device,
-  checking someone's key) and for the microphone only when an agent asks
-  to record and you allow it.
+  app asks for the camera only to scan a QR code, and for the microphone
+  only when an agent asks to record and you allow it.
 
 - **The daemon it carries is checked** (#2403). The build checks the
   arugulad and arugula it carries against the daemon release's signed
