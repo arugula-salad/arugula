@@ -16,32 +16,14 @@ import type { ApiResponse, Client } from "./client";
 import type { Fleet } from "./fleet";
 import { OPS, opPath } from "./ops";
 import type { NvimOpenRequest, NvimOpened, PaneId, PaneInfo } from "../shared/proto";
+import { editorPref, setEditorPref } from "../shared/editor-pref";
 import { pref, seenReady, setPref, subscribeSeen } from "../shared/seen";
 import { openMenu, type MenuItem } from "../shared/ui/menu";
 
-export type Editor = "vscode" | "nvim" | "ask";
+export { EDITORS, editorPref, editorShown, setEditorPref, type Editor } from "../shared/editor-pref";
 
-/** Settings › Editor's choices, in order. */
-export const EDITORS: readonly (readonly [Editor, string])[] = [
-  ["vscode", "VS Code"],
-  ["nvim", "nvim"],
-  ["ask", "Ask each time"],
-];
-
-const KEY = "editor";
 /** When nvim was first seen running in one of your panes. */
 const NVIM_SEEN = "editor:nvim-seen";
-
-/** The preference, if one was chosen (or remembered). */
-export function editorPref(): Editor | null {
-  const v = pref(KEY);
-  return v === "vscode" || v === "nvim" || v === "ask" ? v : null;
-}
-
-/** What Settings shows as chosen. */
-export const editorShown = (): Editor => editorPref() ?? "vscode";
-
-export const setEditorPref = (e: Editor) => setPref(KEY, e);
 
 /** What the Editor preference was before nvim was ticked: unticking goes back. */
 const BEFORE = "editor:before";

@@ -376,12 +376,14 @@ function preferenceItems(): MenuItem[] {
   ];
 }
 
-/** How to learn what's here. */
-function helpItems(client: Client): MenuItem[] {
+/** How to learn what's here: the command palette's Help, not a part of
+ * Settings (Arugula #1108). */
+export function helpItems(client: Client): MenuItem[] {
   return [
     { label: "Getting started", run: () => openGettingStarted(undefined, client) },
-    // Features' help cards, opened on purpose (Tips on or off).
-    { label: "Help", submenu: [{ id: "nvim-help", label: "nvim in Arugula", run: () => openHelpCard(client, undefined) }] },
+    // Features' help cards, opened on purpose (Tips on or off). Not the
+    // pane menu's "nvim help" (that pane's), so the palette lists both.
+    { label: "nvim in Arugula", hint: "The help card, over an nvim pane of the tab", run: () => openHelpCard(client, undefined) },
     { label: "What's new", hint: "The newest releases' headlines", run: () => void openWhatsNew(client) },
   ];
 }
@@ -396,17 +398,25 @@ export interface SettingsGroup {
 }
 
 /** The Settings page's own sections, the Account section apart (./settings-page
- * reads that from the account). Ones with nothing in them are left out. */
+ * reads that from the account). Ones with nothing in them are left out.
+ * Phones and browsers, Appearance and Preferences are the app's You scope's
+ * too (Arugula #1108): Appearance in one place, and this device's push
+ * beside what's pushed to all of them. */
 export function settingsGroups(client: Client): SettingsGroup[] {
   const push = client.state ? notificationParts(client) : { device: [], everywhere: [] };
   const groups: SettingsGroup[] = [
     {
-      id: "device",
-      title: "This device",
-      lede: "Whether this device is told, and how Arugula looks on it.",
-      items: [...push.device, { label: "Appearance…", hint: "This device's palette, finish, corners and chat density", run: openAppearance }],
+      id: "push",
+      title: "Phones and browsers",
+      lede: "Whether this device is told, and what's pushed to every device you turned on.",
+      items: [...push.device, ...push.everywhere],
     },
-    { id: "all-devices", title: "All your devices", lede: "What's pushed to every device you turned on.", items: push.everywhere },
+    {
+      id: "appearance",
+      title: "Appearance",
+      lede: "Palette, finish, corners and chat density. This device's only.",
+      items: [{ label: "Appearance…", hint: "This device's palette, finish, corners and chat density", run: openAppearance }],
+    },
     { id: "preferences", title: "Preferences", lede: "These follow your account to every device.", items: preferenceItems() },
     {
       id: "machine",
@@ -414,7 +424,6 @@ export function settingsGroups(client: Client): SettingsGroup[] {
       lede: "The machine you're looking at. Pick another from the machine menu.",
       items: machineSettingsItems(client),
     },
-    { id: "help", title: "Help", lede: "Find your way around.", items: client.state ? helpItems(client) : [] },
   ];
   return groups.filter((g) => g.items.length > 0);
 }
@@ -436,13 +445,8 @@ export function settingsItems(client: Client | null, opts: { machine?: boolean }
     "separator",
     { header: "Preferences" },
     ...preferenceItems(),
-    ...(client?.state
-      ? [
-          "separator" as const,
-          ...helpItems(client),
-          { label: "Command palette…", shortcut: keyHint("palette"), run: () => openPalette(client) } as MenuItem,
-        ]
-      : []),
+    // Help is the palette's (Arugula #1108).
+    ...(client?.state ? ["separator" as const, { label: "Command palette…", hint: "Help is there too", shortcut: keyHint("palette"), run: () => openPalette(client) } as MenuItem] : []),
   ];
 }
 

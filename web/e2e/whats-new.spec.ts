@@ -10,7 +10,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { menuItem, open, reset, settingsRow } from "./helpers";
+import { menuItem, open, paletteCommand, reset } from "./helpers";
 
 const panel = (page: Page) => page.locator("[data-whats-new]");
 /** This build's version, as web/vite.config.ts reads it. */
@@ -58,10 +58,10 @@ test("a first visit gets Getting started, not What's new too", async ({ page }) 
   await expect(panel(page)).toHaveCount(0);
 });
 
-test("Settings' What's new; Try it opens the thing and closes it", async ({ page }) => {
+test("the command palette's What's new; Try it opens the thing and closes it", async ({ page }) => {
   await reset(page);
   await expect(panel(page)).toHaveCount(0);
-  await settingsRow(page, "What's new");
+  await paletteCommand(page, "Help/What's new");
   await expect(panel(page)).toBeVisible();
   const tries = panel(page).locator("[data-whats-new-try]");
   if ((await tries.count()) === 0) return;
