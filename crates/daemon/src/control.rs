@@ -4327,7 +4327,7 @@ pub async fn join_finish(p: JoinPending) -> anyhow::Result<Approved> {
     let deadline = std::time::Instant::now() + Duration::from_secs(expires_in_secs);
     let got = loop {
         if std::time::Instant::now() > deadline {
-            bail!("nobody approved it in {mins} minutes; ask again for a new code");
+            bail!("nobody added it in {mins} minutes; ask again for a new code");
         }
         tokio::time::sleep(Duration::from_secs(2)).await;
         let res = http.get(format!("{url}{}", wire::JoinPoll::path(&code, &poll))).send().await;
@@ -4561,17 +4561,17 @@ pub async fn join(
     println!();
     if p.has_secret() {
         // #760: the link carries a secret; nothing to check by eye.
-        println!("  on a device that's signed in, and approve it there.");
+        println!("  in a browser that's signed in to Arugula cloud, and click Add there.");
         println!("  Or sign in at {} and type the whole code, {}.", p.url, p.whole_code());
     } else {
-        println!("  on a device that's signed in, and check the code there is {}.", p.code);
+        println!("  in a browser that's signed in, and check the code there is {}.", p.code);
         println!("  Or sign in at {} and type the code.", p.url);
     }
     if team.is_none() {
-        println!("  Whoever approves picks their account or a team they own (--team ID picks one ahead).");
+        println!("  Whoever adds it picks their account or one of their teams (--team ID picks one ahead).");
     }
     println!();
-    println!("  Waiting for approval (the code lasts {} minutes)…", p.expires_in_secs / 60);
+    println!("  Waiting for you to click Add (the code lasts {} minutes)…", p.expires_in_secs / 60);
     let url = p.url.clone();
     let a = join_finish(p).await?;
     let fp = a.joined.account.clone();

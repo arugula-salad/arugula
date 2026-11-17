@@ -80,7 +80,7 @@ export function kindLine(v: AccessView): string {
       return v.team ? `A Cloud workspace of ${whose}: its people reach it by their team role.` : `A Cloud workspace of ${whose}: its account alone.`;
     }
     default:
-      return "Joined to Arugula cloud as a personal machine: its account's devices, and whoever it shares a session with.";
+      return "Joined to Arugula cloud as a personal machine: its account, wherever it signs in, and whoever it shares a session with.";
   }
 }
 

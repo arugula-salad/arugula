@@ -1,6 +1,10 @@
 # Design: resetting your own devices
 
-Status: built (#1582's PR). The table is `reset_requests`, one row per reset, which also counts starts a day. Builds what aru-119 decided ("An account can
+Status: the device reset ended in November 2026, under aru-141: signing in
+reaches machines without a device key, so there are no device keys to
+reset, and control no longer starts or finishes one. The passkey reset
+(DK10, #393) is what's left, and stays. What follows is the device reset as
+it was built (#1582's PR). The table is `reset_requests`, one row per reset, which also counts starts a day. Builds what aru-119 decided ("An account can
 reset its devices from a fresh GitHub sign-in, after a wait"). Issue #1582,
 epic #1599. The support reset it shares a step with is
 `arugula-control account-reset` (#1608).
@@ -85,6 +89,10 @@ the real person's cancel from counting.
 - Rate limit on starting: 3 a day per account
 
 ## Control
+
+Since aru-141 (November 2026) the device reset is over: these routes no
+longer start or finish one. The passkey reset has its own,
+`POST /api/me/passkeys/reset` and its `/cancel` (above).
 
 | Route | Who | Does |
 |---|---|---|
