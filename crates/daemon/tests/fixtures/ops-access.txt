@@ -80,6 +80,7 @@ panes.list GET /api/panes Owner drives=false credential=false
 push.key GET /api/push/key Anyone drives=false credential=false
 push.subscribe POST /api/push/subscribe Handler drives=false credential=false
 push.test POST /api/push/test Handler drives=false credential=false
+remote_sessions.list GET /api/remote-sessions Owner drives=false credential=false
 rule.forget DELETE /api/rules/{index} Owner drives=false credential=false
 rules.forget_all DELETE /api/rules Owner drives=false credential=false
 rules.list GET /api/rules Owner drives=false credential=false

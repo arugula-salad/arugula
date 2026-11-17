@@ -86,6 +86,8 @@ fn generate() -> String {
     c.visit::<crate::telemetry::TelemetryNoteRequest>();
     c.visit::<crate::sharing::Sharing>();
     c.visit::<crate::sharing::SharingSetRequest>();
+    c.visit::<crate::sharing::RemoteSessions>();
+    c.visit::<crate::sharing::RemoteSession>();
     c.visit::<ControlState>();
     c.visit::<HostInfo>();
     c.visit::<InviteRequest>();

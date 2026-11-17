@@ -20,6 +20,12 @@
   display: block;
 }
 
+/* A remote session (ui/remote-sessions.tsx): who and how, then when, at the end. */
+.settings-place .remote-session-when {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
 .settings-place .settings-row-name {
   font-weight: 600;
 }
@@ -55,6 +61,14 @@
 .settings-place .settings-elsewhere > h2 {
   font: 700 var(--text-xl)/1.05 var(--f-display);
   letter-spacing: var(--track-section);
+}
+
+/* A section's count, beside its heading, as /settings has it. */
+.settings-place .settings-sec > h2 > .dim {
+  margin-left: 4px;
+  font: 700 var(--text-sm)/1 var(--f-mono);
+  font-variant-numeric: tabular-nums;
+  vertical-align: 2px;
 }
 
 .settings-place .settings-rows a {

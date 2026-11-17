@@ -2,7 +2,8 @@
 //! of a device key. The role in the token decides what it may do; a token
 //! for another machine, from another key, out of date or used twice is
 //! refused; remote input off here makes everyone a viewer and closes a
-//! channel that could type; and each channel is in the remote sessions log.
+//! channel that could type; and each channel is in the remote sessions log,
+//! which only the owner reads back (Arugula #1094).
 
 // Over the daemon's Unix socket; Windows gets its named pipe in M56 (#219).
 #![cfg(unix)]
@@ -169,6 +170,12 @@ async fn next(ws: &mut Ws, ch: &Channel) -> Option<Msg> {
 
 /// One request over the channel: its status.
 async fn ask(ws: &mut Ws, ch: &Channel, id: u32, method: &str, path: &str) -> u16 {
+    ask_json(ws, ch, id, method, path).await.0
+}
+
+/// One request over the channel: its status and its body, as JSON (null
+/// when it isn't).
+async fn ask_json(ws: &mut Ws, ch: &Channel, id: u32, method: &str, path: &str) -> (u16, Value) {
     let head = RequestHead {
         method: method.into(),
         path: path.into(),
@@ -179,9 +186,15 @@ async fn ask(ws: &mut Ws, ch: &Channel, id: u32, method: &str, path: &str) -> u1
     for w in ch.seal(&Msg::Request { id, head, body: vec![] }).unwrap() {
         ws.send(Message::Binary(w.into())).await.unwrap();
     }
+    let mut body = Vec::new();
     loop {
         match next(ws, ch).await.expect("an answer") {
-            Msg::Response { id: got, head, .. } if got == id => return head.status,
+            Msg::Response { id: got, head, body: part } if got == id => {
+                body.extend(part);
+                if !head.more {
+                    return (head.status, serde_json::from_slice(&body).unwrap_or(Value::Null));
+                }
+            }
             _ => continue,
         }
     }
@@ -278,7 +291,11 @@ async fn remote_input_off_makes_everyone_a_viewer() {
     // Both are in the log, opened and closed.
     r.d.wait_for("the log's closes", || {
         let log = std::fs::read_to_string(r.d.state.join("remote-sessions.jsonl")).unwrap_or_default();
-        let lines: Vec<Value> = log.lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
+        let lines: Vec<Value> = log
+            .lines()
+            .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+            .filter(|l| l["event"] != "start")
+            .collect();
         let opened: Vec<&str> =
             lines.iter().filter(|l| l["event"] == "open").filter_map(|l| l["role"].as_str()).collect();
         let closes = lines.iter().filter(|l| l["event"] == "close").count();
@@ -286,6 +303,66 @@ async fn remote_input_off_makes_everyone_a_viewer() {
             && closes == 2
             && lines.iter().all(|l| l["account"] == "acct-b" && l["by"] == "token")
     });
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_remote_sessions_log_is_the_owners_to_read() {
+    let r = rig().await;
+    let k = issuer();
+    // A viewer and an editor come; neither may read who else did.
+    let (mut viewer, vch, _) = open(&r, token(&r, "viewer", "l1", &k, |_| {})).await;
+    assert_eq!(ask(&mut viewer, &vch, 1, "GET", "/api/remote-sessions").await, 403);
+    let (mut editor, ech, _) = open(&r, token(&r, "editor", "l2", &k, |_| {})).await;
+    assert_eq!(ask(&mut editor, &ech, 1, "GET", "/api/remote-sessions").await, 403);
+    // The viewer leaves.
+    drop(viewer);
+    r.d.wait_for("the viewer's close", || {
+        let log = std::fs::read_to_string(r.d.state.join("remote-sessions.jsonl")).unwrap_or_default();
+        log.lines().any(|l| l.contains(r#""event":"close""#))
+    });
+    // The owner, through control, reads them back: newest first, each open
+    // paired with its close, and whether they may type.
+    let (mut owner, och, _) = open(&r, token(&r, "owner", "l3", &k, |_| {})).await;
+    let (status, v) = ask_json(&mut owner, &och, 1, "GET", "/api/remote-sessions").await;
+    assert_eq!(status, 200, "{v}");
+    assert_eq!(v["remote_input"], true);
+    let rows: Vec<(&str, &str, &str, bool, bool)> = v["sessions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| {
+            (
+                s["role"].as_str().unwrap(),
+                s["name"].as_str().unwrap(),
+                s["path"].as_str().unwrap(),
+                s["open"].as_bool().unwrap(),
+                s["closed_ms"].as_u64().is_some_and(|c| c >= s["opened_ms"].as_u64().unwrap()),
+            )
+        })
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            ("owner", "bee", "direct", true, false),
+            ("editor", "bee", "direct", true, false),
+            ("viewer", "bee", "direct", false, true),
+        ]
+    );
+    // The owner at the machine reads the same, and so does the CLI there.
+    let here = r.d.get("/api/remote-sessions");
+    assert_eq!(here["sessions"].as_array().map(Vec::len), Some(3), "{here}");
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_arugulad"))
+        .args(["sharing", "log", "--state-dir"])
+        .arg(&r.d.state)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    let text = String::from_utf8_lossy(&out.stdout);
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(lines.len(), 3, "{text}");
+    assert!(lines[0].starts_with("bee") && lines[0].contains("owner") && lines[0].ends_with("open now"), "{text}");
+    assert!(lines[2].contains("viewer") && lines[2].contains(", for "), "{text}");
+    drop(editor);
 }
 
 // ---------------------------------------------------------------- the CLI

@@ -15,6 +15,7 @@ import { PageHeader } from "../../shared/ui/page-header";
 import { ElsewhereLinks, Section, SectionIndex, type Elsewhere } from "../../shared/ui/settings-section";
 import { accountHeader, AppBar, useAccount } from "./app-bar";
 import { settingsGroups } from "./commands";
+import { RemoteSessionsSection } from "./remote-sessions";
 import { subscribePush } from "./notify";
 import { settingsRoute } from "./settings-route";
 
@@ -142,6 +143,7 @@ export function SettingsPage({ client }: { client: Client }) {
             {section("all-devices")}
             {section("preferences")}
             {section("machine")}
+            <RemoteSessionsSection client={client} />
             {account && (
               <Section id="account" title="Account" lede={accountHeader(account.login())}>
                 {rows(account.items())}

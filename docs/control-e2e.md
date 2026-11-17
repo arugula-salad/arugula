@@ -48,15 +48,18 @@ terminal traffic is TLS to the relay.
   token or device key, through the relay or a direct path, is a line in
   `remote-sessions.jsonl` in its state directory: the account and login,
   the role, the path, when it opened, and how long it lasted
-  (`crates/daemon/src/remote_log.rs`). For now it's only the file: the
-  machine's page and the CLI don't show it yet.
+  (`crates/daemon/src/remote_log.rs`). Its owner reads it on the machine's
+  Settings page, under Remote sessions (`GET /api/remote-sessions`, which
+  refuses anyone but the owner), or with `arugulad sharing log` on the
+  machine. A daemon that starts where the log has lines writes a `start`
+  line first, so a session the one before it left open reads as ended.
 - **What only the machine can turn off.** `arugulad sharing remote-input
   off`, run on the machine, makes everyone who comes with a machine token
   a viewer; a channel that could type closes and comes back as a viewer's.
   It's in `sharing.json` (`remote_input`), and nothing that comes through
   control can turn it back on (`crates/proto/src/sharing.rs`,
-  `remote_input`). It's set from the command line only for now; the
-  machine's page has no switch for it yet.
+  `remote_input`). It's set from the command line only; the machine's
+  Settings page says which way it is, under Remote sessions.
 - **What still needs you, not control.** Passkeys approve deploys, standing
   run grants and owner changes: a user-verified assertion over the
   action's bytes ([aru-126](decisions/aru-126-device-keys-are-the-machine-plane-s-passkeys-approve.md)).
@@ -1303,7 +1306,7 @@ What limits it:
 | Control… | Your terminals |
 |---|---|
 | relays honestly | it reads what it relays only in memory and keeps none of it |
-| mints a token for someone, or for itself | they get the role it names on that one machine, for a few minutes; each token opens one channel; the machine logs the session in `remote-sessions.jsonl` |
+| mints a token for someone, or for itself | they get the role it names on that one machine, for a few minutes; each token opens one channel; the machine logs the session in `remote-sessions.jsonl`, which its owner reads on its Settings page or with `arugulad sharing log` |
 | mints owner or editor tokens on a machine with remote input off | they come in as viewers: only `arugulad sharing remote-input on`, on the machine, lets them type again |
 | asks a deploy's box to let someone in | refused by the box, whatever the token says |
 | wants a deploy, a standing run grant or an owner change | needs a passkey assertion from a person, over the action's bytes; an agent holds no passkey |

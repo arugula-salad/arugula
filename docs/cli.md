@@ -31,3 +31,12 @@ ssh), paste the address it lands on into the CLI. It's opt-in for now: the
 session is a page's as far as control can tell, and any agent on this machine
 can read the file, so it stays off by default until control gives a CLI a
 session kind that page-only routes refuse. `arugula logout` ends the session.
+
+## Who reached a machine
+
+`arugulad sharing log`, run on the machine, prints who reached it through
+Arugula cloud, newest first: the login, the role, the path (relayed or
+direct), when the session opened and how long it lasted, or that it's open
+now (Arugula #1094). It reads `remote-sessions.jsonl` in the state directory,
+so it works with the daemon stopped. The machine's Settings page shows the
+same list to its owner, under Remote sessions.

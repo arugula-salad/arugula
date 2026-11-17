@@ -29,6 +29,7 @@ pane.process GET /api/panes/{id}/process
 pane.wait GET /api/panes/{id}/wait
 panes.list GET /api/panes
 push.key GET /api/push/key
+remote_sessions.list GET /api/remote-sessions
 rules.list GET /api/rules
 sandboxes.list GET /api/sandboxes
 setup.get GET /api/setup

@@ -5,8 +5,8 @@
 
 use arugula_proto::{
     api::Empty,
-    op::ops::{SharingGet, SharingSet},
-    sharing::{self, Sharing, SharingSetRequest},
+    op::ops::{RemoteSessionsList, SharingGet, SharingSet},
+    sharing::{self, REMOTE_SESSIONS_SHOWN, RemoteSessions, Sharing, SharingSetRequest},
 };
 
 use super::{Cx, Handle, OpError};
@@ -26,6 +26,18 @@ fn now(cx: &Cx<'_>) -> Sharing {
 impl Handle for SharingGet {
     async fn handle(cx: &Cx<'_>, _: (), _: Empty) -> Result<Sharing, OpError> {
         Ok(now(cx))
+    }
+}
+
+/// Who reached the machine through control (Arugula #1094), from the log
+/// it keeps itself (aru-141), and whether they may type now.
+impl Handle for RemoteSessionsList {
+    async fn handle(cx: &Cx<'_>, _: (), _: Empty) -> Result<RemoteSessions, OpError> {
+        let dir = cx.app.control.state_dir();
+        Ok(RemoteSessions {
+            remote_input: sharing::remote_input(dir),
+            sessions: crate::remote_log::sessions(dir, true, REMOTE_SESSIONS_SHOWN),
+        })
     }
 }
 
