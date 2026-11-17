@@ -24,6 +24,8 @@
 //   /p/:project/triage             the Boards page, scrolled to Not on a board (#292, #656)
 //   /p/:project/boards             its boards
 //   /p/:project/boards/:board      a board (`brd_…`)
+//   /boards                        every project's boards, a group a project
+//   /boards/:board                 the same, that board selected (Arugula #1131)
 //   /docs                          every Doc the reader can read, their own
 //                                  private ones first (#418)
 //   /p/:project/docs               its Docs (aru-118)
@@ -120,7 +122,7 @@ export type Route =
   | { page: "new-deploy"; project: string; env?: string }
   | { page: "installed"; project?: string; repo?: string }
   | { page: "inbox"; all?: true }
-  | { page: "all-boards"; all?: true }
+  | { page: "all-boards"; board?: string; all?: true }
   /** Settings (Arugula #1104), at one of its scopes and, with `section`,
    * that section of it. */
   | SettingsRoute
@@ -231,6 +233,10 @@ export function parse(path: string, search = "", hash = ""): Route {
   const all = q.get("all") === "1" ? { all: true as const } : {};
   if (parts.length === 1 && parts[0] === "inbox") return { page: "inbox", ...all };
   if (parts.length === 1 && parts[0] === "boards") return { page: "all-boards", ...all };
+  if (parts.length === 2 && parts[0] === "boards") {
+    const board = idOf(parts[1]);
+    return board?.startsWith("brd_") ? { page: "all-boards", board, ...all } : missing;
+  }
   if (parts.length === 1 && parts[0] === "docs") return { page: "docs", ...all };
   if (parts[0] === "settings") return withOldSection(settingsRoute(parts.slice(1), q), hash) ?? missing;
   if (parts.length === 1 && parts[0] === "design") return { page: "design" };
@@ -534,7 +540,7 @@ export function pathOf(r: Route, names: Names = () => null): string {
     case "inbox":
       return r.all ? "/inbox?all=1" : "/inbox";
     case "all-boards":
-      return r.all ? "/boards?all=1" : "/boards";
+      return `/boards${r.board ? `/${s(r.board)}` : ""}${r.all ? "?all=1" : ""}`;
     case "settings":
       return settingsPath(r, s);
     case "design":

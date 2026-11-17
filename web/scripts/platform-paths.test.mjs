@@ -21,6 +21,11 @@ test("each route parses", () => {
   assert.equal(pathOf({ page: "inbox" }), "/inbox");
   assert.deepEqual(parse("/boards"), { page: "all-boards" });
   assert.equal(pathOf({ page: "all-boards" }), "/boards");
+  // A board selected on every project's Boards (Arugula #1131), All kept.
+  assert.deepEqual(parse("/boards/brd_0a01"), { page: "all-boards", board: "brd_0a01" });
+  assert.deepEqual(parse("/boards/brd_0a01", "?all=1"), { page: "all-boards", board: "brd_0a01", all: true });
+  assert.equal(pathOf({ page: "all-boards", board: "brd_0a01", all: true }), "/boards/brd_0a01?all=1");
+  assert.equal(parse("/boards/pdc_0a01").page, "missing");
   assert.deepEqual(parse("/docs"), { page: "docs" });
   assert.equal(pathOf({ page: "docs" }), "/docs");
   // Settings (Arugula #1104): four scopes, and a section in each.
@@ -144,6 +149,7 @@ test("every route starts with a segment in TOP, the server's 404 list (UI audit 
     { page: "installed" },
     { page: "inbox" },
     { page: "all-boards" },
+    { page: "all-boards", board: "brd_0a01" },
     { page: "docs" },
     { page: "settings", scope: "you" },
     { page: "settings", scope: "you", section: "tokens" },

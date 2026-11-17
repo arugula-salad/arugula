@@ -159,14 +159,6 @@ html[data-native-tabs] .platform {
   margin-top: 8px;
 }
 
-/* The boards pages are wider than the reading column (#704): their cards fit
-   three or four to a row in 1100px, its 24px sides included. */
-@media (min-width: 701px) {
-  .platform-section:is([data-boards-page], [data-all-boards-page]) {
-    padding-inline: max(24px, calc((100% - 1052px) / 2));
-  }
-}
-
 /* The project's Overview takes the window's width (#1085): its boards are
    rows that read across it, Needs you a rail at its right. Without the
    Overview, the page as it was keeps the reading column. */
@@ -1132,8 +1124,9 @@ html[data-corners="square"] .platform-section {
   color: var(--dim);
 }
 
-/* The Boards page (Arugula #1128): the list page fills the page's frame, as
-   Docs does; the board (or Not on a board) scrolls in the middle. */
+/* The Boards pages, a project's and every project's (Arugula #1128, #1131):
+   the list page fills the page's frame, as Docs does; the board (or Not on a
+   board) scrolls in the middle. */
 .platform-main:has(> .boards-page) {
   display: flex;
   flex-direction: column;
@@ -1180,6 +1173,14 @@ html[data-corners="square"] .platform-section {
     display: block;
     overflow: auto;
   }
+}
+
+/* Over a board on every project's Boards (Arugula #1131): its project's Boards, and its issues on no board. */
+.boards-middle-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  margin: 0 0 var(--space-3);
 }
 
 /* A board's row: its title, `13/18` and the lanes' bar on one line. */
