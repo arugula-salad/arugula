@@ -8778,27 +8778,10 @@ button.thread-quote:hover {
   color: var(--fg);
 }
 
+/* Chat's search is a SearchField (shared/ui/search-field.css): here, its place. */
 .chat-search {
   flex: 0 1 420px;
   min-width: 120px;
-  height: 24px;
-  padding: 0 10px;
-  border-radius: var(--field-radius);
-  border: 1px solid var(--line);
-  background: var(--bg);
-  color: var(--dim);
-  text-align: left;
-}
-
-.chat-search:hover,
-.chat-search:focus {
-  border-color: var(--line-strong);
-  color: var(--fg);
-  outline: none;
-}
-
-input.chat-search {
-  font: inherit;
   app-region: no-drag;
   -webkit-app-region: no-drag;
 }
@@ -8806,11 +8789,9 @@ input.chat-search {
 .chat-view > .chat-search {
   flex: none;
   margin: 8px 16px 0;
-  height: 32px;
 }
 
-/* #889: the phone's way into search, beside the list's ✕; its field is
-   16px so iOS doesn't zoom in on it. */
+/* #889: the phone's way into search, beside the list's ✕. */
 .chat-search-open {
   padding: 4px 8px;
   border-radius: var(--btn-radius);
@@ -8821,11 +8802,6 @@ input.chat-search {
 .chat-search-open:hover {
   color: var(--fg);
   background: var(--raised);
-}
-
-.chat.phone input.chat-search {
-  height: 36px;
-  font-size: var(--t-field);
 }
 
 /* M75: Activity and search results, and the switcher. */
@@ -10758,42 +10734,14 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   color: var(--fg);
 }
 
+/* The sidebar's search is the SearchField (shared/ui/search-field.css). */
 .ws-search {
-  display: flex;
-  align-items: center;
-  gap: 6px;
   margin: 2px 10px 8px;
-  padding: 0 8px;
-  height: 30px;
-  border: 1px solid var(--line);
-  border-radius: var(--field-radius);
-  background: var(--bg);
-  color: var(--dim);
-}
-
-/* One ring: the field's border, not an outline on the input inside it
-   too (UI audit #171). */
-.ws-search:focus-within {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
 }
 
 /* (Over the chrome's focus rule, M113, whose :is() counts as two classes.) */
 .app.ws .ws-sidebar .ws-search input:focus-visible {
   outline: none;
-}
-
-.ws-search input {
-  /* The box around it is the field: not the kit's (shared/fields.css). */
-  height: auto;
-  box-shadow: none;
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  outline: none;
-  background: none;
-  color: var(--fg);
-  font: inherit;
 }
 
 .ws-session-list {

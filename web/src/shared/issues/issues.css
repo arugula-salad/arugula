@@ -47,7 +47,6 @@
   min-width: 140px;
 }
 
-.issues-search,
 .issue-form input:not([type="checkbox"]),
 .issue-form textarea,
 .issue-title-edit input {

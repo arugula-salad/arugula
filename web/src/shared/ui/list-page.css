@@ -102,50 +102,12 @@ button.list-count:hover {
 
 .list-search {
   flex: 1;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-  padding: var(--space-1) var(--space-2);
-  border: 1px solid var(--line);
-  border-radius: var(--field-radius);
-  background: var(--surface);
 }
 
+/* The kit's height (shared/fields.css), as the search beside it is. */
 .list-sort {
   flex: none;
   width: auto;
-  /* As tall as the search beside it, and room for the kit's caret
-     (shared/fields.css, #1097). */
-  height: auto;
-  padding: var(--space-1) 28px var(--space-1) var(--space-2);
-  font-size: inherit;
-}
-
-.list-search:focus-within {
-  border-color: var(--accent);
-}
-
-.list-search input {
-  /* The box around it is the field: not the kit's (shared/fields.css). */
-  height: auto;
-  box-shadow: none;
-  flex: 1;
-  min-width: 0;
-  padding: 0;
-  border: 0;
-  outline: 0;
-  background: none;
-  color: var(--fg);
-  font: inherit;
-}
-
-.list-search kbd {
-  padding: 0 var(--space-1);
-  border: 1px solid var(--line-strong);
-  border-radius: 3px;
-  color: var(--dim);
-  font: 500 var(--text-xs)/1.4 var(--f-mono);
 }
 
 .list-status {

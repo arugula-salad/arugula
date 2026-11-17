@@ -7,7 +7,7 @@
 // Boards are on for everyone (they left Labs, #191).
 
 import type { ComponentChildren } from "preact";
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import type { ProjectBoard } from "../../shared/proto";
 import { BoardPanel } from "../../shared/boards/view";
@@ -17,6 +17,7 @@ import { useSubscribe } from "../../shared/ui/hooks";
 import { BlockLoading, EmptyLine, EmptyState } from "../../shared/ui/block-states";
 import { Card } from "../../shared/ui/card";
 import { PageHeader } from "../../shared/ui/page-header";
+import { SearchField } from "../../shared/ui/search-field";
 import { homes, names } from "../links";
 import { follow, go, pathOf } from "../router";
 import { SectionHead } from "../../shared/ui/section-head";
@@ -79,33 +80,9 @@ export function useBoards(project: string | undefined): ProjectBoard[] | null {
   return list;
 }
 
-/** The filter box above a list of boards (#546): `/` focuses it from anywhere that isn't a field, Esc clears it. */
+/** The filter box above a list of boards (#546): the page's search (`/`). */
 function BoardFilter({ q, setQ }: { q: string; setQ: (q: string) => void }) {
-  const box = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    const slash = (e: KeyboardEvent) => {
-      if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
-      if ((e.target as Element | null)?.closest("input, textarea, select, [contenteditable]")) return;
-      e.preventDefault();
-      box.current?.focus();
-    };
-    window.addEventListener("keydown", slash);
-    return () => window.removeEventListener("keydown", slash);
-  }, []);
-  return (
-    <input
-      ref={box}
-      type="search"
-      class="board-filter"
-      value={q}
-      placeholder="Filter boards by title, epic key or goal  (/)"
-      aria-label="Filter boards"
-      data-boards-filter
-      autoComplete="off"
-      onInput={(e) => setQ(e.currentTarget.value)}
-      onKeyDown={(e) => e.key === "Escape" && (e.preventDefault(), setQ(""), box.current?.blur())}
-    />
-  );
+  return <SearchField class="board-filter" value={q} onValue={setQ} label="Filter boards" placeholder="Filter boards by title, epic key or goal" slash data-boards-filter />;
 }
 
 /** `/boards`: the boards of every project the reader belongs to, by

@@ -15,6 +15,7 @@ import type { ChatRoute } from "./route";
 import { handled } from "./escape";
 import { Bar, BarTitle, BarWhere } from "../ui/bar";
 import { ChevronIcon, IconButton } from "../ui/icons";
+import { SearchField } from "../ui/search-field";
 import { inView, searchTeam, type ChatScope } from "./sidebar";
 
 export function when(at: number): string {
@@ -119,7 +120,7 @@ export function RoomSearchView({ store, q, phone, scope, all }: { store: ChatSto
       {/* The view's name, and what was looked for under it: a name is set as
           a page's, and the words are the reader's own. */}
       <ViewHead title="Search" sub={q ? (hits === null ? `Looking for “${q}”…` : `${n >= 50 ? "50+" : n} ${n === 1 ? "message" : "messages"} for “${q}”`) : undefined} phone={phone} />
-      {phone && <SearchField route={{ view: "search", q, all }} phone scope={scope} />}
+      {phone && <ChatSearch route={{ view: "search", q, all }} phone scope={scope} />}
       <div class="thread-list">
         {!q && <EmptyLine>{team ? "Type to search this team's rooms." : "Type to search every room you read."} in:#channel, from:@someone and has:quote narrow it.</EmptyLine>}
         {q && hits?.length === 0 && !err && <EmptyLine>No messages match.</EmptyLine>}
@@ -174,8 +175,9 @@ export function RoomActivityView({ store, phone, scope }: { store: ChatStore; ph
 
 /** The bar's search field: results show as you type. On a phone (#889)
  * it heads the results instead, opened from the list's search button: it
- * takes the focus when it's empty, and emptying it stays on the results. */
-export function SearchField({ route, phone, scope }: { route: ChatRoute; phone?: boolean; scope?: ChatScope }) {
+ * takes the focus when it's empty, and emptying it stays on the results.
+ * `slash`: chat is the page (not a block), so `/` finds it. */
+export function ChatSearch({ route, phone, scope, slash }: { route: ChatRoute; phone?: boolean; scope?: ChatScope; slash?: boolean }) {
   const { nav } = usePlatformApi();
   const shown = route.view === "search" ? (route.q ?? "") : "";
   const [text, setText] = useState(shown);
@@ -197,16 +199,15 @@ export function SearchField({ route, phone, scope }: { route: ChatRoute; phone?:
   };
   return (
     <>
-      <input
-        ref={input}
+      <SearchField
         class="chat-search"
-        type="search"
-        placeholder="Search chat"
-        aria-label="Search chat"
+        inputRef={input}
+        label="Search chat"
+        small={!phone}
+        slash={slash}
         data-chat-search
         value={text}
-        onInput={(e) => {
-          const v = (e.target as HTMLInputElement).value;
+        onValue={(v) => {
           setText(v);
           go(v);
         }}

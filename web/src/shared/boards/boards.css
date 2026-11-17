@@ -959,10 +959,8 @@
   gap: 8px;
 }
 
-.board-find > input {
+.board-find > .search-field {
   flex: 1 1 auto;
-  min-width: 0;
-  box-sizing: border-box;
 }
 
 .board-find-count {
@@ -980,16 +978,14 @@
     flex-wrap: wrap;
   }
 
-  .board-find > input {
+  .board-find > .search-field {
     flex-basis: 100%;
   }
 }
 
 /* The filter box over a list of boards (#546). */
 .board-filter {
-  width: 100%;
   max-width: 480px;
-  box-sizing: border-box;
   margin-bottom: 12px;
 }
 

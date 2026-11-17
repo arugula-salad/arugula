@@ -35,6 +35,7 @@ import { DocActions, openTab } from "../docs/doc-actions";
 import { DocTimes } from "../docs/doc-times";
 import { BlockError, BlockLoading, EmptyLine, EmptyState } from "../ui/block-states";
 import { PageHeader } from "../ui/page-header";
+import { SearchField } from "../ui/search-field";
 import { SectionHead } from "../ui/section-head";
 import { askText, MenuHost, menuBelow, openMenu, type MenuItem } from "../ui/menu";
 import { issues } from "../issues/store";
@@ -153,18 +154,6 @@ export function BoardPanel({
   }, [id]);
   /** Clear and Esc: no text, no menu values. */
   const clearFind = () => (setFind(""), setLabels([]), setPeople([]));
-  // `/` focuses the find box, from anywhere that isn't a field.
-  useEffect(() => {
-    if (!shown) return;
-    const slash = (e: KeyboardEvent) => {
-      if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
-      if ((e.target as Element | null)?.closest("input, textarea, select, [contenteditable]")) return;
-      e.preventDefault();
-      findBox.current?.focus();
-    };
-    window.addEventListener("keydown", slash);
-    return () => window.removeEventListener("keydown", slash);
-  }, [shown]);
   const filter: BoardFilter = { q: find, labels, people };
   useEffect(() => {
     if (!keepInUrl || !shown) return;
@@ -361,16 +350,15 @@ export function BoardPanel({
         </div>
       </div>
       <div class="board-find" role="search" data-board-find>
-        <input
-          ref={findBox}
-          type="text"
-          inputMode="search"
+        {/* The page's search answers `/`; a block's doesn't (the shell's sidebar does). */}
+        <SearchField
+          inputRef={findBox}
           value={find}
+          onValue={setFind}
+          label="Find a row"
           placeholder="Find a row: #541, ARUGU-12 or words"
-          aria-label="Find a row"
+          slash={keepInUrl && shown}
           data-board-find-input
-          autoComplete="off"
-          onInput={(e) => setFind(e.currentTarget.value)}
           onKeyDown={(e) => {
             if (e.key === "Escape") (e.preventDefault(), clearFind(), e.currentTarget.blur());
             else if (e.key === "Enter" && firstMatch) (e.preventDefault(), setDrawer(firstMatch.id));

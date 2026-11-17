@@ -14,6 +14,7 @@ import { SWARM_ABOUT, openSwarm } from "../swarm/route";
 import { controlMenuItems, controlState, subscribeControlState } from "./control-state";
 import { HOSTED_LABEL, HOSTED_MEANS } from "../../shared/hosted";
 import { Caret, ChevronIcon } from "../../shared/ui/icons";
+import { SearchField } from "../../shared/ui/search-field";
 
 function seen(name: string): string {
   const h = directory.find(name);
@@ -350,14 +351,8 @@ export function HostSection({ close }: { close: () => void }) {
     <section class="sheet-hosts">
       {directory.stale && <p class="sheet-note">Saved list</p>}
       {directory.names.length > FILTER_OVER && (
-        <input
-          type="search"
-          class="host-filter"
-          placeholder="Filter machines"
-          aria-label="Filter machines"
-          value={filter}
-          onInput={(e) => setFilter((e.currentTarget as HTMLInputElement).value)}
-        />
+        // The phone's sheet: no `/` here, the page's search has it.
+        <SearchField class="host-filter" label="Filter machines" value={filter} onValue={setFilter} />
       )}
       {shown.map((g) => (
         <Fragment key={g.label}>
