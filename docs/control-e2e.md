@@ -43,6 +43,12 @@ terminal traffic is TLS to the relay.
   - the role: a viewer's token can't type on any machine
     (`crates/daemon/src/e2e.rs`, `token_grant`).
 
+  A block's frame gets a **block grant** instead (#1001,
+  [Block channels](#block-channels)): the same checks but for
+  `use: "block"`, so neither passes for the other, narrowed to one block
+  and bound to the frame's one-off key, and only for a role that gets in
+  as the machine's owner.
+
   A deploy's box refuses every token, whatever control says (#2510).
 - **What the machine keeps for you.** Each remote session it accepts, by
   token or device key, through the relay or a direct path, is a line in
@@ -1583,6 +1589,32 @@ device key, so it opens the channel with a grant
   own device channel (message 2's payload there is `{"now": <ms>}`), never
   from the frame, whose code could stretch its own grant. Expiry gates new channels; an open one lasts until it, the
   block, or the device's trust ends.
+- **Or the hub signs the grant** (#1001), for a page with no device key: it
+  asks `POST /api/machines/<id>/block-grant` with `{"block", "key"}` (the
+  one-off key's public half, hex) and gets `{"token", "expires"}`, a JWT
+  signed with the issuer keys, like a machine token
+  (`crates/control-wire/src/machine_token.rs`, `BlockClaims`):
+
+  | Claim | Meaning |
+  |---|---|
+  | `iss`, `sub`, `aud`, `name`, `iat`, `exp`, `jti` | As a machine token's: the hub, the account, the machine, five minutes |
+  | `use` | `block`, never `machine`: a block grant opens no machine's channel, and a machine token no block |
+  | `role` | The account's role on the machine. The hub gives one only to an owner (or a hosted machine's editor) |
+  | `block` | The block's pane id |
+  | `key` | The one-off key: the daemon refuses the grant from a handshake with any other |
+
+  The frame puts `{"block_token": "<jwt>"}` in message 1's payload. The
+  daemon checks it as a machine token (signature, issuer, this machine,
+  its life) but for `use: "block"`, then the key, then that the role gets
+  in as its owner with remote input on (`e2e::token_owns`), then the
+  block, and answers in message 2 as above. It doesn't take the grant
+  once: the frame's worker and its pages each open a channel with it, and
+  a copy without the key's private half opens nothing, as with a device's
+  grant. A channel it let in closes when remote input goes off, and is a
+  line in `remote-sessions.jsonl` (`by: "block-grant"`). A daemon that
+  takes these says `features.block_grants` in `/api/host`; on an older
+  one, or where the hub gives none, a page with a device key signs the
+  grant as before.
 - Once open, the channel carries S27's frames (`arugula_e2e::block::wire`):
   HTTP requests the daemon answers from its block proxy (`sites.rs`), and
   the page's WebSockets. The daemon's side is `crates/daemon/src/block_channel.rs`.
@@ -1632,13 +1664,14 @@ page that framed them with `postMessage`. Every message carries
   interface Creds {
     daemon: { id: string; noise: string }; // device id, Noise key (hex) from a checked cert
     key: { pkcs8: ArrayBuffer; pub: string }; // a new X25519 key: PKCS#8, public half hex
-    grant: Grant; // arugula_e2e::block::Grant for key.pub, expires by the daemon's clock
+    grant?: Grant; // arugula_e2e::block::Grant for key.pub, expires by the daemon's clock
+    token?: string; // or the hub's block grant for key.pub (#1001), sent as {"block_token"}
     route: "relay" | string; // "relay", or a wss://…/e2e URL straight to the daemon
   }
   ```
 
-  A new key and grant each time; the grant at most ten minutes ahead of
-  the daemon's clock.
+  A new key and grant each time; a device's grant at most ten minutes
+  ahead of the daemon's clock, the hub's five minutes by its own.
 - **The frame accepts** an answer only from `window.parent`, at one of
   control's origins, and keeps `{creds, parent: event.origin}` in its
   origin's IndexedDB (`arugula-block`). Its worker takes them from the page

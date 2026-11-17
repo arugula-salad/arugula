@@ -2610,11 +2610,12 @@ mod wire {
                 "name": "box", "version": "1.2.3", "protocol": 2, "tailnet_url": "https://box.ts.net",
                 "tailnet_seen": true, "control": "https://control", "team": "acme",
                 // `dev` came with flags (#665); `flags` is left out when unsaid;
-                // `block_channels` came with blocks through control (#150);
+                // `block_channels` came with blocks through control (#150),
+                // `block_grants` with the hub's grants for them (#1001);
                 // `calls` went with huddles, `fountain` with daemon-side Managoat,
                 // `threads` with the daemon's chat (M125).
                 "features": { "labs": true, "dev": false, "blocks": true, "vms": false, "studio": false,
-                              "block_channels": false },
+                              "block_channels": false, "block_grants": false },
             })
         );
     }

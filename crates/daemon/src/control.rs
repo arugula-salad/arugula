@@ -1906,9 +1906,33 @@ impl Control {
         &self,
         token: &str,
     ) -> Result<arugula_control_wire::machine_token::MachineClaims, crate::machine_token::Refused> {
-        use crate::machine_token::{Refused, Verifier, verify};
+        let (e, keys, now) = self.token_keys(token).await?;
+        let claims = crate::machine_token::verify(token, &keys, |iss| self.takes_issuer(&e, iss), &e.keys.id(), now)?;
+        self.tokens.take(&claims, now)?;
+        Ok(claims)
+    }
+
+    /// A block grant (#1001), checked as a machine token is but not taken:
+    /// a frame opens each of its channels with the same one, bound to its
+    /// key (`machine_token::verify_block`). Whether it opens the block is
+    /// `block_channel.rs`'s to say.
+    pub async fn check_block_token(
+        &self,
+        token: &str,
+    ) -> Result<arugula_control_wire::machine_token::BlockClaims, crate::machine_token::Refused> {
+        let (e, keys, now) = self.token_keys(token).await?;
+        crate::machine_token::verify_block(token, &keys, |iss| self.takes_issuer(&e, iss), &e.keys.id(), now)
+    }
+
+    /// The hub's keys for `token`, fetched first when none are held or it
+    /// names one not held; and the time, in seconds. A deploy's box lets
+    /// nobody in (M219), whatever control says.
+    async fn token_keys(
+        &self,
+        token: &str,
+    ) -> Result<(Arc<Enrolled>, arugula_control_wire::machine_token::Jwks, u64), crate::machine_token::Refused> {
+        use crate::machine_token::{Refused, Verifier};
         let e = self.enrolled().ok_or(Refused::NoKeys)?;
-        // A deploy's box lets nobody in (M219), whatever control says.
         if !e.admits_links_and_guests() {
             return Err(Refused::Closed);
         }
@@ -1922,13 +1946,16 @@ impl Control {
             }
         }
         let keys = self.tokens.keys().ok_or(Refused::NoKeys)?;
-        let mut issuers: Vec<String> = self.control_urls.lock().unwrap().clone();
-        issuers.push(e.saved.url.clone());
-        let iss_ok = |iss: &str| issuers.iter().any(|u| u.trim_end_matches('/') == iss.trim_end_matches('/'));
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
-        let claims = verify(token, &keys, iss_ok, &e.keys.id(), now)?;
-        self.tokens.take(&claims, now)?;
-        Ok(claims)
+        Ok((e, keys, now))
+    }
+
+    /// Whether a token from `iss` is control's: the one this machine joined,
+    /// by any of the URLs it goes by.
+    fn takes_issuer(&self, e: &Enrolled, iss: &str) -> bool {
+        let iss = iss.trim_end_matches('/');
+        e.saved.url.trim_end_matches('/') == iss
+            || self.control_urls.lock().unwrap().iter().any(|u| u.trim_end_matches('/') == iss)
     }
 
     /// Control's ssh jump host for guests (M65), from its `/control.json`;

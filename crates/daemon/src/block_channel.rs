@@ -15,15 +15,22 @@
 //!   the owner's devices, with its expiry by this daemon's clock, at most
 //!   ten minutes ahead. Device channels learn that clock in their own
 //!   message 2 (`arugula_e2e::channel::Welcome`).
+//!   Or (#1001) `{"block_token": "<jwt>"}`, a block grant the hub signed
+//!   with its issuer keys: a machine token's checks (`machine_token.rs`,
+//!   `verify_block`), with `use: "block"`, the block's id and the
+//!   handshake's static key among its claims, and a role that would get in
+//!   as this machine's owner (`e2e::token_owns`). A page signed in to the
+//!   hub with no device key gets one; `/api/host` says
+//!   `features.block_grants` when this daemon takes it.
 //! - **message 2**: `{"ok":true}`, or `{"ok":false,"refused":"<code>",…}`
 //!   and the channel closes.
 //! - **then** the frames of `arugula_e2e::block::wire`: HTTP requests,
 //!   answered by the block listener's own proxy (`sites::forward` with
 //!   `Via::Channel`), and WebSockets to the block's port.
 //!
-//! A channel lasts until its socket closes, the block closes, or the
-//! device that granted it stops being trusted. Its grant's expiry gates
-//! new channels only.
+//! A channel lasts until its socket closes, the block closes, the device
+//! that granted it stops being trusted, or, for the hub's grant, remote
+//! input goes off here. Its grant's expiry gates new channels only.
 //!
 //! What the frame has to do for the proxy: send each request's path and
 //! query and its headers (cookies from its own jar: a worker's requests
@@ -40,9 +47,10 @@
 
 use std::{collections::HashMap, sync::Arc};
 
+use arugula_control_wire::machine_token::{BlockTokenHello, TokenRole};
 use arugula_e2e::{
     block::{
-        Answer, Expect, Grant, Hello, Refused,
+        Answer, Expect, Hello, Refused,
         wire::{self, ReqHead, ResHead, WsClose, WsOpen},
     },
     channel::{Msg, Responder},
@@ -67,21 +75,79 @@ use crate::{
     sites::{self, Site, Sites, Upstream, Via},
 };
 
-/// Whether `grant` lets `remote` in, as this daemon (`id`) sees it now.
-fn check(app: &App, id: &str, remote: &[u8; 32], payload: &[u8]) -> Result<(Grant, Arc<Site>), Refused> {
+/// Who let a block channel in.
+enum By {
+    /// A grant one of the owner's devices signed (M50): that device.
+    Device(String),
+    /// The hub's block grant (#1001): the account, its login and its role.
+    Token { account: String, name: String, role: &'static str },
+}
+
+impl By {
+    fn who(&self) -> &str {
+        match self {
+            By::Device(d) => d,
+            By::Token { account, .. } => account,
+        }
+    }
+}
+
+/// Why a block grant from the hub was refused, in a block's terms: the
+/// frame asks for a new grant on `expired` only.
+fn token_refused(why: crate::machine_token::Refused) -> Refused {
+    use crate::machine_token::Refused as T;
+    match why {
+        T::Malformed | T::NotMachine | T::NotBlock => Refused::Malformed,
+        T::Signature => Refused::Signature,
+        T::Audience => Refused::OtherDaemon,
+        T::Expired => Refused::Expired,
+        T::Lifetime => Refused::TooLong,
+        T::Issuer | T::NoKeys | T::Closed | T::Replayed | T::BeforeStart => Refused::Untrusted,
+    }
+}
+
+fn role_name(r: TokenRole) -> &'static str {
+    match r {
+        TokenRole::Owner => "owner",
+        TokenRole::Editor => "editor",
+        TokenRole::Viewer => "viewer",
+        TokenRole::Guest => "guest",
+    }
+}
+
+/// Whether message 1's `payload` lets `remote` in, as this daemon (`id`)
+/// sees it now: a device's grant, or the hub's (#1001).
+async fn check(app: &App, id: &str, remote: &[u8; 32], payload: &[u8]) -> Result<(By, Arc<Site>), Refused> {
+    let site = |block: &str| block.parse::<PaneId>().ok().and_then(|b| sites::get()?.site(b));
+    if let Some(hello) = BlockTokenHello::decode(payload) {
+        // Control's word for who this is, narrowed to one block and bound
+        // to the handshake's key; let in only as the machine's owner would
+        // be by a machine token (`e2e::token_owns`), remote input on.
+        let claims = app.control.check_block_token(&hello.block_token).await.map_err(token_refused)?;
+        if arugula_e2e::keys::hex32(&claims.key).map_err(|_| Refused::Malformed)? != *remote {
+            return Err(Refused::OtherKey);
+        }
+        let hosted = app.control.enrolled().is_some_and(|e| e.saved.is_hosted());
+        let input = arugula_proto::sharing::remote_input(app.control.state_dir());
+        if !crate::e2e::token_owns(claims.role, hosted, input) {
+            return Err(Refused::Untrusted);
+        }
+        let site = site(&claims.block).ok_or(Refused::NoBlock)?;
+        return Ok((By::Token { account: claims.sub, name: claims.name, role: role_name(claims.role) }, site));
+    }
     let grant = Hello::decode(payload).map_err(|_| Refused::Malformed)?.grant;
-    let site = || grant.block.parse::<PaneId>().ok().and_then(|b| sites::get()?.site(b));
     grant.check(
         &Expect { daemon: id, remote, now: now_ms() },
         |by| app.control.block_signer(by),
-        |_| site().is_some(),
+        |_| site(&grant.block).is_some(),
     )?;
-    let site = site().ok_or(Refused::NoBlock)?;
-    Ok((grant, site))
+    let site = site(&grant.block).ok_or(Refused::NoBlock)?;
+    Ok((By::Device(grant.by), site))
 }
 
 /// A channel whose message 1 carried a payload: a block's. Answers the
 /// handshake, then serves the block until something ends it.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn serve(
     app: Arc<App>,
     id: &str,
@@ -90,8 +156,9 @@ pub(crate) async fn serve(
     payload: &[u8],
     mut inbound: mpsc::Receiver<Vec<u8>>,
     out: mpsc::Sender<Vec<u8>>,
+    relayed: bool,
 ) -> anyhow::Result<()> {
-    let verdict = check(&app, id, &remote, payload);
+    let verdict = check(&app, id, &remote, payload).await;
     let answer = match &verdict {
         Ok(_) => Answer::ok(),
         Err(why) => Answer::refused(*why),
@@ -99,7 +166,7 @@ pub(crate) async fn serve(
     let (m2, ch) = responder.finish(&answer.encode())?;
     // Queued before the socket closes, so the refusal reaches the frame.
     out.send(m2).await?;
-    let (grant, site) = match verdict {
+    let (by, site) = match verdict {
         Ok(v) => v,
         Err(why) => {
             info!(code = why.code(), why = %why, "refused a block channel");
@@ -109,17 +176,51 @@ pub(crate) async fn serve(
     let sites = sites::get().ok_or_else(|| anyhow::anyhow!("no block sites"))?;
     let out = Arc::new(Out::new(ch, out));
     let ch = out.ch.clone();
-    info!(block = site.id, device = grant.by, "block channel open");
+    info!(block = site.id, by = by.who(), "block channel open");
+    // A channel the hub let in is a remote session, in the machine's own
+    // record of them (aru-141), as a machine token's is.
+    let logged = match &by {
+        By::Device(_) => None,
+        By::Token { account, name, role } => {
+            let entry = |event, secs| crate::remote_log::Entry {
+                event,
+                at: now_ms(),
+                client: 0,
+                account,
+                name,
+                role,
+                path: if relayed { "relay" } else { "direct" },
+                by: "block-grant",
+                secs,
+            };
+            let client = app.new_client_id();
+            crate::remote_log::append(
+                app.control.state_dir(),
+                &crate::remote_log::Entry { client, ..entry("open", None) },
+            );
+            Some((client, std::time::Instant::now(), entry))
+        }
+    };
     let up = Arc::new(Upstream::default());
     let mut streams: HashMap<u32, Stream> = HashMap::new();
     let mut changed = app.control.changed.subscribe();
     let mut closings = sites.closings();
+    // Remote input going off, which nothing announces, ends a channel the
+    // hub let in.
+    let mut tick = tokio::time::interval(crate::e2e::RECHECK);
     let r = loop {
         let w = tokio::select! {
             w = inbound.recv() => w,
             Ok(()) = changed.changed() => {
-                if app.control.block_signer(&grant.by).is_none() {
-                    info!(block = site.id, device = grant.by, "device no longer trusted: closing its block channel");
+                if let By::Device(d) = &by && app.control.block_signer(d).is_none() {
+                    info!(block = site.id, device = d, "device no longer trusted: closing its block channel");
+                    break Ok(());
+                }
+                continue;
+            }
+            _ = tick.tick(), if matches!(by, By::Token { .. }) => {
+                if !arugula_proto::sharing::remote_input(app.control.state_dir()) {
+                    info!(block = site.id, "remote input turned off: closing a block channel the hub let in");
                     break Ok(());
                 }
                 continue;
@@ -145,6 +246,13 @@ pub(crate) async fn serve(
         }
     };
     abort(streams);
+    if let Some((client, opened, entry)) = logged {
+        let secs = Some(opened.elapsed().as_secs());
+        crate::remote_log::append(
+            app.control.state_dir(),
+            &crate::remote_log::Entry { client, ..entry("close", secs) },
+        );
+    }
     info!(block = site.id, "block channel closed");
     r
 }

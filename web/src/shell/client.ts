@@ -50,7 +50,7 @@ import { makeBlockView, type BlockView } from "./blocks";
 import { E2ESocket, connectWith, type DaemonClock, type DaemonRef } from "./e2e/channel.ts";
 import type { WakeSaid } from "./e2e/relaymux.ts";
 import type { DeviceKeys } from "./e2e/keys.ts";
-import type { MachineTokens } from "./e2e/machine-token.ts";
+import type { BlockGrants, MachineTokens } from "./e2e/machine-token.ts";
 import { pick, upload } from "./upload";
 import { offered } from "./hints/attach";
 import { factChanged } from "./hints/facts";
@@ -125,6 +125,9 @@ export interface E2ETarget {
   keys?: DeviceKeys;
   /** aru-141: open channels with machine tokens from control instead. */
   tokens?: MachineTokens;
+  /** #1001: block grants from control, so a block's frame needs no device
+   * key here. */
+  blockGrants?: BlockGrants;
   /** M50: control's block domain, when control serves blocks' origins:
    * this daemon's port and editor blocks are framed there. */
   blockDomain?: string;
@@ -726,6 +729,12 @@ export class Client {
    * daemon's own block sites, or through control's block origins. */
   showsBlocks(): boolean {
     return this.has("blocks") || (!!this.blockDomain() && this.features?.block_channels === true);
+  }
+
+  /** #1001: the daemon takes block grants the hub signs. Unknown means
+   * no: control serves this page to older daemons too. */
+  takesBlockGrants(): boolean {
+    return this.features?.block_grants === true;
   }
 
   /** M50: the daemon's clock, from this page's channel to it. */

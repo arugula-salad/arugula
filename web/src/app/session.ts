@@ -13,7 +13,7 @@
 
 import type { E2ETarget } from "../shell/client";
 import type { DirDaemon, ForeignEntry, Phase, Team } from "../shell/control";
-import { controlTokens, gatedTokens, NoTokenError, tokenEntry, type MachineTokens } from "../shell/e2e/machine-token.ts";
+import { controlBlockGrants, controlTokens, gatedTokens, NoTokenError, tokenEntry, type BlockGrants, type MachineTokens } from "../shell/e2e/machine-token.ts";
 import type { MachineSource } from "../shell/machines";
 
 type Send = typeof fetch;
@@ -40,6 +40,8 @@ export class AppSession implements MachineSource {
   blockDomain: string | null = null;
   private listeners = new Set<() => void>();
   private tokens: MachineTokens;
+  /** #1001: grants for blocks' frames, which hold no device key. */
+  private blockGrants: BlockGrants;
   private timer: ReturnType<typeof setInterval> | undefined;
   private readonly account: () => { account: string; login: string } | null;
   private readonly control: string;
@@ -55,6 +57,7 @@ export class AppSession implements MachineSource {
     this.origin = origin;
     this.send = send;
     const given = gatedTokens(controlTokens("", send));
+    this.blockGrants = controlBlockGrants("", send);
     this.tokens = {
       token: async (id) => {
         try {
@@ -161,6 +164,7 @@ export class AppSession implements MachineSource {
       relay: `${ws}/api/relay/c/${d.id}`,
       mux: `${ws}/api/relay/m`,
       tokens: this.tokens,
+      blockGrants: this.blockGrants,
       ...(this.blockDomain ? { blockDomain: this.blockDomain } : {}),
       hosted,
     };

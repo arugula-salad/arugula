@@ -130,6 +130,16 @@ key in its fragment that the daemon lists as a viewer of one session until the
 link expires (aru-055's links, `acl.link_by_key`). It never used the account's
 device keys, so nothing about it changes.
 
+**A block's frame gets a block grant** (amended 2026-11-16, #1001). A
+port or editor block is framed on an origin of its own so that its code
+can't reach the rest of the machine, so its frame never gets a machine
+token. The hub signs it a block grant instead: a machine token's claims
+with `use: "block"`, one block and the frame's one-off key, made only for
+a role that gets in as the machine's owner. The daemon checks it as a
+machine token but doesn't take it once, since it's bound to that key, as a
+device's grant was. Until the device path goes, a page signs a device's
+grant where the daemon or the hub doesn't know these.
+
 **A deploy's box refuses tokens** (#2510). It lets nobody in (M219), so the
 daemon refuses a machine token there before reading it, whatever control says.
 

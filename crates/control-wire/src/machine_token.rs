@@ -100,6 +100,89 @@ impl TokenHello {
     }
 }
 
+/// The `use` claim every block grant carries (#1001): never [`USE`], so a
+/// block grant can't open a machine's channel and a machine token can't
+/// open a block.
+pub const BLOCK_USE: &str = "block";
+
+/// `POST` here, with a [`BlockGrantRequest`], for a block grant on machine
+/// `id`.
+pub fn block_grant_path(id: &str) -> String {
+    format!("/api/machines/{id}/block-grant")
+}
+
+/// What a page asks the hub for a block grant with: the block, and the
+/// one-off key its frame will open the channel with.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct BlockGrantRequest {
+    /// The block's pane id on the machine, in decimal.
+    pub block: String,
+    /// The frame's one-off X25519 key, the public half, in hex: the static
+    /// key of the channel's handshake.
+    pub key: String,
+}
+
+/// A block grant's claims (#1001): a machine token's, narrowed to one
+/// block and bound to one key. A frame on a block's origin shows that
+/// block, and nothing else on the machine.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct BlockClaims {
+    /// The hub's public URL.
+    pub iss: String,
+    /// The account's id.
+    pub sub: String,
+    /// The machine's id.
+    pub aud: String,
+    /// Always [`BLOCK_USE`].
+    #[serde(rename = "use")]
+    pub use_: String,
+    /// The account's role on the machine when the grant was made. A block
+    /// shows whatever its port does, so the daemon lets in only a role it
+    /// would let in as its owner.
+    pub role: TokenRole,
+    /// The account's login, to show.
+    pub name: String,
+    /// The block's pane id, in decimal.
+    pub block: String,
+    /// The one-off key (X25519, hex) the grant is for: the daemon refuses
+    /// it from a handshake with any other static key.
+    pub key: String,
+    pub iat: u64,
+    pub exp: u64,
+    pub jti: String,
+}
+
+/// The hub's answer to a block grant request.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct BlockGrantResponse {
+    pub token: String,
+    /// When it runs out, in seconds since the epoch.
+    pub expires: u64,
+}
+
+/// The payload of a block channel's first message when its grant is the
+/// hub's rather than one a device signed (`{"grant": …}`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct BlockTokenHello {
+    pub block_token: String,
+}
+
+impl BlockTokenHello {
+    pub fn encode(&self) -> Vec<u8> {
+        serde_json::to_vec(self).expect("serialize a block token hello")
+    }
+
+    /// `Some` when the payload is a block token hello and nothing else.
+    pub fn decode(payload: &[u8]) -> Option<Self> {
+        serde_json::from_slice(payload).ok()
+    }
+}
+
 /// One public key, as a JWKS lists it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -139,6 +222,17 @@ mod tests {
         assert_eq!(TokenHello::decode(br#"{"machine_token":"a.b.c","port":80}"#), None);
         assert_eq!(TokenHello::decode(br#"{"daemon":"d","port":80}"#), None);
         assert_eq!(TokenHello::decode(b""), None);
+    }
+
+    #[test]
+    fn hellos_are_never_each_other() {
+        let b = BlockTokenHello { block_token: "a.b.c".into() };
+        assert_eq!(BlockTokenHello::decode(&b.encode()), Some(b.clone()));
+        assert_eq!(TokenHello::decode(&b.encode()), None);
+        assert_eq!(BlockTokenHello::decode(&TokenHello { machine_token: "a.b.c".into() }.encode()), None);
+        assert_eq!(BlockTokenHello::decode(br#"{"grant":{}}"#), None);
+        assert_eq!(block_grant_path("m1"), "/api/machines/m1/block-grant");
+        assert_ne!(BLOCK_USE, USE);
     }
 
     #[test]

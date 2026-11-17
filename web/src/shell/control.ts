@@ -31,7 +31,7 @@ import {
   type WorkerDaemon,
 } from "./e2e/keys.ts";
 import { newKeyPair } from "./e2e/noise.ts";
-import { controlIssues, controlTokens, gatedTokens, tokenEntry, tokenMode, type MachineTokens } from "./e2e/machine-token.ts";
+import { controlBlockGrants, controlIssues, controlTokens, gatedTokens, tokenEntry, tokenMode, type BlockGrants, type MachineTokens } from "./e2e/machine-token.ts";
 import { acceptHostedHolding, signDelegation, signRevoke, type Delegation, type DelegationRevoke, type HostedProof } from "./e2e/hosted.ts";
 import { directUrls } from "../shared/hosted.ts";
 import { expiresIn, grantBody, grantRevokeBody, newGrant, newGrantRevoke, passkeyChallenge, type GrantRevoke, type PasskeyAssertion, type ProjectGrant } from "./e2e/run-grant.ts";
@@ -1170,6 +1170,8 @@ export class ControlSession {
    * or `tokenMode` says tokens first. */
   tokens = false;
   private machineTokens: MachineTokens = gatedTokens(controlTokens());
+  /** #1001: block grants, for a page that reaches its machines with tokens. */
+  private blockGrants: BlockGrants = controlBlockGrants();
   /** #764: this browser's keys came from a passkey's PRF, and this is
    * the name its certificate takes ("iCloud Keychain passkey"). */
   fromPasskey: string | null = null;
@@ -2511,10 +2513,12 @@ export class ControlSession {
     const blockDomain = this.info.block_domain;
     const hosted = d.hosted ? { project: d.hosted.project, workspace: d.hosted.workspace } : undefined;
     // aru-141: machine tokens, or this browser's device key. A device
-    // keeps its key for what's still signed with one (blocks' grants).
+    // keeps its key for what's still signed with one: blocks' grants on a
+    // daemon from before the hub's (#1001).
     const keys = this.enrollment ? this.keys : undefined;
     const tokens = this.tokens ? this.machineTokens : undefined;
-    return { daemon: { id: d.id, noise: d.cert.noise }, direct: directUrls(d), relay: `${ws}/api/relay/c/${d.id}`, mux, keys, tokens, blockDomain, hosted };
+    const blockGrants = this.tokens ? this.blockGrants : undefined;
+    return { daemon: { id: d.id, noise: d.cert.noise }, direct: directUrls(d), relay: `${ws}/api/relay/c/${d.id}`, mux, keys, tokens, blockGrants, blockDomain, hosted };
   }
 
   /** A read-only link to a session on daemon `id` (M19): a one-off key, its
