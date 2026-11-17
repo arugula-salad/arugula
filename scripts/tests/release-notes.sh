@@ -93,6 +93,25 @@ if gen from-here HEAD 1.2.5 >/dev/null 2>&1; then bad "a broken note should fail
 git rm -q docs/notes/broken.md
 land "Not broken (#15)"
 
+# A value in quotes, as YAML writes one that starts with a backtick: the marks
+# aren't part of it (0.70.7, 0.70.9 and 0.70.33 shipped them in What's new).
+git tag before-quoted
+# shellcheck disable=SC2016
+note quoted "'It''s quoted'" 'line: "`arugula x` does a \"thing\"."
+'
+note quoted-words "Quoted words" 'line: "Add" now says "Allow"
+'
+land "Quoted (#16)"
+out=$(gen before-quoted HEAD 1.2.6)
+# shellcheck disable=SC2016
+block=$(printf '%s\n' "$out" | sed -n '/^```whats-new$/,/^```$/p' | sed '1d;$d')
+# shellcheck disable=SC2016
+if [ "$(jq -r '.[] | select(.id == "quoted") | .line' <<<"$block")" = '`arugula x` does a "thing".' ]; then ok "a double-quoted line is read without its quotes"; else bad "quoted line: $block"; fi
+if [ "$(jq -r '.[] | select(.id == "quoted") | .title' <<<"$block")" = "It's quoted" ]; then ok "and a single-quoted title"; else bad "quoted title: $block"; fi
+if [ "$(jq -r '.[] | select(.id == "quoted-words") | .line' <<<"$block")" = '"Add" now says "Allow"' ]; then ok "a line that only starts and ends with quoted words keeps them"; else bad "quoted words: $block"; fi
+# shellcheck disable=SC2016
+has "the summary has no quote marks either" '"Add" now says "Allow" `arugula x` does a "thing".'
+
 # The check on a pull request.
 main=$(git rev-parse HEAD)
 pr() { # BRANCH: a side branch from main
