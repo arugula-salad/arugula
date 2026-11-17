@@ -11,6 +11,7 @@ import { CopyText } from "../../shared/ui/copy";
 import { Modal } from "../../shared/ui/modal";
 import { RefusedError, takesSecret, type ControlSession, type JoinRequest } from "../control";
 import { fingerprint, normalizeCode, normalizeSecret, splitJoinCode } from "../e2e/cert.ts";
+import { addsInOneClick } from "../team-adds.ts";
 import { clearHash } from "./common";
 
 /** A machine's join, by its code: from its approval link, or typed in.
@@ -79,8 +80,9 @@ export function JoinPrompt({ s, code: whole }: { s: ControlSession; code: string
   // #1003: no device key here: Add, as this signed-in person.
   const oneClick = !!j && j.cert.kind === "daemon" && !s.enrollment;
   // Teams I'm in (#332), and the one it asked for even if I can't add to it.
-  // In one click, control lets a team's owners and editors add machines.
-  const teams = oneClick ? s.teams.filter((t) => t.role === "owner" || t.role === "editor") : s.addableTeams();
+  // In one click, control lets a team's owners and editors add machines,
+  // and only its owners while it's locked.
+  const teams = oneClick ? s.teams.filter(addsInOneClick) : s.addableTeams();
   const asked = j?.team && !teams.some((t) => t.team === j.team!.team) ? j.team : null;
   const team = teams.find((t) => t.team === to);
   const cant = !!to && !team;
