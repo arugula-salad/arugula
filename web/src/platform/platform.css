@@ -724,7 +724,7 @@ html[data-corners="square"] .platform-section {
   background: var(--surface);
 }
 
-.run-start input,
+.run-start input:not([type="checkbox"], [type="radio"]),
 .run-start select {
   box-sizing: border-box;
   height: 28px;

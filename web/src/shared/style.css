@@ -1454,7 +1454,7 @@ button.att {
   color: var(--accent);
 }
 
-.prompt input {
+.prompt input:not([type="checkbox"], [type="radio"]) {
   font: var(--text-md) var(--f-mono);
   padding: 8px;
   color: var(--fg);
@@ -1464,7 +1464,7 @@ button.att {
   outline: none;
 }
 
-.prompt input:focus {
+.prompt input:not([type="checkbox"], [type="radio"]):focus {
   border-color: var(--accent);
 }
 
@@ -3470,7 +3470,6 @@ button.agent-image {
 
 .prompt .machine-telemetry-switch input,
 .prompt .sharing-switch input {
-  width: auto;
   margin: 0;
   padding: 0;
 }
@@ -3516,7 +3515,7 @@ button.agent-image {
   margin-top: 8px;
 }
 
-.control-code input {
+.control-code input:not([type="checkbox"], [type="radio"]) {
   font: var(--t-field) var(--f-mono);
   padding: 6px 8px;
   color: var(--fg);
@@ -3585,13 +3584,6 @@ button.agent-image {
 
 .control-rest p {
   margin: 6px 0;
-}
-
-/* A checkbox in a code row keeps its own size, beside its label. */
-.control-code input[type="checkbox"] {
-  width: auto;
-  padding: 0;
-  accent-color: var(--accent);
 }
 
 /* A display name (#102): words, not a code. */
@@ -3813,7 +3805,6 @@ button.agent-image {
 
 .prompt .control-check input {
   padding: 0;
-  accent-color: var(--accent);
 }
 
 /* A checkbox in a list's row, beside its buttons (UI audit #151). */

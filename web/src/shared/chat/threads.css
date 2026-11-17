@@ -117,10 +117,6 @@
   cursor: pointer;
 }
 
-.thread-also input {
-  accent-color: var(--accent);
-}
-
 /* A room too narrow for itself and the panel side by side: the panel
    covers the room, as a phone's does. The room's width, not the window's,
    so a chat block in a narrow slot does the same (UI audit #156). */
