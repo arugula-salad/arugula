@@ -18,7 +18,6 @@ import { onAppearance, palette, appearance, FINISHES } from "../../shared/appear
 import { EDITORS, editorShown, setEditorPref, type Editor } from "../../shared/editor-pref";
 import { bigTipsOn, setBigTips, setTips, subscribeSeen, tipsOn } from "../../shared/seen";
 import { openAppearance } from "../../shared/ui/appearance";
-import { ExternalIcon } from "../../shared/ui/icons";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { Band, Section } from "../../shared/ui/settings-section";
 import { names } from "../links";
@@ -31,6 +30,7 @@ import { ChatAlerts } from "../settings/chat-alerts";
 import { ClaudeSettings } from "../settings/claude";
 import { LinkedProducts } from "../settings/linked";
 import { NotificationSettings } from "../settings/notifications";
+import { ControlRow } from "../settings/owner-machines";
 import { joined } from "../settings/summary";
 
 export function YouSettings() {
@@ -57,21 +57,6 @@ export function YouSettings() {
   );
 }
 
-/** A row a device signs (Arugula #1108): it opens control's page at its
- * dialog, in this tab. */
-function OnControl({ hash, label, hint }: { hash: string; label: string; hint: string }) {
-  return (
-    <li>
-      <a class="settings-open" href={`${controlOrigin()}/#${hash}`} title="Opens your machines page" data-settings-control={hash}>
-        <span class="settings-open-name">
-          {label} <ExternalIcon size="xs" />
-        </span>
-        <span class="dim">{hint}</span>
-      </a>
-    </li>
-  );
-}
-
 /** Whether this device is pushed, and what every device you turned on is
  * pushed about: control's, where the device's keys are. */
 function PhonesAndBrowsers() {
@@ -84,8 +69,8 @@ function PhonesAndBrowsers() {
       more={<p>Each device turns itself on with its own keys, so these open your machines page.</p>}
     >
       <ul class="platform-list settings-rows">
-        <OnControl hash="settings=push" label="Notify this device" hint="Turn this browser or phone on or off" />
-        <OnControl hash="settings=push" label="What every device is pushed about" hint="Chat, your machines, your projects; and a test notification" />
+        <ControlRow href={`${controlOrigin()}/#settings=push`} label="Notify this device" why="Turn this browser or phone on or off" hook="push" />
+        <ControlRow href={`${controlOrigin()}/#settings=push`} label="What every device is pushed about" why="Chat, your machines, your projects; and a test notification" hook="push" />
       </ul>
     </Section>
   );
@@ -163,11 +148,11 @@ function Account() {
       hooks={{ "data-settings-account": "" }}
     >
       <ul class="platform-list settings-rows">
-        <OnControl hash="account" label="Sign-in and account" hint="Passkeys, GitHub, email and where you're signed in" />
-        <OnControl hash="devices" label="Devices and machines" hint="What you've approved, and taking one back" />
-        <OnControl hash="add-device" label="Add a phone or browser" hint="Approve a new one from this one" />
-        <OnControl hash="teams" label="Teams" hint="The teams you're in, and inviting people" />
-        <OnControl hash="shared-docs" label="Shared Docs" hint="Docs people shared with you" />
+        <ControlRow href={`${controlOrigin()}/#account`} label="Sign-in and account" why="Passkeys, GitHub, email and where you're signed in" hook="account" />
+        <ControlRow href={`${controlOrigin()}/#devices`} label="Devices and machines" why="What you've approved, and taking one back" hook="devices" />
+        <ControlRow href={`${controlOrigin()}/#add-device`} label="Add a phone or browser" why="Approve a new one from this one" hook="add-device" />
+        <ControlRow href={`${controlOrigin()}/#teams`} label="Teams" why="The teams you're in, and inviting people" hook="teams" />
+        <ControlRow href={`${controlOrigin()}/#shared-docs`} label="Shared Docs" why="Docs people shared with you" hook="shared-docs" />
       </ul>
       <p class="dim" data-plan-moved>
         Plan and billing are in each owner's settings:{" "}
