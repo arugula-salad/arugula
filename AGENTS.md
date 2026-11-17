@@ -365,7 +365,10 @@ are built from these, so nobody writes a release's notes at the end.
 - main takes pull requests through GitHub's merge queue: `gh pr merge N`
   queues one, and it lands once its group passes the whole suite, about
   20 minutes later. If its group fails, the pull request leaves the queue;
-  read the group's run, fix it, and queue it again. A CI change is tested
+  read the failing job's log, fix what it shows, and only then queue it
+  again. Re-queue it unchanged only for a flaky test you can name, and say
+  which in the pull request: the same failure queued again fails every pull
+  request behind it. A CI change is tested
   the same way, so it needs no branch run first (docs/development.md,
   "Merging through the queue"). The `full-check` label runs check.yml on the
   branch for an earlier answer.
