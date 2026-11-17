@@ -27,7 +27,57 @@
 }
 
 .list-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
   padding: var(--space-4) var(--space-5) 0;
+}
+
+.list-head-main {
+  flex: 1;
+  min-width: 0;
+}
+
+/* `‹`: fold the list (Arugula #1126). */
+.list-fold {
+  flex: none;
+}
+
+.list-pane[hidden] {
+  display: none;
+}
+
+/* Folded: a 34px strip with `›` and the page's name, and the room is the preview's. */
+.list-page.folded .list-split {
+  grid-template-columns: 34px minmax(0, 1fr);
+}
+
+.list-strip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-4) 0;
+  border: 0;
+  border-right: 1px solid var(--line);
+  border-radius: 0;
+  background: var(--bg);
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.list-strip:is(:hover, :focus-visible) {
+  background: var(--raised);
+  color: var(--fg);
+}
+
+.list-strip-name {
+  writing-mode: vertical-rl;
+  font: 600 var(--text-xs)/1 var(--f-ui);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .list-head .page-head {
@@ -511,13 +561,15 @@ button.list-count:hover {
   box-shadow: 0 0 8px var(--accent);
 }
 
-/* Too little room beside the text: the outline goes under it. */
-@container list-preview (max-width: 720px) {
+/* Too little room beside the text: the aside goes under it (Arugula #1127). */
+@container list-preview (max-width: 900px) {
   .list-preview-body {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--space-5);
   }
+}
 
+@container list-preview (max-width: 720px) {
   .list-preview-head h2 {
     font-size: var(--text-xl);
   }

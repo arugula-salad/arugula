@@ -20,12 +20,18 @@
 // never the window's width: a page can be narrow on a wide screen. Too narrow
 // for both, the list stands alone and a row opens its preview in its place,
 // and the sort is a menu rather than a select beside the search.
+//
+// The list folds to a strip (Arugula #1126): `‹` in its header or `[`, and
+// `[` or the strip opens it again. Each page remembers it, as it does the
+// split; ↑↓ still move the rows while it's folded. Where the list stands
+// alone it doesn't fold. A preview's aside goes under its words when the
+// preview has under ~900px (Arugula #1127).
 
 import { Card } from "./card";
 import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { Bar } from "./bar";
-import { ChevronIcon } from "./icons";
+import { ChevronIcon, IconButton } from "./icons";
 import { menuBelow, openMenu } from "./menu";
 import { SearchField } from "./search-field";
 import "./list-page.css";
@@ -174,7 +180,7 @@ export interface ListPageProps<T> {
   previewOn?: "hover" | "click";
   /** Enter, or a double click. */
   onOpen: (item: T) => void;
-  /** Where the divider's position is kept. */
+  /** Where the divider's position is kept, and whether the list is folded. */
   splitKey: string;
   /** Under the search: what went wrong. */
   notice?: ComponentChildren;
@@ -240,6 +246,18 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, sort,
   const [narrow, setNarrow] = useState(false);
   const storeKey = `arugula-list-split:${splitKey}`;
   const [width, setWidth] = useState<number | null>(() => stored(storeKey));
+  const foldKey = `arugula-list-fold:${splitKey}`;
+  const [folded, setFolded] = useState(() => stored(foldKey) === 1);
+  // Where the list stands alone, it's the page: it doesn't fold.
+  const shut = folded && !narrow;
+  /** Folded or opened by a hand, not on load: the focus goes with it. */
+  const foldedBy = useRef(false);
+  const unfold = useRef<HTMLButtonElement>(null);
+  const fold = (on: boolean) => {
+    foldedBy.current = true;
+    setFolded(on);
+    store(foldKey, on ? 1 : null);
+  };
   const scrollTo = useRef(false);
   const keyed = useRef(0);
   const hover = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -316,12 +334,18 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, sort,
     }
   }, [select]);
   useLayoutEffect(() => {
+    if (!foldedBy.current) return;
+    foldedBy.current = false;
+    if (shut) unfold.current?.focus({ preventScroll: true });
+    else list.current?.focus({ preventScroll: true });
+  }, [shut]);
+  useLayoutEffect(() => {
     if (scrollTo.current && selectedKey !== null) document.getElementById(rowId(selectedKey))?.scrollIntoView({ block: "nearest" });
     scrollTo.current = false;
   }, [selectedKey]);
 
-  const live = useRef({ flat, selected, selectedKey, narrow, detail, onOpen, keyOf, query, setQuery, selectable, ticked, tickAt, clearTicks, tickAll: (keys: string[]) => tick(keys, true) });
-  live.current = { flat, selected, selectedKey, narrow, detail, onOpen, keyOf, query, setQuery, selectable, ticked, tickAt, clearTicks, tickAll: (keys: string[]) => tick(keys, true) };
+  const live = useRef({ flat, selected, selectedKey, narrow, detail, onOpen, keyOf, query, setQuery, selectable, ticked, tickAt, clearTicks, tickAll: (keys: string[]) => tick(keys, true), shut, fold });
+  live.current = { flat, selected, selectedKey, narrow, detail, onOpen, keyOf, query, setQuery, selectable, ticked, tickAt, clearTicks, tickAll: (keys: string[]) => tick(keys, true), shut, fold };
   useEffect(() => {
     const keys = (e: KeyboardEvent) => {
       // Ctrl/Cmd+A in the list ticks every row shown; again, with all ticked, it clears.
@@ -347,6 +371,11 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, sort,
         return;
       }
       if (inField(e.target) && !searching) return;
+      if (e.key === "[" && !searching && !s.narrow) {
+        e.preventDefault();
+        s.fold(!s.shut);
+        return;
+      }
       // A button's Space is its own.
       if (e.key === " " && !searching && s.selectable && s.selectedKey !== null && !(e.target as Element | null)?.closest?.("button, a, [role='separator']")) {
         e.preventDefault();
@@ -506,10 +535,23 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, sort,
   const tickedItems = flat.filter((i) => ticked.has(keyOf(i)));
   const style = width ? ({ "--list-w": `${width}px` } as Record<string, string>) : undefined;
   return (
-    <div ref={root} class={detail || pane ? "list-page detail" : "list-page"} style={style} data-list-page>
+    <div ref={root} class={`list-page${detail || pane ? " detail" : ""}${shut ? " folded" : ""}`} style={style} data-list-page data-list-folded={String(shut)}>
       <div class="list-split">
-        <section class="list-pane" aria-label={label}>
-          <div class="list-head">{header}</div>
+        {shut && (
+          <button ref={unfold} type="button" class="list-strip" aria-label={`Show ${label}`} title={`Show ${label} ([)`} aria-expanded="false" aria-keyshortcuts="[" data-list-unfold onClick={() => fold(false)}>
+            <ChevronIcon dir="right" />
+            <span class="list-strip-name">{label}</span>
+          </button>
+        )}
+        <section class="list-pane" aria-label={label} hidden={shut}>
+          <div class="list-head">
+            <div class="list-head-main">{header}</div>
+            {!narrow && (
+              <IconButton label={`Hide ${label}`} title={`Hide ${label} ([)`} class="secondary small list-fold" aria-expanded="true" aria-keyshortcuts="[" data-list-fold onClick={() => fold(true)}>
+                <ChevronIcon dir="left" />
+              </IconButton>
+            )}
+          </div>
           {above && <div class="list-above">{above}</div>}
           <div class="list-tools">
             <SearchField
@@ -594,28 +636,30 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, sort,
               )}
               {pane ?? preview(selected as T)}
             </aside>
-            <div
-              class="list-handle"
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="Resize the list and the preview"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={pct}
-              tabIndex={0}
-              title="Drag to resize. Double-click to reset."
-              onPointerDown={drag}
-              onDblClick={() => {
-                setWidth(null);
-                store(storeKey, null);
-              }}
-              onKeyDown={(e) => {
-                if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-                e.preventDefault();
-                e.stopPropagation();
-                resize((width ?? paneWidth()) + (e.key === "ArrowLeft" ? -24 : 24));
-              }}
-            />
+            {!shut && (
+              <div
+                class="list-handle"
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize the list and the preview"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={pct}
+                tabIndex={0}
+                title="Drag to resize. Double-click to reset."
+                onPointerDown={drag}
+                onDblClick={() => {
+                  setWidth(null);
+                  store(storeKey, null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  resize((width ?? paneWidth()) + (e.key === "ArrowLeft" ? -24 : 24));
+                }}
+              />
+            )}
           </>
         )}
       </div>

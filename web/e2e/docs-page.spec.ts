@@ -518,6 +518,77 @@ test.describe("the list", () => {
     await page.locator(".list-handle").dblclick();
     await expect.poll(async () => (await pane.boundingBox())?.width).toBe(start);
   });
+
+  /** Where the outline is: beside the Doc with over 900 px of preview, under it
+   * from there to 720, and gone under that (Arugula #1127). */
+  const outlineFits = async (page: Page) => {
+    const p = page.locator("[data-list-preview]");
+    const w = (await p.boundingBox())!.width;
+    if (w <= 720) return expect(p.locator(".list-preview-aside")).toBeHidden();
+    const words = (await p.locator(".list-preview-words").boundingBox())!;
+    const outline = (await p.locator(".list-preview-aside").boundingBox())!;
+    if (w > 900) expect(outline.x, `beside the Doc at ${w} px`).toBeGreaterThanOrEqual(words.x + words.width);
+    else expect(outline.y, `under the Doc at ${w} px`).toBeGreaterThanOrEqual(words.y + words.height);
+  };
+
+  test("the list folds to a strip by ‹ or [, the keys still move it, and the browser remembers (Arugula #1126)", async ({ page }) => {
+    await page.setViewportSize({ width: 1400, height: 800 });
+    await seed(page);
+    await page.locator("[data-list-search]").fill("");
+    const p = page.locator("[data-list-preview]");
+    const strip = page.locator("[data-list-unfold]");
+    await outlineFits(page);
+
+    await page.locator("[data-list-fold]").click();
+    await expect(page.locator(".list-pane")).toBeHidden();
+    await expect(page.locator(".list-handle")).toHaveCount(0);
+    await expect(strip).toBeFocused();
+    await expect(strip).toContainText("Docs");
+    expect((await strip.boundingBox())!.width).toBe(34);
+    expect(await page.evaluate(() => localStorage.getItem("arugula-list-fold:docs"))).toBe("1");
+    await outlineFits(page);
+
+    // ↑/↓ step through the Docs with the list folded.
+    await expect(p.locator(".doc-title")).toHaveText("Long plan");
+    await page.keyboard.press("ArrowDown");
+    await expect(p.locator(".doc-title")).toHaveText("Short note");
+    await page.keyboard.press("ArrowUp");
+    await expect(p.locator(".doc-title")).toHaveText("Long plan");
+
+    await page.reload();
+    await expect(strip).toBeVisible();
+    await expect(page.locator(".list-pane")).toBeHidden();
+    await page.locator("body").press("[");
+    await expect(page.locator("[data-list-rows]")).toBeVisible();
+    await expect(page.locator("[data-list-rows]")).toBeFocused();
+    await expect(strip).toHaveCount(0);
+    expect(await page.evaluate(() => localStorage.getItem("arugula-list-fold:docs"))).toBeNull();
+    await page.keyboard.press("[");
+    await expect(strip).toBeVisible();
+    await strip.click();
+    await expect(page.locator("[data-list-rows]")).toBeVisible();
+
+    // Typed in a field, [ is a letter.
+    const search = page.locator("[data-list-search]");
+    await search.fill("");
+    await search.press("[");
+    await expect(search).toHaveValue("[");
+    await expect(strip).toHaveCount(0);
+    await search.fill("");
+
+    // Where the list stands alone, it doesn't fold.
+    await page.locator("[data-list-fold]").click();
+    await page.setViewportSize({ width: 700, height: 800 });
+    await expect(page.locator("[data-list-rows]")).toBeVisible();
+    await expect(strip).toHaveCount(0);
+    await expect(page.locator("[data-list-fold]")).toHaveCount(0);
+    await page.locator("body").press("[");
+    await expect(page.locator("[data-list-rows]")).toBeVisible();
+    // Wide again, it's folded as it was left.
+    await page.setViewportSize({ width: 1400, height: 800 });
+    await expect(strip).toBeVisible();
+    await strip.click();
+  });
 });
 
 /** The reader (#608): picking a row shows the whole Doc in the preview side. */
