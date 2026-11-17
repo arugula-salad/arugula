@@ -1250,10 +1250,12 @@ button.att {
 }
 
 /* A drop target (#696). `.drop-target` marks a place a drag can land and
-   `.drop-over` is added while the pointer is over it. The edge is an
+   `.drop-over` is added while the pointer is over it (a list's row says
+   `data-drop-target`, Arugula #1128). The edge is an
    outline drawn inside the box and the tint a gradient over its own
    background, so nothing moves or loses its fill when the drag arrives. */
-.drop-target.drop-over {
+.drop-target.drop-over,
+[data-drop-target].drop-over {
   outline: 2px dashed var(--drop-edge);
   outline-offset: -2px;
   background-image: linear-gradient(var(--drop-fill), var(--drop-fill));

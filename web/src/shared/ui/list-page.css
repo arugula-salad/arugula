@@ -718,3 +718,23 @@ button.list-count:hover {
   background: var(--raised);
   color: var(--fg);
 }
+
+/* A folded group's heading, which unfolds it (a Docs list's Deleted, Arugula
+   #1133; Boards' Done): the heading's words, a 24px target. */
+.list-group .list-group-fold {
+  align-items: center;
+  min-height: 24px;
+  margin: -6px 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.list-group .list-group-fold:hover {
+  color: var(--fg);
+}

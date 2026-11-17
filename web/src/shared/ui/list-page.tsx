@@ -198,6 +198,11 @@ export interface ListPageProps<T> {
   pane?: ComponentChildren;
   /** The row to select, when the page knows better: one just saved. */
   select?: string | null;
+  /** That row came by its own address (a board's link): where the list stands
+   * alone, it opens in the list's place. */
+  opened?: boolean;
+  /** A click or the keys picked a row: the page's address can follow it. */
+  onSelect?: (item: T) => void;
   /** A box on each row (on hover, and always once one is ticked), for
    * acting on several. The box is a mark for the mouse (a control in an
    * option fails `nested-interactive`): the option says `aria-checked`, and
@@ -240,7 +245,7 @@ function store(key: string, px: number | null) {
   }
 }
 
-export function ListPage<T>({ label, header, searchLabel, query, setQuery, sort, groups, keyOf, row, preview, previewOn = "hover", onOpen, splitKey, notice, status, above, below, pane, select, selectable, selection }: ListPageProps<T>) {
+export function ListPage<T>({ label, header, searchLabel, query, setQuery, sort, groups, keyOf, row, preview, previewOn = "hover", onOpen, splitKey, notice, status, above, below, pane, select, opened, onSelect, selectable, selection }: ListPageProps<T>) {
   const root = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLInputElement>(null);
@@ -336,6 +341,10 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, sort,
       setPicked(select);
     }
   }, [select]);
+  // Once its row is there: the list may still be loading.
+  useEffect(() => {
+    if (opened && select && narrow && selectedKey === select) setDetail(true);
+  }, [opened, select, narrow, selectedKey === select]);
   useLayoutEffect(() => {
     if (!foldedBy.current) return;
     foldedBy.current = false;
@@ -347,8 +356,8 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, sort,
     scrollTo.current = false;
   }, [selectedKey]);
 
-  const live = useRef({ flat, selected, selectedKey, narrow, detail, onOpen, keyOf, query, setQuery, selectable, ticked, tickAt, clearTicks, tickAll: (keys: string[]) => tick(keys, true), shut, fold });
-  live.current = { flat, selected, selectedKey, narrow, detail, onOpen, keyOf, query, setQuery, selectable, ticked, tickAt, clearTicks, tickAll: (keys: string[]) => tick(keys, true), shut, fold };
+  const live = useRef({ flat, selected, selectedKey, narrow, detail, onOpen, onSelect, keyOf, query, setQuery, selectable, ticked, tickAt, clearTicks, tickAll: (keys: string[]) => tick(keys, true), shut, fold });
+  live.current = { flat, selected, selectedKey, narrow, detail, onOpen, onSelect, keyOf, query, setQuery, selectable, ticked, tickAt, clearTicks, tickAll: (keys: string[]) => tick(keys, true), shut, fold };
   useEffect(() => {
     const keys = (e: KeyboardEvent) => {
       // Ctrl/Cmd+A in the list ticks every row shown; again, with all ticked, it clears.
@@ -402,6 +411,7 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, sort,
         keyed.current = performance.now();
         scrollTo.current = true;
         setPicked(s.keyOf(s.flat[to]));
+        if (to !== at) s.onSelect?.(s.flat[to]);
         return;
       }
       // A button's Enter is its own.
@@ -477,6 +487,7 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, sort,
           // Ticking with a finger: a tap ticks, as the box would.
           if (selectable && ticked.size > 0 && by.current !== "mouse") return tickAt(key, !ticked.has(key), false);
           setPicked(key);
+          onSelect?.(item);
           if (narrow) setDetail(true);
         }}
         onDblClick={() => !narrow && onOpen(item)}

@@ -1,7 +1,7 @@
 // A project's "Not on a board" (#292, #656): its open issues on no board, in
-// the Boards page between the open boards and Done. A row is selected by
-// clicking it, added to a board with ＋, or dragged onto a board's card.
-// `/p/:project/triage` is that page, scrolled here. The reads and the adds are
+// the middle of the Boards page beside the list of boards (Arugula #1128). A
+// row is selected by clicking it, added to a board with ＋, or dragged onto a
+// board's row in the list. `/p/:project/triage` is that page, showing this. The reads and the adds are
 // untriaged.ts's; the issues list stays at All issues.
 
 import { BlockLoading, EmptyLine } from "../../shared/ui/block-states";
@@ -58,7 +58,7 @@ function useSettled<T>(value: T, ms: number): T {
   return v;
 }
 
-/** The section's state, lifted to the page so the board cards can take a drop and the tabs can count. `added` is told when rows went onto a board, so the boards read again. */
+/** The section's state, lifted to the page so the board rows can take a drop and the tabs can count. `added` is told when rows went onto a board, so the boards read again. */
 export function useTriage(project: string, added: () => void) {
   const [q, setQ] = useState("");
   const [label, setLabel] = useState("");
@@ -196,53 +196,55 @@ type Carried = { all: boolean; keys: string[]; count: number };
 
 /** The handlers that make an element a place to drop the dragged rows on `board`. */
 export function dropOn(tri: Triage, board: { id: string; title: string }, done?: () => void) {
+  return dropWhere(tri, (e) => ({ el: e.currentTarget as HTMLElement, board }), done);
+}
+
+/** The same for every board inside one element (the Boards list's rows): `at` finds the board under the pointer and the element that shows it, if any. */
+export function dropWhere(tri: Triage, at: (e: DragEvent) => { el: HTMLElement; board: { id: string; title: string } } | null, done?: () => void) {
   return {
     onDragOver: (e: DragEvent) => {
-      if (!tri.carry.current) return;
+      const t = tri.carry.current && at(e);
+      if (!t) return;
       e.preventDefault();
       if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
-      (e.currentTarget as HTMLElement).classList.add("drop-over");
+      t.el.classList.add("drop-over");
     },
     onDragLeave: (e: DragEvent) => {
-      const el = e.currentTarget as HTMLElement;
-      if (!el.contains(e.relatedTarget as Node | null)) el.classList.remove("drop-over");
+      const t = at(e);
+      if (t && !t.el.contains(e.relatedTarget as Node | null)) t.el.classList.remove("drop-over");
     },
     onDrop: (e: DragEvent) => {
       const taken = tri.carry.current;
-      if (!taken) return;
+      const t = taken && at(e);
+      if (!taken || !t) return;
       e.preventDefault();
-      (e.currentTarget as HTMLElement).classList.remove("drop-over");
+      t.el.classList.remove("drop-over");
       tri.carry.current = null;
       document.body.classList.remove("dragging");
       done?.();
-      void tri.addTo(board, taken);
+      void tri.addTo(t.board, taken);
     },
   };
 }
 
-/** Whether any of the page's board cards is on screen. */
+/** Whether any of the page's board rows is on screen. */
 function boardsInView(): boolean {
-  const g = document.querySelector("[data-boards] [data-board-card]");
+  const g = document.querySelector("[data-boards] [data-board-item]");
   if (!g) return false;
   const r = g.getBoundingClientRect();
   return r.bottom > 40 && r.top < innerHeight;
 }
 
-/** A project's "Not on a board" on its Boards page. `open` are the boards a row can go to; `scroll` brings the section into view once it has its list (`/triage`). */
-export function NotOnBoard({ p, tri, open, scroll }: { p: PlatformProject; tri: Triage; open: ProjectBoard[]; scroll?: boolean }) {
+/** A project's "Not on a board" on its Boards page. `open` are the boards a row can go to. */
+export function NotOnBoard({ p, tri, open }: { p: PlatformProject; tri: Triage; open: ProjectBoard[] }) {
   const { page, items, error, count } = tri;
   const narrow = useNarrow();
   const write = mayWrite(p);
-  const top = useRef<HTMLElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const sentinel = useRef<HTMLLIElement>(null);
   const all = useRef<HTMLInputElement>(null);
   const [dock, setDock] = useState(false);
   const allLink = pathOf({ page: "issues", project: p.id }, names);
-  const ready = page !== null || error !== null;
-  useEffect(() => {
-    if (scroll && ready) top.current?.scrollIntoView({ block: "start" });
-  }, [scroll, ready]);
   // A new filter is a new list: from its top. Loading, selecting and adding keep the box where it is.
   useLayoutEffect(() => {
     if (box.current) box.current.scrollTop = 0;
@@ -260,7 +262,7 @@ export function NotOnBoard({ p, tri, open, scroll }: { p: PlatformProject; tri: 
     if (all.current) all.current.indeterminate = state === "some";
   }, [state]);
 
-  // A drag from a row: the dock of boards drops from the top when the cards are off screen.
+  // A drag from a row: the dock of boards drops from the top when the rows are off screen.
   useEffect(() => {
     const over = () => {
       if (!tri.carry.current) return;
@@ -313,7 +315,7 @@ export function NotOnBoard({ p, tri, open, scroll }: { p: PlatformProject; tri: 
   const words = count === 0 ? `Select all ${total.toLocaleString()}` : state === "all" ? `All ${total.toLocaleString()} selected` : `${count.toLocaleString()} of ${total.toLocaleString()} selected`;
 
   return (
-    <section ref={top} id="triage" class="boards-untriaged" aria-labelledby={`untriaged-${p.id}`} data-boards-untriaged>
+    <section id="triage" class="boards-untriaged" aria-labelledby={`untriaged-${p.id}`} data-boards-untriaged>
       <div class="sw-section-head">
         <h2 id={`untriaged-${p.id}`}>
           Not on a board{page && <span class="untri-n" data-triage-count>{total.toLocaleString()}</span>}
@@ -329,7 +331,7 @@ export function NotOnBoard({ p, tri, open, scroll }: { p: PlatformProject; tri: 
         <>
           {tools && (
             <div class="untri-tools">
-              {/* Not the page's `/`: that's the boards' filter above. */}
+              {/* Not the page's `/`: that's the boards' search beside it. */}
               <SearchField class="untri-search" label="Filter issues not on a board" placeholder="Filter by words or #number" value={tri.q} onValue={tri.setQ} data-triage-filter />
               <select value={tri.order} aria-label="Order" data-triage-order onChange={(e) => tri.setOrder(e.currentTarget.value as "newest" | "oldest")}>
                 <option value="newest">Newest first</option>

@@ -38,7 +38,7 @@ import { DesignPage } from "./pages/design";
 import { SettingsPage } from "./pages/settings";
 import { HostedWorkspacePage, HostedWorkspaces } from "./pages/hosted-workspace";
 import { RunPage, RunsPage } from "./pages/runs";
-import { AllBoardsPage, BoardPage, BoardsPage } from "./pages/boards";
+import { AllBoardsPage, BoardsPage } from "./pages/boards";
 import { DocPage, DocsPage } from "./pages/docs";
 import { projectDocs } from "../shared/docs/store";
 import { SessionPage } from "./pages/session";
@@ -118,11 +118,11 @@ function body(r: Route, lost: string | null) {
     case "issue":
       return <IssuePage project={r.project} issue={r.issue} msg={r.msg} thread={r.thread} />;
     case "triage":
-      return <BoardsPage project={r.project} scroll />;
+      return <BoardsPage project={r.project} triage />;
     case "boards":
       return <BoardsPage project={r.project} />;
     case "board":
-      return <BoardPage project={r.project} board={r.board} />;
+      return <BoardsPage project={r.project} board={r.board} />;
     case "docs":
       return <DocsPage project={r.project} all={r.all} />;
     case "doc":
