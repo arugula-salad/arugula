@@ -9,7 +9,9 @@
 // its time, a search over titles, openings and headings, and the reader in
 // the preview. Where a Doc is open, its actions (#820), the selection (#818)
 // and what a row's ⋯ holds are the host's, since a library Doc and a
-// project's are reached differently.
+// project's are reached differently. A host with deleted Docs (a team's,
+// Arugula #1133) has them in a folded Deleted group at the list's foot, there
+// only when there are any.
 //
 // A row's mark is the Doc's shape: a segment a section, as long as the section
 // is, brighter where it has a figure, and the whole as long as the Doc is. So a
@@ -136,8 +138,10 @@ export interface DocsListProps<T> {
   stats?: (inTab: T[]) => ComponentChildren;
   /** The host's own narrowing (the machine's Open and Shared), and what it says when it leaves none. */
   narrow?: { test: (d: T) => boolean; none: string };
-  /** Under the header: the Trash. */
+  /** Under the header: the cloud line, New Doc's dialog. */
   under?: ComponentChildren;
+  /** The deleted Docs, the latest deleted first: a folded Deleted group at the foot, when there are any. */
+  deleted?: T[];
   /** In the list's place with none at all. */
   empty: ComponentChildren;
   /** Said while they load: nothing, once loading failed and `notice` says why. */
@@ -152,20 +156,22 @@ export interface DocsListProps<T> {
   selection?: (ticked: ListTicked<T>) => ComponentChildren;
 }
 
-export function DocsList<T>({ mode, docs, item, splitKey, sub, title, back, actions, stats, narrow, under, empty, loading, notice, row, preview, onOpen, selectable, selection }: DocsListProps<T>) {
+export function DocsList<T>({ mode, docs, item, splitKey, sub, title, back, actions, stats, narrow, under, deleted, empty, loading, notice, row, preview, onOpen, selectable, selection }: DocsListProps<T>) {
   const [saved, setTab] = useTab();
   const tab = mode.kind === "team" ? saved : null;
   const [query, setQuery] = useState("");
   const [sort, setSort] = useDocSort();
+  const [unfolded, setUnfolded] = useState(false);
   const all = docs ?? [];
-  const tabbed = all.filter((d) => tab === null || inTab(tab, item(d).mine));
+  const inThisTab = (d: T) => tab === null || inTab(tab, item(d).mine);
+  const tabbed = all.filter(inThisTab);
   const q = query.trim().toLowerCase();
-  const shown = tabbed.filter((d) => {
-    if (narrow && !narrow.test(d)) return false;
+  const found = (d: T) => {
     if (!q) return true;
     const it = item(d);
     return it.title.toLowerCase().includes(q) || !!it.summary?.toLowerCase().includes(q) || !!it.sections?.some((s) => s.heading.toLowerCase().includes(q));
-  });
+  };
+  const shown = tabbed.filter((d) => (!narrow || narrow.test(d)) && found(d));
   const now = Date.now();
   const groups: ListGroup<T>[] = [];
   const at = (d: T) => sortTime(item(d), sort);
@@ -175,6 +181,8 @@ export function DocsList<T>({ mode, docs, item, splitKey, sub, title, back, acti
     if (last?.title === title) last.items.push(d);
     else groups.push({ title, items: [d] });
   }
+  const gone = (deleted ?? []).filter((d) => inThisTab(d) && found(d));
+  if (gone.length > 0) groups.push({ title: "Deleted", key: "deleted", items: gone, fold: { open: unfolded, toggle: () => setUnfolded(!unfolded) }, attrs: { "data-docs-deleted": "" } });
 
   const status =
     docs === null ? (

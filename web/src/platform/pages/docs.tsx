@@ -13,11 +13,16 @@
 // A personal project's Docs are kept in the reader's cloud, not on a
 // machine (Arugula #865): a line above the list says so, and offers Move to
 // a team (the selection, and each row's ⋯) or Download (the row's ⋯).
+//
+// A team's deleted Docs wait in its trash for `TRASH_DAYS` (Arugula #866):
+// a folded Deleted group at the list's foot, there only when there are any
+// (#1133). One opens in the preview with who deleted it, when, the days it
+// has left, and Restore for those who may.
 
 import { Card } from "../../shared/ui/card";
-import { BlockLoading, EmptyLine, EmptyState } from "../../shared/ui/block-states";
+import { BlockLoading, EmptyState } from "../../shared/ui/block-states";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { BoardOfDoc, ProjectDoc, ProjectDocTrashed, ProjectDocView } from "../../shared/proto";
+import type { BoardOfDoc, ProjectDoc, ProjectDocTrash, ProjectDocTrashed, ProjectDocView } from "../../shared/proto";
 import { chat } from "../../shared/chat-store";
 import { DocError, projectDocs } from "../../shared/docs/store";
 import { TITLE_MAX, titleRefusal } from "../../shared/docs/doc-title.ts";
@@ -25,7 +30,7 @@ import { boards } from "../../shared/boards/store";
 import { onBoardWords } from "../../shared/boards/text";
 import { whoLabel } from "../../shared/issues/text";
 import { useSubscribe } from "../../shared/ui/hooks";
-import { ListCounts, ListPreview, type ListTicked } from "../../shared/ui/list-page";
+import { ListPreview, type ListRowParts, type ListTicked } from "../../shared/ui/list-page";
 import { Modal } from "../../shared/ui/modal";
 import { Time } from "../../shared/ui/time";
 import { DocBlock } from "../../shared/docs/doc-render";
@@ -103,12 +108,28 @@ export function DocsPage({ project }: { project?: string; all?: boolean }) {
 
 const docPath = (p: PlatformProject, d: ProjectDoc) => pathOf({ page: "doc", project: p.id, doc: d.id }, names);
 
+/** A team project's deleted Docs, read again with each read of its Docs (`docs`): none in a personal one, or when they can't be read. */
+function useTrash(p: PlatformProject, docs: ProjectDoc[] | null): ProjectDocTrash | null {
+  const [trash, setTrash] = useState<ProjectDocTrash | null>(null);
+  useEffect(() => {
+    if (!p.team || docs === null) return;
+    let live = true;
+    projectDocs.trash(p.id).then(
+      (t) => live && setTrash(t),
+      () => live && setTrash(null),
+    );
+    return () => void (live = false);
+  }, [p.id, docs]);
+  return p.team ? trash : null;
+}
+
 function DocList({ p }: { p: PlatformProject }) {
   const mode = modeOf(p);
   const me = session.me?.account;
   const { docs, reload } = useProjectDocs(p.id);
+  const trash = useTrash(p, docs);
+  const deleted = useMemo(() => new Map(trash?.docs.map((t) => [t.doc.id, t])), [trash]);
   const [making, setMaking] = useState(false);
-  const [trashOpen, setTrashOpen] = useState(false);
   const writable = mayWrite(p);
   // A personal project's Docs can be put in a team (Arugula #818); a team's are there already.
   const teams = session.projects.filter((t) => t.team && mayWrite(t));
@@ -121,7 +142,6 @@ function DocList({ p }: { p: PlatformProject }) {
         docs={docs}
         item={(d) => projectItem(d, me)}
         splitKey="platform-docs"
-        sub={mode.kind === "team" ? `${p.name}'s reports, plans and write-ups, by its people and its agent sessions` : undefined}
         actions={
           writable && (
             <button type="button" class="secondary small" data-doc-new-open onClick={() => setMaking(true)}>
@@ -129,14 +149,6 @@ function DocList({ p }: { p: PlatformProject }) {
             </button>
           )
         }
-        stats={(shown) => (
-          <>
-            {docs !== null && <ListCounts counts={[{ key: "all", n: shown.length, label: shown.length === 1 ? "Doc" : "Docs" }]} on="all" pick={() => {}} />}
-            <button type="button" class="link docs-trash-open" aria-expanded={trashOpen} data-docs-trash-open onClick={() => setTrashOpen(!trashOpen)}>
-              Trash
-            </button>
-          </>
-        )}
         under={
           <>
             {cloud && (
@@ -145,72 +157,68 @@ function DocList({ p }: { p: PlatformProject }) {
               </p>
             )}
             {making && <NewDoc p={p} done={() => setMaking(false)} />}
-            {trashOpen && <Trash p={p} restored={reload} />}
           </>
         }
+        deleted={trash?.docs.map((t) => t.doc)}
         loading={<BlockLoading inline data-docs-loading what="the Docs" />}
         empty={<EmptyState where="page" data-docs-none title="No Docs yet." why="Ask any agent for a Doc (a write-up, a plan, a comparison) and it keeps it here." />}
         selectable={() => mode.kind === "personal" && teams.length > 0}
         selection={(ticked) => <ShareBar p={p} ticked={ticked} teams={teams} reload={reload} />}
-        onOpen={(d) => go(docPath(p, d))}
-        row={(d) => ({
-          actions: <RowMenu p={p} doc={d} reload={reload} />,
-          attrs: { "data-private": String(mode.kind === "personal") },
-        })}
-        preview={(d) => <Preview key={d.id} p={p} doc={d} reload={reload} />}
+        // A deleted Doc has no page to open.
+        onOpen={(d) => !deleted.has(d.id) && go(docPath(p, d))}
+        row={(d): Partial<ListRowParts> => {
+          const t = deleted.get(d.id);
+          if (t) return { age: <Time at={t.trashed_at} />, attrs: { "data-trashed-doc": d.id } };
+          return {
+            actions: <RowMenu p={p} doc={d} reload={reload} />,
+            attrs: { "data-private": String(mode.kind === "personal") },
+          };
+        }}
+        preview={(d) => {
+          const t = deleted.get(d.id);
+          return t ? <Deleted key={d.id} p={p} t={t} days={trash?.days ?? TRASH_DAYS} restored={reload} /> : <Preview key={d.id} p={p} doc={d} reload={reload} />;
+        }}
       />
     </div>
   );
 }
 
-/** The project's Trash (Arugula #866): each deleted Doc's title, who deleted it, when, the days it has left, and Restore for those who may. */
-function Trash({ p, restored }: { p: PlatformProject; restored: () => void }) {
-  const [trash, setTrash] = useState<{ docs: ProjectDocTrashed[]; days: number } | null>(null);
-  const [busy, setBusy] = useState("");
-  const who = nameOf(p);
-  const load = () =>
-    projectDocs.trash(p.id).then(
-      (t) => setTrash({ docs: t.docs, days: t.days }),
-      () => setTrash({ docs: [], days: TRASH_DAYS }),
-    );
-  useEffect(() => {
-    setTrash(null);
-    void load();
-  }, [p.id]);
-  const restore = async (d: ProjectDocTrashed) => {
-    setBusy(d.doc.id);
+/** A deleted Doc, in the preview (Arugula #1133): who deleted it, when, the days it has left, and Restore for those who may. */
+function Deleted({ p, t, days, restored }: { p: PlatformProject; t: ProjectDocTrashed; days: number; restored: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const left = Math.max(0, Math.ceil(days - (Date.now() - t.trashed_at) / 86_400_000));
+  const by = t.trashed_by ? (nameOf(p)(t.trashed_by) ?? "a member") : "someone who left";
+  const restore = async () => {
+    setBusy(true);
     try {
-      await projectDocs.restore(p.id, d.doc.id);
+      await projectDocs.restore(p.id, t.doc.id);
       restored();
-      await load();
     } catch (err) {
       toast(`Couldn't restore it: ${(err as Error).message}`);
-    } finally {
-      setBusy("");
+      setBusy(false);
     }
   };
-  if (trash === null) return <BlockLoading inline what="the Trash" />;
-  if (trash.docs.length === 0) return <EmptyLine data-docs-trash-empty>The Trash is empty. A deleted Doc waits here for {trash.days} days.</EmptyLine>;
   return (
-    <ul class="platform-list card-list" data-docs-trash>
-      {trash.docs.map((d) => {
-        const left = Math.max(0, Math.ceil(trash.days - (Date.now() - d.trashed_at) / 86_400_000));
-        return (
-          <Card as="li" dense key={d.doc.id} data-trashed-doc={d.doc.id}>
-            <span data-doc-title>{d.doc.title}</span>
-            <span class="dim">
-              {" "}
-              deleted by {d.trashed_by ? (who(d.trashed_by) ?? "a member") : "someone who left"} · <Time at={d.trashed_at} /> · {left} {left === 1 ? "day" : "days"} left
-            </span>
-            {d.restorable && (
-              <button type="button" class="secondary small" disabled={busy === d.doc.id} data-doc-restore onClick={() => void restore(d)}>
-                Restore
-              </button>
-            )}
-          </Card>
-        );
-      })}
-    </ul>
+    <ListPreview
+      title={t.doc.title}
+      facts={
+        <>
+          Deleted by {by} · <Time at={t.trashed_at} /> · {left} {left === 1 ? "day" : "days"} left
+        </>
+      }
+      actions={
+        t.restorable && (
+          <button type="button" class="primary small" disabled={busy} data-doc-restore onClick={() => void restore()}>
+            Restore
+          </button>
+        )
+      }
+      data-doc-deleted={t.doc.id}
+    >
+      <p class="dim" data-doc-deleted-why>
+        {left === 0 ? "It goes for good today." : `It goes for good in ${left} ${left === 1 ? "day" : "days"}.`} {t.restorable ? "Restore brings it back whole, where it was." : "An owner, an editor or its maker can restore it."}
+      </p>
+    </ListPreview>
   );
 }
 
@@ -434,7 +442,7 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
           load={noImages}
           link="page"
           titleView={view && writer ? <TitleEdit project={project} view={view} editing={editing} setEditing={setEditing} wrote={show} /> : undefined}
-          share={view && <PlatformDocActions p={p} doc={view.doc} menu deleter={deleter} gone={() => go(pathOf({ page: "docs", project }, names))} writer={writer} edit={() => setEditing(true)} />}
+          share={view && <PlatformDocActions p={p} doc={view.doc} menu deleter={deleter} gone={() => go(pathOf({ page: "docs", project }, names))} undone={() => go(pathOf({ page: "doc", project, doc }, names))} writer={writer} edit={() => setEditing(true)} />}
           byline={
             view && (
               <>

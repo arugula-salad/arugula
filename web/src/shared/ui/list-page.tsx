@@ -113,6 +113,9 @@ export interface ListGroup<T> {
   items: T[];
   /** Its `data-*` hooks. */
   attrs?: Record<string, string>;
+  /** Folded under its heading, which unfolds it: a group seldom wanted (a
+   * Docs list's Deleted). Folded, the keys skip its rows. */
+  fold?: { open: boolean; toggle: () => void };
 }
 
 /** One way a list can be ordered. */
@@ -259,7 +262,7 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, sort,
   };
   useEffect(() => unpress, []);
 
-  const flat = groups.flatMap((g) => g.items);
+  const flat = groups.flatMap((g) => (g.fold && !g.fold.open ? [] : g.items));
   // Only what's on the screen stays ticked: a hidden row can't be acted on.
   const shownKeys = flat.map(keyOf).join("\n");
   useEffect(() => {
@@ -559,20 +562,27 @@ export function ListPage<T>({ label, header, searchLabel, query, setQuery, sort,
           {selectable && selection && <div class="list-selection" role="status" data-list-selection>{selection({ items: tickedItems, clear: clearTicks })}</div>}
           <div class="list-scroll">
             {status ?? null}
-            {flat.length > 0 && (
+            {groups.some((g) => g.items.length > 0) && (
               <div ref={list} class={ticked.size > 0 ? "list-rows ticking" : "list-rows"} role="listbox" aria-multiselectable={selectable ? true : undefined} tabIndex={0} aria-label={label} aria-activedescendant={selectedKey === null ? undefined : rowId(selectedKey)} data-list-rows>
                 {groups.map((g, i) =>
                   g.items.length === 0 ? null : g.title ? (
                     <div key={g.key ?? g.title} role="group" aria-labelledby={`list-group-${i}`} {...g.attrs}>
                       <div class="list-group" id={`list-group-${i}`}>
-                        {selectable && <GroupCheck items={g.items.map(keyOf)} ticked={ticked} tick={tick} />}
-                        <span class={g.named ? "list-group-title named" : "list-group-title"}>
-                          {g.title}
-                          {g.detail && <small>{g.detail}</small>}
-                        </span>
+                        {selectable && !g.fold && <GroupCheck items={g.items.map(keyOf)} ticked={ticked} tick={tick} />}
+                        {g.fold ? (
+                          <button type="button" class="list-group-title list-group-fold" aria-expanded={g.fold.open} data-list-group-fold onClick={g.fold.toggle}>
+                            <ChevronIcon open={g.fold.open} />
+                            {g.title}
+                          </button>
+                        ) : (
+                          <span class={g.named ? "list-group-title named" : "list-group-title"}>
+                            {g.title}
+                            {g.detail && <small>{g.detail}</small>}
+                          </span>
+                        )}
                         <span class="list-group-n">{g.items.length}</span>
                       </div>
-                      {g.items.map(draw)}
+                      {(!g.fold || g.fold.open) && g.items.map(draw)}
                     </div>
                   ) : (
                     g.items.map(draw)

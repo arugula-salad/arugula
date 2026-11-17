@@ -85,15 +85,27 @@
   height: 100%;
 }
 
-/* The bar over Mine's rows once any is ticked (Arugula #818), and what each Doc's share came to. */
-/* The Trash link by the list's counts (Arugula #866): a 24px target. */
-.docs-trash-open {
-  display: inline-flex;
+/* The Deleted group's heading, which unfolds it (Arugula #1133): the
+   heading's words, a 24px target. */
+.docs-list .list-group-fold {
   align-items: center;
   min-height: 24px;
-  min-width: 24px;
-  padding: 0 4px;
+  margin: -6px 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
 }
+
+.docs-list .list-group-fold:hover {
+  color: var(--fg);
+}
+
+/* The bar over Mine's rows once any is ticked (Arugula #818), and what each Doc's share came to. */
 
 .docs-share-bar {
   display: flex;

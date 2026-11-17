@@ -252,8 +252,13 @@ function Toast() {
   useSubscribe((fn) => toasts.subscribe(fn));
   const t = toasts.shown();
   return t ? (
-    <div class="platform-toast" role="status" data-platform-toast>
-      {t.text}
+    <div class={t.action ? "platform-toast split-note" : "platform-toast"} role="status" data-platform-toast>
+      <span>{t.text}</span>
+      {t.action && (
+        <button type="button" class="link" data-toast-action onClick={() => toasts.act()}>
+          {t.action.label}
+        </button>
+      )}
     </div>
   ) : null;
 }
