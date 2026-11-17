@@ -25,9 +25,9 @@
 //! Every session has a project (Arugula #1163). One made from a page in a
 //! project starts there, set by hand (`Intent::NewSession`'s `project`).
 //! One that nothing places (no pane in a linked clone, none set by hand)
-//! goes in the owner's default project, as control answers it
-//! (`mcp::issues::owners_default`): their personal one, or the team's on
-//! a team's machine. That counts as inferred, not set by hand, so a later
+//! goes in the machine owner's personal project, as control answers it
+//! (`mcp::issues::owners_personal`), never a team's, even on a team's
+//! machine: private by default. That counts as inferred, not set by hand, so a later
 //! pane in a linked clone, or a branch's card, still moves it
 //! (`Mux::default_project`). Without an answer it waits: each time
 //! control's relay comes up, every session still without a project is
@@ -50,7 +50,7 @@ use crate::{
 };
 
 /// Infer each new pane's session's project, while it has none (or only
-/// the default), and its card, else put it in the owner's default; and
+/// the default), and its card, else put it in the owner's personal one; and
 /// each time control's relay comes up, follow the inferred projects'
 /// repos and place the sessions still without one.
 pub fn start(app: Arc<App>) {
@@ -126,7 +126,7 @@ async fn infer(mux: &MuxHandle, control: &Control, session: SessionId, cwd: &str
     (mux.api(|r| Api::InferProject(session, linked, repo, r)).await == Some(true)).then_some(id)
 }
 
-/// Put `session` in the owner's default project (`known`, else as control
+/// Put `session` in the owner's personal project (`known`, else as control
 /// answers it) while nothing placed it: its id, when it was set.
 async fn place_default(
     mux: &MuxHandle,
@@ -136,19 +136,19 @@ async fn place_default(
 ) -> Option<String> {
     let default = match known {
         Some(d) => d,
-        None => crate::mcp::issues::owners_default(control).await?,
+        None => crate::mcp::issues::owners_personal(control).await?,
     };
     let id = default.id.clone();
     if mux.api(|r| Api::DefaultProject(session, default, r)).await != Some(true) {
         return None;
     }
-    debug!(session, project = id, "a session nothing placed, in the owner's default project");
+    debug!(session, project = id, "a session nothing placed, in the owner's personal project");
     Some(id)
 }
 
 /// Every session still without a project, and not taken out of one by
 /// hand, placed as a new pane's would be: by its panes here in a linked
-/// clone, else in the owner's default project. Control is asked the
+/// clone, else in the owner's personal project. Control is asked the
 /// default once.
 async fn place_unplaced(mux: &MuxHandle, control: &Control) {
     let Some(sessions) = mux.api(Api::Sessions).await else { return };
@@ -176,7 +176,7 @@ async fn place_unplaced(mux: &MuxHandle, control: &Control) {
             continue;
         }
         if default.is_none() {
-            default = crate::mcp::issues::owners_default(control).await;
+            default = crate::mcp::issues::owners_personal(control).await;
             // No answer: the next connect asks again.
             if default.is_none() {
                 return;

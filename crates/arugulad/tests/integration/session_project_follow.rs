@@ -33,9 +33,11 @@ struct Fake {
     url: Arc<Mutex<String>>,
     /// Each repo's project, as control links it: its id and name.
     links: Arc<Mutex<HashMap<String, (String, String)>>>,
-    /// The owner's default project, issue-home with no query: none is an
-    /// older control's 404.
+    /// Control's default, issue-home with no query: on a team's machine,
+    /// the team's project. A stray session must never land in it.
     default: Arc<Mutex<Option<(String, String)>>>,
+    /// The owner's personal project, `project=personal`: none answers 404.
+    personal: Arc<Mutex<Option<(String, String)>>>,
     /// What the daemon said on its relay socket.
     said: Arc<Mutex<Vec<Value>>>,
     /// Sends on the relay socket that's up.
@@ -58,12 +60,20 @@ async fn about(State(f): State<Fake>) -> Json<Value> {
 
 async fn issue_home(State(f): State<Fake>, Query(q): Query<HashMap<String, String>>) -> Response {
     let repo = q.get("repo").cloned().unwrap_or_default();
-    let found = match q.is_empty() {
-        true => f.default.lock().unwrap().clone(),
-        false => f.links.lock().unwrap().get(&repo).cloned(),
+    let personal = q.get("project").is_some_and(|p| p == "personal");
+    let found = match (personal, q.is_empty()) {
+        (true, _) => f.personal.lock().unwrap().clone().map(|p| (p, false)),
+        (false, true) => f.default.lock().unwrap().clone().map(|p| (p, true)),
+        (false, false) => f.links.lock().unwrap().get(&repo).cloned().map(|p| (p, false)),
     };
     match found {
-        Some((id, name)) => Json(json!({ "project": id, "name": name, "home": "native" })).into_response(),
+        Some(((id, name), team)) => {
+            let owner = match team {
+                true => json!({ "kind": "team", "id": "tm_1", "name": "Acme" }),
+                false => json!({ "kind": "personal", "account": "a1" }),
+            };
+            Json(json!({ "project": id, "name": name, "home": "native", "team": team, "owner": owner })).into_response()
+        }
         None => (StatusCode::NOT_FOUND, Json(json!({ "error": format!("{repo} is linked to none of your projects") })))
             .into_response(),
     }
@@ -245,15 +255,17 @@ fn an_inferred_project_follows_its_repo_and_one_set_by_hand_stays() {
 }
 
 /// Arugula #1163: a session made in a project starts there, set by hand,
-/// and no repo moves it; one nothing places goes in the owner's default,
-/// which a pane in a linked clone still moves; an older control, with no
-/// default to give, leaves it in none until one answers, and then those
-/// already there get it too.
+/// and no repo moves it; one nothing places goes in the owner's personal
+/// project, never the team's default on a team's machine, and a pane in a
+/// linked clone still moves it; while control names no personal project
+/// it stays in none, and once it does those already there get it too.
 #[test]
-fn every_session_has_a_project_the_owners_default_when_nothing_places_it() {
+fn every_session_has_a_project_the_owners_personal_when_nothing_places_it() {
     let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
     let f = Fake::default();
     f.link("acme/app", "prj_1", "One");
+    // A team's machine: control's default is the team's project.
+    *f.default.lock().unwrap() = Some(("prj_t".into(), "Acme".into()));
     let url = serve(&rt, f.clone());
     let mut d = arugulad!("projectdefault").no_provider().no_tailscale().wait_secs(30).start();
     d.stop();
@@ -264,8 +276,9 @@ fn every_session_has_a_project_the_owners_default_when_nothing_places_it() {
     clone_at(&app, "acme/app");
     std::fs::create_dir_all(&plain).unwrap();
 
-    // An older control has no default: a session in no linked clone stays
-    // in none, and nothing fails.
+    // Control names no personal project (an older one, or none yet): a
+    // session in no linked clone stays in none, never the team's, and
+    // nothing fails.
     d.post("/api/run", json!({ "session": "early", "cwd": plain }));
     d.post("/api/run", json!({ "session": "linked", "cwd": app }));
     d.wait_for("the linked one inferred", || projects(&d).get("linked") == Some(&json!("prj_1")));
@@ -274,14 +287,15 @@ fn every_session_has_a_project_the_owners_default_when_nothing_places_it() {
 
     // Control answers one now: those still without a project get it once
     // the relay is back, and the inferred one stays.
-    *f.default.lock().unwrap() = Some(("prj_d".into(), "Personal".into()));
+    *f.personal.lock().unwrap() = Some(("prj_d".into(), "Personal".into()));
     f.hang_up.notify_waiters();
     d.wait_for("the early one placed", || projects(&d).get("early") == Some(&json!("prj_d")));
     assert_eq!(projects(&d)["linked"], json!("prj_1"));
 
-    // A new session nothing places: the default.
+    // A new session nothing places: the owner's personal project, not the team's.
     d.post("/api/run", json!({ "session": "fresh", "cwd": plain }));
     d.wait_for("the fresh one placed", || projects(&d).get("fresh") == Some(&json!("prj_d")));
+    assert!(!projects(&d).values().any(|p| p == "prj_t"), "no session in the team's project: {:?}", projects(&d));
     // A pane in a linked clone later: its repo's project wins.
     d.post("/api/run", json!({ "session": "fresh", "cwd": app }));
     d.wait_for("inferred over the default", || projects(&d).get("fresh") == Some(&json!("prj_1")));

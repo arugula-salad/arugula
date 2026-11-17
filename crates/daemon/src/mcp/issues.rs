@@ -518,12 +518,17 @@ pub async fn repo_project(control: &crate::control::Control, repo: &str) -> Opti
     Some(arugula_core::ProjectRef { id: id.to_owned(), name: v["name"].as_str().unwrap_or_default().to_owned() })
 }
 
-/// The owner's default project (Arugula #1163), as [`Call::default_project`]
-/// asks it: issue-home with no query, their personal one on a personal
-/// machine, the team's on a team's. `None` when control didn't answer one.
-/// A session nothing placed goes in it (`session_project.rs`).
-pub async fn owners_default(control: &crate::control::Control) -> Option<arugula_core::ProjectRef> {
-    let v = control.cloud_now(Method::GET, AGENT_ISSUE_HOME, None).await.ok()?;
+/// The machine owner's personal project (Arugula #1163): issue-home asked
+/// for `project=personal`, never the team's default, even on a team's
+/// machine, so a session nothing placed stays private. `None` when control
+/// didn't answer one, or answered a team's. A session nothing placed goes
+/// in it (`session_project.rs`).
+pub async fn owners_personal(control: &crate::control::Control) -> Option<arugula_core::ProjectRef> {
+    let path = format!("{AGENT_ISSUE_HOME}?{}", query(&[("project", "personal".to_owned())]));
+    let v = control.cloud_now(Method::GET, &path, None).await.ok()?;
+    if is_team(&v) {
+        return None;
+    }
     let id = v["project"].as_str().filter(|p| !p.is_empty())?;
     Some(arugula_core::ProjectRef { id: id.to_owned(), name: v["name"].as_str().unwrap_or_default().to_owned() })
 }

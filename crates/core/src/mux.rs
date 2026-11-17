@@ -25,7 +25,7 @@ pub struct Session {
     /// ([`Mux::infer_project`]), following that repo when it moves to
     /// another project ([`Mux::follow_repo`]), or set by hand
     /// ([`Intent::SetSessionProject`], or with [`Intent::NewSession`]),
-    /// which nothing moves. Else the owner's default project
+    /// which nothing moves. Else the owner's personal project
     /// ([`Mux::default_project`]). A layout from before has none, and an
     /// older daemon drops it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -556,7 +556,7 @@ impl Mux {
         Ok(true)
     }
 
-    /// The owner's default project for a session nothing placed (Arugula
+    /// The owner's personal project for a session nothing placed (Arugula
     /// #1163): set only while it has none and none was taken away by hand
     /// ([`Session::unplaced`]). It counts as inferred: a pane's linked repo
     /// still gives it another ([`Mux::infer_project`]), and so does a
