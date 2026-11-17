@@ -1,12 +1,12 @@
 # Arugula control
 
 Control is the hosted service at control.arugula.io and app.arugula.io:
-accounts, devices, the relay that reaches your machines from anywhere,
+accounts, the relay that reaches your machines from anywhere,
 teams, projects, chat, boards, issues, hosted workspaces and billing. Its
 code is closed source and lives in its own repository; versions up to the
 split are in this repository's history, under MIT OR Apache-2.0.
 
-Using control (signing in, devices, joining machines, teams) is on
+Using control (signing in, joining machines, teams) is on
 **[docs.arugula.io/control](https://docs.arugula.io/control/)**. What
 crosses the line between a daemon and control (the wire, the native API) is
 the published contract in [`contract/`](../contract/), and what control

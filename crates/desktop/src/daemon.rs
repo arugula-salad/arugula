@@ -325,7 +325,7 @@ fn dropped(app: &AppHandle, c: &ControlState) {
     remember(file, v, "dropped_ms", at.into());
     eprintln!("arugula: control dropped this machine: {}", c.line());
     let what = match &c.code {
-        Some(code) => format!("{}. It asks to join again: approve {code} on a device you use.", c.line()),
+        Some(code) => format!("{}. It asks to join again: add it in Arugula cloud with the code {code}.", c.line()),
         None => format!("{}. Click to join again.", c.line()),
     };
     crate::notify(app, crate::Click::JoinAgain, "This machine is no longer in Arugula cloud".into(), what);

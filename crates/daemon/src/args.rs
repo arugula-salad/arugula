@@ -51,10 +51,11 @@ pub enum Command {
     /// Linux the systemd user service). The binaries and panes' state stay.
     Uninstall,
     /// Add this machine to your account on Arugula cloud
-    /// (`https://control.example.com`): prints a link to approve from a
-    /// device that's signed in, and finishes once that device approves (an
-    /// older control: then the account's fingerprint to check against that
-    /// device). With `--token`, it joins at once, with no link to approve.
+    /// (`https://control.example.com`): prints a link to open in a browser
+    /// that's signed in, and finishes once you click Add there (with an
+    /// older control, a device approves it, and you check the account's
+    /// fingerprint against that device). With `--token`, it joins at once,
+    /// with no link.
     /// A running daemon picks it up.
     Join {
         /// Control's URL [default: Arugula cloud].

@@ -127,7 +127,7 @@ export function OwnerMachines({ owner, name, band, teams }: { owner: string; nam
           <ControlRow
             href={`${controlOrigin()}/#teams`}
             label={team ? `Share a machine with ${name}, or take one out` : "Move a machine into a team"}
-            why="Signed by your device, so it opens your machines page."
+            why="On your machines page."
             hook="machines"
           />
         </ul>

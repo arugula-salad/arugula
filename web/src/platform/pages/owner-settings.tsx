@@ -117,8 +117,8 @@ export function OwnerSettings({ owner }: { owner: string }) {
 const ROLE: Record<string, string> = { owner: "Owner", editor: "Editor", viewer: "Viewer" };
 
 /** Members: the roster, as the platform's copy has it. Inviting, removing
- * and changing roles is a new roster, signed by an owner's device, so it
- * opens control's page (Arugula #1106). */
+ * and changing roles is a new roster, which control's page makes (an
+ * owner's device signs it, if they have one), so it opens there (Arugula #1106). */
 function Members({ owner, name, role, members, band }: { owner: string; name: string; role: string | undefined; members: ProjectMember[]; band: string }) {
   return (
     <Section
@@ -140,10 +140,10 @@ function Members({ owner, name, role, members, band }: { owner: string; name: st
       </ul>
       {role === "owner" ? (
         <ul class="platform-list settings-rows">
-          <ControlRow href={`${controlOrigin()}/#teams`} label="Invite people, remove them and change roles" why="The roster is signed by an owner's device, so this opens your machines page." hook="members" />
+          <ControlRow href={`${controlOrigin()}/#teams`} label="Invite people, remove them and change roles" why="On your machines page, under Teams…" hook="members" />
         </ul>
       ) : (
-        <p class="dim">Its owners invite people and change roles, from one of their devices.</p>
+        <p class="dim">Its owners invite people and change roles.</p>
       )}
     </Section>
   );

@@ -130,7 +130,7 @@ export function Teams({ s, close }: { s: ControlSession; close: () => void }) {
         ))}
       </ul>
       <p class="dim">
-        An invite link lets one person in right away (with Ask me first, an owner says yes to each). Any member can add their own machines to a team; its owners can take them out.{" "}
+        An invite link lets one person in right away (with Ask me first, an owner says yes to each). Owners, and members who drive, can add their own machines to a team; its owners can take them out.{" "}
         <a href="https://docs.arugula.io/teams/" target="_blank" rel="noreferrer">
           More about teams
         </a>
@@ -177,7 +177,7 @@ function NoPasskeyForOwners({ s }: { s: ControlSession }) {
   const can = typeof PublicKeyCredential !== "undefined";
   return (
     <p class="dim control-explain" data-owners-need-passkey>
-      Making someone an owner, or removing an owner, takes your passkey: it shows a person, not a program on one of your devices, made the change. You have none yet.{" "}
+      Making someone an owner, or removing an owner, takes your passkey: it shows a person, not a program on your computer, made the change. You have none yet.{" "}
       {can ? (
         <button class="link" data-add-passkey onClick={() => s.addPasskey().catch((e: Error) => setErr(e.name === "NotAllowedError" ? "Cancelled." : e.message))}>
           Add a passkey

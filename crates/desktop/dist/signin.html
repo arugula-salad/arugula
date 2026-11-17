@@ -28,11 +28,11 @@
   <div class="kicker">Arugula cloud · optional</div>
   <h1>This window, every machine</h1>
   <p id="moved" hidden></p>
-  <p id="lede">This machine is in Arugula cloud already: your other devices reach it now, and it needs nothing more from you.</p>
-  <p>Next, if you like: sign the app in, so this window can reach your other machines too. That's for the app (<b id="device">the Arugula app</b>), separate from the machine's approval.</p>
+  <p id="lede">This machine is in Arugula cloud already: you reach it now wherever you sign in, and it needs nothing more from you.</p>
+  <p>Next, if you like: sign the app in, so this window can reach your other machines too. That's for the app (<b id="device">the Arugula app</b>), separate from adding the machine.</p>
   <ol class="steps">
     <li>Press <b>Sign the app in</b>: your browser opens.</li>
-    <li>Allow it there. That signs <b class="device">the app</b> in and makes it one of your devices.</li>
+    <li>Choose <b>Allow</b> there. That signs <b class="device">the app</b> in.</li>
   </ol>
   <div id="waiting" hidden>
     <div class="code" id="old-code" hidden><span class="dim">Check your browser shows</span><b id="code">…</b></div>
@@ -56,8 +56,8 @@
       for (const el of document.querySelectorAll(".device")) el.textContent = s.name;
     }
     const machine = s.machine || "This machine";
-    if (s.place) $("lede").textContent = `${machine} is in ${s.place}: your other devices reach it now, and it needs nothing more from you.`;
-    else if (s.machine) $("lede").textContent = `${machine} is in Arugula cloud already: your other devices reach it now, and it needs nothing more from you.`;
+    if (s.place) $("lede").textContent = `${machine} is in ${s.place}: you reach it now wherever you sign in, and it needs nothing more from you.`;
+    else if (s.machine) $("lede").textContent = `${machine} is in Arugula cloud already: you reach it now wherever you sign in, and it needs nothing more from you.`;
     // #1580: signed in before, at another address (control moved, or the
     // machine joined another): that's why this page is back.
     if (s.was && s.control) {

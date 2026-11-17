@@ -9,7 +9,7 @@ and threads are on for a team when its owners turn them on (*Chat* under
 A machine is in one place: *Just me*, or one team. The host menu and
 *Machines…* say which on each machine's line, with what it
 means (who sees its panes, who counts as its owner); so does *Join to* when
-you approve a machine. To work with more than one team, keep the machine
+you add a machine. To work with more than one team, keep the machine
 *Just me* and share a session with each team (*Share*, beside the
 session's name; on a phone, *Share session…* in the sheet, or *Share* on a
 pane's card in the swarm and on its notification, #237). Putting it in a team gives that team every pane that isn't
