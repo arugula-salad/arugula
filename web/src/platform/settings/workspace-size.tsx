@@ -48,8 +48,7 @@ function sizesSummary(list: Workspace[]): string {
   const sizes = list.map((w) => sizeOf(w.spec));
   const large = sizes.filter((s) => s === "large").length;
   if (large > 0 && large < sizes.length) return `${large} large, ${sizes.length - large} small`;
-  const one = SIZES.find((x) => x.size === sizes[0])!;
-  return `${one.size === "large" ? "Large" : "Small"}, ${one.box}${sizes.length > 1 ? ` · all ${sizes.length}` : ""}`;
+  return sizes.length === 1 ? `a ${sizes[0]} workspace` : `${sizes.length} ${sizes[0]} workspaces`;
 }
 
 export function WorkspaceSize({ p }: { p: PlatformProject }) {

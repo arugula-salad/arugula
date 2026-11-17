@@ -1,4 +1,5 @@
-// A project's Overrides (Arugula #897), in its settings: each key its owner
+// A project's Overrides (Arugula #897), in its settings (Team defaults, or
+// Your defaults for a personal project, since Arugula #1105): each key its owner
 // sets a default for, as "Using team default: …" or "Overridden: … ·
 // Reset", with a select to choose its own. Changes are staged as the
 // owner's Project defaults stages them (./overrides): Reset and the select
@@ -80,7 +81,7 @@ export function Overrides({ p }: { p: PlatformProject }) {
   useHoldLeaving(n > 0);
   if (!layers)
     return err ? (
-      <Section id="overrides" title="Overrides" summary="Couldn't load">
+      <Section id="overrides" title={owner === "personal" ? "Your defaults" : "Team defaults"} summary="Couldn't load">
         <p class="control-error">{err}</p>
       </Section>
     ) : null;
@@ -109,7 +110,7 @@ export function Overrides({ p }: { p: PlatformProject }) {
   return (
     <Section
       id="overrides"
-      title="Overrides"
+      title={team ? "Team defaults" : "Your defaults"}
       summary={own ? `${own} set here, the rest ${team ? `${team}'s` : "your"} defaults` : `Follows ${team ? `${team}'s` : "your"} defaults`}
       lede={
         <>

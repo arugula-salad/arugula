@@ -392,9 +392,9 @@ export function IssueHomeSetting({ p }: { p: PlatformProject }) {
   const n = home.repos.length;
   return (
     <Section
-      id="issues"
+      id="issue-home"
       title="Where new issues go"
-      summary={home.home === "github" ? (n === 1 ? `On GitHub, ${home.repos[0]}` : `On GitHub, ${n} repos`) : "Here, on Arugula"}
+      summary={home.home === "github" ? (n === 1 ? `New issues on GitHub, ${home.repos[0]}` : `New issues on GitHub, ${n} repos`) : "New issues on Arugula"}
       lede="New issue opens them here, on Arugula, or on the project's linked repo on GitHub." hooks={{ "data-issue-home": home.home }}>
       {n === 0 ? (
         <p class="dim">Kept here: this project has no linked GitHub repo, so its issues are its own.</p>

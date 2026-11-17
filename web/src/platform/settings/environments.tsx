@@ -47,10 +47,10 @@ export const roleIn = (p: PlatformProject) => p.team?.role ?? "owner";
 export function Environments({ p }: { p: PlatformProject }) {
   const [envs, setEnvs] = useState<Environment[] | null>(null);
   const [drivers, setDrivers] = useState<Driver[]>([]);
-  // The project home's Make an environment comes here (`#environments`):
-  // with none yet, the form is open for an owner.
+  // The project home's Make an environment comes here (Secrets and
+  // environments, Arugula #1105): with none yet, the form is open for an owner.
   const [making, setMaking] = useState(false);
-  const asked = useRef(useContext(SectionListContext)?.asked === "environments");
+  const asked = useRef(useContext(SectionListContext)?.asked === "secrets");
   const [err, setErr] = useState("");
   const base = `/api/projects/${encodeURIComponent(p.id)}`;
   const load = () =>
@@ -75,7 +75,7 @@ export function Environments({ p }: { p: PlatformProject }) {
     <Section
       id="environments"
       title="Environments"
-      summary={envs ? (envs.length ? some(envs.map((e) => e.name)) : "None yet") : err ? "Couldn't load" : undefined}
+      summary={envs ? (envs.length ? some(envs.map((e) => e.name)) : "No environments") : err ? "Couldn't load" : undefined}
       count={envs?.length}
       hooks={{ "data-environments": "" }}
       more={

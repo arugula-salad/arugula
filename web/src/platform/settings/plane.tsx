@@ -224,10 +224,10 @@ export function PlaneConnections({ p }: { p: PlatformProject }) {
       summary={
         conns
           ? connected
-            ? joined(some((conns ?? []).filter((c) => c.purge_after === null).map((c) => c.name)), waiting > 0 && `${waiting} waiting`, failedMoves > 0 && `${failedMoves} failed`)
-            : "None connected"
+            ? joined(`Plane ${some((conns ?? []).filter((c) => c.purge_after === null).map((c) => c.name))}`, waiting > 0 && `${waiting} waiting`, failedMoves > 0 && `${failedMoves} failed`)
+            : undefined
           : err
-            ? "Couldn't load"
+            ? "Plane couldn't load"
             : undefined
       }
       count={conns ? connected : undefined}
