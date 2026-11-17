@@ -7999,10 +7999,37 @@ html[data-scheme="light"] .doc {
   color: var(--dim);
 }
 
-/* The status chip wraps: a state can say a sentence. */
-.mention-line .chip {
-  white-space: normal;
+/* The status chip is one line, cut short with an ellipsis (#1167). */
+.mention-line {
+  min-width: 0;
+}
+
+.mention-line .chip,
+.mention-names {
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   text-align: left;
+}
+
+/* The sessions behind a "no session named" chip. */
+.mention-names-list {
+  margin: 0;
+  padding: var(--space-1);
+  list-style: none;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.mention-names-list button {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  text-align: left;
+  font-family: var(--f-mono);
+  font-size: var(--text-sm);
 }
 
 /* Reactions (#104): chips under a message, and the menu that adds one. */
