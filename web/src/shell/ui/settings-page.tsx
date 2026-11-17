@@ -2,7 +2,9 @@
 // `#settings`, what the rail's Settings opens. Its rows are the ones the
 // menus and the palette use (./commands), drawn as a page: a toggle is a
 // switch, a hint is said out loud. What the platform holds is on `/settings`;
-// this page's index links there, and that page's links back.
+// this page's index links there, and that page's You scope opens this one
+// at its dialogs (Arugula #1108). Help is the command palette's, not a
+// section here.
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
@@ -139,8 +141,8 @@ export function SettingsPage({ client }: { client: Client }) {
           <SectionIndex body={body} anchor={(id) => `#settings=${id}`} opened={() => opened.current} elsewhere={elsewhere} />
           <div class="settings-body" ref={body}>
             <PageHeader title="Settings" />
-            {section("device")}
-            {section("all-devices")}
+            {section("push")}
+            {section("appearance")}
             {section("preferences")}
             {section("machine")}
             <RemoteSessionsSection client={client} />
@@ -149,7 +151,6 @@ export function SettingsPage({ client }: { client: Client }) {
                 {rows(account.items())}
               </Section>
             )}
-            {section("help")}
             <ElsewhereLinks elsewhere={elsewhere} />
           </div>
         </div>
