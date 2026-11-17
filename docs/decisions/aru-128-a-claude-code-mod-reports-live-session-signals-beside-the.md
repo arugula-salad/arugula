@@ -208,7 +208,15 @@ conversation.** So:
   older CLI) goes to its pane as before.
 - VS Code's sessions (`claude-vscode`) are their own source, `vscode`, on
   the default conversations list.
-- The command hooks still trust `ARUGULA_PANE`: #469.
+- The command hooks trusted `ARUGULA_PANE` until #469: since then each
+  sends its pid (`HOOK_PID` in a hook's input, `pid` in `ask`, `withdraw`
+  and `attention`), and a terminal takes a hook only from a process in
+  front of it, by the same check. One from elsewhere goes to no pane:
+  `ask` answers `terminal`, `permit` `withdrawn`, `inbox` refuses (409),
+  and `hook`, `attention` and `withdraw` change nothing. No pid (an older
+  CLI) is taken as before. Defaults, open to change (Jake hadn't answered
+  #469's questions): there's no conversation card, so a hook with no pane
+  leaves its question or permission to Claude Code's own dialog.
 
 Where (#453): `plugins/claude-code/hooks/live.ts`, `crates/cli/src/hook.rs`,
 `crates/arugulad-agent/src/ops.rs` (`session_signal`),

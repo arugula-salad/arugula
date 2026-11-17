@@ -432,6 +432,12 @@ pub struct AttentionRequest {
     /// What it's about (a hook's message), for the reason's headline.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub why: Option<String>,
+    /// The process id of the CLI that says it, when its pane came from its
+    /// environment (Arugula #469): a terminal takes it only from a process
+    /// in front of it ([`HOOK_PID`] says how). None: an older CLI, or a
+    /// pane named outright, taken as before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pid: Option<u32>,
 }
 
 /// `arugula mentions on|off %N` (#579): whether teammates' agents may mention
@@ -1596,6 +1602,12 @@ pub struct AskRequest {
     /// Who asks, as the card names it ("hud asks").
     #[serde(default)]
     pub agent: Option<String>,
+    /// The asking CLI's process id (`arugula ask`, Arugula #469): the card
+    /// goes beside a terminal only when that process is in front of it
+    /// ([`HOOK_PID`] says how); otherwise the answer is `terminal` at once.
+    /// None: an older CLI, or not a hook, taken as before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pid: Option<u32>,
 }
 
 /// How a question was answered: `accept` with the card's fields, the hook's
@@ -1632,6 +1644,10 @@ pub enum AskAnswer {
 pub struct WithdrawRequest {
     #[serde(default)]
     pub id: Option<String>,
+    /// The CLI's process id, as its question or permission sent it (Arugula
+    /// #469): one not in front of the terminal takes nothing back there.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pid: Option<u32>,
 }
 
 /// `POST /api/panes/N/permit` (`arugula hook`): Claude Code's
@@ -1655,6 +1671,11 @@ pub struct PermitRequest {
     #[serde(default)]
     #[cfg_attr(feature = "ts", ts(type = "unknown"))]
     pub permission_suggestions: Option<serde_json::Value>,
+    /// [`HOOK_PID`]: the CLI's process id (Arugula #469). A permission
+    /// from one not in front of the terminal is `withdrawn` at once, which
+    /// leaves it to Claude Code's own dialog.
+    #[serde(default, rename = "arugula_pid", skip_serializing_if = "Option::is_none")]
+    pub pid: Option<u32>,
 }
 
 /// A string where there is one; anything else is none.
@@ -1698,6 +1719,17 @@ pub const HOOK_ACKS: &str = "arugula_acks";
 /// those sessions take one at a tool call: a session that started before
 /// could read it as injected text, so it keeps getting them between turns.
 pub const HOOK_MENTIONS_TOLD: &str = "arugula_mentions_told";
+
+/// The field `arugula hook` and `arugula inbox` add to a hook's input
+/// (Arugula #469): the CLI's own process id. Their pane comes from
+/// `ARUGULA_PANE`, which an editor or the desktop app started from a pane
+/// inherits, so a terminal takes a hook only from a process in front of it:
+/// in its foreground job, or in the pane a `tmux` client there shows
+/// (`procinfo::in_front`, as live signals do since #453). A hook from
+/// anywhere else goes to no pane: it changes nothing there, puts no card
+/// there and waits for nothing, so Claude Code asks in its own dialog. One
+/// without it (an older CLI) is taken as it always was.
+pub const HOOK_PID: &str = "arugula_pid";
 
 /// What `POST /api/panes/N/hook` answers. Empty, unless the hook asked
 /// ([`HOOK_TAKES_MENTION`]) and a mention was waiting.

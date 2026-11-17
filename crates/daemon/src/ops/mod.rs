@@ -31,7 +31,7 @@ mod signin;
 mod telemetry;
 mod tokens;
 mod wait;
-mod waits;
+pub(crate) mod waits;
 
 use std::sync::Arc;
 

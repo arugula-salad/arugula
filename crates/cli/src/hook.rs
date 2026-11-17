@@ -33,7 +33,10 @@
 //! be what the user asked for. A `PostToolUse` in a session a person drives
 //! also takes a mention that's waiting (#644), as `additionalContext`.
 //!
-//! Outside an Arugula pane all of them do nothing.
+//! Outside an Arugula pane all of them do nothing. Nor do they in an editor
+//! or the desktop app started from one, which inherits its `ARUGULA_PANE`
+//! (Arugula #469): each sends its own pid, and the daemon takes the pane
+//! only when that process is in front of it ([`HOOK_PID`]).
 
 use std::{
     io::{Read, Write},
@@ -44,7 +47,8 @@ use serde_json::Value;
 
 use arugula_proto::{
     api::{
-        Empty, FollowUpAck, HOOK_ACKS, HOOK_MENTIONS_TOLD, HOOK_TAKES_MENTION, HookAnswer, InboxAnswer, PermitAnswer,
+        Empty, FollowUpAck, HOOK_ACKS, HOOK_MENTIONS_TOLD, HOOK_PID, HOOK_TAKES_MENTION, HookAnswer, InboxAnswer,
+        PermitAnswer,
     },
     flags::{DOCS_STEERING, ISSUES_STEERING, MENTIONS_STEERING},
     op::ops::{FlagsList, PaneFollowUpAck, PaneInbox, PanePermit},
@@ -62,15 +66,18 @@ const FLAGS_WAIT: Duration = Duration::from_secs(2);
 
 /// The pane and the hook's input, unless this is outside a pane, or the
 /// plugin's copy (`command` is the hook's) of one settings.json has too
-/// (#229).
+/// (#229). The input carries this process's id ([`HOOK_PID`]): the pane
+/// comes from the environment, which an app started from the pane inherits,
+/// so the daemon takes it only from a process in front of the pane.
 fn stdin_hook(command: &str) -> Option<(u32, Value)> {
     let mut input = String::new();
     let _ = std::io::stdin().read_to_string(&mut input);
     let pane = crate::util::env_pane()?;
-    let hook: Value = serde_json::from_str(&input).ok()?;
+    let mut hook: Value = serde_json::from_str(&input).ok()?;
     if crate::hooks::plugin_copy_stands_aside(command, hook["hook_event_name"].as_str()) {
         return None;
     }
+    hook.as_object_mut()?.insert(HOOK_PID.into(), std::process::id().into());
     Some((pane, hook))
 }
 

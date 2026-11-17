@@ -27,7 +27,13 @@ Claude Code:
 
 Without `arugula` on PATH, the plugin says so once when a session starts; the
 hooks fail with "not found" until it's there. Outside an Arugula pane the hooks
-do nothing. With the daemon stopped they behave as the settings.json hooks do:
+do nothing, and nor do they in VS Code or the desktop app started from one:
+each hook sends its own process id, and the pane takes it only when that
+process is in front of the pane (in its foreground job, or in the `tmux`
+window a client there shows, as for live signals below). Anywhere else a
+question or permission prompt stays in Claude Code's own dialog, and the
+session never becomes the pane's to resume. An older `arugula` sends no
+process id and is taken as before. With the daemon stopped they behave as the settings.json hooks do:
 a question or permission prompt waits up to a minute for it, then stays in the
 terminal, and the MCP server answers each call with the error.
 

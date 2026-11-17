@@ -7,7 +7,9 @@
 //!
 //! Anything else ends it with no output, which leaves Claude Code to show
 //! its picker as usual: "Answer in terminal" on the card, running outside an
-//! Arugula pane, input that isn't AskUserQuestion's, or a daemon that's
+//! Arugula pane or not in front of it (an editor or the desktop app started
+//! from one, Arugula #469: it sends its pid, and the daemon answers
+//! `terminal`), input that isn't AskUserQuestion's, or a daemon that's
 //! gone for good. When Claude Code gives up on it (Esc or Ctrl-C in the TUI,
 //! or the hook's timeout) it gets SIGTERM, and withdraws the card first.
 //! A daemon restart while it waits only means asking the new one.
@@ -70,7 +72,10 @@ pub fn run(sock: Target) -> i32 {
 
 /// The hook's output, or `None` to leave the question to the terminal.
 fn wait_for_answer(sock: &Target, pane: u32, questions: &Value, id: Option<String>) -> Option<Value> {
-    let body = AskRequest { questions: questions.clone(), id, source: None, agent: None };
+    // Its pid: the card goes beside the pane only from in front of it
+    // (Arugula #469), not from an app started there.
+    let body =
+        AskRequest { questions: questions.clone(), id, source: None, agent: None, pid: Some(std::process::id()) };
     let mut failing_since: Option<Instant> = None;
     loop {
         let answer = send_op::<PaneAsk>(sock, &pane, &body);
@@ -109,7 +114,8 @@ pub fn withdraw_on_signals(sock: Target, pane: u32, id: Option<String>) {
     }
     std::thread::spawn(move || {
         if set.wait().is_ok() {
-            let _ = send_op::<PaneAskWithdraw>(&sock, &pane, &WithdrawRequest { id });
+            let pid = Some(std::process::id());
+            let _ = send_op::<PaneAskWithdraw>(&sock, &pane, &WithdrawRequest { id, pid });
             std::process::exit(0);
         }
     });
@@ -128,7 +134,8 @@ pub fn withdraw_on_signals(sock: Target, pane: u32, id: Option<String>) {
     }
     unsafe extern "system" fn on_ctrl(_event: u32) -> windows_sys::core::BOOL {
         if let Some((sock, pane, id)) = CARD.get() {
-            let _ = send_op::<PaneAskWithdraw>(sock, pane, &WithdrawRequest { id: id.clone() });
+            let pid = Some(std::process::id());
+            let _ = send_op::<PaneAskWithdraw>(sock, pane, &WithdrawRequest { id: id.clone(), pid });
         }
         std::process::exit(0);
     }
