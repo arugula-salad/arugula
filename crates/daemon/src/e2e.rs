@@ -221,16 +221,57 @@ async fn serve(
     }
     let recheck_who = who;
     let recheck_was = principal.clone();
-    let still = move |app: &App| no_longer(app.control.device(&recheck_who).map(|(_, p)| p), &recheck_was);
+    // Anyone's device but this account's own, whose root this machine
+    // pinned when it joined, goes by remote input as a token does: a team's
+    // roster, and so its members' roots, is control's word now (#1005).
+    let input_off_holds = !app.control.own_device(&who) && !principal.id().starts_with("link:");
+    let viewer_only = input_off_holds && !arugula_proto::sharing::remote_input(app.control.state_dir());
+    let (principal, held) = device_hold(principal, &device, viewer_only);
+    if let Some((id, hold)) = &held {
+        app.acl.hold(id, *hold);
+    }
+    let still = move |app: &App| {
+        no_longer(app.control.device(&recheck_who).map(|(_, p)| p), &recheck_was).or_else(|| {
+            (input_off_holds && !viewer_only && !arugula_proto::sharing::remote_input(app.control.state_dir()))
+                .then_some("remote input turned off")
+        })
+    };
     let log = Opened {
         account: device.account.clone(),
         name: device.name.clone(),
-        role: "device".into(),
+        role: if viewer_only { "viewer" } else { "device" }.into(),
         by: "device",
-        token_role: None,
+        held,
     };
     let hands = (device.device.clone(), device.name.clone());
-    run_client(app, inbound, out, principal, caller, hands, log, relayed, changed, false, still).await
+    run_client(app, inbound, out, principal, caller, hands, log, relayed, changed, input_off_holds, still).await
+}
+
+/// Who another person's device channel is with remote input off here
+/// (aru-141), and what it holds while it's open: a viewer at most, on
+/// every session. A team's owner (the machine's owner by the roster) is
+/// their account, a viewer on every session, as an owner's token is.
+fn device_hold(
+    principal: crate::acl::Principal,
+    device: &arugula_e2e::Cert,
+    viewer_only: bool,
+) -> (crate::acl::Principal, Option<(String, crate::acl::Hold)>) {
+    use crate::acl::{Hold, Principal};
+    if !viewer_only {
+        return (principal, None);
+    }
+    match principal {
+        Principal::Owner => {
+            let id = format!("account:{}", device.account);
+            let hold = Hold::token(Some(arugula_core::Role::Viewer), true);
+            (Principal::User { id: id.clone(), name: device.name.clone(), pic: None }, Some((id, hold)))
+        }
+        p => {
+            let hold = Hold { viewer_only: true, ..Hold::default() };
+            let id = p.id().to_owned();
+            (p, Some((id, hold)))
+        }
+    }
 }
 
 /// How often a token channel checks the machine's remote-input switch,
@@ -238,7 +279,8 @@ async fn serve(
 pub(crate) const RECHECK: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// A channel opened with a machine token (aru-141): let in as the token's
-/// role says, capped to a viewer's while remote input is off here.
+/// role says, and a viewer at most while remote input is off here, a
+/// session shared with them included.
 #[allow(clippy::too_many_arguments)]
 async fn serve_token(
     app: Arc<App>,
@@ -267,22 +309,25 @@ async fn serve_token(
     let out = Arc::new(Out::new(ch, out));
     let id = format!("account:{}", claims.sub);
     // Its role in place of the team roster's while it's open (Arugula
-    // #1005): control's word, a guest's included.
-    app.acl.hold_token_role(&id, grant.role);
+    // #1005): control's word, a guest's included. With remote input off,
+    // nothing raises it past a viewer: not the roster, not a grant on a
+    // session, not a team's.
+    let hold = crate::acl::Hold::token(grant.role, !input);
+    app.acl.hold(&id, hold);
     let caller = Caller { account: claims.sub.clone(), device: id.clone(), name: claims.name.clone() };
     let log = Opened {
         account: claims.sub.clone(),
         name: claims.name.clone(),
         role: grant.shown.into(),
         by: "token",
-        token_role: Some(id.clone()),
+        held: Some((id.clone(), hold)),
     };
-    // A role that could type ends when remote input goes off here; the
-    // client opens a new channel and gets a viewer's.
-    let could_type = grant.could_type;
+    // A channel that opened with remote input on ends when it goes off,
+    // whatever its token's role: a share can make a viewer or a guest an
+    // editor of a session. The client opens a new channel, held to a
+    // viewer's.
     let still = move |app: &App| {
-        (could_type && !arugula_proto::sharing::remote_input(app.control.state_dir()))
-            .then_some("remote input turned off")
+        (input && !arugula_proto::sharing::remote_input(app.control.state_dir())).then_some("remote input turned off")
     };
     run_client(
         app,
@@ -308,8 +353,6 @@ pub(crate) struct TokenGrant {
     pub(crate) role: Option<arugula_core::Role>,
     /// The role to log.
     pub(crate) shown: &'static str,
-    /// Whether it may type or act (more than watch).
-    pub(crate) could_type: bool,
 }
 
 /// What `claims` give here. The owner is this machine's owner; on a hosted
@@ -326,23 +369,17 @@ pub(crate) fn token_grant(
         || crate::acl::Principal::User { id: format!("account:{}", claims.sub), name: claims.name.clone(), pic: None };
     let types = matches!(claims.role, TokenRole::Owner | TokenRole::Editor);
     if types && !remote_input {
-        return TokenGrant { principal: user(), role: Some(Role::Viewer), shown: "viewer", could_type: false };
+        return TokenGrant { principal: user(), role: Some(Role::Viewer), shown: "viewer" };
     }
     match claims.role {
-        TokenRole::Owner => {
-            TokenGrant { principal: crate::acl::Principal::Owner, role: None, shown: "owner", could_type: true }
-        }
+        TokenRole::Owner => TokenGrant { principal: crate::acl::Principal::Owner, role: None, shown: "owner" },
         TokenRole::Editor if hosted => {
-            TokenGrant { principal: crate::acl::Principal::Owner, role: None, shown: "editor", could_type: true }
+            TokenGrant { principal: crate::acl::Principal::Owner, role: None, shown: "editor" }
         }
-        TokenRole::Editor => {
-            TokenGrant { principal: user(), role: Some(Role::Editor), shown: "editor", could_type: true }
-        }
-        TokenRole::Viewer => {
-            TokenGrant { principal: user(), role: Some(Role::Viewer), shown: "viewer", could_type: false }
-        }
+        TokenRole::Editor => TokenGrant { principal: user(), role: Some(Role::Editor), shown: "editor" },
+        TokenRole::Viewer => TokenGrant { principal: user(), role: Some(Role::Viewer), shown: "viewer" },
         // Only what's shared with `account:<sub>`.
-        TokenRole::Guest => TokenGrant { principal: user(), role: None, shown: "guest", could_type: false },
+        TokenRole::Guest => TokenGrant { principal: user(), role: None, shown: "guest" },
     }
 }
 
@@ -359,14 +396,14 @@ pub(crate) fn token_owns(
     remote_input && (role == TokenRole::Owner || (role == TokenRole::Editor && hosted))
 }
 
-/// What the remote sessions log says of a channel, and the token role to
-/// let go of when it closes.
+/// What the remote sessions log says of a channel, and what it holds in
+/// the ACL for whom until it closes.
 struct Opened {
     account: String,
     name: String,
     role: String,
     by: &'static str,
-    token_role: Option<String>,
+    held: Option<(String, crate::acl::Hold)>,
 }
 
 /// A client's channel once it's let in, as `principal`: the mux's client
@@ -636,8 +673,8 @@ impl Drop for Leave {
     fn drop(&mut self) {
         self.app.mux.send(Cmd::Disconnect { client: self.client });
         self.app.hands.disconnect(self.client);
-        if let Some(id) = &self.log.token_role {
-            self.app.acl.drop_token_role(id);
+        if let Some((id, hold)) = &self.log.held {
+            self.app.acl.release(id, *hold);
         }
         let lasted_ms = self.opened.elapsed().as_millis() as u64;
         info!(device = self.device, client = self.client, lasted_ms, "channel closed");
@@ -995,18 +1032,18 @@ mod token_grants {
         let user = Principal::User { id: "account:acct".into(), name: "bee".into(), pic: None };
         let g = |r, hosted, input| {
             let g = token_grant(&claims(r), hosted, input);
-            (g.principal, g.role, g.could_type)
+            (g.principal, g.role)
         };
-        assert_eq!(g(TokenRole::Owner, false, true), (Principal::Owner, None, true));
-        assert_eq!(g(TokenRole::Editor, false, true), (user.clone(), Some(Role::Editor), true));
+        assert_eq!(g(TokenRole::Owner, false, true), (Principal::Owner, None));
+        assert_eq!(g(TokenRole::Editor, false, true), (user.clone(), Some(Role::Editor)));
         // A hosted machine's editors have full use of it (M184).
-        assert_eq!(g(TokenRole::Editor, true, true), (Principal::Owner, None, true));
-        assert_eq!(g(TokenRole::Viewer, false, true), (user.clone(), Some(Role::Viewer), false));
-        assert_eq!(g(TokenRole::Guest, false, true), (user.clone(), None, false));
+        assert_eq!(g(TokenRole::Editor, true, true), (Principal::Owner, None));
+        assert_eq!(g(TokenRole::Viewer, false, true), (user.clone(), Some(Role::Viewer)));
+        assert_eq!(g(TokenRole::Guest, false, true), (user.clone(), None));
         // Remote input off: nobody through control types.
-        assert_eq!(g(TokenRole::Owner, false, false), (user.clone(), Some(Role::Viewer), false));
-        assert_eq!(g(TokenRole::Editor, true, false), (user.clone(), Some(Role::Viewer), false));
-        assert_eq!(g(TokenRole::Guest, false, false), (user, None, false));
+        assert_eq!(g(TokenRole::Owner, false, false), (user.clone(), Some(Role::Viewer)));
+        assert_eq!(g(TokenRole::Editor, true, false), (user.clone(), Some(Role::Viewer)));
+        assert_eq!(g(TokenRole::Guest, false, false), (user, None));
     }
 
     #[test]

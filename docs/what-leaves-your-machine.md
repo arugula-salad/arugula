@@ -160,7 +160,8 @@ signed-in session.
   and `arugulad sharing log` prints it on the machine.
 - **What only the machine can turn off:** typing through control.
   `arugulad sharing remote-input off`, run on the machine, makes everyone
-  who comes with a machine token a viewer
+  who comes with a machine token a viewer, a session shared with them
+  included, and other people's devices too
   (`crates/proto/src/sharing.rs`, `remote_input`). Nothing through control
   can turn it back on.
 - **A CLI's sign-in is a file on its machine:** `arugula login` keeps a

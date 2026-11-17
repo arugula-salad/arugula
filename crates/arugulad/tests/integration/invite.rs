@@ -881,3 +881,42 @@ async fn a_channel_closes_when_its_owner_is_made_a_viewer_and_its_follow_stops()
     let ended = follow(&mut dee, &ch, 20, |_| false).await;
     assert!(ended, "the channel stayed open, still following, after Dee was made a viewer");
 }
+
+/// Remote input off (aru-141) holds for another person's device too: a
+/// team's roster, and so whose devices it lets in, is control's word now
+/// (#1005). A team owner's device channel that could type closes when it
+/// goes off, and a new one only watches; the machine's own account's
+/// devices type as before.
+#[cfg(feature = "labs")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn remote_input_off_makes_a_team_owners_device_a_viewer() {
+    let w = world_where(TeamRole::Owner);
+    w.fake.lock().unwrap().team = Some(w.t1.clone());
+    let d = w.daemon(true);
+    let (pane, _) = first(&d);
+    let send = format!("/api/panes/{pane}/send");
+    let typed = || json!({ "text": "echo hi" });
+    let (mut dee, dee_ch) = channel(&d, &w.daemon, &w.dee.keys).await;
+    let (status, r) = channel_post(&mut dee, &dee_ch, &send, typed()).await;
+    assert_eq!(status, 200, "a team owner types with remote input on: {r}");
+
+    std::fs::write(d.state.join("sharing.json"), r#"{ "remote_input": false }"#).unwrap();
+    let closed = tokio::time::timeout(Duration::from_secs(8), async {
+        while let Some(Ok(m)) = dee.next().await {
+            if matches!(m, Message::Close(_)) {
+                break;
+            }
+        }
+    })
+    .await;
+    assert!(closed.is_ok(), "a team owner's device channel stayed open with remote input off");
+    let (mut dee, dee_ch) = channel(&d, &w.daemon, &w.dee.keys).await;
+    let (status, r) = channel_post(&mut dee, &dee_ch, &send, typed()).await;
+    assert_eq!(status, 403, "a team owner's device typed with remote input off: {r}");
+    let (status, r) = channel_call(&mut dee, &dee_ch, "GET", &format!("/api/panes/{pane}/capture"), json!({})).await;
+    assert_eq!(status, 200, "a team owner watches with remote input off: {r}");
+    // The machine's own account's device is its owner still.
+    let (mut alex, alex_ch) = channel(&d, &w.daemon, &w.alex).await;
+    let (status, r) = channel_post(&mut alex, &alex_ch, &send, typed()).await;
+    assert_eq!(status, 200, "the account's own device: {r}");
+}

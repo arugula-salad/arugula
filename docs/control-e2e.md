@@ -61,7 +61,13 @@ terminal traffic is TLS to the relay.
   line first, so a session the one before it left open reads as ended.
 - **What only the machine can turn off.** `arugulad sharing remote-input
   off`, run on the machine, makes everyone who comes with a machine token
-  a viewer; a channel that could type closes and comes back as a viewer's.
+  a viewer: nothing raises them past one while it's off, not the team's
+  roster, not a session shared with them or their team
+  (`acl::Hold::viewer_only`). Other people's devices are viewers too (a
+  team's roster, which says whose devices get in, is control's word); only
+  the devices of the machine's own account, which chain to the root it
+  pinned when it joined, are as they were. A channel that opened while it
+  was on closes and comes back as a viewer's.
   It's in `sharing.json` (`remote_input`), and nothing that comes through
   control can turn it back on (`crates/proto/src/sharing.rs`,
   `remote_input`). It's set from the command line only; the machine's
@@ -1367,7 +1373,7 @@ What limits it:
 |---|---|
 | relays honestly | it reads what it relays only in memory and keeps none of it |
 | mints a token for someone, or for itself | they get the role it names on that one machine, for a few minutes; each token opens one channel; the machine logs the session in `remote-sessions.jsonl`, which its owner reads on its Settings page or with `arugulad sharing log` |
-| mints owner or editor tokens on a machine with remote input off | they come in as viewers: only `arugulad sharing remote-input on`, on the machine, lets them type again |
+| mints owner or editor tokens on a machine with remote input off | they come in as viewers, whatever is shared with them: only `arugulad sharing remote-input on`, on the machine, lets them type again |
 | asks a deploy's box to let someone in | refused by the box, whatever the token says |
 | wants a deploy, a standing run grant or an owner change | needs a passkey assertion from a person, over the action's bytes; an agent holds no passkey |
 | serves a **modified web client** | can read and do whatever that client can, as it could before |
@@ -1667,7 +1673,9 @@ device key, so it opens the channel with a grant
   line in `remote-sessions.jsonl` (`by: "block-grant"`). A daemon that
   takes these says `features.block_grants` in `/api/host`; on an older
   one, or where the hub gives none, a page with a device key signs the
-  grant as before.
+  grant as before. With remote input off, only a grant from one of the
+  machine's own account's devices opens a block, and a channel another
+  person's device's grant opened closes.
 - Once open, the channel carries S27's frames (`arugula_e2e::block::wire`):
   HTTP requests the daemon answers from its block proxy (`sites.rs`), and
   the page's WebSockets. The daemon's side is `crates/daemon/src/block_channel.rs`.

@@ -59,6 +59,26 @@ impl Principal {
     }
 }
 
+/// What a remote channel holds for its principal while it's open
+/// (aru-141): [`Acl::hold`], then [`Acl::release`] with the same.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Hold {
+    /// A role on every session in place of the team roster's, when
+    /// `replaces`: a machine token's (none for a guest's).
+    pub role: Option<Role>,
+    pub replaces: bool,
+    /// It opened with remote input off: while it's open its principal is
+    /// a viewer at most, on every session.
+    pub viewer_only: bool,
+}
+
+impl Hold {
+    /// A machine token's channel: its role in place of the roster's.
+    pub fn token(role: Option<Role>, viewer_only: bool) -> Self {
+        Self { role, replaces: true, viewer_only }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Grant {
     pub session: SessionId,
@@ -109,10 +129,9 @@ pub struct Acl {
     /// Members of teams sessions were shared with (M30), by team, each with
     /// their role in it, from rosters this daemon verified.
     shared_teams: RwLock<std::collections::HashMap<String, std::collections::HashMap<String, Role>>>,
-    /// Machine-wide roles from the machine tokens of channels open now
-    /// (aru-141), by principal id, each with how many channels hold it:
-    /// none for a guest's, whom the team's roster doesn't raise either.
-    tokens: RwLock<std::collections::HashMap<String, (Option<Role>, u32)>>,
+    /// What the remote channels open now hold for their principals
+    /// (aru-141), by principal id: one [`Hold`] per channel.
+    held: RwLock<std::collections::HashMap<String, Vec<Hold>>>,
     /// Who wants "needs you" notifications about what (M29), by principal
     /// id; in `notify.json`.
     notify_path: PathBuf,
@@ -137,7 +156,7 @@ impl Acl {
             grants: RwLock::new(grants),
             team: Default::default(),
             shared_teams: Default::default(),
-            tokens: Default::default(),
+            held: Default::default(),
             notify_path,
             notify: RwLock::new(notify),
         }
@@ -213,7 +232,10 @@ impl Acl {
                         Some(g.role.min(*in_team))
                     })
                     .max();
-                granted.max(team).max(via_team)
+                let role = granted.max(team).max(via_team);
+                // Remote input off (aru-141): nothing raises them past a
+                // viewer, not a grant on this session, not a team's.
+                if self.viewer_only(id) { role.min(Some(Role::Viewer)) } else { role }
             }
         }
     }
@@ -234,32 +256,43 @@ impl Acl {
 
     /// `id`'s machine-wide role: its machine token's, while a channel
     /// opened with one is open (control's word for its role now, aru-141,
-    /// Arugula #1005), else the team roster's.
+    /// Arugula #1005), else the team roster's; at most a viewer's while a
+    /// channel that opened with remote input off is.
     fn team_role_of(&self, id: &str) -> Option<Role> {
-        match self.tokens.read().unwrap().get(id) {
-            Some((r, _)) => *r,
-            None => self.team.read().unwrap().get(id).copied(),
-        }
+        let held = self.held.read().unwrap();
+        let holds = held.get(id).map(Vec::as_slice).unwrap_or_default();
+        let role = if holds.iter().any(|h| h.replaces) {
+            holds.iter().filter(|h| h.replaces).filter_map(|h| h.role).max()
+        } else {
+            self.team.read().unwrap().get(id).copied()
+        };
+        if holds.iter().any(|h| h.viewer_only) { role.min(Some(Role::Viewer)) } else { role }
     }
 
-    /// A channel opened with a machine token (aru-141) gives `id` `role`
-    /// on every session while it's open, in place of the team roster's
-    /// (none, for a guest's token); [`Acl::drop_token_role`] when it
-    /// closes. Two channels with different roles: the higher one holds.
-    pub fn hold_token_role(&self, id: &str, role: Option<Role>) {
-        let mut t = self.tokens.write().unwrap();
-        let e = t.entry(id.to_owned()).or_insert((role, 0));
-        e.0 = e.0.max(role);
-        e.1 += 1;
+    /// Whether a channel of `id`'s that opened with remote input off is
+    /// open: nothing makes them more than a viewer here then.
+    fn viewer_only(&self, id: &str) -> bool {
+        self.held.read().unwrap().get(id).is_some_and(|h| h.iter().any(|h| h.viewer_only))
     }
 
-    /// One of `id`'s token channels closed.
-    pub fn drop_token_role(&self, id: &str) {
-        let mut t = self.tokens.write().unwrap();
-        if let Some(e) = t.get_mut(id) {
-            e.1 = e.1.saturating_sub(1);
-            if e.1 == 0 {
-                t.remove(id);
+    /// A remote channel opened for `id` holds `hold` until
+    /// [`Acl::release`]: a machine token's role on every session in place
+    /// of the team roster's, the highest of its channels' (none, for a
+    /// guest's), and with remote input off, a viewer's at most, whatever
+    /// grants or rosters say.
+    pub fn hold(&self, id: &str, hold: Hold) {
+        self.held.write().unwrap().entry(id.to_owned()).or_default().push(hold);
+    }
+
+    /// The channel that held `hold` for `id` closed.
+    pub fn release(&self, id: &str, hold: Hold) {
+        let mut held = self.held.write().unwrap();
+        if let Some(h) = held.get_mut(id) {
+            if let Some(i) = h.iter().position(|x| *x == hold) {
+                h.remove(i);
+            }
+            if h.is_empty() {
+                held.remove(id);
             }
         }
     }
@@ -566,21 +599,64 @@ mod tests {
         let bea = Principal::User { id: "account:b1".into(), name: "bea".into(), pic: None };
         acl.set_team_roles([("account:b1".to_owned(), Role::Editor)].into());
         assert_eq!(acl.role(&bea, 3), Some(Role::Editor));
-        acl.hold_token_role("account:b1", Some(Role::Viewer));
+        let (viewer, editor) = (Hold::token(Some(Role::Viewer), false), Hold::token(Some(Role::Editor), false));
+        acl.hold("account:b1", viewer);
         assert_eq!((acl.role(&bea, 3), acl.team_role(&bea)), (Some(Role::Viewer), Some(Role::Viewer)));
-        // A second channel, an editor's: the higher one holds.
-        acl.hold_token_role("account:b1", Some(Role::Editor));
+        // A second channel, an editor's: the higher one holds while it's
+        // open, and goes with it.
+        acl.hold("account:b1", editor);
         assert_eq!(acl.role(&bea, 3), Some(Role::Editor));
-        acl.drop_token_role("account:b1");
-        acl.drop_token_role("account:b1");
+        acl.release("account:b1", editor);
+        assert_eq!(acl.role(&bea, 3), Some(Role::Viewer));
+        acl.release("account:b1", viewer);
         // A guest's token: nothing from the roster, only what's shared.
-        acl.hold_token_role("account:b1", None);
+        let guest = Hold::token(None, false);
+        acl.hold("account:b1", guest);
         assert_eq!(acl.role(&bea, 3), None);
         acl.set(4, "account:b1", "bea", Some(Role::Viewer), "owner").unwrap();
         assert_eq!(acl.role(&bea, 4), Some(Role::Viewer));
         // Closed: the roster's again, for a device's channel.
-        acl.drop_token_role("account:b1");
+        acl.release("account:b1", guest);
         assert_eq!(acl.role(&bea, 3), Some(Role::Editor));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// A channel that opened with remote input off (aru-141) makes its
+    /// principal a viewer at most while it's open: an editor's grant on a
+    /// session, a team's share and the roster don't raise it, and a
+    /// session they have nothing on stays shut.
+    #[test]
+    fn remote_input_off_holds_everyone_to_a_viewer() {
+        let dir = std::env::temp_dir().join(format!("arugula-acl-viewer-only-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let acl = Acl::open(&dir);
+        let bea = Principal::User { id: "account:b1".into(), name: "bea".into(), pic: None };
+        acl.set(3, "account:b1", "bea", Some(Role::Editor), "owner").unwrap();
+        acl.set(4, "team:t1", "t1", Some(Role::Editor), "owner").unwrap();
+        acl.set_shared_teams([("t1".to_owned(), [("account:b1".to_owned(), Role::Editor)].into())].into());
+        assert_eq!((acl.role(&bea, 3), acl.role(&bea, 4)), (Some(Role::Editor), Some(Role::Editor)));
+        // A guest's token, remote input off.
+        let guest = Hold::token(None, true);
+        acl.hold("account:b1", guest);
+        assert_eq!(
+            (acl.role(&bea, 3), acl.role(&bea, 4), acl.role(&bea, 5)),
+            (Some(Role::Viewer), Some(Role::Viewer), None)
+        );
+        // An editor's token that opened with it on doesn't lift it.
+        let editor = Hold::token(Some(Role::Editor), false);
+        acl.hold("account:b1", editor);
+        assert_eq!((acl.role(&bea, 3), acl.team_role(&bea)), (Some(Role::Viewer), Some(Role::Viewer)));
+        acl.release("account:b1", editor);
+        acl.release("account:b1", guest);
+        assert_eq!(acl.role(&bea, 3), Some(Role::Editor));
+        // A device's channel holds no role, only the cap: the roster's
+        // editor watches.
+        acl.set_team_roles([("account:b1".to_owned(), Role::Editor)].into());
+        let device = Hold { viewer_only: true, ..Hold::default() };
+        acl.hold("account:b1", device);
+        assert_eq!((acl.team_role(&bea), acl.role(&bea, 5)), (Some(Role::Viewer), Some(Role::Viewer)));
+        acl.release("account:b1", device);
+        assert_eq!(acl.role(&bea, 5), Some(Role::Editor));
         std::fs::remove_dir_all(dir).unwrap();
     }
 
