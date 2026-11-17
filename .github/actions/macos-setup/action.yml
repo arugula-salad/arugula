@@ -67,11 +67,38 @@ runs:
           echo "::warning::ci-cache didn't answer: compiling without sccache"
           exit 0
         fi
+        # Started here, as the setup action's are (#946): a slow start at the
+        # build's first compile fails the build (macos (test), run
+        # 43994245370). A 60-second startup timeout, which sccache 0.18 takes
+        # only from its config file; three tries; and without sccache if it
+        # still won't come up.
+        conf=$RUNNER_TEMP/sccache.toml
+        echo "server_startup_timeout_ms = 60000" > "$conf"
+        export SCCACHE_CONF=$conf
+        export SCCACHE_WEBDAV_ENDPOINT=https://ci-cache.inevitable.fyi
+        export SCCACHE_WEBDAV_USERNAME=arugula-ci
+        export SCCACHE_WEBDAV_KEY_PREFIX=arugula
+        export SCCACHE_IDLE_TIMEOUT=0
+        # A fresh VM has none running, but don't inherit one if it does.
+        sccache --stop-server >/dev/null 2>&1 || true
+        started=false
+        for n in 1 2 3; do
+          if sccache --start-server; then started=true; break; fi
+          echo "::warning::sccache's server didn't start (try $n of 3)"
+          sccache --stop-server >/dev/null 2>&1 || true
+          sleep 5
+        done
+        if [ "$started" != true ]; then
+          echo "::warning::sccache's server didn't start: compiling without sccache"
+          exit 0
+        fi
         {
           echo "RUSTC_WRAPPER=sccache"
-          echo "SCCACHE_WEBDAV_ENDPOINT=https://ci-cache.inevitable.fyi"
-          echo "SCCACHE_WEBDAV_USERNAME=arugula-ci"
-          echo "SCCACHE_WEBDAV_KEY_PREFIX=arugula"
+          echo "SCCACHE_CONF=$SCCACHE_CONF"
+          echo "SCCACHE_WEBDAV_ENDPOINT=$SCCACHE_WEBDAV_ENDPOINT"
+          echo "SCCACHE_WEBDAV_USERNAME=$SCCACHE_WEBDAV_USERNAME"
+          echo "SCCACHE_WEBDAV_KEY_PREFIX=$SCCACHE_WEBDAV_KEY_PREFIX"
+          echo "SCCACHE_IDLE_TIMEOUT=0"
           echo "CARGO_INCREMENTAL=0"
           echo "SCCACHE_IGNORE_SERVER_IO_ERROR=1"
         } >> "$GITHUB_ENV"
