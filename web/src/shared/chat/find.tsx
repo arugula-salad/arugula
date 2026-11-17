@@ -223,10 +223,14 @@ export function ChatSearch({ route, phone, scope, slash }: { route: ChatRoute; p
       />
       {/* A team's page searches its team's rooms; the URL carries the choice (#883). */}
       {scope?.team && route.view === "search" && (
-        <label class="chat-search-all" title="Search every team's rooms, not only this one's">
-          <input type="checkbox" data-chat-search-all checked={!!route.all} onChange={(e) => nav.openChatView("search", text.trim(), (e.target as HTMLInputElement).checked)} />
-          All teams
-        </label>
+        <div class="seg small chat-search-all" role="group" aria-label="Which teams' rooms" data-chat-search-all={route.all ? "all" : "team"}>
+          <button type="button" aria-pressed={!route.all} onClick={() => nav.openChatView("search", text.trim(), false)}>
+            This team
+          </button>
+          <button type="button" aria-pressed={!!route.all} title="Search every team's rooms, not only this one's" onClick={() => nav.openChatView("search", text.trim(), true)}>
+            All teams
+          </button>
+        </div>
       )}
     </>
   );

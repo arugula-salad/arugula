@@ -108,7 +108,7 @@ function Developer({ client, close }: { client: Client; close: () => void }) {
           {(flags ?? []).map((f) => (
             <li key={f.name}>
               <label data-flag={f.name}>
-                <input type="checkbox" checked={f.on} onChange={(e) => void set(f.name, e.currentTarget.checked)} />
+                <input type="checkbox" role="switch" class="sw-switch" checked={f.on} onChange={(e) => void set(f.name, e.currentTarget.checked)} />
                 <span>
                   <b>{f.title || f.name}</b>
                   <span class="dim">{f.about}</span>

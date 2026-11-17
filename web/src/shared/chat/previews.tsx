@@ -254,6 +254,8 @@ export function WebPreviewsSwitch({ team, toast }: { team: string; toast: (m: st
     <label class="chat-setting" data-web-previews>
       <input
         type="checkbox"
+        role="switch"
+        class="sw-switch"
         checked={on}
         onChange={(e) => {
           const web = (e.currentTarget as HTMLInputElement).checked;

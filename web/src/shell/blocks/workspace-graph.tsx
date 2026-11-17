@@ -66,7 +66,7 @@ export function Graph({ client, id, s, member, close, picked }: {
     if (origin) frame.current?.contentWindow?.postMessage({ type: "behold:view", ...v }, origin);
   };
   useEffect(() => view({ member }), [member, origin]);
-  // The live box moves the graph between the source and the block's env.
+  // The Live segment moves the graph between the source and the block's env.
   useEffect(() => view({ env: live ? s.env : "" }), [live, s.env, origin]);
   // The gate strip follows the block's env, whatever the graph shows.
   useEffect(() => view({ gates: s.env }), [s.env, origin]);
@@ -89,9 +89,14 @@ export function Graph({ client, id, s, member, close, picked }: {
       <Bar sub class="ws-graph-bar">
         <b>Graph</b>
         <span class="dim">{member ?? "whole estate"}</span>
-        <label class="dim" title={`Reads ${s.env} live through behold, with this host's credentials`}>
-          <input type="checkbox" data-ws-graph-live checked={live} onChange={(e) => setLive(e.currentTarget.checked)} /> live {s.env}
-        </label>
+        <div class="seg small" role="group" aria-label="Read the graph from" data-ws-graph-live={live ? "live" : "source"}>
+          <button type="button" aria-pressed={!live} title="The workspace's source" onClick={() => setLive(false)}>
+            Source
+          </button>
+          <button type="button" aria-pressed={live} title={`Reads ${s.env} live through behold, with this host's credentials`} onClick={() => setLive(true)}>
+            Live {s.env}
+          </button>
+        </div>
         <label class="dim">
           a click opens{" "}
           <select class="ws-env" data-ws-graph-clicks value={clicks} onChange={(e) => setClicks(e.currentTarget.value as Clicks)}>

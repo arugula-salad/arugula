@@ -528,6 +528,8 @@ function LendDevice({ s }: { s: ControlSession }) {
       <label class="control-check">
         <input
           type="checkbox"
+          role="switch"
+          class="sw-switch"
           data-lend-device
           checked={on}
           onChange={(e) => {

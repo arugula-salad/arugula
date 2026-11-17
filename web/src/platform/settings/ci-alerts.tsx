@@ -135,6 +135,8 @@ export function CiAlertsSetting({ p }: { p: PlatformProject }) {
               <label class="settings-switch" key={m.account}>
                 <input
                   type="checkbox"
+                  role="switch"
+                  class="sw-switch"
                   data-ci-alerts-person={m.account}
                   checked={a.people.includes(m.account)}
                   disabled={busy || !changes}
