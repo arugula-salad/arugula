@@ -101,6 +101,15 @@ impl Daemon {
                 }
                 let _ = reply.send(set);
             }
+            Api::DefaultProject(session, project, reply) => {
+                let id = project.id.clone();
+                let set = self.mux.default_project(session, project).unwrap_or(false);
+                if set {
+                    info!(session, project = id, "session put in the owner's default project");
+                    self.changed();
+                }
+                let _ = reply.send(set);
+            }
             Api::WorkInferable(session, reply) => {
                 let _ = reply.send(self.mux.session(session).is_ok_and(|s| s.work_inferable()));
             }

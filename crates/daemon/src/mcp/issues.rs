@@ -518,6 +518,16 @@ pub async fn repo_project(control: &crate::control::Control, repo: &str) -> Opti
     Some(arugula_core::ProjectRef { id: id.to_owned(), name: v["name"].as_str().unwrap_or_default().to_owned() })
 }
 
+/// The owner's default project (Arugula #1163), as [`Call::default_project`]
+/// asks it: issue-home with no query, their personal one on a personal
+/// machine, the team's on a team's. `None` when control didn't answer one.
+/// A session nothing placed goes in it (`session_project.rs`).
+pub async fn owners_default(control: &crate::control::Control) -> Option<arugula_core::ProjectRef> {
+    let v = control.cloud_now(Method::GET, AGENT_ISSUE_HOME, None).await.ok()?;
+    let id = v["project"].as_str().filter(|p| !p.is_empty())?;
+    Some(arugula_core::ProjectRef { id: id.to_owned(), name: v["name"].as_str().unwrap_or_default().to_owned() })
+}
+
 /// The GitHub repo (`owner/name`) of the clone at `dir`: its `origin`'s,
 /// else the first remote's that's on github.com.
 async fn github_repo_of(dir: &str) -> Option<String> {

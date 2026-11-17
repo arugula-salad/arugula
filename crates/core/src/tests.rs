@@ -4,14 +4,14 @@ use crate::{Edge, Effect, Intent, Mux, Node, Preset};
 
 fn mux_with_session() -> Mux {
     let mut m = Mux::new();
-    m.apply(Intent::NewSession { name: None, from_pane: None }).unwrap();
+    m.apply(Intent::NewSession { name: None, from_pane: None, project: None }).unwrap();
     m
 }
 
 #[test]
 fn new_session_spawns_one_pane_in_one_tab() {
     let mut m = Mux::new();
-    let fx = m.apply(Intent::NewSession { name: Some("work".into()), from_pane: None }).unwrap();
+    let fx = m.apply(Intent::NewSession { name: Some("work".into()), from_pane: None, project: None }).unwrap();
     assert_eq!(fx, vec![Effect::Spawn { pane: 1, cwd_from: None, cwd: None }]);
     assert_eq!(m.sessions[0].name, "work");
     assert_eq!(m.tab(1).unwrap().root, Node::pane(1));
@@ -128,7 +128,7 @@ fn arb_intent() -> impl Strategy<Value = Intent> {
     let edge =
         prop_oneof![Just(Edge::Left), Just(Edge::Right), Just(Edge::Top), Just(Edge::Bottom), Just(Edge::Center)];
     prop_oneof![
-        Just(Intent::NewSession { name: None, from_pane: None }),
+        Just(Intent::NewSession { name: None, from_pane: None, project: None }),
         (id.clone(), id.clone()).prop_map(|(s, p)| Intent::NewTab {
             session: s % 3 + 1,
             from_pane: Some(p),
@@ -497,7 +497,7 @@ fn an_inferred_project_isnt_moved_by_another_panes_repo() {
 fn an_inferred_project_follows_its_repo_and_one_set_by_hand_stays() {
     let mut m = mux_with_session();
     for _ in 0..3 {
-        m.apply(Intent::NewSession { name: None, from_pane: None }).unwrap();
+        m.apply(Intent::NewSession { name: None, from_pane: None, project: None }).unwrap();
     }
     m.infer_project(1, project("prj_a"), "acme/app").unwrap();
     m.infer_project(2, project("prj_a"), "acme/app").unwrap();
@@ -630,7 +630,7 @@ fn an_inferred_card_is_set_once_in_the_sessions_project() {
     assert_eq!(m.sessions[0].work, Some(work("prj_a", Some("#3"))));
     assert!(!m.sessions[0].work_by_hand);
     // A session in no project takes the card's.
-    m.apply(Intent::NewSession { name: None, from_pane: None }).unwrap();
+    m.apply(Intent::NewSession { name: None, from_pane: None, project: None }).unwrap();
     assert_eq!(m.infer_work(2, work("prj_c", Some("#1")), Some("C".into())), Ok(true));
     assert_eq!(m.sessions[1].project, Some(crate::ProjectRef { id: "prj_c".into(), name: "C".into() }));
     assert_eq!(m.infer_work(9, work("prj_a", None), None), Err(crate::Error::NoSession(9)));
@@ -640,7 +640,7 @@ fn an_inferred_card_is_set_once_in_the_sessions_project() {
 fn inferred_work_follows_its_repo_with_an_iss_card_and_work_set_by_hand_stays() {
     let mut m = mux_with_session();
     for _ in 0..3 {
-        m.apply(Intent::NewSession { name: None, from_pane: None }).unwrap();
+        m.apply(Intent::NewSession { name: None, from_pane: None, project: None }).unwrap();
     }
     for s in 1..=4 {
         m.infer_project(s, project("prj_a"), "acme/app").unwrap();
@@ -686,4 +686,101 @@ fn inferred_work_follows_its_repo_with_an_iss_card_and_work_set_by_hand_stays() 
     m.apply(Intent::SetSessionWork { session: 1, work: None, project_name: None }).unwrap();
     assert_eq!(m.follow_repo("acme/app", &project("prj_b")), Vec::<crate::SessionId>::new());
     assert_eq!(m.sessions[0].project.as_ref().map(|p| p.id.as_str()), Some("prj_c"));
+}
+
+#[test]
+fn a_new_session_with_a_project_starts_in_it_set_by_hand() {
+    let mut m = Mux::new();
+    let intent: Intent = serde_json::from_str(
+        r#"{"op":"new_session","name":null,"from_pane":null,"project":{"id":"prj_x","name":"X"}}"#,
+    )
+    .unwrap();
+    m.apply(intent).unwrap();
+    let s = &m.sessions[0];
+    assert_eq!(s.project, Some(crate::ProjectRef { id: "prj_x".into(), name: "X".into() }));
+    assert!(s.project_by_hand && !s.project_default && !s.inferable());
+    // Nothing infers over it, the default doesn't take it, and no repo moves it.
+    assert_eq!(m.infer_project(1, project("prj_a"), "acme/app"), Ok(false));
+    assert_eq!(m.default_project(1, project("prj_d")), Ok(false));
+    assert_eq!(m.follow_repo("acme/app", &project("prj_b")), Vec::<crate::SessionId>::new());
+    assert_eq!(m.infer_work(1, work("prj_a", Some("#3")), None), Ok(false));
+    assert_eq!(m.sessions[0].project.as_ref().map(|p| p.id.as_str()), Some("prj_x"));
+    // Without one, as before: none, and the wire says nothing of it.
+    let bare: Intent = serde_json::from_str(r#"{"op":"new_session","name":null,"from_pane":null}"#).unwrap();
+    assert_eq!(bare, Intent::NewSession { name: None, from_pane: None, project: None });
+    assert!(serde_json::to_value(&bare).unwrap().get("project").is_none());
+    m.apply(bare).unwrap();
+    assert!(m.sessions[1].unplaced());
+}
+
+/// A daemon from before #1163 reads `new_session` as it always did: its
+/// `project` is a field it doesn't know, which serde passes over.
+#[test]
+fn an_older_daemon_ignores_a_new_sessions_project() {
+    #[derive(Debug, PartialEq, serde::Deserialize)]
+    #[serde(tag = "op", rename_all = "snake_case")]
+    enum Older {
+        NewSession { name: Option<String>, from_pane: Option<crate::PaneId> },
+    }
+    let sent = Intent::NewSession { name: None, from_pane: Some(3), project: Some(project("prj_x")) };
+    let read: Older = serde_json::from_value(serde_json::to_value(&sent).unwrap()).unwrap();
+    assert_eq!(read, Older::NewSession { name: None, from_pane: Some(3) });
+}
+
+#[test]
+fn a_session_nothing_placed_goes_in_the_default_and_a_linked_repo_still_moves_it() {
+    let mut m = mux_with_session();
+    assert!(m.sessions[0].unplaced());
+    let rev = m.rev;
+    assert_eq!(m.default_project(1, project("prj_d")), Ok(true));
+    let s = &m.sessions[0];
+    assert_eq!(s.project, Some(project("prj_d")));
+    assert!(s.project_default && !s.project_by_hand && s.project_repo.is_none());
+    assert!(s.inferable() && !s.unplaced(), "inferred, not set by hand");
+    assert!(m.rev > rev);
+    // Asked again: it has one.
+    assert_eq!(m.default_project(1, project("prj_e")), Ok(false));
+    // Kept through a save; a layout from before has no mark.
+    let saved = serde_json::to_value(&m).unwrap();
+    assert_eq!(saved["sessions"][0]["project_default"], true);
+    let back: Mux = serde_json::from_value(saved).unwrap();
+    assert_eq!(back, m);
+
+    // A later pane in a linked clone: its repo's project wins, and it
+    // follows that repo from then on.
+    assert_eq!(m.infer_project(1, project("prj_a"), "acme/app"), Ok(true));
+    let s = &m.sessions[0];
+    assert_eq!((s.project.as_ref(), s.project_default), (Some(&project("prj_a")), false));
+    assert_eq!(m.infer_project(1, project("prj_b"), "acme/web"), Ok(false), "inferred once");
+    assert_eq!(m.follow_repo("acme/app", &project("prj_b")), vec![1]);
+
+    // A branch's card in another project wins over the default too.
+    m.apply(Intent::NewSession { name: None, from_pane: None, project: None }).unwrap();
+    m.default_project(2, project("prj_d")).unwrap();
+    assert_eq!(m.infer_work(2, work("prj_c", Some("#4")), Some("C".into())), Ok(true));
+    let s = &m.sessions[1];
+    assert_eq!((s.project.as_ref().map(|p| p.id.as_str()), s.project_default), (Some("prj_c"), false));
+    assert_eq!(m.default_project(9, project("prj_d")), Err(crate::Error::NoSession(9)));
+}
+
+#[test]
+fn the_default_never_moves_a_project_set_by_hand_or_one_already_there() {
+    let mut m = mux_with_session();
+    for _ in 0..2 {
+        m.apply(Intent::NewSession { name: None, from_pane: None, project: None }).unwrap();
+    }
+    m.apply(Intent::SetSessionProject { session: 1, project: Some(project("prj_x")) }).unwrap();
+    // Taken out of its project by hand: it stays in none.
+    m.apply(Intent::SetSessionProject { session: 2, project: None }).unwrap();
+    m.infer_project(3, project("prj_a"), "acme/app").unwrap();
+    for s in 1..=3 {
+        assert_eq!(m.default_project(s, project("prj_d")), Ok(false));
+    }
+    let at: Vec<_> = m.sessions.iter().map(|s| s.project.as_ref().map(|p| p.id.as_str())).collect();
+    assert_eq!(at, [Some("prj_x"), None, Some("prj_a")]);
+    // Set by hand over the default: no longer the default.
+    m.apply(Intent::NewSession { name: None, from_pane: None, project: None }).unwrap();
+    m.default_project(4, project("prj_d")).unwrap();
+    m.apply(Intent::SetSessionProject { session: 4, project: Some(project("prj_d")) }).unwrap();
+    assert!(!m.sessions[3].project_default && !m.sessions[3].inferable());
 }

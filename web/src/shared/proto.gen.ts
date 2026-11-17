@@ -3271,7 +3271,7 @@ export type InboxMarked = { item: string,
  */
 marked: number, };
 
-export type Intent = { "op": "new_session", name: string | null, from_pane: number | null, } | { "op": "rename_session", session: number, name: string, } | { "op": "set_session_project", session: number, project: ProjectRef | null, } | { "op": "set_session_work", session: number, work: WorkRef | null, project_name?: string, } | { "op": "close_session", session: number, } | { "op": "new_tab", session: number, from_pane: number | null, cwd?: string, } | { "op": "rename_tab", tab: number, name: string | null, } | { "op": "close_tab", tab: number, } | { "op": "move_tab", tab: number, session: number, index: number, } | { "op": "split", pane: number, edge: Edge, local?: boolean, cwd?: string, } | { "op": "close_pane", pane: number, } | { "op": "move_pane", pane: number, target: number, edge: Edge, } | { "op": "break_pane", pane: number, session: number, index: number | null, } | { "op": "dock_tab", tab: number, target: number, edge: Edge, } | { "op": "resize_split", split: number, weights: Array<number>, } | { "op": "arrange", tab: number, preset: Preset, main?: number, } | { "op": "focus", tab: number, pane: number | null, } | { "op": "pop_out", pane: number, out: boolean, } | { "op": "set_option", scope: OptionScope, name: string, value: string | null, };
+export type Intent = { "op": "new_session", name: string | null, from_pane: number | null, project?: ProjectRef, } | { "op": "rename_session", session: number, name: string, } | { "op": "set_session_project", session: number, project: ProjectRef | null, } | { "op": "set_session_work", session: number, work: WorkRef | null, project_name?: string, } | { "op": "close_session", session: number, } | { "op": "new_tab", session: number, from_pane: number | null, cwd?: string, } | { "op": "rename_tab", tab: number, name: string | null, } | { "op": "close_tab", tab: number, } | { "op": "move_tab", tab: number, session: number, index: number, } | { "op": "split", pane: number, edge: Edge, local?: boolean, cwd?: string, } | { "op": "close_pane", pane: number, } | { "op": "move_pane", pane: number, target: number, edge: Edge, } | { "op": "break_pane", pane: number, session: number, index: number | null, } | { "op": "dock_tab", tab: number, target: number, edge: Edge, } | { "op": "resize_split", split: number, weights: Array<number>, } | { "op": "arrange", tab: number, preset: Preset, main?: number, } | { "op": "focus", tab: number, pane: number | null, } | { "op": "pop_out", pane: number, out: boolean, } | { "op": "set_option", scope: OptionScope, name: string, value: string | null, };
 
 /**
  * How an invite's push went: `sent` once a subscription took it,
@@ -5334,8 +5334,10 @@ export type Session = { id: number, name: string, tabs: Array<number>,
  * of the first pane whose clone is linked to one
  * ([`Mux::infer_project`]), following that repo when it moves to
  * another project ([`Mux::follow_repo`]), or set by hand
- * ([`Intent::SetSessionProject`]), which nothing moves. A layout from
- * before has none, and an older daemon drops it.
+ * ([`Intent::SetSessionProject`], or with [`Intent::NewSession`]),
+ * which nothing moves. Else the owner's default project
+ * ([`Mux::default_project`]). A layout from before has none, and an
+ * older daemon drops it.
  */
 project?: ProjectRef, 
 /**
@@ -5361,7 +5363,14 @@ work_by_hand?: boolean,
  * work set by hand), or inferred before it was kept (that one stays
  * put).
  */
-project_repo?: string, };
+project_repo?: string, 
+/**
+ * Its project is the owner's default (Arugula #1163), there because
+ * nothing else placed it ([`Mux::default_project`]): it counts as
+ * inferred, so a pane's linked repo or branch still moves it. An
+ * older daemon drops the mark, and the project stays put.
+ */
+project_default?: boolean, };
 
 /**
  * [`SESSION_ACTIONS`]'s body: what to ask of the session's box.

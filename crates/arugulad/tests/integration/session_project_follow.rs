@@ -1,6 +1,7 @@
 //! Arugula #992: a session's project inferred from its pane's linked repo
 //! follows the repo when it moves to another project, and one set by hand
-//! stays. Against a fake control: control says the repo moved
+//! stays. Arugula #1163: every session has one, the owner's default when
+//! nothing else places it. Against a fake control: control says the repo moved
 //! (`projects.repo_moved` over the relay socket), and a machine that was
 //! away catches up when its relay comes back. Only the label changes: the
 //! panes are the same ones, still running.
@@ -32,6 +33,9 @@ struct Fake {
     url: Arc<Mutex<String>>,
     /// Each repo's project, as control links it: its id and name.
     links: Arc<Mutex<HashMap<String, (String, String)>>>,
+    /// The owner's default project, issue-home with no query: none is an
+    /// older control's 404.
+    default: Arc<Mutex<Option<(String, String)>>>,
     /// What the daemon said on its relay socket.
     said: Arc<Mutex<Vec<Value>>>,
     /// Sends on the relay socket that's up.
@@ -54,7 +58,11 @@ async fn about(State(f): State<Fake>) -> Json<Value> {
 
 async fn issue_home(State(f): State<Fake>, Query(q): Query<HashMap<String, String>>) -> Response {
     let repo = q.get("repo").cloned().unwrap_or_default();
-    match f.links.lock().unwrap().get(&repo) {
+    let found = match q.is_empty() {
+        true => f.default.lock().unwrap().clone(),
+        false => f.links.lock().unwrap().get(&repo).cloned(),
+    };
+    match found {
         Some((id, name)) => Json(json!({ "project": id, "name": name, "home": "native" })).into_response(),
         None => (StatusCode::NOT_FOUND, Json(json!({ "error": format!("{repo} is linked to none of your projects") })))
             .into_response(),
@@ -112,6 +120,33 @@ fn enroll(state: &std::path::Path, control: &str) {
     let saved =
         json!({ "url": control, "trust": { "account": "a1", "root": keys.id() }, "cert": cert, "login": "jake" });
     std::fs::write(state.join("control.json"), saved.to_string()).unwrap();
+}
+
+/// A clone of `repo` (`owner/name`) at `dir`.
+fn clone_at(dir: &std::path::Path, repo: &str) {
+    std::fs::create_dir_all(dir).unwrap();
+    let origin = format!("git@github.com:{repo}.git");
+    for args in [&["init", "-q"][..], &["remote", "add", "origin", &origin]] {
+        assert!(Command::new("git").arg("-C").arg(dir).args(args).status().unwrap().success());
+    }
+}
+
+/// Send `intent` on the daemon's `/ws`, and wait until its state has `until`.
+fn intent(rt: &tokio::runtime::Runtime, d: &arugula_testkit::Daemon, intent: Value, until: &str) {
+    rt.block_on(async {
+        let (mut ws, _) = tokio_tungstenite::connect_async(d.ws("/ws")).await.unwrap();
+        let msg = json!({ "type": "intent", "id": 1, "intent": intent });
+        ws.send(tokio_tungstenite::tungstenite::Message::Text(msg.to_string().into())).await.unwrap();
+        let seen = tokio::time::timeout(std::time::Duration::from_secs(20), async {
+            while let Some(Ok(m)) = ws.next().await {
+                if m.to_text().is_ok_and(|t| t.contains(until)) {
+                    return;
+                }
+            }
+        });
+        seen.await.unwrap_or_else(|_| panic!("never saw {until}"));
+        ws.close(None).await.ok();
+    });
 }
 
 /// Each session's project id, by its name.
@@ -207,4 +242,69 @@ fn an_inferred_project_follows_its_repo_and_one_set_by_hand_stays() {
 
     // Only the label changed: the same panes, the same processes.
     assert_eq!(pids(&d), before);
+}
+
+/// Arugula #1163: a session made in a project starts there, set by hand,
+/// and no repo moves it; one nothing places goes in the owner's default,
+/// which a pane in a linked clone still moves; an older control, with no
+/// default to give, leaves it in none until one answers, and then those
+/// already there get it too.
+#[test]
+fn every_session_has_a_project_the_owners_default_when_nothing_places_it() {
+    let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+    let f = Fake::default();
+    f.link("acme/app", "prj_1", "One");
+    let url = serve(&rt, f.clone());
+    let mut d = arugulad!("projectdefault").no_provider().no_tailscale().wait_secs(30).start();
+    d.stop();
+    enroll(&d.state, &url);
+    d.start();
+    d.wait_for("the relay", || f.to_daemon.lock().unwrap().is_some());
+    let (app, plain) = (d.state.join("app"), d.state.join("plain"));
+    clone_at(&app, "acme/app");
+    std::fs::create_dir_all(&plain).unwrap();
+
+    // An older control has no default: a session in no linked clone stays
+    // in none, and nothing fails.
+    d.post("/api/run", json!({ "session": "early", "cwd": plain }));
+    d.post("/api/run", json!({ "session": "linked", "cwd": app }));
+    d.wait_for("the linked one inferred", || projects(&d).get("linked") == Some(&json!("prj_1")));
+    std::thread::sleep(std::time::Duration::from_secs(2));
+    assert_eq!(projects(&d)["early"], Value::Null);
+
+    // Control answers one now: those still without a project get it once
+    // the relay is back, and the inferred one stays.
+    *f.default.lock().unwrap() = Some(("prj_d".into(), "Personal".into()));
+    f.hang_up.notify_waiters();
+    d.wait_for("the early one placed", || projects(&d).get("early") == Some(&json!("prj_d")));
+    assert_eq!(projects(&d)["linked"], json!("prj_1"));
+
+    // A new session nothing places: the default.
+    d.post("/api/run", json!({ "session": "fresh", "cwd": plain }));
+    d.wait_for("the fresh one placed", || projects(&d).get("fresh") == Some(&json!("prj_d")));
+    // A pane in a linked clone later: its repo's project wins.
+    d.post("/api/run", json!({ "session": "fresh", "cwd": app }));
+    d.wait_for("inferred over the default", || projects(&d).get("fresh") == Some(&json!("prj_1")));
+
+    // Made from a page in project X: it starts there, set by hand, and a
+    // pane in a linked clone doesn't move it.
+    let new =
+        json!({ "op": "new_session", "name": "web", "from_pane": null, "project": { "id": "prj_x", "name": "X" } });
+    intent(&rt, &d, new, "\"prj_x\"");
+    assert_eq!(projects(&d)["web"], json!("prj_x"));
+    d.post("/api/run", json!({ "session": "web", "cwd": app }));
+    std::thread::sleep(std::time::Duration::from_secs(2));
+    assert_eq!(projects(&d)["web"], json!("prj_x"));
+
+    // Taken out of its project by hand: the next connect leaves it in none.
+    let early =
+        d.get("/api/panes").as_array().unwrap().iter().find(|p| p["session_name"] == "early").unwrap()["session"]
+            .clone();
+    intent(&rt, &d, json!({ "op": "set_session_project", "session": early, "project": null }), "project_by_hand");
+    d.wait_for("taken out", || projects(&d).get("early") == Some(&Value::Null));
+    let dials = *f.dials.lock().unwrap();
+    f.hang_up.notify_waiters();
+    d.wait_for("redialled", || *f.dials.lock().unwrap() > dials && f.to_daemon.lock().unwrap().is_some());
+    std::thread::sleep(std::time::Duration::from_secs(2));
+    assert_eq!(projects(&d)["early"], Value::Null);
 }

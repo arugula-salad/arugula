@@ -190,6 +190,9 @@ pub enum Api {
     /// set only while it may be ([`arugula_core::Mux::infer_project`]).
     /// Whether it was set.
     InferProject(SessionId, arugula_core::ProjectRef, String, oneshot::Sender<bool>),
+    /// The owner's default project, for a session nothing placed
+    /// ([`arugula_core::Mux::default_project`]). Whether it was set.
+    DefaultProject(SessionId, arugula_core::ProjectRef, oneshot::Sender<bool>),
     /// The repos sessions' inferred projects came from
     /// ([`arugula_core::Mux::project_repos`]).
     ProjectRepos(oneshot::Sender<Vec<String>>),
@@ -831,7 +834,7 @@ pub fn start(
     };
     if !d.restore(kept) {
         // Something to attach to on first start.
-        if let Err(e) = d.intent(None, Intent::NewSession { name: None, from_pane: None }) {
+        if let Err(e) = d.intent(None, Intent::NewSession { name: None, from_pane: None, project: None }) {
             warn!(error = %e, "could not create the first session");
         }
     }

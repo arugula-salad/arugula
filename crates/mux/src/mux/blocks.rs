@@ -74,8 +74,8 @@ impl Daemon {
                 Intent::Split { pane, edge: arugula_proto::Edge::Right, local, cwd: None }
             }
             (None, Session::Existing(session)) => Intent::NewTab { session, from_pane: from, cwd: None },
-            (None, Session::Create(name)) => Intent::NewSession { name: Some(name), from_pane: from },
-            (None, Session::Any) => Intent::NewSession { name: None, from_pane: from },
+            (None, Session::Create(name)) => Intent::NewSession { name: Some(name), from_pane: from, project: None },
+            (None, Session::Any) => Intent::NewSession { name: None, from_pane: from, project: None },
         };
         let result = self.intent(None, intent);
         self.next_spawn = None;
@@ -248,8 +248,8 @@ impl Daemon {
         let intent = match (req.split, session) {
             (Some(pane), _) => Intent::Split { pane, edge: arugula_proto::Edge::Right, local, cwd: None },
             (None, Session::Existing(session)) => Intent::NewTab { session, from_pane: from, cwd: None },
-            (None, Session::Create(name)) => Intent::NewSession { name: Some(name), from_pane: from },
-            (None, Session::Any) => Intent::NewSession { name: None, from_pane: from },
+            (None, Session::Create(name)) => Intent::NewSession { name: Some(name), from_pane: from, project: None },
+            (None, Session::Any) => Intent::NewSession { name: None, from_pane: from, project: None },
         };
         let result = self.intent(None, intent);
         let unused = self.next_block.take();

@@ -24,8 +24,10 @@ pub struct Session {
     /// of the first pane whose clone is linked to one
     /// ([`Mux::infer_project`]), following that repo when it moves to
     /// another project ([`Mux::follow_repo`]), or set by hand
-    /// ([`Intent::SetSessionProject`]), which nothing moves. A layout from
-    /// before has none, and an older daemon drops it.
+    /// ([`Intent::SetSessionProject`], or with [`Intent::NewSession`]),
+    /// which nothing moves. Else the owner's default project
+    /// ([`Mux::default_project`]). A layout from before has none, and an
+    /// older daemon drops it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub project: Option<ProjectRef>,
@@ -53,12 +55,26 @@ pub struct Session {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub project_repo: Option<String>,
+    /// Its project is the owner's default (Arugula #1163), there because
+    /// nothing else placed it ([`Mux::default_project`]): it counts as
+    /// inferred, so a pane's linked repo or branch still moves it. An
+    /// older daemon drops the mark, and the project stays put.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    pub project_default: bool,
 }
 
 impl Session {
     /// Whether a pane's linked repo may still give it a project: it has
-    /// none, and none was set or taken away by hand.
+    /// none, or only the default one, and none was set or taken away by
+    /// hand.
     pub fn inferable(&self) -> bool {
+        (self.project.is_none() || self.project_default) && !self.project_by_hand
+    }
+
+    /// Whether nothing has placed it: no project, and none taken away by
+    /// hand. The owner's default may go there ([`Mux::default_project`]).
+    pub fn unplaced(&self) -> bool {
         self.project.is_none() && !self.project_by_hand
     }
 
@@ -85,6 +101,7 @@ impl Session {
             self.project = Some(ProjectRef { id: work.project.clone(), name: name.unwrap_or_default() });
             self.project_repo = None;
         }
+        self.project_default = false;
         self.work = Some(work);
     }
 }
@@ -239,10 +256,15 @@ pub const DEFAULT_ROWS: u16 = 24;
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum Intent {
     /// A session with one tab and one pane. `from_pane` lends its working
-    /// directory to the new pane.
+    /// directory to the new pane. `project`, when given, is its project,
+    /// set by hand (Arugula #1163: the page's current project); an older
+    /// daemon ignores it.
     NewSession {
         name: Option<String>,
         from_pane: Option<PaneId>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts", ts(optional))]
+        project: Option<ProjectRef>,
     },
     RenameSession {
         session: SessionId,
@@ -529,6 +551,22 @@ impl Mux {
         }
         s.project = Some(project);
         s.project_repo = Some(repo.to_owned());
+        s.project_default = false;
+        self.rev += 1;
+        Ok(true)
+    }
+
+    /// The owner's default project for a session nothing placed (Arugula
+    /// #1163): set only while it has none and none was taken away by hand
+    /// ([`Session::unplaced`]). It counts as inferred: a pane's linked repo
+    /// still gives it another ([`Mux::infer_project`]), and so does a
+    /// branch's card ([`Mux::infer_work`]). Whether it was set.
+    pub fn default_project(&mut self, session: SessionId, project: ProjectRef) -> Result<bool, Error> {
+        let s = self.session_mut(session)?;
+        if !s.unplaced() {
+            return Ok(false);
+        }
+        (s.project, s.project_repo, s.project_default) = (Some(project), None, true);
         self.rev += 1;
         Ok(true)
     }
@@ -538,8 +576,9 @@ impl Mux {
     /// and only in the session's project, if it has one. Whether it was set.
     pub fn infer_work(&mut self, session: SessionId, work: WorkRef, name: Option<String>) -> Result<bool, Error> {
         let s = self.session_mut(session)?;
-        if !s.work_inferable() || s.project.as_ref().is_some_and(|p| p.id != work.project) || s.refuses(&work).is_err()
-        {
+        // The default project is no project here: the card's takes its place.
+        let elsewhere = !s.project_default && s.project.as_ref().is_some_and(|p| p.id != work.project);
+        if !s.work_inferable() || elsewhere || s.refuses(&work).is_err() {
             return Ok(false);
         }
         s.take_work(work, name);
@@ -614,18 +653,19 @@ impl Mux {
     fn apply_inner(&mut self, intent: Intent) -> Result<Vec<Effect>, Error> {
         use Intent::*;
         match intent {
-            NewSession { name, from_pane } => {
+            NewSession { name, from_pane, project } => {
                 self.next_session += 1;
                 let id = self.next_session;
                 self.sessions.push(Session {
                     id,
                     name: name.unwrap_or_else(|| id.to_string()),
                     tabs: vec![],
-                    project: None,
-                    project_by_hand: false,
+                    project_by_hand: project.is_some(),
+                    project,
                     work: None,
                     work_by_hand: false,
                     project_repo: None,
+                    project_default: false,
                 });
                 let pane = self.new_pane();
                 self.add_tab(id, Node::pane(pane), None)?;
@@ -644,6 +684,7 @@ impl Mux {
                 s.project = project;
                 s.project_by_hand = true;
                 s.project_repo = None;
+                s.project_default = false;
                 Ok(vec![])
             }
             SetSessionWork { session, work, project_name } => {
