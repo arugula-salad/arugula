@@ -12,8 +12,9 @@
 //
 // A Doc in the person's own project also has Download in ⋯ (Arugula #865):
 // the Doc as Markdown, built here (shared/docs/download.ts). Delete is last
-// in ⋯ for those who may (Arugula #864): a Doc goes to the project's Trash
-// (#866). Rename is first in ⋯ for owners and editors (#979): a row's asks for
+// in ⋯ for those who may (Arugula #864): a team's Doc goes to the project's
+// trash (#866), and the toast that says so has Undo (#1133); after that it's
+// under Deleted at the Docs list's foot. Rename is first in ⋯ for owners and editors (#979): a row's asks for
 // the new title in a dialog, the Doc page's edits the title where it stands.
 
 import { useEffect, useRef, useState } from "preact/hooks";
@@ -36,7 +37,7 @@ import { session, type PlatformProject } from "../session";
 import { toast } from "../toast";
 import { mayWrite } from "./issues";
 
-/** How long a deleted team Doc waits in the Trash (the wire's `TRASH_DAYS`; the list says its own). */
+/** How long a deleted team Doc waits under Deleted (the wire's `TRASH_DAYS`; the list says its own). */
 export const TRASH_DAYS = 30;
 
 /** The Doc's page, whole, as a link. */
@@ -52,10 +53,11 @@ interface Share {
   run: (from: HTMLElement) => void;
 }
 
-/** Who may delete it, and what follows a delete. */
+/** Who may delete it, what follows a delete, and what follows its Undo (`gone` when not said). */
 interface Remove {
   deleter?: boolean;
   gone?: () => void;
+  undone?: () => void;
 }
 
 /** Who may rename it (#979): owners and editors. `edit` is the page's own way to
@@ -190,7 +192,17 @@ function useDocActions(p: PlatformProject, doc: ProjectDoc, eager: boolean, relo
       await projectDocs.remove(p.id, doc.id);
       remove.gone?.();
     } catch (err) {
-      toast(`Couldn't delete it: ${(err as Error).message}`);
+      return toast(`Couldn't delete it: ${(err as Error).message}`);
+    }
+    // Only a team's Doc waits to be restored. Whoever deleted it may restore it.
+    if (p.team) toast(`Deleted “${doc.title}”`, { label: "Undo", run: () => void undo() });
+  };
+  const undo = async () => {
+    try {
+      await projectDocs.restore(p.id, doc.id);
+      (remove.undone ?? remove.gone)?.();
+    } catch (err) {
+      toast(`Couldn't restore it: ${(err as Error).message}`);
     }
   };
   const dialogs: ComponentChildren = renaming ? (
@@ -216,7 +228,7 @@ function useDocActions(p: PlatformProject, doc: ProjectDoc, eager: boolean, relo
   ) : deleting ? (
     <ConfirmRemove title={`Delete “${doc.title}”?`} label="Delete" go={() => void drop()} cancel={() => setDeleting(false)}>
       <p data-doc-confirm>
-        It goes to the Trash for {TRASH_DAYS} days, out of sight of everyone in the project. An owner, an editor or its maker can restore it from the Docs page's Trash.
+        It waits under Deleted at the foot of the Docs list for {TRASH_DAYS} days, out of sight of everyone in the project. An owner, an editor or its maker can restore it there.
       </p>
     </ConfirmRemove>
   ) : null;
@@ -224,8 +236,8 @@ function useDocActions(p: PlatformProject, doc: ProjectDoc, eager: boolean, relo
 }
 
 /** The three actions, for the preview and the page's header. `menu` adds the ⋯ after them. */
-export function PlatformDocActions({ p, doc, reload, menu, deleter, gone, writer, edit }: { p: PlatformProject; doc: ProjectDoc; reload?: () => void; menu?: boolean } & Remove & Rename) {
-  const a = useDocActions(p, doc, true, reload, { deleter, gone }, { writer, edit });
+export function PlatformDocActions({ p, doc, reload, menu, deleter, gone, undone, writer, edit }: { p: PlatformProject; doc: ProjectDoc; reload?: () => void; menu?: boolean } & Remove & Rename) {
+  const a = useDocActions(p, doc, true, reload, { deleter, gone, undone }, { writer, edit });
   return (
     <>
       <DocActions
