@@ -87,7 +87,7 @@ export function NewDeployPage({ project, env }: { project: string; env?: string 
     if (!typed && environment in lastFrom) setRepo(repoFor(envName, repos, lastFrom[environment]));
   }, [environment, envName, repos, lastFrom, typed]);
   if (!p) return <Missing what="That project isn't one of yours (or it's gone)." />;
-  const settings = pathOf({ page: "project-settings", project: p.id }, names);
+  const settings = pathOf({ page: "settings", scope: "project", project: p.id, section: "environments" }, names);
   const back = { href: settings, label: "Project settings", onClick: (e: MouseEvent) => follow(e, settings) };
   if (roleIn(p) === "viewer") {
     return (

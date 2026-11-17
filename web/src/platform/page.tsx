@@ -31,12 +31,11 @@ import { NewDeployPage } from "./pages/new-deploy";
 import { DeploysPage } from "./pages/deploys";
 import { InboxPage } from "./pages/inbox";
 import { Missing, ProjectHome } from "./pages/project";
-import { Installed, ProjectSettings } from "./pages/project-settings";
+import { Installed } from "./pages/project-settings";
 import { MovePage } from "./move/move-page";
 import { SplitNote } from "./move/split-note";
 import { DesignPage } from "./pages/design";
 import { SettingsPage } from "./pages/settings";
-import { OwnerSettings } from "./pages/owner-settings";
 import { HostedWorkspacePage, HostedWorkspaces } from "./pages/hosted-workspace";
 import { RunPage, RunsPage } from "./pages/runs";
 import { AllBoardsPage, BoardPage, BoardsPage } from "./pages/boards";
@@ -139,8 +138,6 @@ function body(r: Route, lost: string | null) {
       return <SessionPage project={r.project} session={r.session} />;
     case "workspaces":
       return <HostedWorkspaces project={r.project} />;
-    case "project-settings":
-      return <ProjectSettings id={r.project} link={r.link} />;
     case "move":
       return <MovePage project={r.project} />;
     case "deploys":
@@ -157,9 +154,7 @@ function body(r: Route, lost: string | null) {
     case "all-boards":
       return <AllBoardsPage all={r.all} />;
     case "settings":
-      return <SettingsPage />;
-    case "owner-settings":
-      return <OwnerSettings owner={r.owner} />;
+      return <SettingsPage r={r} />;
     case "deploy":
       return <DeployPage id={r.deploy} />;
     case "team":
@@ -358,6 +353,7 @@ function useSlug(r: Route) {
   // (Arugula #1074).
   const pops = popCount();
   useEffect(() => {
-    if (want && want !== location.pathname + location.search && popCount() === pops && session.state === "ready") go(want + location.hash, true);
+    // Settings' `#section` is in the path now (Arugula #1104): the hash goes.
+    if (want && want !== location.pathname + location.search && popCount() === pops && session.state === "ready") go(want + (r.page === "settings" ? "" : location.hash), true);
   }, [want, pops, session.state]);
 }

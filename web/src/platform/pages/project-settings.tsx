@@ -1,4 +1,5 @@
-// `/p/:project/settings`: a project's settings (M163). First its name, whose
+// Settings' Project scope (Arugula #1104, `/settings/project/:project`; it
+// was `/p/:project/settings`): a project's settings (M163). First its name, whose
 // it is and archiving it (General, Arugula #895, ../settings/general). Its linked
 // GitHub repos: who links one is a member who maintains it on GitHub, and
 // the platform checks that. Where the GitHub App isn't installed, linking
@@ -13,27 +14,26 @@
 // and its own secrets (M230), what its Claude calls cost (M231), and the
 // apps products keep in it (M236), and first, for every member, who
 // can do what here (Access, Arugula #682, ../settings/access). Each part is a section
-// (shared/ui/settings-section), as /settings's are: a heading, one line, the rest
-// behind More, and on a wide screen an index of them beside the column.
+// (shared/ui/settings-section), as every scope's are: listed with what's
+// set, and its controls beside the list.
 // After the repos, its Overrides (Arugula #897, ../settings/project-overrides):
 // which of its owner's defaults it follows, and which it sets itself.
 // The repos are a table, a row each with its switch. After them, the Plane
 // projects connected to it (#356, ../settings/plane), with boards on, and
 // after where its issues go, its CI alerts (native #774, ../settings/ci-alerts).
 
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useContext, useEffect, useState } from "preact/hooks";
 import type { LinkedRepo, LinkedRepos } from "../../shared/proto.gen";
 import { platformFetch } from "../../shared/maintenance";
 import { desktopApp } from "../../shared/desktop";
 import { BrowserStep } from "../../shared/ui/browser-step";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { useSubscribe } from "../../shared/ui/hooks";
-import { PageHeader } from "../../shared/ui/page-header";
 import { names } from "../links";
-import { follow, go, pathOf, REPO } from "../router";
+import { go, pathOf, REPO } from "../router";
 import { session } from "../session";
 import { useBoards } from "./boards";
-import { Missing, REPOS_MEAN } from "./project";
+import { REPOS_MEAN } from "./project";
 import { IssueHomeSetting } from "./issues";
 import { RunGrant } from "../settings/runs";
 import { FinishStep } from "../settings/finish-step";
@@ -46,7 +46,8 @@ import { ClientApps } from "../settings/client-apps";
 import { PlaneConnections } from "../settings/plane";
 import { CiAlertsSetting } from "../settings/ci-alerts";
 import { BoardSettings } from "../settings/board-settings";
-import { Section, SectionIndex } from "../../shared/ui/settings-section";
+import { Section, SectionListContext } from "../../shared/ui/settings-section";
+import { plural } from "../settings/summary";
 import { Access } from "../settings/access";
 import { General } from "../settings/general";
 import { Overrides } from "../settings/project-overrides";
@@ -87,7 +88,8 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
   // and this asks again, with the request that was refused, when the window
   // is back (#236).
   const [install, setInstall] = useState<{ url: string; retry: () => Promise<unknown> } | null>(null);
-  const body = useRef<HTMLDivElement>(null);
+  // Back from installing the GitHub App, or the Overview's Link a repo: the box, to type one.
+  const asked = useContext(SectionListContext)?.asked === "repos";
   const base = `/api/projects/${encodeURIComponent(id)}/repos`;
   const load = () =>
     call<LinkedRepos>("GET", base).then(
@@ -95,7 +97,12 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
       (e: Error) => setErr(e.message),
     );
   useEffect(() => void load(), [id]);
-  if (!p) return <Missing what="That project isn't one of yours (or it's gone)." />;
+  if (!p)
+    return (
+      <Section id="general" title="General" summary="Not one of yours">
+        <p class="dim">That project isn't one of yours (or it's gone).</p>
+      </Section>
+    );
   const changes = !p.team || p.team.role !== "viewer";
   const act = async (f: () => Promise<unknown>) => {
     setBusy(true);
@@ -127,18 +134,15 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
   };
   // The head counts the linked ones, not those waiting for the purge.
   const linked = (repos ?? []).filter((r) => r.purge_after === null).length;
-  const home = pathOf({ page: "project", project: p.id }, names);
+  const kept = (repos ?? []).filter((r) => r.purge_after === null && r.mirror_content).length;
   return (
-    <section class="platform-section sw-page settings-page" data-project-settings={p.id}>
-      <div class="settings-layout">
-        <SectionIndex body={body} />
-        <div class="settings-body" ref={body}>
-          <PageHeader title="Project settings" back={{ href: home, label: p.name, onClick: (e) => follow(e, home) }} />
+    <>
           <General p={p} />
           <Access p={p} />
           <Section
             id="repos"
             title="Linked repos"
+            summary={repos ? (linked ? (linked === 1 ? `${repos.find((r) => r.purge_after === null)?.full_name}${kept ? ", bodies kept" : ""}` : `${plural(linked, "repo")} linked${kept ? `, ${kept} keep bodies` : ""}`) : "None linked") : err ? "Couldn't load" : undefined}
             count={repos ? linked : undefined}
             more={
               <>
@@ -236,7 +240,7 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
                   value={repo}
                   data-link-repo
                   // The project home's Link a repo comes here, to type one.
-                  autofocus={location.hash === "#repos"}
+                  autofocus={asked}
                   onInput={(e) => setRepo(e.currentTarget.value)}
                 />
                 <button class="primary" disabled={busy}>
@@ -296,9 +300,7 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
           <ProjectAgents p={p} />
           <ClaudeSpend p={p} />
           <ClientApps p={p} />
-        </div>
-      </div>
-    </section>
+    </>
   );
 }
 
@@ -306,7 +308,7 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
  * the repo filled in, to link it. */
 export function Installed({ project, repo }: { project?: string; repo?: string }) {
   useEffect(() => {
-    go(project ? pathOf({ page: "project-settings", project, link: repo }, names) : "/", true);
+    go(project ? pathOf({ page: "settings", scope: "project", project, section: "repos", link: repo }, names) : "/", true);
   }, [project, repo]);
   return <p class="platform-section dim">Back from GitHub…</p>;
 }

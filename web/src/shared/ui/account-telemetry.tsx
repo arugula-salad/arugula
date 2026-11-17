@@ -42,6 +42,7 @@ export function UsageReports({ telemetry: t, setTelemetry }: { telemetry: Consen
         <input
           type="checkbox"
           role="switch"
+          class="sw-switch"
           data-telemetry-switch
           checked={!!t.on}
           onChange={(e) => {

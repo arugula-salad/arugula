@@ -21,6 +21,7 @@ import { follow, pathOf } from "../router";
 import { ATTRIBUTIONS, CUSTOM, KINDS, PRESETS, attributionHelp, presetOf } from "./plane-policy";
 import { useBoards } from "../pages/boards";
 import { Section } from "../../shared/ui/settings-section";
+import { joined, some } from "./summary";
 
 /** A call to the platform: its JSON, or its `{error}` thrown. */
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -220,6 +221,15 @@ export function PlaneConnections({ p }: { p: PlatformProject }) {
     <Section
       id="plane"
       title="Plane"
+      summary={
+        conns
+          ? connected
+            ? joined(some((conns ?? []).filter((c) => c.purge_after === null).map((c) => c.name)), waiting > 0 && `${waiting} waiting`, failedMoves > 0 && `${failedMoves} failed`)
+            : "None connected"
+          : err
+            ? "Couldn't load"
+            : undefined
+      }
       count={conns ? connected : undefined}
       lede="Plane projects whose work items live in this project, for its members."
       hooks={{ "data-plane": p.id }}

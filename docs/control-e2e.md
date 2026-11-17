@@ -209,7 +209,8 @@ Of the device-key design; for what holds for every machine now, see
   link expires.
 - **Push:**
   - the daemon encrypts the notification (RFC 8291) to a subscription
-    the device signed;
+    the device signed, or, since machines trust control (aru-141), to one
+    control vouches for;
   - control only adds the VAPID signature and posts it;
   - control's own notices (something waits for approval, someone came in
     on an invite, a reset) it encrypts itself, and they say what happened;
@@ -1857,9 +1858,18 @@ leaves it. So:
     distributes that.
   - The signature matters: otherwise control could swap in a `p256dh` of
     its own and read notifications.
+  - Since machines trust control (aru-141), a browser with no device key
+    subscribes too, unsigned, and control keeps it with no signature.
+    `GET /api/daemon/push-subs` lists with the subscriptions each of their
+    accounts' role on the machine (`roles`: `owner`, `editor`, `viewer` or
+    `guest`, as a machine token would say it), and only for accounts that
+    may reach it. The daemon takes an unsigned one as that role's person;
+    a control that leaves `roles` out gets signed ones only. Control could
+    swap the keys of these and read their notifications, as it could read
+    the terminals.
 - **Sending:**
-  - the daemon checks the signature and encrypts the payload (today's
-    `push::encrypt`);
+  - the daemon checks the signature, or takes control's word, and
+    encrypts the payload (today's `push::encrypt`);
   - it hands control `{endpoint, body}` in a signed
     `POST /api/daemon/push`;
   - control signs the VAPID JWT and posts it.

@@ -102,16 +102,21 @@ test.describe("on a computer", () => {
     await expect(rail(page, "build").locator(".ws-rail-count")).toHaveText("@4");
   });
 
-  test("a team's settings and members are two clicks: Settings, then the link in sight", async ({ page }) => {
+  test("a team's settings and members are a click from the project's Overrides: the links in sight", async ({ page }) => {
     await openApp(page, () => `/p/${P}/boards`);
+    // The rail's Settings is Settings' Project scope, at the project you're in (Arugula #1104).
     await rail(page, "settings").click();
-    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/settings$`));
+    await expect(page).toHaveURL(new RegExp(`/settings/project/${P}[^/]*$`));
+    await page.locator('[data-settings-row="overrides"]').click();
+    await expect(page).toHaveURL(new RegExp(`/settings/project/${P}[^/]*/overrides$`));
     const settings = page.locator("[data-overrides-team-settings]");
-    await expect(settings).toHaveAttribute("href", /^\/t\/tm_1[^/]*\/settings$/);
+    await expect(settings).toHaveAttribute("href", /^\/settings\/team\/tm_1[^/]*$/);
     await settings.click();
-    await expect(page.locator('[data-team-page="tm_1"][data-team-tab="settings"]')).toBeVisible();
-    // Back to the project's settings, for the other.
+    await expect(page.locator('[data-owner-settings="tm_1"] [data-settings-scope="team"]')).toHaveAttribute("aria-selected", "true");
+    // Back to the project's settings (its old address lands there), for the other.
     await page.goto(`/p/${P}/settings`);
+    await expect(page).toHaveURL(new RegExp(`/settings/project/${P}[^/]*$`));
+    await page.locator('[data-settings-row="overrides"]').click();
     const members = page.locator("[data-overrides-members]");
     await expect(members).toHaveAttribute("href", /^\/t\/tm_1[^/]*\/members$/);
     await members.click();

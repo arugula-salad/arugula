@@ -55,6 +55,7 @@ export function AgentModel({ p }: { p: PlatformProject }) {
     <Section
       id="agent-model"
       title="Agent model"
+      summary={now.model ? name(now.model) : `The strongest (${name(now.models[0] ?? "opus")})`}
       lede="The model agent sessions use: the strongest unless you choose another."
       more={
         <p>

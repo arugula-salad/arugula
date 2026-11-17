@@ -380,11 +380,6 @@ function IssueRow({ p, i, nameOf, label }: { p: PlatformProject; i: NativeIssue;
  * while issues are off for the reader. */
 export function IssueHomeSetting({ p }: { p: PlatformProject }) {
   const [home, set] = useHome(p.id);
-  // The issues list's link comes to `#issues`: there, once it's drawn.
-  const shown = !!home;
-  useEffect(() => {
-    if (shown && location.hash === "#issues") document.getElementById("issues-h")?.scrollIntoView({ block: "start" });
-  }, [shown]);
   if (!home) return null;
   const writer = mayWrite(p);
   const choose = async (h: string | null) => {
@@ -396,7 +391,11 @@ export function IssueHomeSetting({ p }: { p: PlatformProject }) {
   };
   const n = home.repos.length;
   return (
-    <Section id="issues" title="Where new issues go" lede="New issue opens them here, on Arugula, or on the project's linked repo on GitHub." hooks={{ "data-issue-home": home.home }}>
+    <Section
+      id="issues"
+      title="Where new issues go"
+      summary={home.home === "github" ? (n === 1 ? `On GitHub, ${home.repos[0]}` : `On GitHub, ${n} repos`) : "Here, on Arugula"}
+      lede="New issue opens them here, on Arugula, or on the project's linked repo on GitHub." hooks={{ "data-issue-home": home.home }}>
       {n === 0 ? (
         <p class="dim">Kept here: this project has no linked GitHub repo, so its issues are its own.</p>
       ) : (
@@ -474,7 +473,7 @@ function NewIssue({ p }: { p: PlatformProject }) {
         </ul>
         <p class="dim">
           An owner or editor can keep them here instead, under{" "}
-          <a href={`${pathOf({ page: "project-settings", project: p.id }, names)}#issues`} onClick={(e) => follow(e, `${pathOf({ page: "project-settings", project: p.id }, names)}#issues`)}>
+          <a href={pathOf({ page: "settings", scope: "project", project: p.id, section: "issues" }, names)} onClick={(e) => follow(e, pathOf({ page: "settings", scope: "project", project: p.id, section: "issues" }, names))}>
             Where new issues go
           </a>{" "}
           in the project's settings.

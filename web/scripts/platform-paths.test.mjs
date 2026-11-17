@@ -23,13 +23,27 @@ test("each route parses", () => {
   assert.equal(pathOf({ page: "all-boards" }), "/boards");
   assert.deepEqual(parse("/docs"), { page: "docs" });
   assert.equal(pathOf({ page: "docs" }), "/docs");
-  assert.deepEqual(parse("/settings"), { page: "settings" });
-  // An owner's settings (Arugula #897): a team's, and Personal's.
-  // A team's settings are its team page's Settings tab (Arugula #895).
-  assert.deepEqual(parse("/t/team_1/settings"), { page: "team", team: "team_1", tab: "settings" });
-  assert.deepEqual(parse("/settings/personal"), { page: "owner-settings", owner: "personal" });
-  assert.equal(pathOf({ page: "owner-settings", owner: "personal" }), "/settings/personal");
-  assert.equal(pathOf({ page: "owner-settings", owner: "team_1" }), "/t/team_1/settings");
+  // Settings (Arugula #1104): four scopes, and a section in each.
+  assert.deepEqual(parse("/settings"), { page: "settings", scope: "you" });
+  assert.equal(pathOf({ page: "settings", scope: "you" }), "/settings");
+  assert.deepEqual(parse("/settings/you/quiet-hours"), { page: "settings", scope: "you", section: "quiet-hours" });
+  assert.equal(pathOf({ page: "settings", scope: "you", section: "quiet-hours" }), "/settings/you/quiet-hours");
+  assert.deepEqual(parse("/settings/machine"), { page: "settings", scope: "machine" });
+  assert.deepEqual(parse("/settings/machine/0a1b2c3d-geek/machine"), { page: "settings", scope: "machine", machine: "0a1b2c3d", section: "machine" });
+  assert.deepEqual(parse("/settings/team/personal/plan"), { page: "settings", scope: "team", owner: "personal", section: "plan" });
+  assert.equal(pathOf({ page: "settings", scope: "team", owner: "team_1" }), "/settings/team/team_1");
+  assert.equal(pathOf({ page: "settings", scope: "team", owner: "personal", section: "defaults" }), "/settings/team/personal/defaults");
+  // The old addresses land in their scopes: a team's Settings tab, Personal's.
+  assert.deepEqual(parse("/t/team_1/settings"), { page: "settings", scope: "team", owner: "team_1" });
+  assert.deepEqual(parse("/settings/personal"), { page: "settings", scope: "team", owner: "personal" });
+  // An old link's `#section` is the section, where the path names none.
+  assert.deepEqual(parse("/settings", "", "#tokens"), { page: "settings", scope: "you", section: "tokens" });
+  assert.deepEqual(parse(`/p/${P}/settings`, "", "#environments"), { page: "settings", scope: "project", project: P, section: "environments" });
+  assert.deepEqual(parse("/settings/you/linked", "", "#tokens"), { page: "settings", scope: "you", section: "linked" });
+  assert.deepEqual(parse("/settings", "", "#Not a section"), { page: "settings", scope: "you" });
+  for (const p of ["/settings/x", "/settings/you/a/b", "/settings/you/Bad", "/settings/project", "/settings/project/nope", "/settings/machine/geek", "/settings/team/personal/a/b", "/settings/personal/plan"]) {
+    assert.equal(parse(p).page, "missing", p);
+  }
   assert.deepEqual(parse("/design"), { page: "design" });
   assert.equal(pathOf({ page: "design" }), "/design");
   assert.deepEqual(parse("/design/x"), { page: "missing", path: "/design/x" });
@@ -49,9 +63,13 @@ test("each route parses", () => {
   assert.deepEqual(parse(`/p/${P}/dm/dm_00aa11bb22cc33dd-sam`), { page: "dm", project: P, room: "dm_00aa11bb22cc33dd" });
   assert.deepEqual(parse("/dm/dm_00aa11bb22cc33dd-sam", "?msg=3"), { page: "find", what: "chat", room: "dm_00aa11bb22cc33dd", msg: 3 });
   assert.deepEqual(parse(`/p/${P}/workspaces/hw_0123456789abcdef0123456789abcdef-app`), { page: "workspace", project: P, workspace: "hw_0123456789abcdef0123456789abcdef" });
-  assert.deepEqual(parse(`/p/${P}-x/settings`), { page: "project-settings", project: P });
-  assert.deepEqual(parse(`/p/${P}/settings`, "?link=acme%2Fapp"), { page: "project-settings", project: P, link: "acme/app" });
-  assert.deepEqual(parse(`/p/${P}/settings`, "?link=..%2F..%2Fx"), { page: "project-settings", project: P }, "not a repo");
+  // A project's settings are Settings' project scope (Arugula #1104).
+  assert.deepEqual(parse(`/p/${P}-x/settings`), { page: "settings", scope: "project", project: P });
+  assert.deepEqual(parse(`/settings/project/${P}-x/repos`), { page: "settings", scope: "project", project: P, section: "repos" });
+  assert.equal(pathOf({ page: "settings", scope: "project", project: P, section: "repos" }), `/settings/project/${P}/repos`);
+  // A repo to link opens Linked repos.
+  assert.deepEqual(parse(`/p/${P}/settings`, "?link=acme%2Fapp"), { page: "settings", scope: "project", project: P, section: "repos", link: "acme/app" });
+  assert.deepEqual(parse(`/p/${P}/settings`, "?link=..%2F..%2Fx"), { page: "settings", scope: "project", project: P }, "not a repo");
   assert.deepEqual(parse("/installed", `?state=${encodeURIComponent(`${P}:acme/app`)}&installation_id=9&setup_action=install`), { page: "installed", project: P, repo: "acme/app" });
   assert.deepEqual(parse("/installed", "?state=https%3A%2F%2Fevil.example%2F"), { page: "installed" }, "only a project and a repo");
   assert.deepEqual(parse("/installed"), { page: "installed" });
@@ -86,7 +104,8 @@ test("links carry the current slug, and read back as the same route", () => {
     { page: "chat", project: P, view: "search", q: "deploy", all: true },
     { page: "dm", project: P, room: "dm_00aa11bb22cc33dd" },
     { page: "workspace", project: P, workspace: "hw_0123456789abcdef0123456789abcdef" },
-    { page: "project-settings", project: P, link: "acme/app" },
+    { page: "settings", scope: "project", project: P, section: "repos", link: "acme/app" },
+    { page: "settings", scope: "project", project: P, section: "environments" },
     { page: "move", project: P },
     { page: "installed", project: P, repo: "acme/app" },
     { page: "deploys", project: P },
@@ -112,8 +131,13 @@ test("every route starts with a segment in TOP, the server's 404 list (UI audit 
     { page: "inbox" },
     { page: "all-boards" },
     { page: "docs" },
-    { page: "settings" },
-    { page: "owner-settings", owner: "personal" },
+    { page: "settings", scope: "you" },
+    { page: "settings", scope: "you", section: "tokens" },
+    { page: "settings", scope: "machine" },
+    { page: "settings", scope: "machine", machine: "0a1b2c3d", section: "machine" },
+    { page: "settings", scope: "project", project: P },
+    { page: "settings", scope: "team", owner: "personal" },
+    { page: "settings", scope: "team", owner: "a1b2c3d4e5f60718", section: "members" },
     { page: "design" },
     { page: "deploy", deploy: `dep_${"0a".repeat(16)}` },
     { page: "team", team: "a1b2c3d4e5f60718", tab: "chat" },
@@ -133,7 +157,7 @@ test("every route starts with a segment in TOP, the server's 404 list (UI audit 
 test("a team's pages (Arugula #895): its id, then its slug, then the tab", () => {
   const T = "a1b2c3d4e5f60718";
   const teamNames = (id) => (id === T ? "Acme Inc." : undefined);
-  for (const tab of ["chat", "settings", "members"]) {
+  for (const tab of ["chat", "members"]) {
     assert.deepEqual(parse(`/t/${T}/${tab}`), { page: "team", team: T, tab });
     assert.equal(pathOf({ page: "team", team: T, tab }, teamNames), `/t/${T}-acme-inc/${tab}`);
     assert.deepEqual(parse(pathOf({ page: "team", team: T, tab }, teamNames)), { page: "team", team: T, tab }, "the slug is only for people");

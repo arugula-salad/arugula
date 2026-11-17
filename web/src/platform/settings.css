@@ -1,21 +1,20 @@
 /* /settings in the swarm's language (./swarm.css): sections with a display
-   heading, one line and the rest behind More; each project's agent
+   heading, one line and the rest under it; each project's agent
    switches as one matrix, machines by four switches, in a card whose bar
    says whether any machine's agents reach it (accent) or none do (muted);
    linked products and agent tokens as cards (the bar: linked or only
-   signing you in; live or revoked). On a wide screen a sticky index of the
-   sections sits in the panel's gutter, beside the 880px column. A
-   project's settings (/p/:project/settings) are the same sections: its
+   signing you in; live or revoked). Each scope's sections are a list,
+   with the chosen one beside it (shared/ui/settings-section.css). A
+   project's settings (/settings/project/:project) are the same sections: its
    linked repos a table with a switch column, its environments cards whose
    bar is the latest deploy's state (swarm.ts's deployTone), with a tag for
    the driver, a chip per secret and the deploys as a table. The colors
    are the palette's, so every appearance holds. */
 
-/* A finger, not a pointer (UI audit #198): More, a row's link and a
+/* A finger, not a pointer (UI audit #198): a row's link and a
    card's actions are as tall as a button (shared/buttons.css), and a
    secret's box as tall as its field's. */
 @media (pointer: coarse) {
-  .platform .settings-more > summary,
   .platform .settings-rows :is(a:not(.settings-open), .link),
   .platform .settings-card-act :is(a, .link) {
     display: inline-flex;

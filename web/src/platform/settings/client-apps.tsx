@@ -13,6 +13,7 @@ import type { PlatformProject } from "../session";
 import { nameIn } from "../pages/issues";
 import { useProductNames } from "./linked";
 import { Section } from "../../shared/ui/settings-section";
+import { some } from "./summary";
 import { Chip } from "../../shared/ui/state-chip";
 
 type App = { client: string; app: string; title: string; added_by: string | null; added_at: number };
@@ -30,6 +31,7 @@ export function ClientApps({ p }: { p: PlatformProject }) {
     <Section
       id="apps"
       title="Apps from products"
+      summary={apps.length ? some(apps.map((a) => a.title)) : "None yet"}
       count={apps.length}
       hooks={{ "data-client-apps": "" }}
       lede="Apps other products keep in this project."

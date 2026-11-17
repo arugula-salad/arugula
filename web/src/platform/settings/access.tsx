@@ -24,6 +24,7 @@ import { platformFetch } from "../../shared/maintenance";
 import { Time } from "../../shared/ui/time";
 import type { PlatformProject } from "../session";
 import { Section } from "../../shared/ui/settings-section";
+import { joined, plural } from "./summary";
 import { Chip } from "../../shared/ui/state-chip";
 
 /** Someone named in the view; `former`: they left the project, and the
@@ -116,6 +117,13 @@ export function Access({ p }: { p: PlatformProject }) {
     <Section
       id="access"
       title="Access"
+      summary={
+        v
+          ? joined(plural(v.roles.members.length, "member"), plural(v.roles.members.filter((m) => m.role === "owner").length, "owner"), plural(grants.length, "grant"))
+          : err
+            ? "Couldn't load"
+            : undefined
+      }
       count={v ? grants.length : undefined}
       hooks={{ "data-access": v ? "yes" : old ? "old" : "" }}
       more={

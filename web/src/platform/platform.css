@@ -1500,17 +1500,11 @@ span.untri-title {
   color: var(--bg);
 }
 
-/* Search's "All teams", beside the box (Arugula #883). */
+/* Search's "This team | All teams", beside the box (Arugula #883, #1115). */
 .platform-bar .chat-search-all {
   align-self: center;
-  display: flex;
-  align-items: center;
-  gap: 4px;
   margin-left: 8px;
   flex: none;
-  color: var(--dim);
-  font-size: var(--text-sm);
-  white-space: nowrap;
 }
 
 /* The project switcher (Arugula #895; the prototype's, #989, ./switcher):

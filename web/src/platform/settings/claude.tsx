@@ -12,6 +12,7 @@ import { session } from "../session";
 import { useProductNames } from "./linked";
 import { monthName } from "./spend";
 import { Section } from "../../shared/ui/settings-section";
+import { joined, some } from "./summary";
 
 interface Client {
   client: string;
@@ -71,6 +72,10 @@ export function ClaudeSettings({ me }: { me?: string }) {
       <Section
         id="claude"
         title="Claude"
+        summary={joined(
+          apps && (clients.some((c) => c.allowed) ? `${some(clients.filter((c) => c.allowed).map((c) => product(c.client)))} may use it` : "No app may use it"),
+          spent && `${dollars(paid.usd)} in ${monthName(paid.month)}`,
+        )}
         lede={
           apps && spent
             ? "Apps that use Claude through Arugula for you, and what your own key spent. None can until you let it."

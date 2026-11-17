@@ -100,14 +100,14 @@ function NewChannel({ d, close }: { d: Extract<Dialog, { kind: "channel" }>; clo
           <input value={topic} placeholder="what it's for" onInput={(e) => setTopic((e.target as HTMLInputElement).value)} />
         </label>
         <div class="members-kind" role="radiogroup" aria-label="Who can find it">
-          <label class="members-radio">
+          <label class="members-choice">
             <input type="radio" name="members-kind" checked={!priv} data-new-channel-public onChange={() => setPriv(false)} />
             <span>
               <b>Public</b>
               <small>Anyone in {d.name} can find it and join.</small>
             </span>
           </label>
-          <label class="members-radio">
+          <label class="members-choice">
             <input type="radio" name="members-kind" checked={priv} data-new-channel-private onChange={() => setPriv(true)} />
             <span>
               <b>Private</b>
@@ -238,7 +238,7 @@ function NewDm({ d, close }: { d: Extract<Dialog, { kind: "dm" }>; close: () => 
         <ul class="members-list">
           {shown.map((p) => (
             <li key={p.account} data-dm-person={p.account}>
-              <label class="members-radio">
+              <label class="members-choice">
                 <input type="checkbox" checked={picked.includes(p.account)} disabled={full && !picked.includes(p.account)} onChange={() => toggle(p.account)} />
                 <MsgAvatar who={p.account} name={p.name} account={p.account} dot />
                 <span>{p.name}</span>

@@ -9,7 +9,7 @@ import { parse, type Route } from "./paths";
 export * from "./paths";
 
 /** The route the page is at. */
-export const current = (): Route => parse(location.pathname, location.search);
+export const current = (): Route => parse(location.pathname, location.search, location.hash);
 
 const LAST = "arugula.platform-last-page";
 
@@ -24,10 +24,10 @@ function remember(popped = false) {
   if (project) setCurrentProject(project);
   const chat = route.page === "chat" || route.page === "dm";
   noteRoute(was, { project, chat, room: chat && !!route.room }, popped);
-  // Chat and account settings are the rail's own places, not the projects';
-  // the design reference is no place to come back to.
+  // Chat and Settings are the rail's own places, not the projects'; the
+  // design reference is no place to come back to.
   const { page } = route;
-  if (page === "chat" || page === "dm" || page === "settings" || page === "owner-settings" || page === "design") return;
+  if (page === "chat" || page === "dm" || page === "settings" || page === "design") return;
   // A shell button's hand-off passes through; where it lands is the place.
   if (route.page === "home" && route.to) return;
   try {

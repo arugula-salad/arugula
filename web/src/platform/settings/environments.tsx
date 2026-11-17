@@ -16,7 +16,7 @@
 // compact table under mono column heads, as the repos' are.
 
 import { Card } from "../../shared/ui/card";
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useContext, useEffect, useRef, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import { holdable, historyPath, secretNote, environmentBody, type DeployHistory, type Driver, type Environment } from "../deploys-text";
 import { names } from "../links";
@@ -25,7 +25,8 @@ import { ENVIRONMENTS_MEAN } from "../pages/project";
 import { follow, pathOf } from "../router";
 import type { PlatformProject } from "../session";
 import { deployTone } from "../swarm";
-import { Section } from "../../shared/ui/settings-section";
+import { Section, SectionListContext } from "../../shared/ui/settings-section";
+import { some } from "./summary";
 import { Chip, ObjectChip } from "../../shared/ui/state-chip";
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -49,7 +50,7 @@ export function Environments({ p }: { p: PlatformProject }) {
   // The project home's Make an environment comes here (`#environments`):
   // with none yet, the form is open for an owner.
   const [making, setMaking] = useState(false);
-  const asked = useRef(location.hash === "#environments");
+  const asked = useRef(useContext(SectionListContext)?.asked === "environments");
   const [err, setErr] = useState("");
   const base = `/api/projects/${encodeURIComponent(p.id)}`;
   const load = () =>
@@ -74,6 +75,7 @@ export function Environments({ p }: { p: PlatformProject }) {
     <Section
       id="environments"
       title="Environments"
+      summary={envs ? (envs.length ? some(envs.map((e) => e.name)) : "None yet") : err ? "Couldn't load" : undefined}
       count={envs?.length}
       hooks={{ "data-environments": "" }}
       more={

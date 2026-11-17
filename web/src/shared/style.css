@@ -5266,6 +5266,14 @@ button.diff-why-run {
   height: var(--app-height);
 }
 
+/* Edit in nvim (+ Pane's Editor, Getting started): the switch, then its
+   words (#1115). */
+label.edit-in-nvim {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
 .picker.conversations .picker-where .check {
   display: inline-flex;
   gap: 4px;

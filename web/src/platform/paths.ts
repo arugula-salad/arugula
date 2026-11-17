@@ -38,8 +38,7 @@
 //                                  history
 //   /p/:project/workspaces         its hosted workspaces
 //   /p/:project/workspaces/:id     a hosted workspace (`hw_…`)
-//   /p/:project/settings           its settings: linked repos (`?link=OWNER/REPO`
-//                                  fills in one to link), environments (M252)
+//   /p/:project/settings           its settings: now `/settings/project/:project`
 //   /p/:project/settings/move      "Move to project…" (Arugula #971): some of
 //                                  its work into a new or existing project
 //   /p/:project/deploys            its deploys, newest first (Discovery 5)
@@ -49,7 +48,17 @@
 //                                  setup URL): on to the project's settings
 //   /inbox                         the reader's inbox (M171): items that want
 //                                  something of them, and drafts waiting
-//   /settings                      account settings
+//   /settings                      Settings (Arugula #1104): one page of four
+//                                  scopes, each a list of sections and the
+//                                  one chosen beside it. You, at `/settings`;
+//   /settings/you/:section         a section of yours
+//   /settings/machine/:machine     a machine's (`/settings/machine`: the
+//                                  first machine), with `/:section` after
+//   /settings/project/:project     a project's (`?link=OWNER/REPO` fills in
+//                                  one to link, in Linked repos)
+//   /settings/team/:owner          a team's, or Personal's (`personal`):
+//                                  members, plan and billing, defaults
+//                                  (each with `/:section` after it)
 //   /design                        the design reference (#693): every shared
 //                                  piece of the UI, drawn by the real
 //                                  components (`#type`, `#chips`… are its
@@ -57,8 +66,12 @@
 //   /deploys/:deploy               a deploy (M218): its card, approvals
 //                                  and log; a push for one opens here
 //   /t/:team/chat                  a team's own page (Arugula #895): its
-//   /t/:team/settings              channels, its settings, its members;
-//   /t/:team/members               the team's id, with its slug
+//   /t/:team/members               channels and its members; the team's
+//                                  id, with its slug
+//
+// Old addresses for Settings land in its scopes: `/p/:project/settings`,
+// `/settings/personal` and `/t/:team/settings` (the page puts the new path
+// in their place).
 //
 // And addresses that name only an id, for links from places that don't
 // know its project (the shell, an old link, a push): the page finds the
@@ -102,16 +115,15 @@ export type Route =
   | { page: "dm"; project: string; room: string; msg?: number; thread?: number }
   | { page: "workspaces"; project: string }
   | { page: "workspace"; project: string; workspace: string }
-  | { page: "project-settings"; project: string; link?: string }
   | { page: "move"; project: string }
   | { page: "deploys"; project: string }
   | { page: "new-deploy"; project: string; env?: string }
   | { page: "installed"; project?: string; repo?: string }
   | { page: "inbox"; all?: true }
   | { page: "all-boards"; all?: true }
-  | { page: "settings" }
-  /** An owner's settings (Arugula #897): a team's id, or `personal`. */
-  | { page: "owner-settings"; owner: string }
+  /** Settings (Arugula #1104), at one of its scopes and, with `section`,
+   * that section of it. */
+  | SettingsRoute
   | { page: "design" }
   | { page: "deploy"; deploy: string }
   | { page: "team"; team: string; tab: TeamTab }
@@ -124,8 +136,29 @@ export type Route =
   | { page: "find"; what: "machines"; at: MachineAt }
   | { page: "missing"; path: string };
 
-/** A team page's tabs. */
-export const TEAM_TABS = ["chat", "settings", "members"] as const;
+/** Settings' scopes (Arugula #1104): yours, a machine's, a project's, and
+ * an owner's (a team's or Personal's), each with the section chosen. */
+export type SettingsRoute =
+  | { page: "settings"; scope: "you"; section?: string }
+  /** No `machine`: the first one the page knows. */
+  | { page: "settings"; scope: "machine"; machine?: string; section?: string }
+  /** `link`: a repo to fill in, to link (back from installing the GitHub App). */
+  | { page: "settings"; scope: "project"; project: string; section?: string; link?: string }
+  /** `owner`: a team's id, or `personal`. */
+  | { page: "settings"; scope: "team"; owner: string; section?: string };
+
+export type SettingsScopeKey = SettingsRoute["scope"];
+
+/** A section's id, as the address says it. */
+const SECTION = /^[a-z][a-z0-9-]{0,47}$/;
+
+/** A machine's id at the front of a path segment, before its slug: a
+ * daemon's id is hex. */
+const MACHINE_ID = /^([0-9a-f]{6,64})(?:-.*)?$/;
+
+/** A team page's tabs. Its Settings are Settings' team scope (Arugula
+ * #1104), a tab that goes there. */
+export const TEAM_TABS = ["chat", "members"] as const;
 export type TeamTab = (typeof TEAM_TABS)[number];
 
 /** A team's id at the front of a path segment, before its slug: a team's
@@ -178,8 +211,9 @@ export function slugIn(path: string, id: string): string | undefined {
   return segment?.slice(id.length + 1) || undefined;
 }
 
-/** The route a location names. */
-export function parse(path: string, search = ""): Route {
+/** The route a location names. `hash`: only Settings reads it, an old
+ * link's section (`/settings#tokens`) where the path names none. */
+export function parse(path: string, search = "", hash = ""): Route {
   const parts = path.split("/").filter(Boolean);
   const q = new URLSearchParams(search);
   const at = q.get("msg");
@@ -198,8 +232,7 @@ export function parse(path: string, search = ""): Route {
   if (parts.length === 1 && parts[0] === "inbox") return { page: "inbox", ...all };
   if (parts.length === 1 && parts[0] === "boards") return { page: "all-boards", ...all };
   if (parts.length === 1 && parts[0] === "docs") return { page: "docs", ...all };
-  if (parts.length === 1 && parts[0] === "settings") return { page: "settings" };
-  if (parts.length === 2 && parts[0] === "settings" && parts[1] === "personal") return { page: "owner-settings", owner: "personal" };
+  if (parts[0] === "settings") return withOldSection(settingsRoute(parts.slice(1), q), hash) ?? missing;
   if (parts.length === 1 && parts[0] === "design") return { page: "design" };
   if (parts[0] === "chat" && parts.length <= 2) {
     if (parts.length === 1) return { page: "find", what: "chat" };
@@ -235,6 +268,8 @@ export function parse(path: string, search = ""): Route {
   }
   if (parts[0] === "t" && parts.length === 3) {
     const team = TEAM.exec(parts[1])?.[1];
+    // Its Settings tab, from before they were Settings' (Arugula #1104).
+    if (team && parts[2] === "settings") return { page: "settings", scope: "team", owner: team };
     const tab = TEAM_TABS.find((t) => t === parts[2]);
     return team && tab ? { page: "team", team, tab } : missing;
   }
@@ -251,10 +286,8 @@ export function parse(path: string, search = ""): Route {
     const at = parseMachines(parts.slice(3), q);
     return at ? { page: "machines", project, at } : missing;
   }
-  if (parts.length === 3 && parts[2] === "settings") {
-    const link = q.get("link");
-    return { page: "project-settings", project, ...(link && REPO.test(link) ? { link } : {}) };
-  }
+  // Its settings, from before they were Settings' (Arugula #1104).
+  if (parts.length === 3 && parts[2] === "settings") return withOldSection(settingsRoute(["project", project], q), hash) ?? missing;
   if (parts.length === 4 && parts[2] === "settings" && parts[3] === "move") return { page: "move", project };
   if (parts.length === 3 && parts[2] === "deploys") return { page: "deploys", project };
   if (parts.length === 4 && parts[2] === "deploys" && parts[3] === "new") {
@@ -308,6 +341,61 @@ export function parse(path: string, search = ""): Route {
     return workspace?.startsWith("hw_") ? { page: "workspace", project, workspace } : missing;
   }
   return missing;
+}
+
+/** `/settings…`, past `settings`, or null. */
+function settingsRoute(rest: string[], q: URLSearchParams): SettingsRoute | null {
+  const [scope, ...more] = rest;
+  const section = (s: string | undefined): { section?: string } | null => (s === undefined ? {} : SECTION.test(s) ? { section: s } : null);
+  if (scope === undefined) return { page: "settings", scope: "you" };
+  // Personal's, from before (Arugula #897).
+  if (scope === "personal" && more.length === 0) return { page: "settings", scope: "team", owner: "personal" };
+  if (scope === "you" && more.length <= 1) {
+    const s = section(more[0]);
+    return s && { page: "settings", scope: "you", ...s };
+  }
+  if (more.length > 2) return null;
+  const s = section(more[1]);
+  if (!s) return null;
+  if (scope === "machine") {
+    if (more.length === 0) return { page: "settings", scope: "machine" };
+    const machine = MACHINE_ID.exec(more[0])?.[1];
+    return machine ? { page: "settings", scope: "machine", machine, ...s } : null;
+  }
+  if (scope === "project") {
+    const project = more[0] === undefined ? null : idOf(more[0]);
+    if (!project) return null;
+    // A repo to link opens Linked repos, to link it.
+    const link = q.get("link");
+    return link && REPO.test(link) ? { page: "settings", scope: "project", project, section: s.section ?? "repos", link } : { page: "settings", scope: "project", project, ...s };
+  }
+  if (scope === "team") {
+    const owner = more[0] === undefined ? null : TEAM.exec(more[0])?.[1];
+    return owner ? { page: "settings", scope: "team", owner, ...s } : null;
+  }
+  return null;
+}
+
+/** An old link's `#section`, where the path names none: the page puts the
+ * section in the path, in its place. */
+function withOldSection(r: SettingsRoute | null, hash: string): SettingsRoute | null {
+  const section = /^#([a-z][a-z0-9-]{0,47})$/.exec(hash)?.[1];
+  return r && !r.section && section ? { ...r, section } : r;
+}
+
+/** The path for a settings route, with each id's current slug (`s`). */
+function settingsPath(r: SettingsRoute, s: (id: string) => string): string {
+  const at = r.section ? `/${r.section}` : "";
+  switch (r.scope) {
+    case "you":
+      return r.section ? `/settings/you${at}` : "/settings";
+    case "machine":
+      return r.machine ? `/settings/machine/${s(r.machine)}${at}` : "/settings/machine";
+    case "project":
+      return `/settings/project/${s(r.project)}${at}${r.link ? `?link=${encodeURIComponent(r.link)}` : ""}`;
+    case "team":
+      return `/settings/team/${r.owner === "personal" ? "personal" : s(r.owner)}${at}`;
+  }
 }
 
 /** `/p/:project/issues…`, past the project, or null. */
@@ -414,8 +502,6 @@ export function pathOf(r: Route, names: Names = () => null): string {
       return `/p/${s(r.project)}/workspaces`;
     case "workspace":
       return `/p/${s(r.project)}/workspaces/${s(r.workspace)}`;
-    case "project-settings":
-      return `/p/${s(r.project)}/settings${r.link ? `?link=${encodeURIComponent(r.link)}` : ""}`;
     case "move":
       return `/p/${s(r.project)}/settings/move`;
     case "deploys":
@@ -429,9 +515,7 @@ export function pathOf(r: Route, names: Names = () => null): string {
     case "all-boards":
       return r.all ? "/boards?all=1" : "/boards";
     case "settings":
-      return "/settings";
-    case "owner-settings":
-      return r.owner === "personal" ? "/settings/personal" : `/t/${s(r.owner)}/settings`;
+      return settingsPath(r, s);
     case "design":
       return "/design";
     case "deploy":

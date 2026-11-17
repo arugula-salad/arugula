@@ -63,7 +63,7 @@ function usePlaces() {
   const unknown = !!shown && !p && session.state === "ready";
   const section = unknown ? null : sectionOf(r);
   const project = p ?? session.project(currentProject()) ?? session.personal();
-  const at = (page: "project" | "boards" | "docs" | "project-settings") => (project ? pathOf({ page, project: project.id } as Route, names) : "/");
+  const at = (page: "project" | "boards" | "docs") => (project ? pathOf({ page, project: project.id } as Route, names) : "/");
   const talk = !unknown ? chatUnread(chat.rooms, chatTeam(p, project)) : none;
   const chatTo = shown ? chatPath(shown) : entryPath("chat", project, names);
   // What's new in the threads on the project's issues (Boards) and runs (Machines, which holds Runs).
@@ -98,8 +98,8 @@ function usePlaces() {
   ];
   const foot: PlaceLink[] = [
     { key: "inbox", label: "Inbox", tip: inbox.title || "Inbox: what wants you, across your projects", icon: <BellIcon />, to: "/inbox", here: section === "inbox", count: { n: inbox.n, mention: inbox.waiting > 0 } },
-    // A project's settings; account settings are the avatar's menu.
-    { key: "settings", label: "Settings", tip: "Settings: this project's", icon: <SettingsIcon />, to: shown ? at("project-settings") : "/settings", here: section === "settings" },
+    // Settings at the project you're in (Arugula #2594), else yours; account settings are also the avatar's menu.
+    { key: "settings", label: "Settings", tip: shown ? "Settings: this project's" : "Settings", icon: <SettingsIcon />, to: shown && project ? pathOf({ page: "settings", scope: "project", project: project.id }, names) : "/settings", here: section === "settings" },
   ];
   return { spaces, foot, project, shown };
 }

@@ -1,9 +1,10 @@
-// `/t/:team/chat`, `/settings` and `/members`: a team's own page (Arugula
+// `/t/:team/chat` and `/members`: a team's own page (Arugula
 // #895). People, chat and most settings are the team's, not one project's
 // (aru-140), so they have a page of their own, reached from the bar's
 // switcher. It says the team's name, and its way back is the project the
 // reader was last in. Chat lists the team's channels; Members is its roster,
-// which its owners change on the machines page.
+// which its owners change on the machines page. Its Settings tab opens
+// Settings' Team and billing scope for it (Arugula #1104).
 
 import { chat } from "../../shared/chat-store";
 import { EmptyLine } from "../../shared/ui/block-states";
@@ -16,9 +17,8 @@ import { ownerNamed, type Owner } from "../owners";
 import { follow, go, pathOf, TEAM_TABS, type TeamTab } from "../router";
 import { controlOrigin, session } from "../session";
 import { Missing } from "./project";
-import { OwnerSettings } from "./owner-settings";
 
-const TAB_NAME: Record<TeamTab, string> = { chat: "Chat", settings: "Settings", members: "Members" };
+const TAB_NAME: Record<TeamTab, string> = { chat: "Chat", members: "Members" };
 const ROLE: Record<string, string> = { owner: "Owner", editor: "Editor", viewer: "Viewer" };
 
 export function TeamPage({ team, tab }: { team: string; tab: TeamTab }) {
@@ -42,9 +42,11 @@ export function TeamPage({ team, tab }: { team: string; tab: TeamTab }) {
             {TAB_NAME[t]}
           </button>
         ))}
+        <button role="tab" aria-selected={false} data-team-tab-button="settings" onClick={() => go(pathOf({ page: "settings", scope: "team", owner: owner.key }, names))}>
+          Settings
+        </button>
       </div>
       {tab === "chat" && <Channels owner={owner} />}
-      {tab === "settings" && <OwnerSettings owner={owner.key} inTeam />}
       {tab === "members" && <Members owner={owner} />}
     </section>
   );

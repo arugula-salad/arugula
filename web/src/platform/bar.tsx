@@ -63,8 +63,6 @@ export function sectionOf(r: Route): Section | null {
     case "inbox":
       return "inbox";
     case "settings":
-    case "owner-settings":
-    case "project-settings":
     case "move":
     case "installed":
       return "settings";
@@ -106,7 +104,7 @@ function sectionPath(s: Section, project: string): string | null {
     case "chat":
       return chatPath(project);
     case "settings":
-      return pathOf({ page: "project-settings", project }, names);
+      return pathOf({ page: "settings", scope: "project", project }, names);
     default:
       return null;
   }
