@@ -1,8 +1,9 @@
-// A project's "Not on a board" (#292, #656): its open issues on no board, in
-// the middle of the Boards page beside the list of boards (Arugula #1128). A
-// row is selected by clicking it, added to a board with ＋, or dragged onto a
-// board's row in the list. `/p/:project/triage` is that page, showing this. The reads and the adds are
-// untriaged.ts's; the issues list stays at All issues.
+// A project's "Not on a board" (#292, #656): its open issues on no board, the
+// pinned first row of the Boards list (Arugula #1130). Selected, its issues
+// fill the middle and Order and the labels (with their counts) go on the
+// right. A row is selected by clicking it, added to a board with ＋, or
+// dragged onto a board's row in the list. `/p/:project/triage` selects it. The
+// reads and the adds are untriaged.ts's; the issues list stays at All issues.
 
 import { BlockLoading, EmptyLine } from "../../shared/ui/block-states";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
@@ -15,6 +16,7 @@ import { names } from "../links";
 import { follow, pathOf } from "../router";
 import type { PlatformProject } from "../session";
 import { toast } from "../toast";
+import { ListPreview } from "../../shared/ui/list-page";
 import { mayWrite } from "./issues";
 import { WaitingWrites } from "./tracker-writes";
 import { TRIAGE_NONE, addedWords, boxState, itemHref, rangeKeys, sourceLabel, targets } from "./triage-text";
@@ -64,6 +66,8 @@ export function useTriage(project: string, added: () => void) {
   const [label, setLabel] = useState("");
   const [order, setOrder] = useState<"newest" | "oldest">("newest");
   const [page, setPage] = useState<UntriagedPage | null>(null);
+  // Every issue on no board, whatever the filter: the count on the list's row.
+  const [whole, setWhole] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [more, setMore] = useState(false);
   // The selection: these rows, or (`all`) every match of the query but the `except`ed, loaded or not.
@@ -87,6 +91,7 @@ export function useTriage(project: string, added: () => void) {
       (p) => {
         if (n !== seq.current) return;
         setPage(p);
+        if (!words && !label) setWhole(p.total);
         setError(null);
         setMore(false);
       },
@@ -177,16 +182,19 @@ export function useTriage(project: string, added: () => void) {
       const left = c.all ? p.items.filter((i) => c.keys.includes(keyOf(i))) : p.items.filter((i) => !c.keys.includes(keyOf(i)));
       return { ...p, items: left, total: Math.max(0, p.total - n) };
     });
+    setWhole((w) => (w === null ? w : Math.max(0, w - n)));
     clear();
     added();
     toast(addedWords(n, lone ? sourceLabel(lone) : "1 issue", board.title));
     // The total and the facet are the server's; the rows loaded stay where they are (all of them, once a drop took every match).
-    const fresh = await readUntriaged(project, JSON.parse(q0)).catch(() => null);
+    const fresh = await readUntriaged(project, JSON.parse(q0) as typeof query).catch(() => null);
     if (!fresh || same.current !== q0) return;
+    const q1 = JSON.parse(q0) as typeof query;
+    if (!q1.q && !q1.label) setWhole(fresh.total);
     setPage((p) => (p ? { ...p, total: fresh.total, labels: fresh.labels, ...(c.all ? { items: fresh.items, next: fresh.next } : {}) } : p));
   };
 
-  return { q, setQ, label, setLabel, order, setOrder, page, items, error, more, count, isOn, anchor, carry, taking, selection, toggle, selectAll, clear, loadMore, addTo };
+  return { q, setQ, label, setLabel, order, setOrder, page, whole, items, error, more, count, isOn, anchor, carry, taking, selection, toggle, selectAll, clear, loadMore, addTo };
 }
 
 export type Triage = ReturnType<typeof useTriage>;
@@ -235,7 +243,7 @@ function boardsInView(): boolean {
   return r.bottom > 40 && r.top < innerHeight;
 }
 
-/** A project's "Not on a board" on its Boards page. `open` are the boards a row can go to. */
+/** A project's "Not on a board" in the middle of its Boards page, its Order and labels beside it. `open` are the boards a row can go to. */
 export function NotOnBoard({ p, tri, open }: { p: PlatformProject; tri: Triage; open: ProjectBoard[] }) {
   const { page, items, error, count } = tri;
   const narrow = useNarrow();
@@ -245,15 +253,16 @@ export function NotOnBoard({ p, tri, open }: { p: PlatformProject; tri: Triage; 
   const all = useRef<HTMLInputElement>(null);
   const [dock, setDock] = useState(false);
   const allLink = pathOf({ page: "issues", project: p.id }, names);
-  // A new filter is a new list: from its top. Loading, selecting and adding keep the box where it is.
+  // A new filter is a new list: from its top. Loading, selecting and adding keep the middle where it is.
   useLayoutEffect(() => {
-    if (box.current) box.current.scrollTop = 0;
+    const middle = box.current?.closest<HTMLElement>(".list-preview-body");
+    if (middle) middle.scrollTop = 0;
   }, [tri.q.trim(), tri.label, tri.order]);
-  // The next page, when the sentinel nears the foot of the box (of the page, on a phone).
+  // The next page, when the sentinel nears the foot of what scrolls (the middle, or the page on a phone).
   useEffect(() => {
     const s = sentinel.current;
     if (!s) return;
-    const io = new IntersectionObserver((e) => e[0]?.isIntersecting && tri.loadMore(), { root: narrow ? null : box.current, rootMargin: "200px" });
+    const io = new IntersectionObserver((e) => e[0]?.isIntersecting && tri.loadMore(), { root: narrow ? null : box.current?.closest(".list-preview-body"), rootMargin: "200px" });
     io.observe(s);
     return () => io.disconnect();
   }, [page?.next, items.length, narrow, tri.more]);
@@ -311,113 +320,132 @@ export function NotOnBoard({ p, tri, open }: { p: PlatformProject; tri: Triage; 
 
   const total = page?.total ?? 0;
   const filtered = tri.q.trim() !== "" || tri.label !== "";
-  const tools = total > 8 || filtered || tri.order !== "newest";
   const words = count === 0 ? `Select all ${total.toLocaleString()}` : state === "all" ? `All ${total.toLocaleString()} selected` : `${count.toLocaleString()} of ${total.toLocaleString()} selected`;
+  const labels = page?.labels ?? [];
 
   return (
-    <section id="triage" class="boards-untriaged" aria-labelledby={`untriaged-${p.id}`} data-boards-untriaged>
-      <div class="sw-section-head">
-        <h2 id={`untriaged-${p.id}`}>
-          Not on a board{page && <span class="untri-n" data-triage-count>{total.toLocaleString()}</span>}
-        </h2>
-        <a class="sw-all" href={allLink} data-triage-all onClick={(e) => follow(e, allLink)}>
-          All issues <ChevronIcon dir="right" />
-        </a>
-      </div>
-      {error && <p class="control-error" role="alert">{error}</p>}
-      {!error && page === null && <BlockLoading inline what="the issues" />}
-      {page && total === 0 && !filtered && <EmptyLine data-triage-none>{TRIAGE_NONE}</EmptyLine>}
-      {page && (total > 0 || filtered) && (
-        <>
-          {tools && (
-            <div class="untri-tools">
-              {/* Not the page's `/`: that's the boards' search beside it. */}
-              <SearchField class="untri-search" label="Filter issues not on a board" placeholder="Filter by words or #number" value={tri.q} onValue={tri.setQ} data-triage-filter />
-              <select value={tri.order} aria-label="Order" data-triage-order onChange={(e) => tri.setOrder(e.currentTarget.value as "newest" | "oldest")}>
-                <option value="newest">Newest first</option>
-                <option value="oldest">Oldest first</option>
-              </select>
-              {page.labels.length > 1 && (
-                <div class="untri-labels" role="group" aria-label="Labels">
-                  {page.labels.map((l) => (
-                    <button key={l.label} type="button" class="untri-label" aria-pressed={tri.label === l.label} data-triage-label={l.label} onClick={() => tri.setLabel(tri.label === l.label ? "" : l.label)}>
-                      {l.label}
-                      <span class="untri-ct">{l.count.toLocaleString()}</span>
-                    </button>
-                  ))}
-                </div>
+    <div class="boards-loose" data-boards-loose-pane>
+      <ListPreview
+        title="Not on a board"
+        facts={
+          page && (
+            <span data-triage-count>
+              {total.toLocaleString()} {filtered ? "match" : total === 1 ? "open issue" : "open issues"}
+            </span>
+          )
+        }
+        actions={
+          <a class="sw-all" href={allLink} data-triage-all onClick={(e) => follow(e, allLink)}>
+            All issues <ChevronIcon dir="right" />
+          </a>
+        }
+        aside={
+          page &&
+          (total > 0 || filtered) && (
+            <div class="untri-side" data-triage-side>
+              <section aria-labelledby={`untriaged-order-${p.id}`}>
+                <h3 id={`untriaged-order-${p.id}`}>Order</h3>
+                <select value={tri.order} aria-labelledby={`untriaged-order-${p.id}`} data-triage-order onChange={(e) => tri.setOrder(e.currentTarget.value as "newest" | "oldest")}>
+                  <option value="newest">Newest first</option>
+                  <option value="oldest">Oldest first</option>
+                </select>
+              </section>
+              {labels.length > 0 && (
+                <section aria-labelledby={`untriaged-labels-${p.id}`}>
+                  <h3 id={`untriaged-labels-${p.id}`}>Labels</h3>
+                  <ul class="untri-facets" data-triage-labels>
+                    {labels.map((l) => (
+                      <li key={l.label}>
+                        <button type="button" class="untri-facet" aria-pressed={tri.label === l.label} data-triage-label={l.label} onClick={() => tri.setLabel(tri.label === l.label ? "" : l.label)}>
+                          <span class="untri-facet-name">{l.label}</span>
+                          <span class="untri-ct">{l.count.toLocaleString()}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
               )}
             </div>
-          )}
-          <div class="untri-frame">
-            {write && items.length > 0 && (
-              <label class="untri-head">
-                <input ref={all} type="checkbox" checked={state === "all"} aria-label="Select all" data-triage-all-box onChange={tri.selectAll} />
-                <span>{words}</span>
-              </label>
-            )}
-            <div class="untri-box" ref={box} data-triage-box>
-              <ul class="untri-list" data-triage-list>
-                {items.map((i) => {
-                  const k = keyOf(i);
-                  const on = tri.isOn(k);
-                  const name = sourceLabel(i);
-                  const href = itemHref(i, (id) => pathOf({ page: "issue", project: p.id, issue: id }, names));
-                  const github = i.source === "github" || i.source === "plane";
-                  return (
-                    <li
-                      key={k}
-                      class="untri-row"
-                      data-selected={on || undefined}
-                      data-triage-row={name}
-                      draggable={canDrag}
-                      onClick={(e) => {
-                        if (!write || (e.target as Element).closest("a, button")) return;
-                        tri.toggle(k, e.shiftKey);
-                      }}
-                      onDragStart={(e) => dragStart(e, k)}
-                      onDragEnd={endDrag}
-                    >
-                      {write && <input type="checkbox" checked={on} aria-label={`Select ${name}`} data-triage-select onChange={() => {}} />}
-                      <span class="untri-num">{name}</span>
-                      {href ? (
-                        <a class="untri-title" href={href} title={i.title} draggable={false} {...(github ? { target: "_blank", rel: "noopener noreferrer" } : { onClick: (e: MouseEvent) => follow(e, href) })}>
-                          {i.title}
-                        </a>
-                      ) : (
-                        <span class="untri-title dim">{i.title}</span>
-                      )}
-                      <span class="untri-fill" />
-                      {i.labels?.map((l) => (
-                        <Chip key={l} kind="tag" class="untri-label">
-                          {l}
-                        </Chip>
-                      ))}
-                      <span class="untri-age dim">{ago(i.updated_at, Date.now(), "short")}</span>
-                      {write && (
-                        <button type="button" class="untri-add" aria-label={`Add ${name} to a board`} aria-haspopup="menu" data-triage-add onClick={(e) => void menu(e.currentTarget, tri.taking(k))}>
-                          ＋
-                        </button>
-                      )}
+          )
+        }
+      >
+        {error && <p class="control-error" role="alert">{error}</p>}
+        {!error && page === null && <BlockLoading inline what="the issues" />}
+        {page && total === 0 && !filtered && <EmptyLine data-triage-none>{TRIAGE_NONE}</EmptyLine>}
+        {page && (total > 0 || filtered) && (
+          <>
+            {/* Not the page's `/`: that's the boards' search beside it. */}
+            <SearchField class="untri-search" label="Filter issues not on a board" placeholder="Filter by words or #number" value={tri.q} onValue={tri.setQ} data-triage-filter />
+            <div class="untri-frame">
+              {write && items.length > 0 && (
+                <label class="untri-head">
+                  <input ref={all} type="checkbox" checked={state === "all"} aria-label="Select all" data-triage-all-box onChange={tri.selectAll} />
+                  <span>{words}</span>
+                </label>
+              )}
+              <div class="untri-box" ref={box} data-triage-box>
+                <ul class="untri-list" data-triage-list>
+                  {items.map((i) => {
+                    const k = keyOf(i);
+                    const on = tri.isOn(k);
+                    const name = sourceLabel(i);
+                    const href = itemHref(i, (id) => pathOf({ page: "issue", project: p.id, issue: id }, names));
+                    const github = i.source === "github" || i.source === "plane";
+                    return (
+                      <li
+                        key={k}
+                        class="untri-row"
+                        data-selected={on || undefined}
+                        data-triage-row={name}
+                        draggable={canDrag}
+                        onClick={(e) => {
+                          if (!write || (e.target as Element).closest("a, button")) return;
+                          tri.toggle(k, e.shiftKey);
+                        }}
+                        onDragStart={(e) => dragStart(e, k)}
+                        onDragEnd={endDrag}
+                      >
+                        {write && <input type="checkbox" checked={on} aria-label={`Select ${name}`} data-triage-select onChange={() => {}} />}
+                        <span class="untri-num">{name}</span>
+                        {href ? (
+                          <a class="untri-title" href={href} title={i.title} draggable={false} {...(github ? { target: "_blank", rel: "noopener noreferrer" } : { onClick: (e: MouseEvent) => follow(e, href) })}>
+                            {i.title}
+                          </a>
+                        ) : (
+                          <span class="untri-title dim">{i.title}</span>
+                        )}
+                        <span class="untri-fill" />
+                        {i.labels?.map((l) => (
+                          <Chip key={l} kind="tag" class="untri-label">
+                            {l}
+                          </Chip>
+                        ))}
+                        <span class="untri-age dim">{ago(i.updated_at, Date.now(), "short")}</span>
+                        {write && (
+                          <button type="button" class="untri-add" aria-label={`Add ${name} to a board`} aria-haspopup="menu" data-triage-add onClick={(e) => void menu(e.currentTarget, tri.taking(k))}>
+                            ＋
+                          </button>
+                        )}
+                      </li>
+                    );
+                  })}
+                  {items.length === 0 && (
+                    <li class="empty-line" data-triage-nomatch>
+                      Nothing matches.
                     </li>
-                  );
-                })}
-                {items.length === 0 && (
-                  <li class="empty-line" data-triage-nomatch>
-                    Nothing matches.
-                  </li>
-                )}
-                {page.next && (
-                  <li class="empty-line" ref={sentinel} data-triage-more>
-                    Loading more…
-                  </li>
-                )}
-              </ul>
+                  )}
+                  {page.next && (
+                    <li class="empty-line" ref={sentinel} data-triage-more>
+                      Loading more…
+                    </li>
+                  )}
+                </ul>
+              </div>
             </div>
-          </div>
-        </>
-      )}
-      {write && <WaitingWrites project={p.id} />}
+          </>
+        )}
+        {write && <WaitingWrites project={p.id} />}
+      </ListPreview>
       {count > 0 && (
         <div class="untri-selbar" role="region" aria-label="Selected issues" data-triage-selbar>
           <span data-triage-selected>{count.toLocaleString()} selected</span>
@@ -437,6 +465,6 @@ export function NotOnBoard({ p, tri, open }: { p: PlatformProject; tri: Triage; 
           </ObjectChip>
         ))}
       </div>
-    </section>
+    </div>
   );
 }

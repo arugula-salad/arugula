@@ -17,7 +17,7 @@ import { boardMatches, epicLine, firstLine, NOT_STARTED } from "../../shared/boa
 import { useSubscribe } from "../../shared/ui/hooks";
 import { BlockLoading, EmptyLine, EmptyState } from "../../shared/ui/block-states";
 import { Card } from "../../shared/ui/card";
-import { ListPage, type ListGroup } from "../../shared/ui/list-page";
+import { ListPage, type ListGroup, type ListRowParts } from "../../shared/ui/list-page";
 import { Modal } from "../../shared/ui/modal";
 import { PageHeader } from "../../shared/ui/page-header";
 import { SearchField } from "../../shared/ui/search-field";
@@ -158,7 +158,7 @@ export function AllBoardsPage({ all }: { all?: boolean }) {
 }
 
 /** `/p/:project/boards`, `/p/:project/boards/:board` (that board's row
- * selected) and `/p/:project/triage` (Not on a board in the middle): one page,
+ * selected) and `/p/:project/triage` (Not on a board's row selected): one page,
  * so going between them keeps the list as it is. */
 export function BoardsPage({ project, board, triage }: { project: string; board?: string; triage?: boolean }) {
   useSubscribe((fn) => session.subscribe(fn));
@@ -198,11 +198,17 @@ function BlindMachines({ project, may }: { project: string; may: boolean }) {
   );
 }
 
+/** Not on a board's row: pinned first in the Boards list (Arugula #1130), whatever the search. */
+const LOOSE = { loose: true } as const;
+const LOOSE_KEY = "loose";
+type BoardRow = ProjectBoard | typeof LOOSE;
+const isLoose = (r: BoardRow): r is typeof LOOSE => "loose" in r;
+
 /** A project's boards on the list page (Arugula #1128): a row a board, its
  * progress as `13/18` and the lanes' bar, From Plane and Done (folded) as
- * groups; the board itself in the middle. Not on a board is a link over the
- * list, and its issues go in the middle in the board's place; a row of it
- * dragged onto a board's row goes on that board. */
+ * groups; the board itself in the middle. Not on a board is the first row,
+ * with its count (Arugula #1130): selected, its issues go in the middle, and
+ * one dragged onto a board's row goes on that board. */
 function BoardList({ p, board, triage }: { p: PlatformProject; board?: string; triage?: boolean }) {
   const list = useBoards(p.id);
   const [q, setQ] = useState("");
@@ -214,15 +220,18 @@ function BoardList({ p, board, triage }: { p: PlatformProject; board?: string; t
   const shown = all.filter((b) => boardMatches(b, q));
   const done = shown.filter((b) => b.closed_at != null);
   const live = shown.filter((b) => b.closed_at == null);
+  const made = live.filter((b) => !b.source);
   const plane = live.filter((b) => b.source);
+  const fromPlane = [...plane.filter((b) => b.source?.started), ...plane.filter((b) => !b.source?.started)];
   // A Done board's own link unfolds Done, so its row can be the one selected.
   const doneLinked = !!board && done.some((b) => b.id === board);
   useEffect(() => {
     if (doneLinked) setUnfolded(true);
   }, [doneLinked]);
-  const groups: ListGroup<ProjectBoard>[] = [
-    { items: live.filter((b) => !b.source) },
-    { title: "From Plane", key: "plane", items: [...plane.filter((b) => b.source?.started), ...plane.filter((b) => !b.source?.started)], attrs: { "data-boards-plane": "" } },
+  const groups: ListGroup<BoardRow>[] = [
+    { key: LOOSE_KEY, items: [LOOSE] },
+    { items: made },
+    { title: "From Plane", key: "plane", items: fromPlane, attrs: { "data-boards-plane": "" } },
     { title: "Done", key: "done", items: done, fold: { open: unfolded || !!q.trim(), toggle: () => setUnfolded(!unfolded) }, attrs: { "data-boards-done": "" } },
   ];
   const boardPath = (id: string) => pathOf({ page: "board", project: p.id, board: id }, names);
@@ -235,15 +244,12 @@ function BoardList({ p, board, triage }: { p: PlatformProject; board?: string; t
       <ChevronIcon dir="left" /> Boards
     </a>
   );
-  const pane = triage ? (
-    <div class="sw-page boards-middle boards-loose" data-boards-loose-pane>
-      {back}
-      <NotOnBoard p={p} tri={tri} open={open} />
-    </div>
-  ) : rowless && board ? (
-    <BoardMiddle p={p} id={board} back={back} />
-  ) : undefined;
-  const total = tri.page?.total;
+  const pane = !triage && rowless && board ? <BoardMiddle p={p} id={board} back={back} /> : undefined;
+  // The page's own address selects a row: Not on a board's, a board's, or with neither the first board (Not on a board when there's none).
+  const first = [...made, ...fromPlane][0]?.id;
+  const select = triage ? LOOSE_KEY : (board ?? first ?? null);
+  const pick = (r: BoardRow) => (isLoose(r) ? go(loosePath) : go(boardPath(r.id), !triage));
+  const total = tri.whole;
   const status =
     list === null ? (
       <BlockLoading inline what="boards" />
@@ -258,7 +264,7 @@ function BoardList({ p, board, triage }: { p: PlatformProject; board?: string; t
       const b = el && open.find((x) => x.id === el.dataset.boardItem);
       return el && b ? { el, board: b } : null;
     })}>
-      <ListPage<ProjectBoard>
+      <ListPage<BoardRow>
         label="Boards"
         splitKey="platform-boards"
         header={
@@ -277,32 +283,30 @@ function BoardList({ p, board, triage }: { p: PlatformProject; board?: string; t
             {making && <NewBoard p={p} done={() => setMaking(false)} />}
           </>
         }
-        above={
-          list !== null && (
-            <a class="boards-loose-link" href={loosePath} aria-current={triage ? "page" : undefined} data-boards-loose onClick={(e) => follow(e, loosePath)}>
-              Not on a board
-              {total !== undefined && (
-                <span class="list-group-n" data-boards-loose-n>
-                  {total.toLocaleString()}
-                </span>
-              )}
-            </a>
-          )
-        }
         searchLabel="Filter boards by title, epic key or goal"
         query={q}
         setQuery={setQ}
         groups={groups}
-        keyOf={(b) => b.id}
+        keyOf={(r) => (isLoose(r) ? LOOSE_KEY : r.id)}
         previewOn="click"
-        select={triage ? null : (board ?? null)}
-        opened={!!board}
+        select={select}
+        opened={!!board || !!triage}
         // The address follows the row, so a board's link is the page with its row selected; from Not on a board, Back returns there.
-        onSelect={(b) => go(boardPath(b.id), !triage)}
-        onOpen={(b) => go(boardPath(b.id), !triage)}
-        status={status && <div class="list-status">{status}</div>}
+        onSelect={pick}
+        onOpen={pick}
+        // Under Not on a board's row, which is always there.
+        below={status && <div class="list-status">{status}</div>}
         pane={pane}
-        row={(b) => {
+        row={(r): ListRowParts => {
+          if (isLoose(r))
+            return {
+              dense: true,
+              name: "Not on a board",
+              title: "Not on a board",
+              age: total !== null && <span data-boards-loose-n>{total.toLocaleString()}</span>,
+              attrs: { "data-boards-loose": "" },
+            };
+          const b = r;
           const e = epicLine(b.progress);
           return {
             dense: true,
@@ -328,7 +332,7 @@ function BoardList({ p, board, triage }: { p: PlatformProject; board?: string; t
             attrs: { "data-board-item": b.id, ...(b.closed_at == null ? { "data-drop-target": "" } : {}) },
           };
         }}
-        preview={(b) => <BoardMiddle key={b.id} p={p} id={b.id} />}
+        preview={(r) => (isLoose(r) ? <NotOnBoard p={p} tri={tri} open={open} /> : <BoardMiddle key={r.id} p={p} id={r.id} />)}
       />
     </div>
   );

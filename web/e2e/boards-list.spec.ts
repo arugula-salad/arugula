@@ -2,12 +2,14 @@
 // progress as `13/18` and the lanes' bar; From Plane and Done (folded) as
 // groups; the selected board in the middle, its address the page's, so an
 // old board link selects its row; New board beside the title; Not on a
-// board a link over the list, its issues in the middle, and one dragged onto
-// a board's row goes on that board; on a phone the list is the page and a
-// board opens in its place. The board's controls are in the right column, and
-// a row's drawer takes it while open (Arugula #1129); with too little room the
-// column goes under the board and the drawer is a sheet. On the app's frame
-// fixture (app-frame-page.tsx), with the cloud's answers made up here.
+// board the pinned first row (Arugula #1130), its issues in the middle, Order
+// and the labels with their counts on the right, and one dragged onto a
+// board's row goes on that board; on a phone the list is the page, Not on a
+// board its first row, and a row opens in its place. The board's controls are
+// in the right column, and a row's drawer takes it while open (Arugula #1129);
+// with too little room the column goes under the board and the drawer is a
+// sheet. On the app's frame fixture (app-frame-page.tsx), with the cloud's
+// answers made up here.
 import { devices, expect, test, type Page } from "@playwright/test";
 import { fixturePage } from "./fixture-page";
 import { reset } from "./helpers";
@@ -116,15 +118,24 @@ test.describe("on a computer", () => {
     await expect(page.locator("[data-board-new-dialog]")).toHaveCount(0);
   });
 
-  test("Not on a board fills the middle; an issue dragged onto a board's row goes on it", async ({ page }) => {
+  test("Not on a board is the first row; its issues fill the middle, and one dragged onto a board's row goes on it", async ({ page }) => {
     const added: string[] = [];
     await openApp(page, `/p/${P}/boards`, added);
-    await expect(page.locator("[data-boards-loose-n]")).toHaveText("2");
-    await page.locator("[data-boards-loose]").click();
+    const loose = page.locator("[data-list-rows] [data-boards-loose]");
+    await expect(page.locator("[data-list-rows] [role=option]").first()).toHaveAttribute("data-boards-loose", "");
+    await expect(loose.locator("[data-boards-loose-n]")).toHaveText("2");
+    // Pinned: a search that hides every board keeps it.
+    await page.locator("[data-list-search]").fill("nothing like this");
+    await expect(loose).toBeVisible();
+    await page.locator("[data-list-search]").fill("");
+    await loose.click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/triage$`));
-    await expect(page.locator("[data-boards-loose]")).toHaveAttribute("aria-current", "page");
+    await expect(loose).toHaveAttribute("aria-selected", "true");
     const pane = page.locator("[data-list-preview] [data-boards-loose-pane]");
     await expect(pane.locator("[data-triage-row]")).toHaveCount(2);
+    // Order and the labels, with their counts, on the right.
+    await expect(pane.locator(".list-preview-aside [data-triage-order]")).toBeVisible();
+    await expect(pane.locator('.list-preview-aside [data-triage-label="ui"]')).toContainText("2");
     await pane.locator('[data-triage-row="#41"]').dragTo(item(page, "brd_0a01"));
     await expect.poll(() => added).toEqual(["brd_0a01"]);
     // A board's row goes back to the board, and Back to Not on a board.
@@ -132,6 +143,13 @@ test.describe("on a computer", () => {
     await expect(page).toHaveURL(at("brd_0a03"));
     await page.goBack();
     await expect(page).toHaveURL(/\/triage$/);
+    await expect(loose).toHaveAttribute("aria-selected", "true");
+  });
+
+  test("the triage link selects Not on a board's row", async ({ page }) => {
+    await openApp(page, `/p/${P}/triage`);
+    await expect(page.locator("[data-list-rows] [data-boards-loose]")).toHaveAttribute("aria-selected", "true");
+    await expect(page.locator("[data-list-preview] [data-boards-loose-pane] [data-triage-row]")).toHaveCount(2);
   });
 });
 
@@ -213,6 +231,15 @@ test.describe("on a phone", () => {
     await expect(page.locator("[data-list-back]")).toBeVisible();
     await page.locator("[data-list-back]").click();
     await expect(item(page, "brd_0a01")).toBeVisible();
+  });
+
+  test("Not on a board is the first row, and its issues open in the list's place", async ({ page }) => {
+    await openApp(page, `/p/${P}/boards`);
+    const loose = page.locator("[data-list-rows] [data-boards-loose]");
+    await expect(page.locator("[data-list-rows] [role=option]").first()).toHaveAttribute("data-boards-loose", "");
+    await loose.click();
+    await expect(page.locator('[data-boards-loose-pane] [data-triage-row="#41"]')).toBeVisible();
+    await expect(page.locator("[data-list-back]")).toBeVisible();
   });
 
   test("a board's link opens that board", async ({ page }) => {
