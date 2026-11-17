@@ -3,7 +3,7 @@
 // the board routes' paths. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { closedWithLine, heldChip, holdsRow, stalledFor, settledFacts, LANE_GLYPH, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, waitingOf, notFinishedLine, readyCount, relationLine, UNSEEN_BLOCKER, needsDot, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip, onIssueChip, boardGroup, clusterOrder, NO_BOARD, sourceLine, sourceLinked, leftOutLine, docWords, docHref, onBoardWords, pointerText, doneRefusal, laneOfZone, laneSetLine, closeName, rowMatches, findLine, boardMatches, rowHasLabel, rowHasPerson, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, topAndMore, initialsOf, liveSessions } from "../src/shared/boards/text.ts";
+import { closedWithLine, heldChip, holdsRow, stalledFor, settledFacts, LANE_GLYPH, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, waitingOf, notFinishedLine, readyCount, relationLine, UNSEEN_BLOCKER, needsDot, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip, onIssueChip, boardGroup, clusterOrder, NO_BOARD, sourceLine, sourceLinked, leftOutLine, docWords, docHref, onBoardWords, pointerText, doneRefusal, laneOfZone, laneSetLine, closeName, rowMatches, findLine, boardMatches, rowHasLabel, rowHasPerson, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, groupChoices, NO_GROUP, topAndMore, initialsOf, liveSessions } from "../src/shared/boards/text.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
@@ -551,6 +551,21 @@ test("label: and @ in the find box are a label and a person; the menus are OR wi
   assert.deepEqual(filterChoices([a, b], "assignees").map((x) => x.value), ["Ana Diaz", "bob"]);
 });
 
+test("the Group menu: each group with its rows, No group last, and a row passes when its group is picked (Arugula #1129)", () => {
+  const rows = [{ group: "zone_a" }, { group: "zone_a" }, { group: null }, {}];
+  assert.deepEqual(groupChoices([{ id: "zone_a", title: "Phase 1" }, { id: "zone_b", title: "Phase 2" }], rows), [
+    { value: "zone_a", label: "Phase 1", count: 2 },
+    { value: "zone_b", label: "Phase 2", count: 0 },
+    { value: NO_GROUP, label: "No group", count: 2 },
+  ]);
+  assert.deepEqual(groupChoices([{ id: "zone_a", title: "Phase 1" }], [{ group: "zone_a" }]).map((c) => c.value), ["zone_a"], "No group only when a row has none");
+  const r = (group) => ({ pointer: { kind: "none" }, note: "x", group });
+  const f = (groups) => ({ q: "", labels: [], people: [], groups });
+  assert.deepEqual([r("zone_a"), r("zone_b"), r(null)].map((x) => rowPasses(x, f(["zone_a", NO_GROUP]))), [true, false, true]);
+  assert.equal(filtering(f([])), false);
+  assert.equal(filtering(f(["zone_b"])), true);
+});
+
 test("a filter lives in the URL hash, and the chips fold into +N (#547)", () => {
   const f = { q: "fold", labels: ["boards", "needs work"], people: ["Ana Diaz"] };
   const h = filterHash(f);
@@ -561,6 +576,10 @@ test("a filter lives in the URL hash, and the chips fold into +N (#547)", () => 
   assert.equal(parseFilterHash("#other=1"), null, "a hash that names no filter is none");
   assert.deepEqual(parseFilterHash("#label=x&label="), { q: "", labels: ["x"], people: [] });
   assert.deepEqual(topAndMore(["a", "b", "c", "d", "e"], 3), { top: ["a", "b", "c"], more: 2 });
+  // The Group menu (Arugula #1129): its ids ride in the hash, and only when picked.
+  const g = { q: "", labels: [], people: [], groups: ["zone_a", NO_GROUP] };
+  assert.equal(filterHash(g), "group=zone_a&group=none");
+  assert.deepEqual(parseFilterHash("#group=zone_a&group=none"), g);
   assert.deepEqual(topAndMore(["a"], 3), { top: ["a"], more: 0 });
   assert.equal(initialsOf("Ana Diaz"), "AD");
   assert.equal(initialsOf("alice"), "A");

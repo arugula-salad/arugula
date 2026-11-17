@@ -635,16 +635,32 @@ export function rowMatches(r: Pick<BoardRow, "pointer" | "live" | "note">, q: st
 }
 
 /** What narrows a board: the find box's text, and the Label and Person menus. */
-export type BoardFilter = { q: string; labels: string[]; people: string[] };
+/** `groups`: the Group menu's (Arugula #1129), group ids and `none` for the rows with no group. */
+export type BoardFilter = { q: string; labels: string[]; people: string[]; groups?: string[] };
+
+/** The Group menu's value for the rows with no group. */
+export const NO_GROUP = "none";
 
 /** Whether a filter narrows anything. */
 export function filtering(f: BoardFilter): boolean {
-  return !!f.q.trim() || f.labels.length > 0 || f.people.length > 0;
+  return !!f.q.trim() || f.labels.length > 0 || f.people.length > 0 || (f.groups?.length ?? 0) > 0;
 }
 
 /** Whether a row passes a filter: the text and each menu all hold, and within a menu any value does. */
-export function rowPasses(r: Pick<BoardRow, "pointer" | "live" | "note">, f: BoardFilter): boolean {
-  return rowMatches(r, f.q) && (!f.labels.length || f.labels.some((l) => rowHasLabel(r, l))) && (!f.people.length || f.people.some((p) => rowHasPerson(r, p)));
+export function rowPasses(r: Pick<BoardRow, "pointer" | "live" | "note"> & { group?: string | null }, f: BoardFilter): boolean {
+  return (
+    rowMatches(r, f.q) &&
+    (!f.labels.length || f.labels.some((l) => rowHasLabel(r, l))) &&
+    (!f.people.length || f.people.some((p) => rowHasPerson(r, p))) &&
+    (!f.groups?.length || f.groups.includes(r.group ?? NO_GROUP))
+  );
+}
+
+/** The Group menu's choices (Arugula #1129): each group in the board's order with how many rows it holds, then No group when a row has none. */
+export function groupChoices(groups: Pick<BoardGroup, "id" | "title">[], rows: { group?: string | null }[]): { value: string; label: string; count: number }[] {
+  const n = (g: string | null) => rows.filter((r) => (r.group ?? null) === g).length;
+  const loose = n(null);
+  return [...groups.map((g) => ({ value: g.id, label: g.title, count: n(g.id) })), ...(loose ? [{ value: NO_GROUP, label: "No group", count: loose }] : [])];
 }
 
 /** The labels (or people) the rows have, most common first, for a menu: each once, as its first row spells it. */
@@ -667,13 +683,15 @@ export function filterHash(f: BoardFilter): string {
   if (f.q.trim()) p.set("q", f.q.trim());
   for (const l of f.labels) p.append("label", l);
   for (const w of f.people) p.append("person", w);
+  for (const g of f.groups ?? []) p.append("group", g);
   return p.toString();
 }
 
 /** A filter from a URL hash (with or without the `#`); `null` when it names none. */
 export function parseFilterHash(hash: string): BoardFilter | null {
   const p = new URLSearchParams(hash.replace(/^#/, ""));
-  const f = { q: p.get("q") ?? "", labels: p.getAll("label").filter(Boolean), people: p.getAll("person").filter(Boolean) };
+  const groups = p.getAll("group").filter(Boolean);
+  const f: BoardFilter = { q: p.get("q") ?? "", labels: p.getAll("label").filter(Boolean), people: p.getAll("person").filter(Boolean), ...(groups.length ? { groups } : {}) };
   return filtering(f) ? f : null;
 }
 

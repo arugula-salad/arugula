@@ -1149,6 +1149,8 @@ html[data-corners="square"] .platform-section {
 }
 
 .boards-page .list-page {
+  /* A board's row is short and the board wide: a narrower list by default, so its controls' column fits beside it at 1440 (Arugula #1129). A dragged width still wins. */
+  --list-w: clamp(340px, 28%, 440px);
   height: 100%;
 }
 
@@ -1161,6 +1163,23 @@ html[data-corners="square"] .platform-section {
 
 .boards-middle > .list-back {
   margin: 0 0 var(--space-3);
+}
+
+/* A board (Arugula #1129): the board and its controls' column scroll on
+   their own (../shared/boards/boards.css); under ~900px they're one column
+   again, and the middle scrolls. */
+.boards-middle.boards-board {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+@container list-preview (max-width: 900px) {
+  .boards-middle.boards-board {
+    display: block;
+    overflow: auto;
+  }
 }
 
 /* A board's row: its title, `13/18` and the lanes' bar on one line. */

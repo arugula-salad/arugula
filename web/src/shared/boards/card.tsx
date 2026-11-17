@@ -1,6 +1,7 @@
 // A board row's drawer (lanes, aru-125; #369), wherever the board is drawn:
 // the platform page's and the board block's (./view.tsx). A side sheet with
-// the row's item, read-only: its lane, marks and note, its live session,
+// the row's item, or on the Boards page the board's right column, in place of
+// its controls (`place: "column"`, Arugula #1129), read-only: its lane, marks and note, its live session,
 // the body, the latest comments, the PRs' checks, relations, Docs, the
 // sessions and attachments, and the proof. The chips a row shows on the
 // board too (its sessions, attachments, owners and labels) are here, and the
@@ -10,13 +11,14 @@
 // a live pane comes through `PlatformApi.LivePane`, where the page has one.
 
 import { createContext } from "preact";
-import { useContext, useEffect, useState } from "preact/hooks";
+import { useContext, useEffect, useId, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { RelationKind, BoardLane, BoardAttachment, BoardRow, BoardRowSession, BoardView, ForgeText } from "../proto";
 import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
 import { Card } from "../ui/card";
 import { Markdown } from "../ui/markdown";
-import { ArrowIcon, CloseIcon, ExternalIcon, IconButton, PlusIcon } from "../ui/icons";
+import { ArrowIcon, ChevronIcon, CloseIcon, ExternalIcon, IconButton, PlusIcon } from "../ui/icons";
+import { escapeTaken } from "../ui/menu";
 import { SideSheet } from "../ui/side-sheet";
 import { StateChip, Chip, ObjectChip } from "../ui/state-chip";
 import { usePhone, useSubscribe } from "../ui/hooks";
@@ -309,7 +311,7 @@ function NotFinishedSection({ r, nf, write, act, id }: { r: BoardRow; nf: NotFin
 }
 
 /** The drawer: a row's item, read-only, beside the board (a sheet on a phone). Its title, state and link out; its live session; the body, the latest comments, the PRs' checks, the attachments and the proof's evidence. */
-export function Drawer({ steps, r, platform, close, project, others, write, act, id, moveLane, nameOf, who = "steer" }: { /** In Steps, the row's place in its group and its step, and the move ↑ and ↓ send on a phone. */ steps?: { place: ReturnType<typeof stepPlace>; move: (m: Reorder) => void }; /** What the reader does here: `steer` (the default) may take a live session's pane; `read` (Product mode, later) sees each session's state card. */ who?: "steer" | "read"; r: BoardRow; platform: (path: string) => string | undefined; close: () => void; project: string; others: BoardRow[]; write: boolean; act: (write: () => Promise<BoardView>) => Promise<boolean>; id: string; moveLane: (row: string, lane: BoardLane) => void; nameOf: (account: string) => string | undefined }) {
+export function Drawer({ steps, r, platform, close, project, others, write, act, id, moveLane, nameOf, who = "steer", place = "sheet" }: { /** `sheet` (the default): a side sheet over the page. `column`: the board's right column, with ‹ Board controls to go back (Arugula #1129). */ place?: "sheet" | "column"; /** In Steps, the row's place in its group and its step, and the move ↑ and ↓ send on a phone. */ steps?: { place: ReturnType<typeof stepPlace>; move: (m: Reorder) => void }; /** What the reader does here: `steer` (the default) may take a live session's pane; `read` (Product mode, later) sees each session's state card. */ who?: "steer" | "read"; r: BoardRow; platform: (path: string) => string | undefined; close: () => void; project: string; others: BoardRow[]; write: boolean; act: (write: () => Promise<BoardView>) => Promise<boolean>; id: string; moveLane: (row: string, lane: BoardLane) => void; nameOf: (account: string) => string | undefined }) {
   const [read, setRead] = useState<Read | null>(null);
   const phone = usePhone();
   const href = pointerHref(r, platform);
@@ -339,8 +341,9 @@ export function Drawer({ steps, r, platform, close, project, others, write, act,
   const attached = r.attachments.filter((a) => !(a.role === "work" && a.pointer.kind === "block"));
   // The card's other sessions, from the project's by-card list (Arugula #1082).
   const cardSessions = useRowSessions(r);
-  return (
-    <SideSheet title={title} close={close} class={full ? "board-drawer board-drawer-live" : "board-drawer"} root={{ "data-board-drawer": r.id }} titleAttrs={{ "data-board-drawer-title": true }} closeAttrs={{ "data-board-drawer-close": true }}>
+  const cls = full ? "board-drawer board-drawer-live" : "board-drawer";
+  const body = (
+    <>
       {Ask && shown?.kind === "block" && <Ask key={shown.key} machine={shown.machine} pane={shown.pane} />}
       <div class="board-line board-drawer-lane">
         {write ? (
@@ -523,7 +526,59 @@ export function Drawer({ steps, r, platform, close, project, others, write, act,
         </section>
       )}
       {api.CardWhy && shown?.kind === "block" && shown.machine && <api.CardWhy key={shown.key} machine={shown.machine} pane={shown.pane} />}
+    </>
+  );
+  if (place === "column")
+    return (
+      <DrawerColumn title={title} row={r.id} close={close} class={cls}>
+        {body}
+      </DrawerColumn>
+    );
+  return (
+    <SideSheet title={title} close={close} class={cls} root={{ "data-board-drawer": r.id }} titleAttrs={{ "data-board-drawer-title": true }} closeAttrs={{ "data-board-drawer-close": true }}>
+      {body}
     </SideSheet>
+  );
+}
+
+/** The drawer in the board's right column (Arugula #1129): not a dialog, so the board beside it still works. ‹ Board controls (and Escape, unless a field, a menu, a dialog or a driven terminal has it) goes back to the controls, and the focus to the row when it was in here. It takes the focus as it opens on a row. */
+function DrawerColumn({ title, row, close, class: cls, children }: { title: string; row: string; close: () => void; class: string; children: preact.ComponentChildren }) {
+  const ref = useRef<HTMLElement>(null);
+  const id = useId();
+  const back = () => {
+    const had = !!ref.current?.contains(document.activeElement);
+    close();
+    if (had) requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-board-row="${row}"]`)?.focus({ preventScroll: true }));
+  };
+  const now = useRef(back);
+  now.current = back;
+  useLayoutEffect(() => {
+    ref.current?.scrollTo?.(0, 0);
+    ref.current?.focus({ preventScroll: true });
+  }, [row]);
+  // As it's drawn, so Esc works at once.
+  useLayoutEffect(() => {
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented || e.isComposing || escapeTaken(e)) return;
+      if ((e.target as Element | null)?.closest?.("[data-keys-own], input, textarea, select, [contenteditable], [role=dialog]")) return;
+      if (document.querySelector("[aria-modal=true], [data-context-pop]")) return;
+      e.preventDefault();
+      now.current();
+    };
+    // On the document: after a menu's or a dialog's (the window's capture), before the list page's (the window's).
+    document.addEventListener("keydown", esc);
+    return () => document.removeEventListener("keydown", esc);
+  }, []);
+  return (
+    <section ref={ref} tabIndex={-1} class={`${cls} board-drawer-col`} aria-labelledby={id} data-board-drawer={row}>
+      <button type="button" class="link board-drawer-back" data-board-drawer-back data-board-drawer-close onClick={back}>
+        <ChevronIcon dir="left" /> Board controls
+      </button>
+      <h2 id={id} class="board-drawer-col-title" data-board-drawer-title>
+        {title}
+      </h2>
+      {children}
+    </section>
   );
 }
 
