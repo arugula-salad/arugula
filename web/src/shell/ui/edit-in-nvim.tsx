@@ -31,6 +31,8 @@ export function EditInNvim({
     <label class="check edit-in-nvim" title={title}>
       <input
         type="checkbox"
+        role="switch"
+        class="sw-switch"
         data-edit-in-nvim
         checked={disabled || editsInNvim()}
         disabled={disabled}

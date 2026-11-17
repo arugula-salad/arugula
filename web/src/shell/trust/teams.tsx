@@ -33,7 +33,7 @@ function TeamChat({ team, on, edit, set }: { team: Team; on: boolean; edit: bool
         Chat <span class="dim">· {on ? "on" : "off"}</span>
       </h4>
       <label class="control-check" data-team-chat={team.team} title={edit ? undefined : "Its owners turn it on and off"}>
-        <input type="checkbox" checked={on} disabled={!edit} aria-label={`Chat for ${team.roster.name}`} onChange={(e) => set((e.target as HTMLInputElement).checked)} />
+        <input type="checkbox" role="switch" class="sw-switch" checked={on} disabled={!edit} aria-label={`Chat for ${team.roster.name}`} onChange={(e) => set((e.target as HTMLInputElement).checked)} />
         <span>
           Channels, direct messages, issues and the threads on its machines' panes, for its members.
           {edit ? null : <span class="dim"> Its owners turn it on and off.</span>}

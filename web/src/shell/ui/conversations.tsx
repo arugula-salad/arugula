@@ -313,11 +313,11 @@ function Picker({ client, where, phone, close }: { client: Client; where: Conver
       <div class="picker-where">
         <span class="picker-host">Claude Code conversations</span>
         <label class="check">
-          <input type="checkbox" checked={liveOnly} onChange={(e) => setLiveOnly(e.currentTarget.checked)} />
+          <input type="checkbox" role="switch" class="sw-switch" checked={liveOnly} onChange={(e) => setLiveOnly(e.currentTarget.checked)} />
           Open now
         </label>
         <label class="check" title="claude -p and SDK runs, archived ones, ones whose folder is gone">
-          <input type="checkbox" checked={all} onChange={(e) => setAll(e.currentTarget.checked)} />
+          <input type="checkbox" role="switch" class="sw-switch" checked={all} onChange={(e) => setAll(e.currentTarget.checked)} />
           All
         </label>
       </div>
