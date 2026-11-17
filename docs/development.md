@@ -420,7 +420,7 @@ nothing: the pick is fixed when you name it. After the tag, a commit adds the
 notes and the client fixtures to main.
 
 `release-train.yml` does this on its own each time chant's tick finishes on main,
-at most once every 2 hours after the last release (`scripts/release-train`, #724,
+at most once an hour after the last release (`scripts/release-train`, #724,
 Arugula #794), when the repository variable `ARUGULA_RELEASE_TRAIN` is `on`: the newest
 commit with the daemon's green tag goes out as a patch, with notes built from what
 its pull requests added to `docs/notes/` (`scripts/release-notes.mjs`), if they added
