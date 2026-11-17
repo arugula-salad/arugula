@@ -33,16 +33,25 @@ export function spoken(m: number): string {
   return `${h % 12 || 12}${min ? `:${String(min).padStart(2, "0")}` : ""} ${h < 12 ? "AM" : "PM"}`;
 }
 
-/** Which nights, in words: `Weeknights`, `Every night`, `Mon, Wed`. */
+/** Which nights, in words: `Weeknights`, `Weekends`, `Every night`; three
+ * or more in a row as a range (`Mon–Sat`, and `Sun–Thu` round the week's
+ * end when that's all of them), the rest one by one (`Mon, Wed, Fri`). */
 function nights(days: number[]): string {
-  const set = [...new Set(days)].sort((a, b) => a - b).join();
+  const on = [...new Set(days)].filter((d) => d >= 1 && d <= 7).sort((a, b) => a - b);
+  const set = on.join();
   if (set === "1,2,3,4,5,6,7") return "Every night";
   if (set === "1,2,3,4,5") return "Weeknights";
   if (set === "6,7") return "Weekends";
-  return [...new Set(days)]
-    .sort((a, b) => a - b)
-    .map((d) => DAY[d - 1])
-    .join(", ");
+  // Runs of days in a row, Monday first.
+  const runs: number[][] = [];
+  for (const d of on) {
+    const last = runs[runs.length - 1];
+    if (last && d === last[last.length - 1] + 1) last.push(d);
+    else runs.push([d]);
+  }
+  // One run that goes past Sunday into Monday: Sunday's end is its start.
+  if (runs.length === 2 && runs[0][0] === 1 && runs[1][runs[1].length - 1] === 7) runs.splice(0, 2, [...runs[1], ...runs[0]]);
+  return runs.map((r) => (r.length >= 3 ? `${DAY[r[0] - 1]}–${DAY[r[r.length - 1] - 1]}` : r.map((d) => DAY[d - 1]).join(", "))).join(", ");
 }
 
 /** Quiet hours in a line: `Weeknights 10 PM – 8 AM · New York`, or `Off`.

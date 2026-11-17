@@ -88,7 +88,8 @@
 .time-range > input {
   all: unset;
   box-sizing: border-box;
-  width: 96px;
+  /* "10:00 PM" with its picker, unclipped (Arugula #1109). */
+  width: 116px;
   padding: 0 4px;
   color: var(--fg);
   font: 500 var(--t-field) var(--f-mono);
@@ -121,6 +122,51 @@
   }
 
   .time-range > input {
-    width: 112px;
+    width: 124px;
   }
+}
+
+/* Week: a bar a day, midnight to midnight, its covered stretches in the
+   accent; the day's name before it, the hours under the last. */
+.week {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 3px 8px;
+  width: 100%;
+  max-width: 520px;
+  color: var(--dim);
+  font: 500 var(--text-xs) / 14px var(--f-mono);
+}
+
+.week-caption {
+  grid-column: 1 / -1;
+  margin-bottom: 3px;
+  font-size: var(--text-xs);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+}
+
+.week-day {
+  display: contents;
+}
+
+.week-bar {
+  position: relative;
+  height: 14px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+}
+
+.week-bar > i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.week-ticks {
+  display: flex;
+  grid-column: 2;
+  justify-content: space-between;
 }

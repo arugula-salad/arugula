@@ -3,14 +3,15 @@
 // (a snooze now, or quiet hours by weekday in your time zone), and whether
 // the pause covers every push or only chat's. A room's own level is its
 // bell's (shared/chat/bell). The platform's (`/api/notify/prefs`). Quiet
-// hours are a section of their own, in the index (UI audit #168).
+// hours are a section of their own, in the index (UI audit #168): the
+// nights, one window and the week they make, drawn (Arugula #1109).
 
 import { useEffect, useState } from "preact/hooks";
 import type { NotifyLevel, QuietHours } from "../../shared/proto.gen";
 import { clock, deviceZone, LEVELS, levelLabel, loadNotify, minutes, notifyPrefs, setNotify, snoozePresets, subscribeNotify, untilText } from "../../shared/chat/notify";
-import { claimDays } from "../../shared/ui/days";
+import { claimDays, sameTimes } from "../../shared/ui/days";
 import { useSubscribe } from "../../shared/ui/hooks";
-import { TimeRange, Weekdays } from "../../shared/ui/schedule";
+import { TimeRange, Week, Weekdays } from "../../shared/ui/schedule";
 import { Section } from "../../shared/ui/settings-section";
 import { joined, quietSummary } from "./summary";
 
@@ -144,6 +145,40 @@ export function NotificationSettings() {
         hooks={{ "data-notify-quiet": "" }}
       >
         <ul class="platform-list settings-rows notify-schedule" data-notify-schedule>
+          {/* The nights as chips and their hours as one range (Arugula #1101);
+              different times on some days is a window of their own, and a
+              day is in one window, so picking it in another moves it there. */}
+          {mine.map((w, i) => (
+            <li key={i} data-notify-window={i}>
+              <Weekdays
+                value={w.days}
+                label={i === 0 ? "Quiet days" : "Quiet days, other hours"}
+                onChange={(days) => setWins(days.length || i === 0 ? claimDays(mine, i, days) : mine.filter((_, j) => j !== i))}
+              />
+              <TimeRange
+                from={w.from}
+                to={w.to}
+                label={i === 0 ? "Quiet hours" : "Other quiet hours"}
+                onChange={(r) => setWins(mine.map((x, j) => (j === i ? { ...x, ...r } : x)))}
+              />
+            </li>
+          ))}
+          {/* One window is the usual week; the rest wait behind a link
+              (Arugula #1109, the Settings Doc's decision 5). */}
+          {(mine.length > 1 || mine[0].days.length > 0) && (
+            <li class="notify-split">
+              {mine.length < 7 && mine.every((w) => w.days.length) && (
+                <button class="link small" data-notify-add-window onClick={() => setWins([...mine, { days: [], from: mine[0].from, to: mine[0].to }])}>
+                  {mine.length === 1 ? "Different times on some days…" : "Different times on more days…"}
+                </button>
+              )}
+              {mine.length > 1 && (
+                <button class="link small" data-notify-same-times onClick={() => setWins(sameTimes(mine))}>
+                  Same times every night
+                </button>
+              )}
+            </li>
+          )}
           <li>
             <label class="settings-field">
               Time zone
@@ -160,30 +195,9 @@ export function NotificationSettings() {
               </button>
             )}
           </li>
-          {/* Days as chips and times as one range (Arugula #1101); a day is in
-              one window, so picking it in another moves it there. */}
-          {mine.map((w, i) => (
-            <li key={i} data-notify-window={i}>
-              <Weekdays
-                value={w.days}
-                label={i === 0 ? "Quiet days" : "Quiet days, other hours"}
-                onChange={(days) => setWins(days.length || i === 0 ? claimDays(mine, i, days) : mine.filter((_, j) => j !== i))}
-              />
-              <TimeRange
-                from={w.from}
-                to={w.to}
-                label={i === 0 ? "Quiet hours" : "Other quiet hours"}
-                onChange={(r) => setWins(mine.map((x, j) => (j === i ? { ...x, ...r } : x)))}
-              />
-            </li>
-          ))}
-          {mine.length < 7 && mine.every((w) => w.days.length) && (
-            <li>
-              <button class="link small" data-notify-add-window onClick={() => setWins([...mine, { days: [], from: mine[0].from, to: mine[0].to }])}>
-                Other hours for some days
-              </button>
-            </li>
-          )}
+          <li>
+            <Week windows={mine} data-notify-week />
+          </li>
           <li>
             <button
               class="primary"
