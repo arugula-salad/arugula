@@ -35,6 +35,30 @@ test("quiet hours: the nights, one window and the zone's city; off when none", (
   assert.equal(quietSummary([{ days: [1, 2, 3, 4, 5, 6, 7], from: 23 * 60, to: 7 * 60 }], "UTC"), "Every night 11 PM – 7 AM · UTC");
   assert.equal(quietSummary([{ days: [6, 7], from: 0, to: 9 * 60 }], "Europe/London"), "Weekends 12 AM – 9 AM · London");
   assert.equal(quietSummary([{ days: [3, 1], from: 21 * 60, to: 6 * 60 }], "UTC"), "Mon, Wed 9 PM – 6 AM · UTC");
+  // Three or more nights in a row read as a range; scattered ones, one by one.
+  const at = (days) => quietSummary([{ days, from: 22 * 60, to: 8 * 60 }], "UTC");
+  assert.equal(at([1, 2, 3, 4, 5, 6]), "Mon–Sat 10 PM – 8 AM · UTC");
+  assert.equal(at([2, 3, 4]), "Tue–Thu 10 PM – 8 AM · UTC");
+  assert.equal(at([1, 3, 5]), "Mon, Wed, Fri 10 PM – 8 AM · UTC");
+  assert.equal(at([1, 2]), "Mon, Tue 10 PM – 8 AM · UTC");
+  assert.equal(at([1, 2, 3, 5]), "Mon–Wed, Fri 10 PM – 8 AM · UTC");
+  assert.equal(at([1, 3, 4, 5, 7]), "Mon, Wed–Fri, Sun 10 PM – 8 AM · UTC");
+  // Round the week's end when that's the only run: the nights before a workday.
+  assert.equal(at([7, 1, 2, 3, 4]), "Sun–Thu 10 PM – 8 AM · UTC");
+  assert.equal(at([5, 6, 7, 1]), "Fri–Mon 10 PM – 8 AM · UTC");
+  assert.equal(at([7, 1]), "Sun, Mon 10 PM – 8 AM · UTC");
+  assert.equal(at([1, 2, 4, 6, 7]), "Mon, Tue, Thu, Sat, Sun 10 PM – 8 AM · UTC");
+  // Windows of their own: the nights they cover, and that the times vary.
+  assert.equal(
+    quietSummary(
+      [
+        { days: [1, 2, 3, 4], from: 22 * 60, to: 7 * 60 },
+        { days: [5, 6], from: 23 * 60 + 30, to: 10 * 60 },
+      ],
+      "America/New_York",
+    ),
+    "Mon–Sat, times vary · New York",
+  );
   // Two windows: the nights, and that the times vary.
   assert.equal(
     quietSummary(

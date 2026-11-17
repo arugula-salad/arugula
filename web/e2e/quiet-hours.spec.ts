@@ -81,7 +81,7 @@ test("different times on some days: a window of their own, saved as QuietHours, 
       { days: [5, 6], from: 23 * 60 + 30, to: 10 * 60 },
     ],
   });
-  await expect(page.locator('[data-settings-row="quiet-hours"] .list-row-detail')).toContainText("times vary");
+  await expect(page.locator('[data-settings-row="quiet-hours"] .list-row-detail')).toHaveText("Mon–Sat, times vary · New York");
   // Back to one window: every night they covered, at the first one's times.
   await page.locator("[data-notify-same-times]").click();
   await expect(page.locator("[data-notify-window]")).toHaveCount(1);
@@ -89,7 +89,7 @@ test("different times on some days: a window of their own, saved as QuietHours, 
   await page.locator("[data-notify-save]").click();
   await expect.poll(() => saved.length).toBe(2);
   expect(saved[1].quiet).toEqual([{ days: [1, 2, 3, 4, 5, 6], from: 22 * 60, to: 8 * 60 }]);
-  await expect(page.locator('[data-settings-row="quiet-hours"] .list-row-detail')).toHaveText("Mon, Tue, Wed, Thu, Fri, Sat 10 PM – 8 AM · New York");
+  await expect(page.locator('[data-settings-row="quiet-hours"] .list-row-detail')).toHaveText("Mon–Sat 10 PM – 8 AM · New York");
 });
 
 test("off: an empty week and no link until a night is picked", async ({ page }) => {
