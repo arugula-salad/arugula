@@ -165,27 +165,36 @@ test("a browser with no device key opens a pane with machine tokens", async ({ p
   await run(page, pane, "echo token-$((6*7))", "token-42");
 });
 
-test("with a control that signs no tokens, a new browser asks to be approved", async ({ page }) => {
-  const enrolled: string[] = [];
-  const asked: string[] = [];
-  await page.route(/\/control\.json$/, (r) => r.fulfill({ json: { control: true, url: origin, github: true, passkeys: false, vapid: "" } }));
-  await page.route(/\/\.well-known\/jwks\.json$/, (r) => r.fulfill({ status: 404, json: { error: "no issuer" } }));
-  await page.route(/\/api\//, async (r) => {
-    const url = new URL(r.request().url());
-    const method = r.request().method();
-    if (url.pathname === "/api/me") return r.fulfill({ json: { account: "a1", login: "me", name: "Me", root: rootDevice, passkeys: 0 } });
-    if (url.pathname.endsWith("/token") && method === "POST") asked.push(url.pathname);
-    if (url.pathname.startsWith("/api/devices") && method === "POST") enrolled.push(url.pathname);
-    return r.fulfill({ status: 404, json: { error: "not here" } });
-  });
+// #1004: no screen asks for an approval any more. Where control signs no
+// tokens (a dev or test hub), only the account's first browser becomes a
+// device, signing itself; any other browser of the account just signs in.
+for (const root of [null, "other"] as const) {
+  test(`with a control that signs no tokens, a new browser ${root ? "of an account with a device isn't asked to be approved" : "is the account's first device, with no screen"}`, async ({ page }) => {
+    const enrolled: string[] = [];
+    await page.route(/\/control\.json$/, (r) => r.fulfill({ json: { control: true, url: origin, github: true, passkeys: false, vapid: "" } }));
+    await page.route(/\/\.well-known\/jwks\.json$/, (r) => r.fulfill({ status: 404, json: { error: "no issuer" } }));
+    await page.route(/\/api\//, async (r) => {
+      const url = new URL(r.request().url());
+      const method = r.request().method();
+      if (url.pathname === "/api/me") return r.fulfill({ json: { account: "a1", login: "me", name: "Me", root: root && rootDevice, passkeys: 0 } });
+      if (url.pathname === "/api/devices" && method === "POST") enrolled.push((r.request().postDataJSON() as { cert: Cert }).cert.approver);
+      return r.fulfill({ status: 404, json: { error: "not here" } });
+    });
 
-  await page.goto(`${origin}/`);
-  // It enrolls (here control refuses, so it goes no further), and never
-  // waits on a token.
-  await expect.poll(() => enrolled.length).toBeGreaterThan(0);
-  expect(await page.evaluate(() => !!window.__arugula.control?.tokens)).toBe(false);
-  expect(asked).toEqual([]);
-});
+    await page.goto(`${origin}/`);
+    if (root) {
+      await expect.poll(() => page.evaluate(() => window.__arugula?.control?.phase)).toBe("ready");
+      expect(enrolled).toEqual([]);
+      expect(await page.evaluate(() => [window.__arugula.control!.tokens, !!window.__arugula.control!.enrollment])).toEqual([true, false]);
+    } else {
+      // It signs its own certificate (here control refuses, so it goes no
+      // further), and nothing waits to approve it.
+      await expect.poll(() => enrolled.length).toBeGreaterThan(0);
+      expect(enrolled[0]).toBe(await page.evaluate(() => window.__arugula.control!.keys.id));
+    }
+    await expect(page.locator("[data-waiting-line], [data-device-code], [data-recovery-code]")).toHaveCount(0);
+  });
+}
 
 // #1003: Getting started's link (`#join=CODE.SECRET`) on a browser with no
 // device key: it isn't asked to be approved, and adds the machine with one
@@ -257,9 +266,10 @@ for (const app of [false, true]) {
   });
 }
 
-// #997: a CLI's join still needs a device's signature, which a browser
-// with no device key can't give: it says so, and where to go instead.
-test("a browser with no device key can't approve a CLI, and says why", async ({ page }) => {
+// #997, #1004: a CLI's join still needs a device's signature, which a
+// browser with no device key can't give: it says how to sign the CLI in
+// from a browser instead, and turning it down ends the CLI's wait.
+test("a browser with no device key can't approve a CLI, and points it at arugula login --browser", async ({ page }) => {
   const k = await generateKeys(true);
   const cli: Cert = { v: 1, account: "", device: k.id, kind: "cli", name: "Arugula CLI on laptop", noise: k.noisePub, sign: k.signPub, created: Date.now(), approver: "", sig: "" };
   const code = await joinCode(cli);
@@ -273,7 +283,9 @@ test("a browser with no device key can't approve a CLI, and says why", async ({ 
     return r.fulfill({ status: 404, json: { error: "not here" } });
   });
   await page.goto(`${origin}/#join=${code}.ABCD-EFGH-JKMN-PQRS`);
-  const dialog = page.getByRole("dialog", { name: "Add a terminal?" });
-  await expect(dialog.locator("[data-join-needs-device]")).toContainText("arugula login --browser");
-  await expect(dialog.locator("[data-approve-join]")).toBeDisabled();
+  const dialog = page.getByRole("dialog", { name: "Sign in the command line?" });
+  await expect(dialog.locator("[data-join-cli-browser]")).toContainText("laptop");
+  await expect(dialog.locator("[data-join-cli-command]")).toContainText(`arugula login --browser ${origin}`);
+  await expect(dialog.locator("[data-approve-join]")).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: "Turn it down" })).toBeVisible();
 });
