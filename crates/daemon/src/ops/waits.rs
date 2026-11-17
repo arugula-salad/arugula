@@ -16,8 +16,57 @@ use super::{Cx, Handle, OpError};
 use crate::{
     api::{ApiError, bad, is_doc, is_invite, not_on_docs, not_on_invites},
     mux::{Api, AskReply, Cmd, InboxReply, MuxHandle},
+    server::App,
     store::now_ms,
 };
+
+/// Whether pane `pane` takes a Claude Code hook from the CLI process `pid`
+/// (Arugula #469, [`HOOK_PID`](arugula_proto::api::HOOK_PID)): the CLI
+/// found the pane in `ARUGULA_PANE`, which an editor or the desktop app
+/// started from the pane inherits, so a terminal takes it only when `pid`
+/// is in front of it: in its foreground job, or in the pane a `tmux` client
+/// there shows (as live signals, #453). No pid (an older CLI), or a pane
+/// that isn't a terminal (a block, or none: its own errors say so), takes
+/// it as before.
+pub(crate) async fn takes_hook(app: &App, pane: PaneId, pid: Option<u32>) -> bool {
+    let Some(pid) = pid else { return true };
+    let Some(h) = app.mux.api(|r| Api::Pane(pane, r)).await.flatten() else { return true };
+    let leader = h.pid_now();
+    let sessions = crate::agent::sessions();
+    let front = crate::task::spawn_blocking(move || {
+        takes(Some(pid), leader, |leader, pid| crate::procinfo::in_front(leader, pid, |c| sessions.through(c)))
+    });
+    let takes = front.await.unwrap_or(false);
+    if !takes {
+        tracing::debug!(pane, pid, "a Claude Code hook from outside the pane's front: not the pane's");
+    }
+    takes
+}
+
+/// [`takes_hook`] for a terminal whose own process is `leader` (none: it
+/// has ended), with `in_front(leader, pid)` the process table's answer.
+fn takes(pid: Option<u32>, leader: Option<u32>, in_front: impl FnOnce(u32, u32) -> bool) -> bool {
+    match (pid, leader) {
+        (None, _) => true,
+        (Some(_), None) => false,
+        (Some(pid), Some(leader)) => in_front(leader, pid),
+    }
+}
+
+/// A hook input's [`HOOK_PID`](arugula_proto::api::HOOK_PID), if the CLI
+/// added one.
+pub(crate) fn hook_pid(hook: &serde_json::Value) -> Option<u32> {
+    hook[arugula_proto::api::HOOK_PID].as_u64().and_then(|p| u32::try_from(p).ok())
+}
+
+/// What a hook from outside a terminal's front (Arugula #469) is told by
+/// `inbox`: nothing waits for it there.
+fn not_in_front(pane: PaneId) -> OpError {
+    OpError::Status(
+        StatusCode::CONFLICT,
+        format!("this Claude Code isn't in front of %{pane}: nothing waits for it there"),
+    )
+}
 
 /// Withdraws a terminal's question if whoever asked it goes away first.
 struct AskGuard {
@@ -53,6 +102,10 @@ impl Handle for PaneAsk {
             return Err(not_on_docs().into());
         }
         let questions = req.questions.as_array().filter(|q| !q.is_empty()).ok_or_else(|| bad("no questions"))?;
+        // Asked from an app started from the pane: its own picker.
+        if !takes_hook(app, id, req.pid).await {
+            return Ok(AskAnswer::Terminal);
+        }
         let message = match questions.as_slice() {
             [q] => q["question"].as_str().unwrap_or_default().to_owned(),
             _ => "Please answer the following questions.".to_owned(),
@@ -112,6 +165,10 @@ impl Handle for PanePermit {
             return Err(not_on_docs().into());
         }
         let tool = hook.tool_name.ok_or_else(|| bad("no tool_name"))?;
+        // From an app started from the pane: Claude Code's own dialog.
+        if !takes_hook(app, id, hook.pid).await {
+            return Ok(PermitAnswer::Withdrawn);
+        }
         let input = hook.tool_input;
         let session =
             format!("{}/{}", hook.session_id.as_deref().unwrap_or(""), hook.agent_id.as_deref().unwrap_or(""));
@@ -168,6 +225,9 @@ impl Drop for InboxGuard {
 impl Handle for PaneInbox {
     async fn handle(cx: &Cx<'_>, id: PaneId, hook: serde_json::Value) -> Result<InboxAnswer, OpError> {
         let app = cx.app;
+        if !takes_hook(app, id, hook_pid(&hook)).await {
+            return Err(not_in_front(id));
+        }
         let (token, rx) = match app.mux.api(|r| Api::Inbox(id, hook, r)).await {
             Some(Ok(r)) => r,
             Some(Err(e)) => return Err(ApiError(StatusCode::NOT_FOUND, e).into()),
@@ -202,6 +262,11 @@ impl Handle for PaneAskWithdraw {
         if is_doc(cx.app, id).await {
             return Err(not_on_docs().into());
         }
+        // It put nothing there, so it takes nothing back (an id-less
+        // withdraw would take the pane's own card).
+        if !takes_hook(cx.app, id, req.pid).await {
+            return Ok(Empty {});
+        }
         cx.app.mux.send(Cmd::Api(Api::AskWithdraw(id, req.id, None)));
         Ok(Empty {})
     }
@@ -209,4 +274,106 @@ impl Handle for PaneAskWithdraw {
 
 fn shutting_down() -> ApiError {
     ApiError(StatusCode::SERVICE_UNAVAILABLE, "daemon is shutting down".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::takes;
+    use crate::procinfo::in_front_of;
+
+    /// The processes the tests read: pid → (parent, process group). Claude
+    /// Code starts each command hook in a session of its own (`sh -c
+    /// 'arugula …'`), so a hook's CLI is never in its Claude Code's group:
+    /// only its ancestry ties it to one.
+    ///
+    /// Pane A's shell (100) runs `claude` at its prompt (200, the
+    /// terminal's foreground job; its hook 210, CLI 211). An editor started
+    /// from it as a job in the background (400) runs Claude Code (410, CLI
+    /// 412), and the desktop app started from it left it (500, now init's;
+    /// its CLI 512).
+    ///
+    /// Pane B's shell (700) has a `tmux` client (701) in front. The `tmux`
+    /// server (800) has the window the client shows (pane 810, `claude` 811,
+    /// CLI 813) and one behind it (pane 820, `claude` 821, CLI 823).
+    fn table() -> HashMap<u32, (u32, u32)> {
+        [
+            (100, (1, 100)),
+            (200, (100, 200)),
+            (210, (200, 210)),
+            (211, (210, 210)),
+            (400, (100, 400)),
+            (410, (400, 400)),
+            (411, (410, 411)),
+            (412, (411, 411)),
+            (500, (1, 500)),
+            (510, (500, 500)),
+            (511, (510, 511)),
+            (512, (511, 511)),
+            (700, (1, 700)),
+            (701, (700, 701)),
+            (800, (1, 800)),
+            (810, (800, 810)),
+            (811, (810, 811)),
+            (812, (811, 812)),
+            (813, (812, 812)),
+            (820, (800, 820)),
+            (821, (820, 821)),
+            (822, (821, 822)),
+            (823, (822, 822)),
+        ]
+        .into()
+    }
+
+    /// Whether the pane whose own process is `leader` takes a hook from
+    /// `pid`, read from [`table`].
+    fn pane_takes(leader: Option<u32>, pid: Option<u32>) -> bool {
+        let t = table();
+        let ppid = |p: u32| t.get(&p).map(|e| e.0);
+        let pgid = |p: u32| t.get(&p).map(|e| e.1);
+        let fg = |leader: u32| match leader {
+            100 => Some(200),
+            700 => Some(701),
+            810 => Some(811),
+            820 => Some(821),
+            _ => None,
+        };
+        let shows = |client: u32| (client == 701).then_some(810);
+        takes(pid, leader, |leader, pid| in_front_of(leader, pid, fg, ppid, pgid, shows))
+    }
+
+    /// Arugula #469: `claude` at the pane's prompt is the pane's: its
+    /// cards, waits, attention and session go there.
+    #[test]
+    fn a_hook_in_front_of_the_pane_is_the_panes() {
+        assert!(pane_takes(Some(100), Some(211)));
+    }
+
+    /// An editor or the desktop app started from the pane inherits its
+    /// `ARUGULA_PANE`, but isn't in front of it: none of its sessions' hooks
+    /// are the pane's.
+    #[test]
+    fn a_hook_from_an_app_started_from_the_pane_isnt_the_panes() {
+        assert!(!pane_takes(Some(100), Some(412)), "a job in the background");
+        assert!(!pane_takes(Some(100), Some(512)), "an app that left the pane");
+        // Nor is anything once the pane's own process has ended.
+        assert!(!pane_takes(None, Some(211)));
+    }
+
+    /// Through a `tmux` client in front of the pane: the session in the
+    /// window it shows is the pane's, one in a window behind it isn't.
+    #[test]
+    fn through_tmux_only_the_window_it_shows_is_the_panes() {
+        assert!(pane_takes(Some(700), Some(813)));
+        assert!(!pane_takes(Some(700), Some(823)));
+    }
+
+    /// An older CLI sends no pid: the pane takes its hook as it always did,
+    /// without asking the process table.
+    #[test]
+    fn a_hook_without_a_pid_is_taken_as_before() {
+        assert!(takes(None, Some(100), |_, _| unreachable!("no pid: nothing to look up")));
+        assert!(takes(None, None, |_, _| unreachable!("no pid: nothing to look up")));
+    }
 }

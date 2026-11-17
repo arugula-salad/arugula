@@ -703,7 +703,7 @@ mod tests {
             serde_json::to_value(prompt).unwrap().to_string(),
             r#"{"answering":true,"stall":null,"text":"go","timeout":30.0}"#
         );
-        let withdraw = serde_json::to_value(WithdrawRequest { id: Some("q1".into()) }).unwrap();
+        let withdraw = serde_json::to_value(WithdrawRequest { id: Some("q1".into()), pid: None }).unwrap();
         assert_eq!(withdraw.to_string(), r#"{"id":"q1"}"#);
     }
 

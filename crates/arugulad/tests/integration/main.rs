@@ -79,6 +79,7 @@ mod guests_agents;
 mod hand;
 #[cfg(unix)]
 mod hint_facts;
+mod hooks_in_front;
 #[cfg(unix)]
 mod hosted_sessions;
 #[cfg(unix)]

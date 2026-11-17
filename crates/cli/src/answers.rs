@@ -328,11 +328,11 @@ fn request_bodies_are_what_the_json_was() {
         &[("vm", json!(false)), ("image", Value::Null)],
     );
     body(
-        AskRequest { questions: json!([{ "q": 1 }]), id: Some("t".into()), source: None, agent: None },
+        AskRequest { questions: json!([{ "q": 1 }]), id: Some("t".into()), source: None, agent: None, pid: None },
         json!({ "questions": [{ "q": 1 }], "id": "t" }),
         &[("source", Value::Null), ("agent", Value::Null)],
     );
-    body(WithdrawRequest { id: None }, json!({ "id": null }), &[]);
+    body(WithdrawRequest { id: None, pid: None }, json!({ "id": null }), &[]);
     body(IdeDiffsRequest { diffs: "arugula".into() }, json!({ "diffs": "arugula" }), &[]);
     body(
         StudioLoginRequest { url: "https://s".into(), token: "t".into() },

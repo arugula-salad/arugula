@@ -104,13 +104,21 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
                 return Ok(0);
             }
             let state = state.replace('-', "_");
+            // A pane from the environment comes with this process's id
+            // (Arugula #469): an app started from the pane inherits it, and
+            // the daemon takes it only from in front of the pane. One named
+            // outright is taken as it is.
+            let pid = pane.is_none().then(std::process::id);
             // Hooks (Claude Code's, say) run this in every terminal; outside an
             // Arugula pane there's nobody to tell, and that's fine.
             let Ok(pane) = here(pane) else { return Ok(0) };
             // The state stays the string typed here: the daemon names the
             // ones it doesn't know, as it always did.
-            request_op::<PaneAttention>(&sock, &pane, &json!({"state": state, "why": hook_message()}))?
-                .parse::<Empty>()?;
+            let mut body = json!({"state": state, "why": hook_message()});
+            if let Some(pid) = pid {
+                body["pid"] = pid.into();
+            }
+            request_op::<PaneAttention>(&sock, &pane, &body)?.parse::<Empty>()?;
         }
     }
     Ok(0)

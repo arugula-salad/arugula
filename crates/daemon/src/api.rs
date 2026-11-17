@@ -552,10 +552,15 @@ async fn hook(
     Path(id): Path<PaneId>,
     Json(hook): Json<serde_json::Value>,
 ) -> Res<Json<arugula_proto::api::HookAnswer>> {
+    use arugula_proto::api::{HookAnswer, HookFollowUp};
+    // Arugula #469: from an app started from the pane, it's not the pane's
+    // Claude Code: its session, cards and mentions aren't the pane's.
+    if !crate::ops::waits::takes_hook(&app, id, crate::ops::waits::hook_pid(&hook)).await {
+        return Ok(Json(HookAnswer::default()));
+    }
     app.hooks_heard.lock().unwrap().insert(id, now_ms());
     // #644: the CLI asks only where a person drives the session, and only
     // when a tool call ended. An older CLI never asks.
-    use arugula_proto::api::{HookAnswer, HookFollowUp};
     let take = hook[arugula_proto::api::HOOK_TAKES_MENTION] == true;
     let asked = take.then(|| hook.clone());
     app.mux.send(Cmd::Api(Api::Hook(id, hook)));

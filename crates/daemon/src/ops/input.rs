@@ -82,6 +82,11 @@ impl Handle for PaneMouse {
 
 impl Handle for PaneAttention {
     async fn handle(cx: &Cx<'_>, id: PaneId, req: AttentionRequest) -> Result<Empty, OpError> {
+        // A hook from an app started from the pane (Arugula #469) says
+        // nothing of the pane.
+        if !super::waits::takes_hook(cx.app, id, req.pid).await {
+            return Ok(Empty {});
+        }
         match cx.app.mux.api(|r| Api::Attention(id, req.state, req.why, r)).await {
             Some(true) => Ok(Empty {}),
             _ => Err(OpError::NoPane(id)),
