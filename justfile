@@ -485,7 +485,7 @@ shellcheck:
     [ "$v" = 0.11.0 ] || echo "shellcheck $v here, 0.11.0 in CI: it may report other things" >&2
     shellcheck -s sh scripts/install.sh scripts/glibc-floor
     shellcheck -s bash scripts/tests/*.sh scripts/dist-pack
-    shellcheck -x scripts/ci-* scripts/chant scripts/free-port scripts/pr-crates testnet/*.sh testnet/forges/*.sh testnet/editors/*.sh testnet/macos/*.sh
+    shellcheck -x scripts/ci-* scripts/chant scripts/free-port scripts/pr-crates scripts/queue-cancel-superseded testnet/*.sh testnet/forges/*.sh testnet/editors/*.sh testnet/macos/*.sh
     shellcheck -s sh testnet/editors/box/entrypoint.sh testnet/sshd/entrypoint.sh testnet/sshd-systemd/keys.sh testnet/git/entrypoint.sh testnet/tailnet/entrypoint.sh
 
 # Tag the newest commit on main with a ci/green tag (--app: ci/green-app,
@@ -819,7 +819,8 @@ macos cmd="tools" *args:
 # binaries.yml's gate on pull requests that change CI (#304); that release,
 # signing and deploy secrets are read only through environments, what ships
 # compiles without the shared cache, and actions are pinned;
-# scripts/ci-velocity's merge queue numbers;
+# scripts/ci-velocity's merge queue numbers; which runs
+# scripts/queue-cancel-superseded cancels;
 # and last the flaky tests' quarantine (`just quarantine`), which fails
 # when an entry is past its `until`. Also the nvim key tips' `:help` tags,
 # against a real nvim when there is one (`just nvim-tips-check`).
@@ -831,6 +832,7 @@ test-scripts:
     scripts/tests/ci-nightly-red.sh
     scripts/tests/ci-auto-revert.sh
     scripts/tests/ci-velocity.sh
+    scripts/tests/queue-cancel-superseded.sh
     scripts/tests/capabilities.sh
     scripts/tests/data-model-check.sh
     scripts/tests/crate-boundary.sh
