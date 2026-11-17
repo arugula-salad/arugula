@@ -9080,6 +9080,18 @@ button.thread-quote:hover {
   color: var(--dim);
 }
 
+/* Its name is its words ("Your presence: Away"), not an aria-label: the
+   picture's initials are visible text, which a label would leave out
+   (axe's label-content-name-mismatch). */
+.chat-you-said {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .chat-you .msg-avatar {
   width: 22px;
   height: 22px;
