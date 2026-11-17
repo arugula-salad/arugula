@@ -20,8 +20,9 @@ import { AddedAt, clearHash, dropHash } from "./common";
  * nothing, so there's nothing to compare (#758). A CLI on another computer
  * takes the address the browser lands on, pasted by whoever ran it.
  * From a device, it also signs the app's certificate, so the app is a
- * device at once; otherwise its window asks to be approved afterwards (the
- * "New device?" prompt). An app from before #758 still shows a code. */
+ * device at once; otherwise its window reaches the machines with control's
+ * tokens (#2628), with nothing to approve. An app from before #758 still
+ * shows a code. */
 export function AppLoginPrompt({ s, id }: { s: ControlSession; id: string }) {
   const [a, setA] = useState<AppLogin | null>(null);
   const [err, setErr] = useState("");
@@ -201,7 +202,7 @@ export function AddPasskeyAgain({ s }: { s: ControlSession }) {
 export function AppLoginDone() {
   const [signed] = useState(signedAppIn);
   useEffect(() => {
-    // Out of the way of the device prompt that follows.
+    // It says what happened, then goes.
     const t = setTimeout(clearHash, 6000);
     return () => clearTimeout(t);
   }, []);
@@ -215,8 +216,8 @@ export function AppLoginDone() {
         </p>
       ) : (
         <p data-app-login-done>
-          Signed in. Next the app's window asks to be approved as a device, so it reaches your machines: the prompt shows here in a moment. As an
-          app, it approves machines and CLIs, not browsers, phones or deploys. Its own machine joins separately, with a code, and doesn't need this.
+          Signed in. The app's window reaches your machines now, through Arugula cloud: there's nothing more to approve. Its own machine joins
+          separately, with a code, and doesn't need this.
         </p>
       )}
       <div class="prompt-buttons">
