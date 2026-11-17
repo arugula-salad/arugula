@@ -85,7 +85,7 @@ async function noLabsItems(page: Page, pane: number) {
 
 test("the host says labs is off, and what follows it", async () => {
   expect(await features()).toEqual({
-    ...{ labs: false, dev: false, blocks: false, vms: false, studio: false, block_channels: false },
+    ...{ labs: false, dev: false, blocks: false, vms: false, studio: false, block_channels: false, block_grants: true },
     ...{ guest_ssh: false, flags: [] },
   });
 });
@@ -273,7 +273,7 @@ test("setting the flag on the running daemon brings it all back, with no restart
   page.on("request", (r) => asked.push(r.url()));
   labs(state);
   expect(await features()).toEqual({
-    ...{ labs: true, dev: true, blocks: false, vms: true, studio: true, block_channels: false },
+    ...{ labs: true, dev: true, blocks: false, vms: true, studio: true, block_channels: false, block_grants: true },
     // `labs`, the one switch from before, is every flag (#665), and keeps guest ssh on as
     // Guest SSH access, a sharing setting (native #205).
     guest_ssh: true,

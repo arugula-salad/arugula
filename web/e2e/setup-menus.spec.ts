@@ -49,6 +49,8 @@ test("menus offer only what this machine is set up for", async ({ page }) => {
     studio: false,
     // Not joined to a control with a block domain (#150).
     block_channels: false,
+    // Its blocks' frames may come with the hub's grants (#1001).
+    block_grants: true,
     // `labs` in flags.json is every flag (#665), and keeps guest ssh on as
     // Guest SSH access, a sharing setting (native #205).
     guest_ssh: true,
