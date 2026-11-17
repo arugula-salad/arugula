@@ -30,6 +30,11 @@ import { Teams } from "./teams";
 /** Control's address that opens Teams (where a team's owner turns chat on). */
 const TEAMS_HASH = "#teams";
 
+/** Control's addresses for the rest of the account's dialogs: the app's
+ * Settings opens them here, since a device signs what's in them (Arugula
+ * #1108). `#account` and `#teams` are above. */
+const PANEL_HASH = /^#(devices|add-device|shared-docs)$/;
+
 /** Over the app: approval prompts, a daemon's join, the device list. */
 export function ControlOverlay({ s }: { s: ControlSession }) {
   useControl(s);
@@ -137,6 +142,20 @@ export function ControlOverlay({ s }: { s: ControlSession }) {
       setHash("");
     };
     return <Teams s={s} close={done} />;
+  }
+  const named = PANEL_HASH.exec(hash)?.[1];
+  if (named) {
+    const done = () => {
+      history.replaceState(history.state, "", location.pathname + location.search);
+      setHash("");
+    };
+    if (named === "devices") return <Devices s={s} close={done} />;
+    if (named === "add-device") return <AddDevice s={s} close={done} />;
+    return (
+      <Modal close={done}>
+        <SharedDocs s={s} close={done} />
+      </Modal>
+    );
   }
   if (panel === "devices") return <Devices s={s} close={() => setPanel(null)} />;
   if (panel === "teams") return <Teams s={s} close={() => setPanel(null)} />;
