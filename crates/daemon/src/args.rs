@@ -164,7 +164,7 @@ pub enum SharingSetting {
     /// machine.
     RemoteInput,
     /// Who reached this machine through Arugula cloud, newest first: who,
-    /// the role, the path and when (Arugula #1094). It only shows.
+    /// the role, the path and when. It only shows.
     Log,
 }
 
