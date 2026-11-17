@@ -5537,11 +5537,8 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn unsigned_subscriptions_count_on_controls_word() {
         let r = rig("push-unsigned").await;
-        {
-            let mut f = r.fake.lock().unwrap();
-            let (own, bea) = (unsigned(&r, "a1", "https://push.test/a1"), unsigned(&r, "b1", "https://push.test/b1"));
-            f.subs = vec![own, bea, unsigned(&r, "c1", "https://push.test/c1")];
-        }
+        let subs = ["a1", "b1", "c1"].map(|a| unsigned(&r, a, &format!("https://push.test/{a}")));
+        r.fake.lock().unwrap().subs = subs.to_vec();
         let c = r.daemon().await;
         r.grant();
         assert!(c.refresh_now(REFRESH_WAIT).await);
