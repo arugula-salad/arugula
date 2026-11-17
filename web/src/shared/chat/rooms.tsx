@@ -674,7 +674,7 @@ function YouRow() {
       data-chat-you={presence.mode}
       onClick={pick}
     >
-      <span class="avatar-wrap">
+      <span class="avatar-wrap" aria-hidden="true">
         <MsgAvatar who={chat.me} name={chat.myNames[0] ?? "?"} account={chat.me} />
         <span class={`presence-dot presence-${state}`} data-presence={state} aria-hidden="true" />
       </span>
