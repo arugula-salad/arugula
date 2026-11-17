@@ -109,7 +109,9 @@ cancel() {
   if gh api -X POST "repos/$repo/actions/runs/$id/cancel" --silent 2>"$tmp/err"; then
     echo "Cancelled $name run $id on $ref: $why"
   elif grep -q 'HTTP 409' "$tmp/err"; then
-    echo "$name run $id on $ref finished before it could be cancelled"
+    # It finished meanwhile, or it's one GitHub never started and won't
+    # cancel ("has not been queued yet"), which holds no runner.
+    echo "Couldn't cancel $name run $id on $ref: $(sed -n 's/^gh: //p' "$tmp/err" | head -n 1)"
   else
     cat "$tmp/err" >&2
     return 1
