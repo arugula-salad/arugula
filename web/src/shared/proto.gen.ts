@@ -6570,7 +6570,6 @@ export const OPS = {
   "setup.agent": { method: "POST", path: "/api/setup/agents/{kind}" },
   "setup.claude": { method: "POST", path: "/api/setup/claude" },
   "setup.control": { method: "POST", path: "/api/setup/control" },
-  "setup.control_confirm": { method: "POST", path: "/api/setup/control/confirm" },
   "setup.get": { method: "GET", path: "/api/setup" },
   "setup.tailscale": { method: "POST", path: "/api/setup/tailscale" },
   "share.mint": { method: "POST", path: "/api/shares" },

@@ -87,7 +87,6 @@ sandboxes.list GET /api/sandboxes Owner drives=false credential=false
 setup.agent POST /api/setup/agents/{kind} Owner drives=false credential=false
 setup.claude POST /api/setup/claude Owner drives=false credential=false
 setup.control POST /api/setup/control Owner drives=false credential=false
-setup.control_confirm POST /api/setup/control/confirm Owner drives=false credential=false
 setup.get GET /api/setup Owner drives=false credential=false
 setup.tailscale POST /api/setup/tailscale Owner drives=false credential=false
 share.mint POST /api/shares Owner drives=false credential=false

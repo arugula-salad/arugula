@@ -216,7 +216,7 @@ export function ControlBanner({ client }: { client: Client }) {
         {s.code ? (
           <span data-control-dropped-code>
             {" "}
-            It asked to join again: approve <b>{s.code}</b> on a device you use.
+            It asked to join again, with code <b>{s.code}</b>: add it in Arugula cloud.
           </span>
         ) : null}
       </p>

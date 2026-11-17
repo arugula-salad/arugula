@@ -26,7 +26,11 @@ import { clearHash } from "./common";
  *
  * #761: a device alongside that shows a code is approved with it, not by
  * its fingerprint: from the link (`device`, which a waiting browser adds
- * to the machine's link it hands on), or scanned or typed on its card. */
+ * to the machine's link it hands on), or scanned or typed on its card.
+ *
+ * #1003: a browser that isn't one of the account's devices adds a machine
+ * in one click (aru-141): nothing to compare and no secret to answer, since
+ * control decides who reaches the machine. */
 export function JoinPrompt({ s, code: whole, from, device }: { s: ControlSession; code: string; from?: Cert; device?: string }) {
   const parts = splitJoinCode(whole);
   const code = parts?.code ?? whole;
@@ -103,8 +107,11 @@ export function JoinPrompt({ s, code: whole, from, device }: { s: ControlSession
         </div>
       </Modal>
     );
+  // #1003: no device key here: Add, as this signed-in person.
+  const oneClick = !!j && j.cert.kind === "daemon" && !s.enrollment;
   // Teams I'm in (#332), and the one it asked for even if I can't add to it.
-  const teams = s.addableTeams();
+  // In one click, control lets a team's owners and editors add machines.
+  const teams = oneClick ? s.teams.filter((t) => t.role === "owner" || t.role === "editor") : s.addableTeams();
   const asked = j?.team && !teams.some((t) => t.team === j.team!.team) ? j.team : null;
   const team = teams.find((t) => t.team === to);
   const cant = !!to && !team;
@@ -135,7 +142,7 @@ export function JoinPrompt({ s, code: whole, from, device }: { s: ControlSession
   // #760: the secret from the link (or the whole code typed in Look up),
   // else the rest of the code typed here.
   const secret = parts?.secret ?? (typed.bad ? null : normalizeSecret(typed.rest));
-  const sealed = !!j && (!!parts?.secret || takesSecret(j));
+  const sealed = !!j && !oneClick && (!!parts?.secret || takesSecret(j));
   // Named, so it reads apart from a device's field below it (#761).
   const askWhole =
     j && sealed && !parts?.secret ? (
@@ -158,7 +165,7 @@ export function JoinPrompt({ s, code: whole, from, device }: { s: ControlSession
   if (j?.cert.kind === "cli")
     return <CliJoin s={s} j={j} cancel={cancel} refused={refused} failed={failed} sealed={sealed} secret={secret} whole={askWhole} />;
   const machine = j ? (
-    sealed ? (
+    sealed || oneClick ? (
       <p data-join-sealed>
         <b>{j.cert.name}</b> asks to join {j.team ? <>the team <b data-join-team={j.team.team}>{j.team.name}</b></> : "your account"}.
       </p>
@@ -316,7 +323,8 @@ export function JoinPrompt({ s, code: whole, from, device }: { s: ControlSession
             setBusy(true);
             try {
               // The machine, then the devices that came with it.
-              await s.approveJoin(j.code, j.cert, team?.team ?? null, also, secret, codes);
+              if (oneClick) await s.addJoin(j.code, team?.team ?? null);
+              else await s.approveJoin(j.code, j.cert, team?.team ?? null, also, secret, codes);
               clearHash();
             } catch (e) {
               // The machine is in: only the device is left to ask again.
@@ -325,7 +333,7 @@ export function JoinPrompt({ s, code: whole, from, device }: { s: ControlSession
             }
           }}
         >
-          {also.length > 1 ? "Approve them all" : also.length ? "Approve both" : "Approve"}
+          {oneClick ? "Add" : also.length > 1 ? "Approve them all" : also.length ? "Approve both" : "Approve"}
         </button>
       </div>
     </Modal>

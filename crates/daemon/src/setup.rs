@@ -4,16 +4,15 @@
 //! - `POST /api/setup/tailscale`: `tailscale serve --bg --https=443` in
 //!   front of this daemon, so the phone reaches it on the tailnet.
 //! - `POST /api/setup/control`: ask Arugula control to add this machine
-//!   (`arugulad join`); the answer is the code and where to approve it,
-//!   and the daemon waits for the approval in the background. The link
-//!   carries a join secret (#760), so an approval whose MAC checks out is
-//!   saved at once, as is one a signed-in person added with one click,
-//!   which control answers with where the machine went (aru-141). With an
-//!   older control (no secret), the page shows the account's fingerprint
-//!   to check against the approving device, and
-//!   `POST /api/setup/control/confirm` (`{"same": true}`) saves the join;
-//!   `false` drops it. On a machine control dropped (#325), the same
-//!   button joins again: the old enrollment is set aside first.
+//!   (`arugulad join`); the answer is the code and the link that opens
+//!   control with it, and the daemon waits in the background. A signed-in
+//!   person clicks Add there, and control answers the poll with where the
+//!   machine went (aru-141, #1003). Whatever control approves is saved at
+//!   once: since control decides who reaches a machine, there's no account
+//!   fingerprint to compare and no answer to the join secret to wait for,
+//!   even when one of the account's devices approved it. On a machine
+//!   control dropped (#325), the same button joins again: the old
+//!   enrollment is set aside first.
 //! - `POST /api/setup/claude`: `claude mcp add arugula -- arugula mcp`.
 //! - `POST /api/setup/agents/{kind}` (#335), "Use Claude Code with
 //!   Arugula": installs (or updates) the agent's ACP adapter, waiting for
@@ -42,8 +41,8 @@ use std::{
 };
 
 use arugula_proto::{
-    op::ops::{SetupAgent, SetupClaude, SetupControl, SetupControlConfirm, SetupGet, SetupTailscale},
-    setup::{ControlConfirmRequest, ControlJoinRequest, Outcome, SetupQuery},
+    op::ops::{SetupAgent, SetupClaude, SetupControl, SetupGet, SetupTailscale},
+    setup::{ControlJoinRequest, Outcome, SetupQuery},
 };
 use axum::Router;
 use serde::Serialize;
@@ -53,20 +52,14 @@ use crate::agent::{
     adapters::{ADAPTERS, Adapter, State as AdapterState},
     defs::Kind,
 };
-use crate::{control::AccountCheck, ops::OpRoutes, server::App};
+use crate::{ops::OpRoutes, server::App};
 
 pub const CONTROL: &str = "https://control.arugula.io";
 const TAILSCALE_ADMIN_DNS: &str = "https://login.tailscale.com/admin/dns";
 const TAILSCALE_DOWNLOAD: &str = "https://tailscale.com/download";
 
 pub fn routes() -> Router<Arc<App>> {
-    Router::new()
-        .op::<SetupGet>()
-        .op::<SetupTailscale>()
-        .op::<SetupControl>()
-        .op::<SetupControlConfirm>()
-        .op::<SetupClaude>()
-        .op::<SetupAgent>()
+    Router::new().op::<SetupGet>().op::<SetupTailscale>().op::<SetupControl>().op::<SetupClaude>().op::<SetupAgent>()
 }
 
 #[derive(Serialize)]
@@ -146,9 +139,6 @@ struct ControlStatus {
     /// A join waiting for someone to approve it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pending: Option<Pending>,
-    /// An approved join waiting for the person to check the account.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    confirm: Option<Confirm>,
     /// The last join that didn't work, and why.
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
@@ -178,17 +168,6 @@ struct Pending {
     approve: String,
     /// When the code stops working (ms since the epoch).
     expires_ms: u64,
-}
-
-/// What the page shows to check before the join is saved.
-#[derive(Serialize, Clone)]
-struct Confirm {
-    /// The account's fingerprint.
-    account: String,
-    /// The device that approved it, by name.
-    approver: String,
-    /// "your account" or "the team X".
-    place: String,
 }
 
 #[derive(Serialize, Default)]
@@ -249,8 +228,6 @@ impl HooksSaid {
 
 /// The join in flight, if any, and the last one's failure.
 static JOIN: Mutex<(Option<Pending>, Option<String>)> = Mutex::new((None, None));
-/// An approved join, until the person says the account is theirs.
-static APPROVED: Mutex<Option<crate::control::Approved>> = Mutex::new(None);
 /// The old key control said was removed, until this machine is in again.
 static REMOVED: Mutex<Option<crate::control::Removed>> = Mutex::new(None);
 
@@ -412,11 +389,6 @@ fn control_status(app: &App) -> ControlStatus {
         joined: saved.map(|s| s.url.clone()),
         team: saved.and_then(|s| s.team_name()),
         pending: pending.filter(|p| p.expires_ms > now_ms() && saved.is_none()),
-        confirm: APPROVED.lock().unwrap().as_ref().filter(|_| saved.is_none()).map(|a| Confirm {
-            account: a.joined.account.clone(),
-            approver: a.joined.approver.clone(),
-            place: a.joined.place.clone(),
-        }),
         error: error.filter(|_| saved.is_none()),
         removed: REMOVED.lock().unwrap().clone().filter(|_| saved.is_none()),
         elsewhere: crate::control::JoinLock::held(app.control.state_dir()).filter(|h| !h.mine() && saved.is_none()),
@@ -448,7 +420,7 @@ pub fn control_state(app: &App) -> crate::control::State {
 
 pub(crate) async fn control_join(app: &Arc<App>, req: ControlJoinRequest) -> Value {
     let dropped = app.control.state().is_dropped();
-    if (app.control.enrolled().is_some() && !dropped) || APPROVED.lock().unwrap().is_some() {
+    if app.control.enrolled().is_some() && !dropped {
         return serde_json::to_value(control_status(app)).unwrap();
     }
     // One at a time: asking again while a code is open returns that code.
@@ -472,14 +444,15 @@ pub(crate) async fn control_join(app: &Arc<App>, req: ControlJoinRequest) -> Val
 /// it again, with a new key, unless a join is under way already.
 pub fn rejoin(app: Arc<App>, url: String) {
     crate::task::spawn(async move {
-        if APPROVED.lock().unwrap().is_some()
-            || JOIN.lock().unwrap().0.as_ref().is_some_and(|p| p.expires_ms > now_ms())
-        {
+        if JOIN.lock().unwrap().0.as_ref().is_some_and(|p| p.expires_ms > now_ms()) {
             return;
         }
         let v = start_join(&app, &url, None).await;
         match v["pending"]["approve"].as_str() {
-            Some(at) => tracing::warn!(approve = at, "joining again with a new key: approve it on a signed-in device"),
+            Some(at) => tracing::warn!(
+                approve = at,
+                "joining again with a new key: open the link and click Add in Arugula cloud"
+            ),
             None => tracing::warn!(error = %v["error"], "can't join again with a new key"),
         }
     });
@@ -496,24 +469,19 @@ async fn start_join(app: &Arc<App>, url: &str, team: Option<&str>) -> Value {
                 approve: p.approve_url(),
                 expires_ms: now_ms() + p.expires_in_secs * 1000,
             };
-            let rejoining = p.renewed.as_ref().and_then(|r| r.root.clone());
             if let Some(r) = &p.renewed {
                 *REMOVED.lock().unwrap() = Some(r.clone());
             }
             *JOIN.lock().unwrap() = (Some(pending.clone()), None);
             let app = app.clone();
             crate::task::spawn(async move {
-                let r = crate::control::join_finish(p).await;
-                // A signed-in person added it (aru-141: control's word is
-                // the trust now), the approving device answered the link's
-                // secret (#760), or it's back in the account it was
-                // removed from (the person checked that one when it first
-                // joined): saved, with nothing to confirm.
-                let r = match r {
-                    Ok(a)
-                        if matches!(a.check, AccountCheck::Control | AccountCheck::Proven)
-                            || rejoining.as_deref().is_some_and(|root| a.is_account(root)) =>
-                    {
+                // Saved at once, however it was approved (#1003): a
+                // signed-in person's one click, or one of the account's
+                // devices, with or without its answer to the link's
+                // secret. Control's word is what decides who reaches a
+                // machine now (aru-141), so there's nothing to compare.
+                let error = match crate::control::join_finish(p).await {
+                    Ok(a) => {
                         let saved = a.save(app.control.state_dir()).map(|_| ());
                         if saved.is_ok() {
                             *REMOVED.lock().unwrap() = None;
@@ -521,29 +489,11 @@ async fn start_join(app: &Arc<App>, url: &str, team: Option<&str>) -> Value {
                         // Joined before the code goes (Arugula #284): a page that looks
                         // in between sees one or the other, never neither.
                         app.control.saved_join();
-                        *JOIN.lock().unwrap() = (None, saved.err().map(|e| e.to_string()));
-                        return;
+                        saved.err().map(|e| e.to_string())
                     }
-                    // The link had a secret, and the approval no answer to
-                    // it: the account is only control's word.
-                    Ok(a) if a.check == AccountCheck::Missing => {
-                        a.refuse(app.control.state_dir()).await;
-                        *JOIN.lock().unwrap() = (
-                            None,
-                            Some("Not joined: the approval came without the approving device's answer to this machine's secret (approved from the code alone?), so the account is only control's word. Connect again, and open the link, or type the whole code.".into()),
-                        );
-                        return;
-                    }
-                    r => r,
+                    Err(e) => Some(e.to_string()),
                 };
-                let mut j = JOIN.lock().unwrap();
-                match r {
-                    Ok(a) => {
-                        *APPROVED.lock().unwrap() = Some(a);
-                        *j = (None, None);
-                    }
-                    Err(e) => *j = (None, Some(e.to_string())),
-                }
+                *JOIN.lock().unwrap() = (None, error);
             });
             serde_json::json!({ "pending": pending, "removed": REMOVED.lock().unwrap().clone() })
         }
@@ -552,31 +502,6 @@ async fn start_join(app: &Arc<App>, url: &str, team: Option<&str>) -> Value {
             serde_json::json!({ "error": e.to_string() })
         }
     }
-}
-
-/// The person compared the account's fingerprints: save the join (where the
-/// running daemon picks it up), or drop it.
-pub(crate) async fn control_confirm(app: &Arc<App>, req: ControlConfirmRequest) -> Value {
-    let Some(a) = APPROVED.lock().unwrap().take() else {
-        return serde_json::json!({ "control": control_status(app) });
-    };
-    let error = if !req.same {
-        let e = format!(
-            "Not joined: control approved this machine into the account {}, which isn't the one your device shows. Don't add machines through this control.",
-            a.joined.account
-        );
-        a.refuse(app.control.state_dir()).await;
-        Some(e)
-    } else {
-        let r = a.save(app.control.state_dir());
-        if r.is_ok() {
-            *REMOVED.lock().unwrap() = None;
-        }
-        app.control.saved_join();
-        r.err().map(|e| e.to_string())
-    };
-    JOIN.lock().unwrap().1 = error;
-    serde_json::json!({ "control": control_status(app) })
 }
 
 // ---- claude code

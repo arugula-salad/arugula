@@ -7034,7 +7034,9 @@ html[data-scheme="light"] .doc {
   overflow-wrap: anywhere;
 }
 
-.start-code-big.start-fp {
+/* A code to type on another device (#1003): the link is the way, so it's
+   smaller than one to read out. */
+.start-code-big.start-code-typed {
   font: 700 clamp(18px, 6vw, 30px)/1.2 var(--f-mono); /* off-scale: the start code */
   letter-spacing: 0.04em; /* off-scale: the start code */
   overflow-wrap: anywhere;

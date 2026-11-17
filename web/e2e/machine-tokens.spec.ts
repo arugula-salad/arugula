@@ -19,7 +19,7 @@ import { ANY, daemonPort, listen } from "./ports";
 import { labs } from "./labs";
 import { ready, run } from "./helpers";
 import { keyHeaders } from "./local-token";
-import { certBody, deviceId, hex, unhex, type Cert } from "../src/shell/e2e/cert.ts";
+import { certBody, deviceId, hex, joinCode, unhex, type Cert } from "../src/shell/e2e/cert.ts";
 import { generateKeys, signText } from "../src/shell/e2e/keys.ts";
 
 // Control's routes are on the page, and a service worker would take them.
@@ -185,4 +185,45 @@ test("with a control that signs no tokens, a new browser asks to be approved", a
   await expect.poll(() => enrolled.length).toBeGreaterThan(0);
   expect(await page.evaluate(() => !!window.__arugula.control?.tokens)).toBe(false);
   expect(asked).toEqual([]);
+});
+
+// #1003: Getting started's link (`#join=CODE.SECRET`) on a browser with no
+// device key: it isn't asked to be approved, and adds the machine with one
+// click, as the signed-in person: no certificate, no MAC, no fingerprint.
+test("a browser with no device key adds a machine's join in one click", async ({ page }) => {
+  const enrolled: string[] = [];
+  const added: unknown[] = [];
+  // Another machine, waiting with its code.
+  const k = await generateKeys(true);
+  const joining: Cert = { v: 1, account: "", device: k.id, kind: "daemon", name: "new-box", noise: k.noisePub, sign: k.signPub, created: Date.now(), approver: "", sig: "" };
+  const code = await joinCode(joining);
+  await page.route(/\/control\.json$/, (r) => r.fulfill({ json: { control: true, url: origin, github: true, passkeys: false, vapid: "" } }));
+  await page.route(/\/\.well-known\/jwks\.json$/, (r) => r.fulfill({ json: jwks() }));
+  await page.route(/\/api\//, async (r) => {
+    const url = new URL(r.request().url());
+    const method = r.request().method();
+    if (url.pathname === "/api/me") return r.fulfill({ json: { account: "a1", login: "me", name: "Me", root: rootDevice, passkeys: 0 } });
+    if (url.pathname === "/api/directory") return r.fulfill({ json: { daemons: [{ id: machine.id, name: "box", urls: [origin], online: true, last_seen: null, noise: machine.noise }] } });
+    if (url.pathname === "/api/teams") return r.fulfill({ json: { teams: [] } });
+    if (url.pathname === `/api/joins/${code}` && method === "GET")
+      return r.fulfill({ json: { code, cert: joining, urls: [], created: Date.now(), team: null, features: "presigned-invites,owner-moves,join-secret,owner-passkeys" } });
+    if (url.pathname === `/api/joins/${code}/approve` && method === "POST") {
+      added.push(r.request().postDataJSON());
+      return r.fulfill({ json: { approved: true, daemon: joining.device } });
+    }
+    if (url.pathname.startsWith("/api/devices") && method === "POST") enrolled.push(url.pathname);
+    return r.fulfill({ status: 404, json: { error: "not here" } });
+  });
+
+  await page.goto(`${origin}/#join=${code}.ABCD-EFGH-JKMN-PQRS`);
+  await expect.poll(() => page.evaluate(() => window.__arugula?.control?.phase)).toBe("ready");
+  expect(await page.evaluate(() => [window.__arugula.control?.tokens, !!window.__arugula.control?.enrollment])).toEqual([true, false]);
+  const dialog = page.getByRole("dialog", { name: "Add a machine?" });
+  await expect(dialog).toContainText("new-box asks to join your account.");
+  await expect(dialog).not.toContainText(/fingerprint|Its key/);
+  await expect(dialog.locator("[data-join-rest]")).toHaveCount(0);
+  await dialog.locator("[data-approve-join]").filter({ hasText: /^Add$/ }).click();
+  await expect(dialog).toBeHidden();
+  expect(added).toEqual([{ team: null }]);
+  expect(enrolled).toEqual([]);
 });
