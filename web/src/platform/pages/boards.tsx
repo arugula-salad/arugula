@@ -374,12 +374,13 @@ function NewBoard({ p, done }: { p: PlatformProject; done: () => void }) {
   );
 }
 
-/** One board, in the list page's middle: the board's own panel, as the board block draws it. `back`: the way to the list, when the board has no row in it. */
+/** One board, in the list page's middle: the board's own panel, its controls in the right column (Arugula #1129). `back`: the way to the list, when the board has no row in it. */
 function BoardMiddle({ p, id, back }: { p: PlatformProject; id: string; back?: ComponentChildren }) {
   return (
-    <div class="boards-middle" data-board-page={id}>
-      {back}
+    <div class="boards-middle boards-board" data-board-page={id}>
       <BoardPanel
+        placement="aside"
+        back={back}
         id={id}
         write={mayWrite(p)}
         platform={(path) => path}
@@ -388,13 +389,11 @@ function BoardMiddle({ p, id, back }: { p: PlatformProject; id: string; back?: C
         cardSessions
         // A board moved to another project (Arugula #972): the page's address goes to its new one.
         onProject={(home) => home !== p.id && homes.set(id, home)}
-        back={
-          <p class="dim">
-            {/* The swarm is the shell's, on control's page (#466). */}
-            <a href={`${controlOrigin()}/#swarm=board:${id}`} data-board-workers title="This board's agents in the swarm, by the lane of their row">
-              Workers
-            </a>
-          </p>
+        tools={
+          // The swarm is the shell's, on control's page (#466).
+          <a class="secondary small" href={`${controlOrigin()}/#swarm=board:${id}`} data-board-workers title="This board's agents in the swarm, by the lane of their row">
+            Workers
+          </a>
         }
       />
     </div>

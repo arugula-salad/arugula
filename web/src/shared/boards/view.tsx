@@ -15,13 +15,20 @@
 // lane's tone, and its title opens the drawer (./card.tsx), a read-only side
 // sheet with the item's body, comments, checks, attachments and proof (#369).
 //
+// Where it goes (Arugula #1129): the board block draws it all in one column,
+// as ever. The Boards page puts the controls (Lanes/Steps, find and its
+// Label, Person and Group menus, the Docs, the adds, Workers and ⋯) in a
+// column at the right, under small headings, and a row's drawer takes that
+// column while it's open. With under ~900px of room the column goes under the
+// board (as a list page's aside does, #1127) and the drawer is a sheet again.
+//
 // It reads the board as the person looking: now, again when the platform
 // says it changed (the board's thread, chat's live stream), and when the
 // page comes back into view. A write on an entry that moved on is refused
 // (409): the view reads the board again and says so, and the change is theirs
 // to make again.
 
-import { useEffect, useId, useRef, useState } from "preact/hooks";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { BoardLane, BoardAsk, BoardAnsweredAsk, BoardGroup, BoardPointer, ProjectBoard, BoardRow, BoardView, BoardWorkItem, BoardZone } from "../proto";
 import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
@@ -50,7 +57,7 @@ import { useLiveRowSessions } from "./live-sessions";
 import "./bar.css";
 import "./boards.css";
 import { groupFold, groupLaneFold, isFolded, laneFold, loadFolds, saveFolds, type Folds } from "./folds";
-import { MOVE_LANES, closeName, closedWithLine, doneRefusal, laneOfZone, laneSetLine, PICK_DELAY_MS, cardTone, groupMove, PICK_LIMIT, GOAL_MAX, answerReady, askWaitingLine, debounced, earlierLine, epicLine, holdsRow, heldChip, groupLine, isCard, laneCount, marksOf, waitingOf, notFinishedLine, needsDot, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, sections, sourceLine, sourceLinked, leftOutLine, stepActive, workLabel, findLine, type BoardFilter, rowPasses, filtering, filterChoices, filterHash, parseFilterHash } from "./text";
+import { MOVE_LANES, closeName, closedWithLine, doneRefusal, laneOfZone, laneSetLine, PICK_DELAY_MS, cardTone, groupMove, PICK_LIMIT, GOAL_MAX, answerReady, askWaitingLine, debounced, earlierLine, epicLine, holdsRow, heldChip, groupLine, isCard, laneCount, marksOf, waitingOf, notFinishedLine, needsDot, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, sections, sourceLine, sourceLinked, leftOutLine, stepActive, workLabel, findLine, type BoardFilter, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, groupChoices } from "./text";
 
 const STALE_SAID = "That changed while you were editing, so the board is read again. Make your change again if it still applies.";
 
@@ -80,6 +87,8 @@ export function BoardPanel({
   keepInUrl = false,
   onProject,
   cardSessions = false,
+  placement = "column",
+  tools,
 }: {
   id: string;
   /** False for a block that isn't on screen: it reads nothing then. */
@@ -96,6 +105,10 @@ export function BoardPanel({
   onProject?: (project: string) => void;
   /** Read the project's sessions by card, and show each card's on its row and in its drawer (Arugula #1082): the platform's page, which the Sessions page folded into. */
   cardSessions?: boolean;
+  /** Where the controls go (Arugula #1129): `column`, over the lanes (the board block's); `aside`, a column at the right that a row's drawer takes while open (the Boards page's). */
+  placement?: "column" | "aside";
+  /** The page's own links (Workers): in the aside's Board section, else over the title. */
+  tools?: preact.ComponentChildren;
 }) {
   const { toast, teams } = usePlatformApi();
   const nameOf = (account: string) => teams().flatMap((t) => t.roster.members).find((m) => m.account === account)?.name;
@@ -142,6 +155,7 @@ export function BoardPanel({
   /** The Label and Person menus' values (#547): any of a menu's matches, and every menu and the text have to. */
   const [labels, setLabels] = useState<string[]>(() => (keepInUrl ? (parseFilterHash(location.hash)?.labels ?? []) : []));
   const [people, setPeople] = useState<string[]>(() => (keepInUrl ? (parseFilterHash(location.hash)?.people ?? []) : []));
+  const [inGroups, setInGroups] = useState<string[]>(() => (keepInUrl ? (parseFilterHash(location.hash)?.groups ?? []) : []));
   const findBox = useRef<HTMLInputElement>(null);
   // Another board starts with no filter; the first one keeps what its link said.
   const was = useRef(id);
@@ -151,15 +165,16 @@ export function BoardPanel({
     setFind("");
     setLabels([]);
     setPeople([]);
+    setInGroups([]);
   }, [id]);
   /** Clear and Esc: no text, no menu values. */
-  const clearFind = () => (setFind(""), setLabels([]), setPeople([]));
-  const filter: BoardFilter = { q: find, labels, people };
+  const clearFind = () => (setFind(""), setLabels([]), setPeople([]), setInGroups([]));
+  const filter: BoardFilter = { q: find, labels, people, groups: inGroups };
   useEffect(() => {
     if (!keepInUrl || !shown) return;
     const h = filterHash(filter);
     if (location.hash.replace(/^#/, "") !== h) history.replaceState(history.state, "", location.pathname + location.search + (h ? `#${h}` : ""));
-  }, [keepInUrl, shown, find, labels, people]);
+  }, [keepInUrl, shown, find, labels, people, inGroups]);
   // Chat says when the thread's object changed; it's on while chat is.
   useSubscribe((fn) => chat.subscribe(fn));
   const seen = useRef(0);
@@ -170,6 +185,11 @@ export function BoardPanel({
     if (shown && project) void boards.plane(project).then(setPlane);
     if (project) onProject?.(project);
   }, [project, shown]);
+  /** The goal's text while its form is open; null while it's shut. */
+  const [goalDraft, setGoalDraft] = useState<string | null>(null);
+  /** The aside has the room to be beside the board (more than 900px across, as a list page's): else it goes under it, and the drawer is a sheet. */
+  const [root, setRoot] = useState<HTMLElement | null>(null);
+  const wide = useWider(placement === "aside" ? root : null, ASIDE_ROOM);
   const byCard = useLiveRowSessions(project, view?.zones.flatMap((z) => z.rows) ?? [], { shown, cards: !!cardSessions }, () => again());
 
   const again = () => {
@@ -325,58 +345,135 @@ export function BoardPanel({
   const found = narrowed.zones.flatMap((z) => z.rows);
   const firstMatch = sections(narrowed).flatMap((s) => s.lanes.flatMap((z) => z.rows))[0];
   const opened = drawer ? view.zones.flatMap((z) => z.rows).find((r) => r.id === drawer) : undefined;
+  const aside = placement === "aside";
+  /** The drawer takes the aside while open; with the aside under the board, it's a sheet. */
+  const inColumn = aside && wide;
+  const closeEpic = write && view.board.closed_at == null && !epicClosing ? () => (setEpicNote(""), setEpicClosing(true)) : undefined;
+  const more = boardMenu(write, () => void rename(), () => setGoalDraft(view.board.goal), closeEpic);
+  const grouped = !!view.groups?.length;
 
-  return (
-    <CardSessions.Provider value={byCard}>
+  const views = (
+    <div class="seg small board-views" role="group" aria-label="View" data-board-views>
+      {(["lanes", "steps"] as const).map((m) => (
+        <button key={m} type="button" aria-pressed={mode === m} data-board-view={m} onClick={() => setMode(m)}>
+          {m === "lanes" ? "Lanes" : "Steps"}
+        </button>
+      ))}
+    </div>
+  );
+  const stepsToggles = mode === "steps" && allRows.length > 0 && !(narrows && found.length === 0) && (
+    <div class="steps-toggles" data-steps-toggles>
+      <button type="button" class="secondary small steps-toggle" aria-pressed={showDone} data-board-done title={showDone ? "Hide done rows" : "Show done rows"} aria-label={phone ? (showDone ? "Hide done rows" : "Show done rows") : undefined} onClick={() => setShowDone(!showDone)}>
+        <CheckCircleIcon />
+        {!phone && "Done"}
+      </button>
+      <button type="button" class="secondary small steps-toggle" aria-pressed={showLinks} data-board-links title={showLinks ? "Hide links" : "Show links"} aria-label={phone ? (showLinks ? "Hide links" : "Show links") : undefined} onClick={() => setShowLinks(!showLinks)}>
+        <LinksIcon />
+        {!phone && "Links"}
+      </button>
+    </div>
+  );
+  const findBar = (
+    <div class="board-find" role="search" data-board-find>
+      {/* The page's search answers `/`; a block's doesn't (the shell's sidebar does). */}
+      <SearchField
+        inputRef={findBox}
+        value={find}
+        onValue={setFind}
+        label="Find a row"
+        placeholder="Find a row: #541, ARUGU-12 or words"
+        slash={keepInUrl && shown}
+        data-board-find-input
+        onKeyDown={(e) => {
+          if (e.key === "Escape") (e.preventDefault(), clearFind(), e.currentTarget.blur());
+          else if (e.key === "Enter" && firstMatch) (e.preventDefault(), setDrawer(firstMatch.id));
+        }}
+      />
+      <FilterMenu name="label" title="Label" choices={filterChoices(allRows, "labels")} picked={labels} set={setLabels} />
+      <FilterMenu name="person" title="Person" choices={filterChoices(allRows, "assignees")} picked={people} set={setPeople} />
+      {grouped && <FilterMenu name="group" title="Group" choices={groupChoices(view.groups ?? [], allRows)} picked={inGroups} set={setInGroups} />}
+      {narrows && (
+        <span class="board-find-count dim" role="status" data-board-find-count>
+          {findLine(found.length, every)}
+        </span>
+      )}
+      {narrows && (
+        <button type="button" class="board-find-clear" data-board-find-clear onClick={clearFind}>
+          Clear
+        </button>
+      )}
+    </div>
+  );
+  const rowForm = <RowForm project={view.board.project} row={null} save={(f) => act(() => boards.put(id, { entry: "row", note: f.note, pointer: f.pointer ?? null }))} done={() => setEditing(null)} />;
+  const adds = (
+    <>
+      {allRows.length > 0 && (
+        <button type="button" class="secondary small" data-board-add-row onClick={() => setEditing("new")}>
+          <PlusIcon size="xs" />
+          Add row
+        </button>
+      )}
+      {write && (
+        <button type="button" class="secondary small" data-board-add-group onClick={() => void addGroup()}>
+          <PlusIcon size="xs" />
+          Add a group
+        </button>
+      )}
+      <button type="button" class="secondary small" data-board-new-issue onClick={() => void newIssue()}>
+        <PlusIcon size="xs" />
+        New issue
+      </button>
+      {plane.map((c) => (
+        <button key={c.id} type="button" class="secondary small" data-board-new-plane-issue={c.identifier} onClick={() => void newPlaneIssue(c)}>
+          <PlusIcon size="xs" />
+          New issue in Plane ({c.identifier})
+        </button>
+      ))}
+    </>
+  );
+  const drawn = opened && (
+    <Drawer
+      place={inColumn ? "column" : "sheet"}
+      steps={mode === "steps" && write ? { place: stepPlace(view, opened.id), move: (m) => void reorderRow(opened, m) } : undefined}
+      r={opened}
+      platform={platform}
+      close={() => setDrawer(null)}
+      project={view.board.project}
+      others={allRows}
+      write={write}
+      act={act}
+      id={id}
+      moveLane={moveLane}
+      nameOf={nameOf}
+    />
+  );
+
+  const board = (
     <div class="board" data-board={id}>
       <BoardHead
         view={view}
-        back={back}
+        back={
+          !aside && tools ? (
+            <>
+              {back}
+              <p class="dim">{tools}</p>
+            </>
+          ) : (
+            back
+          )
+        }
         write={write}
         shareLink={shareLink}
-        rename={() => void rename()}
-        close={write && view.board.closed_at == null && !epicClosing ? () => (setEpicNote(""), setEpicClosing(true)) : undefined}
+        more={aside ? [] : more}
+        docs={!aside}
+        goal={goalDraft}
+        setGoal={setGoalDraft}
         act={act}
         id={id}
         platform={platform}
       />
-      <div class="board-switch">
-        <div class="seg small board-views" role="group" aria-label="View" data-board-views>
-          {(["lanes", "steps"] as const).map((m) => (
-            <button key={m} type="button" aria-pressed={mode === m} data-board-view={m} onClick={() => setMode(m)}>
-              {m === "lanes" ? "Lanes" : "Steps"}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div class="board-find" role="search" data-board-find>
-        {/* The page's search answers `/`; a block's doesn't (the shell's sidebar does). */}
-        <SearchField
-          inputRef={findBox}
-          value={find}
-          onValue={setFind}
-          label="Find a row"
-          placeholder="Find a row: #541, ARUGU-12 or words"
-          slash={keepInUrl && shown}
-          data-board-find-input
-          onKeyDown={(e) => {
-            if (e.key === "Escape") (e.preventDefault(), clearFind(), e.currentTarget.blur());
-            else if (e.key === "Enter" && firstMatch) (e.preventDefault(), setDrawer(firstMatch.id));
-          }}
-        />
-        <FilterMenu name="label" title="Label" choices={filterChoices(allRows, "labels")} picked={labels} set={setLabels} />
-        <FilterMenu name="person" title="Person" choices={filterChoices(allRows, "assignees")} picked={people} set={setPeople} />
-        {narrows && (
-          <span class="board-find-count dim" role="status" data-board-find-count>
-            {findLine(found.length, every)}
-          </span>
-        )}
-        {narrows && (
-          <button type="button" class="board-find-clear" data-board-find-clear onClick={clearFind}>
-            Clear
-          </button>
-        )}
-      </div>
+      {!aside && <div class="board-switch">{views}</div>}
+      {!aside && findBar}
       <Epic b={view.board} closing={epicClosing} setClosing={setEpicClosing} note={epicNote} setNote={setEpicNote} act={act} id={id} write={write} view={view} />
       {stale && (
         <p class="board-stale" role="status" data-board-stale>
@@ -404,21 +501,11 @@ export function BoardPanel({
       )}
       {mode === "steps" && allRows.length > 0 && !(narrows && found.length === 0) && (
         <>
-          <div class="steps-toggles" data-steps-toggles>
-            <button type="button" class="secondary small steps-toggle" aria-pressed={showDone} data-board-done title={showDone ? "Hide done rows" : "Show done rows"} aria-label={phone ? (showDone ? "Hide done rows" : "Show done rows") : undefined} onClick={() => setShowDone(!showDone)}>
-              <CheckCircleIcon />
-              {!phone && "Done"}
-            </button>
-            <button type="button" class="secondary small steps-toggle" aria-pressed={showLinks} data-board-links title={showLinks ? "Hide links" : "Show links"} aria-label={phone ? (showLinks ? "Hide links" : "Show links") : undefined} onClick={() => setShowLinks(!showLinks)}>
-              <LinksIcon />
-              {!phone && "Links"}
-            </button>
-          </div>
+          {!aside && stepsToggles}
           <StepsView view={narrowed} write={write} open={setDrawer} opened={drawer} move={(r, m) => void reorderRow(r, m)} behind={behind} showDone={showDone} showLinks={showLinks} />
         </>
       )}
       {mode === "lanes" && sections(narrowed).map((s) => {
-        const grouped = !!view.groups?.length;
         const key = groupFold(s.group?.id ?? null);
         const held = s.lanes.reduce((n, z) => n + z.rows.length, 0);
         // A find hides what doesn't match, and opens a heading that holds a match without saving it.
@@ -476,34 +563,7 @@ export function BoardPanel({
           {view.said}
         </p>
       )}
-      {editing === "new" ? (
-        <RowForm project={view.board.project} row={null} save={(f) => act(() => boards.put(id, { entry: "row", note: f.note, pointer: f.pointer ?? null }))} done={() => setEditing(null)} />
-      ) : (
-        <p class="board-foot">
-          {allRows.length > 0 && (
-            <button type="button" class="secondary small" data-board-add-row onClick={() => setEditing("new")}>
-              <PlusIcon size="xs" />
-              Add row
-            </button>
-          )}
-          {write && (
-            <button type="button" class="secondary small" data-board-add-group onClick={() => void addGroup()}>
-              <PlusIcon size="xs" />
-              Add a group
-            </button>
-          )}
-          <button type="button" class="secondary small" data-board-new-issue onClick={() => void newIssue()}>
-            <PlusIcon size="xs" />
-            New issue
-          </button>
-          {plane.map((c) => (
-            <button key={c.id} type="button" class="secondary small" data-board-new-plane-issue={c.identifier} onClick={() => void newPlaneIssue(c)}>
-              <PlusIcon size="xs" />
-              New issue in Plane ({c.identifier})
-            </button>
-          ))}
-        </p>
-      )}
+      {!aside && (editing === "new" ? rowForm : <p class="board-foot">{adds}</p>)}
       {dropping && (
         <ConfirmRemove
           title={`Delete the group ${dropping.title}?`}
@@ -532,20 +592,96 @@ export function BoardPanel({
           </label>
         </ConfirmRemove>
       )}
-      {opened && <Drawer steps={mode === "steps" && write ? { place: stepPlace(view, opened.id), move: (m) => void reorderRow(opened, m) } : undefined} r={opened} platform={platform} close={() => setDrawer(null)} project={view.board.project} others={view.zones.flatMap((z) => z.rows)} write={write} act={act} id={id} moveLane={moveLane} nameOf={nameOf} />}
+      {!inColumn && drawn}
     </div>
+  );
+  if (!aside) return <CardSessions.Provider value={byCard}>{board}</CardSessions.Provider>;
+
+  return (
+    <CardSessions.Provider value={byCard}>
+      <div ref={setRoot} class="board-split" data-board-split data-board-drawer-open={inColumn && opened ? "" : undefined}>
+        {board}
+        <aside class="board-aside" aria-label={inColumn && opened ? "Row" : "Board controls"} data-board-aside>
+          {inColumn && drawn ? (
+            drawn
+          ) : (
+            <>
+              <section class="board-aside-part" data-board-aside-part="view">
+                <h3 class="board-aside-head">View</h3>
+                {views}
+                {stepsToggles}
+              </section>
+              <section class="board-aside-part" data-board-aside-part="find">
+                <h3 class="board-aside-head">Find</h3>
+                {findBar}
+              </section>
+              <DocsStrip view={view} act={act} id={id} write={write} platform={platform} />
+              <section class="board-aside-part" data-board-aside-part="add">
+                <h3 class="board-aside-head">Add</h3>
+                {editing === "new" ? rowForm : <div class="board-aside-buttons">{adds}</div>}
+              </section>
+              {(tools || more.length > 0) && (
+                <section class="board-aside-part" data-board-aside-part="board">
+                  <h3 class="board-aside-head">Board</h3>
+                  <div class="board-aside-buttons">
+                    {tools}
+                    {more.length > 0 && (
+                      <IconButton label="More" class="bar-btn sq" aria-haspopup="menu" data-board-more data-page-more onClick={(ev) => openMenu(ev, more, { from: ev.currentTarget })}>
+                        <MoreIcon size="sm" />
+                      </IconButton>
+                    )}
+                  </div>
+                </section>
+              )}
+            </>
+          )}
+        </aside>
+      </div>
     </CardSessions.Provider>
   );
 }
 
-/** The board's header, as a Doc's (#929): the title and, at its right, Copy link, Open in browser and ⋯; when it was made and last edited; the goal with the Docs beside it; and the progress as its bottom rule. The panel doesn't know whether the person may write (the pin block has no project), so without `write` the controls still show and the platform's refusal comes back as `act`'s toast. */
-function BoardHead({ view, back, write, shareLink, rename, close, act, id, platform }: { view: BoardView; back?: preact.ComponentChildren; write: boolean; shareLink: string | null; rename: () => void; close?: () => void; act: Act; id: string; platform: (path: string) => string | undefined }) {
+/** Under this many pixels across, the aside goes under the board (as `.list-preview-body`'s, ../ui/list-page.css). */
+const ASIDE_ROOM = 900;
+
+/** Whether `el` is more than `min` pixels across, as it resizes; true with no element. */
+function useWider(el: HTMLElement | null, min: number): boolean {
+  const [wider, setWider] = useState(true);
+  useLayoutEffect(() => {
+    if (!el) return;
+    const look = () => setWider(el.clientWidth > min);
+    look();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(look);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [el, min]);
+  return wider;
+}
+
+/** The board's ⋯: Rename and Edit goal for a writer, and Close epic while it can be closed. */
+function boardMenu(write: boolean, rename: () => void, editGoal: () => void, close?: () => void): MenuItem[] {
+  return [
+    ...(write
+      ? [
+          { label: "Rename…", run: rename, attrs: { "data-board-rename": "" } },
+          { label: "Edit goal…", run: editGoal, attrs: { "data-board-goal-menu": "" } },
+        ]
+      : []),
+    ...(close ? [{ label: "Close epic…", run: close, attrs: { "data-board-close": "" } }] : []),
+  ];
+}
+
+/** The board's header, as a Doc's (#929): the title and, at its right, Copy link, Open in browser and ⋯ (`more`, none when the aside has it); when it was made and last edited; the goal with the Docs beside it (`docs`, false when the aside has them); and the progress as its bottom rule. `goal` is the goal's text while its form is open. The panel doesn't know whether the person may write (the pin block has no project), so without `write` the controls still show and the platform's refusal comes back as `act`'s toast. */
+function BoardHead({ view, back, write, shareLink, more: items, docs, goal: draft, setGoal: setDraft, act, id, platform }: { view: BoardView; back?: preact.ComponentChildren; write: boolean; shareLink: string | null; more: MenuItem[]; docs: boolean; goal: string | null; setGoal: (g: string | null) => void; act: Act; id: string; platform: (path: string) => string | undefined }) {
   const b = view.board;
   const { toast } = usePlatformApi();
-  const [goalOpen, setGoalOpen] = useState(false);
-  const [goal, setGoal] = useState("");
+  const goalOpen = draft !== null;
+  const goal = draft ?? "";
+  const setGoal = (g: string) => setDraft(g);
+  const setGoalOpen = (on: boolean) => setDraft(on ? b.goal : null);
   const e = epicLine(b.progress);
-  const editGoal = () => (setGoal(b.goal), setGoalOpen(true));
+  const editGoal = () => setGoalOpen(true);
   const saveGoal = async () => {
     if (await act(() => boards.edit(id, { goal: goal.trim() }))) setGoalOpen(false);
   };
@@ -558,15 +694,6 @@ function BoardHead({ view, back, write, shareLink, rename, close, act, id, platf
       return false;
     }
   };
-  const items: MenuItem[] = [
-    ...(write
-      ? [
-          { label: "Rename…", run: rename, attrs: { "data-board-rename": "" } },
-          { label: "Edit goal…", run: editGoal, attrs: { "data-board-goal-menu": "" } },
-        ]
-      : []),
-    ...(close ? [{ label: "Close epic…", run: close, attrs: { "data-board-close": "" } }] : []),
-  ];
   // The goal's button takes the focus back when its form shuts.
   const goalButton = useRef<HTMLParagraphElement>(null);
   const wasOpen = useRef(false);
@@ -604,8 +731,8 @@ function BoardHead({ view, back, write, shareLink, rename, close, act, id, platf
       <p class="doc-meta board-meta" data-board-meta>
         <DocTimes doc={{ made: b.created_at, updated: b.updated_at }} />
       </p>
-      {(write || b.goal || (view.docs ?? []).length > 0) && (
-        <div class="board-head-body">
+      {(write || b.goal || (docs && ((view.docs ?? []).length > 0 || write))) && (
+        <div class={docs ? "board-head-body" : "board-head-body solo"}>
           <div class="board-goal-col">
             {goalOpen ? (
               <div class="board-form" data-board-goal-form>
@@ -644,7 +771,7 @@ function BoardHead({ view, back, write, shareLink, rename, close, act, id, platf
               )
           )}
         </div>
-        <DocsStrip view={view} act={act} id={id} write={write} platform={platform} />
+        {docs && <DocsStrip view={view} act={act} id={id} write={write} platform={platform} />}
       </div>
       )}
       {b.progress.total > 0 ? (
@@ -930,7 +1057,7 @@ function Lane({
 }
 
 /** A filter menu of the find bar (#547): its values with how many rows have each, several at once. */
-function FilterMenu({ name, title, choices, picked, set }: { name: string; title: string; choices: { value: string; count: number }[]; picked: string[]; set: (v: string[]) => void }) {
+function FilterMenu({ name, title, choices, picked, set }: { name: string; title: string; choices: { value: string; label?: string; count: number }[]; picked: string[]; set: (v: string[]) => void }) {
   const button = useRef<HTMLButtonElement>(null);
   // Drawn in the facet itself, so it is part of the board it filters.
   const [open, setOpen] = useState(false);
@@ -947,8 +1074,8 @@ function FilterMenu({ name, title, choices, picked, set }: { name: string; title
     const { picked: was, set: setTo } = now.current;
     setTo(was.some((p) => p.toLowerCase() === v.toLowerCase()) ? was.filter((p) => p.toLowerCase() !== v.toLowerCase()) : [...was, v]);
   };
-  const items: MenuItem[] = shown.map((c) => ({
-    label: c.value,
+  const items: MenuItem[] = shown.map((c: { value: string; label?: string; count: number }) => ({
+    label: c.label ?? c.value,
     detail: String(c.count),
     checked: on(c.value),
     multi: true,

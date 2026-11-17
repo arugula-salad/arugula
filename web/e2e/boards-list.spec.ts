@@ -4,8 +4,10 @@
 // old board link selects its row; New board beside the title; Not on a
 // board a link over the list, its issues in the middle, and one dragged onto
 // a board's row goes on that board; on a phone the list is the page and a
-// board opens in its place. On the app's frame fixture (app-frame-page.tsx),
-// with the cloud's answers made up here.
+// board opens in its place. The board's controls are in the right column, and
+// a row's drawer takes it while open (Arugula #1129); with too little room the
+// column goes under the board and the drawer is a sheet. On the app's frame
+// fixture (app-frame-page.tsx), with the cloud's answers made up here.
 import { devices, expect, test, type Page } from "@playwright/test";
 import { fixturePage } from "./fixture-page";
 import { reset } from "./helpers";
@@ -27,12 +29,18 @@ const BOARDS = [
 ];
 
 const row = (id: string, lane: string, number: number, title: string) => ({ id, rev: 1, pointer: { kind: "issue", id: `iss_${number}` }, note: "", status: "none", lane, attachments: [], live: { state: "open", kind: "native", number, title }, created_at: 1, updated_at: 1 });
-const view = (b: (typeof BOARDS)[number]) => ({
-  board: b,
-  zones: (["next", "doing", "review", "done"] as const).map((lane) => ({ id: `lane_${lane}`, rev: 1, title: lane[0].toUpperCase() + lane.slice(1), kind: "lane", rows: lane === "doing" ? [row(`row_${b.id}`, lane, 900, `${b.title}'s first issue`)] : [] })),
-  groups: [],
-  docs: [],
-});
+/** A board's rows: one in Doing; Epic: search has a group, Phase 1, with that row in it and a second row in none. */
+const view = (b: (typeof BOARDS)[number]) => {
+  const grouped = b.id === "brd_0a03";
+  const rows = (lane: string) =>
+    lane !== "doing" ? [] : [{ ...row(`row_${b.id}`, lane, 900, `${b.title}'s first issue`), group: grouped ? "zone_g1" : null }, ...(grouped ? [row("row_loose", lane, 901, "Loose issue")] : [])];
+  return {
+    board: b,
+    zones: (["next", "doing", "review", "done"] as const).map((lane) => ({ id: `lane_${lane}`, rev: 1, title: lane[0].toUpperCase() + lane.slice(1), kind: "lane", rows: rows(lane) })),
+    groups: grouped ? [{ id: "zone_g1", rev: 1, title: "Phase 1", progress: progress(0, 1) }] : [],
+    docs: [],
+  };
+};
 
 const loose = (number: number, title: string) => ({ pointer: { kind: "issue", id: `iss_${number}` }, source: "native", kind: "issue", number, title, state: "open", assignees: [], labels: ["ui"], updated_at: 1 });
 
@@ -124,6 +132,71 @@ test.describe("on a computer", () => {
     await expect(page).toHaveURL(at("brd_0a03"));
     await page.goBack();
     await expect(page).toHaveURL(/\/triage$/);
+  });
+});
+
+test.describe("a board's controls on the right (Arugula #1129)", () => {
+  const box = async (page: Page, sel: string) => (await page.locator(sel).boundingBox())!;
+
+  test("at 1440 they're a column right of the board; a row's drawer takes it, and ‹ Board controls or Esc goes back", async ({ page }, info) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openApp(page, `/p/${P}/boards/brd_0a01`);
+    const aside = page.locator('[data-board-page="brd_0a01"] [data-board-aside]');
+    for (const hook of ["[data-board-views]", "[data-board-find-input]", "[data-board-docs]", "[data-board-new-issue]", "[data-board-workers]", "[data-board-more]"]) await expect(aside.locator(hook)).toBeVisible();
+    await expect(aside.locator(".board-aside-head")).toHaveText(["View", "Find", "Add", "Board"]);
+    // None of them over the lanes any more.
+    await expect(page.locator('[data-board="brd_0a01"] :is([data-board-find], [data-board-views], [data-board-docs], .board-foot)')).toHaveCount(0);
+    expect((await box(page, '[data-board-page="brd_0a01"] [data-board-aside]')).x).toBeGreaterThan((await box(page, '[data-board="brd_0a01"]')).x + 400);
+    await page.screenshot({ path: info.outputPath("board-controls-1440.png") });
+    // A row's drawer takes the column: no sheet, no backdrop, the controls gone until it closes.
+    await page.locator('[data-board-row="row_brd_0a01"] [data-board-ptr]').click();
+    const drawer = aside.locator('[data-board-drawer="row_brd_0a01"]');
+    await expect(drawer).toBeVisible();
+    await expect(drawer.locator("[data-board-drawer-title]")).toHaveText("Launch's first issue");
+    await expect(page.locator("[data-side-sheet-backdrop]")).toHaveCount(0);
+    await expect(aside.locator("[data-board-find]")).toHaveCount(0);
+    await expect(aside).toHaveAttribute("aria-label", "Row");
+    await page.screenshot({ path: info.outputPath("board-drawer-1440.png") });
+    // The board beside it still works: another row's title opens its drawer in place.
+    await drawer.locator("[data-board-drawer-back]").click();
+    await expect(drawer).toHaveCount(0);
+    await expect(aside.locator("[data-board-find-input]")).toBeVisible();
+    await page.locator('[data-board-row="row_brd_0a01"] [data-board-ptr]').click();
+    await expect(drawer).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(drawer).toHaveCount(0);
+    await expect(page.locator('[data-board-row="row_brd_0a01"]')).toBeFocused();
+  });
+
+  test("a grouped board has a Group menu, and it narrows the rows", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openApp(page, `/p/${P}/boards/brd_0a01`);
+    await expect(page.locator('[data-board-aside] [data-board-find-input]')).toBeVisible();
+    await expect(page.locator('[data-board-facet="group"]')).toHaveCount(0);
+    await item(page, "brd_0a03").click();
+    const aside = page.locator('[data-board-page="brd_0a03"] [data-board-aside]');
+    await expect(page.locator("[data-board-row]")).toHaveCount(2);
+    await aside.locator('[data-board-facet-button="group"]').click();
+    await page.locator('[data-board-facet-menu="group"] [data-board-facet-value="zone_g1"]').click();
+    await page.keyboard.press("Escape");
+    await expect(page.locator("[data-board-row]")).toHaveCount(1);
+    await expect(page.locator('[data-board-row="row_brd_0a03"]')).toBeVisible();
+    await expect(aside.locator("[data-board-find-count]")).toHaveText("1 of 2 rows");
+    await expect(page).toHaveURL(/#group=zone_g1$/);
+  });
+
+  test("at 850 the column goes under the board, and the drawer is a sheet", async ({ page }, info) => {
+    await page.setViewportSize({ width: 850, height: 900 });
+    await openApp(page, `/p/${P}/boards/brd_0a01`);
+    const aside = page.locator('[data-board-page="brd_0a01"] [data-board-aside]');
+    await expect(aside.locator("[data-board-find-input]")).toBeAttached();
+    expect((await box(page, '[data-board-page="brd_0a01"] [data-board-aside]')).y).toBeGreaterThan((await box(page, '[data-board="brd_0a01"]')).y + 100);
+    await page.screenshot({ path: info.outputPath("board-controls-850.png"), fullPage: true });
+    await page.locator('[data-board-row="row_brd_0a01"] [data-board-ptr]').click();
+    await expect(page.locator('[data-side-sheet-backdrop] [data-board-drawer="row_brd_0a01"]')).toBeVisible();
+    await page.screenshot({ path: info.outputPath("board-drawer-850.png") });
+    await page.keyboard.press("Escape");
+    await expect(page.locator("[data-board-drawer]")).toHaveCount(0);
   });
 });
 
