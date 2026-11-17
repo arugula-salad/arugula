@@ -1749,7 +1749,9 @@ export class ControlSession {
   /** Someone on control, by their login or name: whom to share with, and the root
    * device to pin for them (compare its fingerprint with them). */
   async person(login: string) {
-    return api<{ account: string; name: string; root: string }>(`/api/people?login=${encodeURIComponent(login)}`);
+    // No root for someone with no device key (aru-141, #1004): shared with
+    // on control's word.
+    return api<{ account: string; name: string; root: string | null }>(`/api/people?login=${encodeURIComponent(login)}`);
   }
 
   /** Hand control a push subscription, signed by this device (M21). A live
@@ -1920,9 +1922,11 @@ export class ControlSession {
   }
 
   /** Teams I can put my machines in (#332): any I'm in, but only those I
-   * own while they're locked. */
+   * own while they're locked. A device page signs the team in, so only one
+   * whose roster it checked; with no device key (aru-141) control's word
+   * is all there is. */
   addableTeams(): Team[] {
-    return this.teams.filter((t) => t.verified && (t.role === "owner" || !t.locked));
+    return this.teams.filter((t) => (t.verified || !this.enrollment) && (t.role === "owner" || !t.locked));
   }
 
   /** Approve a join (a machine's, or the Arugula CLI's or the phone app's
@@ -1954,7 +1958,9 @@ export class ControlSession {
   }
 
   /** Move a machine of this account into `team` (one I'm in), or back to
-   * the account (null). This device signs it for the daemon to check. A
+   * the account (null). A device signs it for the daemon to check; a page
+   * with no device key (aru-141, #1004) sends it unsigned, on control's
+   * word, which control takes from the machine's owner on its page. A
    * team's owner takes someone else's machine out of it the same way. */
   async moveDaemon(daemon: string, team: string | null) {
     let pin: TeamPin | null = null;
@@ -1964,8 +1970,9 @@ export class ControlSession {
       pin = t.pin;
     }
     const at = Date.now();
-    const sig = await signText(this.keys, moveBody(daemon, pin, at));
-    await api(`/api/daemons/${daemon}/team`, { team: pin, at, by: this.keys.id, sig });
+    const signs = !!this.enrollment && !this.rootMismatch;
+    const sig = signs ? await signText(this.keys, moveBody(daemon, pin, at)) : "";
+    await api(`/api/daemons/${daemon}/team`, { team: pin, at, by: signs ? this.keys.id : "", sig });
     await this.refresh();
   }
 

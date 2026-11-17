@@ -116,18 +116,16 @@ pub(crate) async fn set(app: &App, b: AclSetRequest) -> Result<Value, ApiError> 
     // Account ids are as control made them; logins aren't case-sensitive.
     let principal =
         if b.principal.starts_with("tailnet:") { b.principal.to_ascii_lowercase() } else { b.principal.clone() };
-    // Joined on control's word (aru-141), an account's people get in with
-    // control's tokens, not by certificates chained to a root: none needed.
-    let by_control = app.control.enrolled().is_some_and(|e| e.saved.by_control().is_some());
-    if (principal.starts_with("team:") || (principal.starts_with("account:") && !by_control))
+    // An account with no root is shared with on control's word (aru-141,
+    // Arugula #1004): its person gets in with control's machine tokens, not
+    // by certificates chained to a root, so none is needed. A team still
+    // pins its founder's.
+    if principal.starts_with("team:")
         && b.role.is_some()
         && b.root.is_none()
         && app.acl.list().iter().all(|g| g.principal != principal)
     {
-        return Err(refuse(
-            StatusCode::BAD_REQUEST,
-            "sharing with an account needs its root device (a team: its founder's)",
-        ));
+        return Err(refuse(StatusCode::BAD_REQUEST, "sharing with a team needs its founder's root device"));
     }
     let name = b.name.unwrap_or_else(|| principal.split_once(':').map(|(_, n)| n.to_owned()).unwrap_or_default());
     let from = if b.history || b.role.is_none() {

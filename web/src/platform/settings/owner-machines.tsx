@@ -3,8 +3,9 @@
 // origin reaches): a team's are those shared with it, Personal's are yours
 // that are no team's. Cloud workspaces aren't listed: each is a project's.
 // One of yours opens its settings (This machine); someone else's says
-// whose it is. Sharing one with a team, or taking it out, is signed by a
-// device, so that row opens control's page (`#teams`).
+// whose it is. Sharing one with a team, or taking it out, is done on
+// control's page (a device signs it there; with no device key, control's
+// word does, aru-141), so that row opens it (`#teams`).
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";

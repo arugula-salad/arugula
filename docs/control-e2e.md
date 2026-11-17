@@ -368,7 +368,12 @@ device nobody trusted. Now:
   signs the choice (`illogical team join v1`: the daemon, the team, its
   founder). The daemon pins only a team signed that way, or named in a
   signed move (`illogical machine move v1`) from one of its account's
-  devices or, taking it out, an owner of its team.
+  devices or, taking it out, an owner of its team. Since aru-141 (#1004)
+  it also takes a move on control's word (`Move::on_controls_word`: no
+  signer, no signature), which a person with no device key makes on
+  control's page: control takes one only from the machine's own account
+  or, taking it out, an owner of its team, and only for a machine that
+  says it understands it (`controls-moves`).
 - A machine is its team's only while its account is in the team. The
   version that leaves that account out takes its machines out of the team
   at control, in the same write (`drop_departed_machines` in

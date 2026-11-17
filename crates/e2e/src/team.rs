@@ -306,9 +306,10 @@ impl TeamPin {
 }
 
 /// A joined machine moved into a team, between teams, or back to its
-/// account, after it joined: a device of its own account signs it, and the
-/// daemon applies only a move newer than the last it took, so control can
-/// neither make one up nor replay an old one.
+/// account, after it joined: a device of its own account signs it, or
+/// (aru-141, Arugula #1004) it's control's word ([`Move::on_controls_word`]),
+/// and the daemon applies only a move newer than the last it took, so
+/// control can't replay an old one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct Move {
@@ -317,12 +318,23 @@ pub struct Move {
     pub team: Option<TeamPin>,
     /// When it was made (ms); a daemon takes only newer ones.
     pub at: u64,
-    /// The signing device.
+    /// The signing device; empty on control's word.
     pub by: String,
     pub sig: String,
 }
 
 impl Move {
+    /// Whether this move is control's word, not a device's (aru-141,
+    /// Arugula #1004): it names no signer and carries no signature, as a
+    /// person with no device key made it on control's page. The hub takes
+    /// one only from the machine's own account, or a team owner taking it
+    /// out of the team, signed in on its page; a daemon takes it as control
+    /// says, as it takes a team's roster on control's word
+    /// ([`Roster::on_controls_word`]).
+    pub fn on_controls_word(&self) -> bool {
+        self.by.is_empty() && self.sig.is_empty()
+    }
+
     /// ```text
     /// illogical machine move v1
     /// daemon <device id>
@@ -1316,5 +1328,12 @@ mod tests {
         let out = sign(&alice, None, 7);
         assert!(out.signed_for("box", &alice.cert));
         assert!(!sign(&mallory, None, 7).signed_for("box", &alice.cert));
+        // aru-141 (#1004): only a move with neither signer nor signature is
+        // control's word; a signed one isn't, nor is it signed for anyone.
+        assert!(!into.on_controls_word());
+        let unsigned = Move { by: String::new(), sig: String::new(), ..into.clone() };
+        assert!(unsigned.on_controls_word());
+        assert!(!unsigned.signed_for("box", &alice.cert));
+        assert!(!Move { sig: String::new(), ..into.clone() }.on_controls_word());
     }
 }

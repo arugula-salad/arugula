@@ -247,6 +247,14 @@ interface Person {
   root: string;
 }
 
+/** Someone control found by their login or name: with no root when they
+ * have no device key (aru-141, #1004), shared with on control's word. */
+interface Found {
+  account: string;
+  name: string;
+  root: string | null;
+}
+
 
 /** #763: verify someone you share with, if you want to: scan the code in
  * their Machines, or compare its words. Off the main path:
@@ -437,16 +445,19 @@ export function ShareDialog({ client }: { client: Client }) {
     const res = await client.request(OPS["acl.set"].method, opPath("acl.set"), { session, principal, role: r, history: withHistory, ...extra });
     if (!res.ok) setErr((await res.json<{ error?: string }>().catch(() => null))?.error ?? `HTTP ${res.status}`);
     await load();
+    return res.ok;
   };
   // Share and notify (#233): the machine grants and pushes them alone. A
   // name it doesn't know is looked up on control and shared with as a
   // plain share is (`offer`).
-  const invite = async (whom: string, extra: Record<string, string> = {}) => {
+  // `found`: control was asked who they are already, so a machine that
+  // doesn't know them doesn't send the page to ask again.
+  const invite = async (whom: string, extra: Record<string, string> = {}, found = false) => {
     setErr("");
     setTold(null);
     const res = await client.request(OPS["invite.send"].method, opPath("invite.send"), { session, who: whom, role, history, note, pane, follow: watch, ...extra } satisfies InviteRequest);
     const body = await res.json<Partial<Invited> & { error?: string }>().catch(() => null);
-    if (res.status === 404 && control && client.e2e && !extra.root) {
+    if (res.status === 404 && control && client.e2e && !extra.root && !found) {
       control.person(whom).then((p) => offer(p, whom, true), (x: Error) => setErr(x.message));
       return;
     }
@@ -462,8 +473,14 @@ export function ShareDialog({ client }: { client: Client }) {
     setNote("");
     await load();
   };
-  const share = async (p: Person, notify: boolean) => {
-    await (notify ? invite(`account:${p.account}`, { root: p.root }) : set(`account:${p.account}`, role, history, { root: p.root, name: p.name }));
+  const share = async (p: Found, notify: boolean) => {
+    const principal = `account:${p.account}`;
+    if (p.root) await (notify ? invite(principal, { root: p.root }, true) : set(principal, role, history, { root: p.root, name: p.name }));
+    else {
+      // No device key, no root (aru-141, #1004): shared on control's word,
+      // then told, by the grant this machine holds now.
+      if ((await set(principal, role, history, { name: p.name })) && notify) await invite(principal, {}, true);
+    }
     setAsked(`If ${p.name} isn't in one of your teams, they're asked first. Then it's under ${machine ?? "this machine"} in their host menu.`);
     setWho("");
   };
@@ -471,9 +488,12 @@ export function ShareDialog({ client }: { client: Client }) {
   // browser; after that, a root control names that isn't the one pinned
   // here, or the one a grant on this machine holds (shared from another
   // device of yours), stops the share.
-  const offer = async (p: Person, login: string, notify: boolean, go: () => Promise<void> = () => share(p, notify)) => {
+  const offer = async (found: Found, login: string, notify: boolean, go: () => Promise<void> = () => share(found, notify)) => {
     setChanged(null);
     setVerifying(null);
+    // No root to pin or check: someone with no device key (aru-141).
+    if (!found.root) return go();
+    const p: Person = { ...found, root: found.root };
     const held = grants.find((g) => g.principal === `account:${p.account}` && g.root);
     // A grant on this machine counts as a pin, from when it was made.
     if (held?.root) pinPerson(p.account, held.root, held.at);
@@ -719,7 +739,7 @@ export function ShareDialog({ client }: { client: Client }) {
               // then by name, so a teammate the machine knows is named as
               // it knows them.
               control.person(p).then(
-                (x) => offer(x, p, true, () => invite(p)),
+                (x) => offer(x, p, true, x.root ? () => invite(p) : undefined),
                 () => void invite(p),
               );
             }}

@@ -97,12 +97,13 @@ const REFRESH: Duration = Duration::from_secs(60);
 pub const REFRESH_WAIT: Duration = Duration::from_secs(10);
 /// What this daemon tells control it understands, so control offers only
 /// what every daemon checking a team can take (presigned invites' rosters,
-/// an owner the desktop app made, DK7).
+/// an owner the desktop app made, DK7; a move on control's word, aru-141,
+/// Arugula #1004: `controls-moves`).
 /// `ARUGULA_FEATURES` says otherwise (tests play an older daemon with "").
 /// (`chat-import`, M124, went with the import, native #203.)
 fn features() -> String {
     std::env::var("ARUGULA_FEATURES")
-        .unwrap_or_else(|_| "presigned-invites,owner-moves,join-secret,owner-passkeys".into())
+        .unwrap_or_else(|_| "presigned-invites,owner-moves,join-secret,owner-passkeys,controls-moves".into())
 }
 
 /// Whether `features` names `feature`.
@@ -756,10 +757,12 @@ pub struct Former {
 
 /// Take a move (#100) if a device of this machine's own account signed
 /// it: into a team, between teams, or back to the account. An owner of
-/// its team (in the roster it checked) may take it out too (#332). The new
-/// team's roster is fetched from scratch, checked against the pin as at a
-/// join. One no newer than the last it took is a replay (or the same one
-/// again).
+/// its team (in the roster it checked) may take it out too (#332). Since
+/// aru-141 (Arugula #1004) a move on control's word ([`Move::on_controls_word`])
+/// is taken as control says, as a team's roster is: control decides who
+/// reaches a machine. The new team's roster is fetched from scratch, checked
+/// against the pin as at a join. One no newer than the last it took is a
+/// replay (or the same one again).
 fn take_move(saved: &mut Saved, m: Move) {
     if m.at <= saved.moved_at {
         return;
@@ -770,12 +773,13 @@ fn take_move(saved: &mut Saved, m: Move) {
         warn!(by = m.by, "a move from control reached a hosted machine; ignoring it");
         return;
     }
+    let by_control = m.on_controls_word();
     let trusted = saved.own_devices();
     let own = trusted.get(&m.by).is_some_and(|by| m.signed_for(&saved.cert.device, by));
     let owner_out = saved
         .team()
         .is_some_and(|t| t.roster.as_ref().is_some_and(|r| m.owner_takes_out(&saved.cert.device, r, &t.certs)));
-    if !own && !owner_out {
+    if !own && !owner_out && !by_control {
         warn!(
             by = m.by,
             "a move from control isn't signed by this account's devices or its team's owners; ignoring it"
@@ -783,7 +787,7 @@ fn take_move(saved: &mut Saved, m: Move) {
         return;
     }
     if saved.team_pin() != m.team.as_ref() {
-        info!(team = m.team.as_ref().map(|p| p.team.as_str()), "moved");
+        info!(team = m.team.as_ref().map(|p| p.team.as_str()), by_control, "moved");
         // Into a team: its roster is fetched from scratch. Out of one:
         // nothing of it stays.
         saved.kind = m.team.map_or(MachineKind::Personal, |pin| MachineKind::Team(InTeam::new(pin)));
@@ -6113,6 +6117,50 @@ pub(crate) mod tests {
         // Control replays the move into the team: too old.
         take_move(&mut saved, into);
         assert_eq!(saved.team_pin(), None);
+    }
+
+    /// aru-141 (Arugula #1004): a move on control's word, which a person
+    /// with no device key made, is taken, on a machine that pinned its
+    /// account's root and on one that joined on control's word; an older
+    /// one of control's is still a replay, and a signed move that isn't
+    /// is still refused.
+    #[test]
+    fn a_daemon_takes_a_move_on_controls_word() {
+        let (_, root) = device("a", Kind::Browser);
+        let (_, daemon) = device("a", Kind::Daemon);
+        let (mkeys, mallory) = device("m", Kind::Browser);
+        let pin = TeamPin { team: "t1".into(), founder: "o".into(), founder_root: "r".into() };
+        let unsigned =
+            |team: Option<&TeamPin>, at| Move { team: team.cloned(), at, by: String::new(), sig: String::new() };
+        for root in [
+            Root::Pinned(Trust { account: "a".into(), root: root.device.clone() }),
+            Root::Control(ByControl { at: 1, team: None }),
+        ] {
+            let mut saved = Saved {
+                url: String::new(),
+                root,
+                cert: daemon.clone(),
+                certs: vec![],
+                revocations: vec![],
+                kind: MachineKind::Personal,
+                seen: Default::default(),
+                peers: Default::default(),
+                shared_teams: Default::default(),
+                held_teams: Default::default(),
+                held_peers: Default::default(),
+                login: String::new(),
+                moved_at: 0,
+            };
+            let d = daemon.device.as_str();
+            take_move(&mut saved, unsigned(Some(&pin), 5));
+            assert_eq!((saved.team_pin(), saved.moved_at), (Some(&pin), 5));
+            take_move(&mut saved, mv(&mkeys, &mallory, d, None, 6));
+            assert_eq!(saved.team_pin(), Some(&pin), "not a move someone else signed");
+            take_move(&mut saved, unsigned(None, 4));
+            assert_eq!(saved.team_pin(), Some(&pin), "an older one is a replay");
+            take_move(&mut saved, unsigned(None, 7));
+            assert_eq!((saved.team_pin(), saved.moved_at), (None, 7));
+        }
     }
 
     /// #332: a member's machine in a team; the team's owners may take it
