@@ -352,7 +352,7 @@ function settingsRoute(rest: string[], q: URLSearchParams): SettingsRoute | null
   if (scope === "personal" && more.length === 0) return { page: "settings", scope: "team", owner: "personal" };
   if (scope === "you" && more.length <= 1) {
     const s = section(more[0]);
-    return s && { page: "settings", scope: "you", ...s };
+    return s && youSection(s.section);
   }
   if (more.length > 2) return null;
   const s = section(more[1]);
@@ -376,12 +376,19 @@ function settingsRoute(rest: string[], q: URLSearchParams): SettingsRoute | null
   return null;
 }
 
+/** A section of yours, or where it went: your machines' agents are each
+ * machine's now (Arugula #1107), in This machine's Agents' grants. */
+function youSection(section?: string): SettingsRoute {
+  if (section === "agents") return { page: "settings", scope: "machine", section };
+  return { page: "settings", scope: "you", ...(section ? { section } : {}) };
+}
+
 /** An old link's `#section`, where the path names none: the page puts the
  * section in the path, in its place. A project's section that's part of
  * another now lands on that one. */
 function withOldSection(r: SettingsRoute | null, hash: string): SettingsRoute | null {
   const section = /^#([a-z][a-z0-9-]{0,47})$/.exec(hash)?.[1];
-  const at = r && !r.section && section ? { ...r, section } : r;
+  const at = r && !r.section && section ? (r.scope === "you" ? youSection(section) : { ...r, section }) : r;
   return at?.scope === "project" && at.section && MOVED[at.section] ? { ...at, section: MOVED[at.section] } : at;
 }
 
@@ -403,7 +410,8 @@ function settingsPath(r: SettingsRoute, s: (id: string) => string): string {
     case "you":
       return r.section ? `/settings/you${at}` : "/settings";
     case "machine":
-      return r.machine ? `/settings/machine/${s(r.machine)}${at}` : "/settings/machine";
+      // No machine yet (the page picks the first): the section waits in the hash.
+      return r.machine ? `/settings/machine/${s(r.machine)}${at}` : `/settings/machine${r.section ? `#${r.section}` : ""}`;
     case "project":
       return `/settings/project/${s(r.project)}${at}${r.link ? `?link=${encodeURIComponent(r.link)}` : ""}`;
     case "team":

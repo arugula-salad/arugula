@@ -3,10 +3,11 @@
 // so the list is the shown host's, and the owner's alone: the daemon refuses
 // anyone else. Offered in the menus once the machine has asked for it
 // (`arugulad flags`); the desktop app's Daemon menu and `#developer` open it
-// either way.
+// either way. Settings' This machine has it as a section (Arugula #1107).
 
 import { useEffect, useState } from "preact/hooks";
 import { Modal } from "../../shared/ui/modal";
+import { Section } from "../../shared/ui/settings-section";
 import type { Client } from "../client";
 import type { FlagInfo } from "../../shared/proto.gen";
 
@@ -67,8 +68,8 @@ function FlagSource({ f }: { f: FlagInfo }) {
   ) : null;
 }
 
-// A Modal like control's dialogs (UI audit #175).
-function Developer({ client, close }: { client: Client; close: () => void }) {
+/** The machine's flags (`GET /api/flags`), and setting one. */
+function useFlags(client: Client) {
   const [flags, setFlags] = useState<FlagInfo[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -86,7 +87,7 @@ function Developer({ client, close }: { client: Client; close: () => void }) {
       setError((e as Error).message);
     }
   };
-  useEffect(() => void load(), []);
+  useEffect(() => void load(), [client]);
 
   const set = async (name: string, on: boolean | null) => {
     const res = await client.request("PUT", `/api/flags/${encodeURIComponent(name)}`, { on }).catch(() => null);
@@ -94,46 +95,82 @@ function Developer({ client, close }: { client: Client; close: () => void }) {
     // The menus and the page follow the host's features: no reload.
     await Promise.all([load(), client.loadFeatures()]);
   };
+  return { flags, error, set };
+}
 
+/** What Settings' list says of them (Arugula #1107): how many are on. */
+export function flagsSummary(flags: FlagInfo[]): string {
+  const on = flags.filter((f) => f.on).length;
+  return on ? `${on} of ${flags.length} on` : "All off";
+}
+
+const HELP = (
+  <>
+    Features that aren't ready for everyone, on this machine. Each takes effect at once; <code>arugulad flags</code> shows the same
+    switches. What you set here wins over what's set for your account or team.
+  </>
+);
+
+/** A switch per flag, with where its state comes from. */
+function FlagList({ flags, error, set }: ReturnType<typeof useFlags>) {
+  return (
+    <>
+      {error && <p class="error">{error}</p>}
+      {flags?.some((f) => f.built === false) && <p class="dim">This daemon was built without Labs: the switches turn nothing on.</p>}
+      <ul class="rules-list">
+        {(flags ?? []).map((f) => (
+          <li key={f.name}>
+            <label data-flag={f.name}>
+              <input type="checkbox" role="switch" class="sw-switch" checked={f.on} onChange={(e) => void set(f.name, e.currentTarget.checked)} />
+              <span>
+                <b>{f.title || f.name}</b>
+                <span class="dim">{f.about}</span>
+                <FlagSource f={f} />
+                {f.local_only ? (
+                  <span class="dim flag-source" data-flag-local-only>
+                    Only this machine sets it, never your account or team
+                  </span>
+                ) : null}
+              </span>
+            </label>
+            {/* This machine's word taken back: control's, or the default. */}
+            {f.source && f.local !== undefined ? (
+              <button type="button" class="secondary small flag-follow" aria-label={`${followLabel(f)} for ${f.title || f.name}`} onClick={() => void set(f.name, null)}>
+                {followLabel(f)}
+              </button>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+// A Modal like control's dialogs (UI audit #175).
+function Developer({ client, close }: { client: Client; close: () => void }) {
+  const f = useFlags(client);
   return (
     <Modal close={close} label="Developer settings" class="rules developer">
-        <h2>Developer settings</h2>
-        <p class="dim">
-          Features that aren't ready for everyone, on this machine. Each takes effect at once; <code>arugulad flags</code> shows the same
-          switches. What you set here wins over what's set for your account or team.
-        </p>
-        {error && <p class="error">{error}</p>}
-        {flags?.some((f) => f.built === false) && <p class="dim">This daemon was built without Labs: the switches turn nothing on.</p>}
-        <ul class="rules-list">
-          {(flags ?? []).map((f) => (
-            <li key={f.name}>
-              <label data-flag={f.name}>
-                <input type="checkbox" role="switch" class="sw-switch" checked={f.on} onChange={(e) => void set(f.name, e.currentTarget.checked)} />
-                <span>
-                  <b>{f.title || f.name}</b>
-                  <span class="dim">{f.about}</span>
-                  <FlagSource f={f} />
-                  {f.local_only ? (
-                    <span class="dim flag-source" data-flag-local-only>
-                      Only this machine sets it, never your account or team
-                    </span>
-                  ) : null}
-                </span>
-              </label>
-              {/* This machine's word taken back: control's, or the default. */}
-              {f.source && f.local !== undefined ? (
-                <button type="button" class="secondary small flag-follow" aria-label={`${followLabel(f)} for ${f.title || f.name}`} onClick={() => void set(f.name, null)}>
-                  {followLabel(f)}
-                </button>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-        <div class="prompt-buttons">
-          <button class="secondary" type="button" onClick={close}>
-            Done
-          </button>
-        </div>
+      <h2>Developer settings</h2>
+      <p class="dim">{HELP}</p>
+      <FlagList {...f} />
+      <div class="prompt-buttons">
+        <button class="secondary" type="button" onClick={close}>
+          Done
+        </button>
+      </div>
     </Modal>
+  );
+}
+
+/** Developer settings as a section of Settings' This machine (Arugula #1107). */
+export function DeveloperSection({ client }: { client: Client }) {
+  const f = useFlags(client);
+  return (
+    <Section id="developer" title="Developer settings" summary={f.flags ? flagsSummary(f.flags) : f.error ? "Couldn't load" : undefined} lede={HELP}>
+      <div class="rules developer machine-sec">
+        <FlagList {...f} />
+      </div>
+    </Section>
   );
 }

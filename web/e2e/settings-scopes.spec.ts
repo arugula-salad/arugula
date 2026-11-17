@@ -63,7 +63,8 @@ test.describe("on a computer", () => {
     await expect(row(page, "quiet-hours").locator(".list-row-detail")).toHaveText("Weeknights 10 PM – 8 AM · New York");
     await expect(row(page, "linked").locator(".list-row-detail")).toHaveText("None");
     await expect(row(page, "tokens").locator(".list-row-detail")).toHaveText("1 token");
-    await expect(row(page, "agents").locator(".list-row-detail")).toHaveText("No machines yet");
+    // Your machines' agents are each machine's, under This machine (Arugula #1107).
+    await expect(row(page, "agents")).toHaveCount(0);
     // The first is shown, the rest wait; its help is under its heading, with no More to open.
     await expect(row(page, "notifications")).toHaveAttribute("aria-current", "true");
     await expect(section(page, "notifications")).toBeVisible();
@@ -80,6 +81,9 @@ test.describe("on a computer", () => {
     await page.goto("/settings#notifications");
     await expect(page).toHaveURL(/\/settings\/you\/notifications$/);
     await expect(section(page, "notifications")).toBeVisible();
+    // The old Agents on your machines' address opens This machine's Agents' grants (Arugula #1107).
+    await page.goto("/settings#agents");
+    await expect(page.locator('[data-settings-scope="machine"]')).toHaveAttribute("aria-selected", "true");
   });
 
   test("You: control's device and preference rows join it in bands, a device's are ↗ rows to control's page at their dialog, and there's no second index or Help", async ({ page }) => {
@@ -89,7 +93,7 @@ test.describe("on a computer", () => {
     await expect(bands).toHaveText(["Notifications", "Look and feel", "Account"]);
     const ids = () => page.locator("[data-settings-row]").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.settingsRow));
     // (Chat alerts, after quiet hours, shows once chat is on: it isn't here.)
-    await expect.poll(ids).toEqual(["notifications", "quiet-hours", "push", "appearance", "preferences", "account", "linked", "agents", "tokens"]);
+    await expect.poll(ids).toEqual(["notifications", "quiet-hours", "push", "appearance", "preferences", "account", "linked", "tokens"]);
     // Appearance in one place: its own section, and only there.
     await expect(page.locator("[data-open-appearance]")).toHaveCount(1);
     await expect(section(page, "appearance").locator("[data-open-appearance]")).toHaveCount(1);

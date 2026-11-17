@@ -26,7 +26,7 @@ import { openGettingStarted } from "./welcome";
 import { openDeveloper } from "./developer";
 import { openMachineTelemetry } from "./machine-telemetry";
 import { openSharing } from "./sharing";
-import { openAgentGrants } from "./agent-grants";
+import { agentGrantsShown, openAgentGrants } from "./agent-grants";
 import { openAccess } from "./access";
 import { directory } from "../hosts";
 import { openRules } from "./rules";
@@ -530,8 +530,11 @@ export function machineSettingsItems(client: Client): MenuItem[] {
     // machine has an id; control refuses anyone but its owner (or its team's).
     ...renameItems(client),
     // Discovery 10: what its agents may do on control (`arugula grants`),
-    // once it's joined (or the page is control's).
-    ...(directory.control || directory.joined ? [{ label: "Agents' grants…", run: openAgentGrants }] : []),
+    // once it's joined (or the page is control's): in Settings' This
+    // machine, where they're changed (Arugula #1107).
+    ...((directory.control || directory.joined) && agentGrantsShown()
+      ? [{ label: "Agents' grants…", hint: "What its agents may do on Arugula cloud, in Settings", run: () => openAgentGrants(client.e2e?.daemon.id ?? directory.find(directory.current)?.id) }]
+      : []),
     { label: "Developer settings…", run: () => openDeveloper(client) },
     // The menu is built when it opens, so it can't wait on the daemon's list
     // of copies: Remove always runs, and says when there was none.

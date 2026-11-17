@@ -6,7 +6,7 @@
 
 import type { ComponentType } from "preact";
 import { useEffect, useState } from "preact/hooks";
-import type { Reach } from "./live-pane";
+import type { Reach } from "./machine-client";
 import type { AppSession } from "./session";
 
 type Chunk = typeof import("./live-pane");

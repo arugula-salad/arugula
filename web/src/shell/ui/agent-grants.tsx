@@ -1,19 +1,11 @@
-// What this machine's agents may do on Arugula control (Discovery 10):
-// *Agents' grants…* in the machine's settings (the machine menu's *This
-// machine*). It reads the account's grants as `arugula grants ls` does
-// (`GET /api/grants`, the platform's, on control's page) and shows this
-// machine's live ones: threads, issues, runs, deploys, boards, sessions
-// over a project or your DMs, and `cloud.drive`. They're changed on the
-// platform's Settings, which it links to; here they're read only. On a
-// machine's own page, which control's routes aren't on, it says where to
-// look instead.
+// What this machine's agents may do on Arugula cloud (Discovery 10): the
+// words for the grants `GET /api/grants` lists (`arugula grants ls`), as
+// Access shows this machine's live ones. They're given and taken back in
+// Settings' This machine, under Agents' grants (Arugula #1107), which
+// *Agents' grants…* in the machine's settings opens: one editable view
+// where there were two (that and a read-only dialog here).
 
-import { useEffect, useState } from "preact/hooks";
-import { platformFetch } from "../../shared/maintenance";
-import { Modal } from "../../shared/ui/modal";
-import { directory } from "../hosts";
 import { openPlatform, platformOrigin } from "../platform-links";
-import { ExternalIcon } from "../../shared/ui/icons";
 
 /** A grant, as `GET /api/grants` lists it. */
 export interface Grant {
@@ -43,55 +35,11 @@ export const POWERS: Record<string, string> = {
   "sessions.reply": "Answer and prompt agent sessions",
 };
 
-/** #366: where a machine holds all of `boards.write`, `issues.write` and
- * `trackers.write` is one line, "Work on boards"; the three leave their own
- * lines there. */
-export function withWork(byPower: Map<string, string[]>): Map<string, string[]> {
-  const three = ["boards.write", "issues.write", "trackers.write"];
-  const all = (byPower.get("boards.write") ?? []).filter((w) => three.every((p) => byPower.get(p)?.includes(w)));
-  if (!all.length) return byPower;
-  const out = new Map(byPower);
-  for (const p of three) {
-    const rest = (out.get(p) ?? []).filter((w) => !all.includes(w));
-    if (rest.length) out.set(p, rest);
-    else out.delete(p);
-  }
-  out.set("work.boards", all);
-  return out;
-}
-
 /** Where one reaches, in words. */
 export function over(g: Grant): string {
   if (g.power === "cloud.drive") return "your account";
   if (g.scope.kind === "account") return "your DMs";
   return g.scope.name ?? g.scope.id;
-}
-
-let shown = false;
-const listeners = new Set<() => void>();
-const changed = () => listeners.forEach((fn) => fn());
-
-export function openAgentGrants() {
-  shown = true;
-  changed();
-}
-
-export function AgentGrantsLayer() {
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    const fn = () => setTick((t) => t + 1);
-    listeners.add(fn);
-    return () => void listeners.delete(fn);
-  }, []);
-  if (!shown) return null;
-  return (
-    <AgentGrants
-      close={() => {
-        shown = false;
-        changed();
-      }}
-    />
-  );
 }
 
 /** This machine's live grants, from the account's: by its id in control's
@@ -100,69 +48,10 @@ export function grantsOf(all: Grant[], machine: { id?: string; name: string }): 
   return all.filter((g) => g.live && g.subject.kind === "daemon" && (machine.id ? g.subject.id === machine.id : g.subject.name === machine.name));
 }
 
-function AgentGrants({ close }: { close: () => void }) {
-  const name = directory.current;
-  const id = directory.find(name)?.id;
-  const [grants, setGrants] = useState<Grant[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    let live = true;
-    platformFetch("/api/grants", { credentials: "same-origin" })
-      .then(async (r) => {
-        const v = (await r.json().catch(() => null)) as { grants?: Grant[]; error?: string } | null;
-        if (!r.ok || !v?.grants) throw new Error(v?.error ?? `${r.status}`);
-        if (live) setGrants(grantsOf(v.grants, { id, name }));
-      })
-      .catch(() => live && setError("Arugula cloud has them: open this machine there to see them here."));
-    return () => void (live = false);
-  }, [id, name]);
-  const settings = platformOrigin();
-  // By power, each with where it reaches.
-  const plain = new Map<string, string[]>();
-  for (const g of grants ?? []) plain.set(g.power, [...(plain.get(g.power) ?? []), over(g)]);
-  const byPower = withWork(plain);
-  const order = Object.keys(POWERS);
-  const powers = [...byPower.keys()].sort((a, b) => (order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99) || a.localeCompare(b));
-  return (
-    <Modal close={close} label="Agents' grants" class="rules agent-grants">
-      <h2>Agents' grants</h2>
-      <p class="dim">
-        What the agents on {name} may do on Arugula cloud, as you: each one's work there is labelled as your agent's on this machine.
-      </p>
-      {error && <p class="dim" data-agent-grants-error>{error}</p>}
-      {!error && grants === null && <p class="dim">Loading…</p>}
-      {grants && !powers.length && <p data-agent-grants-none>None: its agents can't do anything on Arugula cloud.</p>}
-      {powers.length > 0 && (
-        <ul class="agent-grants-list" data-agent-grants>
-          {powers.map((p) => (
-            <li key={p} data-agent-grant={p}>
-              <b>{POWERS[p] ?? p}</b> <span class="dim">over {byPower.get(p)!.join(", ")}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-      <p class="dim">
-        {settings ? "Give or take them back in Account settings, under Agents, or with " : "Give or take them back with "}
-        <code>arugula grants</code>.
-      </p>
-      <div class="prompt-buttons">
-        {settings && (
-          <button
-            class="secondary"
-            type="button"
-            data-agent-grants-settings
-            onClick={() => {
-              close();
-              openPlatform("/settings#agents");
-            }}
-          >
-            Change them in Settings <ExternalIcon size="xs" />
-          </button>
-        )}
-        <button class="primary" type="button" onClick={close}>
-          Done
-        </button>
-      </div>
-    </Modal>
-  );
+/** Whether the page can open Settings, where the grants are changed. */
+export const agentGrantsShown = () => !!platformOrigin();
+
+/** *Agents' grants…*: machine `id`'s, in Settings' This machine. */
+export function openAgentGrants(id?: string) {
+  openPlatform(id ? `/settings/machine/${id}/agents` : "/settings/machine#agents");
 }
