@@ -134,3 +134,5 @@ Where: `crates/control/src/passkey.rs` (`fresh_github`), `crates/e2e/src/cert.rs
 From: #1582, #1581, epic #1599.
 
 **Amended by aru-141, "Machines trust control: the hub's tokens replace device keys"** (Jake, 2026-11-13). The device reset goes with device keys: there's no chain to reset, and a machine trusts control rather than a pinned root. The passkey reset stays as written.
+
+**The device reset ended** (2026-11-17, under aru-141). With no device keys to reset, control no longer starts or finishes one. The passkey reset stays as written.
