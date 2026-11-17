@@ -12,18 +12,13 @@
    are the palette's, so every appearance holds. */
 
 /* A finger, not a pointer (UI audit #198): a row's link and a
-   card's actions are as tall as a button (shared/buttons.css), and a
-   secret's box as tall as its field's. */
+   card's actions are as tall as a button (shared/buttons.css). */
 @media (pointer: coarse) {
   .platform .settings-rows :is(a:not(.settings-open), .link),
   .platform .settings-card-act :is(a, .link) {
     display: inline-flex;
     align-items: center;
     min-height: 40px;
-  }
-
-  .platform .env-secret input {
-    height: 40px;
   }
 }
 
@@ -427,10 +422,8 @@
   gap: 8px;
 }
 
-/* As tall as every other field and its button (UI audit #166). */
 .platform .env-secret input {
   flex: 0 1 240px;
-  height: 32px;
 }
 
 /* Its deploys: state (in its tone, after a dot), what it deployed (a
@@ -894,8 +887,7 @@
   max-width: 220px;
 }
 
-.platform .defaults-table .defaults-own,
-.platform .defaults-table .defaults-own select {
+.platform .defaults-table .defaults-own {
   background-color: var(--raised);
   font-weight: 600;
 }

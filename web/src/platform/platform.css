@@ -724,18 +724,6 @@ html[data-corners="square"] .platform-section {
   background: var(--surface);
 }
 
-.run-start input:not([type="checkbox"], [type="radio"]),
-.run-start select {
-  box-sizing: border-box;
-  height: 28px;
-  padding: 4px 28px 4px 8px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--field-radius);
-  background-color: var(--letterbox);
-  color: var(--fg);
-  font: inherit;
-}
-
 .run-start .run-command {
   flex: 1;
   min-width: 160px;
@@ -985,17 +973,6 @@ html[data-corners="square"] .platform-section {
   margin: 8px 0;
 }
 
-.hosted-add input {
-  box-sizing: border-box;
-  height: 28px;
-  padding: 4px 8px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--field-radius);
-  background: var(--letterbox);
-  color: var(--fg);
-  font: inherit;
-}
-
 .hosted-edit textarea {
   display: block;
   box-sizing: border-box;
@@ -1063,25 +1040,6 @@ html[data-corners="square"] .platform-section {
 
 .deploy-form label.control-confirm {
   display: block;
-}
-
-.deploy-form input:not([type="checkbox"]),
-.deploy-form select,
-.env-secret input {
-  box-sizing: border-box;
-  min-width: 0;
-  height: 30px;
-  padding: 4px 8px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--field-radius);
-  background-color: var(--letterbox);
-  color: var(--fg);
-  font: inherit;
-}
-
-/* Room for the kit's caret (shared/fields.css, #1097). */
-.deploy-form select {
-  padding-right: 28px;
 }
 
 .deploy-form .deploy-commit {

@@ -206,6 +206,13 @@ select.field {
 }
 
 @media (pointer: coarse), (max-width: 600px) {
+  /* :root outranks a place's `input { width: ... }` that would catch a box
+     too; a switch keeps its pill. */
+  :root input:is([type="checkbox"], [type="radio"]):not(.sw-switch) {
+    width: var(--choice-size);
+    height: var(--choice-size);
+  }
+
   :where(input[type="checkbox"]:not(.sw-switch))::before {
     width: 14px;
     height: 14px;
