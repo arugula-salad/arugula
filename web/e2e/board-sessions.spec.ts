@@ -71,6 +71,20 @@ test("a card's sessions are on its row: what needs you first, finished ones left
   await expect(page.locator(`[data-pane="${pane}"]`)).toBeVisible();
 });
 
+test("the Sessions page's old address lands on Boards, slug and all, and stays there", async ({ page }) => {
+  // Its move and the slug's rewrite were two effects of one render: when
+  // the effects ran in the frame after it, before any other news re-drew the
+  // page, the rewrite ran second and put /sessions back (Arugula #1155).
+  // Run them that soon here, every time.
+  await page.addInitScript(() => {
+    window.requestAnimationFrame = (f) => (queueMicrotask(() => f(performance.now())), 1);
+  });
+  await openApp(page, () => `/p/${P}/sessions`);
+  await expect(page).toHaveURL(new RegExp(`/p/${P}-arugula/boards$`));
+  await expect(page.locator('a[href*="brd_00e2e0"]').first()).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/p/${P}-arugula/boards$`));
+});
+
 test("a session's state shows on its row as it moves, without a reload: its live event reads it again", async ({ page }, info) => {
   // #985's hosted session, from the by-card list; #970's own, from the board's read.
   let hub = "working";

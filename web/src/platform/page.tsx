@@ -132,8 +132,9 @@ function body(r: Route, lost: string | null) {
     case "run":
       return <RunPage project={r.project} run={r.run} msg={r.msg} thread={r.thread} />;
     case "sessions":
-      // Folded into each card's row (Arugula #1082): an old link goes on to Boards.
-      return <Moved to={pathOf({ page: "boards", project: r.project }, names)} />;
+      // Folded into each card's row (Arugula #1082): useSlug takes an old
+      // link on to Boards.
+      return null;
     case "session":
       return <SessionPage project={r.project} session={r.session} />;
     case "workspaces":
@@ -178,14 +179,6 @@ function Entering({ to }: { to: Entry }) {
     go(entryPath(to, session.project(currentProject()), names), true);
   }, [ready]);
   return <p class="platform-section dim">Finding it…</p>;
-}
-
-/** A page that moved: on to `to`, in its place in the history. */
-function Moved({ to }: { to: string }) {
-  useEffect(() => {
-    go(to + location.hash, true);
-  }, [to]);
-  return null;
 }
 
 /** `page`: the page's address, for its guard. */
@@ -341,18 +334,26 @@ function useTitle(r: Route) {
   useEffect(() => void (document.title = title), [title]);
 }
 
+/** Where a page that moved is now: the Sessions page folded into Boards
+ * (Arugula #1082). Here, not in an effect of its own, which raced this one:
+ * the slug's rewrite ran after it and put the old address back (Arugula
+ * #1155). */
+function movedPage(r: Route): Route {
+  return r.page === "sessions" ? { page: "boards", project: r.project } : r;
+}
+
 /** Put the address's slugs right once the names are known: only the ids
  * are read, so an old slug lands, and the bar shows the current one. An id
  * whose name isn't known yet (a Doc's, until it's read) keeps the slug it
  * has, so loading a page doesn't take it off the address and put it back. A
- * room of another project's goes to its own (UI audit #169). The hash stays:
- * it can name a Doc's tab. */
+ * room of another project's goes to its own (UI audit #169), and a page that
+ * moved to its new address. The hash stays: it can name a Doc's tab. */
 function useSlug(r: Route) {
   // An issue, Doc or board moved by a split goes to its new project's address (Arugula #972).
   useSubscribe((fn) => homes.subscribe(fn));
   useSubscribe((fn) => issues.subscribe(fn));
   const known = (id: string) => names(id) ?? slugIn(location.pathname, id);
-  const want = r.page === "missing" || r.page === "find" || (r.page === "home" && r.to) ? null : (roomElsewhere(r) ?? movedHome(r) ?? pathOf(r, known));
+  const want = r.page === "missing" || r.page === "find" || (r.page === "home" && r.to) ? null : (roomElsewhere(r) ?? movedHome(r) ?? pathOf(movedPage(r), known));
   // Not after a Back: the effect runs after the paint, and a Back before
   // then would have it replace the entry Back went to with this page's
   // (Arugula #1074).
