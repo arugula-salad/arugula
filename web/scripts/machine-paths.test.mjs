@@ -37,6 +37,7 @@ test("each of control's page addresses has its place in the app, project-less", 
     ["#agents", "", "/machines#agents"],
     ["#agents=team", "", "/machines#agents=team"],
     ["#settings=machine", "", "/machines#settings=machine"],
+    ["#settings=remote-sessions", "", "/machines#settings=remote-sessions"],
     ["#developer", "", "/machines#developer"],
   ];
   for (const [hash, search, path] of rows) assert.equal(fromControl(hash, search), path, `${hash}${search}`);

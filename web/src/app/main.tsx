@@ -69,7 +69,7 @@ arriveHere();
 setSignedIn(signedInOf(session));
 // The platform is this page: the shell's links to it (a card, a board's
 // row, an issue) go to its places here, in place, not to a tab of their own.
-setPlatformHere((path) => go(path));
+setPlatformHere((path, replace) => go(path, replace));
 followPlatformLinks((path) => go(path), "[data-platform-machines]");
 // The machines through the hub, made once someone is signed in: its
 // links back to control's page need the hub's address, which the

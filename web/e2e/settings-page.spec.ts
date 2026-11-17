@@ -1,6 +1,8 @@
 // The Settings page (Arugula #695): `#settings`, what the rail's Settings
-// opens, on a daemon's own page. On control's, with the platform's half of
-// the index, it's in platform.spec.ts.
+// opens, on a daemon's own page, which has every section. On control's
+// page, which has the app's Settings, it keeps Phones and browsers alone,
+// and the rest of its old links land in the app (Arugula #1110): the last
+// test, with control made up on the suite's daemon and the app a stand-in.
 
 import { expect, test } from "@playwright/test";
 import { closeContexts, closeSettingsPage, openSettingsPage, reset, settingsRow, sheetTab } from "./helpers";
@@ -24,10 +26,10 @@ test("the rail's Settings is a page: every scope's rows, and back to the panes",
   await expect(settings.getByRole("button", { name: "Appearance…" })).toHaveCount(1);
   await expect(settings.locator('[data-settings-section="preferences"]').getByRole("switch", { name: "Tips", exact: true })).toBeChecked();
 
-  // A daemon's own page has no account, so no second way in, and no platform.
+  // A daemon's own page has no account, so no second way in.
   await expect(page.locator("[data-account-menu]")).toHaveCount(0);
-  await expect(settings.locator("[data-settings-index-elsewhere]")).toHaveCount(0);
-  await expect(settings.locator("[data-settings-elsewhere]")).toHaveCount(0);
+  // …and no app, so nothing moves.
+  await expect(settings.locator("[data-settings-in-app]")).toHaveCount(0);
 
   // A switch says what it now is, without leaving the page.
   const tips = settings.getByRole("switch", { name: "Tips", exact: true });
@@ -145,4 +147,29 @@ test.describe("on a phone", () => {
     await settings.locator("[data-open-panes]").click();
     await expect(settings).toHaveCount(0);
   });
+});
+
+// Arugula #1110: on control's page, an old link to a section that's in the
+// app's Settings now lands on it, at once; Phones and browsers stays. A
+// machine's own sections wait for the machine shown (settings-machine.spec.ts).
+test("on control's page, old #settings links land on the app's Settings, but Phones and browsers stays", async ({ page }) => {
+  const APP = "http://app.test";
+  await page.route(/\/control\.json$/, (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify({ control: true, url: new URL(r.request().url()).origin, platform: APP }) }));
+  await page.route(`${APP}/**`, (r) => r.fulfill({ contentType: "text/html", body: "<!doctype html><title>the app</title><p data-app-stand-in>the app</p>" }));
+  for (const [hash, path] of [
+    ["#settings", "/settings"],
+    ["#settings=appearance", "/settings/you/appearance"],
+    ["#settings=preferences", "/settings/you/preferences"],
+    ["#settings=account", "/settings/you/account"],
+  ]) {
+    await page.goto(`/${hash}`);
+    await expect(page).toHaveURL(`${APP}${path}`);
+    await expect(page.locator("[data-app-stand-in]")).toBeVisible();
+  }
+  for (const hash of ["#settings=push", "#settings=device"]) {
+    await page.goto(`/${hash}`);
+    // Long enough for a redirect to have happened.
+    await page.waitForTimeout(500);
+    expect(new URL(page.url()).origin, hash).not.toBe(APP);
+  }
 });

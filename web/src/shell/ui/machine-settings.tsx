@@ -4,6 +4,9 @@
 // daemon keeps them and answers its owner alone, so they're read through a
 // client to it; one that isn't connected, or isn't the owner's, draws each
 // section saying why in its summary, so the list and its addresses stay.
+// Who reached it through Arugula cloud (./remote-sessions) is last, and
+// only where the machine answers (Arugula #1110: it was control's
+// `#settings`).
 
 import type { ComponentChildren } from "preact";
 import { useSubscribe } from "../../shared/ui/hooks";
@@ -11,6 +14,7 @@ import { Section } from "../../shared/ui/settings-section";
 import type { Client } from "../client";
 import { AccessSection } from "./access";
 import { DeveloperSection } from "./developer";
+import { RemoteSessionsSection } from "./remote-sessions";
 import { ReportsSection } from "./machine-telemetry";
 import { RulesSection } from "./rules";
 import { SharingSection } from "./sharing";
@@ -69,6 +73,7 @@ export function MachineSections({ client, away, children }: { client: Client | n
       <ReportsSection client={c} />
       <SharingSection client={c} />
       <DeveloperSection client={c} />
+      <RemoteSessionsSection client={c} />
     </>
   );
 }

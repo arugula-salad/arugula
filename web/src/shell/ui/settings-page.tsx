@@ -1,20 +1,20 @@
-// The Settings page on control's page and a daemon's own (Arugula #695):
-// `#settings`, what the rail's Settings opens. Its rows are the ones the
-// menus and the palette use (./commands), drawn as a page: a toggle is a
-// switch, a hint is said out loud. What the platform holds is on `/settings`;
-// this page's index links there, and that page's You scope opens this one
-// at its dialogs (Arugula #1108). Help is the command palette's, not a
-// section here.
+// The Settings page on a daemon's own page and control's (Arugula #695):
+// `#settings`. Its rows are the ones the menus and the palette use
+// (./commands), drawn as a page: a toggle is a switch, a hint is said out
+// loud. Where the app's Settings is, this page keeps only Phones and
+// browsers, which a device turns on with its own keys, and its other
+// sections' old links land in the app (Arugula #1110, ./app.tsx). A
+// daemon's own page has no app, so it keeps every section. Help is the
+// command palette's, not a section here.
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
 import { platformHref, openPlatform } from "../platform-links";
 import { subscribeSeen } from "../../shared/seen";
-import { PLATFORM_SECTIONS } from "../../shared/settings-map";
 import { useSubscribe } from "../../shared/ui/hooks";
 import type { MenuItem } from "../../shared/ui/menu";
 import { PageHeader } from "../../shared/ui/page-header";
-import { ElsewhereLinks, Section, SectionIndex, type Elsewhere } from "../../shared/ui/settings-section";
+import { Section, SectionIndex } from "../../shared/ui/settings-section";
 import { accountHeader, AppBar, useAccount } from "./app-bar";
 import { settingsGroups } from "./commands";
 import { RemoteSessionsSection } from "./remote-sessions";
@@ -106,26 +106,6 @@ export function SettingsPage({ client }: { client: Client }) {
       </Section>
     ) : null;
   };
-  const elsewhere: Elsewhere = {
-    title: "In your projects",
-    links: PLATFORM_SECTIONS.flatMap((s) => {
-      const path = `/settings#${s.id}`;
-      const href = platformHref(path);
-      return href
-        ? [
-            {
-              title: s.title,
-              href,
-              onClick: (e: MouseEvent) => {
-                if (e.metaKey || e.ctrlKey || e.shiftKey) return;
-                e.preventDefault();
-                openPlatform(path);
-              },
-            },
-          ]
-        : [];
-    }),
-  };
   // The route's section, once: the hash stays `#settings=…` as you scroll.
   const opened = useRef(settingsRoute()?.section);
   useEffect(() => {
@@ -133,27 +113,49 @@ export function SettingsPage({ client }: { client: Client }) {
     addEventListener("hashchange", fn);
     return () => removeEventListener("hashchange", fn);
   }, []);
+  // The app's Settings, where there is one: this page is Phones and browsers.
+  const app = platformHref("/settings");
   return (
     <div class="chat agents-page settings-place" data-settings-page>
       <AppBar client={client} at="settings" />
       <div class="settings-place-scroll">
-        <div class="settings-layout">
-          <SectionIndex body={body} anchor={(id) => `#settings=${id}`} opened={() => opened.current} elsewhere={elsewhere} />
-          <div class="settings-body" ref={body}>
+        {app ? (
+          <div class="settings-body" data-settings-kept>
             <PageHeader title="Settings" />
             {section("push")}
-            {section("appearance")}
-            {section("preferences")}
-            {section("machine")}
-            <RemoteSessionsSection client={client} />
-            {account && (
-              <Section id="account" title="Account" lede={accountHeader(account.login())}>
-                {rows(account.items())}
-              </Section>
-            )}
-            <ElsewhereLinks elsewhere={elsewhere} />
+            <p class="dim" data-settings-in-app>
+              Your other settings, and those of your machines, projects and team, are in{" "}
+              <a
+                href={app}
+                onClick={(e) => {
+                  if (e.metaKey || e.ctrlKey || e.shiftKey) return;
+                  e.preventDefault();
+                  openPlatform("/settings");
+                }}
+              >
+                Settings
+              </a>
+              .
+            </p>
           </div>
-        </div>
+        ) : (
+          <div class="settings-layout">
+            <SectionIndex body={body} anchor={(id) => `#settings=${id}`} opened={() => opened.current} />
+            <div class="settings-body" ref={body}>
+              <PageHeader title="Settings" />
+              {section("push")}
+              {section("appearance")}
+              {section("preferences")}
+              {section("machine")}
+              <RemoteSessionsSection client={client} />
+              {account && (
+                <Section id="account" title="Account" lede={accountHeader(account.login())}>
+                  {rows(account.items())}
+                </Section>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

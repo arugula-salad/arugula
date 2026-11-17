@@ -34,11 +34,13 @@ const BOARD = /^brd_[\w-]+$/;
 const NAME = /^[\w.-]{1,253}$/;
 /** The shell's own places over a machine, as their fragments say them. */
 const LAYER = /^(?:overview(?:=\d+)?|agents(?:=team)?|settings(?:=[\w-]+)?|developer|getting-started=\w+)$/;
-/** Those of them control's page sends on to the app: the machine's own.
- * Your account's, your devices' and the rest of Settings stay with
- * control's sign-in and passkeys, and so does Getting started (joining a
+/** Those of them control's page sends on to the app: the machine's own,
+ * its Settings sections among them, which the machine's page there sends on
+ * to Settings' This machine (Arugula #1110). The rest of Settings is the
+ * app's `/settings` (shell/fragments.ts) but for Phones and browsers;
+ * Getting started stays with control's sign-in and passkeys (joining a
  * machine to control). */
-const MOVES = /^(?:overview(?:=\d+)?|agents(?:=team)?|settings=machine|developer)$/;
+const MOVES = /^(?:overview(?:=\d+)?|agents(?:=team)?|settings=(?:machine|remote-sessions)|developer)$/;
 
 const num = (v: string | null) => (v !== null && /^\d{1,9}$/.test(v) ? Number(v) : undefined);
 
@@ -162,4 +164,23 @@ export function fromControl(hash: string, search = ""): string | null {
   const layer = hash.slice(1);
   if (MOVES.test(layer)) return machinesPath({ at: "machines", layer });
   return null;
+}
+
+/** Control's Settings sections that are a machine's own: This machine's. */
+export const MACHINE_SETTINGS = new Set(["machine", "remote-sessions"]);
+
+/** Where one of control's Settings sections (`#settings=<id>`, Arugula
+ * #695) is in the app's Settings now (Arugula #1110): You's by the same
+ * id, and a machine's own in This machine, at `machine` (the one shown;
+ * without it, the page's first). Phones and browsers (`push`, and This
+ * device and All your devices before it) stays on control's page, where a
+ * device subscribes with its own keys: null. Any other (Help, before
+ * #1108) is Settings, at You. */
+export function settingsPath(section?: string, machine?: string): string | null {
+  if (section === "push" || section === "device" || section === "all-devices") return null;
+  if (section && MACHINE_SETTINGS.has(section)) {
+    const sub = section === "machine" ? "" : section;
+    return machine ? `/settings/machine/${machine}${sub && `/${sub}`}` : `/settings/machine${sub && `#${sub}`}`;
+  }
+  return section === "appearance" || section === "preferences" || section === "account" ? `/settings/you/${section}` : "/settings";
 }

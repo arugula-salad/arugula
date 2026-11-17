@@ -71,7 +71,7 @@ window.fetch = async (input, init) => {
 // platform's session (sam), as app/main.tsx says.
 setSignedIn(signedInOf(session));
 // And the platform is this page, as there: its links stay in it.
-setPlatformHere((path) => go(path));
+setPlatformHere((path, replace) => go(path, replace));
 followPlatformLinks((path) => go(path), "[data-platform-machines]");
 
 // Prefs (where you were) are this browser's here, as the app's are until
