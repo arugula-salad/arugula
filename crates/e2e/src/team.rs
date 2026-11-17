@@ -413,6 +413,11 @@ impl TeamLock {
     }
 }
 
+/// What a roster names as the root of an account with none (aru-141): a
+/// person who signed up after device keys stopped being made. No device
+/// chains to it, so it lets no device in anywhere.
+pub const NO_ROOT: &str = "-";
+
 /// Every member account's certificates and revocations, as control hands
 /// them out.
 pub type AccountCerts = HashMap<String, (Vec<Cert>, Vec<Revocation>)>;
@@ -548,6 +553,19 @@ impl Roster {
     pub fn sign_redeem(&mut self, k: &DeviceKeys) {
         self.by = hex::encode(k.sign_public());
         self.sig = hex::encode(k.signature(self.body().as_bytes()));
+    }
+
+    /// Whether this version is control's word, not an owner's device's
+    /// (aru-141, Arugula #1005): it names no signer and carries no
+    /// signature (an owner with no device key wrote it on control's page),
+    /// or it redeems a one-click invite no device signed (control made it
+    /// for such an owner; the link's one-time key still signs the version).
+    /// The hub takes one only from an owner signed in on its page, and a
+    /// team's machines and pages take it as control says: the team's
+    /// members and roles are control's.
+    pub fn on_controls_word(&self) -> bool {
+        (self.by.is_empty() && self.sig.is_empty())
+            || self.redeem.as_ref().is_some_and(|r| r.invite.by.is_empty() && r.invite.sig.is_empty())
     }
 
     pub fn member(&self, account: &str) -> Option<&Member> {

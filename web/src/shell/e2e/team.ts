@@ -1,6 +1,9 @@
 // Team rosters (M19): the browser's copy of `arugula_e2e::team`. Owners'
-// browsers sign each new version; the same rules as daemons decide which
-// follow.
+// browsers with a device key sign each new version; the same rules as
+// daemons decide which follow. Since aru-141 (Arugula #1005) the team's
+// members and roles are control's: an owner with no device key writes a
+// version on control's word (`onControlsWord`), and pages and machines
+// take it as control says.
 
 import { approves, browserChained, evaluate, fromApp, hex, unhex, type Cert, type Revocation } from "./cert.ts";
 import { signText, type DeviceKeys } from "./keys.ts";
@@ -71,6 +74,19 @@ export interface TeamPin {
 }
 
 export type AccountCerts = Record<string, [Cert[], Revocation[]]>;
+
+/** What a roster names as the root of an account with none
+ * (`team::NO_ROOT`, aru-141): no device chains to it. */
+export const NO_ROOT = "-";
+
+/** Whether something an owner would sign names no signer and carries no
+ * signature: control's word (aru-141). */
+export const unsigned = (x: { by: string; sig: string }) => x.by === "" && x.sig === "";
+
+/** Whether a version is control's word, not an owner's device's
+ * (`Roster::on_controls_word`): unsigned, or it redeems a one-click invite
+ * no device signed (the link's one-time key still signs the version). */
+export const onControlsWord = (r: Roster) => unsigned(r) || (!!r.redeem && unsigned(r.redeem.invite));
 
 export function rosterBody(r: Roster): string {
   // Frozen (#504): this and the signed bodies below; see crates/e2e/src/frozen.rs.
@@ -143,6 +159,9 @@ export async function askOk(
   if (!i || typeof req.proof !== "string" || i.team !== r.team || !ROLES.includes(i.role) || !isCount(i.made) || !isCount(i.expires)) return null;
   if (typeof i.key !== "string" || typeof i.by !== "string" || typeof i.sig !== "string") return null;
   if (!(await verify(i.key, askBody(i, req.account, req.root), req.proof))) return null;
+  // A link control made for an owner with no device key (aru-141): its
+  // word; which owner made it isn't said ("").
+  if (unsigned(i)) return "";
   for (const o of r.members.filter((m) => m.role === "owner")) {
     const [c, rv] = certs[o.account] ?? [[], []];
     const d = (await evaluate({ account: o.account, root: o.root }, c, rv)).get(i.by);
@@ -382,7 +401,11 @@ export function asOf(certs: AccountCerts, at: number): AccountCerts {
  *   device's removal before this look, so a removed device's key can't
  *   date one back once the page knows. Those versions come back third, to
  *   show. The last version is always checked as of now. Rust's `advance`
- *   has no such allowance. */
+ *   has no such allowance.
+ *
+ * A version on control's word (`onControlsWord`, aru-141) is taken as the
+ * next one when it's well formed and the pinned team's, as
+ * `checkpoint::advance` takes it. */
 export async function advance(
   held: Roster | null,
   history: Roster[],
@@ -399,6 +422,10 @@ export async function advance(
       return [cur, r.version, late];
     }
     if (r.version !== (cur ? cur.version + 1 : 1)) return [cur, r.version, late];
+    if (onControlsWord(r) && r.team === pin.team && wellFormed(r)) {
+      cur = r;
+      continue;
+    }
     const step = opts.vet ? await opts.vet(cur, certs) : certs;
     if (!(await follows(r, cur, pin, step))) {
       const last = i === history.length - 1;
