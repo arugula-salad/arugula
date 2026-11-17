@@ -1,10 +1,12 @@
 // An owner's settings (Arugula #897): Settings' Team and billing scope
 // (Arugula #1104), a team's at `/settings/team/:team`, Personal's at
 // `/settings/team/personal` (they were `/t/:team/settings` and
-// `/settings/personal`). Its sections, as every scope's are: General
-// (its default project), Members, Machines, Chat (the team chat's
-// owners-only switches, from a project's settings), Plan and billing (from
-// the account's settings), Labs, and Project defaults.
+// `/settings/personal`). Its sections, as every scope's are, in two bands.
+// The owner's own: Members, Machines (../settings/owner-machines), Chat
+// (the team chat's owners-only switches), Plan and billing, and Labs. Then
+// Every project: its default project, and Project defaults. What a device
+// signs (the roster, a machine joining a team) and what the app can't reach
+// yet (Labs' flags) is a ↗ row in place, opening control's page (#1106).
 //
 // Project defaults is a table: a row per key a project overrides, the
 // owner's default first, then a column per project that isn't archived,
@@ -15,14 +17,17 @@
 // viewers read it; only its owners choose its default project.
 
 import { useEffect, useState } from "preact/hooks";
-import type { SessionSettings } from "../../shared/proto";
+import type { ProjectMember, SessionSettings } from "../../shared/proto";
 import { platformFetch } from "../../shared/maintenance";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { Section } from "../../shared/ui/settings-section";
+import { Chip } from "../../shared/ui/state-chip";
 import { useHoldLeaving } from "../router";
 import { runs, type HostedWorkspace } from "../runs";
 import { controlOrigin, session, type PlatformProject } from "../session";
+import { owners } from "../owners";
 import { TeamChat } from "../settings/chat-alerts";
+import { ControlRow, OwnerMachines } from "../settings/owner-machines";
 import { PlanAndBilling } from "../settings/plan";
 import {
   ISSUE_HOMES,
@@ -93,57 +98,82 @@ export function OwnerSettings({ owner }: { owner: string }) {
         <p class="dim">That team isn't one of yours (or it's gone).</p>
       </Section>
     );
+  // The prototype's two bands: the owner's own, then what its projects start with.
+  const band = team ? "Team" : "Personal";
+  const every = "Every project";
   return (
     <>
-          <General owner={owner} projects={projects} role={role} />
-          {team && (
-            <Section
-              id="members"
-              title="Members"
-              summary={joined(plural(team.members.length, "person", "people"), plural(team.members.filter((m) => m.role === "owner").length, "owner"))}
-              count={team.members.length}
-              lede={`Who's in ${name}, and their role.`} hooks={{ "data-owner-members": owner }}>
-              <ul class="platform-list settings-rows">
-                {team.members.map((m) => (
-                  <li key={m.account} data-owner-member={m.account}>
-                    <b>{m.name}</b>
-                    <span class="dim">{m.role}</span>
-                  </li>
-                ))}
-              </ul>
-              <p class="dim">
-                Invite, remove and change roles on{" "}
-                <a href={`${controlOrigin()}/#settings=account`} data-settings-control>
-                  your machines page
-                </a>
-                : the roster is signed by an owner's device.
-              </p>
-            </Section>
-          )}
-          <Section id="machines" title="Machines" summary="On your machines page" lede={team ? `The machines shared with ${name}, and what they may do, are on your machines page.` : "Your machines are on your machines page."}>
-            <p>
-              <a href={`${controlOrigin()}/`} data-settings-control>
-                Your machines
-              </a>
-            </p>
-          </Section>
-          {team && <TeamChat team={owner} name={name} role={role} />}
-          <PlanAndBilling team={team ? owner : undefined} />
-          <Section id="labs" title="Labs" summary="Per machine, on its page" lede="Labs features are turned on per machine, in its Developer settings.">
-            <p>
-              <a href={`${controlOrigin()}/#settings=machine`} data-settings-control>
-                This machine's settings
-              </a>
-            </p>
-          </Section>
-          <ProjectDefaults owner={owner} name={name} projects={projects} role={role} />
+      {team && <Members owner={owner} name={name} role={role} members={team.members} band={band} />}
+      <OwnerMachines owner={owner} name={name} band={band} teams={owners(session.projects).some((o) => o.kind === "team")} />
+      {team && <TeamChat team={owner} name={name} role={role} band={band} />}
+      <PlanAndBilling team={team ? owner : undefined} band={band} />
+      <Labs owner={owner} name={name} role={role} band={band} />
+      <General owner={owner} projects={projects} role={role} band={every} />
+      <ProjectDefaults owner={owner} name={name} projects={projects} role={role} band={every} />
     </>
+  );
+}
+
+const ROLE: Record<string, string> = { owner: "Owner", editor: "Editor", viewer: "Viewer" };
+
+/** Members: the roster, as the platform's copy has it. Inviting, removing
+ * and changing roles is a new roster, signed by an owner's device, so it
+ * opens control's page (Arugula #1106). */
+function Members({ owner, name, role, members, band }: { owner: string; name: string; role: string | undefined; members: ProjectMember[]; band: string }) {
+  return (
+    <Section
+      id="members"
+      title="Members"
+      band={band}
+      summary={joined(plural(members.length, "person", "people"), plural(members.filter((m) => m.role === "owner").length, "owner"))}
+      count={members.length}
+      lede={`Who's in ${name}, and their role.`}
+      hooks={{ "data-owner-members": owner }}
+    >
+      <ul class="platform-list settings-rows">
+        {members.map((m) => (
+          <li key={m.account} data-owner-member={m.account}>
+            <b>{m.name || m.account}</b>
+            <Chip kind="tag">{ROLE[m.role] ?? m.role}</Chip>
+          </li>
+        ))}
+      </ul>
+      {role === "owner" ? (
+        <ul class="platform-list settings-rows">
+          <ControlRow href={`${controlOrigin()}/#teams`} label="Invite people, remove them and change roles" why="The roster is signed by an owner's device, so this opens your machines page." hook="members" />
+        </ul>
+      ) : (
+        <p class="dim">Its owners invite people and change roles, from one of their devices.</p>
+      )}
+    </Section>
+  );
+}
+
+/** Labs: the flags control sets for the owner's machines. The app can't
+ * reach them yet (Arugula #1106's follow-up), so this opens control's page,
+ * where Teams lists them. */
+function Labs({ owner, name, role, band }: { owner: string; name: string; role: string | undefined; band: string }) {
+  const team = owner !== "personal";
+  return (
+    <Section
+      id="labs"
+      title="Labs"
+      band={band}
+      summary="On your machines page"
+      lede={team ? `Labs features turned on for ${name}'s machines.` : "Labs features turned on for every machine of yours."}
+      more={<p>A machine's own Developer settings win over these, yours over a team's.{team && role !== "owner" ? ` ${name}'s owners set its own.` : ""}</p>}
+      hooks={{ "data-owner-labs": owner }}
+    >
+      <ul class="platform-list settings-rows">
+        <ControlRow href={`${controlOrigin()}/#teams`} label={team ? `Labs for ${name}'s machines` : "Labs for your machines"} why="Only your machines page reaches these for now." hook="labs" />
+      </ul>
+    </Section>
   );
 }
 
 /** General: the owner's name, and its default project, which only its
  * owners choose. One select and a Save, so a change isn't one click. */
-function General({ owner, projects, role }: { owner: string; projects: PlatformProject[]; role: string | undefined }) {
+function General({ owner, projects, role, band }: { owner: string; projects: PlatformProject[]; role: string | undefined; band: string }) {
   const [read, setRead] = useState<EffectiveSetting[] | null>(null);
   const [draft, setDraft] = useState<Value>(null);
   const [err, setErr] = useState("");
@@ -177,7 +207,8 @@ function General({ owner, projects, role }: { owner: string; projects: PlatformP
   return (
     <Section
       id="general"
-      title="General"
+      title="Default project"
+      band={band}
       summary={read ? `Default project: ${words("default_project", saved, nameOf)}` : err ? "Couldn't load" : undefined}
       lede="Its default project: where its new things go when nothing says which.">
       {read && (
@@ -214,7 +245,7 @@ function General({ owner, projects, role }: { owner: string; projects: PlatformP
 }
 
 /** Project defaults: the table, its staged changes and the bar above it. */
-function ProjectDefaults({ owner, name, projects, role }: { owner: string; name: string; projects: PlatformProject[]; role: string | undefined }) {
+function ProjectDefaults({ owner, name, projects, role, band }: { owner: string; name: string; projects: PlatformProject[]; role: string | undefined; band: string }) {
   const [layers, setLayers] = useState<Layers | null>(null);
   const [err, setErr] = useState("");
   const [staged, setStaged] = useState<Staged>({});
@@ -273,6 +304,7 @@ function ProjectDefaults({ owner, name, projects, role }: { owner: string; name:
     <Section
       id="defaults"
       title="Project defaults"
+      band={band}
       summary={layers ? defaultsSummary(layers, projects) : err ? "Couldn't load" : undefined}
       lede={`What ${owner === "personal" ? "your projects use" : `every project in ${name} uses`} unless it overrides it.`}
       more={<p>A highlighted cell is a project's own value. Choose Default in it to follow the default again. Changes wait for Save.</p>}
