@@ -1038,8 +1038,10 @@ pub(crate) async fn session_names(app: &App, only: Option<PaneId>) -> Vec<(PaneI
     let mut out = vec![];
     let mut terminals = HashMap::new();
     let mut hooked = vec![];
+    let mut ours = HashSet::new();
     for p in app.mux.api(Api::Panes).await.unwrap_or_default() {
         let id = p.info.id;
+        ours.insert(id);
         if only.is_some_and(|o| o != id) {
             continue;
         }
@@ -1064,6 +1066,7 @@ pub(crate) async fn session_names(app: &App, only: Option<PaneId>) -> Vec<(PaneI
             // Discovery finds every pane's Claude Code on Linux (by scope),
             // not only the ones asked for (#512).
             only_pane(&mut live, only);
+            not_strangers(&mut live, &ours, &hooked);
             live.extend(hooked.into_iter().map(|(pane, sid)| (pane, (sid, None))));
             let ids: Vec<String> = live.values().map(|(sid, _)| sid.clone()).collect();
             let titles = crate::agent::conversation_titles(&ids);
@@ -1083,6 +1086,16 @@ pub(crate) async fn session_names(app: &App, only: Option<PaneId>) -> Vec<(PaneI
 /// own `arugula-pane-*` scope), and a name for one pane must not be another's.
 fn only_pane<V>(live: &mut HashMap<PaneId, V>, only: Option<PaneId>) {
     live.retain(|p, _| only.is_none_or(|o| o == *p));
+}
+
+/// Drop what discovery placed in a pane this daemon doesn't have, and any
+/// session a pane's hooks already place: one session is in one pane. A
+/// scope names a pane by its number alone, so a daemon started unscoped
+/// from another's pane (`just dev`, a test daemon) finds its own panes'
+/// Claude Code in that pane's scope too, and its session would go by its
+/// name twice (a mention naming it then reaches no one).
+fn not_strangers<V>(live: &mut HashMap<PaneId, (String, V)>, ours: &HashSet<PaneId>, hooked: &[(PaneId, String)]) {
+    live.retain(|p, (sid, _)| ours.contains(p) && !hooked.iter().any(|(_, h)| h == sid));
 }
 
 /// The name of the session in `pane` (#429), for a post to carry.
@@ -1451,6 +1464,22 @@ mod tests {
         let mut all = HashMap::from([(1, "a"), (2, "b")]);
         only_pane(&mut all, None);
         assert_eq!(all.len(), 2);
+    }
+
+    #[test]
+    fn a_session_is_never_named_in_a_pane_that_isnt_ours_or_twice() {
+        // A daemon started unscoped from pane 1335 of another: its pane 2's
+        // Claude Code is in that pane's scope. Pane 3's is its own.
+        let mut live = HashMap::from([
+            (1335, ("sess-1".to_owned(), None::<String>)),
+            (3, ("sess-3".to_owned(), None)),
+            (4, ("sess-4".to_owned(), None)),
+        ]);
+        // Pane 2's hooks say sess-1; pane 4 is ours too, and so is 3.
+        let ours = HashSet::from([1, 2, 3, 4]);
+        let hooked = [(2, "sess-1".to_owned()), (4, "sess-4".to_owned())];
+        not_strangers(&mut live, &ours, &hooked);
+        assert_eq!(live.keys().copied().collect::<HashSet<_>>(), HashSet::from([3]));
     }
 
     /// A daemon with a state dir, and panes that take follow-ups or not.
