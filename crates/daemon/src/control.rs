@@ -2868,7 +2868,13 @@ impl Control {
             )
             .await
         {
-            Ok(peers) => saved.login = peers.get(&own).map(|p| p.name.clone()).unwrap_or_default(),
+            // What to call the account, when control says (the join saved
+            // one already).
+            Ok(peers) => {
+                if let Some(p) = peers.get(&own).filter(|p| !p.name.is_empty()) {
+                    saved.login = p.name.clone();
+                }
+            }
             Err(err) => {
                 tracing::debug!(error = %err, "control said nothing of the people sessions here are shared with")
             }
