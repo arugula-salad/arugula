@@ -3,7 +3,7 @@
   "commit": "db13a426b59b5fefe1468cea1d19f99c133fad26",
   "branch": "main",
   "state": "pending",
-  "at": "2026-11-17T03:38:49Z",
+  "at": "2026-11-17T03:43:47Z",
   "phases": {
     "lint": {
       "verdict": "pass",
@@ -30,7 +30,7 @@
       ]
     },
     "build": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
@@ -48,7 +48,7 @@
         {
           "name": "clippy",
           "id": 133797733168,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/44010944901/job/133797733168"
         }
       ]
@@ -78,19 +78,19 @@
         {
           "name": "e2e (1)",
           "id": 133799054330,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/44010944901/job/133799054330"
         },
         {
           "name": "e2e (10)",
           "id": 133799054290,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/44010944901/job/133799054290"
         },
         {
           "name": "e2e (11)",
           "id": 133799054323,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/44010944901/job/133799054323"
         },
         {
@@ -102,31 +102,31 @@
         {
           "name": "e2e (2)",
           "id": 133799054386,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/44010944901/job/133799054386"
         },
         {
           "name": "e2e (3)",
           "id": 133799054392,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/44010944901/job/133799054392"
         },
         {
           "name": "e2e (4)",
           "id": 133799054271,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/44010944901/job/133799054271"
         },
         {
           "name": "e2e (5)",
           "id": 133799054283,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/44010944901/job/133799054283"
         },
         {
           "name": "e2e (6)",
           "id": 133799054250,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/44010944901/job/133799054250"
         },
         {
@@ -138,13 +138,13 @@
         {
           "name": "e2e (8)",
           "id": 133799054301,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/44010944901/job/133799054301"
         },
         {
           "name": "e2e (9)",
           "id": 133799054325,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/44010944901/job/133799054325"
         },
         {
@@ -156,13 +156,13 @@
       ]
     },
     "claims": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "desktop-xvfb",
           "id": 133797733188,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/44010944901/job/133797733188"
         }
       ]
@@ -180,13 +180,13 @@
       ]
     },
     "windows": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "workspace",
           "id": 133797712375,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/44010944927/job/133797712375"
         },
         {
