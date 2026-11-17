@@ -20,7 +20,7 @@ import type { PlatformProject } from "../shared/proto.gen";
 import { useInboxByProject } from "./inbox-count";
 import { names } from "./links";
 import { makers, ownerKey, owners, PERSONAL, type Owner } from "./owners";
-import { follow, go, pathOf } from "./router";
+import { current, follow, go, pathOf } from "./router";
 import { session } from "./session";
 import { placeOf } from "./places-kept";
 
@@ -57,9 +57,11 @@ export function Switcher({ from, project, owner, close, beside = false }: { from
       )}
     </a>
   );
-  // Where you were in it (Arugula #989), else its Overview.
+  // On a machine's page, the same machine in it (Arugula #1164); else where you were in it (Arugula #989), else its Overview.
+  const here = current();
+  const machine = here.page === "machines" && here.at.at === "machine" ? { at: "machine" as const, machine: here.at.machine } : here.page === "machines" && here.at.at === "machines" && here.at.name ? { at: "machines" as const, name: here.at.name } : null;
   const projectRow = (p: PlatformProject) =>
-    row(p.id, placeOf(p.id) ?? pathOf({ page: "project", project: p.id }, names), initialsOf(p), p.name, counts.by.get(p.id) ?? 0, p.id === project, { "data-switcher-project": p.id });
+    row(p.id, (machine && pathOf({ page: "machines", project: p.id, at: machine }, names)) || placeOf(p.id) || pathOf({ page: "project", project: p.id }, names), initialsOf(p), p.name, counts.by.get(p.id) ?? 0, p.id === project, { "data-switcher-project": p.id });
   const group = (o: Owner, heading: ComponentChildren) => (
     <div key={o.key} class="switcher-group" role="group" aria-label={o.name} data-switcher-owner={o.key}>
       <div class="menu-header switcher-head">{heading}</div>

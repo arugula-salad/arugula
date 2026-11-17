@@ -11,6 +11,7 @@ import { OPS, opPath } from "./ops";
 import { FLAG_ALIASES, type FLAGS } from "../shared/proto.gen";
 import { pickFollowed, WATCH_MS } from "./follow";
 import { withProject } from "./new-session";
+import { inShown, shownProject } from "./project-view";
 import {
   decodeFrame,
   encodeFrame,
@@ -38,6 +39,7 @@ import {
   type Presence,
   type RunRequest,
   type ServerMsg,
+  type Session,
   type SessionId,
   type Share,
   type ShareRequest,
@@ -414,6 +416,11 @@ export class Client {
   error: string | null = null;
   session: SessionId | null = null;
   tab: TabId | null = null;
+  /** The session last shown in each project (Arugula #1164), so coming
+   * back to one lands where you were in it. */
+  private lastIn = new Map<string, SessionId>();
+  /** The project the selection was made in. */
+  private shownIn: string | null = shownProject()?.id ?? null;
   readonly activePane = new Map<TabId, PaneId>();
   /** Terminals, by pane id. */
   readonly panes = new Map<PaneId, PaneEntry>();
@@ -1578,11 +1585,35 @@ export class Client {
     if (files.length) await this.sendFiles(pane, files);
   }
 
+  /** The sessions the view shows (Arugula #1164): the shown project's,
+   * every one on the daemon's own page. */
+  shownSessions(): Session[] {
+    const s = this.state;
+    if (!s) return [];
+    // A session placed nowhere is its machine owner's: yours when you own it.
+    return s.sessions.filter((x) => inShown(x.project, !s.roles));
+  }
+
+  /** The view shows another project: show your last session in it here,
+   * else its first, else none. */
+  reselect() {
+    const now = shownProject()?.id ?? null;
+    if (now === this.shownIn) return;
+    if (this.shownIn !== null && this.session !== null) this.lastIn.set(this.shownIn, this.session);
+    this.shownIn = now;
+    this.fixSelection();
+    this.emit();
+  }
+
   private fixSelection() {
     const s = this.state;
     if (!s) return;
     this.restorePlace(s);
-    if (!s.sessions.some((x) => x.id === this.session)) this.session = s.sessions[0]?.id ?? null;
+    const shown = this.shownSessions();
+    if (!shown.some((x) => x.id === this.session)) {
+      const last = this.shownIn === null ? undefined : this.lastIn.get(this.shownIn);
+      this.session = (shown.find((x) => x.id === last) ?? shown[0])?.id ?? null;
+    }
     const tabs = s.sessions.find((x) => x.id === this.session)?.tabs ?? [];
     if (this.tab === null || !tabs.includes(this.tab)) this.tab = tabs[0] ?? null;
   }

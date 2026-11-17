@@ -22,6 +22,12 @@ test.use({ permissions: ["local-network-access"] });
 async function openApp(page: Page, path: (pane: number) => string): Promise<number> {
   await reset(page);
   const [pane] = await panes(page);
+  // The app's machine page shows the project's sessions only (Arugula #1164): put the suite's in it.
+  await page.evaluate((id) => {
+    const c = window.__arugula.client;
+    for (const s of c.state!.sessions) c.intent({ op: "set_session_project", session: s.id, project: { id, name: "Arugula" } });
+  }, P);
+  await expect.poll(() => page.evaluate((id) => window.__arugula.client.state!.sessions.every((s) => s.project?.id === id), P)).toBe(true);
   const body = await fixturePage("./app-frame-page.tsx");
   await page.route(new RegExp(`/p/${P}`), (r) => r.fulfill({ contentType: "text/html", body }));
   await page.goto(path(pane));
