@@ -53,6 +53,13 @@ function readBoards(project: string): Promise<ProjectBoard[]> {
 /** The lists on screen, by project: `boardsChanged` tells them to read again. */
 const watching = new Map<string, Set<() => void>>();
 
+/** Read `project`'s boards again with `read` when they change. */
+function watch(project: string, read: () => void) {
+  const at = watching.get(project) ?? new Set();
+  at.add(read);
+  watching.set(project, at);
+}
+
 /** The project's boards moved (a row was added): every `useBoards` of it reads them again, keeping what it shows until they answer. */
 export function boardsChanged(project: string): void {
   for (const again of watching.get(project) ?? []) again();
@@ -72,12 +79,10 @@ export function useBoards(project: string | undefined): ProjectBoard[] | null {
         () => live && setList((was) => was ?? []),
       );
     void read();
-    const at = watching.get(project) ?? new Set();
-    at.add(read);
-    watching.set(project, at);
+    watch(project, read);
     return () => {
       live = false;
-      at.delete(read);
+      watching.get(project)?.delete(read);
     };
   }, [project]);
   return list;
@@ -107,15 +112,22 @@ export function AllBoardsPage({ all, board }: { all?: boolean; board?: string })
   useEffect(() => {
     setLists(null);
     let live = true;
-    void Promise.all(
-      projects.map((p) =>
-        readBoards(p.id).then(
-          (l): [string, ProjectBoard[]] => [p.id, l],
-          (): [string, ProjectBoard[]] => [p.id, []],
+    const read = () =>
+      void Promise.all(
+        projects.map((p) =>
+          readBoards(p.id).then(
+            (l): [string, ProjectBoard[]] => [p.id, l],
+            (): [string, ProjectBoard[]] => [p.id, []],
+          ),
         ),
-      ),
-    ).then((all) => live && setLists(new Map(all)));
-    return () => void (live = false);
+      ).then((all) => live && setLists(new Map(all)));
+    read();
+    // A board changed in the middle (Arugula #1159): read again, keeping what's shown till then.
+    for (const p of projects) watch(p.id, read);
+    return () => {
+      live = false;
+      for (const p of projects) watching.get(p.id)?.delete(read);
+    };
   }, [key]);
   const shown = projects.flatMap((p) => {
     const l = lists?.get(p.id);
@@ -475,6 +487,8 @@ function BoardMiddle({ p, id, back }: { p: PlatformProject; id: string; back?: C
         cardSessions
         // A board moved to another project (Arugula #972): the page's address goes to its new one.
         onProject={(home) => home !== p.id && homes.set(id, home)}
+        // Closed, reopened, renamed or moved on: its row in the list follows (Arugula #1159).
+        onBoard={() => boardsChanged(p.id)}
         tools={
           // The swarm is the shell's, on control's page (#466).
           <a class="secondary small" href={`${controlOrigin()}/#swarm=board:${id}`} data-board-workers title="This board's agents in the swarm, by the lane of their row">
