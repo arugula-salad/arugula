@@ -71,6 +71,48 @@ test("a card's sessions are on its row: what needs you first, finished ones left
   await expect(page.locator(`[data-pane="${pane}"]`)).toBeVisible();
 });
 
+test("a session's state shows on its row as it moves, without a reload: its live event reads it again", async ({ page }, info) => {
+  // #985's hosted session, from the by-card list; #970's own, from the board's read.
+  let hub = "working";
+  let own = "working";
+  const answer = (pane: number) => {
+    const a = byCard(M, pane);
+    const s = a.groups[1].sessions[0];
+    if (s.kind === "hosted") s.state = hub;
+    return a;
+  };
+  const held = () => ({
+    ...board,
+    zones: board.zones.map((z) => ({ ...z, rows: z.rows.map((r) => (r.id === "row_0970" ? { ...r, sessions: [{ session: "ses_0970eeee", state: own, live: true, branch: "arugula/0970eeee-rail" }] } : r)) })),
+  });
+  const pane = await openApp(page, () => `/p/${P}/boards/brd_00e2e0`);
+  await page.route(`**/api/projects/${P}/sessions/by-card`, (r) => r.fulfill({ json: answer(pane) }));
+  await page.route("**/api/boards/brd_00e2e0", (r) => r.fulfill({ json: held() }));
+  await page.reload();
+  await page.locator('[data-board-view="lanes"]').click();
+  const chip = page.locator('[data-board-row="row_0985"] [data-board-card-session="hosted::ses_0985aaaa"]');
+  const mine = page.locator('[data-board-row="row_0970"] [data-board-session="ses_0970eeee"]');
+  await expect(chip).toContainText("working");
+  await expect(mine).toContainText("working");
+  /** What the platform pushes as a session's state moves (chat's `session` event). */
+  const push = (ses: string) => page.evaluate((ses) => (window as unknown as { __chat: { heard(ev: unknown): void } }).__chat.heard({ type: "session", room: "r", ses }), ses);
+  // Working → needs input → done, on each row, and no reload.
+  hub = own = "needs_input";
+  await push("ses_0985aaaa");
+  await push("ses_0970eeee");
+  await expect(chip).toContainText("needs input");
+  await expect(chip).toHaveAttribute("data-board-card-session-needs", "");
+  await expect(mine).toContainText("needs input");
+  await page.screenshot({ path: info.outputPath("board-sessions-live.png") });
+  hub = own = "done";
+  await push("ses_0985aaaa");
+  await push("ses_0970eeee");
+  // The list is read again no sooner than BY_CARD_SOON_MS after the last read.
+  await expect(chip).toContainText("done", { timeout: 15_000 });
+  await expect(chip).not.toHaveAttribute("data-board-card-session-needs", "");
+  await expect(mine).toContainText("done");
+});
+
 test("Build's panes list has Agents only beside its machine filter; it says when there are none", async ({ page }, info) => {
   const pane = await openApp(page, () => `/p/${P}/machines/panes`);
   const list = page.locator("[data-panes-list]");

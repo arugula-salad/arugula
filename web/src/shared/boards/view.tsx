@@ -46,7 +46,7 @@ import { StepsView } from "./steps-view";
 import { loadDone, loadLinks, loadMode, saveDone, saveLinks, saveMode, stepPlace, type BoardMode, type Reorder } from "./steps";
 import { DocLink, DocPicker } from "./docs";
 import { AttachmentChip, CardSessions, Drawer, Labels, Owners, RowSessionChip, SessionChip, notFinishedTitle, useRowSessions, type Act } from "./card";
-import { BY_CARD_EVERY_MS, sessionsByCard, type SessionsByCard } from "../project-sessions";
+import { useLiveRowSessions } from "./live-sessions";
 import "./bar.css";
 import "./boards.css";
 import { groupFold, groupLaneFold, isFolded, laneFold, loadFolds, saveFolds, type Folds } from "./folds";
@@ -170,7 +170,7 @@ export function BoardPanel({
     if (shown && project) void boards.plane(project).then(setPlane);
     if (project) onProject?.(project);
   }, [project, shown]);
-  const byCard = useByCard(project, cardSessions && shown);
+  const byCard = useLiveRowSessions(project, view?.zones.flatMap((z) => z.rows) ?? [], { shown, cards: !!cardSessions }, () => again());
 
   const again = () => {
     const n = ++seen.current;
@@ -536,30 +536,6 @@ export function BoardPanel({
     </div>
     </CardSessions.Provider>
   );
-}
-
-/** The project's sessions by card while the board is shown, read again a
- * minute later (the hub allows 600 reads an hour); null when `on` is
- * false, before it answers, or where it can't. */
-function useByCard(project: string | undefined, on: boolean): SessionsByCard | null {
-  const [v, setV] = useState<SessionsByCard | null>(null);
-  useEffect(() => {
-    setV(null);
-    if (!on || !project) return;
-    let live = true;
-    const read = () =>
-      sessionsByCard(project).then(
-        (x) => live && setV(x),
-        () => {},
-      );
-    void read();
-    const t = setInterval(() => document.visibilityState === "visible" && void read(), BY_CARD_EVERY_MS);
-    return () => {
-      live = false;
-      clearInterval(t);
-    };
-  }, [project, on]);
-  return v;
 }
 
 /** The board's header, as a Doc's (#929): the title and, at its right, Copy link, Open in browser and ⋯; when it was made and last edited; the goal with the Docs beside it; and the progress as its bottom rule. The panel doesn't know whether the person may write (the pin block has no project), so without `write` the controls still show and the platform's refusal comes back as `act`'s toast. */

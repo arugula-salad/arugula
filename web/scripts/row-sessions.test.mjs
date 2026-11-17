@@ -2,7 +2,7 @@
 // folded away). Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { rowSessions } from "../src/shared/boards/row-sessions.ts";
+import { pushedSessions, rowSessions } from "../src/shared/boards/row-sessions.ts";
 import { finishedStates, hubStanding, stateStanding } from "../src/shared/project-sessions.ts";
 import { DANA, byCard } from "../e2e/sessions-fixture.ts";
 
@@ -64,4 +64,12 @@ test("the Overview and the rows read states alike: what waits on you, failures, 
   assert.equal(finishedStates(["exited", null]), false, "a pane not said isn't finished");
   assert.equal(finishedStates(["failed"]), false, "a failure stays in sight");
   assert.equal(finishedStates([]), false);
+});
+
+test("the pushes a board hears: its rows' own hosted sessions, and the hosted ones on its cards", () => {
+  const rows = [row({ sessions: [{ session: "ses_row" }] }), row({ id: "row_0985", pointer: { kind: "issue", id: "iss_985" } })];
+  assert.deepEqual(pushedSessions(rows, byCard(M, 4)), { board: ["ses_row"], cards: ["ses_0970bbbb", "ses_0971dddd", "ses_0985aaaa"] });
+  // A card on no row, and a computer's session, push nothing here.
+  assert.deepEqual(pushedSessions([row({ id: "row_x", pointer: { kind: "issue", id: "iss_1" } })], byCard(M, 4)), { board: [], cards: [] });
+  assert.deepEqual(pushedSessions(rows, null).cards, []);
 });
