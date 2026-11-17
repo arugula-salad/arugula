@@ -28,6 +28,8 @@ import { ListPage, ListPreview } from "../../shared/ui/list-page";
 import { menuBelow, openMenu, type MenuItem } from "../../shared/ui/menu";
 import { Modal } from "../../shared/ui/modal";
 import { PageHeader } from "../../shared/ui/page-header";
+import { TimeRange, Weekdays } from "../../shared/ui/schedule";
+import { SearchField } from "../../shared/ui/search-field";
 import { SectionHead } from "../../shared/ui/section-head";
 import { SideSheet } from "../../shared/ui/side-sheet";
 import { Chip, Count, HintChip, ObjectChip, StateChip, type Tone } from "../../shared/ui/state-chip";
@@ -231,6 +233,225 @@ function Buttons() {
             </button>
           ))}
         </div>
+      </Sample>
+    </>
+  );
+}
+
+/** One state of a control, named under it. */
+function State({ name, children }: { name: string; children: ComponentChildren }) {
+  return (
+    <div class="design-state" data-design-field-state={name}>
+      {children}
+      <span class="design-state-name">{name}</span>
+    </div>
+  );
+}
+
+/** A box or a dot with its words, as a form has it. */
+function Choice({ children }: { children: ComponentChildren }) {
+  return <label class="design-choice">{children}</label>;
+}
+
+/** Marks a checkbox as some of a list: only code can. */
+const indeterminate = (el: HTMLInputElement | null) => {
+  if (el) el.indeterminate = true;
+};
+
+function Fields() {
+  const [query, setQuery] = useState("");
+  const [found, setFound] = useState("installer");
+  const [days, setDays] = useState([1, 2, 3, 4, 5]);
+  const [range, setRange] = useState({ from: "09:00", to: "17:30" });
+  const [night, setNight] = useState({ from: "22:00", to: "07:00" });
+  const [seg, setSeg] = useState("week");
+  const [sw, setSw] = useState(true);
+  return (
+    <>
+      <Sample label="focus" wide>
+        <span class="dim">Click or Tab into any field below: its line goes accent, with a halo.</span>
+      </Sample>
+      <Sample label="text: 32 on a page (40 on touch, 16px text on a phone)" wide>
+        <State name="empty">
+          <input aria-label="Name, empty" placeholder="Name" />
+        </State>
+        <State name="filled">
+          <input aria-label="Name, filled" value="build" />
+        </State>
+        <State name="invalid">
+          <input aria-label="Name, invalid" aria-invalid="true" value="build/" />
+        </State>
+        <State name="disabled">
+          <input aria-label="Name, disabled" disabled value="build" />
+        </State>
+        <State name="small: 24, in a bar">
+          <input class="small" aria-label="Name, small" placeholder="Name" />
+        </State>
+      </Sample>
+      <Sample label="search: SearchField; the page's main one answers / and shows the key" wide>
+        <State name="empty, with /">
+          <SearchField label="Search the samples" value={query} onValue={setQuery} slash />
+        </State>
+        <State name="filled: Esc clears it">
+          <SearchField label="Search, filled" value={found} onValue={setFound} />
+        </State>
+        <State name="small: 24, in a bar">
+          <SearchField label="Search, small" value="" onValue={noop} small />
+        </State>
+      </Sample>
+      <Sample label="select: the kit's caret on every system" wide>
+        <State name="empty">
+          <select aria-label="Machine, empty">
+            <option value="">Pick a machine</option>
+            <option>mac-mini</option>
+          </select>
+        </State>
+        <State name="filled">
+          <select aria-label="Machine, filled">
+            <option>mac-mini</option>
+            <option>build-vm</option>
+          </select>
+        </State>
+        <State name="invalid">
+          <select aria-label="Machine, invalid" aria-invalid="true">
+            <option value="">Pick a machine</option>
+          </select>
+        </State>
+        <State name="disabled">
+          <select aria-label="Machine, disabled" disabled>
+            <option>mac-mini</option>
+          </select>
+        </State>
+      </Sample>
+      <Sample label="textarea: grows by hand, prose line-height" wide>
+        <State name="empty">
+          <textarea aria-label="Note, empty" placeholder="Add a note" rows={2} />
+        </State>
+        <State name="filled">
+          <textarea aria-label="Note, filled" rows={2} value="Ship it after the screenshots." />
+        </State>
+        <State name="invalid">
+          <textarea aria-label="Note, invalid" aria-invalid="true" rows={2} value="" />
+        </State>
+        <State name="disabled">
+          <textarea aria-label="Note, disabled" disabled rows={2} value="Read only" />
+        </State>
+      </Sample>
+      <Sample label="checkbox, a box: pick, then press a button to commit" wide>
+        <State name="off">
+          <Choice>
+            <input type="checkbox" /> Open
+          </Choice>
+        </State>
+        <State name="on">
+          <Choice>
+            <input type="checkbox" checked /> Closed
+          </Choice>
+        </State>
+        <State name="indeterminate: some of a list">
+          <Choice>
+            <input type="checkbox" ref={indeterminate} /> All
+          </Choice>
+        </State>
+        <State name="invalid">
+          <Choice>
+            <input type="checkbox" aria-invalid="true" /> I agree
+          </Choice>
+        </State>
+        <State name="disabled">
+          <Choice>
+            <input type="checkbox" disabled /> Off
+          </Choice>
+          <Choice>
+            <input type="checkbox" disabled checked /> On
+          </Choice>
+        </State>
+      </Sample>
+      <Sample label="radio, a dot: one of a few that each need words" wide>
+        <State name="off, on">
+          <Choice>
+            <input type="radio" name="design-radio" /> Everyone in the project
+          </Choice>
+          <Choice>
+            <input type="radio" name="design-radio" checked /> Only me
+          </Choice>
+        </State>
+        <State name="invalid">
+          <Choice>
+            <input type="radio" name="design-radio-bad" aria-invalid="true" /> Pick one
+          </Choice>
+        </State>
+        <State name="disabled">
+          <Choice>
+            <input type="radio" name="design-radio-off" disabled /> Off
+          </Choice>
+          <Choice>
+            <input type="radio" name="design-radio-off" disabled checked /> On
+          </Choice>
+        </State>
+      </Sample>
+      <Sample label="switch: takes effect now, no button" wide>
+        <State name="off">
+          <input type="checkbox" role="switch" class="sw-switch" aria-label="Off" />
+        </State>
+        <State name="on">
+          <input type="checkbox" role="switch" class="sw-switch" aria-label="On" checked={sw} onChange={(e) => setSw(e.currentTarget.checked)} />
+        </State>
+        <State name="partial">
+          <input type="checkbox" role="switch" class="sw-switch partial" aria-label="Partly on" title="Some of it: read, not write" />
+        </State>
+        <State name="busy">
+          <input type="checkbox" role="switch" class="sw-switch" aria-label="Being turned" aria-busy="true" checked />
+        </State>
+        <State name="disabled">
+          <input type="checkbox" role="switch" class="sw-switch" aria-label="Off, disabled" disabled />
+          <input type="checkbox" role="switch" class="sw-switch" aria-label="On, disabled" disabled checked />
+        </State>
+      </Sample>
+      <Sample label="segments: one of two to four, short (Buttons has the sizes)" wide>
+        <State name="one on">
+          <div class="seg" role="group" aria-label="Range">
+            {["day", "week", "month"].map((v) => (
+              <button key={v} type="button" aria-pressed={seg === v} onClick={() => setSeg(v)}>
+                {v[0].toUpperCase() + v.slice(1)}
+              </button>
+            ))}
+          </div>
+        </State>
+        <State name="disabled">
+          <div class="seg" role="group" aria-label="Range, disabled">
+            {["day", "week", "month"].map((v) => (
+              <button key={v} type="button" aria-pressed={v === "week"} disabled>
+                {v[0].toUpperCase() + v.slice(1)}
+              </button>
+            ))}
+          </div>
+        </State>
+      </Sample>
+      <Sample label="weekday chips: Weekdays, any of the seven days" wide>
+        <State name="none">
+          <Weekdays label="Days, none" value={[]} onChange={noop} />
+        </State>
+        <State name="some">
+          <Weekdays label="Days" value={days} onChange={setDays} />
+        </State>
+        <State name="disabled">
+          <Weekdays label="Days, disabled" value={[6, 7]} onChange={noop} disabled />
+        </State>
+      </Sample>
+      <Sample label="time range: TimeRange, from and to in one field" wide>
+        <State name="empty">
+          <TimeRange label="Empty" from="" to="" onChange={noop} />
+        </State>
+        <State name="filled">
+          <TimeRange label="Day" from={range.from} to={range.to} onChange={setRange} />
+        </State>
+        <State name="overnight">
+          <TimeRange label="Night" from={night.from} to={night.to} onChange={setNight} />
+        </State>
+        <State name="disabled">
+          <TimeRange label="Disabled" from="09:00" to="17:00" onChange={noop} disabled />
+        </State>
       </Sample>
     </>
   );
@@ -664,6 +885,7 @@ const SECTIONS = [
   ["type", "Type"],
   ["colour", "Colour"],
   ["buttons", "Buttons"],
+  ["fields", "Fields"],
   ["headers", "Headers"],
   ["rows", "Rows and the selected state"],
   ["chips", "Chips"],
@@ -741,6 +963,9 @@ export function DesignPage() {
         </Section>
         <Section id="buttons" title="Buttons" use="Three heights; one primary to a place; danger beside a variant; the segmented control for a choice of one." from="shared/buttons.css">
           <Buttons />
+        </Section>
+        <Section id="fields" title="Fields" use="The quiet hairline: a field is outlined, a button is filled. A switch when it takes effect now, a box when a button commits it, a dot for one of a few that need words, segments for one of two to four, chips for days." from="shared/fields.css (or .field), shared/switch.css: .sw-switch, shared/ui/search-field.tsx, shared/ui/schedule.tsx, shared/buttons.css: .seg">
+          <Fields />
         </Section>
         <Section id="headers" title="Headers" use="Two headers and nothing else: the bar for a pane, a block or a column; the page header for a place you go to." from="shared/ui/bar.tsx, shared/ui/page-header.tsx">
           <Headers />

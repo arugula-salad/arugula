@@ -118,13 +118,55 @@ phone's tabs, Slate/Latte). `role="group"` with `aria-pressed` for a filter,
 (32), `.touch` (40). A row of actions (the pane presets) is a group of bar
 buttons, not a segmented control, because nothing in it is ever on.
 
+## Fields
+
+*(Built: #1097–#1101. `shared/fields.css`, `shared/switch.css`,
+`shared/ui/search-field.tsx`, `shared/ui/schedule.tsx`; `/design#fields`
+shows each in its states.)*
+
+**The quiet hairline: a field is outlined, a button is filled,** so the shape
+says "type here" or "press here". A field is a 1px `--line-strong` line on the
+page's `--bg`; under the pointer the line darkens; on focus it goes accent
+with a 3px accent halo. Invalid is a `--danger` line (`aria-invalid="true"`)
+with the error as a red line by the field; disabled is the same field at half
+strength. A placeholder is `--dim`.
+
+- **Every `<input>`, `<select>` and `<textarea>` gets it** at no specificity,
+  so a bare one is right. `.field` is the same look as a class, for a place
+  whose own rule would win. Don't restyle a field in an area's CSS.
+- **Sizes:** 32 on a page, 24 in a bar (inside a bar, or `.small`), 40 on
+  touch (32 in a bar there). Text is `--t-field`: 13, and **16 on a phone**,
+  or iOS zooms.
+- **A select** draws the kit's caret, the same on every system. **A
+  textarea** grows by hand, at the prose line-height. **A time** reads in
+  the mono.
+- **Search** is `SearchField`: the glass, the box and, for a page's main
+  search, the `/` key (shown in the box until you type). Esc clears it, and
+  on an empty box leaves it.
+
+### Choices
+
+Five controls, one rule for which:
+
+| control | use it when | is |
+|---|---|---|
+| switch | it takes effect now, with no button | `.sw-switch` (`role="switch"`); `.partial` for some of it, `aria-busy` while it's being turned |
+| box | you pick, then a button commits it | a checkbox; indeterminate (set in code) is "some of a list" |
+| dot | one of a few, each needing words | a radio |
+| segments | one of two to four, short | `.seg` (Buttons) |
+| weekday chips | any of the days of the week | `Weekdays` |
+
+Boxes and dots are drawn by the kit: off is the field's hairline, on is the
+accent with a tick or a dot; 16 (20 on touch). A switch is 32×18, its knob on
+the accent when on.
+
 ### Days and times
 
 `shared/ui/schedule.tsx`. Any of the seven days is `Weekdays`: a row of
-toggle buttons (M T W T F S S, each `aria-pressed`, the "on" tint). They're
-buttons, not chips. A from-to time is `TimeRange`: two time fields in one
-outlined field, never drawn as disabled, saying "into the next morning" when
-it ends before it starts. Settings' quiet hours use both.
+toggle buttons (M T W T F S S, each `aria-pressed`, the "on" tint), 40 on
+touch. They're buttons, not chips. A from-to time is `TimeRange`: two time
+fields in one outlined field, so neither end reads as off, saying "into the next
+morning" when it ends before it starts. Settings' quiet hours use both.
 
 ## Headers
 
