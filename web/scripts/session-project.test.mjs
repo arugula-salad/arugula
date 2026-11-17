@@ -9,7 +9,7 @@ const B = "prj_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const all = {
   me: { account: "acc_1", login: "ada", name: "Ada" },
   projects: [
-    { id: A, name: "Personal", team: null },
+    { id: A, name: "Default", team: null },
     { id: B, name: "Acme", team: { id: "team_1", name: "Acme", role: "member", members: [] } },
   ],
   hosted: false,

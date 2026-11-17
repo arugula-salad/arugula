@@ -56,7 +56,7 @@ export const SCOPES: { [K in SettingsScopeKey]: SettingsScope<K> } = {
   team: {
     key: "team",
     title: "Team and billing",
-    whose: "A team, or Personal: who's in it, what it pays, and what its projects start with.",
+    whose: "A team, or just you: who's in it, what it pays, and what its projects start with.",
     pick: "Team",
     sections: (r) => <OwnerSettings owner={r.owner} />,
   },

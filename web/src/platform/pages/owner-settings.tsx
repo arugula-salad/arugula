@@ -90,7 +90,7 @@ export function OwnerSettings({ owner }: { owner: string }) {
   useSubscribe((fn) => session.subscribe(fn));
   const projects = projectsOf(owner);
   const team = owner === "personal" ? null : session.projects.find((p) => p.team?.id === owner)?.team ?? null;
-  const name = owner === "personal" ? "Personal" : (team?.name ?? (projects[0] && ownerOf(projects[0]).name) ?? "Team");
+  const name = owner === "personal" ? "Just you" : (team?.name ?? (projects[0] && ownerOf(projects[0]).name) ?? "Team");
   const role = roleIn(owner);
   if (owner !== "personal" && !team && projects.length === 0)
     return (
@@ -99,7 +99,7 @@ export function OwnerSettings({ owner }: { owner: string }) {
       </Section>
     );
   // The prototype's two bands: the owner's own, then what its projects start with.
-  const band = team ? "Team" : "Personal";
+  const band = team ? "Team" : "Just you";
   const every = "Every project";
   return (
     <>

@@ -18,7 +18,7 @@ const roster = [
   { account: "acct_b", name: "Jo", role: "editor" },
 ];
 const projects = (role: string) => [
-  { id: ME, name: "Personal", owner: { kind: "personal" }, team: null },
+  { id: ME, name: "Default", owner: { kind: "personal" }, team: null },
   { id: SITE, name: "Site", owner: { kind: "team", id: "tm_1", name: "Acme" }, team: { id: "tm_1", name: "Acme", role, members: roster } },
 ];
 

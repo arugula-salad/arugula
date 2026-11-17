@@ -117,7 +117,7 @@ function Path({ r, project }: { r: Route; project: string | undefined }) {
   const section = sectionOf(r);
   const crumbs: { label: string; to?: string; data: string }[] = [];
   if (project && p) {
-    crumbs.push({ label: p.team?.name ?? "Personal", data: "owner" });
+    crumbs.push({ label: p.team?.name ?? "Just you", data: "owner" });
     crumbs.push({ label: p.name, to: pathOf({ page: "project", project }, names), data: "project" });
     if (r.page === "project" && r.board && r.card) {
       // A card open on the Overview: each level a step up (the prototype's zoom path).

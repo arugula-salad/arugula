@@ -14,7 +14,7 @@ async function open(page: Page, quiet: Quiet[]) {
   let prefs = { channels: "mentions", dms: "all", threads: "all", snooze_until: null, tz: "America/New_York", quiet, all_notices: false, paused: false };
   const json = (r: Route, body: unknown, status = 200) => r.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
   await page.route(/\/api\//, (r) => json(r, { error: "not here" }, 404));
-  await page.route(/\/api\/projects$/, (r) => json(r, { me: { account: "acct_a", login: "sam", name: "Sam" }, projects: [{ id: "prj_aaaa0001", name: "Personal", owner: { kind: "personal" }, team: null }], hosted: false }));
+  await page.route(/\/api\/projects$/, (r) => json(r, { me: { account: "acct_a", login: "sam", name: "Sam" }, projects: [{ id: "prj_aaaa0001", name: "Default", owner: { kind: "personal" }, team: null }], hosted: false }));
   await page.route(/\/api\/notify\/prefs$/, (r) => {
     if (r.request().method() === "POST") {
       const body = r.request().postDataJSON();

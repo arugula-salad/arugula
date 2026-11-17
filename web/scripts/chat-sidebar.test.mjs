@@ -77,7 +77,7 @@ test("a project's page lists its team's rooms, and Personal the rooms of no team
   const other = { id: "o", team: "t2" };
   const pane = { id: "p", team: null };
   const acme = { team: "t1", name: "Acme" };
-  const own = { team: null, name: "Personal" };
+  const own = { team: null, name: "Default" };
   assert.deepEqual([ch, other, pane].filter((r) => inScope(r, acme)).map((r) => r.id), ["c"]);
   assert.deepEqual([ch, other, pane].filter((r) => inScope(r, own)).map((r) => r.id), ["p"]);
   assert.deepEqual([ch, other, pane].filter((r) => inScope(r)).map((r) => r.id), ["c", "o", "p"]);

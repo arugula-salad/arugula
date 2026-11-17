@@ -17,7 +17,7 @@ const roster = [
   { account: "acct_b", name: "Jo", role: "editor" },
 ];
 const projects = (role: string) => [
-  { id: ME, name: "Personal", owner: { kind: "personal" }, team: null },
+  { id: ME, name: "Default", owner: { kind: "personal" }, team: null },
   { id: SITE, name: "Site", owner: { kind: "team", id: "tm_1", name: "Acme" }, team: { id: "tm_1", name: "Acme", role, members: roster } },
   { id: SHOP, name: "Shop", owner: { kind: "team", id: "tm_2", name: "Bakery" }, team: { id: "tm_2", name: "Bakery", role: "viewer", members: roster } },
 ];
@@ -78,9 +78,9 @@ test("a team's owner: two bands, the roster with a ↗ to change it, the team's 
   await expect(section(page, "labs")).toContainText("Labs for Acme's machines");
 });
 
-test("Personal: your machines in no team, a way to move one into a team, and no roster", async ({ page }) => {
+test("Just you: your machines in no team, a way to move one into a team, and no roster", async ({ page }) => {
   await open(page, "/settings/team/personal");
-  await expect(page.locator(".settings-list .list-group-title")).toHaveText(["Personal", "Every project"]);
+  await expect(page.locator(".settings-list .list-group-title")).toHaveText(["Just you", "Every project"]);
   await expect(row(page, "members")).toHaveCount(0);
   await expect(row(page, "machines").locator(".list-row-detail")).toHaveText("1 machine · online");
   const machines = section(page, "machines");

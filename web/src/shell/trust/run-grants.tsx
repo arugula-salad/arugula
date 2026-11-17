@@ -37,7 +37,7 @@ export function RunGrants({ s }: { s: ControlSession }) {
     const [d, p] = await Promise.all([s.delegations(), api<PlatformProjects>("/api/projects", undefined, platformFetch).catch(() => null)]);
     const owned = (p?.projects ?? [])
       .filter((x) => !x.team || x.team.role === "owner")
-      .map((x) => ({ id: x.id, name: x.team ? x.name : "Personal", owner: x.team ? `team:${x.team.id}` : `account:${s.account}` }));
+      .map((x) => ({ id: x.id, name: x.name, owner: x.team ? `team:${x.team.id}` : `account:${s.account}` }));
     const out: Row[] = [];
     for (const x of owned) {
       const live = d.delegations.find((l) => l.delegation.project === x.id && l.delegation.owner === x.owner && l.delegation.key === d.key && !l.revoke && !l.ended);

@@ -134,7 +134,7 @@ export function Overrides({ p }: { p: PlatformProject }) {
         <p>
           The defaults are in{" "}
           <a href={table} onClick={(e) => follow(e, table)}>
-            {name}'s settings
+            {owner === "personal" ? "your settings" : `${name}'s settings`}
           </a>
           , with every project's choices side by side.
         </p>

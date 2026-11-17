@@ -12,7 +12,7 @@ const ISSUE = "iss_0000c0de";
 /** Where `GUARD_SHOTS=dir` puts the pictures (the PR's Before | After). */
 const SHOTS = process.env.GUARD_SHOTS;
 
-const projects = [{ id: P, name: "Personal", owner: { kind: "personal" }, team: null }];
+const projects = [{ id: P, name: "Default", owner: { kind: "personal" }, team: null }];
 const issue = {
   id: ISSUE,
   project: P,

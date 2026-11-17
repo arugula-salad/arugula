@@ -45,7 +45,7 @@ window.fetch = async (input, init) => {
     return json({
       me: { account: "acct_a", login: "sam", name: "Sam" },
       projects: [
-        { id: "prj_aaaa0001", name: "Personal", owner: { kind: "personal" }, team: null },
+        { id: "prj_aaaa0001", name: "Default", owner: { kind: "personal" }, team: null },
         { id: "prj_aaaa0002", name: "Arugula", owner: { kind: "team", id: "tm_1", name: "Arugula team" }, team: { id: "tm_1", name: "Arugula team", role: "owner", members: [{ account: "acct_a", name: "Sam", role: "owner" }, { account: "acct_b", name: "Jo", role: "editor" }] } },
         { id: "prj_aaaa0003", name: "Site", owner: { kind: "team", id: "tm_1", name: "Arugula team" }, team: null },
       ],
