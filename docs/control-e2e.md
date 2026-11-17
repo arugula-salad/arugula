@@ -88,10 +88,15 @@ terminal traffic is TLS to the relay.
   `localStorage["arugula.machine-tokens"] = "off"`, still makes the
   account's first browser its first device, self-signed, with no screen.
   A page that is one of the account's devices keeps its key, and is still
-  what approves `arugula login` (a `cli` device, until the CLI has a session
-  of its own, #1018) and the phone app; a page without one points the CLI
-  at `arugula login --browser`. Removing a machine from such a page is
-  control's word too (`DELETE /api/daemons/{id}`, #1017).
+  what approves `arugula login --device` (a `cli` device) and the phone
+  app; a page without one points the CLI at `arugula login --browser`.
+  Plain `arugula login` signs in from a browser (#1151), with a CLI's own
+  kind of session (#1018): control lets it reach what a CLI device's
+  signature reaches and refuses it every route that only the page calls
+  (approvals, passkeys, devices, joins, teams' members, invites and lock,
+  machine moves and shares, deploy approvals, standing run grants), since
+  an agent on its machine can read its file. Removing a machine from such
+  a page is control's word too (`DELETE /api/daemons/{id}`, #1017).
 - **What still needs you, not control.** Passkeys approve deploys, standing
   run grants and owner changes: a user-verified assertion over the
   action's bytes ([aru-126](decisions/aru-126-device-keys-are-the-machine-plane-s-passkeys-approve.md)).
@@ -2004,13 +2009,21 @@ only an approval does.
 
 ### Page-only actions need a browser and a passkey
 
-A CLI's login signs its requests with a key file on its machine, where
-an agent can read it. So it's a session only where routes.toml's
-`clients` lists `cli` (`clients::gate`, 401 `page_only` elsewhere). What
-only the page does takes the session cookie alone (`auth::PageSession`):
+A CLI's login is a file on its machine, where an agent can read it: a
+`cli` device's key that signs its requests, or (#1018, the default since
+#1151) a session from a browser's Allow whose kind is the CLI's
+(`sessions.via = cli`: it asked `/auth/app` with the `cli` feature; one
+from an older CLI, which sends no User-Agent, counts as one too). Either
+is a session only where routes.toml's `clients` lists `cli`
+(`clients::gate`, 401 `page_only` elsewhere), so each route says whether
+a CLI may call it, and one that approves, grants a passkey's power or
+changes who may reach what leaves `cli` out. The platform hears a CLI's
+session as a CLI, which never approves a deploy. What only the page does
+takes the page's session cookie alone (`auth::PageSession`):
 
-- allowing the desktop app's sign-in (a CLI could otherwise allow a
-  sign-in it started itself and redeem it for a cookie);
+- allowing the desktop app's or a CLI's sign-in (a CLI could otherwise
+  allow a sign-in it started itself and redeem it for a session); the
+  Allow screen says which one asks;
 - enrolling and approving devices, and machines' joins;
 - recovery codes;
 - adding a passkey (which reads the cookie itself, `session_of`).

@@ -759,6 +759,9 @@ export interface AppLogin {
   code?: string;
   /** From #758 on: the public half of the app's device keys, hex. */
   device?: { noise: string; sign: string };
+  /** Which one asks (#1018): the CLI's `arugula login`, or the desktop
+   * app. None from a control before then. */
+  kind?: "app" | "cli";
 }
 
 /** A browser's name in its account's device list. */

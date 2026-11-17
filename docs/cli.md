@@ -13,27 +13,34 @@ and listed by `arugula help plumbing`. `arugula inbox` is the follow-up hook
 
 ## Signing in to Arugula cloud
 
-`arugula login [URL]` makes this CLI one of the account's devices: it shows
-a code to approve from a device you already have (`--account FINGERPRINT`
-checks the account too, for an older control). Since #1004 browsers sign in
-with no device key, so only one that was a device before can approve it;
-the CLI and a keyless browser's page both point to `arugula login
---browser` instead. `--host NAME` then asks
-control for a machine token first (`POST /api/machines/{id}/token`) and opens
-a channel with it and a key made for that channel alone; it uses the device
-key only when control gives none (a control without an issuer key) or the
-machine's daemon is older than tokens.
-
-`arugula login --browser [URL]` signs in with no key (aru-141): it prints a
-link to control's page; click Allow in a browser that's signed in, and the
-browser hands the CLI a one-time grant on a loopback port, which the CLI
-swaps, with a verifier only it holds, for a session of your account
+`arugula login [URL]` signs in from a browser, with no key (aru-141): it
+prints a link to control's page; click Allow in a browser that's signed in,
+and the browser hands the CLI a one-time grant on a loopback port, which the
+CLI swaps, with a verifier only it holds, for a session of your account
 (`cli-session.json` in the config dir), the way the desktop app signs in
 (control's `/auth/app`). If the browser is on another computer (the CLI over
-ssh), paste the address it lands on into the CLI. It's opt-in for now: the
-session is a page's as far as control can tell, and any agent on this machine
-can read the file, so it stays off by default until control gives a CLI a
-session kind that page-only routes refuse. `arugula logout` ends the session.
+ssh), paste the address it lands on into the CLI. `--browser` says the same
+and is kept for scripts. `arugula logout` ends the session.
+
+The session is a CLI's, not a browser's (#1018): any agent on this machine
+can read its file, so control lets it do what the CLI does (machines and
+machine tokens, projects, issues, grants, runs) and refuses it what only a
+browser's page does: allowing a sign-in, passkeys, approving devices, joins
+and deploys, standing run grants, and changing a team's members. Allow
+screens say which one asks, the CLI or the desktop app. A control too old to
+tell the two apart answers without saying it's a CLI's session; then plain
+`arugula login` joins this terminal as one of your devices instead (below),
+and `arugula login --browser` stops (#1151).
+
+`arugula login --device [URL]` makes this CLI one of the account's devices:
+it shows a code to approve from a device you already have (`--account
+FINGERPRINT` checks the account too, for an older control). Since #1004
+browsers sign in with no device key, so only one that was a device before
+can approve it. `--host NAME` then asks control for a machine token first
+(`POST /api/machines/{id}/token`) and opens a channel with it and a key made
+for that channel alone; it uses the device key only when control gives none
+(a control without an issuer key) or the machine's daemon is older than
+tokens.
 
 ## Who reached a machine
 

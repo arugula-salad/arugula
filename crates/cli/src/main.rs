@@ -409,8 +409,9 @@ enum Command {
     /// Sign this CLI in to Arugula cloud.
     ///
     /// So `--host NAME` reaches every machine on your account, directly or through
-    /// control's relay. Shows a code to approve from a signed-in device; `--browser`
-    /// prints a link to click Allow on in a signed-in browser instead.
+    /// control's relay. Prints a link to click Allow on in a browser that's signed
+    /// in; `--device` joins this terminal as one of your devices instead, with a
+    /// code to approve from a signed-in device.
     Login(cmd::login::Args),
     /// Sign this CLI out of Arugula cloud (or forget its device key).
     Logout,

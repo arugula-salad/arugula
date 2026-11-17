@@ -20,7 +20,9 @@ import { AddedAt, clearHash, dropHash } from "./common";
  * nothing, so there's nothing to compare (#758). A CLI on another computer
  * takes the address the browser lands on, pasted by whoever ran it.
  * Since aru-141 (#1004) the app's window isn't made a device: it reaches
- * machines with tokens. An app from before #758 still shows a code. */
+ * machines with tokens. An app from before #758 still shows a code. The
+ * heading says which one asks once control says (#1018): a CLI's session
+ * is its own kind, which approves nothing. */
 export function AppLoginPrompt({ s, id }: { s: ControlSession; id: string }) {
   const [a, setA] = useState<AppLogin | null>(null);
   const [err, setErr] = useState("");
@@ -28,16 +30,17 @@ export function AppLoginPrompt({ s, id }: { s: ControlSession; id: string }) {
   useEffect(() => {
     s.showAppLogin(id).then(setA, (e: Error) => setErr(e.message));
   }, [id]);
+  const cli = a?.kind === "cli";
   return (
     <Modal close={clearHash}>
-      <h2>Sign in the app?</h2>
+      <h2 data-app-login-kind={a?.kind ?? ""}>{cli ? "Sign in the CLI?" : "Sign in the app?"}</h2>
       {err ? <p class="control-error" data-app-login-error>{err}</p> : null}
       {a?.allowed ? (
-        <p data-app-login-error>This sign-in was already allowed. Start it again in the app or CLI if it didn't finish.</p>
+        <p data-app-login-error>This sign-in was already allowed. Start it again in the {cli ? "terminal" : "app or CLI"} if it didn't finish.</p>
       ) : a ? (
         <>
           <p>
-            <b data-app-login-name>{a.name}</b> asks to sign in as you.
+            <b data-app-login-name>{a.name}</b> asks to sign in as you{cli ? ", as the Arugula command line" : ""}.
             {a.code ? (
               <>
                 {" "}
@@ -50,6 +53,12 @@ export function AppLoginPrompt({ s, id }: { s: ControlSession; id: string }) {
               It asked from another network ({a.from}) than this browser's. If you didn't start it yourself, on a computer of yours, cancel.
             </p>
           )}
+          {cli ? (
+            <p data-app-login-cli>
+              It reaches your machines and does what the command line does. It can't approve sign-ins, devices or deploys, add passkeys or change a
+              team's members: agents on that computer can read its sign-in.
+            </p>
+          ) : null}
           <p class="dim">
             Only the app or CLI that asked can finish it. If you didn't just press Sign in in the Arugula app, or run <code>arugula login</code>,
             cancel: someone may have sent you this link.
