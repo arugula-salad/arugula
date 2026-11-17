@@ -1298,14 +1298,14 @@ export class ControlSession {
         this.enrollment = undefined;
       }
       // aru-141: a browser that would wait for another device's approval
-      // reaches its machines with machine tokens instead. One that becomes
-      // a device at once still does: the account's first browser, the app's
-      // window a browser signed in, one whose passkey is a device already,
-      // and one that came to approve a machine's join or use a recovery code
-      // (which need a device), until joins take tokens too (#993, #1004).
-      // A control that signs no tokens leaves it to be approved as before.
+      // reaches its machines with machine tokens instead, and adds a
+      // machine's join in one click (#1003). One that becomes a device at
+      // once still does: the account's first browser, the app's window a
+      // browser signed in, one whose passkey is a device already, and one
+      // here to use a recovery code (#1004). A control that signs no tokens
+      // leaves it to be approved as before.
       const mode = tokenMode();
-      if (!this.enrollment && mode !== "off" && me.root !== null && !this.handed && !joinInHash() && !recoverAsked() && (await controlIssues())) {
+      if (!this.enrollment && mode !== "off" && me.root !== null && !this.handed && !recoverAsked() && (await controlIssues())) {
         if (!(this.fromPasskey && (await this.rejoin()))) this.tokens = true;
       }
       if (!this.enrollment && !this.tokens) await this.enroll(me.root);
@@ -2596,6 +2596,17 @@ export class ControlSession {
     const j = await api<JoinRequest>(`/api/joins/${c}`);
     if ((await joinCode(j.cert)) !== c) throw new Error("that request doesn't match its code: not approving it");
     return j;
+  }
+
+  /** #1003: add a machine's join in one click, as this signed-in person,
+   * with no device's signature: control makes it `team`'s (one I own or
+   * edit) or this account's, and its poll answers with where it went. The
+   * machine pins no account root, so devices don't reach it by their keys
+   * (aru-141); machine tokens do. What a browser that isn't one of the
+   * account's devices does; a device signs the join, as before. */
+  async addJoin(code: string, team: string | null = null) {
+    await this.approving(api(`/api/joins/${code}/approve`, { team }));
+    await this.refresh();
   }
 
   /** Teams I can put my machines in (#332): any I'm in, but only those I

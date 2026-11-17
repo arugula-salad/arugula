@@ -89,11 +89,9 @@ interface Setup {
   control: {
     joined?: string;
     team?: string;
-    /** `code` is the whole code: with the join secret after a dot (#760). */
+    /** `code` is the whole code: with the join secret after a dot (#760).
+     * `approve` opens control with it, where a signed-in person clicks Add. */
     pending?: { code: string; approve: string; expires_ms: number };
-    /** Approved by an older control's page (no join secret, #760): the
-     * account's fingerprint, to check before it's saved. */
-    confirm?: { account: string; approver: string; place: string };
     error?: string;
     /** #330: control said this machine's old key was removed, so the join
      * waiting has a new key. */
@@ -306,16 +304,18 @@ function GettingStarted({ client, section, close }: { client: Client | null; sec
       .catch(() => {});
   }, []);
 
-  // While a join waits for approval (or was just confirmed and the daemon
-  // is picking it up), look for the answer.
-  const [confirmed, setConfirmed] = useState(false);
-  const waiting = !!setup?.control.pending || (confirmed && !setup?.control.joined);
+  // While a join waits for someone to click Add, look for the answer: the
+  // daemon saves it as soon as control says (#1003).
+  const waiting = !!setup?.control.pending;
   useEffect(() => {
     if (!waiting) return;
     const t = setInterval(async () => {
       const r = await fetch(`${opPath("setup.get")}?part=control`).catch(() => null);
       const got = r?.ok ? ((await r.json()) as Pick<Setup, "control">) : null;
-      if (got) setSetup((s) => (s ? { ...s, control: got.control } : s));
+      if (!got) return;
+      setSetup((s) => (s ? { ...s, control: got.control } : s));
+      // The banner and the host menu's line (#325) catch up.
+      if (got.control.joined) refreshControlState();
     }, 2000);
     return () => clearInterval(t);
   }, [waiting]);
@@ -390,7 +390,6 @@ function GettingStarted({ client, section, close }: { client: Client | null; sec
             manual={manual}
             refresh={refresh}
             setSetup={setSetup}
-            onConfirmed={() => setConfirmed(true)}
             close={close}
           />
         )}
@@ -618,13 +617,13 @@ function hostOf(url: string): string {
   }
 }
 
-/** A join code to approve, big: with a join secret (#760), the secret
+/** A join code, big (`typed`: smaller, to type elsewhere): with a join secret (#760), the secret
  * goes on a line of its own after the code. The link carries both; typed,
  * it's all of it, dot included. */
-function WholeCode({ code }: { code: string }) {
+function WholeCode({ code, typed = false }: { code: string; typed?: boolean }) {
   const dot = code.indexOf(".");
   return (
-    <div class="start-code-big" data-start-code>
+    <div class={typed ? "start-code-big start-code-typed" : "start-code-big"} data-start-code>
       {dot < 0 ? (
         code
       ) : (
@@ -637,10 +636,11 @@ function WholeCode({ code }: { code: string }) {
   );
 }
 
-/** #326: joining this machine is one approval, of its code, on a device
- * already in the account, where the account or team is picked. Approving
- * a browser (or the app's window) as a device is another, for reaching
- * machines from it, and joining doesn't need it: the step says so. */
+/** #1003: joining this machine is one click. Connect opens Arugula cloud
+ * with its code, and a signed-in person clicks Add there, picking their
+ * account or a team; the daemon saves the join as soon as control says,
+ * with no fingerprint to compare (aru-141: control decides who reaches a
+ * machine). */
 function Cloud({
   name,
   client,
@@ -650,7 +650,6 @@ function Cloud({
   manual,
   refresh,
   setSetup,
-  onConfirmed,
   close,
 }: {
   name: string;
@@ -661,7 +660,6 @@ function Cloud({
   manual: boolean;
   refresh: () => Promise<void>;
   setSetup: (fn: (s: Setup | null) => Setup | null) => void;
-  onConfirmed: () => void;
   close: () => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -686,20 +684,6 @@ function Cloud({
     await refresh();
     setBusy(false);
   };
-  // The person compared the account's fingerprints (an older control, with
-  // no join secret, #760): keep the join, or drop it.
-  const confirm = async (same: boolean) => {
-    setBusy(true);
-    const r = await post(opPath("setup.control_confirm"), { same });
-    const got = (r as { control?: Setup["control"] }).control;
-    if (got) setSetup((s) => (s ? { ...s, control: got } : s));
-    if (same) {
-      onConfirmed();
-      // The banner and the host menu's line (#325) catch up.
-      refreshControlState();
-    }
-    setBusy(false);
-  };
   // Why this machine is out, and what happened since (#325, #330), above
   // whatever comes next: the code to approve, or the button.
   const removed = c?.removed;
@@ -710,7 +694,7 @@ function Cloud({
         {dropped.said ? ` Arugula cloud says: ${dropped.said}.` : ""}{" "}
         {removed
           ? `Its key can't come back, so it made a new one (${removed.new_key}) and asks to join again; the old one is kept at ${removed.kept}.`
-          : "Join again to put it back; the approver picks the account or team."}
+          : "Join again to put it back; you pick the account or team in Arugula cloud."}
       </p>
     </div>
   );
@@ -740,45 +724,24 @@ function Cloud({
           <Together joined={joined} client={client} close={close} />
           <p class="start-dim" data-start-next-device>
             {desktopApp()
-              ? "Next, if you like: sign the app in and approve it as a device, so this window reaches your other machines too. It's optional: this machine is in already."
-              : "To reach it from another browser or phone, sign in to the cloud there. Each one is approved once as a device; this machine doesn't need that."}
+              ? "Next, if you like: sign the app in, so this window reaches your other machines too. It's optional: this machine is in already."
+              : "To reach it from another browser or phone, sign in to Arugula cloud there."}
           </p>
         </>
-      ) : c?.confirm ? (
-        <div class="start-code" data-start-confirm>
-          <div class="start-kicker">Approved on {c.confirm.approver || "your device"}. Is this your account?</div>
-          <div class="start-code-big start-fp" data-start-account={c.confirm.account}>
-            {c.confirm.account}
-          </div>
-          <p class="start-dim">
-            The device you approved on shows your account's fingerprint in the approval and under Devices and machines. Check they're the same before this
-            machine trusts the account.
-          </p>
-          <div class="start-confirm">
-            <button class="primary" disabled={busy} onClick={() => void confirm(true)} data-start-same>
-              They match
-            </button>
-            <button class="secondary" disabled={busy} onClick={() => void confirm(false)} data-start-different>
-              They don't
-            </button>
-          </div>
-        </div>
       ) : c?.pending ? (
         <div class="start-code" data-start-pending>
           {droppedNote}
-          <div class="start-kicker">Approve this code on a device you use</div>
-          <WholeCode code={c.pending.code} />
           <a class="primary big" href={c.pending.approve} target="_blank" rel="noreferrer" data-start-approve>
-            Approve in Arugula cloud <ExternalIcon size="xs" />
+            Add it in Arugula cloud <ExternalIcon size="xs" />
           </a>
           <p class="start-dim">
-            <span class="start-pulse" /> Waiting for the approval. Open the link (or type the whole code) on a browser or phone you already use with
-            Arugula; that's where you pick where {name} goes: your account, or a team you own. New here? It signs you up first (a passkey or GitHub).
+            <span class="start-pulse" /> Waiting for you to click Add there, where you pick your account or a team. Not signed in there yet? It signs you
+            in first, or up if you're new (a passkey or GitHub).
           </p>
-          <p class="start-dim" data-start-one-approval>
-            That's the only approval {name} needs. A browser that isn't one of your devices yet asks to be approved itself; that's separate, and only for
-            reaching your machines from it. A device you already use approves both at once.
+          <p class="start-dim" data-start-code-elsewhere>
+            Signed in on another computer or phone instead? Type this code under <i>Add a machine</i> there:
           </p>
+          <WholeCode code={c.pending.code} typed />
         </div>
       ) : c?.elsewhere ? (
         <div class="start-code" data-start-elsewhere>
@@ -787,16 +750,16 @@ function Cloud({
           {c.elsewhere.code && <WholeCode code={c.elsewhere.code} />}
           {c.elsewhere.approve && (
             <a class="primary big" href={c.elsewhere.approve} target="_blank" rel="noreferrer" data-start-approve>
-              Approve in Arugula cloud <ExternalIcon size="xs" />
+              Add it in Arugula cloud <ExternalIcon size="xs" />
             </a>
           )}
-          <p class="start-dim">One join at a time: approve this one, or stop it where it runs and try again here.</p>
+          <p class="start-dim">One join at a time: add this one, or stop it where it runs and try again here.</p>
         </div>
       ) : (
         <>
           {droppedNote}
           <p class="start-dim" data-start-join-how>
-            {name} shows a code, and you approve it on a device you use, picking your account or a team there: that one approval joins it.
+            Connect opens Arugula cloud with {name}'s code. Click Add there, picking your account or a team, and it's in.
           </p>
           <button class="primary big" disabled={busy || !setup} onClick={connect} data-start-connect>
             {busy ? "Asking the cloud…" : dropped ? `Join ${hostOf(control)} again` : ours ? "Connect to Arugula cloud" : `Connect to ${hostOf(control)}`}

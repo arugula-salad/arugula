@@ -259,7 +259,6 @@ mod tests {
             (&g, "/api/setup", Policy::Owner),
             (&p, "/api/setup/tailscale", Policy::Owner),
             (&p, "/api/setup/control", Policy::Owner),
-            (&p, "/api/setup/control/confirm", Policy::Owner),
             (&p, "/api/setup/claude", Policy::Owner),
             (&p, "/api/setup/agents/claude", Policy::Owner),
         ] {

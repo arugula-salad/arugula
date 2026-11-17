@@ -218,8 +218,6 @@ impl Request for crate::setup::ControlJoinRequest {
     }
 }
 
-impl Request for crate::setup::ControlConfirmRequest {}
-
 // #578 part b: access and credentials.
 impl Request for crate::api::ShareRequest {}
 
@@ -355,7 +353,6 @@ macro_rules! every_op {
         $m!($crate::op::ops::SetupGet);
         $m!($crate::op::ops::SetupTailscale);
         $m!($crate::op::ops::SetupControl);
-        $m!($crate::op::ops::SetupControlConfirm);
         $m!($crate::op::ops::SetupClaude);
         $m!($crate::op::ops::SetupAgent);
         // #578 part b: access and credentials.
@@ -1585,20 +1582,6 @@ pub mod ops {
         const ACCESS: Access = Access::Owner;
         type Path = ();
         type Req = crate::setup::ControlJoinRequest;
-        type Res = serde_json::Value;
-    }
-
-    /// `POST /api/setup/control/confirm`: save the join, or drop it, once the
-    /// person has compared the account's fingerprints.
-    pub struct SetupControlConfirm;
-
-    impl Op for SetupControlConfirm {
-        const NAME: &'static str = "setup.control_confirm";
-        const METHOD: Method = Method::Post;
-        const PATH: &'static str = "/api/setup/control/confirm";
-        const ACCESS: Access = Access::Owner;
-        type Path = ();
-        type Req = crate::setup::ControlConfirmRequest;
         type Res = serde_json::Value;
     }
 

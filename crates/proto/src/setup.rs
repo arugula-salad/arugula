@@ -66,10 +66,3 @@ pub struct ControlJoinRequest {
     /// A team to put it in ahead of time (its id).
     pub team: Option<String>,
 }
-
-/// `POST /api/setup/control/confirm`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ControlConfirmRequest {
-    /// The fingerprint here is the one the approving device shows.
-    pub same: bool,
-}

@@ -667,7 +667,9 @@ would pass. So the daemon doesn't take the root on control's word. Since
   machine with a secret but no MAC is refused unless `--account
   FINGERPRINT` names the account (scripts that pass it keep working), or
   it's a machine going back into the account it was removed from, by the
-  root it kept itself.
+  root it kept itself. Getting started no longer refuses it (#1003): it
+  saves whatever control approves, as it saves a one-click Add (aru-141).
+  `arugulad join` and `arugula login` still check.
 - **What this rests on:** the machine's side is the daemon's own output
   (terminal, or its local page), which control doesn't serve. The other
   side is the approving device, and it's only as trustworthy as that
@@ -680,8 +682,8 @@ would pass. So the daemon doesn't take the root on control's word. Since
   8 bytes of SHA-256 over `illogical device id` and its keys, as
   `1a2b-3c4d-5e6f-7a8b`), which the
   machine then shows and asks about (`y`, or the fingerprint typed;
-  *They match* / *They don't* in Getting started; `--account FINGERPRINT`
-  without asking). A newer daemon or CLI does the same with a control that
+  `--account FINGERPRINT` without asking; Getting started saves it without
+  asking since #1003). A newer daemon or CLI does the same with a control that
   doesn't say `join_secret` in `/control.json`, so a control that lies
   about that gets the compare, not a pass. Daemons from 0.16.0 and before
   pinned without a check; control now refuses them (426), saying to update.

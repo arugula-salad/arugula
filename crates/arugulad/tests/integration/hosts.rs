@@ -365,7 +365,6 @@ fn the_files_hosts_and_setup_routes_are_the_owners() {
         ("GET", "/api/setup", None),
         ("POST", "/api/setup/tailscale", None),
         ("POST", "/api/setup/control", None),
-        ("POST", "/api/setup/control/confirm", Some(r#"{"same":false}"#)),
         ("POST", "/api/setup/claude", None),
         ("POST", "/api/setup/agents/claude", None),
     ] {

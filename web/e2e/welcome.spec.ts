@@ -78,6 +78,50 @@ test("the desktop app up to 0.26.3 opens it from its Daemon menu", async ({ page
   await expect(panel.locator("[data-start-progress]")).toHaveText("Step 3 / 5 · Cloud");
 });
 
+// #1003: joining Arugula cloud is one click. Connect shows the link that
+// opens control with the code, where a signed-in person clicks Add, and the
+// step says joined as soon as the daemon does: no fingerprint to compare.
+// The daemon's answers are stood in for here (control isn't); the daemon's
+// own join is crates/arugulad/tests/integration/join_tokens.rs.
+test("the cloud step is one click in Arugula cloud, then joined", async ({ page }) => {
+  await reset(page);
+  const url = "https://control.arugula.io";
+  const code = "ABCDE-FGHJK.MNPQ-RSTV-WXYZ-0123";
+  const pending = { code, approve: `${url}/#join=${code}`, expires_ms: Date.now() + 15 * 60_000 };
+  let state: "none" | "pending" | "joined" = "none";
+  const control = () => ({ url, ...(state === "pending" ? { pending } : state === "joined" ? { joined: url } : {}) });
+  await page.route(/\/api\/setup(\/control)?(\?.*)?$/, async (r) => {
+    const u = new URL(r.request().url());
+    if (u.pathname === "/api/setup/control") {
+      state = "pending";
+      return r.fulfill({ json: { pending } });
+    }
+    if (u.searchParams.get("part") === "control") return r.fulfill({ json: { control: control() } });
+    // The rest of the status is the daemon's own.
+    const real = (await (await r.fetch()).json()) as Record<string, unknown>;
+    return r.fulfill({ json: { ...real, control: control() } });
+  });
+  await page.evaluate(() => dispatchEvent(new CustomEvent("arugula:getting-started", { detail: "cloud" })));
+  const panel = page.getByRole("dialog", { name: "Getting started" });
+  await expect(panel.locator("[data-start-progress]")).toHaveText("Step 3 / 5 · Cloud");
+  await expect(panel.locator("[data-start-join-how]")).toContainText("Click Add there");
+  await panel.locator("[data-start-connect]").click();
+
+  const add = panel.locator("[data-start-approve]");
+  await expect(add).toHaveText("Add it in Arugula cloud");
+  await expect(add).toHaveAttribute("href", pending.approve);
+  await expect(panel.locator("[data-start-pending]")).toContainText("Waiting for you to click Add there");
+  // The code, for a device signed in elsewhere; nothing to compare.
+  await expect(panel.locator("[data-start-code]")).toHaveText("ABCDE-FGHJK.MNPQ-RSTV-WXYZ-0123");
+  await expect(panel.locator("[data-start-confirm], [data-start-one-approval], .start-fp")).toHaveCount(0);
+  await expect(panel.locator("[data-start-pending]")).not.toContainText(/approv|fingerprint/i);
+
+  // Added there: the poll finds it joined.
+  state = "joined";
+  await expect(panel.locator("[data-start-joined]")).toHaveText("Joined to your account", { timeout: 10_000 });
+  await expect(panel.locator("[data-start-next-device]")).not.toContainText(/approv/i);
+});
+
 test("the daemon's setup status, and the cheap poll for a join", async ({ page }) => {
   await reset(page);
   const status = await page.evaluate(async () => (await fetch("/api/setup")).json());
