@@ -152,7 +152,7 @@ function body(r: Route, lost: string | null) {
     case "inbox":
       return <InboxPage all={r.all} />;
     case "all-boards":
-      return <AllBoardsPage all={r.all} />;
+      return <AllBoardsPage all={r.all} board={r.board} />;
     case "settings":
       return <SettingsPage r={r} />;
     case "deploy":

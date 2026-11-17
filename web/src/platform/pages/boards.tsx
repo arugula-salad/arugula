@@ -1,7 +1,7 @@
 // `/p/:project/boards` and `/p/:project/boards/:board` (boards,
 // step 2): a project's boards, and one, on the list page (Arugula #1128): the
 // boards in the list, the one selected in the middle. `/boards` (#339): every project's,
-// grouped by project, where the rail's Boards goes. A board is the platform's object
+// a group a project on the same list (Arugula #1131), where the rail's Boards goes. A board is the platform's object
 // (crates/platform/src/boards.rs): zones of rows, each pointing at an issue,
 // a PR, a run, a workspace or an agent block, with a note and a status.
 // The view is shared with the board block (../../shared/boards/view).
@@ -88,9 +88,14 @@ function BoardFilter({ q, setQ }: { q: string; setQ: (q: string) => void }) {
   return <SearchField class="board-filter" value={q} onValue={setQ} label="Filter boards" placeholder="Filter boards by title, epic key or goal" slash data-boards-filter />;
 }
 
-/** `/boards`: the boards of every project the reader belongs to, by
- * project. A project with none isn't listed. */
-export function AllBoardsPage({ all }: { all?: boolean }) {
+/** `/boards` and `/boards/:board` (that board's row selected): the boards
+ * of every project the reader belongs to on the list page, as a project's
+ * Boards page (Arugula #1131): a group a project, its open boards (the ones
+ * people made, then From Plane's), every project's Done folded at the foot,
+ * each naming its project; the selected board in the middle. A project with
+ * none isn't listed. Not on a board is a project's, so it stays on the
+ * project's page: a project's heading says how many there are. */
+export function AllBoardsPage({ all, board }: { all?: boolean; board?: string }) {
   useSubscribe((fn) => session.subscribe(fn));
   useSubscribe((fn) => onCurrentProject(fn));
   const scope = scopeOf({ page: "all-boards", all: all || undefined }, currentProject(), (id) => !!session.project(id));
@@ -98,6 +103,7 @@ export function AllBoardsPage({ all }: { all?: boolean }) {
   const key = projects.map((p) => p.id).join(",");
   const [lists, setLists] = useState<Map<string, ProjectBoard[]> | null>(null);
   const [q, setQ] = useState("");
+  const [unfolded, setUnfolded] = useState(false);
   useEffect(() => {
     setLists(null);
     let live = true;
@@ -115,45 +121,115 @@ export function AllBoardsPage({ all }: { all?: boolean }) {
     const l = lists?.get(p.id);
     return Array.isArray(l) && l.length > 0 ? [{ p, list: l }] : [];
   });
-  const kept = shown.filter((s) => s.list.some((b) => boardMatches(b, q)));
   // Each shown project's issues on no board, read together.
-  const counted = shown.map((s) => s.p.id);
-  const open = useUntriaged(counted);
+  const open = useUntriaged(shown.map((s) => s.p.id));
+  const projectOf = new Map(shown.flatMap(({ p, list }) => list.map((b) => [b.id, p] as const)));
+  const kept = shown.map(({ p, list }) => ({ p, list: list.filter((b) => boardMatches(b, q)) }));
+  const done = kept.flatMap(({ list }) => list.filter((b) => b.closed_at != null));
+  const linked = board ? kept.flatMap(({ list }) => list).find((b) => b.id === board) : undefined;
+  // A Done board's own link unfolds Done, so its row can be the one selected.
+  const doneLinked = linked?.closed_at != null;
+  useEffect(() => {
+    if (doneLinked) setUnfolded(true);
+  }, [doneLinked]);
+  const folded = !(unfolded || !!q.trim());
+  const groups: ListGroup<ProjectBoard>[] = [
+    ...kept.map(({ p, list }) => {
+      const live = list.filter((b) => b.closed_at == null);
+      const plane = live.filter((b) => b.source);
+      const n = open?.get(p.id);
+      return {
+        title: p.name,
+        named: true,
+        key: p.id,
+        detail: !!n && <span data-all-boards-untriaged={p.id}>{n.toLocaleString()} not on a board</span>,
+        items: [...live.filter((b) => !b.source), ...plane.filter((b) => b.source?.started), ...plane.filter((b) => !b.source?.started)],
+        attrs: { "data-all-boards-project": p.id },
+      };
+    }),
+    { title: "Done", key: "done", items: done, fold: { open: !folded, toggle: () => setUnfolded(!unfolded) }, attrs: { "data-boards-done": "" } },
+  ];
+  const pathTo = (id?: string) => pathOf({ page: "all-boards", board: id, all: all || undefined }, names);
+  const listPath = pathTo();
+  // A board linked to that has no row here (one the search hides, or the list still loading) draws all the same; one in none of the reader's projects (or out of scope) says so.
+  const rowless = !!board && !groups.some((g) => (!g.fold || g.fold.open) && g.items.some((b) => b.id === board));
+  const back = (
+    <a class="list-back" href={listPath} data-boards-back onClick={(e) => follow(e, listPath)}>
+      <ChevronIcon dir="left" /> Boards
+    </a>
+  );
+  const home = board ? projectOf.get(board) : undefined;
+  const pane =
+    rowless && board && lists ? (
+      home ? (
+        <BoardMiddle p={home} id={board} back={back} />
+      ) : (
+        <div class="boards-middle" data-all-boards-missing={board}>
+          {back}
+          <EmptyState where="page" title="That board isn't here." why={scope ? "It may be another project's: try All projects." : "It's in none of your projects, or it's gone."} />
+        </div>
+      )
+    ) : undefined;
+  const first = groups.find((g) => !g.fold)?.items[0]?.id;
+  const status =
+    lists === null ? (
+      <BlockLoading inline what="boards" />
+    ) : shown.length === 0 ? (
+      <EmptyState where="page" title="No boards yet." why="A board follows a goal across its issues and PRs. Make one on a project's Boards page." />
+    ) : groups.every((g) => g.items.length === 0) ? (
+      <EmptyLine data-boards-filter-none>No board matches “{q.trim()}”.</EmptyLine>
+    ) : undefined;
   return (
-    <section class="platform-section sw-page" data-all-boards-page>
-      <PageHeader title="Boards" actions={<ScopeToggle r={{ page: "all-boards" }} scoped={!!scope} all={!!all} />} />
-      {lists === null && <BlockLoading inline what="boards" />}
-      {lists && shown.length === 0 && (
-        <EmptyState where="page" title="No boards yet." why="A board follows a goal across its issues and PRs. Make one on a project's Boards page." />
+    <div class="boards-page" data-all-boards-page>
+      <ListPage<ProjectBoard>
+        label="Boards"
+        splitKey="platform-all-boards"
+        header={<PageHeader title="Boards" actions={<ScopeToggle r={{ page: "all-boards" }} scoped={!!scope} all={!!all} />} />}
+        searchLabel="Filter boards by title, epic key or goal"
+        query={q}
+        setQuery={setQ}
+        groups={groups}
+        keyOf={(b) => b.id}
+        previewOn="click"
+        select={board ?? first ?? null}
+        opened={!!board}
+        // The address follows the row, as on a project's page.
+        onSelect={(b) => go(pathTo(b.id), true)}
+        onOpen={(b) => go(pathTo(b.id), true)}
+        status={status}
+        pane={pane}
+        row={(b) => {
+          const r = boardRow(b);
+          const p = projectOf.get(b.id);
+          // Done is every project's: each row there names its own.
+          return b.closed_at != null && p && shown.length > 1 ? { ...r, tags: <span class="dim" data-board-project={p.id}>{p.name}</span> } : r;
+        }}
+        preview={(b) => {
+          const p = projectOf.get(b.id);
+          return p && <BoardMiddle key={b.id} p={p} id={b.id} back={<ProjectLinks p={p} board={b.id} loose={open?.get(p.id)} />} />;
+        }}
+      />
+    </div>
+  );
+}
+
+/** Over a board on every project's Boards: the way to it on its project's
+ * Boards, and to the project's issues on no board (`loose` of them), whose
+ * row is there. */
+function ProjectLinks({ p, board, loose }: { p: PlatformProject; board: string; loose?: number }) {
+  const to = pathOf({ page: "board", project: p.id, board }, names);
+  const tri = pathOf({ page: "triage", project: p.id }, names);
+  return (
+    <p class="boards-middle-links">
+      <a href={to} data-all-boards-project-link={p.id} onClick={(e) => follow(e, to)}>
+        {p.name}'s Boards <ChevronIcon dir="right" />
+      </a>
+      {!!loose && (
+        <a href={tri} data-all-boards-untriaged-link={p.id} onClick={(e) => follow(e, tri)}>
+          {loose.toLocaleString()} not on a board <ChevronIcon dir="right" />
+        </a>
       )}
-      {shown.length > 0 && <BoardFilter q={q} setQ={setQ} />}
-      {q.trim() && shown.length > 0 && kept.length === 0 && (
-        <EmptyLine data-boards-filter-none>No board matches “{q.trim()}”.</EmptyLine>
-      )}
-      {kept.map(({ p, list }) => {
-        const all = pathOf({ page: "boards", project: p.id }, names);
-        return (
-          <div key={p.id} data-all-boards-project={p.id}>
-            <SectionHead
-              title={p.name}
-              action={
-                <>
-                  {!!open?.get(p.id) && (
-                    <a class="sw-untriaged" href={pathOf({ page: "triage", project: p.id }, names)} data-all-boards-untriaged={p.id} onClick={(e) => follow(e, pathOf({ page: "triage", project: p.id }, names))}>
-                      {open.get(p.id)} not on a board
-                    </a>
-                  )}
-                  <a class="sw-all" href={all} onClick={(e) => follow(e, all)} data-all-boards-project-link>
-                    All boards <ChevronIcon dir="right" />
-                  </a>
-                </>
-              }
-            />
-            <BoardItems p={p} list={list} q={q} />
-          </div>
-        );
-      })}
-    </section>
+    </p>
   );
 }
 
@@ -306,36 +382,42 @@ function BoardList({ p, board, triage }: { p: PlatformProject; board?: string; t
               age: total !== null && <span data-boards-loose-n>{total.toLocaleString()}</span>,
               attrs: { "data-boards-loose": "" },
             };
-          const b = r;
-          const e = epicLine(b.progress);
-          return {
-            dense: true,
-            name: b.title,
-            title: <span data-board-title>{b.title}</span>,
-            tags: b.source && !b.source.started && b.closed_at == null && (
-              <span class="dim board-item-waiting" data-board-not-started>
-                {NOT_STARTED}
-              </span>
-            ),
-            age: (
-              <span title={e.words} data-board-tally>
-                {b.progress.done}/{b.progress.total}
-              </span>
-            ),
-            mark: b.progress.total > 0 && (
-              <span class="board-bar board-item-bar" role="progressbar" aria-valuemin={0} aria-valuemax={b.progress.total} aria-valuenow={b.progress.done} aria-label={e.words} data-board-progress>
-                {e.segments.map((s) => (
-                  <i key={s.lane} data-lane={s.lane} style={{ width: `${s.pct}%` }} />
-                ))}
-              </span>
-            ),
-            attrs: { "data-board-item": b.id, ...(b.closed_at == null ? { "data-drop-target": "" } : {}) },
-          };
+          return { ...boardRow(r), attrs: { "data-board-item": r.id, ...(r.closed_at == null ? { "data-drop-target": "" } : {}) } };
         }}
         preview={(r) => (isLoose(r) ? <NotOnBoard p={p} tri={tri} open={open} /> : <BoardMiddle key={r.id} p={p} id={r.id} />)}
       />
     </div>
   );
+}
+
+/** A board's row, on a project's Boards and on every project's (Arugula
+ * #1128, #1131): its title, its progress as `13/18` and the lanes' bar; a
+ * Plane epic's not started yet says so. */
+function boardRow(b: ProjectBoard): ListRowParts {
+  const e = epicLine(b.progress);
+  return {
+    dense: true,
+    name: b.title,
+    title: <span data-board-title>{b.title}</span>,
+    tags: b.source && !b.source.started && b.closed_at == null && (
+      <span class="dim board-item-waiting" data-board-not-started>
+        {NOT_STARTED}
+      </span>
+    ),
+    age: (
+      <span title={e.words} data-board-tally>
+        {b.progress.done}/{b.progress.total}
+      </span>
+    ),
+    mark: b.progress.total > 0 && (
+      <span class="board-bar board-item-bar" role="progressbar" aria-valuemin={0} aria-valuemax={b.progress.total} aria-valuenow={b.progress.done} aria-label={e.words} data-board-progress>
+        {e.segments.map((s) => (
+          <i key={s.lane} data-lane={s.lane} style={{ width: `${s.pct}%` }} />
+        ))}
+      </span>
+    ),
+    attrs: { "data-board-item": b.id },
+  };
 }
 
 /** New board: a title, in the page's project, then its row selected. */
