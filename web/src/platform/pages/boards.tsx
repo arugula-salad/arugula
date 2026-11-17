@@ -1,5 +1,6 @@
 // `/p/:project/boards` and `/p/:project/boards/:board` (boards,
-// step 2): a project's boards, and one. `/boards` (#339): every project's,
+// step 2): a project's boards, and one, on the list page (Arugula #1128): the
+// boards in the list, the one selected in the middle. `/boards` (#339): every project's,
 // grouped by project, where the rail's Boards goes. A board is the platform's object
 // (crates/platform/src/boards.rs): zones of rows, each pointing at an issue,
 // a PR, a run, a workspace or an agent block, with a note and a status.
@@ -16,6 +17,8 @@ import { boardMatches, epicLine, firstLine, NOT_STARTED } from "../../shared/boa
 import { useSubscribe } from "../../shared/ui/hooks";
 import { BlockLoading, EmptyLine, EmptyState } from "../../shared/ui/block-states";
 import { Card } from "../../shared/ui/card";
+import { ListPage, type ListGroup } from "../../shared/ui/list-page";
+import { Modal } from "../../shared/ui/modal";
 import { PageHeader } from "../../shared/ui/page-header";
 import { SearchField } from "../../shared/ui/search-field";
 import { homes, names } from "../links";
@@ -30,7 +33,7 @@ import { Missing } from "./project";
 import { currentProject, onCurrentProject } from "../current-project";
 import { scopeOf } from "../scope";
 import { ScopeToggle } from "../scope-toggle";
-import { NotOnBoard, dropOn, useTriage, useUntriaged, type Triage } from "./triage";
+import { NotOnBoard, dropWhere, useTriage, useUntriaged } from "./triage";
 import { ChevronIcon } from "../../shared/ui/icons";
 
 /** The reads in flight, by project: the bar, the project's home and a page
@@ -146,7 +149,7 @@ export function AllBoardsPage({ all }: { all?: boolean }) {
                 </>
               }
             />
-            <BoardItems p={p} list={list} data="data-project-boards" q={q} />
+            <BoardItems p={p} list={list} q={q} />
           </div>
         );
       })}
@@ -154,11 +157,14 @@ export function AllBoardsPage({ all }: { all?: boolean }) {
   );
 }
 
-export function BoardsPage({ project, scroll }: { project: string; scroll?: boolean }) {
+/** `/p/:project/boards`, `/p/:project/boards/:board` (that board's row
+ * selected) and `/p/:project/triage` (Not on a board in the middle): one page,
+ * so going between them keeps the list as it is. */
+export function BoardsPage({ project, board, triage }: { project: string; board?: string; triage?: boolean }) {
   useSubscribe((fn) => session.subscribe(fn));
   const p = session.project(project);
   if (!p) return <Missing what="That project isn't one of yours (or it's gone)." />;
-  return <BoardList p={p} scroll={scroll} />;
+  return <BoardList p={p} board={board} triage={triage} />;
 }
 
 /** The names of the machines of the reader's whose agents can't see the project's boards (#313); none while the grants load or when they can't be read. */
@@ -192,83 +198,206 @@ function BlindMachines({ project, may }: { project: string; may: boolean }) {
   );
 }
 
-function BoardList({ p, scroll }: { p: PlatformProject; scroll?: boolean }) {
+/** A project's boards on the list page (Arugula #1128): a row a board, its
+ * progress as `13/18` and the lanes' bar, From Plane and Done (folded) as
+ * groups; the board itself in the middle. Not on a board is a link over the
+ * list, and its issues go in the middle in the board's place; a row of it
+ * dragged onto a board's row goes on that board. */
+function BoardList({ p, board, triage }: { p: PlatformProject; board?: string; triage?: boolean }) {
   const list = useBoards(p.id);
-  const [title, setTitle] = useState("");
   const [q, setQ] = useState("");
+  const [making, setMaking] = useState(false);
+  const [unfolded, setUnfolded] = useState(false);
   const tri = useTriage(p.id, () => boardsChanged(p.id));
-  // On a phone the page is two tabs; `/triage` opens the second.
-  const [tab, setTab] = useState<"boards" | "loose">(scroll ? "loose" : "boards");
-  const open = (list ?? []).filter((b) => b.closed_at == null);
-  const make = async (e: Event) => {
-    e.preventDefault();
-    if (!title.trim()) return;
-    try {
-      const v = await boards.create(p.id, title.trim());
-      go(pathOf({ page: "board", project: p.id, board: v.board.id }, names));
-    } catch (err) {
-      toast(`Couldn't make the board: ${(err as Error).message}`);
-    }
-  };
+  const all = list ?? [];
+  const open = all.filter((b) => b.closed_at == null);
+  const shown = all.filter((b) => boardMatches(b, q));
+  const done = shown.filter((b) => b.closed_at != null);
+  const live = shown.filter((b) => b.closed_at == null);
+  const plane = live.filter((b) => b.source);
+  // A Done board's own link unfolds Done, so its row can be the one selected.
+  const doneLinked = !!board && done.some((b) => b.id === board);
+  useEffect(() => {
+    if (doneLinked) setUnfolded(true);
+  }, [doneLinked]);
+  const groups: ListGroup<ProjectBoard>[] = [
+    { items: live.filter((b) => !b.source) },
+    { title: "From Plane", key: "plane", items: [...plane.filter((b) => b.source?.started), ...plane.filter((b) => !b.source?.started)], attrs: { "data-boards-plane": "" } },
+    { title: "Done", key: "done", items: done, fold: { open: unfolded || !!q.trim(), toggle: () => setUnfolded(!unfolded) }, attrs: { "data-boards-done": "" } },
+  ];
+  const boardPath = (id: string) => pathOf({ page: "board", project: p.id, board: id }, names);
+  const listPath = pathOf({ page: "boards", project: p.id }, names);
+  const loosePath = pathOf({ page: "triage", project: p.id }, names);
+  // A board linked to that has no row here (another project's, one the search hides, or the list still loading) draws all the same.
+  const rowless = !!board && !shown.some((b) => b.id === board && (b.closed_at == null || unfolded || !!q.trim()));
+  const back = (
+    <a class="list-back" href={listPath} data-boards-back onClick={(e) => follow(e, listPath)}>
+      <ChevronIcon dir="left" /> Boards
+    </a>
+  );
+  const pane = triage ? (
+    <div class="sw-page boards-middle boards-loose" data-boards-loose-pane>
+      {back}
+      <NotOnBoard p={p} tri={tri} open={open} />
+    </div>
+  ) : rowless && board ? (
+    <BoardMiddle p={p} id={board} back={back} />
+  ) : undefined;
+  const total = tri.page?.total;
+  const status =
+    list === null ? (
+      <BlockLoading inline what="boards" />
+    ) : all.length === 0 ? (
+      <EmptyState where="page" title="No boards yet." why={`A board follows a goal across its issues and PRs.${mayWrite(p) ? " Make one with New board." : ""}`} />
+    ) : shown.length === 0 ? (
+      <EmptyLine data-boards-filter-none>No board matches “{q.trim()}”.</EmptyLine>
+    ) : undefined;
   return (
-    <section class="platform-section sw-page" data-boards-page data-tab={tab}>
-      <PageHeader title="Boards" />
-      <BlindMachines project={p.id} may={roleIn(p) !== "viewer"} />
-      {list && (
-        <div class="boards-tabs" role="tablist" aria-label="Boards page" data-boards-tabs>
-          <button type="button" role="tab" id="boards-tab-boards" aria-selected={tab === "boards"} data-tab="boards" onClick={() => setTab("boards")}>
-            Boards<span class="boards-tab-n">{open.length}</span>
-          </button>
-          <button type="button" role="tab" id="boards-tab-loose" aria-selected={tab === "loose"} data-tab="loose" onClick={() => setTab("loose")}>
-            Not on a board{tri.page && <span class="boards-tab-n">{tri.page.total.toLocaleString()}</span>}
-          </button>
-        </div>
-      )}
-      {list === null && <BlockLoading inline what="boards" />}
-      {list?.length === 0 && (
-        <EmptyState where="page" title="No boards yet." why="A board follows a goal across its issues and PRs. Make one below." />
-      )}
-      {list && list.length > 0 && <BoardFilter q={q} setQ={setQ} />}
-      {list && <BoardItems p={p} list={list} data="data-boards" q={q} drop={tri} between={<NotOnBoard p={p} tri={tri} open={open} scroll={scroll} />} />}
-      {mayWrite(p) && (
-        <form class="board-form" onSubmit={(e) => void make(e)}>
-          <input type="text" value={title} maxLength={120} placeholder="a new board's title" aria-label="New board's title" data-board-new-title onInput={(e) => setTitle(e.currentTarget.value)} />
-          <span class="board-form-buttons">
-            <button type="submit" class="primary small" data-board-new disabled={!title.trim()}>
-              Make a board
-            </button>
-          </span>
-        </form>
-      )}
-    </section>
+    <div class="boards-page" data-boards-page data-boards {...dropWhere(tri, (e) => {
+      const el = (e.target as Element | null)?.closest?.<HTMLElement>("[data-board-item]");
+      const b = el && open.find((x) => x.id === el.dataset.boardItem);
+      return el && b ? { el, board: b } : null;
+    })}>
+      <ListPage<ProjectBoard>
+        label="Boards"
+        splitKey="platform-boards"
+        header={
+          <>
+            <PageHeader
+              title="Boards"
+              actions={
+                mayWrite(p) && (
+                  <button type="button" class="secondary small" data-board-new-open onClick={() => setMaking(true)}>
+                    New board
+                  </button>
+                )
+              }
+            />
+            <BlindMachines project={p.id} may={roleIn(p) !== "viewer"} />
+            {making && <NewBoard p={p} done={() => setMaking(false)} />}
+          </>
+        }
+        above={
+          list !== null && (
+            <a class="boards-loose-link" href={loosePath} aria-current={triage ? "page" : undefined} data-boards-loose onClick={(e) => follow(e, loosePath)}>
+              Not on a board
+              {total !== undefined && (
+                <span class="list-group-n" data-boards-loose-n>
+                  {total.toLocaleString()}
+                </span>
+              )}
+            </a>
+          )
+        }
+        searchLabel="Filter boards by title, epic key or goal"
+        query={q}
+        setQuery={setQ}
+        groups={groups}
+        keyOf={(b) => b.id}
+        previewOn="click"
+        select={triage ? null : (board ?? null)}
+        opened={!!board}
+        // The address follows the row, so a board's link is the page with its row selected; from Not on a board, Back returns there.
+        onSelect={(b) => go(boardPath(b.id), !triage)}
+        onOpen={(b) => go(boardPath(b.id), !triage)}
+        status={status && <div class="list-status">{status}</div>}
+        pane={pane}
+        row={(b) => {
+          const e = epicLine(b.progress);
+          return {
+            dense: true,
+            name: b.title,
+            title: <span data-board-title>{b.title}</span>,
+            tags: b.source && !b.source.started && b.closed_at == null && (
+              <span class="dim board-item-waiting" data-board-not-started>
+                {NOT_STARTED}
+              </span>
+            ),
+            age: (
+              <span title={e.words} data-board-tally>
+                {b.progress.done}/{b.progress.total}
+              </span>
+            ),
+            mark: b.progress.total > 0 && (
+              <span class="board-bar board-item-bar" role="progressbar" aria-valuemin={0} aria-valuemax={b.progress.total} aria-valuenow={b.progress.done} aria-label={e.words} data-board-progress>
+                {e.segments.map((s) => (
+                  <i key={s.lane} data-lane={s.lane} style={{ width: `${s.pct}%` }} />
+                ))}
+              </span>
+            ),
+            attrs: { "data-board-item": b.id, ...(b.closed_at == null ? { "data-drop-target": "" } : {}) },
+          };
+        }}
+        preview={(b) => <BoardMiddle key={b.id} p={p} id={b.id} />}
+      />
+    </div>
   );
 }
 
-export function BoardPage({ project, board }: { project: string; board: string }) {
-  useSubscribe((fn) => session.subscribe(fn));
-  const p = session.project(project);
-  if (!p) return <Missing what="That project isn't one of yours (or it's gone)." />;
+/** New board: a title, in the page's project, then its row selected. */
+function NewBoard({ p, done }: { p: PlatformProject; done: () => void }) {
+  const [title, setTitle] = useState("");
+  const [busy, setBusy] = useState(false);
+  const make = async (e: Event) => {
+    e.preventDefault();
+    if (!title.trim() || busy) return;
+    setBusy(true);
+    try {
+      const v = await boards.create(p.id, title.trim());
+      done();
+      boardsChanged(p.id);
+      go(pathOf({ page: "board", project: p.id, board: v.board.id }, names));
+    } catch (err) {
+      toast(`Couldn't make the board: ${(err as Error).message}`);
+      setBusy(false);
+    }
+  };
   return (
-    <section class="platform-section" data-board-page={board}>
+    <Modal
+      title="New board"
+      close={done}
+      onSubmit={(e) => void make(e)}
+      root={{ "data-board-new-dialog": true }}
+      buttons={
+        <>
+          <button type="button" class="secondary" onClick={done}>
+            Cancel
+          </button>
+          <button type="submit" class="primary" data-board-new disabled={busy || !title.trim()}>
+            Make a board
+          </button>
+        </>
+      }
+    >
+      <input class="field" type="text" value={title} maxLength={120} placeholder="Its title" aria-label="New board's title" data-board-new-title autoFocus onInput={(e) => setTitle(e.currentTarget.value)} />
+    </Modal>
+  );
+}
+
+/** One board, in the list page's middle: the board's own panel, as the board block draws it. `back`: the way to the list, when the board has no row in it. */
+function BoardMiddle({ p, id, back }: { p: PlatformProject; id: string; back?: ComponentChildren }) {
+  return (
+    <div class="boards-middle" data-board-page={id}>
+      {back}
       <BoardPanel
-        id={board}
+        id={id}
         write={mayWrite(p)}
         platform={(path) => path}
         keepInUrl
         // Each card's sessions on its row: the Sessions page folded into the board (Arugula #1082).
         cardSessions
         // A board moved to another project (Arugula #972): the page's address goes to its new one.
-        onProject={(home) => home !== project && homes.set(board, home)}
+        onProject={(home) => home !== p.id && homes.set(id, home)}
         back={
           <p class="dim">
             {/* The swarm is the shell's, on control's page (#466). */}
-            <a href={`${controlOrigin()}/#swarm=board:${board}`} data-board-workers title="This board's agents in the swarm, by the lane of their row">
+            <a href={`${controlOrigin()}/#swarm=board:${id}`} data-board-workers title="This board's agents in the swarm, by the lane of their row">
               Workers
             </a>
           </p>
         }
       />
-    </section>
+    </div>
   );
 }
 
@@ -283,19 +412,19 @@ export function ProjectBoards({ p, list }: { p: PlatformProject; list: ProjectBo
       <SectionHead title="Boards" all={all} onAll={(e) => follow(e, all)} data="project-boards-link" />
       {list.length === 0 && <EmptyState where="page" title="No boards yet." why="A board follows a goal across its issues and PRs." />}
       {list.length > 0 && <BoardFilter q={q} setQ={setQ} />}
-      <BoardItems p={p} list={list} data="data-project-boards" q={q} />
+      <BoardItems p={p} list={list} q={q} />
     </>
   );
 }
 
 /** One board in a list, a compact card: its title (the whole card is the link), the goal's first line (a closed board has the done note's instead), the bar and its words. A Done board's has no bar. */
-function BoardItem({ p, b, waiting, drop }: { p: PlatformProject; b: ProjectBoard; waiting?: boolean; drop?: Triage }) {
+function BoardItem({ p, b, waiting }: { p: PlatformProject; b: ProjectBoard; waiting?: boolean }) {
   const to = pathOf({ page: "board", project: p.id, board: b.id }, names);
   const closed = b.closed_at != null;
   const e = epicLine(b.progress);
   const line = firstLine(closed ? b.done_note : b.goal);
   return (
-    <Card as="li" class={drop && !closed ? "drop-target" : undefined} data-board-card={b.id} {...(drop && !closed ? dropOn(drop, b) : {})}>
+    <Card as="li" data-board-card={b.id}>
       <a href={to} class="card-title" data-board-link={b.id} onClick={(ev) => follow(ev, to)}>
         {b.title}
       </a>
@@ -321,8 +450,8 @@ function BoardItem({ p, b, waiting, drop }: { p: PlatformProject; b: ProjectBoar
   );
 }
 
-/** A project's boards: the ones people made, then the open ones that follow a Plane epic under "From Plane" (those whose epic is started first, the rest marked), and the closed ones folded under "Done (N)". `between` is drawn after the open ones and before the done; `drop` makes the open cards places to drop the section's rows on. `data` is the attribute the open list carries. */
-function BoardItems({ p, list: all, data, q = "", between, drop }: { p: PlatformProject; list: ProjectBoard[]; data: "data-boards" | "data-project-boards"; q?: string; between?: ComponentChildren; drop?: Triage }) {
+/** A project's boards as cards (the project's home, every project's `/boards`): the ones people made, then the open ones that follow a Plane epic under "From Plane" (those whose epic is started first, the rest marked), and the closed ones folded under "Done (N)". */
+function BoardItems({ p, list: all, q = "" }: { p: PlatformProject; list: ProjectBoard[]; q?: string }) {
   const list = all.filter((b) => boardMatches(b, q));
   const open = list.filter((b) => b.closed_at == null);
   const done = list.filter((b) => b.closed_at != null);
@@ -332,9 +461,9 @@ function BoardItems({ p, list: all, data, q = "", between, drop }: { p: Platform
   const waiting = plane.filter((b) => !b.source?.started);
   return (
     <>
-      <ul class="board-list card-grid" {...{ [data]: true }}>
+      <ul class="board-list card-grid" data-project-boards>
         {made.map((b) => (
-          <BoardItem key={b.id} p={p} b={b} drop={drop} />
+          <BoardItem key={b.id} p={p} b={b} />
         ))}
       </ul>
       {plane.length > 0 && (
@@ -342,15 +471,14 @@ function BoardItems({ p, list: all, data, q = "", between, drop }: { p: Platform
           <h3 id={`plane-boards-${p.id}`}>From Plane</h3>
           <ul class="board-list card-grid">
             {started.map((b) => (
-              <BoardItem key={b.id} p={p} b={b} drop={drop} />
+              <BoardItem key={b.id} p={p} b={b} />
             ))}
             {waiting.map((b) => (
-              <BoardItem key={b.id} p={p} b={b} waiting drop={drop} />
+              <BoardItem key={b.id} p={p} b={b} waiting />
             ))}
           </ul>
         </section>
       )}
-      {between}
       {done.length > 0 && (
         <details class="board-done-list" data-boards-done open={q.trim() ? true : undefined}>
           <summary>Done ({done.length})</summary>
