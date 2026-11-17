@@ -163,6 +163,14 @@ signed-in session.
   who comes with a machine token a viewer
   (`crates/proto/src/sharing.rs`, `remote_input`). Nothing through control
   can turn it back on.
+- **A CLI's sign-in is a file on its machine:** `arugula login` keeps a
+  session of your account in `cli-session.json` in the config dir
+  (`crates/cli/src/control.rs`), readable by your user, and so by any agent
+  you run there. Whoever holds it reaches your machines as you. Control
+  gives it a CLI's kind of session, not a browser's, and refuses it what
+  only a browser's page does: approving sign-ins, devices, joins and
+  deploys, passkeys, standing run grants and a team's members.
+  `arugula logout` ends it.
 - **Not through control:** a daemon's own page on the machine or your
   tailnet, and `arugula attach` on the machine, talk to the daemon
   directly. `arugulad leave` takes the machine out of control altogether.

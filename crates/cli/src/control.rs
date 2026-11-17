@@ -7,7 +7,12 @@
 //! person pastes the address the browser lands on, when it's on another
 //! computer), and the CLI swaps the grant and its verifier for a session of
 //! the account, kept in the config dir (`cli-session.json`). No key and no
-//! certificate: control decides who reaches a machine.
+//! certificate: control decides who reaches a machine. The session is a
+//! CLI's (it asks with the `cli` feature, Arugula #1018): control lets it
+//! do what a CLI does and nothing only a browser's page does (approving,
+//! passkeys), since agents on this machine can read its file. A control
+//! that doesn't answer `"kind": "cli"` is older than that, and would make
+//! it the app's session: the CLI doesn't go on with it (#1151).
 //!
 //! Then `--host NAME` finds names that aren't in the local daemon's host
 //! list in control's directory, and opens a Noise channel to the machine
@@ -362,9 +367,12 @@ impl Enrolled {
     /// [`maintenance::may_retry`]'s.
     pub(crate) fn api(&self, method: &str, path: &str, body: Option<&Value>) -> anyhow::Result<Value> {
         let (status, got) = self.api_raw(method, path, body)?;
-        if status == 401 && matches!(self.how, How::Session(_)) {
+        // A route only a browser's page calls (#1018) refuses a CLI's
+        // session with `page_only`, which isn't the session ending.
+        let page_only = || serde_json::from_slice::<Value>(&got).is_ok_and(|v| v["reason"] == "page_only");
+        if status == 401 && matches!(self.how, How::Session(_)) && !page_only() {
             bail!(
-                "this CLI's sign-in to Arugula cloud at {} has ended: `arugula logout`, then `arugula login --browser` again",
+                "this CLI's sign-in to Arugula cloud at {} has ended: `arugula logout`, then `arugula login` again",
                 self.url
             );
         }
@@ -828,11 +836,27 @@ pub fn logged_in() -> bool {
 /// the loopback port it listens on (control's `app_login.rs`).
 const LOOPBACK_PATH: &str = "/arugula-signin";
 
-/// `arugula login --browser`: a session of the account at `url`, from a browser
-/// that allows it (aru-141), the way the desktop app signs in: a verifier
-/// this CLI keeps, a ticket from control for it, and the grant the browser
-/// hands to this CLI's loopback port once someone signed in clicks Allow.
-/// Only this CLI can swap the grant, since only it holds the verifier.
+/// Control at this URL is older than a CLI's own kind of session (Arugula
+/// #1018): it didn't answer `"kind": "cli"`, so the session it would give
+/// is the desktop app's, which does what only a browser's page should.
+#[derive(Debug)]
+pub struct OlderControl(String);
+
+impl std::fmt::Display for OlderControl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Arugula cloud at {} is older than this CLI's sign-in from a browser", self.0)
+    }
+}
+
+impl std::error::Error for OlderControl {}
+
+/// `arugula login` (the default since #1151): a session of the account at
+/// `url`, from a browser that allows it (aru-141), the way the desktop app
+/// signs in: a verifier this CLI keeps, a ticket from control for it, and
+/// the grant the browser hands to this CLI's loopback port once someone
+/// signed in clicks Allow. Only this CLI can swap the grant, since only it
+/// holds the verifier. A control older than a CLI's session (#1018) gets
+/// [`OlderControl`], before any link is shown.
 pub fn login(url: &str, name: &str) -> anyhow::Result<()> {
     let url = url.trim_end_matches('/').to_owned();
     match Enrolled::load()? {
@@ -882,7 +906,8 @@ fn sign_in(url: &str, name: &str, show: impl FnOnce(&str, u64)) -> anyhow::Resul
     let listener =
         std::net::TcpListener::bind("127.0.0.1:0").context("can't listen on this computer for the sign-in")?;
     let port = listener.local_addr()?.port();
-    let ask = json!({ "name": name, "challenge": challenge, "port": port, "features": ["no-code"] }).to_string();
+    // `cli` (#1018): the session is a CLI's, not the app's.
+    let ask = json!({ "name": name, "challenge": challenge, "port": port, "features": ["no-code", "cli"] }).to_string();
     let res = send_on(
         u.connect(Some(Duration::from_secs(10))).with_context(|| format!("can't reach control at {url}"))?,
         "POST",
@@ -893,6 +918,9 @@ fn sign_in(url: &str, name: &str, show: impl FnOnce(&str, u64)) -> anyhow::Resul
     )?;
     let t =
         json_answer(res.status, res.bytes()?).with_context(|| format!("control at {url} didn't start a sign-in"))?;
+    if t["kind"] != "cli" {
+        return Err(OlderControl(url.to_owned()).into());
+    }
     let ticket = t["ticket"].as_str().filter(|t| !t.is_empty() && t.bytes().all(|c| c.is_ascii_hexdigit()));
     let ticket = ticket.context("control's answer has no ticket")?.to_owned();
     let link = t["url"].as_str().filter(|l| l.starts_with("https://") || l.starts_with("http://"));
@@ -906,8 +934,8 @@ fn sign_in(url: &str, name: &str, show: impl FnOnce(&str, u64)) -> anyhow::Resul
         "POST",
         &format!("/auth/app/{ticket}/redeem"),
         &u.authority,
-        // As control's own page sends it: the only place it takes one from.
-        &[("Content-Type", "application/json"), ("Origin", url)],
+        // No origin: control takes a CLI's ticket from the CLI that asked.
+        &[("Content-Type", "application/json")],
         body.as_bytes(),
     )?;
     let set = res.header("set-cookie").and_then(|c| c.split(';').next()).map(str::trim).map(str::to_owned);
@@ -942,7 +970,7 @@ fn await_grant(listener: &std::net::TcpListener, ticket: &str, deadline: Instant
     });
     loop {
         if Instant::now() > deadline {
-            bail!("nobody allowed it in time; run `arugula login --browser` again for a new link");
+            bail!("nobody allowed it in time; run `arugula login` again for a new link");
         }
         if let Some(rx) = &pasted
             && let Ok(line) = rx.try_recv()
@@ -1000,7 +1028,7 @@ fn grant_in(address: &str, ticket: &str) -> Option<String> {
     (!grant.is_empty() && grant.len() <= 256 && grant.bytes().all(|c| c.is_ascii_hexdigit())).then(|| grant.to_owned())
 }
 
-/// `arugula login` (the default; `--device` is kept as a hidden no-op): join the account at `url` as a `cli` device,
+/// `arugula login --device`: join the account at `url` as a `cli` device,
 /// as before machine tokens (aru-141; it goes with the key code, #1007).
 /// Shows the link to approve on a signed-in device and waits; then checks the
 /// account before pinning it. The link carries a join secret (#760) when
@@ -1080,7 +1108,7 @@ pub fn login_device(url: &str, name: &str, account: Option<&str>) -> anyhow::Res
     // aru-141 (#1004): browsers sign in with no device key now, so most
     // accounts have nothing that approves this: say the way that works.
     println!("  A browser you sign in on can't approve it unless it holds a device key from before.");
-    println!("  To sign this terminal in from any browser instead: Ctrl-C, then `arugula login --browser`.");
+    println!("  To sign this terminal in from any browser instead: Ctrl-C, then `arugula login`.");
     println!();
     println!("  Waiting for approval (the code lasts {} minutes)…", secs / 60);
     std::io::stdout().flush()?;
@@ -1097,9 +1125,7 @@ pub fn login_device(url: &str, name: &str, account: Option<&str>) -> anyhow::Res
         let v: wire::JoinPoll = serde_json::from_value(res.json().context("control")?)
             .context("control's answer about the approval isn't one this CLI can read")?;
         if let Some(on) = &v.rejected {
-            bail!(
-                "turned down on {on}; to sign this terminal in from a browser instead, run `arugula login --browser`"
-            );
+            bail!("turned down on {on}; to sign this terminal in from a browser instead, run `arugula login`");
         }
         if v.approved {
             break v;
@@ -1888,7 +1914,8 @@ mod tests {
     /// `arugula login` (aru-141): control's link, a browser's Allow that
     /// hands the grant to this CLI's loopback port (one for another sign-in
     /// is turned away first), and a session for the verifier only this CLI
-    /// holds, swapped from control's own origin; then whose session it is.
+    /// holds, a CLI's (#1018), swapped with no origin; then whose session
+    /// it is.
     #[test]
     fn a_cli_signs_in_from_a_browser_with_its_own_verifier() {
         use sha2::{Digest, Sha256};
@@ -1902,7 +1929,7 @@ mod tests {
                 ("POST", "/auth/app") => {
                     let ask: Value = serde_json::from_slice(&a.body).unwrap();
                     assert_eq!(ask["name"], "Arugula CLI on test");
-                    assert_eq!(ask["features"], json!(["no-code"]));
+                    assert_eq!(ask["features"], json!(["no-code", "cli"]));
                     assert!(ask.get("device").is_none(), "no device keys: it isn't a device");
                     *challenge.lock().unwrap() = ask["challenge"].as_str().unwrap().to_owned();
                     let port = ask["port"].as_u64().unwrap();
@@ -1920,10 +1947,11 @@ mod tests {
                         assert!(hand(&mine).contains("Signed in."));
                     });
                     let link = format!("{at}/#app={ticket}");
-                    (200, String::new(), json!({ "ticket": ticket, "url": link, "expires_in_secs": 60 }).to_string())
+                    let t = json!({ "ticket": ticket, "url": link, "expires_in_secs": 60, "kind": "cli" });
+                    (200, String::new(), t.to_string())
                 }
                 ("POST", p) if p == format!("/auth/app/{ticket}/redeem") => {
-                    assert_eq!(a.header("origin"), Some(at.as_str()), "from control's own origin");
+                    assert_eq!(a.header("origin"), None, "the CLI, not control's page");
                     let b: Value = serde_json::from_slice(&a.body).unwrap();
                     assert_eq!(b["grant"], "cafe");
                     let v = b["verifier"].as_str().unwrap();
@@ -1947,6 +1975,30 @@ mod tests {
         drop(server);
     }
 
+    /// A control from before a CLI's own kind of session (#1018) answers
+    /// with no `"kind": "cli"`: the CLI shows no link and asks nothing more,
+    /// so it never holds the app's session (#1151).
+    #[test]
+    fn an_older_control_gets_no_sign_in_from_a_browser() {
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", l.local_addr().unwrap());
+        let at = url.clone();
+        let server = control(l, move |a| {
+            Some(match (a.method.as_str(), a.path.as_str()) {
+                ("POST", "/auth/app") => {
+                    let t = json!({ "ticket": "ab".repeat(16), "url": format!("{at}/#app=x"), "expires_in_secs": 60 });
+                    (200, String::new(), t.to_string())
+                }
+                other => panic!("unexpected {other:?}"),
+            })
+        });
+        let mut shown = false;
+        let err = sign_in(&url, "Arugula CLI on test", |_, _| shown = true).err().unwrap();
+        assert!(err.downcast_ref::<OlderControl>().is_some(), "{err:#}");
+        assert!(!shown, "no link to click");
+        drop(server);
+    }
+
     /// The grant in what the loopback port is asked, or in an address a
     /// person pastes: only for this sign-in's ticket, and only hex.
     #[test]
@@ -1966,7 +2018,8 @@ mod tests {
 
     /// A signed-in CLI asks control with its session's cookie and control's
     /// origin, never a signature, and says how to sign in again once the
-    /// session has ended; a device signs.
+    /// session has ended, but not when control refuses a CLI's session on a
+    /// page's route (#1018); a device signs.
     #[test]
     fn a_session_asks_with_its_cookie() {
         let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -1983,7 +2036,12 @@ mod tests {
                     Some((200, String::new(), r#"{"daemons":[]}"#.into()))
                 }
                 2 => Some((401, String::new(), r#"{"error":"sign in again"}"#.into())),
-                3 => {
+                3 => Some((
+                    401,
+                    String::new(),
+                    r#"{"error":"this is for Arugula's page, in a browser","reason":"page_only"}"#.into(),
+                )),
+                4 => {
                     assert!(a.header("cookie").is_none());
                     assert!(a.header("x-arugula-auth").is_some());
                     Some((200, String::new(), "{}".into()))
@@ -1994,7 +2052,10 @@ mod tests {
         let e = Enrolled::for_tests_session(url.clone(), "ilg_session=s");
         assert_eq!(e.api("GET", "/api/directory", None).unwrap(), json!({ "daemons": [] }));
         let err = e.api("GET", "/api/directory", None).unwrap_err();
-        assert!(format!("{err:#}").contains("`arugula login --browser` again"), "{err:#}");
+        assert!(format!("{err:#}").contains("`arugula login` again"), "{err:#}");
+        // Refused as a CLI (#1018) isn't signed out: control's reason says so.
+        let err = e.api("POST", "/api/devices", None).unwrap_err();
+        assert!(format!("{err:#}").contains("for Arugula's page, in a browser"), "{err:#}");
         Enrolled::for_tests(url).api("GET", "/api/directory", None).unwrap();
         drop(server);
     }

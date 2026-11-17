@@ -17,8 +17,8 @@ arugula: this CLI isn't one of the account's devices any more (revoked?): `arugu
 
 ## Why
 
-A CLI logged in with `arugula login` (without `--browser`)
-is a device of your control account, with keys of its own. It reaches a
+A CLI logged in with `arugula login --device` (or plain `arugula login`
+before #1151) is a device of your control account, with keys of its own. It reaches a
 machine with a machine token from control, and with its key only when
 control gives no tokens or the machine's daemon is older than them; before
 using its key it checks that it's still one of the account's devices
@@ -27,6 +27,6 @@ removed from them.
 
 ## Do
 
-`arugula logout`, then `arugula login` for a new code to approve from a
-device you have (or `arugula login --browser` to sign in from a browser with
-no key).
+`arugula logout`, then `arugula login` to sign in from a browser with no
+key (or `arugula login --device` for a new code to approve from a device you
+have).

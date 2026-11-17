@@ -409,11 +409,12 @@ function AppJoin({ s, j, cancel, refused, failed, sealed, secret, whole }: Devic
   );
 }
 
-/** `arugula login` signs the CLI in as one of the account's devices
- * until the CLI has a session kind of its own (#1018). A browser with no
+/** A CLI from before #1151 (plain `arugula login`) or a newer one with
+ * `--device` asks to be one of the account's devices. A browser with no
  * device key can't approve that (aru-141, #1004): it says how to sign the
- * CLI in from a browser instead, `arugula login --browser`, and turning
- * this one down ends its wait. */
+ * CLI in from a browser instead, `arugula login --browser` (which both an
+ * older CLI and a newer one take), and turning this one down ends its
+ * wait. */
 function CliFromBrowser({ s, j, cancel, refused }: DeviceJoin) {
   const host = j.cert.name.replace(/^(Arugula|illogical) CLI on /, "");
   // The hosted control is the CLI's default; another is named.
