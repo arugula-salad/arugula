@@ -325,6 +325,7 @@ pub(crate) fn features(app: &App) -> HostFeatures {
         dev: arugula_proto::flags::unlocked(dir),
         blocks: crate::sites::get().is_some_and(|s| s.listens()),
         block_channels: crate::sites::control_blocks(),
+        block_grants: true,
         vms: on.has(flags::SANDBOX_PROVIDERS) && app.mux.provider.is_some(),
         studio: on.has(flags::STUDIO) && crate::lab_hooks::labs().studio_here(),
         // A sharing setting, not a flag (native #205).

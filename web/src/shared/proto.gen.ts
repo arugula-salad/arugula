@@ -3144,6 +3144,13 @@ blocks: boolean,
  */
 block_channels?: boolean, 
 /**
+ * A block's frame may open its channel with a block grant the hub
+ * signs (#1001), not only one a device signed: a page with no device
+ * key can show blocks. Older daemons leave it out, and a page then
+ * signs with its device key if it has one.
+ */
+block_grants?: boolean, 
+/**
  * VM tabs and panes and *Sandboxes…*: a sandbox provider (loam).
  */
 vms: boolean, 

@@ -14,7 +14,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use arugula_control_wire::machine_token::{CLOCK_SKEW_SECS, Jwk, Jwks, MAX_LIFETIME_SECS, MachineClaims, USE};
+use arugula_control_wire::machine_token::{
+    BLOCK_USE, BlockClaims, CLOCK_SKEW_SECS, Jwk, Jwks, MAX_LIFETIME_SECS, MachineClaims, USE,
+};
 use base64::Engine as _;
 use serde::Deserialize;
 
@@ -33,6 +35,8 @@ pub enum Refused {
     Issuer,
     Audience,
     NotMachine,
+    /// Not a block grant (a machine token, say) where one was wanted.
+    NotBlock,
     Expired,
     Lifetime,
     Replayed,
@@ -52,6 +56,7 @@ impl std::fmt::Display for Refused {
             Refused::Issuer => "issued by another control",
             Refused::Audience => "issued for another machine",
             Refused::NotMachine => "not a machine token",
+            Refused::NotBlock => "not a block grant",
             Refused::Expired => "expired: ask control for a new one",
             Refused::Lifetime => "outside the lifetime control gives",
             Refused::Replayed => "already used",
@@ -95,16 +100,9 @@ fn kid_of(token: &str) -> Result<String, Refused> {
     Ok(header.kid)
 }
 
-/// Checks `token` against `jwks`: issued by an issuer `iss_ok` takes, for
-/// machine `aud`, a machine token, live at `now` (seconds). Pure: the
-/// replay check is [`Verifier`]'s.
-pub fn verify(
-    token: &str,
-    jwks: &Jwks,
-    iss_ok: impl Fn(&str) -> bool,
-    aud: &str,
-    now: u64,
-) -> Result<MachineClaims, Refused> {
+/// `token`'s claims, once its signature by a key in `jwks` holds, if they
+/// carry `use`: what every token the hub signs for a machine starts with.
+fn signed(token: &str, jwks: &Jwks, use_: &str, wrong_use: Refused) -> Result<serde_json::Value, Refused> {
     if token.len() > MAX_TOKEN {
         return Err(Refused::Malformed);
     }
@@ -123,26 +121,79 @@ pub fn verify(
         .map_err(|_| Refused::Signature)?;
     // Claims are read only once the signature holds.
     let v: serde_json::Value = unb64(p).and_then(|b| serde_json::from_slice(&b).ok()).ok_or(Refused::Malformed)?;
-    if v.get("use").and_then(|u| u.as_str()) != Some(USE) {
-        return Err(Refused::NotMachine);
+    if v.get("use").and_then(|u| u.as_str()) != Some(use_) {
+        return Err(wrong_use);
     }
-    let claims: MachineClaims = serde_json::from_value(v).map_err(|_| Refused::Malformed)?;
-    if !iss_ok(&claims.iss) {
-        return Err(Refused::Issuer);
+    Ok(v)
+}
+
+/// The claims every token for a machine has, checked the same way.
+struct Common<'a> {
+    iss: &'a str,
+    aud: &'a str,
+    sub: &'a str,
+    iat: u64,
+    exp: u64,
+    jti: &'a str,
+}
+
+impl Common<'_> {
+    /// From an issuer `iss_ok` takes, for machine `aud`, live at `now`.
+    fn check(&self, iss_ok: impl Fn(&str) -> bool, aud: &str, now: u64) -> Result<(), Refused> {
+        if !iss_ok(self.iss) {
+            return Err(Refused::Issuer);
+        }
+        if self.aud != aud {
+            return Err(Refused::Audience);
+        }
+        if self.exp <= self.iat || self.exp - self.iat > MAX_LIFETIME_SECS || self.iat > now + CLOCK_SKEW_SECS {
+            return Err(Refused::Lifetime);
+        }
+        if self.exp <= now {
+            return Err(Refused::Expired);
+        }
+        if self.jti.is_empty() || self.sub.is_empty() {
+            return Err(Refused::Malformed);
+        }
+        Ok(())
     }
-    if claims.aud != aud {
-        return Err(Refused::Audience);
-    }
-    if claims.exp <= claims.iat || claims.exp - claims.iat > MAX_LIFETIME_SECS || claims.iat > now + CLOCK_SKEW_SECS {
-        return Err(Refused::Lifetime);
-    }
-    if claims.exp <= now {
-        return Err(Refused::Expired);
-    }
-    if claims.jti.is_empty() || claims.sub.is_empty() {
-        return Err(Refused::Malformed);
-    }
-    Ok(claims)
+}
+
+/// Checks `token` against `jwks`: issued by an issuer `iss_ok` takes, for
+/// machine `aud`, a machine token, live at `now` (seconds). Pure: the
+/// replay check is [`Verifier`]'s.
+pub fn verify(
+    token: &str,
+    jwks: &Jwks,
+    iss_ok: impl Fn(&str) -> bool,
+    aud: &str,
+    now: u64,
+) -> Result<MachineClaims, Refused> {
+    let v = signed(token, jwks, USE, Refused::NotMachine)?;
+    let c: MachineClaims = serde_json::from_value(v).map_err(|_| Refused::Malformed)?;
+    Common { iss: &c.iss, aud: &c.aud, sub: &c.sub, iat: c.iat, exp: c.exp, jti: &c.jti }.check(iss_ok, aud, now)?;
+    Ok(c)
+}
+
+/// Checks a block grant (#1001) as [`verify`] checks a machine token, but
+/// for `use: "block"`. Whether its key, its block and its role let a
+/// channel in is the block channel's to say (`block_channel.rs`).
+///
+/// No replay check: a frame's worker and its pages open their channels
+/// with the same grant until it expires, as with a device's grant. It's
+/// bound to the one-off key that does the handshake, and a channel needs
+/// that key's private half, so a copied grant opens nothing.
+pub fn verify_block(
+    token: &str,
+    jwks: &Jwks,
+    iss_ok: impl Fn(&str) -> bool,
+    aud: &str,
+    now: u64,
+) -> Result<BlockClaims, Refused> {
+    let v = signed(token, jwks, BLOCK_USE, Refused::NotBlock)?;
+    let c: BlockClaims = serde_json::from_value(v).map_err(|_| Refused::Malformed)?;
+    Common { iss: &c.iss, aud: &c.aud, sub: &c.sub, iat: c.iat, exp: c.exp, jti: &c.jti }.check(iss_ok, aud, now)?;
+    Ok(c)
 }
 
 /// The hub's keys as last fetched, and the tokens already taken.
@@ -293,6 +344,40 @@ pub(crate) mod tests {
         parts[1] = b64(&serde_json::to_vec(&claims("owner", "m2", 1000)).unwrap());
         assert_eq!(verify(&parts.join("."), &jwks, ISS, "m2", 1010), Err(Refused::Signature));
         assert_eq!(verify("a.b", &jwks, ISS, "m1", 1010), Err(Refused::Malformed));
+    }
+
+    pub(crate) fn block_claims(role: &str, aud: &str, iat: u64) -> serde_json::Value {
+        serde_json::json!({
+            "iss": "https://control.example", "sub": "acct1", "aud": aud, "use": "block",
+            "role": role, "name": "someone", "block": "7", "key": "ab".repeat(32),
+            "iat": iat, "exp": iat + 300, "jti": "j1",
+        })
+    }
+
+    #[test]
+    fn a_block_grant_is_never_a_machine_token() {
+        let (k, jwks) = key();
+        let b = sign(&k, "k1", &block_claims("owner", "m1", 1000));
+        let c = verify_block(&b, &jwks, ISS, "m1", 1010).unwrap();
+        assert_eq!((c.block.as_str(), c.role, c.key.len()), ("7", TokenRole::Owner, 64));
+        assert_eq!(verify(&b, &jwks, ISS, "m1", 1010), Err(Refused::NotMachine));
+        let m = sign(&k, "k1", &claims("owner", "m1", 1000));
+        assert_eq!(verify_block(&m, &jwks, ISS, "m1", 1010), Err(Refused::NotBlock));
+        // The checks a machine token has.
+        assert_eq!(verify_block(&b, &jwks, ISS, "m2", 1010), Err(Refused::Audience));
+        assert_eq!(verify_block(&b, &jwks, |_| false, "m1", 1010), Err(Refused::Issuer));
+        assert_eq!(verify_block(&b, &jwks, ISS, "m1", 1300), Err(Refused::Expired));
+        let other = SigningKey::from_bytes(&[8; 32]);
+        assert_eq!(
+            verify_block(&sign(&other, "k1", &block_claims("owner", "m1", 1000)), &jwks, ISS, "m1", 1010),
+            Err(Refused::Signature)
+        );
+        let mut long = block_claims("owner", "m1", 1000);
+        long["exp"] = serde_json::json!(1000 + 3600);
+        assert_eq!(verify_block(&sign(&k, "k1", &long), &jwks, ISS, "m1", 1010), Err(Refused::Lifetime));
+        let mut keyless = block_claims("owner", "m1", 1000);
+        keyless.as_object_mut().unwrap().remove("key");
+        assert_eq!(verify_block(&sign(&k, "k1", &keyless), &jwks, ISS, "m1", 1010), Err(Refused::Malformed));
     }
 
     #[test]

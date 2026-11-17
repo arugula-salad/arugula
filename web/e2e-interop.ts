@@ -10,6 +10,7 @@ import { generateKeys, signText } from "./src/shell/e2e/keys.ts";
 import { daemonNow, E2ESocket, readWelcome } from "./src/shell/e2e/channel.ts";
 import { blockRoutesLabel } from "./src/shell/blocks/block-route.ts";
 import { blockOrigin, blockSrc, credsFor, frameAllow, grantExpiry, heard, isWebKit, MAX_LIFE_MS, mint, type Framed } from "./src/shell/blocks/through-control.ts";
+import { hello as blockHello } from "./src/shell/block/channel.ts";
 import { workerDirectBlocked } from "./src/shell/block/lna.ts";
 import { advance, follows, lockSignedIn, newInviteKey, redeemInvite, signInvite, signLock, signRedeem, signRoster, type Roster, type TeamLock, type TeamPin } from "./src/shell/e2e/team.ts";
 import { refreshAccount, type Seen } from "./src/shell/e2e/checkpoint.ts";
@@ -383,6 +384,20 @@ check("Rust trusts what we signed", JSON.stringify(rust) === JSON.stringify([roo
   check("the relay when the page is relayed", (await credsFor(client(null), "42", ua.chrome, false)).route === "relay");
   const noClock = { ...client(null), daemonClock: () => undefined };
   check("no grant without the daemon's clock", await credsFor(noClock, "42", ua.chrome, false).then(() => false, () => true));
+  // #1001: the hub's grant where the daemon takes one, for the new key;
+  // the device's where it doesn't, or the hub gives none.
+  const asked: string[][] = [];
+  const hub = { grant: async (m: string, b: string, k: string) => (asked.push([m, b, k]), "h.u.b") };
+  const noHub = { grant: async () => Promise.reject(new Error("Arugula cloud gave no grant for this block: HTTP 404")) };
+  const via = (grants: typeof hub, takes: boolean, keys = true) => ({ ...client(null), e2e: { daemon, keys: keys ? dev : undefined, blockGrants: grants }, takesBlockGrants: () => takes });
+  const h = await credsFor(via(hub, true, false), "42", ua.chrome, false);
+  check("the hub's grant, for this block and this key", h.token === "h.u.b" && !h.grant && JSON.stringify(asked[0]) === JSON.stringify([daemon.id, "42", h.key.pub]));
+  check("…sent as a block token", JSON.stringify(blockHello(h)) === '{"block_token":"h.u.b"}' && "grant" in blockHello(c));
+  check("…first, even for a device", (await credsFor(via(hub, true), "42", ua.chrome, false)).token === "h.u.b");
+  check("a device's grant on a daemon from before them", !!(await credsFor(via(hub, false), "42", ua.chrome, false)).grant && asked.length === 2);
+  check("…and when the hub gives none", !!(await credsFor(via(noHub, true), "42", ua.chrome, false)).grant);
+  check("no key and no hub grant: the hub's reason", await credsFor(via(noHub, true, false), "42", ua.chrome, false).then(() => "", (e: Error) => e.message).then((m) => m.includes("HTTP 404")));
+  check("no key on a daemon from before them: update it", await credsFor(via(hub, false, false), "42", ua.chrome, false).then(() => "", (e: Error) => e.message).then((m) => m.includes("update it")));
   // Origins and addresses.
   const origin = blockOrigin("0123456789abcdef0123456789abcdef", "arugula.run", { protocol: "https:", port: "" });
   check("a block's origin", origin === "https://b-0123456789abcdef0123456789abcdef.arugula.run", origin);

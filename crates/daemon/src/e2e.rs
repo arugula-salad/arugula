@@ -194,7 +194,8 @@ async fn serve(
     }
     // A block's frame (M50): a one-off key and its grant, not a device.
     if !payload.is_empty() {
-        return crate::block_channel::serve(app, &enrolled.keys.id(), responder, who, &payload, inbound, out).await;
+        return crate::block_channel::serve(app, &enrolled.keys.id(), responder, who, &payload, inbound, out, relayed)
+            .await;
     }
     let Some((device, principal)) = app.control.device(&who) else {
         warn!(key = hex::encode(&who[..8]), "refused a channel from a device this daemon doesn't trust");
@@ -234,7 +235,7 @@ async fn serve(
 
 /// How often a token channel checks the machine's remote-input switch,
 /// which `sharing.json` holds and nothing announces.
-const RECHECK: std::time::Duration = std::time::Duration::from_secs(2);
+pub(crate) const RECHECK: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// A channel opened with a machine token (aru-141): let in as the token's
 /// role says, capped to a viewer's while remote input is off here.
@@ -343,6 +344,19 @@ pub(crate) fn token_grant(
         // Only what's shared with `account:<sub>`.
         TokenRole::Guest => TokenGrant { principal: user(), role: None, shown: "guest", could_type: false },
     }
+}
+
+/// Whether a token with `role` gets in as this machine's owner: what a
+/// block's grant needs (#1001), since a block shows whatever its port does,
+/// as a device's grant needs an owner's device. The same rule as
+/// [`token_grant`]'s.
+pub(crate) fn token_owns(
+    role: arugula_control_wire::machine_token::TokenRole,
+    hosted: bool,
+    remote_input: bool,
+) -> bool {
+    use arugula_control_wire::machine_token::TokenRole;
+    remote_input && (role == TokenRole::Owner || (role == TokenRole::Editor && hosted))
 }
 
 /// What the remote sessions log says of a channel, and the token role to
@@ -959,7 +973,7 @@ mod token_grants {
     use arugula_control_wire::machine_token::{MachineClaims, TokenRole, USE};
     use arugula_core::Role;
 
-    use super::token_grant;
+    use super::{token_grant, token_owns};
     use crate::acl::Principal;
 
     fn claims(role: TokenRole) -> MachineClaims {
@@ -993,5 +1007,17 @@ mod token_grants {
         assert_eq!(g(TokenRole::Owner, false, false), (user.clone(), Some(Role::Viewer), false));
         assert_eq!(g(TokenRole::Editor, true, false), (user.clone(), Some(Role::Viewer), false));
         assert_eq!(g(TokenRole::Guest, false, false), (user, None, false));
+    }
+
+    #[test]
+    fn a_block_grant_needs_what_gets_in_as_the_owner() {
+        for role in [TokenRole::Owner, TokenRole::Editor, TokenRole::Viewer, TokenRole::Guest] {
+            for hosted in [false, true] {
+                for input in [false, true] {
+                    let owner = token_grant(&claims(role), hosted, input).principal == Principal::Owner;
+                    assert_eq!(token_owns(role, hosted, input), owner, "{role:?} hosted {hosted} input {input}");
+                }
+            }
+        }
     }
 }

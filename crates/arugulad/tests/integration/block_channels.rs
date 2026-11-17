@@ -5,13 +5,15 @@
 //! don't hold are refused in message 2; and closing the block closes its
 //! channel. A daemon with no block flags opens port blocks, and serves them
 //! over block channels, while its control has a block domain (PR 4), and
-//! not otherwise.
+//! not otherwise. A block grant the hub signs (#1001) opens one block for
+//! one key, for someone who'd get in as the owner, and nothing else.
 
 // Over the daemon's Unix socket; Windows gets its named pipe in M56 (#219).
 #![cfg(unix)]
 
 use std::{collections::HashMap, net::TcpListener, time::Duration};
 
+use arugula_control_wire::machine_token::{BLOCK_USE, BlockTokenHello, TokenHello, USE};
 use arugula_e2e::{
     Cert, DeviceKeys, Kind,
     block::{
@@ -28,6 +30,8 @@ use axum::{
     response::{Html, Redirect},
     routing::{get, post},
 };
+use base64::Engine as _;
+use ed25519_dalek::{Signer as _, SigningKey};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use tokio_tungstenite::tungstenite::Message;
@@ -38,16 +42,31 @@ fn free_port() -> u16 {
     TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port()
 }
 
+fn b64(b: &[u8]) -> String {
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b)
+}
+
+/// The hub's issuer key in these tests.
+fn issuer() -> SigningKey {
+    SigningKey::from_bytes(&[42; 32])
+}
+
 /// A control that trusts `device` (the account's root) and this daemon,
-/// serving block origins under `block_domain` if it's given.
+/// serving block origins under `block_domain` if it's given, and
+/// publishing the issuer's key.
 async fn fake_control(certs: Vec<Cert>, block_domain: Option<&'static str>) -> String {
     let trust = json!({ "certs": certs, "revocations": [] });
+    let jwks = json!({ "keys": [{
+        "kty": "OKP", "crv": "Ed25519", "kid": "k1", "alg": "EdDSA", "use": "sig",
+        "x": b64(issuer().verifying_key().as_bytes()),
+    }]});
     let info = match block_domain {
         Some(d) => json!({ "control": true, "daemon_auth": 2, "block_domain": d }),
         None => json!({ "control": true, "daemon_auth": 2 }),
     };
     let app = Router::new()
         .route("/control.json", get(move || async move { Json(info) }))
+        .route("/.well-known/jwks.json", get(move || async move { Json(jwks) }))
         .route("/api/daemon/trust", get(move || async move { Json(trust) }))
         .route("/api/daemon/peers", get(|| async { Json(json!({})) }))
         .route("/api/daemon/push-subs", get(|| async { Json(json!({ "subs": [] })) }))
@@ -363,4 +382,131 @@ async fn a_daemon_with_no_block_flags_shows_blocks_through_control_only() {
             .await;
     assert_eq!(res.status, 200);
     assert!(String::from_utf8_lossy(&page).contains("hello"));
+}
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()
+}
+
+/// A JWT as the hub signs one, with these claims.
+fn jwt(key: &SigningKey, claims: &Value) -> String {
+    let h = b64(&serde_json::to_vec(&json!({ "alg": "EdDSA", "typ": "JWT", "kid": "k1" })).unwrap());
+    let p = b64(&serde_json::to_vec(claims).unwrap());
+    let s = b64(&key.sign(format!("{h}.{p}").as_bytes()).to_bytes());
+    format!("{h}.{p}.{s}")
+}
+
+/// A block grant from the hub for `block` and `key`, as `role`, with `edit`
+/// applied to its claims; in message 1's hello.
+fn block_grant(r: &Rig, block: &str, key: &DeviceKeys, role: &str, edit: impl FnOnce(&mut Value)) -> Vec<u8> {
+    let mut c = json!({
+        "iss": r.control, "sub": "acct-b", "aud": r.daemon.id(), "use": BLOCK_USE, "role": role,
+        "name": "bee", "block": block, "key": hex::encode(key.noise_public),
+        "iat": now_secs(), "exp": now_secs() + 300, "jti": "0123456789abcdef0123456789abcdef",
+    });
+    edit(&mut c);
+    BlockTokenHello { block_token: jwt(&issuer(), &c) }.encode()
+}
+
+/// #1001: a browser that reaches the machine with the hub's tokens, and
+/// holds no device key, shows a block with a grant the hub signed for it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_block_through_the_hubs_grant() {
+    let r = rig().await;
+    let dev_port = free_port();
+    dev_server(dev_port).await;
+    assert_eq!(r.d.get("/api/host")["features"]["block_grants"], true);
+    let (status, body) =
+        r.d.raw("POST", "/api/blocks", Some(json!({"type": "browser", "config": {"port": dev_port, "path": "/"}})));
+    assert_eq!(status, 200, "{body}");
+    let block = serde_json::from_str::<Value>(&body).unwrap()["block"].as_u64().unwrap().to_string();
+
+    // The frame's one-off key, and the hub's grant for it.
+    let key = DeviceKeys::generate();
+    let grant = block_grant(&r, &block, &key, "owner", |_| {});
+    let (mut ws, ch, answer) = open(&r, &key, &grant).await.unwrap();
+    assert_eq!(Answer::decode(&answer), Ok(()));
+    let (res, page) =
+        fetch(&mut ws, &ch, 1, get_req("/", &[("sec-fetch-mode", "navigate"), ("sec-fetch-dest", "iframe")]), b"")
+            .await;
+    assert_eq!(res.status, 200);
+    assert!(String::from_utf8_lossy(&page).contains("hello"));
+    // The frame's worker and its pages each open a channel with it, as
+    // with a device's grant: it's bound to the key, not taken once.
+    let (_ws2, _, again) = open(&r, &key, &grant).await.unwrap();
+    assert_eq!(Answer::decode(&again), Ok(()));
+
+    // Grants that don't hold are refused in message 2.
+    let other = DeviceKeys::generate();
+    let stranger = SigningKey::from_bytes(&[9; 32]);
+    let machine_token = |c: &mut Value| c["use"] = json!(USE);
+    let refusals: Vec<(Vec<u8>, &DeviceKeys, Refused)> = vec![
+        // Someone else's grant: the key it names isn't the handshake's.
+        (grant.clone(), &other, Refused::OtherKey),
+        (block_grant(&r, "999", &other, "owner", |_| {}), &other, Refused::NoBlock),
+        // A block shows whatever its port does: owners only.
+        (block_grant(&r, &block, &other, "editor", |_| {}), &other, Refused::Untrusted),
+        (block_grant(&r, &block, &other, "viewer", |_| {}), &other, Refused::Untrusted),
+        (block_grant(&r, &block, &other, "guest", |_| {}), &other, Refused::Untrusted),
+        (
+            block_grant(&r, &block, &other, "owner", |c| c["aud"] = json!("another-machine")),
+            &other,
+            Refused::OtherDaemon,
+        ),
+        (
+            block_grant(&r, &block, &other, "owner", |c| c["iss"] = json!("https://other.example")),
+            &other,
+            Refused::Untrusted,
+        ),
+        (
+            block_grant(&r, &block, &other, "owner", |c| {
+                c["iat"] = json!(now_secs() - 400);
+                c["exp"] = json!(now_secs() - 100);
+            }),
+            &other,
+            Refused::Expired,
+        ),
+        (block_grant(&r, &block, &other, "owner", |c| c["exp"] = json!(now_secs() + 3600)), &other, Refused::TooLong),
+        // A machine token is never a block grant, nor a block grant one.
+        (block_grant(&r, &block, &other, "owner", machine_token), &other, Refused::Malformed),
+    ];
+    for (payload, keys, want) in refusals {
+        let (mut ws, _, got) = open(&r, keys, &payload).await.expect("an answer");
+        assert_eq!(Answer::decode(&got), Err(want));
+        assert!(!matches!(ws.next().await, Some(Ok(Message::Binary(_)))), "{want:?}: closed");
+    }
+    // Signed with a key the hub doesn't publish.
+    let mut forged = json!({
+        "iss": r.control, "sub": "acct-b", "aud": r.daemon.id(), "use": BLOCK_USE, "role": "owner",
+        "name": "bee", "block": block, "key": hex::encode(other.noise_public),
+        "iat": now_secs(), "exp": now_secs() + 300, "jti": "0123456789abcdef0123456789abcdef",
+    });
+    let (_ws3, _, got) =
+        open(&r, &other, &BlockTokenHello { block_token: jwt(&stranger, &forged) }.encode()).await.unwrap();
+    assert_eq!(Answer::decode(&got), Err(Refused::Signature));
+    // A block grant opens no machine's channel.
+    forged["use"] = json!(BLOCK_USE);
+    let (_ws4, _, got) =
+        open(&r, &other, &TokenHello { machine_token: jwt(&issuer(), &forged) }.encode()).await.unwrap();
+    assert_eq!(Refusal::decode(&got).map(|r| r.refused), Some("machine-token".to_owned()));
+
+    // Remote input off here: the open channel closes, and a new one is
+    // refused.
+    std::fs::write(r.d.state.join("sharing.json"), r#"{ "remote_input": false }"#).unwrap();
+    let closed =
+        tokio::time::timeout(Duration::from_secs(8), async { while next(&mut ws, &ch).await.is_some() {} }).await;
+    assert!(closed.is_ok(), "a block channel the hub let in stayed open with remote input off");
+    let (_ws5, _, got) = open(&r, &key, &grant).await.unwrap();
+    assert_eq!(Answer::decode(&got), Err(Refused::Untrusted));
+
+    // Each one it let in is in the machine's own record of remote sessions.
+    r.d.wait_for("the log's closes", || {
+        let log = std::fs::read_to_string(r.d.state.join("remote-sessions.jsonl")).unwrap_or_default();
+        let lines: Vec<Value> = log.lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
+        let opens = lines.iter().filter(|l| l["event"] == "open").count();
+        let closes = lines.iter().filter(|l| l["event"] == "close").count();
+        opens == 2
+            && closes == 2
+            && lines.iter().all(|l| l["account"] == "acct-b" && l["by"] == "block-grant" && l["role"] == "owner")
+    });
 }

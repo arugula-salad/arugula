@@ -127,6 +127,35 @@ export function controlTokens(origin = "", send: typeof fetch = (i, o) => fetch(
   };
 }
 
+/** Where a page's block grants come from (#1001): the hub signs one for
+ * one block on one machine, for the frame's one-off key (`key`, the X25519
+ * public half in hex), and the frame opens its channel with it
+ * (`{"block_token": "<jwt>"}`). Not a machine token: a block's frame gets
+ * that block and nothing else on the machine. */
+export interface BlockGrants {
+  grant(machine: string, block: string, key: string): Promise<string>;
+}
+
+/** Block grants from control at `origin` ("" for this page's own). */
+export function controlBlockGrants(origin = "", send: typeof fetch = (i, o) => fetch(i, o)): BlockGrants {
+  return {
+    async grant(machine, block, key) {
+      const res = await send(`${origin}/api/machines/${encodeURIComponent(machine)}/block-grant`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ block, key }),
+      });
+      const j = (await res.json().catch(() => ({}))) as { token?: unknown; error?: unknown; reason?: unknown };
+      if (!res.ok || typeof j.token !== "string" || !j.token) {
+        const said = typeof j.error === "string" ? j.error : typeof j.reason === "string" ? j.reason : `HTTP ${res.status}`;
+        throw new NoTokenError(res.status, `Arugula cloud gave no grant for this block: ${said}`);
+      }
+      return j.token;
+    },
+  };
+}
+
 /** Whether control at `origin` signs machine tokens: it publishes its
  * issuer's keys. A control without an issuer (a self-host or a test hub
  * started without one) answers 404, and a browser that isn't a device yet

@@ -278,6 +278,13 @@ pub struct HostFeatures {
     #[serde(default)]
     #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
     pub block_channels: bool,
+    /// A block's frame may open its channel with a block grant the hub
+    /// signs (#1001), not only one a device signed: a page with no device
+    /// key can show blocks. Older daemons leave it out, and a page then
+    /// signs with its device key if it has one.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    pub block_grants: bool,
     /// VM tabs and panes and *Sandboxes…*: a sandbox provider (loam).
     pub vms: bool,
     /// A studio is linked (`arugula studio login`).

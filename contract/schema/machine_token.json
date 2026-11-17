@@ -1,5 +1,119 @@
 {
   "$defs": {
+    "BlockClaims": {
+      "description": "A block grant's claims (#1001): a machine token's, narrowed to one\nblock and bound to one key. A frame on a block's origin shows that\nblock, and nothing else on the machine.",
+      "properties": {
+        "aud": {
+          "description": "The machine's id.",
+          "type": "string"
+        },
+        "block": {
+          "description": "The block's pane id, in decimal.",
+          "type": "string"
+        },
+        "exp": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "iat": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "iss": {
+          "description": "The hub's public URL.",
+          "type": "string"
+        },
+        "jti": {
+          "type": "string"
+        },
+        "key": {
+          "description": "The one-off key (X25519, hex) the grant is for: the daemon refuses\nit from a handshake with any other static key.",
+          "type": "string"
+        },
+        "name": {
+          "description": "The account's login, to show.",
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/TokenRole",
+          "description": "The account's role on the machine when the grant was made. A block\nshows whatever its port does, so the daemon lets in only a role it\nwould let in as its owner."
+        },
+        "sub": {
+          "description": "The account's id.",
+          "type": "string"
+        },
+        "use": {
+          "description": "Always [`BLOCK_USE`].",
+          "type": "string"
+        }
+      },
+      "required": [
+        "iss",
+        "sub",
+        "aud",
+        "use",
+        "role",
+        "name",
+        "block",
+        "key",
+        "iat",
+        "exp",
+        "jti"
+      ],
+      "type": "object"
+    },
+    "BlockGrantRequest": {
+      "description": "What a page asks the hub for a block grant with: the block, and the\none-off key its frame will open the channel with.",
+      "properties": {
+        "block": {
+          "description": "The block's pane id on the machine, in decimal.",
+          "type": "string"
+        },
+        "key": {
+          "description": "The frame's one-off X25519 key, the public half, in hex: the static\nkey of the channel's handshake.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "block",
+        "key"
+      ],
+      "type": "object"
+    },
+    "BlockGrantResponse": {
+      "description": "The hub's answer to a block grant request.",
+      "properties": {
+        "expires": {
+          "description": "When it runs out, in seconds since the epoch.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "token": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "token",
+        "expires"
+      ],
+      "type": "object"
+    },
+    "BlockTokenHello": {
+      "additionalProperties": false,
+      "description": "The payload of a block channel's first message when its grant is the\nhub's rather than one a device signed (`{\"grant\": …}`).",
+      "properties": {
+        "block_token": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "block_token"
+      ],
+      "type": "object"
+    },
     "Jwk": {
       "description": "One public key, as a JWKS lists it.",
       "properties": {

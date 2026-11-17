@@ -7,10 +7,12 @@
 // - A frame is answered only when the message comes from a frame this page
 //   made (`event.source`), at the origin it gave that frame
 //   (`event.origin`), and only for that frame's block.
-// - Each answer is a new X25519 key and a grant for it, signed with this
-//   device's key. Its expiry is by the daemon's clock, from the device
-//   channel's message 2 (`{"now"}`), a few minutes ahead and never more
-//   than ten. Nothing the frame says sets a time.
+// - Each answer is a new X25519 key and a grant for it. The hub signs it
+//   (#1001: `{"block_token"}`, for that block and key) when the daemon
+//   takes the hub's grants and this page gets them; else this device's key
+//   does, its expiry by the daemon's clock, from the device channel's
+//   message 2 (`{"now"}`), a few minutes ahead and never more than ten.
+//   Nothing the frame says sets a time.
 // - The route is the relay, or the daemon's own `wss://…/e2e` when this page
 //   reached it directly, except in WebKit (Safari, iOS, the desktop app's
 //   WebKitGTK), which stays on the relay until its direct path is measured
@@ -25,6 +27,7 @@
 import { hex } from "../e2e/cert.ts";
 import { daemonNow, type DaemonClock, type DaemonRef } from "../e2e/channel.ts";
 import { signText, type DeviceKeys } from "../e2e/keys.ts";
+import type { BlockGrants } from "../e2e/machine-token.ts";
 import { newKeyPair, publicRaw } from "../e2e/noise.ts";
 import type { Creds, Grant, Route } from "../block/channel.ts";
 import { TAG, VERSION } from "../block/page.ts";
@@ -109,6 +112,15 @@ export async function mint(m: Mint): Promise<Creds> {
   return { daemon: { id: m.daemon.id, noise: m.daemon.noise }, key: { pkcs8, pub }, grant, route: m.route };
 }
 
+/** A new block key, and a grant for it from the hub (#1001). */
+export async function fromHub(grants: BlockGrants, daemon: DaemonRef, block: string, route: string): Promise<Creds> {
+  const kp = await newKeyPair("X25519", true, ["deriveBits"]);
+  const pkcs8 = await crypto.subtle.exportKey("pkcs8", kp.privateKey);
+  const pub = hex(await publicRaw(kp.publicKey));
+  const token = await grants.grant(daemon.id, block, pub);
+  return { daemon: { id: daemon.id, noise: daemon.noise }, key: { pkcs8, pub }, token, route };
+}
+
 /** What a frame this page made stands for. */
 export interface Framed {
   /** The `<iframe>`: its `contentWindow` is the only source answered. */
@@ -191,7 +203,9 @@ export interface BlockClient {
   /** Control's block domain, when this page reaches the daemon through a
    * control that serves block origins. */
   blockDomain(): string | null;
-  e2e?: { daemon: DaemonRef; keys?: DeviceKeys };
+  e2e?: { daemon: DaemonRef; keys?: DeviceKeys; blockGrants?: BlockGrants };
+  /** The daemon takes the hub's block grants (`features.block_grants`). */
+  takesBlockGrants?(): boolean;
   /** The daemon's clock, from this page's channel to it. */
   daemonClock(): DaemonClock | undefined;
   /** The daemon's own `wss://…/e2e`, when this page reached it directly. */
@@ -206,8 +220,20 @@ export async function credsFor(c: BlockClient, block: string, ua = navigator.use
   if (!clock) throw new Error("this machine isn't connected, or its Arugula is too old to show blocks here: update it");
   const direct = c.directE2E();
   const route = direct && !isWebKit(ua, touchMac) ? direct : "relay";
-  // A block's grant is signed with a device key (#1001 moves it to tokens).
-  if (!c.e2e.keys) throw new Error("this browser reaches the machine with a token from Arugula cloud, and blocks shown here still need it to be one of your devices");
+  // The hub's grant where the daemon takes one (#1001). A device's grant
+  // still works where the hub gives none (a control from before them, or
+  // one that signs no tokens), and on a daemon from before them.
+  const hub = c.e2e.blockGrants && c.takesBlockGrants?.() ? c.e2e.blockGrants : undefined;
+  if (hub) {
+    try {
+      return await fromHub(hub, c.e2e.daemon, block, route);
+    } catch (e) {
+      if (!c.e2e.keys) throw e;
+    }
+  }
+  if (!c.e2e.keys) {
+    throw new Error(c.e2e.blockGrants ? "this machine's Arugula is too old to show blocks to a browser signed in with Arugula cloud: update it" : "Arugula cloud gives no grants for blocks here, and this browser isn't one of your devices");
+  }
   return mint({ keys: c.e2e.keys, daemon: c.e2e.daemon, block, now: daemonNow(clock), route });
 }
 

@@ -7,7 +7,9 @@
 // The handshake is the product's (Noise IK, ../e2e/noise.ts, the frozen
 // prologue `illogical/1\n<daemon id>\n`) with the block's one-off key as
 // the static key, and the grant in message 1's payload (`{"grant": …}`,
-// crates/e2e/src/block.rs). The daemon answers in message 2's payload:
+// crates/e2e/src/block.rs, signed by the parent's device key; or
+// `{"block_token": "<jwt>"}`, a grant the hub signed for this key, #1001).
+// The daemon answers in message 2's payload:
 // `{"ok":true}`, or `{"ok":false,"refused":"<code>"}` and a close. Then
 // every transport message is the product's framing (../e2e/channel.ts: a
 // continuation byte, then a binary `Msg`), each carrying one frame of
@@ -42,7 +44,10 @@ export interface Creds {
   /** The one-off X25519 block key: its PKCS#8 private half and its public
    * half (hex, the grant's `key`). */
   key: { pkcs8: ArrayBuffer; pub: string };
-  grant: Grant;
+  /** A grant the parent's device key signed (M50)… */
+  grant?: Grant;
+  /** …or one the hub signed for `key.pub` (#1001): a JWT. */
+  token?: string;
   /** "relay" (control's relay on this origin), or a `wss://…/e2e` URL
    * straight to the daemon. */
   route: string;
@@ -76,6 +81,12 @@ export class Refused extends Error {
     super(`the machine refused this block (${code})`);
     this.code = code;
   }
+}
+
+/** Message 1's payload for `creds`: the hub's grant when it gave one,
+ * else the device's. */
+export function hello(creds: Creds): { block_token: string } | { grant: Grant | undefined } {
+  return creds.token ? { block_token: creds.token } : { grant: creds.grant };
 }
 
 export const NativeWebSocket: typeof WebSocket = globalThis.WebSocket;
@@ -181,7 +192,7 @@ export class BlockChannel {
       ws.onopen = async () => {
         try {
           // Frozen (#504): the prologue both ends agree on.
-          ws.send(await ik.write(enc.encode(JSON.stringify({ grant: creds.grant })), enc.encode(`illogical/1\n${creds.daemon.id}\n`)));
+          ws.send(await ik.write(enc.encode(JSON.stringify(hello(creds))), enc.encode(`illogical/1\n${creds.daemon.id}\n`)));
         } catch (e) {
           rej(e);
         }
