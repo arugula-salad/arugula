@@ -1097,7 +1097,9 @@ pub fn login_device(url: &str, name: &str, account: Option<&str>) -> anyhow::Res
         let v: wire::JoinPoll = serde_json::from_value(res.json().context("control")?)
             .context("control's answer about the approval isn't one this CLI can read")?;
         if let Some(on) = &v.rejected {
-            bail!("turned down on {on}; to sign this terminal in from a browser instead, run `arugula login --browser`");
+            bail!(
+                "turned down on {on}; to sign this terminal in from a browser instead, run `arugula login --browser`"
+            );
         }
         if v.approved {
             break v;
