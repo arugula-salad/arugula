@@ -286,6 +286,12 @@ jobs:
           ARUGULA_RELEASE_TAG: ${{ github.ref_name }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_TOKEN: ${{ secrets.CI_GREEN_TOKEN }}
+      # chant titles app-latest "app-latest X.Y.Z": this names it "Arugula app
+      # (latest)" and deletes whatever on it the tag's release doesn't hold
+      # (#868). With TAG_TOKEN, as chant writes that release.
+      - run: scripts/release app-latest "$GITHUB_REF_NAME"
+        env:
+          GH_TOKEN: ${{ secrets.CI_GREEN_TOKEN }}
       - run: scripts/release check-latest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

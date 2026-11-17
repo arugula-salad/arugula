@@ -618,7 +618,10 @@ that release is out (lex00, 2026-10-08, #524).
    holding the same downloads, `SHA256SUMS` and the updater's
    `latest.json`, whose URLs point at the `app-vX.Y.Z` release. The site's
    download buttons and the updater's endpoint (`tauri.conf.json`) point
-   at `app-latest`, so they get the new app at once.
+   at `app-latest`, so they get the new app at once. chant titles it
+   `app-latest X.Y.Z`, so `scripts/release app-latest TAG` then names it
+   "Arugula app (latest)" and deletes anything on it that the tag's release
+   doesn't hold, besides `latest.json` (#868).
 4. Apps from before the split (0.23 and older) have no updater key, so they
    never check: their people install the new app once, by hand.
 
