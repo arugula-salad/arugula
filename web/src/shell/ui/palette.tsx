@@ -32,7 +32,7 @@ import { opPath, OPS } from "../ops";
 import type { DocRow } from "../../shared/proto";
 import { askText, closeMenu, type MenuItem } from "../../shared/ui/menu";
 import { ariaKeys, keyHint } from "./keys";
-import { newTabItems, paneItems, sessionItems, settingsItems, tabItems } from "./commands";
+import { helpItems, newTabItems, paneItems, sessionItems, settingsItems, tabItems } from "./commands";
 import { currentAccount } from "./app-bar";
 import { needsYou } from "../../shared/needs-you";
 import { ago } from "../../shared/time";
@@ -160,7 +160,7 @@ function fromMenu(group: string, items: MenuItem[], about?: string, heading: str
 
 /** What each menu's commands are shown as: one pattern, plural nouns (UI
  * audit #176: PLACES, DOCS, PANE, GO TO). */
-const KINDS: Record<string, string> = { Pane: "Panes", Tab: "Tabs", New: "Tabs", Session: "Sessions", Settings: "Settings", Account: "Account", Docs: "Docs", Places: "Places" };
+const KINDS: Record<string, string> = { Pane: "Panes", Tab: "Tabs", New: "Tabs", Session: "Sessions", Settings: "Settings", Help: "Help", Account: "Account", Docs: "Docs", Places: "Places" };
 export const kindOf = (c: Command) => c.kind ?? KINDS[c.group] ?? c.group;
 
 /** Every command for what's shown now. */
@@ -195,11 +195,13 @@ export function commands(client: Client, phone: boolean, workspace: string | nul
   }
 
   // The account menu's settings: this machine's (always: UI audit #176,
-  // "permission" and "developer" found nothing), this device's, help; and
-  // the account's own (Teams, Devices…). Without the menus' headers: each
-  // would name every item after it.
+  // "permission" and "developer" found nothing), this device's; Help, which
+  // is here and not in Settings (Arugula #1108); and the account's own
+  // (Teams, Devices…). Without the menus' headers: each would name every
+  // item after it.
   const labelled = (items: MenuItem[]) => items.filter((i) => typeof i === "object" && "label" in i && i.label !== "Command palette…");
   out.push(...fromMenu("Settings", labelled(settingsItems(client, { machine: true }))));
+  out.push(...fromMenu("Help", helpItems(client)));
   const account = currentAccount();
   if (account) out.push(...fromMenu("Account", labelled([...account.items(), { label: "Sign out", danger: true, run: () => account.signOut() }])));
 

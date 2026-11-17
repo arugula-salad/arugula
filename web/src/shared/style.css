@@ -3369,7 +3369,9 @@ button.agent-image {
 }
 
 .prompt .machine-telemetry-switch,
-.prompt .sharing-switch {
+.prompt .sharing-switch,
+.machine-sec .machine-telemetry-switch,
+.machine-sec .sharing-switch {
   display: flex;
   gap: 10px;
   align-items: center;

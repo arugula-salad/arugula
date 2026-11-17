@@ -25,7 +25,6 @@ import { directory } from "../hosts";
 import { DeveloperLayer } from "./developer";
 import { RulesLayer } from "./rules";
 import { SharingLayer } from "./sharing";
-import { AgentGrantsLayer } from "./agent-grants";
 import { AccessLayer } from "./access";
 import { DocShareLayer } from "./doc-share";
 import { ConversationsLayer } from "./conversations";
@@ -154,7 +153,6 @@ export function App({ client, cell, frame = "own", onSwarm }: { client: Client; 
       <DocShareLayer />
       <DeveloperLayer />
       <SharingLayer />
-      <AgentGrantsLayer />
       <AccessLayer />
       <PickerLayer />
       <PaletteLayer />
@@ -251,7 +249,6 @@ export function App({ client, cell, frame = "own", onSwarm }: { client: Client; 
       <DocShareLayer />
       <DeveloperLayer />
       <SharingLayer />
-      <AgentGrantsLayer />
       <AccessLayer />
       <PickerLayer />
       <PaletteLayer />

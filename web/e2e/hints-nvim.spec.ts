@@ -20,7 +20,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { closeContexts, menuItem, paneEl, panes, reset, settingsRow, closeSettingsPage } from "./helpers";
+import { closeContexts, menuItem, paneEl, panes, reset, paletteCommand, settingsRow } from "./helpers";
 import type { PaneId } from "../src/shared/proto";
 import { ANY, daemonPort } from "./ports";
 
@@ -194,9 +194,8 @@ test("the help card: once, over the first nvim pane, until it's closed; the pane
   await page.keyboard.press("Escape");
   await expect(card(page, other)).toHaveCount(0);
 
-  // Help in Settings, too: over an nvim pane of the tab.
-  await settingsRow(page, "nvim in Arugula");
-  await closeSettingsPage(page);
+  // The command palette's Help, too: over an nvim pane of the tab.
+  await paletteCommand(page, "Help/nvim in Arugula");
   await expect(page.locator("[data-pane-tip]")).toHaveCount(1);
   await page.locator("[data-pane-tip] [data-hint-second]").click();
   await expect(page.locator("[data-pane-tip]")).toHaveCount(0);
