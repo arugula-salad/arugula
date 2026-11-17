@@ -128,14 +128,6 @@ export interface PlatformApi {
    * shown only where there is no Overview (the page doesn't reach
    * machines, #1088). A page without it shows those alone. */
   Overview?: ComponentType<{ project: string; board?: string; card?: string; children?: ComponentChildren }>;
-  /** A machine's own settings as sections of Settings' This machine
-   * (Arugula #1107): Access, Permission rules, Usage and crash reports,
-   * Guest SSH access and Developer settings, read from the machine through
-   * the page's own client to it, each saying so in its summary when the
-   * page can't reach it. `children`, the platform's sections about the
-   * machine, go after Access. Where the page reaches machines itself (the
-   * app); a page without it links to the machine's page instead. */
-  MachineSettings?: ComponentType<{ machine: string; name: string; children?: ComponentChildren }>;
 }
 
 const none = () => () => {};

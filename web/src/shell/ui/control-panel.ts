@@ -4,6 +4,6 @@
 // bringing those screens along (Arugula #989: the app holds no
 // shell/trust/).
 
-export type Panel = "devices" | "add" | "add-device" | "teams" | "account" | "shared-docs";
+export type Panel = "devices" | "add" | "teams" | "account" | "shared-docs";
 
 export const openPanel = (p: Panel) => () => dispatchEvent(new CustomEvent("arugula:control-panel", { detail: p }));

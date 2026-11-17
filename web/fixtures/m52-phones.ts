@@ -124,30 +124,17 @@ interface Phone {
   page: Page;
 }
 
-/** Sign a phone in and wait until it's in. A hub with an issuer key (the
- * test stack's, aru-141) hands a new browser machine tokens, so it's in
- * once signed in; one without asks the device to approve it first (#761:
- * with the code the phone shows, as scanning it would). */
-async function signIn(d: Device, browser: Browser, name: string, options: BrowserContextOptions, local: string): Promise<Phone> {
+/** Sign a phone in and wait until it's in. Signing in is all it takes
+ * (aru-141, #1004): the test stack's hub has an issuer key, so the phone
+ * reaches the box with machine tokens, and nothing approves it. */
+async function signIn(browser: Browser, name: string, options: BrowserContextOptions, local: string): Promise<Phone> {
   const ctx = await browser.newContext({ ...options, baseURL: local });
   const page = await ctx.newPage();
   page.on("pageerror", (e) => log(`${name}: page error: ${e.message}`));
   await page.goto("/");
   await page.locator("[data-signin=github]").tap();
-  const phase = await until(
-    `${name} to be signed in`,
-    () => page.evaluate(() => (["ready", "waiting"] as const).find((p) => window.__arugula?.control?.phase === p)),
-    30_000,
-  );
-  if (phase === "waiting") {
-    const { asked, code } = await page.evaluate(() => {
-      const s = window.__arugula.control as unknown as { request: unknown; deviceCode: string | null };
-      return { asked: s.request, code: s.deviceCode };
-    });
-    await d.approveRequest(asked as Parameters<Device["approveRequest"]>[0], code);
-    await until(`${name} to be approved`, () => page.evaluate(() => window.__arugula.control?.phase === "ready"), 30_000);
-  }
-  log(`${name}: signed in${phase === "waiting" ? " and approved" : ""}`);
+  await until(`${name} to be signed in`, () => page.evaluate(() => window.__arugula?.control?.phase === "ready" || undefined), 30_000);
+  log(`${name}: signed in`);
   return { name, page };
 }
 
@@ -194,8 +181,8 @@ async function main() {
     browsers.push(await chromium.launch({ channel: process.env.E2E_CHROMIUM ? undefined : "chrome" }));
     browsers.push(await webkit.launch());
     const phones = [
-      await signIn(d, browsers[0], "Pixel 7", phoneOf("Pixel 7"), local),
-      await signIn(d, browsers[1], "iPhone", phoneOf("iPhone 15"), local),
+      await signIn(browsers[0], "Pixel 7", phoneOf("Pixel 7"), local),
+      await signIn(browsers[1], "iPhone", phoneOf("iPhone 15"), local),
     ];
     for (const [i, p] of phones.entries()) await typeMarker(d, box.id, p, await open(p, boxName, 60_000), `${marker}-PHONE${i}-A`);
 

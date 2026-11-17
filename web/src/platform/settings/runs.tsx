@@ -118,7 +118,7 @@ export function RunGrant({ project }: { project: string }) {
       {v.role === "owner" ? (
         <p class="dim settings-note">
           {g ? (v.stale || v.renew || v.signer_gone ? "Renew it, or revoke it," : "Revoke it") : v.offer ? "This project has cloud workspaces. Allow runs on them" : "Allow runs"} on{" "}
-          {sign}, under Devices and machines, on a computer or your phone: you confirm it there with a passkey.
+          {sign}, under Machines, on a computer or your phone: you confirm it there with a passkey.
         </p>
       ) : (
         <p class="dim settings-note">A project owner allows runs, or revokes them, with a passkey.</p>

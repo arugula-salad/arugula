@@ -234,7 +234,7 @@ export function GettingStartedLayer() {
   // Where it went: it doesn't just vanish.
   return closedOnce ? (
     <div class="start-toast" role="status" data-start-toast>
-      Getting started is in the command palette, under Help, any time.
+      Getting started is in Settings, at the bottom of the rail, any time.
     </div>
   ) : null;
 }
@@ -401,7 +401,7 @@ function GettingStarted({ client, section, close }: { client: Client | null; sec
         <button class="secondary" disabled={step === 0} onClick={() => go(step - 1)}>
           <ChevronIcon dir="left" /> Back
         </button>
-        <span class="start-hint">Always in the command palette: Getting started</span>
+        <span class="start-hint">Always in Settings: Getting started</span>
         {last ? (
           <button class="primary" onClick={close}>
             Done
@@ -1106,7 +1106,7 @@ function Try({ client, done, go, close }: { client: Client | null; done: Record<
         </ul>
       )}
       <p class="start-lede">
-        Anything you skipped is a click away: this is <b>Getting started</b> in the command palette, under Help (and the ☰ sheet on a phone), any time.
+        Anything you skipped is a click away: this is <b>Getting started</b> in Settings, at the bottom of the rail (and the ☰ sheet on a phone), any time.
       </p>
     </section>
   );

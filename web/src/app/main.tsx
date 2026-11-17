@@ -39,7 +39,6 @@ import { fromControl } from "../shared/machine-paths";
 import type { PlatformApi } from "../shared/platform-api";
 import { appMachineDocs, appMachines, appOverview } from "./machines";
 import { appLive } from "./live";
-import { appMachineSettings } from "./settings";
 import { AppSession } from "./session";
 import { signedInOf } from "./signed-in";
 import { setSignedIn } from "../shell/signed-in";
@@ -85,8 +84,6 @@ const api: PlatformApi = {
   machineDocs: appMachineDocs(appSession),
   // A board card's session, drawn in its drawer with the app's own clients.
   ...appLive(appSession),
-  // Settings' This machine: each machine's own settings, through the hub.
-  MachineSettings: appMachineSettings(appSession),
   goToPane: (machine, pane, quote) =>
     here() ? go(pathOf({ page: "find", what: "machines", at: { at: "machine", machine, pane: Number(pane) } }, names)) : platformApi.goToPane(machine, pane, quote),
   goToSession: (machine) => (here() ? go(pathOf({ page: "find", what: "machines", at: { at: "machine", machine } }, names)) : platformApi.goToSession(machine)),

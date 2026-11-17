@@ -5,9 +5,7 @@
 // team's Settings tab, `#section`) land in their scope. On a phone, the
 // list, then a section full width with a way back. The Project scope's 17
 // sections are 11 rows in four bands (Arugula #1105), and an old section's
-// address lands on the row it's part of. You holds control's device and
-// preference rows too (Arugula #1108): what a device signs is a ↗ row to
-// control's page at its dialog, and Help is the palette's. On #971's fixture page
+// address lands on the row it's part of. On #971's fixture page
 // (move-to-project-page.tsx): the platform's answers are this spec's.
 import { devices, expect, test, type Page, type Route } from "@playwright/test";
 import { fixturePage } from "./fixture-page";
@@ -63,17 +61,16 @@ test.describe("on a computer", () => {
     await expect(row(page, "quiet-hours").locator(".list-row-detail")).toHaveText("Weeknights 10 PM – 8 AM · New York");
     await expect(row(page, "linked").locator(".list-row-detail")).toHaveText("None");
     await expect(row(page, "tokens").locator(".list-row-detail")).toHaveText("1 token");
-    // Your machines' agents are each machine's, under This machine (Arugula #1107).
-    await expect(row(page, "agents")).toHaveCount(0);
+    await expect(row(page, "agents").locator(".list-row-detail")).toHaveText("No machines yet");
     // The first is shown, the rest wait; its help is under its heading, with no More to open.
-    await expect(row(page, "notifications")).toHaveAttribute("aria-current", "true");
-    await expect(section(page, "notifications")).toBeVisible();
+    await expect(row(page, "account")).toHaveAttribute("aria-current", "true");
+    await expect(section(page, "account")).toBeVisible();
     await expect(section(page, "quiet-hours")).toBeHidden();
     await expect(page.locator("details.settings-more")).toHaveCount(0);
     await row(page, "quiet-hours").click();
     await expect(page).toHaveURL(/\/settings\/you\/quiet-hours$/);
     await expect(section(page, "quiet-hours")).toBeVisible();
-    await expect(section(page, "notifications")).toBeHidden();
+    await expect(section(page, "account")).toBeHidden();
     await expect(row(page, "quiet-hours")).toHaveAttribute("aria-current", "true");
     // A link opens its section, and an old one's `#section` lands on it.
     await page.goto("/settings/you/tokens");
@@ -81,60 +78,6 @@ test.describe("on a computer", () => {
     await page.goto("/settings#notifications");
     await expect(page).toHaveURL(/\/settings\/you\/notifications$/);
     await expect(section(page, "notifications")).toBeVisible();
-    // The old Agents on your machines' address opens This machine's Agents' grants (Arugula #1107).
-    await page.goto("/settings#agents");
-    await expect(page.locator('[data-settings-scope="machine"]')).toHaveAttribute("aria-selected", "true");
-  });
-
-  test("You: control's device and preference rows join it in bands, a device's are ↗ rows to control's page at their dialog, and there's no second index or Help", async ({ page }) => {
-    await open(page, "/settings");
-    // Notifications, Look and feel, Account: each section under its band.
-    const bands = page.locator(".settings-list .list-group-title");
-    await expect(bands).toHaveText(["Notifications", "Look and feel", "Account"]);
-    const ids = () => page.locator("[data-settings-row]").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.settingsRow));
-    // (Chat alerts, after quiet hours, shows once chat is on: it isn't here.)
-    await expect.poll(ids).toEqual(["notifications", "quiet-hours", "push", "appearance", "preferences", "account", "linked", "tokens"]);
-    // Appearance in one place: its own section, and only there.
-    await expect(page.locator("[data-open-appearance]")).toHaveCount(1);
-    await expect(section(page, "appearance").locator("[data-open-appearance]")).toHaveCount(1);
-    await expect(row(page, "appearance").locator(".list-row-detail")).toHaveText(/ on this device$/);
-    // No index of control's sections, and no Help.
-    await expect(section(page, "elsewhere")).toHaveCount(0);
-    await expect(page.locator("[data-settings-elsewhere]")).toHaveCount(0);
-    await expect(page.getByText("Getting started")).toHaveCount(0);
-    await expect(page.getByText("What's new")).toHaveCount(0);
-
-    // What a device signs: a ↗ row each, at its dialog on control's page.
-    const origin = new URL(page.url()).origin;
-    await row(page, "account").click();
-    await expect(page).toHaveURL(/\/settings\/you\/account$/);
-    const account = section(page, "account");
-    await expect(account.locator("h2")).toHaveText("Sign-in and devices");
-    const out = account.locator("[data-settings-control]");
-    await expect(out).toHaveText(["Sign-in and account", "Devices and machines", "Add a phone or browser", "Teams", "Shared Docs"].map((t) => new RegExp(`^${t}`)));
-    expect(await out.evaluateAll((els) => els.map((e) => (e as HTMLAnchorElement).href))).toEqual(["account", "devices", "add-device", "teams", "shared-docs"].map((h) => `${origin}/#${h}`));
-    // Phones and browsers: This device and All your devices, as one, on control's page.
-    await row(page, "push").click();
-    const push = section(page, "push").locator("[data-settings-control]");
-    await expect(push).toHaveCount(2);
-    for (const href of await push.evaluateAll((els) => els.map((e) => (e as HTMLAnchorElement).href))) expect(href).toBe(`${origin}/#settings=push`);
-  });
-
-  test("You: Preferences are drawn here, and their summary says what's set", async ({ page }) => {
-    await open(page, "/settings/you/preferences");
-    const prefs = section(page, "preferences");
-    await expect(prefs).toBeVisible();
-    await expect(row(page, "preferences").locator(".list-row-detail")).toHaveText("Tips on · opens in VS Code");
-    const tips = prefs.getByRole("switch", { name: "Tips", exact: true });
-    await expect(tips).toBeChecked();
-    await tips.click();
-    await expect(tips).not.toBeChecked();
-    await prefs.locator('[data-pref="editor"]').selectOption("nvim");
-    await expect(row(page, "preferences").locator(".list-row-detail")).toHaveText("Tips off · opens in nvim");
-    await prefs.getByRole("switch", { name: "Tips", exact: true }).click();
-    await prefs.getByRole("switch", { name: "Big tips" }).click();
-    await prefs.locator('[data-pref="editor"]').selectOption("ask");
-    await expect(row(page, "preferences").locator(".list-row-detail")).toHaveText("Tips on, not big ones · asks which editor");
   });
 
   test("the old addresses land in their scopes, the picker chooses which one, and the scopes' switch goes between them", async ({ page }) => {

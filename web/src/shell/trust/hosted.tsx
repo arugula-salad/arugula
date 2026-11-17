@@ -1,4 +1,4 @@
-// Hosted machines in Devices and machines (M178): the ones this browser
+// Hosted machines in Machines (M178): the ones this browser
 // accepted for a project, labelled "Hosted: the operator can read", and,
 // for each project this account owns, whether control may enroll them
 // (the project delegation, signed here by this device). Allow is offered

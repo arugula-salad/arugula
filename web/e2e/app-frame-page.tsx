@@ -25,7 +25,6 @@ import { PlatformPage } from "../src/platform/page";
 import { go } from "../src/platform/router";
 import { appMachines, appOverview } from "../src/app/machines";
 import { appLive } from "../src/app/live";
-import { appMachineSettings } from "../src/app/settings";
 import { chat } from "../src/shared/chat-store";
 import { localBackend, setSeenBackend } from "../src/shared/seen";
 import { session } from "../src/platform/session";
@@ -78,16 +77,13 @@ followPlatformLinks((path) => go(path), "[data-platform-machines]");
 // the hub answers on its host.
 setSeenBackend(localBackend());
 
-/** The suite's daemon as Settings' This machine names it: a machine's id is hex. */
-const SUITE = "5e771e0000000001";
-
 // In the frame, as app.html's root is (shared/frame.css).
 const root = document.getElementById("root")!;
 root.classList.add("frame");
 render(
   // A board card's session (board-live.spec.ts, overview.spec.ts): the machine `m_suite` is the suite's daemon, this page's origin.
   <PlatformApiContext.Provider
-    value={{ ...platformApi, Machines: appMachines(() => null), Overview: appOverview(() => null), ...appLive(() => null, (m) => (m === "m_suite" ? "" : undefined)), MachineSettings: appMachineSettings(() => null, (m) => (m === SUITE ? "" : undefined)), goToPane: (_machine, pane) => go(`/p/prj_aaaa0002/machines?pane=${pane}`) }}
+    value={{ ...platformApi, Machines: appMachines(() => null), Overview: appOverview(() => null), ...appLive(() => null, (m) => (m === "m_suite" ? "" : undefined)), goToPane: (_machine, pane) => go(`/p/prj_aaaa0002/machines?pane=${pane}`) }}
   >
     <PlatformPage />
     <MenuLayer />

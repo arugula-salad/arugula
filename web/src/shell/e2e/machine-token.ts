@@ -174,12 +174,14 @@ export async function controlIssues(origin = "", send: typeof fetch = (i, o) => 
 /** How this browser reaches its machines: `first` (the default since
  * every machine runs 0.70.4 or newer, Jake 2026-11-14) uses tokens even
  * when it's one of the account's devices; `no-key` uses them only when it
- * isn't; `off` never does, and a browser that isn't a device asks to be
- * approved, as before machine tokens. */
+ * isn't. `off` reaches them by the device key when it has one, and makes
+ * the account's first browser its first device even where control signs
+ * tokens (a test's way to make one); since #1004 no other browser becomes
+ * a device, so one that isn't uses tokens in every mode. */
 export type TokenMode = "no-key" | "first" | "off";
 
 /** Where a person (or a test) can say which, until the device path goes
- * (#1004): no Labs flag, since it's about this browser, not the account. */
+ * (#1007): no Labs flag, since it's about this browser, not the account. */
 export const TOKEN_MODE_KEY = "arugula.machine-tokens";
 
 /** The default for every browser that hasn't said. */

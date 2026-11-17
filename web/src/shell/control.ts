@@ -1,28 +1,22 @@
 // The page served by Arugula control (M17): who you are, this browser's
 // place in your account, and the daemons you can reach.
 //
-// Signing in (GitHub) only opens control's API. What lets this browser
-// reach a daemon is its device key, approved by a device the account
-// already trusts (the first one is trusted on enrollment). When this
-// browser is enrolled it pins the account's root device, and from then on
-// believes only certificates that chain back to it: control hands out the
-// directory and the keys, but it can't slip in a daemon of its own (and a
-// daemon can't be reached by a device it hasn't approved).
+// Signing in is the whole flow (aru-141, #1004): a signed-in browser
+// reaches its machines with machine tokens control signs, and never asks
+// another device to approve it. A browser that is one of the account's
+// devices already (from before aru-141) keeps its key: it pins the
+// account's root device and believes only certificates that chain back to
+// it, signs what daemons from before still check, and uses tokens to
+// reach machines unless `tokenMode` says otherwise. Only a control that
+// signs no tokens (a dev or test hub), or `tokenMode` "off", still makes
+// the account's first browser its first device, with no screen.
 
-import { browserOrLegacyChained, certBody, certifies, DEVICE_SECRET, fromApp, deviceId, deviceMac, deviceMacOk, devicePinBody, devicePinOk, evaluate, hex, JOIN_SECRET, joinCode, joinMac, newSecret, normalizeCode, normalizeSecret, splitJoinCode, type Cert, type Kind, type Revocation, revocationBody, unhex } from "./e2e/cert.ts";
+import { browserOrLegacyChained, certBody, certifies, fromApp, evaluate, hex, JOIN_SECRET, joinCode, joinMac, normalizeCode, splitJoinCode, type Cert, type Kind, type Revocation, revocationBody } from "./e2e/cert.ts";
 import {
-  adoptKeys,
-  adoptPrfKeys,
-  keysFromPrf,
-  existingKeys,
   forget,
   forgetEnrollment,
-  freshKeys,
   loadEnrollment,
   loadKeys,
-  PRF_SALTS,
-  prfBytes,
-  prfDevice,
   saveEnrollment,
   saveWorkerDirectory,
   signText,
@@ -238,35 +232,6 @@ const rootChangesKept = () => readKey<Record<string, RootChange[]>>(ROOT_CHANGES
 const ROSTER_LATE_KEY = "arugula.control.roster-late";
 const rosterLateKept = () => readKey<Record<string, number[]>>(ROSTER_LATE_KEY, {});
 
-/** #761: the secret this browser shows while it waits, kept with its key
- * id so a reload shows the same code (one already scanned still works). */
-const SECRET_KEY = "arugula.control.device-secret";
-
-function deviceSecretFor(id: string): string {
-  try {
-    const kept = JSON.parse(localStorage.getItem(SECRET_KEY) ?? "null") as { id?: string; secret?: string } | null;
-    const secret = kept?.id === id && kept.secret ? normalizeSecret(kept.secret) : null;
-    if (secret) return secret;
-  } catch {
-    // a new one
-  }
-  const secret = newSecret();
-  try {
-    localStorage.setItem(SECRET_KEY, JSON.stringify({ id, secret }));
-  } catch {
-    // A reload shows a new code.
-  }
-  return secret;
-}
-
-function dropDeviceSecret() {
-  try {
-    localStorage.removeItem(SECRET_KEY);
-  } catch {
-    // nothing kept
-  }
-}
-
 /** First sight of another account's root (trust on first use): pinned
  * here, and a different one later is refused, not believed. */
 function pins(): Record<string, string> {
@@ -409,14 +374,6 @@ export class RefusedError extends Error {
   }
 }
 
-/** The machine was approved, but a device approved with it wasn't
- * (#326): the machine's prompt is done, and that device asks on its own. */
-export class AlongsideError extends Error {
-  constructor(name: string, why: string) {
-    super(`The machine is approved, but not ${name}: ${why}`);
-  }
-}
-
 /** `GET /api/flags` on control (#347). */
 export type LabsFlags = {
   account: Record<string, boolean>;
@@ -470,67 +427,23 @@ const b64u = (b: ArrayBuffer | Uint8Array) =>
     .replace(/=+$/, "");
 const unb64u = (s: string) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
 
-/** #764: the `prf` extension, evaluated at both salts in the same
- * ceremony (`first` for the X25519 key, `second` for Ed25519). */
-const PRF_ASK = { prf: { eval: { first: PRF_SALTS.noise, second: PRF_SALTS.sign } } } as AuthenticationExtensionsClientInputs;
-
-interface PrfOut {
-  enabled?: boolean;
-  results?: { first?: ArrayBuffer; second?: ArrayBuffer };
-}
-
-/** The `prf` result with its outputs as bytes, whatever shape the
- * passkey's provider gave them in (`prfBytes`). */
-const prfOf = (cred: PublicKeyCredential): PrfOut | undefined => {
-  const p = (cred.getClientExtensionResults() as { prf?: { enabled?: boolean; results?: { first?: unknown; second?: unknown } } }).prf;
-  if (!p) return undefined;
-  const r = p.results;
-  return { enabled: p.enabled, results: r ? { first: prfBytes(r.first), second: prfBytes(r.second) } : undefined };
-};
-
-/** #764: a passkey's PRF output as this browser's device keys, the same on
- * every browser with that passkey, so they're one device. Not while this
- * browser is a working device of that account already: it keeps its own.
- * Whether it took them. */
-async function takePrfKeys(prf: PrfOut | undefined, account: string, provider: string | null | undefined, credential: string): Promise<boolean> {
-  // The desktop app's window is an app device: it never takes a passkey's
-  // browser keys.
-  if (appWindow()) return false;
-  const r = prf?.results;
-  if (!r?.first || !r.second) return false;
-  const e = await loadEnrollment(location.origin);
-  const have = await existingKeys();
-  if (e && e.account === account && have?.id === e.cert.device) return false;
-  try {
-    await adoptPrfKeys(r.first, r.second, provider ? `${provider} passkey` : "Passkey", credential);
-  } catch (err) {
-    // This browser can't keep them: it's approved as before.
-    console.warn("arugula: not using the passkey's keys:", err);
-    return false;
-  }
-  // Whatever it was enrolled as, it's that device now.
-  if (e) await forgetEnrollment(location.origin);
-  return true;
-}
-
-/** Sign in with a passkey (any registered on this control). Whether this
- * browser took device keys from it (#764). */
-export async function passkeySignIn(): Promise<boolean> {
+/** Sign in with a passkey (any registered on this control). It signs in
+ * and nothing more: since aru-141 (#1004) no browser takes device keys
+ * from a passkey's PRF output (#764). */
+export async function passkeySignIn(): Promise<void> {
   const o = await api<{ challenge: string; rpId: string; userVerification: UserVerificationRequirement; timeout: number }>("/auth/passkey/login", {});
   const cred = (await navigator.credentials.get({
-    publicKey: { challenge: unb64u(o.challenge), rpId: o.rpId, userVerification: o.userVerification, timeout: o.timeout, extensions: PRF_ASK },
+    publicKey: { challenge: unb64u(o.challenge), rpId: o.rpId, userVerification: o.userVerification, timeout: o.timeout },
   })) as PublicKeyCredential | null;
   if (!cred) throw new Error("no passkey chosen");
   const r = cred.response as AuthenticatorAssertionResponse;
-  const prf = prfOf(cred);
-  const done = await api<{ account?: string; provider?: string | null }>("/auth/passkey/login/finish", {
+  await api("/auth/passkey/login/finish", {
     id: b64u(cred.rawId),
     clientDataJSON: b64u(r.clientDataJSON),
     authenticatorData: b64u(r.authenticatorData),
     signature: b64u(r.signature),
-    prf: !!(prf?.results?.first && prf.results.second),
+    prf: false,
   });
-  return done.account ? takePrfKeys(prf, done.account, done.provider, b64u(cred.rawId)) : false;
 }
 
 /** A passkey made for the account signed in, waiting for one the account
@@ -538,7 +451,6 @@ export async function passkeySignIn(): Promise<boolean> {
  * ([`passkeyConfirm`]), as a browser asks for a passkey only on one. */
 export interface PasskeyToConfirm {
   finish: Record<string, unknown>;
-  prf: PrfOut | undefined;
   /** What keeps the new one, as control names it from its AAGUID (null
    * when it doesn't know), and when it was made: the prompt says (#471). */
   provider: string | null;
@@ -602,20 +514,15 @@ export async function passkeyRegister(name?: string, device?: PasskeySigner): Pr
       ...opts,
       challenge: unb64u(o.challenge),
       user: { ...o.user, id: unb64u(o.user.id) },
-      extensions: PRF_ASK,
     },
   })) as PublicKeyCredential | null;
   if (!cred) throw new Error("no passkey made");
   const r = cred.response as AuthenticatorAttestationResponse;
-  // #764: some authenticators give PRF output as the passkey is made;
-  // others say only that they will, at sign-in.
-  const prf = prfOf(cred);
   const id = b64u(cred.rawId);
   const finish = {
     id,
     clientDataJSON: b64u(r.clientDataJSON),
     attestationObject: b64u(r.attestationObject),
-    prf: prf?.enabled ?? (prf?.results ? true : undefined),
     ...(device_sig && device ? { device: { id: device.id, sig: await device.sign(addPasskeyDeviceBody(device.account, id, o.challenge)) } } : {}),
   };
   if (step_up === "passkey") {
@@ -626,9 +533,9 @@ export async function passkeyRegister(name?: string, device?: PasskeySigner): Pr
       id: finish.id,
       attestationObject: finish.attestationObject,
     });
-    return { finish, prf, provider, made, options };
+    return { finish, provider, made, options };
   }
-  await finishRegister(finish, prf);
+  await finishRegister(finish);
   return null;
 }
 
@@ -643,7 +550,7 @@ export const OWNERS_NEED_WEBAUTHN = "This window can't ask for a passkey: change
  * keeps it then. Call it from a click. */
 export async function passkeyConfirm(p: PasskeyToConfirm): Promise<void> {
   const step_up = await agreeWith(p.options);
-  await finishRegister({ ...p.finish, step_up }, p.prf);
+  await finishRegister({ ...p.finish, step_up });
 }
 
 /** One of the account's passkeys `o` offers signs its challenge: the
@@ -693,31 +600,6 @@ export async function passkeyOver(challenge: Uint8Array<ArrayBuffer>): Promise<P
   return { id: b64u(got.rawId), clientDataJSON: b64u(a.clientDataJSON), authenticatorData: b64u(a.authenticatorData), signature: b64u(a.signature) };
 }
 
-/** #641: the keys passkey `id`'s PRF output makes. Control gets none of
- * this: the challenge is this page's, and nothing is sent back. Call it
- * from a click. */
-async function passkeyDeviceKeys(id: string) {
-  const got = (await navigator.credentials.get({
-    publicKey: {
-      challenge: crypto.getRandomValues(new Uint8Array(32)),
-      allowCredentials: [{ type: "public-key", id: unb64u(id) }],
-      rpId: location.hostname,
-      userVerification: "required",
-      timeout: 5 * 60 * 1000,
-      extensions: PRF_ASK,
-    },
-  })) as PublicKeyCredential | null;
-  if (!got) throw new Error("no passkey chosen");
-  const r = prfOf(got)?.results;
-  if (!r?.first || !r.second) throw new Error("This passkey can't do this: whatever keeps it doesn't give the keys it would take. It still signs you in.");
-  try {
-    return await keysFromPrf(r.first, r.second);
-  } finally {
-    new Uint8Array(r.first).fill(0);
-    new Uint8Array(r.second).fill(0);
-  }
-}
-
 /** What another of the account's passkeys signs to remove one (DK10,
  * #393): its removal in the account's passkey log, and the others to
  * choose from. Asked for as the dialog opens, so the click that confirms
@@ -733,9 +615,8 @@ export async function passkeyRemove(id: string, o: PasskeyRemoval): Promise<void
   await api(`/api/me/passkeys/${encodeURIComponent(id)}/remove`, { assertion });
 }
 
-async function finishRegister(body: Record<string, unknown>, prf: PrfOut | undefined) {
-  const done = await api<{ account?: string; provider?: string | null }>("/auth/passkey/register/finish", body);
-  if (done.account) await takePrfKeys(prf, done.account, done.provider, String(body.id));
+async function finishRegister(body: Record<string, unknown>) {
+  await api("/auth/passkey/register/finish", body);
 }
 
 /** What a signed-out page may know about an invite (#103): the team's
@@ -778,8 +659,8 @@ const KEPT_JOIN_MS = 15 * 60 * 1000;
 /** Where signing in with GitHub comes back to: this page, but never with a
  * an invite's seed (#762) or a machine's join secret (#760), which control
  * mustn't see. The link waits in this tab's sessionStorage for
- * `restoreInvite`; a join (or #761, a waiting device's code) comes back
- * with its code alone meanwhile, so the page still says what it's for. */
+ * `restoreInvite`; a join comes back with its code alone meanwhile, so the
+ * page still says what it's for. */
 /** M152: the hub's `/signin/platform` sent someone without a session here
  * to sign in, with its query as `#platform-signin=` (base64url). Once
  * they're signed in, back to it: it sends the browser on to the platform
@@ -808,17 +689,14 @@ export function resumePlatformSignIn(): boolean {
 
 export function signInNext(): string {
   const join = JOIN_HASH.exec(location.hash);
-  // #761: a waiting device's code carries its secret too, on its own
-  // (`#device=`) or with the machine it came to approve (`&device=`).
-  const secret = join ? splitJoinCode(join[1])?.secret || join[2] : DEVICE_HASH.test(location.hash);
+  const secret = join ? splitJoinCode(join[1])?.secret : null;
   if (!seedInHash(location.hash) && !secret) return location.pathname + location.hash;
   try {
     sessionStorage.setItem(PENDING_INVITE, JSON.stringify({ hash: location.hash, at: Date.now() }));
   } catch {
     // Without storage the link has to be opened again after signing in.
   }
-  const device = join ? null : splitDeviceCode(location.hash);
-  return location.pathname + (join ? `#join=${joinInHash()}` : device ? `#device=${device.code}` : "");
+  return location.pathname + (join ? `#join=${joinInHash()}` : "");
 }
 
 /** Back from signing in: the invite link with its seed (presigned or, since
@@ -834,14 +712,10 @@ export function restoreInvite() {
     // A join comes back as its code alone (`signInNext`), soon: then the
     // kept link has its secret. A link that brings its own secret wins,
     // and so does any link once the kept one is older than a join lasts
-    // (a retried join has the same code and a new secret, #760). A
-    // waiting device's code (#761) comes back the same way, as
-    // `#device=LOOKUP`.
+    // (a retried join has the same code and a new secret, #760).
     const fresh = Date.now() - at < KEPT_JOIN_MS;
     const join = joinInHash(hash) !== null && wholeJoinInHash() === joinInHash(hash) && fresh;
-    const lookup = DEVICE_HASH.test(hash) ? splitDeviceCode(hash)?.code : null;
-    const device = !!lookup && location.hash === `#device=${lookup}` && fresh;
-    if ((!location.hash && seedInHash(hash)) || join || device) history.replaceState(null, "", location.pathname + location.search + hash);
+    if ((!location.hash && seedInHash(hash)) || join) history.replaceState(null, "", location.pathname + location.search + hash);
   } catch {
     // Nothing kept, or not in this shape.
   }
@@ -853,53 +727,27 @@ const PRESIGNED_TTL_MS = 24 * 3600_000;
 /** How long an Ask me first link lasts. */
 const ASK_TTL_MS = 7 * 24 * 3600_000;
 
-export type Phase = "loading" | "signed-out" | "waiting" | "turned-down" | "lost-key" | "untrusted" | "unvouched" | "ready" | "error";
+/** Where the page is: aru-141 (#1004) took out every phase in which a
+ * browser waits to be approved, or was turned down, lost its key or stopped
+ * being trusted. */
+export type Phase = "loading" | "signed-out" | "ready" | "error";
 
 /** What the person reads when control refuses an approval (#327), by its
  * reason code: which check failed, and what to do next. `revoked` isn't
  * here: control's own words say it (#330), and a removed machine asks
  * again with a new key by itself. */
 const REFUSED: Record<string, string> = {
-  approver_untrusted:
-    "This browser isn't one your account trusts any more, so its approvals are refused. Forget it and enroll it again (another of your devices or a recovery code approves it), then try again.",
-  bad_signature: "This browser's key isn't the one your account approved. Forget it and enroll it again, then try again.",
+  approver_untrusted: "Your account doesn't trust this browser's key any more, so what it signs is refused. Reload: it works on without the key.",
+  bad_signature: "This browser's key isn't the one your account has. Reload: it works on without the key.",
   cant_approve: "A machine can't approve devices. Approve from a browser, phone or the Arugula CLI.",
-  recovery_for_machine: "A recovery code approves browsers and phones, not machines. Approve the machine from one of your devices.",
-  needs_browser: "Only a browser or a phone approves a browser, a phone or recovery codes. The desktop app and the Arugula CLI approve machines, CLIs and apps: approve this one from a browser.",
-  recovery_spent: "That recovery code let a device in already, and each one lets in one device. Use your other recovery code, or approve this browser from one of your devices.",
+  needs_browser: "Only a browser or a phone approves this. The desktop app and the Arugula CLI approve machines, CLIs and apps.",
   clock: "This device's clock is too far from Arugula cloud's for the approval to count. Check the clock, reload and approve again.",
-  no_chain: "Arugula cloud's records for your account don't add up from here (the approval doesn't chain to your first device). Reload and try again; if it keeps happening, approve from another device.",
-  no_devices: "This account has no devices yet. Reload: this browser becomes its first.",
+  no_chain: "Arugula cloud's records for your account don't add up from here (the approval doesn't chain to your first device). Reload and try again.",
+  no_devices: "Your account has no devices to sign this with. Reload and try again.",
 };
 
 /** Refusals that mean this browser itself isn't trusted. */
 const SELF_REFUSED = new Set(["approver_untrusted", "bad_signature"]);
-
-/** Where `enrollAgain` leaves a note for the next page: open the recovery
- * form (#327). */
-const RECOVER_KEY = "arugula.control.recover";
-
-/** Where `allowAppLogin` notes that it signed the app's certificate, for
- * the page the app sends this tab back to (#758). */
-const APP_SIGNED_KEY = "arugula.control.app-signed";
-
-let appSigned: boolean | null = null;
-
-/** Whether this tab just signed the desktop app in as a device. Taken out
- * of sessionStorage on the first call, so a later reload doesn't say it
- * again, and kept for the rest of this page load: the prompts mount afresh
- * when the page picks a machine (`ControlRoot` is keyed by the client's
- * base), and the second mount must say the same. */
-export function signedAppIn(): boolean {
-  if (appSigned !== null) return appSigned;
-  try {
-    appSigned = sessionStorage.getItem(APP_SIGNED_KEY) === "1";
-    sessionStorage.removeItem(APP_SIGNED_KEY);
-  } catch {
-    appSigned = false;
-  }
-  return appSigned;
-}
 
 /** A desktop app asking to sign in (`GET /api/app-login/{id}`). */
 export interface AppLogin {
@@ -912,67 +760,6 @@ export interface AppLogin {
   /** From #758 on: the public half of the app's device keys, hex. */
   device?: { noise: string; sign: string };
 }
-
-/** The page came from forgetting a stale browser: offer the recovery code
- * at once. Read once. */
-export function cameToRecover(): boolean {
-  try {
-    const yes = sessionStorage.getItem(RECOVER_KEY) === "1";
-    sessionStorage.removeItem(RECOVER_KEY);
-    return yes;
-  } catch {
-    return false;
-  }
-}
-
-// ---- recovery codes: an Ed25519 seed each, on paper only.
-
-const B32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-const PKCS8_ED25519 = unhex("302e020100300506032b657004220420");
-
-function toCode(seed: Uint8Array): string {
-  let bits = 0;
-  let val = 0;
-  let out = "";
-  for (const b of seed) {
-    val = (val << 8) | b;
-    bits += 8;
-    while (bits >= 5) {
-      out += B32[(val >>> (bits - 5)) & 31];
-      bits -= 5;
-    }
-  }
-  if (bits) out += B32[(val << (5 - bits)) & 31];
-  return out.match(/.{1,4}/g)!.join("-");
-}
-
-function fromCode(code: string): Uint8Array<ArrayBuffer> | null {
-  const c = code.toUpperCase().replace(/[^A-Z2-7]/g, "");
-  if (c.length !== 52) return null;
-  const out: number[] = [];
-  let bits = 0;
-  let val = 0;
-  for (const ch of c) {
-    val = (val << 5) | B32.indexOf(ch);
-    bits += 5;
-    if (bits >= 8) {
-      out.push((val >>> (bits - 8)) & 255);
-      bits -= 8;
-    }
-  }
-  return Uint8Array.from(out.slice(0, 32));
-}
-
-const subtle = globalThis.crypto.subtle;
-
-async function recoveryKey(seed: Uint8Array): Promise<CryptoKey> {
-  const pkcs8 = new Uint8Array(48);
-  pkcs8.set(PKCS8_ED25519);
-  pkcs8.set(seed, 16);
-  return subtle.importKey("pkcs8", pkcs8, { name: "Ed25519" }, false, ["sign"]);
-}
-
-const NO_NOISE = "0".repeat(64);
 
 /** A browser's name in its account's device list. */
 export function deviceName(): string {
@@ -1033,28 +820,10 @@ export function shownName(name: string): string {
 }
 
 /** The whole join code in `#join=CODE` or `#join=CODE.SECRET` (#760), as
- * it is there; and (#761) the code of the browser that came to approve
- * the machine and waits to be approved with it, `&device=LOOKUP.SECRET`. */
+ * it is there. A link a waiting browser handed on before #1004 may carry
+ * its code too (`&device=LOOKUP.SECRET`, #761): nothing waits for it now,
+ * so it's ignored. */
 export const JOIN_HASH = /^#join=([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)?)(?:&device=([A-Za-z0-9-]+\.[A-Za-z0-9-]+))?$/;
-
-/** A waiting device's code in a link (#761): `#device=LOOKUP.SECRET`,
- * what its QR code says. */
-export const DEVICE_HASH = /^#device=([A-Za-z0-9-]+\.[A-Za-z0-9-]+)$/;
-
-/** A waiting device's code, typed or from a link (`LOOKUP.SECRET`, or the
- * whole link): its lookup and its secret, normalized; null if it isn't
- * one. */
-export interface DeviceCode {
-  code: string;
-  secret: string;
-}
-
-export function splitDeviceCode(s: string): DeviceCode | null {
-  const t = s.trim();
-  const m = /#device=([^&\s]+)/.exec(t) ?? /&device=([^&\s]+)/.exec(t);
-  const parts = splitJoinCode(m ? decodeURIComponent(m[1]) : t);
-  return parts?.secret ? { code: parts.code, secret: parts.secret } : null;
-}
 
 /** The machine's join code this page was opened to approve
  * (`#join=CODE`), if any: the code only, which is all control is told. */
@@ -1063,8 +832,8 @@ export function joinInHash(hash: string = location.hash): string | null {
   return m ? (splitJoinCode(m[1])?.code ?? null) : null;
 }
 
-/** The whole code in the hash, the secret too (#760), for the link a
- * waiting browser hands on: `CODE.SECRET`, or just `CODE`. */
+/** The whole code in the hash, the secret too (#760): `CODE.SECRET`, or
+ * just `CODE`. */
 export function wholeJoinInHash(hash: string = location.hash): string | null {
   const m = JOIN_HASH.exec(hash);
   const j = m ? splitJoinCode(m[1]) : null;
@@ -1086,44 +855,19 @@ export function appWindow(): boolean {
  * `browser` one it named (`Cert::from_app`). */
 export { fromApp };
 
-/** What the browser that allowed the desktop app's sign-in hands the app
- * (#758): a certificate for the app's keys, signed by that browser, and
- * the account root it pinned. */
-export interface AppEnrollment {
-  cert: Cert;
-  root: string;
-}
-
-/** The app's keys (PKCS#8) and what came with them, from the redeem link. */
-interface AppHandOff extends AppEnrollment {
-  noise: Uint8Array<ArrayBuffer>;
-  sign: Uint8Array<ArrayBuffer>;
-}
-
-const b64url = (s: string) => btoa(String.fromCharCode(...new TextEncoder().encode(s))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-const unb64url = (s: string) => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0)));
-
 /** M48: the desktop app's window, after the person allowed its sign-in in
  * their browser: `#app-redeem=<ticket>.<grant>.<verifier>` from the app,
  * posted here for the session cookie. Only in the app's own window (a link
- * to this in a browser would sign it in as someone else). #758: when the
- * browser that allowed it signed the app's certificate, the link also
- * carries the keys the app made (`.<noise>.<sign>.<cert>`): the window
- * takes them as its own. */
-async function redeemAppLogin(): Promise<AppHandOff | null> {
+ * to this in a browser would sign it in as someone else). An app from
+ * #758 on may add the keys it made and a certificate an older browser's
+ * page signed for them (`.<noise>.<sign>.<cert>`): not taken since aru-141
+ * (#1004), as the window reaches machines with tokens. */
+async function redeemAppLogin(): Promise<void> {
   const m = /^#app-redeem=([0-9a-f]+)\.([0-9a-f]+)\.([0-9a-f]+)(?:\.([0-9a-f]+)\.([0-9a-f]+)\.([A-Za-z0-9_-]+))?$/.exec(location.hash);
-  if (!m) return null;
+  if (!m) return;
   history.replaceState(null, "", location.pathname + location.search);
-  if (!inApp()) return null;
+  if (!inApp()) return;
   await api(`/auth/app/${m[1]}/redeem`, { grant: m[2], verifier: m[3] }).catch(() => {});
-  if (!m[6]) return null;
-  try {
-    const e = JSON.parse(unb64url(m[6])) as AppEnrollment;
-    if (typeof e.root !== "string" || typeof e.cert?.device !== "string") return null;
-    return { cert: e.cert, root: e.root, noise: unhex(m[4]), sign: unhex(m[5]) };
-  } catch {
-    return null;
-  }
 }
 
 /** Someone offering to share a session on their machine with this
@@ -1148,15 +892,6 @@ export class ControlSession {
   account = "";
   /** Passkeys registered to the account. */
   passkeys = 0;
-  /** Shown once, right after the account's first device enrolls (or new
-   * ones are made). */
-  recoveryCodes: string[] | null = null;
-  /** While turned down: the name of the device that did it, and when
-   * (ms; 0 from a control too old to say). */
-  turnedDownBy = "";
-  turnedDownAt = 0;
-  /** Asks again after a turn-down. */
-  private askAgain: (() => void) | null = null;
   keys!: DeviceKeys;
   /** The account's root device as control says, or none: an account made
    * after device keys stopped being made (aru-141). What a roster lists
@@ -1169,9 +904,6 @@ export class ControlSession {
   private machineTokens: MachineTokens = gatedTokens(controlTokens());
   /** #1001: block grants, for a page that reaches its machines with tokens. */
   private blockGrants: BlockGrants = controlBlockGrants();
-  /** #764: this browser's keys came from a passkey's PRF, and this is
-   * the name its certificate takes ("iCloud Keychain passkey"). */
-  fromPasskey: string | null = null;
   enrollment: Enrollment | undefined;
   /** Every device the account trusts, by this browser's reckoning. */
   trusted = new Map<string, Cert>();
@@ -1183,32 +915,6 @@ export class ControlSession {
    * (`legacy_app_children`): such a window counts just above one of them on
    * the way back to the root, as control counts it, and nowhere else. */
   legacyAppChildren = new Set<string>();
-  /** Devices asking to join, for this one to approve. */
-  pending: Cert[] = [];
-  /** #326: the machine's join code a waiting device came to approve, by
-   * the device's id, while that join is open: approved together. */
-  pendingJoins = new Map<string, string>();
-  /** #761: each waiting device's lookup (its keys' code), by its id, and
-   * those that show a code with a secret (approved with a MAC, from the
-   * code scanned or typed, not by comparing a fingerprint). */
-  pendingCodes = new Map<string, string>();
-  pendingSealed = new Set<string>();
-  /** #761: while this browser waits, the code it shows
-   * (`LOOKUP.SECRET`); null when control doesn't take one (it shows its
-   * fingerprint instead). */
-  deviceCode: string | null = null;
-  /** #761, in the `unvouched` phase: approved, but not with this
-   * browser's code. `missing`: by a page from before codes (the person
-   * checks the account's fingerprint instead); `wrong`: a MAC that doesn't
-   * check out, refused. */
-  vouch: { why: "missing" | "wrong"; root: string; by: string } | null = null;
-  private vouchOk: (() => void) | null = null;
-  /** When each device last loaded the page, as control saw (none before it
-   * kept it, or from an older control). */
-  used = new Map<string, number>();
-  /** #764: devices whose keys come from a passkey, as control says (they
-   * pinned their root): one device on every browser with that passkey. */
-  passkeyDevices = new Set<string>();
   revocations: Revocation[] = [];
   daemons: DirDaemon[] = [];
   /** Shares waiting for this account's yes. */
@@ -1218,9 +924,6 @@ export class ControlSession {
   /** Control says the account's root is a different device than the one
    * this browser pinned: don't trust anything new from it. */
   rootMismatch = false;
-  /** Why the account doesn't trust this browser (#327), in the
-   * `untrusted` phase: a device removed it, or it's missing. */
-  untrustedWhy: "removed" | "missing" = "missing";
   private listeners = new Set<() => void>();
   private timer: number | undefined;
   readonly info: ControlInfo;
@@ -1244,36 +947,21 @@ export class ControlSession {
     this.emit();
   }
 
-  /** Sign-in state, enrollment, then the directory, kept fresh. */
+  /** Sign-in state, this browser's place, then the directory, kept fresh. */
   async boot() {
     try {
-      const handed = await redeemAppLogin();
+      // M48: the desktop app's window redeems its sign-in. Keys an older
+      // browser's page handed it with a certificate aren't taken (aru-141):
+      // the window reaches machines with tokens, as any new browser does.
+      await redeemAppLogin();
       this.keys = await loadKeys();
       this.enrollment = await loadEnrollment(location.origin);
-      // #758: the app's window, handed its keys and a certificate for them
-      // by the browser that allowed its sign-in. Taken unless the window is
-      // already a working device of that account.
-      const e = this.enrollment;
-      if (handed && (!e || e.account !== handed.cert.account || e.cert.device !== this.keys.id)) {
-        try {
-          this.keys = await adoptKeys(handed.noise, handed.sign, handed.cert.noise, handed.cert.sign);
-          this.handed = handed;
-          if (e?.cert.device !== this.keys.id) this.enrollment = undefined;
-        } catch (err) {
-          // Not keys for that certificate (or this webview can't keep
-          // them): ask to be approved, as before.
-          console.warn("arugula: not using the keys the sign-in handed over:", err);
-          this.keys = await loadKeys();
-        }
-      }
-      const prf = await prfDevice();
-      this.fromPasskey = prf?.device === this.keys.id && !appWindow() ? prf.name : null;
       if (this.enrollment && this.enrollment.cert.device !== this.keys.id) {
         // #94: the key this browser enrolled with didn't come back from
         // its storage (WebKit loses X25519 keys there), so it would sign
-        // approvals nobody trusts. Say so, not fail later; with machine
-        // tokens (aru-141), work without it.
-        if (tokenMode() === "off") return this.set("lost-key");
+        // what nobody trusts. With machine tokens (aru-141) it works on
+        // without it, as a browser that was never a device.
+        await forgetEnrollment(location.origin);
         this.enrollment = undefined;
       }
       const me = await api<{ account: string; login: string; name?: string; root: string | null; passkeys: number }>("/api/me").catch((e) => {
@@ -1294,35 +982,24 @@ export class ControlSession {
       if (resumePlatformSignIn()) return;
       if (this.enrollment && this.enrollment.account !== me.account) {
         // Signed in as someone else: this browser's place was in another
-        // account. Start over as a new device of this one.
+        // account, and it has none in this one.
         this.enrollment = undefined;
       }
-      // aru-141 (#997): a browser that isn't one of the account's devices
-      // stays that way. It reaches its machines with machine tokens and adds
-      // a machine's join in one click (#1003): the account's first browser,
-      // the app's window (whatever keys its sign-in handed it), one here to
-      // use a recovery code and any other. One that is a device keeps its
-      // key, as does one whose passkey is a device already. Only a control
-      // that signs no tokens (a dev or test hub), or `tokenMode` "off",
-      // still has a new browser enroll as before.
+      // aru-141 (#997, #1004): signing in is the whole flow. A browser that
+      // isn't one of the account's devices stays that way: it reaches its
+      // machines with machine tokens and adds a machine's join in one click
+      // (#1003). Nothing asks another device to approve it. One that is a
+      // device keeps its key. Only a control that signs no tokens (a dev
+      // or test hub), or `tokenMode` "off", makes the account's first
+      // browser its first device, signed by itself, with no screen.
       const mode = tokenMode();
-      if (!this.enrollment && mode !== "off" && (await controlIssues())) {
-        if (!(this.fromPasskey && me.root !== null && (await this.rejoin()))) this.tokens = true;
-      }
-      if (!this.enrollment && !this.tokens) await this.enroll(me.root);
-      if (!this.enrollment && !this.tokens) return;
-      if (mode === "first") this.tokens = true;
-      if (this.usedRecovery) {
-        // Spent: nobody gets in with it again.
-        await this.revoke(this.usedRecovery).catch(() => {});
-        this.usedRecovery = null;
-      }
-      // Which device this sign-in is, for Sign-in and Devices to name
-      // it the same (a control without the route says 404).
+      if (!this.enrollment && me.root === null && (mode === "off" || !(await controlIssues()))) await this.enrollFirst();
+      if (!this.enrollment || mode === "first") this.tokens = true;
+      // Which device this sign-in is, for Sign-in and account to name it
+      // (a control without the route says 404).
       if (this.enrollment) void api("/api/me/sessions/device", { device: this.keys.id }).catch(() => {});
       await this.refresh();
-      // #327: a browser the account no longer trusts says so at once.
-      this.set(this.phase === "untrusted" ? "untrusted" : "ready");
+      this.set("ready");
       this.timer = window.setInterval(() => void this.refresh(), 10_000);
       // M104: the account's answer about usage counts from this page.
       void this.loadTelemetry();
@@ -1331,269 +1008,55 @@ export class ControlSession {
     }
   }
 
-  private async enroll(root: string | null) {
-    // #764: keys from a passkey another browser enrolled already: this
-    // browser is that device, with no approval.
-    if (this.fromPasskey && root !== null && (await this.rejoin())) return;
+  /** Where control signs no tokens, or `tokenMode` is "off": this browser
+   * becomes the account's first device, its certificate signed by its own
+   * key, which it pins as the root. Told it isn't the first after all
+   * (another browser got there at the same moment), it stays keyless. */
+  private async enrollFirst() {
     const k = this.keys;
-    // The desktop app's window is an app device: it approves machines,
-    // CLIs and apps, not browsers, phones or deploys.
-    const kind: Kind = appWindow() ? "app" : "browser";
     const cert: Cert = {
       v: 1,
       account: this.account,
       device: k.id,
-      kind,
-      name: this.fromPasskey ?? deviceName(),
+      // The desktop app's window is an app device: it approves machines,
+      // CLIs and apps, not browsers, phones or deploys.
+      kind: appWindow() ? "app" : "browser",
+      name: deviceName(),
       noise: k.noisePub,
       sign: k.signPub,
       created: Date.now(),
-      approver: "",
+      approver: k.id,
       sig: "",
     };
-    if (root === null) {
-      // The account's first device signs itself.
-      cert.approver = k.id;
-      cert.sig = await signText(k, certBody(cert));
+    cert.sig = await signText(k, certBody(cert));
+    const r = await api<{ approved: boolean }>("/api/devices", { cert });
+    if (!r.approved) {
+      // Another browser is the first: drop the request this one left.
+      await api(`/api/devices/${k.id}/reject`, {}).catch(() => {});
+      return;
     }
-    // #758: signed already by the browser that allowed the app's sign-in.
-    const handed = this.handed;
-    this.handed = null;
-    // One an older page signed as a browser is no good here: it asks.
-    const signed = root !== null && handed?.cert.device === k.id && handed.cert.account === this.account && handed.cert.kind === kind ? handed : null;
-    this.request = cert;
-    // #761: a code to show while it waits, whose secret control never
-    // sees: the approving device answers it, and this browser checks the
-    // answer before it pins the root. Made whatever control says of itself
-    // or of the account: with no answer, the person checks the account
-    // (`vouched`). A first device doesn't get as far as showing it; only
-    // one the app's sign-in signed already has none.
-    const secret = signed ? null : deviceSecretFor(k.id);
-    this.deviceCode = secret ? `${await joinCode(cert)}.${secret}` : null;
-    // #326: here to approve a machine, which this browser can't until it's
-    // one of the account's devices: the device that approves it is shown
-    // the machine alongside, and approves both at once.
-    let join = joinInHash();
-    const ask = () => api<{ approved: boolean; cert?: Cert }>("/api/devices", { cert, join, ...(secret ? { features: DEVICE_SECRET } : {}) });
-    let r = signed ? await api<{ approved: boolean; cert?: Cert }>("/api/devices", { cert: signed.cert }) : await ask();
-    // Taken as the account's first device: its root can only be this key.
-    // Told there were no devices and kept waiting, another browser got
-    // there first (two signing in at once), and this one is approved as
-    // any other is.
-    const takenAsFirst = root === null && r.approved;
-    if (signed && !r.approved) {
-      // An older control keeps it waiting: approve it with the same
-      // signature (a control that refused it leaves it to a device).
-      await api(`/api/devices/${k.id}/approve`, { cert: signed.cert }).catch(() => {});
-      r = await api<{ approved: boolean; cert: Cert }>(`/api/devices/${k.id}`).catch(() => r);
-    }
-    if (!r.approved) this.brought = join;
-    while (!r.approved) {
-      this.set("waiting");
-      await new Promise((res) => setTimeout(res, 2000));
-      // Another machine's link followed in this tab (only the hash changes,
-      // so nothing reloads), or the link left: ask again with that join, so
-      // the approving device sees this machine alongside, not the last one.
-      const now = joinInHash();
-      if (now !== join) {
-        const was = join;
-        join = now;
-        try {
-          r = await ask();
-          this.brought = join;
-        } catch {
-          // Asked again on the next turn.
-          join = was;
-        }
-        continue;
-      }
-      try {
-        r = await api<{ approved: boolean; cert: Cert }>(`/api/devices/${k.id}`);
-      } catch (e) {
-        if (!(e instanceof HttpError && e.status === 404)) continue;
-        // Turned down (#105): say so, until this browser asks again.
-        this.turnedDownBy = typeof e.body.by === "string" ? e.body.by : "";
-        this.turnedDownAt = typeof e.body.at === "number" ? e.body.at : 0;
-        this.set("turned-down");
-        await new Promise<void>((res) => (this.askAgain = res));
-        this.askAgain = null;
-        r = await ask();
-      }
-    }
-    // Pin the root as control reports it now, and check that our own
-    // certificate chains back to it.
     const all = await api<{ trust: { account: string; root: string }; certs: Cert[]; revocations: Revocation[] }>("/api/devices");
-    // #758: the app's window takes the root the browser that signed it
-    // pinned, not control's word for it.
-    if (signed && all.trust.root !== signed.root) throw new Error("Arugula cloud says this account's root is a different device than the browser that signed this app in has: not trusting it");
-    // This browser's own key as the root: nothing else can sign for it
-    // (`evaluate` wants its self-signed certificate), and nothing approved it.
-    const own = all.trust.root === k.id;
-    if (takenAsFirst && !own) throw new Error("Arugula cloud took this browser as the account's first device, then named another as its root: not trusting it");
-    const trusted = await evaluate(all.trust, all.certs, all.revocations);
-    const mine = trusted.get(k.id);
-    if (!mine) throw new Error("Arugula cloud approved this device, but the approval doesn't check out");
-    // #761: the device that approved it answered its code, for this root.
-    // A recovery code approves it without one (this browser holds that).
-    if (secret && !own && !this.usedRecovery && !(await this.vouched(secret, cert, all))) return;
-    if (root === null && own) await this.makeRecoveryCodes();
+    // Taken as the account's first device: its root can only be this key.
+    if (all.trust.root !== k.id) throw new Error("Arugula cloud took this browser as the account's first device, then named another as its root: not trusting it");
+    const mine = (await evaluate(all.trust, all.certs, all.revocations)).get(k.id);
+    if (!mine) throw new Error("Arugula cloud took this browser as the account's first device, but its certificate doesn't check out");
     this.enrollment = { control: location.origin, account: this.account, root: all.trust.root, cert: mine };
     await saveEnrollment(this.enrollment);
-    dropDeviceSecret();
-    this.deviceCode = null;
-    if (this.fromPasskey) await this.savePin();
   }
 
-  /** #764: this browser's keys came from a passkey. If the account has
-   * that device (another browser with the passkey enrolled it), this
-   * browser is it, once the device's pin shows the root is the one that
-   * device pinned, not just control's word for it. True if so. A device
-   * that was removed, or whose pin doesn't check out, gives way to keys of
-   * this browser's own, approved as any new browser is; a device the
-   * account doesn't have yet is approved once, then pinned. */
-  private async rejoin(): Promise<boolean> {
-    // Never as a browser in the desktop app's window.
-    if (appWindow()) return false;
-    const k = this.keys;
-    const all = await api<{ trust: { account: string; root: string } | null; certs: Cert[]; revocations: Revocation[] }>("/api/devices");
-    const removed = all.revocations.some((r) => r.device === k.id);
-    if (!removed && !all.certs.some((c) => c.device === k.id)) return false;
-    const pin = removed ? undefined : (await api<{ approved: boolean; pin?: string }>(`/api/devices/${k.id}`).catch(() => null))?.pin;
-    const pinned = !!all.trust && (all.trust.root === k.id || (!!pin && (await devicePinOk(all.trust, k.id, k.signPub, pin))));
-    const mine = pinned && all.trust ? (await evaluate(all.trust, all.certs, all.revocations)).get(k.id) : undefined;
-    if (!mine || !all.trust) {
-      console.warn(`arugula: not this account's passkey device (${removed ? "removed" : "its pin doesn't check out"}): asking to be approved instead`);
-      this.keys = await freshKeys();
-      this.fromPasskey = null;
-      return false;
-    }
-    this.enrollment = { control: location.origin, account: this.account, root: all.trust.root, cert: mine };
-    await saveEnrollment(this.enrollment);
-    // #641: which passkey this device is, for Sign-in and account to say, on
-    // a device from before control kept that.
-    const from = await prfDevice();
-    if (pin && from?.device === k.id && from.credential) {
-      await api(`/api/devices/${k.id}/pin`, { pin, passkey: from.credential }).catch((err) => console.warn("arugula: couldn't say which passkey this device is:", err));
-    }
-    return true;
-  }
-
-  /** #764: this device's signature over the root it pinned, for the next
-   * browser that derives its keys from the same passkey. Without it that
-   * browser asks to be approved, so a failure here costs only that. */
-  private async savePin() {
-    const e = this.enrollment;
-    if (!e) return;
-    const pin = await signText(this.keys, devicePinBody({ account: e.account, root: e.root }, this.keys.id));
-    const from = await prfDevice();
-    await api(`/api/devices/${this.keys.id}/pin`, { pin, ...(from?.device === this.keys.id && from.credential ? { passkey: from.credential } : {}) }).catch((err) => console.warn("arugula: couldn't save this device's pin:", err));
-  }
-
-  /** #764: while waiting, sign in with a passkey instead. If it gives PRF
-   * output this browser takes its keys: the device another browser with
-   * that passkey enrolled, or one approved once for all of them. */
-  async usePasskey() {
-    if (appWindow()) throw new Error("The desktop app's window is approved from a browser or a phone of yours, not with a passkey.");
-    const old = this.keys.id;
-    if (!(await passkeySignIn())) throw new Error("That passkey can't stand in for an approval. Approve this browser instead.");
-    // The request with this browser's old keys goes from the list.
-    await api(`/api/devices/${old}/reject`, {}).catch(() => {});
-    location.reload();
-  }
-
-  /** #761: whether to pin the root control names, by the approving
-   * device's MAC under this browser's secret. A MAC that checks out: yes.
-   * A wrong one (control's own account, or the code mistyped): no, and
-   * the secret goes, so there's one guess per code; the `unvouched` screen
-   * says to enroll again. None (approved from a page from before codes,
-   * or a control that doesn't pass it on): the person checks the account's
-   * fingerprint on that screen, the old way, and says so with `vouchFor`. */
-  private async vouched(secret: string, mine: Cert, all: { trust: { account: string; root: string }; certs: Cert[] }): Promise<boolean> {
-    const got = await api<{ cert: Cert; mac?: string }>(`/api/devices/${mine.device}`);
-    if (got.mac && (await deviceMacOk(secret, all.trust, mine, got.mac))) return true;
-    const by = all.certs.find((c) => c.device === got.cert.approver)?.name ?? "";
-    this.vouch = { why: got.mac ? "wrong" : "missing", root: all.trust.root, by };
-    if (got.mac) {
-      dropDeviceSecret();
-      this.set("unvouched");
-      return false;
-    }
-    this.set("unvouched");
-    await new Promise<void>((res) => (this.vouchOk = res));
-    this.vouchOk = null;
-    this.vouch = null;
-    this.set("loading");
-    return true;
-  }
-
-  /** #761: the person checked the account's fingerprint on the approving
-   * device, and it's the one this browser was given. */
-  vouchFor() {
-    this.vouchOk?.();
-  }
-
-  /** Two recovery codes, signed by this device (the first, or one making
-   * new ones). */
-  private async makeRecoveryCodes(revocations: Revocation[] = []) {
-    const codes: string[] = [];
-    const certs: Cert[] = [];
-    for (let i = 1; i <= 2; i++) {
-      const kp = await newKeyPair("Ed25519", true, ["sign", "verify"]);
-      const seed = new Uint8Array(await subtle.exportKey("pkcs8", kp.privateKey)).slice(16);
-      const sign = new Uint8Array(await subtle.exportKey("raw", kp.publicKey));
-      const c: Cert = {
-        v: 1,
-        account: this.account,
-        device: await deviceId(unhex(NO_NOISE), sign),
-        kind: "recovery",
-        name: `recovery code ${i}`,
-        noise: NO_NOISE,
-        sign: hex(sign),
-        created: Date.now(),
-        approver: this.keys.id,
-        sig: "",
-      };
-      c.sig = await signText(this.keys, certBody(c));
-      certs.push(c);
-      codes.push(toCode(seed));
-    }
-    await api("/api/recovery", { certs, revocations });
-    this.recoveryCodes = codes;
-  }
-
-  /** This browser's request, as it asks to join. */
-  private request: Cert | null = null;
-
-  /** #758: the app's window's certificate, as the browser that allowed
-   * its sign-in signed it, until it enrolls with it. */
-  private handed: AppHandOff | null = null;
-
-  /** #326: the machine's join code this browser waited with, which the
-   * device that approved it may have approved alongside. */
-  brought: string | null = null;
-
-  /** After a turn-down: ask again. */
-  tryAgain() {
-    this.askAgain?.();
-  }
-
-  /** Recovery codes still good. */
-  get recoveryLeft(): number {
-    return [...this.trusted.values()].filter((c) => c.kind === "recovery").length;
-  }
-
-  /** New recovery codes, signed by this device; the old ones are revoked
-   * in the same request, so they stop working (#106). */
-  async newRecoveryCodes() {
-    const old = [...this.trusted.values()].filter((c) => c.kind === "recovery");
-    const revocations: Revocation[] = [];
-    for (const c of old) {
-      const r: Revocation = { v: 1, account: this.account, device: c.device, at: Date.now(), by: this.keys.id, sig: "" };
-      r.sig = await signText(this.keys, revocationBody(r));
-      revocations.push(r);
-    }
-    await this.makeRecoveryCodes(revocations);
-    await this.refresh();
+  /** #327, #1004: the account doesn't trust this browser's key. It works
+   * on with machine tokens, as a browser that was never a device. Removed
+   * (`forget`), it forgets the key's place for good, since a removed device
+   * never comes back; only missing from what control lists, it keeps it for
+   * the next page load to check again. */
+  private async dropDevice(forget: boolean) {
+    if (forget) await forgetEnrollment(location.origin).catch(() => {});
+    this.enrollment = undefined;
+    this.trusted = new Map();
+    this.certs = [];
+    this.revocations = [];
+    this.rootMismatch = false;
+    this.tokens = true;
   }
 
   /** A passkey made, waiting for one the account has to agree. */
@@ -1610,61 +1073,6 @@ export class ControlSession {
       return;
     }
     await this.refreshMe();
-    await this.offerPasskeyDevice();
-  }
-
-  /** #641: the passkey just added, offered as a device of the account, so
-   * a new computer with it needs no other device. */
-  passkeyOffer: { id: string; provider: string | null } | null = null;
-
-  private async offerPasskeyDevice() {
-    if (!this.enrollment || appWindow()) return;
-    const { passkeys } = await api<{ passkeys: { id: string; created: number; provider: string | null; prf: boolean | null; device: string | null }[] }>("/api/me/passkeys").catch(() => ({ passkeys: [] }));
-    const made = passkeys.at(-1);
-    if (!made || made.device || made.prf === false) return;
-    this.passkeyOffer = { id: made.id, provider: made.provider };
-    this.emit();
-  }
-
-  dropPasskeyOffer() {
-    this.passkeyOffer = null;
-    this.emit();
-  }
-
-  /** #641: passkey `id`'s device becomes one of the account's, signed by
-   * this browser, which keeps its own keys. The device signs the root this
-   * browser pinned, so the next browser with the passkey checks that and
-   * takes no word from control (`rejoin`). From a click. */
-  async passkeyAsDevice(id: string, provider: string | null) {
-    if (appWindow()) throw new Error("The desktop app's window can't do this: do it from a browser or a phone.");
-    const e = this.enrollment;
-    if (!e || this.rootMismatch) throw new Error("This browser's account root isn't settled: do this from a device you've used before.");
-    const k = await passkeyDeviceKeys(id);
-    const all = await api<{ certs: Cert[]; revocations: Revocation[] }>("/api/devices");
-    // What this browser has heard too: control could leave one out.
-    if ([...this.revocations, ...all.revocations].some((r) => r.device === k.id)) {
-      throw new Error("This passkey's device was removed from your account, and a removed device doesn't come back. To use a passkey on new computers, add a new one.");
-    }
-    if (k.id !== this.keys.id && !all.certs.some((c) => c.device === k.id)) {
-      const cert: Cert = {
-        v: 1,
-        account: this.account,
-        device: k.id,
-        kind: "browser",
-        name: provider ? `${provider} passkey` : "Passkey",
-        noise: k.noisePub,
-        sign: k.signPub,
-        created: Date.now(),
-        approver: this.keys.id,
-        sig: "",
-      };
-      cert.sig = await signText(this.keys, certBody(cert));
-      await this.approving(api("/api/devices", { cert, passkey_device: true }));
-    }
-    const pin = await signText(k, devicePinBody({ account: e.account, root: e.root }, k.id));
-    await api(`/api/devices/${k.id}/pin`, { pin, passkey: id });
-    this.passkeyOffer = null;
-    await this.refresh();
   }
 
   /** One of the account's passkeys agrees to the one made (from a click). */
@@ -1678,7 +1086,6 @@ export class ControlSession {
       this.emit();
     }
     await this.refreshMe();
-    await this.offerPasskeyDevice();
   }
 
   /** Never mind the passkey made: control never kept it. */
@@ -1693,88 +1100,6 @@ export class ControlSession {
     this.emit();
   }
 
-  savedRecoveryCodes() {
-    this.recoveryCodes = null;
-    this.emit();
-  }
-
-  /** #1581, #77: while waiting, the account's other browsers and apps as
-   * control lists them (not revoked), each with when control last saw it
-   * used: `can`, those that may approve one of `kind` (this browser, this
-   * app window, or a machine), and `cannot`, the rest (the desktop app
-   * approves machines and apps, never a browser). Control's word: for
-   * showing, never for trust; control checks the approval itself. */
-  async approvers(kind: Kind): Promise<Approvers> {
-    const devs = await api<{
-      trust: { account: string; root: string } | null;
-      certs: Cert[];
-      revocations: Revocation[];
-      used?: Record<string, number>;
-      legacy_app_children?: string[];
-    }>("/api/devices");
-    const gone = new Set(devs.revocations.map((r) => r.device));
-    const legacy = new Set(devs.legacy_app_children ?? []);
-    // One row a device: its newest certificate.
-    const byDevice = new Map<string, Cert>();
-    for (const c of devs.certs) {
-      if ((c.kind !== "browser" && c.kind !== "app") || gone.has(c.device) || c.device === this.keys?.id) continue;
-      const had = byDevice.get(c.device);
-      if (!had || c.created > had.created) byDevice.set(c.device, c);
-    }
-    const may = (c: Cert) =>
-      certifies(c.kind, kind) &&
-      // A browser is approved from a browser's chain alone, as control asks.
-      (kind !== "browser" || (!!devs.trust && browserOrLegacyChained(devs.trust, devs.certs, c.device, legacy)));
-    const row = (c: Cert): Approver => ({ cert: c, used: devs.used?.[c.device] ?? null });
-    // Last used first; never seen used, newest added first.
-    const order = (a: Approver, b: Approver) => (b.used ?? 0) - (a.used ?? 0) || b.cert.created - a.cert.created;
-    const all = [...byDevice.values()];
-    return { can: all.filter(may).map(row).sort(order), cannot: all.filter((c) => !may(c)).map(row).sort(order) };
-  }
-
-  /** While waiting for approval: approve this browser with a recovery
-   * code instead, then retire the code. */
-  async useRecoveryCode(code: string) {
-    const seed = fromCode(code);
-    if (!seed) throw new Error("a recovery code is 52 letters and digits");
-    const key = await recoveryKey(seed);
-    const devs = await api<{ trust: { account: string; root: string } | null; certs: Cert[]; revocations: Revocation[] }>("/api/devices");
-    // Only codes still good (a used one was revoked).
-    const live = devs.trust ? [...(await evaluate(devs.trust, devs.certs, devs.revocations)).values()] : [];
-    const probe = new TextEncoder().encode("arugula recovery probe");
-    const sig = new Uint8Array(await subtle.sign("Ed25519", key, probe));
-    let mine: Cert | undefined;
-    for (const c of live.filter((c) => c.kind === "recovery")) {
-      const pub = await subtle.importKey("raw", unhex(c.sign), { name: "Ed25519" }, false, ["verify"]);
-      if (await subtle.verify("Ed25519", pub, sig, probe)) mine = c;
-    }
-    if (!mine) throw new Error("that isn't one of this account's recovery codes (or it was used)");
-    // Turned down: ask again first, so there's a request to approve.
-    if (this.phase === "turned-down" && this.request) await api("/api/devices", { cert: this.request });
-    const k = this.keys;
-    const cert: Cert = {
-      v: 1,
-      account: this.account,
-      device: k.id,
-      // As it asked: the desktop app's window is an app device.
-      kind: this.request?.kind ?? (appWindow() ? "app" : "browser"),
-      // As it asked (#764: a passkey's device is named for the passkey).
-      name: this.request?.name ?? this.fromPasskey ?? deviceName(),
-      noise: k.noisePub,
-      sign: k.signPub,
-      created: Date.now(),
-      approver: mine.device,
-      sig: "",
-    };
-    cert.sig = hex(new Uint8Array(await subtle.sign("Ed25519", key, new TextEncoder().encode(certBody(cert)))));
-    await api(`/api/devices/${k.id}/approve`, { cert });
-    this.usedRecovery = mine.device;
-    this.tryAgain();
-  }
-
-  /** The recovery code that let this browser in, to retire once enrolled. */
-  private usedRecovery: string | null = null;
-
   /** Devices and the directory, checked against the pinned root. */
   async refresh() {
     const e = this.enrollment;
@@ -1785,11 +1110,6 @@ export class ControlSession {
           trust: { account: string; root: string } | null;
           certs: Cert[];
           revocations: Revocation[];
-          pending: Cert[];
-          joins?: Record<string, string>;
-          features?: Record<string, string>;
-          used?: Record<string, number>;
-          passkeys?: string[];
           legacy_app_children?: string[];
         }>("/api/devices"),
         api<{ daemons: ForeignEntry[]; offers?: ShareOffer[] }>("/api/directory"),
@@ -1818,23 +1138,14 @@ export class ControlSession {
       this.certs = devs.certs;
       this.revocations = devs.revocations;
       this.legacyAppChildren = new Set(devs.legacy_app_children ?? []);
-      // #327: this browser's own place, checked like any other device's.
-      // (A different root is said elsewhere, and isn't fixed by enrolling
-      // again under control's.)
-      const mine = this.trusted.has(this.keys.id) || this.rootMismatch;
-      if (!mine) this.untrustedWhy = devs.revocations.some((r) => r.device === this.keys.id) ? "removed" : "missing";
-      if (!mine && (this.phase === "ready" || this.phase === "loading")) this.phase = "untrusted";
-      else if (mine && this.phase === "untrusted") this.phase = "ready";
-      this.pending = devs.pending;
-      this.pendingJoins = new Map(Object.entries(devs.joins ?? {}));
-      this.pendingCodes = new Map(await Promise.all(devs.pending.map(async (c) => [c.device, await joinCode(c)] as const)));
-      this.pendingSealed = new Set(
-        Object.entries(devs.features ?? {})
-          .filter(([, f]) => f.split(",").includes(DEVICE_SECRET))
-          .map(([d]) => d),
-      );
-      this.used = new Map(Object.entries(devs.used ?? {}));
-      this.passkeyDevices = new Set(devs.passkeys ?? []);
+      // #327, #1004: this browser's own place, checked like any other
+      // device's. One the account no longer trusts works on with machine
+      // tokens, as a browser that was never a device. (A different root is
+      // said elsewhere, and isn't fixed by dropping the key.)
+      if (!this.trusted.has(this.keys.id) && !this.rootMismatch) {
+        await this.dropDevice(devs.revocations.some((r) => r.device === this.keys.id));
+        return this.refreshForTokens();
+      }
       const daemons: DirDaemon[] = [];
       const hosted: ForeignEntry[] = [];
       for (const d of dir.daemons) {
@@ -2570,38 +1881,6 @@ export class ControlSession {
     return `${this.info.url}/#link=${d.id}.${d.cert.noise}.${hex(seed)}.${hex(pub)}${typeof expires === "number" ? `.${expires}` : ""}`;
   }
 
-  /** Approve another device's request: sign its certificate. With the
-   * code it shows (#761, scanned or typed), the lookup must be its keys'
-   * code, and the approval carries a MAC under the secret over this
-   * account, the root this device pinned and its keys, which it checks
-   * before it pins that root. */
-  async approve(c: Cert, code: DeviceCode | null = null) {
-    await this.approveDevice(c, code);
-    await this.refresh();
-  }
-
-  /** Whether a waiting device shows a code (#761): approved from it, not
-   * by comparing its fingerprint. */
-  sealed(c: Cert): boolean {
-    return this.pendingSealed.has(c.device);
-  }
-
-  private async approveDevice(c: Cert, code: DeviceCode | null = null) {
-    if (this.sealed(c) && !code) throw new Error(`${c.name} shows a code: scan it or type it to approve it`);
-    // Dated now, as it's approved: control takes approvals made within
-    // minutes of its clock, whenever the device asked.
-    const signed: Cert = { ...c, account: this.account, created: Date.now(), approver: this.keys.id, sig: "" };
-    signed.sig = await signText(this.keys, certBody(signed));
-    let mac: string | null = null;
-    if (code) {
-      // Recomputed from the key control shows, so control can't swap it.
-      if ((await joinCode(c)) !== code.code) throw new Error(`that isn't the code ${c.name} shows: not approving it`);
-      if (!this.enrollment || this.rootMismatch) throw new Error("this browser's account root isn't settled: approve from a device you've used before");
-      mac = await deviceMac(code.secret, { account: this.account, root: this.enrollment.root }, c);
-    }
-    await this.approving(api(`/api/devices/${c.device}/approve`, { cert: signed, ...(mac ? { mac } : {}) }));
-  }
-
   /** An approval's request: refused, it says which check failed and what
    * to do (#327); one that says this browser isn't trusted shows that
    * screen. */
@@ -2616,11 +1895,6 @@ export class ControlSession {
       if (SELF_REFUSED.has(reason)) await this.refresh();
       throw new RefusedError(reason, REFUSED[reason] ?? (e as Error).message);
     }
-  }
-
-  async reject(c: Cert) {
-    await api(`/api/devices/${c.device}/reject`, { by: this.keys.id });
-    await this.refresh();
   }
 
   /** A daemon's join request, by the code it printed. The code is
@@ -2651,17 +1925,14 @@ export class ControlSession {
     return this.teams.filter((t) => t.verified && (t.role === "owner" || !t.locked));
   }
 
-  /** Approve a daemon into this account, or into `team` (one I'm in): this
-   * device signs the team in, so control can't pick one (#100). `devices`
-   * waiting with its code (#326) are approved with it, before the page
-   * hears of either, so its prompt stays up until both are done. With the
-   * machine's join `secret` (#760), the approval carries a MAC under it
+  /** Approve a join (a machine's, or the Arugula CLI's or the phone app's
+   * as a device) into this account, or a machine into `team` (one I'm
+   * in): this device signs the team in, so control can't pick one (#100).
+   * With the join's `secret` (#760), the approval carries a MAC under it
    * over this account and the root this device pinned (not control's word
-   * for it), which the machine checks before it pins that root. A device
-   * alongside that shows a code (#761) is approved with it, from
-   * `deviceCodes` by its id. */
-  async approveJoin(code: string, c: Cert, team: string | null = null, devices: Cert[] = [], secret: string | null = null, deviceCodes: Map<string, DeviceCode> = new Map()) {
-    // Dated now, as approveDevice's.
+   * for it), which the machine checks before it pins that root. */
+  async approveJoin(code: string, c: Cert, team: string | null = null, secret: string | null = null) {
+    // Dated now: control takes approvals made within minutes of its clock.
     const signed: Cert = { ...c, account: this.account, created: Date.now(), approver: this.keys.id, sig: "" };
     signed.sig = await signText(this.keys, certBody(signed));
     let mac: string | null = null;
@@ -2675,15 +1946,8 @@ export class ControlSession {
       if (!t) throw new Error("only the team's members add machines to it");
       teamSig = await signText(this.keys, teamJoinBody(c.device, t.pin));
     }
-    await this.approving(api(`/api/joins/${code}/approve`, { cert: signed, team, team_sig: teamSig, ...(mac ? { mac } : {}) }));
     try {
-      for (const d of devices) {
-        try {
-          await this.approveDevice(d, deviceCodes.get(d.device) ?? null);
-        } catch (e) {
-          throw new AlongsideError(d.name, (e as Error).message);
-        }
-      }
+      await this.approving(api(`/api/joins/${code}/approve`, { cert: signed, team, team_sig: teamSig, ...(mac ? { mac } : {}) }));
     } finally {
       await this.refresh();
     }
@@ -2732,14 +1996,6 @@ export class ControlSession {
   }
   private appLogins = new Map<string, Promise<AppLogin>>();
 
-  /** Whether allowing `a` also makes the app one of the account's devices
-   * (#758): it sent keys, and this browser is a device that can sign one.
-   * Not where machine tokens are taken (aru-141, #997): the app's window
-   * takes them too, and wouldn't use the certificate. */
-  signsApp(a: AppLogin): boolean {
-    return !!a.device && !!this.enrollment && !this.tokens && this.phase === "ready" && !this.rootMismatch && this.canApprove("app");
-  }
-
   /** Whether this device may approve one of `kind` (`Kind::certifies`):
    * the desktop app, its devices from before it had a kind, and anything
    * they certified approve machines, CLIs and apps, not browsers, phones
@@ -2756,43 +2012,13 @@ export class ControlSession {
 
   /** Allow it: control answers with the app's loopback address, which this
    * browser hands the grant to (only the app on this computer hears it).
-   * #758: with a certificate for the app's keys, signed here, and the root
-   * this browser pinned. They go only to the app: if control showed keys
-   * of its own, the app finds the certificate isn't for its keys. */
-  async allowAppLogin(id: string, a: AppLogin): Promise<string> {
+   * Since aru-141 (#1004) no certificate goes with it: the app's window
+   * reaches machines with tokens, and isn't one of the account's devices. */
+  async allowAppLogin(id: string): Promise<string> {
     const r = await api<{ redirect: string }>(`/api/app-login/${encodeURIComponent(id)}/allow`, {});
     const url = new URL(r.redirect);
     if (url.protocol !== "http:" || url.hostname !== "127.0.0.1" || url.pathname !== "/arugula-signin")
       throw new Error("Arugula cloud sent the sign-in somewhere other than the app on this computer: not following it");
-    if (a.device && this.signsApp(a)) {
-      try {
-        const cert: Cert = {
-          v: 1,
-          account: this.account,
-          device: await deviceId(unhex(a.device.noise), unhex(a.device.sign)),
-          // An app device: its keys reached it through whatever listens on
-          // this computer's loopback port, so it never approves a browser.
-          kind: "app",
-          name: a.name.slice(0, 64),
-          noise: a.device.noise,
-          sign: a.device.sign,
-          created: Date.now(),
-          approver: this.keys.id,
-          sig: "",
-        };
-        cert.sig = await signText(this.keys, certBody(cert));
-        const handOff: AppEnrollment = { cert, root: this.enrollment!.root };
-        url.searchParams.set("cert", b64url(JSON.stringify(handOff)));
-        try {
-          sessionStorage.setItem(APP_SIGNED_KEY, "1");
-        } catch {
-          // The page after says less.
-        }
-      } catch (e) {
-        // Signed in all the same; the app asks to be approved instead.
-        console.warn("arugula: couldn't sign the app's certificate:", e);
-      }
-    }
     return url.href;
   }
 
@@ -2812,26 +2038,26 @@ export class ControlSession {
     await api(`/api/joins/${code}/reject`, { device: this.keys.id });
   }
 
+  /** Remove one of the account's machines. A device signs its removal,
+   * which machines from before tokens check; with no device key, control
+   * takes it on the account's word (`DELETE /api/daemons/{id}`, #1017):
+   * the machine leaves the directory and the relay, and its key never joins
+   * again. */
+  async removeMachine(id: string) {
+    if (this.enrollment && !this.rootMismatch && this.trusted.get(id)?.kind === "daemon") return this.revoke(id);
+    const res = await fetch(`/api/daemons/${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (!res.ok) {
+      const j = (await res.json().catch(() => ({}))) as { error?: string; reason?: string };
+      throw new HttpError(res.status, refusalOf(res.status, j, `HTTP ${res.status}`), j as Record<string, unknown>);
+    }
+    await this.refresh();
+  }
+
   async revoke(id: string) {
     const r: Revocation = { v: 1, account: this.account, device: id, at: Date.now(), by: this.keys.id, sig: "" };
     r.sig = await signText(this.keys, revocationBody(r));
     await api("/api/revocations", { revocation: r });
     await this.refresh();
-  }
-
-  /** After a lost key (#94): forget this browser's place in the account
-   * and ask to join again, as a new device. One the account stopped
-   * trusting (#327) asks with the recovery form open; a lost key asks as
-   * before, the form a button away. */
-  async enrollAgain(recover = false) {
-    await forget(location.origin);
-    if (recover)
-      try {
-        sessionStorage.setItem(RECOVER_KEY, "1");
-      } catch {
-        // The form stays a button away.
-      }
-    location.reload();
   }
 
   async signOut(forgetDevice: boolean) {

@@ -11,7 +11,6 @@ import { BrowserStep, browserButton } from "../../shared/ui/browser-step";
 import { currentHand, lending, setLending } from "../hand";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { Time } from "../../shared/ui/time";
-import { NameLine, RecoveryLeft } from "./recovery";
 import { EmailSection } from "./email";
 import { PasskeyResetOffer } from "./reset";
 
@@ -102,6 +101,48 @@ const LINKED: Record<string, string> = {
   failed: "Linking GitHub failed: try again.",
 };
 
+/** What other people see (#102), changed in place: Sign-in and account's
+ * own row under its title (UI audit #174: it sat under Recovery codes). */
+export function NameLine({ s }: { s: ControlSession }) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(s.name);
+  const [err, setErr] = useState("");
+  if (!editing)
+    return (
+      <p class="dim">
+        Name <b data-account-name>{s.name || "none yet"}</b>{" "}
+        <button
+          class="link"
+          data-edit-name
+          onClick={() => {
+            setName(s.name);
+            setEditing(true);
+          }}
+        >
+          Change
+        </button>
+      </p>
+    );
+  return (
+    <form
+      class="control-code control-name"
+      onSubmit={(e) => {
+        e.preventDefault();
+        s.setName(name).then(
+          () => setEditing(false),
+          (x: Error) => setErr(x.message),
+        );
+      }}
+    >
+      <input data-name-input maxLength={64} value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} aria-label="Name" autoFocus />
+      <button type="submit" class="primary" data-save-name disabled={!name.trim()}>
+        Save
+      </button>
+      {err ? <p class="control-error">{err}</p> : null}
+    </form>
+  );
+}
+
 export function AccountPanel({ s, close, linked, emailBack }: { s: ControlSession; close: () => void; linked?: string; emailBack?: string }) {
   const [sessions, setSessions] = useState<SessionRow[] | null>(null);
   const [keys, setKeys] = useState<Passkeys | null>(null);
@@ -110,7 +151,7 @@ export function AccountPanel({ s, close, linked, emailBack }: { s: ControlSessio
   // The passkey whose Remove was clicked: a dialog asks, and another of
   // the account's passkeys agrees (DK10, #393): what it signs, fetched as
   // the dialog opens, or why not.
-  const [removing, setRemoving] = useState<{ id: string; name: string; device: "yes" | "maybe" | "no" } | null>(null);
+  const [removing, setRemoving] = useState<{ id: string; name: string } | null>(null);
   const [removal, setRemoval] = useState<{ id: string; options?: PasskeyRemoval; err?: string } | null>(null);
   const [unlinking, setUnlinking] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -144,8 +185,8 @@ export function AccountPanel({ s, close, linked, emailBack }: { s: ControlSessio
   };
   // DK10: removing a passkey takes another, so the only one stays.
   const onlyPasskey = keys?.passkeys.length === 1;
-  const askToRemove = (id: string, name: string, device: "yes" | "maybe" | "no") => {
-    setRemoving({ id, name, device });
+  const askToRemove = (id: string, name: string) => {
+    setRemoving({ id, name });
     setRemoval({ id });
     passkeyRemoval(id).then(
       (options) => setRemoval((r) => (r?.id === id ? { id, options } : r)),
@@ -172,7 +213,6 @@ export function AccountPanel({ s, close, linked, emailBack }: { s: ControlSessio
         {keys?.github ? ` (GitHub: ${keys.github})` : ""}.
       </p>
       <NameLine s={s} />
-      <RecoveryLeft s={s} />
       <h3 class="control-group">Where you're signed in</h3>
       <ul class="control-devices control-rows" data-sessions>
         {(sessions ?? []).filter((x) => !earlier(x)).map((x) => (
@@ -215,7 +255,6 @@ export function AccountPanel({ s, close, linked, emailBack }: { s: ControlSessio
           }}
         />
       </p>
-      <p class="dim">Devices and machines lists the same browsers, each with whether it's signed in.</p>
       {s.info.passkeys || keys?.passkeys.length ? (
         <>
           <h3 class="control-group">Passkeys</h3>
@@ -233,29 +272,15 @@ export function AccountPanel({ s, close, linked, emailBack }: { s: ControlSessio
                   ) : (
                     ""
                   )}
-                  {k.device && s.trusted.has(k.device) ? <span data-passkey-on-new-computers>, opens your machines wherever it syncs</span> : null}
                 </span>
                 <span class="control-row-actions">
-                  {/* #641: not once its device is removed, which never comes
-                      back, and not where the passkey says it can't. */}
-                  {!app && !k.device && k.prf !== false ? (
-                    <button
-                      class="secondary small"
-                      data-passkey-as-device={k.id}
-                      disabled={waiting}
-                      title="A new computer with this passkey reaches your machines with no other device. Whoever can use the passkey can then do what this browser does."
-                      onClick={() => act(() => s.passkeyAsDevice(k.id, k.provider))}
-                    >
-                      Use on new computers
-                    </button>
-                  ) : null}
                 <button
                   class="secondary danger small"
                   data-remove-passkey={k.id}
                   disabled={waiting || onlyPasskey || (keys?.ways ?? 0) <= 1}
                   {...browserButton("Remove")}
                   title={onlyPasskey ? ONLY_PASSKEY : (keys?.ways ?? 0) <= 1 ? "Your only way to sign in" : app ? "Opens in your browser" : undefined}
-                  onClick={() => (app ? toBrowser("remove-passkey") : askToRemove(k.id, passkeyName(k, i), k.device && s.trusted.has(k.device) ? "yes" : k.prf !== false && !k.device ? "maybe" : "no"))}
+                  onClick={() => (app ? toBrowser("remove-passkey") : askToRemove(k.id, passkeyName(k, i)))}
                 />
                 </span>
               </li>
@@ -287,11 +312,6 @@ export function AccountPanel({ s, close, linked, emailBack }: { s: ControlSessio
               }}
             >
               <p>It stops signing you in at once. To use it again, add it as a new passkey.</p>
-              {removing.device === "yes" ? (
-                <p data-remove-passkey-device>Its device stays one of yours until you remove it under Devices, and only that stops it reaching your machines.</p>
-              ) : removing.device === "maybe" ? (
-                <p data-remove-passkey-device>If it's ever been approved as a device, that stays one of yours until you remove it under Devices: only that stops it reaching your machines.</p>
-              ) : null}
               <p class="dim" data-remove-passkey-with>
                 Confirm with another of your passkeys: your browser asks for one when you press Remove.
               </p>
@@ -380,7 +400,7 @@ export function AccountPanel({ s, close, linked, emailBack }: { s: ControlSessio
       <UsageReports telemetry={s.telemetry} setTelemetry={(on) => s.setTelemetry(on)} />
       <h3 class="control-group">Delete your account</h3>
       <p class="dim">
-        Removes your account from this server, with your devices, machines, sessions and passkeys.{" "}
+        Removes your account from this server, with your machines, sessions and passkeys.{" "}
         <button
           class="link danger"
           data-delete-account
@@ -439,7 +459,7 @@ function DeleteAccount({ s, back }: { s: ControlSession; back: () => void }) {
           <ul class="control-steps" data-delete-what>
             <li>your account, your passkeys, its link to your GitHub account, and every session;</li>
             <li>
-              your devices, and your {p.machines} machine{p.machines === 1 ? "" : "s"}: they stop reaching Arugula cloud (Arugula keeps running on them, reachable only locally);
+              your {p.machines} machine{p.machines === 1 ? "" : "s"}: they stop reaching Arugula cloud (Arugula keeps running on them, reachable only locally);
             </li>
             {p.disband.map((t) => (
               <li key={t.team} data-disband={t.team}>

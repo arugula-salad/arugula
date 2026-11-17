@@ -1,7 +1,7 @@
 // Control's overlay over the app (M17): one thing at a time, in order of
-// what needs an answer first (recovery codes to keep, a link's join, device
-// or invite; a device or machine asking; a session offered; what control
-// kept to say), else the dialog the account menu opened, else the one-time
+// what needs an answer first (a passkey to confirm, a link's join or
+// invite; someone asking into a team; a session offered; what control kept
+// to say), else the dialog the account menu opened, else the one-time
 // usage counts question. Also the account's and the host menu's items.
 //
 // The platform's settings (plan and usage) are on the platform page
@@ -14,28 +14,22 @@ import { openPlatform, platformOrigin } from "../platform-links";
 import { TelemetryAsk } from "../../shared/ui/account-telemetry";
 import type { MenuItem } from "../../shared/ui/menu";
 import { Modal } from "../../shared/ui/modal";
-import { ADD_PASSKEY_HASH, DEVICE_HASH, inviteInHash, JOIN_HASH, type ControlSession } from "../control";
+import { ADD_PASSKEY_HASH, inviteInHash, JOIN_HASH, type ControlSession } from "../control";
 import { SharedDocs } from "../ui/shared-docs";
 import { ACCOUNT_HASH, AccountPanel, GITHUB_LINK_HASH } from "./account";
 import { EMAIL_HASH } from "./email";
-import { DeviceLinkPrompt, DevicePrompt, JoinPrompt } from "./approve";
+import { JoinPrompt } from "./approve";
 import { DEPLOY_HASH, DeployPrompt } from "./deploy";
 import { openPanel, useControl, usedLink, type Panel } from "./common";
-import { AddDevice, Devices } from "./devices";
+import { Devices } from "./devices";
 import { AddMachine } from "./machines";
-import { AddPasskeyAgain, AdmitPrompt, AppLoginDone, AppLoginPrompt, ConfirmPasskey, InvitePrompt, Joined, Notice, PasskeyOffer, PresignedPrompt, ShareOfferPrompt } from "./prompts";
-import { RecoveryCodes } from "./recovery";
+import { AddPasskeyAgain, AdmitPrompt, AppLoginDone, AppLoginPrompt, ConfirmPasskey, InvitePrompt, Joined, Notice, PresignedPrompt, ShareOfferPrompt } from "./prompts";
 import { Teams } from "./teams";
 
 /** Control's address that opens Teams (where a team's owner turns chat on). */
 const TEAMS_HASH = "#teams";
 
-/** Control's addresses for the rest of the account's dialogs: the app's
- * Settings opens them here, since a device signs what's in them (Arugula
- * #1108). `#account` and `#teams` are above. */
-const PANEL_HASH = /^#(devices|add-device|shared-docs)$/;
-
-/** Over the app: approval prompts, a daemon's join, the device list. */
+/** Over the app: a join to add, invites, the machines list. */
 export function ControlOverlay({ s }: { s: ControlSession }) {
   useControl(s);
   const [hash, setHash] = useState(location.hash);
@@ -59,20 +53,13 @@ export function ControlOverlay({ s }: { s: ControlSession }) {
     };
   }, []);
   if (s.phase !== "ready") return null;
-  if (s.recoveryCodes) return <RecoveryCodes s={s} />;
   if (s.passkeyToConfirm) return <ConfirmPasskey s={s} />;
-  if (s.passkeyOffer) return <PasskeyOffer s={s} offer={s.passkeyOffer} />;
   if (hash === ADD_PASSKEY_HASH) return <AddPasskeyAgain s={s} />;
   const join = JOIN_HASH.exec(hash);
-  if (join) return <JoinPrompt s={s} code={join[1]} device={join[2]} />;
-  // #761: a waiting device's code, scanned with the camera or opened.
-  const device = DEVICE_HASH.exec(hash)?.[1];
-  if (device) return <DeviceLinkPrompt key={device} s={s} whole={device} />;
-  // The app's device asking to be approved comes first: it's the next step
-  // after allowing its sign-in.
+  if (join) return <JoinPrompt s={s} code={join[1]} />;
   const appLogin = /^#app=([0-9a-f]{16,128})$/.exec(hash)?.[1];
-  if (appLogin && !s.pending[0]) return <AppLoginPrompt s={s} id={appLogin} />;
-  if (hash === "#app-done" && !s.pending[0]) return <AppLoginDone />;
+  if (appLogin) return <AppLoginPrompt s={s} id={appLogin} />;
+  if (hash === "#app-done") return <AppLoginDone />;
   // M218: a deploy's approval, from the platform page's Approve or Deny.
   const deploy = DEPLOY_HASH.exec(hash)?.[1];
   if (deploy) return <DeployPrompt key={deploy} s={s} id={deploy} />;
@@ -86,11 +73,6 @@ export function ControlOverlay({ s }: { s: ControlSession }) {
   // Someone used an invite to a team I own: add them (sign the roster)?
   const req = s.teams.flatMap((t) => (t.role === "owner" ? t.requests.map((r) => ({ t, r })) : []))[0];
   if (req) return <AdmitPrompt s={s} team={req.t} req={req.r} />;
-  const asking = s.pending[0];
-  // #326: a device that came to approve a machine's join: both together.
-  const asked = asking && s.pendingJoins.get(asking.device);
-  if (asking && asked) return <JoinPrompt key={asked} s={s} code={asked} from={asking} />;
-  if (asking) return <DevicePrompt key={asking.device} s={s} c={asking} />;
   const offer = s.offers[0];
   if (offer) return <ShareOfferPrompt s={s} o={offer} />;
   if (s.joined) return <Joined s={s} />;
@@ -143,20 +125,6 @@ export function ControlOverlay({ s }: { s: ControlSession }) {
     };
     return <Teams s={s} close={done} />;
   }
-  const named = PANEL_HASH.exec(hash)?.[1];
-  if (named) {
-    const done = () => {
-      history.replaceState(history.state, "", location.pathname + location.search);
-      setHash("");
-    };
-    if (named === "devices") return <Devices s={s} close={done} />;
-    if (named === "add-device") return <AddDevice s={s} close={done} />;
-    return (
-      <Modal close={done}>
-        <SharedDocs s={s} close={done} />
-      </Modal>
-    );
-  }
   if (panel === "devices") return <Devices s={s} close={() => setPanel(null)} />;
   if (panel === "teams") return <Teams s={s} close={() => setPanel(null)} />;
   if (panel === "shared-docs")
@@ -171,7 +139,6 @@ export function ControlOverlay({ s }: { s: ControlSession }) {
         <AccountPanel s={s} close={() => setPanel(null)} />
       </Modal>
     );
-  if (panel === "add-device") return <AddDevice s={s} close={() => setPanel(null)} />;
   if (panel === "add")
     return (
       <Modal close={() => setPanel(null)}>
@@ -205,10 +172,9 @@ export function controlMenuItems(s: ControlSession): MenuItem[] {
 export function accountItems(s: ControlSession): MenuItem[] {
   return [
     { label: "Teams…", run: openPanel("teams") },
-    { label: "Devices and machines…", run: openPanel("devices") },
+    { label: "Machines…", run: openPanel("devices") },
     // #1066; everyone's since Docs left Labs (native #204).
     { label: "Shared Docs…", run: openPanel("shared-docs") },
-    { label: "Add a phone or browser…", run: openPanel("add-device") },
     { label: "Sign-in and account…", run: openPanel("account") },
     ...(platformOrigin() && s.billing?.billing ? [{ label: s.billing.relay.warning ? "Plan and usage… (over the free relay)" : "Plan and usage…", run: () => openPlatform("/settings/personal") }] : []),
   ];

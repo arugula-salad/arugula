@@ -64,7 +64,7 @@ async function forThem(client: Client, releases: WhatsNewRelease[]): Promise<Wha
 }
 
 /** Open it with this build's newest releases (the update chip's
- * *What's new*, and the command palette's). */
+ * *What's new*, in Settings). */
 export async function openWhatsNew(client: Client, newer?: Newer) {
   open = { client, releases: await forThem(client, upTo(RELEASES, BUILT)), newer };
   changed();

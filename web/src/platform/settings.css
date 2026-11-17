@@ -116,8 +116,22 @@
   padding: 2px 0;
 }
 
-/* -- A machine's Agents' grants (Arugula #1107): a row per project, and
-      your DMs, a switch per column. */
+/* -- Agents on your machines: a card per project (and your DMs) holding
+      its matrix. */
+
+.platform .agent-card.card {
+  display: block;
+}
+
+.platform .agent-cards {
+  gap: 12px;
+}
+
+.platform .agent-card-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--text-sm);
+}
 
 .platform .agent-matrix {
   width: 100%;
@@ -185,6 +199,25 @@
 
 .platform .agent-matrix td {
   text-align: center;
+}
+
+/* Your DMs' one column sits under the projects' Threads & issues, which
+   it's the DMs' version of: its card is about a project's first two
+   columns wide (24% + 19%), and its table fills it, so the card and the
+   table are one size (UI audit #168). */
+.platform .agent-card[data-agent-dms] {
+  justify-self: start;
+  width: 46%;
+  min-width: 280px;
+  box-sizing: border-box;
+}
+
+.platform .agent-matrix:not(.agent-matrix-wide) {
+  width: 100%;
+}
+
+.platform .agent-matrix:not(.agent-matrix-wide) thead th:first-child {
+  width: 56%;
 }
 
 .platform .agent-level {
@@ -536,11 +569,15 @@
   font-size: var(--text-sm);
 }
 
-/* -- A phone: each project of a machine's grants is a row of its own, its
-      name above its switches, each labelled, so nothing is wider than the
-      screen. */
+/* -- A phone: each machine of a project's matrix is a row of its own, its
+      name above its four switches, each labelled, so nothing is wider than
+      the screen. */
 
 @media (max-width: 700px) {
+  .platform .agent-card[data-agent-dms] {
+    justify-self: stretch;
+    width: auto;
+  }
   .platform .agent-matrix-wide thead {
     position: absolute;
     width: 1px;
@@ -576,10 +613,6 @@
     gap: 4px;
     min-width: 0;
     padding: 0 2px;
-  }
-  /* Your DMs' row has one switch: no labels over nothing. */
-  .platform .agent-matrix-wide td:empty {
-    display: none;
   }
   .platform .agent-matrix-wide td::before {
     content: attr(data-col);

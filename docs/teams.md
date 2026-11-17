@@ -7,7 +7,7 @@ and threads are on for a team when its owners turn them on (*Chat* under
 *Teams* on control's page, native #203): [labs.md](labs.md#threads-and-chat).
 
 A machine is in one place: *Just me*, or one team. The host menu and
-*Devices and machines…* say which on each machine's line, with what it
+*Machines…* say which on each machine's line, with what it
 means (who sees its panes, who counts as its owner); so does *Join to* when
 you approve a machine. To work with more than one team, keep the machine
 *Just me* and share a session with each team (*Share*, beside the

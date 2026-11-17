@@ -914,7 +914,7 @@ journey shows the change.
 
 | Journey | What |
 |---|---|
-| J1 | one person on the Mac app, from no account to a command in a terminal: Getting started's Cloud step, an account made from the machine's approval link, recovery codes, the machine approved (one Approve: the link carries the machine's secret, so there's no code or account fingerprint to compare, #760), the app signed in through the browser (one Allow, which also makes it a device: no code or fingerprint to compare, #758), the app reopened |
+| J1 | one person on the Mac app, from no account to a command in a terminal: Getting started's Cloud step, an account made from the machine's approval link, the machine added (one Add, #1003), the app signed in through the browser (one Allow, #758; no device, #1004), the app reopened |
 | J2a | two friends, each through J1 first: one shares a session with the other (not a teammate) by their login, with no fingerprint to compare (their key is pinned on first use, #763), who accepts, finds the machine, asks to drive, is allowed, takes control and types; the owner sees it |
 | J2b | the same through a team: a one-click invite, the owner's machine moved into the team with *Team …*, the friend driving it by role |
 | J2c | the evening #551 audits: the owner's machine already in a team, a friend's second team, the team page's `arugulad join … --team` (not on the app's PATH, #550, and the machine is already in a team), *Team …*, sharing with the team, the Swarm, *+* on a teammate's machine |
@@ -1045,13 +1045,9 @@ const sock = await me.connect(box.id);           // or an E2ESocket of your own
 - `trusted()` is the account's devices and machines that chain to the
   pinned root; `api(path, body?)` is any other control call with the
   device's session.
-- `approveRequest(cert, code)` approves a browser page waiting on the
-  account, from its `control.request` and the code it shows
-  (`control.deviceCode`, `LOOKUP.SECRET`, #761), with the MAC the
-  *New device?* prompt sends. Without `code` it approves the way a page
-  from before codes did, and the browser asks its person to check the
-  account's fingerprint (*It matches*); that's what `just dev-control`
-  does.
+- `approveRequest(cert, code)` approves a device request with the MAC
+  the *New device?* prompt sent (#761). Since #1004 no page asks to be
+  approved, so it's for a request an older page or a test makes itself.
 - `save(file)` and `Device.load(file)` keep a device between steps.
 
 `web/fixtures/device-cli.ts` is the same from a shell or a Rust test, with
@@ -1211,7 +1207,6 @@ people signed in on any browser context, and machines joined to it.
 | #964 | `doc-grammar.spec.ts` (no page), `doc.spec.ts`, `doc.webkit.spec.ts` | a Doc's charts and drawings: the daemon's validator and the web client's both run over `crates/daemon/tests/fixtures/docs/` (`expect.json` says what each must come to); a chart drawn as SVG, a drawing shown only through `<img>` (a script in one runs nowhere), a chart that can't be drawn saying why with its source, a viewer's page, the light theme and the dark, and a chart fence in a forge body staying code (`forge-github.spec.ts`) |
 | #965 | `doc-grammar.spec.ts`, `doc.spec.ts`, `doc.webkit.spec.ts` | a Doc's pictures: `![alt](assets/<name>)` checked by the daemon and the web client over the same files (`expect.json` lists the Doc's assets); a PNG shown from a data: URL (control's CSP has no blob:, and none is made), fetched once per `name/rev`, a name written again shown with no reload, an `http://`, `data:` or `../` image staying text and never fetched, a viewer's page showing it, and the cache empty once the block is closed |
 | #86 | `studio-phone.spec.ts` | a studio app from the template through the token API (a fake studio and box), `arugula studio login`, `hud share --role follower`, `arugula studio follower`, `arugula app`; a question answered from a Pixel 7 and a gate approved from an iPhone, with hud told who |
-| Arugula #77 | `control-waiting-approvers.spec.ts` | a waiting page names the devices that can approve it, last used first: a new browser lists the laptop and names the desktop app apart (it approves machines and apps, not browsers), a browser here for a machine lists both, and with every device gone it says so and points to a recovery code. A local control (`team-fixture.ts`) |
 | Arugula #85 | `agent-images.spec.ts`, `agents.spec.ts` | an agent block's kept images (M71) from data: URLs, not blob: ones (control's page CSP has no blob:): the preview and the transcript's picture loaded (`naturalWidth`), a viewer's page showing it (reading one is a viewer's call) and refused a send, a click showing it full size. The same through control's page, owner and viewer, is `agent-images-control.spec.ts` in the cloud repository, with the other specs that start a control |
 | Arugula #869 | `doc-prototype.spec.ts` (desktop, Pixel 7), `doc.webkit.spec.ts` (iPhone, and WebKit at a desktop's size) | a Doc whose prototype is there before the page loads, switched to (and away and back): it runs, with no "tried to leave the page", though on a phone each switch moves its frame and loads it again, and each frame loads its page once (Arugula #947: WebKit loaded a `loading="lazy"` frame moved in from off the page twice); a prototype that navigates is still caught after that, also one that says it's ready itself first. The checks are `doc-steps.ts`'s |
 
