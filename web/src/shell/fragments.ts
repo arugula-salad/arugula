@@ -6,12 +6,15 @@
 //
 // Only the platform's routes left: `#chat…` is the platform page's paths
 // now ("Platform URLs are ids with cosmetic slugs"), and the shell sends an
-// old link to its new place. **Keep those redirects forever**: they're in
+// old link to its new place. So is most of `#settings` (Arugula #1110),
+// which is the app's `/settings`. **Keep those redirects forever**: they're in
 // old notifications, bookmarks, and messages from old daemons. (`#cloud=…`
 // and `#cloud-ws…` went with Managoat's Cloud workspaces, which are gone.)
 //
 // `scripts/fragments.test.mjs` checks that every file listening for
 // `hashchange` is named here, and the redirects.
+
+import { MACHINE_SETTINGS, settingsPath } from "../shared/machine-paths.ts";
 
 export interface Fragment {
   /** The fragment, as it starts. */
@@ -46,6 +49,11 @@ export const FRAGMENTS: Fragment[] = [
   { route: "#machine=", why: "A machine to show (M184: a hosted workspace's, from the platform page), and with `&agent` Start an agent on it.", where: ["shell/main.tsx"] },
   { route: "#getting-started=", why: "The getting-started guide at a step.", where: ["shell/main.tsx"] },
   { route: "#developer", why: "The developer settings dialog.", where: ["shell/ui/developer.tsx"] },
+  {
+    route: "#settings=push",
+    why: "Phones and browsers (Arugula #1110): a device turns its notifications on with its own keys, so it stays on control's page. The rest of `#settings` is the app's /settings; a daemon's own page, with no app, keeps it all.",
+    where: ["shell/ui/settings-route.ts", "shell/ui/settings-page.tsx", "shell/ui/app.tsx"],
+  },
   { route: "#lend=", why: "Lending this device to an agent on or off (S33).", where: ["shell/hand.ts"] },
   { route: "#app-done", why: "The desktop app's sign-in finished (M48).", where: ["shell/trust/overlay.tsx"] },
   { route: "#github-link=", why: "Back from linking GitHub to the account signed in (#208): what happened, for Sign-in and account to say.", where: ["shell/trust/overlay.tsx", "shell/trust/account.tsx"] },
@@ -68,6 +76,7 @@ export const HASH_LISTENERS: { where: string; why: string }[] = [
   { where: "shell/ui/places.tsx", why: "The places bar follows `#swarm`, `#overview`, `#agents`, `#docs`." },
   { where: "shell/ui/shell/overview.tsx", why: "`#overview`." },
   { where: "shell/ui/shell/rail.tsx", why: "The rail follows the shell's places." },
+  { where: "shell/ui/settings-page.tsx", why: "Notes the section `#settings=…` opened at, for its index to scroll to." },
 ];
 
 const ID = "[a-z]{2,3}_[0-9a-f]{4,64}";
@@ -90,5 +99,9 @@ export function platformPath(hash: string): string | null {
     return `/chat/search${q ? `?q=${encodeURIComponent(q)}` : ""}`;
   }
   if (/^#chat(?:=|$)/.test(hash)) return "/chat";
+  // Control's Settings (Arugula #1110), but for what stays here and a
+  // machine's own sections, which the page sends on once it knows the
+  // machine shown (./ui/app.tsx).
+  if ((m = /^#settings(?:=([\w-]+))?$/.exec(hash)) && !MACHINE_SETTINGS.has(m[1])) return settingsPath(m[1]);
   return null;
 }

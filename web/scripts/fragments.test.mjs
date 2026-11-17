@@ -9,6 +9,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { FRAGMENTS, HASH_LISTENERS, platformPath } from "../src/shell/fragments.ts";
+import { settingsPath } from "../src/shared/machine-paths.ts";
 import { parse } from "../src/platform/paths.ts";
 
 const src = join(dirname(fileURLToPath(import.meta.url)), "..", "src");
@@ -33,6 +34,41 @@ test("each old route of the platform's, with real parameters, lands on its new p
     const [p, q] = path.split("?");
     assert.notEqual(parse(p, q ? `?${q}` : "").page, "missing", path);
   }
+});
+
+// Arugula #1110: control's `#settings` keeps Phones and browsers; each
+// other section's old link lands on its section of the app's Settings.
+test("control's old Settings sections land on the app's Settings, but Phones and browsers stays", () => {
+  const D = "da5b786733ac68a9";
+  const cases = [
+    ["#settings", "/settings"],
+    ["#settings=appearance", "/settings/you/appearance"],
+    ["#settings=preferences", "/settings/you/preferences"],
+    ["#settings=account", "/settings/you/account"],
+    // Help went to the command palette (Arugula #1108): Settings, at You.
+    ["#settings=help", "/settings"],
+  ];
+  for (const [hash, path] of cases) {
+    assert.equal(platformPath(hash), path, hash);
+    const r = parse(path, "");
+    assert.equal(r.page, "settings", path);
+    assert.equal(r.scope, "you", path);
+    assert.equal(r.section, hash.split("=")[1] === "help" ? undefined : hash.split("=")[1], path);
+  }
+  // Kept on control's page: a device turns its notifications on with its own keys.
+  for (const hash of ["#settings=push", "#settings=device", "#settings=all-devices"]) assert.equal(platformPath(hash), null, hash);
+  // A machine's own wait for the machine shown, which the page knows (shell/ui/app.tsx).
+  for (const hash of ["#settings=machine", "#settings=remote-sessions"]) assert.equal(platformPath(hash), null, hash);
+  // …and land on This machine, at it.
+  assert.equal(settingsPath("machine", D), `/settings/machine/${D}`);
+  assert.equal(settingsPath("remote-sessions", D), `/settings/machine/${D}/remote-sessions`);
+  assert.deepEqual(parse(`/settings/machine/${D}/remote-sessions`, ""), { page: "settings", scope: "machine", machine: D, section: "remote-sessions" });
+  // Not known (an older daemon): the page's first machine, the section waiting in the hash.
+  assert.equal(settingsPath("machine"), "/settings/machine");
+  assert.equal(settingsPath("remote-sessions"), "/settings/machine#remote-sessions");
+  assert.deepEqual(parse("/settings/machine", ""), { page: "settings", scope: "machine" });
+  // Not a section: nothing.
+  for (const hash of ["#settingsx", "#settings=", "#settings=a b"]) assert.equal(platformPath(hash), null, hash);
 });
 
 test("the secret-bearing fragments, and the shell's own, are never redirected", () => {

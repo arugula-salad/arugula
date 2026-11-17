@@ -15,7 +15,7 @@ import { desktopApp } from "../shared/desktop";
 
 let origin: string | null = null;
 /** The app's router, when the platform is this page. */
-let navigate: ((path: string) => void) | null = null;
+let navigate: ((path: string, replace?: boolean) => void) | null = null;
 
 /** The platform page's origin, when control has one. */
 export const platformOrigin = () => origin;
@@ -27,7 +27,7 @@ export function setPlatformOrigin(o: string | null | undefined) {
 }
 
 /** The platform is this page (the app): its paths go to `go`. */
-export function setPlatformHere(go: (path: string) => void, here = location.origin) {
+export function setPlatformHere(go: (path: string, replace?: boolean) => void, here = location.origin) {
   origin = here;
   navigate = go;
 }
@@ -45,6 +45,15 @@ export function openPlatform(path: string) {
   const url = `${origin}${path}`;
   const standalone = matchMedia?.("(display-mode: standalone)").matches;
   if (desktopApp() || standalone || !window.open(url, "arugula-platform")) location.assign(url);
+}
+
+/** The platform page at `path` instead of this address, which moved there
+ * (an old link): in this window, leaving no step for Back to land on it
+ * again. Nothing without a platform page. */
+export function landOnPlatform(path: string) {
+  if (!origin) return;
+  if (navigate) return navigate(path, true);
+  location.replace(`${origin}${path}`);
 }
 
 /** The platform page's address for `path`, for a link's `href`: in the

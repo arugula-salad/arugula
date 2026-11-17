@@ -6,9 +6,12 @@
 // app can't reach says so in each of its sections' summaries. On the app
 // frame's fixture page (app-frame-page.tsx), served on the suite daemon's
 // origin, which stands for the machine `SUITE`; the platform's grants and
-// the hub's rename are this spec's.
+// the hub's rename are this spec's. Who reached it through Arugula cloud
+// and the machine's old addresses on control's `#settings` are here too
+// (Arugula #1110).
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { fixturePage } from "./fixture-page";
+import { panes, reset } from "./helpers";
 
 const SUITE = "5e771e0000000001";
 const AWAY = "0ff11e0000000002";
@@ -43,7 +46,8 @@ async function open(page: Page, path: string, renames: boolean) {
     return json(r, { id, name: names[id], was });
   });
   const body = await fixturePage("./app-frame-page.tsx");
-  await page.route(/\/settings/, (r) => (r.request().resourceType() === "document" ? r.fulfill({ contentType: "text/html", body }) : r.fallback()));
+  // Settings, and a project's machines (whose machine page has the shell's own places).
+  await page.route(/\/(settings|p\/)/, (r) => (r.request().resourceType() === "document" ? r.fulfill({ contentType: "text/html", body }) : r.fallback()));
   await page.goto(path);
 }
 
@@ -57,7 +61,7 @@ test("a machine's own settings, its agents' grants and its name, each a row with
   await expect(page).toHaveURL(new RegExp(`/settings/machine/${SUITE}[^/]*$`));
   await expect(page.locator('[data-settings-pick="machine"]')).toHaveValue(SUITE);
   // In the machine menu's order, its agents' grants after Access, its name last.
-  await expect(page.locator("[data-settings-row]")).toHaveText([/^Access/, /^Agents' grants/, /^Permission rules/, /^Usage and crash reports/, /^Guest SSH access/, /^Developer settings/, /^Name/]);
+  await expect(page.locator("[data-settings-row]")).toHaveText([/^Access/, /^Agents' grants/, /^Permission rules/, /^Usage and crash reports/, /^Guest SSH access/, /^Developer settings/, /^Remote sessions/, /^Name/]);
   // What's set, read from the machine.
   await expect(said(page, "access")).toHaveText(/^(Only you|You \+ .+)$/);
   await expect(said(page, "rules")).toHaveText(/^(None yet|\d+ rules?)$/);
@@ -115,4 +119,47 @@ test("the old address of Agents on your machines opens the first machine's Agent
   await open(page, "/settings#agents", false);
   await expect(page).toHaveURL(new RegExp(`/settings/machine/${SUITE}[^/]*/agents$`));
   await expect(section(page, "agents")).toBeVisible();
+});
+
+// Arugula #1110: what was a section of control's `#settings`.
+test("who reached the machine through Arugula cloud is a section of This machine, saying how many in its row", async ({ page }) => {
+  const now = Date.now();
+  await page.route("**/api/remote-sessions", (r) =>
+    r.fulfill({
+      json: {
+        remote_input: false,
+        sessions: [
+          { account: "a2", name: "lee", role: "viewer", path: "relay", by: "token", opened_ms: now - 60_000, open: true },
+          { account: "a1", name: "sam", role: "editor", path: "relay", by: "token", opened_ms: now - 7_200_000, closed_ms: now - 6_480_000, open: false },
+        ],
+      },
+    }),
+  );
+  await open(page, `/settings/machine/${SUITE}/remote-sessions`, false);
+  await expect(said(page, "remote-sessions")).toHaveText("2 sessions, 1 open · watch only");
+  await expect(section(page, "remote-sessions").locator("[data-remote-session]")).toHaveCount(2);
+  await expect(section(page, "remote-sessions").locator("[data-remote-input]")).toHaveAttribute("data-remote-input", "off");
+});
+
+test("a machine's old Settings addresses land on This machine", async ({ page }) => {
+  // Control's page sends `#settings=machine` here, over the machines (machine-paths' MOVES):
+  // the list names no machine, so This machine opens at the first.
+  await open(page, `/p/${P}/machines#settings=machine`, false);
+  await expect(page).toHaveURL(new RegExp(`/settings/machine/${SUITE}[^/]*$`));
+  await expect(section(page, "access")).toBeVisible();
+  // Back doesn't land on the old address again.
+  await page.goBack();
+  await expect(page).not.toHaveURL(/#settings/);
+  await page.goto(`/p/${P}/machines#settings=remote-sessions`);
+  await expect(page).toHaveURL(new RegExp(`/settings/machine/${SUITE}[^/]*/remote-sessions$`));
+  // Another of control's sections: You's, by the same id.
+  await page.goto(`/p/${P}/machines#settings=preferences`);
+  await expect(page).toHaveURL(/\/settings\/you\/preferences$/);
+  // On a machine's page, the old address lands on the machine shown. (Its menu's Machine
+  // settings… goes the same way; with one machine here, the page draws no machine menu.)
+  await reset(page);
+  const [pane] = await panes(page);
+  await page.goto(`/p/${P}/machines?pane=${pane}#settings=machine`);
+  await expect(page).toHaveURL(/\/settings\/machine\/[0-9a-f]+[^/]*$/);
+  await expect(page.locator("[data-machine-settings-page]")).toBeVisible();
 });

@@ -533,7 +533,7 @@ export function machineSettingsItems(client: Client): MenuItem[] {
     // once it's joined (or the page is control's): in Settings' This
     // machine, where they're changed (Arugula #1107).
     ...((directory.control || directory.joined) && agentGrantsShown()
-      ? [{ label: "Agents' grants…", hint: "What its agents may do on Arugula cloud, in Settings", run: () => openAgentGrants(client.e2e?.daemon.id ?? directory.find(directory.current)?.id) }]
+      ? [{ label: "Agents' grants…", hint: "What its agents may do on Arugula cloud, in Settings", run: () => openAgentGrants(machineShown(client)) }]
       : []),
     { label: "Developer settings…", run: () => openDeveloper(client) },
     // The menu is built when it opens, so it can't wait on the daemon's list
@@ -544,6 +544,11 @@ export function machineSettingsItems(client: Client): MenuItem[] {
       run: () => void removePlugin(client),
     },
   ];
+}
+
+/** The shown machine's id on control, where it has one. */
+export function machineShown(client: Client): string | undefined {
+  return client.e2e?.daemon.id ?? directory.find(directory.current)?.id;
 }
 
 /** *Rename…* on the shown machine (Arugula #500): the name the machines list,

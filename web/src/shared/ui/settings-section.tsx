@@ -8,7 +8,7 @@
 // Inside a scope's list (./settings-list.tsx) a section tells the list its
 // title and summary, so the list can say them, and it shows only while
 // it's the one chosen; it stays drawn while hidden, so what it reads keeps
-// its summary current. Anywhere else (control's `#settings`, a page that
+// its summary current. Anywhere else (the shell's `#settings`, a page that
 // borrows one) it's drawn in place, and its id is the section index's
 // anchor; the index sits beside the column on a wide screen.
 //
@@ -160,15 +160,12 @@ export function SectionIndex({
   body,
   anchor = (id) => `#${id}`,
   opened: openedAt = () => decodeURIComponent(location.hash.slice(1)),
-  elsewhere,
 }: {
   body: RefObject<HTMLDivElement | null>;
   /** A section's address, where the hash isn't simply its id. */
   anchor?: (id: string) => string;
   /** The section the page was opened at. */
   opened?: () => string | undefined;
-  /** The rest of Settings, on the other page (Arugula #695). */
-  elsewhere?: Elsewhere;
 }) {
   const [secs, setSecs] = useState<{ id: string; title: string }[]>([]);
   const [here, setHere] = useState("");
@@ -228,46 +225,6 @@ export function SectionIndex({
           </li>
         ))}
       </ul>
-      {elsewhere && elsewhere.links.length > 0 && (
-        <>
-          <p class="settings-index-head">{elsewhere.title}</p>
-          <ul data-settings-index-elsewhere>
-            {elsewhere.links.map((l) => (
-              <li key={l.href}>
-                <a href={l.href} onClick={l.onClick}>
-                  {l.title}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
     </nav>
-  );
-}
-
-/** The other page's sections, as links. */
-export interface Elsewhere {
-  title: string;
-  links: { title: string; href: string; onClick?: (e: MouseEvent) => void }[];
-}
-
-/** The same links in the column, where the index beside it isn't shown
- * (a narrow window, a phone). */
-export function ElsewhereLinks({ elsewhere }: { elsewhere: Elsewhere }) {
-  if (elsewhere.links.length === 0) return null;
-  return (
-    <section class="settings-elsewhere" data-settings-elsewhere>
-      <h2>{elsewhere.title}</h2>
-      <ul class="settings-rows">
-        {elsewhere.links.map((l) => (
-          <li key={l.href}>
-            <a href={l.href} onClick={l.onClick}>
-              {l.title}
-            </a>
-          </li>
-        ))}
-      </ul>
-    </section>
   );
 }

@@ -189,25 +189,6 @@
   list-style: none;
 }
 
-/* The other page's sections: beside the column when there's room, else in it. */
-:is(.platform, .settings-place) .settings-elsewhere {
-  margin-top: 32px;
-}
-
-:is(.platform, .settings-place) .settings-index-head {
-  margin: 16px 0 6px;
-  font: 500 var(--text-xs)/1.3 var(--f-mono);
-  letter-spacing: var(--track-caps);
-  text-transform: uppercase;
-  color: var(--dim);
-}
-
-@media (min-width: 1320px) {
-  :is(.platform, .settings-place) .settings-elsewhere {
-    display: none;
-  }
-}
-
 /* -- Settings' list and detail (settings-list.tsx): the List pages' split
       (./list-page.css), filling the page's frame as Docs does. The list
       is narrower than a Doc's (a title and a line), and the detail holds

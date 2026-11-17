@@ -19,6 +19,8 @@ import { agentsRoute } from "./agents-route";
 import { docsRoute } from "./docs-route";
 import { SettingsPage } from "./settings-page";
 import { openSettings, settingsRoute } from "./settings-route";
+import { settingsPath } from "../../shared/machine-paths";
+import { landOnPlatform, platformHere, platformOrigin } from "../platform-links";
 import { HostPicker, NewMachineNote, setMachineItems } from "./hosts";
 import { ControlRequests, ShareDialog } from "./people";
 import { directory } from "../hosts";
@@ -32,7 +34,7 @@ import { PickerLayer } from "./picker";
 import { InstallHint } from "./notify";
 import { DeploysWaitingNote } from "./deploys-waiting";
 import { GettingStartedLayer, useFirstRun } from "./welcome";
-import { machineSettingsItems } from "./commands";
+import { machineSettingsItems, machineShown } from "./commands";
 import { PaletteLayer } from "./palette";
 import { ControlBanner } from "./control-state";
 import { MovingNote } from "./moving-note";
@@ -102,13 +104,16 @@ export function App({ client, cell, frame = "own", onSwarm }: { client: Client; 
   // M113 (#1028): a computer draws the workspace once a machine is shown;
   // a phone keeps its own header.
   const ws = !phone && !!client.state;
-  // The machine menu's "This machine" items are this client's: one row to the
-  // Settings page where the rail has one (Arugula #695), else the rows.
+  // The machine menu's "This machine" items are this client's: one row to
+  // where they're a page, the app's Settings in the app or `#settings` on a
+  // daemon's own page (Arugula #695); else the rows. Control's page keeps
+  // the rows, since the app may not reach the machine (Arugula #1110).
   useEffect(
     () =>
       setMachineItems(() => {
         const mine = machineSettingsItems(client);
-        return ws && mine.length ? [{ label: "Machine settings…", run: () => openSettings("machine") }] : mine;
+        const page = ws && mine.length > 0 && (platformHere() || !platformOrigin());
+        return page ? [{ label: "Machine settings…", run: () => openSettings("machine", machineShown(client)) }] : mine;
       }),
     [client, ws],
   );
@@ -358,7 +363,10 @@ function AgentsPageLayer({ client }: { client: Client }) {
   );
 }
 
-/** The Settings page (Arugula #695), while its route is up. */
+/** The Settings page (Arugula #695), while its route is up. Where the
+ * app's Settings is (control's page, the app), a section that's there now
+ * lands on it (Arugula #1110), a machine's own once the machine shown is
+ * known; control's page keeps Phones and browsers. */
 function SettingsPageLayer({ client }: { client: Client }) {
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -366,11 +374,28 @@ function SettingsPageLayer({ client }: { client: Client }) {
     window.addEventListener("hashchange", fn);
     return () => window.removeEventListener("hashchange", fn);
   }, []);
-  return settingsRoute() ? (
+  useSubscribe((fn) => directory.subscribe(fn));
+  const route = settingsRoute();
+  const to = route ? movedTo(client, route.section) : null;
+  useEffect(() => {
+    if (to && to !== "wait") landOnPlatform(to);
+  }, [to]);
+  return route && !to ? (
     <PlaceGuard client={client} at="settings">
       <SettingsPage client={client} />
     </PlaceGuard>
   ) : null;
+}
+
+/** Where `#settings=<section>` is in the app's Settings now, "wait" while
+ * the machine it's about isn't known yet, or null where it's drawn here: a
+ * daemon's own page, and control's Phones and browsers. In the app, that's
+ * You's, whose rows lead back to control's. */
+function movedTo(client: Client, section?: string): string | "wait" | null {
+  if (!platformOrigin()) return null;
+  const machine = machineShown(client);
+  if ((section === "machine" || section === "remote-sessions") && !machine && !client.state) return "wait";
+  return settingsPath(section, machine) ?? (platformHere() ? `/settings/you/push` : null);
 }
 
 /** The Docs page (#1494): a chunk of its own, fetched while its route is

@@ -1,7 +1,8 @@
 // Who reached this machine through Arugula cloud (Arugula #1094, aru-141):
 // the log the daemon keeps itself (`remote_sessions.list`, from
-// `remote-sessions.jsonl` in its state directory), on the Settings page
-// under This machine, with the remote-input switch it goes with. Its
+// `remote-sessions.jsonl` in its state directory), in Settings' This
+// machine (and a daemon's own `#settings`), with the remote-input switch
+// it goes with. Its
 // owner's alone. One quiet row per session, newest first. A daemon from
 // before the route answers 404, and then the section isn't there.
 
@@ -64,10 +65,13 @@ export function RemoteSessionsSection({ client }: { client: Client }) {
   }, [client, owner, connected]);
   if (!owner || !got) return null;
   const { sessions } = got;
+  const open = sessions.filter((s) => s.open).length;
+  const summary = sessions.length ? `${sessions.length} ${sessions.length === 1 ? "session" : "sessions"}${open ? `, ${open} open` : ""}` : "None yet";
   return (
     <Section
       id="remote-sessions"
       title="Remote sessions"
+      summary={`${summary}${got.remote_input ? "" : " · watch only"}`}
       count={sessions.length}
       lede="Who reached this machine through Arugula cloud, newest first, from the record the machine keeps itself."
       more={

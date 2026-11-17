@@ -111,6 +111,21 @@
   padding: 2px 0;
 }
 
+/* A machine's remote sessions (shell/ui/remote-sessions.tsx, Arugula
+   #1110): who and how, then when, at the end. */
+.platform [data-remote-session] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+  padding: 2px 0;
+}
+
+.platform .remote-session-when {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
 /* -- A machine's Agents' grants (Arugula #1107): a row per project, and
       your DMs, a switch per column. */
 
