@@ -36,4 +36,7 @@ Release-note: none, the tests' fake forge only
 ```
 
 The `notes` check on a pull request (`scripts/pr-notes-check`) fails until it has one
-or the other. A change only to docs, tests, CI or scripts needs neither.
+or the other. A change only to docs, tests, CI or scripts needs neither. In the
+merge queue, check.yml's `lint` reads the pull request's notes again with the
+group's scripts (`--notes-only`), so a note that stopped reading after a limit
+changed on main fails there instead of holding the release train.

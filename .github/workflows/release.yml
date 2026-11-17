@@ -274,12 +274,22 @@ jobs:
       # chant, and the vsce its marketplace target runs, from release/tools'
       # lockfile.
       - run: npm ci --prefix release/tools --no-fund --no-audit && echo "$PWD/release/tools/node_modules/.bin" >>"$GITHUB_PATH"
+      # github-meta-token.mjs sends the Homebrew target's read of GitHub's
+      # SSH host keys with the job's token: without one it shared the
+      # runner's rate limit, and a 403 failed v0.70.10 and v0.70.20. A
+      # second try for anything else: chant resumes from its record and
+      # publishes nothing twice.
       - working-directory: release/daemon
-        run: chant release publish "$GITHUB_REF_NAME" --yes
+        run: |
+          chant release publish "$GITHUB_REF_NAME" --yes && exit 0
+          echo "::warning::chant release publish failed; trying once more in 60s"
+          sleep 60
+          chant release publish "$GITHUB_REF_NAME" --yes
         env:
           ARUGULA_RELEASE_TAG: ${{ github.ref_name }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_KEY: ${{ secrets.HOMEBREW_TAP_KEY }}
+          NODE_OPTIONS: --import=${{ github.workspace }}/release/tools/github-meta-token.mjs
       - run: scripts/release check-latest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

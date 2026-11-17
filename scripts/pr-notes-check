@@ -8,11 +8,23 @@
 # Otherwise it fails, saying how to do one or the other.
 #
 #   scripts/pr-notes-check BASE HEAD
+#   scripts/pr-notes-check --notes-only BASE HEAD
+#
+# --notes-only: check.yml's lint on a merge group (#720). Only that the notes
+# it adds or edits still read, with the group's scripts: a pull request whose
+# notes passed before a limit changed on main mustn't land and hold the train
+# (#2341). Whether it needed a note is the pull request's check, and doesn't
+# change in the queue.
 #
 # Reads git alone: no API, no secrets, so a fork's pull request runs it too.
 set -uo pipefail
-base=${1:?usage: pr-notes-check BASE HEAD}
-head=${2:?usage: pr-notes-check BASE HEAD}
+notes_only=
+if [ "${1:-}" = --notes-only ]; then
+  notes_only=1
+  shift
+fi
+base=${1:?usage: pr-notes-check [--notes-only] BASE HEAD}
+head=${2:?usage: pr-notes-check [--notes-only] BASE HEAD}
 here=$(cd "$(dirname "$0")" && pwd)
 
 from=$(git merge-base "$base" "$head") || {
@@ -32,6 +44,10 @@ if [ -n "$notes" ]; then
     git cat-file -e "$from:$f" 2>/dev/null && how=edited
     if ! git show "$head:$f" | node "$here/release-note-check.mjs" "${f##*/}" "$how"; then exit 1; fi
   done <<<"$notes"
+fi
+if [ -n "$notes_only" ]; then
+  echo "notes: $(printf '%s' "$notes" | grep -c . || true) note(s) added or edited, and they read"
+  exit 0
 fi
 added=$(git diff --name-only --diff-filter=A "$from" "$head" -- 'docs/notes/*.md' | grep -v '/README\.md$' || true)
 

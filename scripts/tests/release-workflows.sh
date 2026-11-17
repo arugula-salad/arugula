@@ -3,8 +3,8 @@
 # - a job that reads a release, signing or deploy secret names an
 #   environment, which only main or protected tags reach; the repository's
 #   own secrets are only the compile cache's and the forge tests';
-# - what ships compiles from source: release.yml's Linux builds and
-#   server-release's build don't get the compile cache's password;
+# - what ships compiles from source: release.yml's Linux builds don't get
+#   the compile cache's password;
 # - every action that isn't this repository's is pinned to a commit, and so
 #   is every action the release workflows use.
 #
@@ -21,8 +21,8 @@ import yaml
 
 root = sys.argv[1]
 repo_level = {"GITHUB_TOKEN", "SCCACHE_WEBDAV_PASSWORD", "ARUGULA_GH_AUTHOR_TOKEN", "ARUGULA_GH_REVIEWER_TOKEN", "ARUGULA_GH_APP_PRIVATE_KEY"}
-from_source = {"release.yml": ["linux", "linux-arm64"], "server-release.yml": ["build"]}
-release = {"release.yml", "app-release.yml", "server-release.yml"}
+from_source = {"release.yml": ["linux", "linux-arm64"]}
+release = {"release.yml", "app-release.yml"}
 sha = re.compile(r"^[^@]+@[0-9a-f]{40}$")
 fail = []
 
