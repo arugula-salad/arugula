@@ -2,7 +2,8 @@
 # A setup for a hosted workspace on this repo (the arugula-dev workspaces;
 # `arugula cloud edit <ws> --setup packaging/hosted/examples/arugula-dev-setup.sh`):
 # the toolchain docs/development.md asks for, where the box's session users
-# run it too (Arugula #215). It builds nothing.
+# run it too (Arugula #215). The one thing it builds is libghostty-vt-sys,
+# once as each session user, to fill their Ghostty cache (below).
 #
 # Setup runs as `user`, whose home session users (ses1..ses6, each
 # session's agent and its finish step) can't enter. So nothing a session
@@ -19,12 +20,16 @@
 #   would come first on their PATH.
 # - A build cache for each session user (ARUGULA_DEV_SCCACHE=0 for none):
 #   sccache, its cache in the user's home (~/.cache/sccache, at most
-#   ARUGULA_DEV_SCCACHE_SIZE), its server on a socket there, and
-#   libghostty-vt-sys's Ghostty checkout and Zig caches there too. A
-#   session's checkout is new, so its own crates build again, but a slot's
-#   next session finds the dependencies and Ghostty built (docs/control.md,
-#   "Session users' tools"). One cache all session users write would let
-#   one session plant what another links; each user's is theirs.
+#   ARUGULA_DEV_SCCACHE_SIZE), its server on a socket there. A session's
+#   checkout is new, so its own crates build again, but a slot's next
+#   session finds the dependencies built (docs/control.md, "Session users'
+#   tools"). One cache all session users write would let one session plant
+#   what another links; each user's is theirs.
+# - Each session user's Ghostty (Arugula #842), with or without sccache:
+#   libghostty-vt-sys's Ghostty checkout, Zig's packages and Zig's caches
+#   in ~/.cache/libghostty-vt-sys (LIBGHOSTTY_VT_SYS_CACHE_DIR), filled
+#   here, so no session clones Ghostty or fetches from the network to
+#   build it. The setup fails if one isn't.
 # - Swap, and cargo's jobs (CARGO_BUILD_JOBS), as a box this size takes.
 # - The browser specs (Arugula #264): python3 (the specs' fake agent,
 #   scripts/free-port), Playwright's Chromium with its system libraries
@@ -162,12 +167,52 @@ if [ "${ARUGULA_DEV_SCCACHE:-1}" != 0 ]; then
     'SCCACHE_DIR=~/.cache/sccache' \
     "SCCACHE_CACHE_SIZE=${ARUGULA_DEV_SCCACHE_SIZE:-2G}" \
     'SCCACHE_SERVER_UDS=~/.sccache.sock' \
-    SCCACHE_IGNORE_SERVER_IO_ERROR=1 \
-    'LIBGHOSTTY_VT_SYS_CACHE_DIR=~/.cache/libghostty-vt-sys'
+    SCCACHE_IGNORE_SERVER_IO_ERROR=1
 else
-  arugula-tools env RUSTC_WRAPPER SCCACHE_DIR SCCACHE_CACHE_SIZE SCCACHE_SERVER_UDS SCCACHE_IGNORE_SERVER_IO_ERROR \
-    LIBGHOSTTY_VT_SYS_CACHE_DIR
+  arugula-tools env RUSTC_WRAPPER SCCACHE_DIR SCCACHE_CACHE_SIZE SCCACHE_SERVER_UDS SCCACHE_IGNORE_SERVER_IO_ERROR
 fi
+
+# Each session user's Ghostty (Arugula #842). Without it, a slot's first
+# build of anything on libghostty-vt clones Ghostty and fetches Zig's
+# packages mid-session, and a dropped connection fails the build
+# (HttpConnectionClosing). So build libghostty-vt-sys as each of them now,
+# into their own cache, from a copy of the crate (they can't read this
+# checkout), and build it again in a new target directory with every
+# proxy a dead port: if that build reaches for the network, it fails, and
+# so does the setup. It's a build, not a clone and `zig build --fetch` in
+# here, because build.rs reuses a checkout only when its stamp
+# (.ghostty-commit) is the pinned commit and the text of every patch, and
+# fetches with its own build's options: a copy of either here would drift
+# the day they change. It compiles Ghostty too, so the slot's first
+# session doesn't.
+arugula-tools env 'LIBGHOSTTY_VT_SYS_CACHE_DIR=~/.cache/libghostty-vt-sys'
+# shellcheck disable=SC2016 # expanded by the session user's sh
+fill='set -eu
+[ -n "${LIBGHOSTTY_VT_SYS_CACHE_DIR:-}" ] || { echo "no LIBGHOSTTY_VT_SYS_CACHE_DIR" >&2; exit 1; }
+unset RUSTC_WRAPPER
+t=$(mktemp -d)
+trap "rm -rf \"$t\"" EXIT
+cp -R "$1" "$t/crate"
+cd "$t/crate"
+cargo build -p libghostty-vt-sys --target-dir "$t/fill"
+dead=http://127.0.0.1:9
+env -u no_proxy -u NO_PROXY http_proxy=$dead https_proxy=$dead all_proxy=$dead \
+  HTTP_PROXY=$dead HTTPS_PROXY=$dead ALL_PROXY=$dead \
+  cargo build --offline -p libghostty-vt-sys --target-dir "$t/offline"
+test -f "$LIBGHOSTTY_VT_SYS_CACHE_DIR/ghostty-src/.ghostty-commit"'
+crate=$(mktemp -d)
+cp -R "$repo/vendor/libghostty-vt-sys" "$crate/"
+chmod -R a+rX "$crate"
+filled=0
+for n in 1 2 3 4 5 6; do
+  getent passwd "ses$n" >/dev/null || continue
+  echo "ses$n: filling its Ghostty cache"
+  arugula-tools as "ses$n" sh -c "$fill" sh "$crate/libghostty-vt-sys" ||
+    { echo "ses$n's Ghostty cache isn't usable without the network (Arugula #842)" >&2; rm -rf "$crate"; exit 1; }
+  filled=$((filled + 1))
+done
+rm -rf "$crate"
+echo "filled $filled session users' Ghostty caches"
 
 # The same tools in `user`'s own shells.
 line="export MISE_DATA_DIR=$tools/mise PLAYWRIGHT_BROWSERS_PATH=$tools/ms-playwright E2E_CHROMIUM=1 ARUGULA_SUITE_LOCK_FILE=/opt/arugula/locks/suite.lock PATH=\"$tools/bin:\$HOME/.cargo/bin:\$HOME/.local/bin:$tools/mise/bin:$tools/mise/shims:\$PATH\""
@@ -178,6 +223,9 @@ done
 # What a session sees, as ses1 when the box has it (expanded there).
 # shellcheck disable=SC2016
 check='cd /tmp && rustc --version && cargo --version && cargo nextest --version | head -1 && zig version && just --version && pnpm --version && node --version && python3 --version && ls -d "$PLAYWRIGHT_BROWSERS_PATH"/chromium-*/chrome-linux*/chrome && test -w "$ARUGULA_SUITE_LOCK_FILE"'
+# And the Ghostty cache the fill left (when there's a session user to have one).
+# shellcheck disable=SC2016
+getent passwd ses1 >/dev/null && check="$check"' && test -f "$LIBGHOSTTY_VT_SYS_CACHE_DIR/ghostty-src/.ghostty-commit"'
 if getent passwd ses1 >/dev/null; then
   arugula-tools as ses1 sh -c "$check"
 else
