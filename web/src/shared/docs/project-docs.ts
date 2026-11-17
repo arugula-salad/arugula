@@ -1,5 +1,5 @@
 // A project's Docs as the one Docs list reads them (Arugula #864): the list,
-// each Doc read whole a few at a time for its headings and shape, and the
+// each Doc read whole a few at a time for its headings and length, and the
 // one in the preview kept live through its thread. The platform's page and
 // a team machine's page both list a project's Docs this way.
 
@@ -14,7 +14,7 @@ import { projectDocs } from "./store";
 const wordsIn = (s: ProjectDocSection) => (s.body?.match(/\S+/g) ?? []).length;
 const figuresIn = (s: ProjectDocSection) => (s.body?.match(/^(```(chart|svg|prototype)|!\[)/gm) ?? []).length;
 
-/** A project Doc's written sections, as the shape and the outline draw them. */
+/** A project Doc's written sections, as the facts and the outline count them. */
 export const shapeOf = (sections: ProjectDocSection[]): DocShapeSection[] =>
   sections.filter((s) => s.body !== null).map((s) => ({ heading: s.heading, words: wordsIn(s), figures: figuresIn(s) }));
 
@@ -57,7 +57,7 @@ export function useProjectDocs(project: string | null): { docs: ProjectDoc[] | n
       document.removeEventListener("visibilitychange", back);
     };
   }, [project, again]);
-  // Each Doc is read whole, a few at a time, for its headings and shape.
+  // Each Doc is read whole, a few at a time, for its headings and length.
   useEffect(() => {
     if (!docs || !project) return;
     let live = true;

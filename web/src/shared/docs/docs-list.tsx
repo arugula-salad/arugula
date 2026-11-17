@@ -5,20 +5,17 @@
 // and Team Docs, the one used last remembered.
 //
 // What it draws is the same wherever it is: the rows in time groups by the
-// sort's time (#825), each with its layout mark (#829, #830), its shape and
-// its time, a search over titles, openings and headings, and the reader in
-// the preview. Where a Doc is open, its actions (#820), the selection (#818)
-// and what a row's ⋯ holds are the host's, since a library Doc and a
-// project's are reached differently. A host with deleted Docs (a team's,
-// Arugula #1133) has them in a folded Deleted group at the list's foot, there
-// only when there are any.
-//
-// A row's mark is the Doc's shape: a segment a section, as long as the section
-// is, brighter where it has a figure, and the whole as long as the Doc is. So a
-// note and a long plan look different without opening either.
+// sort's time (#825), each with its layout mark (#829, #830) and its time
+// and nothing else (#1134), a search over titles, openings and headings, and
+// the reader in the preview, its facts saying how long it is. Where a Doc is
+// open, its actions (#820), the selection (#818) and what a row's ⋯ holds are
+// the host's, since a library Doc and a project's are reached differently. A
+// host with deleted Docs (a team's, Arugula #1133) has them in a folded
+// Deleted group at the list's foot, there only when there are any.
 
 import type { ComponentChildren } from "preact";
-import { useState } from "preact/hooks";
+import type { RefObject } from "preact";
+import { useEffect, useState } from "preact/hooks";
 import { EmptyLine } from "../ui/block-states";
 import { ListPage, type ListGroup, type ListRowParts, type ListTicked } from "../ui/list-page";
 import { PageHeader, type BackLink } from "../ui/page-header";
@@ -28,7 +25,7 @@ import { LayoutMark } from "./layout-mark";
 import { inTab, savedTab, saveTab, type DocsMode, type DocsTab } from "./docs-mode";
 import "./docs.css";
 
-/** A section as the shape and the outline draw it. */
+/** A section as the facts and the outline count it. */
 export interface DocShapeSection {
   heading: string;
   words: number;
@@ -49,48 +46,94 @@ export interface DocsListItem extends DocTimesOf {
   mine: boolean;
 }
 
-/** A Doc as long as this is as long as a mark gets. */
-const LONG_DOC = 20_000;
-const MARK_W = 130;
+const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 
-/** The Doc's shape: see the top of this file. */
-export function Shape({ sections }: { sections: DocShapeSection[] }) {
+/** Words a minute, for a Doc's reading time. */
+const READ_WPM = 230;
+
+/** A Doc's facts line (#1134): "8 sections · 12 min read". */
+export function docFacts(sections: DocShapeSection[]): string | null {
   if (!sections.length) return null;
   const words = sections.reduce((n, s) => n + s.words, 0);
-  const width = Math.max(26, Math.sqrt(Math.min(words, LONG_DOC) / LONG_DOC) * MARK_W);
-  return (
-    <span class="doc-shape" style={{ width: `${Math.round(width)}px` }} aria-hidden="true" data-doc-shape>
-      {sections.map((s, i) => (
-        <i key={i} class={s.figures ? "fig" : undefined} style={{ flex: `${Math.max(s.words, words * 0.012, 1)} 0 0` }} />
-      ))}
-    </span>
-  );
+  return [plural(sections.length, "section"), words > 0 && `${Math.max(1, Math.round(words / READ_WPM))} min read`].filter(Boolean).join(" · ");
 }
 
-/** The preview's outline: each heading, which scrolls the reader to it, with
- * a bar as long as its section. */
-export function Outline({ sections, go }: { sections: DocShapeSection[]; go: (i: number) => void }) {
+/** Scroll the reader in `root` to its `i`th section. */
+const goToSection = (root: HTMLElement | null, i: number) => root?.querySelectorAll("[data-section]")[i]?.scrollIntoView({ block: "start" });
+
+/** How far under the top of the reader's scroll a section's top may be and
+ * still be the one being read. */
+const READING_EDGE = 48;
+
+/** The nearest box around `el` that scrolls. */
+function scrollerOf(el: HTMLElement): HTMLElement | null {
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    const y = getComputedStyle(p).overflowY;
+    if (y === "auto" || y === "scroll") return p;
+  }
+  return null;
+}
+
+/** Which section of the reader in `reader` is being read: the last one whose
+ * top has reached the top of the scroll, or the last one once it's scrolled
+ * to the end. */
+function useReading(reader: RefObject<HTMLElement | null>, count: number): number {
+  const [at, setAt] = useState(0);
+  useEffect(() => {
+    const root = reader.current;
+    const box = root && scrollerOf(root);
+    if (!root || !box) return;
+    let frame = 0;
+    const look = () => {
+      frame = 0;
+      const all = root.querySelectorAll("[data-section]");
+      const edge = box.getBoundingClientRect().top + READING_EDGE;
+      let i = 0;
+      all.forEach((s, n) => {
+        if (s.getBoundingClientRect().top <= edge) i = n;
+      });
+      if (box.scrollTop > 0 && box.scrollTop + box.clientHeight >= box.scrollHeight - 2) i = all.length - 1;
+      setAt(Math.max(0, Math.min(i, count - 1)));
+    };
+    const soon = () => {
+      if (!frame) frame = requestAnimationFrame(look);
+    };
+    look();
+    box.addEventListener("scroll", soon, { passive: true });
+    return () => {
+      box.removeEventListener("scroll", soon);
+      cancelAnimationFrame(frame);
+    };
+  }, [reader.current, count]);
+  return at;
+}
+
+/** The preview's outline (#1135): each heading, which scrolls the reader to
+ * it, the one being read marked as it scrolls, and ◧ on a section that holds
+ * a figure (a chart, svg, prototype or picture). */
+export function Outline({ sections, reader }: { sections: DocShapeSection[]; reader: RefObject<HTMLElement | null> }) {
+  const at = useReading(reader, sections.length);
   if (!sections.length) return null;
-  const biggest = Math.max(1, ...sections.map((s) => s.words));
   return (
     <>
       <h3>Outline</h3>
       <ol class="doc-outline" data-doc-outline>
         {sections.map((s, i) => (
-          <li key={i}>
-            <button type="button" class="link doc-outline-go" title={s.heading} data-doc-outline-go onClick={() => go(i)}>
+          <li key={i} data-doc-outline-at={i === at ? "" : undefined}>
+            <button type="button" class="link doc-outline-go" title={s.heading} aria-current={i === at ? "location" : undefined} data-doc-outline-go onClick={() => goToSection(reader.current, i)}>
               {s.heading}
             </button>
-            <i class={s.figures ? "fig" : undefined} style={{ width: `${Math.max(6, (s.words / biggest) * 100)}%` }} />
+            {s.figures > 0 && (
+              <span class="doc-outline-fig" title="Holds a figure" data-doc-outline-fig>
+                ◧
+              </span>
+            )}
           </li>
         ))}
       </ol>
     </>
   );
 }
-
-/** Scroll the reader in `root` to its `i`th section. */
-export const goToSection = (root: HTMLElement | null, i: number) => root?.querySelectorAll("[data-section]")[i]?.scrollIntoView({ block: "start" });
 
 /** Which of the list's groups a Doc falls in, by the day of the time it's sorted by. */
 export function ageGroup(at: number, now: number): string {
@@ -258,7 +301,6 @@ export function DocsList<T>({ mode, docs, item, splitKey, sub, title, back, acti
             </>
           ),
           age: <DocRowTime doc={it} by={sort} />,
-          mark: it.sections && <Shape sections={it.sections} />,
           ...own,
           attrs: { "data-doc": it.id, "data-mine": String(it.mine), ...own.attrs },
         };
