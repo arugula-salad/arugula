@@ -176,14 +176,20 @@ async fn ask(ws: &mut Ws, ch: &Channel, id: u32, method: &str, path: &str) -> u1
 /// One request over the channel: its status and its body, as JSON (null
 /// when it isn't).
 async fn ask_json(ws: &mut Ws, ch: &Channel, id: u32, method: &str, path: &str) -> (u16, Value) {
+    send_json(ws, ch, id, method, path, None).await
+}
+
+/// [`ask_json`], with a JSON body.
+async fn send_json(ws: &mut Ws, ch: &Channel, id: u32, method: &str, path: &str, body: Option<Value>) -> (u16, Value) {
     let head = RequestHead {
         method: method.into(),
         path: path.into(),
-        content_type: None,
+        content_type: body.as_ref().map(|_| "application/json".into()),
         stream: false,
         headers: Default::default(),
     };
-    for w in ch.seal(&Msg::Request { id, head, body: vec![] }).unwrap() {
+    let body = body.map(|b| serde_json::to_vec(&b).unwrap()).unwrap_or_default();
+    for w in ch.seal(&Msg::Request { id, head, body }).unwrap() {
         ws.send(Message::Binary(w.into())).await.unwrap();
     }
     let mut body = Vec::new();
@@ -303,6 +309,59 @@ async fn remote_input_off_makes_everyone_a_viewer() {
             && closes == 2
             && lines.iter().all(|l| l["account"] == "acct-b" && l["by"] == "token")
     });
+}
+
+/// Remote input off holds for a session shared with someone, too: a guest
+/// whose token gives nothing machine-wide types into a session shared with
+/// them as an editor while it's on; with it off, their channel that could
+/// type closes, and a new one only watches that session.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn remote_input_off_makes_a_shared_guest_a_viewer() {
+    let r = rig().await;
+    let k = issuer();
+    let panes = r.d.get("/api/panes");
+    let (pane, session) = (panes[0]["id"].as_u64().unwrap(), panes[0]["session"].as_u64().unwrap());
+    r.d.post("/api/acl", json!({ "session": session, "principal": "account:acct-b", "role": "editor", "root": "-" }));
+    let send = format!("/api/panes/{pane}/send");
+    let typed = || Some(json!({ "text": "echo hi" }));
+    let (mut open_ws, open_ch, said) = open(&r, token(&r, "guest", "g1", &k, |_| {})).await;
+    assert!(refused(&said).is_none());
+    // Trusted with the owner's pane (M14), as an editor needs to be to type.
+    // (Asked over an owner's channel: this machine's TCP port is control's.)
+    let (mut owner_ws, owner_ch, _) = open(&r, token(&r, "owner", "o1", &k, |_| {})).await;
+    let op =
+        json!({ "type": "pane", "pane": pane, "op": { "op": "grant_trust", "to": "account:acct-b", "minutes": 30 } });
+    for w in owner_ch.seal(&Msg::Text(op.to_string())).unwrap() {
+        owner_ws.send(Message::Binary(w.into())).await.unwrap();
+    }
+    let mut id = 0;
+    let typed_in = tokio::time::timeout(Duration::from_secs(8), async {
+        loop {
+            id += 1;
+            if send_json(&mut open_ws, &open_ch, id, "POST", &send, typed()).await.0 == 200 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await;
+    assert!(typed_in.is_ok(), "the share and the trust let them type");
+    std::fs::write(r.d.state.join("sharing.json"), r#"{ "remote_input": false }"#).unwrap();
+    let closed =
+        tokio::time::timeout(Duration::from_secs(8), async { while next(&mut open_ws, &open_ch).await.is_some() {} })
+            .await;
+    assert!(closed.is_ok(), "a shared guest's channel stayed open with remote input off");
+    // A new one watches the shared session and can't type into it.
+    let (mut ws, ch, said) = open(&r, token(&r, "guest", "g2", &k, |_| {})).await;
+    assert!(refused(&said).is_none());
+    let (status, body) = send_json(&mut ws, &ch, 1, "POST", &send, typed()).await;
+    assert_eq!(status, 403, "a shared guest typed with remote input off: {body}");
+    assert_eq!(ask(&mut ws, &ch, 2, "GET", &format!("/api/panes/{pane}/capture")).await, 200);
+    // An editor's token, with the same share, is held to a viewer too.
+    let (mut ws, ch, said) = open(&r, token(&r, "editor", "e1", &k, |_| {})).await;
+    assert!(refused(&said).is_none());
+    let (status, body) = send_json(&mut ws, &ch, 1, "POST", &send, typed()).await;
+    assert_eq!(status, 403, "a shared editor typed with remote input off: {body}");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

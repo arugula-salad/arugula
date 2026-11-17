@@ -214,7 +214,8 @@ pub fn sessions_shown(state_dir: &Path) -> AgentListing {
 
 /// Whether people reaching this machine through control with a machine
 /// token (aru-141) may type and act here: on unless the file says
-/// `remote_input: false`. Off, every such channel is a viewer's. Only
+/// `remote_input: false`. Off, every such channel is a viewer's, whatever
+/// is shared with them, and so are other people's devices'. Only
 /// `arugulad sharing remote-input` on the machine sets it: it isn't in
 /// [`SharingSetRequest`], so nothing that comes through control can turn
 /// it back on.

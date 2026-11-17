@@ -136,9 +136,13 @@ async fn check(app: &App, id: &str, remote: &[u8; 32], payload: &[u8]) -> Result
         return Ok((By::Token { account: claims.sub, name: claims.name, role: role_name(claims.role) }, site));
     }
     let grant = Hello::decode(payload).map_err(|_| Refused::Malformed)?.grant;
+    // A device's grant: with remote input off, only this account's own
+    // devices' (aru-141); a team owner's devices are the roster's, which is
+    // control's word now.
+    let input = arugula_proto::sharing::remote_input(app.control.state_dir());
     grant.check(
         &Expect { daemon: id, remote, now: now_ms() },
-        |by| app.control.block_signer(by),
+        |by| if input || app.control.own_device_id(by) { app.control.block_signer(by) } else { None },
         |_| site(&grant.block).is_some(),
     )?;
     let site = site(&grant.block).ok_or(Refused::NoBlock)?;
@@ -206,7 +210,11 @@ pub(crate) async fn serve(
     let mut changed = app.control.changed.subscribe();
     let mut closings = sites.closings();
     // Remote input going off, which nothing announces, ends a channel the
-    // hub let in.
+    // hub let in, or one another person's device's grant opened.
+    let input_off_ends = match &by {
+        By::Token { .. } => true,
+        By::Device(d) => !app.control.own_device_id(d),
+    };
     let mut tick = tokio::time::interval(crate::e2e::RECHECK);
     let r = loop {
         let w = tokio::select! {
@@ -218,9 +226,9 @@ pub(crate) async fn serve(
                 }
                 continue;
             }
-            _ = tick.tick(), if matches!(by, By::Token { .. }) => {
+            _ = tick.tick(), if input_off_ends => {
                 if !arugula_proto::sharing::remote_input(app.control.state_dir()) {
-                    info!(block = site.id, "remote input turned off: closing a block channel the hub let in");
+                    info!(block = site.id, by = by.who(), "remote input turned off: closing a block channel");
                     break Ok(());
                 }
                 continue;

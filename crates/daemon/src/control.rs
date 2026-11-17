@@ -2478,6 +2478,18 @@ impl Control {
         arugula_e2e::keys::hex32(&cert.sign).ok()
     }
 
+    /// Whether the device with this Noise key is one of this account's own
+    /// (they chain to the root this machine pinned when it joined): the
+    /// only devices remote input off (aru-141) leaves as they are.
+    pub fn own_device(&self, noise: &[u8]) -> bool {
+        self.enrolled().is_some_and(|e| e.trusted.by_noise(noise).is_some_and(|c| c.kind.connects()))
+    }
+
+    /// [`Control::own_device`], by the device's id.
+    pub fn own_device_id(&self, device: &str) -> bool {
+        self.enrolled().is_some_and(|e| e.trusted.get(device).is_some_and(|c| c.kind.connects()))
+    }
+
     /// Who a Noise key belongs to, if this daemon lets them in: a device of
     /// its own account (the owner), a team member's, or someone's a session
     /// was shared with.
