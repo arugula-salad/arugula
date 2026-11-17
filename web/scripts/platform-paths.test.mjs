@@ -38,7 +38,7 @@ test("each route parses", () => {
   assert.deepEqual(parse("/settings/personal"), { page: "settings", scope: "team", owner: "personal" });
   // An old link's `#section` is the section, where the path names none.
   assert.deepEqual(parse("/settings", "", "#tokens"), { page: "settings", scope: "you", section: "tokens" });
-  assert.deepEqual(parse(`/p/${P}/settings`, "", "#environments"), { page: "settings", scope: "project", project: P, section: "environments" });
+  assert.deepEqual(parse(`/p/${P}/settings`, "", "#ci-alerts"), { page: "settings", scope: "project", project: P, section: "ci-alerts" });
   assert.deepEqual(parse("/settings/you/linked", "", "#tokens"), { page: "settings", scope: "you", section: "linked" });
   assert.deepEqual(parse("/settings", "", "#Not a section"), { page: "settings", scope: "you" });
   for (const p of ["/settings/x", "/settings/you/a/b", "/settings/you/Bad", "/settings/project", "/settings/project/nope", "/settings/machine/geek", "/settings/team/personal/a/b", "/settings/personal/plan"]) {
@@ -67,6 +67,14 @@ test("each route parses", () => {
   assert.deepEqual(parse(`/p/${P}-x/settings`), { page: "settings", scope: "project", project: P });
   assert.deepEqual(parse(`/settings/project/${P}-x/repos`), { page: "settings", scope: "project", project: P, section: "repos" });
   assert.equal(pathOf({ page: "settings", scope: "project", project: P, section: "repos" }), `/settings/project/${P}/repos`);
+  // A section that's part of another now (Arugula #1105) lands on that one, by path or `#section`.
+  assert.deepEqual(parse(`/settings/project/${P}/environments`), { page: "settings", scope: "project", project: P, section: "secrets" });
+  assert.deepEqual(parse(`/settings/project/${P}/finish`), { page: "settings", scope: "project", project: P, section: "runs" });
+  assert.deepEqual(parse(`/settings/project/${P}/agent-model`), { page: "settings", scope: "project", project: P, section: "agents" });
+  assert.deepEqual(parse(`/p/${P}/settings`, "", "#plane"), { page: "settings", scope: "project", project: P, section: "repos" });
+  assert.deepEqual(parse(`/p/${P}/settings`, "", "#boards"), { page: "settings", scope: "project", project: P, section: "issues" });
+  assert.deepEqual(parse(`/settings/project/${P}/size`), { page: "settings", scope: "project", project: P, section: "runs" });
+  assert.deepEqual(parse("/settings/you/agents"), { page: "settings", scope: "you", section: "agents" }, "only a project's");
   // A repo to link opens Linked repos.
   assert.deepEqual(parse(`/p/${P}/settings`, "?link=acme%2Fapp"), { page: "settings", scope: "project", project: P, section: "repos", link: "acme/app" });
   assert.deepEqual(parse(`/p/${P}/settings`, "?link=..%2F..%2Fx"), { page: "settings", scope: "project", project: P }, "not a repo");
@@ -105,7 +113,7 @@ test("links carry the current slug, and read back as the same route", () => {
     { page: "dm", project: P, room: "dm_00aa11bb22cc33dd" },
     { page: "workspace", project: P, workspace: "hw_0123456789abcdef0123456789abcdef" },
     { page: "settings", scope: "project", project: P, section: "repos", link: "acme/app" },
-    { page: "settings", scope: "project", project: P, section: "environments" },
+    { page: "settings", scope: "project", project: P, section: "secrets" },
     { page: "move", project: P },
     { page: "installed", project: P, repo: "acme/app" },
     { page: "deploys", project: P },

@@ -377,11 +377,24 @@ function settingsRoute(rest: string[], q: URLSearchParams): SettingsRoute | null
 }
 
 /** An old link's `#section`, where the path names none: the page puts the
- * section in the path, in its place. */
+ * section in the path, in its place. A project's section that's part of
+ * another now lands on that one. */
 function withOldSection(r: SettingsRoute | null, hash: string): SettingsRoute | null {
   const section = /^#([a-z][a-z0-9-]{0,47})$/.exec(hash)?.[1];
-  return r && !r.section && section ? { ...r, section } : r;
+  const at = r && !r.section && section ? { ...r, section } : r;
+  return at?.scope === "project" && at.section && MOVED[at.section] ? { ...at, section: MOVED[at.section] } : at;
 }
+
+/** A project's sections that are parts of others (Arugula #1105): the
+ * section each is in now. */
+const MOVED: Record<string, string> = {
+  plane: "repos",
+  boards: "issues",
+  size: "runs",
+  finish: "runs",
+  "agent-model": "agents",
+  environments: "secrets",
+};
 
 /** The path for a settings route, with each id's current slug (`s`). */
 function settingsPath(r: SettingsRoute, s: (id: string) => string): string {

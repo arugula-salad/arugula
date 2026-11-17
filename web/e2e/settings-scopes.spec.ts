@@ -3,7 +3,9 @@
 // and the chosen one's controls beside it. The section is the address, so a
 // link opens it; the old addresses (a project's settings, Personal's, a
 // team's Settings tab, `#section`) land in their scope. On a phone, the
-// list, then a section full width with a way back. On #971's fixture page
+// list, then a section full width with a way back. The Project scope's 17
+// sections are 11 rows in four bands (Arugula #1105), and an old section's
+// address lands on the row it's part of. On #971's fixture page
 // (move-to-project-page.tsx): the platform's answers are this spec's.
 import { devices, expect, test, type Page, type Route } from "@playwright/test";
 import { fixturePage } from "./fixture-page";
@@ -21,9 +23,10 @@ const projects = [
   },
 ];
 
-/** The fixture page at `path`, with the platform's answers. */
-async function open(page: Page, path: string) {
-  const json = (r: Route, body: unknown, status = 200) => r.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+const json = (r: Route, body: unknown, status = 200) => r.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+
+/** The fixture page at `path`, with the platform's answers, and `more` of a test's own. */
+async function open(page: Page, path: string, more?: () => Promise<unknown>) {
   // What this spec doesn't answer, nobody does.
   await page.route(/\/api\//, (r) => json(r, { error: "not here" }, 404));
   await page.route(/\/api\/projects$/, (r) => json(r, { me: { account: "acct_a", login: "sam", name: "Sam" }, projects, hosted: false }));
@@ -37,6 +40,8 @@ async function open(page: Page, path: string) {
   await page.route(/\/api\/grants$/, (r) => json(r, { grants: [] }));
   await page.route(/\/api\/projects\/[^/]+\/repos$/, (r) => json(r, { repos: [{ repo_id: 1, full_name: "acme/site", private: false, mirror_content: false, purge_after: null }] }));
   await page.route(/\/api\/(projects|owners)\/[^/]+\/settings$/, (r) => json(r, []));
+  await page.route(/\/api\/projects\/[^/]+\/trackers$/, (r) => json(r, { project: SITE, connections: [] }));
+  await more?.();
   const body = await fixturePage("./move-to-project-page.tsx");
   await page.route(/\/(p\/prj_|settings|t\/)/, (r) => (r.request().resourceType() === "document" ? r.fulfill({ contentType: "text/html", body }) : r.fallback()));
   await page.goto(path);
@@ -101,6 +106,60 @@ test.describe("on a computer", () => {
     await page.goto("/t/tm_1/settings");
     await expect(page).toHaveURL(/\/settings\/team\/tm_1[^/]*$/);
     await expect(page.locator('[data-owner-settings="tm_1"]')).toBeVisible();
+  });
+});
+
+test.describe("a project's settings", () => {
+  test.use({ viewport: { width: 1280, height: 900 } });
+
+  /** A project with an environment, a secret, an agent token and a model. */
+  const project = (page: Page) =>
+    Promise.all([
+      page.route(/\/api\/projects\/[^/]+\/environments$/, (r) => json(r, { environments: [] })),
+      page.route(/\/api\/projects\/[^/]+\/drivers$/, (r) => json(r, { drivers: [] })),
+      page.route(/\/api\/projects\/[^/]+\/secrets$/, (r) => json(r, { secrets: [{ name: "API_KEY", updated_at: 1, updated_by: null, agent: null }], max: 20 })),
+      page.route(/\/api\/projects\/[^/]+\/agent-tokens$/, (r) =>
+        json(r, { tokens: [{ id: "tok_2", name: "deploy-bot", created_at: 1, last_used_at: null, revoked_at: null, live: true, grants: [], owner: { account: "acct_b", name: "Jo" } }] }),
+      ),
+      page.route(/\/api\/projects\/[^/]+\/sessions\/settings$/, (r) => json(r, { model: null, models: ["opus", "sonnet"] })),
+      page.route(/\/api\/projects\/[^/]+\/runs\/grant$/, (r) => json(r, { role: "owner", grant: null, past: [], stale: false, renew: false, workspaces: 0, offer: false })),
+    ]);
+
+  test("the rows in four bands, a merged row saying its parts' in a line, each part under its own heading", async ({ page }) => {
+    await open(page, `/settings/project/${SITE}`, () => project(page));
+    await expect(page.locator(".settings-list .list-group-title")).toHaveText(["Basics", "Work", "Agents and runs", "Spend"]);
+    await expect(row(page, "spend")).toBeVisible();
+    // Apps from products, the eleventh, shows once a product keeps one here.
+    const rows = await page.locator("[data-settings-row]").evaluateAll((els) => els.map((e) => e.getAttribute("data-settings-row")));
+    expect(rows).toEqual(["general", "access", "overrides", "repos", "issues", "ci-alerts", "runs", "agents", "secrets", "spend"]);
+    // A team's project: its defaults are the team's.
+    await expect(row(page, "overrides").locator(".list-row-title")).toHaveText("Team defaults");
+    await expect(row(page, "repos").locator(".list-row-detail")).toHaveText("acme/site");
+    await expect(row(page, "agents").locator(".list-row-detail")).toHaveText("The strongest (Opus) · 1 token");
+    await expect(row(page, "secrets").locator(".list-row-detail")).toHaveText("No environments · 1 secret");
+    await expect(row(page, "runs").locator(".list-row-detail")).toHaveText("No standing grant");
+    await row(page, "secrets").click();
+    await expect(page).toHaveURL(new RegExp(`/settings/project/${SITE}[^/]*/secrets$`));
+    const secrets = section(page, "secrets");
+    await expect(secrets.locator("h2")).toHaveText("Secrets and environments");
+    await expect(secrets.locator("[data-settings-part] > h3")).toHaveText([/^Environments/, /^Project secrets/]);
+    await expect(secrets.locator("[data-project-secret]")).toHaveText(/API_KEY/);
+  });
+
+  test("an old section's address lands on the row it's part of now", async ({ page }) => {
+    await open(page, `/settings/project/${SITE}/environments`, () => project(page));
+    await expect(page).toHaveURL(new RegExp(`/settings/project/${SITE}[^/]*/secrets$`));
+    await expect(section(page, "secrets").locator('[data-settings-part="environments"]')).toBeVisible();
+    await expect(row(page, "secrets")).toHaveAttribute("aria-current", "true");
+    // An old `#section` too, and one that's still a row of its own.
+    await page.goto(`/p/${SITE}/settings#finish`);
+    await expect(page).toHaveURL(new RegExp(`/settings/project/${SITE}[^/]*/runs$`));
+    await expect(section(page, "runs")).toBeVisible();
+    await page.goto(`/settings/project/${SITE}/agent-model`);
+    await expect(page).toHaveURL(new RegExp(`/settings/project/${SITE}[^/]*/agents$`));
+    await expect(section(page, "agents").locator('[data-settings-part="agent-model"]')).toBeVisible();
+    await page.goto(`/settings/project/${SITE}/ci-alerts`);
+    await expect(section(page, "ci-alerts")).toBeVisible();
   });
 });
 

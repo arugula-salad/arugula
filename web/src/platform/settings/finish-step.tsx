@@ -38,8 +38,8 @@ async function call<T>(
 /** What the list says: the one step, or how many workspaces have one. */
 function finishSummary(list: Workspace[]): string {
   const steps = list.map((w) => (w.spec.finish ?? "").trim()).filter(Boolean);
-  if (steps.length === 0) return "None";
-  return new Set(steps).size === 1 && steps.length === list.length ? steps[0] : `${steps.length} of ${plural(list.length, "workspace")}`;
+  if (steps.length === 0) return "no finish step";
+  return new Set(steps).size === 1 && steps.length === list.length ? `finish step: ${steps[0]}` : `a finish step in ${steps.length} of ${plural(list.length, "workspace")}`;
 }
 
 export function FinishStep({ p }: { p: PlatformProject }) {

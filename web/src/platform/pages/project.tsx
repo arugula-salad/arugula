@@ -232,7 +232,7 @@ function ProjectSetup({ p }: { p: PlatformProject }) {
       )}
       {envs !== null && (
         <>
-          <SectionHead title="Environments" all={settings("environments")} onAll={(e) => follow(e, settings("environments"))} />
+          <SectionHead title="Environments" all={settings("secrets")} onAll={(e) => follow(e, settings("secrets"))} />
           {envs.length ? (
             rows(envs, "project-envs")
           ) : (
@@ -241,7 +241,7 @@ function ProjectSetup({ p }: { p: PlatformProject }) {
               data-project-envs-none
               title="No environments yet."
               why={owner ? ENVIRONMENTS_MEAN : `${ENVIRONMENTS_MEAN} A project's owners make its environments.`}
-              action={owner && step(settings("environments"), "Make an environment", "project-make-env")}
+              action={owner && step(settings("secrets"), "Make an environment", "project-make-env")}
             />
           )}
         </>

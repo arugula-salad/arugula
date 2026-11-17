@@ -54,7 +54,7 @@ export function RunGrant({ project }: { project: string }) {
   }, [project]);
   if (err)
     return (
-      <Section id="runs" title="Runs" summary="Couldn't load">
+      <Section id="run-grant" title="Standing grant" summary="Couldn't load">
         <p class="control-error">{err}</p>
       </Section>
     );
@@ -67,8 +67,8 @@ export function RunGrant({ project }: { project: string }) {
   );
   return (
     <Section
-      id="runs"
-      title="Runs"
+      id="run-grant"
+      title="Standing grant"
       summary={g ? (g.expires ? `Standing grant, until ${new Date(g.expires).toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : "Standing grant") : "No standing grant"}
       hooks={{ "data-run-grant": g ? "yes" : v.offer ? "offered" : "no" }}
       lede={

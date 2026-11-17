@@ -11,9 +11,16 @@
 // its summary current. Anywhere else (control's `#settings`, a page that
 // borrows one) it's drawn in place, and its id is the section index's
 // anchor; the index sits beside the column on a wide screen.
+//
+// A section can hold sections (Arugula #1105): where a scope merges a few
+// into one row ("Runs and workspaces"), each it holds is a part of it,
+// under a smaller heading, and tells it its summary instead of the list.
+// The row says the parts' summaries in a line, where the section says
+// none of its own. A `Band` names the heading its sections are listed
+// under.
 
 import { createContext, type ComponentChildren, type RefObject } from "preact";
-import { useContext, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 
 /** What a section tells the list it's in. */
 export interface ListedSection {
@@ -38,6 +45,27 @@ export interface SectionList {
 }
 
 export const SectionListContext = createContext<SectionList | null>(null);
+
+/** The section a part is in: where it says what it is. */
+interface Whole {
+  tell(id: string, summary: string | undefined, el: HTMLElement): void;
+  forget(id: string, el: HTMLElement): void;
+}
+
+const WholeContext = createContext<Whole | null>(null);
+
+const BandContext = createContext<string | undefined>(undefined);
+
+/** Sections listed under one heading: "Basics", "Spend". */
+export function Band({ title, children }: { title: string; children: ComponentChildren }) {
+  return <BandContext.Provider value={title}>{children}</BandContext.Provider>;
+}
+
+/** Parts' summaries, in the page's order, in a line. */
+function partsLine(parts: ReadonlyMap<string, { summary?: string; el: HTMLElement }>): string | undefined {
+  const inOrder = [...parts.values()].sort((a, b) => (a.el.compareDocumentPosition(b.el) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+  return inOrder.map((p) => p.summary).filter(Boolean).join(" · ") || undefined;
+}
 
 export function Section({
   id,
@@ -67,34 +95,59 @@ export function Section({
   children?: ComponentChildren;
 }) {
   const list = useContext(SectionListContext);
+  const whole = useContext(WholeContext);
+  const inBand = useContext(BandContext);
   const el = useRef<HTMLElement>(null);
+  // The parts it holds, and what each says.
+  const [parts, setParts] = useState<ReadonlyMap<string, { summary?: string; el: HTMLElement }>>(new Map());
+  const holds: Whole = useMemo(
+    () => ({
+      tell: (part, said, at) =>
+        setParts((was) => {
+          const o = was.get(part);
+          return o && o.summary === said && o.el === at ? was : new Map(was).set(part, { summary: said, el: at });
+        }),
+      forget: (part, at) =>
+        setParts((was) => {
+          if (was.get(part)?.el !== at) return was;
+          const next = new Map(was);
+          next.delete(part);
+          return next;
+        }),
+    }),
+    [],
+  );
+  const said = summary ?? partsLine(parts);
   useLayoutEffect(() => {
-    if (list && el.current) list.tell({ id, title, summary, band, el: el.current });
-  }, [list, id, title, summary, band]);
+    if (!el.current) return;
+    if (whole) whole.tell(id, said, el.current);
+    else list?.tell({ id, title, summary: said, band: band ?? inBand, el: el.current });
+  }, [list, whole, id, title, said, band, inBand]);
   useLayoutEffect(() => {
     const at = el.current;
-    return () => void (list && at && list.forget(id, at));
-  }, [list, id]);
-  const hidden = list ? list.shown !== id : false;
+    return () => void (at && (whole ? whole.forget(id, at) : list?.forget(id, at)));
+  }, [list, whole, id]);
+  // A part shows whenever its section does, under a smaller heading.
+  const hidden = list && !whole ? list.shown !== id : false;
+  const Heading = whole ? "h3" : "h2";
   return (
     <section
       ref={el}
-      class="settings-sec"
+      class={whole ? "settings-part" : "settings-sec"}
       id={id}
       hidden={hidden}
       aria-labelledby={`${id}-h`}
-      data-settings-section={id}
-      data-settings-title={title}
-      data-settings-summary={summary}
+      {...(whole ? { "data-settings-part": id } : { "data-settings-section": id, "data-settings-title": title })}
+      data-settings-summary={said}
       {...hooks}
     >
-      <h2 id={`${id}-h`}>
+      <Heading id={`${id}-h`}>
         {title}
         {count !== undefined ? <span class="dim">{count}</span> : null}
-      </h2>
+      </Heading>
       {lede ? <p class="settings-lede">{lede}</p> : null}
       {more ? <div class="settings-more">{more}</div> : null}
-      {children}
+      <WholeContext.Provider value={holds}>{children}</WholeContext.Provider>
     </section>
   );
 }
