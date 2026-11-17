@@ -10,6 +10,7 @@ import type { ProjectBoard } from "../../shared/proto";
 import { boards } from "../../shared/boards/store";
 import { ago } from "../../shared/time";
 import { openMenu, type MenuItem } from "../../shared/ui/menu";
+import { SearchField } from "../../shared/ui/search-field";
 import { names } from "../links";
 import { follow, pathOf } from "../router";
 import type { PlatformProject } from "../session";
@@ -328,7 +329,8 @@ export function NotOnBoard({ p, tri, open, scroll }: { p: PlatformProject; tri: 
         <>
           {tools && (
             <div class="untri-tools">
-              <input type="search" class="issues-search" value={tri.q} placeholder="Filter by words or #number" aria-label="Filter issues not on a board" data-triage-filter autoComplete="off" onInput={(e) => tri.setQ(e.currentTarget.value)} />
+              {/* Not the page's `/`: that's the boards' filter above. */}
+              <SearchField class="untri-search" label="Filter issues not on a board" placeholder="Filter by words or #number" value={tri.q} onValue={tri.setQ} data-triage-filter />
               <select value={tri.order} aria-label="Order" data-triage-order onChange={(e) => tri.setOrder(e.currentTarget.value as "newest" | "oldest")}>
                 <option value="newest">Newest first</option>
                 <option value="oldest">Oldest first</option>

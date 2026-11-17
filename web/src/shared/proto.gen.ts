@@ -5007,6 +5007,61 @@ export type RelationKind = "blocks" | "relates" | "duplicate_of" | "discovered_f
 export type RelationSource = "person" | "agent" | "plane" | "github";
 
 /**
+ * One remote session: a channel's open paired with its close.
+ */
+export type RemoteSession = { 
+/**
+ * The account, as control named it.
+ */
+account: string, 
+/**
+ * Its login, to show.
+ */
+name: string, 
+/**
+ * What it could do: `owner`, `editor`, `viewer` or `guest`, or
+ * `device` for a channel opened with a device key.
+ */
+role: string, 
+/**
+ * `relay` (through control) or `direct`.
+ */
+path: string, 
+/**
+ * How it got in: `token` or `device`.
+ */
+by: string, 
+/**
+ * When it opened, in ms since the epoch.
+ */
+opened_ms: number, 
+/**
+ * When it closed, in ms since the epoch. Absent while it's open, and
+ * when the daemon stopped before it could write the close.
+ */
+closed_ms?: number, 
+/**
+ * Still open now.
+ */
+open: boolean, };
+
+/**
+ * `GET /api/remote-sessions` (the `remote_sessions.list` operation,
+ * Arugula #1094): who reached this machine through control, from its own
+ * log (`remote-sessions.jsonl` in the state dir, aru-141), and whether they
+ * may type here now. The owner's alone.
+ */
+export type RemoteSessions = { 
+/**
+ * [`remote_input`]: whether people who come through control may type.
+ */
+remote_input: boolean, 
+/**
+ * The newest first, at most [`REMOTE_SESSIONS_SHOWN`].
+ */
+sessions: Array<RemoteSession>, };
+
+/**
  * `PATCH /api/projects/{project}/repos/{owner}/{name}` (M166): a linked
  * repo's settings; the answer is its [`LinkedRepo`]. `mirror_content`
  * on keeps its PRs' and issues' bodies and comments on the platform
@@ -6563,6 +6618,7 @@ export const OPS = {
   "push.key": { method: "GET", path: "/api/push/key" },
   "push.subscribe": { method: "POST", path: "/api/push/subscribe" },
   "push.test": { method: "POST", path: "/api/push/test" },
+  "remote_sessions.list": { method: "GET", path: "/api/remote-sessions" },
   "rule.forget": { method: "DELETE", path: "/api/rules/{index}" },
   "rules.forget_all": { method: "DELETE", path: "/api/rules" },
   "rules.list": { method: "GET", path: "/api/rules" },
@@ -6570,7 +6626,6 @@ export const OPS = {
   "setup.agent": { method: "POST", path: "/api/setup/agents/{kind}" },
   "setup.claude": { method: "POST", path: "/api/setup/claude" },
   "setup.control": { method: "POST", path: "/api/setup/control" },
-  "setup.control_confirm": { method: "POST", path: "/api/setup/control/confirm" },
   "setup.get": { method: "GET", path: "/api/setup" },
   "setup.tailscale": { method: "POST", path: "/api/setup/tailscale" },
   "share.mint": { method: "POST", path: "/api/shares" },

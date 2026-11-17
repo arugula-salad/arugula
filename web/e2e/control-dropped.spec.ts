@@ -67,7 +67,7 @@ test("dropped by control: a banner, the host menu's line, and Join again", async
 
 // #330: control removed the key, so the daemon made a new one and asks to
 // join again by itself: the banner has the code, and Getting started the
-// code to approve and why it has a new key.
+// link to add it with (and its code) and why it has a new key.
 test("a removed key: the join it asked for, in the banner and Getting started", async ({ page }) => {
   const code = "ABCDE-FGHIJ";
   const approve = `${CONTROL}/#join=${code}`;
@@ -98,8 +98,8 @@ test("in the app, a drop opens the join itself, once, leading with the machine (
   const start = page.getByRole("dialog", { name: "Getting started" });
   await expect(start).toHaveAttribute("data-step", "cloud");
   await expect(start.locator("[data-start-cloud-title]")).toContainText("back in your account or team");
-  // One approval, of the machine's code, on a device the person uses.
-  await expect(start.locator("[data-start-join-how]")).toContainText("that one approval joins it");
+  // One click, in Arugula cloud (#1003).
+  await expect(start.locator("[data-start-join-how]")).toContainText("Click Add there");
   await start.getByRole("button", { name: "Close" }).click();
   // Once per drop: not again on a reload.
   await page.reload();

@@ -60,23 +60,30 @@ runs:
           # GitHub's Ubuntu images try azure.archive.ubuntu.com first, which
           # stalls or doesn't resolve for whole stretches, and at times
           # archive.ubuntu.com doesn't either (actions/runner-images#14594):
-          # apt goes to kernel.org's mirror, then archive.ubuntu.com. Each try
-          # is bounded, and a stalled one is tried again on a fresh connection.
+          # apt goes to kernel.org's mirror, then archive.ubuntu.com. Each
+          # download is bounded, and a stalled one is tried again on a fresh
+          # connection.
           if [ -f /etc/apt/apt-mirrors.txt ]; then
             printf '%s\tpriority:%s\n' http://mirrors.edge.kernel.org/ubuntu/ 1 http://archive.ubuntu.com/ubuntu/ 2 \
               | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
           fi
-          apt=(sudo apt-get -qq -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
+          apt=(sudo apt-get -qq -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o DPkg::Lock::Timeout=120)
           tries() {
             for n in 1 2 3; do
               timeout 120 "$@" && return 0
-              echo "::warning::try $n of 3 failed: $*"
+              echo "::warning::try $n of 3 failed: $*" >&2
               sleep 5
             done
             return 1
           }
           tries "${apt[@]}" update
-          tries "${apt[@]}" install -y --no-install-recommends "${missing[@]}" >/dev/null
+          # Only the network is timed. Unpacking and configuring take what they
+          # take (clippy's whole install ran 1-5 min): a timeout that cuts dpkg
+          # short leaves it interrupted, and every later try fails on that
+          # (Arugula #1111). Killing a download leaves nothing to repair.
+          tries "${apt[@]}" install -y --no-install-recommends --download-only "${missing[@]}" >/dev/null
+          sudo dpkg --configure -a
+          "${apt[@]}" install -y --no-install-recommends "${missing[@]}" >/dev/null
         fi
     # GitHub's VMs boot systemd but start no user manager for the runner,
     # whose job isn't a login session: linger starts one, and systemctl

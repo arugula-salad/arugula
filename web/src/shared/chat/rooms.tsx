@@ -23,7 +23,7 @@ import { usePhone, useSubscribe } from "../ui/hooks";
 import { askText, openMenu, useMenuFrom, type MenuItem } from "../ui/menu";
 import type { ChatRoute } from "./route";
 import { SavedView } from "./saved";
-import { RoomActivityView, RoomSearchView, SearchField } from "./find";
+import { ChatSearch, RoomActivityView, RoomSearchView } from "./find";
 import { MsgAvatar } from "./avatar";
 import { presence, presenceItems } from "./presence";
 import { WebPreviewsSwitch } from "./previews";
@@ -613,7 +613,7 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
   return (
     <div class="chat" ref={root} data-chat data-chat-control>
       <Bar>
-        <SearchField route={route} scope={scope} />
+        <ChatSearch route={route} scope={scope} slash={!phone && !fit.scoped} />
       </Bar>
       <MaintenanceNote />
       <RoomSwitcher rooms={order} open={switching} close={() => setSwitching(false)} />
@@ -674,7 +674,7 @@ function YouRow() {
       data-chat-you={presence.mode}
       onClick={pick}
     >
-      <span class="avatar-wrap">
+      <span class="avatar-wrap" aria-hidden="true">
         <MsgAvatar who={chat.me} name={chat.myNames[0] ?? "?"} account={chat.me} />
         <span class={`presence-dot presence-${state}`} data-presence={state} aria-hidden="true" />
       </span>

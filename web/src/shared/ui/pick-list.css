@@ -62,12 +62,11 @@
 .pick-row input[type="checkbox"] {
   flex: none;
   margin: 2px 0 0;
-  accent-color: var(--accent);
 }
 
 .pick-box-none {
   flex: none;
-  width: 13px;
+  width: var(--choice-size);
 }
 
 .pick-text {

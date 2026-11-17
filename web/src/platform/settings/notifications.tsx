@@ -8,17 +8,17 @@
 import { useEffect, useState } from "preact/hooks";
 import type { NotifyLevel, QuietHours } from "../../shared/proto.gen";
 import { clock, deviceZone, LEVELS, loadNotify, minutes, notifyPrefs, setNotify, snoozePresets, subscribeNotify, untilText } from "../../shared/chat/notify";
+import { claimDays } from "../../shared/ui/days";
 import { useSubscribe } from "../../shared/ui/hooks";
+import { TimeRange, Weekdays } from "../../shared/ui/schedule";
 import { Section } from "../../shared/ui/settings-section";
-
-const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 type Day = { on: boolean; from: string; to: string };
 
 /** The schedule's windows as one row per weekday (the last one covering a
  * day wins; the page writes one window per day-pair of times). */
 function rowsOf(quiet: QuietHours[]): Day[] {
-  const rows: Day[] = DAYS.map(() => ({ on: false, from: "22:00", to: "08:00" }));
+  const rows: Day[] = Array.from({ length: 7 }, () => ({ on: false, from: "22:00", to: "08:00" }));
   for (const q of quiet) for (const d of q.days) rows[d - 1] = { on: true, from: clock(q.from), to: clock(q.to) };
   return rows;
 }
@@ -36,6 +36,21 @@ function windowsOf(rows: Day[]): QuietHours[] {
   return [...by.values()];
 }
 
+/** A window as the page edits it: its days (chips) and its times (one range). */
+type QuietWindow = { days: number[]; from: string; to: string };
+
+/** The schedule as windows that don't share a day, each with its own days
+ * and times (Arugula #1101); with none saved, one with no days yet. */
+function editOf(quiet: QuietHours[]): QuietWindow[] {
+  const wins = windowsOf(rowsOf(quiet)).map((w) => ({ days: w.days, from: clock(w.from), to: clock(w.to) }));
+  return wins.length ? wins : [{ days: [], from: "22:00", to: "08:00" }];
+}
+
+/** What's saved: the windows with a day in them. */
+function savedOf(wins: QuietWindow[]): QuietHours[] {
+  return wins.filter((w) => w.days.length).map((w) => ({ days: w.days, from: minutes(w.from), to: minutes(w.to) }));
+}
+
 const zones = (): string[] => {
   try {
     return (Intl as unknown as { supportedValuesOf(k: string): string[] }).supportedValuesOf("timeZone");
@@ -48,11 +63,11 @@ export function NotificationSettings() {
   useSubscribe(subscribeNotify);
   useEffect(() => void loadNotify(), []);
   const p = notifyPrefs();
-  const [rows, setRows] = useState<Day[] | null>(null);
+  const [wins, setWins] = useState<QuietWindow[] | null>(null);
   const [tz, setTz] = useState<string | null>(null);
   const [err, setErr] = useState("");
   if (!p) return null;
-  const mine = rows ?? rowsOf(p.quiet);
+  const mine = wins ?? editOf(p.quiet);
   // Until quiet hours are saved the zone is the platform's default (UTC);
   // offer this device's instead (UI audit #200).
   const zone = tz ?? (p.quiet.length === 0 && p.tz === "UTC" ? deviceZone() : p.tz);
@@ -142,44 +157,36 @@ export function NotificationSettings() {
               </button>
             )}
           </li>
-          {DAYS.map((d, i) => (
-            <li key={d} data-notify-day={d}>
-              <label class="settings-switch notify-day">
-                <input
-                  type="checkbox"
-                  role="switch"
-                  class="sw-switch"
-                  checked={mine[i].on}
-                  onChange={(e) => setRows(mine.map((r, j) => (j === i ? { ...r, on: e.currentTarget.checked } : r)))}
-                />
-                <span>{d}</span>
-              </label>
-              <input
-                type="time"
-                class="field small"
-                value={mine[i].from}
-                disabled={!mine[i].on}
-                aria-label={`${d} from`}
-                onInput={(e) => setRows(mine.map((r, j) => (j === i ? { ...r, from: e.currentTarget.value } : r)))}
+          {/* Days as chips and times as one range (Arugula #1101); a day is in
+              one window, so picking it in another moves it there. */}
+          {mine.map((w, i) => (
+            <li key={i} data-notify-window={i}>
+              <Weekdays
+                value={w.days}
+                label={i === 0 ? "Quiet days" : "Quiet days, other hours"}
+                onChange={(days) => setWins(days.length || i === 0 ? claimDays(mine, i, days) : mine.filter((_, j) => j !== i))}
               />
-              <span class="dim">to</span>
-              <input
-                type="time"
-                class="field small"
-                value={mine[i].to}
-                disabled={!mine[i].on}
-                aria-label={`${d} to`}
-                onInput={(e) => setRows(mine.map((r, j) => (j === i ? { ...r, to: e.currentTarget.value } : r)))}
+              <TimeRange
+                from={w.from}
+                to={w.to}
+                label={i === 0 ? "Quiet hours" : "Other quiet hours"}
+                onChange={(r) => setWins(mine.map((x, j) => (j === i ? { ...x, ...r } : x)))}
               />
-              {mine[i].on && minutes(mine[i].to) <= minutes(mine[i].from) && <span class="dim">into the next morning</span>}
             </li>
           ))}
+          {mine.length < 7 && mine.every((w) => w.days.length) && (
+            <li>
+              <button class="link small" data-notify-add-window onClick={() => setWins([...mine, { days: [], from: mine[0].from, to: mine[0].to }])}>
+                Other hours for some days
+              </button>
+            </li>
+          )}
           <li>
             <button
               class="primary"
               data-notify-save
-              disabled={rows === null && tz === null}
-              onClick={() => void run({ tz: zone, quiet: windowsOf(mine) }).then(() => (setRows(null), setTz(null)))}
+              disabled={wins === null && tz === null}
+              onClick={() => void run({ tz: zone, quiet: savedOf(mine) }).then(() => (setWins(null), setTz(null)))}
             >
               Save quiet hours
             </button>

@@ -129,6 +129,48 @@ pub struct SharingSetRequest {
     pub agent_sessions: Option<AgentListing>,
 }
 
+/// `GET /api/remote-sessions` (the `remote_sessions.list` operation,
+/// Arugula #1094): who reached this machine through control, from its own
+/// log (`remote-sessions.jsonl` in the state dir, aru-141), and whether they
+/// may type here now. The owner's alone.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct RemoteSessions {
+    /// [`remote_input`]: whether people who come through control may type.
+    pub remote_input: bool,
+    /// The newest first, at most [`REMOTE_SESSIONS_SHOWN`].
+    pub sessions: Vec<RemoteSession>,
+}
+
+/// How many sessions `GET /api/remote-sessions` gives, the newest.
+pub const REMOTE_SESSIONS_SHOWN: usize = 100;
+
+/// One remote session: a channel's open paired with its close.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct RemoteSession {
+    /// The account, as control named it.
+    pub account: String,
+    /// Its login, to show.
+    pub name: String,
+    /// What it could do: `owner`, `editor`, `viewer` or `guest`, or
+    /// `device` for a channel opened with a device key.
+    pub role: String,
+    /// `relay` (through control) or `direct`.
+    pub path: String,
+    /// How it got in: `token` or `device`.
+    pub by: String,
+    /// When it opened, in ms since the epoch.
+    pub opened_ms: u64,
+    /// When it closed, in ms since the epoch. Absent while it's open, and
+    /// when the daemon stopped before it could write the close.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub closed_ms: Option<u64>,
+    /// Still open now.
+    pub open: bool,
+}
+
 /// The file as it is: empty if there's none, or it doesn't parse (logged
 /// by nobody: the next write replaces it).
 fn doc(dir: &Path) -> Map<String, Value> {

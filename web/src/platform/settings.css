@@ -84,15 +84,9 @@
   min-width: 0;
 }
 
-/* Quiet hours: a day's switch, then its times, on one line. */
+/* Quiet hours: a window's days, then its times, on one line. */
 .platform .notify-schedule > li {
   align-items: center;
-}
-
-.platform .notify-day {
-  align-items: center;
-  width: 64px;
-  margin: 0;
 }
 
 /* A section's New… button (New agent token): the set's secondary

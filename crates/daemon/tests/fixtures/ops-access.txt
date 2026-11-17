@@ -80,6 +80,7 @@ panes.list GET /api/panes Owner drives=false credential=false
 push.key GET /api/push/key Anyone drives=false credential=false
 push.subscribe POST /api/push/subscribe Handler drives=false credential=false
 push.test POST /api/push/test Handler drives=false credential=false
+remote_sessions.list GET /api/remote-sessions Owner drives=false credential=false
 rule.forget DELETE /api/rules/{index} Owner drives=false credential=false
 rules.forget_all DELETE /api/rules Owner drives=false credential=false
 rules.list GET /api/rules Owner drives=false credential=false
@@ -87,7 +88,6 @@ sandboxes.list GET /api/sandboxes Owner drives=false credential=false
 setup.agent POST /api/setup/agents/{kind} Owner drives=false credential=false
 setup.claude POST /api/setup/claude Owner drives=false credential=false
 setup.control POST /api/setup/control Owner drives=false credential=false
-setup.control_confirm POST /api/setup/control/confirm Owner drives=false credential=false
 setup.get GET /api/setup Owner drives=false credential=false
 setup.tailscale POST /api/setup/tailscale Owner drives=false credential=false
 share.mint POST /api/shares Owner drives=false credential=false

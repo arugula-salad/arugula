@@ -1454,7 +1454,7 @@ button.att {
   color: var(--accent);
 }
 
-.prompt input {
+.prompt input:not([type="checkbox"], [type="radio"]) {
   font: var(--text-md) var(--f-mono);
   padding: 8px;
   color: var(--fg);
@@ -1464,7 +1464,7 @@ button.att {
   outline: none;
 }
 
-.prompt input:focus {
+.prompt input:not([type="checkbox"], [type="radio"]):focus {
   border-color: var(--accent);
 }
 
@@ -3470,7 +3470,6 @@ button.agent-image {
 
 .prompt .machine-telemetry-switch input,
 .prompt .sharing-switch input {
-  width: auto;
   margin: 0;
   padding: 0;
 }
@@ -3516,7 +3515,7 @@ button.agent-image {
   margin-top: 8px;
 }
 
-.control-code input {
+.control-code input:not([type="checkbox"], [type="radio"]) {
   font: var(--t-field) var(--f-mono);
   padding: 6px 8px;
   color: var(--fg);
@@ -3585,13 +3584,6 @@ button.agent-image {
 
 .control-rest p {
   margin: 6px 0;
-}
-
-/* A checkbox in a code row keeps its own size, beside its label. */
-.control-code input[type="checkbox"] {
-  width: auto;
-  padding: 0;
-  accent-color: var(--accent);
 }
 
 /* A display name (#102): words, not a code. */
@@ -3813,7 +3805,6 @@ button.agent-image {
 
 .prompt .control-check input {
   padding: 0;
-  accent-color: var(--accent);
 }
 
 /* A checkbox in a list's row, beside its buttons (UI audit #151). */
@@ -7034,7 +7025,9 @@ html[data-scheme="light"] .doc {
   overflow-wrap: anywhere;
 }
 
-.start-code-big.start-fp {
+/* A code to type on another device (#1003): the link is the way, so it's
+   smaller than one to read out. */
+.start-code-big.start-code-typed {
   font: 700 clamp(18px, 6vw, 30px)/1.2 var(--f-mono); /* off-scale: the start code */
   letter-spacing: 0.04em; /* off-scale: the start code */
   overflow-wrap: anywhere;
@@ -8778,27 +8771,10 @@ button.thread-quote:hover {
   color: var(--fg);
 }
 
+/* Chat's search is a SearchField (shared/ui/search-field.css): here, its place. */
 .chat-search {
   flex: 0 1 420px;
   min-width: 120px;
-  height: 24px;
-  padding: 0 10px;
-  border-radius: var(--field-radius);
-  border: 1px solid var(--line);
-  background: var(--bg);
-  color: var(--dim);
-  text-align: left;
-}
-
-.chat-search:hover,
-.chat-search:focus {
-  border-color: var(--line-strong);
-  color: var(--fg);
-  outline: none;
-}
-
-input.chat-search {
-  font: inherit;
   app-region: no-drag;
   -webkit-app-region: no-drag;
 }
@@ -8806,11 +8782,9 @@ input.chat-search {
 .chat-view > .chat-search {
   flex: none;
   margin: 8px 16px 0;
-  height: 32px;
 }
 
-/* #889: the phone's way into search, beside the list's ✕; its field is
-   16px so iOS doesn't zoom in on it. */
+/* #889: the phone's way into search, beside the list's ✕. */
 .chat-search-open {
   padding: 4px 8px;
   border-radius: var(--btn-radius);
@@ -8821,11 +8795,6 @@ input.chat-search {
 .chat-search-open:hover {
   color: var(--fg);
   background: var(--raised);
-}
-
-.chat.phone input.chat-search {
-  height: 36px;
-  font-size: var(--t-field);
 }
 
 /* M75: Activity and search results, and the switcher. */
@@ -10758,42 +10727,14 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   color: var(--fg);
 }
 
+/* The sidebar's search is the SearchField (shared/ui/search-field.css). */
 .ws-search {
-  display: flex;
-  align-items: center;
-  gap: 6px;
   margin: 2px 10px 8px;
-  padding: 0 8px;
-  height: 30px;
-  border: 1px solid var(--line);
-  border-radius: var(--field-radius);
-  background: var(--bg);
-  color: var(--dim);
-}
-
-/* One ring: the field's border, not an outline on the input inside it
-   too (UI audit #171). */
-.ws-search:focus-within {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
 }
 
 /* (Over the chrome's focus rule, M113, whose :is() counts as two classes.) */
 .app.ws .ws-sidebar .ws-search input:focus-visible {
   outline: none;
-}
-
-.ws-search input {
-  /* The box around it is the field: not the kit's (shared/fields.css). */
-  height: auto;
-  box-shadow: none;
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  outline: none;
-  background: none;
-  color: var(--fg);
-  font: inherit;
 }
 
 .ws-session-list {

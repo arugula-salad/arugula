@@ -48,15 +48,18 @@ terminal traffic is TLS to the relay.
   token or device key, through the relay or a direct path, is a line in
   `remote-sessions.jsonl` in its state directory: the account and login,
   the role, the path, when it opened, and how long it lasted
-  (`crates/daemon/src/remote_log.rs`). For now it's only the file: the
-  machine's page and the CLI don't show it yet.
+  (`crates/daemon/src/remote_log.rs`). Its owner reads it on the machine's
+  Settings page, under Remote sessions (`GET /api/remote-sessions`, which
+  refuses anyone but the owner), or with `arugulad sharing log` on the
+  machine. A daemon that starts where the log has lines writes a `start`
+  line first, so a session the one before it left open reads as ended.
 - **What only the machine can turn off.** `arugulad sharing remote-input
   off`, run on the machine, makes everyone who comes with a machine token
   a viewer; a channel that could type closes and comes back as a viewer's.
   It's in `sharing.json` (`remote_input`), and nothing that comes through
   control can turn it back on (`crates/proto/src/sharing.rs`,
-  `remote_input`). It's set from the command line only for now; the
-  machine's page has no switch for it yet.
+  `remote_input`). It's set from the command line only; the machine's
+  Settings page says which way it is, under Remote sessions.
 - **A team's members, roles, invites and lock are control's** (#1005). An
   owner signed in on control's page changes them with no device's
   signature: control writes the roster version, the invite link or the
@@ -681,7 +684,9 @@ would pass. So the daemon doesn't take the root on control's word. Since
   machine with a secret but no MAC is refused unless `--account
   FINGERPRINT` names the account (scripts that pass it keep working), or
   it's a machine going back into the account it was removed from, by the
-  root it kept itself.
+  root it kept itself. Getting started no longer refuses it (#1003): it
+  saves whatever control approves, as it saves a one-click Add (aru-141).
+  `arugulad join` and `arugula login` still check.
 - **What this rests on:** the machine's side is the daemon's own output
   (terminal, or its local page), which control doesn't serve. The other
   side is the approving device, and it's only as trustworthy as that
@@ -694,8 +699,8 @@ would pass. So the daemon doesn't take the root on control's word. Since
   8 bytes of SHA-256 over `illogical device id` and its keys, as
   `1a2b-3c4d-5e6f-7a8b`), which the
   machine then shows and asks about (`y`, or the fingerprint typed;
-  *They match* / *They don't* in Getting started; `--account FINGERPRINT`
-  without asking). A newer daemon or CLI does the same with a control that
+  `--account FINGERPRINT` without asking; Getting started saves it without
+  asking since #1003). A newer daemon or CLI does the same with a control that
   doesn't say `join_secret` in `/control.json`, so a control that lies
   about that gets the compare, not a pass. Daemons from 0.16.0 and before
   pinned without a check; control now refuses them (426), saying to update.
@@ -1315,7 +1320,7 @@ What limits it:
 | Control… | Your terminals |
 |---|---|
 | relays honestly | it reads what it relays only in memory and keeps none of it |
-| mints a token for someone, or for itself | they get the role it names on that one machine, for a few minutes; each token opens one channel; the machine logs the session in `remote-sessions.jsonl` |
+| mints a token for someone, or for itself | they get the role it names on that one machine, for a few minutes; each token opens one channel; the machine logs the session in `remote-sessions.jsonl`, which its owner reads on its Settings page or with `arugulad sharing log` |
 | mints owner or editor tokens on a machine with remote input off | they come in as viewers: only `arugulad sharing remote-input on`, on the machine, lets them type again |
 | asks a deploy's box to let someone in | refused by the box, whatever the token says |
 | wants a deploy, a standing run grant or an owner change | needs a passkey assertion from a person, over the action's bytes; an agent holds no passkey |

@@ -1,0 +1,87 @@
+/* One search field (#1100, ./search-field.tsx). The box is the field, in
+   the kit's look (shared/fields.css): outlined on the page, the accent
+   line and halo on focus. The input inside it draws nothing of its own. */
+
+.search-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  min-width: 0;
+  height: var(--field-h);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--field-line);
+  border-radius: var(--field-radius);
+  background-color: var(--bg);
+  color: var(--dim);
+  cursor: text;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+.search-field.small {
+  height: var(--field-h-bar);
+}
+
+.search-field:hover:not(:focus-within) {
+  border-color: var(--field-line-hover);
+}
+
+.search-field:focus-within {
+  border-color: var(--accent);
+  box-shadow: var(--field-ring);
+}
+
+.search-field > svg {
+  flex: none;
+}
+
+/* Over the kit's field rules and the shell's focus outline. */
+.search-field > input,
+.search-field > input:focus,
+.search-field > input:focus-visible {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  outline: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--t-field);
+}
+
+.search-field.small > input {
+  font-size: var(--text-sm);
+}
+
+/* The browser's ✕ on a mouse: Esc clears it. A finger keeps it. */
+@media (pointer: fine) {
+  .search-field > input::-webkit-search-cancel-button {
+    display: none;
+  }
+}
+
+.search-field > kbd {
+  flex: none;
+  padding: 0 var(--space-1);
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  color: var(--dim);
+  font: 500 var(--text-xs)/1.4 var(--f-mono);
+}
+
+/* The key is for what's empty, and for a keyboard. */
+.search-field:has(> input:not(:placeholder-shown)) > kbd {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  .search-field > kbd {
+    display: none;
+  }
+}

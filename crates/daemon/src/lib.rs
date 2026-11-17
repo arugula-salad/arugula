@@ -635,6 +635,43 @@ fn flags_cli(name: Option<&str>, switch: Option<args::Switch>, dir: &std::path::
     Ok(())
 }
 
+/// `arugulad sharing log` (Arugula #1094): who reached this machine through
+/// Arugula cloud, newest first, from its own log, one line each.
+fn remote_log_cli(dir: &std::path::Path) {
+    use arugula_proto::sharing::REMOTE_SESSIONS_SHOWN;
+    let file = dir.join(remote_log::FILE);
+    let sessions = remote_log::sessions(dir, daemon_running(dir), REMOTE_SESSIONS_SHOWN);
+    if sessions.is_empty() {
+        println!("No one has reached this machine through Arugula cloud yet ({}).", file.display());
+        return;
+    }
+    let who =
+        |s: &arugula_proto::sharing::RemoteSession| if s.name.is_empty() { s.account.clone() } else { s.name.clone() };
+    let width = sessions.iter().map(|s| who(s).chars().count()).max().unwrap_or(0);
+    for s in &sessions {
+        let till = match (s.open, s.closed_ms) {
+            (true, _) => "open now".to_owned(),
+            (false, Some(c)) => format!("for {}", lasted(c.saturating_sub(s.opened_ms) / 1000)),
+            (false, None) => "until the daemon stopped".to_owned(),
+        };
+        let how = format!("{} by {}", s.path, s.by);
+        println!("{:width$}  {:6}  {:15}  opened {}, {till}", who(s), s.role, how, mcp::tools::ago(s.opened_ms));
+    }
+    if sessions.len() == REMOTE_SESSIONS_SHOWN {
+        println!("The newest {REMOTE_SESSIONS_SHOWN}; every line is in {}.", file.display());
+    }
+}
+
+/// How long something lasted, in a few characters: `40s`, `12m`, `3h`, `2d`.
+fn lasted(secs: u64) -> String {
+    match secs {
+        0..60 => format!("{secs}s"),
+        60..3600 => format!("{}m", secs / 60),
+        3600..86400 => format!("{}h", secs / 3600),
+        _ => format!("{}d", secs / 86400),
+    }
+}
+
 /// `arugulad sharing`: the machine's sharing settings, one's state, or one
 /// set (native #205). It works on the state directory, not through the
 /// daemon, so only someone at the machine as its owner can.
@@ -655,6 +692,8 @@ fn sharing_cli(
         anyhow::bail!("agent-sessions takes work, names or none; the others take on or off");
     }
     match (name, switch) {
+        (Some(args::SharingSetting::Log), Some(_)) => anyhow::bail!("log only shows: it takes no setting"),
+        (Some(args::SharingSetting::Log), None) => remote_log_cli(dir),
         (None, _) => {
             println!("guest-ssh  {:3}  {about}", state(sharing::guest_ssh(dir)));
             println!("agent-mentions  {:3}  {mentions_about}", state(sharing::agent_mentions(dir)));
@@ -1122,6 +1161,8 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     if let Err(e) = arugula_proto::sharing::migrate(&state_dir) {
         warn!(error = %e, "couldn't keep the guest-ssh flag as Guest SSH access");
     }
+    // Sessions the daemon before this one left open ended with it (#1094).
+    remote_log::started(&state_dir);
     let guest_listen = match args.guest_ssh.as_str() {
         "off" => None,
         a => Some(a.parse::<SocketAddr>().map_err(|e| anyhow::anyhow!("--guest-ssh {a}: {e}"))?),

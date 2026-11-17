@@ -23,8 +23,6 @@
 
 .ws-search {
   margin: 0 12px 8px;
-  border-color: var(--line-strong);
-  border-radius: var(--field-radius);
 }
 
 .ws-session-list {
