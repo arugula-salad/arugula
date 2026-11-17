@@ -519,6 +519,12 @@ function AppJoin({ s, j, cancel, refused, failed, sealed, secret, whole }: Devic
       )}
       {whole}
       <p class="dim">It reaches your machines (directly or through Arugula cloud's relay), your chat, projects, issues and boards.</p>
+      {s.enrollment ? null : (
+        <p class="control-error" data-join-needs-device>
+          Only one of your devices approves an app, and this browser isn't one: it reaches your machines with Arugula cloud's tokens. Approve
+          it from a browser or phone that is.
+        </p>
+      )}
       <div class="prompt-buttons">
         <button class="secondary" data-cancel-join onClick={cancel}>
           {refused ? "Close" : "Cancel"}
@@ -526,7 +532,7 @@ function AppJoin({ s, j, cancel, refused, failed, sealed, secret, whole }: Devic
         <button
           class="primary"
           data-approve-join
-          disabled={busy || (sealed && !secret)}
+          disabled={busy || (sealed && !secret) || !s.enrollment}
           onClick={async () => {
             setBusy(true);
             try {
@@ -584,6 +590,12 @@ function CliJoin({ s, j, cancel, refused, failed, sealed, secret, whole }: Devic
         </p>
       ) : null}
       <p class="dim">It reaches your machines (directly or through Arugula cloud's relay) and can approve devices, as this one can.</p>
+      {s.enrollment ? null : (
+        <p class="control-error" data-join-needs-device>
+          Only one of your devices approves a command line, and this browser isn't one: it reaches your machines with Arugula cloud's tokens.
+          Run <code>arugula login --browser</code> there instead, or approve it from a device that is.
+        </p>
+      )}
       <div class="prompt-buttons">
         <button class="secondary" data-cancel-join onClick={cancel}>
           {refused ? "Close" : "Cancel"}
@@ -591,7 +603,7 @@ function CliJoin({ s, j, cancel, refused, failed, sealed, secret, whole }: Devic
         <button
           class="primary"
           data-approve-join
-          disabled={busy || (sealed && !secret)}
+          disabled={busy || (sealed && !secret) || !s.enrollment}
           onClick={async () => {
             setBusy(true);
             try {

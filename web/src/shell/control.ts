@@ -1134,16 +1134,6 @@ export interface ShareOffer {
   owner_login: string;
 }
 
-/** The recovery code is on its way (`cameToRecover`, which this doesn't
- * spend): the browser means to be a device again. */
-function recoverAsked(): boolean {
-  try {
-    return sessionStorage.getItem(RECOVER_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
 export class ControlSession {
   phase: Phase = "loading";
   error = "";
@@ -1299,16 +1289,17 @@ export class ControlSession {
         // account. Start over as a new device of this one.
         this.enrollment = undefined;
       }
-      // aru-141: a browser that would wait for another device's approval
-      // reaches its machines with machine tokens instead, and adds a
-      // machine's join in one click (#1003). One that becomes a device at
-      // once still does: the account's first browser, the app's window a
-      // browser signed in, one whose passkey is a device already, and one
-      // here to use a recovery code (#1004). A control that signs no tokens
-      // leaves it to be approved as before.
+      // aru-141 (#997): a browser that isn't one of the account's devices
+      // stays that way. It reaches its machines with machine tokens and adds
+      // a machine's join in one click (#1003): the account's first browser,
+      // the app's window (whatever keys its sign-in handed it), one here to
+      // use a recovery code and any other. One that is a device keeps its
+      // key, as does one whose passkey is a device already. Only a control
+      // that signs no tokens (a dev or test hub), or `tokenMode` "off",
+      // still has a new browser enroll as before.
       const mode = tokenMode();
-      if (!this.enrollment && mode !== "off" && me.root !== null && !this.handed && !recoverAsked() && (await controlIssues())) {
-        if (!(this.fromPasskey && (await this.rejoin()))) this.tokens = true;
+      if (!this.enrollment && mode !== "off" && (await controlIssues())) {
+        if (!(this.fromPasskey && me.root !== null && (await this.rejoin()))) this.tokens = true;
       }
       if (!this.enrollment && !this.tokens) await this.enroll(me.root);
       if (!this.enrollment && !this.tokens) return;
@@ -2701,9 +2692,11 @@ export class ControlSession {
   private appLogins = new Map<string, Promise<AppLogin>>();
 
   /** Whether allowing `a` also makes the app one of the account's devices
-   * (#758): it sent keys, and this browser is a device that can sign one. */
+   * (#758): it sent keys, and this browser is a device that can sign one.
+   * Not where machine tokens are taken (aru-141, #997): the app's window
+   * takes them too, and wouldn't use the certificate. */
   signsApp(a: AppLogin): boolean {
-    return !!a.device && !!this.enrollment && this.phase === "ready" && !this.rootMismatch && this.canApprove("app");
+    return !!a.device && !!this.enrollment && !this.tokens && this.phase === "ready" && !this.rootMismatch && this.canApprove("app");
   }
 
   /** Whether this device may approve one of `kind` (`Kind::certifies`):
