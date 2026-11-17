@@ -5335,7 +5335,7 @@ export type Session = { id: number, name: string, tabs: Array<number>,
  * ([`Mux::infer_project`]), following that repo when it moves to
  * another project ([`Mux::follow_repo`]), or set by hand
  * ([`Intent::SetSessionProject`], or with [`Intent::NewSession`]),
- * which nothing moves. Else the owner's default project
+ * which nothing moves. Else the owner's personal project
  * ([`Mux::default_project`]). A layout from before has none, and an
  * older daemon drops it.
  */
