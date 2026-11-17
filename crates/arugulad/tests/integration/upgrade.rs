@@ -381,3 +381,32 @@ async fn a_run_panes_command_survives_a_restart() {
     let _ = d.connect().await;
     assert_eq!(ls_command(&d, pane).await.as_deref(), Some("sleep 300"), "after a crash");
 }
+
+/// Arugula #1120: a descriptor the shim was handed by accident (one another
+/// daemon thread made just before its close-on-exec, such as the API's
+/// listening socket on macOS) is closed: it doesn't stay open in the shim,
+/// or in its program, after the daemon that made it is gone.
+#[test]
+fn a_shim_keeps_no_descriptor_it_was_handed_by_accident() {
+    use std::os::fd::AsRawFd;
+    let dir = std::env::temp_dir().join(format!("arugula-shim-strays-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    // A stray: a pipe without close-on-exec, as one is before its fcntl.
+    let (_r, w) = nix::unistd::pipe().unwrap();
+    let flags = nix::fcntl::fcntl(&w, nix::fcntl::FcntlArg::F_GETFD).unwrap();
+    assert_eq!(flags & nix::libc::FD_CLOEXEC, 0, "the stray is inheritable");
+    let out = dir.join("out");
+    let check =
+        format!("if [ -e /dev/fd/{} ]; then echo open; else echo closed; fi > {}", w.as_raw_fd(), out.display());
+    let status = Command::new(env!("CARGO_BIN_EXE_arugulad"))
+        .arg("_shim")
+        .arg("--record")
+        .arg(dir.join("record"))
+        .args(["--", "sh", "-c", &check])
+        .status()
+        .unwrap();
+    assert!(status.success(), "{status}");
+    assert_eq!(std::fs::read_to_string(&out).unwrap().trim(), "closed", "the program got the shim's stray");
+    let _ = std::fs::remove_dir_all(&dir);
+}

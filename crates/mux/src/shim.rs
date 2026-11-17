@@ -137,6 +137,7 @@ pub fn run(args: &[String]) -> ! {
             std::process::exit(2);
         }
     };
+    close_strays(if hold.is_some() { HELD_FD } else { 2 });
     let cargs: Vec<CString> = argv.iter().map(|a| CString::new(a.as_str()).unwrap_or_default()).collect();
     let holder = hold.and_then(|socket| match crate::holder::Holder::prepare(socket.as_ref(), HELD_FD) {
         Ok(h) => Some(h),
@@ -262,6 +263,29 @@ pub fn run(args: &[String]) -> ! {
 /// Where the daemon puts the PTY master for `--hold`.
 #[cfg(unix)]
 pub const HELD_FD: i32 = 3;
+
+/// Close every descriptor above `keep` (the shim's stdio, and the held
+/// master): none is meant for the shim, and it and its program outlive the
+/// daemon. A descriptor another daemon thread had just made, before its
+/// close-on-exec was set (macOS has no `SOCK_CLOEXEC`, and `pipe` sets it
+/// apart on both), came along with the fork. Kept, it outlived its daemon:
+/// a pane's shim holding the API's listening socket answered no one, and
+/// the next daemon's first caller, connected to it, waited forever (Arugula
+/// #1120).
+#[cfg(unix)]
+fn close_strays(keep: i32) {
+    // `/dev/fd` lists this process's descriptors on Linux and macOS. Read
+    // whole first: the listing's own descriptor is among them.
+    let open: Vec<i32> = match std::fs::read_dir("/dev/fd") {
+        Ok(d) => d.flatten().filter_map(|e| e.file_name().to_str()?.parse().ok()).collect(),
+        Err(_) => return,
+    };
+    for fd in open.into_iter().filter(|fd| *fd > keep) {
+        // SAFETY: single-threaded, before anything here uses a descriptor
+        // above `keep`; one already closed (the listing's) is EBADF.
+        unsafe { libc::close(fd) };
+    }
+}
 
 #[cfg(any(unix, test))]
 fn parse(args: &[String]) -> Option<(String, Option<String>, Vec<String>)> {
