@@ -1,6 +1,8 @@
 /* A Settings page's sections and index (settings-section.tsx), on
    both pages (Arugula #695): under `.platform` on `/settings`, and
-   `.settings-place` on control's page. Its switch is shared/switch.css. */
+   `.settings-place` on control's page. Its switch is shared/switch.css.
+   Then Settings' list and detail (settings-list.tsx, Arugula #1104), on
+   the List pages' look. */
 
 /* -- The sections */
 
@@ -26,50 +28,21 @@
   color: var(--dim);
 }
 
-/* More: the rest of a section's explanation, a click away. */
+/* The rest of what there is to know, under the help line: shown, not
+   behind a toggle (Arugula #1104). */
 :is(.platform, .settings-place) .settings-more {
   margin: -4px 0 12px;
   font-size: var(--text-md);
   color: var(--dim);
 }
 
-:is(.platform, .settings-place) .settings-more > summary {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  font: 500 var(--text-xs)/1.6 var(--f-mono);
-  letter-spacing: var(--track-caps);
-  text-transform: uppercase;
-  color: var(--accent);
-  cursor: pointer;
-  list-style: none;
-}
-
-:is(.platform, .settings-place) .settings-more > summary::-webkit-details-marker {
-  display: none;
-}
-
-:is(.platform, .settings-place) .settings-more > summary::before {
-  content: "";
-  border: 4px solid transparent;
-  border-left: 5px solid currentColor;
-  border-right-width: 0;
-  transition: transform 0.15s;
-}
-
-:is(.platform, .settings-place) .settings-more[open] > summary::before {
-  transform: rotate(90deg);
-}
-
-:is(.platform, .settings-place) .settings-more > summary:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  border-radius: var(--tag-radius);
-}
-
 :is(.platform, .settings-place) .settings-more p {
   max-width: 70ch;
   margin: 6px 0 0;
+}
+
+:is(.platform, .settings-place) .settings-sec[hidden] {
+  display: none;
 }
 
 /* Appearance & account: what to open, and what it is. */
@@ -190,12 +163,6 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  :is(.platform, .settings-place) .settings-more > summary::before {
-    transition: none;
-  }
-}
-
 :is(.platform, .settings-place) .settings-rows {
   margin: 0;
   padding: 0;
@@ -218,5 +185,96 @@
 @media (min-width: 1320px) {
   :is(.platform, .settings-place) .settings-elsewhere {
     display: none;
+  }
+}
+
+/* -- Settings' list and detail (settings-list.tsx): the List pages' split
+      (./list-page.css), filling the page's frame as Docs does. The list
+      is narrower than a Doc's (a title and a line), and the detail holds
+      the controls, scrolling on its own. */
+
+.platform-main:has(> .settings-host) {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+.settings-host {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.settings-host .list-page {
+  --list-w: clamp(300px, 32%, 400px);
+  height: 100%;
+}
+
+@container list-page (min-width: 761px) {
+  .settings-list .list-split {
+    grid-template-columns: min(var(--list-w), calc(100% - 420px)) minmax(0, 1fr);
+  }
+}
+
+/* The scopes: on one line, scrolling sideways where it's narrower. */
+.settings-list .list-head .page-head .settings-scopes {
+  max-width: 100%;
+  margin-top: var(--space-3);
+  overflow-x: auto;
+}
+
+.settings-list a.list-row {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* What's set, on its own line under the title. */
+.settings-list .list-row-detail {
+  grid-column: 1 / -1;
+}
+
+/* Which machine, project or team: a label and its select, under the header. */
+.settings-pick {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: var(--space-3) 0 var(--space-2);
+  color: var(--dim);
+  font-size: var(--text-sm);
+}
+
+.settings-pick .field {
+  flex: 0 1 280px;
+  min-width: 0;
+}
+
+.settings-detail-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-4) var(--space-6) var(--space-6);
+}
+
+/* A section, alone in the detail: its heading at the top, its help under it. */
+.platform .settings-detail-body .settings-sec {
+  max-width: 880px;
+  margin-top: 0;
+}
+
+.platform .settings-detail-body.sw-page .settings-sec > h2 {
+  margin: 0 0 var(--space-2);
+}
+
+/* The way back to the list shows only where the detail stands alone. */
+@container list-page (min-width: 761px) {
+  .settings-list .list-back {
+    display: none;
+  }
+}
+
+@container list-page (max-width: 760px) {
+  .settings-detail-body {
+    padding: var(--space-3) var(--space-5) var(--space-6);
   }
 }

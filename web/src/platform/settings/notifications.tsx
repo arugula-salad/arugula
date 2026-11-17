@@ -7,11 +7,12 @@
 
 import { useEffect, useState } from "preact/hooks";
 import type { NotifyLevel, QuietHours } from "../../shared/proto.gen";
-import { clock, deviceZone, LEVELS, loadNotify, minutes, notifyPrefs, setNotify, snoozePresets, subscribeNotify, untilText } from "../../shared/chat/notify";
+import { clock, deviceZone, LEVELS, levelLabel, loadNotify, minutes, notifyPrefs, setNotify, snoozePresets, subscribeNotify, untilText } from "../../shared/chat/notify";
 import { claimDays } from "../../shared/ui/days";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { TimeRange, Weekdays } from "../../shared/ui/schedule";
 import { Section } from "../../shared/ui/settings-section";
+import { joined, quietSummary } from "./summary";
 
 type Day = { on: boolean; from: string; to: string };
 
@@ -92,6 +93,7 @@ export function NotificationSettings() {
       <Section
         id="notifications"
         title="Chat notifications"
+        summary={joined(levelLabel(p.channels), p.paused ? (snoozed && p.snooze_until ? `paused ${untilText(p.snooze_until)}` : "paused by quiet hours") : "not paused")}
         hooks={{ "data-notify-settings": "" }}
         more={
           <p>
@@ -137,6 +139,7 @@ export function NotificationSettings() {
       <Section
         id="quiet-hours"
         title="Quiet hours"
+        summary={quietSummary(p.quiet, p.tz)}
         more={<p>They follow the time zone chosen here, not the device's, so travelling doesn't move them.</p>}
         hooks={{ "data-notify-quiet": "" }}
       >

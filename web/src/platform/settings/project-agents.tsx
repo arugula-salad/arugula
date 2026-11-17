@@ -19,6 +19,7 @@ import { follow, pathOf } from "../router";
 import { reachOf, type AgentToken } from "./agent-tokens";
 import { roleIn } from "./environments";
 import { Section } from "../../shared/ui/settings-section";
+import { plural } from "./summary";
 
 async function call<T>(path: string, body?: unknown, method?: string): Promise<T> {
   const r = await platformFetch(path, {
@@ -129,12 +130,14 @@ export function ProjectAgents({ p }: { p: PlatformProject }) {
   };
   // Where an owner makes their own tokens: the account's settings, at
   // that section (UI audit #166).
-  const own = `${pathOf({ page: "settings" }, names)}#tokens`;
+  const own = pathOf({ page: "settings", scope: "you", section: "tokens" }, names);
+  const failed = err && tokens === null ? "Couldn't load" : undefined;
   return (
     <>
       <Section
         id="agents"
         title="Agent tokens"
+        summary={tokens ? (tokens.length ? `${plural(tokens.length, "token")} over this project` : "None") : failed}
         count={tokens?.length}
         hooks={{ "data-project-agents": "" }}
         lede="Every agent token over this project, whoever made it: agents with no machine."
@@ -199,6 +202,7 @@ export function ProjectAgents({ p }: { p: PlatformProject }) {
       <Section
         id="secrets"
         title="Project secrets"
+        summary={secrets ? (secrets.secrets.length ? `${secrets.secrets.length} of ${secrets.max}` : "None") : failed}
         count={secrets?.secrets.length}
         lede="Secrets set by name for this project, by its owners or their agents. Their values are never shown."
         more={

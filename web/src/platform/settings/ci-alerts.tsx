@@ -14,6 +14,7 @@ import { ago } from "../../shared/time";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { CopyText } from "../../shared/ui/copy";
 import { Section } from "../../shared/ui/settings-section";
+import { joined, plural } from "./summary";
 import type { PlatformProject } from "../session";
 import { names } from "../links";
 import { follow, pathOf } from "../router";
@@ -43,7 +44,12 @@ export function CiAlertsSetting({ p }: { p: PlatformProject }) {
   useEffect(() => {
     call<CiAlerts>("GET", base).then(setA, (e: Error) => setErr(e.message));
   }, [p.id]);
-  if (!a) return err ? <p class="control-error">{err}</p> : null;
+  if (!a)
+    return err ? (
+      <Section id="ci-alerts" title="CI alerts" summary="Couldn't load">
+        <p class="control-error">{err}</p>
+      </Section>
+    ) : null;
   const changes = mayWrite(p);
   const act = async (f: () => Promise<CiAlerts>) => {
     setBusy(true);
@@ -78,6 +84,7 @@ export function CiAlertsSetting({ p }: { p: PlatformProject }) {
     <Section
       id="ci-alerts"
       title="CI alerts"
+      summary={a.on ? joined("On", a.open.length > 0 && `${plural(a.open.length, "red branch", "red branches")} open`) : "Off"}
       lede="A red main opens an issue here, chant's CI events comment on it, and a green commit closes it."
       hooks={{ "data-ci-alerts": a.on ? "on" : "off" }}
       more={

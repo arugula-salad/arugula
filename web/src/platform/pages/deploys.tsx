@@ -56,7 +56,7 @@ export function DeploysPage({ project }: { project: string }) {
   const role = roleIn(p);
   const plans = role !== "viewer";
   const deployPath = pathOf({ page: "new-deploy", project: p.id }, names);
-  const envPath = `${pathOf({ page: "project-settings", project: p.id }, names)}#environments`;
+  const envPath = pathOf({ page: "settings", scope: "project", project: p.id, section: "environments" }, names);
   const older = async () => {
     if (!page?.next) return;
     setBusy(true);

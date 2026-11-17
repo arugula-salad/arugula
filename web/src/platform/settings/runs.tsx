@@ -52,7 +52,12 @@ export function RunGrant({ project }: { project: string }) {
       })
       .catch((e: Error) => setErr(e.message));
   }, [project]);
-  if (err) return <p class="control-error">{err}</p>;
+  if (err)
+    return (
+      <Section id="runs" title="Runs" summary="Couldn't load">
+        <p class="control-error">{err}</p>
+      </Section>
+    );
   if (!v) return null;
   const g = v.grant?.grant;
   const sign = (
@@ -64,6 +69,7 @@ export function RunGrant({ project }: { project: string }) {
     <Section
       id="runs"
       title="Runs"
+      summary={g ? (g.expires ? `Standing grant, until ${new Date(g.expires).toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : "Standing grant") : "No standing grant"}
       hooks={{ "data-run-grant": g ? "yes" : v.offer ? "offered" : "no" }}
       lede={
         g

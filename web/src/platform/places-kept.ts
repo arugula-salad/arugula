@@ -8,8 +8,8 @@
 //
 // Opening the app goes back to the last project's place; the switcher opens
 // a project at its place; Build's list of panes marks your last one (#1083). Chat,
-// account settings and the design reference are no project's place, as
-// the router's own memory has it (./router.ts).
+// Settings (any scope's: it's the rail's own place, Arugula #1104) and the
+// design reference are no project's place.
 
 import { pref, setPref } from "../shared/seen.ts";
 import { idOf, type Route } from "./paths.ts";
@@ -19,7 +19,7 @@ export const placeKey = (project: string) => `app.place.${project}`;
 export const paneKey = (project: string) => `app.pane.${project}`;
 
 /** The pages that are no project's place to come back to. */
-const NOT_A_PLACE = new Set<Route["page"]>(["home", "find", "missing", "chat", "dm", "settings", "owner-settings", "design", "inbox", "all-boards", "installed", "deploy", "team"]);
+const NOT_A_PLACE = new Set<Route["page"]>(["home", "find", "missing", "chat", "dm", "settings", "design", "inbox", "all-boards", "installed", "deploy", "team"]);
 
 /** The project `r` is a place of, or null when it's none to come back to. */
 export function placeIn(r: Route): string | null {

@@ -195,7 +195,7 @@ function ProjectSetup({ p }: { p: PlatformProject }) {
     void read<{ environments: { name: string }[] }>("environments", (v) => v.environments.map((e) => e.name), setEnvs);
     return () => void (live = false);
   }, [p.id]);
-  const settings = pathOf({ page: "project-settings", project: p.id }, names);
+  const settings = (section: string) => pathOf({ page: "settings", scope: "project", project: p.id, section }, names);
   const changes = !p.team || p.team.role !== "viewer";
   const owner = !p.team || p.team.role === "owner";
   const step = (to: string, label: string, data: string) => (
@@ -216,7 +216,7 @@ function ProjectSetup({ p }: { p: PlatformProject }) {
     <>
       {repos !== null && (
         <>
-          <SectionHead title="Repos" all={`${settings}#repos`} onAll={(e) => follow(e, `${settings}#repos`)} />
+          <SectionHead title="Repos" all={settings("repos")} onAll={(e) => follow(e, settings("repos"))} />
           {repos.length ? (
             rows(repos, "project-repos")
           ) : (
@@ -225,14 +225,14 @@ function ProjectSetup({ p }: { p: PlatformProject }) {
               data-project-repos-none
               title="No repos linked yet."
               why={changes ? REPOS_MEAN : `${REPOS_MEAN} A team's owners and editors link repos.`}
-              action={changes && step(`${settings}#repos`, "Link a repo", "project-link-repo")}
+              action={changes && step(settings("repos"), "Link a repo", "project-link-repo")}
             />
           )}
         </>
       )}
       {envs !== null && (
         <>
-          <SectionHead title="Environments" all={`${settings}#environments`} onAll={(e) => follow(e, `${settings}#environments`)} />
+          <SectionHead title="Environments" all={settings("environments")} onAll={(e) => follow(e, settings("environments"))} />
           {envs.length ? (
             rows(envs, "project-envs")
           ) : (
@@ -241,7 +241,7 @@ function ProjectSetup({ p }: { p: PlatformProject }) {
               data-project-envs-none
               title="No environments yet."
               why={owner ? ENVIRONMENTS_MEAN : `${ENVIRONMENTS_MEAN} A project's owners make its environments.`}
-              action={owner && step(`${settings}#environments`, "Make an environment", "project-make-env")}
+              action={owner && step(settings("environments"), "Make an environment", "project-make-env")}
             />
           )}
         </>

@@ -10,6 +10,7 @@ import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import type { PlatformProject } from "../session";
 import { Section } from "../../shared/ui/settings-section";
+import { plural } from "./summary";
 
 /** A hosted workspace, as much of it as this needs. */
 interface Workspace {
@@ -32,6 +33,13 @@ async function call<T>(
   const v = (await r.json().catch(() => ({}))) as { error?: string };
   if (!r.ok) throw new Error(v.error ?? `Request failed (${r.status})`);
   return v as T;
+}
+
+/** What the list says: the one step, or how many workspaces have one. */
+function finishSummary(list: Workspace[]): string {
+  const steps = list.map((w) => (w.spec.finish ?? "").trim()).filter(Boolean);
+  if (steps.length === 0) return "None";
+  return new Set(steps).size === 1 && steps.length === list.length ? steps[0] : `${steps.length} of ${plural(list.length, "workspace")}`;
 }
 
 export function FinishStep({ p }: { p: PlatformProject }) {
@@ -82,6 +90,7 @@ export function FinishStep({ p }: { p: PlatformProject }) {
     <Section
       id="finish"
       title="Finish step"
+      summary={finishSummary(list)}
       lede="A command agent sessions run after each turn, before they push: its branch is pushed only if it passes."
       more={
         <p>

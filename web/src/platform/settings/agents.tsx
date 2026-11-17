@@ -28,6 +28,7 @@ import {
   columnRefused,
   COMMAND_POWERS,
   forRole,
+  grantsSummary,
   liveOver,
   machinesOf,
   matrixOf,
@@ -185,7 +186,12 @@ export function AgentGrants() {
       (e: Error) => setErr(e.message),
     );
   useEffect(() => void load(), []);
-  if (grants === null) return err ? <p class="control-error">{err}</p> : null;
+  if (grants === null)
+    return err ? (
+      <Section id="agents" title="Agents on your machines" summary="Couldn't load">
+        <p class="control-error">{err}</p>
+      </Section>
+    ) : null;
   const machines = machinesOf(grants);
   // A column that's one grant: deploys, start and reply.
   const turnSingle = async (machine: string, s: AgentScope, column: Column, power: string, on: boolean) => {
@@ -321,6 +327,7 @@ export function AgentGrants() {
     <Section
       id="agents"
       title="Agents on your machines"
+      summary={grantsSummary(grants)}
       more={
         <>
           <p>

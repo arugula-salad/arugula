@@ -74,8 +74,6 @@ export function titleOf(r: Route, k: Known): string {
       return parts("Cloud workspaces", p);
     case "workspace":
       return parts("Cloud workspace", p);
-    case "project-settings":
-      return parts("Settings", p);
     case "move":
       return parts("Move to project", p);
     case "deploys":
@@ -91,11 +89,12 @@ export function titleOf(r: Route, k: Known): string {
     case "all-boards":
       return parts("Boards");
     case "settings":
+      if (r.scope === "project") return parts("Settings", p);
+      if (r.scope === "machine") return parts("Machine settings");
+      if (r.scope === "team") return parts(r.owner === "personal" ? "Personal settings" : "Team settings", k.team?.(r.owner));
       return parts("Account settings");
     case "team":
-      return parts({ chat: "Chat", settings: "Settings", members: "Members" }[r.tab], k.team?.(r.team));
-    case "owner-settings":
-      return parts(r.owner === "personal" ? "Personal settings" : "Team settings");
+      return parts({ chat: "Chat", members: "Members" }[r.tab], k.team?.(r.team));
     case "design":
       return parts("Design reference");
     case "machines":

@@ -10,6 +10,7 @@ import { platformFetch } from "../../shared/maintenance";
 import { BrowserStep } from "../../shared/ui/browser-step";
 import { Modal } from "../../shared/ui/modal";
 import { Section } from "../../shared/ui/settings-section";
+import { joined } from "./summary";
 
 const mb = (b: number) => `${(b / 1e6).toFixed(b < 1e7 ? 1 : 0)} MB`;
 
@@ -111,7 +112,11 @@ export function PlanAndBilling({ team }: { team?: string }) {
   const mine = team ? billing.teams.find((t) => t.team === team) : undefined;
   if (team && !mine) return null;
   return (
-    <Section id="plan" title="Plan and billing" lede={mine ? `${mine.name}: ${planWords(billing, team)}.` : `You're on ${planWords(billing)}.`} hooks={{ "data-owner-plan": team ?? "personal" }}>
+    <Section
+      id="plan"
+      title="Plan and billing"
+      summary={mine ? joined(planWords(billing, team), `${mine.sandbox_minutes} VM minutes this month`) : joined(billing.plan === "paid" ? "Paid plan" : "Free plan", billing.relay.warning && "over the free relay")}
+      lede={mine ? `${mine.name}: ${planWords(billing, team)}.` : `You're on ${planWords(billing)}.`} hooks={{ "data-owner-plan": team ?? "personal" }}>
       <ul class="platform-list settings-rows">
         <li>
           <button class="settings-open" data-open-plan onClick={() => setPlan(true)}>

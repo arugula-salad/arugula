@@ -1,15 +1,49 @@
-// A section of /settings and of a project's settings: a display heading
-// (with a count, where it lists things), one plain line saying what it is,
-// and the rest of what there is to know behind More (a <details>), then
-// what it holds. Its id is the section index's anchor; the index sits
-// beside the column on a wide screen (../settings.css).
+// A section of Settings: a display heading (with a count, where it lists
+// things), one plain line saying what it is (its help), the rest of what
+// there is to know under it, then what it holds. One shape for every
+// section of every scope (Arugula #1104): an id (the address's), a title,
+// a summary (a few words on what's set: "Weeknights 10 PM – 8 AM",
+// "3 repos linked") and the detail, its children.
+//
+// Inside a scope's list (./settings-list.tsx) a section tells the list its
+// title and summary, so the list can say them, and it shows only while
+// it's the one chosen; it stays drawn while hidden, so what it reads keeps
+// its summary current. Anywhere else (control's `#settings`, a page that
+// borrows one) it's drawn in place, and its id is the section index's
+// anchor; the index sits beside the column on a wide screen.
 
-import type { ComponentChildren, RefObject } from "preact";
-import { useEffect, useRef, useState } from "preact/hooks";
+import { createContext, type ComponentChildren, type RefObject } from "preact";
+import { useContext, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+
+/** What a section tells the list it's in. */
+export interface ListedSection {
+  id: string;
+  title: string;
+  summary?: string;
+  /** The heading it's listed under, where a scope groups its sections. */
+  band?: string;
+  /** Its element, to put the list in the page's order. */
+  el: HTMLElement;
+}
+
+/** The list a section is in: the one chosen, and where it says what it is. */
+export interface SectionList {
+  /** The section shown; the rest are drawn hidden. */
+  shown: string | null;
+  /** The section the address names, before it's drawn: a section that
+   * opens with something started (a form) when it's asked for. */
+  asked: string | null;
+  tell(s: ListedSection): void;
+  forget(id: string, el: HTMLElement): void;
+}
+
+export const SectionListContext = createContext<SectionList | null>(null);
 
 export function Section({
   id,
   title,
+  summary,
+  band,
   count,
   lede,
   more,
@@ -18,28 +52,48 @@ export function Section({
 }: {
   id: string;
   title: string;
+  /** What's set, in a few words, for the list beside it. */
+  summary?: string;
+  /** The heading it's listed under, in a scope that groups its sections. */
+  band?: string;
   /** How many it lists, beside the heading. */
   count?: number;
-  /** The one plain line under the heading; left out where the heading says it. */
+  /** Its help: the one plain line under the heading; left out where the heading says it. */
   lede?: ComponentChildren;
+  /** The rest of what there is to know, under the help line. */
   more?: ComponentChildren;
   /** The section's own `data-*` hooks. */
   hooks?: Record<`data-${string}`, string>;
   children?: ComponentChildren;
 }) {
+  const list = useContext(SectionListContext);
+  const el = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    if (list && el.current) list.tell({ id, title, summary, band, el: el.current });
+  }, [list, id, title, summary, band]);
+  useLayoutEffect(() => {
+    const at = el.current;
+    return () => void (list && at && list.forget(id, at));
+  }, [list, id]);
+  const hidden = list ? list.shown !== id : false;
   return (
-    <section class="settings-sec" id={id} aria-labelledby={`${id}-h`} data-settings-section={id} data-settings-title={title} {...hooks}>
+    <section
+      ref={el}
+      class="settings-sec"
+      id={id}
+      hidden={hidden}
+      aria-labelledby={`${id}-h`}
+      data-settings-section={id}
+      data-settings-title={title}
+      data-settings-summary={summary}
+      {...hooks}
+    >
       <h2 id={`${id}-h`}>
         {title}
         {count !== undefined ? <span class="dim">{count}</span> : null}
       </h2>
       {lede ? <p class="settings-lede">{lede}</p> : null}
-      {more ? (
-        <details class="settings-more">
-          <summary>More</summary>
-          {more}
-        </details>
-      ) : null}
+      {more ? <div class="settings-more">{more}</div> : null}
       {children}
     </section>
   );

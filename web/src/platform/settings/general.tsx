@@ -10,6 +10,7 @@ import { useEffect, useState } from "preact/hooks";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { Section } from "../../shared/ui/settings-section";
+import { joined } from "./summary";
 import { names } from "../links";
 import { RecentSplits } from "../move/split-note";
 import { makers, ownerKey, owners, PERSONAL } from "../owners";
@@ -43,7 +44,7 @@ export function General({ p }: { p: PlatformProject }) {
     }
   };
   return (
-    <Section id="general" title="General" lede="Its name, whose it is, and whether it's archived." hooks={{ "data-project-general": p.id }}>
+    <Section id="general" title="General" summary={joined(mine?.name ?? "Personal", p.archived ? "archived" : "active")} lede="Its name, whose it is, and whether it's archived." hooks={{ "data-project-general": p.id }}>
       <form
         class="settings-add"
         aria-label="Rename"
