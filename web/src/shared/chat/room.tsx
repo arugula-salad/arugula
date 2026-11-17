@@ -507,7 +507,7 @@ export function RoomBody({
 
 // The composer's handle for "Quote in reply" (one is shown at a time), and
 // the thread panel's own beside it (#106).
-type ComposeHandle = { current: { reply(text: string): void; focus(): void; attach(files: File[]): void } | null };
+type ComposeHandle = { current: { reply(text: string): void; focus(): void; attach(files: File[]): void; insert(text: string): void } | null };
 const composeRef: ComposeHandle = { current: null };
 export const threadComposeRef: ComposeHandle = { current: null };
 
@@ -712,7 +712,7 @@ export function RoomMessage({
             <pre>{m.quote}</pre>
           </div>
         )}
-        <MentionStatus room={room} m={m} />
+        <MentionStatus room={room} m={m} insert={(t) => (inThread ? threadComposeRef : composeRef).current?.insert(t)} />
         <ReactionChips room={room} m={m} open={() => setPanel("react")} setError={setError} />
         {!inThread && <ThreadFooter room={room} m={m} />}
       </div>
@@ -999,6 +999,11 @@ export function RoomCompose({
       },
       focus: () => input.current?.focus(),
       attach: files.add,
+      // At the end, after a space, with the caret after it (#1167).
+      insert(t: string) {
+        setText((x) => `${x}${x && !/\s$/.test(x) ? " " : ""}${t}`);
+        placeCaret(Infinity, true);
+      },
     };
     return () => {
       handle.current = null;

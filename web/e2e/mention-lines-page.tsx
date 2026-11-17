@@ -15,14 +15,21 @@ const status: ChatMentionStatus[] = [
   { machine: "mch_mini", machine_name: "mini", for_session: "build", state: "answered", session: "build", reply: 12 },
   { machine: "mch_air", machine_name: "air", state: "offline" },
   { machine: "mch_box", machine_name: "box", state: "mentions_off" },
+  // Typed by its display name, in another case than the handle (#1167).
+  { machine: "mch_mac", machine_name: "Aarons-Mac-mini.local", state: "no_such_session", asked: "v1-engineering-done-board", names: ["Keymaster", "deploy approvals workflow", "launch"] },
+  // Routing put it there: nobody typed it, so no warning.
+  { machine: "mch_old", machine_name: "oldbox", state: "no_such_session", asked: "gone", names: ["a", "b"] },
+  { machine: "mch_off", machine_name: "offbox", state: "offline" },
 ];
 
 const room = { id: "ch_aaaa0001" } as unknown as ChatRoom;
-const m = { seq: 11, parent: null, deleted: null, mention_status: status } as unknown as ChatMessage;
+const text = "@air and @BOX and @aarons-mac-mini.local/v1-engineering-done-board please";
+const m = { seq: 11, parent: null, deleted: null, text, mention_status: status } as unknown as ChatMessage;
 
 render(
   <div style="padding: 16px; max-width: 520px">
-    <MentionStatus room={room} m={m} />
+    <MentionStatus room={room} m={m} insert={(t) => ((document.getElementById("composer") as HTMLElement).textContent += t)} />
+    <p id="composer" data-composer />
   </div>,
   document.getElementById("root")!,
 );

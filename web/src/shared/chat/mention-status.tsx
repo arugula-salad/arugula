@@ -4,10 +4,14 @@
 // answers, and again when the machine's agent replies in the thread. Each
 // is a status chip in the tone of its state.
 
+import { useRef, useState } from "preact/hooks";
 import type { ChatMentionStatus, ChatMessage, ChatRoom } from "../proto";
 import { usePlatformApi } from "../platform-api";
 import { ChevronIcon, MachineIcon } from "../ui/icons";
+import { Popover, pressedShut } from "../ui/menu";
 import { Chip, type Tone } from "../ui/state-chip";
+import { machineHandle, sessionSlug } from "./agents";
+import { typesMachine } from "./mention-typed";
 
 /** A state's tone: working accent, read and answered ok, the ones that wait
  * or went elsewhere warn, a dropped turn danger, and what was only sent or
@@ -58,10 +62,9 @@ export function mentionStatusText(s: ChatMentionStatus): string {
       return `${at}: held: no hooks, waiting for ${who}`;
     case "silenced":
       return `Not delivered to ${who}${s.asked ? `/${s.asked}` : ""}: its owner silenced mentions for that session`;
-    case "no_such_session": {
-      const none = `No session on ${who} is called ${s.asked ?? "that"}`;
-      return s.names?.length ? `${none}: ${s.names.join(", ")}` : none;
-    }
+    // The machine's sessions are behind the chip (#1167), not in it.
+    case "no_such_session":
+      return `${who}: no session named ${s.asked ?? "that"}`;
     case "working":
       return `${at}: working…`;
     case "read":
@@ -81,11 +84,50 @@ export function mentionStatusText(s: ChatMentionStatus): string {
   }
 }
 
+/** A `no_such_session` line with names to offer: the chip opens a list of
+ * them, and a pick puts `@machine/session` in the composer (#1167). */
+function NamesChip({ s, insert }: { s: ChatMentionStatus; insert: (text: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const from = useRef<HTMLSpanElement | null>(null);
+  const handle = machineHandle(s.machine_name ?? "");
+  return (
+    <>
+      <span ref={from} class="mention-names">
+        <Chip tone={mentionTone(s.state)} dot class="mention-link" title="Sessions on this machine" onClick={() => !pressedShut(from.current) && setOpen(true)}>
+          {mentionStatusText(s)} <ChevronIcon dir="down" />
+        </Chip>
+      </span>
+      {open && (
+        <Popover from={from} label={`Sessions on ${s.machine_name || "the machine"}`} attrs={{ "data-mention-names": "" }} onClose={() => setOpen(false)}>
+          <ul class="mention-names-list">
+            {(s.names ?? []).map((n) => (
+              <li key={n}>
+                <button
+                  type="button"
+                  data-mention-pick={n}
+                  onClick={() => {
+                    setOpen(false);
+                    insert(`@${handle}/${sessionSlug(n)} `);
+                  }}
+                >
+                  {n}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </Popover>
+      )}
+    </>
+  );
+}
+
 /** The lines under a message: nothing for one that mentions no machine. An
- * answer is a link to the reply it names, in the thread. */
-export function MentionStatus({ room, m }: { room: ChatRoom; m: ChatMessage }) {
+ * answer is a link to the reply it names, in the thread. A warning for a
+ * machine the poster didn't type (routing put it there) isn't shown (#1167).
+ * `insert` writes into the composer this message is answered in. */
+export function MentionStatus({ room, m, insert }: { room: ChatRoom; m: ChatMessage; insert?: (text: string) => void }) {
   const { nav } = usePlatformApi();
-  const lines = m.mention_status ?? [];
+  const lines = (m.mention_status ?? []).filter((s) => mentionTone(s.state) !== "warn" || !s.machine_name || typesMachine(m.text ?? "", s.machine_name));
   if (!lines.length || m.deleted !== null) return null;
   return (
     <div class="mention-status" role="group" aria-label="Agent mentions">
@@ -96,6 +138,8 @@ export function MentionStatus({ room, m }: { room: ChatRoom; m: ChatMessage }) {
             <Chip tone={mentionTone(s.state)} dot class="mention-link" onClick={() => nav.openRoom(room.id, s.reply, m.parent ?? m.seq)}>
               {mentionStatusText(s)} <ChevronIcon dir="right" />
             </Chip>
+          ) : s.state === "no_such_session" && s.names?.length && insert ? (
+            <NamesChip s={s} insert={insert} />
           ) : (
             <Chip tone={mentionTone(s.state)} dot>
               {mentionStatusText(s)}
