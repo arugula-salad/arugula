@@ -798,26 +798,10 @@ fn a_teams_lock_doesnt_take_a_closed_pane_for_good() {
             && newest(&f, "pane", &closed) == Some(vec![])
     });
 
-    // Control's plain word that it isn't locked any more doesn't lift it:
-    // cy is still in no list.
+    // Control lifts the lock (aru-141, Arugula #1005: its word, with no
+    // owner's device signing it): cy reads both again.
     *f.locked.lock().unwrap() = (false, None);
     eve(&d, sid, false);
-    d.wait_for("eve off the open pane", || newest(&f, "pane", &open).is_some_and(|l| !l.contains(&"a9".to_owned())));
-    assert!(!newest(&f, "pane", &open).unwrap().contains(&"a3".to_owned()), "a plain word unlocked it");
-    assert_eq!(newest(&f, "pane", &closed), Some(vec![]));
-
-    // Its owner lifts the lock: cy reads both again.
-    let mut lock = TeamLock {
-        team: "t1".into(),
-        locked: false,
-        version: 1,
-        at: arugula_e2e::now_ms(),
-        by: String::new(),
-        sig: String::new(),
-    };
-    lock.sign_with(&alex);
-    *f.locked.lock().unwrap() = (false, Some(lock));
-    eve(&d, sid, true);
     d.wait_for("cy back on the closed pane", || newest(&f, "pane", &closed) == cy);
     assert!(newest(&f, "pane", &open).is_some_and(|l| l.contains(&"a3".to_owned())));
 }

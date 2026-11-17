@@ -266,16 +266,16 @@ async fn serve_token(
     out.send(m2).await?;
     let out = Arc::new(Out::new(ch, out));
     let id = format!("account:{}", claims.sub);
-    if let Some(r) = grant.role {
-        app.acl.hold_token_role(&id, r);
-    }
+    // Its role in place of the team roster's while it's open (Arugula
+    // #1005): control's word, a guest's included.
+    app.acl.hold_token_role(&id, grant.role);
     let caller = Caller { account: claims.sub.clone(), device: id.clone(), name: claims.name.clone() };
     let log = Opened {
         account: claims.sub.clone(),
         name: claims.name.clone(),
         role: grant.shown.into(),
         by: "token",
-        token_role: grant.role.map(|_| id.clone()),
+        token_role: Some(id.clone()),
     };
     // A role that could type ends when remote input goes off here; the
     // client opens a new channel and gets a viewer's.

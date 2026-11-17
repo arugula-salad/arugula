@@ -110,8 +110,9 @@ pub struct Acl {
     /// their role in it, from rosters this daemon verified.
     shared_teams: RwLock<std::collections::HashMap<String, std::collections::HashMap<String, Role>>>,
     /// Machine-wide roles from the machine tokens of channels open now
-    /// (aru-141), by principal id, each with how many channels hold it.
-    tokens: RwLock<std::collections::HashMap<String, (Role, u32)>>,
+    /// (aru-141), by principal id, each with how many channels hold it:
+    /// none for a guest's, whom the team's roster doesn't raise either.
+    tokens: RwLock<std::collections::HashMap<String, (Option<Role>, u32)>>,
     /// Who wants "needs you" notifications about what (M29), by principal
     /// id; in `notify.json`.
     notify_path: PathBuf,
@@ -197,7 +198,7 @@ impl Acl {
                     .iter()
                     .find(|g| g.session == session && &g.principal == id)
                     .map(|g| g.role);
-                let team = self.team.read().unwrap().get(id).copied().max(self.token_role(id));
+                let team = self.team_role_of(id);
                 // Shared with a team they're in: the grant's role, at most
                 // their role in the team.
                 let teams = self.shared_teams.read().unwrap();
@@ -228,13 +229,24 @@ impl Acl {
     }
 
     pub fn team_role(&self, p: &Principal) -> Option<Role> {
-        self.team.read().unwrap().get(p.id()).copied().max(self.token_role(p.id()))
+        self.team_role_of(p.id())
+    }
+
+    /// `id`'s machine-wide role: its machine token's, while a channel
+    /// opened with one is open (control's word for its role now, aru-141,
+    /// Arugula #1005), else the team roster's.
+    fn team_role_of(&self, id: &str) -> Option<Role> {
+        match self.tokens.read().unwrap().get(id) {
+            Some((r, _)) => *r,
+            None => self.team.read().unwrap().get(id).copied(),
+        }
     }
 
     /// A channel opened with a machine token (aru-141) gives `id` `role`
-    /// on every session while it's open; [`Acl::drop_token_role`] when it
+    /// on every session while it's open, in place of the team roster's
+    /// (none, for a guest's token); [`Acl::drop_token_role`] when it
     /// closes. Two channels with different roles: the higher one holds.
-    pub fn hold_token_role(&self, id: &str, role: Role) {
+    pub fn hold_token_role(&self, id: &str, role: Option<Role>) {
         let mut t = self.tokens.write().unwrap();
         let e = t.entry(id.to_owned()).or_insert((role, 0));
         e.0 = e.0.max(role);
@@ -250,10 +262,6 @@ impl Acl {
                 t.remove(id);
             }
         }
-    }
-
-    fn token_role(&self, id: &str) -> Option<Role> {
-        self.tokens.read().unwrap().get(id).map(|(r, _)| *r)
     }
 
     /// Until when read-only links may reach this daemon (M19).
@@ -543,6 +551,36 @@ mod tests {
         assert!(!again.forget_session(3));
         let log = again.audit();
         assert_eq!(log.iter().map(|e| e["action"].as_str().unwrap()).collect::<Vec<_>>(), ["grant", "grant", "revoke"]);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// A machine token's role (aru-141) stands in for the team roster's
+    /// while its channel is open, lower or higher: a viewer's token isn't
+    /// raised by the roster, and a guest's (someone control took out) gets
+    /// nothing from it. A grant on a session still counts.
+    #[test]
+    fn a_machine_tokens_role_stands_in_for_the_rosters() {
+        let dir = std::env::temp_dir().join(format!("arugula-acl-token-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let acl = Acl::open(&dir);
+        let bea = Principal::User { id: "account:b1".into(), name: "bea".into(), pic: None };
+        acl.set_team_roles([("account:b1".to_owned(), Role::Editor)].into());
+        assert_eq!(acl.role(&bea, 3), Some(Role::Editor));
+        acl.hold_token_role("account:b1", Some(Role::Viewer));
+        assert_eq!((acl.role(&bea, 3), acl.team_role(&bea)), (Some(Role::Viewer), Some(Role::Viewer)));
+        // A second channel, an editor's: the higher one holds.
+        acl.hold_token_role("account:b1", Some(Role::Editor));
+        assert_eq!(acl.role(&bea, 3), Some(Role::Editor));
+        acl.drop_token_role("account:b1");
+        acl.drop_token_role("account:b1");
+        // A guest's token: nothing from the roster, only what's shared.
+        acl.hold_token_role("account:b1", None);
+        assert_eq!(acl.role(&bea, 3), None);
+        acl.set(4, "account:b1", "bea", Some(Role::Viewer), "owner").unwrap();
+        assert_eq!(acl.role(&bea, 4), Some(Role::Viewer));
+        // Closed: the roster's again, for a device's channel.
+        acl.drop_token_role("account:b1");
+        assert_eq!(acl.role(&bea, 3), Some(Role::Editor));
         std::fs::remove_dir_all(dir).unwrap();
     }
 

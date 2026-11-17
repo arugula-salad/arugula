@@ -3,8 +3,8 @@
 // (aru-140), so they have a page of their own, reached from the bar's
 // switcher. It says the team's name, and its way back is the project the
 // reader was last in. Chat lists the team's channels; Members is its roster,
-// which changes on the machines page, signed by a device. Its Settings tab
-// opens Settings' Team and billing scope for it (Arugula #1104).
+// which its owners change on the machines page. Its Settings tab opens
+// Settings' Team and billing scope for it (Arugula #1104).
 
 import { chat } from "../../shared/chat-store";
 import { EmptyLine } from "../../shared/ui/block-states";
@@ -103,7 +103,7 @@ function Members({ owner }: { owner: Owner }) {
       </ul>
       {!owner.members.length && <EmptyLine>None of its projects lists its people.</EmptyLine>}
       <p class="dim">
-        Roles and invites change on <a href={controlOrigin()}>your machines page</a>, where each change is signed.
+        Its owners change roles and invites on <a href={controlOrigin()}>your machines page</a>.
       </p>
     </div>
   );

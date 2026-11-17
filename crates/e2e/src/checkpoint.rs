@@ -227,6 +227,12 @@ pub fn take_lock(
 /// that doesn't stops the walk, and its version comes back with where it
 /// stopped: a control that leaves versions out, or sends older ones or
 /// another history, leaves `held` as it is.
+///
+/// A version on control's word ([`Roster::on_controls_word`], aru-141,
+/// Arugula #1005), which an owner with no device key wrote, follows as the
+/// next one when it's well formed and the pinned team's: the team's
+/// members and roles are control's now. A version a device signed still
+/// has to follow the one before.
 pub fn advance(
     held: Option<&Roster>,
     history: impl IntoIterator<Item = Roster>,
@@ -247,7 +253,8 @@ pub fn advance(
             }
         }
         let next = cur.as_ref().map_or(1, |c| c.version + 1);
-        if r.version != next || !r.follows(cur.as_ref(), pin, certs) {
+        let by_control = r.on_controls_word() && r.team == pin.team && r.well_formed();
+        if r.version != next || !(by_control || r.follows(cur.as_ref(), pin, certs)) {
             return (cur, Some(r.version));
         }
         cur = Some(r);

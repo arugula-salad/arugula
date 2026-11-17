@@ -57,6 +57,8 @@ import {
   signLock,
   signRoster,
   teamJoinBody,
+  unsigned,
+  NO_ROOT,
   word,
   type AccountCerts,
   type AskInvite,
@@ -164,16 +166,16 @@ export interface Team {
   team: string;
   pin: TeamPin;
   locked: boolean;
-  /** The owner's signed word that set `locked` (none from before). */
+  /** The owner's signed word on whether it's locked, if one checked out
+   * (none from before, or on control's word): `locked` is control's word
+   * (aru-141). */
   lock?: TeamLock | null;
-  /** Control says it's locked, with no owner's signed word this page
-   * holds: its claim only (`locked` is then false). */
-  lockClaimed?: boolean;
   roster: Roster;
   role: TeamRole | null;
   /** Who used an invite link and waits for an owner (owners only). Only
    * those whose link's one-time key vouches for them (#762): `by` is the
-   * owner whose device made the link. */
+   * owner whose device made the link, or "" for a link control made
+   * (aru-141). */
   requests: { account: string; root: string; name: string; role: TeamRole; created: number; invite: AskInvite; proof: string; by: string }[];
   certs: AccountCerts;
   /** Members' names as they set them, by account (#208): the roster's
@@ -182,8 +184,9 @@ export interface Team {
   /** The founder is the one this browser pinned on first sight, and the
    * roster follows the last one this browser checked. */
   verified: boolean;
-  /** Why control's roster wasn't taken: `roster` is then the last one
-   * this browser checked, and changes wait until control's follows it. */
+  /** Why control's roster doesn't follow the one this browser last
+   * checked (or can't be kept): `roster` is control's all the same
+   * (aru-141), and changes to it go on control's word, unsigned. */
   rosterProblem?: RosterProblem;
   /** Members' roots that changed since this browser last looked, until
    * dismissed. */
@@ -1155,6 +1158,10 @@ export class ControlSession {
   /** Asks again after a turn-down. */
   private askAgain: (() => void) | null = null;
   keys!: DeviceKeys;
+  /** The account's root device as control says, or none: an account made
+   * after device keys stopped being made (aru-141). What a roster lists
+   * this account with when this browser isn't one of its devices. */
+  accountRoot: string | null = null;
   /** aru-141: this browser reaches its machines with machine tokens from
    * control, not its device key: it isn't one of the account's devices,
    * or `tokenMode` says tokens first. */
@@ -1281,6 +1288,7 @@ export class ControlSession {
       this.name = me.name ?? "";
       this.login = this.name || me.login || "you";
       this.account = me.account;
+      this.accountRoot = me.root;
       this.passkeys = me.passkeys;
       // M152: signed in on the way to the platform page: on to it.
       if (resumePlatformSignIn()) return;
@@ -1981,21 +1989,19 @@ export class ControlSession {
             lateOk: (account, root, device) => !l.removedBefore(account, root, device),
           },
         );
+        // The team's members and roles are control's (aru-141, Arugula
+        // #1005): a version that doesn't follow the one this page checked
+        // shows as control has it, and changes go on top of it on control's
+        // word, not signed by this device.
+        const roster = c.problem ? t.roster : c.roster;
         // Members' certificates as this page holds them, from the roots the
-        // roster it checked names.
-        for (const m of c.roster.members) if (t.certs[m.account]) t.certs[m.account] = await take(m.account, m.root, t.certs[m.account]);
-        for (const a of Object.keys(t.certs)) if (!c.roster.members.some((m) => m.account === a)) delete t.certs[a];
-        // The team's lock as an owner signed it: only from an owner in the
-        // roster checked, for this team, not dated far ahead, and newer than
-        // the one held. Without one, control's plain word is only its claim,
-        // not the owners' state.
+        // roster shown names.
+        for (const m of roster.members) if (t.certs[m.account]) t.certs[m.account] = await take(m.account, m.root, t.certs[m.account]);
+        for (const a of Object.keys(t.certs)) if (!roster.members.some((m) => m.account === a)) delete t.certs[a];
+        // Locked or not as control says (aru-141). An owner's signed lock
+        // that checks out is still held, for the record.
         const lock = ok && !c.problem ? await takeLock(l, t.team, t.lock, c.roster, t.certs) : l.lock(t.team);
         t.lock = lock ?? null;
-        if (lock) t.locked = lock.locked;
-        else {
-          t.lockClaimed = t.locked;
-          t.locked = false;
-        }
         if (ok && c.keep && c.keep.version > (held[t.team]?.version ?? 0)) held[t.team] = c.keep;
         if (ok && c.changes.length) kept[t.team] = [...(kept[t.team] ?? []), ...c.changes];
         if (ok && c.late.length) lateKept[t.team] = [...new Set([...(lateKept[t.team] ?? []), ...c.late])].sort((a, b) => a - b);
@@ -2003,12 +2009,12 @@ export class ControlSession {
         // says waits is refused here, never shown.
         const requests: Team["requests"] = [];
         for (const q of t.requests ?? []) {
-          const by = await askOk(c.roster, t.certs, q);
-          if (by) requests.push({ ...q, role: q.invite.role, by });
+          const by = await askOk(roster, t.certs, q);
+          if (by !== null) requests.push({ ...q, role: q.invite.role, by });
         }
         out.push({
           ...t,
-          roster: c.roster,
+          roster,
           requests,
           verified: ok && !c.problem,
           ...(c.problem ? { rosterProblem: c.problem } : {}),
@@ -2139,7 +2145,22 @@ export class ControlSession {
 
   private myMember(): { account: string; root: string; name: string } {
     // Never "you": teammates see this.
-    return { account: this.account, root: this.enrollment!.root, name: word(this.name || `account-${this.account.slice(0, 6)}`) };
+    return { account: this.account, root: this.myRoot(), name: word(this.name || `account-${this.account.slice(0, 6)}`) };
+  }
+
+  /** The root a roster lists this account with: this browser's account
+   * root, control's word for it, or none (aru-141). */
+  private myRoot(): string {
+    return this.enrollment?.root ?? this.accountRoot ?? NO_ROOT;
+  }
+
+  /** Whether this browser signs a change to `t` with its device key, as
+   * before aru-141, so machines from before it keep following the team:
+   * only while it's one of the account's devices and the roster it shows
+   * is one it checked. Otherwise the change is control's word, unsigned
+   * (Arugula #1005). */
+  private signs(t: Team): boolean {
+    return !!this.enrollment && t.verified;
   }
 
   /** Change what other people see (#102). */
@@ -2199,38 +2220,45 @@ export class ControlSession {
   }
 
   async createTeam(name: string) {
+    const named = name.trim().slice(0, 80) || "team";
+    if (!this.enrollment) {
+      // On control's word (aru-141): control writes the first version.
+      await api("/api/teams", { name: named });
+      return this.refresh();
+    }
     const team = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, "0")).join("");
-    const roster = await signRoster(
-      { v: 1, team, name: name.trim().slice(0, 80) || "team", version: 1, at: Date.now(), members: [{ ...this.myMember(), role: "owner" }] },
-      this.keys,
-    );
+    const roster = await signRoster({ v: 1, team, name: named, version: 1, at: Date.now(), members: [{ ...this.myMember(), role: "owner" }] }, this.keys);
     await api("/api/teams", { roster });
     await this.refresh();
   }
 
-  /** Sign and send the team's next roster, as `change` makes it. */
+  /** Send the team's next roster, as `change` makes it: signed by this
+   * device when it signs for the team (`signs`), else on control's word
+   * (aru-141), which control takes from an owner signed in here. */
   async changeTeam(team: string, change: (members: Roster["members"]) => Roster["members"], name?: string) {
     const t = this.teams.find((x) => x.team === team);
     if (!t) throw new Error("no such team");
-    if (t.rosterProblem) throw new Error("Arugula cloud's list of this team's members doesn't follow the one this browser last checked; changes wait until it does");
     const prev = t.roster;
     // Used presigned invites stay listed until they'd have expired anyway,
     // so none works twice.
     const now = Date.now();
     const spent = (prev.spent ?? []).filter((x) => x.expires > now);
-    const next = await signRoster(
-      {
-        v: spent.length ? 2 : 1,
-        team,
-        name: name ?? prev.name,
-        version: prev.version + 1,
-        at: now,
-        members: change(prev.members.map((m) => ({ ...m }))),
-        ...(spent.length ? { spent } : {}),
-      },
-      this.keys,
-    );
-    if (!(await follows(next, prev, t.pin, t.certs))) throw new Error("that change doesn't check out (are you an owner here?)");
+    const draft: Omit<Roster, "by" | "sig"> = {
+      v: spent.length ? 2 : 1,
+      team,
+      name: name ?? prev.name,
+      version: prev.version + 1,
+      at: now,
+      members: change(prev.members.map((m) => ({ ...m }))),
+      ...(spent.length ? { spent } : {}),
+    };
+    let next: Roster = { ...draft, by: "", sig: "" };
+    if (this.signs(t)) {
+      const signed = await signRoster(draft, this.keys);
+      // One this device can't sign as an owner here (it was made an owner
+      // on control's word, say) goes on control's word too.
+      if (await follows(signed, prev, t.pin, t.certs)) next = signed;
+    }
     // One that changes who the owners are takes this owner's passkey over
     // its bytes too (DK7, aru-126), whichever device signed it.
     const passkey = changesOwners(next, prev) ? await this.confirmOwners(next) : undefined;
@@ -2288,18 +2316,24 @@ export class ControlSession {
    * when it does though it wasn't asked to: control makes a presigned one
    * only once every machine checking the team's rosters understands it. */
   async makeInvite(team: string, role: TeamRole, askFirst = false): Promise<{ link: string; asks: boolean; why?: string }> {
+    // Signed by this device when it signs for the team, else on control's
+    // word (aru-141): control takes it from an owner signed in here.
+    const t = this.teams.find((x) => x.team === team);
+    const signs = !!t && this.signs(t);
     // #762: an Ask me first link carries a one-time key too, so a request
     // to join proves it came from the link.
     const old = async (why?: string) => {
       const { seed, key } = await newInviteKey();
       const made = Date.now();
-      const ask = await signAskInvite({ team, role, made, expires: made + ASK_TTL_MS, key }, this.keys);
+      const draft = { team, role, made, expires: made + ASK_TTL_MS, key };
+      const ask = signs ? await signAskInvite(draft, this.keys) : { ...draft, by: "", sig: "" };
       await api(`/api/teams/${team}/invites`, { role, ask });
       return { link: `${location.origin}/#askinvite=${team}.${seed}`, asks: true, why };
     };
     if (askFirst || role === "owner") return old();
     const { seed, key } = await newInviteKey();
-    const presigned = await signInvite({ team, role, expires: Date.now() + PRESIGNED_TTL_MS, key }, this.keys);
+    const draft = { team, role, expires: Date.now() + PRESIGNED_TTL_MS, key };
+    const presigned = signs ? await signInvite(draft, this.keys) : { ...draft, by: "", sig: "" };
     try {
       await api(`/api/teams/${team}/invites`, { role, presigned });
     } catch (e) {
@@ -2322,9 +2356,13 @@ export class ControlSession {
       const p = await this.showPresigned(team, seed);
       if (!pin(`team:${team}`, `${p.pin.founder}.${p.pin.founder_root}`)) throw new Error("this team isn't the one this browser saw before");
       const next = await redeemInvite(p.roster, p.invite, seed, this.myMember());
-      const mine = await api<{ certs: Cert[]; revocations: Revocation[] }>("/api/devices");
-      const certs: AccountCerts = { ...p.certs, [this.account]: [mine.certs, mine.revocations] };
-      if (!(await follows(next, p.roster, p.pin, certs))) throw new Error("that invite doesn't check out");
+      // A link control made (aru-141) is its word: control checks it holds
+      // it. One an owner's device signed is checked here, as before.
+      if (!unsigned(p.invite)) {
+        const mine = await api<{ certs: Cert[]; revocations: Revocation[] }>("/api/devices");
+        const certs: AccountCerts = { ...p.certs, [this.account]: [mine.certs, mine.revocations] };
+        if (!(await follows(next, p.roster, p.pin, certs))) throw new Error("that invite doesn't check out");
+      }
       try {
         await api(`/api/teams/${team}/roster`, { roster: next });
         break;
@@ -2346,7 +2384,7 @@ export class ControlSession {
    * this account and its root, which owners' pages check (#762). */
   async acceptInvite(team: string, seed: string) {
     const k = await inviteKey(seed);
-    const proof = await k.sign(askBody({ team, key: k.key }, this.account, this.enrollment!.root));
+    const proof = await k.sign(askBody({ team, key: k.key }, this.account, this.myRoot()));
     await api(`/api/invites/${team}/${k.key}/accept`, { proof });
     await this.refresh();
   }
@@ -2370,13 +2408,16 @@ export class ControlSession {
     }
   }
 
-  /** Lock or unlock a team, signed by this device (`TeamLock`): machines
-   * take it only from an owner in the roster they hold, and only newer
-   * than the lock they hold. */
+  /** Lock or unlock a team: signed by this device (`TeamLock`) when it
+   * signs for the team, so machines from before aru-141 take it too; else
+   * on control's word, which machines take now (Arugula #1005). */
   async lockTeam(team: string, locked: boolean) {
     const t = this.teams.find((x) => x.team === team);
     if (!t) throw new Error("no such team");
-    if (!locked && t.rosterProblem) throw new Error("Arugula cloud's list of this team's members doesn't check out here; unlocking waits until it does");
+    if (!this.signs(t)) {
+      await api(`/api/teams/${team}/lock`, { locked });
+      return this.refresh();
+    }
     // After the lock this page checked and holds (never dated far ahead).
     const lock = await signLock({ team, locked, version: t.roster.version, at: Math.max(Date.now(), (this.held.lock(team)?.at ?? 0) + 1) }, this.keys);
     await api(`/api/teams/${team}/lock`, { locked, lock });

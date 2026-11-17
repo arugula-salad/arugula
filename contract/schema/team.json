@@ -426,10 +426,10 @@
               "type": "null"
             }
           ],
-          "description": "The owner's signed word on whether it's locked (the latest)."
+          "description": "The owner's signed word on whether it's locked (the latest), kept\nfor the record."
         },
         "locked": {
-          "description": "Control's plain word, for machines from before `lock`.",
+          "description": "Control's word on whether it's locked, which machines go by since\n#1005 (aru-141); machines from before took it only to lock.",
           "type": "boolean"
         },
         "name": {
@@ -520,10 +520,10 @@
               "type": "null"
             }
           ],
-          "description": "The owner's signed word on whether it's locked (the latest)."
+          "description": "The owner's signed word on whether it's locked (the latest), kept\nfor the record."
         },
         "locked": {
-          "description": "Control's plain word, for machines from before `lock`.",
+          "description": "Control's word on whether it's locked, which machines go by since\n#1005 (aru-141); machines from before took it only to lock.",
           "type": "boolean"
         },
         "names": {

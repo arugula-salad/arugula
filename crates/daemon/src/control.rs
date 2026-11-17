@@ -877,17 +877,38 @@ pub(crate) fn retire_members(
     former.retain(|a, _| !certs.contains_key(a));
 }
 
+/// Where a team's roster stands after control's answer (`history`, oldest
+/// first), from `held` ([`checkpoint::advance`]): where it stopped, if it
+/// did, and whether it took a version on control's word (aru-141, Arugula
+/// #1005), to say so in the log.
+pub(crate) fn roster_from(
+    held: Option<&Roster>,
+    history: Vec<Roster>,
+    pin: &TeamPin,
+    certs: &AccountCerts,
+) -> (Option<Roster>, Option<u64>, bool) {
+    let after = held.map_or(0, |h| h.version);
+    let took = history.iter().any(|r| r.version > after && r.on_controls_word());
+    let (cur, stopped) = checkpoint::advance(held, history, pin, certs);
+    let took = took && cur.as_ref().is_some_and(|c| c.version > after);
+    (cur, stopped, took)
+}
+
 /// The team's roster, members' certificates and names, as a refresh
 /// takes control's answer: rosters from the one held, each following the
-/// one before ([`checkpoint::advance`]); members' removals only add up.
+/// one before or on control's word ([`roster_from`]); members' removals
+/// only add up.
 fn take_team(saved: &mut Saved, t: wire::TeamAnswer, now: u64) {
     let Saved { kind, seen, .. } = saved;
     let Some(team) = kind.team_mut() else { return };
     let pin = &team.pin;
     let mut certs = take_members(&team.certs, team.roster.as_ref(), &team.former, t.certs, seen, now);
-    let (cur, stopped) = checkpoint::advance(team.roster.as_ref(), t.rosters, pin, &certs);
+    let (cur, stopped, by_control) = roster_from(team.roster.as_ref(), t.rosters, pin, &certs);
     if let Some(version) = stopped {
         warn!(version, "a team roster from control doesn't follow the one held; ignoring it");
+    }
+    if by_control && let Some(r) = &cur {
+        info!(version = r.version, "took the team's roster on control's word");
     }
     // Keep only the current members' certificates; those taken out are
     // kept apart, removals and all.
@@ -897,10 +918,12 @@ fn take_team(saved: &mut Saved, t: wire::TeamAnswer, now: u64) {
     team.roster = cur;
     team.certs = certs;
     team.names = names;
-    // Locked or not by an owner's newer signed word only; control alone
-    // can lock it, never unlock it.
-    (team.locked, team.lock) =
-        checkpoint::take_lock((team.locked, team.lock.as_ref()), t.lock, t.locked, team.roster.as_ref(), &team.certs);
+    // Locked or not as control says (aru-141, Arugula #1005): an owner with
+    // no device key locks and unlocks it on control's word. An owner's
+    // signed lock is still kept, for the record.
+    team.lock =
+        checkpoint::take_lock((team.locked, team.lock.as_ref()), t.lock, t.locked, team.roster.as_ref(), &team.certs).1;
+    team.locked = t.locked;
 }
 
 /// People's certificates as a refresh takes them (`got`, by account),
@@ -975,21 +998,26 @@ fn take_shared(
         let mut former = last.map(|h| h.former.clone()).unwrap_or_default();
         let mut certs =
             take_members(last.map_or(&none, |h| &h.certs), last.map(|h| &h.roster), &former, g.certs, seen, now);
-        let (cur, stopped) = checkpoint::advance(last.map(|h| &h.roster), g.rosters, pin, &certs);
+        let (cur, stopped, by_control) = roster_from(last.map(|h| &h.roster), g.rosters, pin, &certs);
         if let Some(version) = stopped {
             warn!(team, version, "a shared team's roster doesn't follow the one held; stopping there");
+        }
+        if by_control && let Some(r) = &cur {
+            info!(team, version = r.version, "took a shared team's roster on control's word");
         }
         let Some(roster) = cur else { continue };
         retire_members(last.map(|h| &h.roster), Some(&roster), &mut certs, &mut former);
         let mut names = g.names;
         names.retain(|a, _| roster.member(a).is_some());
-        let (locked, lock) = checkpoint::take_lock(
+        // Locked or not as control says (aru-141), as for its own team.
+        let (_, lock) = checkpoint::take_lock(
             last.map_or((false, None), |h| (h.locked, h.lock.as_ref())),
             g.lock,
             g.locked,
             Some(&roster),
             &certs,
         );
+        let locked = g.locked;
         out.insert(team.clone(), SharedTeam { roster, certs, names, locked, lock, pin: Some(pin.clone()), former });
     }
     (out, still_held)
@@ -7143,10 +7171,11 @@ pub(crate) mod tests {
         assert!(s.own_devices().get(&late.device).is_none(), "a removed device's backdated certificate counts");
     }
 
-    /// A team's lock: control alone can't unlock it, nor can an editor;
-    /// an owner's newer signed word can. The same for a shared team.
+    /// A team's lock is control's word (aru-141, Arugula #1005): it locks
+    /// and unlocks it with no owner's device signing it, and a signed lock
+    /// it sends doesn't say otherwise. The same for a shared team.
     #[test]
-    fn only_an_owners_newer_word_unlocks_a_team() {
+    fn control_says_whether_a_team_is_locked() {
         let (ok, oc) = device("o", Kind::Browser);
         let (ek, ec) = device("e", Kind::Browser);
         let pin = TeamPin { team: "t1".into(), founder: "o".into(), founder_root: oc.device.clone() };
@@ -7171,11 +7200,12 @@ pub(crate) mod tests {
         take_team(&mut s, answer(vec![v1.clone()], true, Some(lock(true, 10, &ok))), 1);
         assert!(s.team().unwrap().locked);
         take_team(&mut s, answer(vec![], false, None), 1);
-        assert!(s.team().unwrap().locked, "control unlocked it by its plain word");
-        take_team(&mut s, answer(vec![], false, Some(lock(false, 20, &ek))), 1);
-        assert!(s.team().unwrap().locked, "an editor unlocked it");
-        take_team(&mut s, answer(vec![], false, Some(lock(false, 20, &ok))), 1);
-        assert!(!s.team().unwrap().locked, "an owner's newer unlock");
+        assert!(!s.team().unwrap().locked, "control unlocks it");
+        assert_eq!(s.team().unwrap().lock, Some(lock(true, 10, &ok)), "the owner's signed lock is kept");
+        take_team(&mut s, answer(vec![], true, Some(lock(false, 20, &ek))), 1);
+        assert!(s.team().unwrap().locked, "control locks it, whatever an editor signed");
+        take_team(&mut s, answer(vec![], false, Some(lock(false, 30, &ok))), 1);
+        assert!(!s.team().unwrap().locked);
 
         let pins: BTreeMap<String, TeamPin> = [("t1".to_owned(), pin.clone())].into();
         let shared = |locked, l| -> BTreeMap<String, wire::SharedTeamAnswer> {
@@ -7198,7 +7228,7 @@ pub(crate) mod tests {
         let a = take_shared(&none, &none, &pins, shared(true, Some(lock(true, 10, &ok))), &mut seen, 1).0;
         assert!(a["t1"].locked);
         let b = take_shared(&a, &none, &pins, shared(false, None), &mut seen, 1).0;
-        assert!(b["t1"].locked, "control unlocked a shared team by its plain word");
+        assert!(!b["t1"].locked, "control unlocks a shared team");
     }
 
     /// DK7 (#388; Jake, 2026-10-31): a team machine takes a version that
@@ -7278,6 +7308,88 @@ pub(crate) mod tests {
         let p = built.others.iter().find(|(x, _)| x.device == ec.device).map(|(_, p)| p.clone());
         assert_eq!(p, Some(Principal::Owner), "e is an owner here");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A version on control's word (aru-141, Arugula #1005), which an owner
+    /// with no device key wrote: taken as the next one, for the team's own
+    /// machine and a team a session was shared with, and a signed one after
+    /// it still has to follow it. One a device signed that doesn't follow
+    /// isn't, nor one of control's for another team.
+    #[test]
+    fn a_team_machine_takes_a_version_on_controls_word() {
+        let (ok, oc) = device("o", Kind::Browser);
+        let (_, ec) = device("e", Kind::Browser);
+        let (stranger, _) = device("x", Kind::Browser);
+        let pin = TeamPin { team: "t1".into(), founder: "o".into(), founder_root: oc.device.clone() };
+        let mut s = saved_for("https://c.example", "o");
+        s.kind = MachineKind::Team(InTeam::new(pin.clone()));
+        let certs: AccountCerts =
+            [("o".to_owned(), (vec![oc.clone()], vec![])), ("e".to_owned(), (vec![ec.clone()], vec![]))].into();
+        let answer = |rosters: Vec<Roster>| wire::TeamAnswer {
+            team: Some(pin.clone()),
+            locked: false,
+            lock: None,
+            rosters,
+            certs: certs.clone(),
+            names: Default::default(),
+        };
+        let o = member("o", &oc, TeamRole::Owner);
+        let v1 = signed_roster(1, vec![o.clone(), member("e", &ec, TeamRole::Editor)], &ok);
+        take_team(&mut s, answer(vec![v1.clone()]), 1);
+        // Control's word: e a viewer, and k, with no device, an editor.
+        let k = arugula_e2e::team::Member {
+            account: "k".into(),
+            root: arugula_e2e::team::NO_ROOT.into(),
+            role: TeamRole::Editor,
+            name: "k".into(),
+        };
+        let unsigned =
+            |version, members| Roster { version, members, by: String::new(), sig: String::new(), ..v1.clone() };
+        let v2 = unsigned(2, vec![o.clone(), member("e", &ec, TeamRole::Viewer), k.clone()]);
+        // A device that isn't an owner's, after it: not taken.
+        let forged = signed_roster(3, vec![o.clone(), member("e", &ec, TeamRole::Owner), k.clone()], &stranger);
+        take_team(&mut s, answer(vec![v2.clone(), forged]), 2);
+        assert_eq!(s.roster(), Some(&v2));
+        let built = |s: &Saved| {
+            let dir = std::env::temp_dir().join(format!("arugula-by-control-{}", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+            let acl = Arc::new(Acl::open(&dir));
+            let b = Enrolled::build(s.clone(), Arc::new(DeviceKeys::generate()), &acl, false);
+            let _ = std::fs::remove_dir_all(&dir);
+            b.team_roles
+        };
+        assert_eq!(built(&s).get("account:e"), Some(&Role::Viewer));
+        assert_eq!(built(&s).get("account:k"), Some(&Role::Editor));
+        // The owner's device signs on top of it: taken; another team's
+        // version on control's word isn't.
+        let v3 = signed_roster(3, vec![o.clone(), member("e", &ec, TeamRole::Editor)], &ok);
+        take_team(&mut s, answer(vec![v3.clone()]), 3);
+        assert_eq!(s.roster(), Some(&v3));
+        let other = Roster { team: "t2".into(), ..unsigned(4, vec![o.clone()]) };
+        take_team(&mut s, answer(vec![other]), 4);
+        assert_eq!(s.roster().map(|r| r.version), Some(3));
+
+        // A team a session was shared with: the same.
+        let pins: BTreeMap<String, TeamPin> = [("t1".to_owned(), pin.clone())].into();
+        let shared = |rosters: Vec<Roster>| -> BTreeMap<String, wire::SharedTeamAnswer> {
+            [(
+                "t1".to_owned(),
+                wire::SharedTeamAnswer {
+                    team: Some(pin.clone()),
+                    name: "Acme".into(),
+                    locked: false,
+                    lock: None,
+                    rosters,
+                    certs: certs.clone(),
+                    names: Default::default(),
+                },
+            )]
+            .into()
+        };
+        let none = BTreeMap::new();
+        let mut seen = checkpoint::Seen::default();
+        let a = take_shared(&none, &none, &pins, shared(vec![v1, v2.clone()]), &mut seen, 1).0;
+        assert_eq!(a["t1"].roster, v2);
     }
 
     /// A team member's removed device stays removed when control leaves

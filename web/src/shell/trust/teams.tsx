@@ -1,8 +1,9 @@
 // Teams: making one, and for each its members and roles, its machines
 // (an owner takes a member's out, #332), invite links (#134, #762), locking
 // it, whether it has chat (native #203), and the Labs flags control sets
-// (#347). Roster admin stays in the shell: a roster change is signed with
-// this device's key.
+// (#347). Roster admin stays in the shell: a change is signed with this
+// device's key when it's one of the account's devices, else it's control's
+// word (aru-141, Arugula #1005).
 
 import { useEffect, useState } from "preact/hooks";
 import { FLAGS } from "../../shared/proto.gen";
@@ -284,7 +285,7 @@ function TeamSection({
   return (
     <section class="team" data-team={t.team}>
       <h3>
-        {t.roster.name} {t.locked ? <span class="control-error">· locked</span> : t.lockClaimed ? <span class="dim" data-team-lock-claimed>· Arugula cloud says it's locked (not signed by an owner)</span> : null}
+        {t.roster.name} {t.locked ? <span class="control-error">· locked</span> : null}
       </h3>
       {t.locked && !owner ? (
         <p class="dim" data-team-add-locked>
@@ -298,15 +299,6 @@ function TeamSection({
           <TeamJoin s={s} t={t} here />
         </>
       )}
-      {t.rosterProblem === "unsaved" ? (
-        <p class="control-error" data-team-roster-problem="unsaved">
-          This browser can't keep the list of this team's members it checked (its storage is off, full or unreadable), so changes to the team wait. Open Arugula in a window that keeps site data to change it.
-        </p>
-      ) : t.rosterProblem ? (
-        <p class="control-error" data-team-roster-problem={t.rosterProblem}>
-          Arugula cloud sent a list of this team's members that doesn't follow the one this browser last checked (version {t.roster.version}). That one shows here, and changes wait until it sends one that follows it.
-        </p>
-      ) : null}
       {t.rosterLate?.length ? (
         <p class="dim control-explain" data-team-roster-late={t.rosterLate.join(",")}>
           {t.rosterLate.length === 1 ? `Version ${t.rosterLate[0]}` : `Versions ${t.rosterLate.join(", ")}`} of this team's members {t.rosterLate.length === 1 ? "was" : "were"} signed by a device that has been removed since. It counted when it signed; if you don't recognise the change, ask the team's owners.{" "}

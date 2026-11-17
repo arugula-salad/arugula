@@ -7,7 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { certBody, revocationBody } from "../src/shell/e2e/cert.ts";
 import { generateKeys, signText } from "../src/shell/e2e/keys.ts";
-import { ownersAsHeld, signLock, signRoster } from "../src/shell/e2e/team.ts";
+import { NO_ROOT, onControlsWord, ownersAsHeld, signLock, signRoster } from "../src/shell/e2e/team.ts";
 import { checkRoster, RosterStore, takeLock, TrustStore, withTimeout } from "../src/shell/team-rosters.ts";
 import { refreshAccount } from "../src/shell/e2e/checkpoint.ts";
 
@@ -64,6 +64,23 @@ test("a version signed by a device removed since is taken if it counted then, an
   const after = await signRoster({ ...base, version: 2, at: 15, members: v2.members }, alice2);
   const w3b = await signRoster({ ...base, version: 3, at: 20, members: v3.members }, alice);
   assert.equal((await checkRoster(null, w3b, pin, later, serves([v1, after, w3b]), yes)).problem, "unchecked");
+});
+
+test("a version on control's word is taken as the next one; a signed one still has to follow (aru-141)", async () => {
+  // An owner with no device key makes Kim (no root either) an editor.
+  const kim = { account: "kim", root: NO_ROOT, role: "editor", name: "kim" };
+  const u3 = { ...base, version: 3, members: [...v2.members, kim], by: "", sig: "" };
+  assert.ok(onControlsWord(u3));
+  assert.deepEqual(await checkRoster(v2, u3, pin, certs, serves([v1, v2, u3])), ok(u3));
+  // From the founder on a first look, too, and a device's signature on top.
+  const w4 = await signRoster({ ...base, version: 4, members: [owner, kim] }, alice);
+  assert.deepEqual(await checkRoster(null, w4, pin, certs, serves([v1, v2, u3, w4])), ok(w4));
+  // Bob's device, not an owner's, after it: not taken.
+  const byBob = await signRoster({ ...base, version: 4, members: [owner, { ...kim, role: "owner" }] }, bob);
+  assert.deepEqual((await checkRoster(u3, byBob, pin, certs, serves([u3, byBob]))).problem, "unchecked");
+  // Not another team's.
+  const other = { ...u3, team: "fedcba9876543210" };
+  assert.equal((await checkRoster(v2, other, pin, certs, serves([v1, v2, other]))).problem, "unchecked");
 });
 
 test("the same version again is taken; another at that version, or an older one, isn't", async () => {

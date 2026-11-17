@@ -115,8 +115,11 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
             let mut certs = take_members(held.map_or(&none, |t| &t.certs), held_roster, &former, certs, &mut seen, now);
             if let Some(p) = prev {
                 ensure!(p.team_pin() == Some(&pin), "control changed this machine's team");
+                // A newer version on control's word (aru-141, Arugula #1005),
+                // which an owner with no device key wrote, is taken as it is.
                 if let Some(last) = p.roster()
                     && r != *last
+                    && !(r.on_controls_word() && r.version > last.version)
                     && !r.follows(Some(last), &pin, &certs)
                 {
                     warn!(
@@ -133,10 +136,11 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
             );
             retire_members(held_roster, Some(&r), &mut certs, &mut former);
             let trust = Trust { account: pin.founder.clone(), root: pin.founder_root.clone() };
-            // Locked or not as an owner's newer signed word says; control
-            // alone can lock it, never unlock it (`take_lock`).
+            // Locked or not as control says (aru-141, Arugula #1005); an
+            // owner's signed lock is kept for the record (`take_lock`).
             let held_lock = held.map_or((false, None), |t| (t.locked, t.lock.as_ref()));
-            let (locked, lock) = take_lock(held_lock, got_lock, got_locked, Some(&r), &certs);
+            let (_, lock) = take_lock(held_lock, got_lock, got_locked, Some(&r), &certs);
+            let locked = got_locked;
             let team = InTeam { pin, roster: Some(r), certs, former, names: Default::default(), locked, lock };
             (team.pin.founder.clone(), trust, vec![], vec![], Some(team))
         }
@@ -759,8 +763,9 @@ mod tests {
     }
 
     /// A team's hosted machine holds the team's lock as ordinary team
-    /// machines do: an owner's signed word locks it, and control alone
-    /// can't unlock it, nor can an editor's word.
+    /// machines do: as control says (aru-141, Arugula #1005), whether an
+    /// owner's device signed it or not, and an editor's signed word doesn't
+    /// say otherwise.
     #[test]
     fn a_hosted_machine_holds_its_teams_lock() {
         use arugula_e2e::team::TeamLock;
@@ -778,13 +783,10 @@ mod tests {
         let second = saved_from(locked, &keys, Some(&first)).unwrap();
         assert!(second.team().unwrap().locked, "an owner's lock");
         let third = saved_from(got.clone(), &keys, Some(&second)).unwrap();
-        assert!(third.team().unwrap().locked, "control unlocked it by its plain word");
-        let mut by_editor = got.clone();
-        by_editor.lock = Some(lock(false, 20, &e));
-        assert!(saved_from(by_editor, &keys, Some(&third)).unwrap().team().unwrap().locked, "an editor unlocked it");
-        let mut by_owner = got.clone();
-        by_owner.lock = Some(lock(false, 20, &o));
-        assert!(!saved_from(by_owner, &keys, Some(&third)).unwrap().team().unwrap().locked, "an owner's newer unlock");
+        assert!(!third.team().unwrap().locked, "control unlocks it");
+        let mut by_control = got.clone();
+        (by_control.locked, by_control.lock) = (true, Some(lock(false, 20, &e)));
+        assert!(saved_from(by_control, &keys, Some(&third)).unwrap().team().unwrap().locked, "control locks it");
     }
 
     /// #672: what a box is for only closes, refresh by refresh: a people's

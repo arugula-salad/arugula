@@ -66,6 +66,20 @@ terminal traffic is TLS to the relay.
   control can turn it back on (`crates/proto/src/sharing.rs`,
   `remote_input`). It's set from the command line only; the machine's
   Settings page says which way it is, under Remote sessions.
+- **A team's members, roles, invites and lock are control's** (#1005). An
+  owner signed in on control's page changes them with no device's
+  signature: control writes the roster version, the invite link or the
+  lock on its word (`by` and `sig` empty; `Roster::on_controls_word`), and
+  takes one only from an owner on its page, never a CLI's login. A team's
+  machines take such a version as the next one
+  (`arugula_e2e::checkpoint::advance`) and its lock as control says, and a
+  machine token's role comes from control's latest roster when it's made;
+  on a machine, a token's role stands in for the roster's while its
+  channel is open. Someone with no device key is listed with the root
+  `-`, which no device chains to. A page that is one of the account's
+  devices still signs changes on top of versions it checked, so machines
+  from before #1005 keep following the team until it takes a version on
+  control's word; those stop there, and need this release.
 - **What still needs you, not control.** Passkeys approve deploys, standing
   run grants and owner changes: a user-verified assertion over the
   action's bytes ([aru-126](decisions/aru-126-device-keys-are-the-machine-plane-s-passkeys-approve.md)).
@@ -349,8 +363,9 @@ device nobody trusted. Now:
   keeps the last roster it checked; asking for more, it's answered with
   none.
 - **A team's member list** (its roster) is versioned, and each version is
-  signed by a device of an owner in the version before. The one exception
-  is a **presigned invite**:
+  signed by a device of an owner in the version before, or is control's
+  word since #1005 ([above](#what-control-can-do-to-your-machines)). The
+  one exception is a **presigned invite**:
   - The owner's device signs `illogical team invite v1` (team, role,
     expiry, a one-time Ed25519 public key) when it makes the link. The
     private half of that key goes only in the link's `#fragment`
@@ -411,8 +426,8 @@ device nobody trusted. Now:
     keeps the last roster it checked for each team, checks control's
     latest against it (fetching the versions in between), and signs a
     change only on top of a version that follows. If control's latest
-    doesn't follow, the page shows the last one it checked and holds
-    changes until control's does. The page keeps what it checked in
+    doesn't follow, the page shows control's all the same (#1005) and
+    changes it on control's word, unsigned. The page keeps what it checked in
     memory for as long as it's open. Certificates, removals and locks are
     kept as one store per browser, and each look at them is one
     transaction under a browser-wide lock (the Web Locks API): it reads the
@@ -519,10 +534,9 @@ device nobody trusted. Now:
   it: control's plain word can lock a team (it can refuse service anyway),
   never unlock it. Control writes a lock only if it's newer than the one
   it holds, checked as it writes, and refuses one dated more than ten
-  minutes ahead of its clock. The owner's page shows and signs after the
-  lock it checked the same way, never control's word for it; with no
-  signed lock held, it says control claims the team is locked, not that
-  it is.
+  minutes ahead of its clock. Since #1005 a machine and the page go by
+  control's plain `locked` instead, which an owner sets on control's page
+  with no signature; a signed lock is kept for the record.
 
 **Recovery:**
 
