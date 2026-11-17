@@ -371,6 +371,17 @@ test.describe("the list", () => {
     await expect(page.locator(`[data-doc-block] .doc-title`).filter({ hasText: "Short note" })).toBeVisible();
   });
 
+  test("a machine on a daemon from before Docs says so, not HTTP 404", async ({ page }) => {
+    // 0.42 is in the supported window (#807) and has no /api/docs
+    // (`just older-daemons` runs the real one).
+    await seed(page);
+    await page.route("**/api/docs", (route) => route.fulfill({ status: 404 }));
+    await page.reload();
+    await goToDocs(page);
+    await expect(page.locator("[data-docs-older]")).toContainText("older than Docs");
+    await expect(page.locator("[data-docs-error]")).toHaveCount(0);
+  });
+
   test("sweeping the pointer down the list changes nothing and reads nothing; a click shows the Doc", async ({ page }) => {
     await seed(page);
     const head = page.locator("[data-list-preview] .doc-title");
