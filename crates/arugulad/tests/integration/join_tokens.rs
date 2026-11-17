@@ -54,8 +54,12 @@ struct Seen {
     asked: Option<Cert>,
     /// The join token was taken.
     used: bool,
-    /// Asked for a roster or peers: never, joined this way.
+    /// Asked for its own team's roster: never, joined this way.
     pinned_asks: Vec<String>,
+    /// What it asked about the people and teams its sessions are shared
+    /// with (aru-141, Arugula #1004): the queries, which make control offer
+    /// a share and route a team's members. It takes no certificates.
+    shared_asks: Vec<String>,
     /// How `/api/daemon/trust` answers: none is a control from before
     /// #1016 (a 404); else this status and body.
     trust: Option<(StatusCode, Value)>,
@@ -115,6 +119,12 @@ async fn fake_control(fake: Fake) -> String {
             None => (StatusCode::NOT_FOUND, Json(json!({ "error": "no such route" }))).into_response(),
         }
     });
+    let shared = || {
+        get(|State(f): State<Fake>, RawQuery(q): RawQuery| async move {
+            f.lock().unwrap().shared_asks.push(q.unwrap_or_default());
+            Json(json!({}))
+        })
+    };
     let subs = get(|State(f): State<Fake>| async move {
         f.lock().unwrap().refreshes += 1;
         Json(json!({ "subs": [] }))
@@ -127,8 +137,8 @@ async fn fake_control(fake: Fake) -> String {
         .route("/api/join/{code}", poll)
         .route("/api/daemon/trust", trust)
         .route("/api/daemon/team", pinned("team"))
-        .route("/api/daemon/teams", pinned("teams"))
-        .route("/api/daemon/peers", pinned("peers"))
+        .route("/api/daemon/teams", shared())
+        .route("/api/daemon/peers", shared())
         .route("/api/daemon/push-subs", subs)
         .route("/api/daemon/access", post(|| async { Json(json!({})) }))
         .with_state(fake);
@@ -276,9 +286,11 @@ async fn a_join_token_lets_in_tokens_and_no_devices() {
     assert_eq!(status, 200, "{why}");
 
     // Refreshes come round (push subscriptions), and never ask for what
-    // only a pinned root checks.
+    // only a pinned root checks. They ask about the account shared with,
+    // so control offers it the share (aru-141, Arugula #1004).
     d.wait_for("a refresh", || fake.lock().unwrap().refreshes > 0);
     assert_eq!(fake.lock().unwrap().pinned_asks, Vec::<String>::new());
+    d.wait_for("an ask about b1", || fake.lock().unwrap().shared_asks.iter().any(|q| q.contains("b1")));
 }
 
 /// Getting started's Cloud step (#1003): a signed-in person adds the

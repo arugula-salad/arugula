@@ -236,9 +236,8 @@ pub async fn run(app: &App, b: InviteRequest, drafted: Option<&Drafted>) -> Resu
     }
     let granted = !co_owner && app.acl.role_of(&person.id, b.session).is_none_or(|h| h < want);
     if granted {
-        if person.id.starts_with("account:") && person.root.is_none() {
-            return Err(no(StatusCode::BAD_REQUEST, format!("sharing with {} needs their root device", person.name)));
-        }
+        // An account with no root (aru-141, Arugula #1004) is shared with on
+        // control's word: they reach it with machine tokens.
         // A new share is from now on unless asked; one held keeps its own.
         let from = if b.history || grant.is_some() {
             None

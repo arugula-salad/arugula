@@ -97,12 +97,13 @@ const REFRESH: Duration = Duration::from_secs(60);
 pub const REFRESH_WAIT: Duration = Duration::from_secs(10);
 /// What this daemon tells control it understands, so control offers only
 /// what every daemon checking a team can take (presigned invites' rosters,
-/// an owner the desktop app made, DK7).
+/// an owner the desktop app made, DK7; a move on control's word, aru-141,
+/// Arugula #1004: `controls-moves`).
 /// `ARUGULA_FEATURES` says otherwise (tests play an older daemon with "").
 /// (`chat-import`, M124, went with the import, native #203.)
 fn features() -> String {
     std::env::var("ARUGULA_FEATURES")
-        .unwrap_or_else(|_| "presigned-invites,owner-moves,join-secret,owner-passkeys".into())
+        .unwrap_or_else(|_| "presigned-invites,owner-moves,join-secret,owner-passkeys,controls-moves".into())
 }
 
 /// Whether `features` names `feature`.
@@ -756,10 +757,12 @@ pub struct Former {
 
 /// Take a move (#100) if a device of this machine's own account signed
 /// it: into a team, between teams, or back to the account. An owner of
-/// its team (in the roster it checked) may take it out too (#332). The new
-/// team's roster is fetched from scratch, checked against the pin as at a
-/// join. One no newer than the last it took is a replay (or the same one
-/// again).
+/// its team (in the roster it checked) may take it out too (#332). Since
+/// aru-141 (Arugula #1004) a move on control's word ([`Move::on_controls_word`])
+/// is taken as control says, as a team's roster is: control decides who
+/// reaches a machine. The new team's roster is fetched from scratch, checked
+/// against the pin as at a join. One no newer than the last it took is a
+/// replay (or the same one again).
 fn take_move(saved: &mut Saved, m: Move) {
     if m.at <= saved.moved_at {
         return;
@@ -770,12 +773,13 @@ fn take_move(saved: &mut Saved, m: Move) {
         warn!(by = m.by, "a move from control reached a hosted machine; ignoring it");
         return;
     }
+    let by_control = m.on_controls_word();
     let trusted = saved.own_devices();
     let own = trusted.get(&m.by).is_some_and(|by| m.signed_for(&saved.cert.device, by));
     let owner_out = saved
         .team()
         .is_some_and(|t| t.roster.as_ref().is_some_and(|r| m.owner_takes_out(&saved.cert.device, r, &t.certs)));
-    if !own && !owner_out {
+    if !own && !owner_out && !by_control {
         warn!(
             by = m.by,
             "a move from control isn't signed by this account's devices or its team's owners; ignoring it"
@@ -783,7 +787,7 @@ fn take_move(saved: &mut Saved, m: Move) {
         return;
     }
     if saved.team_pin() != m.team.as_ref() {
-        info!(team = m.team.as_ref().map(|p| p.team.as_str()), "moved");
+        info!(team = m.team.as_ref().map(|p| p.team.as_str()), by_control, "moved");
         // Into a team: its roster is fetched from scratch. Out of one:
         // nothing of it stays.
         saved.kind = m.team.map_or(MachineKind::Personal, |pin| MachineKind::Team(InTeam::new(pin)));
@@ -875,6 +879,53 @@ pub(crate) fn retire_members(
     }
     certs.retain(|a, _| cur.member(a).is_some());
     former.retain(|a, _| !certs.contains_key(a));
+}
+
+/// The members of each team a session here was shared with (M30), and
+/// their role there: a viewer's as a viewer, anyone else's as an editor;
+/// only owners while the team is locked, and never this machine's own
+/// account (it's the owner).
+fn shared_team_roles(saved: &Saved, acl: &Acl) -> HashMap<String, HashMap<String, Role>> {
+    let grants = acl.list();
+    let mut out: HashMap<String, HashMap<String, Role>> = HashMap::new();
+    for (team, t) in &saved.shared_teams {
+        if !grants.iter().any(|g| g.principal == format!("team:{team}")) {
+            continue;
+        }
+        let roles = out.entry(team.clone()).or_default();
+        for m in &t.roster.members {
+            if m.account == saved.cert.account || (t.locked && m.role != TeamRole::Owner) {
+                continue;
+            }
+            roles.insert(
+                format!("account:{}", m.account),
+                if m.role == TeamRole::Viewer { Role::Viewer } else { Role::Editor },
+            );
+        }
+    }
+    out
+}
+
+/// The accounts this machine lets in, for control to route (it routes
+/// only those it would anyway): those whose devices get in, and, since
+/// aru-141 (Arugula #1004), everyone a session here is shared with and
+/// the members of the teams one is shared with, whose people reach it
+/// with control's machine tokens rather than by a device certificate.
+/// A deploy's box lets nobody in.
+fn let_in(e: &Enrolled, acl: &Acl) -> Vec<String> {
+    let mut a = e.accounts();
+    if e.admits_links_and_guests() {
+        a.extend(acl.list().iter().filter_map(|g| g.principal.strip_prefix("account:").map(str::to_owned)));
+        a.extend(
+            e.team_roles
+                .keys()
+                .chain(e.shared_roles.values().flat_map(|r| r.keys()))
+                .filter_map(|id| id.strip_prefix("account:").map(str::to_owned)),
+        );
+    }
+    a.sort();
+    a.dedup();
+    a
 }
 
 /// Where a team's roster stands after control's answer (`history`, oldest
@@ -1131,6 +1182,10 @@ impl Enrolled {
         // machine-token channels (`e2e.rs`'s `serve_token`, which control
         // decides) and read-only links ([`Control::device`]).
         if saved.by_control().is_some() {
+            // Teams sessions were shared with: their members' roles, as
+            // control's roster says (aru-141, Arugula #1004), for a machine
+            // token's channel to get in by.
+            let shared_roles = shared_team_roles(&saved, acl);
             return Self {
                 saved,
                 keys,
@@ -1140,7 +1195,7 @@ impl Enrolled {
                 drivers: vec![],
                 open_agents,
                 team_roles: HashMap::new(),
-                shared_roles: HashMap::new(),
+                shared_roles,
                 push: Vec::new(),
             };
         }
@@ -2777,17 +2832,88 @@ impl Control {
     /// dropped.
     async fn refresh_by_control(&self, e: &Enrolled, number: u64) -> anyhow::Result<bool> {
         let took = std::time::Instant::now();
+        let mut saved = e.saved.clone();
         match self.get::<wire::TrustAnswer>(e, &self.trust_query()).await {
-            Ok(own) => self.take_flags(own.flags.as_ref()),
+            Ok(own) => {
+                self.take_flags(own.flags.as_ref());
+                // A move on control's word (aru-141, Arugula #1004), or one
+                // a device signed (which this machine can't check: it holds
+                // no devices, and takes only control's word).
+                if let Some(m) = own.moved {
+                    take_move(&mut saved, m);
+                }
+            }
             Err(err) if err.is::<Refused>() || err.is::<Removed>() => return Err(err),
             Err(err) => tracing::debug!(error = %err, "no flags from control for a machine joined on its word"),
         }
-        let mut saved = e.saved.clone();
         if let Some(to) = self.where_control_is(&e.saved.url).await {
             info!(from = saved.url, to, "control moved; following it");
             saved.url = to;
         }
-        let changed = saved.url != e.saved.url;
+        // People and teams sessions here are shared with (aru-141, Arugula
+        // #1004): asking control about them is what offers a share to
+        // someone it doesn't route here yet, and what has it route a team's
+        // members. Nobody's certificates count here (there's no root to
+        // check them by): a person gets in with control's machine token,
+        // and a team's members by the roster control says, as
+        // [`roster_from`] takes one on control's word.
+        let now = saved.seen.next();
+        let own = saved.cert.account.clone();
+        let accounts: Vec<String> =
+            self.acl.list().iter().filter_map(|g| g.principal.strip_prefix("account:").map(str::to_owned)).collect();
+        match self
+            .get::<BTreeMap<String, PeerCerts>>(
+                e,
+                &wire::PeersQuery::path(&[own.clone()].iter().chain(&accounts).cloned().collect::<Vec<_>>()),
+            )
+            .await
+        {
+            // What to call the account, when control says (the join saved
+            // one already).
+            Ok(peers) => {
+                if let Some(p) = peers.get(&own).filter(|p| !p.name.is_empty()) {
+                    saved.login = p.name.clone();
+                }
+            }
+            Err(err) => {
+                tracing::debug!(error = %err, "control said nothing of the people sessions here are shared with")
+            }
+        }
+        let pins: BTreeMap<String, TeamPin> = self
+            .acl
+            .list()
+            .iter()
+            .filter_map(|g| {
+                let team = g.principal.strip_prefix("team:")?;
+                Some((team.to_owned(), team_pin(team, g.root.as_deref()?)?))
+            })
+            .collect();
+        if !pins.is_empty() {
+            let ids: Vec<&str> = pins.keys().map(String::as_str).collect();
+            match self
+                .get::<BTreeMap<String, wire::SharedTeamAnswer>>(e, &wire::TeamsQuery::path(&ids, &self.features()))
+                .await
+            {
+                Ok(got) => {
+                    (saved.shared_teams, saved.held_teams) =
+                        take_shared(&e.saved.shared_teams, &e.saved.held_teams, &pins, got, &mut saved.seen, now);
+                }
+                Err(err) => {
+                    tracing::debug!(error = %err, "control said nothing of the teams sessions here are shared with")
+                }
+            }
+        } else {
+            saved.shared_teams.clear();
+        }
+        prune_seen(&mut saved);
+        saved.seen.settle(now);
+        let changed = saved.url != e.saved.url
+            || saved.moved_at != e.saved.moved_at
+            || saved.kind != e.saved.kind
+            || saved.login != e.saved.login
+            || saved.shared_teams != e.saved.shared_teams
+            || saved.held_teams != e.saved.held_teams
+            || saved.seen != e.saved.seen;
         let wrote = (changed || self.unsaved.load(std::sync::atomic::Ordering::SeqCst)) && self.save_or_say(&saved);
         let mut next = Enrolled::build(saved, e.keys.clone(), &self.acl, self.open_agents());
         self.publish(&next).await;
@@ -3312,7 +3438,7 @@ impl Control {
     /// Tell control which accounts get in (it routes them; we decide).
     async fn publish(&self, e: &Enrolled) {
         let links = self.acl.links_until();
-        let body = wire::AccessList { accounts: e.accounts(), links_until: links, agents: e.agent_accounts() };
+        let body = wire::AccessList { accounts: let_in(e, &self.acl), links_until: links, agents: e.agent_accounts() };
         if self.published.lock().unwrap().as_ref() == Some(&body) {
             return;
         }
@@ -5137,6 +5263,70 @@ pub(crate) mod tests {
         assert!(saved_by_control("https://c", &ask, &other).is_err());
     }
 
+    /// aru-141 (Arugula #1004): a machine joined on control's word tells
+    /// control it lets in everyone a session is shared with and the members
+    /// of a team one is shared with (they reach it with machine tokens),
+    /// and gives those members their role there, by control's roster.
+    #[test]
+    fn on_controls_word_it_lets_in_whom_sessions_are_shared_with() {
+        let dir = std::env::temp_dir().join(format!("arugula-shared-by-control-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (keys, mut saved) = by_control(None);
+        let none = arugula_e2e::team::NO_ROOT.to_owned();
+        let m = |account: &str, role| arugula_e2e::team::Member {
+            account: account.into(),
+            root: none.clone(),
+            role,
+            name: account.into(),
+        };
+        let roster = Roster {
+            v: 1,
+            team: "t1".into(),
+            name: "Acme".into(),
+            version: 1,
+            at: 1,
+            members: vec![
+                m("f", TeamRole::Owner),
+                m("k", TeamRole::Editor),
+                m("v", TeamRole::Viewer),
+                m(&saved.cert.account.clone(), TeamRole::Editor),
+            ],
+            spent: vec![],
+            redeem: None,
+            by: String::new(),
+            sig: String::new(),
+        };
+        let pin = TeamPin { team: "t1".into(), founder: "f".into(), founder_root: none.clone() };
+        saved.shared_teams.insert(
+            "t1".into(),
+            SharedTeam {
+                roster,
+                certs: Default::default(),
+                names: Default::default(),
+                locked: false,
+                lock: None,
+                pin: Some(pin),
+                former: Default::default(),
+            },
+        );
+        let acl = Acl::open(&dir);
+        acl.set_full(1, "team:t1", "Acme", Some(Role::Editor), "owner", None, Some(format!("f.{none}"))).unwrap();
+        acl.set_full(1, "account:p", "Pat", Some(Role::Viewer), "owner", None, None).unwrap();
+        let e = Enrolled::build(saved, Arc::new(keys), &acl, false);
+        let roles = &e.shared_roles["t1"];
+        assert_eq!(roles.get("account:f"), Some(&Role::Editor));
+        assert_eq!(roles.get("account:k"), Some(&Role::Editor));
+        assert_eq!(roles.get("account:v"), Some(&Role::Viewer));
+        assert_eq!(roles.len(), 3, "not its own account: {roles:?}");
+        assert!(e.others.is_empty(), "no devices of anyone's");
+        assert_eq!(let_in(&e, &acl), ["f", "k", "p", "v"]);
+        acl.set_shared_teams(e.shared_roles.clone());
+        assert_eq!(acl.role_of("account:v", 1), Some(Role::Viewer), "a team share, at their role in it");
+        assert_eq!(acl.role_of("account:p", 1), Some(Role::Viewer));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// aru-141: joined on control's word, no device gets in, not even the
     /// account's own browser, and nor do the people sessions are shared
     /// with; a read-only link's key does (machine tokens are `e2e.rs`'s).
@@ -6113,6 +6303,50 @@ pub(crate) mod tests {
         // Control replays the move into the team: too old.
         take_move(&mut saved, into);
         assert_eq!(saved.team_pin(), None);
+    }
+
+    /// aru-141 (Arugula #1004): a move on control's word, which a person
+    /// with no device key made, is taken, on a machine that pinned its
+    /// account's root and on one that joined on control's word; an older
+    /// one of control's is still a replay, and a signed move that isn't
+    /// is still refused.
+    #[test]
+    fn a_daemon_takes_a_move_on_controls_word() {
+        let (_, root) = device("a", Kind::Browser);
+        let (_, daemon) = device("a", Kind::Daemon);
+        let (mkeys, mallory) = device("m", Kind::Browser);
+        let pin = TeamPin { team: "t1".into(), founder: "o".into(), founder_root: "r".into() };
+        let unsigned =
+            |team: Option<&TeamPin>, at| Move { team: team.cloned(), at, by: String::new(), sig: String::new() };
+        for root in [
+            Root::Pinned(Trust { account: "a".into(), root: root.device.clone() }),
+            Root::Control(ByControl { at: 1, team: None }),
+        ] {
+            let mut saved = Saved {
+                url: String::new(),
+                root,
+                cert: daemon.clone(),
+                certs: vec![],
+                revocations: vec![],
+                kind: MachineKind::Personal,
+                seen: Default::default(),
+                peers: Default::default(),
+                shared_teams: Default::default(),
+                held_teams: Default::default(),
+                held_peers: Default::default(),
+                login: String::new(),
+                moved_at: 0,
+            };
+            let d = daemon.device.as_str();
+            take_move(&mut saved, unsigned(Some(&pin), 5));
+            assert_eq!((saved.team_pin(), saved.moved_at), (Some(&pin), 5));
+            take_move(&mut saved, mv(&mkeys, &mallory, d, None, 6));
+            assert_eq!(saved.team_pin(), Some(&pin), "not a move someone else signed");
+            take_move(&mut saved, unsigned(None, 4));
+            assert_eq!(saved.team_pin(), Some(&pin), "an older one is a replay");
+            take_move(&mut saved, unsigned(None, 7));
+            assert_eq!((saved.team_pin(), saved.moved_at), (None, 7));
+        }
     }
 
     /// #332: a member's machine in a team; the team's owners may take it

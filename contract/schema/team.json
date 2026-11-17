@@ -201,7 +201,7 @@
       "type": "object"
     },
     "Move": {
-      "description": "A joined machine moved into a team, between teams, or back to its\naccount, after it joined: a device of its own account signs it, and the\ndaemon applies only a move newer than the last it took, so control can\nneither make one up nor replay an old one.",
+      "description": "A joined machine moved into a team, between teams, or back to its\naccount, after it joined: a device of its own account signs it, or\n(aru-141, Arugula #1004) it's control's word ([`Move::on_controls_word`]),\nand the daemon applies only a move newer than the last it took, so\ncontrol can't replay an old one.",
       "properties": {
         "at": {
           "description": "When it was made (ms); a daemon takes only newer ones.",
@@ -210,7 +210,7 @@
           "type": "integer"
         },
         "by": {
-          "description": "The signing device.",
+          "description": "The signing device; empty on control's word.",
           "type": "string"
         },
         "sig": {

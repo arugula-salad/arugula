@@ -156,9 +156,6 @@ export function Devices({ s, close }: { s: ControlSession; close: () => void }) 
   // The machine whose Remove was clicked: a dialog asks.
   const [removing, setRemoving] = useState<Cert | null>(null);
   const machines = ownMachines(s);
-  // Moving a machine into a team is signed with a device key (what
-  // machines check), so a browser without one can't yet.
-  const signs = !!s.enrollment && !s.rootMismatch;
   return (
     <Modal close={close}>
       <h2>Machines</h2>
@@ -194,7 +191,7 @@ export function Devices({ s, close }: { s: ControlSession; close: () => void }) 
               <p class="dim control-explain" data-place={team ?? ""}>
                 <b>{machinePlace(team)}</b>: {placeMeans(team)}
               </p>
-              {signs ? <MoveMachine s={s} c={{ ...c, name: d.name }} team={d.team ?? null} online={d.online} /> : null}
+              <MoveMachine s={s} c={{ ...c, name: d.name }} team={d.team ?? null} online={d.online} />
             </li>
           );
         })}
