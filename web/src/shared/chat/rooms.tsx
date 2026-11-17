@@ -668,7 +668,6 @@ function YouRow() {
       ref={button}
       class="chat-row chat-you"
       title="Your presence: click to change it"
-      aria-label={`Your presence: ${mode}`}
       aria-haspopup="menu"
       aria-expanded={open}
       data-chat-you={presence.mode}
@@ -678,7 +677,10 @@ function YouRow() {
         <MsgAvatar who={chat.me} name={chat.myNames[0] ?? "?"} account={chat.me} />
         <span class={`presence-dot presence-${state}`} data-presence={state} aria-hidden="true" />
       </span>
-      <span class="chat-label">{mode}</span>
+      <span class="chat-label">
+        <span class="chat-you-said">Your presence: </span>
+        {mode}
+      </span>
     </button>
   );
 }
