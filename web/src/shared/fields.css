@@ -217,12 +217,14 @@ select.field {
   }
 }
 
-:where(input[type="checkbox"]:not(.sw-switch), input[type="radio"]):is(:checked, :indeterminate) {
+/* A radio is :indeterminate too, while none of its group is picked: only
+   a checkbox's indeterminate is "some". */
+:where(input[type="checkbox"]:not(.sw-switch):is(:checked, :indeterminate), input[type="radio"]:checked) {
   border-color: var(--accent);
   background-color: var(--accent);
 }
 
-:where(input[type="checkbox"]:not(.sw-switch), input[type="radio"]):is(:checked, :indeterminate)::before {
+:where(input[type="checkbox"]:not(.sw-switch):is(:checked, :indeterminate), input[type="radio"]:checked)::before {
   opacity: 1;
 }
 
