@@ -465,13 +465,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   width: 140px;
   /* 5px, off the 4px scale: centres the field in the tab's height (UI audit #198). */
   margin: 5px 4px;
-  padding: 2px 6px;
-  font: inherit;
-  color: var(--fg);
-  background: var(--letterbox);
-  border: 1px solid var(--accent);
-  border-radius: var(--tag-radius);
-  outline: none;
 }
 
 /* ---- tab area: the daemon's cell grid, centered and scaled to fit,
@@ -977,20 +970,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 .menu-filter {
   display: block;
-  box-sizing: border-box;
   width: 100%;
-  padding: 6px 8px;
-  font: inherit;
-  font-size: var(--t-field);
-  color: var(--fg);
-  background: var(--letterbox);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--field-radius);
-  outline: none;
-}
-
-.menu-filter:focus {
-  border-color: var(--accent);
 }
 
 .menu-none {
@@ -1455,17 +1435,7 @@ button.att {
 }
 
 .prompt input:not([type="checkbox"], [type="radio"]) {
-  font: var(--text-md) var(--f-mono);
-  padding: 8px;
-  color: var(--fg);
-  background: var(--letterbox);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--field-radius);
-  outline: none;
-}
-
-.prompt input:not([type="checkbox"], [type="radio"]):focus {
-  border-color: var(--accent);
+  font-family: var(--f-mono);
 }
 
 /* Answers to tap (#150): the ports listening, the pane's own first. */
@@ -1685,14 +1655,6 @@ button.att {
 
 .browser-url input {
   width: 100%;
-  height: 26px;
-  padding: 0 8px;
-  border: 1px solid var(--line);
-  border-radius: var(--field-radius);
-  background: var(--letterbox);
-  color: var(--fg);
-  font: inherit;
-  font-size: var(--text-md);
 }
 
 .browser-frame {
@@ -2471,21 +2433,7 @@ button.att {
   flex: 1;
   min-height: 36px;
   max-height: 40vh;
-  resize: vertical;
-  padding: 8px;
-  font: inherit;
-  /* A field's size: 16 on touch, so iOS doesn't zoom into it (#772). */
-  font-size: var(--t-field);
-  color: var(--fg);
-  background: var(--letterbox);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--card-radius);
-  outline: none;
   field-sizing: content;
-}
-
-.agent-composer textarea:focus {
-  border-color: var(--accent);
 }
 
 .agent-composer :is(.primary, .secondary) {
@@ -2589,19 +2537,8 @@ button.agent-image {
   gap: 10px;
 }
 
-.agent-dialog select,
 .agent-dialog textarea {
-  font: var(--text-md) var(--f-mono);
-  padding: 8px;
-  color: var(--fg);
-  background-color: var(--letterbox);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--field-radius);
-}
-
-/* Room for the kit's caret (shared/fields.css, #1097). */
-.agent-dialog select {
-  padding-right: 28px;
+  font-family: var(--f-mono);
 }
 
 .agent-dialog label.check {
@@ -2650,14 +2587,6 @@ button.agent-image {
 
 .chat-block-model {
   max-width: 40%;
-  /* Its own height, and room for the kit's caret (shared/fields.css). */
-  height: auto;
-  padding: 2px 22px 2px 6px;
-  font-size: var(--text-sm);
-  color: var(--fg);
-  background-color: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: var(--field-radius);
 }
 
 .chat-block .agent-composer {
@@ -2782,17 +2711,7 @@ button.agent-image {
 }
 
 .picker-filter {
-  font: var(--text-md) var(--f-mono);
-  padding: 8px;
-  color: var(--fg);
-  background: var(--letterbox);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--field-radius);
-  outline: none;
-}
-
-.picker-filter:focus {
-  border-color: var(--accent);
+  font-family: var(--f-mono);
 }
 
 .picker-list {
@@ -3091,21 +3010,12 @@ button.agent-image {
   overflow-x: auto;
 }
 
-/* --divider, not --line, as .ask-option's (UI audit #198). */
 .ask-other,
 .ask-field input[type="text"],
 .ask-field input[type="number"],
 .ask-field textarea {
   width: 100%;
-  box-sizing: border-box;
   margin-top: 6px;
-  min-height: 36px;
-  padding: 6px 8px;
-  border: 1px solid var(--divider);
-  border-radius: var(--field-radius);
-  background: var(--bg);
-  color: inherit;
-  font: inherit;
 }
 
 .ask-field textarea {
@@ -3516,12 +3426,7 @@ button.agent-image {
 }
 
 .control-code input:not([type="checkbox"], [type="radio"]) {
-  font: var(--t-field) var(--f-mono);
-  padding: 6px 8px;
-  color: var(--fg);
-  background: var(--letterbox);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--field-radius);
+  font-family: var(--f-mono);
   width: 10rem;
 }
 
@@ -3539,15 +3444,23 @@ button.agent-image {
 .control-rest-field {
   display: inline-flex;
   align-items: center;
+  box-sizing: border-box;
   max-width: 100%;
-  font: var(--text-md) var(--f-mono);
-  background: var(--letterbox);
-  border: 1px solid var(--line-strong);
+  height: var(--field-h);
+  font: var(--t-field) var(--f-mono);
+  background-color: var(--bg);
+  border: 1px solid var(--field-line);
   border-radius: var(--field-radius);
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+.control-rest-field:hover:not(:focus-within) {
+  border-color: var(--field-line-hover);
 }
 
 .control-rest-field:focus-within {
   border-color: var(--accent);
+  box-shadow: var(--field-ring);
 }
 
 .control-rest-known {
@@ -4097,13 +4010,7 @@ button.agent-image {
   font-weight: 400;
 }
 
-.share-dialog select {
-  padding: 4px 28px 4px 4px;
-  color: var(--fg);
-  background-color: var(--letterbox);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--field-radius);
-}
+
 
 .pane-private {
   position: absolute;
@@ -4869,17 +4776,11 @@ button.agent-image {
 }
 .diff-edit {
   display: block;
-  box-sizing: border-box;
   width: 100%;
   min-height: 10em;
   max-height: 40vh;
   margin: 4px 0;
   font: var(--text-sm)/1.4 var(--f-mono);
-  color: var(--fg);
-  background: var(--surface);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--tag-radius);
-  resize: vertical;
 }
 
 /* M28: following an editor, over the swarm's field. The panel is the
@@ -5406,16 +5307,7 @@ label.edit-in-nvim {
 }
 
 .ws-env {
-  min-width: 0;
   max-width: 14em;
-  /* Room for the kit's caret (shared/fields.css, #1097). */
-  padding: 0 24px 0 6px;
-  background-color: var(--raised);
-  color: var(--fg);
-  border: 0;
-  border-radius: var(--tag-radius);
-  font-size: var(--text-sm);
-  height: 26px;
 }
 
 .ws-gates {
@@ -7347,20 +7239,7 @@ html[data-scheme="light"] .doc {
 .agents-field input,
 .agents-field select,
 .agents-field textarea {
-  font: inherit;
   width: 100%;
-  min-width: 0;
-  box-sizing: border-box;
-  padding: 4px 8px;
-  border-radius: var(--field-radius);
-  border: 1px solid var(--line);
-  background-color: var(--bg);
-  color: var(--fg);
-}
-
-/* Room for the kit's caret (shared/fields.css, #1097). */
-.agents-field select {
-  padding-right: 28px;
 }
 
 .agents-field textarea {
@@ -8413,13 +8292,7 @@ button.thread-quote:hover {
 
 .chat-quote-text {
   width: 100%;
-  box-sizing: border-box;
   font: var(--text-sm)/1.35 var(--f-mono);
-  color: var(--fg);
-  background: var(--letterbox);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--tag-radius);
-  padding: 6px;
 }
 
 /* A quote whose pane the reader can't open: no pointer, no hover. */
@@ -8458,14 +8331,7 @@ button.thread-quote:hover {
 
 .msg-edit textarea {
   width: 100%;
-  box-sizing: border-box;
   min-height: 3em;
-  font: inherit;
-  color: var(--fg);
-  background: var(--letterbox);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--field-radius);
-  padding: 6px 8px;
 }
 
 .msg-edit span {
@@ -9326,13 +9192,7 @@ button.thread-quote:hover {
   margin-top: 10px;
 }
 
-.conv-dialog select {
-  padding: 6px 28px 6px 8px;
-  color: var(--fg);
-  background-color: var(--letterbox);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--field-radius);
-}
+
 
 .chat-people li .dim {
   margin-left: auto;
@@ -9448,14 +9308,7 @@ button.thread-quote:hover {
 
 .hand-answer {
   width: 100%;
-  box-sizing: border-box;
   margin-top: 8px;
-  font: inherit;
-  background: var(--surface);
-  color: var(--fg);
-  border: 1px solid var(--line);
-  border-radius: var(--btn-radius);
-  padding: 6px;
 }
 
 /* ---- #325: control dropped this machine */
@@ -9696,14 +9549,7 @@ button.thread-quote:hover {
 .forge-field input,
 .forge-field textarea,
 .forge-compose textarea {
-  font: inherit;
-  color: var(--fg);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--field-radius);
-  padding: var(--space-2) var(--space-2);
   width: 100%;
-  box-sizing: border-box;
 }
 
 .forge-field input {
@@ -9771,11 +9617,7 @@ button.thread-quote:hover {
   font-size: var(--text-sm);
 }
 
-.forge-compose textarea {
-  font-size: var(--text-md);
-  border-color: var(--accent);
-  resize: vertical;
-}
+
 
 /* On a phone the main buttons share the row, big enough to tap. */
 @container (max-width: 460px) {
@@ -12066,15 +11908,6 @@ html[data-workspace="new"] .thread-panel {
 
 .add-pane-input {
   flex: 1;
-  min-width: 0;
-  height: 28px;
-  padding: 0 8px;
-  box-sizing: border-box;
-  border: 1px solid var(--line);
-  border-radius: var(--field-radius);
-  background-color: var(--bg);
-  color: var(--fg);
-  font: inherit;
 }
 
 .add-pane-dir {
@@ -12539,17 +12372,6 @@ button.chat-agent-name:hover {
 .emoji-search {
   flex: none;
   margin: 8px 8px 4px;
-  padding: 6px 10px;
-  font: inherit;
-  color: var(--fg);
-  background: var(--letterbox);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--field-radius);
-  outline: none;
-}
-
-.emoji-search:focus {
-  border-color: var(--dim);
 }
 
 .emoji-cats {

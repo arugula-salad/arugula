@@ -23,7 +23,7 @@ export function RenameInput({ value: initial, onDone }: { value: string; onDone:
   return (
     <input
       ref={ref}
-      class="rename"
+      class="rename small"
       value={value}
       onInput={(e) => setValue((e.target as HTMLInputElement).value)}
       onKeyDown={(e) => {

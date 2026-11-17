@@ -17,19 +17,7 @@ html[data-scheme="light"] {
   --platform-shadow: #0003;
 }
 
-/* The repo and secret fields had the browser's own grey, which grey
-   placeholders barely read on: they take the dialogs' fields' look
-   (style.css's .prompt input) under every finish. Placeholders are
-   --subtle, which reads on the letterbox where --dim doesn't (Latte). */
-.platform-link-repo input {
-  padding: 4px 8px;
-  color: var(--fg);
-  background: var(--letterbox);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--field-radius);
-  font: inherit;
-}
-
+/* Placeholders are --subtle, which reads where --dim doesn't (Latte). */
 .platform input::placeholder,
 .platform textarea::placeholder {
   color: var(--subtle);

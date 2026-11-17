@@ -47,24 +47,8 @@
   min-width: 140px;
 }
 
-.issue-form input:not([type="checkbox"]),
-.issue-form textarea,
-.issue-title-edit input {
-  box-sizing: border-box;
-  height: 32px;
-  padding: 4px 8px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--field-radius);
-  background: var(--letterbox);
-  color: var(--fg);
-  font: inherit;
-}
-
 .issue-form textarea {
-  height: auto;
   min-height: 8em;
-  resize: vertical;
-  line-height: 1.45;
 }
 
 /* Issues here and on linked repos (UI audit #163): a note, in the info
@@ -207,9 +191,6 @@ details.issues-note > summary {
 
 .issue-title-edit input {
   flex: 1;
-  min-width: 0;
-  height: 32px;
-  font-size: var(--t-field);
 }
 
 .issue-cols {

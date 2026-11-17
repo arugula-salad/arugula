@@ -2,33 +2,10 @@
    UI audit #177: one bar for every block (shared/ui/bar.css, #686), the
    team chat's and the workspace graph's too. */
 /* Its plain buttons are the bar button's (buttons.css); its selects are
-   the same 24px. A primary or secondary in a bar keeps its own look. */
-:where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) select:not(.field) {
-  box-sizing: border-box;
-  display: inline-block;
+   the kit's, a bar's 24px (shared/fields.css). A primary or secondary in a
+   bar keeps its own look. */
+:where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) select {
   flex: none;
-  height: 24px;
-  min-width: 24px;
-  /* Room for the kit's caret (shared/fields.css, #1097). */
-  padding: 0 24px 0 6px;
-  border: 1px solid var(--line);
-  border-radius: var(--btn-radius);
-  background-color: var(--bg);
-  color: var(--subtle);
-  font: inherit;
-  font-size: var(--text-sm);
-  line-height: 1;
-  cursor: pointer;
-}
-
-:where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) select:not(.field):hover:not(:disabled) {
-  background-color: var(--raised);
-  color: var(--fg);
-}
-
-:where(.browser-bar, .agent-bar, .review-bar, .chat-block-bar, .ws-graph-bar) select:not(.field):disabled {
-  opacity: 0.45;
-  cursor: default;
 }
 
 /* Which way a port or editor went (M50), in its bar now (UI audit #177),
@@ -65,11 +42,6 @@
   margin-bottom: 0;
 }
 
-.browser-url input {
-  background: var(--bg);
-  font-size: var(--text-sm);
-}
-
 .agent-log {
   padding: 14px;
   line-height: 1.6;
@@ -90,17 +62,6 @@
 .agent-composer {
   padding: 10px;
   gap: 8px;
-}
-
-.agent-composer textarea {
-  background: var(--bg);
-  border-color: var(--line);
-  border-radius: var(--field-radius);
-  line-height: 1.5;
-}
-
-.agent-composer textarea:focus {
-  border-color: var(--accent);
 }
 
 .diff-file-head {
