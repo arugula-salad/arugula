@@ -96,18 +96,18 @@ export function withWorkOnBoards(powers: string[], on: boolean): string[] {
 /** How much of a project's boards a machine's agents have. */
 export type BoardsLevel = "off" | "read" | "write";
 
-/** What a machine's agents have over a project's boards: write if
- * `boards.write` is live (whatever else is), else read if `boards.read` is. */
-/** What Settings' list says of the grants (Arugula #1104): how many
- * machines, and how many projects their agents reach. */
-export function grantsSummary(grants: Grant[]): string {
-  const machines = machinesOf(grants).length;
-  if (machines === 0) return "No machines yet";
-  const projects = new Set(grants.filter((g) => g.live && g.subject.kind === "daemon" && g.power !== "cloud.drive" && g.scope.kind === "project").map((g) => g.scope.id)).size;
-  const n = (k: number, one: string) => `${k} ${one}${k === 1 ? "" : "s"}`;
-  return `${n(machines, "machine")} · ${projects ? `reach ${n(projects, "project")}` : "reach nothing yet"}`;
+/** What Settings' list says of one machine's grants (Arugula #1107): how
+ * many projects its agents reach, and whether your DMs. */
+export function machineGrantsSummary(grants: Grant[], machine: string): string {
+  const live = grants.filter((g) => g.live && g.subject.kind === "daemon" && g.subject.id === machine && g.power !== "cloud.drive");
+  const projects = new Set(live.filter((g) => g.scope.kind === "project").map((g) => g.scope.id)).size;
+  const dms = live.some((g) => g.scope.kind === "account");
+  if (!projects) return dms ? "Your DMs only" : "Nothing yet";
+  return `${projects} ${projects === 1 ? "project" : "projects"}${dms ? " and your DMs" : ""}`;
 }
 
+/** What a machine's agents have over a project's boards: write if
+ * `boards.write` is live (whatever else is), else read if `boards.read` is. */
 export function boardsLevel(grants: Grant[], machine: string, project: string): BoardsLevel {
   if (singleGrant(grants, machine, project, BOARDS_WRITE)) return "write";
   return singleGrant(grants, machine, project, BOARDS_READ) ? "read" : "off";

@@ -24,7 +24,6 @@ import { names } from "../links";
 import { owners } from "../owners";
 import { follow, pathOf } from "../router";
 import { controlOrigin, session } from "../session";
-import { AgentGrants } from "../settings/agents";
 import { AgentTokens } from "../settings/agent-tokens";
 import { ChatAlerts } from "../settings/chat-alerts";
 import { ClaudeSettings } from "../settings/claude";
@@ -49,7 +48,6 @@ export function YouSettings() {
       <Band title="Account">
         <Account />
         <LinkedProducts />
-        <AgentGrants />
         <AgentTokens />
         <ClaudeSettings me={session.me?.account} />
       </Band>

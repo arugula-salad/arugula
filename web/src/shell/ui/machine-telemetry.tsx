@@ -9,8 +9,9 @@
 //   control that doesn't ask: each machine the person owns asks once, as
 //   it's shown there. Not on a read-only link.
 // - **The switch** is *Usage and crash reports…* in the machine's settings
-//   (the machine menu, or the account menu's *This machine*), and on the
-//   phone's sheet, with the same preview.
+//   (the machine menu, or the account menu's *This machine*), on the
+//   phone's sheet, and in Settings' This machine (Arugula #1107), with the
+//   same preview.
 // - **Views** this page opens (telemetry.ts) go to that daemon's
 //   `telemetry.note` each minute and as the page goes away, while the
 //   machine's answer is yes. Control's page sends its own to control (M104),
@@ -18,6 +19,7 @@
 
 import { useEffect, useState } from "preact/hooks";
 import { Modal } from "../../shared/ui/modal";
+import { Section } from "../../shared/ui/settings-section";
 import type { Client } from "../client";
 import { desktopApp } from "../../shared/desktop";
 import { OPS, opPath } from "../ops";
@@ -187,46 +189,80 @@ const KEPT_OFF: Partial<Record<TelemetryInfo["why"], string>> = {
   test: "Off: this daemon is a test run.",
 };
 
-// A Modal like control's dialogs (UI audit #175).
-function MachineTelemetrySettings({ client, close }: { client: Client; close: () => void }) {
+/** The machine's answer (`telemetry.get`), and changing it. */
+function useReports(client: Client) {
   const [t, setT] = useState<TelemetryInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     void read(client).then((i) => (i ? setT(i) : setError("This machine's daemon didn't say: it may be too old for usage reports.")));
-  }, []);
-  const kept = t ? KEPT_OFF[t.why] : undefined;
+  }, [client]);
   const set = (on: boolean) => {
     setError(null);
     answer(client, on).then(setT, (e: Error) => setError(e.message));
   };
+  return { t, error, set };
+}
+
+/** What Settings' list says of it (Arugula #1107). */
+export function reportsSummary(t: TelemetryInfo): string {
+  if (KEPT_OFF[t.why]) return "Off on this machine";
+  if (t.on) return "On";
+  return t.why === "not_asked" ? "Not answered yet" : "Off";
+}
+
+/** The switch, why it's kept off when it is, and what a report holds. */
+function ReportsSwitch({ t, error, set }: ReturnType<typeof useReports>) {
+  const kept = t ? KEPT_OFF[t.why] : undefined;
+  return (
+    <>
+      {error && <p class="error">{error}</p>}
+      {kept && <p class="dim">{kept}</p>}
+      {t && (
+        <>
+          <label class="machine-telemetry-switch">
+            <input
+              type="checkbox"
+              role="switch"
+              class="sw-switch"
+              data-machine-telemetry-switch
+              checked={t.on}
+              disabled={!!kept}
+              onChange={(e) => set(e.currentTarget.checked)}
+            />{" "}
+            Usage and crash reports from this machine
+          </label>
+          {t.preview !== undefined && <TelemetryPreview preview={t.preview} />}
+        </>
+      )}
+    </>
+  );
+}
+
+// A Modal like control's dialogs (UI audit #175).
+function MachineTelemetrySettings({ client, close }: { client: Client; close: () => void }) {
+  const r = useReports(client);
   return (
     <Modal close={close} label="Usage and crash reports" class="rules machine-telemetry">
-        <h2>Usage and crash reports</h2>
-        <p class="dim">{ABOUT}</p>
-        {error && <p class="error">{error}</p>}
-        {kept && <p class="dim">{kept}</p>}
-        {t && (
-          <>
-            <label class="machine-telemetry-switch">
-              <input
-                type="checkbox"
-                role="switch"
-                class="sw-switch"
-                data-machine-telemetry-switch
-                checked={t.on}
-                disabled={!!kept}
-                onChange={(e) => set(e.currentTarget.checked)}
-              />{" "}
-              Usage and crash reports from this machine
-            </label>
-            {t.preview !== undefined && <TelemetryPreview preview={t.preview} />}
-          </>
-        )}
-        <div class="prompt-buttons">
-          <button class="secondary" type="button" onClick={close}>
-            Done
-          </button>
-        </div>
+      <h2>Usage and crash reports</h2>
+      <p class="dim">{ABOUT}</p>
+      <ReportsSwitch {...r} />
+      <div class="prompt-buttons">
+        <button class="secondary" type="button" onClick={close}>
+          Done
+        </button>
+      </div>
     </Modal>
+  );
+}
+
+/** Usage and crash reports as a section of Settings' This machine (Arugula #1107). */
+export function ReportsSection({ client }: { client: Client }) {
+  const r = useReports(client);
+  return (
+    <Section id="reports" title="Usage and crash reports" summary={r.t ? reportsSummary(r.t) : r.error ? "Couldn't load" : undefined} lede={ABOUT}>
+      <div class="rules machine-telemetry machine-sec">
+        <ReportsSwitch {...r} />
+      </div>
+    </Section>
   );
 }

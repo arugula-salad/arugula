@@ -44,7 +44,7 @@ export const SCOPES: { [K in SettingsScopeKey]: SettingsScope<K> } = {
     title: "This machine",
     whose: "One of your machines.",
     pick: "Machine",
-    sections: (r) => <MachineSettings machine={r.machine} />,
+    sections: (r) => <MachineSettings machine={r.machine} section={r.section} />,
   },
   project: {
     key: "project",

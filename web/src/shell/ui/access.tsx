@@ -6,13 +6,15 @@
 // session's shares with their floors, links and when they end, ssh guests
 // and trust live now. Each row says whose word it is: this machine's, or
 // the team's roster. Below them, this machine's agents' powers, which are
-// Arugula cloud's word (`GET /api/grants`, as Agents' grants… reads it),
+// Arugula cloud's word (`GET /api/grants`, as Settings' Agents' grants reads it),
 // labelled so, with what to do when cloud can't be asked. An older daemon
 // has no `access.get` (a 404): the dialog says so, and where the shares
-// still are.
+// still are. Settings' This machine draws the same rows as its Access
+// section (Arugula #1107).
 
 import { useEffect, useState } from "preact/hooks";
 import { Modal } from "../../shared/ui/modal";
+import { Section } from "../../shared/ui/settings-section";
 import { Time } from "../../shared/ui/time";
 import type { Client } from "../client";
 import { OPS, opPath } from "../ops";
@@ -166,7 +168,8 @@ function Powers({ v }: { v: AccessView }) {
   );
 }
 
-function AccessDialog({ client, close }: { client: Client; close: () => void }) {
+/** The daemon's answer to who reaches it (`access.get`), read once per client. */
+function useAccess(client: Client): { view: AccessView | null; error: string | null } {
   const [view, setView] = useState<AccessView | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -187,14 +190,58 @@ function AccessDialog({ client, close }: { client: Client; close: () => void }) 
       live = false;
     };
   }, [client]);
+  return { view, error };
+}
+
+/** What Settings' list says of it (Arugula #1107): you, then who else. */
+export function accessSummary(v: AccessView): string {
+  const n = (k: number, one: string, many = `${one}s`) => (k ? `${k} ${k === 1 ? one : many}` : "");
+  const others = v.rows.filter((r) => r.kind !== "owner");
+  const people = new Set(others.filter((r) => r.kind !== "link" && r.kind !== "guest").map((r) => r.principal ?? r.who)).size;
+  const rest = [n(people, "person", "people"), n(others.filter((r) => r.kind === "link").length, "link"), n(others.filter((r) => r.kind === "guest").length, "guest")].filter(Boolean);
+  return rest.length ? `You + ${rest.join(", ")}` : "Only you";
+}
+
+const HELP = (
+  <>
+    The people, links and guests that reach this machine, and as what, from what it holds. Each row says whose word it is: this
+    machine&apos;s own files, the team&apos;s roster it checked itself, or Arugula cloud.
+  </>
+);
+
+/** Who reaches it: what kind of machine it is, then a row each. */
+function AccessRows({ view }: { view: AccessView }) {
+  return (
+    <>
+      <p class="dim" data-access-kind>
+        {kindLine(view)}
+      </p>
+      {view.notes.map((n) => (
+        <p class="dim" data-access-note key={n}>
+          {n}
+        </p>
+      ))}
+      {view.rows.length ? (
+        <ul class="rules-list access-rows" data-access-rows>
+          {view.rows.map((r, i) => (
+            <Row key={`${r.kind}-${r.principal ?? r.who}-${r.session ?? ""}-${r.pane ?? ""}-${i}`} r={r} v={view} />
+          ))}
+        </ul>
+      ) : (
+        <p data-access-nobody>Nothing listed: no person, link or guest reaches it from what it holds.</p>
+      )}
+      {view.guest_ssh === false && <p class="dim">Guest SSH access is off: no ssh guest can be invited until you turn it on.</p>}
+    </>
+  );
+}
+
+function AccessDialog({ client, close }: { client: Client; close: () => void }) {
+  const { view, error } = useAccess(client);
   const name = view?.name || directory.current;
   return (
     <Modal close={close} label="Access" class="rules access-view">
       <h2>Who can reach {name}</h2>
-      <p class="dim">
-        The people, links and guests that reach this machine, and as what, from what it holds. Each row says whose word it is: this
-        machine&apos;s own files, the team&apos;s roster it checked itself, or Arugula cloud.
-      </p>
+      <p class="dim">{HELP}</p>
       {error && (
         <p class="error" data-access-error>
           {error}
@@ -203,28 +250,11 @@ function AccessDialog({ client, close }: { client: Client; close: () => void }) 
       {!error && view === null && <p class="dim">Loading…</p>}
       {view && (
         <>
-          <p class="dim" data-access-kind>
-            {kindLine(view)}
-          </p>
-          {view.notes.map((n) => (
-            <p class="dim" data-access-note key={n}>
-              {n}
-            </p>
-          ))}
-          {view.rows.length ? (
-            <ul class="rules-list access-rows" data-access-rows>
-              {view.rows.map((r, i) => (
-                <Row key={`${r.kind}-${r.principal ?? r.who}-${r.session ?? ""}-${r.pane ?? ""}-${i}`} r={r} v={view} />
-              ))}
-            </ul>
-          ) : (
-            <p data-access-nobody>Nothing listed: no person, link or guest reaches it from what it holds.</p>
-          )}
-          {view.guest_ssh === false && <p class="dim">Guest SSH access is off: no ssh guest can be invited until you turn it on.</p>}
+          <AccessRows view={view} />
           <h3>Its agents&apos; powers</h3>
           <p class="dim">
             What the agents on {name} may do on Arugula cloud, as you. That is Arugula cloud&apos;s word, not this machine&apos;s: change it in
-            Account settings, under Agents, or with <code>arugula grants</code>.
+            Settings, under This machine, or with <code>arugula grants</code>.
           </p>
           <Powers v={view} />
         </>
@@ -235,5 +265,24 @@ function AccessDialog({ client, close }: { client: Client; close: () => void }) 
         </button>
       </div>
     </Modal>
+  );
+}
+
+/** Access as a section of Settings' This machine (Arugula #1107). Its
+ * agents' powers are the section beside it there. */
+export function AccessSection({ client }: { client: Client }) {
+  const { view, error } = useAccess(client);
+  return (
+    <Section id="access" title="Access" summary={error ? "Couldn't load" : view ? accessSummary(view) : undefined} lede={HELP}>
+      <div class="rules access-view machine-sec">
+        {error && (
+          <p class="error" data-access-error>
+            {error}
+          </p>
+        )}
+        {!error && view === null && <p class="dim">Loading…</p>}
+        {view && <AccessRows view={view} />}
+      </div>
+    </Section>
   );
 }
