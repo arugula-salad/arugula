@@ -14,30 +14,40 @@
 # The workflows are its arguments (their files' names, without .yml), or
 # ARUGULA_NIGHTLIES. Reads and writes with gh (GH_TOKEN: actions: read,
 # issues: write).
+#
+# ARUGULA_NIGHTLY_EVENT: the event whose runs count instead of schedule.
+# The cloud repo's testnet-green runs on workflow_run, after each green
+# check.yml on main. A cancelled or skipped run says nothing either way, so
+# the newest run that passed or failed is the one that counts.
 set -euo pipefail
 
 repo=${GITHUB_REPOSITORY:-arugula-salad/arugula}
 mention=${ARUGULA_RED_MENTION:-}
+event=${ARUGULA_NIGHTLY_EVENT:-schedule}
+case "$event" in schedule) what=scheduled ;; *) what=$event ;; esac
 read -r -a nightlies <<<"${*:-${ARUGULA_NIGHTLIES:-forges-nightly macos-vm macos-intel testnet-break perf-nightly rare-nightly}}"
 
 errors=0
 for wf in "${nightlies[@]}"; do
   title="nightly is red: $wf"
-  # Its newest finished scheduled run on main: "ID CONCLUSION URL CREATED SHA". One
-  # workflow gh can't read (renamed, or not on main yet) doesn't stop the
-  # others; the job fails at the end.
-  if ! run=$(gh run list -R "$repo" -w "$wf.yml" -b main -e schedule -s completed -L 1 \
+  # Its finished $event runs on main, newest first: "ID CONCLUSION URL
+  # CREATED SHA". One workflow gh can't read (renamed, or not on main yet)
+  # doesn't stop the others; the job fails at the end.
+  if ! runs=$(gh run list -R "$repo" -w "$wf.yml" -b main -e "$event" -s completed -L 20 \
     --json databaseId,conclusion,url,createdAt,headSha \
     --jq '.[] | "\(.databaseId) \(.conclusion) \(.url) \(.createdAt) \(.headSha)"'); then
     echo "$wf: couldn't list its runs" >&2
     errors=1
     continue
   fi
+  # The newest that passed or failed: cancelled or skipped says nothing
+  # either way.
   id='' conclusion='' url='' created='' sha=''
-  read -r id conclusion url created sha <<<"$run" || true
-  if [ -z "$id" ]; then echo "$wf: no scheduled run yet"; continue; fi
-  # Cancelled or skipped says nothing either way.
-  case "$conclusion" in success|failure|timed_out|startup_failure) ;; *) echo "$wf: newest run $id $conclusion"; continue ;; esac
+  while read -r id conclusion url created sha; do
+    case "$conclusion" in success|failure|timed_out|startup_failure) break ;; esac
+    id=''
+  done <<<"$runs"
+  if [ -z "$id" ]; then echo "$wf: no $what run that passed or failed yet"; continue; fi
 
   # A maintainer can validate a fix without waiting for the next schedule.
   # Only main's newest completed manual run can clear the scheduled failure;
@@ -76,8 +86,8 @@ for wf in "${nightlies[@]}"; do
     continue
   fi
 
-  news="- The scheduled run $url ended $conclusion."
-  footer="This is scripts/ci-nightly-red, every hour: it closes this when a scheduled $wf run passes, or a newer manual run on main passes on the same or a descendant commit."
+  news="- The $what run $url ended $conclusion."
+  footer="This is scripts/ci-nightly-red, every hour: it closes this when a $what $wf run passes, or a newer manual run on main passes on the same or a descendant commit."
   if [ "$state" = OPEN ]; then
     said=$(gh issue view "$issue" -R "$repo" --json body,comments --jq '.body, .comments[].body')
     if [[ "$said" == *"/runs/$id"* ]]; then echo "$wf: #$issue already names run $id"; continue; fi

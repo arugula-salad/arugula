@@ -281,6 +281,11 @@ completed manual run counts: an older success, a run on another branch or
 older code, and a failed or cancelled manual run can't dismiss the alert.
 The monitor needs main's full Git history to check ancestry (ci-red.yml
 already checks it out).
+The newest run that passed or failed counts: a newer cancelled or skipped
+one says nothing either way. `ARUGULA_NIGHTLY_EVENT` counts another
+event's runs instead of the scheduled ones: the cloud repo's
+`nightly-red.yml` watches its `testnet-green` (run on `workflow_run`) that
+way.
 `scripts/tests/ci-nightly-red.sh` runs it with a fake gh.
 
 `scripts/ci-velocity` says how the merge queue is doing, so a change to CI

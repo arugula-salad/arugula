@@ -30,7 +30,7 @@ git -C "$tmp/repo" checkout -q --orphan unrelated
 git -C "$tmp/repo" commit -q --allow-empty -m unrelated
 unrelated=$(git -C "$tmp/repo" rev-parse HEAD)
 
-# gh: scheduled `run list` prints $tmp/run ("ID CONCLUSION URL CREATED SHA"),
+# gh: scheduled `run list` (or $FAKE_EVENT's) prints $tmp/run ("ID CONCLUSION URL CREATED SHA", newest first),
 # manual `run list` $tmp/manual ("CONCLUSION URL CREATED SHA"), `issue list`
 # $tmp/issue ("NUMBER STATE"), `issue view` $tmp/said; create, comment and
 # close append to $tmp/calls. Reject a query not scoped to main.
@@ -42,7 +42,7 @@ case "$1 $2" in
     case "$*" in *missing.yml*) echo "HTTP 404: workflow missing.yml not found" >&2; exit 1 ;; esac
     case " $* " in *" -b main "*) ;; *) echo "run list must filter main" >&2; exit 1 ;; esac
     case " $* " in
-      *" -e schedule "*) cat "$FAKE/run" ;;
+      *" -e ${FAKE_EVENT:-schedule} "*) cat "$FAKE/run" ;;
       *" -e workflow_dispatch "*)
         if [ -e "$FAKE/manual-error" ]; then echo "HTTP 503" >&2; exit 1; fi
         cat "$FAKE/manual" ;;
@@ -56,7 +56,7 @@ esac
 EOF
 chmod +x "$tmp/bin/gh"
 export PATH=$tmp/bin:$PATH FAKE=$tmp GITHUB_REPOSITORY=forge/arugula
-unset ARUGULA_RED_MENTION ARUGULA_NIGHTLIES
+unset ARUGULA_RED_MENTION ARUGULA_NIGHTLIES ARUGULA_NIGHTLY_EVENT FAKE_EVENT
 
 url=https://github.com/forge/arugula/actions/runs
 run() { # NAME: the script on forges-nightly, and what it wrote
@@ -149,6 +149,32 @@ elif wrote "$url/16" && ! wrote "issue close"; then ok "a failed manual lookup p
 else bad "manual lookup: $(cat "$tmp/out") / $(cat "$tmp/calls")"; fi
 rm "$tmp/manual-error"
 : >"$tmp/manual"
+
+# A newer cancelled or skipped run hides nothing: the newest that passed or
+# failed counts.
+: >"$tmp/issue"
+printf '%s\n' "21 cancelled $url/21 2026-10-27T02:00:00Z $fixed" "20 skipped $url/20 2026-10-27T01:00:00Z $fixed" \
+  "19 failure $url/19 2026-10-27T00:00:00Z $failed" "18 success $url/18 2026-10-26T00:00:00Z $old" >"$tmp/run"
+run "red under a cancelled run"
+if wrote "issue create" && wrote "$url/19"; then ok "a red run under newer cancelled and skipped ones opens the issue"; else bad "red under cancelled: $(cat "$tmp/calls")"; fi
+echo "7 OPEN" >"$tmp/issue"
+printf '%s\n' "21 cancelled $url/21 2026-10-27T02:00:00Z $fixed" "20 success $url/20 2026-10-27T01:00:00Z $fixed" \
+  "19 failure $url/19 2026-10-27T00:00:00Z $failed" >"$tmp/run"
+run "green under a cancelled run"
+if wrote "issue close 7" && wrote "$url/20"; then ok "a green run under a newer cancelled one closes the issue"; else bad "green under cancelled: $(cat "$tmp/calls")"; fi
+
+# ARUGULA_NIGHTLY_EVENT: another event's runs count instead (the cloud
+# repo's testnet-green, on workflow_run), and the issue says which.
+export ARUGULA_NIGHTLY_EVENT=workflow_run FAKE_EVENT=workflow_run
+: >"$tmp/issue"
+echo "22 failure $url/22 2026-10-28T00:00:00Z $fixed" >"$tmp/run"
+run "workflow_run red"
+if wrote "issue create" && wrote "The workflow_run run $url/22 ended failure" && wrote "a workflow_run forges-nightly run passes"; then ok "ARUGULA_NIGHTLY_EVENT: its red run opens the issue"; else bad "workflow_run red: $(cat "$tmp/out") / $(cat "$tmp/calls")"; fi
+echo "7 OPEN" >"$tmp/issue"
+echo "23 success $url/23 2026-10-28T01:00:00Z $fixed" >"$tmp/run"
+run "workflow_run green"
+if wrote "issue close 7" && wrote "$url/23"; then ok "ARUGULA_NIGHTLY_EVENT: its green run closes the issue"; else bad "workflow_run green: $(cat "$tmp/out") / $(cat "$tmp/calls")"; fi
+unset ARUGULA_NIGHTLY_EVENT FAKE_EVENT
 
 # A workflow gh can't find: the others still run, and it exits 1.
 echo "17 failure $url/17 2026-10-26T00:00:00Z $failed" >"$tmp/run"
