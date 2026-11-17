@@ -62,6 +62,7 @@ import {
   type TeamPin,
   type TeamRole,
 } from "./e2e/team.ts";
+import { movesInto } from "./team-adds.ts";
 import { checkRoster, ClosureStore, RosterStore, takeLock, TrustStore, withTimeout, type RootChange, type RosterProblem } from "./team-rosters.ts";
 
 export interface ControlInfo {
@@ -1924,12 +1925,12 @@ export class ControlSession {
     await this.refresh();
   }
 
-  /** Teams I can put my machines in (#332): any I'm in, but only those I
-   * own while they're locked. A device page signs the team in, so only one
-   * whose roster it checked; with no device key (aru-141) control's word
-   * is all there is. */
+  /** Teams I can move my machines into (#332), by control's rule
+   * (`movesInto`): any I'm in, but only those I own while they're locked.
+   * A device page signs the team in, so only one whose roster it checked;
+   * with no device key (aru-141) control's word is all there is. */
   addableTeams(): Team[] {
-    return this.teams.filter((t) => (t.verified || !this.enrollment) && (t.role === "owner" || !t.locked));
+    return this.teams.filter((t) => (t.verified || !this.enrollment) && movesInto(t));
   }
 
   /** Approve a join (a machine's, or the Arugula CLI's or the phone app's
