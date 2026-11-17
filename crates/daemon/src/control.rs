@@ -1075,7 +1075,9 @@ pub struct Enrolled {
     /// Members of teams sessions were shared with, by team, and their role
     /// in it (M30).
     pub shared_roles: HashMap<String, HashMap<String, Role>>,
-    /// Push subscriptions (M21) whose signatures checked out, and whose.
+    /// Push subscriptions (M21) this daemon takes, and whose: those whose
+    /// signatures checked out, and those control vouches for (aru-141,
+    /// [`Control::taken_subs`]).
     pub push: Vec<(Principal, PushSub)>,
 }
 
@@ -2735,7 +2737,7 @@ impl Control {
         let mut next = Enrolled::build(saved, e.keys.clone(), &self.acl, self.open_agents());
         self.publish(&next).await;
         let subs: wire::PushSubs = self.get(&next, wire::PUSH_SUBS).await?;
-        next.push = Self::verified_subs(&next, subs);
+        next.push = Self::taken_subs(&next, subs);
         let took_ms = took.elapsed().as_millis() as u64;
         info!(changed, took_ms, "refreshed (joined on control's word)");
         self.install(Some(next));
@@ -2892,7 +2894,7 @@ impl Control {
         Ok(wrote)
     }
 
-    /// Notify people through control (M21): every verified subscription
+    /// Notify people through control (M21): every subscription it takes
     /// `to` accepts, encrypted here for that subscription alone. In the
     /// background; [`Control::push_report`] says how it went.
     pub fn push(
@@ -3211,26 +3213,45 @@ impl Control {
         Ok(res.status().as_u16())
     }
 
-    /// Subscriptions control has for the people this daemon serves, kept if
-    /// a device we trust signed them.
+    /// Subscriptions control has for the people this daemon serves, and
+    /// whose they are ([`Control::taken_subs`]).
     async fn push_subs(&self, e: &Enrolled) -> Vec<(Principal, PushSub)> {
         let Ok(got) = self.get::<wire::PushSubs>(e, wire::PUSH_SUBS).await else { return Vec::new() };
-        Self::verified_subs(e, got)
+        Self::taken_subs(e, got)
     }
 
-    /// Those of `got` a device we trust signed, and whose they are. Joined
-    /// on control's word there are no such devices yet, so none.
-    fn verified_subs(e: &Enrolled, got: wire::PushSubs) -> Vec<(Principal, PushSub)> {
+    /// Those of `got` this daemon pushes to, and whose they are. One a
+    /// device it trusts signed is that device's person's (M21). Any other
+    /// is the person control's `roles` says its account is here: control
+    /// decides who reaches a machine (aru-141), so a browser with no device
+    /// key is told about its panes too. Control lists there only accounts
+    /// that may reach this machine; one from before it lists none, and
+    /// then only signed subscriptions count. A deploy's box lets nobody in,
+    /// so it takes none.
+    fn taken_subs(e: &Enrolled, got: wire::PushSubs) -> Vec<(Principal, PushSub)> {
+        if e.saved.purpose().is_some_and(Purpose::deploys) {
+            return Vec::new();
+        }
+        let hosted = e.saved.is_hosted();
         got.subs
             .into_iter()
             .filter_map(|s| {
-                if let Some(c) = e.trusted.get(&s.device) {
-                    return s.signed_by(c).then_some((Principal::Owner, s));
+                if let Some(who) = Self::signer(e, &s) {
+                    return Some((who, s));
                 }
-                let (c, who) = e.others.iter().find(|(c, _)| c.device == s.device)?;
-                s.signed_by(c).then(|| (who.clone(), s))
+                let role = *got.roles.get(&s.account)?;
+                Some((role_principal(role, &s.account, hosted), s))
             })
             .collect()
+    }
+
+    /// Whose `s` is, if a device this daemon trusts signed it.
+    fn signer(e: &Enrolled, s: &PushSub) -> Option<Principal> {
+        if let Some(c) = e.trusted.get(&s.device) {
+            return s.signed_by(c).then_some(Principal::Owner);
+        }
+        let (c, who) = e.others.iter().find(|(c, _)| c.device == s.device)?;
+        s.signed_by(c).then(|| who.clone())
     }
 
     /// Tell control which accounts get in (it routes them; we decide).
@@ -3692,6 +3713,21 @@ fn retire(state_dir: &Path, r: &mut Removed) -> anyhow::Result<()> {
         "this machine's key was removed; set it aside for a new one"
     );
     Ok(())
+}
+
+/// Who a subscription is for when control vouches for it (aru-141): the
+/// person a machine token with `role` would let in (`e2e::token_grant`).
+/// Remote input off doesn't change it: being told isn't
+/// typing.
+fn role_principal(role: arugula_control_wire::machine_token::TokenRole, account: &str, hosted: bool) -> Principal {
+    use arugula_control_wire::machine_token::TokenRole;
+    match role {
+        TokenRole::Owner => Principal::Owner,
+        TokenRole::Editor if hosted => Principal::Owner,
+        TokenRole::Editor | TokenRole::Viewer | TokenRole::Guest => {
+            Principal::User { id: format!("account:{account}"), name: String::new(), pic: None }
+        }
+    }
 }
 
 /// Why control refuses this machine's signature, if it does: what it said
@@ -5078,9 +5114,10 @@ pub(crate) mod tests {
     }
 
     /// A control of the test's own (#232). As the real one, it hands a
-    /// daemon the subscriptions only of accounts it serves: its own, and
+    /// daemon the subscriptions only of accounts it serves: its own (`a1`),
     /// those the daemon told it about that control routes to it (`b1`,
-    /// once `routed`); and it refuses to relay to anyone else.
+    /// once `routed`) and those `roles` lists; and it refuses to relay to
+    /// anyone else.
     #[derive(Default)]
     struct Fake {
         /// What `/api/daemon/access` was last told.
@@ -5096,6 +5133,10 @@ pub(crate) mod tests {
         flags: Option<serde_json::Value>,
         /// The trust answer's revocations.
         revocations: Vec<Revocation>,
+        /// aru-141: who may reach the machine, as `push-subs` says it;
+        /// `None` leaves `roles` out, as a control from before it did.
+        /// Their subscriptions are served too.
+        roles: Option<serde_json::Value>,
     }
 
     struct Rig {
@@ -5196,9 +5237,14 @@ pub(crate) mod tests {
                 "/api/daemon/push-subs",
                 get(|State((f, _, _)): State<St>| async move {
                     let f = f.lock().unwrap();
-                    let served = |a: &str| f.routed && f.published.iter().any(|p| p == a);
+                    let listed = |a: &str| f.roles.as_ref().is_some_and(|r| r.get(a).is_some());
+                    let served = |a: &str| a == "a1" || (f.routed && f.published.iter().any(|p| p == a)) || listed(a);
                     let subs: Vec<&PushSub> = f.subs.iter().filter(|s| served(&s.account)).collect();
-                    Json(serde_json::json!({ "subs": subs }))
+                    let mut v = serde_json::json!({ "subs": subs });
+                    if let Some(roles) = &f.roles {
+                        v["roles"] = roles.clone();
+                    }
+                    Json(v)
                 }),
             )
             .route(
@@ -5209,7 +5255,8 @@ pub(crate) mod tests {
                     let Some(s) = f.subs.iter().find(|s| s.endpoint == endpoint) else {
                         return StatusCode::NOT_FOUND;
                     };
-                    if !(f.routed && f.published.contains(&s.account)) {
+                    let listed = f.roles.as_ref().is_some_and(|r| r.get(&s.account).is_some());
+                    if s.account != "a1" && !(f.routed && f.published.contains(&s.account)) && !listed {
                         return StatusCode::FORBIDDEN;
                     }
                     let body = base64::engine::general_purpose::STANDARD
@@ -5471,6 +5518,130 @@ pub(crate) mod tests {
         let got = c.push_report(1, "t", "b", None, to_bea).await;
         assert_eq!(got, Pushed { matched: 1, relayed: 0, refused: 1 });
         let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
+    /// A subscription from a browser with no device key (aru-141), as
+    /// control stores one: nobody's signature.
+    fn unsigned(r: &Rig, account: &str, endpoint: &str) -> PushSub {
+        let mut s = r.fake.lock().unwrap().subs[0].clone();
+        s.account = account.into();
+        s.endpoint = endpoint.into();
+        s.device = String::new();
+        s.sig = String::new();
+        s
+    }
+
+    /// aru-141 (#1000): a subscription nobody signed reaches its person
+    /// once control says their account may reach this machine, as the role
+    /// it says; with no `roles` (a control from before them), it doesn't.
+    #[tokio::test]
+    async fn unsigned_subscriptions_count_on_controls_word() {
+        let r = rig("push-unsigned").await;
+        {
+            let mut f = r.fake.lock().unwrap();
+            let (own, bea) = (unsigned(&r, "a1", "https://push.test/a1"), unsigned(&r, "b1", "https://push.test/b1"));
+            f.subs = vec![own, bea, unsigned(&r, "c1", "https://push.test/c1")];
+        }
+        let c = r.daemon().await;
+        r.grant();
+        assert!(c.refresh_now(REFRESH_WAIT).await);
+        let owner = |p: &Principal| p.is_owner();
+        assert_eq!(c.push_report(1, "t", "b", None, owner).await, Pushed::default(), "today's control: signed only");
+        assert_eq!(c.push_report(1, "t", "b", None, to_bea).await, Pushed::default());
+
+        // Control lists who may reach the machine: the owner as `owner`,
+        // Bea as an editor; `c1` isn't listed, so isn't anyone here.
+        r.fake.lock().unwrap().roles = Some(serde_json::json!({ "a1": "owner", "b1": "editor" }));
+        assert!(c.refresh_now(REFRESH_WAIT).await);
+        let got = c.push_report(1, "Waiting", "on you", None, owner).await;
+        assert_eq!(got, Pushed { matched: 1, relayed: 1, refused: 0 }, "the owner's browser");
+        let got = c.push_report(2, "Waiting", "on you", None, to_bea).await;
+        assert_eq!(got, Pushed { matched: 1, relayed: 1, refused: 0 }, "Bea's, as account:b1");
+        let relayed: Vec<String> = r.fake.lock().unwrap().relayed.iter().map(|(e, _)| e.clone()).collect();
+        assert_eq!(relayed, ["https://push.test/a1", "https://push.test/b1"]);
+        let e = c.enrolled().unwrap();
+        assert!(!e.push.iter().any(|(_, s)| s.account == "c1"), "nobody control didn't list");
+
+        // Control stops listing Bea: the next refresh drops hers.
+        r.fake.lock().unwrap().roles = Some(serde_json::json!({ "a1": "owner" }));
+        assert!(c.refresh_now(REFRESH_WAIT).await);
+        assert_eq!(c.push_report(1, "t", "b", None, to_bea).await, Pushed::default());
+        let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
+    /// Signed and unsigned side by side (until the device keys go, #1007):
+    /// a signed subscription is its signer's whatever `roles` says.
+    #[test]
+    fn a_signed_subscription_is_its_signers() {
+        use arugula_control_wire::machine_token::TokenRole;
+        let ends = |got: &[(Principal, PushSub)]| -> Vec<(String, String)> {
+            got.iter().map(|(p, s)| (p.id().to_owned(), s.endpoint.clone())).collect()
+        };
+        let (rk, root) = device("a1", Kind::Browser);
+        let dk = DeviceKeys::generate();
+        let mut dcert = Cert::new(&dk, "a1", Kind::Daemon, "box");
+        dcert.sign_with(&rk);
+        let saved = Saved {
+            url: "http://control.test".into(),
+            root: Root::Pinned(Trust { account: "a1".into(), root: root.device.clone() }),
+            cert: dcert,
+            certs: vec![root.clone()],
+            revocations: vec![],
+            kind: MachineKind::Personal,
+            seen: Default::default(),
+            peers: Default::default(),
+            shared_teams: Default::default(),
+            held_teams: Default::default(),
+            held_peers: Default::default(),
+            login: String::new(),
+            moved_at: 0,
+        };
+        let dir = std::env::temp_dir().join(format!("arugula-push-signed-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let e = Enrolled::build(saved, Arc::new(dk), &Acl::open(&dir), false);
+        let sub = |account: &str, endpoint: &str| PushSub {
+            v: 1,
+            account: account.into(),
+            device: String::new(),
+            endpoint: endpoint.into(),
+            p256dh: "AAAA".into(),
+            auth: "BBBB".into(),
+            at: 1,
+            sig: String::new(),
+        };
+        let mut signed = sub("a1", "https://push.test/signed");
+        signed.sign_with(&rk);
+        let mut forged = signed.clone();
+        forged.endpoint = "https://push.test/forged".into();
+        let got = Control::taken_subs(
+            &e,
+            wire::PushSubs { subs: vec![signed.clone(), forged.clone()], roles: Default::default() },
+        );
+        assert_eq!(ends(&got), [("owner".into(), "https://push.test/signed".into())], "signed only, without roles");
+
+        let roles = [("a1".to_owned(), TokenRole::Viewer), ("g1".to_owned(), TokenRole::Guest)].into();
+        let guest = sub("g1", "https://push.test/guest");
+        let got = Control::taken_subs(&e, wire::PushSubs { subs: vec![signed, forged, guest], roles });
+        assert_eq!(
+            ends(&got),
+            [
+                ("owner".into(), "https://push.test/signed".into()),
+                ("account:a1".into(), "https://push.test/forged".into()),
+                ("account:g1".into(), "https://push.test/guest".into()),
+            ],
+            "a signature that doesn't check is control's word; a guest is their account"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_role_is_the_principal_a_token_would_be() {
+        use arugula_control_wire::machine_token::TokenRole;
+        assert!(role_principal(TokenRole::Owner, "a1", false).is_owner());
+        assert!(role_principal(TokenRole::Editor, "a1", true).is_owner(), "a hosted machine's editor (M184)");
+        for r in [TokenRole::Editor, TokenRole::Viewer, TokenRole::Guest] {
+            assert_eq!(role_principal(r, "b1", false).id(), "account:b1");
+        }
     }
 
     /// The trap (#232): a refresh already under way when `refresh_now` is

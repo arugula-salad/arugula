@@ -455,6 +455,9 @@ fn push_subs_are_what_control_answers() {
     round::<PushSubs>(json!({ "subs": [] }));
     // Control answers with the bodies it stored, unread.
     round::<PushSubs<Value>>(json!({ "subs": [push_sub(), { "account": "a1" }] }));
+    // aru-141: who may reach the machine, for the subscriptions nobody signed.
+    let s = round::<PushSubs>(json!({ "subs": [push_sub()], "roles": { "a1": "owner", "b1": "viewer" } }));
+    assert_eq!(s.roles.get("b1"), Some(&crate::machine_token::TokenRole::Viewer));
 }
 
 /// What the daemon built with `json!` to relay a push: `endpoint` and
