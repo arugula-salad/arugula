@@ -55,6 +55,47 @@ test("#settings=<section> opens at it, and a reload stays there", async ({ page 
   await expect(page.locator(".settings-index a", { hasText: "Help" })).toHaveAttribute("href", "#settings=help");
 });
 
+// Arugula #1094: who reached the machine through Arugula cloud, from the
+// daemon's own log, under This machine, with the remote-input switch's state.
+test("Remote sessions lists who came through Arugula cloud, one row each", async ({ page }) => {
+  await reset(page);
+  const now = Date.now();
+  await page.route("**/api/remote-sessions", (r) =>
+    r.fulfill({
+      json: {
+        remote_input: false,
+        sessions: [
+          { account: "a2", name: "lee", role: "viewer", path: "relay", by: "token", opened_ms: now - 60_000, open: true },
+          { account: "a1", name: "sam", role: "editor", path: "relay", by: "token", opened_ms: now - 7_200_000, closed_ms: now - 6_480_000, open: false },
+          { account: "a1", name: "sam", role: "owner", path: "direct", by: "token", opened_ms: now - 90_000_000, open: false },
+        ],
+      },
+    }),
+  );
+  await page.goto("/#settings=remote-sessions");
+  const section = page.locator('[data-settings-section="remote-sessions"]');
+  await expect(section.locator("h2")).toHaveText("Remote sessions3");
+  const rows = section.locator("[data-remote-session]");
+  await expect(rows).toHaveCount(3);
+  await expect(rows.nth(0)).toHaveAttribute("data-remote-session", "open");
+  await expect(rows.nth(0)).toContainText("lee");
+  await expect(rows.nth(0)).toContainText("Open");
+  await expect(rows.nth(1)).toContainText("for 12m");
+  await expect(rows.nth(2)).toContainText("until the daemon stopped");
+  await expect(section.locator("[data-remote-input]")).toHaveAttribute("data-remote-input", "off");
+  // The index lists it with the page's other sections.
+  await expect(page.locator(".settings-index a", { hasText: "Remote sessions" })).toHaveAttribute("href", "#settings=remote-sessions");
+});
+
+test("a daemon without the log's route shows no Remote sessions, and no error", async ({ page }) => {
+  await reset(page);
+  await page.route("**/api/remote-sessions", (r) => r.fulfill({ status: 404, json: { error: "no such route" } }));
+  await page.goto("/#settings=machine");
+  await expect(page.locator('[data-settings-section="machine"]')).toBeVisible();
+  await expect(page.locator('[data-settings-section="remote-sessions"]')).toHaveCount(0);
+  await expect(page.locator("[data-settings-page] .error")).toHaveCount(0);
+});
+
 test("the command palette still finds every setting, and goes to the page", async ({ page }) => {
   await reset(page);
   await page.locator(".ws-head [data-open-palette]").click();

@@ -155,8 +155,9 @@ signed-in session.
 - **What the machine keeps for you:** each remote session it accepts, with
   who, the role, relay or direct, and when it opened and closed, in
   `remote-sessions.jsonl` in the state directory
-  (`crates/daemon/src/remote_log.rs`). Only the file for now: no page or
-  command shows it yet.
+  (`crates/daemon/src/remote_log.rs`). The machine's Settings page shows
+  it under Remote sessions, to its owner only (`GET /api/remote-sessions`),
+  and `arugulad sharing log` prints it on the machine.
 - **What only the machine can turn off:** typing through control.
   `arugulad sharing remote-input off`, run on the machine, makes everyone
   who comes with a machine token a viewer
@@ -362,7 +363,7 @@ These run only there; a person's machine doesn't send them
 | Chat readers | chat off for the account or team, in control | `crates/daemon/src/chat_readers.rs` |
 | Agent mentions | `arugulad sharing agent-mentions off` (`agent_mentions: false` in `sharing.json`) | `crates/proto/src/sharing.rs`, `agent_mentions` |
 | Typing through control (machine tokens, aru-141) | `arugulad sharing remote-input off` (`remote_input: false` in `sharing.json`), on the machine only: people who come through control can only watch | `crates/proto/src/sharing.rs`, `remote_input`; `crates/daemon/src/e2e.rs`, `token_grant` |
-| Who came (not a switch: always on) | `remote-sessions.jsonl` in the state directory, one line per remote session opened and closed | `crates/daemon/src/remote_log.rs` |
+| Who came (not a switch: always on) | `remote-sessions.jsonl` in the state directory, one line per remote session opened and closed; read it on the machine's Settings page (Remote sessions) or with `arugulad sharing log` | `crates/daemon/src/remote_log.rs` |
 | Boards state | `arugulad leave`, or take away the machine's `boards.write` grant (`arugula grants`) | `crates/daemon/src/board_state.rs`, `enabled`; `crates/platform/src/grants.rs` |
 | Agents' control tools | the machine's grants (`arugula grants`) | `crates/platform/src/grants.rs` |
 | VM panes (loam) | no `--loam-url`, or the `sandbox-providers` flag off | `crates/daemon/src/lib.rs`, `open_provider`; `crates/daemon/src/provider_gate.rs` |

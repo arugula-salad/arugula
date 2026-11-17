@@ -285,6 +285,7 @@ macro_rules! every_op {
         $m!($crate::op::ops::TelemetryNote);
         $m!($crate::op::ops::SharingGet);
         $m!($crate::op::ops::SharingSet);
+        $m!($crate::op::ops::RemoteSessionsList);
         $m!($crate::op::ops::RulesList);
         $m!($crate::op::ops::RulesForgetAll);
         $m!($crate::op::ops::RuleForget);
@@ -413,7 +414,7 @@ pub mod ops {
         },
         flags::{FlagInfo, FlagSetRequest},
         hosts::SandboxList,
-        sharing::{Sharing, SharingSetRequest},
+        sharing::{RemoteSessions, Sharing, SharingSetRequest},
         telemetry::{TelemetryInfo, TelemetryNoteRequest, TelemetrySetRequest},
     };
 
@@ -572,6 +573,22 @@ pub mod ops {
         type Path = ();
         type Req = SharingSetRequest;
         type Res = Sharing;
+    }
+
+    /// `GET /api/remote-sessions` (Arugula #1094): who reached this machine
+    /// through control, newest first, from its own log (aru-141), and
+    /// whether they may type now. The owner's: a viewer or an editor of a
+    /// session learns nothing of who else came.
+    pub struct RemoteSessionsList;
+
+    impl Op for RemoteSessionsList {
+        const NAME: &'static str = "remote_sessions.list";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/remote-sessions";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = Empty;
+        type Res = RemoteSessions;
     }
 
     /// `GET /api/rules`: standing tool permission rules.

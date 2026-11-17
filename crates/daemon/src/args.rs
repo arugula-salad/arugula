@@ -112,7 +112,8 @@ pub enum Command {
     /// machine's owner invite a guest with only OpenSSH to a pane (Guest
     /// SSH access, off by default); `off` ends every ssh invite. It writes
     /// sharing.json in the state directory; a running daemon follows at
-    /// once. Control can't set it.
+    /// once. Arugula cloud can't set it. `arugulad sharing log` shows who
+    /// reached this machine through Arugula cloud.
     Sharing {
         /// The setting to show or set [default: list them].
         #[arg(value_enum)]
@@ -162,6 +163,9 @@ pub enum SharingSetting {
     /// act here (aru-141). Off, they can only watch. Only set here, on the
     /// machine.
     RemoteInput,
+    /// Who reached this machine through Arugula cloud, newest first: who,
+    /// the role, the path and when (Arugula #1094). It only shows.
+    Log,
 }
 
 /// What `arugulad sharing NAME` is told: `on` or `off`, or for
