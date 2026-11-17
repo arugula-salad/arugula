@@ -529,6 +529,14 @@ async fn report(Axum(f): Axum<Fake>, Json(r): Json<SessionReport>) -> Json<Value
     if s.stopped {
         return refuse("stopped".into(), Some("stopped"), None);
     }
+    // As the platform does: one it took before, signed the same, is a retry
+    // whose answer was lost (Arugula #1120: a box stopped between control
+    // taking a report and keeping that it had).
+    if r.n <= s.work.n
+        && f.reports.lock().unwrap().iter().any(|k| k.session == r.session && k.n == r.n && k.sig == r.sig)
+    {
+        return Json(json!({ "kind": "already" }));
+    }
     if r.n != s.work.n + 1 {
         return refuse(format!("n {} isn't {}", r.n, s.work.n + 1), None, Some(s.work.n + 1));
     }
@@ -665,8 +673,8 @@ fn serve(rt: &tokio::runtime::Runtime, f: Fake) -> String {
     })
 }
 
-/// Wait until `ok` holds, for 40 s; else fail with what the platform heard
-/// and the daemon's log.
+/// Wait until `ok` holds, for 40 s; else fail with what the platform heard,
+/// the daemon's log and what each agent said on its stderr.
 fn wait(marks: &Path, f: &Fake, what: &str, mut ok: impl FnMut() -> bool) {
     let deadline = std::time::Instant::now() + Duration::from_secs(40);
     while !ok() {
@@ -674,7 +682,17 @@ fn wait(marks: &Path, f: &Fake, what: &str, mut ok: impl FnMut() -> bool) {
             let log = std::fs::read_to_string(marks.join("arugulad.log")).unwrap_or_default();
             let tail: Vec<&str> = log
                 .lines()
-                .filter(|l| l.contains("hosted") || l.contains("agent") || l.contains("WARN") || l.contains("ERROR"))
+                .filter(|l| ["hosted", "agent", "attention", "WARN", "ERROR"].iter().any(|w| l.contains(w)))
+                .collect();
+            // Arugula #1120: a block stuck after a restart says why there.
+            let blocks = std::fs::read_dir(marks.join("state/blocks")).into_iter().flatten().flatten();
+            let stderr: Vec<String> = blocks
+                .filter_map(|b| {
+                    let said = std::fs::read_to_string(b.path().join("agent.err")).ok()?;
+                    let lines: Vec<&str> = said.lines().collect();
+                    let last = lines[lines.len().saturating_sub(20)..].join("\n");
+                    Some(format!("block {}:\n{last}", b.file_name().to_string_lossy()))
+                })
                 .collect();
             let reports: Vec<String> = f
                 .reports
@@ -684,11 +702,12 @@ fn wait(marks: &Path, f: &Fake, what: &str, mut ok: impl FnMut() -> bool) {
                 .map(|r| format!("{} {} {} {}->{} {}", &r.session[..6], r.n, r.kind, r.from, r.to, r.detail))
                 .collect();
             panic!(
-                "timed out waiting for {what}\nreports:\n{}\nrefused: {:?}\npulls: {}\nlog:\n{}",
+                "timed out waiting for {what}\nreports:\n{}\nrefused: {:?}\npulls: {}\nlog:\n{}\nagents' stderr:\n{}",
                 reports.join("\n"),
                 f.refused.lock().unwrap(),
                 f.pulls(),
-                tail[tail.len().saturating_sub(60)..].join("\n")
+                tail[tail.len().saturating_sub(60)..].join("\n"),
+                stderr.join("\n")
             );
         }
         std::thread::sleep(Duration::from_millis(50));

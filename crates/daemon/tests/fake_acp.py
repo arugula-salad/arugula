@@ -195,8 +195,15 @@ def from_transcript(sid):
 
 
 def save(sid, s):
-    with open(path(sid), "w") as f:
+    # Whole or not at all: a turn's thread saves as it goes, and the process
+    # can end under it (stdin closed by a daemon's restart). A file it had
+    # just truncated left the next agent's session/load unanswered, and the
+    # block waiting for it for good (Arugula #1120).
+    # Named so no test's listing of the directory (prompt-*, fake-*) sees it.
+    tmp = os.path.join(DIR, f".saving-{sid}-{threading.get_ident()}")
+    with open(tmp, "w") as f:
         json.dump(s, f)
+    os.replace(tmp, path(sid))
 
 
 def update(sid, s, u):
