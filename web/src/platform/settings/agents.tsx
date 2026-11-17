@@ -1,18 +1,19 @@
-// What a machine's agents may do, in This machine's settings (Arugula
-// #1107): a row per project, and your DMs, with eight columns. Threads &
-// issues (M197) lets the machine's agents read and post in the project's
-// threads and write its issues; Runs (M216) lets them read its runs and
-// start its run specs; Commands (M216, apart) start commands of their own
-// there; Deploys (M218) plan its deploys and ask for approval: never
-// approve; Start sessions and Answer sessions (aru-121) start agent
-// sessions as you, and answer or prompt them; Plane writes (#359); and
-// Boards (#293, a select of three levels, not a switch) lets them read its
-// boards, or read them and write their rows. Your DMs get one, Threads
-// (M197). Off until you turn one on, and only over what you read; what
-// they write is labelled as your agent's, and every room they reach says
-// so. The same grants as `arugula grants add` (`/api/grants`, the
-// platform's). What each switch reads of the grants is ./grants's, tested.
+// Agents on your machines, in the account's settings: per project, a
+// matrix of the machines and seven columns each. Threads & issues (M197)
+// lets a machine's agents read and post in the project's threads and
+// write its issues; Runs (M216) lets them read its runs and start its run
+// specs; Commands (M216, apart) start commands of their own there; Deploys
+// (M218) plan its deploys and ask for approval: never approve; Start
+// sessions and Answer sessions (aru-121) start agent sessions as you, and
+// answer or prompt them; and Boards (#293, a select of three levels, not a
+// switch) lets them read its boards, or read them and write their rows.
+// Your DMs get one more, one switch per machine (M197). Off until you turn
+// one on, and only over what you read; what they write is labelled as your
+// agent's, and every room they reach says so. The same grants as `arugula
+// grants add` (`/api/grants`, the platform's). What each switch reads of
+// the grants is ./grants's, tested.
 
+import { Card } from "../../shared/ui/card";
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import { useSubscribe } from "../../shared/ui/hooks";
@@ -27,10 +28,12 @@ import {
   columnRefused,
   COMMAND_POWERS,
   forRole,
+  grantsSummary,
   liveOver,
-  machineGrantsSummary,
+  machinesOf,
   matrixOf,
   powersFor,
+  reaching,
   RUN_POWERS,
   SINGLE,
   singleGrant,
@@ -44,6 +47,7 @@ import {
 import { Time } from "../../shared/ui/time";
 import { roleIn } from "./environments";
 import { Section } from "../../shared/ui/settings-section";
+import { Count } from "../../shared/ui/state-chip";
 
 async function call<T>(path: string, body?: unknown): Promise<T> {
   const r = await platformFetch(path, {
@@ -169,9 +173,8 @@ function Switch({ cell, label, k, busy, refused, turn }: { cell: Cell; label: st
 /** Why a column's switch is off for good on a viewer's project. */
 const REFUSED_WHY = "You only view this project, so this would do nothing for its agents: every write is refused. Ask an owner for the editor role.";
 
-/** The account's grants (`/api/grants`) and the switches' turns: each
- * gives or revokes what its column gives, then reads them again. */
-function useGrantSwitches() {
+export function AgentGrants() {
+  useSubscribe((fn) => session.subscribe(fn));
   const [grants, setGrants] = useState<Grant[] | null>(null);
   const [err, setErr] = useState("");
   // What a viewer's switch left out (Arugula #683): a note, not an error.
@@ -183,13 +186,20 @@ function useGrantSwitches() {
       (e: Error) => setErr(e.message),
     );
   useEffect(() => void load(), []);
+  if (grants === null)
+    return err ? (
+      <Section id="agents" title="Agents on your machines" summary="Couldn't load">
+        <p class="control-error">{err}</p>
+      </Section>
+    ) : null;
+  const machines = machinesOf(grants);
   // A column that's one grant: deploys, start and reply.
-  const turnSingle = async (all: Grant[], machine: string, s: AgentScope, column: Column, power: string, on: boolean) => {
+  const turnSingle = async (machine: string, s: AgentScope, column: Column, power: string, on: boolean) => {
     const project = s.id!;
     setErr("");
     setBusy(cellKey(machine, s, column));
     try {
-      const g = singleGrant(all, machine, project, power);
+      const g = singleGrant(grants, machine, project, power);
       if (on && !g) await call("/api/grants", { daemon: machine, power, scope: { kind: "project", id: project } });
       if (!on && g) await call(`/api/grants/${encodeURIComponent(g.id)}/revoke`, {});
     } catch (e) {
@@ -204,7 +214,7 @@ function useGrantSwitches() {
     setErr("");
     setBusy(cellKey(machine, s, "boards"));
     try {
-      const { give, revoke } = boardsMove(grants ?? [], machine, project, to);
+      const { give, revoke } = boardsMove(grants, machine, project, to);
       for (const power of give) await call("/api/grants", { daemon: machine, power, scope: { kind: "project", id: project } });
       for (const g of revoke) await call(`/api/grants/${encodeURIComponent(g.id)}/revoke`, {});
     } catch (e) {
@@ -213,14 +223,14 @@ function useGrantSwitches() {
     await load();
     setBusy("");
   };
-  const turn = async (all: Grant[], machine: string, s: AgentScope, on: boolean, which?: "runs" | "commands") => {
+  const turn = async (machine: string, s: AgentScope, on: boolean, which?: "runs" | "commands") => {
     setErr("");
     setBusy(cellKey(machine, s, which ?? "threads"));
-    const gives = which === "runs" ? RUN_POWERS : which === "commands" ? COMMAND_POWERS : powersFor(s.kind);
+    const all = which === "runs" ? RUN_POWERS : which === "commands" ? COMMAND_POWERS : powersFor(s.kind);
     // A viewer's machine is given what still works for it (Arugula #683),
     // and told what wasn't asked for.
-    const powers = forRole(gives, s.role);
-    const left = gives.filter((p) => !powers.includes(p));
+    const powers = forRole(all, s.role);
+    const left = all.filter((p) => !powers.includes(p));
     setNote("");
     try {
       if (on) {
@@ -228,7 +238,7 @@ function useGrantSwitches() {
         for (const power of powers) await call("/api/grants", { daemon: machine, power, scope });
         if (left.length) setNote(`Given without ${left.join(" and ")}: you only view ${s.name}, so those would do nothing for its agents.`);
       } else {
-        for (const g of liveOver(all, machine, s, which ? gives : undefined)) {
+        for (const g of liveOver(grants, machine, s, which ? all : undefined)) {
           await call(`/api/grants/${encodeURIComponent(g.id)}/revoke`, {});
         }
       }
@@ -239,109 +249,135 @@ function useGrantSwitches() {
     setBusy("");
   };
   const turnCell = (machine: string, s: AgentScope, column: Column, on: boolean) => {
-    const all = grants ?? [];
     const single = SINGLE[column];
-    if (single) return void turnSingle(all, machine, s, column, single, on);
-    void turn(all, machine, s, on, column === "threads" ? undefined : column === "runs" ? "runs" : "commands");
+    if (single) return void turnSingle(machine, s, column, single, on);
+    void turn(machine, s, on, column === "threads" ? undefined : column === "runs" ? "runs" : "commands");
   };
-  return { grants, err, note, busy, turnCell, turnBoards };
-}
 
-/** What a machine's agents may do (Arugula #1107), in This machine's
- * settings: a row per project and one for your DMs, a switch per column.
- * "Agents on your machines" (You) and the machine's read-only *Agents'
- * grants…* were two views of these; this is the one. */
-export function MachineAgentGrants({ machine }: { machine: { id: string; name: string } }) {
-  useSubscribe((fn) => session.subscribe(fn));
-  const { grants, err, note, busy, turnCell, turnBoards } = useGrantSwitches();
-  const title = "Agents' grants";
-  const lede = `What the agents on ${machine.name} may do on Arugula cloud, as you. Off until you turn one on, and never more than you can read or do.`;
-  if (grants === null)
+  // A scope's card: its name, how many machines reach it (0/5 too, UI
+  // audit #168), and the matrix. The bar says whether any machine's agents
+  // reach it at all.
+  const card = (s: AgentScope, title: string, sub: string, columns: Column[], heads: Head[], data: object) => {
+    const rows = matrixOf(grants, machines, s, columns, s.role);
+    const n = reaching(rows);
     return (
-      <Section id="agents" title={title} summary={err ? "Couldn't load" : undefined} lede={lede}>
-        {err ? <p class="control-error">{err}</p> : <p class="dim">Loading…</p>}
-      </Section>
-    );
-  const dms: AgentScope = { kind: "account", name: "Your DMs" };
-  const scopes = session.projects.map(
-    (p): AgentScope => ({ kind: "project", id: p.id, name: p.team ? p.name : "your personal project", role: roleIn(p) as Role }),
-  );
-  // One machine's row of each scope's matrix: its cells.
-  const cellsOf = (s: AgentScope, columns: Column[]) => matrixOf(grants, [machine], s, columns, s.role)[0].cells;
-  const cell = (s: AgentScope, column: Column, c: Cell, label: string) => {
-    const k = cellKey(machine.id, s, column);
-    const head = HEADS[column];
-    const name = `${machine.name}: ${s.kind === "account" ? "your DMs" : `${label}: ${head.name}`}`;
-    if (column === "boards")
-      return (
-        <td key={k} data-col={head.head}>
-          <BoardsLevelSelect level={boardsLevel(grants, machine.id, s.id ?? "")} label={name} k={k} busy={busy === k} role={s.role} turn={(to) => void turnBoards(machine.id, s, to)} />
-          <Says cell={{ limited: boardsLimit(grants, machine.id, s.id ?? ""), revoked: boardsRevoked(grants, machine.id, s) }} k={k} />
-        </td>
-      );
-    return (
-      <td key={k} data-col={head.short ?? head.head}>
-        <Switch cell={c} k={k} label={name} busy={busy === k} refused={columnRefused(column, s.role) ? REFUSED_WHY : undefined} turn={(on) => turnCell(machine.id, s, column, on)} />
-      </td>
+      <Card key={s.id ?? "dms"} class="agent-card" tone={n ? "accent" : "muted"} {...data}>
+        <div class="card-head">
+          <b class="card-title big">{title}</b>
+          <Count class="count-end" title={`Agents on ${n} of ${machines.length} ${machines.length === 1 ? "machine" : "machines"} reach it`}>
+            {n}/{machines.length}
+          </Count>
+        </div>
+        {sub ? <span class="dim agent-card-sub">{sub}</span> : null}
+        <table class={`agent-matrix${columns.length > 1 ? " agent-matrix-wide" : ""}`}>
+          <thead>
+            <tr>
+              <th scope="col">Machine</th>
+              {heads.map((h) => (
+                <th scope="col" key={h.head} title={`Its agents ${h.gives}`}>
+                  {h.head}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(({ machine: m, cells }) => (
+              <tr key={m.id}>
+                <th scope="row">{m.name}</th>
+                {cells.map((cell, i) => {
+                  const k = cellKey(m.id, s, columns[i]);
+                  const name = `${m.name}: ${s.kind === "account" ? "your DMs" : `${s.name}: ${heads[i].name}`}`;
+                  if (columns[i] === "boards") {
+                    return (
+                      <td key={k} data-col={heads[i].head}>
+                        <BoardsLevelSelect
+                          level={boardsLevel(grants, m.id, s.id ?? "")}
+                          label={name}
+                          k={k}
+                          busy={busy === k}
+                          role={s.role}
+                          turn={(to) => void turnBoards(m.id, s, to)}
+                        />
+                        <Says cell={{ limited: boardsLimit(grants, m.id, s.id ?? ""), revoked: boardsRevoked(grants, m.id, s) }} k={k} />
+                      </td>
+                    );
+                  }
+                  return (
+                    <td key={k} data-col={heads[i].short ?? heads[i].head}>
+                      <Switch
+                        cell={cell}
+                        k={k}
+                        label={name}
+                        busy={busy === k}
+                        refused={columnRefused(columns[i], s.role) ? REFUSED_WHY : undefined}
+                        turn={(on) => turnCell(m.id, s, columns[i], on)}
+                      />
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
     );
   };
+
   return (
     <Section
       id="agents"
-      title={title}
-      summary={machineGrantsSummary(grants, machine.id)}
-      lede={lede}
-      hooks={{ "data-agent-grants": machine.id }}
+      title="Agents on your machines"
+      summary={grantsSummary(grants)}
       more={
         <>
           <p>
-            What they write is labelled as your agent's on {machine.name}, and every room they reach says so to everyone in it. A run or an
-            agent session one of them starts is yours: you're its asker and you pay for it.
+            Never more than you can read or do. What they write is labelled as your agent's on that machine, and every room they reach
+            says so to everyone in it. A run they start is yours, labelled as started by your agent on that machine.
           </p>
           <p>
-            They never approve anything: an owner approves a deploy with a passkey, and a session's permission waits on a person. A switch
-            marked "only …" holds part of what it gives (from <code>arugula grants add</code>, say): turning it off takes that away, and on
-            again gives all of it. In a project you only view, a switch gives what still works for a viewer's agents and says what it left
-            out. A project's owners can revoke any grant over it: it shows here as revoked, by them and when, and you can give it again.
+            An agent session one of them starts is yours: you're its asker and you pay for it, and its card says your agent on that
+            machine started it.
+          </p>
+          <p>
+            They never approve anything: an owner approves a deploy, on their phone or in a browser, with a passkey, and a session's
+            permission waits on a person. A switch marked
+            "only …" holds part of what it gives (from <code>arugula grants add</code>, say): turning it off takes that away, and on
+            again gives all of it. In a project you only view, a switch gives what still works for a viewer's agents and says what it
+            left out; one that would do nothing can't be turned on. A grant from before you were a viewer stays and says what it
+            does now ("idle", "reads only"); an owner making you an editor brings the rest back.
+          </p>
+          <p>
+            A project's owners can also revoke any grant over it, whoever gave it: it shows here as revoked, by them and when, and
+            you're told. The machine is still yours, so you can give it again; an owner who means it takes you out of the team.
           </p>
         </>
       }
     >
-      <table class="agent-matrix agent-matrix-wide machine-grants">
-        <thead>
-          <tr>
-            <th scope="col">Project</th>
-            {COLUMNS.map((c) => (
-              <th scope="col" key={c} title={`Its agents ${HEADS[c].gives}`}>
-                {HEADS[c].head}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {scopes.map((s, i) => {
-            const p = session.projects[i];
-            return (
-              <tr key={s.id} data-agent-project={s.id}>
-                <th scope="row">
-                  {p.name}
-                  {p.team?.role === "viewer" && <span class="agent-idle">you only view it</span>}
-                </th>
-                {cellsOf(s, COLUMNS).map((c, j) => cell(s, COLUMNS[j], c, p.name))}
-              </tr>
+      {machines.length === 0 ? (
+        <p class="dim">No machines on your account yet.</p>
+      ) : (
+        <div class="card-list agent-cards" data-agent-grants>
+          {session.projects.map((p) => {
+            const s: AgentScope = { kind: "project", id: p.id, name: p.team ? p.name : "your personal project", role: roleIn(p) as Role };
+            return card(
+              s,
+              p.name,
+              p.team?.role === "viewer" ? "You only view it, so a write power here reads and comments only" : "",
+              COLUMNS,
+              COLUMNS.map((c) => HEADS[c]),
+              { "data-agent-project": p.id },
             );
           })}
-          <tr data-agent-dms="">
-            <th scope="row" title="Read and post in your direct messages">
-              Your DMs
-            </th>
-            {cell(dms, "threads", cellsOf(dms, ["threads"])[0], "Your DMs")}
-            {COLUMNS.slice(1).map((c) => (
-              <td key={c} data-col={HEADS[c].short ?? HEADS[c].head} aria-hidden="true" />
-            ))}
-          </tr>
-        </tbody>
-      </table>
+          {card(
+            { kind: "account", name: "Your DMs" },
+            "Your DMs",
+            "Read and post in your direct messages",
+            ["threads"],
+            [{ head: "Read & post", name: "your DMs", gives: "read and post in your DMs" }],
+            { "data-agent-dms": "" },
+          )}
+        </div>
+      )}
       {note ? (
         <p class="agent-grants-note" data-agent-grants-note>
           {note}

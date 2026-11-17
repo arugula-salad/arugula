@@ -1,45 +1,25 @@
-// Settings' This machine scope (Arugula #1104, #1107): one of your
-// machines, by the picker. Its own settings (Access, Permission rules,
-// usage and crash reports, Guest SSH access, Developer settings) are the
-// machine's, which the page draws where it reaches machines
-// (`PlatformApi.MachineSettings`, the app's); a page that doesn't links to
-// the machine's page for them. Then what Arugula cloud keeps about it: what
-// its agents may do (../settings/agents), after Access, and its name, last.
-// The machines are those the platform's grants name (`/api/grants`, which
-// lists every machine of yours).
+// Settings' This machine scope (Arugula #1104): one of your machines, by
+// the picker. For now one section that opens the machine's own page, where
+// its settings are (Access, Permission rules, usage and crash reports,
+// Guest SSH, Developer settings, its name); the app draws them here in
+// Arugula #1107. The machines are those the platform's grants name
+// (`/api/grants`, as Agents on your machines reads them).
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
-import { usePlatformApi } from "../../shared/platform-api";
 import { Section } from "../../shared/ui/settings-section";
 import { names } from "../links";
 import { follow, go, pathOf } from "../router";
-import { controlOrigin } from "../session";
-import { MachineAgentGrants } from "../settings/agents";
-import { ControlRow } from "../settings/owner-machines";
 import { machinesOf, type Grant } from "../settings/grants";
 
 type Machine = { id: string; name: string };
 
 let known: Promise<Machine[]> | null = null;
-const listeners = new Set<() => void>();
-
-/** Read your machines again (one was renamed). */
-function readAgain() {
-  known = null;
-  listeners.forEach((fn) => fn());
-}
 
 /** Your machines, read once a page load (a failed read is tried again). */
 export function useMachines(): { machines: Machine[] | null; err: string } {
   const [machines, setMachines] = useState<Machine[] | null>(null);
   const [err, setErr] = useState("");
-  const [again, setAgain] = useState(0);
-  useEffect(() => {
-    const fn = () => setAgain((n) => n + 1);
-    listeners.add(fn);
-    return () => void listeners.delete(fn);
-  }, []);
   useEffect(() => {
     let live = true;
     known ??= platformFetch("/api/grants", { credentials: "same-origin" }).then(async (r) => {
@@ -55,17 +35,16 @@ export function useMachines(): { machines: Machine[] | null; err: string } {
       },
     );
     return () => void (live = false);
-  }, [again]);
+  }, []);
   return { machines, err };
 }
 
-export function MachineSettings({ machine, section }: { machine?: string; section?: string }) {
+export function MachineSettings({ machine }: { machine?: string }) {
   const { machines, err } = useMachines();
-  const api = usePlatformApi();
-  // No machine named: the first one, at the section asked for.
+  // No machine named: the first one.
   const first = machines?.[0]?.id;
   useEffect(() => {
-    if (!machine && first) go(pathOf({ page: "settings", scope: "machine", machine: first, section }, names), true);
+    if (!machine && first) go(pathOf({ page: "settings", scope: "machine", machine: first }, names), true);
   }, [machine, first]);
   if (err) {
     return (
@@ -83,33 +62,13 @@ export function MachineSettings({ machine, section }: { machine?: string; sectio
       </Section>
     );
   }
-  const Own = api.MachineSettings;
-  return (
-    <>
-      {Own ? (
-        <Own key={m.id} machine={m.id} name={m.name}>
-          <MachineAgentGrants machine={m} />
-        </Own>
-      ) : (
-        <>
-          <OnItsPage m={m} />
-          <MachineAgentGrants machine={m} />
-        </>
-      )}
-      <MachineName key={m.id} m={m} />
-    </>
-  );
-}
-
-/** Where the page reaches no machines: the way to the machine's own page, where its settings are. */
-function OnItsPage({ m }: { m: Machine }) {
   const page = pathOf({ page: "find", what: "machines", at: { at: "machine", machine: m.id } }, names);
   return (
     <Section
       id="machine"
-      title="Its own settings"
-      summary="On its own page"
-      lede={`${m.name}'s own settings are on its page, under This machine in its menu: who can reach it, permission rules, reports, guest SSH and developer settings.`}
+      title="This machine"
+      summary="On its own page for now"
+      lede={`${m.name}'s settings are on its page, under This machine in its menu: who can reach it, permission rules, reports, guest SSH, developer settings and its name.`}
       hooks={{ "data-machine-settings": m.id }}
     >
       <ul class="platform-list settings-rows">
@@ -119,74 +78,6 @@ function OnItsPage({ m }: { m: Machine }) {
           </a>
         </li>
       </ul>
-    </Section>
-  );
-}
-
-/** Its name on Arugula cloud (Arugula #500): the one the machines list,
- * the picker, chat and `@machine` call it. The old one keeps working in
- * mentions. */
-function MachineName({ m }: { m: Machine }) {
-  const api = usePlatformApi();
-  const [name, setName] = useState(m.name);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-  const [done, setDone] = useState("");
-  // Arugula cloud doesn't rename from this page's host yet: rename it on its machines page.
-  const [elsewhere, setElsewhere] = useState(false);
-  useEffect(() => setName(m.name), [m.name]);
-  const there = api.controlHref?.(`machine=${m.id}`) ?? `${controlOrigin()}/#machine=${m.id}`;
-  const rename = async (to: string) => {
-    setBusy(true);
-    setErr("");
-    setDone("");
-    try {
-      const r = await platformFetch(`/api/daemons/${encodeURIComponent(m.id)}/name`, {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: to }),
-      });
-      const v = (await r.json().catch(() => ({}))) as { name?: string; error?: string };
-      if (r.status === 404 && !v.error) return setElsewhere(true);
-      if (!r.ok) throw new Error(v.error ?? `Request failed (${r.status})`);
-      setDone(`Renamed to ${v.name ?? to}. Its old name still reaches it in mentions.`);
-      readAgain();
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <Section id="name" title="Name" summary={m.name} lede="What the machines list, chat and @mentions call it. Its old name keeps working in mentions." hooks={{ "data-machine-name": m.id }}>
-      {elsewhere ? (
-        <>
-          <p class="dim" data-machine-rename-elsewhere>
-            Arugula cloud doesn't rename machines from this page yet.
-          </p>
-          <ul class="platform-list settings-rows">
-            <ControlRow href={there} label={`Rename ${m.name}`} why="On your machines page: This machine › Rename machine… in its menu." hook="rename" />
-          </ul>
-        </>
-      ) : (
-        <form
-          class="settings-add"
-          aria-label="Rename"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const n = name.trim();
-            if (n && n !== m.name) void rename(n);
-          }}
-        >
-          <input class="field" aria-label="Name" value={name} maxLength={40} data-machine-rename-name onInput={(e) => setName(e.currentTarget.value)} />
-          <button class="primary" type="submit" disabled={busy || !name.trim() || name.trim() === m.name} data-machine-rename>
-            Rename
-          </button>
-        </form>
-      )}
-      {done && <p class="dim">{done}</p>}
-      {err && <p class="control-error">{err}</p>}
     </Section>
   );
 }

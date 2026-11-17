@@ -15,7 +15,10 @@ and listed by `arugula help plumbing`. `arugula inbox` is the follow-up hook
 
 `arugula login [URL]` makes this CLI one of the account's devices: it shows
 a code to approve from a device you already have (`--account FINGERPRINT`
-checks the account too, for an older control). `--host NAME` then asks
+checks the account too, for an older control). Since #1004 browsers sign in
+with no device key, so only one that was a device before can approve it;
+the CLI and a keyless browser's page both point to `arugula login
+--browser` instead. `--host NAME` then asks
 control for a machine token first (`POST /api/machines/{id}/token`) and opens
 a channel with it and a key made for that channel alone; it uses the device
 key only when control gives none (a control without an issuer key) or the

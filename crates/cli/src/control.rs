@@ -1077,6 +1077,11 @@ pub fn login_device(url: &str, name: &str, account: Option<&str>) -> anyhow::Res
         println!("  Or sign in at {url} and type the code.");
     }
     println!();
+    // aru-141 (#1004): browsers sign in with no device key now, so most
+    // accounts have nothing that approves this: say the way that works.
+    println!("  A browser you sign in on can't approve it unless it holds a device key from before.");
+    println!("  To sign this terminal in from any browser instead: Ctrl-C, then `arugula login --browser`.");
+    println!();
     println!("  Waiting for approval (the code lasts {} minutes)…", secs / 60);
     std::io::stdout().flush()?;
     let deadline = Instant::now() + Duration::from_secs(secs);
@@ -1092,7 +1097,9 @@ pub fn login_device(url: &str, name: &str, account: Option<&str>) -> anyhow::Res
         let v: wire::JoinPoll = serde_json::from_value(res.json().context("control")?)
             .context("control's answer about the approval isn't one this CLI can read")?;
         if let Some(on) = &v.rejected {
-            bail!("turned down on {on}");
+            bail!(
+                "turned down on {on}; to sign this terminal in from a browser instead, run `arugula login --browser`"
+            );
         }
         if v.approved {
             break v;
@@ -1115,7 +1122,7 @@ pub fn login_device(url: &str, name: &str, account: Option<&str>) -> anyhow::Res
     let proven = match (&secret, &got.mac) {
         (Some(s), Some(mac)) if arugula_e2e::cert::join_mac_ok(s, &trust, &cert, mac) => true,
         (Some(_), Some(_)) => bail!(
-            "the approval doesn't match the secret in this terminal's link: the code was mistyped, or control changed the account it's approved into. Not logging in; run `arugula login` again for a new code (and remove this one under Devices and machines… if it's listed)"
+            "the approval doesn't match the secret in this terminal's link: the code was mistyped, or control changed the account it's approved into. Not logging in; run `arugula login` again for a new code"
         ),
         _ => false,
     };

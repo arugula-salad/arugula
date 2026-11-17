@@ -81,12 +81,12 @@ export function AddMachine({ s }: { s: ControlSession }) {
             ))}
         </li>
         <li>
-          <b>Approve it here.</b> It prints a link and a code: open the link here, or type the code below. Codes last 15 minutes.
+          <b>Add it here.</b> It prints a link and a code: open the link here, or type the code below. Codes last 15 minutes.
           <JoinCodeForm s={s} />
         </li>
       </ol>
       <p class="dim">
-        A <i>machine</i> runs your terminals; a <i>device</i> (this browser, your phone) reaches them.
+        A <i>machine</i> runs your terminals; any browser or phone you sign in on reaches them.
       </p>
     </div>
   );
@@ -98,7 +98,7 @@ export function TeamJoin({ s, t, here }: { s: ControlSession; t: Team; here?: bo
   return (
     <>
       <span class="dim">
-        To add a machine to <b>{t.roster.name}</b>, run this on it, or move one you have with <i>Team …</i> in <i>Devices and machines</i>:
+        To add a machine to <b>{t.roster.name}</b>, run this on it, or move one you have with <i>Team …</i> in <i>Machines</i>:
       </span>
       <CopyText text={`arugulad join ${s.info.url} --team ${t.team}`} {...(here ? { "data-team-join": true } : { "data-team-join-step": t.team })} />
     </>
@@ -119,7 +119,7 @@ function JoinCodeForm({ s }: { s: ControlSession }) {
     >
       <input class="control-join-code" placeholder="XXXXX-XXXXX.XXXX-XXXX-XXXX-XXXX" value={code} onInput={(e) => setCode((e.target as HTMLInputElement).value)} aria-label="Join code" />
       <button type="submit" class="primary" disabled={!code.trim() || s.phase !== "ready"}>
-        Approve…
+        Add…
       </button>
     </form>
   );

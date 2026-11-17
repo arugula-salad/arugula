@@ -1,37 +1,32 @@
-// Approving with this device's key: a machine's join (or the Arugula CLI's,
-// M49) by its code, with the devices that came alongside it (#326), and
-// another device asking to be the account's (#761). A code with a secret
-// (#760, #761) is typed or scanned rather than compared; one from before
-// codes shows a fingerprint to check.
+// A join, by its code: a machine's, added in one click by a browser with no
+// device key (#1003) or approved with this browser's key; the Arugula
+// CLI's (M49) or the phone app's (aru-131), which only a device approves
+// (`arugula login --browser` signs the CLI in with no key). A code with a
+// secret (#760) is typed rather than compared; one from before codes
+// shows a fingerprint to check. No browser asks to be approved any more
+// (aru-141, #1004).
 
 import { useEffect, useState } from "preact/hooks";
+import { CopyText } from "../../shared/ui/copy";
 import { Modal } from "../../shared/ui/modal";
-import { AlongsideError, RefusedError, splitDeviceCode, takesSecret, type ControlSession, type DeviceCode, type JoinRequest } from "../control";
-import { fingerprint, fromApp, normalizeCode, normalizeSecret, splitJoinCode, type Cert } from "../e2e/cert.ts";
-import { canScan, Scanner } from "../ui/scan";
+import { RefusedError, takesSecret, type ControlSession, type JoinRequest } from "../control";
+import { fingerprint, normalizeCode, normalizeSecret, splitJoinCode } from "../e2e/cert.ts";
 import { clearHash } from "./common";
 
-/** A machine's join, by its code: from its approval link, typed in, or
- * (#326) brought by a waiting device that came to approve it (`from`).
- * Devices waiting with this code are listed alongside, and one Approve
- * covers the machine and them.
- *
- * #760: a machine whose link carries a secret (`CODE.SECRET`) is approved
- * with a MAC under it, and there's nothing to compare: the code was
- * recomputed from its key, and the machine checks the account itself. One
- * that made a secret but reached this page without it (the code alone, or
- * brought by a waiting device) asks for the whole code. An older machine
- * makes none, and its code and the account's fingerprint are compared, as
- * before.
- *
- * #761: a device alongside that shows a code is approved with it, not by
- * its fingerprint: from the link (`device`, which a waiting browser adds
- * to the machine's link it hands on), or scanned or typed on its card.
+/** A machine's join, by its code: from its approval link, or typed in.
  *
  * #1003: a browser that isn't one of the account's devices adds a machine
  * in one click (aru-141): nothing to compare and no secret to answer, since
- * control decides who reaches the machine. */
-export function JoinPrompt({ s, code: whole, from, device }: { s: ControlSession; code: string; from?: Cert; device?: string }) {
+ * control decides who reaches the machine.
+ *
+ * #760: from a device, a machine whose link carries a secret
+ * (`CODE.SECRET`) is approved with a MAC under it, and there's nothing to
+ * compare: the code was recomputed from its key, and the machine checks the
+ * account itself. One that made a secret but reached this page without it
+ * (the code alone) asks for the rest of the code. An older machine makes
+ * none, and its code and the account's fingerprint are compared, as
+ * before. */
+export function JoinPrompt({ s, code: whole }: { s: ControlSession; code: string }) {
   const parts = splitJoinCode(whole);
   const code = parts?.code ?? whole;
   // #760: the rest of the code, typed when the page has only the first half.
@@ -47,15 +42,9 @@ export function JoinPrompt({ s, code: whole, from, device }: { s: ControlSession
   const [refused, setRefused] = useState(false);
   // "" is just me; else a team's id.
   const [to, setTo] = useState("");
-  // Devices alongside that the person unticked.
-  const [skip, setSkip] = useState<Set<string>>(new Set());
-  // #761: codes typed or scanned for devices alongside, by id.
-  const [typedCodes, setTypedCodes] = useState<Map<string, Rest>>(new Map());
   useEffect(() => {
-    // Another code: nothing typed for the last one carries over, nor for
-    // the devices that came with it (#761).
+    // Another code: nothing typed for the last one carries over.
     setTyped({ rest: "", bad: null });
-    setTypedCodes(new Map());
     setUnknown(false);
     // This browser's own trust, fresh, before it offers Approve (#327).
     void s.refresh();
@@ -70,26 +59,6 @@ export function JoinPrompt({ s, code: whole, from, device }: { s: ControlSession
       },
     );
   }, [code]);
-  // The machine's code is gone (approved elsewhere, expired): the device
-  // that brought it asks on its own.
-  if (from && err && !j) return <DevicePrompt s={s} c={from} />;
-  // This browser waited with this code (#326), and it's gone: most likely
-  // approved with this browser, on the device that approved both.
-  if (!from && err && !j && s.brought === code)
-    return (
-      <Modal close={clearHash}>
-        <h2>Add a machine?</h2>
-        <p data-join-done={code}>
-          Code <b>{s.brought}</b> isn't waiting any more: the device that approved this browser approved the machine with it, or the code expired. The
-          machine says which.
-        </p>
-        <div class="prompt-buttons">
-          <button class="primary" onClick={clearHash}>
-            Done
-          </button>
-        </div>
-      </Modal>
-    );
   // A code control doesn't know says so, in words, with nothing to approve
   // (UI audit #179: it showed "no such code (expired?)" over Approve).
   if (unknown && !j)
@@ -116,20 +85,6 @@ export function JoinPrompt({ s, code: whole, from, device }: { s: ControlSession
   const team = teams.find((t) => t.team === to);
   const cant = !!to && !team;
   const locked = !!asked && !!s.teams.find((t) => t.team === asked.team)?.locked;
-  // Devices waiting with this code (#326), approved with the machine
-  // unless unticked.
-  const alongside = j ? s.pending.filter((c) => s.pendingJoins.get(c.device) === j.code) : [];
-  // #761: each one's code, from the link or its card, when it's its own.
-  const linked = device ? splitDeviceCode(device) : null;
-  const codes = new Map<string, DeviceCode>();
-  for (const c of alongside) {
-    const want = s.pendingCodes.get(c.device);
-    const given = (want && linked?.code === want ? linked : null) ?? typedCode(want ?? "", typedCodes.get(c.device) ?? NO_REST);
-    if (given) codes.set(c.device, given);
-  }
-  const ready = (c: Cert) => !s.sealed(c) || codes.has(c.device);
-  const fromLink = (c: Cert) => !!linked && linked.code === s.pendingCodes.get(c.device);
-  const also = alongside.filter((c) => !skip.has(c.device) && ready(c));
   const cancel = () => {
     if (j && !refused) void s.rejectJoin(j.code).then(() => s.refresh(), () => {});
     clearHash();
@@ -180,8 +135,8 @@ export function JoinPrompt({ s, code: whole, from, device }: { s: ControlSession
     )
   ) : null;
   return (
-    <Modal close={from ? undefined : clearHash}>
-      <h2>{alongside.length ? "Add a machine and a device?" : "Add a machine?"}</h2>
+    <Modal close={clearHash}>
+      <h2>Add a machine?</h2>
       {err ? (
         <p class="control-error" data-join-error>
           {err}
@@ -189,71 +144,8 @@ export function JoinPrompt({ s, code: whole, from, device }: { s: ControlSession
       ) : null}
       {j ? (
         <>
-          {alongside.length ? (
-            <div class="control-both" data-join-both>
-              <div class="control-both-card" data-join-machine>
-                <div class="control-both-kind">{j.cert.name} (machine)</div>
-                {machine}
-              </div>
-              {alongside.map((c) => (
-                <div key={c.device} class="control-both-card" data-join-alongside={c.device}>
-                  <div class="control-both-kind">
-                    {c.name} ({kindWord(c)})
-                  </div>
-                  {s.sealed(c) ? (
-                    <>
-                      <p data-pending={c.device} data-device-sealed>
-                        Signed in to come here and approve this machine. Approved too, it reaches your machines.
-                        {fromLink(c) ? " Its code came with the link." : " Its code goes below."}
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <p>Signed in to come here and approve this machine. Approved too, it reaches your machines. It shows this fingerprint:</p>
-                      <p class="fingerprint" data-pending={c.device}>
-                        {fingerprint(c.device)}
-                      </p>
-                    </>
-                  )}
-                  <label class="control-check">
-                    <input
-                      type="checkbox"
-                      data-join-also={c.device}
-                      disabled={!ready(c)}
-                      checked={!skip.has(c.device) && ready(c)}
-                      onChange={(e) => {
-                        const next = new Set(skip);
-                        if ((e.target as HTMLInputElement).checked) next.delete(c.device);
-                        else next.add(c.device);
-                        setSkip(next);
-                      }}
-                    />{" "}
-                    {/* #761: its code, entered below, ticks it. */}
-                    {ready(c) ? "Approve it too" : "Approve it too, once its code is in below"}
-                  </label>
-                </div>
-              ))}
-            </div>
-          ) : (
-            machine
-          )}
+          {machine}
           {askWhole}
-          {/* #761: a device's code, at full width under the cards. */}
-          {alongside
-            .filter((c) => s.sealed(c) && !fromLink(c))
-            .map((c) => (
-              <DeviceRest
-                key={c.device}
-                code={s.pendingCodes.get(c.device) ?? ""}
-                typed={typedCodes.get(c.device) ?? NO_REST}
-                set={(t) => setTypedCodes(new Map(typedCodes).set(c.device, t))}
-                prompt={
-                  <>
-                    Enter the rest of <b>{c.name}</b>'s code to approve it too.
-                  </>
-                }
-              />
-            ))}
           {s.enrollment && !sealed ? (
             <p>
               Your account:{" "}
@@ -324,28 +216,18 @@ export function JoinPrompt({ s, code: whole, from, device }: { s: ControlSession
             try {
               // The machine, then the devices that came with it.
               if (oneClick) await s.addJoin(j.code, team?.team ?? null);
-              else await s.approveJoin(j.code, j.cert, team?.team ?? null, also, secret, codes);
+              else await s.approveJoin(j.code, j.cert, team?.team ?? null, secret);
               clearHash();
             } catch (e) {
-              // The machine is in: only the device is left to ask again.
-              if (e instanceof AlongsideError) setJ(null);
               failed(e);
             }
           }}
         >
-          {oneClick ? "Add" : also.length > 1 ? "Approve them all" : also.length ? "Approve both" : "Approve"}
+          {oneClick ? "Add" : "Approve"}
         </button>
       </div>
     </Modal>
   );
-}
-
-/** What a device alongside a machine is, in a word (UI audit #179: they
- * all read "browser", the app's window and a phone too). */
-function kindWord(c: Cert): string {
-  if (fromApp(c)) return "app";
-  if (c.kind === "cli") return "command line";
-  return /iPhone|Android/.test(c.name) ? "phone" : /iPad/.test(c.name) ? "tablet" : "browser";
 }
 
 /** Letters people read for digits in a join code: its alphabet has no
@@ -388,19 +270,16 @@ type Rest = { rest: string; bad: string | null };
 const NO_REST: Rest = { rest: "", bad: null };
 
 /** #760: a machine (or the CLI) made a join secret, but this page has only
- * its code (typed alone, or brought by a waiting browser, #326). The code
- * is shown as a fixed prefix, and only the rest is typed. #761: the same
- * for a waiting device's code (`what="device"`), whose first half is its
- * request's keys' code; there the rest can be scanned too. Holding
- * another code (`restOf` keeps it, its first half and all), the field
- * drops the fixed half and widens, so it shows that code once and whole. */
+ * its code (typed alone). The code is shown as a fixed prefix, and only the
+ * rest is typed. Holding another code (`restOf` keeps it, its first half
+ * and all), the field drops the fixed half and widens, so it shows that
+ * code once and whole. */
 function RestOfCode({
   code,
   rest,
   bad,
   set,
   cli = false,
-  what = "join",
   hint,
   prompt = "Enter the rest of its code to approve.",
 }: {
@@ -409,37 +288,15 @@ function RestOfCode({
   bad: string | null;
   set: (r: Rest) => void;
   cli?: boolean;
-  what?: "join" | "device";
   hint?: preact.ComponentChildren;
   prompt?: preact.ComponentChildren;
 }) {
-  const [scanning, setScanning] = useState(false);
-  const tag = (t: string) => ({ [`data-${what}-${t}`]: "" });
+  const tag = (t: string) => ({ [`data-join-${t}`]: "" });
   // More than the 16 characters of a rest: a code of its own, typed whole.
   const claims = rest.replace(/[^A-Za-z0-9]/g, "").length > 16;
   return (
     <div class="control-rest" {...tag("rest")}>
-      <p>
-        {prompt}
-        {what === "device" && canScan() && !scanning ? (
-          <>
-            {" "}
-            <button type="button" class="link" data-scan onClick={() => setScanning(true)}>
-              Scan it
-            </button>
-          </>
-        ) : null}
-      </p>
-      {scanning ? (
-        <Scanner
-          accept={(t) => {
-            const d = splitDeviceCode(t);
-            if (d) set(restOf(`${d.code}.${d.secret}`, code));
-            return !!d;
-          }}
-          close={() => setScanning(false)}
-        />
-      ) : null}
+      <p>{prompt}</p>
       <div class={claims ? "control-rest-field claims" : "control-rest-field"}>
         {/* Hidden, not removed, so the input keeps its place and focus. */}
         <span class="control-rest-known" aria-hidden="true" hidden={claims}>
@@ -521,8 +378,8 @@ function AppJoin({ s, j, cancel, refused, failed, sealed, secret, whole }: Devic
       <p class="dim">It reaches your machines (directly or through Arugula cloud's relay), your chat, projects, issues and boards.</p>
       {s.enrollment ? null : (
         <p class="control-error" data-join-needs-device>
-          Only one of your devices approves an app, and this browser isn't one: it reaches your machines with Arugula cloud's tokens. Approve
-          it from a browser or phone that is.
+          The phone app still joins as one of your devices, and only a device approves it. This browser isn't one: signing in is all it took
+          here. Approve the app from a browser or phone that still holds a device key, or turn it down.
         </p>
       )}
       <div class="prompt-buttons">
@@ -536,7 +393,7 @@ function AppJoin({ s, j, cancel, refused, failed, sealed, secret, whole }: Devic
           onClick={async () => {
             setBusy(true);
             try {
-              await s.approveJoin(j.code, j.cert, null, [], secret);
+              await s.approveJoin(j.code, j.cert, null, secret);
               clearHash();
             } catch (e) {
               setErr((e as Error).message);
@@ -552,9 +409,44 @@ function AppJoin({ s, j, cancel, refused, failed, sealed, secret, whole }: Devic
   );
 }
 
-function CliJoin({ s, j, cancel, refused, failed, sealed, secret, whole }: DeviceJoin) {
+/** `arugula login` signs the CLI in as one of the account's devices
+ * until the CLI has a session kind of its own (#1018). A browser with no
+ * device key can't approve that (aru-141, #1004): it says how to sign the
+ * CLI in from a browser instead, `arugula login --browser`, and turning
+ * this one down ends its wait. */
+function CliFromBrowser({ s, j, cancel, refused }: DeviceJoin) {
+  const host = j.cert.name.replace(/^(Arugula|illogical) CLI on /, "");
+  // The hosted control is the CLI's default; another is named.
+  const cmd = `arugula login --browser${s.info.url.replace(/\/$/, "") === HOSTED_URL ? "" : ` ${s.info.url}`}`;
+  return (
+    <Modal close={clearHash}>
+      <h2>Sign in the command line?</h2>
+      <p data-join-cli={j.cert.name} data-join-cli-browser>
+        The Arugula command line on <b>{host}</b> asks to be one of your devices. Signing in is all it takes now, so it doesn't need a device: stop{" "}
+        <code>arugula login</code> there (Ctrl-C), and run this instead. It prints a link to open in this browser, where you press Allow.
+      </p>
+      <CopyText text={cmd} data-join-cli-command />
+      <p class="dim">Turn it down to end its wait.</p>
+      <div class="prompt-buttons">
+        <button class="secondary" data-cancel-join onClick={cancel}>
+          {refused ? "Close" : "Turn it down"}
+        </button>
+        <button class="primary" data-join-cli-done onClick={clearHash}>
+          Done
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/** The hosted control, the CLI's default (`ssh::CONTROL`). */
+const HOSTED_URL = "https://control.arugula.io";
+
+function CliJoin(p: DeviceJoin) {
+  const { s, j, cancel, refused, failed, sealed, secret, whole } = p;
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  if (!s.enrollment) return <CliFromBrowser {...p} />;
   // Its name is "Arugula CLI on <host>" unless `--name` said otherwise:
   // the machine, here, since the sentence says it's the command line.
   const host = j.cert.name.replace(/^(Arugula|illogical) CLI on /, "");
@@ -580,7 +472,7 @@ function CliJoin({ s, j, cancel, refused, failed, sealed, secret, whole }: Devic
         </>
       )}
       {whole}
-      {s.enrollment && !sealed ? (
+      {!sealed ? (
         <p>
           Your account:{" "}
           <b class="fingerprint" data-join-account={s.enrollment.root}>
@@ -589,13 +481,7 @@ function CliJoin({ s, j, cancel, refused, failed, sealed, secret, whole }: Devic
           . Once you approve, it shows its account's fingerprint: check it's this one there.
         </p>
       ) : null}
-      <p class="dim">It reaches your machines (directly or through Arugula cloud's relay) and can approve devices, as this one can.</p>
-      {s.enrollment ? null : (
-        <p class="control-error" data-join-needs-device>
-          Only one of your devices approves a command line, and this browser isn't one: it reaches your machines with Arugula cloud's tokens.
-          Run <code>arugula login --browser</code> there instead, or approve it from a device that is.
-        </p>
-      )}
+      <p class="dim">It reaches your machines (directly or through Arugula cloud's relay). To sign it in with no key instead, run <code>arugula login --browser</code> there.</p>
       <div class="prompt-buttons">
         <button class="secondary" data-cancel-join onClick={cancel}>
           {refused ? "Close" : "Cancel"}
@@ -603,11 +489,11 @@ function CliJoin({ s, j, cancel, refused, failed, sealed, secret, whole }: Devic
         <button
           class="primary"
           data-approve-join
-          disabled={busy || (sealed && !secret) || !s.enrollment}
+          disabled={busy || (sealed && !secret)}
           onClick={async () => {
             setBusy(true);
             try {
-              await s.approveJoin(j.code, j.cert, null, [], secret);
+              await s.approveJoin(j.code, j.cert, null, secret);
               clearHash();
             } catch (e) {
               setErr((e as Error).message);
@@ -617,102 +503,6 @@ function CliJoin({ s, j, cancel, refused, failed, sealed, secret, whole }: Devic
           }}
         >
           Approve
-        </button>
-      </div>
-    </Modal>
-  );
-}
-
-/** Another device asks to be one of this account's. #761: one that shows
- * a code is approved with it (scanned with the camera, typed, or `given`
- * by the link its QR code holds): its lookup must be the request's keys'
- * code, and the approval answers its secret, so there's no fingerprint to
- * compare. One from before codes shows its fingerprint, as before. */
-export function DevicePrompt({ s, c, given, done }: { s: ControlSession; c: Cert; given?: DeviceCode; done?: () => void }) {
-  const [err, setErr] = useState("");
-  const [typed, setTyped] = useState<Rest>(NO_REST);
-  const act = (f: () => Promise<void>) => f().then(() => done?.(), (e: Error) => setErr(e.message));
-  const sealed = s.sealed(c);
-  const want = s.pendingCodes.get(c.device) ?? "";
-  const code = (given?.code === want ? given : null) ?? typedCode(want, typed);
-  // The app's window doesn't approve a browser or a phone.
-  const mayApprove = s.canApprove(c.kind);
-  return (
-    <Modal>
-      <h2>New device?</h2>
-      {sealed ? (
-        <p data-pending={c.device} data-device-sealed>
-          <b>{c.name}</b> wants to reach your machines.{" "}
-          {code && code === given ? "Approve it if it's the one that showed you this code." : null}
-        </p>
-      ) : (
-        <>
-          <p>
-            <b>{c.name}</b> wants to reach your machines. Approve it only if it's yours and shows this fingerprint:
-          </p>
-          <p class="fingerprint" data-pending={c.device}>
-            {fingerprint(c.device)}
-          </p>
-        </>
-      )}
-      {sealed && !(code && code === given) ? <DeviceRest code={want} typed={typed} set={setTyped} /> : null}
-      {err ? <p class="control-error">{err}</p> : null}
-      {mayApprove ? (
-        <p class="dim">If you didn't just sign in on it, turn it down.</p>
-      ) : (
-        <p class="dim" data-approve-elsewhere>
-          The desktop app approves machines, CLIs and other apps, not browsers or phones: approve it from a browser or phone of yours. If you
-          didn't just sign in on it, turn it down.
-        </p>
-      )}
-      <div class="prompt-buttons">
-        <button class="secondary" data-reject onClick={() => act(() => s.reject(c))}>
-          Turn down
-        </button>
-        <button class="primary" data-approve disabled={(sealed && !code) || !mayApprove} onClick={() => act(() => s.approve(c, code))}>
-          Approve
-        </button>
-      </div>
-    </Modal>
-  );
-}
-
-/** #761: the rest of a waiting device's code, after its lookup. */
-function DeviceRest({ code, typed, set, prompt }: { code: string; typed: Rest; set: (r: Rest) => void; prompt?: preact.ComponentChildren }) {
-  return <RestOfCode what="device" code={code} rest={typed.rest} bad={typed.bad} set={set} prompt={prompt} hint="It's after the dot, on the screen asking to be approved." />;
-}
-
-/** #761: the code typed after `lookup`, once it's whole. */
-function typedCode(lookup: string, typed: Rest): DeviceCode | null {
-  const secret = typed.bad ? null : normalizeSecret(typed.rest);
-  return lookup && secret ? { code: lookup, secret } : null;
-}
-
-/** #761: here from a waiting device's QR code or link (`#device=`): the
- * request whose keys give that lookup, approved with it. */
-export function DeviceLinkPrompt({ s, whole }: { s: ControlSession; whole: string }) {
-  const given = splitDeviceCode(whole);
-  const [looked, setLooked] = useState(false);
-  useEffect(() => {
-    // The request may be newer than this page's last look.
-    void s.refresh().finally(() => setLooked(true));
-  }, []);
-  const c = given ? s.pending.find((p) => s.pendingCodes.get(p.device) === given.code) : undefined;
-  // Keyed, like the overlay's: another device's prompt starts empty.
-  if (c && given) return <DevicePrompt key={c.device} s={s} c={c} given={given} done={clearHash} />;
-  return (
-    <Modal close={clearHash}>
-      <h2>New device?</h2>
-      {looked ? (
-        <p data-device-gone>
-          No device is waiting with code <b>{given?.code ?? whole}</b>: it was approved or turned down already, or the code isn't whole.
-        </p>
-      ) : (
-        <p class="dim">Looking for it…</p>
-      )}
-      <div class="prompt-buttons">
-        <button class="primary" onClick={clearHash}>
-          Close
         </button>
       </div>
     </Modal>

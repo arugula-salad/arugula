@@ -6,7 +6,7 @@
 
 import { useEffect, useState } from "preact/hooks";
 import { Modal } from "../../shared/ui/modal";
-import { signedAppIn, type AppLogin, type ControlSession, type ShareOffer, type Team } from "../control";
+import { type AppLogin, type ControlSession, type ShareOffer, type Team } from "../control";
 import type { TeamRole } from "../e2e/team.ts";
 import { roleAs, roleLabel } from "../ui/roles";
 import { when } from "../../shared/time";
@@ -19,9 +19,8 @@ import { AddedAt, clearHash, dropHash } from "./common";
  * computer (its loopback port): an app elsewhere that sent this link gets
  * nothing, so there's nothing to compare (#758). A CLI on another computer
  * takes the address the browser lands on, pasted by whoever ran it.
- * From a device, it also signs the app's certificate, so the app is a
- * device at once; otherwise its window asks to be approved afterwards (the
- * "New device?" prompt). An app from before #758 still shows a code. */
+ * Since aru-141 (#1004) the app's window isn't made a device: it reaches
+ * machines with tokens. An app from before #758 still shows a code. */
 export function AppLoginPrompt({ s, id }: { s: ControlSession; id: string }) {
   const [a, setA] = useState<AppLogin | null>(null);
   const [err, setErr] = useState("");
@@ -45,13 +44,6 @@ export function AppLoginPrompt({ s, id }: { s: ControlSession; id: string }) {
                 Check the app shows <b data-app-login-code={a.code}>{a.code}</b>.
               </>
             ) : null}
-            {s.signsApp(a) ? (
-              <span data-app-login-device>
-                {" "}
-                Allowing also makes it one of your devices, as an app: its window reaches your machines and can approve machines, CLIs and other apps,
-                but not browsers, phones or deploys.
-              </span>
-            ) : null}
           </p>
           {a.same_network ? null : (
             <p class="control-error" data-app-login-elsewhere>
@@ -72,7 +64,7 @@ export function AppLoginPrompt({ s, id }: { s: ControlSession; id: string }) {
                 setBusy(true);
                 try {
                   // To the app's loopback port; it sends this page back.
-                  location.href = await s.allowAppLogin(id, a);
+                  location.href = await s.allowAppLogin(id);
                 } catch (e) {
                   setErr((e as Error).message);
                   setBusy(false);
@@ -132,45 +124,6 @@ export function ConfirmPasskey({ s }: { s: ControlSession }) {
   );
 }
 
-/** #641: the passkey just added, as a device of the account: what it gets
- * you and what it costs (aru-061), asked from a click because a browser
- * asks for a passkey only on one. */
-export function PasskeyOffer({ s, offer }: { s: ControlSession; offer: { id: string; provider: string | null } }) {
-  const [err, setErr] = useState("");
-  const [busy, setBusy] = useState(false);
-  return (
-    <Modal close={() => s.dropPasskeyOffer()}>
-      <h2>Use this passkey on new computers?</h2>
-      <p data-passkey-offer>A new computer with this passkey will reach your machines straight away, with no other device to approve it.</p>
-      <p class="dim" data-passkey-offer-cost>
-        Whoever can use this passkey can then do what this browser does: reach your machines, approve new devices, and remove your others. So it's only as safe as{" "}
-        {offer.provider ?? "whatever keeps it"}. It's listed under Devices, and you can remove it there; this passkey can't be turned on again after that.
-      </p>
-      {err ? <p class="control-error">{err}</p> : null}
-      <div class="prompt-buttons">
-        <button class="secondary" data-passkey-offer-no onClick={() => s.dropPasskeyOffer()}>
-          Not now
-        </button>
-        <button
-          class="primary"
-          data-passkey-offer-yes
-          disabled={busy}
-          onClick={() => {
-            setErr("");
-            setBusy(true);
-            s.passkeyAsDevice(offer.id, offer.provider).catch((e: Error) => {
-              setErr(e.name === "NotAllowedError" ? "Cancelled." : e.message);
-              setBusy(false);
-            });
-          }}
-        >
-          Turn it on
-        </button>
-      </div>
-    </Modal>
-  );
-}
-
 /** Back from signing in with GitHub again to add a passkey (an account
  * with none needs a sign-in from the last few minutes): make it now. */
 export function AddPasskeyAgain({ s }: { s: ControlSession }) {
@@ -196,29 +149,18 @@ export function AddPasskeyAgain({ s }: { s: ControlSession }) {
   );
 }
 
-/** Back from handing the app its grant (and, from a device, its
- * certificate). */
+/** Back from handing the app its grant. */
 export function AppLoginDone() {
-  const [signed] = useState(signedAppIn);
   useEffect(() => {
-    // Out of the way of the device prompt that follows.
     const t = setTimeout(clearHash, 6000);
     return () => clearTimeout(t);
   }, []);
   return (
     <Modal close={clearHash}>
       <h2>Sign in the app?</h2>
-      {signed ? (
-        <p data-app-login-done>
-          Signed in, and the app is one of your devices now: its window reaches your machines. As an app, it approves machines and CLIs, not
-          browsers, phones or deploys. Its own machine joins separately, with a code, and doesn't need this.
-        </p>
-      ) : (
-        <p data-app-login-done>
-          Signed in. Next the app's window asks to be approved as a device, so it reaches your machines: the prompt shows here in a moment. As an
-          app, it approves machines and CLIs, not browsers, phones or deploys. Its own machine joins separately, with a code, and doesn't need this.
-        </p>
-      )}
+      <p data-app-login-done>
+        Signed in: the app's window reaches your machines as you. Its own machine joins separately, with a code, and doesn't need this.
+      </p>
       <div class="prompt-buttons">
         <button class="primary" onClick={clearHash}>
           Done

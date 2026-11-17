@@ -41,12 +41,6 @@ test("each route parses", () => {
   assert.deepEqual(parse(`/p/${P}/settings`, "", "#ci-alerts"), { page: "settings", scope: "project", project: P, section: "ci-alerts" });
   assert.deepEqual(parse("/settings/you/linked", "", "#tokens"), { page: "settings", scope: "you", section: "linked" });
   assert.deepEqual(parse("/settings", "", "#Not a section"), { page: "settings", scope: "you" });
-  // Your machines' agents are each machine's now (Arugula #1107): the old addresses open This machine's.
-  assert.deepEqual(parse("/settings", "", "#agents"), { page: "settings", scope: "machine", section: "agents" });
-  assert.deepEqual(parse("/settings/you/agents"), { page: "settings", scope: "machine", section: "agents" });
-  assert.equal(pathOf({ page: "settings", scope: "machine", section: "agents" }), "/settings/machine#agents");
-  assert.deepEqual(parse("/settings/machine", "", "#agents"), { page: "settings", scope: "machine", section: "agents" });
-  assert.equal(pathOf({ page: "settings", scope: "machine", machine: "0a1b2c3d", section: "agents" }), "/settings/machine/0a1b2c3d/agents");
   for (const p of ["/settings/x", "/settings/you/a/b", "/settings/you/Bad", "/settings/project", "/settings/project/nope", "/settings/machine/geek", "/settings/team/personal/a/b", "/settings/personal/plan"]) {
     assert.equal(parse(p).page, "missing", p);
   }
@@ -80,7 +74,7 @@ test("each route parses", () => {
   assert.deepEqual(parse(`/p/${P}/settings`, "", "#plane"), { page: "settings", scope: "project", project: P, section: "repos" });
   assert.deepEqual(parse(`/p/${P}/settings`, "", "#boards"), { page: "settings", scope: "project", project: P, section: "issues" });
   assert.deepEqual(parse(`/settings/project/${P}/size`), { page: "settings", scope: "project", project: P, section: "runs" });
-  assert.deepEqual(parse("/settings/you/finish"), { page: "settings", scope: "you", section: "finish" }, "only a project's");
+  assert.deepEqual(parse("/settings/you/agents"), { page: "settings", scope: "you", section: "agents" }, "only a project's");
   // A repo to link opens Linked repos.
   assert.deepEqual(parse(`/p/${P}/settings`, "?link=acme%2Fapp"), { page: "settings", scope: "project", project: P, section: "repos", link: "acme/app" });
   assert.deepEqual(parse(`/p/${P}/settings`, "?link=..%2F..%2Fx"), { page: "settings", scope: "project", project: P }, "not a repo");

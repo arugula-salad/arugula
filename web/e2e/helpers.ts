@@ -287,16 +287,6 @@ export async function settingsRow(page: Page, name: string) {
   await (await openSettingsPage(page)).getByRole("button", { name, exact: true }).click();
 }
 
-/** Run one of the command palette's commands by its key (`Help/What's new`):
- * Help is the palette's, not a section of Settings (Arugula #1108). */
-export async function paletteCommand(page: Page, key: string) {
-  await page.locator(".ws-head [data-open-palette]").click();
-  const palette = page.getByRole("dialog", { name: "Command palette" });
-  await palette.getByRole("combobox", { name: "Command" }).fill(key.slice(key.indexOf("/") + 1));
-  await palette.locator(`[data-command="${key}"]`).click();
-  await expect(palette).toBeHidden();
-}
-
 /** Back to the panes from the Settings page. */
 export async function closeSettingsPage(page: Page) {
   await page.locator(".ws-rail [data-open-build]").click();

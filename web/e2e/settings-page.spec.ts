@@ -12,16 +12,13 @@ test("the rail's Settings is a page: every scope's rows, and back to the panes",
   const settings = await openSettingsPage(page);
   await expect(page).toHaveURL(/#settings$/);
   await expect(page).toHaveTitle(/^Settings/);
-  for (const id of ["push", "appearance", "preferences", "machine"]) await expect(settings.locator(`[data-settings-section="${id}"]`)).toBeVisible();
-  // Help is the command palette's, not a section here (Arugula #1108).
-  await expect(settings.locator('[data-settings-section="help"]')).toHaveCount(0);
+  for (const id of ["device", "preferences", "machine", "help"]) await expect(settings.locator(`[data-settings-section="${id}"]`)).toBeVisible();
 
   // Each row under what it reaches.
   const machine = settings.locator('[data-settings-section="machine"]');
   await expect(machine.getByRole("button", { name: "Developer settings…" })).toBeVisible();
   await expect(machine.getByRole("button", { name: "Remove arugula.nvim" })).toBeVisible();
-  await expect(settings.locator('[data-settings-section="appearance"]').getByRole("button", { name: "Appearance…" })).toBeVisible();
-  await expect(settings.getByRole("button", { name: "Appearance…" })).toHaveCount(1);
+  await expect(settings.locator('[data-settings-section="device"]').getByRole("button", { name: "Appearance…" })).toBeVisible();
   await expect(settings.locator('[data-settings-section="preferences"]').getByRole("switch", { name: "Tips", exact: true })).toBeChecked();
 
   // A daemon's own page has no account, so no second way in, and no platform.
@@ -55,28 +52,7 @@ test("#settings=<section> opens at it, and a reload stays there", async ({ page 
   await page.reload();
   await expect(heading).toBeInViewport();
   // The index keeps the page's own address, not a bare `#machine`.
-  await expect(page.locator(".settings-index a", { hasText: "Preferences" })).toHaveAttribute("href", "#settings=preferences");
-});
-
-test("This device and All your devices are one section, Phones and browsers, and their old links land on it", async ({ page }) => {
-  await reset(page);
-  for (const old of ["device", "all-devices"]) {
-    await page.goto(`/#settings=${old}`);
-    await expect(page.locator("#push-h")).toHaveText("Phones and browsers");
-    await expect(page.locator("#push-h")).toBeInViewport();
-  }
-});
-
-test("Help is in the command palette, not in Settings", async ({ page }) => {
-  await reset(page);
-  await page.locator(".ws-head [data-open-palette]").click();
-  const palette = page.getByRole("dialog", { name: "Command palette" });
-  const filter = palette.getByRole("combobox", { name: "Command" });
-  for (const label of ["Getting started", "What's new", "nvim in Arugula"]) {
-    await filter.fill(label);
-    await expect(palette.locator(`[data-command="Help/${label}"]`)).toBeVisible();
-    await expect(palette.locator(`[data-command="Settings/${label}"]`)).toHaveCount(0);
-  }
+  await expect(page.locator(".settings-index a", { hasText: "Help" })).toHaveAttribute("href", "#settings=help");
 });
 
 // Arugula #1094: who reached the machine through Arugula cloud, from the

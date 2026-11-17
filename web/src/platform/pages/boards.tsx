@@ -177,11 +177,11 @@ function useBlindMachines(project: string, may: boolean): string[] {
   return blind;
 }
 
-/** A quiet line under the header when some of the reader's machines have no Boards grant over the project (#313): their agents' first `board_read` would be refused. It only points at Settings → This machine → Agents' grants, where the grant is given. */
+/** A quiet line under the header when some of the reader's machines have no Boards grant over the project (#313): their agents' first `board_read` would be refused. It only points at Settings → Agents, where the grant is given. */
 function BlindMachines({ project, may }: { project: string; may: boolean }) {
   const line = blindLine(useBlindMachines(project, may));
   if (!line) return null;
-  const to = pathOf({ page: "settings", scope: "machine", section: "agents" }, names);
+  const to = pathOf({ page: "settings", scope: "you", section: "agents" }, names);
   return (
     <p class="dim" data-boards-blind>
       {line}{" "}

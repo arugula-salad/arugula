@@ -295,19 +295,6 @@ To land a pull request: `gh pr merge N` (or Merge when ready on GitHub). It
 lands when its group passes; `gh pr view N` says where it is. A failed group
 takes the pull request out of the queue, and queueing it again re-runs it.
 
-A group GitHub throws away (one ahead failed, a pull request left, the queue
-rebuilt) keeps running on its old `gh-readonly-queue/main/pr-N-<base>` ref,
-so `queue-cancel-superseded.yml` runs on each new group and cancels them
-(Arugula #1125). `scripts/queue-cancel-superseded` cancels a run only when
-the queue says pull request N is in another group now (or N merged as
-another commit), that group's runs were made after this one, and the run's
-ref no longer points at its commit. A pull request is in one live group at a
-time and `chant ci verdict` reads only its group's commit, so a cancelled run
-never counts against a live group. A pull request that left the queue
-without merging keeps its runs. To see what it would cancel:
-`gh workflow run queue-cancel-superseded.yml` (dry run by default), or
-`GITHUB_REPOSITORY=arugula-salad/arugula scripts/queue-cancel-superseded --dry-run`.
-
 The queue lands the commit its group tested, so the group's check runs are
 on main's commit already and chant's tick counts them. Main's push run on
 that commit skips what the group passed (`scripts/queue-tested`); chant

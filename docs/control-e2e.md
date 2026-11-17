@@ -80,6 +80,18 @@ terminal traffic is TLS to the relay.
   devices still signs changes on top of versions it checked, so machines
   from before #1005 keep following the team until it takes a version on
   control's word; those stop there, and need this release.
+- **Signing in is the whole flow** (#1004). No page asks another device
+  to approve it: there's no *Approve this browser*, *New device?*, recovery
+  code, device reset or passkey-derived device key any more, and a page the
+  account stopped trusting works on with machine tokens. Only a control
+  that signs no tokens (a dev or test hub), or a page with
+  `localStorage["arugula.machine-tokens"] = "off"`, still makes the
+  account's first browser its first device, self-signed, with no screen.
+  A page that is one of the account's devices keeps its key, and is still
+  what approves `arugula login` (a `cli` device, until the CLI has a session
+  of its own, #1018) and the phone app; a page without one points the CLI
+  at `arugula login --browser`. Removing a machine from such a page is
+  control's word too (`DELETE /api/daemons/{id}`, #1017).
 - **What still needs you, not control.** Passkeys approve deploys, standing
   run grants and owner changes: a user-verified assertion over the
   action's bytes ([aru-126](decisions/aru-126-device-keys-are-the-machine-plane-s-passkeys-approve.md)).
@@ -101,7 +113,9 @@ device to approve, in exchange for trusting control with them.
 ## Device keys
 
 **Device keys decide who reaches a machine; passkeys decide what a person
-meant.**
+meant.** Since #1004 nothing makes a new browser, phone, app window or
+recovery code a device: what follows is how devices made before, and the
+machines that check them, still work until the key code goes (#1007).
 
 Each browser, phone, terminal, desktop app window and machine you use has
 a key pair of its own. When a machine joins your account it pins the
@@ -153,7 +167,8 @@ machines enforce this themselves (`Kind::certifies`, `Trust::evaluate` in
 `crates/e2e/src/cert.rs`), and control refuses such an approval first
 (`needs_browser`).
 
-**Getting back in.** Recovery codes let in one device each and keep your
+**Getting back in** (before #1004; the page no longer offers either).
+Recovery codes let in one device each and keep your
 machines joined ([Recovery](#keys)). With no device and no code left, a
 fresh GitHub sign-in starts a device reset: 48 hours any device can cancel,
 then a new root, so each machine has to be joined again on the machine
@@ -264,9 +279,9 @@ device nobody trusted. Now:
   to use anywhere until the device is removed. With plain non-extractable
   keys it can only use them while it runs in the page. On disk both forms
   are equally readable to someone with the browser profile.
-- **A browser enrolled with keys it lost** says so at boot and offers to
-  forget itself and enroll again, approved by another device or a recovery
-  code.
+- **A browser enrolled with keys it lost** forgets its place at boot and
+  works on with machine tokens (#1004); before, it said so and offered to
+  enroll again.
 - `/key-probe.html` (on control and on every daemon) runs the round trip
   in whatever browser opens it and says plainly whether it works, with the
   Safari version.
@@ -538,7 +553,8 @@ device nobody trusted. Now:
   control's plain `locked` instead, which an owner sets on control's page
   with no signature; a signed lock is kept for the record.
 
-**Recovery:**
+**Recovery** (gone from the page since #1004: none are made, shown or
+taken; certificates of kind `recovery` made before still chain):
 
 - At first sign-in, the user gets two recovery codes. Each is an Ed25519
   seed, shown as 52 letters and digits in fours, whose certificate (`kind: recovery`) the first
@@ -557,6 +573,10 @@ device nobody trusted. Now:
 - Control never sees the seed.
 
 ### PRF: re-deriving a browser's keys
+
+Gone from the page since #1004: signing in with a passkey asks for no PRF
+output and takes no keys, and *Use on new computers* is gone. A browser that
+took a passkey's keys before keeps them as the device it was.
 
 A passkey created with the `prf` extension returns 32 bytes per salt, the
 same every time for that credential. Since #764 those bytes are the
@@ -739,6 +759,10 @@ would pass. So the daemon doesn't take the root on control's word. Since
 
 ### Approving a new browser or phone: the code it shows
 
+Gone since #1004: no page waits to be approved, so none shows a code, and
+`#device=` links lead nowhere. Control still takes the requests an older
+page makes.
+
 The same mechanism as a machine's join (#761). A browser, phone or the
 app's window that waits to be approved shows a code instead of its
 fingerprint:
@@ -785,6 +809,11 @@ fingerprint:
   other device to answer a code.
 
 ### Signing in the desktop app: one Allow
+
+Since #1004 Allow sends no certificate, and the app's window doesn't take
+the keys an older page signed for it: it reaches machines with tokens, as
+any new browser does. What follows is how it made the window a device
+before.
 
 The desktop app's window signs in through the person's browser
 (`crates/control/src/app_login.rs`), and since #758 nothing is compared:
