@@ -38,9 +38,9 @@ impl Daemon {
     }
 
     /// Someone's role on the editors that joined this daemon: the owner's
-    /// editors are theirs; a team's members have their team role (M19).
+    /// editors are theirs; a team's members watch them (M19, Arugula #1162).
     pub(super) fn presence_role(&self, who: &Principal) -> Option<Role> {
-        if who.is_owner() { Some(Role::Owner) } else { self.config.acl.team_role(who) }
+        if who.is_owner() { Some(Role::Owner) } else { self.config.acl.team_role(who).map(|r| r.min(Role::Viewer)) }
     }
 
     /// The editor a block is, or that runs in a terminal (#1730).
@@ -301,9 +301,13 @@ impl Daemon {
         if who.is_owner() || self.machine_of(pane).is_some_and(|m| m.by.as_deref() == Some(who.id())) {
             return Ok(());
         }
-        // A team's machine is the team's: its members drive it by their
-        // team role, no one person's trust needed (M19).
-        if self.config.acl.team_role(who).is_some_and(|r| r >= Role::Editor) {
+        // A team's machine is the team's: its members drive what they may
+        // edit, a session shared with them or their team as editors, with no
+        // one person's trust needed (M19). Their team role alone only
+        // watches (Arugula #1162).
+        if self.config.acl.team_role(who).is_some()
+            && self.session_of(pane).and_then(|s| self.config.acl.role(who, s)).is_some_and(|r| r >= Role::Editor)
+        {
             return Ok(());
         }
         let until = self.trust.get(&(pane, who.id().to_owned())).copied().unwrap_or(0);

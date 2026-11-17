@@ -4880,7 +4880,14 @@ export type ProjectRef = {
 /**
  * `prj_…`.
  */
-id: string, name: string, };
+id: string, name: string, 
+/**
+ * The team whose project it is, as control said (Arugula #1162):
+ * that team's members watch the session on a machine of the team.
+ * None for a person's own project, and until control says (an older
+ * control never does): then no team sees it.
+ */
+team?: string, };
 
 export type ProjectTeam = { id: string, name: string, 
 /**

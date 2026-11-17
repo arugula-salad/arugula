@@ -450,6 +450,17 @@ impl Saved {
         }
     }
 
+    /// The team's id, if it's a team's: the pinned one, or, joined on
+    /// control's word, the one control gave. Its projects' sessions are
+    /// what the team's members watch here (Arugula #1162).
+    pub fn team_id(&self) -> Option<String> {
+        match (self.team(), self.by_control()) {
+            (Some(t), _) => Some(t.pin.team.clone()),
+            (None, Some(b)) => b.team.as_ref().map(|t| t.id.clone()),
+            (None, None) => None,
+        }
+    }
+
     /// The team's pin, when there is a team.
     pub fn team_pin(&self) -> Option<&TeamPin> {
         self.team().map(|t| &t.pin)
@@ -2626,6 +2637,7 @@ impl Control {
         }
         crate::sites::set_control_origins(origins);
         self.acl.set_team_roles(e.as_ref().map(|e| e.team_roles.clone()).unwrap_or_default());
+        self.acl.set_machine_team(e.as_ref().and_then(|e| e.saved.team_id()));
         self.acl.set_shared_teams(e.as_ref().map(|e| e.shared_roles.clone()).unwrap_or_default());
         *self.now.write().unwrap() = e.map(Arc::new);
         self.changed.send_modify(|v| *v += 1);
@@ -5334,6 +5346,10 @@ pub(crate) mod tests {
         assert!(e.others.is_empty(), "no devices of anyone's");
         assert_eq!(let_in(&e, &acl), ["f", "k", "p", "v"]);
         acl.set_shared_teams(e.shared_roles.clone());
+        // A team's share counts while the session is in its project
+        // (Arugula #1162); a person's wherever it is.
+        assert_eq!(acl.role_of("account:v", 1), None, "not in t1's project");
+        acl.set_session_teams([(1, "t1".to_owned())]);
         assert_eq!(acl.role_of("account:v", 1), Some(Role::Viewer), "a team share, at their role in it");
         assert_eq!(acl.role_of("account:p", 1), Some(Role::Viewer));
         let _ = std::fs::remove_dir_all(&dir);

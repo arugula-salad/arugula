@@ -463,10 +463,19 @@ impl Daemon {
                 self.sizes.insert(pane, size);
             }
         }
-        // A pane may have moved to a session someone else can't read.
+        // A pane may have moved to a session someone else can't read, or a
+        // session to a project another team's members don't watch.
+        self.sync_session_teams();
         self.access_moved();
         self.broadcast();
         self.save_due.get_or_insert_with(|| Instant::now() + SAVE_DEBOUNCE);
+    }
+
+    /// Each session's project's team to the ACL (Arugula #1162): who
+    /// watches a session follows its project.
+    pub(super) fn sync_session_teams(&self) {
+        let teams = self.mux.sessions.iter().filter_map(|s| Some((s.id, s.project.as_ref()?.team.clone()?)));
+        self.config.acl.set_session_teams(teams);
     }
 
     /// Who may read what could have changed: streams the mux doesn't track

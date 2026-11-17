@@ -514,8 +514,31 @@ pub async fn linked_project(
 pub async fn repo_project(control: &crate::control::Control, repo: &str) -> Option<arugula_core::ProjectRef> {
     let q = Rule::Linked(repo.to_owned()).query(&Steps { repo: Some(repo.to_owned()), ..Default::default() });
     let v = control.cloud_now(Method::GET, &format!("{AGENT_ISSUE_HOME}?{}", query(&q)), None).await.ok()?;
+    project_ref(&v)
+}
+
+/// The project control's answer at [`AGENT_ISSUE_HOME`] names, with its
+/// team (Arugula #1162): an older control names no owner, and then no team.
+pub(crate) fn project_ref(v: &Value) -> Option<arugula_core::ProjectRef> {
     let id = v["project"].as_str().filter(|p| !p.is_empty())?;
-    Some(arugula_core::ProjectRef { id: id.to_owned(), name: v["name"].as_str().unwrap_or_default().to_owned() })
+    let owner = serde_json::from_value::<arugula_control_wire::projects::ProjectOwner>(v["owner"].clone()).ok();
+    Some(arugula_core::ProjectRef {
+        id: id.to_owned(),
+        name: v["name"].as_str().unwrap_or_default().to_owned(),
+        team: owner.as_ref().and_then(|o| o.team_id()).map(str::to_owned),
+    })
+}
+
+/// The project `project` (`prj_…`) as control says it is now, with its
+/// team: `None` when control didn't answer, the owner can't read it, or
+/// the answer says nothing of whose it is (an older control).
+pub async fn project_now(control: &crate::control::Control, project: &str) -> Option<arugula_core::ProjectRef> {
+    let path = format!("{AGENT_ISSUE_HOME}?{}", query(&[("project", project.to_owned())]));
+    let v = control.cloud_now(Method::GET, &path, None).await.ok()?;
+    if v["owner"].is_null() {
+        return None;
+    }
+    project_ref(&v).filter(|p| p.id == project)
 }
 
 /// The machine owner's personal project (Arugula #1163): issue-home asked
@@ -529,8 +552,8 @@ pub async fn owners_personal(control: &crate::control::Control) -> Option<arugul
     if is_team(&v) {
         return None;
     }
-    let id = v["project"].as_str().filter(|p| !p.is_empty())?;
-    Some(arugula_core::ProjectRef { id: id.to_owned(), name: v["name"].as_str().unwrap_or_default().to_owned() })
+    // A person's own project: no team sees it.
+    project_ref(&v).map(|p| arugula_core::ProjectRef { team: None, ..p })
 }
 
 /// The GitHub repo (`owner/name`) of the clone at `dir`: its `origin`'s,
@@ -562,6 +585,22 @@ async fn github_repo_of(dir: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Arugula #1162: control's answer names the project's team when it's
+    /// a team's; a person's own, or an older control's answer with no
+    /// owner, names none, and then no team sees its sessions.
+    #[test]
+    fn a_projects_team_is_what_control_names() {
+        let team = json!({ "project": "prj_1", "name": "Arugula", "team": true,
+                           "owner": { "kind": "team", "id": "t1", "name": "Acme" } });
+        let own = json!({ "project": "prj_2", "name": "Default", "owner": { "kind": "personal", "account": "a1" } });
+        let old = json!({ "project": "prj_1", "name": "Arugula", "team": true });
+        let p = |v: &Value| project_ref(v).map(|p| (p.id, p.team));
+        assert_eq!(p(&team), Some(("prj_1".into(), Some("t1".into()))));
+        assert_eq!(p(&own), Some(("prj_2".into(), None)));
+        assert_eq!(p(&old), Some(("prj_1".into(), None)));
+        assert_eq!(p(&json!({ "project": "" })), None);
+    }
 
     /// The order: each step wins over every one after it, and asks
     /// control for its own project.

@@ -199,6 +199,12 @@ pub enum Api {
     /// A repo's project now: the sessions inferred from it follow
     /// ([`arugula_core::Mux::follow_repo`]). The sessions it moved.
     FollowRepo(String, arugula_core::ProjectRef, oneshot::Sender<Vec<SessionId>>),
+    /// Control's word on a project: its sessions take its name and team
+    /// ([`arugula_core::Mux::project_known`], Arugula #1162). The sessions
+    /// it changed.
+    ProjectKnown(arugula_core::ProjectRef, oneshot::Sender<Vec<SessionId>>),
+    /// The projects the sessions are in, each once.
+    SessionProjects(oneshot::Sender<Vec<String>>),
     /// Whether a session may still get its card from a pane's branch
     /// ([`arugula_core::Session::work_inferable`]): asked before control is.
     WorkInferable(SessionId, oneshot::Sender<bool>),
@@ -1251,6 +1257,8 @@ impl Daemon {
     }
 
     async fn run(mut self, mut rx: mpsc::UnboundedReceiver<Cmd>, mut notices: mpsc::UnboundedReceiver<Notice>) {
+        // The restored sessions' projects say who watches them.
+        self.sync_session_teams();
         let mut refresh = tokio::time::interval(REFRESH);
         let mut tick = tokio::time::interval(TICK);
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);

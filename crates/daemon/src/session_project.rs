@@ -18,6 +18,12 @@
 //! agent restarts. A repo linked to no project now, or no answer, leaves
 //! the label as it was.
 //!
+//! Who sees a session follows its project (Arugula #1162): a team's
+//! project's sessions are watched by the team's members on a machine of
+//! that team. When the relay comes up the daemon asks control each
+//! session's project again, for its team as well as its name; until control
+//! names a team (an older control never does), no team sees the session.
+//!
 //! Its card too, the same way: a terminal on a `feat/N-…` branch puts its
 //! session on `#N` when a board has a row for it
 //! (`board_attach::infer_card`), and never over one set by hand.
@@ -67,6 +73,7 @@ pub fn start(app: Arc<App>) {
             if *connects.borrow_and_update() > 0 {
                 follow(&a.mux, &a.control, None).await;
                 place_unplaced(&a.mux, &a.control).await;
+                known(&a.mux, &a.control).await;
             }
         }
     });
@@ -198,12 +205,18 @@ pub async fn repo_moved(mux: &MuxHandle, control: &Control, repo: &str) -> OpAns
 }
 
 /// `sessions.set_project` (Arugula #1166): `done` once the session is in
-/// the project, set by hand; `failed` with why not.
-pub async fn set(mux: &MuxHandle, ask: &SessionProjectAsk) -> OpAnswer {
+/// the project, set by hand; `failed` with why not. Then control is asked
+/// the project's team, which says who watches the session (Arugula #1162):
+/// until it answers, no team does.
+pub async fn set(mux: &MuxHandle, control: &Control, ask: &SessionProjectAsk) -> OpAnswer {
     let put = async {
         let (session, project) = asked(ask)?;
+        let id = project.id.clone();
         mux.api(|r| Api::SetSessionProject(session, project, r)).await.ok_or("the daemon is shutting down")??;
         debug!(session, project = ask.project, "a session moved to a project from control");
+        if let Some(known) = crate::mcp::issues::project_now(control, &id).await {
+            mux.api(|r| Api::ProjectKnown(known, r)).await;
+        }
         Ok::<_, String>(())
     };
     match put.await {
@@ -218,7 +231,7 @@ fn asked(ask: &SessionProjectAsk) -> Result<(SessionId, ProjectRef), String> {
     let id = crate::machine_sessions::project_id(&ask.project)
         .ok_or_else(|| format!("a session goes in a project (prj_…), not {:?}", ask.project))?;
     let name = Some(ask.project_name.trim()).filter(|n| !n.is_empty()).unwrap_or(&id).to_owned();
-    Ok((session, ProjectRef { id, name }))
+    Ok((session, ProjectRef { id, name, team: None }))
 }
 
 /// Ask control the project of each repo sessions' projects were inferred
@@ -228,6 +241,17 @@ async fn follow(mux: &MuxHandle, control: &Control, only: Option<&str>) {
     for repo in repos.into_iter().filter(|r| only.is_none_or(|o| o == r)) {
         let Some(project) = crate::mcp::issues::repo_project(control, &repo).await else { continue };
         mux.api(|r| Api::FollowRepo(repo, project, r)).await;
+    }
+}
+
+/// Ask control each session's project as it is now, with its team, and
+/// give it to the sessions in it (Arugula #1162). No answer leaves it as it
+/// was.
+async fn known(mux: &MuxHandle, control: &Control) {
+    let Some(projects) = mux.api(Api::SessionProjects).await else { return };
+    for id in projects {
+        let Some(project) = crate::mcp::issues::project_now(control, &id).await else { continue };
+        mux.api(|r| Api::ProjectKnown(project, r)).await;
     }
 }
 
@@ -243,7 +267,7 @@ mod tests {
     /// sees it (else by its id).
     #[test]
     fn an_ask_names_a_session_and_a_project() {
-        let p = |id: &str, name: &str| ProjectRef { id: id.into(), name: name.into() };
+        let p = |id: &str, name: &str| ProjectRef { id: id.into(), name: name.into(), team: None };
         assert_eq!(asked(&ask("3", "prj_1", "Factorio mods")), Ok((3, p("prj_1", "Factorio mods"))));
         assert_eq!(asked(&ask("3", "prj_1", " ")), Ok((3, p("prj_1", "prj_1"))));
         assert!(asked(&ask("s3", "prj_1", "x")).is_err(), "not a session's id");

@@ -36,3 +36,17 @@ test("an answer is a choice, an id, a name in any case, or none", () => {
   assert.equal(projectPicked("No project", all), null);
   assert.equal(projectPicked("Elsewhere", all), undefined);
 });
+
+test("a team's project carries its team, which says who watches the session (Arugula #1162)", () => {
+  const owned = {
+    ...all,
+    projects: [
+      { ...all.projects[0], owner: { kind: "personal", account: "acc_1" } },
+      { ...all.projects[1], owner: { kind: "team", id: "team_1", name: "Acme" } },
+    ],
+  };
+  assert.deepEqual(projectPicked(B, owned), { id: B, name: "Acme", team: "team_1" });
+  assert.deepEqual(projectPicked(A, owned), { id: A, name: "Default" });
+  // An older control names no owner: no team.
+  assert.deepEqual(projectPicked(B, all), { id: B, name: "Acme" });
+});

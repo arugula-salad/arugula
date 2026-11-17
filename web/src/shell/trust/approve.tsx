@@ -195,7 +195,7 @@ export function JoinPrompt({ s, code: whole }: { s: ControlSession; code: string
           ) : (
             <p class="dim" data-join-grants>
               {team
-                ? `Everyone in ${team.roster.name} sees it and reaches it by their role: owners and editors drive its terminals, viewers watch. Its owners also see private panes, and can take it out of the team. It stays yours.`
+                ? `Everyone in ${team.roster.name} sees its sessions in ${team.roster.name}'s projects and watches them: they drive a terminal only when you share its session or trust them with it. Its owners reach all of it, private panes too, and can take it out of the team. Sessions in your own projects stay yours alone. It stays yours.`
                 : "Only you reach it, and you can drive its terminals. You're its only owner."}{" "}
               Arugula cloud decides who reaches it and relays the connection: it can read what it relays, and keeps none of it.
             </p>

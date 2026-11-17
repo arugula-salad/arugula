@@ -1027,7 +1027,7 @@ async fn a_sessions_project_is_set_and_cleared() {
     let (mut ws, s) = connect_state(&d).await;
     let session = s.sessions[0].id;
     assert_eq!(s.sessions[0].project, None);
-    let project = arugula_proto::ProjectRef { id: "prj_0123abcd".into(), name: "Acme".into() };
+    let project = arugula_proto::ProjectRef { id: "prj_0123abcd".into(), name: "Acme".into(), team: None };
     let set = Intent::SetSessionProject { session, project: Some(project.clone()) };
     send(&mut ws, ClientMsg::Intent { id: None, intent: set }).await;
     let s = state_where(&mut ws, |s| s.sessions[0].project.is_some()).await;
