@@ -3,7 +3,7 @@
   "commit": "ecab5ce668a50ec46bd8f02af340e6836dfa55b0",
   "branch": "main",
   "state": "pending",
-  "at": "2026-11-17T07:39:03Z",
+  "at": "2026-11-17T07:45:59Z",
   "phases": {
     "lint": {
       "verdict": "pass",
@@ -30,7 +30,7 @@
       ]
     },
     "build": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
@@ -48,7 +48,7 @@
         {
           "name": "clippy",
           "id": 133890221080,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/44039377788/job/133890221080"
         }
       ]
@@ -72,13 +72,13 @@
       ]
     },
     "e2e": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "e2e (1)",
           "id": 133891403526,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/44039377788/job/133891403526"
         },
         {
@@ -102,7 +102,7 @@
         {
           "name": "e2e (2)",
           "id": 133891403532,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/44039377788/job/133891403532"
         },
         {
@@ -114,7 +114,7 @@
         {
           "name": "e2e (4)",
           "id": 133891403448,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/44039377788/job/133891403448"
         },
         {
@@ -138,7 +138,7 @@
         {
           "name": "e2e (8)",
           "id": 133891403451,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/44039377788/job/133891403451"
         },
         {
@@ -156,13 +156,13 @@
       ]
     },
     "claims": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "desktop-xvfb",
           "id": 133890220896,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/44039377788/job/133890220896"
         }
       ]
