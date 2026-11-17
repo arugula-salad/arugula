@@ -227,3 +227,53 @@ test("a browser with no device key adds a machine's join in one click", async ({
   expect(added).toEqual([{ team: null }]);
   expect(enrolled).toEqual([]);
 });
+
+// #997: no browser becomes a device any more where control signs tokens:
+// not the account's first (which used to sign itself as its root), and not
+// the desktop app's window. Each lists its machines from the directory and
+// asks control for tokens, with no `/api/devices` POST.
+for (const app of [false, true]) {
+  test(`the account's first ${app ? "app window" : "browser"} takes tokens and never enrolls`, async ({ page }) => {
+    const enrolled: string[] = [];
+    if (app) await page.addInitScript(() => Object.assign(window, { __arugulaApp: { name: "Arugula app on test-mac" } }));
+    await page.route(/\/control\.json$/, (r) => r.fulfill({ json: { control: true, url: origin, github: true, passkeys: false, vapid: "" } }));
+    await page.route(/\/\.well-known\/jwks\.json$/, (r) => r.fulfill({ json: jwks() }));
+    await page.route(/\/api\//, async (r) => {
+      const url = new URL(r.request().url());
+      const method = r.request().method();
+      // No device yet: no root.
+      if (url.pathname === "/api/me") return r.fulfill({ json: { account: "a1", login: "me", name: "Me", root: null, passkeys: 0 } });
+      if (url.pathname === "/api/directory") return r.fulfill({ json: { daemons: [{ id: machine.id, name: "box", urls: [origin], online: true, last_seen: null, noise: machine.noise }] } });
+      if (url.pathname === `/api/machines/${machine.id}/token` && method === "POST") return r.fulfill({ json: { token: token(), expires: Math.floor(Date.now() / 1000) + 300, role: "owner" } });
+      if (url.pathname.startsWith("/api/devices") && method === "POST") enrolled.push(url.pathname);
+      return r.fulfill({ status: 404, json: { error: "not here" } });
+    });
+
+    await page.goto(`${origin}/`);
+    await expect.poll(() => page.evaluate(() => window.__arugula?.control?.phase)).toBe("ready");
+    expect(await page.evaluate(() => [window.__arugula.control?.tokens, !!window.__arugula.control?.enrollment, window.__arugula.control?.recoveryCodes ?? null])).toEqual([true, false, null]);
+    await expect.poll(() => page.evaluate((id) => window.__arugula.client.e2e?.daemon.id === id && window.__arugula.client.connected, machine.id), { timeout: 20_000 }).toBe(true);
+    expect(enrolled).toEqual([]);
+  });
+}
+
+// #997: a CLI's join still needs a device's signature, which a browser
+// with no device key can't give: it says so, and where to go instead.
+test("a browser with no device key can't approve a CLI, and says why", async ({ page }) => {
+  const k = await generateKeys(true);
+  const cli: Cert = { v: 1, account: "", device: k.id, kind: "cli", name: "Arugula CLI on laptop", noise: k.noisePub, sign: k.signPub, created: Date.now(), approver: "", sig: "" };
+  const code = await joinCode(cli);
+  await page.route(/\/control\.json$/, (r) => r.fulfill({ json: { control: true, url: origin, github: true, passkeys: false, vapid: "" } }));
+  await page.route(/\/\.well-known\/jwks\.json$/, (r) => r.fulfill({ json: jwks() }));
+  await page.route(/\/api\//, async (r) => {
+    const url = new URL(r.request().url());
+    if (url.pathname === "/api/me") return r.fulfill({ json: { account: "a1", login: "me", name: "Me", root: rootDevice, passkeys: 0 } });
+    if (url.pathname === "/api/directory") return r.fulfill({ json: { daemons: [] } });
+    if (url.pathname === `/api/joins/${code}`) return r.fulfill({ json: { code, cert: cli, urls: [], created: Date.now(), team: null, features: "join-secret" } });
+    return r.fulfill({ status: 404, json: { error: "not here" } });
+  });
+  await page.goto(`${origin}/#join=${code}.ABCD-EFGH-JKMN-PQRS`);
+  const dialog = page.getByRole("dialog", { name: "Add a terminal?" });
+  await expect(dialog.locator("[data-join-needs-device]")).toContainText("arugula login --browser");
+  await expect(dialog.locator("[data-approve-join]")).toBeDisabled();
+});
