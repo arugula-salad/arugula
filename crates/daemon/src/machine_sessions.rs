@@ -243,7 +243,7 @@ mod tests {
             id,
             name: format!("s{id}"),
             tabs: vec![],
-            project: project.map(|p| ProjectRef { id: p.into(), name: "Arugula".into() }),
+            project: project.map(|p| ProjectRef { id: p.into(), name: "Arugula".into(), team: None }),
             project_by_hand: false,
             work: project.map(|p| WorkRef { project: p.into(), item: item.map(Into::into) }),
             work_by_hand: false,
@@ -292,7 +292,7 @@ mod tests {
             project: project.map(Into::into),
             boards: vec![],
         };
-        let session = ProjectRef { id: "prj_2".into(), name: "x".into() };
+        let session = ProjectRef { id: "prj_2".into(), name: "x".into(), team: None };
         assert_eq!(
             place(Some(&on("#4", Some("prj_1"))), Some(&session)),
             Place { project: Some("prj_1".into()), work_item: Some("#4".into()) }
@@ -304,7 +304,10 @@ mod tests {
             Place { project: Some("prj_2".into()), work_item: None }
         );
         assert_eq!(place(Some(&on("#4", None)), None), Place::default());
-        assert_eq!(place(None, Some(&ProjectRef { id: "personal".into(), name: "x".into() })), Place::default());
+        assert_eq!(
+            place(None, Some(&ProjectRef { id: "personal".into(), name: "x".into(), team: None })),
+            Place::default()
+        );
     }
 
     /// The list is looked at when the layout changed, or every `LOOK`, and

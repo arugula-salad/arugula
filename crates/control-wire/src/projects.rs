@@ -162,6 +162,14 @@ impl ProjectOwner {
     pub fn is_team(&self) -> bool {
         matches!(self, Self::Team { .. })
     }
+
+    /// The team's id, when it's a team's.
+    pub fn team_id(&self) -> Option<&str> {
+        match self {
+            Self::Team { id, .. } => Some(id),
+            Self::Personal { .. } => None,
+        }
+    }
 }
 
 /// An owner named by what it is, without its name: a team by its id, or

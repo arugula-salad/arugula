@@ -461,7 +461,7 @@ fn layout_changes_clear_focus() {
 }
 
 fn project(id: &str) -> crate::ProjectRef {
-    crate::ProjectRef { id: id.into(), name: format!("{id}'s name") }
+    crate::ProjectRef { id: id.into(), name: format!("{id}'s name"), team: None }
 }
 
 #[test]
@@ -572,7 +572,7 @@ fn a_sessions_work_set_by_hand_puts_it_in_its_project_and_is_kept() {
     m.apply(set(Some(work("prj_a", Some("#7"))), Some("A"))).unwrap();
     let s = &m.sessions[0];
     assert_eq!(s.work, Some(work("prj_a", Some("#7"))));
-    assert_eq!(s.project, Some(crate::ProjectRef { id: "prj_a".into(), name: "A".into() }));
+    assert_eq!(s.project, Some(crate::ProjectRef { id: "prj_a".into(), name: "A".into(), team: None }));
     assert!(s.work_by_hand && !s.project_by_hand, "its project follows its work");
     let back: Mux = serde_json::from_str(&serde_json::to_string(&m).unwrap()).unwrap();
     assert_eq!(back, m);
@@ -632,7 +632,7 @@ fn an_inferred_card_is_set_once_in_the_sessions_project() {
     // A session in no project takes the card's.
     m.apply(Intent::NewSession { name: None, from_pane: None, project: None }).unwrap();
     assert_eq!(m.infer_work(2, work("prj_c", Some("#1")), Some("C".into())), Ok(true));
-    assert_eq!(m.sessions[1].project, Some(crate::ProjectRef { id: "prj_c".into(), name: "C".into() }));
+    assert_eq!(m.sessions[1].project, Some(crate::ProjectRef { id: "prj_c".into(), name: "C".into(), team: None }));
     assert_eq!(m.infer_work(9, work("prj_a", None), None), Err(crate::Error::NoSession(9)));
 }
 
@@ -672,7 +672,7 @@ fn inferred_work_follows_its_repo_with_an_iss_card_and_work_set_by_hand_stays() 
     let mut m = mux_with_session();
     m.infer_project(1, project("prj_a"), "acme/app").unwrap();
     m.infer_work(1, work("prj_a", Some("#3")), None).unwrap();
-    let renamed = crate::ProjectRef { id: "prj_a".into(), name: "A2".into() };
+    let renamed = crate::ProjectRef { id: "prj_a".into(), name: "A2".into(), team: None };
     assert_eq!(m.follow_repo("acme/app", &renamed), vec![1]);
     assert_eq!(
         (m.sessions[0].project.as_ref(), m.sessions[0].work.clone()),
@@ -697,7 +697,7 @@ fn a_new_session_with_a_project_starts_in_it_set_by_hand() {
     .unwrap();
     m.apply(intent).unwrap();
     let s = &m.sessions[0];
-    assert_eq!(s.project, Some(crate::ProjectRef { id: "prj_x".into(), name: "X".into() }));
+    assert_eq!(s.project, Some(crate::ProjectRef { id: "prj_x".into(), name: "X".into(), team: None }));
     assert!(s.project_by_hand && !s.project_default && !s.inferable());
     // Nothing infers over it, the default doesn't take it, and no repo moves it.
     assert_eq!(m.infer_project(1, project("prj_a"), "acme/app"), Ok(false));
@@ -783,4 +783,28 @@ fn the_default_never_moves_a_project_set_by_hand_or_one_already_there() {
     m.default_project(4, project("prj_d")).unwrap();
     m.apply(Intent::SetSessionProject { session: 4, project: Some(project("prj_d")) }).unwrap();
     assert!(!m.sessions[3].project_default && !m.sessions[3].inferable());
+}
+
+/// Arugula #1162: control's word on a project gives its sessions its name
+/// and team, and nothing else: how each got its project, and its repo, stay.
+#[test]
+fn a_project_control_names_gives_its_sessions_its_team() {
+    let mut m = mux_with_session();
+    m.apply(Intent::NewSession { name: Some("two".into()), from_pane: None, project: None }).unwrap();
+    m.infer_project(1, project("prj_a"), "acme/app").unwrap();
+    m.apply(Intent::SetSessionProject { session: 2, project: Some(project("prj_b")) }).unwrap();
+    let known = crate::ProjectRef { id: "prj_a".into(), name: "A".into(), team: Some("t1".into()) };
+    assert_eq!(m.project_known(&known), vec![1]);
+    assert_eq!(m.project_known(&known), Vec::<crate::SessionId>::new(), "already so");
+    assert_eq!(m.sessions[0].project.as_ref(), Some(&known));
+    assert_eq!(m.sessions[0].project_repo.as_deref(), Some("acme/app"));
+    assert_eq!(m.sessions[1].project, Some(project("prj_b")));
+    // A team's project goes back to its owner's: the team goes.
+    let own = crate::ProjectRef { team: None, ..known.clone() };
+    assert_eq!(m.project_known(&own), vec![1]);
+    assert_eq!(m.sessions[0].project.as_ref().and_then(|p| p.team.as_deref()), None);
+    // A team is kept through a save.
+    m.project_known(&known);
+    let back: crate::Mux = serde_json::from_value(serde_json::to_value(&m).unwrap()).unwrap();
+    assert_eq!(back.sessions[0].project.as_ref(), Some(&known));
 }

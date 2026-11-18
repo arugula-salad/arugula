@@ -325,8 +325,12 @@ fn use_(e: &Enrolled, want: &str, json_out: bool) -> anyhow::Result<i32> {
     let session = this_session().context("run it in an Arugula pane: it sets that pane's session's project")?;
     let projects: Projects = serde_json::from_value(e.api("GET", "/api/projects", None)?)?;
     let id = issue_native::project_id(&projects, want)?;
-    let name = projects.projects.iter().find(|p| p.id == id).map(|p| p.name.clone()).unwrap_or_default();
-    let project = ProjectRef { id, name };
+    let found = projects.projects.iter().find(|p| p.id == id);
+    let name = found.map(|p| p.name.clone()).unwrap_or_default();
+    // Its team says who sees the session (Arugula #1162); an older control
+    // names no owner, and then no team does.
+    let team = found.and_then(|p| p.owner.as_ref()?.team_id().map(str::to_owned));
+    let project = ProjectRef { id, name, team };
     set_session_project(&session_target()?, session.id, project.clone())?;
     if json_out {
         print_json(&json!({ "session": session.id, "project": project }));

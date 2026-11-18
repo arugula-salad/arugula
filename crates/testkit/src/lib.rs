@@ -624,6 +624,26 @@ impl Daemon {
         while ws.read().is_ok() {}
     }
 
+    /// The owner puts `session` in a project of team `team` from its menu,
+    /// over the WebSocket, and waits until its panes say so: the team's
+    /// members watch it then (Arugula #1162).
+    pub fn in_team_project(&self, session: u64, team: &str) {
+        use tokio_tungstenite::tungstenite::{self, Message};
+        let stream = TcpStream::connect(("127.0.0.1", self.port)).unwrap();
+        let (mut ws, _) = tungstenite::client(self.ws("/ws"), stream).expect("the WebSocket");
+        let project = serde_json::json!({ "id": format!("prj_{team}"), "name": team, "team": team });
+        let set = serde_json::json!({ "op": "set_session_project", "session": session, "project": project });
+        ws.send(Message::Text(serde_json::json!({ "type": "intent", "id": 1, "intent": set }).to_string().into()))
+            .unwrap();
+        let _ = ws.close(None);
+        while ws.read().is_ok() {}
+        self.wait_for(&format!("session {session} in {team}'s project"), || {
+            self.get("/api/panes")
+                .as_array()
+                .is_some_and(|ps| ps.iter().any(|p| p["session"] == session && p["session_project"]["team"] == team))
+        });
+    }
+
     /// One request over the socket (the owner's, so no credential): status
     /// and body, chunks joined. Status 0 if it doesn't answer, and the body
     /// says what happened instead (and whether the daemon still runs).

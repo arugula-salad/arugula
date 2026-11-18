@@ -98,7 +98,7 @@ impl Session {
     /// it's a new one). [`Session::refuses`] first.
     fn take_work(&mut self, work: WorkRef, name: Option<String>) {
         if self.project.as_ref().is_none_or(|p| p.id != work.project) {
-            self.project = Some(ProjectRef { id: work.project.clone(), name: name.unwrap_or_default() });
+            self.project = Some(ProjectRef { id: work.project.clone(), name: name.unwrap_or_default(), team: None });
             self.project_repo = None;
         }
         self.project_default = false;
@@ -120,12 +120,19 @@ pub struct WorkRef {
 
 /// A project in Arugula control, as a session keeps it: its id, and its
 /// name when it was set, to show without asking control.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ProjectRef {
     /// `prj_…`.
     pub id: String,
     pub name: String,
+    /// The team whose project it is, as control said (Arugula #1162):
+    /// that team's members watch the session on a machine of the team.
+    /// None for a person's own project, and until control says (an older
+    /// control never does): then no team sees it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub team: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -639,6 +646,25 @@ impl Mux {
             self.rev += 1;
         }
         moved
+    }
+
+    /// Control's word on `project` (Arugula #1162): every session in it
+    /// takes its name and its team, which say who sees the session. Nothing
+    /// moves, and how it got its project stays. The sessions it changed.
+    pub fn project_known(&mut self, project: &ProjectRef) -> Vec<SessionId> {
+        let changed: Vec<SessionId> = self
+            .sessions
+            .iter_mut()
+            .filter_map(|s| {
+                let p = s.project.as_mut().filter(|p| p.id == project.id && *p != project)?;
+                *p = project.clone();
+                Some(s.id)
+            })
+            .collect();
+        if !changed.is_empty() {
+            self.rev += 1;
+        }
+        changed
     }
 
     pub fn apply(&mut self, intent: Intent) -> Result<Vec<Effect>, Error> {

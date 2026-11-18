@@ -1,7 +1,7 @@
 // The session menu's Project…: the reader's projects as choices, and the
 // project an answer names (Arugula projects RFC). A session's project is
 // inferred once from its first linked repo; this sets or clears it by hand.
-import type { PlatformProjects, ProjectRef } from "../../shared/proto";
+import type { PlatformProject, PlatformProjects, ProjectRef } from "../../shared/proto";
 import type { PromptChoice } from "../../shared/ui/menu";
 
 /** The choice that takes the session out of its project. */
@@ -28,5 +28,13 @@ export function projectPicked(answer: string, all: PlatformProjects): ProjectRef
   const a = answer.trim();
   if (a === NO_PROJECT || a.toLowerCase() === "no project") return null;
   const p = all.projects.find((x) => x.id === a) ?? all.projects.find((x) => x.name.toLowerCase() === a.toLowerCase());
-  return p ? { id: p.id, name: p.name } : undefined;
+  return p ? projectRef(p) : undefined;
+}
+
+/** A project as a session keeps it, with its team, which says who watches
+ * the session (Arugula #1162). An older control names no owner, and then no
+ * team does. */
+export function projectRef(p: PlatformProject): ProjectRef {
+  const team = p.owner?.kind === "team" ? p.owner.id : undefined;
+  return team ? { id: p.id, name: p.name, team } : { id: p.id, name: p.name };
 }

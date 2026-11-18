@@ -147,6 +147,21 @@ impl Daemon {
                 }
                 let _ = reply.send(moved);
             }
+            Api::ProjectKnown(project, reply) => {
+                let changed = self.mux.project_known(&project);
+                if !changed.is_empty() {
+                    info!(?changed, project = project.id, team = project.team, "sessions' project as control says");
+                    self.changed();
+                }
+                let _ = reply.send(changed);
+            }
+            Api::SessionProjects(reply) => {
+                let mut ids: Vec<String> =
+                    self.mux.sessions.iter().filter_map(|s| Some(s.project.as_ref()?.id.clone())).collect();
+                ids.sort();
+                ids.dedup();
+                let _ = reply.send(ids);
+            }
             Api::Conversation(pane, reply) => {
                 let id = self.meta.get(&pane).and_then(|m| m.session.as_ref());
                 let _ = reply.send(id.filter(|s| s.running && s.agent == "claude").map(|s| s.id.clone()));

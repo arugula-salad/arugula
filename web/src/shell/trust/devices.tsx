@@ -72,7 +72,7 @@ function MoveMachine({ s, c, team, online }: { s: ControlSession; c: Cert; team:
       {to !== undefined ? (
         <p class="dim control-explain" data-move-explain>
           {to
-            ? `Everyone in ${name(to)} sees ${c.name} and reaches it by their role${team ? `, and ${name(team)}'s members lose it` : ""}; its owners also see private panes. It stays yours, and you can take it out again.`
+            ? `Everyone in ${name(to)} sees ${c.name}'s sessions in ${name(to)}'s projects and watches them${team ? `, and ${name(team)}'s members lose them` : ""}; its owners reach all of it, private panes too. Sessions in your own projects stay yours alone. It stays yours, and you can take it out again.`
             : `${name(team)}'s members lose ${c.name} at once; only you reach it.`}
           {/* #778: a machine is in one team at a time; sharing reaches the
               other team without taking it from this one. */}

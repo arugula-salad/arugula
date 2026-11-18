@@ -42,6 +42,7 @@ import { notePane } from "../platform/places-kept";
 import { popOutIn } from "../shell/ui/panes/pop-out";
 import { PanesList } from "./panes-list";
 import { newSessionsIn } from "../shell/new-session";
+import { projectRef } from "../shell/ui/session-project";
 import { inShown, onShownProject, projectOf, showProject } from "../shell/project-view";
 
 export interface Booted {
@@ -179,9 +180,10 @@ function Place({ project, at, b: { machines, cell }, session }: { project: strin
   const p = platform.project(project);
   const shown = { id: project, name: p?.name ?? "this project", personal: platform.personal()?.id === project };
   useEffect(() => {
-    newSessionsIn({ id: project, name: p?.name ?? "" });
+    // With its team, so the team watches a new session at once (Arugula #1162).
+    newSessionsIn(p ? projectRef(p) : { id: project, name: "" });
     return () => newSessionsIn(null);
-  }, [project, p?.name]);
+  }, [project, p?.name, p?.owner?.kind === "team" ? p.owner.id : null]);
   useLayoutEffect(() => {
     showProject({ ...shown, machines: () => go(pathOf({ page: "machines", project, at: { at: "machines" } }, names)) });
     machines.client.reselect();

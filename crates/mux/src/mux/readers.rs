@@ -68,9 +68,9 @@ impl Daemon {
     /// again later doesn't bring it back, whether chat is on or not. Not
     /// those kept out only by their team's lock, which is lifted, while
     /// their team would give them the pane were it unlocked: this
-    /// machine's own team gives every session (a private pane only to its
-    /// owners, who aren't locked out), a team a session was shared with
-    /// only a session that still carries its share. They're refused while
+    /// machine's own team gives a session in its project (Arugula #1162;
+    /// a private pane only to its owners, who aren't locked out), a team a
+    /// session was shared with only a session that still carries its share. They're refused while
     /// the lock lasts (`readers`) and read again after. Only once
     /// the team's roster is known, which is also when one that closed
     /// before it was gets the team's part of who read it: its members and
@@ -90,8 +90,12 @@ impl Daemon {
             locked.iter().any(|(who, team)| {
                 who == id
                     && match team {
-                        None => !private,
-                        Some(t) => !private && shares.contains(&(session, format!("team:{t}"))),
+                        None => !private && self.config.acl.team_watches(session),
+                        Some(t) => {
+                            !private
+                                && shares.contains(&(session, format!("team:{t}")))
+                                && self.config.acl.session_team(session).as_deref() == Some(t.as_str())
+                        }
                     }
             })
         };

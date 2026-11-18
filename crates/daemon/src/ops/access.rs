@@ -224,10 +224,10 @@ pub fn compose(p: Pieces) -> AccessView {
                 TeamRole::Owner if hosted => "an owner of the project: full use".into(),
                 TeamRole::Owner => "an owner of the team: an owner here, with every owner route".into(),
                 TeamRole::Editor if hosted => "an editor of the project: full use, as an owner".into(),
-                TeamRole::Editor => {
-                    "types by role in every session, no trust needed; no files, new sessions or sharing".into()
+                TeamRole::Editor | TeamRole::Viewer => {
+                    "watches the sessions in the team's projects (not a private pane); types only where shared with or trusted"
+                        .into()
                 }
-                TeamRole::Viewer => "watches every session (not a private pane)".into(),
             });
             rows.push(x);
         }
