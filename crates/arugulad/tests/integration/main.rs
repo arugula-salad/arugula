@@ -133,5 +133,6 @@ mod version;
 mod vm_layout;
 mod waits;
 mod windows;
+mod windows_agents;
 #[cfg(feature = "labs")]
 mod workspace;

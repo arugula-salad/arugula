@@ -247,6 +247,9 @@ fn a_title_the_person_gave_is_saved_and_outranks_the_session_s() {
     assert_eq!(inner.shown_title().as_deref(), Some("Fix the parser"));
 }
 
+/// Unix's layout. Windows's (#1178) is checked with Windows's rules on
+/// any OS, in the adapters' `finds_node_the_windows_way`.
+#[cfg(unix)]
 #[test]
 fn a_real_node_from_mise_not_its_shims() {
     let root = std::env::temp_dir().join(format!("ilg-node-{}", std::process::id()));

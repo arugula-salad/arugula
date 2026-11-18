@@ -43,9 +43,9 @@
 //!
 //! **Restarts.** A local agent server keeps running through a daemon
 //! restart (its own scope; its pipes in the FD store; see [`link`]). After a
-//! reboot the block starts it again and reopens the session with
-//! `session/resume` (no replay; the transcript is ours) or `session/load`
-//! (whose replay is merged in). The restart policy decides whether that
+//! reboot, and on Windows after any restart (#1178), the block starts it
+//! again and reopens the session with `session/resume` (no replay; the
+//! transcript is ours) or `session/load` (whose replay is merged in). The restart policy decides whether that
 //! happens by itself (`none` and `rerun-ask` wait for "Resume").
 //!
 //! **What the daemon reaches** (#232): the block types (`agent` and `chat`)

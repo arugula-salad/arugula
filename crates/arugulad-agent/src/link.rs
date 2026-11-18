@@ -10,12 +10,24 @@
 //!   restart neither loses nor splits a frame (one longer than the socket's
 //!   1 MiB buffer is the exception: see `read_lines`). Its stderr goes to
 //!   `agent.err` in the block's directory.
+//! - **On Windows** (#1178) the daemon starts it itself, with no console
+//!   window, its stdin and stdout anonymous pipes, in a job object: a stop
+//!   closes its stdin, then ends the job a few seconds later, and the job
+//!   ends with the daemon (`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`), taking
+//!   the adapter's `claude` with it. Windows has no FD store, so nothing
+//!   outlives a daemon restart: the block starts its agent again and
+//!   reopens the session, as after a reboot on Unix (or waits for "Resume",
+//!   by its restart policy). A name without a path, or npm's shim without
+//!   its `.cmd`, is found the Windows way (`arugula_proto::exe`), and a
+//!   `.cmd` runs through cmd.exe (Rust's `Command` does that).
 //! - **In a VM** it runs as a non-TTY exec session on the block's sprite.
 //!   The session outlives the WebSocket (`max_run_after_disconnect`), so a
 //!   restarted daemon reattaches at the output offset it had processed, kept
 //!   in `agent-exec.json`. Credentials go in on stdin before the server
 //!   starts (see `GUEST_BOOT`), never in the URL, the argv or the VM's disk.
 
+#[cfg(unix)]
+use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(unix)]
 use std::{
     fs::File,
@@ -26,24 +38,18 @@ use std::{
 };
 use std::{
     fs::OpenOptions,
-    io::Write,
+    io::{BufRead, Read, Write},
     path::{Path, PathBuf},
-    sync::Arc,
-    time::Duration,
-};
-#[cfg(unix)]
-use std::{
     process::Stdio,
-    time::{Instant, SystemTime, UNIX_EPOCH},
+    sync::Arc,
+    time::{Duration, Instant},
 };
 
 use arugula_proto::PaneId;
 #[cfg(unix)]
 use nix::sys::socket::{MsgFlags, recv, setsockopt, sockopt};
 use tokio::sync::mpsc;
-use tracing::info;
-#[cfg(unix)]
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::{
     pane::Launcher,
@@ -97,7 +103,9 @@ pub fn alive_pid(dir: &Path) -> Option<u32> {
 }
 
 /// Kill a process group: TERM now, KILL in a few seconds if it's still there.
-/// (Windows: the process now; its tree goes with the job in M58, #221.)
+/// (Windows: the process now. A running agent's tree goes with its job,
+/// by `Link::stop`; this is only for one a record names, which Windows
+/// doesn't write.)
 #[cfg(not(unix))]
 pub fn kill_group(pid: u32, _dir: PathBuf) {
     crate::procinfo::kill(pid);
@@ -132,10 +140,238 @@ pub struct LocalSpawn<'a> {
     pub launch: &'a Launcher,
 }
 
-/// Start an agent server on this host. Windows: in M56 (#219).
-#[cfg(not(unix))]
-pub fn spawn_local(_s: LocalSpawn, _sink: Sink) -> std::io::Result<(Link, u32)> {
-    Err(std::io::Error::other("agents don't run on Windows yet (M56, #219)"))
+/// Start an agent server on this host (#1178): the daemon's child, in a job
+/// object, with no console window. See the module's notes for what differs
+/// from Unix.
+#[cfg(windows)]
+pub fn spawn_local(s: LocalSpawn, sink: Sink) -> std::io::Result<(Link, u32)> {
+    use std::os::windows::process::CommandExt;
+
+    use windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
+
+    let Some((first, rest)) = s.argv.split_first() else {
+        return Err(std::io::Error::other("no command to start the agent with"));
+    };
+    // Nothing for a restarted daemon to find (a Unix daemon's, say).
+    let _ = std::fs::remove_file(record_path(s.dir));
+    let err =
+        crate::perm::open_mode(OpenOptions::new().create(true).append(true), 0o600).open(s.dir.join("agent.err"))?;
+    let home = crate::home();
+    let cwd = if s.cwd.is_dir() { s.cwd } else { home.as_path() };
+    let program = program(first, s.env, &arugula_proto::exe::Exe::here());
+    let mut cmd = std::process::Command::new(&program);
+    for k in s.remove {
+        cmd.env_remove(k);
+    }
+    cmd.args(rest)
+        .current_dir(cwd)
+        .envs(s.env.iter().map(|(k, v)| (k, v)))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::from(err))
+        // A console of its own, never shown: the adapter's `claude` and the
+        // commands it runs share it, and no window opens for any of them.
+        .creation_flags(CREATE_NO_WINDOW);
+    let mut child =
+        cmd.spawn().map_err(|e| std::io::Error::other(format!("can't start {}: {e}", program.display())))?;
+    let pid = child.id();
+    // Into the job before it can have started anything: npm's shim is
+    // cmd.exe reading a batch file, then Node loading, long before
+    // `claude` is spawned. Without a job (assigning failed), a stop
+    // still ends the adapter itself.
+    let job = match job::Job::new().and_then(|j| j.add(&child).map(|()| j)) {
+        Ok(j) => Some(j),
+        Err(e) => {
+            warn!(block = s.id, error = %e, "the agent server isn't in a job; stopping it may leave its children");
+            None
+        }
+    };
+    let (Some(stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else {
+        let _ = child.kill();
+        return Err(std::io::Error::other("the agent server's pipes weren't made"));
+    };
+    // One that ends at once (a script that isn't there) is told by its
+    // reader, with its last words, as on Unix once the shim has run it.
+    info!(block = s.id, pid, argv = ?s.argv, program = %program.display(), cwd = %cwd.display(), "started agent server");
+    Ok((run_windows(s.id, s.dir.to_owned(), child, stdin, stdout, job, sink), pid))
+}
+
+/// The program `argv[0]` names, as Windows would find it with the agent's
+/// PATH: a bare name on that PATH (`claude-agent-acp` is npm's
+/// `claude-agent-acp.cmd` there), a path with its extension. Unchanged
+/// when there's nothing there, so starting it says what's missing.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn program(first: &str, env: &[(String, String)], x: &arugula_proto::exe::Exe) -> PathBuf {
+    let p = Path::new(first);
+    let found = if p.components().count() == 1 && !p.has_root() {
+        let path = env
+            .iter()
+            .rev()
+            .find(|(k, _)| k.eq_ignore_ascii_case("PATH"))
+            .map(|(_, v)| v.clone())
+            .or_else(|| std::env::var("PATH").ok())
+            .unwrap_or_default();
+        x.find(first, &path)
+    } else {
+        x.at(p)
+    };
+    found.unwrap_or_else(|| p.to_owned())
+}
+
+#[cfg(windows)]
+mod job {
+    //! A job object: the agent server's whole tree, ended in one call, and
+    //! when the daemon goes (its handle is closed, however it exits).
+
+    use std::{
+        ffi::c_void,
+        io,
+        os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle},
+        process::Child,
+        ptr,
+    };
+
+    use windows_sys::Win32::System::JobObjects::{
+        AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation, SetInformationJobObject,
+        TerminateJobObject,
+    };
+
+    pub struct Job(OwnedHandle);
+
+    impl Job {
+        pub fn new() -> io::Result<Self> {
+            // SAFETY: a new, unnamed job; the handle is ours to own.
+            let job = unsafe {
+                let h = CreateJobObjectW(ptr::null(), ptr::null());
+                if h.is_null() {
+                    return Err(io::Error::last_os_error());
+                }
+                Job(OwnedHandle::from_raw_handle(h))
+            };
+            let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { std::mem::zeroed() };
+            info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            // SAFETY: our job handle, and a struct of the size given.
+            let ok = unsafe {
+                SetInformationJobObject(
+                    job.0.as_raw_handle(),
+                    JobObjectExtendedLimitInformation,
+                    &info as *const _ as *const c_void,
+                    std::mem::size_of_val(&info) as u32,
+                )
+            };
+            if ok == 0 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(job)
+        }
+
+        pub fn add(&self, child: &Child) -> io::Result<()> {
+            // SAFETY: our job handle, and the child's process handle.
+            if unsafe { AssignProcessToJobObject(self.0.as_raw_handle(), child.as_raw_handle()) } == 0 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        }
+
+        /// End everything in it.
+        pub fn kill(&self) {
+            // SAFETY: our job handle.
+            unsafe { TerminateJobObject(self.0.as_raw_handle(), 1) };
+        }
+    }
+}
+
+/// How long a stopped agent server has, once its stdin is closed, before
+/// its job is ended (Unix: TERM, then KILL as long after).
+#[cfg(windows)]
+const KILL_AFTER: Duration = Duration::from_secs(3);
+
+/// How long what an agent server started may outlive it before its job is
+/// ended. Windows hands a child every handle that can be inherited, so one
+/// may hold the server's stdout open: without this the reader would wait
+/// on it, and the block never hear the server had gone.
+#[cfg(windows)]
+const ORPHANS_AFTER: Duration = Duration::from_secs(1);
+
+#[cfg(windows)]
+fn run_windows(
+    id: PaneId,
+    dir: PathBuf,
+    mut child: std::process::Child,
+    stdin: std::process::ChildStdin,
+    stdout: std::process::ChildStdout,
+    job: Option<job::Job>,
+    sink: Sink,
+) -> Link {
+    use std::sync::OnceLock;
+
+    let pid = child.id();
+    let job = job.map(Arc::new);
+    // Its exit code (None: it couldn't be had), once it has exited.
+    let exit: Arc<OnceLock<Option<i32>>> = Arc::default();
+    // An empty frame is the writer's cue to close stdin: `Link::send`
+    // never sends one (it adds a newline).
+    let (tx, mut rx) = mpsc::unbounded_channel::<Vec<u8>>();
+    let _ = std::thread::Builder::new().name(format!("agent{id}-write")).spawn(move || {
+        let mut writer = stdin;
+        while let Some(line) = rx.blocking_recv() {
+            if line.is_empty() || writer.write_all(&line).and_then(|()| writer.flush()).is_err() {
+                break;
+            }
+        }
+    });
+    let (waited, orphans) = (exit.clone(), job.clone());
+    let _ = std::thread::Builder::new().name(format!("agent{id}-wait")).spawn(move || {
+        let code = child.wait().ok().and_then(|s| s.code());
+        let _ = waited.set(code);
+        std::thread::sleep(ORPHANS_AFTER);
+        if let Some(j) = &orphans {
+            j.kill();
+        }
+        // The process handle closes here, not before: until then its pid
+        // can't be another's (`stop` may kill by it).
+        drop(child);
+    });
+    let ended = exit.clone();
+    let _ = std::thread::Builder::new().name(format!("agent{id}-read")).spawn(move || {
+        let why = read_stream(stdout, &sink);
+        // Its exit code, a moment after its output closes.
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while ended.get().is_none() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let what = match ended.get().copied().flatten() {
+            Some(c) if c != 0 => match last_words(&dir) {
+                Some(w) => format!("exited with code {c}: {w}"),
+                None => format!("exited with code {c}"),
+            },
+            Some(c) => format!("exited with code {c}"),
+            None => why,
+        };
+        sink(FromAgent::Closed(what));
+    });
+    let closer = tx.clone();
+    Link {
+        tx,
+        stop: Box::new(move || {
+            // Its stdin closes, which ends claude-agent-acp on its own.
+            let _ = closer.send(vec![]);
+            let (exit, job) = (exit.clone(), job.clone());
+            std::thread::spawn(move || {
+                let deadline = Instant::now() + KILL_AFTER;
+                while exit.get().is_none() && Instant::now() < deadline {
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+                match &job {
+                    // Everything it started, too.
+                    Some(j) => j.kill(),
+                    None if exit.get().is_none() => crate::procinfo::kill(pid),
+                    None => {}
+                }
+            });
+        }),
+    }
 }
 
 /// Start an agent server on this host.
@@ -376,6 +612,34 @@ fn read_lines(sock: &OwnedFd, sink: &Sink) -> String {
         // Now take them.
         if let Err(why) = take(sock, last + 1) {
             return why;
+        }
+    }
+}
+
+/// Whole lines from a pipe (Windows), each handed to `sink`: no peeking,
+/// and none needed, as nothing reattaches to it. A line of any length comes
+/// whole; a `\r` before its newline goes (Python's stdout writes one on
+/// Windows). As on Unix, a last line without its newline is dropped.
+#[cfg_attr(unix, allow(dead_code))]
+fn read_stream(r: impl Read, sink: &Sink) -> String {
+    let mut r = std::io::BufReader::with_capacity(64 * 1024, r);
+    let mut line = Vec::new();
+    loop {
+        line.clear();
+        match r.read_until(b'\n', &mut line) {
+            Ok(0) => return "closed its output".into(),
+            Ok(_) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(e) => return format!("read failed: {e}"),
+        }
+        if line.pop() != Some(b'\n') {
+            continue;
+        }
+        if line.last() == Some(&b'\r') {
+            line.pop();
+        }
+        if !line.iter().all(u8::is_ascii_whitespace) {
+            sink(FromAgent::Line(std::mem::take(&mut line)));
         }
     }
 }
@@ -628,8 +892,6 @@ async fn drive_vm(
 }
 
 #[cfg(unix)]
-/// The last thing an agent server wrote to stderr (`agent.err`), for the
-/// note when it exits with an error.
 /// What was written to `path` after its first `from` bytes: the last few
 /// lines, short.
 fn said_since(path: &Path, from: u64) -> String {
@@ -639,7 +901,8 @@ fn said_since(path: &Path, from: u64) -> String {
     lines[lines.len().saturating_sub(3)..].join(" / ").chars().take(400).collect()
 }
 
-#[cfg(unix)]
+/// The last thing an agent server wrote to stderr (`agent.err`), for the
+/// note when it exits with an error.
 fn last_words(dir: &Path) -> Option<String> {
     let text = std::fs::read_to_string(dir.join("agent.err")).ok()?;
     let tail = &text[text.len().saturating_sub(4096)..];
@@ -649,6 +912,54 @@ fn last_words(dir: &Path) -> Option<String> {
     });
     let line = line.or_else(|| tail.lines().map(str::trim).rfind(|l| !l.is_empty()))?;
     Some(line.chars().take(240).collect())
+}
+
+/// Windows's reading and finding (#1178), here on any OS.
+#[cfg(test)]
+mod windows_tests {
+    use std::sync::Mutex;
+
+    use arugula_proto::exe::Exe;
+
+    use super::*;
+
+    #[test]
+    fn a_pipes_lines_come_whole_without_their_carriage_returns() {
+        let lines = Arc::new(Mutex::new(vec![]));
+        let got = lines.clone();
+        let sink: Sink = Arc::new(move |f| {
+            if let FromAgent::Line(l) = f {
+                got.lock().unwrap().push(String::from_utf8(l).unwrap());
+            }
+        });
+        let big = "x".repeat(300_000);
+        let text = format!("first\r\n\r\n \n{big}\nlast\r\ncut off");
+        assert_eq!(read_stream(text.as_bytes(), &sink), "closed its output");
+        assert_eq!(*lines.lock().unwrap(), ["first".to_owned(), big, "last".to_owned()]);
+    }
+
+    #[test]
+    fn the_adapter_is_found_on_the_agents_path_the_windows_way() {
+        let d = std::env::temp_dir().join(format!("arugula-link-program-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let (npm, bin) = (d.join("npm"), d.join("agents/claude/node_modules/.bin"));
+        std::fs::create_dir_all(&npm).unwrap();
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::write(npm.join("claude-agent-acp.cmd"), "").unwrap();
+        std::fs::write(bin.join("claude-agent-acp.cmd"), "").unwrap();
+        let win = Exe::windows(None);
+        // Windows names it Path; a pane's environment, PATH.
+        let env = vec![("Path".to_owned(), format!("{};{}", d.join("nothing").display(), npm.display()))];
+        assert_eq!(program("claude-agent-acp", &env, &win), npm.join("claude-agent-acp.cmd"));
+        let shim = bin.join("claude-agent-acp");
+        assert_eq!(program(&shim.display().to_string(), &env, &win), bin.join("claude-agent-acp.cmd"));
+        // Not there: as it was, for the error to name.
+        assert_eq!(program("python", &env, &win), PathBuf::from("python"));
+        // Unix's rules find no `.cmd`.
+        let unix = vec![("PATH".to_owned(), npm.display().to_string())];
+        assert_eq!(program("claude-agent-acp", &unix, &Exe::unix()), PathBuf::from("claude-agent-acp"));
+        let _ = std::fs::remove_dir_all(&d);
+    }
 }
 
 #[cfg(all(test, unix))]

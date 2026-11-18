@@ -16,6 +16,10 @@ use arugula_testkit::{Builder, arugulad};
 pub use arugula_testkit::{Scratch, systemctl};
 use serde_json::{Value, json};
 
+/// What runs the fake agent servers: Windows's Python is `python` (a
+/// `python3` there may be the Store's stand-in).
+pub const PYTHON: &str = if cfg!(windows) { "python" } else { "python3" };
+
 pub fn fake() -> String {
     format!("{}/tests/fake_acp.py", concat!(env!("CARGO_MANIFEST_DIR"), "/../daemon"))
 }
@@ -174,7 +178,10 @@ impl Daemon {
     fn builder(sessions: &std::path::Path) -> Builder {
         // #379: blocks take their login from whoever starts them; the
         // test's own (a Claude Code running it) stays out.
-        arugulad!("agt").env("FAKE_ACP_DIR", sessions).env_remove("CLAUDE_CONFIG_DIR").wait_secs(20)
+        // Windows: GitHub's runner starts several daemons cold at once
+        // (`windows.rs`'s WAIT).
+        let wait = if cfg!(windows) { 60 } else { 20 };
+        arugulad!("agt").env("FAKE_ACP_DIR", sessions).env_remove("CLAUDE_CONFIG_DIR").wait_secs(wait)
     }
 
     /// A request over TCP from a tailnet user, as `tailscale serve` hands
@@ -205,7 +212,7 @@ impl Daemon {
     }
 
     pub fn open(&self, prompt: &str) -> u64 {
-        let config = json!({ "agent": "acp", "command": ["python3", fake()], "cwd": self.sessions, "prompt": prompt });
+        let config = json!({ "agent": "acp", "command": [PYTHON, fake()], "cwd": self.sessions, "prompt": prompt });
         self.open_with(json!({ "type": "agent", "config": config }))
     }
 
@@ -254,7 +261,16 @@ pub fn last_tool(state: &Value) -> Value {
     entries(state).into_iter().rev().find(|e| e["type"] == "tool").unwrap_or_default()
 }
 
+/// Running (`tasklist`).
+#[cfg(windows)]
+pub fn alive(pid: u64) -> bool {
+    let filter = format!("PID eq {pid}");
+    let out = std::process::Command::new("tasklist").args(["/FI", &filter, "/NH", "/FO", "CSV"]).output().unwrap();
+    String::from_utf8_lossy(&out.stdout).contains(&format!("\"{pid}\""))
+}
+
 /// Running: it exists and isn't a zombie (`ps`, so it works without /proc).
+#[cfg(unix)]
 pub fn alive(pid: u64) -> bool {
     let out = std::process::Command::new("ps").args(["-o", "stat=", "-p", &pid.to_string()]).output().unwrap();
     let stat = String::from_utf8_lossy(&out.stdout);
