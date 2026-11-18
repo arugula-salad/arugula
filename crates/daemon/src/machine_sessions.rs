@@ -18,8 +18,11 @@
 //!   [`BLOCK_STATE_EVERY_MS`](arugula_control_wire::boards::BLOCK_STATE_EVERY_MS)).
 //!   So at most one request a tick.
 //! - **An older control:** one without the route answers 404 (or 405):
-//!   then nothing more is sent until the daemon restarts. Any other
-//!   refusal waits as a block state's does.
+//!   then nothing more is sent until the daemon restarts. One that refuses
+//!   how each session was placed (its `repo` and `by_hand`, Arugula #1166,
+//!   for Move to project) gets the list without them, until every block is
+//!   sent again (control may have been upgraded). Any other refusal waits
+//!   as a block state's does.
 
 use std::time::{Duration, Instant};
 
@@ -98,12 +101,15 @@ impl Pane {
     }
 }
 
-/// Every session, with its panes, as control is told them.
-pub(crate) fn report(sessions: &[Session], panes: &[Pane]) -> MachineSessionsReport {
+/// Every session, with its panes, as control is told them; and how each
+/// was placed in its project, when control takes it (`placed`).
+pub(crate) fn report(sessions: &[Session], panes: &[Pane], placed: bool) -> MachineSessionsReport {
     let sessions = sessions
         .iter()
         .map(|s| {
             let own = session_place(s);
+            // How it was placed, while control takes it and it's in a project.
+            let placed = placed && own.project.is_some();
             let panes = panes
                 .iter()
                 .filter(|p| p.session == s.id)
@@ -121,6 +127,8 @@ pub(crate) fn report(sessions: &[Session], panes: &[Pane]) -> MachineSessionsRep
                 project: own.project,
                 work_item: own.work_item,
                 panes,
+                repo: s.project_repo.clone().filter(|_| placed),
+                by_hand: placed && s.project_by_hand,
             }
         })
         .collect();
@@ -141,6 +149,9 @@ pub(crate) struct Sessions {
     quiet_until: Option<Instant>,
     /// Control has no route for it: nothing more is sent until restart.
     off: bool,
+    /// Control refused how the sessions were placed: they're sent without
+    /// it until every block is sent again.
+    pub bare: bool,
 }
 
 impl Sessions {
@@ -149,9 +160,11 @@ impl Sessions {
         self.dirty = true;
     }
 
-    /// Every block is sent again: so is the list, whole.
+    /// Every block is sent again: so is the list, whole, and how each
+    /// session was placed is tried once more.
     pub fn again(&mut self) {
         self.force = true;
+        self.bare = false;
     }
 
     /// Out of control: joining again sends the list whole.
@@ -188,7 +201,16 @@ impl Sessions {
             }
             Err(e) => e,
         };
-        self.timed_out_or(wait_of(e), sent, at);
+        let wait = wait_of(e);
+        // A control from before them refuses the fields it doesn't know:
+        // the list goes again at once, without them.
+        if matches!(wait, Wait::Dropped(_)) && !self.bare && sent.sessions.iter().any(|s| s.repo.is_some() || s.by_hand)
+        {
+            (self.bare, self.force) = (true, true);
+            warn!("control doesn't take how this machine's sessions were placed: telling it without");
+            return;
+        }
+        self.timed_out_or(wait, sent, at);
     }
 
     /// The request took too long, or control refused: wait, or drop a list
@@ -246,7 +268,7 @@ mod tests {
             pane(1, 4, BlockType::Agent, Some("#9")),
             pane(2, 5, BlockType::Browser, None),
         ];
-        let r = serde_json::to_value(report(&sessions, &panes)).unwrap();
+        let r = serde_json::to_value(report(&sessions, &panes, true)).unwrap();
         assert_eq!(
             r,
             serde_json::json!({ "sessions": [
@@ -291,8 +313,8 @@ mod tests {
     #[test]
     fn the_list_goes_once_until_it_changes() {
         let t = Instant::now();
-        let one = report(&[session(1, Some("prj_1"), None)], &[]);
-        let two = report(&[session(1, Some("prj_1"), Some("#7"))], &[]);
+        let one = report(&[session(1, Some("prj_1"), None)], &[], true);
+        let two = report(&[session(1, Some("prj_1"), Some("#7"))], &[], true);
         let mut s = Sessions::default();
         assert!(s.look(t), "at first");
         let sent = s.worth_sending(one.clone(), t).expect("the first list");
@@ -316,7 +338,7 @@ mod tests {
     #[test]
     fn a_control_without_the_route_is_left_alone() {
         let t = Instant::now();
-        let one = report(&[session(1, None, None)], &[]);
+        let one = report(&[session(1, None, None)], &[], true);
         let mut s = Sessions::default();
         let sent = s.worth_sending(one.clone(), t).unwrap();
         let not_found = CloudRefused::Said { status: 404, said: "not found".into(), reason: None };
@@ -331,7 +353,7 @@ mod tests {
     #[test]
     fn a_failure_waits_and_a_refused_list_waits_for_a_change() {
         let t = Instant::now();
-        let one = report(&[session(1, None, None)], &[]);
+        let one = report(&[session(1, None, None)], &[], true);
         let mut s = Sessions::default();
         let sent = s.worth_sending(one.clone(), t).unwrap();
         s.answered(sent, Err(CloudRefused::Unreachable("down".into())), t);
@@ -342,5 +364,38 @@ mod tests {
         let refused = CloudRefused::Said { status: 422, said: "no".into(), reason: None };
         s.answered(one.clone(), Err(refused), t + TROUBLE);
         assert_eq!(s.worth_sending(one, t + TROUBLE + LOOK), None);
+    }
+
+    /// How each session was placed goes (Arugula #1166): the repo its
+    /// project follows, or that it was set by hand. A control that refuses
+    /// them gets the list again at once without them, until every block is
+    /// sent again.
+    #[test]
+    fn how_a_session_was_placed_goes_unless_control_refuses_it() {
+        let mut by_repo = session(1, Some("prj_1"), None);
+        by_repo.project_repo = Some("acme/app".into());
+        let mut by_hand = session(2, Some("prj_1"), None);
+        by_hand.project_by_hand = true;
+        let all = [by_repo, by_hand, session(3, Some("prj_1"), None)];
+        let r = report(&all, &[], true);
+        assert_eq!(
+            r.sessions.iter().map(|s| (s.repo.as_deref(), s.by_hand)).collect::<Vec<_>>(),
+            [(Some("acme/app"), false), (None, true), (None, false)]
+        );
+        let bare = report(&all, &[], false);
+        assert!(bare.sessions.iter().all(|s| s.repo.is_none() && !s.by_hand));
+        assert!(!serde_json::to_string(&bare).unwrap().contains("by_hand"), "an older control's shape");
+
+        let t = Instant::now();
+        let mut s = Sessions::default();
+        let sent = s.worth_sending(r.clone(), t).unwrap();
+        let refused = CloudRefused::Said { status: 422, said: "unknown field `repo`".into(), reason: None };
+        s.answered(sent, Err(refused), t);
+        assert!(s.bare && s.look(t), "again at once");
+        assert_eq!(s.worth_sending(bare.clone(), t), Some(bare.clone()), "without them");
+        s.answered(bare, Err(CloudRefused::Said { status: 422, said: "no".into(), reason: None }), t);
+        assert!(s.bare, "refused bare too: it's the list, not them");
+        s.again();
+        assert!(!s.bare, "tried once more when every block is");
     }
 }

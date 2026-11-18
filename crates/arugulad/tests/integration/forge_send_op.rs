@@ -206,7 +206,8 @@ fn a_machine_sends_its_persons_draft_when_control_asks() {
             "agents.grant_ask",
             "projects.repo_moved",
             "docs.list",
-            "sessions.set_card"
+            "sessions.set_card",
+            "sessions.set_project"
         ])
     );
     assert_eq!(

@@ -5,7 +5,10 @@
 // On a fixture page (move-to-project-page.tsx); the platform's answers,
 // the split's plan and move among them, are this spec's (the planner's
 // rules are the cloud's tests). The project switcher's New project from…
-// (Arugula #1040) opens the same page for a project the reader owns.
+// (Arugula #1040) opens the same page for a project the reader owns. The
+// project's sessions, by machine (Arugula #1166): a repo brings those it
+// placed, others are picked on the reader's own online machines, and the
+// page says who will see them.
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { fixturePage } from "./fixture-page";
 
@@ -37,11 +40,47 @@ const SOURCE = {
     { id: "pdc_rhythm", title: "Rhythm plan", board: "brd_rhythm" },
     { id: "pdc_pricing", title: "Pricing" },
   ],
+  machines: [
+    {
+      id: "m_mac",
+      name: "aarons-mac-mini",
+      online: true,
+      yours: true,
+      owner: "Sam",
+      sessions: [
+        { id: "1", name: "belt-balancer", repo: RHYTHM, by_hand: false },
+        { id: "2", name: "factorio server", by_hand: true },
+        { id: "3", name: "dotfiles", by_hand: false },
+      ],
+    },
+    {
+      id: "m_old",
+      name: "old-linux-box",
+      online: false,
+      yours: true,
+      owner: "Sam",
+      sessions: [
+        { id: "1", name: "map-render", repo: RHYTHM, by_hand: false },
+        { id: "2", name: "homelab", by_hand: true },
+      ],
+    },
+    {
+      id: "m_jake",
+      name: "jake-mbp",
+      online: true,
+      yours: false,
+      owner: "Jake",
+      sessions: [
+        { id: "1", name: "site-dev", repo: RHYTHM, by_hand: false },
+        { id: "2", name: "L7 drawer", by_hand: true },
+      ],
+    },
+  ],
 };
 const DOCS = SOURCE.docs;
 const MAC_DOC = "d0c0ffee00000001";
 
-type Ask = { to: { kind: "new"; name: string; owner: { kind: string; id?: string } } | { kind: "project"; id: string }; repos: string[]; boards: string[]; issues: string[]; docs: string[] };
+type Ask = { to: { kind: "new"; name: string; owner: { kind: string; id?: string } } | { kind: "project"; id: string }; repos: string[]; boards: string[]; issues: string[]; docs: string[]; sessions: string[] };
 
 const page_ = <T>(items: T[]) => ({ count: items.length, items });
 
@@ -59,7 +98,19 @@ function planOf(ask: Ask, again: boolean) {
   const boards = [...(rhythm ? [{ id: "brd_rhythm", title: SOURCE.boards[0].title, rows: 3, with: { kind: "repo", repo: RHYTHM } }] : []), ...(ask.boards.includes("brd_ideas") ? [{ id: "brd_ideas", title: "Ideas", rows: 2 }] : [])];
   const repos = SOURCE.repos.filter((r) => ask.repos.includes(r.name)).map((r) => ({ id: r.id, name: r.name }));
   const toTeam = ask.to.kind === "new" && ask.to.owner.kind === "team";
-  const empty = !repos.length && !boards.length && !issues.length && !docs.length;
+  // Sessions a moving repo placed, from any machine, and those picked.
+  const machine_sessions = SOURCE.machines
+    .map((m) => ({
+      machine: m.id,
+      name: m.name,
+      online: m.online,
+      sessions: m.sessions
+        .filter((s) => (s.repo && ask.repos.includes(s.repo)) || ask.sessions.includes(`${m.id}/${s.id}`))
+        .map((s) => ({ id: s.id, name: s.name, who: toTeam ? "the Arugula team watches" : m.yours ? "only you" : `only ${m.owner}, on their machine`, ...(s.repo && ask.repos.includes(s.repo) ? { with: { kind: "repo", repo: s.repo } } : {}) })),
+    }))
+    .filter((m) => m.sessions.length);
+  const moving = machine_sessions.flatMap((m) => m.sessions.map((s) => s.name));
+  const empty = !repos.length && !boards.length && !issues.length && !docs.length && !moving.length;
   const machine_docs = rhythm
     ? [
         { machine: "m_mac", name: "aarons-mac-mini", docs: [{ id: MAC_DOC, title: "Colour (#688)" }] },
@@ -67,6 +118,7 @@ function planOf(ask: Ask, again: boolean) {
       ]
     : [];
   const notes = empty || !toTeam ? [] : [{ key: "people", text: "Everyone in Arugula team will see what moves." }, ...(rhythm ? [{ key: "machine_docs:m_jake", text: "Move its Doc from jakes-laptop so Arugula team can open it." }] : [])];
+  if (toTeam && moving.length) notes.push({ key: "sessions-watch", text: `Moving ${moving.length} sessions to ${ask.to.kind === "new" ? ask.to.name : "Arugula"} lets the Arugula team watch them: ${moving.join(", ")}. That includes what they printed before.` });
   return {
     from: { id: ME, name: "Default" },
     to: { ...(ask.to.kind === "project" ? { id: ask.to.id } : {}), name: ask.to.kind === "new" ? ask.to.name : "Arugula", owner: toTeam ? { kind: "team", id: "tm_1", name: "Arugula team" } : { kind: "personal", account: "acct_a" }, first_number: first },
@@ -83,6 +135,7 @@ function planOf(ask: Ask, again: boolean) {
       environments: [],
       sessions: rhythm ? 2 : 0,
       drafts: 0,
+      machine_sessions,
       links: { moving: [], crossing: [] },
     },
     source: SOURCE,
@@ -237,4 +290,50 @@ test("a reader who owns no project isn't offered New project from…", async ({ 
   await page.locator(".ws-rail [data-project-switcher]").click();
   await expect(page.locator("[data-switcher-new]")).toBeVisible();
   await expect(page.locator("[data-switcher-new-from]")).toHaveCount(0);
+});
+
+test("the project's sessions, by machine: a repo brings those it placed, others are picked, and the page says who sees them (Arugula #1166)", async ({ page }) => {
+  const done = { ...moved.body, machine_sessions: { moved: 3, waiting: [{ machine: "m_old", name: "old-linux-box", sessions: ["map-render"] }], failed: [] } };
+  const seen = await open(page, `/p/${ME}/settings/move`, () => ({ status: 200, body: done }));
+  await page.locator("[data-move-name]").fill("Factorio mods");
+  const machine = (id: string) => page.locator(`[data-move-sessions] [data-move-sessions-machine="${id}"]`);
+  await expect(machine("m_mac")).toContainText("On aarons-mac-mini");
+  await expect(machine("m_old")).toContainText("old-linux-box is offline: its other sessions can be picked once it's back.");
+  await expect(machine("m_jake")).toContainText("Jake's machine: Jake moves these from each session's menu.");
+  // Others' and offline machines' sessions have no box.
+  await expect(row(page, "sessions", "m_old/2").locator("input")).toHaveCount(0);
+  await expect(row(page, "sessions", "m_jake/2").locator("input")).toHaveCount(0);
+  await expect(row(page, "sessions", "m_mac/2")).toContainText("Set by hand");
+
+  // Picked one by one on the reader's own machine; a repo's, picked first, goes with the repo.
+  await tick(page, "sessions", "m_mac/2");
+  await tick(page, "sessions", "m_mac/1");
+  await expect.poll(() => seen.plans.at(-1)?.sessions).toEqual(["m_mac/1", "m_mac/2"]);
+  await tick(page, "repos", RHYTHM);
+  for (const k of ["m_mac/1", "m_old/1", "m_jake/1"]) {
+    await expect(row(page, "sessions", k).locator("input")).toBeChecked();
+    await expect(row(page, "sessions", k).locator("input")).toBeDisabled();
+  }
+  await expect(row(page, "sessions", "m_old/1")).toContainText(`with ${RHYTHM} · when it's back`);
+  await expect.poll(() => seen.plans.at(-1)?.sessions).toEqual(["m_mac/2"]);
+
+  // Who sees them: each beside it when they differ, one line when not.
+  const along = page.locator("[data-move-along-sessions]");
+  await expect(along).toContainText("4 sessions");
+  await expect(page.locator("[data-move-sessions-who]")).toHaveText("Who sees each is beside it.");
+  await along.locator("button").first().click();
+  await expect(along.locator("li", { hasText: "map-render" })).toContainText("on old-linux-box, when it's back · only you");
+  await expect(along.locator("li", { hasText: "site-dev" })).toContainText("on jake-mbp · only Jake, on their machine");
+  await page.locator("[data-move-owner]").selectOption("tm_1");
+  await expect(page.locator('[data-move-note="sessions-watch"]')).toContainText("lets the Arugula team watch them: belt-balancer, factorio server, map-render, site-dev. That includes what they printed before.");
+  await expect(page.locator("[data-move-sessions-who]")).toHaveText("The Arugula team watches.");
+  if (SHOTS) {
+    await page.locator("[data-move-sessions]").evaluate((e) => e.scrollIntoView());
+    await page.screenshot({ path: `${SHOTS}/sessions.png` });
+  }
+
+  await page.locator("[data-move-go]").click();
+  await expect(page).toHaveURL(new RegExp(`/p/${NEW}`));
+  expect(seen.moves[0]).toMatchObject({ repos: [RHYTHM], sessions: ["m_mac/2"] });
+  await expect(page.getByText("3 sessions moved now; map-render moves when old-linux-box is back.")).toBeVisible();
 });

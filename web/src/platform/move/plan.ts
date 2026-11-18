@@ -7,7 +7,9 @@
 // rules are the planner's: work goes with its repo; picking a board picks
 // its repo; a board with no repo moves on its own; an issue with no repo goes
 // with its board; a Doc on a moving board comes along; a machine's Docs move
-// from that machine. The shapes are the platform's (crates/platform/src/split.rs
+// from that machine; a session a moving repo placed comes with it, and
+// another is picked one by one on the reader's own online machines, which
+// control then tells to move it (Arugula #1166). The shapes are the platform's (crates/platform/src/split.rs
 // in the cloud's repository), which aren't in proto.gen.ts: the cloud is closed.
 
 import type { ProjectOwnerRef } from "../../shared/proto.gen";
@@ -27,6 +29,8 @@ export interface Ask {
   issues: string[];
   /** Project Docs, `pdc_` ids. */
   docs: string[];
+  /** Machine sessions picked one by one, `machine/session` (Arugula #1166). */
+  sessions: string[];
   /** A list's page (the platform's default is 50, at most 200). */
   limit?: number;
   /** Where each list's page starts: a list's `next`. */
@@ -56,6 +60,34 @@ export interface MachineDocs {
   docs: { id: string; title: string }[];
 }
 
+/** A machine with sessions in the project (Arugula #1166): the reader's
+ * own online ones' can be picked; a repo brings those it placed from any. */
+export interface SourceMachine {
+  id: string;
+  name: string;
+  online: boolean;
+  /** The reader's own: only its owner moves a session by hand. */
+  yours: boolean;
+  /** Its owner's name, as people read it. */
+  owner: string;
+  sessions: {
+    id: string;
+    name: string;
+    /** The GitHub repo (`owner/name`) that placed it, which it follows. */
+    repo?: string;
+    /** Its project was set by hand. */
+    by_hand: boolean;
+  }[];
+}
+
+/** A machine's sessions that move, each with who sees it after. */
+export interface MovingSessions {
+  machine: string;
+  name: string;
+  online: boolean;
+  sessions: { id: string; name: string; who: string; with?: With }[];
+}
+
 export interface Plan {
   from: { id: string; name: string };
   to: {
@@ -78,8 +110,11 @@ export interface Plan {
     machine_docs: MachineDocs[];
     workspaces: { id: string; name: string; specs: number; schedules: number; runs: number }[];
     environments: { id: string; name: string; deploys: number }[];
+    /** Cloud agent sessions in a moving repo. */
     sessions: number;
     drafts: number;
+    /** Machine sessions that move, by machine; none from an older control. */
+    machine_sessions?: MovingSessions[];
   };
   /** What there is to pick. */
   source: {
@@ -90,6 +125,8 @@ export interface Plan {
     issues: { id: string; number: number; title: string; closed: boolean }[];
     /** The project's Docs; `board`, the first board it's on. */
     docs: { id: string; title: string; board?: string }[];
+    /** Machines with sessions in the project; none from an older control. */
+    machines?: SourceMachine[];
   };
 }
 
@@ -99,6 +136,13 @@ export interface Done {
   id: string;
   to: { id: string; name: string };
   moved: Record<"repos" | "boards" | "issues" | "docs" | "workspaces" | "environments" | "runs" | "sessions" | "drafts" | "links", number>;
+  /** Machine sessions: moved now, waiting for their machine (a repo's, on
+   * one that's offline), or refused by it. */
+  machine_sessions?: {
+    moved: number;
+    waiting: { machine: string; name: string; sessions: string[] }[];
+    failed: { machine: string; name: string; session: string; why: string }[];
+  };
 }
 
 /** A refusal: its status, the platform's words, and a 409's `reason`
@@ -185,14 +229,42 @@ export interface Picks {
   issues: Set<string>;
   docs: Set<string>;
   machineDocs: Set<string>;
+  /** Machine sessions, `machine/session`. */
+  sessions: Set<string>;
 }
 
-export const noPicks = (owner = "personal"): Picks => ({ target: "new", name: "", owner, repos: new Set(), boards: new Set(), issues: new Set(), docs: new Set(), machineDocs: new Set() });
+export const noPicks = (owner = "personal"): Picks => ({ target: "new", name: "", owner, repos: new Set(), boards: new Set(), issues: new Set(), docs: new Set(), machineDocs: new Set(), sessions: new Set() });
 
-/** The request for `p`. */
-export function askOf(p: Picks): Ask {
+/** The request for `p`, over the project's `machines`: a session counts
+ * as picked while it's one the reader may move and no moving repo brings it. */
+export function askOf(p: Picks, machines: SourceMachine[] = []): Ask {
   const to: To = p.target === "new" ? { kind: "new", name: p.name.trim(), owner: p.owner === "personal" ? { kind: "personal" } : { kind: "team", id: p.owner } } : { kind: "project", id: p.target };
-  return { to, repos: [...p.repos], boards: [...p.boards], issues: [...p.issues], docs: [...p.docs], limit: PAGE_MAX };
+  const sessions = machines.flatMap((m) => (m.online && m.yours ? m.sessions.filter((s) => !brought(s, p) && p.sessions.has(`${m.id}/${s.id}`)).map((s) => `${m.id}/${s.id}`) : []));
+  return { to, repos: [...p.repos], boards: [...p.boards], issues: [...p.issues], docs: [...p.docs], sessions, limit: PAGE_MAX };
+}
+
+/** Whether a repo `p` moves brings session `s`, the one that placed it. */
+export const brought = (s: SourceMachine["sessions"][number], p: Picks) => !!s.repo && p.repos.has(s.repo);
+
+/** Who sees the moving sessions, in one line: theirs when it's the same
+ * for all ("The Arugula team watches."), else that it's beside each. */
+export function whoLine(moving: MovingSessions[]): string {
+  const who = [...new Set(moving.flatMap((m) => m.sessions.map((s) => s.who)))];
+  if (!who.length) return "";
+  return who.length === 1 ? `${who[0].charAt(0).toUpperCase()}${who[0].slice(1)}.` : "Who sees each is beside it.";
+}
+
+/** What happened to the machine sessions, after "Moved to X.": how many
+ * moved, which wait for their machine, and the first one refused. */
+export function sessionsSaid(done: Done): string {
+  const m = done.machine_sessions;
+  if (!m || (!m.moved && !m.waiting.length && !m.failed.length)) return "";
+  const bits = [m.moved ? `${m.moved} ${m.moved === 1 ? "session" : "sessions"} moved now` : ""];
+  for (const w of m.waiting) bits.push(`${w.sessions.join(", ")} ${w.sessions.length === 1 ? "moves" : "move"} when ${w.name} is back`);
+  const f = m.failed[0];
+  if (f) bits.push(`${m.failed.length === 1 ? f.session : `${m.failed.length} sessions`} stayed on ${f.name}: ${f.why}`);
+  const said = bits.filter(Boolean).join("; ");
+  return `${said.charAt(0).toUpperCase()}${said.slice(1)}.`;
 }
 
 /** Why a row is in without its own pick: "with owner/repo", "with its board". */
