@@ -34,7 +34,7 @@ export function ownerKey(p: Pick<PlatformProject, "owner" | "team">): string {
 /** The reader's owners: Personal first, always, then each team in the
  * order its first project came. */
 export function owners(projects: readonly PlatformProject[]): Owner[] {
-  const mine: Owner = { key: PERSONAL, kind: "personal", name: "Personal", role: "owner", members: [], projects: [], archived: [] };
+  const mine: Owner = { key: PERSONAL, kind: "personal", name: "Just you", role: "owner", members: [], projects: [], archived: [] };
   const all = new Map<string, Owner>([[PERSONAL, mine]]);
   for (const p of projects) {
     const key = ownerKey(p);

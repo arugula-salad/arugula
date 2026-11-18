@@ -91,7 +91,7 @@ export function titleOf(r: Route, k: Known): string {
     case "settings":
       if (r.scope === "project") return parts("Settings", p);
       if (r.scope === "machine") return parts("Machine settings");
-      if (r.scope === "team") return parts(r.owner === "personal" ? "Personal settings" : "Team settings", k.team?.(r.owner));
+      if (r.scope === "team") return parts(r.owner === "personal" ? "Your settings" : "Team settings", k.team?.(r.owner));
       return parts("Account settings");
     case "team":
       return parts({ chat: "Chat", members: "Members" }[r.tab], k.team?.(r.team));

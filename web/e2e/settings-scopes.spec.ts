@@ -16,7 +16,7 @@ const ME = "prj_aaaa0001";
 const SITE = "prj_aaaa0002";
 
 const projects = [
-  { id: ME, name: "Personal", owner: { kind: "personal" }, team: null },
+  { id: ME, name: "Default", owner: { kind: "personal" }, team: null },
   {
     id: SITE,
     name: "Site",

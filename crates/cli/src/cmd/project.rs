@@ -25,7 +25,7 @@ pub static SOCKET: OnceLock<PathBuf> = OnceLock::new();
 
 #[derive(clap::Subcommand)]
 pub enum ProjectCmd {
-    /// Your projects: Personal's, then each team's.
+    /// Your projects: yours (Just you), then each team's.
     ///
     /// `*` marks the current one. Archived ones are left out unless you
     /// pass `--archived`.
@@ -36,7 +36,7 @@ pub enum ProjectCmd {
     },
     /// Make a project, and print its id and name.
     ///
-    /// It's Personal's unless `--team` names a team you own.
+    /// It's yours unless `--team` names a team you own.
     New {
         name: String,
         /// The team: its id or name.
@@ -232,18 +232,18 @@ fn chosen(e: &Enrolled, projects: &Projects, asked: Option<&str>) -> anyhow::Res
     chosen.map(|(id, _)| id).context("no current project: name one with --project")
 }
 
-/// One owner's projects: Personal's (`team` none) or a team's.
+/// One owner's projects: yours (`team` none) or a team's.
 struct Owner<'a> {
     team: Option<String>,
     name: String,
     projects: Vec<&'a Project>,
 }
 
-/// The projects by owner: Personal first, then each team in the order its
+/// The projects by owner: yours first, then each team in the order its
 /// first project came, as the web's switcher (`platform/owners.ts`). An
 /// owner left with none isn't listed.
 fn owners(projects: &Projects, archived: bool) -> Vec<Owner<'_>> {
-    let mut all = vec![Owner { team: None, name: "Personal".into(), projects: vec![] }];
+    let mut all = vec![Owner { team: None, name: "Just you".into(), projects: vec![] }];
     for p in projects.projects.iter().filter(|p| archived || !p.archived) {
         let (team, name) = match (&p.owner, &p.team) {
             (Some(ProjectOwner::Team { id, name }), _) => (Some(id.clone()), name.clone()),
@@ -275,7 +275,7 @@ fn teams(projects: &Projects) -> Vec<(String, String)> {
     all
 }
 
-/// `Personal`, then `* prj_…  Notes` for each, `*` the current one.
+/// `Just you`, then `* prj_…  Notes` for each, `*` the current one.
 fn listed(groups: &[Owner], current: Option<&str>) -> String {
     let mut out = String::new();
     for g in groups {
@@ -448,12 +448,12 @@ fn named(p: &Value) -> String {
 fn planned(plan: &Value) -> String {
     let to = &plan["to"];
     let owner = match to["owner"]["kind"].as_str() {
-        Some("team") => to["owner"]["name"].as_str().unwrap_or("a team").to_owned(),
-        _ => "Personal".into(),
+        Some("team") => format!("{}'s", to["owner"]["name"].as_str().unwrap_or("a team")),
+        _ => "yours".into(),
     };
     let into = match to["id"].as_str() {
-        Some(_) => format!("{}, {owner}'s", named(to)),
-        None => format!("a new project, {}, {owner}'s", to["name"].as_str().unwrap_or("?")),
+        Some(_) => format!("{}, {owner}", named(to)),
+        None => format!("a new project, {}, {owner}", to["name"].as_str().unwrap_or("?")),
     };
     let first = to["first_number"].as_u64().unwrap_or(1);
     let mut out = format!("From {} into {into}. Its issues are numbered from #{first}.\n", named(&plan["from"]));
@@ -575,7 +575,7 @@ mod tests {
     #[test]
     fn a_project_is_named_by_its_name_or_id() {
         let listed = json!({ "projects": [
-            { "id": "prj_a", "name": "Personal" }, { "id": "prj_b", "name": "Acme" }, { "id": "prj_c", "name": "dup" },
+            { "id": "prj_a", "name": "Default" }, { "id": "prj_b", "name": "Acme" }, { "id": "prj_c", "name": "dup" },
             { "id": "prj_d", "name": "Dup" } ] });
         assert_eq!(project_id(&listed, "acme").unwrap(), "prj_b");
         assert!(project_id(&listed, "dup").unwrap_err().to_string().contains("prj_c, prj_d"));
@@ -619,7 +619,7 @@ mod tests {
         .unwrap()
     }
 
-    /// Personal first, then each team as its first project came; archived
+    /// Yours first, then each team as its first project came; archived
     /// ones only when asked for.
     #[test]
     fn listed_by_owner() {
@@ -627,7 +627,7 @@ mod tests {
         let shown = listed(&owners(&p, false), Some("prj_4"));
         assert_eq!(
             shown,
-            "Personal\n  prj_1  Jake\n  prj_6  Notes\nAcme\n  prj_2  Acme\n* prj_4  Web\nOps\n  prj_5  Ops\n"
+            "Just you\n  prj_1  Jake\n  prj_6  Notes\nAcme\n  prj_2  Acme\n* prj_4  Web\nOps\n  prj_5  Ops\n"
         );
         let shown = listed(&owners(&p, true), None);
         assert!(shown.contains("  prj_3  Old  (archived)\n  prj_6"), "{shown}");

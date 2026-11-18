@@ -525,11 +525,14 @@ fn refused_for_viewer(powers: &[String], role: Option<&str>) -> Vec<String> {
 /// A project named on the command line, by its id or name (any case).
 fn project_id(projects: &Value, want: &str) -> anyhow::Result<String> {
     let all = projects["projects"].as_array().cloned().unwrap_or_default();
-    let ids: Vec<String> = all
-        .iter()
-        .filter(|p| p["id"] == want || p["name"].as_str().is_some_and(|n| n.eq_ignore_ascii_case(want)))
-        .filter_map(|p| p["id"].as_str().map(String::from))
-        .collect();
+    // `personal` is the project of no team, whatever it's called (Arugula #1165).
+    let named = |p: &Value| match p.get("owner").filter(|o| !o.is_null()) {
+        _ if !want.eq_ignore_ascii_case("personal") => p["name"].as_str().is_some_and(|n| n.eq_ignore_ascii_case(want)),
+        Some(o) => o["kind"] != "team",
+        None => p["team"].is_null(),
+    };
+    let ids: Vec<String> =
+        all.iter().filter(|p| p["id"] == want || named(p)).filter_map(|p| p["id"].as_str().map(String::from)).collect();
     match ids.as_slice() {
         [id] => Ok(id.clone()),
         [] => bail!("you have no project called {want} (your machines page lists yours)"),
@@ -698,7 +701,7 @@ mod tests {
             "revoked_by": { "account": "a1", "name": "Ana" }, "former_giver": true });
         let l = line(&gone);
         assert!(l.starts_with("a former member's") && l.contains("revoked") && l.contains("by Ana"), "{l}");
-        let empty = json!({ "project": { "name": "Personal", "owner": { "kind": "account", "id": "a1" } }, "role": "owner",
+        let empty = json!({ "project": { "name": "Default", "owner": { "kind": "account", "id": "a1" } }, "role": "owner",
             "roles": { "says": "this account's own project", "members": [{ "account": "a1", "name": "alice", "role": "owner" }] },
             "cloud_drive": { "says": "the platform's cloud.drive grants", "members": [
                 { "owner": { "account": "a1", "name": "alice", "former": false }, "role": "owner", "power": "cloud.drive", "machines": 0, "driving": 0 } ] },
@@ -707,7 +710,7 @@ mod tests {
             "workspaces": { "says": "the platform's list", "list": [] } });
         let text = access_text(&empty);
         for want in [
-            "Personal (personal project)",
+            "Default (personal project)",
             "alice                    no machine joined",
             "none given: no machine's",
             "control couldn't say",
@@ -859,7 +862,9 @@ mod tests {
         assert!(give("d1", "runs.command", Some(&dms)).is_err());
 
         let projects = json!({ "projects": [
-            { "id": "prj_1", "name": "Personal" }, { "id": "prj_2", "name": "Acme" }, { "id": "prj_3", "name": "acme" },
+            { "id": "prj_1", "name": "Default", "owner": { "kind": "personal", "account": "a1" } },
+            { "id": "prj_2", "name": "Acme", "owner": { "kind": "team", "id": "tm_1", "name": "Acme" } },
+            { "id": "prj_3", "name": "acme", "owner": { "kind": "team", "id": "tm_2", "name": "acme" } },
         ] });
         assert_eq!(project_id(&projects, "personal").unwrap(), "prj_1");
         assert_eq!(project_id(&projects, "prj_3").unwrap(), "prj_3");
@@ -896,7 +901,7 @@ mod tests {
         assert!(give("d1", "cloud.drive", Some(&team)).is_err());
 
         let projects = json!({ "projects": [
-            { "id": "prj_1", "name": "Personal", "team": null },
+            { "id": "prj_1", "name": "Default", "team": null },
             { "id": "prj_2", "name": "Acme", "team": { "id": "tm_1", "name": "Acme", "role": "editor" } },
             { "id": "prj_3", "name": "Site", "team": { "id": "tm_1", "name": "Acme", "role": "editor" } },
             { "id": "prj_4", "name": "Ops", "team": { "id": "tm_2", "name": "", "role": "owner" } },

@@ -303,7 +303,7 @@ fn list_by_owner() {
     let rig = Rig::new("list");
     rig.state.lock().unwrap().session_project = Some(prj(3));
     let out = rig.ok(true, &["project", "list"]);
-    let want = format!("Personal\n  {}  Jake\nAcme\n  {}  Acme\n* {}  Web\n", prj(1), prj(2), prj(3));
+    let want = format!("Just you\n  {}  Jake\nAcme\n  {}  Acme\n* {}  Web\n", prj(1), prj(2), prj(3));
     assert_eq!(out, want, "the session's project is current; the archived one is hidden");
     let out = rig.ok(false, &["project", "list", "--archived"]);
     assert!(out.contains(&format!("* {}  Jake\n  {}  Old  (archived)\n", prj(1), prj(4))), "{out}");

@@ -16,7 +16,7 @@ const SHOTS = process.env.SPLIT_SHOTS;
 const ON_A_DAY = / · [A-Z][a-z]{2} \d{1,2}$/;
 
 const projects = [
-  { id: ME, name: "Personal", owner: { kind: "personal" }, team: null },
+  { id: ME, name: "Default", owner: { kind: "personal" }, team: null },
   { id: RHYTHM, name: "Rhythm", owner: { kind: "team", id: "tm_1", name: "Arugula team" }, team: { id: "tm_1", name: "Arugula team", role: "owner", members: [] } },
 ];
 
@@ -24,7 +24,7 @@ const moved = { repos: 0, boards: 1, issues: 25, docs: 2, workspaces: 0, environ
 const split = (direction: "out" | "in", undone: boolean) => ({
   id: "spl_1",
   direction,
-  other: direction === "out" ? { id: RHYTHM, name: "Rhythm" } : { id: ME, name: "Personal" },
+  other: direction === "out" ? { id: RHYTHM, name: "Rhythm" } : { id: ME, name: "Default" },
   moved,
   moved_at: Date.now() - 60_000,
   ...(undone ? { undone_at: Date.now() } : {}),
@@ -77,7 +77,7 @@ async function open(page: Page, path: string, undo: () => { status: number; body
   return seen;
 }
 
-const back = { status: 200, body: { id: "spl_1", to: { id: ME, name: "Personal" }, deleted: false, moved, issues: [{ id: ISSUE, from: 975, to: 12 }] } };
+const back = { status: 200, body: { id: "spl_1", to: { id: ME, name: "Default" }, deleted: false, moved, issues: [{ id: ISSUE, from: 975, to: 12 }] } };
 const note = (page: Page) => page.locator("[data-split-note]");
 
 test.use({ viewport: { width: 1280, height: 720 } });
@@ -90,7 +90,7 @@ test("where the work left: what moved and where, then Undo, until the page is le
 
   await page.locator("[data-split-undo]").click();
   await expect(note(page)).toHaveAttribute("data-split-note", "undone");
-  await expect(note(page)).toHaveText("Moved back to Personal.");
+  await expect(note(page)).toHaveText("Moved back to Default.");
   await expect(page.locator("[data-split-undo]")).toHaveCount(0);
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/banner-undone.png` });
   expect(seen.undos).toEqual([`/api/projects/${ME}/splits/spl_1/undo`]);
@@ -104,10 +104,10 @@ test("where the work left: what moved and where, then Undo, until the page is le
 test("where the work arrived: where from, and Undo on the project it left", async ({ page }) => {
   const seen = await open(page, `/p/${RHYTHM}`, () => back);
   await expect(note(page)).toHaveAttribute("data-split-note", "in");
-  await expect(note(page)).toHaveText("Moved here from Personal.Undo");
+  await expect(note(page)).toHaveText("Moved here from Default.Undo");
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/banner-in.png` });
   await page.locator("[data-split-undo]").click();
-  await expect(note(page)).toHaveText("Moved back to Personal.");
+  await expect(note(page)).toHaveText("Moved back to Default.");
   expect(seen.undos).toEqual([`/api/projects/${ME}/splits/spl_1/undo`]);
 });
 
@@ -138,14 +138,14 @@ test("its × closes it for this reader, for good, and Undo stays in Settings ›
   await expect(row.locator("span")).toHaveText(ON_A_DAY);
   if (SHOTS) await page.locator("[data-project-general]").screenshot({ path: `${SHOTS}/followup-settings.png` });
   await row.locator("[data-recent-split-undo]").click();
-  await expect(page.locator("[data-recent-split-said]")).toHaveText("Moved back to Personal.");
+  await expect(page.locator("[data-recent-split-said]")).toHaveText("Moved back to Default.");
   await expect(page.locator("[data-recent-splits]")).toHaveCount(0);
   expect(seen.undos).toEqual([`/api/projects/${ME}/splits/spl_1/undo`]);
 });
 
 test("in settings, a refused undo says why; a project with no moves lists none", async ({ page }) => {
   await open(page, `/p/${RHYTHM}/settings`, () => ({ status: 409, body: { error: "something's in the way", reason: "in_the_way" } }));
-  await expect(page.locator('[data-recent-split="spl_1"] span')).toHaveText(/^Moved here from Personal · /);
+  await expect(page.locator('[data-recent-split="spl_1"] span')).toHaveText(/^Moved here from Default · /);
   await page.locator("[data-recent-split-undo]").click();
   await expect(page.locator("[data-recent-split-said]")).toHaveAttribute("data-recent-split-said", "refused");
   await expect(page.locator("[data-recent-split-said]")).toHaveText("Something's in the way.");

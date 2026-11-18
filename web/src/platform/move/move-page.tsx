@@ -173,7 +173,7 @@ function Mover({ p }: { p: PlatformProject }) {
                   <option value="new">A new project</option>
                   {targets.map((t) => (
                     <option key={t.id} value={t.id}>
-                      {t.name} ({all.find((o) => o.key === ownerKey(t))?.name ?? "Personal"})
+                      {t.name} ({all.find((o) => o.key === ownerKey(t))?.name ?? "Just you"})
                     </option>
                   ))}
                 </select>

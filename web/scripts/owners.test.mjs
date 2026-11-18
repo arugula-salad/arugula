@@ -29,7 +29,7 @@ test("Personal comes first, then each team in the order its first project came",
   assert.deepEqual(
     all.map((o) => [o.key, o.kind, o.name]),
     [
-      [PERSONAL, "personal", "Personal"],
+      [PERSONAL, "personal", "Just you"],
       ["tm_acme", "team", "Acme"],
       ["tm_beta", "team", "Beta"],
     ],

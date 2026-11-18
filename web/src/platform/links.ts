@@ -92,7 +92,9 @@ export function movedHome(r: Route): string | null {
 
 /** Each id's name now, for its slug. */
 export function names(id: string): string | undefined {
-  if (id.startsWith("prj_")) return session.project(id)?.name;
+  // The personal project's address stays `-personal`, whatever it's called
+  // (Arugula #1165).
+  if (id.startsWith("prj_")) return id === session.personal()?.id ? "personal" : session.project(id)?.name;
   if (id.startsWith("iss_")) return issues.known(id)?.title;
   if (id.startsWith("brd_")) return boards.title(id);
   if (id.startsWith("pdc_")) return projectDocs.title(id);

@@ -15,7 +15,7 @@
 export function ownerOf(p: { owner?: { kind: "team"; id: string; name: string } | { kind: "personal"; account: string }; team: { id: string; name: string } | null }): { owner: string; name: string } {
   if (p.owner?.kind === "team") return { owner: p.owner.id, name: p.owner.name || "Team" };
   if (!p.owner && p.team) return { owner: p.team.id, name: p.team.name || "Team" };
-  return { owner: "personal", name: "Personal" };
+  return { owner: "personal", name: "Just you" };
 }
 
 /** Where a key's effective value came from. */

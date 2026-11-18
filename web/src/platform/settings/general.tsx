@@ -44,7 +44,7 @@ export function General({ p }: { p: PlatformProject }) {
     }
   };
   return (
-    <Section id="general" title="General" summary={joined(mine?.name ?? "Personal", p.archived ? "archived" : "active")} lede="Its name, whose it is, and whether it's archived." hooks={{ "data-project-general": p.id }}>
+    <Section id="general" title="General" summary={joined(mine?.name ?? "Just you", p.archived ? "archived" : "active")} lede="Its name, whose it is, and whether it's archived." hooks={{ "data-project-general": p.id }}>
       <form
         class="settings-add"
         aria-label="Rename"
@@ -62,7 +62,7 @@ export function General({ p }: { p: PlatformProject }) {
         )}
       </form>
       <p class="dim" data-project-owner>
-        Owner: {mine?.name ?? "Personal"}
+        Owner: {mine?.name ?? "Just you"}
         {p.archived ? " · archived" : ""}
       </p>
       {owns ? (

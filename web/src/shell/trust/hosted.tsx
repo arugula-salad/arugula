@@ -31,7 +31,7 @@ export function HostedMachines({ s }: { s: ControlSession }) {
     // The projects this account owns: its own, and its teams' as an owner.
     const projects = (p?.projects ?? [])
       .filter((x) => !x.team || x.team.role === "owner")
-      .map((x) => ({ id: x.id, name: x.team ? x.name : "Personal", owner: x.team ? `team:${x.team.id}` : `account:${s.account}` }));
+      .map((x) => ({ id: x.id, name: x.name, owner: x.team ? `team:${x.team.id}` : `account:${s.account}` }));
     setList({ ...d, projects, open: !!p?.hosted });
   };
   useEffect(() => void load().catch((e: Error) => setErr(e.message)), []);

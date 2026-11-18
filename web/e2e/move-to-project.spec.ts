@@ -16,7 +16,7 @@ const SHOTS = process.env.MOVE_SHOTS;
 
 const team = (id: string, name: string, role: string) => ({ id, name, role, members: [] });
 const projects = (made: boolean) => [
-  { id: ME, name: "Personal", owner: { kind: "personal" }, team: null },
+  { id: ME, name: "Default", owner: { kind: "personal" }, team: null },
   { id: "prj_aaaa0002", name: "Arugula", owner: { kind: "team", id: "tm_1", name: "Arugula team" }, team: team("tm_1", "Arugula team", "owner") },
   { id: "prj_aaaa0003", name: "Site", owner: { kind: "team", id: "tm_2", name: "Friends" }, team: team("tm_2", "Friends", "editor") },
   ...(made ? [{ id: NEW, name: "Rhythm", owner: { kind: "team", id: "tm_1", name: "Arugula team" }, team: null }] : []),
@@ -68,7 +68,7 @@ function planOf(ask: Ask, again: boolean) {
     : [];
   const notes = empty || !toTeam ? [] : [{ key: "people", text: "Everyone in Arugula team will see what moves." }, ...(rhythm ? [{ key: "machine_docs:m_jake", text: "Move its Doc from jakes-laptop so Arugula team can open it." }] : [])];
   return {
-    from: { id: ME, name: "Personal" },
+    from: { id: ME, name: "Default" },
     to: { ...(ask.to.kind === "project" ? { id: ask.to.id } : {}), name: ask.to.kind === "new" ? ask.to.name : "Arugula", owner: toTeam ? { kind: "team", id: "tm_1", name: "Arugula team" } : { kind: "personal", account: "acct_a" }, first_number: first },
     empty,
     notes,
@@ -222,7 +222,7 @@ test("New project from…, in the switcher: one of the reader's own projects, th
   await page.locator("[data-switcher-new-from]").click();
   // Only those the reader owns: Site is Friends', where they're an editor.
   const source = page.locator("[data-new-project-from-source]");
-  await expect(source.locator("option")).toHaveText(["Personal", "Arugula"]);
+  await expect(source.locator("option")).toHaveText(["Default", "Arugula"]);
   await expect(source).toHaveValue("prj_aaaa0002");
   if (SHOTS) await page.locator("[data-new-project-from]").screenshot({ path: `${SHOTS}/followup-new-project-from.png` });
   await source.selectOption(ME);
