@@ -14,5 +14,5 @@ gone from the list, since every session is in one.
 
 In Share session…, a team's "Share with everyone in" shows only on a session in
 one of that team's projects, the only place a team share counts. On any other
-session it says so and offers Move to a <team> project…, which opens Project…
+session it says so and offers "Move to a team project…", which opens Project…
 with that team's projects.
