@@ -556,6 +556,35 @@ pub async fn owners_personal(control: &crate::control::Control) -> Option<arugul
     project_ref(&v).map(|p| arugula_core::ProjectRef { team: None, ..p })
 }
 
+/// Where a session nothing placed goes (Arugula #1163): the owner's
+/// personal project, or on the team's box, the team's default project
+/// (Arugula #1182). `None` when control didn't answer one.
+pub async fn unplaced_home(control: &crate::control::Control) -> Option<arugula_core::ProjectRef> {
+    // Whose a machine in a team is comes with a refresh: until the first
+    // has gone through, nothing is placed, rather than a team's box placing
+    // a session in a person's project.
+    let in_team = control.enrolled().is_some_and(|e| !e.saved.is_hosted() && e.saved.team_id().is_some());
+    if in_team {
+        let mut refreshed = control.on_refresh();
+        let first = refreshed.wait_for(|n| *n > 0);
+        if !matches!(tokio::time::timeout(std::time::Duration::from_secs(30), first).await, Ok(Ok(_))) {
+            return None;
+        }
+    }
+    match control.team_box() {
+        Some(team) => team_default(control, &team).await,
+        None => owners_personal(control).await,
+    }
+}
+
+/// Team `team`'s default project, as control answers issue-home on its
+/// box with nothing named. `None` when it named another, or no team's (an
+/// older control names no owner).
+async fn team_default(control: &crate::control::Control, team: &str) -> Option<arugula_core::ProjectRef> {
+    let v = control.cloud_now(Method::GET, AGENT_ISSUE_HOME, None).await.ok()?;
+    project_ref(&v).filter(|p| p.team.as_deref() == Some(team))
+}
+
 /// The GitHub repo (`owner/name`) of the clone at `dir`: its `origin`'s,
 /// else the first remote's that's on github.com.
 async fn github_repo_of(dir: &str) -> Option<String> {

@@ -12,6 +12,7 @@ import { Modal } from "../../shared/ui/modal";
 import { RefusedError, takesSecret, type ControlSession, type JoinRequest } from "../control";
 import { fingerprint, normalizeCode, normalizeSecret, splitJoinCode } from "../e2e/cert.ts";
 import { addsInOneClick, cantAdd } from "../team-adds.ts";
+import { WhosePicker } from "./whose";
 import { clearHash } from "./common";
 
 /** A machine's join, by its code: from its approval link, or typed in.
@@ -43,6 +44,9 @@ export function JoinPrompt({ s, code: whole }: { s: ControlSession; code: string
   const [refused, setRefused] = useState(false);
   // "" is just me; else a team's id.
   const [to, setTo] = useState("");
+  // Into a team: the team's own machine, not mine also used for it
+  // (Arugula #1182). Mine unless picked.
+  const [teamBox, setTeamBox] = useState(false);
   useEffect(() => {
     // Another code: nothing typed for the last one carries over.
     setTyped({ rest: "", bad: null });
@@ -163,9 +167,9 @@ export function JoinPrompt({ s, code: whole }: { s: ControlSession; code: string
               {/* #778: someone already in a team, before they pick: what each
                   place means, and the way to work with several teams. */}
               <p class="dim" data-join-place>
-                A machine is in one place: <b>Just me</b> (only you see its panes, and the sessions you share) or one team (everyone in it sees
-                them, and the team's owners count as its owners too). To work with more than one team, pick Just me, then share a session with each team
-                (<i>Share</i>, beside the session's name).
+                A machine is in one place: <b>Just me</b> (only you see its panes, and the sessions you share) or one team (everyone in it watches
+                its sessions in the team's projects, or uses all of it if it's the team's own machine, and the team's owners count as its owners
+                too). To work with more than one team, pick Just me, then share a session with each team (<i>Share</i>, beside the session's name).
               </p>
               <p>
                 <label>
@@ -185,6 +189,13 @@ export function JoinPrompt({ s, code: whole }: { s: ControlSession; code: string
                   </select>
                 </label>
               </p>
+              {/* Arugula #1182: a machine into a team is its owner's or the
+                  team's. */}
+              {team && j.cert.kind === "daemon" ? (
+                <p>
+                  <WhosePicker hook="join" teamBox={teamBox} onPick={setTeamBox} />
+                </p>
+              ) : null}
             </>
           ) : null}
           {cant ? (
@@ -193,9 +204,11 @@ export function JoinPrompt({ s, code: whole }: { s: ControlSession; code: string
             </p>
           ) : (
             <p class="dim" data-join-grants>
-              {team
-                ? `Everyone in ${team.roster.name} sees its sessions in ${team.roster.name}'s projects and watches them: they drive a terminal only when you share its session or trust them with it. Its owners reach all of it, private panes too, and can take it out of the team. Sessions in your own projects stay yours alone. It stays yours.`
-                : "Only you reach it, and you can drive its terminals. You're its only owner."}{" "}
+              {team && teamBox
+                ? `It's ${team.roster.name}'s: its sessions go in ${team.roster.name}'s project, and everyone in ${team.roster.name} uses it by their role: editors drive its terminals, viewers watch. Its owners reach all of it, private panes too, and can take it out of the team.`
+                : team
+                  ? `Everyone in ${team.roster.name} sees its sessions in ${team.roster.name}'s projects and watches them: they drive a terminal only when you share its session or trust them with it. Its owners reach all of it, private panes too, and can take it out of the team. Sessions in your own projects stay yours alone. It stays yours.`
+                  : "Only you reach it, and you can drive its terminals. You're its only owner."}{" "}
               Arugula cloud decides who reaches it and relays the connection: it can read what it relays, and keeps none of it.
             </p>
           )}
@@ -216,8 +229,8 @@ export function JoinPrompt({ s, code: whole }: { s: ControlSession; code: string
             setBusy(true);
             try {
               // The machine, then the devices that came with it.
-              if (oneClick) await s.addJoin(j.code, team?.team ?? null);
-              else await s.approveJoin(j.code, j.cert, team?.team ?? null, secret);
+              if (oneClick) await s.addJoin(j.code, team?.team ?? null, teamBox);
+              else await s.approveJoin(j.code, j.cert, team?.team ?? null, secret, teamBox);
               clearHash();
             } catch (e) {
               failed(e);

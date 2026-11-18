@@ -127,6 +127,11 @@ export interface DirDaemon {
   account?: string;
   owner_name?: string;
   team?: string | null;
+  /** In a team, joined on control's word (Arugula #1182): whether it's
+   * the team's (a shared or work machine) rather than its owner's, also
+   * used for the team. Absent where that isn't asked (no team, or a
+   * machine that pinned a root, or an older control). */
+  team_box?: boolean;
   /** M178: a hosted machine, accepted for this project only (labelled
    * "Hosted: the operator can read" wherever it's shown). */
   hosted?: { project: string; workspace: string; role: TeamRole };
@@ -1920,8 +1925,19 @@ export class ControlSession {
    * machine pins no account root, so devices don't reach it by their keys
    * (aru-141); machine tokens do. What a browser that isn't one of the
    * account's devices does; a device signs the join, as before. */
-  async addJoin(code: string, team: string | null = null) {
-    await this.approving(api(`/api/joins/${code}/approve`, { team }));
+  /** Approve a machine's join in one click (aru-141): into this account,
+   * or into `team`, as its owner's machine also used for the team or, with
+   * `teamBox`, as the team's (Arugula #1182). */
+  async addJoin(code: string, team: string | null = null, teamBox = false) {
+    await this.approving(api(`/api/joins/${code}/approve`, team ? { team, team_box: teamBox } : { team }));
+    await this.refresh();
+  }
+
+  /** Whose a machine in a team is (Arugula #1182): the team's, or its
+   * owner's, also used for the team. Its owner or the team's owners
+   * change it; the machine takes it at its next refresh. */
+  async setTeamBox(daemon: string, teamBox: boolean) {
+    await api(`/api/daemons/${daemon}/team-box`, { team_box: teamBox });
     await this.refresh();
   }
 
@@ -1940,7 +1956,7 @@ export class ControlSession {
    * With the join's `secret` (#760), the approval carries a MAC under it
    * over this account and the root this device pinned (not control's word
    * for it), which the machine checks before it pins that root. */
-  async approveJoin(code: string, c: Cert, team: string | null = null, secret: string | null = null) {
+  async approveJoin(code: string, c: Cert, team: string | null = null, secret: string | null = null, teamBox = false) {
     // Dated now: control takes approvals made within minutes of its clock.
     const signed: Cert = { ...c, account: this.account, created: Date.now(), approver: this.keys.id, sig: "" };
     signed.sig = await signText(this.keys, certBody(signed));
@@ -1956,7 +1972,9 @@ export class ControlSession {
       teamSig = await signText(this.keys, teamJoinBody(c.device, t.pin));
     }
     try {
-      await this.approving(api(`/api/joins/${code}/approve`, { cert: signed, team, team_sig: teamSig, ...(mac ? { mac } : {}) }));
+      // Into a team: whose it is (Arugula #1182), control's to keep.
+      const whose = team ? { team_box: teamBox } : {};
+      await this.approving(api(`/api/joins/${code}/approve`, { cert: signed, team, team_sig: teamSig, ...whose, ...(mac ? { mac } : {}) }));
     } finally {
       await this.refresh();
     }

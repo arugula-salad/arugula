@@ -40,6 +40,8 @@ export interface HostRef {
    * the team's name. */
   ownerId?: string;
   teamName?: string;
+  /** The team's own box, not someone's machine also used for it (Arugula #1182). */
+  teamBox?: boolean;
   /** M178: a hosted machine, its project's only. */
   hosted?: boolean;
 }

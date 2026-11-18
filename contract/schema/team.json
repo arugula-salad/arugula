@@ -729,6 +729,10 @@
           },
           "type": "array"
         },
+        "team_box": {
+          "description": "A machine joined on control's word, in a team: whose it is (Arugula\n#1182). True: the team's, a shared or work machine; its sessions go\nin the team's project and the team keeps its roles on all of them.\nFalse, or left out by an older control: its owner's, also used for\nthe team, where the team watches its projects' sessions (#1162).",
+          "type": "boolean"
+        },
         "trust": {
           "anyOf": [
             {

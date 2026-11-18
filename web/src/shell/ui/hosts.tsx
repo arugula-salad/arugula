@@ -72,9 +72,13 @@ export function machinePlace(team: string | null | undefined, owner?: string): s
   return owner ? `${owner}'s` : "Just me";
 }
 
-/** #778: what the place means: who sees its panes, who counts as its owner. */
-export function placeMeans(team: string | null | undefined, owner?: string): string {
-  if (team) return `everyone in ${team} sees its panes, except private ones, and ${team}'s owners count as its owners too.`;
+/** #778: what the place means: who sees its panes, who counts as its owner.
+ * In a team, whose it is says how much (Arugula #1162, #1182). */
+export function placeMeans(team: string | null | undefined, owner?: string, teamBox = false): string {
+  if (team && teamBox)
+    return `it's ${team}'s: its sessions go in ${team}'s project, everyone in ${team} uses it by their role, and ${team}'s owners count as its owners too.`;
+  if (team)
+    return `everyone in ${team} watches its sessions in ${team}'s projects; sessions in its owner's own projects stay theirs. ${team}'s owners count as its owners too.`;
   if (owner) return `you see what ${owner} shares with you.`;
   return "only you see its panes (and whoever you share a session with), and you're its only owner.";
 }
@@ -86,7 +90,7 @@ function placeIn(name: string): { place: string; means: string } | null {
   const team = h.team ? (h.teamName ?? "a team") : null;
   // M178: a hosted machine says so wherever its place is shown.
   if (h.hosted) return { place: team ? `In ${team} · ${HOSTED_LABEL}` : HOSTED_LABEL, means: HOSTED_MEANS };
-  return { place: machinePlace(team, h.owner), means: placeMeans(team, h.owner) };
+  return { place: machinePlace(team, h.owner), means: placeMeans(team, h.owner, h.teamBox) };
 }
 
 /** The host menu's line for a machine: its panes, when known, how it is,

@@ -38,6 +38,8 @@ struct Fake {
     default: Arc<Mutex<Option<(String, String)>>>,
     /// The owner's personal project, `project=personal`: none answers 404.
     personal: Arc<Mutex<Option<(String, String)>>>,
+    /// Control says the machine is the team's box (Arugula #1182).
+    team_box: Arc<Mutex<bool>>,
     /// What the daemon said on its relay socket.
     said: Arc<Mutex<Vec<Value>>>,
     /// Sends on the relay socket that's up.
@@ -56,6 +58,11 @@ impl Fake {
 async fn about(State(f): State<Fake>) -> Json<Value> {
     let url = f.url.lock().unwrap().clone();
     Json(json!({ "control": true, "daemon_auth": 2, "url": url }))
+}
+
+async fn trust(State(f): State<Fake>) -> Json<Value> {
+    let team_box = *f.team_box.lock().unwrap();
+    Json(json!({ "certs": [], "revocations": [], "team_box": team_box }))
 }
 
 async fn issue_home(State(f): State<Fake>, Query(q): Query<HashMap<String, String>>) -> Response {
@@ -108,7 +115,7 @@ fn serve(rt: &tokio::runtime::Runtime, f: Fake) -> String {
     rt.block_on(async {
         let app = Router::new()
             .route("/control.json", get(about))
-            .route("/api/daemon/trust", get(|| async { Json(json!({ "certs": [], "revocations": [] })) }))
+            .route("/api/daemon/trust", get(trust))
             .route("/api/daemon/peers", get(|| async { Json(json!({ "a1": { "name": "jake" } })) }))
             .route("/api/daemon/push-subs", get(|| async { Json(json!({ "subs": [] })) }))
             .route("/api/daemon/access", post(|| async { Json(json!({})) }))
@@ -129,6 +136,17 @@ fn enroll(state: &std::path::Path, control: &str) {
     cert.sign_with(&keys);
     let saved =
         json!({ "url": control, "trust": { "account": "a1", "root": keys.id() }, "cert": cert, "login": "jake" });
+    std::fs::write(state.join("control.json"), saved.to_string()).unwrap();
+}
+
+/// Joined on control's word into team `tm_1`, as a one-click approval
+/// saves it: whose it is, control says at each refresh (Arugula #1182).
+fn enroll_in_team(state: &std::path::Path, control: &str) {
+    let keys = DeviceKeys::load_or_create(&state.join("daemon.key")).unwrap();
+    let mut cert = Cert::new(&keys, "a1", Kind::Daemon, "test");
+    cert.sign_with(&keys);
+    let team = json!({ "id": "tm_1", "name": "Acme" });
+    let saved = json!({ "url": control, "by_control": { "at": 1, "team": team }, "cert": cert, "login": "jake" });
     std::fs::write(state.join("control.json"), saved.to_string()).unwrap();
 }
 
@@ -321,4 +339,37 @@ fn every_session_has_a_project_the_owners_personal_when_nothing_places_it() {
     d.wait_for("redialled", || *f.dials.lock().unwrap() > dials && f.to_daemon.lock().unwrap().is_some());
     std::thread::sleep(std::time::Duration::from_secs(2));
     assert_eq!(projects(&d)["early"], Value::Null);
+}
+
+/// Arugula #1182: whose a machine in a team is, control says at each
+/// refresh. Its owner's (an older control says nothing): a session nothing
+/// places goes in the owner's personal project. The team's box: in the
+/// team's default project, with its team, so the team sees it.
+#[test]
+fn a_session_nothing_places_goes_where_whose_the_machine_is_says() {
+    let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+    for team_box in [false, true] {
+        let f = Fake::default();
+        *f.default.lock().unwrap() = Some(("prj_t".into(), "Acme".into()));
+        *f.personal.lock().unwrap() = Some(("prj_d".into(), "Personal".into()));
+        *f.team_box.lock().unwrap() = team_box;
+        let url = serve(&rt, f.clone());
+        let mut d =
+            arugulad!(if team_box { "teambox" } else { "teammine" }).no_provider().no_tailscale().wait_secs(30).start();
+        d.stop();
+        enroll_in_team(&d.state, &url);
+        d.start();
+        d.wait_for("the relay", || f.to_daemon.lock().unwrap().is_some());
+        let plain = d.state.join("plain");
+        std::fs::create_dir_all(&plain).unwrap();
+
+        d.post("/api/run", json!({ "session": "build", "cwd": plain }));
+        let (want, other) = if team_box { ("prj_t", "prj_d") } else { ("prj_d", "prj_t") };
+        d.wait_for(&format!("placed in {want}"), || projects(&d).get("build") == Some(&json!(want)));
+        let panes = d.get("/api/panes");
+        let pane = panes.as_array().unwrap().iter().find(|p| p["session_name"] == "build").unwrap();
+        let team = if team_box { json!("tm_1") } else { Value::Null };
+        assert_eq!(pane["session_project"]["team"], team, "{pane}");
+        assert!(!projects(&d).values().any(|p| p == other), "none in {other}: {:?}", projects(&d));
+    }
 }
