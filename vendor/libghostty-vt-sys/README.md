@@ -47,8 +47,9 @@ checkout's `zig-pkg/`, so a cached checkout builds without the network.
 
 - `0001-no-signal-stack.patch`: no 256 KiB threadlocal signal stack, which
   glibc allocated for every thread in the daemon (S9, M9).
-- `0002-msvc-stl-clang-mismatch.patch`: simdutf builds against MSVC 14.52's
-  STL, which wants clang 22 where Zig 0.16 has 21 (Arugula #1187).
+- `0002-msvc-stl-clang-mismatch.patch`: Ghostty's C++ (simdutf and
+  `src/simd`) builds against MSVC 14.52's STL, which wants clang 22 where
+  Zig 0.16 has 21 (Arugula #1187).
 
 When libghostty-rs moves, copy its `crates/libghostty-vt-sys` again, keep
 the patch step in `fetch_ghostty`, and check that the patches still apply.
