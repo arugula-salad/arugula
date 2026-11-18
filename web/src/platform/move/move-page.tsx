@@ -12,6 +12,14 @@
 // reader's own machine that answers), they can be picked, whoever owns the
 // target, and the machine moves them once the rest has; anywhere else the
 // group says where they move from, with a link there.
+//
+// Sessions too (Arugula #1166), by machine: one a moving repo placed comes
+// with it, ticked and locked, even from an offline machine (once it's
+// back); any other on the reader's own online machines is picked one by
+// one, and control tells its machine to move it, set by hand. Another's
+// machine's, or an offline one's, are listed without a box, saying why.
+// Before you move and Comes along say who will see them, as the planner
+// does.
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import { usePlatformApi } from "../../shared/platform-api";
@@ -27,7 +35,7 @@ import { Missing } from "../pages/project";
 import { follow, go, pathOf } from "../router";
 import { session, type PlatformProject } from "../session";
 import { toast } from "../toast";
-import { askOf, changed, matches, move, noPicks, plan, type Picks, type Plan } from "./plan";
+import { askOf, brought, changed, matches, move, noPicks, plan, sessionsSaid, whoLine, type Picks, type Plan, type SourceMachine } from "./plan";
 import "./move.css";
 
 /** A list longer than this gets a search (as a menu of 13 rows gets a filter). */
@@ -60,13 +68,14 @@ function Mover({ p }: { p: PlatformProject }) {
   const writes = new Set(all.filter((o) => o.role === "owner" || o.role === "editor").map((o) => o.key));
   const targets = session.projects.filter((x) => x.id !== p.id && !x.archived && writes.has(ownerKey(x)));
   const [picks, setPicks] = useState<Picks>(() => noPicks(mine));
-  const [q, setQ] = useState({ repos: "", boards: "", docs: "", issues: "" });
+  const [q, setQ] = useState({ repos: "", boards: "", docs: "", issues: "", sessions: "" });
   const [out, setOut] = useState<Plan | null>(null);
   const [err, setErr] = useState("");
   const [said, setSaid] = useState("");
   const [busy, setBusy] = useState(false);
   // Ask the planner again once the picks settle; an older answer is dropped.
-  const ask = askOf(picks);
+  const machines = out?.source.machines ?? [];
+  const ask = askOf(picks, machines);
   const key = JSON.stringify(ask);
   const asked = useRef(key);
   asked.current = key;
@@ -108,7 +117,7 @@ function Mover({ p }: { p: PlatformProject }) {
 
   const set = (f: (n: Picks) => void) =>
     setPicks((old) => {
-      const n = { ...old, repos: new Set(old.repos), boards: new Set(old.boards), issues: new Set(old.issues), docs: new Set(old.docs), machineDocs: new Set(old.machineDocs) };
+      const n = { ...old, repos: new Set(old.repos), boards: new Set(old.boards), issues: new Set(old.issues), docs: new Set(old.docs), machineDocs: new Set(old.machineDocs), sessions: new Set(old.sessions) };
       f(n);
       return n;
     });
@@ -126,7 +135,7 @@ function Mover({ p }: { p: PlatformProject }) {
     setErr("");
     setSaid("");
     try {
-      const done = await move(p.id, askOf(picks));
+      const done = await move(p.id, askOf(picks, machines));
       // Then each machine its Docs, into the project the rest went to.
       const stayed: string[] = [];
       const listed = new Set(out?.along.machine_docs.flatMap((m) => m.docs.map((d) => `${m.machine}/${d.id}`)));
@@ -137,7 +146,9 @@ function Mover({ p }: { p: PlatformProject }) {
         if (why) stayed.push(why);
       }
       await session.load();
-      toast(stayed.length ? `Moved to ${done.to.name}. ${stayed.length === 1 ? "A Doc" : `${stayed.length} Docs`} stayed on its machine: ${stayed[0]}` : `Moved to ${done.to.name}.`);
+      const docs = stayed.length ? ` ${stayed.length === 1 ? "A Doc" : `${stayed.length} Docs`} stayed on its machine: ${stayed[0]}` : "";
+      const sessions = sessionsSaid(done);
+      toast(`Moved to ${done.to.name}.${sessions ? ` ${sessions}` : ""}${docs}`);
       go(pathOf({ page: "project", project: done.to.id }, names));
     } catch (e) {
       if (!changed(e)) {
@@ -146,7 +157,7 @@ function Mover({ p }: { p: PlatformProject }) {
       }
       // Something moved under the plan: nothing did here. The plan as it is now.
       try {
-        setOut(await plan(p.id, askOf(picks)));
+        setOut(await plan(p.id, askOf(picks, machines)));
         setSaid("Something changed; here's the new plan.");
       } catch (again) {
         setErr((again as Error).message);
@@ -160,6 +171,9 @@ function Mover({ p }: { p: PlatformProject }) {
   const repoRows = (src?.repos ?? []).filter((r) => matches(r.name, q.repos));
   const boardRows = (src?.boards ?? []).filter((b) => matches(b.title, q.boards));
   const along = out?.along;
+  const movingSessions = along?.machine_sessions ?? [];
+  const nMoving = movingSessions.reduce((n, m) => n + m.sessions.length, 0);
+  const pickable = machines.flatMap((m) => (m.online && m.yours ? m.sessions.filter((s) => !brought(s, picks) && matches(s.name, q.sessions)).map((s) => `${m.id}/${s.id}`) : []));
   return (
     <section class="platform-section sw-page move-page" data-move-page={p.id}>
       <PageHeader title="Move to project" back={{ href: settings, label: `${p.name} settings`, onClick: (e) => follow(e, settings) }} sub={`From ${p.name}.`} />
@@ -198,7 +212,7 @@ function Mover({ p }: { p: PlatformProject }) {
               )}
             </div>
           </Section>
-          <Section id="move-what" title="What moves" lede="A repo brings its boards, issues and sessions.">
+          <Section id="move-what" title="What moves" lede={src?.machines ? "A repo brings its boards, issues and the sessions it placed. Pick other sessions one by one." : "A repo brings its boards, issues and sessions."}>
             {!src ? (
               <p class="dim" data-move-loading>
                 Reading {p.name}…
@@ -282,6 +296,26 @@ function Mover({ p }: { p: PlatformProject }) {
                     />
                   </>
                 )}
+                {machines.length > 0 && (
+                  <>
+                    <h3 class="move-sub">Sessions</h3>
+                    <PickList
+                      label="Sessions"
+                      data-move-sessions
+                      groups={sessionGroups(machines, picks, q.sessions, p.name)}
+                      toggle={(k, on) => set((n) => flip(n.sessions, k, on))}
+                      search={searchOver(
+                        machines.reduce((n, m) => n + m.sessions.length, 0),
+                        q.sessions,
+                        (v) => setQ({ ...q, sessions: v }),
+                        "Search sessions",
+                        pickable,
+                        picks.sessions,
+                        (keys, on) => set((n) => keys.forEach((k) => flip(n.sessions, k, on))),
+                      )}
+                    />
+                  </>
+                )}
               </>
             )}
           </Section>
@@ -351,7 +385,22 @@ function Mover({ p }: { p: PlatformProject }) {
                   rows={along.environments.map((e) => ({ key: e.id, title: e.name, meta: plural(e.deploys, "deploy", true) }))}
                   data-move-along-environments
                 />
-                <CountList n={along.sessions} label={plural(along.sessions, "session")} data-move-along-sessions />
+                {along.machine_sessions ? (
+                  <>
+                    <CountList
+                      n={nMoving}
+                      label={plural(nMoving, "session")}
+                      rows={movingSessions.flatMap((m) =>
+                        m.sessions.map((s) => ({ key: `${m.machine}/${s.id}`, title: s.name, meta: `on ${m.name}${m.online ? "" : ", when it's back"} · ${s.who}` })),
+                      )}
+                      note={<span data-move-sessions-who>{whoLine(movingSessions)}</span>}
+                      data-move-along-sessions
+                    />
+                    <CountList n={along.sessions} label={plural(along.sessions, "cloud workspace session")} data-move-along-cloud-sessions />
+                  </>
+                ) : (
+                  <CountList n={along.sessions} label={plural(along.sessions, "session")} data-move-along-sessions />
+                )}
                 <CountList n={along.drafts} label={`${plural(along.drafts, "draft")} waiting`} data-move-along-drafts />
               </div>
             )}
@@ -384,6 +433,30 @@ function repoDetail(r: Plan["source"]["repos"][number]): string | null {
 function searchOver(rows: number, query: string, setQuery: (q: string) => void, placeholder: string, keys: string[], picked: Set<string>, tick: (keys: string[], on: boolean) => void) {
   if (rows < SEARCH_FROM) return undefined;
   return { query, setQuery, placeholder, matching: keys.length, all: () => tick(keys, true), clear: () => tick([...picked], false), picked: picked.size };
+}
+
+/** The project's sessions, by machine: one a picked repo placed is in,
+ * locked; another can be picked on the reader's own online machines, and
+ * is listed without a box elsewhere, the group saying why. */
+function sessionGroups(machines: SourceMachine[], picks: Picks, q: string, project: string): PickGroup[] {
+  return machines.map((m) => {
+    const mine = m.online && m.yours;
+    const note = !m.online ? `${m.name} is offline: its other sessions can be picked once it's back.` : !m.yours ? `${m.owner}'s machine: ${m.owner} moves these from each session's menu.` : null;
+    return {
+      key: m.id,
+      title: `On ${m.name}`,
+      note,
+      data: { "data-move-sessions-machine": m.id },
+      items: m.sessions
+        .filter((s) => matches(s.name, q))
+        .map((s): Pick => {
+          const key = `${m.id}/${s.id}`;
+          if (brought(s, picks)) return { key, title: s.name, on: true, why: `with ${s.repo}${m.online ? "" : " · when it's back"}` };
+          const how = s.by_hand ? "Set by hand" : s.repo ? `Placed by ${s.repo}` : `Placed in ${project}`;
+          return mine ? { key, title: s.name, detail: how, on: picks.sessions.has(key) } : { key, title: s.name, detail: m.online ? `${m.owner}'s` : "Offline", on: false, fixed: true };
+        }),
+    };
+  });
 }
 
 /** Whether Doc `id` is on a board that moves, so it comes along. */

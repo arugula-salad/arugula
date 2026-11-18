@@ -160,3 +160,43 @@ fn control_puts_a_session_on_a_card_and_takes_it_back() {
         "card": "acme/app#7" });
     assert_eq!(ask(&d, &f, "c4", github)["answer"], "failed");
 }
+
+/// Arugula #1166: Move to project moves a session one by one
+/// (`sessions.set_project`). It's in the project, set by hand, so its repo
+/// doesn't move it back.
+#[test]
+fn control_moves_a_session_to_a_project_by_hand() {
+    let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+    let f = Fake::default();
+    let url = serve(&rt, f.clone());
+    let mut d = arugulad!("sessionproject").no_provider().no_tailscale().wait_secs(30).start();
+    d.stop();
+    enroll(&d.state, &url);
+    d.start();
+    d.wait_for("the relay", || f.to_daemon.lock().unwrap().is_some());
+    let ops = f.said.lock().unwrap().iter().find(|v| v["t"] == "ops").cloned().unwrap();
+    assert!(ops["ops"].as_array().unwrap().contains(&json!("sessions.set_project")), "{ops}");
+
+    let a = d.post("/api/run", json!({ "session": "release" }))["pane"].as_u64().unwrap();
+    let session =
+        d.get("/api/panes").as_array().unwrap().iter().find(|p| p["id"] == a).unwrap()["session"].as_u64().unwrap();
+    let move_it = json!({ "op": "sessions.set_project", "session": session.to_string(), "project": "prj_2",
+        "project_name": "Factorio mods" });
+    assert_eq!(ask(&d, &f, "p1", move_it)["answer"], "done");
+    let chip =
+        d.get("/api/panes").as_array().unwrap().iter().find(|p| p["id"] == a).unwrap()["session_project"].clone();
+    assert_eq!(chip, json!({ "id": "prj_2", "name": "Factorio mods" }));
+    d.stop();
+    let layout: Value = serde_json::from_str(&std::fs::read_to_string(d.state.join("layout.json")).unwrap()).unwrap();
+    let saved = layout["mux"]["sessions"].as_array().unwrap().iter().find(|s| s["id"] == session).unwrap().clone();
+    assert_eq!((&saved["project"]["id"], &saved["project_by_hand"]), (&json!("prj_2"), &json!(true)), "{saved}");
+    d.start();
+    d.wait_for("the relay", || f.to_daemon.lock().unwrap().is_some());
+
+    // No such session, or not a project: refused, with why.
+    let none = json!({ "op": "sessions.set_project", "session": "999", "project": "prj_2", "project_name": "x" });
+    assert_eq!(ask(&d, &f, "p2", none)["answer"], "failed");
+    let personal = json!({ "op": "sessions.set_project", "session": session.to_string(), "project": "personal",
+        "project_name": "x" });
+    assert_eq!(ask(&d, &f, "p3", personal)["answer"], "failed");
+}

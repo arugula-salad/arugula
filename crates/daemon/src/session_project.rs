@@ -34,10 +34,14 @@
 //! placed as a new pane's would be, so those from before this one, and
 //! those made while control was away, get theirs then. One taken out of
 //! its project by hand stays out.
+//!
+//! Move to project moves sessions one by one too (Arugula #1166): control
+//! asks `sessions.set_project` over the relay, for the machine's owner, and
+//! the session takes it as set by hand, so its repo never moves it back.
 
 use std::sync::Arc;
 
-use arugula_control_wire::forge::OpAnswer;
+use arugula_control_wire::forge::{OpAnswer, SessionProjectAsk};
 use arugula_core::ProjectRef;
 use arugula_proto::{EventKind, SessionId};
 use tokio::sync::broadcast::error::RecvError;
@@ -193,6 +197,30 @@ pub async fn repo_moved(mux: &MuxHandle, control: &Control, repo: &str) -> OpAns
     OpAnswer::Done { url: None, routed: None }
 }
 
+/// `sessions.set_project` (Arugula #1166): `done` once the session is in
+/// the project, set by hand; `failed` with why not.
+pub async fn set(mux: &MuxHandle, ask: &SessionProjectAsk) -> OpAnswer {
+    let put = async {
+        let (session, project) = asked(ask)?;
+        mux.api(|r| Api::SetSessionProject(session, project, r)).await.ok_or("the daemon is shutting down")??;
+        debug!(session, project = ask.project, "a session moved to a project from control");
+        Ok::<_, String>(())
+    };
+    match put.await {
+        Ok(()) => OpAnswer::Done { url: None, routed: None },
+        Err(error) => OpAnswer::Failed { error },
+    }
+}
+
+/// What an ask names: the session and its project, or why it names none.
+fn asked(ask: &SessionProjectAsk) -> Result<(SessionId, ProjectRef), String> {
+    let session = ask.session.trim().parse().map_err(|_| format!("no session {:?} on this machine", ask.session))?;
+    let id = crate::machine_sessions::project_id(&ask.project)
+        .ok_or_else(|| format!("a session goes in a project (prj_…), not {:?}", ask.project))?;
+    let name = Some(ask.project_name.trim()).filter(|n| !n.is_empty()).unwrap_or(&id).to_owned();
+    Ok((session, ProjectRef { id, name }))
+}
+
 /// Ask control the project of each repo sessions' projects were inferred
 /// from (or only `only`), and move those sessions to it.
 async fn follow(mux: &MuxHandle, control: &Control, only: Option<&str>) {
@@ -200,5 +228,25 @@ async fn follow(mux: &MuxHandle, control: &Control, only: Option<&str>) {
     for repo in repos.into_iter().filter(|r| only.is_none_or(|o| o == r)) {
         let Some(project) = crate::mcp::issues::repo_project(control, &repo).await else { continue };
         mux.api(|r| Api::FollowRepo(repo, project, r)).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ask(session: &str, project: &str, name: &str) -> SessionProjectAsk {
+        SessionProjectAsk { session: session.into(), project: project.into(), project_name: name.into() }
+    }
+
+    /// A session's id here, and a project's `prj_…` id, named as the person
+    /// sees it (else by its id).
+    #[test]
+    fn an_ask_names_a_session_and_a_project() {
+        let p = |id: &str, name: &str| ProjectRef { id: id.into(), name: name.into() };
+        assert_eq!(asked(&ask("3", "prj_1", "Factorio mods")), Ok((3, p("prj_1", "Factorio mods"))));
+        assert_eq!(asked(&ask("3", "prj_1", " ")), Ok((3, p("prj_1", "prj_1"))));
+        assert!(asked(&ask("s3", "prj_1", "x")).is_err(), "not a session's id");
+        assert!(asked(&ask("3", "personal", "x")).is_err(), "not a project");
     }
 }

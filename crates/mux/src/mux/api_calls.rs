@@ -125,6 +125,9 @@ impl Daemon {
             Api::SetSessionWork(session, work, project_name, reply) => {
                 let _ = reply.send(self.intent(None, Intent::SetSessionWork { session, work, project_name }));
             }
+            Api::SetSessionProject(session, project, reply) => {
+                let _ = reply.send(self.intent(None, Intent::SetSessionProject { session, project: Some(project) }));
+            }
             Api::UnsetWork(session, reply) => {
                 let unset = self.mux.unset_work(session).map_err(|e| e.to_string());
                 if unset == Ok(true) {

@@ -209,6 +209,10 @@ pub enum Api {
     /// A session's work set by hand ([`Intent::SetSessionWork`]), and its
     /// project's name: why not, if it was refused.
     SetSessionWork(SessionId, Option<arugula_core::WorkRef>, Option<String>, oneshot::Sender<Result<(), String>>),
+    /// A session's project set by hand ([`Intent::SetSessionProject`]),
+    /// as Move to project asks it through control (Arugula #1166): why
+    /// not, if it was refused.
+    SetSessionProject(SessionId, arugula_core::ProjectRef, oneshot::Sender<Result<(), String>>),
     /// A session's card back to the one its branch gives (Arugula #1019,
     /// [`arugula_core::Mux::unset_work`]): why not, if there's no session.
     UnsetWork(SessionId, oneshot::Sender<Result<(), String>>),

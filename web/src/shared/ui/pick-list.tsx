@@ -38,6 +38,8 @@ export interface PickGroup {
   /** Beside the note: a link to where it can be done. */
   action?: ComponentChildren;
   items: Pick[];
+  /** The group's own hooks, as `data-*` attributes. */
+  data?: Record<`data-${string}`, string>;
 }
 
 export function PickList({
@@ -83,7 +85,7 @@ function Group({ g, toggle }: { g: PickGroup; toggle: (key: string, on: boolean)
   const [shown, setShown] = useState(PAGE);
   const more = g.items.length - shown;
   return (
-    <div class="pick-group" data-pick-group={g.key}>
+    <div class="pick-group" data-pick-group={g.key} {...g.data}>
       {g.title && (
         <div class="pick-group-head">
           <span class="pick-group-title">{g.title}</span>

@@ -1433,6 +1433,15 @@ pub struct MachineSession {
     pub work_item: Option<String>,
     #[serde(default)]
     pub panes: Vec<MachineSessionPane>,
+    /// The GitHub repo (`OWNER/NAME`) its project was inferred from, which
+    /// it follows (Arugula #992): Move to project moves it with that repo
+    /// (#1166). Sent only to a control that takes it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
+    /// Its project was set by hand: picked, or the one it was started in
+    /// (Arugula #1166). Sent only to a control that takes it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub by_hand: bool,
 }
 
 /// A pane of a [`MachineSession`]: its id and kind, never what it shows.
