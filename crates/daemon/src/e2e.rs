@@ -303,7 +303,7 @@ async fn serve_token(
         }
     };
     let input = arugula_proto::sharing::remote_input(app.control.state_dir());
-    let grant = token_grant(&claims, enrolled.saved.is_hosted(), input);
+    let grant = token_grant(&claims, enrolled.saved.is_hosted(), enrolled.owner_role_owns(&claims.sub), input);
     let (m2, ch) = responder.finish(&Welcome { now: arugula_e2e::now_ms() }.encode())?;
     out.send(m2).await?;
     let out = Arc::new(Out::new(ch, out));
@@ -355,12 +355,17 @@ pub(crate) struct TokenGrant {
     pub(crate) shown: &'static str,
 }
 
-/// What `claims` give here. The owner is this machine's owner; on a hosted
-/// machine an editor is too, as a team roster's editor is (M184). With
-/// remote input off, nobody through control is more than a viewer.
+/// What `claims` give here. An owner's token is this machine's owner when
+/// `owns` (`Enrolled::owner_role_owns`: its own account, or anyone on a
+/// machine that's the team's); a team owner on a teammate's machine is a
+/// teammate, whose owner's role counts as the team's on its projects'
+/// sessions (Arugula #1180). On a hosted machine an editor is the owner too,
+/// as a team roster's editor is (M184). With remote input off, nobody
+/// through control is more than a viewer.
 pub(crate) fn token_grant(
     claims: &arugula_control_wire::machine_token::MachineClaims,
     hosted: bool,
+    owns: bool,
     remote_input: bool,
 ) -> TokenGrant {
     use arugula_control_wire::machine_token::TokenRole;
@@ -372,7 +377,8 @@ pub(crate) fn token_grant(
         return TokenGrant { principal: user(), role: Some(Role::Viewer), shown: "viewer" };
     }
     match claims.role {
-        TokenRole::Owner => TokenGrant { principal: crate::acl::Principal::Owner, role: None, shown: "owner" },
+        TokenRole::Owner if owns => TokenGrant { principal: crate::acl::Principal::Owner, role: None, shown: "owner" },
+        TokenRole::Owner => TokenGrant { principal: user(), role: Some(Role::Owner), shown: "owner" },
         TokenRole::Editor if hosted => {
             TokenGrant { principal: crate::acl::Principal::Owner, role: None, shown: "editor" }
         }
@@ -390,10 +396,11 @@ pub(crate) fn token_grant(
 pub(crate) fn token_owns(
     role: arugula_control_wire::machine_token::TokenRole,
     hosted: bool,
+    owns: bool,
     remote_input: bool,
 ) -> bool {
     use arugula_control_wire::machine_token::TokenRole;
-    remote_input && (role == TokenRole::Owner || (role == TokenRole::Editor && hosted))
+    remote_input && ((role == TokenRole::Owner && owns) || (role == TokenRole::Editor && hosted))
 }
 
 /// What the remote sessions log says of a channel, and what it holds in
@@ -553,7 +560,8 @@ async fn run_client(
 }
 
 /// The device on the other end of a channel (S34, #399): which account it
-/// is, whatever its principal (every team owner is `Owner` on a team box).
+/// is, whatever its principal (every team owner is `Owner` on a team box
+/// or a cloud workspace).
 /// Handlers that decide by account (the agents') read it.
 #[derive(Debug, Clone)]
 #[cfg_attr(not(feature = "labs"), allow(dead_code))]
@@ -1031,7 +1039,7 @@ mod token_grants {
     fn each_role_gives_what_it_says() {
         let user = Principal::User { id: "account:acct".into(), name: "bee".into(), pic: None };
         let g = |r, hosted, input| {
-            let g = token_grant(&claims(r), hosted, input);
+            let g = token_grant(&claims(r), hosted, true, input);
             (g.principal, g.role)
         };
         assert_eq!(g(TokenRole::Owner, false, true), (Principal::Owner, None));
@@ -1043,16 +1051,28 @@ mod token_grants {
         // Remote input off: nobody through control types.
         assert_eq!(g(TokenRole::Owner, false, false), (user.clone(), Some(Role::Viewer)));
         assert_eq!(g(TokenRole::Editor, true, false), (user.clone(), Some(Role::Viewer)));
-        assert_eq!(g(TokenRole::Guest, false, false), (user, None));
+        assert_eq!(g(TokenRole::Guest, false, false), (user.clone(), None));
+        // A team owner on a teammate's machine (Arugula #1180): a teammate,
+        // with the owner's role as the team's, which the ACL holds to
+        // watching the team's projects' sessions.
+        let teammate = |input| {
+            let g = token_grant(&claims(TokenRole::Owner), false, false, input);
+            (g.principal, g.role)
+        };
+        assert_eq!(teammate(true), (user.clone(), Some(Role::Owner)));
+        assert_eq!(teammate(false), (user, Some(Role::Viewer)));
     }
 
     #[test]
     fn a_block_grant_needs_what_gets_in_as_the_owner() {
         for role in [TokenRole::Owner, TokenRole::Editor, TokenRole::Viewer, TokenRole::Guest] {
             for hosted in [false, true] {
-                for input in [false, true] {
-                    let owner = token_grant(&claims(role), hosted, input).principal == Principal::Owner;
-                    assert_eq!(token_owns(role, hosted, input), owner, "{role:?} hosted {hosted} input {input}");
+                for owns in [false, true] {
+                    for input in [false, true] {
+                        let owner = token_grant(&claims(role), hosted, owns, input).principal == Principal::Owner;
+                        let why = format!("{role:?} hosted {hosted} owns {owns} input {input}");
+                        assert_eq!(token_owns(role, hosted, owns, input), owner, "{why}");
+                    }
                 }
             }
         }

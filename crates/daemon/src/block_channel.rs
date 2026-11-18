@@ -127,9 +127,11 @@ async fn check(app: &App, id: &str, remote: &[u8; 32], payload: &[u8]) -> Result
         if arugula_e2e::keys::hex32(&claims.key).map_err(|_| Refused::Malformed)? != *remote {
             return Err(Refused::OtherKey);
         }
-        let hosted = app.control.enrolled().is_some_and(|e| e.saved.is_hosted());
+        let e = app.control.enrolled();
+        let hosted = e.as_ref().is_some_and(|e| e.saved.is_hosted());
+        let owns = e.as_ref().is_some_and(|e| e.owner_role_owns(&claims.sub));
         let input = arugula_proto::sharing::remote_input(app.control.state_dir());
-        if !crate::e2e::token_owns(claims.role, hosted, input) {
+        if !crate::e2e::token_owns(claims.role, hosted, owns, input) {
             return Err(Refused::Untrusted);
         }
         let site = site(&claims.block).ok_or(Refused::NoBlock)?;
