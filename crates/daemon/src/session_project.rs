@@ -147,20 +147,20 @@ async fn place_default(
 ) -> Option<String> {
     let default = match known {
         Some(d) => d,
-        None => crate::mcp::issues::owners_personal(control).await?,
+        None => crate::mcp::issues::unplaced_home(control).await?,
     };
     let id = default.id.clone();
     if mux.api(|r| Api::DefaultProject(session, default, r)).await != Some(true) {
         return None;
     }
-    debug!(session, project = id, "a session nothing placed, in the owner's personal project");
+    debug!(session, project = id, "a session nothing placed, in the default project");
     Some(id)
 }
 
 /// Every session still without a project, and not taken out of one by
 /// hand, placed as a new pane's would be: by its panes here in a linked
-/// clone, else in the owner's personal project. Control is asked the
-/// default once.
+/// clone, else in the owner's personal project, or on a team's box the
+/// team's default (Arugula #1182). Control is asked the default once.
 async fn place_unplaced(mux: &MuxHandle, control: &Control) {
     let Some(sessions) = mux.api(Api::Sessions).await else { return };
     let unplaced: Vec<SessionId> = sessions.iter().filter(|s| s.unplaced()).map(|s| s.id).collect();
@@ -187,7 +187,7 @@ async fn place_unplaced(mux: &MuxHandle, control: &Control) {
             continue;
         }
         if default.is_none() {
-            default = crate::mcp::issues::owners_personal(control).await;
+            default = crate::mcp::issues::unplaced_home(control).await;
             // No answer: the next connect asks again.
             if default.is_none() {
                 return;

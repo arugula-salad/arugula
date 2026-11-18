@@ -132,6 +132,18 @@ fn enroll(state: &std::path::Path, control: &str) {
     std::fs::write(state.join("control.json"), saved.to_string()).unwrap();
 }
 
+/// Joined on control's word for team `tm_1`, as `arugulad join --team`
+/// does (Arugula #1182): the team's box, with no root pinned.
+fn enroll_box(state: &std::path::Path, control: &str) {
+    let keys = DeviceKeys::load_or_create(&state.join("daemon.key")).unwrap();
+    let mut cert = Cert::new(&keys, "a1", Kind::Daemon, "test");
+    cert.sign_with(&keys);
+    let team = json!({ "id": "tm_1", "name": "Acme" });
+    let saved = json!({ "url": control, "by_control": { "at": 1, "team": team, "team_owned": true }, "cert": cert,
+                        "login": "jake" });
+    std::fs::write(state.join("control.json"), saved.to_string()).unwrap();
+}
+
 /// A clone of `repo` (`owner/name`) at `dir`.
 fn clone_at(dir: &std::path::Path, repo: &str) {
     std::fs::create_dir_all(dir).unwrap();
@@ -321,4 +333,30 @@ fn every_session_has_a_project_the_owners_personal_when_nothing_places_it() {
     d.wait_for("redialled", || *f.dials.lock().unwrap() > dials && f.to_daemon.lock().unwrap().is_some());
     std::thread::sleep(std::time::Duration::from_secs(2));
     assert_eq!(projects(&d)["early"], Value::Null);
+}
+
+/// Arugula #1182: a box joined for a team is the team's. A session nothing
+/// places goes in the team's default project, with its team, so the team
+/// sees it; not in the person's who approved the join.
+#[test]
+fn on_a_box_joined_for_a_team_a_session_nothing_places_goes_in_the_teams_project() {
+    let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+    let f = Fake::default();
+    *f.default.lock().unwrap() = Some(("prj_t".into(), "Acme".into()));
+    *f.personal.lock().unwrap() = Some(("prj_d".into(), "Personal".into()));
+    let url = serve(&rt, f.clone());
+    let mut d = arugulad!("teambox").no_provider().no_tailscale().wait_secs(30).start();
+    d.stop();
+    enroll_box(&d.state, &url);
+    d.start();
+    d.wait_for("the relay", || f.to_daemon.lock().unwrap().is_some());
+    let plain = d.state.join("plain");
+    std::fs::create_dir_all(&plain).unwrap();
+
+    d.post("/api/run", json!({ "session": "build", "cwd": plain }));
+    d.wait_for("placed in the team's project", || projects(&d).get("build") == Some(&json!("prj_t")));
+    let panes = d.get("/api/panes");
+    let pane = panes.as_array().unwrap().iter().find(|p| p["session_name"] == "build").unwrap();
+    assert_eq!(pane["session_project"]["team"], "tm_1", "{pane}");
+    assert!(!projects(&d).values().any(|p| p == "prj_d"), "none in a person's own project: {:?}", projects(&d));
 }

@@ -16,8 +16,8 @@
 //! project's team isn't known yet, are the owner's and whoever they're
 //! shared with: a share with a person stays wherever the session goes, and
 //! a share with a team counts only while the session is in its project.
-//! A cloud workspace is its project's: there the team role counts on every
-//! session, as before.
+//! A cloud workspace is its project's, and a box joined for a team is the
+//! team's (Arugula #1182): there the team role counts on every session.
 
 use std::{
     collections::BTreeMap,
@@ -138,8 +138,8 @@ pub struct Acl {
     team: RwLock<std::collections::HashMap<String, Role>>,
     /// The team this machine is in (Arugula #1162), when it's a team's.
     machine_team: RwLock<Option<String>>,
-    /// It's a cloud workspace: its project's, so the team's role counts on
-    /// every session.
+    /// It's a cloud workspace (its project's) or a box joined for a team
+    /// (the team's, Arugula #1182): the team's role counts on every session.
     hosted: RwLock<bool>,
     /// The team whose project each session is in, for the sessions in a
     /// team's project control named (Arugula #1162).
@@ -294,7 +294,7 @@ impl Acl {
     }
 
     /// The team this machine is in, if any (Arugula #1162), and whether
-    /// it's a cloud workspace.
+    /// it's the team's own (a cloud workspace, or a box joined for it).
     pub fn set_machine_team(&self, team: Option<String>, hosted: bool) {
         *self.machine_team.write().unwrap() = team;
         *self.hosted.write().unwrap() = hosted;
@@ -793,14 +793,22 @@ mod tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
 
-    /// A cloud workspace is its project's: its team's members keep their
-    /// role on every session, whatever its project.
+    /// A cloud workspace is its project's, and a box joined for a team the
+    /// team's (Arugula #1182): its team's members keep their role on every
+    /// session, whatever its project, an editor's token's included.
     #[test]
     fn a_cloud_workspaces_team_keeps_its_role_everywhere() {
         let (dir, acl) = opened("hosted");
         acl.set_machine_team(Some("t1".into()), true);
         acl.set_team_roles([("account:c1".to_owned(), Role::Viewer)].into());
+        acl.hold("account:b1", Hold::token(Some(Role::Editor), false));
         assert_eq!(acl.role_of("account:c1", 1), Some(Role::Viewer), "no project's team known");
+        acl.set_session_teams([(2, "t2".to_owned())]);
+        assert_eq!(acl.role_of("account:b1", 1), Some(Role::Editor), "in no team's project");
+        assert_eq!(acl.role_of("account:b1", 2), Some(Role::Editor), "in another team's");
+        // A person's machine in the team: #1162's rule.
+        acl.set_machine_team(Some("t1".into()), false);
+        assert_eq!((acl.role_of("account:b1", 1), acl.role_of("account:b1", 2)), (None, None));
         std::fs::remove_dir_all(dir).unwrap();
     }
 

@@ -209,6 +209,9 @@ pub struct ByControl {
     /// is checked against it, and it lets nobody in.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub team: Option<wire::JoinedTeam>,
+    /// It joined for that team: the team's box (Arugula #1182).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub team_owned: bool,
 }
 
 /// What a machine is (#672, docs/data-model.md "Machines and compute"):
@@ -459,6 +462,15 @@ impl Saved {
             (None, Some(b)) => b.team.as_ref().map(|t| t.id.clone()),
             (None, None) => None,
         }
+    }
+
+    /// The team whose box this is, when control joined it for a team
+    /// (Arugula #1182): its sessions go in the team's project, and the team
+    /// keeps its roles on every one. Not a person's machine moved into a
+    /// team: there the team watches its projects' sessions (#1162).
+    pub fn team_box(&self) -> Option<String> {
+        let b = self.by_control().filter(|b| b.team_owned)?;
+        b.team.as_ref().map(|t| t.id.clone())
     }
 
     /// The team's pin, when there is a team.
@@ -2637,9 +2649,11 @@ impl Control {
         }
         crate::sites::set_control_origins(origins);
         self.acl.set_team_roles(e.as_ref().map(|e| e.team_roles.clone()).unwrap_or_default());
+        // A cloud workspace, or a box joined for its team (Arugula #1182):
+        // the team's roles count on every session.
         self.acl.set_machine_team(
             e.as_ref().and_then(|e| e.saved.team_id()),
-            e.as_ref().is_some_and(|e| e.saved.is_hosted()),
+            e.as_ref().is_some_and(|e| e.saved.is_hosted() || e.saved.team_box().is_some()),
         );
         self.acl.set_shared_teams(e.as_ref().map(|e| e.shared_roles.clone()).unwrap_or_default());
         *self.now.write().unwrap() = e.map(Arc::new);
@@ -4463,7 +4477,11 @@ fn saved_by_control(url: &str, ask: &Cert, j: &wire::Joined) -> anyhow::Result<(
     }
     let saved = Saved {
         url: url.to_owned(),
-        root: Root::Control(ByControl { at: now_ms(), team: j.team.clone() }),
+        root: Root::Control(ByControl {
+            at: now_ms(),
+            team: j.team.clone(),
+            team_owned: j.team_owned && j.team.is_some(),
+        }),
         cert: Cert { account: j.account.clone(), ..ask.clone() },
         certs: vec![],
         revocations: vec![],
@@ -5207,10 +5225,36 @@ pub(crate) mod tests {
     fn by_control(team: Option<wire::JoinedTeam>) -> (DeviceKeys, Saved) {
         let keys = DeviceKeys::generate();
         let ask = Cert { account: String::new(), ..Cert::new(&keys, "", Kind::Daemon, "box") };
-        let j = wire::Joined { account: "acct1".into(), login: "sam".into(), machine: keys.id(), team };
+        let j =
+            wire::Joined { account: "acct1".into(), login: "sam".into(), machine: keys.id(), team, team_owned: false };
         let (saved, joined) = saved_by_control("https://control.example", &ask, &j).unwrap();
         assert_eq!(joined.key, fingerprint(&keys.id()));
         (keys, saved)
+    }
+
+    /// Arugula #1182: a box control joined for a team is the team's box,
+    /// through a save; one joined as a person's machine in the team isn't,
+    /// nor is one control names no team for, nor a file from before.
+    #[test]
+    fn a_box_joined_for_a_team_is_the_teams() {
+        let keys = DeviceKeys::generate();
+        let ask = Cert { account: String::new(), ..Cert::new(&keys, "", Kind::Daemon, "box") };
+        let acme = || Some(wire::JoinedTeam { id: "tm_1".into(), name: "Acme".into() });
+        let saved = |team: Option<wire::JoinedTeam>, team_owned: bool| {
+            let j = wire::Joined { account: "acct1".into(), login: "sam".into(), machine: keys.id(), team, team_owned };
+            saved_by_control("https://control.example", &ask, &j).unwrap().0
+        };
+        let team_box = saved(acme(), true);
+        assert_eq!(team_box.team_box().as_deref(), Some("tm_1"));
+        let v = serde_json::to_value(&team_box).unwrap();
+        assert_eq!(v["by_control"]["team_owned"], true, "{v}");
+        let back: Saved = serde_json::from_value(v).unwrap();
+        assert_eq!(back.team_box().as_deref(), Some("tm_1"));
+
+        let persons = saved(acme(), false);
+        assert_eq!((persons.team_box(), persons.team_id().as_deref()), (None, Some("tm_1")));
+        assert!(serde_json::to_value(&persons).unwrap()["by_control"].get("team_owned").is_none());
+        assert_eq!(saved(None, true).team_box(), None, "no team named");
     }
 
     /// aru-141: a join on control's word saves no root. Its file has no
@@ -5286,7 +5330,13 @@ pub(crate) mod tests {
 
         // Control adding some other machine isn't joined.
         let ask = Cert::new(&keys, "", Kind::Daemon, "box");
-        let other = wire::Joined { account: "a".into(), login: "".into(), machine: "elsewhere".into(), team: None };
+        let other = wire::Joined {
+            account: "a".into(),
+            login: "".into(),
+            machine: "elsewhere".into(),
+            team: None,
+            team_owned: false,
+        };
         assert!(saved_by_control("https://c", &ask, &other).is_err());
     }
 
@@ -6351,7 +6401,7 @@ pub(crate) mod tests {
             |team: Option<&TeamPin>, at| Move { team: team.cloned(), at, by: String::new(), sig: String::new() };
         for root in [
             Root::Pinned(Trust { account: "a".into(), root: root.device.clone() }),
-            Root::Control(ByControl { at: 1, team: None }),
+            Root::Control(ByControl { at: 1, team: None, team_owned: false }),
         ] {
             let mut saved = Saved {
                 url: String::new(),
