@@ -1086,7 +1086,11 @@ older daemon or CLI prints no secret), `arugulad join --account
 <fingerprint>` (and `arugula join --account`, and `arugula login
 --account`) takes the account without asking; the fingerprint is what
 `signin` printed. A machine that made a secret and gets an approval
-without its MAC refuses unless `--account` names the account. `just
+without its MAC refuses unless `--account` names the account. A
+one-click Add (a page with no device key, `ControlSession.addJoin`) needs
+a MAC too, `oneClickMac` under the secret: control refuses one sent with
+the code alone, and the machine checks it. A spec that adds a machine in
+one click opens the whole link. `just
 control-smoke` and the testnet's `control` claims pass both. `approve`
 takes a CLI's code from `arugula login` as well as a daemon's.
 

@@ -18,8 +18,10 @@ import { clearHash } from "./common";
 /** A machine's join, by its code: from its approval link, or typed in.
  *
  * #1003: a browser that isn't one of the account's devices adds a machine
- * in one click (aru-141): nothing to compare and no secret to answer, since
- * control decides who reaches the machine.
+ * in one click (aru-141): nothing to compare, since control decides who
+ * reaches the machine. A machine whose link carries a secret takes the Add
+ * only with a MAC under it, so it's added from the whole link (or the
+ * whole code typed in), not the code alone.
  *
  * #760: from a device, a machine whose link carries a secret
  * (`CODE.SECRET`) is approved with a MAC under it, and there's nothing to
@@ -104,7 +106,8 @@ export function JoinPrompt({ s, code: whole }: { s: ControlSession; code: string
   // #760: the secret from the link (or the whole code typed in Look up),
   // else the rest of the code typed here.
   const secret = parts?.secret ?? (typed.bad ? null : normalizeSecret(typed.rest));
-  const sealed = !!j && !oneClick && (!!parts?.secret || takesSecret(j));
+  // In one click too: the machine checks the Add's MAC under its secret.
+  const sealed = !!j && (!!parts?.secret || takesSecret(j));
   // Named, so it reads apart from a device's field below it (#761).
   const askWhole =
     j && sealed && !parts?.secret ? (
@@ -229,7 +232,7 @@ export function JoinPrompt({ s, code: whole }: { s: ControlSession; code: string
             setBusy(true);
             try {
               // The machine, then the devices that came with it.
-              if (oneClick) await s.addJoin(j.code, team?.team ?? null, teamBox);
+              if (oneClick) await s.addJoin(j.code, j.cert, team?.team ?? null, teamBox, sealed ? secret : null);
               else await s.approveJoin(j.code, j.cert, team?.team ?? null, secret, teamBox);
               clearHash();
             } catch (e) {

@@ -730,6 +730,23 @@ would pass. So the daemon doesn't take the root on control's word. Since
   root it kept itself. Getting started no longer refuses it (#1003): it
   saves whatever control approves, as it saves a one-click Add (aru-141).
   `arugulad join` and `arugula login` still check.
+- **A one-click Add answers the secret too** (aru-141, with a control whose
+  `/control.json` says `join_secret: 2`). A page with no device key adds a
+  machine with no certificate, and with it sends
+  `HMAC-SHA256(secret, "arugula one-click join v1", account, the machine's device id and keys)`
+  (`arugula_e2e::cert::one_click_mac`), over the account's id, since such
+  an account may have no root. Control refuses an Add with no MAC for a
+  machine that made a secret, telling the person to open the link the
+  machine printed, and passes the MAC on in the machine's poll. The
+  machine checks it against the account control says added it before it
+  saves anything; a missing or wrong one ends the join and drops the key,
+  as above. So adding a machine takes the whole link (or the whole code
+  typed in), not the code alone. With an older control the machine takes a
+  one-click Add as before. `--account FINGERPRINT` holds for a one-click
+  Add as well: the account must be that one, by its id or its root
+  device's, or the machine refuses it and stays unjoined. A join token
+  (`arugulad join --token`) is already bound to its account and needs
+  neither.
 - **What this rests on:** the machine's side is the daemon's own output
   (terminal, or its local page), which control doesn't serve. The other
   side is the approving device, and it's only as trustworthy as that

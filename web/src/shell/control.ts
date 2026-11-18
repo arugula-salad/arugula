@@ -11,7 +11,7 @@
 // signs no tokens (a dev or test hub), or `tokenMode` "off", still makes
 // the account's first browser its first device, with no screen.
 
-import { browserOrLegacyChained, certBody, certifies, fromApp, evaluate, hex, JOIN_SECRET, joinCode, joinMac, normalizeCode, splitJoinCode, type Cert, type Kind, type Revocation, revocationBody } from "./e2e/cert.ts";
+import { browserOrLegacyChained, certBody, certifies, fromApp, evaluate, hex, JOIN_SECRET, joinCode, joinMac, oneClickMac, normalizeCode, splitJoinCode, type Cert, type Kind, type Revocation, revocationBody } from "./e2e/cert.ts";
 import {
   forget,
   forgetEnrollment,
@@ -1924,12 +1924,18 @@ export class ControlSession {
    * edit) or this account's, and its poll answers with where it went. The
    * machine pins no account root, so devices don't reach it by their keys
    * (aru-141); machine tokens do. What a browser that isn't one of the
-   * account's devices does; a device signs the join, as before. */
-  /** Approve a machine's join in one click (aru-141): into this account,
-   * or into `team`, as its owner's machine also used for the team or, with
-   * `teamBox`, as the team's (Arugula #1182). */
-  async addJoin(code: string, team: string | null = null, teamBox = false) {
-    await this.approving(api(`/api/joins/${code}/approve`, team ? { team, team_box: teamBox } : { team }));
+   * account's devices does; a device signs the join, as before.
+   *
+   * Into this account, or into `team`, as its owner's machine also used
+   * for the team or, with `teamBox`, as the team's (Arugula #1182). With
+   * the join's `secret` (from its link), the Add carries a MAC under it
+   * over this account and the machine's keys (`oneClickMac`), which the
+   * machine checks before it saves the account: control never sees the
+   * secret, and a machine that made one takes no Add without it. */
+  async addJoin(code: string, c: Cert, team: string | null = null, teamBox = false, secret: string | null = null) {
+    const mac = secret ? await oneClickMac(secret, this.account, c) : null;
+    const body = { team, ...(team ? { team_box: teamBox } : {}), ...(mac ? { mac } : {}) };
+    await this.approving(api(`/api/joins/${code}/approve`, body));
     await this.refresh();
   }
 

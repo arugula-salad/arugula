@@ -832,20 +832,53 @@ fn join_mac_body(trust: &Trust, cert: &Cert) -> String {
     )
 }
 
-fn join_hmac(secret: &str, trust: &Trust, cert: &Cert) -> hkdf::hmac::Hmac<sha2::Sha256> {
+fn join_hmac(secret: &str, body: &str) -> hkdf::hmac::Hmac<sha2::Sha256> {
     use hkdf::hmac::{KeyInit, Mac};
     // The key is the secret's 16 characters, without the dashes.
     let key: String = secret.chars().filter(|c| *c != '-').collect();
     let mut m = <hkdf::hmac::Hmac<sha2::Sha256> as KeyInit>::new_from_slice(key.as_bytes()).expect("any key length");
-    m.update(join_mac_body(trust, cert).as_bytes());
+    m.update(body.as_bytes());
     m
+}
+
+/// Whether `mac` (hex) is the HMAC of `body` under `secret`, compared in
+/// constant time.
+fn join_hmac_ok(secret: &str, body: &str, mac: &str) -> bool {
+    use hkdf::hmac::Mac;
+    let Ok(mac) = hex::decode(mac.trim()) else { return false };
+    join_hmac(secret, body).verify_slice(&mac).is_ok()
 }
 
 /// The approving device's answer (hex HMAC-SHA256): `secret` binds the
 /// account `trust` names to the machine whose keys are in `cert`.
 pub fn join_mac(secret: &str, trust: &Trust, cert: &Cert) -> String {
     use hkdf::hmac::Mac;
-    hex::encode(join_hmac(secret, trust, cert).finalize().into_bytes())
+    hex::encode(join_hmac(secret, &join_mac_body(trust, cert)).finalize().into_bytes())
+}
+
+/// What a page adding a machine in one click (aru-141) MACs under the
+/// link's secret: the account it adds the machine to (its id: such an
+/// account may have no root) and the machine's keys. Domain-separated
+/// from [`join_mac_body`], so neither answer stands in for the other.
+fn one_click_mac_body(account: &str, cert: &Cert) -> String {
+    format!(
+        "arugula one-click join v1\naccount {account}\ndevice {}\nnoise {}\nsign {}\n",
+        cert.device, cert.noise, cert.sign
+    )
+}
+
+/// A one-click Add's answer (hex HMAC-SHA256): `secret`, which only the
+/// link carries, binds the account `account` to the machine whose keys are
+/// in `cert`. The machine checks it before it saves the account control
+/// names, so adding it takes the link, not the code alone.
+pub fn one_click_mac(secret: &str, account: &str, cert: &Cert) -> String {
+    use hkdf::hmac::Mac;
+    hex::encode(join_hmac(secret, &one_click_mac_body(account, cert)).finalize().into_bytes())
+}
+
+/// Whether `mac` (hex) is [`one_click_mac`]'s, compared in constant time.
+pub fn one_click_mac_ok(secret: &str, account: &str, cert: &Cert, mac: &str) -> bool {
+    join_hmac_ok(secret, &one_click_mac_body(account, cert), mac)
 }
 
 /// What a device signs to pin its account's root (#764), when its keys
@@ -863,9 +896,7 @@ pub fn device_pin_ok(trust: &Trust, cert: &Cert, pin: &str) -> bool {
 
 /// Whether `mac` (hex) is [`join_mac`]'s, compared in constant time.
 pub fn join_mac_ok(secret: &str, trust: &Trust, cert: &Cert, mac: &str) -> bool {
-    use hkdf::hmac::Mac;
-    let Ok(mac) = hex::decode(mac.trim()) else { return false };
-    join_hmac(secret, trust, cert).verify_slice(&mac).is_ok()
+    join_hmac_ok(secret, &join_mac_body(trust, cert), mac)
 }
 
 #[cfg(test)]
@@ -1275,6 +1306,42 @@ mod tests {
         let mac = join_mac("ABCD-EFGH-JKMN-PQRS", &trust, &c);
         assert_eq!(mac, "21ec725fbc58f0e2aac0c21b84b6c9f99ca6f4a15bf48f5cf2d98598eaab135b");
         assert_eq!(mac, join_mac("ABCDEFGHJKMNPQRS", &trust, &c), "dashes aside");
+    }
+
+    /// A one-click Add's MAC binds the account and the machine's keys, and
+    /// is no device approval's MAC; the page computes the same one
+    /// (`web/src/shell/e2e/cert.ts`'s `oneClickMac`): fixed inputs, fixed
+    /// answer.
+    #[test]
+    fn one_click_macs() {
+        let k = DeviceKeys::generate();
+        let machine = Cert::new(&k, "", Kind::Daemon, "box");
+        let s = join_secret();
+        let mac = one_click_mac(&s, "acct", &machine);
+        assert!(one_click_mac_ok(&s, "acct", &machine, &mac));
+        assert!(!one_click_mac_ok(&s, "other", &machine, &mac), "another account");
+        let other = Cert::new(&DeviceKeys::generate(), "", Kind::Daemon, "box");
+        assert!(!one_click_mac_ok(&s, "acct", &other, &mac), "another machine");
+        assert!(!one_click_mac_ok(&join_secret(), "acct", &machine, &mac), "another secret");
+        assert!(!one_click_mac_ok(&s, "acct", &machine, ""));
+        let trust = Trust { account: "acct".into(), root: String::new() };
+        assert!(!join_mac_ok(&s, &trust, &machine, &mac), "not a device's answer");
+
+        let c = Cert {
+            v: 1,
+            account: String::new(),
+            device: "fedcba9876543210".into(),
+            kind: Kind::Daemon,
+            name: "box".into(),
+            noise: "aa".into(),
+            sign: "bb".into(),
+            created: 0,
+            approver: String::new(),
+            sig: String::new(),
+        };
+        let fixed = one_click_mac("ABCD-EFGH-JKMN-PQRS", "a1", &c);
+        assert_eq!(fixed, one_click_mac("ABCDEFGHJKMNPQRS", "a1", &c), "dashes aside");
+        assert_eq!(fixed, "a0c62e0470fc67adc99f47c76c949e79b2fea69157a992ffd89425de570bfd21");
     }
 
     /// #764: a device's pin is its own signature; another device's, or one

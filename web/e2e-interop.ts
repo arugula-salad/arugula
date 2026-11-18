@@ -5,7 +5,7 @@
 
 import { execFileSync, spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { evaluate, certBody, joinCode, joinMac, revocationBody, splitJoinCode, type Cert, type Revocation } from "./src/shell/e2e/cert.ts";
+import { evaluate, certBody, joinCode, joinMac, oneClickMac, revocationBody, splitJoinCode, type Cert, type Revocation } from "./src/shell/e2e/cert.ts";
 import { generateKeys, signText } from "./src/shell/e2e/keys.ts";
 import { daemonNow, E2ESocket, readWelcome } from "./src/shell/e2e/channel.ts";
 import { blockRoutesLabel } from "./src/shell/blocks/block-route.ts";
@@ -45,6 +45,9 @@ check("same join code", (await joinCode(fx.daemon)) === fx.joinCode, fx.joinCode
   const want = "21ec725fbc58f0e2aac0c21b84b6c9f99ca6f4a15bf48f5cf2d98598eaab135b";
   check("the join MAC", (await joinMac("ABCD-EFGH-JKMN-PQRS", trust, c)) === want);
   check("the join MAC without dashes", (await joinMac("ABCDEFGHJKMNPQRS", trust, c)) === want);
+  // A one-click Add's MAC (aru-141): Rust's `one_click_macs`.
+  const oneClick = "a0c62e0470fc67adc99f47c76c949e79b2fea69157a992ffd89425de570bfd21";
+  check("the one-click MAC", (await oneClickMac("ABCD-EFGH-JKMN-PQRS", "a1", c)) === oneClick);
   const split = splitJoinCode("abcde-fghjk.abcd efgh jkmn pqrs");
   check("a whole code splits", split?.code === "ABCDE-FGHJK" && split.secret === "ABCD-EFGH-JKMN-PQRS", JSON.stringify(split));
 }
