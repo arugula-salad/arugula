@@ -157,6 +157,10 @@ test.describe("on a computer", () => {
     // A row opens its project.
     await sw.locator('[data-switcher-project="prj_aaaa0003"]').click();
     await expect(page).toHaveURL(/\/p\/prj_aaaa0003[^/]*$/);
+    // Your own project is named Default, and its address still says personal (Arugula #1165).
+    await page.locator(".ws-rail [data-project-switcher]").click();
+    await sw.locator('[data-switcher-project="prj_aaaa0001"]').click();
+    await expect(page).toHaveURL(/\/p\/prj_aaaa0001-personal$/);
   });
 
   test("a pane opens on its machine's page inside the app, under Build", async ({ page }, info) => {
