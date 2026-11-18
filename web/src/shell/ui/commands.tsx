@@ -10,7 +10,6 @@ import { askText, openMenu, type MenuItem } from "../../shared/ui/menu";
 import { openSessionProject } from "./project-dialog";
 import { openSandboxes, pickApp } from "../labs-load";
 import { driveItems, getControlSession, shareSession } from "./people";
-import { getSignedIn } from "../signed-in";
 import { cardItems } from "./pane-card";
 import { hasChat } from "./places";
 import { machineHandle } from "../../shared/chat/agents";
@@ -277,7 +276,7 @@ export function sessionItems(client: Client, session: SessionId, rename: () => v
       label: "Project…",
       detail: client.state?.sessions.find((x) => x.id === session)?.project?.name,
       hint: "The Arugula project this session is in, and who sees it",
-      run: () => pickSessionProject(client, session),
+      run: () => openSessionProject(client, session),
       attrs: { "data-session-project": true },
     },
     // #1090: the session's card, here rather than on each pane's bar.
@@ -308,14 +307,6 @@ function sessionCardItems(client: Client, session: SessionId): MenuItem[] {
   const tabs = client.state?.tabs.filter((t) => client.sessionOfTab(t.id) === session) ?? [];
   const pane = active !== undefined && client.sessionOfPane(active) === session ? active : tabs.flatMap(paneIds)[0];
   return pane === undefined ? [] : cardItems(client, pane);
-}
-
-/** Move a session to another of the reader's projects (Arugula #1177). */
-function pickSessionProject(client: Client, session: SessionId) {
-  if (getSignedIn()?.phase !== "ready") {
-    return client.toast("Projects are read as you, through Arugula cloud: open this machine in Arugula cloud, signed in");
-  }
-  openSessionProject(client, session);
 }
 
 /** What the session's menu holds, in a few words, for the tooltips of the

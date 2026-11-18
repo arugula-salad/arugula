@@ -12,10 +12,16 @@ import { OPS, opPath } from "../ops";
 import type { PlatformProject, PlatformProjects, SessionId } from "../../shared/proto";
 import { Modal } from "../../shared/ui/modal";
 import { platformFetch } from "../../shared/maintenance";
-import { movedSaid, projectRef, projectRows, teamNow, whoLine, whoSees } from "./session-project";
+import { getSignedIn } from "../signed-in";
+import { movedSaid, projectRef, projectRows, teamNow, teamOf, whoLine, whoSees } from "./session-project";
 
-/** Open it for `session`, in a host of its own that goes with it. One at a time. */
-export function openSessionProject(client: Client, session: SessionId) {
+/** Open it for `session`, in a host of its own that goes with it, listing
+ * only `team`'s projects when given (the Share dialog's move, #1182). One
+ * at a time. */
+export function openSessionProject(client: Client, session: SessionId, team?: string) {
+  if (getSignedIn()?.phase !== "ready") {
+    return client.toast("Projects are read as you, through Arugula cloud: open this machine in Arugula cloud, signed in");
+  }
   if (document.querySelector("[data-session-project-host]")) return;
   const host = document.createElement("div");
   host.dataset.sessionProjectHost = "";
@@ -24,7 +30,7 @@ export function openSessionProject(client: Client, session: SessionId) {
     render(null, host);
     host.remove();
   };
-  render(<ProjectDialog client={client} session={session} done={done} />, host);
+  render(<ProjectDialog client={client} session={session} team={team} done={done} />, host);
 }
 
 /** The people the session is shared with, by name: a share stays wherever it goes (#1161, decision 4). */
@@ -35,7 +41,7 @@ async function sharedWith(client: Client, session: SessionId): Promise<string[]>
   return (v?.grants ?? []).filter((g) => g.session === session && !g.principal.startsWith("link:") && !g.principal.startsWith("team:")).map((g) => g.name);
 }
 
-function ProjectDialog({ client, session, done }: { client: Client; session: SessionId; done: () => void }) {
+function ProjectDialog({ client, session, team, done }: { client: Client; session: SessionId; team?: string; done: () => void }) {
   const [all, setAll] = useState<PlatformProjects | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [shared, setShared] = useState<string[]>([]);
@@ -53,7 +59,11 @@ function ProjectDialog({ client, session, done }: { client: Client; session: Ses
   const s = client.state?.sessions.find((x) => x.id === session);
   const name = s?.name ?? `$${session}`;
   const current = s?.project;
-  const rows = all ? projectRows(all, current).filter((p) => !q.trim() || p.name.toLowerCase().includes(q.trim().toLowerCase())) : [];
+  const rows = all
+    ? projectRows(all, current)
+        .filter((p) => !team || teamOf(p)?.id === team)
+        .filter((p) => !q.trim() || p.name.toLowerCase().includes(q.trim().toLowerCase()))
+    : [];
   // Where Enter goes: the row pointed or arrowed at, else the first one typed for.
   const target = rows.find((p) => p.id === at) ?? (q.trim() ? rows.find((p) => p.id !== current?.id) : undefined) ?? null;
   const line = all ? whoLine(teamNow(all, current), current, target, shared) : null;
@@ -127,6 +137,7 @@ function ProjectDialog({ client, session, done }: { client: Client; session: Ses
                 </button>
               );
             })}
+            {!rows.length && <span class="dim" data-session-project-none>No project of yours {q.trim() ? "has that name" : "is there to pick"}.</span>}
           </div>
           {line && (
             <p class={line.warn ? "session-project-who warn" : "session-project-who"} data-session-project-who data-warn={line.warn || undefined}>
