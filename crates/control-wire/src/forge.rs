@@ -207,8 +207,8 @@ pub const PROJECT_OPS: &[&str] = &["projects.repo_moved"];
 /// The Docs' op (Arugula #1023) every daemon of this build knows.
 pub const DOC_OPS: &[&str] = &["docs.list"];
 
-/// The sessions' op (Arugula #1019) every daemon of this build knows.
-pub const SESSION_OPS: &[&str] = &["sessions.set_card"];
+/// The sessions' ops (Arugula #1019, #1166) every daemon of this build knows.
+pub const SESSION_OPS: &[&str] = &["sessions.set_card", "sessions.set_project"];
 
 /// `{"t": "ops", "ops": [...]}`, daemon to control, on connecting: the
 /// [`DaemonOp`]s it knows. A daemon that never says knows none, and control
@@ -340,6 +340,14 @@ pub enum DaemonOp {
     /// be. An older daemon answers `unknown`.
     #[serde(rename = "sessions.set_card")]
     SessionCard(SessionCardAsk),
+    /// A person moved one of this machine's sessions to another project
+    /// with Move to project (Arugula #1166). The machine's owner's own act,
+    /// through the hub, as the session's menu's Project… is: the session
+    /// takes it as set by hand (`Intent::SetSessionProject`), so its repo
+    /// never moves it back. The daemon answers `done` once it's there,
+    /// `failed` when it can't be. An older daemon answers `unknown`.
+    #[serde(rename = "sessions.set_project")]
+    SessionProject(SessionProjectAsk),
 }
 
 impl DaemonOp {
@@ -357,6 +365,7 @@ impl DaemonOp {
             DaemonOp::MentionsHeld(_) => "agents.mentions_held",
             DaemonOp::DocsList(_) => "docs.list",
             DaemonOp::SessionCard(_) => "sessions.set_card",
+            DaemonOp::SessionProject(_) => "sessions.set_project",
         }
     }
 }
@@ -450,6 +459,18 @@ pub struct SessionCardAsk {
     /// `None`: the session goes back to the card its branch gives, or to
     /// none, and a branch may give it one again.
     pub card: Option<String>,
+}
+
+/// `sessions.set_project`'s ask (Arugula #1166).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct SessionProjectAsk {
+    /// The session's id on the machine, as its sessions report says it.
+    pub session: String,
+    /// The project it goes in: `prj_…`.
+    pub project: String,
+    /// What the person sees it called.
+    pub project_name: String,
 }
 
 /// `docs.list`'s ask (Arugula #1023): nothing yet, so the answer is every

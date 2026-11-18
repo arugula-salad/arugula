@@ -1602,6 +1602,10 @@
       "additionalProperties": false,
       "description": "One session in a [`MachineSessionsReport`].",
       "properties": {
+        "by_hand": {
+          "description": "Its project was set by hand: picked, or the one it was started in\n(Arugula #1166). Sent only to a control that takes it.",
+          "type": "boolean"
+        },
         "name": {
           "description": "Its name, as the machine's session list shows it.",
           "type": "string"
@@ -1615,6 +1619,13 @@
         },
         "project": {
           "description": "The project it works in: a `prj_…` id.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repo": {
+          "description": "The GitHub repo (`OWNER/NAME`) its project was inferred from, which\nit follows (Arugula #992): Move to project moves it with that repo\n(#1166). Sent only to a control that takes it.",
           "type": [
             "string",
             "null"
