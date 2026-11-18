@@ -1926,7 +1926,8 @@ export class ControlSession {
   }
 
   /** Teams I can move my machines into (#332), by control's rule
-   * (`movesInto`): any I'm in, but only those I own while they're locked.
+   * (`movesInto`): those I own or edit, but only those I own while they're
+   * locked (#1184).
    * A device page signs the team in, so only one whose roster it checked;
    * with no device key (aru-141) control's word is all there is. */
   addableTeams(): Team[] {
@@ -1951,7 +1952,7 @@ export class ControlSession {
     let teamSig: string | null = null;
     if (team) {
       const t = this.addableTeams().find((x) => x.team === team);
-      if (!t) throw new Error("only the team's members add machines to it");
+      if (!t) throw new Error("only the team's owners and editors add machines to it");
       teamSig = await signText(this.keys, teamJoinBody(c.device, t.pin));
     }
     try {
@@ -1970,7 +1971,7 @@ export class ControlSession {
     let pin: TeamPin | null = null;
     if (team) {
       const t = this.addableTeams().find((x) => x.team === team);
-      if (!t) throw new Error("only the team's members add machines to it");
+      if (!t) throw new Error("only the team's owners and editors add machines to it");
       pin = t.pin;
     }
     const at = Date.now();

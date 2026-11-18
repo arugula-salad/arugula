@@ -37,7 +37,7 @@ export function VerifyMe({ account, root }: { account: string; root: string }) {
   );
 }
 
-/** *Move to…* on a machine (#100): into a team you're in (#332), or back
+/** *Move to…* on a machine (#100): into a team you own or edit (#332, #1184), or back
  * to just you. Only shown when there's somewhere to move it. */
 function MoveMachine({ s, c, team, online }: { s: ControlSession; c: Cert; team: string | null; online: boolean }) {
   const [to, setTo] = useState<string | null | undefined>(undefined);
