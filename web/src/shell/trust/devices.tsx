@@ -16,6 +16,7 @@ import { machinePlace, machineState, placeMeans } from "../ui/hosts";
 import { AddedAt, openPanel, QrCode, since } from "./common";
 import { HostedMachines } from "./hosted";
 import { RunGrants } from "./run-grants";
+import { WhosePicker } from "./whose";
 
 /** #763: for someone sharing with you who wants to verify it's you: a QR
  * code for their camera, and the same as words for over the phone. From
@@ -34,6 +35,36 @@ export function VerifyMe({ account, root }: { account: string; root: string }) {
         {words.join(" ")}
       </p>
     </details>
+  );
+}
+
+/** Whose a machine in a team is (Arugula #1182), where control asks: the
+ * team's, or its owner's also used for the team. It counts at the
+ * machine's next refresh. */
+function WhoseMachine({ s, d }: { s: ControlSession; d: DirDaemon }) {
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  if (!d.team || d.team_box === undefined) return null;
+  return (
+    <div class="control-move" data-whose-machine={d.id}>
+      <WhosePicker
+        hook="machine"
+        teamBox={d.team_box}
+        disabled={busy}
+        onPick={(teamBox) => {
+          setBusy(true);
+          setErr("");
+          s.setTeamBox(d.id, teamBox).then(
+            () => setBusy(false),
+            (e: Error) => {
+              setBusy(false);
+              setErr(e.message);
+            },
+          );
+        }}
+      />
+      {err ? <p class="control-error">{err}</p> : null}
+    </div>
   );
 }
 
@@ -189,8 +220,9 @@ export function Devices({ s, close }: { s: ControlSession; close: () => void }) 
               {/* #778: its place and what that means, before a join or a
                   share elsewhere runs into it. */}
               <p class="dim control-explain" data-place={team ?? ""}>
-                <b>{machinePlace(team)}</b>: {placeMeans(team)}
+                <b>{machinePlace(team)}</b>: {placeMeans(team, undefined, !!d.team_box)}
               </p>
+              <WhoseMachine s={s} d={d} />
               <MoveMachine s={s} c={{ ...c, name: d.name }} team={d.team ?? null} online={d.online} />
             </li>
           );

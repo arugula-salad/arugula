@@ -344,10 +344,6 @@
           ],
           "default": null,
           "description": "The team it joined, when it's a team's."
-        },
-        "team_owned": {
-          "description": "It joined for the team (`arugulad join --team`), not as a person's\nown machine in it (Arugula #1182): the team's box. Its sessions go in\nthe team's project, and the team keeps its roles on all of them. An\nolder control sends none: a person's machine.",
-          "type": "boolean"
         }
       },
       "required": [

@@ -146,6 +146,7 @@ export class Machines {
         team: d?.team ?? null,
         ownerId: d?.account,
         teamName: d?.team ? source?.teams.find((t) => t.team === d.team)?.roster.name : undefined,
+        teamBox: !!d?.team && !!d.team_box,
         hosted: !!d?.hosted,
       };
     });

@@ -557,10 +557,21 @@ pub async fn owners_personal(control: &crate::control::Control) -> Option<arugul
 }
 
 /// Where a session nothing placed goes (Arugula #1163): the owner's
-/// personal project, or on a box joined for a team, the team's default
-/// project (Arugula #1182). `None` when control didn't answer one.
+/// personal project, or on the team's box, the team's default project
+/// (Arugula #1182). `None` when control didn't answer one.
 pub async fn unplaced_home(control: &crate::control::Control) -> Option<arugula_core::ProjectRef> {
-    match control.enrolled().and_then(|e| e.saved.team_box()) {
+    // Whose a machine in a team is comes with a refresh: until the first
+    // has gone through, nothing is placed, rather than a team's box placing
+    // a session in a person's project.
+    let in_team = control.enrolled().is_some_and(|e| !e.saved.is_hosted() && e.saved.team_id().is_some());
+    if in_team {
+        let mut refreshed = control.on_refresh();
+        let first = refreshed.wait_for(|n| *n > 0);
+        if !matches!(tokio::time::timeout(std::time::Duration::from_secs(30), first).await, Ok(Ok(_))) {
+            return None;
+        }
+    }
+    match control.team_box() {
         Some(team) => team_default(control, &team).await,
         None => owners_personal(control).await,
     }

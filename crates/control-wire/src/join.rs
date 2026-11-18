@@ -237,12 +237,6 @@ pub struct Joined {
     /// The team it joined, when it's a team's.
     #[serde(default)]
     pub team: Option<JoinedTeam>,
-    /// It joined for the team (`arugulad join --team`), not as a person's
-    /// own machine in it (Arugula #1182): the team's box. Its sessions go in
-    /// the team's project, and the team keeps its roles on all of them. An
-    /// older control sends none: a person's machine.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub team_owned: bool,
 }
 
 /// The team a [`Joined`] machine is in.

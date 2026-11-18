@@ -31,6 +31,13 @@ pub struct TrustAnswer {
     /// control from before them; a daemon then keeps what it had.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub flags: Option<Flags>,
+    /// A machine joined on control's word, in a team: whose it is (Arugula
+    /// #1182). True: the team's, a shared or work machine; its sessions go
+    /// in the team's project and the team keeps its roles on all of them.
+    /// False, or left out by an older control: its owner's, also used for
+    /// the team, where the team watches its projects' sessions (#1162).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub team_box: bool,
 }
 
 /// Labs flags only a machine sets for itself (#347): control refuses to

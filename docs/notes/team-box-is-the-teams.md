@@ -1,11 +1,15 @@
 ---
-section: Fixed
-title: A box joined for a team is the team's again
-line: On a machine joined for a team, the team sees and uses every session again, and new sessions go in the team's project.
+section: Added
+title: A machine in a team is yours, or the team's
+line: Adding a machine to a team asks whose it is. Yours, also used for the team, keeps your own sessions private; the team's runs every session for the team.
 ---
-A machine joined with `arugulad join --team` is the team's own box, not a
-person's machine in the team. Its team's members keep their roles on every
-session there, as on a cloud workspace: editors type, viewers watch. A session
-nothing else places goes in the team's default project instead of the personal
-project of whoever approved the join. A person's own machine moved into a team
-keeps the rule that the team watches only the sessions in its projects.
+A machine in a team is one of two kinds, and you pick which when you approve it
+into the team, or later on **Machines**:
+
+- **Mine, also used for the team** (the default): the team watches the sessions
+  in its projects, and sessions in your own projects stay yours.
+- **The team's: a shared or work machine** (a work desktop, a Mac mini, a cloud
+  workstation): a session nothing else places goes in the team's project, and
+  everyone in the team uses it by their role.
+
+Machines already in a team stay yours until you change it.

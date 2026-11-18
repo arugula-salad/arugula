@@ -209,9 +209,6 @@ pub struct ByControl {
     /// is checked against it, and it lets nobody in.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub team: Option<wire::JoinedTeam>,
-    /// It joined for that team: the team's box (Arugula #1182).
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub team_owned: bool,
 }
 
 /// What a machine is (#672, docs/data-model.md "Machines and compute"):
@@ -462,15 +459,6 @@ impl Saved {
             (None, Some(b)) => b.team.as_ref().map(|t| t.id.clone()),
             (None, None) => None,
         }
-    }
-
-    /// The team whose box this is, when control joined it for a team
-    /// (Arugula #1182): its sessions go in the team's project, and the team
-    /// keeps its roles on every one. Not a person's machine moved into a
-    /// team: there the team watches its projects' sessions (#1162).
-    pub fn team_box(&self) -> Option<String> {
-        let b = self.by_control().filter(|b| b.team_owned)?;
-        b.team.as_ref().map(|t| t.id.clone())
     }
 
     /// The team's pin, when there is a team.
@@ -1506,6 +1494,10 @@ pub struct Control {
     /// The number of the last refresh that went through, set as it ends
     /// and nowhere else: [`Control::refresh_now`] waits on it.
     refreshed: watch::Sender<u64>,
+    /// Control's word at the last refresh that this machine, in a team, is
+    /// the team's box rather than its owner's (Arugula #1182). Not kept:
+    /// until a refresh says so, it's its owner's.
+    team_box: std::sync::atomic::AtomicBool,
     http: reqwest::Client,
     /// What control was last told about access.
     published: std::sync::Mutex<Option<wire::AccessList>>,
@@ -1840,6 +1832,7 @@ impl Control {
             nudge: tokio::sync::Notify::new(),
             started: Default::default(),
             refreshed: watch::channel(0).0,
+            team_box: Default::default(),
             http: control_http().timeout(Duration::from_secs(20)).build().expect("http client"),
             published: Default::default(),
             no_relay,
@@ -2115,6 +2108,20 @@ impl Control {
     /// Told each time the relay socket comes up, counting from 1.
     pub fn on_connect(&self) -> watch::Receiver<u64> {
         self.connects.subscribe()
+    }
+
+    /// The team whose box this machine is, as control said at the last
+    /// refresh (Arugula #1182): its sessions go in the team's project, and
+    /// the team keeps its roles on every one. `None` for a machine in no
+    /// team, a cloud workspace, or its owner's machine also used for the
+    /// team, where the team watches its projects' sessions (#1162).
+    pub fn team_box(&self) -> Option<String> {
+        let e = self.enrolled()?;
+        Self::is_team_box(&e.saved, &self.team_box).then(|| e.saved.team_id()).flatten()
+    }
+
+    fn is_team_box(saved: &Saved, said: &std::sync::atomic::AtomicBool) -> bool {
+        !saved.is_hosted() && saved.team_id().is_some() && said.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// Told the number of each refresh that went through, as it ends.
@@ -2649,11 +2656,14 @@ impl Control {
         }
         crate::sites::set_control_origins(origins);
         self.acl.set_team_roles(e.as_ref().map(|e| e.team_roles.clone()).unwrap_or_default());
-        // A cloud workspace, or a box joined for its team (Arugula #1182):
-        // the team's roles count on every session.
+        // A cloud workspace, or the team's box (Arugula #1182): the team's
+        // roles count on every session.
+        if e.is_none() {
+            self.team_box.store(false, std::sync::atomic::Ordering::SeqCst);
+        }
         self.acl.set_machine_team(
             e.as_ref().and_then(|e| e.saved.team_id()),
-            e.as_ref().is_some_and(|e| e.saved.is_hosted() || e.saved.team_box().is_some()),
+            e.as_ref().is_some_and(|e| e.saved.is_hosted() || Self::is_team_box(&e.saved, &self.team_box)),
         );
         self.acl.set_shared_teams(e.as_ref().map(|e| e.shared_roles.clone()).unwrap_or_default());
         *self.now.write().unwrap() = e.map(Arc::new);
@@ -2877,6 +2887,7 @@ impl Control {
         match self.get::<wire::TrustAnswer>(e, &self.trust_query()).await {
             Ok(own) => {
                 self.take_flags(own.flags.as_ref());
+                self.team_box.store(own.team_box, std::sync::atomic::Ordering::SeqCst);
                 // A move on control's word (aru-141, Arugula #1004), or one
                 // a device signed (which this machine can't check: it holds
                 // no devices, and takes only control's word).
@@ -3016,6 +3027,7 @@ impl Control {
         // its row. An older control ignores them.
         let own: wire::TrustAnswer = self.get(&e, &self.trust_query()).await?;
         self.take_flags(own.flags.as_ref());
+        self.team_box.store(own.team_box, std::sync::atomic::Ordering::SeqCst);
         let mut saved = e.saved.clone();
         if let Some(to) = moved_to {
             info!(from = saved.url, to, "control moved; following it");
@@ -4477,11 +4489,7 @@ fn saved_by_control(url: &str, ask: &Cert, j: &wire::Joined) -> anyhow::Result<(
     }
     let saved = Saved {
         url: url.to_owned(),
-        root: Root::Control(ByControl {
-            at: now_ms(),
-            team: j.team.clone(),
-            team_owned: j.team_owned && j.team.is_some(),
-        }),
+        root: Root::Control(ByControl { at: now_ms(), team: j.team.clone() }),
         cert: Cert { account: j.account.clone(), ..ask.clone() },
         certs: vec![],
         revocations: vec![],
@@ -5225,36 +5233,28 @@ pub(crate) mod tests {
     fn by_control(team: Option<wire::JoinedTeam>) -> (DeviceKeys, Saved) {
         let keys = DeviceKeys::generate();
         let ask = Cert { account: String::new(), ..Cert::new(&keys, "", Kind::Daemon, "box") };
-        let j =
-            wire::Joined { account: "acct1".into(), login: "sam".into(), machine: keys.id(), team, team_owned: false };
+        let j = wire::Joined { account: "acct1".into(), login: "sam".into(), machine: keys.id(), team };
         let (saved, joined) = saved_by_control("https://control.example", &ask, &j).unwrap();
         assert_eq!(joined.key, fingerprint(&keys.id()));
         (keys, saved)
     }
 
-    /// Arugula #1182: a box control joined for a team is the team's box,
-    /// through a save; one joined as a person's machine in the team isn't,
-    /// nor is one control names no team for, nor a file from before.
+    /// Arugula #1182: whose a machine in a team is, control says at each
+    /// refresh; an older control's answer says nothing: its owner's. Not
+    /// kept in the file.
     #[test]
-    fn a_box_joined_for_a_team_is_the_teams() {
-        let keys = DeviceKeys::generate();
-        let ask = Cert { account: String::new(), ..Cert::new(&keys, "", Kind::Daemon, "box") };
-        let acme = || Some(wire::JoinedTeam { id: "tm_1".into(), name: "Acme".into() });
-        let saved = |team: Option<wire::JoinedTeam>, team_owned: bool| {
-            let j = wire::Joined { account: "acct1".into(), login: "sam".into(), machine: keys.id(), team, team_owned };
-            saved_by_control("https://control.example", &ask, &j).unwrap().0
-        };
-        let team_box = saved(acme(), true);
-        assert_eq!(team_box.team_box().as_deref(), Some("tm_1"));
-        let v = serde_json::to_value(&team_box).unwrap();
-        assert_eq!(v["by_control"]["team_owned"], true, "{v}");
-        let back: Saved = serde_json::from_value(v).unwrap();
-        assert_eq!(back.team_box().as_deref(), Some("tm_1"));
-
-        let persons = saved(acme(), false);
-        assert_eq!((persons.team_box(), persons.team_id().as_deref()), (None, Some("tm_1")));
-        assert!(serde_json::to_value(&persons).unwrap()["by_control"].get("team_owned").is_none());
-        assert_eq!(saved(None, true).team_box(), None, "no team named");
+    fn whose_a_machine_is_is_controls_word_at_each_refresh() {
+        let said = |v: serde_json::Value| serde_json::from_value::<wire::TrustAnswer>(v).unwrap().team_box;
+        assert!(said(serde_json::json!({ "certs": [], "revocations": [], "team_box": true })));
+        assert!(!said(serde_json::json!({ "certs": [], "revocations": [] })), "an older control");
+        let (_, in_team) = by_control(Some(wire::JoinedTeam { id: "tm_1".into(), name: "Acme".into() }));
+        let (_, alone) = by_control(None);
+        let flag = std::sync::atomic::AtomicBool::new(false);
+        assert!(!Control::is_team_box(&in_team, &flag), "its owner's until control says");
+        flag.store(true, std::sync::atomic::Ordering::SeqCst);
+        assert!(Control::is_team_box(&in_team, &flag));
+        assert!(!Control::is_team_box(&alone, &flag), "in no team");
+        assert!(serde_json::to_value(&in_team).unwrap()["by_control"].get("team_box").is_none());
     }
 
     /// aru-141: a join on control's word saves no root. Its file has no
@@ -5330,13 +5330,7 @@ pub(crate) mod tests {
 
         // Control adding some other machine isn't joined.
         let ask = Cert::new(&keys, "", Kind::Daemon, "box");
-        let other = wire::Joined {
-            account: "a".into(),
-            login: "".into(),
-            machine: "elsewhere".into(),
-            team: None,
-            team_owned: false,
-        };
+        let other = wire::Joined { account: "a".into(), login: "".into(), machine: "elsewhere".into(), team: None };
         assert!(saved_by_control("https://c", &ask, &other).is_err());
     }
 
@@ -6401,7 +6395,7 @@ pub(crate) mod tests {
             |team: Option<&TeamPin>, at| Move { team: team.cloned(), at, by: String::new(), sig: String::new() };
         for root in [
             Root::Pinned(Trust { account: "a".into(), root: root.device.clone() }),
-            Root::Control(ByControl { at: 1, team: None, team_owned: false }),
+            Root::Control(ByControl { at: 1, team: None }),
         ] {
             let mut saved = Saved {
                 url: String::new(),
