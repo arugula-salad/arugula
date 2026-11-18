@@ -3,7 +3,7 @@
   "commit": "4b65b638611954d5e0b43acfc295da7c519c63ae",
   "branch": "main",
   "state": "pending",
-  "at": "2026-11-18T05:58:28Z",
+  "at": "2026-11-18T06:08:09Z",
   "phases": {
     "lint": {
       "verdict": "pass",
@@ -30,7 +30,7 @@
       ]
     },
     "build": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
@@ -48,7 +48,7 @@
         {
           "name": "clippy",
           "id": 134607330746,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/44246665180/job/134607330746"
         }
       ]
