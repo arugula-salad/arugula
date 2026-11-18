@@ -1929,7 +1929,7 @@ export class ControlSession {
    * or into `team`, as its owner's machine also used for the team or, with
    * `teamBox`, as the team's (Arugula #1182). */
   async addJoin(code: string, team: string | null = null, teamBox = false) {
-    await this.approving(api(`/api/joins/${code}/approve`, { team, team_box: !!team && teamBox }));
+    await this.approving(api(`/api/joins/${code}/approve`, team ? { team, team_box: teamBox } : { team }));
     await this.refresh();
   }
 
