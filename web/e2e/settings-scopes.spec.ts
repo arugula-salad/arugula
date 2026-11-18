@@ -121,6 +121,47 @@ test.describe("on a computer", () => {
     for (const href of await push.evaluateAll((els) => els.map((e) => (e as HTMLAnchorElement).href))) expect(href).toBe(`${origin}/#settings=push`);
   });
 
+  test("Status: on hosted Arugula your picture's menu and You link status.arugula.io in a new tab; on a control you run there's none (Arugula #1176)", async ({ page, context }) => {
+    // Nothing leaves for arugula.io: the status page is this spec's.
+    await context.route(/^https:\/\/[^/]*arugula\.io\//, (r) => r.fulfill({ contentType: "text/html", body: "<title>Status</title>" }));
+    const menu = async () => {
+      await page.locator(".ws-rail [data-signed-in-as]").click();
+      return page.locator(".menu-item");
+    };
+    // A control you run yourself (this page's own hub): no Status anywhere.
+    await open(page, "/settings/you/account");
+    await expect(section(page, "account")).toBeVisible();
+    await expect(row(page, "status-page")).toHaveCount(0);
+    await expect(page.locator("[data-status-page]")).toHaveCount(0);
+    await expect(await menu()).toHaveText(["Your account…", "Sign out of this page"]);
+    await page.keyboard.press("Escape");
+
+    // Hosted Arugula: control says it's the hub on every answer on the app's host.
+    await page.unrouteAll({ behavior: "wait" });
+    await open(page, "/settings/you/status-page", () =>
+      page.route(/\/api\/projects$/, (r) =>
+        r.fulfill({ contentType: "application/json", headers: { "x-arugula-hub": "https://control.arugula.io" }, body: JSON.stringify({ me: { account: "acct_a", login: "sam", name: "Sam" }, projects, hosted: false }) }),
+      ),
+    );
+    // Settings › You: a Status row in the Account band, after Sign-in and machines.
+    const ids = () => page.locator("[data-settings-row]").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.settingsRow));
+    await expect.poll(ids).toEqual(["notifications", "quiet-hours", "push", "appearance", "preferences", "account", "status-page", "linked", "tokens"]);
+    await expect(row(page, "status-page").locator(".list-row-detail")).toHaveText("status.arugula.io");
+    const link = section(page, "status-page").locator("a[data-status-page]");
+    await expect(link).toHaveAttribute("href", "https://status.arugula.io");
+    await expect(link).toHaveAttribute("target", "_blank");
+    await expect(link).toHaveAttribute("rel", "noopener");
+    // The menu: Status after Your account…, opening a tab that can't reach back into this one.
+    const items = await menu();
+    await expect(items).toHaveText(["Your account…", /^Status/, "Sign out of this page"]);
+    const tab = context.waitForEvent("page");
+    await page.locator(".menu-item[data-status-page]").click();
+    const status = await tab;
+    await expect(status).toHaveURL("https://status.arugula.io/");
+    expect(await status.evaluate(() => window.opener)).toBeNull();
+    await expect(page).toHaveURL(/\/settings\/you\/status-page$/);
+  });
+
   test("You: Preferences are drawn here, and their summary says what's set", async ({ page }) => {
     await open(page, "/settings/you/preferences");
     const prefs = section(page, "preferences");

@@ -12,7 +12,8 @@ import { openMenu, pressedShut, useMenuFrom, type MenuItem } from "../shared/ui/
 import { WindowButtons } from "../shared/ui/window-buttons";
 import { currentProject } from "./current-project";
 import { follow, go, pathOf, useRoute, type Route } from "./router";
-import { session } from "./session";
+import { controlOrigin, session } from "./session";
+import { openStatusPage, statusPage } from "./status-page";
 import { signOut } from "./signin";
 import { names } from "./links";
 import { AccountPicture } from "../shared/chat/avatar";
@@ -159,9 +160,10 @@ function Path({ r, project }: { r: Route; project: string | undefined }) {
   );
 }
 
-/** You, and your account's menu: your account (Settings) and signing out;
- * your presence is Chat's (Arugula #1079). On the rail's foot (`compact`,
- * the picture alone) or a phone's bar. */
+/** You, and your account's menu: your account (Settings), the status page
+ * on hosted Arugula (Arugula #1176) and signing out; your presence is
+ * Chat's (Arugula #1079). On the rail's foot (`compact`, the picture
+ * alone) or a phone's bar. */
 export function AccountButton({ compact = false }: { compact?: boolean }) {
   useSubscribe((fn) => session.subscribe(fn));
   const button = useRef<HTMLButtonElement>(null);
@@ -170,9 +172,11 @@ export function AccountButton({ compact = false }: { compact?: boolean }) {
   if (!me) return null;
   const account = (e: MouseEvent) => {
     const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const status = statusPage(controlOrigin());
     const items: MenuItem[] = [
       { header: me.login || me.name || "Signed in", name: !!(me.login || me.name) },
       { label: "Your account…", run: () => go("/settings") },
+      ...(status ? [{ label: "Status", external: true, hint: "Whether hosted Arugula is up", attrs: { "data-status-page": "" }, run: () => openStatusPage(status) }] : []),
       "separator",
       // This page only: the hub's session, on control's page, stays.
       { label: "Sign out of this page", run: () => void signOut().then(() => location.reload()) },

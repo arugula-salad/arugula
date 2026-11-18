@@ -9,6 +9,7 @@
 // which machines' agents read and post (M197); agents with no machine
 // (M230); and the apps that may use Claude for you, with what your own key
 // spent (M231). Plan and billing are each owner's, in Team and billing.
+// On hosted Arugula, its status page too (Arugula #1176).
 //
 // Push is control's to set: a device subscribes with its own keys, and the
 // hub answers push settings only there. Help isn't a section: it's in the
@@ -30,6 +31,8 @@ import { ClaudeSettings } from "../settings/claude";
 import { LinkedProducts } from "../settings/linked";
 import { NotificationSettings } from "../settings/notifications";
 import { ControlRow } from "../settings/owner-machines";
+import { statusPage } from "../status-page";
+import { ExternalIcon } from "../../shared/ui/icons";
 import { joined } from "../settings/summary";
 
 export function YouSettings() {
@@ -47,6 +50,7 @@ export function YouSettings() {
       </Band>
       <Band title="Account">
         <Account />
+        <Status />
         <LinkedProducts />
         <AgentTokens />
         <ClaudeSettings me={session.me?.account} />
@@ -164,6 +168,29 @@ function Account() {
         ))}
         .
       </p>
+    </Section>
+  );
+}
+
+/** Whether hosted Arugula is up: its status page, in a new tab. Only on
+ * hosted Arugula's page (status-page.ts); a control you run yourself has
+ * none of ours. Its id isn't `status`: that's the shell's status pill's
+ * (style.css `#status`). */
+function Status() {
+  const url = statusPage(controlOrigin());
+  if (!url) return null;
+  return (
+    <Section id="status-page" title="Status" summary={new URL(url).host} lede="Whether hosted Arugula is up right now, and any incident we're working on." hooks={{ "data-settings-status": "" }}>
+      <ul class="platform-list settings-rows">
+        <li>
+          <a class="settings-open" href={url} target="_blank" rel="noopener" data-status-page>
+            <span class="settings-open-name">
+              Status <ExternalIcon size="xs" />
+            </span>
+            <span class="dim">Control, the platform, installs and downloads</span>
+          </a>
+        </li>
+      </ul>
     </Section>
   );
 }
