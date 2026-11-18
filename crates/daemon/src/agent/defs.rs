@@ -152,15 +152,15 @@ pub fn agents_dir(home: &Path) -> PathBuf {
 }
 
 /// `name` from our agents directory if it's installed there, else `name`
-/// (found on PATH).
+/// (found on PATH). Windows: npm's `.cmd` shim (#1175).
 fn adapter(home: &Path, dir: &str, name: &str) -> String {
-    let p = agents_dir(home).join(dir).join("node_modules/.bin").join(name);
-    if p.exists() { p.display().to_string() } else { name.to_owned() }
+    let bin = agents_dir(home).join(dir).join("node_modules").join(".bin");
+    arugula_proto::exe::Exe::here().in_dir(&bin, name).map_or_else(|| name.to_owned(), |p| p.display().to_string())
 }
 
 fn installed(home: &Path, name: &str) -> String {
-    let p = home.join(".local/bin").join(name);
-    if p.exists() { p.display().to_string() } else { name.to_owned() }
+    let bin = home.join(".local").join("bin");
+    arugula_proto::exe::Exe::here().in_dir(&bin, name).map_or_else(|| name.to_owned(), |p| p.display().to_string())
 }
 
 /// Why a Managoat block doesn't start: daemon-side Managoat was removed.
