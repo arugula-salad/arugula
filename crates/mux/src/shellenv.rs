@@ -328,10 +328,14 @@ pub fn merge(block: &[(String, String)], shell: &Resolved, bin: Option<&Path>) -
         env.retain(|(e, _)| e != k);
         env.push((k.clone(), v.clone()));
     }
+    // `;` between them on Windows (#1178): `:` cut every one at its drive.
     if let (Some(bin), Some((_, path))) = (bin, env.iter_mut().find(|(k, _)| k == "PATH")) {
-        let bin = bin.display().to_string();
-        if !path.split(':').any(|p| p == bin) {
-            *path = format!("{bin}:{path}");
+        let mut dirs: Vec<PathBuf> = std::env::split_paths(path.as_str()).collect();
+        if !dirs.iter().any(|d| d == bin) {
+            dirs.insert(0, bin.to_owned());
+            if let Ok(joined) = std::env::join_paths(dirs) {
+                *path = joined.to_string_lossy().into_owned();
+            }
         }
     }
     env
@@ -382,6 +386,18 @@ mod tests {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);
         }
+    }
+
+    /// #1178: the CLI's directory goes first once, with this OS's
+    /// separator (Windows: `;`, and every directory has a `:`).
+    #[test]
+    fn the_cli_goes_first_on_this_oss_path() {
+        let (bin, other) = (std::env::temp_dir().join("arugula-bin"), std::env::temp_dir().join("tools"));
+        let path = |dirs: &[&PathBuf]| std::env::join_paths(dirs).unwrap().into_string().unwrap();
+        let block = vec![("PATH".to_owned(), path(&[&other]))];
+        let env = merge(&block, &Resolved::default(), Some(&bin));
+        assert_eq!(env, [("PATH".to_owned(), path(&[&bin, &other]))]);
+        assert_eq!(merge(&env, &Resolved::default(), Some(&bin)), env, "once");
     }
 
     // Unix: runs bash.

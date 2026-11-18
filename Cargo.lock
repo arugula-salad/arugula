@@ -378,6 +378,7 @@ dependencies = [
  "sha2 0.11.0",
  "tokio",
  "tracing",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]

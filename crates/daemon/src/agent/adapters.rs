@@ -330,26 +330,49 @@ pub fn with_node_on_path(env: &mut Vec<(String, String)>, home: &Path) {
 
 fn with_node_on_path_in(env: &mut Vec<(String, String)>, home: &Path, x: &Exe) {
     let path = path_of(env);
-    let shims = home.join(".local/share/mise/shims");
+    let mise = mise_dir(env, home, x);
+    let shims = mise.join("shims");
     let real = x.dirs(&path).iter().any(|d| *d != shims && x.in_dir(d, "node").is_some());
     if real {
         return;
     }
-    let Some(bin) = mise_node(&home.join(".local/share/mise/installs/node")) else { return };
+    let Some(bin) = mise_node_in(&mise.join("installs").join("node"), x) else { return };
     env.retain(|(k, _)| k != "PATH");
     env.push(("PATH".into(), x.prepend(&bin, &path)));
 }
 
+/// Where mise keeps its shims and installs: `~/.local/share/mise`, and on
+/// Windows `%LOCALAPPDATA%\mise` (#1178).
+fn mise_dir(env: &[(String, String)], home: &Path, x: &Exe) -> PathBuf {
+    if x.sep != ';' {
+        return home.join(".local/share/mise");
+    }
+    let local = env
+        .iter()
+        .rev()
+        .find(|(k, _)| k.eq_ignore_ascii_case("LOCALAPPDATA"))
+        .map(|(_, v)| v.clone())
+        .or_else(|| std::env::var("LOCALAPPDATA").ok())
+        .filter(|v| !v.is_empty())
+        .map_or_else(|| home.join("AppData").join("Local"), PathBuf::from);
+    local.join("mise")
+}
+
 /// The `bin` of a Node that mise installed: 22's if there, else the newest.
 pub fn mise_node(installs: &Path) -> Option<std::path::PathBuf> {
+    mise_node_in(installs, &Exe::here())
+}
+
+/// Windows: `node.exe` is in the version's own directory, not a `bin`.
+fn mise_node_in(installs: &Path, x: &Exe) -> Option<std::path::PathBuf> {
     let mut versions: Vec<(Vec<u32>, std::path::PathBuf)> = std::fs::read_dir(installs)
         .ok()?
         .flatten()
         .filter_map(|e| {
             let name = e.file_name().to_string_lossy().into_owned();
             let v: Vec<u32> = name.split('.').map(|p| p.parse().ok()).collect::<Option<_>>()?;
-            let bin = e.path().join("bin");
-            (v.len() == 3 && bin.join("node").is_file()).then_some((v, bin))
+            let bin = if x.sep == ';' { e.path() } else { e.path().join("bin") };
+            (v.len() == 3 && x.in_dir(&bin, "node").is_some()).then_some((v, bin))
         })
         .collect();
     versions.sort();
@@ -518,14 +541,33 @@ mod tests {
         let s = status_in(claude, home, &env, &win);
         assert_eq!(s.state, State::Installed { version: Some("0.85.0".into()), on_path: false });
 
-        // A Node mise installed goes first, after a `;`.
+        // A Node mise installed goes first, after a `;`. #1178: mise is in
+        // %LOCALAPPDATA% there, `node.exe` in the version's directory.
         let bare = home.join("nothing").display().to_string();
-        let mise = home.join(".local/share/mise/installs/node/22.20.0/bin");
-        std::fs::create_dir_all(&mise).unwrap();
-        std::fs::write(mise.join("node"), "").unwrap();
+        let unix = home.join(".local/share/mise/installs/node/22.20.0/bin");
+        std::fs::create_dir_all(&unix).unwrap();
+        std::fs::write(unix.join("node"), "").unwrap();
         let mut env = vec![("PATH".to_owned(), bare.clone())];
         with_node_on_path_in(&mut env, home, &win);
-        assert_eq!(path_of(&env), format!("{};{bare}", mise.display()));
+        assert_eq!(path_of(&env), bare, "a Unix mise isn't Windows's");
+        let local = home.join("AppData/Local");
+        let mise = local.join("mise/installs/node/22.20.0");
+        std::fs::create_dir_all(&mise).unwrap();
+        std::fs::write(mise.join("node.exe"), "").unwrap();
+        // Its shims (.cmd files) aren't a Node.
+        std::fs::create_dir_all(local.join("mise/shims")).unwrap();
+        std::fs::write(local.join("mise/shims/node.cmd"), "").unwrap();
+        let shims = format!("{};{bare}", local.join("mise/shims").display());
+        for (local_env, path) in [(None, bare.clone()), (Some(local.display().to_string()), shims.clone())] {
+            let mut env = vec![("PATH".to_owned(), path.clone())];
+            env.extend(local_env.map(|l| ("LOCALAPPDATA".to_owned(), l)));
+            with_node_on_path_in(&mut env, home, &win);
+            assert_eq!(path_of(&env), format!("{};{path}", mise.display()));
+        }
+        // And Unix's, as it was.
+        let mut env = vec![("PATH".to_owned(), bare.clone())];
+        with_node_on_path_in(&mut env, home, &Exe::unix());
+        assert_eq!(path_of(&env), format!("{}:{bare}", unix.display()));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
