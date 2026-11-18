@@ -189,9 +189,9 @@ export function JoinPrompt({ s, code: whole }: { s: ControlSession; code: string
                   </select>
                 </label>
               </p>
-              {/* Arugula #1182: a machine joined on control's word, into a
-                  team, is its owner's or the team's. */}
-              {oneClick && team ? (
+              {/* Arugula #1182: a machine into a team is its owner's or the
+                  team's. */}
+              {team && j.cert.kind === "daemon" ? (
                 <p>
                   <WhosePicker hook="join" teamBox={teamBox} onPick={setTeamBox} />
                 </p>
@@ -204,7 +204,7 @@ export function JoinPrompt({ s, code: whole }: { s: ControlSession; code: string
             </p>
           ) : (
             <p class="dim" data-join-grants>
-              {team && oneClick && teamBox
+              {team && teamBox
                 ? `It's ${team.roster.name}'s: its sessions go in ${team.roster.name}'s project, and everyone in ${team.roster.name} uses it by their role: editors drive its terminals, viewers watch. Its owners reach all of it, private panes too, and can take it out of the team.`
                 : team
                   ? `Everyone in ${team.roster.name} sees its sessions in ${team.roster.name}'s projects and watches them: they drive a terminal only when you share its session or trust them with it. Its owners reach all of it, private panes too, and can take it out of the team. Sessions in your own projects stay yours alone. It stays yours.`
@@ -230,7 +230,7 @@ export function JoinPrompt({ s, code: whole }: { s: ControlSession; code: string
             try {
               // The machine, then the devices that came with it.
               if (oneClick) await s.addJoin(j.code, team?.team ?? null, teamBox);
-              else await s.approveJoin(j.code, j.cert, team?.team ?? null, secret);
+              else await s.approveJoin(j.code, j.cert, team?.team ?? null, secret, teamBox);
               clearHash();
             } catch (e) {
               failed(e);

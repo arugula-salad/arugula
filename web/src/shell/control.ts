@@ -1956,7 +1956,7 @@ export class ControlSession {
    * With the join's `secret` (#760), the approval carries a MAC under it
    * over this account and the root this device pinned (not control's word
    * for it), which the machine checks before it pins that root. */
-  async approveJoin(code: string, c: Cert, team: string | null = null, secret: string | null = null) {
+  async approveJoin(code: string, c: Cert, team: string | null = null, secret: string | null = null, teamBox = false) {
     // Dated now: control takes approvals made within minutes of its clock.
     const signed: Cert = { ...c, account: this.account, created: Date.now(), approver: this.keys.id, sig: "" };
     signed.sig = await signText(this.keys, certBody(signed));
@@ -1972,7 +1972,9 @@ export class ControlSession {
       teamSig = await signText(this.keys, teamJoinBody(c.device, t.pin));
     }
     try {
-      await this.approving(api(`/api/joins/${code}/approve`, { cert: signed, team, team_sig: teamSig, ...(mac ? { mac } : {}) }));
+      // Into a team: whose it is (Arugula #1182), control's to keep.
+      const whose = team ? { team_box: teamBox } : {};
+      await this.approving(api(`/api/joins/${code}/approve`, { cert: signed, team, team_sig: teamSig, ...whose, ...(mac ? { mac } : {}) }));
     } finally {
       await this.refresh();
     }
