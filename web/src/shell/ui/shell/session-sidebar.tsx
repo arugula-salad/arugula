@@ -26,6 +26,8 @@ import type { MenuItem } from "../../../shared/ui/menu";
 import { SearchField } from "../../../shared/ui/search-field";
 import { Time } from "../../../shared/ui/time";
 import { ObjectChip } from "../../../shared/ui/state-chip";
+import { onShownProject, shownProject } from "../../project-view";
+import { useSubscribe } from "../../../shared/ui/hooks";
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -139,7 +141,10 @@ export function SessionSidebar({
   useLayoutEffect(() => {
     if (open && takeSearchFocus()) search.current?.focus();
   });
-  const all = state ? state.sessions.map((s) => summarize(client, s)) : [];
+  useSubscribe(onShownProject);
+  // The shown project's (Arugula #1164): another's isn't here at all.
+  const all = client.shownSessions().map((s) => summarize(client, s));
+  const project = shownProject();
   const q = query.trim().toLowerCase();
   const shown = q ? all.filter((r) => r.session.name.toLowerCase().includes(q) || (r.context ?? "").toLowerCase().includes(q)) : all;
   // In the order they're drawn, for the arrow keys.
@@ -201,6 +206,11 @@ export function SessionSidebar({
           </button>
         )}
       </div>
+      {owner && project && (
+        <p class="ws-sidebar-where" data-new-session-where>
+          On {project.name}
+        </p>
+      )}
       <SearchField
         class="ws-search"
         inputRef={search}
@@ -270,7 +280,15 @@ export function SessionSidebar({
                 : undefined
             }
           >
-            {q ? `No session on ${host} matches “${query.trim()}”.` : owner ? `No sessions on ${host}.` : `Nothing on ${host} is shared with you.`}
+            {q
+              ? `No session on ${host} matches “${query.trim()}”.`
+              : project
+                ? owner
+                  ? `No ${project.name} sessions on ${host} yet.`
+                  : `Nothing in ${project.name} on ${host}.`
+                : owner
+                  ? `No sessions on ${host}.`
+                  : `Nothing on ${host} is shared with you.`}
           </EmptyLine>
         )}
       </div>
@@ -420,7 +438,6 @@ export function SessionButton({
   session: Session;
   setRenaming: (r: Renaming) => void;
 }) {
-  const state = client.state!;
   const sessionMenu = (e: MouseEvent) => {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const rename = () => {
@@ -434,7 +451,7 @@ export function SessionButton({
       { clientX: r.left, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() },
       () => [
         { header: "Switch to" },
-        ...state.sessions.map((s): MenuItem => ({ label: s.name, checked: s.id === session.id, run: () => showSession(client, s.id) })),
+        ...client.shownSessions().map((s): MenuItem => ({ label: s.name, checked: s.id === session.id, run: () => showSession(client, s.id) })),
         "separator",
         ...sessionItems(client, session.id, rename),
       ],

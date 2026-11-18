@@ -10,7 +10,7 @@
 // (tokens through the relay on the app's host) is the cloud's spec.
 import { devices, expect, test, type Page } from "@playwright/test";
 import { fixturePage } from "./fixture-page";
-import { panes, reset } from "./helpers";
+import { inProject, panes, reset } from "./helpers";
 
 const P = "prj_aaaa0002";
 
@@ -22,6 +22,7 @@ test.use({ permissions: ["local-network-access"] });
 async function openApp(page: Page, path: (pane: number) => string): Promise<number> {
   await reset(page);
   const [pane] = await panes(page);
+  await inProject(page, P, "Arugula");
   const body = await fixturePage("./app-frame-page.tsx");
   await page.route(new RegExp(`/p/${P}`), (r) => r.fulfill({ contentType: "text/html", body }));
   await page.goto(path(pane));

@@ -8,7 +8,7 @@
 // daemon.
 import { expect, test, type Page } from "@playwright/test";
 import { fixturePage } from "./fixture-page";
-import { panes, reset } from "./helpers";
+import { inProject, panes, reset } from "./helpers";
 import { PROJECT as P, byCard } from "./sessions-fixture";
 
 /** The reader's computer, as the cloud names it: the fixture page reaches
@@ -36,6 +36,7 @@ const board = {
 async function openApp(page: Page, path: (pane: number) => string): Promise<number> {
   await reset(page);
   const [pane] = await panes(page);
+  await inProject(page, P, "Arugula");
   await page.route(`**/api/projects/${P}/sessions/by-card`, (r) => r.fulfill({ json: byCard(M, pane) }));
   await page.route(`**/api/projects/${P}/boards`, (r) => r.fulfill({ json: { project: P, boards: [board.board] } }));
   await page.route("**/api/boards/brd_00e2e0", (r) => r.fulfill({ json: board }));

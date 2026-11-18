@@ -24,6 +24,7 @@ import { landOnPlatform, platformHere, platformOrigin } from "../platform-links"
 import { HostPicker, NewMachineNote, setMachineItems } from "./hosts";
 import { ControlRequests, ShareDialog } from "./people";
 import { directory } from "../hosts";
+import { onShownProject, shownProject } from "../project-view";
 import { DeveloperLayer } from "./developer";
 import { RulesLayer } from "./rules";
 import { SharingLayer } from "./sharing";
@@ -136,7 +137,7 @@ export function App({ client, cell, frame = "own", onSwarm }: { client: Client; 
       <PageGuard at={`${client.session}:${client.tab}`}>
         {!state ? (
           <HostPicker />
-        ) : state.sessions.length === 0 ? (
+        ) : client.shownSessions().length === 0 ? (
           <NoSessions client={client} phone={phone} />
         ) : tab ? (
           <TabArea client={client} tab={tab} cell={cell} phone={phone} />
@@ -175,7 +176,7 @@ export function App({ client, cell, frame = "own", onSwarm }: { client: Client; 
   );
   if (ws) {
     noteLastTab(client);
-    const session = state?.sessions.find((s) => s.id === client.session) ?? state?.sessions[0];
+    const session = client.shownSessions().find((s) => s.id === client.session);
     // The chrome is all outside `.main`, so the panes' cells and who sizes
     // the tab are the panes' own business. `frame` is the head and chrome
     // the platform page shares (shared/frame.css).
@@ -277,8 +278,38 @@ export function App({ client, cell, frame = "own", onSwarm }: { client: Client; 
  * since the machine may not be the one meant. A guest can't make one. */
 function NoSessions({ client, phone }: { client: Client; phone: boolean }) {
   useSubscribe((fn) => directory.subscribe(fn));
+  useSubscribe(onShownProject);
   const host = directory.current || "this machine";
   const guest = !!client.state?.roles;
+  // The app's machine page shows one project's sessions (Arugula #1164).
+  const project = shownProject();
+  if (project)
+    return (
+      <div class="empty" data-no-sessions data-project-empty>
+        <EmptyState
+          where="page"
+          title={guest ? `Nothing in ${project.name} on ${host}.` : `No ${project.name} sessions on ${host} yet.`}
+          action={
+            guest ? (
+              project.machines && (
+                <button class="secondary" data-project-empty-machines onClick={project.machines}>
+                  Machines
+                </button>
+              )
+            ) : (
+              <span class="empty-new-session">
+                <button class="primary" disabled={!client.connected} data-project-empty-new onClick={() => client.intent({ op: "new_session", name: null, from_pane: null })}>
+                  New session
+                </button>
+                <span class="dim" data-project-empty-where>
+                  On {project.name}
+                </span>
+              </span>
+            )
+          }
+        />
+      </div>
+    );
   return (
     <div class="empty" data-no-sessions>
       <EmptyState
@@ -321,7 +352,7 @@ function useTabTitle(client: Client) {
     return () => window.removeEventListener("hashchange", fn);
   }, []);
   const state = client.state;
-  const session = state ? (state.sessions.find((s) => s.id === client.session) ?? state.sessions[0])?.name : null;
+  const session = state ? client.shownSessions().find((s) => s.id === client.session)?.name : null;
   const title = shellTitle(currentPlace(), directory.current || null, session);
   useEffect(() => void (document.title = title), [title]);
 }

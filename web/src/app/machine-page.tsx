@@ -42,6 +42,7 @@ import { notePane } from "../platform/places-kept";
 import { popOutIn } from "../shell/ui/panes/pop-out";
 import { PanesList } from "./panes-list";
 import { newSessionsIn } from "../shell/new-session";
+import { inShown, onShownProject, projectOf, showProject } from "../shell/project-view";
 
 export interface Booted {
   machines: Machines;
@@ -173,12 +174,19 @@ export function MachinesPlace({ project, at, session }: { project: string; at: M
 
 function Place({ project, at, b: { machines, cell }, session }: { project: string; at: MachineAt; b: Booted; session: AppSession | null }) {
   useSubscribe((fn) => directory.subscribe(fn));
-  // A session made here starts in this project (Arugula #1163).
-  const projectName = platform.project(project)?.name ?? "";
+  useSubscribe((fn) => platform.subscribe(fn));
+  // Everything here shows this project's sessions only (Arugula #1164), and a session made here starts in it (Arugula #1163).
+  const p = platform.project(project);
+  const shown = { id: project, name: p?.name ?? "this project", personal: platform.personal()?.id === project };
   useEffect(() => {
-    newSessionsIn({ id: project, name: projectName });
+    newSessionsIn({ id: project, name: p?.name ?? "" });
     return () => newSessionsIn(null);
-  }, [project, projectName]);
+  }, [project, p?.name]);
+  useLayoutEffect(() => {
+    showProject({ ...shown, machines: () => go(pathOf({ page: "machines", project, at: { at: "machines" } }, names)) });
+    machines.client.reselect();
+  }, [project, shown.name, shown.personal]);
+  useEffect(() => () => showProject(null), []);
   // A list in the platform's panel: the machines, or Build's home, every machine's panes (Arugula #1083).
   const list = (at.at === "machines" && at.pane === undefined && !at.name) || at.at === "panes";
   // The shell's keys while a machine's page or Swarm is shown, and only then.
@@ -229,6 +237,7 @@ function Place({ project, at, b: { machines, cell }, session }: { project: strin
     <PlatformApiContext.Provider value={shellPlatformApi(client)}>
       <MachineView client={client} cell={cell} pop={pop} frame="app" onSwarm={() => go(pathOf({ page: "machines", project, at: { at: "swarm" } }, names))} />
       {!pop && <KeepPane key={client.base} project={project} client={client} asked={at.pane} />}
+      {at.pane !== undefined && <PaneProject key={client.base} project={project} client={client} at={at} />}
       {/* The machine page's own Swarm (`#swarm`), as on control's page. */}
       <Swarm machines={machines} client={client} ready={() => true} />
       <AgentDialogLayer />
@@ -246,13 +255,33 @@ function KeepPane({ project, client, asked }: { project: string; client: Client;
   const pane = client.connected && client.state ? client.active() : null;
   if (!settled.current && pane !== null && (pane === asked || !client.info(asked!))) settled.current = true;
   const machine = client.e2e?.daemon.id ?? directory.find(directory.current)?.id;
+  // Only a pane of this project's: one of another's is about to be left.
+  const sid = pane === null || pane === undefined ? null : client.sessionOfPane(pane);
+  const ours = client.shownSessions().some((s) => s.id === sid);
   useEffect(() => {
-    if (pane === null || !settled.current) return;
+    if (pane === null || !settled.current || !ours) return;
     const at: MachineAt = machine ? { at: "machine", machine, pane } : { at: "machines", pane };
     const path = pathOf({ page: "machines", project, at }, names);
     notePane(project, path);
     if (current().page === "machines" && location.pathname + location.search !== path) go(path, true);
-  }, [pane, machine, settled.current]);
+  }, [pane, machine, settled.current, ours]);
+  return null;
+}
+
+/** A link to a pane in another of your projects (a notification, Needs
+ * you, a pinned pane: #1161, decision 3) switches to that project first,
+ * so the tile always matches what's shown. */
+function PaneProject({ project, client, at }: { project: string; client: Client; at: MachineAt }) {
+  useSubscribe((fn) => client.subscribe(fn));
+  const pane = at.at === "swarm" || at.at === "panes" ? undefined : at.pane;
+  const sid = pane === undefined || !client.state ? null : client.sessionOfPane(pane);
+  const s = sid === null ? undefined : client.state?.sessions.find((x) => x.id === sid);
+  const yours = !!client.state && !client.state.roles;
+  const its = s && !inShown(s.project, yours) ? projectOf(s.project, yours, platform.personal()?.id) : null;
+  const to = its && its !== project && platform.project(its) ? pathOf({ page: "machines", project: its, at }, names) : null;
+  useEffect(() => {
+    if (to) go(to, true);
+  }, [to]);
   return null;
 }
 
@@ -278,7 +307,14 @@ function MachinesList({ project, fleet, session }: { project: string; fleet: Fle
   useSubscribe((fn) => session?.subscribe(fn) ?? (() => {}));
   useSubscribe((fn) => platform.subscribe(fn));
   const phone = usePhone();
-  const rows = sortRows(rowsOf(fleet.list, fleet.panes, (id) => session?.daemons.find((d) => d.id === id)?.hosted?.role));
+  useSubscribe(onShownProject);
+  const hosted = (id: string | undefined) => (id ? session?.daemons.find((d) => d.id === id)?.hosted : undefined);
+  const name = platform.project(project)?.name ?? "this project";
+  // This project's (Arugula #1164): your machines, its cloud workspaces,
+  // and any other machine with a session of it you may see.
+  const rows = sortRows(rowsOf(fleet.list, fleet.panes, (id) => hosted(id)?.role, (p, yours) => inShown(p, yours))).filter((r) =>
+    r.cloud ? hosted(r.id)?.project === project || !!r.sessions : !r.owner || !!r.sessions,
+  );
   // The project's runs and cloud workspaces are here, under Build (Arugula #1082): a run is a session in a cloud workspace.
   const runs = pathOf({ page: "runs", project }, names);
   const workspaces = pathOf({ page: "workspaces", project }, names);
@@ -306,7 +342,7 @@ function MachinesList({ project, fleet, session }: { project: string; fleet: Fle
           {rows.map((r) => {
             const at: MachineAt = r.id ? { at: "machine", machine: r.id } : { at: "machines", name: r.name };
             const to = `/p/${project}${machinesPath(at)}`;
-            const line = sessionsLine(r);
+            const line = sessionsLine(r, name);
             return (
               <li key={r.name}>
                 <Card as="a" tone={r.needsYou ? "accent" : r.online ? "ok" : "muted"} href={to} data-machine-link={r.id ?? r.name} onClick={(e) => follow(e, to)}>
@@ -326,15 +362,6 @@ function MachinesList({ project, fleet, session }: { project: string; fleet: Fle
                     <p class="card-meta" data-machine-sessions>
                       {line}
                     </p>
-                  )}
-                  {!phone && r.projects.length > 0 && (
-                    <span class="card-head">
-                      {r.projects.map((p) => (
-                        <Chip key={p} kind="tag">
-                          {p}
-                        </Chip>
-                      ))}
-                    </span>
                   )}
                 </Card>
               </li>

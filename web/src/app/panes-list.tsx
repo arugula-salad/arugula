@@ -20,6 +20,7 @@ import { names } from "../platform/links";
 import { paneOf } from "../platform/places-kept";
 import { follow, go, pathOf } from "../platform/router";
 import { paneGroups, type PaneGroup } from "./machine-list";
+import { inShown, onShownProject, shownProject } from "../shell/project-view";
 
 /** The pane you last had open in `project` (its machine's id, if the path
  * names one), from the path kept for it. */
@@ -52,12 +53,16 @@ const isAgent = (p: FleetPane) => kindOf(p) === "agent";
 export function PanesList({ project, fleet, machine, agents }: { project: string; fleet: Fleet; machine?: string; agents: boolean }) {
   useSubscribe((fn) => directory.subscribe(fn));
   useSubscribe((fn) => fleet.subscribe(fn));
+  useSubscribe(onShownProject);
   const phone = usePhone();
   const to = (at: MachineAt) => pathOf({ page: "machines", project, at }, names);
   // This list, filtered so: the machine's and Agents only's links keep each other.
   const here = (f: { machine?: string; agents: boolean }) => to({ at: "panes", ...(f.machine ? { machine: f.machine } : {}), ...(f.agents ? { agents: true } : {}) });
-  const all = paneGroups(fleet.list, fleet.panes);
-  const mine = machine ? all.filter((g) => g.id === machine || (!g.id && g.name === machine)) : all;
+  // This project's panes, on the machines that have some (Arugula #1164).
+  const every = paneGroups(fleet.list, fleet.panes, undefined, (p, yours) => inShown(p, yours));
+  const all = every.filter((g) => g.panes.length);
+  const name = shownProject()?.name ?? "this project";
+  const mine = machine ? every.filter((g) => g.id === machine || (!g.id && g.name === machine)) : all;
   const picked = machine ? mine[0] : undefined;
   // Agents only drops the machines with none, unless you picked that one.
   const groups = agents ? mine.map((g) => ({ ...g, panes: g.panes.filter(isAgent) })).filter((g) => machine || g.panes.length) : mine;
@@ -101,8 +106,10 @@ export function PanesList({ project, fleet, machine, agents }: { project: string
       </div>
       {directory.list === null ? (
         <p class="dim">Loading…</p>
-      ) : !all.length ? (
+      ) : !fleet.list.length ? (
         <EmptyState where="page" title="No machines yet." why="A machine's panes show here once it has joined your team." data-panes-empty />
+      ) : !all.length && !machine ? (
+        <EmptyState where="page" title={`No ${name} panes yet.`} why="Open a machine and start a session." data-panes-empty data-project-empty />
       ) : !mine.length ? (
         <EmptyState
           where="page"

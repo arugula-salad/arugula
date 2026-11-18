@@ -8,7 +8,7 @@
 // real one of the suite's daemon, the board and issue it names made up.
 import { expect, test, type Page } from "@playwright/test";
 import { fixturePage } from "./fixture-page";
-import { panes, reset } from "./helpers";
+import { inProject, panes, reset } from "./helpers";
 
 const P = "prj_aaaa0002";
 const B = "brd_0123456789abcdef0123456789abcdef";
@@ -31,6 +31,7 @@ const issue = { id: ISSUE, project: P, number: 1, title: "Tabs vanish", body: ""
 async function openApp(page: Page, before: (pane: number) => Promise<unknown>) {
   await reset(page);
   const [pane] = await panes(page);
+  await inProject(page, P, "Arugula");
   await before(pane);
   const body = await fixturePage("./app-frame-page.tsx");
   await page.route(new RegExp(`/p/${P}`), (r) => r.fulfill({ contentType: "text/html", body }));

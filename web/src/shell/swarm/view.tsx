@@ -20,6 +20,7 @@ import { ANSWERED_MS, answeredLine, FollowUpBox, PermissionBody, PermissionButto
 import { Avatar } from "../ui/people";
 import { escapeTaken, MenuLayer, openMenu } from "../../shared/ui/menu";
 import { usePhone, useSubscribe } from "../../shared/ui/hooks";
+import { inShown } from "../project-view";
 import { Field, type FieldHooks, type FieldPane, type HistoryRun, type SwarmScene } from "./field";
 import { FollowView, appName } from "./follow";
 import { DiffCard } from "../ui/diff-card";
@@ -193,7 +194,9 @@ export function SwarmView({
   const lanes = read.view
     ? boardFocus(read.view, fleet.panes.map((p) => ({ key: p.key, host: p.host, id: p.id, on_issue: p.info.on_issue })), (m) => fleet.hostById(m)?.name ?? fleet.host(m)?.name)
     : null;
-  const panes = board ? fleet.panes.filter((p) => lanes?.placed.has(p.key)) : fleet.panes;
+  // The shown project's panes only, in the app (Arugula #1164).
+  const ours = fleet.panes.filter((p) => inShown(p.info.session_project, !fleet.host(p.host)?.owner));
+  const panes = board ? ours.filter((p) => lanes?.placed.has(p.key)) : ours;
   const bundles = bundlesOf(panes);
   const cap = phone ? 4 : Math.max(2, Math.floor((innerHeight - 120) / 170));
   const shown = bundles.slice(0, cap);
