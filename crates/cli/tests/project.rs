@@ -336,7 +336,7 @@ fn use_sets_the_session_s_project() {
     let intents = rig.state.lock().unwrap().intents.clone();
     assert_eq!(
         intents[0],
-        json!({ "op": "set_session_project", "session": 2, "project": { "id": prj(3), "name": "Web" } })
+        json!({ "op": "set_session_project", "session": 2, "project": { "id": prj(3), "name": "Web", "team": "tm_1" } })
     );
     assert_eq!(intents[1]["project"]["id"], prj(1));
 

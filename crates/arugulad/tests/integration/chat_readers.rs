@@ -517,10 +517,13 @@ fn a_teams_other_owner_reads_every_panes_thread_until_the_roster_takes_them_out(
 
     let p = &d.get("/api/panes")[0];
     let (pane, session) = (p["id"].as_u64().unwrap(), p["session"].as_u64().unwrap().to_string());
+    // Cy reads what the team watches: its projects' sessions (Arugula #1162).
+    d.in_team_project(session.parse().unwrap(), "t1");
     let pane_t = pane.to_string();
     // Bea as an owner reads from the start and isn't watching; Cy by his
-    // team role. Only accounts the roster names, and never the machine's own.
-    let both = json!([{ "account": "a2", "from": null }, { "account": "a3", "from": null }]);
+    // team role, which watches the team's projects' sessions (Arugula
+    // #1162). Only accounts the roster names, and never the machine's own.
+    let both = json!([{ "account": "a2", "from": null }, { "account": "a3", "from": null, "watching": true }]);
     d.wait_for("the pane's readers", || lists_for(&f, "pane", &pane_t).contains(&both));
     d.wait_for("the session's readers", || lists_for(&f, "session", &session).contains(&both));
 
@@ -601,6 +604,7 @@ fn a_closed_panes_readers_only_narrow() {
 
     let first = &d.get("/api/panes")[0];
     let (closing, sid) = (first["id"].as_u64().unwrap(), first["session"].as_u64().unwrap());
+    d.in_team_project(sid, "t1");
     let open = d.post("/api/run", json!({ "command": "sh", "session": sid.to_string() }))["pane"].as_u64().unwrap();
     let (closing_t, open_t) = (closing.to_string(), open.to_string());
     let cy = Some(vec!["a3".to_owned()]);
@@ -660,6 +664,9 @@ fn team_machine(name: &str, f: &Fake, url: &str, alex: &DeviceKeys, alex_root: &
     });
     std::fs::write(d.state.join("control.json"), saved.to_string()).unwrap();
     d.start();
+    // The team reads what it watches: its projects' sessions (Arugula #1162).
+    let session = d.get("/api/panes")[0]["session"].as_u64().unwrap();
+    d.in_team_project(session, "t1");
     d
 }
 
@@ -916,6 +923,8 @@ fn a_locked_teams_share_taken_away_and_given_again_doesnt_give_back_a_closed_pan
         d.post("/api/acl", body);
     };
     let sid = d.get("/api/panes")[0]["session"].as_u64().unwrap();
+    // A team's share counts while the session is in its project (Arugula #1162).
+    d.in_team_project(sid, "t2");
     share(sid, true);
     // Bo, t2's owner, reads as Cy does; a lock keeps out only Cy.
     let has = |l: Option<Vec<String>>, a: &str| l.is_some_and(|l| l.iter().any(|x| x == a));

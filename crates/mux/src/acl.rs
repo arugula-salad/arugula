@@ -16,6 +16,8 @@
 //! project's team isn't known yet, are the owner's and whoever they're
 //! shared with: a share with a person stays wherever the session goes, and
 //! a share with a team counts only while the session is in its project.
+//! A cloud workspace is its project's: there the team role counts on every
+//! session, as before.
 
 use std::{
     collections::BTreeMap,
@@ -136,6 +138,9 @@ pub struct Acl {
     team: RwLock<std::collections::HashMap<String, Role>>,
     /// The team this machine is in (Arugula #1162), when it's a team's.
     machine_team: RwLock<Option<String>>,
+    /// It's a cloud workspace: its project's, so the team's role counts on
+    /// every session.
+    hosted: RwLock<bool>,
     /// The team whose project each session is in, for the sessions in a
     /// team's project control named (Arugula #1162).
     session_teams: RwLock<std::collections::HashMap<SessionId, String>>,
@@ -169,6 +174,7 @@ impl Acl {
             grants: RwLock::new(grants),
             team: Default::default(),
             machine_team: Default::default(),
+            hosted: Default::default(),
             session_teams: Default::default(),
             shared_teams: Default::default(),
             held: Default::default(),
@@ -233,11 +239,12 @@ impl Acl {
                     .iter()
                     .find(|g| g.session == session && &g.principal == id)
                     .map(|g| g.role);
-                let project_team = self.session_teams.read().unwrap().get(&session).cloned();
-                // The machine's team watches its projects' sessions
-                // (Arugula #1162), and nothing else.
-                let ours = project_team.is_some() && *self.machine_team.read().unwrap() == project_team;
-                let team = self.team_role_of(id).filter(|_| ours).map(|r| r.min(Role::Viewer));
+                let project_team = self.session_team(session);
+                let team = if *self.hosted.read().unwrap() {
+                    self.team_role_of(id)
+                } else {
+                    self.team_role_of(id).filter(|_| self.team_watches(session)).map(|r| r.min(Role::Viewer))
+                };
                 // Shared with a team they're in, while the session is in
                 // that team's project: the grant's role, at most their role
                 // in the team.
@@ -270,9 +277,27 @@ impl Acl {
         *self.team.write().unwrap() = roles;
     }
 
-    /// The team this machine is in, if any (Arugula #1162).
-    pub fn set_machine_team(&self, team: Option<String>) {
+    /// Whether this machine's team gets `session` by its members' roles: a
+    /// cloud workspace's every session, else one in the team's project
+    /// (Arugula #1162), as a viewer's at most.
+    pub fn team_watches(&self, session: SessionId) -> bool {
+        if *self.hosted.read().unwrap() {
+            return true;
+        }
+        let team = self.machine_team.read().unwrap();
+        team.is_some() && self.session_teams.read().unwrap().get(&session) == team.as_ref()
+    }
+
+    /// The team whose project `session` is in, as control named it.
+    pub fn session_team(&self, session: SessionId) -> Option<String> {
+        self.session_teams.read().unwrap().get(&session).cloned()
+    }
+
+    /// The team this machine is in, if any (Arugula #1162), and whether
+    /// it's a cloud workspace.
+    pub fn set_machine_team(&self, team: Option<String>, hosted: bool) {
         *self.machine_team.write().unwrap() = team;
+        *self.hosted.write().unwrap() = hosted;
     }
 
     /// The team whose project each session is in (Arugula #1162): the
@@ -639,7 +664,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("arugula-acl-token-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let acl = Acl::open(&dir);
-        acl.set_machine_team(Some("t1".into()));
+        acl.set_machine_team(Some("t1".into()), false);
         acl.set_session_teams([(3, "t1".to_owned())]);
         let bea = Principal::User { id: "account:b1".into(), name: "bea".into(), pic: None };
         acl.set_team_roles([("account:b1".to_owned(), Role::Editor)].into());
@@ -675,7 +700,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("arugula-acl-viewer-only-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let acl = Acl::open(&dir);
-        acl.set_machine_team(Some("t1".into()));
+        acl.set_machine_team(Some("t1".into()), false);
         acl.set_session_teams([(4, "t1".to_owned()), (5, "t1".to_owned())]);
         let bea = Principal::User { id: "account:b1".into(), name: "bea".into(), pic: None };
         acl.set(3, "account:b1", "bea", Some(Role::Editor), "owner").unwrap();
@@ -721,7 +746,7 @@ mod tests {
     #[test]
     fn a_team_watches_its_projects_sessions_and_no_others() {
         let (dir, acl) = opened("team-project");
-        acl.set_machine_team(Some("t1".into()));
+        acl.set_machine_team(Some("t1".into()), false);
         // 1 in t1's project, 2 in t2's; 3 in the owner's own, 4 in none:
         // neither has a team.
         acl.set_session_teams([(1, "t1".to_owned()), (2, "t2".to_owned())]);
@@ -748,7 +773,7 @@ mod tests {
     #[test]
     fn a_project_change_grants_and_revokes_the_teams_watch() {
         let (dir, acl) = opened("project-change");
-        acl.set_machine_team(Some("t1".into()));
+        acl.set_machine_team(Some("t1".into()), false);
         acl.set_team_roles([("account:b1".to_owned(), Role::Viewer)].into());
         let bea = Principal::User { id: "account:b1".into(), name: "bea".into(), pic: None };
         assert!(!acl.set_session_teams([]));
@@ -763,8 +788,19 @@ mod tests {
         assert_eq!(acl.role(&bea, 7), None);
         // The machine left the team: none of its old projects' sessions.
         acl.set_session_teams([(7, "t1".to_owned())]);
-        acl.set_machine_team(None);
+        acl.set_machine_team(None, false);
         assert_eq!(acl.role(&bea, 7), None);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// A cloud workspace is its project's: its team's members keep their
+    /// role on every session, whatever its project.
+    #[test]
+    fn a_cloud_workspaces_team_keeps_its_role_everywhere() {
+        let (dir, acl) = opened("hosted");
+        acl.set_machine_team(Some("t1".into()), true);
+        acl.set_team_roles([("account:c1".to_owned(), Role::Viewer)].into());
+        assert_eq!(acl.role_of("account:c1", 1), Some(Role::Viewer), "no project's team known");
         std::fs::remove_dir_all(dir).unwrap();
     }
 
@@ -776,7 +812,7 @@ mod tests {
     #[test]
     fn a_persons_share_stays_and_a_teams_follows_the_project() {
         let (dir, acl) = opened("shares");
-        acl.set_machine_team(Some("t1".into()));
+        acl.set_machine_team(Some("t1".into()), false);
         acl.set_team_roles([("account:b1".to_owned(), Role::Viewer)].into());
         acl.set_shared_teams([("t1".to_owned(), [("account:c1".to_owned(), Role::Editor)].into())].into());
         let (bea, cy) = (
@@ -803,7 +839,7 @@ mod tests {
     #[test]
     fn with_no_team_known_the_team_gets_nothing() {
         let (dir, acl) = opened("old-control");
-        acl.set_machine_team(Some("t1".into()));
+        acl.set_machine_team(Some("t1".into()), false);
         acl.set_team_roles([("account:b1".to_owned(), Role::Editor)].into());
         acl.hold("account:c1", Hold::token(Some(Role::Editor), false));
         acl.set_session_teams([]);

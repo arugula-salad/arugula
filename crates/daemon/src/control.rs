@@ -2637,7 +2637,10 @@ impl Control {
         }
         crate::sites::set_control_origins(origins);
         self.acl.set_team_roles(e.as_ref().map(|e| e.team_roles.clone()).unwrap_or_default());
-        self.acl.set_machine_team(e.as_ref().and_then(|e| e.saved.team_id()));
+        self.acl.set_machine_team(
+            e.as_ref().and_then(|e| e.saved.team_id()),
+            e.as_ref().is_some_and(|e| e.saved.is_hosted()),
+        );
         self.acl.set_shared_teams(e.as_ref().map(|e| e.shared_roles.clone()).unwrap_or_default());
         *self.now.write().unwrap() = e.map(Arc::new);
         self.changed.send_modify(|v| *v += 1);

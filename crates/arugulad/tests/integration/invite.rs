@@ -557,25 +557,33 @@ fn team_pins_make_members_nameable_and_delivery_is_what_control_did() {
     assert_eq!(w.bea.got(&w.fake).len(), 2);
 }
 
+/// On a team daemon its members watch the sessions in the team's projects
+/// (Arugula #1162): a viewer's invite is only the push, and an editor's
+/// shares the session, after which no one's trust is needed to steer it.
 #[test]
-fn on_a_team_daemon_a_members_role_is_enough() {
+fn on_a_team_daemon_a_members_role_is_enough_to_watch() {
     let w = world();
     w.fake.lock().unwrap().team = Some(w.t1.clone());
     w.route(&w.bea);
     let d = w.daemon(true);
     let (_, session) = first(&d);
+    d.in_team_project(session, "t1");
 
-    // Bea drives everything here already: no grant, just the push.
-    let (status, r) =
-        invite_when_known(&d, json!({ "session": session, "who": "bea", "role": "editor", "drive_minutes": 30 }));
+    // Bea watches it already: no grant, just the push.
+    let (status, r) = invite_when_known(&d, json!({ "session": session, "who": "bea", "role": "viewer" }));
     assert_eq!(status, 200, "{r}");
     assert_eq!(r["grant"]["granted"], false, "{r}");
-    assert_eq!(r["drive"], false, "a team's machine: no one's trust needed");
     assert_eq!(r["delivery"], "sent", "{r}");
     assert!(d.get("/api/acl")["grants"].as_array().unwrap().is_empty());
+    assert_eq!(w.bea.got(&w.fake).len(), 1);
+    // To steer it she's shared it as an editor: a team's machine needs no
+    // one's trust then.
+    let (status, r) = invite(&d, json!({ "session": session, "who": "bea", "role": "editor", "drive_minutes": 30 }));
+    assert_eq!(status, 200, "{r}");
+    assert_eq!((r["grant"]["granted"].as_bool(), r["grant"]["role"].as_str()), (Some(true), Some("editor")), "{r}");
+    assert_eq!(r["drive"], false, "a team's machine: no one's trust needed");
     let panes = d.get("/api/panes");
     assert!(panes[0]["trusted"].as_array().is_none_or(|t| t.is_empty()), "{panes}");
-    assert_eq!(w.bea.got(&w.fake).len(), 1);
     // The owner is the owner already.
     let (status, _) = invite(&d, json!({ "session": session, "who": "account:a1" }));
     assert_eq!(status, 404, "this account is never named");
@@ -893,7 +901,10 @@ async fn remote_input_off_makes_a_team_owners_device_a_viewer() {
     let w = world_where(TeamRole::Owner);
     w.fake.lock().unwrap().team = Some(w.t1.clone());
     let d = w.daemon(true);
-    let (pane, _) = first(&d);
+    let (pane, session) = first(&d);
+    // With remote input off, Dee watches as the team does: the sessions in
+    // its projects (Arugula #1162).
+    d.in_team_project(session, "t1");
     let send = format!("/api/panes/{pane}/send");
     let typed = || json!({ "text": "echo hi" });
     let (mut dee, dee_ch) = channel(&d, &w.daemon, &w.dee.keys).await;
