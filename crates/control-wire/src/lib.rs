@@ -177,7 +177,8 @@ pub struct ControlInfo {
     #[serde(default)]
     pub cli_join: u64,
     /// Control passes a join secret's MAC from the approving device to the
-    /// machine (#760), so a machine's link may carry a secret.
+    /// machine (#760), so a machine's link may carry a secret. From 2, a
+    /// one-click Add's MAC too (aru-141, [`JOIN_SECRET_ONE_CLICK`]).
     #[serde(default, skip_serializing_if = "is_zero")]
     pub join_secret: u64,
     /// Control passes an approving device's MAC under a waiting device's
@@ -242,9 +243,16 @@ fn is_zero(n: &u64) -> bool {
     *n == 0
 }
 
+/// `/control.json`'s `join_secret` from which a one-click Add (aru-141)
+/// carries a MAC under the link's secret too, and control refuses one
+/// without it for a machine that made a secret: then the machine takes no
+/// one-click Add without it either.
+pub const JOIN_SECRET_ONE_CLICK: u64 = 2;
+
 /// Just whether control passes a join secret's MAC on (#760), from
 /// `/control.json`, read apart from [`ControlInfo`] like the others. A
-/// machine or the CLI puts a secret in its link only when it does.
+/// machine or the CLI puts a secret in its link only when it does; from
+/// [`JOIN_SECRET_ONE_CLICK`], a one-click Add's too.
 #[derive(Debug, Clone, Copy, Default, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ControlJoinSecret {

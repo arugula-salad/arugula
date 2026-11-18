@@ -19,7 +19,7 @@ import { ANY, daemonPort, listen } from "./ports";
 import { labs } from "./labs";
 import { ready, run } from "./helpers";
 import { keyHeaders } from "./local-token";
-import { certBody, deviceId, hex, joinCode, unhex, type Cert } from "../src/shell/e2e/cert.ts";
+import { certBody, deviceId, hex, joinCode, oneClickMac, unhex, type Cert } from "../src/shell/e2e/cert.ts";
 import { generateKeys, signText } from "../src/shell/e2e/keys.ts";
 
 // Control's routes are on the page, and a service worker would take them.
@@ -198,44 +198,54 @@ for (const root of [null, "other"] as const) {
 
 // #1003: Getting started's link (`#join=CODE.SECRET`) on a browser with no
 // device key: it isn't asked to be approved, and adds the machine with one
-// click, as the signed-in person: no certificate, no MAC, no fingerprint.
-test("a browser with no device key adds a machine's join in one click", async ({ page }) => {
-  const enrolled: string[] = [];
-  const added: unknown[] = [];
-  // Another machine, waiting with its code.
-  const k = await generateKeys(true);
-  const joining: Cert = { v: 1, account: "", device: k.id, kind: "daemon", name: "new-box", noise: k.noisePub, sign: k.signPub, created: Date.now(), approver: "", sig: "" };
-  const code = await joinCode(joining);
-  await page.route(/\/control\.json$/, (r) => r.fulfill({ json: { control: true, url: origin, github: true, passkeys: false, vapid: "" } }));
-  await page.route(/\/\.well-known\/jwks\.json$/, (r) => r.fulfill({ json: jwks() }));
-  await page.route(/\/api\//, async (r) => {
-    const url = new URL(r.request().url());
-    const method = r.request().method();
-    if (url.pathname === "/api/me") return r.fulfill({ json: { account: "a1", login: "me", name: "Me", root: rootDevice, passkeys: 0 } });
-    if (url.pathname === "/api/directory") return r.fulfill({ json: { daemons: [{ id: machine.id, name: "box", urls: [origin], online: true, last_seen: null, noise: machine.noise }] } });
-    if (url.pathname === "/api/teams") return r.fulfill({ json: { teams: [] } });
-    if (url.pathname === `/api/joins/${code}` && method === "GET")
-      return r.fulfill({ json: { code, cert: joining, urls: [], created: Date.now(), team: null, features: "presigned-invites,owner-moves,join-secret,owner-passkeys" } });
-    if (url.pathname === `/api/joins/${code}/approve` && method === "POST") {
-      added.push(r.request().postDataJSON());
-      return r.fulfill({ json: { approved: true, daemon: joining.device } });
-    }
-    if (url.pathname.startsWith("/api/devices") && method === "POST") enrolled.push(url.pathname);
-    return r.fulfill({ status: 404, json: { error: "not here" } });
-  });
+// click, as the signed-in person: no certificate and no fingerprint, but a
+// MAC under the link's secret over the account and the machine's keys,
+// which the machine checks. With the code alone, it asks for the rest of
+// the code before it offers Add.
+for (const whole of [true, false]) {
+  test(`a browser with no device key adds a machine's join in one click${whole ? "" : ", from the code and the rest typed"}`, async ({ page }) => {
+    const enrolled: string[] = [];
+    const added: unknown[] = [];
+    // Another machine, waiting with its code.
+    const k = await generateKeys(true);
+    const joining: Cert = { v: 1, account: "", device: k.id, kind: "daemon", name: "new-box", noise: k.noisePub, sign: k.signPub, created: Date.now(), approver: "", sig: "" };
+    const code = await joinCode(joining);
+    await page.route(/\/control\.json$/, (r) => r.fulfill({ json: { control: true, url: origin, github: true, passkeys: false, vapid: "" } }));
+    await page.route(/\/\.well-known\/jwks\.json$/, (r) => r.fulfill({ json: jwks() }));
+    await page.route(/\/api\//, async (r) => {
+      const url = new URL(r.request().url());
+      const method = r.request().method();
+      if (url.pathname === "/api/me") return r.fulfill({ json: { account: "a1", login: "me", name: "Me", root: rootDevice, passkeys: 0 } });
+      if (url.pathname === "/api/directory") return r.fulfill({ json: { daemons: [{ id: machine.id, name: "box", urls: [origin], online: true, last_seen: null, noise: machine.noise }] } });
+      if (url.pathname === "/api/teams") return r.fulfill({ json: { teams: [] } });
+      if (url.pathname === `/api/joins/${code}` && method === "GET")
+        return r.fulfill({ json: { code, cert: joining, urls: [], created: Date.now(), team: null, features: "presigned-invites,owner-moves,join-secret,owner-passkeys" } });
+      if (url.pathname === `/api/joins/${code}/approve` && method === "POST") {
+        added.push(r.request().postDataJSON());
+        return r.fulfill({ json: { approved: true, daemon: joining.device } });
+      }
+      if (url.pathname.startsWith("/api/devices") && method === "POST") enrolled.push(url.pathname);
+      return r.fulfill({ status: 404, json: { error: "not here" } });
+    });
 
-  await page.goto(`${origin}/#join=${code}.ABCD-EFGH-JKMN-PQRS`);
-  await expect.poll(() => page.evaluate(() => window.__arugula?.control?.phase)).toBe("ready");
-  expect(await page.evaluate(() => [window.__arugula.control?.tokens, !!window.__arugula.control?.enrollment])).toEqual([true, false]);
-  const dialog = page.getByRole("dialog", { name: "Add a machine?" });
-  await expect(dialog).toContainText("new-box asks to join your account.");
-  await expect(dialog).not.toContainText(/fingerprint|Its key/);
-  await expect(dialog.locator("[data-join-rest]")).toHaveCount(0);
-  await dialog.locator("[data-approve-join]").filter({ hasText: /^Add$/ }).click();
-  await expect(dialog).toBeHidden();
-  expect(added).toEqual([{ team: null }]);
-  expect(enrolled).toEqual([]);
-});
+    await page.goto(whole ? `${origin}/#join=${code}.ABCD-EFGH-JKMN-PQRS` : `${origin}/#join=${code}`);
+    await expect.poll(() => page.evaluate(() => window.__arugula?.control?.phase)).toBe("ready");
+    expect(await page.evaluate(() => [window.__arugula.control?.tokens, !!window.__arugula.control?.enrollment])).toEqual([true, false]);
+    const dialog = page.getByRole("dialog", { name: "Add a machine?" });
+    await expect(dialog).toContainText("new-box asks to join your account.");
+    await expect(dialog).not.toContainText(/fingerprint|Its key/);
+    const add = dialog.locator("[data-approve-join]").filter({ hasText: /^Add$/ });
+    if (whole) await expect(dialog.locator("[data-join-rest]")).toHaveCount(0);
+    else {
+      await expect(add).toBeDisabled();
+      await dialog.locator("[data-join-whole]").fill("ABCD-EFGH-JKMN-PQRS");
+    }
+    await add.click();
+    await expect(dialog).toBeHidden();
+    expect(added).toEqual([{ team: null, mac: await oneClickMac("ABCD-EFGH-JKMN-PQRS", "a1", joining) }]);
+    expect(enrolled).toEqual([]);
+  });
+}
 
 // #997: no browser becomes a device any more where control signs tokens:
 // not the account's first (which used to sign itself as its root), and not

@@ -17,6 +17,12 @@
 //! - **Without** (an older control, or `ARUGULA_FEATURES` playing an older
 //!   daemon): it shows the account's fingerprint (its root device's id),
 //!   which the person checks against the device they approved on.
+//! - **Added in one click** (aru-141): a signed-in page adds it with no
+//!   device, and it's saved on control's word with no root pinned. With a
+//!   join secret, the Add answers it too
+//!   ([`arugula_e2e::cert::one_click_mac`], when control passes that on):
+//!   the code alone doesn't add the machine, the whole link does. And
+//!   `--account` names the account it must be, by its id or its root's.
 //!
 //! The running daemon notices the file (within a few seconds), and from
 //! then on:
@@ -4187,6 +4193,10 @@ pub struct JoinPending {
     /// The join secret in the link after the code (#760), when control
     /// passes its MAC on; never sent to control.
     secret: Option<String>,
+    /// Control passes a one-click Add's MAC on too, and refuses an Add
+    /// without it (`wire::JOIN_SECRET_ONE_CLICK`): then this machine takes
+    /// none without it either.
+    one_click_proof: bool,
     state_dir: PathBuf,
     pub expires_in_secs: u64,
     /// The team `--team` named, by name.
@@ -4235,8 +4245,10 @@ pub enum AccountCheck {
     /// account's fingerprint, as before.
     Unasked,
     /// A signed-in person added it with no device certificate (aru-141):
-    /// control's word is what decides who reaches a machine now, so
-    /// there's nothing to check, and no root is pinned.
+    /// control's word is what decides who reaches a machine now, and no
+    /// root is pinned. When this machine made a secret, the Add answered it
+    /// (`cert::one_click_mac`), so whoever added it had the whole link;
+    /// `--account` still names the account it must be.
     Control,
 }
 
@@ -4261,6 +4273,9 @@ pub struct Approved {
     pub joined: Joined,
     /// How the account was checked, so far.
     pub check: AccountCheck,
+    /// Added in one click (aru-141): the account's root device, if control
+    /// named one, for `--account` to compare as well as the account's id.
+    control_root: Option<String>,
 }
 
 /// Turned down here: ask control to drop the machine again (best effort),
@@ -4281,18 +4296,28 @@ async fn drop_key(url: &str, state_dir: &Path) {
     let _ = std::fs::remove_file(key);
 }
 
-/// Whether control passes a join secret's MAC on (#760).
-async fn takes_secret(http: &reqwest::Client, url: &str) -> bool {
-    let Ok(r) = http.get(format!("{url}{}", wire::CONTROL_JSON)).send().await else { return false };
+/// Which join secrets' MACs control passes on (#760): 0 none, 1 a device
+/// approval's, from [`wire::JOIN_SECRET_ONE_CLICK`] a one-click Add's too.
+async fn secret_version(http: &reqwest::Client, url: &str) -> u64 {
+    let Ok(r) = http.get(format!("{url}{}", wire::CONTROL_JSON)).send().await else { return 0 };
     let about: wire::ControlJoinSecret = r.json().await.unwrap_or_default();
-    about.join_secret >= 1
+    about.join_secret
 }
 
 impl Approved {
     /// Whether `typed` is this account's fingerprint (any case, with or
     /// without the dashes).
+    ///
+    /// Added in one click (aru-141), there's no root pinned: the account
+    /// control named is checked instead, by its id or its root device's.
     pub fn is_account(&self, typed: &str) -> bool {
-        self.saved.trust().is_some_and(|t| same_fingerprint(&t.root, typed))
+        match self.saved.trust() {
+            Some(t) => same_fingerprint(&t.root, typed),
+            None => {
+                same_fingerprint(&self.saved.cert.account, typed)
+                    || self.control_root.as_deref().is_some_and(|r| same_fingerprint(r, typed))
+            }
+        }
     }
 
     /// Pin the account and save `control.json` (a running daemon picks it
@@ -4359,7 +4384,8 @@ pub async fn join_start(
     // A secret in the link (#760), when this daemon takes them and control
     // passes the MAC on.
     let mut feats = features();
-    let secret = (has_feature(&feats, cert::JOIN_SECRET) && takes_secret(&http, &url).await).then(cert::join_secret);
+    let version = if has_feature(&feats, cert::JOIN_SECRET) { secret_version(&http, &url).await } else { 0 };
+    let secret = (version >= 1).then(cert::join_secret);
     if secret.is_none() {
         feats = feats.split(',').filter(|f| *f != cert::JOIN_SECRET).collect::<Vec<_>>().join(",");
     }
@@ -4409,6 +4435,7 @@ pub async fn join_start(
     let mut p = JoinPending {
         url,
         code: started.code,
+        one_click_proof: secret.is_some() && version >= wire::JOIN_SECRET_ONE_CLICK,
         secret,
         state_dir: state_dir.to_owned(),
         expires_in_secs: started.expires_in_secs,
@@ -4430,7 +4457,20 @@ pub async fn join_start(
 /// one ([`AccountCheck`]): a wrong one refuses here and drops the key.
 /// Nothing is saved until [`Approved::save`].
 pub async fn join_finish(p: JoinPending) -> anyhow::Result<Approved> {
-    let JoinPending { url, code, secret, state_dir, expires_in_secs, team_name, poll, ask, http, _lock, .. } = p;
+    let JoinPending {
+        url,
+        code,
+        secret,
+        one_click_proof,
+        state_dir,
+        expires_in_secs,
+        team_name,
+        poll,
+        ask,
+        http,
+        _lock,
+        ..
+    } = p;
     let mins = expires_in_secs / 60;
     let deadline = std::time::Instant::now() + Duration::from_secs(expires_in_secs);
     let got = loop {
@@ -4455,10 +4495,19 @@ pub async fn join_finish(p: JoinPending) -> anyhow::Result<Approved> {
         }
     };
     // Added by a signed-in person (aru-141): saved on control's word, with
-    // no root to pin and nothing to compare.
+    // no root to pin. A machine that made a secret takes it only with the
+    // Add's answer to it, which only the whole link makes: the code alone
+    // isn't enough to add it. One guess per code, as below.
     if let Some(j) = &got.joined {
+        if let (true, Some(s)) = (one_click_proof, &secret) {
+            let answered = got.mac.as_deref().is_some_and(|mac| cert::one_click_mac_ok(s, &j.account, &ask, mac));
+            if !answered {
+                drop_key(&url, &state_dir).await;
+                bail!("{}", if got.mac.is_none() { ONE_CLICK_NO_PROOF } else { ONE_CLICK_WRONG_PROOF });
+            }
+        }
         let (saved, joined) = saved_by_control(&url, &ask, j)?;
-        return Ok(Approved { saved, joined, check: AccountCheck::Control });
+        return Ok(Approved { saved, joined, check: AccountCheck::Control, control_root: j.root.clone() });
     }
     let (cert, trust) = got.cert.zip(got.trust).context("control approved it but sent no certificate")?;
     if !cert.same_request(&ask) {
@@ -4527,8 +4576,14 @@ pub async fn join_finish(p: JoinPending) -> anyhow::Result<Approved> {
         key: fingerprint(&cert.device),
         account: fingerprint(&trust.root),
     };
-    Ok(Approved { saved, joined, check })
+    Ok(Approved { saved, joined, check, control_root: None })
 }
+
+/// A one-click Add with no answer to this machine's secret.
+const ONE_CLICK_NO_PROOF: &str = "the machine was added without the secret in its link (from the code alone, without the part after the dot?); not joining. This machine made a new key: run join again, and open the whole link it prints in a browser that's signed in";
+
+/// A one-click Add whose answer to this machine's secret is wrong.
+const ONE_CLICK_WRONG_PROOF: &str = "the Add doesn't match the secret in this machine's link: the code was mistyped, or it was added to another account than the one that answered. Not joining; this machine made a new key, so run join again for a new link";
 
 /// A join on control's word (aru-141): what to save for `j`, the answer
 /// to `ask` (this machine's unsigned certificate), and what to say. No
@@ -4684,8 +4739,13 @@ pub async fn join(
     let a = join_finish(p).await?;
     let fp = a.joined.account.clone();
     let checked = match &account {
-        // Added by a signed-in person (aru-141): control's word decides who
-        // reaches a machine now, so there's no root to compare.
+        // Added by a signed-in person (aru-141): no root to compare, but
+        // `--account` names the account it must be.
+        Some(want) if a.check == AccountCheck::Control && !a.is_account(want) => Err(anyhow::anyhow!(
+            "control added this machine to {}, not the account {}; not joining. Add it from that account, or join with a token made there (`arugulad join --token`)",
+            a.joined.place,
+            fingerprint(want)
+        )),
         _ if a.check == AccountCheck::Control => Ok(()),
         Some(want) if !a.is_account(want) => Err(anyhow::anyhow!(
             "control approved this machine into the account {fp}, not {}; not joining",
@@ -5283,12 +5343,189 @@ pub(crate) mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// What the page that adds a machine in one click sends with it.
+    #[derive(Default, Clone, Copy, PartialEq)]
+    enum Add {
+        /// The code alone: no MAC.
+        #[default]
+        CodeOnly,
+        /// A MAC under some other secret.
+        Wrong,
+        /// The whole link, read from what this machine says it's waiting
+        /// on (`join.lock`): the MAC under its secret.
+        Link,
+    }
+
+    /// aru-141: a control that adds whatever asked in one click, into
+    /// `account` (with `root`, if any), passing on what the page sent
+    /// (`add`). `join_secret` is what its `/control.json` says.
+    #[derive(Default)]
+    struct OneClickFake {
+        join_secret: u64,
+        asked: Option<Cert>,
+        account: String,
+        root: Option<String>,
+        add: Add,
+        state_dir: PathBuf,
+        left: usize,
+    }
+
+    async fn one_click_fake(join_secret: u64, state_dir: &Path) -> (String, Arc<std::sync::Mutex<OneClickFake>>) {
+        use axum::{
+            Json, Router,
+            routing::{get, post},
+        };
+        let fake = Arc::new(std::sync::Mutex::new(OneClickFake {
+            join_secret,
+            account: "a1b2c3d4e5f60718".into(),
+            state_dir: state_dir.to_owned(),
+            ..Default::default()
+        }));
+        let (f0, f1, f2, f3) = (fake.clone(), fake.clone(), fake.clone(), fake.clone());
+        let app = Router::new()
+            .route(
+                "/control.json",
+                get(move || async move {
+                    let v = f0.lock().unwrap().join_secret;
+                    Json(serde_json::json!({ "daemon_auth": 2, "join_secret": v }))
+                }),
+            )
+            .route(
+                "/api/join",
+                post(move |Json(b): Json<serde_json::Value>| async move {
+                    let c: Cert = serde_json::from_value(b["cert"].clone()).unwrap();
+                    let code = join_code(&c);
+                    f1.lock().unwrap().asked = Some(c);
+                    Json(serde_json::json!({ "code": code, "poll": "p", "expires_in_secs": 60 }))
+                }),
+            )
+            .route(
+                "/api/join/{code}",
+                get(move || async move {
+                    let f = f2.lock().unwrap();
+                    let asked = f.asked.clone().unwrap();
+                    let joined = wire::Joined {
+                        account: f.account.clone(),
+                        root: f.root.clone(),
+                        login: "sam".into(),
+                        machine: asked.device.clone(),
+                        team: None,
+                    };
+                    let mut v = serde_json::json!({ "approved": true, "joined": joined });
+                    let lock: JoinLockInfo =
+                        serde_json::from_slice(&std::fs::read(f.state_dir.join(JOIN_LOCK)).unwrap()).unwrap();
+                    let secret = lock.code.as_deref().and_then(|w| cert::split_join_code(w).unwrap().1);
+                    match (f.add, secret) {
+                        (Add::CodeOnly, _) => {}
+                        (Add::Wrong, _) => {
+                            v["mac"] = serde_json::json!(cert::one_click_mac(&cert::join_secret(), &f.account, &asked))
+                        }
+                        (Add::Link, Some(s)) => {
+                            v["mac"] = serde_json::json!(cert::one_click_mac(&s, &f.account, &asked))
+                        }
+                        (Add::Link, None) => {}
+                    }
+                    Json(v)
+                }),
+            )
+            .route(
+                "/api/daemon/leave",
+                post(move || async move {
+                    f3.lock().unwrap().left += 1;
+                    Json(serde_json::json!({}))
+                }),
+            );
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", l.local_addr().unwrap());
+        crate::task::spawn(async move { axum::serve(l, app).await });
+        (url, fake)
+    }
+
+    /// aru-141: a machine that made a join secret takes a one-click Add
+    /// only with the Add's answer to it, which only the whole link makes.
+    /// The code alone, or a wrong answer, ends the join: nothing saved, the
+    /// key dropped and control told. With the link's answer it joins on
+    /// control's word, asking nobody. A control that doesn't pass the
+    /// answer on (an older one) still adds it as before.
+    #[tokio::test]
+    async fn a_one_click_add_needs_the_links_secret() {
+        let dir = std::env::temp_dir().join(format!("arugula-join-one-click-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let key = dir.join(KEY_FILE);
+        let (url, fake) = one_click_fake(wire::JOIN_SECRET_ONE_CLICK, &dir).await;
+
+        // The code alone.
+        let e = join(&url, "box", None, None, &dir).await.expect_err("refused");
+        assert!(e.to_string().contains("without the secret in its link"), "{e}");
+        assert!(read_saved(&dir).unwrap().is_none() && !key.exists());
+        assert_eq!(fake.lock().unwrap().left, 1, "control is told to drop it");
+
+        // An answer under another secret.
+        fake.lock().unwrap().add = Add::Wrong;
+        let e = join(&url, "box", None, None, &dir).await.expect_err("refused");
+        assert!(e.to_string().contains("doesn't match the secret"), "{e}");
+        assert!(read_saved(&dir).unwrap().is_none() && !key.exists());
+        assert_eq!(fake.lock().unwrap().left, 2);
+
+        // The whole link.
+        fake.lock().unwrap().add = Add::Link;
+        join(&url, "box", None, None, &dir).await.unwrap();
+        let saved = read_saved(&dir).unwrap().unwrap();
+        assert!(saved.by_control().is_some() && saved.trust().is_none());
+        assert_eq!(saved.cert.account, "a1b2c3d4e5f60718");
+        assert_eq!(fake.lock().unwrap().left, 2);
+        let _ = std::fs::remove_dir_all(&dir);
+
+        // An older control, which takes the code alone: as before.
+        let (url, _) = one_click_fake(1, &dir).await;
+        let a = join_finish(join_start(&url, "box", None, &dir, "a test").await.unwrap()).await.unwrap();
+        assert_eq!(a.check, AccountCheck::Control);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// aru-141: `--account` holds for a one-click Add too: added to another
+    /// account, the machine refuses, saves nothing and drops its key. The
+    /// account is named by its id, or its root device's when it has one.
+    #[tokio::test]
+    async fn account_names_the_account_a_one_click_add_must_be() {
+        let dir = std::env::temp_dir().join(format!("arugula-join-one-click-account-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let (url, fake) = one_click_fake(wire::JOIN_SECRET_ONE_CLICK, &dir).await;
+        fake.lock().unwrap().add = Add::Link;
+        let root = DeviceKeys::generate().id();
+        fake.lock().unwrap().root = Some(root.clone());
+
+        let mine = fingerprint(&DeviceKeys::generate().id());
+        let e = join(&url, "box", None, Some(&mine), &dir).await.expect_err("refused");
+        assert!(e.to_string().contains(&format!("not the account {mine}; not joining")), "{e}");
+        assert!(e.to_string().contains("sam's account"), "says where it went: {e}");
+        assert!(read_saved(&dir).unwrap().is_none() && !dir.join(KEY_FILE).exists());
+        assert_eq!(fake.lock().unwrap().left, 1);
+
+        // Its id, dashed as a fingerprint is; then its root's.
+        join(&url, "box", None, Some("a1b2-c3d4-e5f6-0718"), &dir).await.unwrap();
+        assert_eq!(read_saved(&dir).unwrap().unwrap().cert.account, "a1b2c3d4e5f60718");
+        let _ = std::fs::remove_dir_all(&dir);
+        join(&url, "box", None, Some(&fingerprint(&root)), &dir).await.unwrap();
+        assert!(read_saved(&dir).unwrap().is_some());
+        let _ = std::fs::remove_dir_all(&dir);
+
+        // With no secret to answer (an older control), `--account` still
+        // holds.
+        let (url, fake) = one_click_fake(0, &dir).await;
+        fake.lock().unwrap().root = None;
+        let e = join(&url, "box", None, Some(&mine), &dir).await.expect_err("refused");
+        assert!(e.to_string().contains("not joining"), "{e}");
+        assert!(read_saved(&dir).unwrap().is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// A machine joined on control's word (aru-141), as `join --token` and
     /// one-click approval save it.
     fn by_control(team: Option<wire::JoinedTeam>) -> (DeviceKeys, Saved) {
         let keys = DeviceKeys::generate();
         let ask = Cert { account: String::new(), ..Cert::new(&keys, "", Kind::Daemon, "box") };
-        let j = wire::Joined { account: "acct1".into(), login: "sam".into(), machine: keys.id(), team };
+        let j = wire::Joined { account: "acct1".into(), root: None, login: "sam".into(), machine: keys.id(), team };
         let (saved, joined) = saved_by_control("https://control.example", &ask, &j).unwrap();
         assert_eq!(joined.key, fingerprint(&keys.id()));
         (keys, saved)
@@ -5385,7 +5622,8 @@ pub(crate) mod tests {
 
         // Control adding some other machine isn't joined.
         let ask = Cert::new(&keys, "", Kind::Daemon, "box");
-        let other = wire::Joined { account: "a".into(), login: "".into(), machine: "elsewhere".into(), team: None };
+        let other =
+            wire::Joined { account: "a".into(), root: None, login: "".into(), machine: "elsewhere".into(), team: None };
         assert!(saved_by_control("https://c", &ask, &other).is_err());
     }
 

@@ -14,9 +14,9 @@ pub struct Args {
     /// Join it to a team (its id), not your account alone.
     #[arg(long)]
     team: Option<String>,
-    /// The account's fingerprint, as the approving device shows it
-    /// (Devices and machines…): checked too. Only needed with an older
-    /// control or daemon, whose link has no secret to answer.
+    /// The account it must join: its fingerprint, as the approving device
+    /// shows it (Devices and machines…), or its id. Checked for a one-click
+    /// Add too: added to another account, it doesn't join.
     #[arg(long, value_name = "FINGERPRINT")]
     account: Option<String>,
 }

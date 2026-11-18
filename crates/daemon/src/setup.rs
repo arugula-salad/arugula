@@ -483,10 +483,11 @@ async fn start_join(app: &Arc<App>, url: &str, team: Option<&str>) -> Value {
             let app = app.clone();
             crate::task::spawn(async move {
                 // Saved at once, however it was approved (#1003): a
-                // signed-in person's one click, or one of the account's
-                // devices, with or without its answer to the link's
-                // secret. Control's word is what decides who reaches a
-                // machine now (aru-141), so there's nothing to compare.
+                // signed-in person's one click (with its answer to the
+                // link's secret, which `join_finish` checks), or one of the
+                // account's devices, with or without its answer. Control's
+                // word is what decides who reaches a machine now (aru-141),
+                // so there's nothing to compare.
                 let error = match crate::control::join_finish(p).await {
                     Ok(a) => {
                         let saved = a.save(app.control.state_dir()).map(|_| ());

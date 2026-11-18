@@ -84,7 +84,8 @@ pub struct JoinPoll {
     #[serde(default)]
     pub revocations: Vec<Revocation>,
     /// The approving device's MAC under the join secret (#760,
-    /// `arugula_e2e::cert::join_mac`), hex; only when it sent one.
+    /// `arugula_e2e::cert::join_mac`), hex; only when it sent one. With
+    /// `joined`, the one-click Add's (`arugula_e2e::cert::one_click_mac`).
     #[serde(default)]
     pub mac: Option<String>,
     /// Added by a signed-in person with no device certificate (aru-141):
@@ -230,6 +231,10 @@ pub struct TokenJoinRequest {
 pub struct Joined {
     /// The account it's in: its owner.
     pub account: String,
+    /// That account's root device, if it has one: with `account`, what
+    /// `arugulad join --account` compares.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root: Option<String>,
     /// That account's login.
     pub login: String,
     /// The machine's id: its key's.

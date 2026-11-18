@@ -136,7 +136,7 @@
           ]
         },
         "join_secret": {
-          "description": "Control passes a join secret's MAC from the approving device to the\nmachine (#760), so a machine's link may carry a secret.",
+          "description": "Control passes a join secret's MAC from the approving device to the\nmachine (#760), so a machine's link may carry a secret. From 2, a\none-click Add's MAC too (aru-141, [`JOIN_SECRET_ONE_CLICK`]).",
           "format": "uint64",
           "minimum": 0,
           "type": "integer"
@@ -186,7 +186,7 @@
       "type": "object"
     },
     "ControlJoinSecret": {
-      "description": "Just whether control passes a join secret's MAC on (#760), from\n`/control.json`, read apart from [`ControlInfo`] like the others. A\nmachine or the CLI puts a secret in its link only when it does.",
+      "description": "Just whether control passes a join secret's MAC on (#760), from\n`/control.json`, read apart from [`ControlInfo`] like the others. A\nmachine or the CLI puts a secret in its link only when it does; from\n[`JOIN_SECRET_ONE_CLICK`], a one-click Add's too.",
       "properties": {
         "join_secret": {
           "default": 0,

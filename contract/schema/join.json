@@ -113,7 +113,7 @@
         },
         "mac": {
           "default": null,
-          "description": "The approving device's MAC under the join secret (#760,\n`arugula_e2e::cert::join_mac`), hex; only when it sent one.",
+          "description": "The approving device's MAC under the join secret (#760,\n`arugula_e2e::cert::join_mac`), hex; only when it sent one. With\n`joined`, the one-click Add's (`arugula_e2e::cert::one_click_mac`).",
           "type": [
             "string",
             "null"
@@ -332,6 +332,13 @@
         "machine": {
           "description": "The machine's id: its key's.",
           "type": "string"
+        },
+        "root": {
+          "description": "That account's root device, if it has one: with `account`, what\n`arugulad join --account` compares.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "team": {
           "anyOf": [

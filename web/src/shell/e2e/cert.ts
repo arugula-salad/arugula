@@ -330,6 +330,16 @@ export async function joinMac(secret: string, trust: { account: string; root: st
   return hex(new Uint8Array(await subtle.sign("HMAC", key, enc.encode(body))));
 }
 
+/** A one-click Add's answer (aru-141; hex HMAC-SHA256): `secret`, which
+ * only the link carries, binds `account` (its id: such an account may have
+ * no root) to the machine whose keys are in `c`. The machine checks it
+ * before it saves the account control names. Rust's `one_click_mac`. */
+export async function oneClickMac(secret: string, account: string, c: Cert): Promise<string> {
+  const key = await subtle.importKey("raw", enc.encode(secret.replace(/-/g, "")), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const body = `arugula one-click join v1\naccount ${account}\ndevice ${c.device}\nnoise ${c.noise}\nsign ${c.sign}\n`;
+  return hex(new Uint8Array(await subtle.sign("HMAC", key, enc.encode(body))));
+}
+
 // ---- a device's code (#761)
 //
 // The same mechanism, for a new browser, phone or app window waiting to be
