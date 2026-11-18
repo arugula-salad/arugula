@@ -1,0 +1,23 @@
+Let simdutf build against MSVC's STL from a clang it doesn't expect yet.
+
+MSVC 14.52 (GitHub's windows-2025-vs2026 image from 20261111) static_asserts
+"STL1000: Unexpected compiler version, expected Clang 22 or newer", and Zig
+0.16 ships clang 21. On MSVC, simdutf is the C++ that includes STL headers
+(Ghostty skips linkLibCpp there), so it alone fails. The STL's documented
+escape hatch, `_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH`, turns the check off.
+
+illogical applies this at build time (vendor/libghostty-vt-sys/build.rs,
+Arugula #1187) until Zig ships clang 22.
+
+--- a/pkg/simdutf/build.zig
++++ b/pkg/simdutf/build.zig
+@@ -69,6 +69,9 @@
+         // On MSVC we skip linkLibCpp (see above), so the C++ standard is
+         // not set implicitly. simdutf requires C++17, so set it explicitly.
+         try flags.append(b.allocator, "-std=c++17");
++        // MSVC 14.52's STL rejects clang older than 22 (STL1000), and
++        // Zig 0.16 ships clang 21.
++        try flags.append(b.allocator, "-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH");
+     }
+ 
+     if (target.result.os.tag == .freebsd or
