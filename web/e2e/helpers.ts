@@ -97,6 +97,19 @@ export async function ready(page: Page, pane: PaneId) {
   }
 }
 
+/** Put every session on the daemon in `project`: the app's machine page in a
+ * project shows only its sessions (Arugula #1164). */
+export async function inProject(page: Page, id: string, name: string) {
+  await page.evaluate(
+    ([id, name]) => {
+      const c = window.__arugula.client;
+      for (const s of c.state!.sessions) c.intent({ op: "set_session_project", session: s.id, project: { id, name } });
+    },
+    [id, name] as const,
+  );
+  await expect.poll(() => page.evaluate((id) => window.__arugula.client.state!.sessions.every((s) => s.project?.id === id), id)).toBe(true);
+}
+
 /** Panes of the shown tab, in layout order. */
 export const panes = (page: Page) =>
   page.evaluate(() => window.__arugula.client.tabView()?.layout.panes.map(([id]) => id) ?? []);

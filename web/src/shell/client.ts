@@ -11,7 +11,8 @@ import { OPS, opPath } from "./ops";
 import { FLAG_ALIASES, type FLAGS } from "../shared/proto.gen";
 import { pickFollowed, WATCH_MS } from "./follow";
 import { withProject } from "./new-session";
-import { inShown, shownProject } from "./project-view";
+import { inShown, keepLastSession, lastSession, shownProject } from "./project-view";
+import { getSignedIn } from "./signed-in";
 import {
   decodeFrame,
   encodeFrame,
@@ -416,10 +417,7 @@ export class Client {
   error: string | null = null;
   session: SessionId | null = null;
   tab: TabId | null = null;
-  /** The session last shown in each project (Arugula #1164), so coming
-   * back to one lands where you were in it. */
-  private lastIn = new Map<string, SessionId>();
-  /** The project the selection was made in. */
+  /** The project the selection was made in (Arugula #1164). */
   private shownIn: string | null = shownProject()?.id ?? null;
   readonly activePane = new Map<TabId, PaneId>();
   /** Terminals, by pane id. */
@@ -507,7 +505,14 @@ export class Client {
   private placeNoted = "";
   private placeRestored = false;
 
+  /** Who's looking and at which machine, for the last session kept per
+   * project (Arugula #1164): coming back to a project, even after a reload,
+   * lands where you were in it. */
+  private lastKey = () => [getSignedIn()?.account ?? "", this.base] as const;
+
   private notePlace() {
+    const shown = shownProject()?.id;
+    if (shown && shown === this.shownIn && this.session !== null && this.shownSessions().some((s) => s.id === this.session)) keepLastSession(...this.lastKey(), shown, this.session);
     if (this.tab === null || !this.state) return;
     const pane = this.activePane.get(this.tab);
     const v = JSON.stringify({ tab: this.tab, pane: pane ?? null });
@@ -1599,7 +1604,6 @@ export class Client {
   reselect() {
     const now = shownProject()?.id ?? null;
     if (now === this.shownIn) return;
-    if (this.shownIn !== null && this.session !== null) this.lastIn.set(this.shownIn, this.session);
     this.shownIn = now;
     this.fixSelection();
     this.emit();
@@ -1611,7 +1615,7 @@ export class Client {
     this.restorePlace(s);
     const shown = this.shownSessions();
     if (!shown.some((x) => x.id === this.session)) {
-      const last = this.shownIn === null ? undefined : this.lastIn.get(this.shownIn);
+      const last = this.shownIn === null ? null : lastSession(...this.lastKey(), this.shownIn);
       this.session = (shown.find((x) => x.id === last) ?? shown[0])?.id ?? null;
     }
     const tabs = s.sessions.find((x) => x.id === this.session)?.tabs ?? [];

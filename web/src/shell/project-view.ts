@@ -48,3 +48,36 @@ export function inShown(project: ProjectRef | null | undefined, yours: boolean, 
 export function projectOf(project: ProjectRef | null | undefined, yours: boolean, personal: string | undefined): string | null {
   return project?.id ?? (yours ? (personal ?? null) : null);
 }
+
+/** Where the last session shown in each project is kept, per viewer and
+ * machine: `arugula.last-session:<viewer>:<machine>`, a map of project to
+ * session id. In this browser only; without storage, none is kept. */
+const lastKey = (viewer: string, machine: string) => `arugula.last-session:${viewer}:${machine}`;
+
+function lastMap(key: string): Record<string, number> {
+  try {
+    const v = JSON.parse(localStorage.getItem(key) ?? "{}") as unknown;
+    return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, number>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** The session `viewer` last had shown in `project` on `machine`, if kept. */
+export function lastSession(viewer: string, machine: string, project: string): number | null {
+  const id = lastMap(lastKey(viewer, machine))[project];
+  return typeof id === "number" ? id : null;
+}
+
+/** Keep `session` as the one `viewer` last had shown in `project` on `machine`. */
+export function keepLastSession(viewer: string, machine: string, project: string, session: number) {
+  const key = lastKey(viewer, machine);
+  const map = lastMap(key);
+  if (map[project] === session) return;
+  map[project] = session;
+  try {
+    localStorage.setItem(key, JSON.stringify(map));
+  } catch {
+    // No storage: switching back lands on the project's first session.
+  }
+}

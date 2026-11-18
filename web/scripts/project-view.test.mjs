@@ -3,7 +3,7 @@
 // `node --experimental-strip-types`.
 import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { inShown, onShownProject, projectOf, showProject, shownProject } from "../src/shell/project-view.ts";
+import { inShown, keepLastSession, lastSession, onShownProject, projectOf, showProject, shownProject } from "../src/shell/project-view.ts";
 
 const site = { id: "prj_site", name: "Site" };
 const app = { id: "prj_app", name: "App" };
@@ -46,4 +46,26 @@ test("listeners hear a change of project, not the same one again", () => {
   showProject(null);
   assert.equal(heard, 2);
   assert.equal(shownProject(), null);
+});
+
+test("the last session in each project is kept per viewer and machine, across a reload", () => {
+  const kept = new Map();
+  globalThis.localStorage = { getItem: (k) => kept.get(k) ?? null, setItem: (k, v) => void kept.set(k, String(v)) };
+  try {
+    keepLastSession("acct_a", "e2e:m1", site.id, 4);
+    keepLastSession("acct_a", "e2e:m1", app.id, 7);
+    assert.equal(lastSession("acct_a", "e2e:m1", site.id), 4);
+    assert.equal(lastSession("acct_a", "e2e:m1", app.id), 7);
+    assert.equal(lastSession("acct_b", "e2e:m1", site.id), null, "another viewer's isn't yours");
+    assert.equal(lastSession("acct_a", "e2e:m2", site.id), null, "nor another machine's");
+    kept.set("arugula.last-session:acct_a:e2e:m1", "not json");
+    assert.equal(lastSession("acct_a", "e2e:m1", site.id), null);
+  } finally {
+    delete globalThis.localStorage;
+  }
+});
+
+test("without storage, nothing is kept and nothing throws", () => {
+  keepLastSession("acct_a", "e2e:m1", site.id, 4);
+  assert.equal(lastSession("acct_a", "e2e:m1", site.id), null);
 });
