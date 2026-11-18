@@ -158,9 +158,12 @@ mod tests {
         assert_eq!(w.find("claude", &path), Some(npm.join("claude.cmd")));
         assert_eq!(w.at(&npm.join("claude")), Some(npm.join("claude.cmd")));
         assert_eq!(w.find("git", &path), None);
-        // Split on `:`, that PATH finds nothing.
-        assert_eq!(Exe::unix().find("node.exe", &path.replace(';', ":")), Some(nodejs.join("node.exe")));
+        // Unix's rules find no `node` there.
         assert_eq!(Exe::unix().find("node", &path), None);
+        // (A Windows temp dir has a `C:`, which `:` would cut.)
+        if cfg!(unix) {
+            assert_eq!(Exe::unix().find("node.exe", &path.replace(';', ":")), Some(nodejs.join("node.exe")));
+        }
         let _ = std::fs::remove_dir_all(&d);
     }
 
