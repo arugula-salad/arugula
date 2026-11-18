@@ -5,10 +5,9 @@
 import { hostMenuShown } from "./hosts";
 import { opPath } from "../ops";
 import { paneIds, type Client } from "../client";
-import type { Machine, OpenRequest, PaneId, PlatformProjects, Policy, SessionId, TabView } from "../../shared/proto";
+import type { Machine, OpenRequest, PaneId, Policy, SessionId, TabView } from "../../shared/proto";
 import { askText, openMenu, type MenuItem } from "../../shared/ui/menu";
-import { platformFetch } from "../../shared/maintenance";
-import { projectChoices, projectPicked } from "./session-project";
+import { openSessionProject } from "./project-dialog";
 import { openSandboxes, pickApp } from "../labs-load";
 import { driveItems, getControlSession, shareSession } from "./people";
 import { getSignedIn } from "../signed-in";
@@ -273,12 +272,12 @@ export function sessionItems(client: Client, session: SessionId, rename: () => v
   if (client.state?.roles) return [...sessionThreadItems(client, session), ...agentNotifyItems(client, session)];
   return [
     { label: "Rename session", run: rename },
-    // The project it's in: inferred from its first linked repo, or set here.
+    // The project it's in, which says who sees it (Arugula #1177): moved here.
     {
       label: "Project…",
       detail: client.state?.sessions.find((x) => x.id === session)?.project?.name,
-      hint: "The Arugula project this session is in",
-      run: () => void pickSessionProject(client, session),
+      hint: "The Arugula project this session is in, and who sees it",
+      run: () => pickSessionProject(client, session),
       attrs: { "data-session-project": true },
     },
     // #1090: the session's card, here rather than on each pane's bar.
@@ -311,24 +310,12 @@ function sessionCardItems(client: Client, session: SessionId): MenuItem[] {
   return pane === undefined ? [] : cardItems(client, pane);
 }
 
-/** Put a session in one of the reader's projects, or in none. */
-async function pickSessionProject(client: Client, session: SessionId) {
+/** Move a session to another of the reader's projects (Arugula #1177). */
+function pickSessionProject(client: Client, session: SessionId) {
   if (getSignedIn()?.phase !== "ready") {
     return client.toast("Projects are read as you, through Arugula cloud: open this machine in Arugula cloud, signed in");
   }
-  const current = client.state?.sessions.find((x) => x.id === session)?.project;
-  const all = platformFetch("/api/projects", { credentials: "same-origin" }).then(async (r) => {
-    if (!r.ok) throw new Error(`Arugula cloud said ${r.status}`);
-    return (await r.json()) as PlatformProjects;
-  });
-  const answer = await askText("Session's project", "", "project", all.then((a) => projectChoices(a, current)));
-  if (answer === null || !answer.trim()) return;
-  const projects = await all.catch(() => null);
-  if (!projects) return client.toast("Couldn't read your projects from Arugula cloud");
-  const project = projectPicked(answer, projects);
-  if (project === undefined) return client.toast(`No project of yours is called ${answer.trim()}`);
-  if ((project?.id ?? null) === (current?.id ?? null)) return;
-  client.intent({ op: "set_session_project", session, project });
+  openSessionProject(client, session);
 }
 
 /** What the session's menu holds, in a few words, for the tooltips of the
