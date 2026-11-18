@@ -2315,7 +2315,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `joins` | metadata | A machine asking to join: its certificate, a hash of its poll token, its addresses, the approval. | yes |  |
 | `join_tokens` | metadata | A one-time join token (aru-141): a hash of the token, the account and team it joins a machine to, when it runs out, and the machine that used it. | yes |  |
 | `machine_removals` | metadata | A machine its account removed without a device's signature (aru-141): its id, the account and when, so its key never joins again. | yes |  |
-| `daemons` | metadata | The directory: a joined machine's id, name, addresses, team, last seen, and the version, OS and arch it runs; for one that joined with a token or in one click (aru-141), its public keys. | yes | PostHog |
+| `daemons` | metadata | The directory: a joined machine's id, name, addresses, team and whether it's the team's own (Arugula #1182), last seen, and the version, OS and arch it runs; for one that joined with a token or in one click (aru-141), its public keys. | yes | PostHog |
 | `daemon_access` | metadata | The accounts a machine says it lets in, for routing (the machine checks for itself). | yes |  |
 | `daemon_agent_access` | metadata | The accounts whose machines a machine lets in for its agents, for routing. | yes |  |
 | `daemon_offers` | metadata | A machine shared with an account that hasn't said yes yet. | yes |  |
