@@ -18,6 +18,13 @@
 //! a share with a team counts only while the session is in its project.
 //! A cloud workspace is its project's, and a box joined for a team is the
 //! team's (Arugula #1182): there the team role counts on every session.
+//!
+//! A team owner is the owner (`Principal::Owner`) only of a machine that's
+//! the team's. On a person's machine in a team they're a teammate (Arugula
+//! #1180): their owner's role is their team role, which watches as anyone's
+//! does. Managing the machine (its tokens, removing it, whose box it is)
+//! stays theirs in control. The daemon decides which they are
+//! (`control.rs`'s `Enrolled::owner_role_owns`).
 
 use std::{
     collections::BTreeMap,
@@ -856,6 +863,40 @@ mod tests {
         }
         acl.set(1, "account:c1", "cy", Some(Role::Viewer), "owner").unwrap();
         assert_eq!(acl.role_of("account:c1", 1), Some(Role::Viewer), "shared with them");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// Arugula #1180: a team owner on a teammate's machine, by the roster or
+    /// an owner's machine token, gets what any teammate gets: a viewer's
+    /// watch on the sessions in the team's projects, nothing on the
+    /// teammate's own, and what's shared with them.
+    #[test]
+    fn a_team_owner_on_a_teammates_machine_watches_as_a_teammate() {
+        let (dir, acl) = opened("team-owner");
+        acl.set_machine_team(Some("t1".into()), false);
+        // 1 in t1's project; 2 in the teammate's own; 3 in t2's.
+        acl.set_session_teams([(1, "t1".to_owned()), (3, "t2".to_owned())]);
+        let (ola, oz) = (
+            Principal::User { id: "account:o1".into(), name: "ola".into(), pic: None },
+            Principal::User { id: "account:o2".into(), name: "oz".into(), pic: None },
+        );
+        // Ola by the roster, Oz by an owner's token.
+        acl.set_team_roles([("account:o1".to_owned(), Role::Owner)].into());
+        acl.hold("account:o2", Hold::token(Some(Role::Owner), false));
+        for who in [&ola, &oz] {
+            assert_eq!(acl.team_role(who), Some(Role::Owner), "{}", who.id());
+            assert_eq!([1, 2, 3].map(|s| acl.role(who, s)), [Some(Role::Viewer), None, None], "{}", who.id());
+            assert!(!acl.notifies(who.id(), Some(1)), "a watcher isn't told: {}", who.id());
+        }
+        // Shared with Ola on the teammate's own session: that share.
+        acl.set(2, "account:o1", "ola", Some(Role::Editor), "owner").unwrap();
+        assert_eq!(acl.role(&ola, 2), Some(Role::Editor));
+        // The machine's own account is still its owner.
+        assert_eq!([1, 2, 3].map(|s| acl.role(&Principal::Owner, s)), [Some(Role::Owner); 3]);
+        // On a machine that's the team's (Arugula #1182), the owner's role
+        // counts on every session.
+        acl.set_machine_team(Some("t1".into()), true);
+        assert_eq!([1, 2, 3].map(|s| acl.role(&oz, s)), [Some(Role::Owner); 3]);
         std::fs::remove_dir_all(dir).unwrap();
     }
 

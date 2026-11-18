@@ -93,11 +93,14 @@ fn row(kind: &str, word: &str, who: impl Into<String>, role: Role) -> AccessRow 
 }
 
 /// A member's role on sessions, as `control.rs`'s `Enrolled::build` gives
-/// it: an owner is the owner; a hosted machine's editor has full use, as
-/// an owner (Jake, 2026-10-21); a locked team lets only owners in.
-fn member_role(role: TeamRole, hosted: bool, locked: bool) -> Option<Role> {
+/// it: an owner is the owner of a machine that's the team's (`theirs`: a
+/// cloud workspace or the team's box), and on a person's machine watches
+/// as any teammate does (Arugula #1180); a hosted machine's editor has full
+/// use, as an owner (Jake, 2026-10-21); a locked team lets only owners in.
+fn member_role(role: TeamRole, hosted: bool, theirs: bool, locked: bool) -> Option<Role> {
     match role {
-        TeamRole::Owner => Some(Role::Owner),
+        TeamRole::Owner if theirs => Some(Role::Owner),
+        TeamRole::Owner => Some(Role::Viewer),
         _ if locked => None,
         TeamRole::Editor if hosted => Some(Role::Owner),
         TeamRole::Editor => Some(Role::Editor),
@@ -121,6 +124,7 @@ pub fn compose(p: Pieces) -> AccessView {
     let mut notes = Vec::new();
 
     let hosted = roster.as_ref().is_some_and(|r| r.hosted);
+    let theirs = hosted || roster.as_ref().is_some_and(|r| r.team_box);
     let kind = match &roster {
         None => "local",
         Some(r) if r.hosted => "hosted",
@@ -216,13 +220,17 @@ pub fn compose(p: Pieces) -> AccessView {
             if !hosted && m.account == r.account {
                 continue;
             }
-            let Some(role) = member_role(m.role, hosted, t.locked) else { continue };
+            let Some(role) = member_role(m.role, hosted, theirs, t.locked) else { continue };
             let kind = if m.role == TeamRole::Owner { "team_owner" } else { "team_role" };
             let mut x = row(kind, ROSTER, m.name.clone(), role);
             x.principal = Some(format!("account:{}", m.account));
             x.note = Some(match m.role {
                 TeamRole::Owner if hosted => "an owner of the project: full use".into(),
-                TeamRole::Owner => "an owner of the team: an owner here, with every owner route".into(),
+                TeamRole::Owner if theirs => "an owner of the team: an owner here, with every owner route".into(),
+                TeamRole::Owner => {
+                    "an owner of the team: watches the sessions in the team's projects, as a teammate does; manages this machine in Arugula cloud"
+                        .into()
+                }
                 TeamRole::Editor if hosted => "an editor of the project: full use, as an owner".into(),
                 TeamRole::Editor | TeamRole::Viewer => {
                     "watches the sessions in the team's projects (not a private pane); types only where shared with or trusted"
@@ -431,6 +439,7 @@ mod tests {
     fn enrolled(team: Option<RosterTeam>, hosted: bool) -> RosterView {
         RosterView {
             hosted,
+            team_box: false,
             purpose: hosted.then(|| "people".to_owned()),
             nobody: false,
             team_id: team.as_ref().map(|t| t.id.clone()),
@@ -481,9 +490,10 @@ mod tests {
         );
     }
 
-    /// A team machine: the roster's other owners are owners here, an
-    /// editor types by role, a viewer watches; the own account is the
-    /// owner row, not a member row; every one of them is the roster's word.
+    /// A team machine: the roster's other owners watch as teammates do
+    /// (Arugula #1180), an editor types by role, a viewer watches; the own
+    /// account is the owner row, not a member row; every one of them is the
+    /// roster's word.
     #[test]
     fn a_team_machine_lists_the_roster_by_role() {
         let v = compose(pieces(Some(enrolled(Some(acme(false)), false))));
@@ -498,13 +508,25 @@ mod tests {
                 ("owner", "alex", Role::Owner, THIS_MACHINE),
                 ("team_role", "bea", Role::Editor, ROSTER),
                 ("team_role", "cy", Role::Viewer, ROSTER),
-                ("team_owner", "ola", Role::Owner, ROSTER),
+                ("team_owner", "ola", Role::Viewer, ROSTER),
             ]
         );
+        assert!(v.rows[3].note.as_deref().is_some_and(|n| n.contains("as a teammate does")), "{:?}", v.rows[3]);
         assert!(v.rows[1].session.is_none() && v.rows[1].pane.is_none(), "every session");
         // Only what every view says: what isn't listed.
         assert_eq!(v.notes.len(), 1, "{:?}", v.notes);
         assert!(v.notes[0].starts_with("Not listed:"), "{:?}", v.notes);
+    }
+
+    /// The team's box (Arugula #1182): the team's owners own it.
+    #[test]
+    fn a_team_boxs_owners_are_owners_here() {
+        let mut r = enrolled(Some(acme(false)), false);
+        r.team_box = true;
+        let v = compose(pieces(Some(r)));
+        let ola = v.rows.iter().find(|r| r.who == "ola").unwrap();
+        assert_eq!((ola.kind.as_str(), ola.role), ("team_owner", Role::Owner));
+        assert_eq!(ola.note.as_deref(), Some("an owner of the team: an owner here, with every owner route"));
     }
 
     /// Locked: only the owners get in, and the view says so.

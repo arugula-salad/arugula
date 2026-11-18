@@ -1160,7 +1160,9 @@ pub struct Enrolled {
     /// #399: this machine offers agents, so its teams' members' daemons get
     /// in to call them (and control is told to route those accounts).
     pub open_agents: bool,
-    /// Team members' roles on every session (not owners: they're the owner).
+    /// Team members' roles, which count on the sessions in the team's
+    /// projects ([`Acl::role`]): a team owner's too on a person's machine,
+    /// where they're a teammate (Arugula #1180), not the owner.
     pub team_roles: HashMap<String, Role>,
     /// Members of teams sessions were shared with, by team, and their role
     /// in it (M30).
@@ -1169,10 +1171,14 @@ pub struct Enrolled {
     /// signatures checked out, and those control vouches for (aru-141,
     /// [`Control::taken_subs`]).
     pub push: Vec<(Principal, PushSub)>,
+    /// Control said at the last refresh that this is the team's box
+    /// (Arugula #1182), so its team's owners own it.
+    pub team_box: bool,
 }
 
 impl Enrolled {
-    fn build(saved: Saved, keys: Arc<DeviceKeys>, acl: &Acl, open_agents: bool) -> Self {
+    fn build(saved: Saved, keys: Arc<DeviceKeys>, acl: &Acl, open_agents: bool, team_box: bool) -> Self {
+        let team_box = Control::is_team_box_now(&saved, team_box);
         // A deploy's box (M219): nobody gets in, not even the project's
         // owners: it only takes its one deploy run, and goes after.
         if saved.purpose().is_some_and(Purpose::deploys) {
@@ -1187,6 +1193,7 @@ impl Enrolled {
                 team_roles: HashMap::new(),
                 shared_roles: HashMap::new(),
                 push: Vec::new(),
+                team_box,
             };
         }
         // Joined on control's word (aru-141): no device gets in, only
@@ -1208,6 +1215,7 @@ impl Enrolled {
                 team_roles: HashMap::new(),
                 shared_roles,
                 push: Vec::new(),
+                team_box,
             };
         }
         let trusted = saved.own_devices();
@@ -1215,7 +1223,10 @@ impl Enrolled {
         let mut team_roles = HashMap::new();
         // A hosted workspace's editors have full use of it, as its owners do
         // (Jake, 2026-10-21); viewers watch. Team machines keep their roles.
+        // A team's owners own a machine that's the team's; on a person's,
+        // they're teammates (Arugula #1180).
         let hosted = saved.is_hosted();
+        let owns = |account: &str| account == saved.cert.account || hosted || team_box;
         if let Some(t) = saved.team()
             && let Some(r) = &t.roster
         {
@@ -1224,10 +1235,14 @@ impl Enrolled {
                     continue;
                 }
                 let who = match m.role {
-                    TeamRole::Owner => Principal::Owner,
+                    TeamRole::Owner if owns(&m.account) => Principal::Owner,
                     TeamRole::Editor if hosted => Principal::Owner,
-                    TeamRole::Editor | TeamRole::Viewer => {
-                        let role = if m.role == TeamRole::Editor { Role::Editor } else { Role::Viewer };
+                    TeamRole::Owner | TeamRole::Editor | TeamRole::Viewer => {
+                        let role = match m.role {
+                            TeamRole::Owner => Role::Owner,
+                            TeamRole::Editor => Role::Editor,
+                            TeamRole::Viewer => Role::Viewer,
+                        };
                         team_roles.insert(format!("account:{}", m.account), role);
                         let name = t.names.get(&m.account).unwrap_or(&m.name).clone();
                         Principal::User { id: format!("account:{}", m.account), name, pic: None }
@@ -1283,7 +1298,25 @@ impl Enrolled {
             team_roles,
             shared_roles,
             push: Vec::new(),
+            team_box,
         }
+    }
+
+    /// Whether this machine is its team's own: a cloud workspace, or the
+    /// team's box (Arugula #1182). There a team's owners own it; on a
+    /// person's machine in a team they're teammates (Arugula #1180).
+    pub(crate) fn the_teams(&self) -> bool {
+        self.saved.is_hosted() || self.team_box
+    }
+
+    /// Whether an owner's role, the roster's or a machine token's, makes
+    /// `account` this machine's owner: its own account always; anyone else
+    /// on a machine that's the team's ([`Self::the_teams`]), or in no team,
+    /// where control's word stands. A team owner on a teammate's machine
+    /// sees it as a teammate does (Arugula #1180); managing the machine
+    /// stays theirs in control.
+    pub(crate) fn owner_role_owns(&self, account: &str) -> bool {
+        account == self.saved.cert.account || self.the_teams() || self.saved.team_id().is_none()
     }
 
     /// The machines that drive this one (M184): on a hosted machine only,
@@ -1391,7 +1424,8 @@ impl Enrolled {
     /// account ([`Control::to_push`]) read this, and a hosted workspace's
     /// editor isn't one ([`Self::as_owner`]).
     fn co_owner(&self, account: &str) -> Option<Principal> {
-        if account == self.saved.cert.account || self.saved.purpose().is_some_and(Purpose::deploys) {
+        if account == self.saved.cert.account || !self.the_teams() || self.saved.purpose().is_some_and(Purpose::deploys)
+        {
             return None;
         }
         let t = self.saved.team()?;
@@ -1702,6 +1736,9 @@ fn load_waiting(state_dir: &Path) -> Vec<Waiting> {
 pub struct RosterView {
     /// A hosted machine: who gets in is its project's people.
     pub hosted: bool,
+    /// The team's box (Arugula #1182): its team's owners own it, as on a
+    /// cloud workspace; on a person's machine they're teammates (#1180).
+    pub team_box: bool,
     /// What a hosted machine is for (`people`, `deploy`, `snapshot`,
     /// `both`); nothing on another kind.
     pub purpose: Option<String>,
@@ -2121,7 +2158,16 @@ impl Control {
     }
 
     fn is_team_box(saved: &Saved, said: &std::sync::atomic::AtomicBool) -> bool {
-        !saved.is_hosted() && saved.team_id().is_some() && said.load(std::sync::atomic::Ordering::SeqCst)
+        Self::is_team_box_now(saved, said.load(std::sync::atomic::Ordering::SeqCst))
+    }
+
+    fn is_team_box_now(saved: &Saved, said: bool) -> bool {
+        !saved.is_hosted() && saved.team_id().is_some() && said
+    }
+
+    /// What control said of the team's box at the last refresh.
+    fn said_team_box(&self) -> bool {
+        self.team_box.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// Told the number of each refresh that went through, as it ends.
@@ -2354,10 +2400,12 @@ impl Control {
     }
 
     /// Whether this daemon's own team (a team daemon) has `account` as an
-    /// owner: an owner here already.
+    /// owner who owns this machine: its own account, or anyone on a
+    /// machine that's the team's (Arugula #1180).
     pub fn owns_here(&self, account: &str) -> bool {
         self.enrolled().is_some_and(|e| {
-            e.saved.roster().and_then(|r| r.member(account)).is_some_and(|m| m.role == TeamRole::Owner)
+            e.owner_role_owns(account)
+                && e.saved.roster().and_then(|r| r.member(account)).is_some_and(|m| m.role == TeamRole::Owner)
         })
     }
 
@@ -2504,6 +2552,7 @@ impl Control {
             .collect();
         Some(RosterView {
             hosted: s.is_hosted(),
+            team_box: e.team_box,
             purpose: s.purpose().map(|p| {
                 match p {
                     Purpose::People => "people",
@@ -2676,7 +2725,7 @@ impl Control {
         let next = match read_saved(&self.state_dir).and_then(|s| {
             let Some(saved) = s else { return Ok(None) };
             let keys = DeviceKeys::load(&self.state_dir.join(KEY_FILE))?;
-            Ok(Some(Enrolled::build(saved, Arc::new(keys), &self.acl, self.open_agents())))
+            Ok(Some(Enrolled::build(saved, Arc::new(keys), &self.acl, self.open_agents(), self.said_team_box())))
         }) {
             Ok(n) => {
                 self.unreadable.store(false, std::sync::atomic::Ordering::SeqCst);
@@ -2830,7 +2879,7 @@ impl Control {
         let saved = crate::hosted::trust::saved_from(got, &e.keys, Some(&e.saved))?;
         let changed = serde_json::to_value(&saved).ok() != serde_json::to_value(&e.saved).ok();
         let wrote = (changed || self.unsaved.load(std::sync::atomic::Ordering::SeqCst)) && self.save_or_say(&saved);
-        let next = Enrolled::build(saved, e.keys.clone(), &self.acl, self.open_agents());
+        let next = Enrolled::build(saved, e.keys.clone(), &self.acl, self.open_agents(), self.said_team_box());
         let took_ms = took.elapsed().as_millis() as u64;
         info!(
             devices = next.trusted.devices.len(),
@@ -2967,7 +3016,7 @@ impl Control {
             || saved.held_teams != e.saved.held_teams
             || saved.seen != e.saved.seen;
         let wrote = (changed || self.unsaved.load(std::sync::atomic::Ordering::SeqCst)) && self.save_or_say(&saved);
-        let mut next = Enrolled::build(saved, e.keys.clone(), &self.acl, self.open_agents());
+        let mut next = Enrolled::build(saved, e.keys.clone(), &self.acl, self.open_agents(), self.said_team_box());
         self.publish(&next).await;
         let subs: wire::PushSubs = self.get(&next, wire::PUSH_SUBS).await?;
         next.push = Self::taken_subs(&next, subs);
@@ -3105,7 +3154,7 @@ impl Control {
             || saved.revocations != e.saved.revocations
             || saved.peers != e.saved.peers;
         let wrote = (changed || self.unsaved.load(std::sync::atomic::Ordering::SeqCst)) && self.save_or_say(&saved);
-        let mut next = Enrolled::build(saved, e.keys.clone(), &self.acl, self.open_agents());
+        let mut next = Enrolled::build(saved, e.keys.clone(), &self.acl, self.open_agents(), self.said_team_box());
         if next.trusted.get(&next.saved.cert.device).is_none() {
             warn!("this daemon's own certificate no longer checks out (revoked?)");
         }
@@ -3474,7 +3523,7 @@ impl Control {
                     return Some((who, s));
                 }
                 let role = *got.roles.get(&s.account)?;
-                Some((role_principal(role, &s.account, hosted), s))
+                Some((role_principal(role, &s.account, hosted, e.owner_role_owns(&s.account)), s))
             })
             .collect()
     }
@@ -3950,13 +3999,19 @@ fn retire(state_dir: &Path, r: &mut Removed) -> anyhow::Result<()> {
 }
 
 /// Who a subscription is for when control vouches for it (aru-141): the
-/// person a machine token with `role` would let in (`e2e::token_grant`).
-/// Remote input off doesn't change it: being told isn't
+/// person a machine token with `role` would let in (`e2e::token_grant`),
+/// `owns` as there. Remote input off doesn't change it: being told isn't
 /// typing.
-fn role_principal(role: arugula_control_wire::machine_token::TokenRole, account: &str, hosted: bool) -> Principal {
+fn role_principal(
+    role: arugula_control_wire::machine_token::TokenRole,
+    account: &str,
+    hosted: bool,
+    owns: bool,
+) -> Principal {
     use arugula_control_wire::machine_token::TokenRole;
     match role {
-        TokenRole::Owner => Principal::Owner,
+        TokenRole::Owner if owns => Principal::Owner,
+        TokenRole::Owner => Principal::User { id: format!("account:{account}"), name: String::new(), pic: None },
         TokenRole::Editor if hosted => Principal::Owner,
         TokenRole::Editor | TokenRole::Viewer | TokenRole::Guest => {
             Principal::User { id: format!("account:{account}"), name: String::new(), pic: None }
@@ -4869,7 +4924,7 @@ pub(crate) mod tests {
     pub(crate) fn joined_at(dir: &Path, url: &str) -> Arc<Control> {
         let acl = Arc::new(Acl::open(dir));
         let c = Control::new(dir, vec![], String::new(), acl.clone(), false);
-        c.install(Some(Enrolled::build(saved_for(url, "a"), Arc::new(DeviceKeys::generate()), &acl, false)));
+        c.install(Some(Enrolled::build(saved_for(url, "a"), Arc::new(DeviceKeys::generate()), &acl, false, false)));
         c
     }
 
@@ -5384,7 +5439,7 @@ pub(crate) mod tests {
         let acl = Acl::open(&dir);
         acl.set_full(1, "team:t1", "Acme", Some(Role::Editor), "owner", None, Some(format!("f.{none}"))).unwrap();
         acl.set_full(1, "account:p", "Pat", Some(Role::Viewer), "owner", None, None).unwrap();
-        let e = Enrolled::build(saved, Arc::new(keys), &acl, false);
+        let e = Enrolled::build(saved, Arc::new(keys), &acl, false, false);
         let roles = &e.shared_roles["t1"];
         assert_eq!(roles.get("account:f"), Some(&Role::Editor));
         assert_eq!(roles.get("account:k"), Some(&Role::Editor));
@@ -5419,7 +5474,7 @@ pub(crate) mod tests {
         let link = [7u8; 32];
         acl.add_link(1, &hex::encode(link), now_ms() + 600_000, None).unwrap();
         let c = Control::new(&dir, vec![], String::new(), acl.clone(), false);
-        c.install(Some(Enrolled::build(saved, Arc::new(keys), &acl, false)));
+        c.install(Some(Enrolled::build(saved, Arc::new(keys), &acl, false, false)));
         let e = c.enrolled().expect("enrolled");
         assert!(e.trusted.devices.is_empty() && e.others.is_empty() && e.drivers.is_empty());
         assert!(e.agent_callers.is_empty() && e.team_roles.is_empty() && e.accounts().is_empty());
@@ -5915,7 +5970,7 @@ pub(crate) mod tests {
         };
         let dir = std::env::temp_dir().join(format!("arugula-push-signed-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let e = Enrolled::build(saved, Arc::new(dk), &Acl::open(&dir), false);
+        let e = Enrolled::build(saved, Arc::new(dk), &Acl::open(&dir), false, false);
         let sub = |account: &str, endpoint: &str| PushSub {
             v: 1,
             account: account.into(),
@@ -5951,7 +6006,7 @@ pub(crate) mod tests {
 
         // Joined on control's word, no device is trusted: control's word is all.
         let (bk, bsaved) = by_control(None);
-        let be = Enrolled::build(bsaved, Arc::new(bk), &Acl::open(&dir), false);
+        let be = Enrolled::build(bsaved, Arc::new(bk), &Acl::open(&dir), false, false);
         let subs = vec![sub("acct1", "https://push.test/own"), sub("other", "https://push.test/other")];
         let got = Control::taken_subs(&be, wire::PushSubs { subs: subs.clone(), roles: Default::default() });
         assert!(got.is_empty(), "today's control: none");
@@ -5964,10 +6019,12 @@ pub(crate) mod tests {
     #[test]
     fn a_role_is_the_principal_a_token_would_be() {
         use arugula_control_wire::machine_token::TokenRole;
-        assert!(role_principal(TokenRole::Owner, "a1", false).is_owner());
-        assert!(role_principal(TokenRole::Editor, "a1", true).is_owner(), "a hosted machine's editor (M184)");
+        assert!(role_principal(TokenRole::Owner, "a1", false, true).is_owner());
+        assert!(role_principal(TokenRole::Editor, "a1", true, false).is_owner(), "a hosted machine's editor (M184)");
+        // A team owner on a teammate's machine is a teammate (Arugula #1180).
+        assert_eq!(role_principal(TokenRole::Owner, "b1", false, false).id(), "account:b1");
         for r in [TokenRole::Editor, TokenRole::Viewer, TokenRole::Guest] {
-            assert_eq!(role_principal(r, "b1", false).id(), "account:b1");
+            assert_eq!(role_principal(r, "b1", false, true).id(), "account:b1");
         }
     }
 
@@ -6110,7 +6167,7 @@ pub(crate) mod tests {
         let c = Control::new(&r.dir, vec![], String::new(), r.acl.clone(), false);
         let changed = *c.changed.borrow();
         c.reload();
-        c.install(c.enrolled().map(|e| Enrolled::build(e.saved.clone(), e.keys.clone(), &r.acl, false)));
+        c.install(c.enrolled().map(|e| Enrolled::build(e.saved.clone(), e.keys.clone(), &r.acl, false, false)));
         assert!(*c.changed.borrow() > changed);
         assert_eq!(*c.refreshed.borrow(), 0, "not by reload or install");
         c.refresh().await.unwrap();
@@ -6582,7 +6639,7 @@ pub(crate) mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let acl = Arc::new(Acl::open(&dir));
         let who = |saved: &Saved, c: &Cert| {
-            let e = Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), &acl, false);
+            let e = Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), &acl, false, false);
             let p = e.others.iter().find(|(x, _)| x.device == c.device).map(|(_, p)| p.clone()).unwrap();
             (p == Principal::Owner, e.team_roles.get(&format!("account:{}", c.account)).copied())
         };
@@ -6592,7 +6649,7 @@ pub(crate) mod tests {
         // A deploy's box (M219): nobody at all, its owners included.
         let mut deploy_saved = hosted_saved.clone();
         deploy_saved.hosted_mut().unwrap().purpose = Purpose::Deploy;
-        let e = Enrolled::build(deploy_saved.clone(), Arc::new(DeviceKeys::generate()), &acl, true);
+        let e = Enrolled::build(deploy_saved.clone(), Arc::new(DeviceKeys::generate()), &acl, true, false);
         assert!(e.others.is_empty() && e.drivers.is_empty() && e.trusted.devices.is_empty() && e.team_roles.is_empty());
         // Nor by a machine token (aru-141): refused before it's read.
         let c = Control::new(&dir, vec![], String::new(), acl.clone(), false);
@@ -6606,7 +6663,7 @@ pub(crate) mod tests {
         // outsider's.
         let (_, outsider) = device("x", Kind::Browser);
         let c = Control::new(&dir, vec![], String::new(), acl.clone(), false);
-        c.install(Some(Enrolled::build(hosted_saved, Arc::new(DeviceKeys::generate()), &acl, false)));
+        c.install(Some(Enrolled::build(hosted_saved, Arc::new(DeviceKeys::generate()), &acl, false, false)));
         for (who, c2, ok) in [
             ("owner", &owner, true),
             ("editor", &editor, true),
@@ -6708,7 +6765,7 @@ pub(crate) mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let acl = Arc::new(Acl::open(&dir));
         let drivers = |saved: &Saved| {
-            let e = Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), &acl, false);
+            let e = Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), &acl, false, false);
             assert!(e.drivers.iter().all(|(_, p)| *p == Principal::Owner));
             let mut ids: Vec<String> = e.drivers.iter().map(|(c, _)| c.account.clone()).collect();
             ids.sort();
@@ -6720,7 +6777,7 @@ pub(crate) mod tests {
         locked.team_mut().unwrap().locked = true;
         assert_eq!(drivers(&locked), ["o"]);
         // The viewer's machine still calls its agents.
-        let e = Enrolled::build(hosted_saved, Arc::new(DeviceKeys::generate()), &acl, false);
+        let e = Enrolled::build(hosted_saved, Arc::new(DeviceKeys::generate()), &acl, false, false);
         assert!(e.agent_callers.iter().any(|(c, p)| c.device == v_box.device && !p.is_owner()));
     }
 
@@ -6806,17 +6863,18 @@ pub(crate) mod tests {
             e.agent_callers.iter().find(|(x, _)| x.device == c.device).map(|(_, p)| p.id().to_owned())
         };
 
-        let closed = Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), &acl, false);
+        let closed = Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), &acl, false, false);
         assert_eq!(who(&closed, &m_other).as_deref(), Some("account:m"), "this account's other machine, not the owner");
         assert_eq!(who(&closed, &o_box).as_deref(), Some("account:o"), "a team owner's machine, not the owner");
         assert_eq!(who(&closed, &p_box), None, "a pinned team's only while agents are offered");
         assert!(closed.agent_callers.iter().all(|(c, p)| c.kind == Kind::Daemon && !p.is_owner()));
         assert!(closed.agent_accounts().is_empty());
-        // People are let in as before: the team owner's browser is the owner.
-        assert!(closed.others.iter().any(|(c, p)| c.device == o_root.device && p.is_owner()));
+        // People are let in as before: the team owner's browser is a
+        // teammate on this account's machine (Arugula #1180).
+        assert!(closed.others.iter().any(|(c, p)| c.device == o_root.device && p.id() == "account:o"));
         assert!(!closed.others.iter().any(|(c, _)| c.kind == Kind::Daemon));
 
-        let open = Enrolled::build(saved, Arc::new(DeviceKeys::generate()), &acl, true);
+        let open = Enrolled::build(saved, Arc::new(DeviceKeys::generate()), &acl, true, false);
         assert_eq!(who(&open, &p_box).as_deref(), Some("account:p"));
         assert_eq!(open.agent_accounts(), ["o", "p"], "control routes those, for agents; never this account");
         let c = Control::new(&dir, vec![], String::new(), acl.clone(), false);
@@ -6887,7 +6945,8 @@ pub(crate) mod tests {
         let dir = std::env::temp_dir().join(format!("arugula-co-owners-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let acl = Arc::new(Acl::open(&dir));
-        let mut e = Enrolled::build(saved, Arc::new(keys), &acl, false);
+        // The team's box (Arugula #1182): its team's owners own it.
+        let mut e = Enrolled::build(saved.clone(), Arc::new(keys), &acl, false, true);
         let sub = |account: &str, device: &Cert| PushSub {
             v: 1,
             account: account.into(),
@@ -6922,6 +6981,18 @@ pub(crate) mod tests {
         assert_eq!(to(|p| p.is_owner()), ["m", "o"], "the owner's pushes still reach them");
         assert_eq!(to(|p| p.id() == "account:e"), ["e"]);
         assert!(to(|p| p.id() == "account:m").is_empty(), "this machine's own account is the owner");
+
+        // M's own machine in the team (Arugula #1180): O is a teammate
+        // here, their owner's role the team's, and no co-owner.
+        let mine = Enrolled::build(saved, Arc::new(DeviceKeys::generate()), &acl, false, false);
+        assert!(mine.others.iter().any(|(c, p)| c.device == owner.device && p.id() == "account:o"));
+        assert_eq!(mine.team_roles.get("account:o"), Some(&Role::Owner));
+        assert!(!mine.owner_role_owns("o") && mine.owner_role_owns("m"));
+        let c = Control::new(&dir, vec![], String::new(), acl.clone(), false);
+        c.install(Some(mine));
+        assert!(c.co_owners().is_empty() && c.co_owner_of("o").is_none() && c.as_owner().is_empty());
+        assert!(!c.owns_here("o") && c.owns_here("m"));
+        assert!(c.block_signer(&owner.device).is_none(), "a block's grant needs the machine's owner");
         let _ = std::fs::remove_dir_all(&dir);
 
         fn c_name(p: &Principal) -> String {
@@ -6935,8 +7006,9 @@ pub(crate) mod tests {
     /// Native #684 and #705: whom a machine lists as thread readers by the
     /// owner's role (`as_owner`) is exactly whom [`Enrolled::build`]
     /// admits as the owner, less its own account, on every kind of
-    /// machine: the roster's other owners on a team machine, locked or
-    /// not, and on a hosted one; a hosted workspace's editors too, who get
+    /// machine: the roster's other owners on the team's box, locked or
+    /// not, and on a hosted one (on a person's machine in the team they're
+    /// teammates, Arugula #1180); a hosted workspace's editors too, who get
     /// in as the owner (not on a locked team's, where only its owners get
     /// in); nobody on a deploy's or a both-flags box, which admit nobody;
     /// and on a snapshot's box the same people `build` admits for its
@@ -7041,8 +7113,8 @@ pub(crate) mod tests {
         // What `build` admits as the owner (less this machine's own
         // account), and what the machine lists: as the owner, and by role.
         // The co-owners are the roster's other owners among them.
-        let look = |saved: &Saved, what: &str| -> (Vec<String>, Vec<String>) {
-            let e = Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), &acl, false);
+        let look_on = |saved: &Saved, team_box: bool, what: &str| -> (Vec<String>, Vec<String>) {
+            let e = Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), &acl, false, team_box);
             let mut admitted: Vec<String> =
                 e.others.iter().filter(|(_, p)| p.is_owner()).map(|(c, _)| format!("account:{}", c.account)).collect();
             admitted.sort();
@@ -7071,10 +7143,15 @@ pub(crate) mod tests {
             }
             (listed, people)
         };
+        let look = |saved: &Saved, what: &str| look_on(saved, false, what);
         assert_eq!(look(&personal, "personal"), (vec![], vec![]), "a personal machine has no roster");
         let r1 = roster(1, all(Owner, Editor));
-        assert_eq!(look(&team(r1.clone(), false), "team"), (ids(vec!["o"]), ids(vec!["e", "v"])));
-        assert_eq!(look(&team(r1.clone(), true), "locked team"), (ids(vec!["o"]), vec![]));
+        // M's own machine in the team: O, an owner of the team, is a
+        // teammate here (Arugula #1180); on the team's box, an owner.
+        assert_eq!(look(&team(r1.clone(), false), "team"), (vec![], ids(vec!["e", "o", "v"])));
+        assert_eq!(look(&team(r1.clone(), true), "locked team"), (vec![], ids(vec!["o"])));
+        assert_eq!(look_on(&team(r1.clone(), false), true, "team box"), (ids(vec!["o"]), ids(vec!["e", "v"])));
+        assert_eq!(look_on(&team(r1.clone(), true), true, "locked team box"), (ids(vec!["o"]), vec![]));
         // Hosted (#705): the editor gets in as the owner, and is listed as
         // one; the viewer watches, by their role.
         assert_eq!(look(&hosted(r1.clone(), false, Purpose::People), "hosted"), (ids(vec!["e", "o"]), ids(vec!["v"])));
@@ -7186,7 +7263,7 @@ pub(crate) mod tests {
         let dir = std::env::temp_dir().join(format!("arugula-hosted-editor-gates-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let acl = Arc::new(Acl::open(&dir));
-        let mut e = Enrolled::build(saved, Arc::new(DeviceKeys::generate()), &acl, false);
+        let mut e = Enrolled::build(saved, Arc::new(DeviceKeys::generate()), &acl, false, false);
         for (c, p) in &e.others {
             assert_eq!(*p, Principal::Owner, "{} gets in as the owner", c.account);
         }
@@ -7277,7 +7354,7 @@ pub(crate) mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let acl = Acl::open(&dir);
         let keys = Arc::new(keys);
-        let name = |saved: &Saved| match &Enrolled::build(saved.clone(), keys.clone(), &acl, false).others[0].1 {
+        let name = |saved: &Saved| match &Enrolled::build(saved.clone(), keys.clone(), &acl, false, false).others[0].1 {
             Principal::User { name, .. } => name.clone(),
             other => panic!("{other:?}"),
         };
@@ -7605,7 +7682,8 @@ pub(crate) mod tests {
         );
         take_team(&mut s, answer(vec![moved]), 3);
         assert_eq!(s.roster().map(|r| r.version), Some(1), "an owner's root a CLI moved");
-        // The app makes e an owner: taken, and e's devices are owners here.
+        // The app makes e an owner: taken, and e's devices are owners of the
+        // team's box (on a person's machine, teammates: Arugula #1180).
         let by_app =
             signed_roster(2, vec![o, member("e", &ec, TeamRole::Owner), member("f", &fc, TeamRole::Viewer)], &app_k);
         take_team(&mut s, answer(vec![by_app]), 4);
@@ -7613,7 +7691,7 @@ pub(crate) mod tests {
         let dir = std::env::temp_dir().join(format!("arugula-dk7-owners-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let acl = Arc::new(Acl::open(&dir));
-        let built = Enrolled::build(s.clone(), Arc::new(DeviceKeys::generate()), &acl, false);
+        let built = Enrolled::build(s.clone(), Arc::new(DeviceKeys::generate()), &acl, false, true);
         let p = built.others.iter().find(|(x, _)| x.device == ec.device).map(|(_, p)| p.clone());
         assert_eq!(p, Some(Principal::Owner), "e is an owner here");
         let _ = std::fs::remove_dir_all(&dir);
@@ -7663,7 +7741,7 @@ pub(crate) mod tests {
             let dir = std::env::temp_dir().join(format!("arugula-by-control-{}", std::process::id()));
             std::fs::create_dir_all(&dir).unwrap();
             let acl = Arc::new(Acl::open(&dir));
-            let b = Enrolled::build(s.clone(), Arc::new(DeviceKeys::generate()), &acl, false);
+            let b = Enrolled::build(s.clone(), Arc::new(DeviceKeys::generate()), &acl, false, false);
             let _ = std::fs::remove_dir_all(&dir);
             b.team_roles
         };
@@ -7964,11 +8042,13 @@ pub(crate) mod tests {
     /// project, and what it says of itself and of each account. The same
     /// function, on the types before #672, wrote each fixture's
     /// `<name>.who.json` (see the README there); this one has to agree.
+    /// That code made every team machine its team's, so a team's owners
+    /// owned it: as the team's box does now (Arugula #1182, #1180).
     pub(crate) fn outcomes(saved: &Saved, dir: &Path) -> serde_json::Value {
         use serde_json::json;
         let acl = Arc::new(Acl::open(dir));
         let c = Control::new(dir, vec![], String::new(), acl.clone(), false);
-        let e = Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), &acl, true);
+        let e = Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), &acl, true, true);
         let sorted = |mut v: Vec<String>| {
             v.sort();
             v
@@ -8016,7 +8096,7 @@ pub(crate) mod tests {
         };
         let known_roots = per_account(&|a| json!(e.known_root(a)));
         let co_owner = per_account(&|a| json!(e.co_owner(a).map(|p| format!("{p:?}"))));
-        c.install(Some(Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), &acl, true)));
+        c.install(Some(Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), &acl, true, true)));
         let owns_here = per_account(&|a| json!(c.owns_here(a)));
         let is_me = per_account(&|a| json!(c.is_me(a)));
         let name_of_account = per_account(&|a| json!(c.name_of_account(a)));
@@ -8061,7 +8141,7 @@ pub(crate) mod tests {
     /// `ok <project>` or `err`.
     pub(crate) fn accepts(saved: &Saved, dir: &Path, inputs: &serde_json::Value) -> Vec<String> {
         let acl = Acl::open(dir);
-        let e = Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), &acl, true);
+        let e = Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), &acl, true, false);
         inputs
             .as_array()
             .unwrap()
@@ -8090,7 +8170,7 @@ pub(crate) mod tests {
         let dir = std::env::temp_dir().join(format!("arugula-peer-held-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let acl = Acl::open(&dir);
-        let e = Enrolled::build(saved, Arc::new(DeviceKeys::generate()), &acl, true);
+        let e = Enrolled::build(saved, Arc::new(DeviceKeys::generate()), &acl, true, false);
         let key = HostedKey::from_seed(&MACHINE_KEY);
         let entry = |created: u64, closed: serde_json::Value| {
             let k = DeviceKeys::generate();
@@ -8168,7 +8248,7 @@ pub(crate) mod tests {
             let acl = Arc::new(Acl::open(&dir));
             acl.add_link(1, &key, now_ms() + 600_000, None).unwrap();
             let c = Control::new(&dir, vec![], String::new(), acl.clone(), false);
-            c.install(Some(Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), &acl, false)));
+            c.install(Some(Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), &acl, false, false)));
             let got = c.device(&noise).map(|(_, p)| p);
             (c, acl, dir, got)
         };
@@ -8197,7 +8277,7 @@ pub(crate) mod tests {
         let mut changed = c.changed.subscribe();
         changed.mark_unchanged();
         saved.hosted_mut().unwrap().purpose = saved.purpose().unwrap().or(Purpose::Deploy);
-        c.install(Some(Enrolled::build(saved, Arc::new(DeviceKeys::generate()), &acl, false)));
+        c.install(Some(Enrolled::build(saved, Arc::new(DeviceKeys::generate()), &acl, false, false)));
         assert!(changed.has_changed().unwrap(), "the channel's loop is woken");
         let now = c.device(&noise).map(|(_, p)| p);
         assert!(now.is_none(), "the same key, once it's a deploy's box");
@@ -8239,7 +8319,7 @@ pub(crate) mod tests {
             let text = std::fs::read_to_string(Path::new(FIXTURES).join(format!("{name}.json"))).unwrap();
             let saved: Saved = serde_json::from_str(&text).unwrap();
             let acl = Arc::new(Acl::open(&dir));
-            let e = Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), &acl, true);
+            let e = Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), &acl, true, false);
             // Whom control's routing admits, by account, as what: the
             // account's own devices as the owner, and the others as their
             // principal says.
@@ -8251,6 +8331,9 @@ pub(crate) mod tests {
                 let role = match p {
                     Principal::Owner => "owner",
                     Principal::User { id, .. } => match e.team_roles.get(id) {
+                        // A team owner on a person's machine: a teammate,
+                        // who watches (#1180).
+                        Some(Role::Owner) => "viewer",
                         Some(Role::Editor) => "editor",
                         Some(Role::Viewer) => "viewer",
                         other => panic!("{name}: {id} admitted with no team role: {other:?}"),
@@ -8525,7 +8608,7 @@ pub(crate) mod tests {
         let dir = std::env::temp_dir().join(format!("arugula-both-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let acl = Acl::open(&dir);
-        let e = Enrolled::build(both, Arc::new(DeviceKeys::generate()), &acl, true);
+        let e = Enrolled::build(both, Arc::new(DeviceKeys::generate()), &acl, true, false);
         assert!(
             e.others.is_empty() && e.drivers.is_empty() && e.trusted.devices.is_empty() && e.agent_callers.is_empty()
         );
