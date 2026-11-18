@@ -291,6 +291,10 @@ function TeamSection({
         <p class="dim" data-team-add-locked>
           It's locked: only its owners add machines to it until it's unlocked.
         </p>
+      ) : t.role === "viewer" ? (
+        <p class="dim" data-team-add-viewer>
+          Viewers can't add machines to it: only its owners and editors do.
+        </p>
       ) : (
         <>
           <p class="dim">

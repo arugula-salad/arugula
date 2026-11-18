@@ -11,7 +11,7 @@ import { CopyText } from "../../shared/ui/copy";
 import { Modal } from "../../shared/ui/modal";
 import { RefusedError, takesSecret, type ControlSession, type JoinRequest } from "../control";
 import { fingerprint, normalizeCode, normalizeSecret, splitJoinCode } from "../e2e/cert.ts";
-import { addsInOneClick } from "../team-adds.ts";
+import { addsInOneClick, cantAdd } from "../team-adds.ts";
 import { clearHash } from "./common";
 
 /** A machine's join, by its code: from its approval link, or typed in.
@@ -79,14 +79,15 @@ export function JoinPrompt({ s, code: whole }: { s: ControlSession; code: string
     );
   // #1003: no device key here: Add, as this signed-in person.
   const oneClick = !!j && j.cert.kind === "daemon" && !s.enrollment;
-  // Teams I'm in (#332), and the one it asked for even if I can't add to it.
+  // Teams I can add it to (#332, #1184), and the one it asked for even if
+  // I can't, with why not (#1183).
   // In one click, control lets a team's owners and editors add machines,
   // and only its owners while it's locked.
   const teams = oneClick ? s.teams.filter(addsInOneClick) : s.addableTeams();
   const asked = j?.team && !teams.some((t) => t.team === j.team!.team) ? j.team : null;
   const team = teams.find((t) => t.team === to);
   const cant = !!to && !team;
-  const locked = !!asked && !!s.teams.find((t) => t.team === asked.team)?.locked;
+  const why = asked ? cantAdd(asked.name, s.teams.find((t) => t.team === asked.team) ?? null) : null;
   const cancel = () => {
     if (j && !refused) void s.rejectJoin(j.code).then(() => s.refresh(), () => {});
     clearHash();
@@ -178,7 +179,7 @@ export function JoinPrompt({ s, code: whole }: { s: ControlSession; code: string
                     ))}
                     {asked ? (
                       <option value={asked.team}>
-                        {asked.name} ({locked ? "locked" : "you're not in it"})
+                        {asked.name} ({why!.note})
                       </option>
                     ) : null}
                   </select>
@@ -188,9 +189,7 @@ export function JoinPrompt({ s, code: whole }: { s: ControlSession; code: string
           ) : null}
           {cant ? (
             <p class="control-error" data-join-not-member>
-              {locked
-                ? `${asked!.name} is locked: only its owners add machines to it. Ask one of them to approve it, or pick Just me.`
-                : `Only ${asked!.name}'s members add machines to it. Ask one of them to approve it, or pick Just me.`}
+              {why?.error}
             </p>
           ) : (
             <p class="dim" data-join-grants>

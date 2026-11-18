@@ -13,6 +13,7 @@ import { splitJoinCode } from "../e2e/cert.ts";
 import { AccountButton } from "../ui/app-bar";
 import { MovingNote } from "../ui/moving-note";
 import { DeploysWaitingNote } from "../ui/deploys-waiting";
+import { movesInto } from "../team-adds.ts";
 import { Mark } from "../../shared/ui/icons";
 
 /** Ready, but no machine to show yet: the account's menu (#97), any team
@@ -75,7 +76,7 @@ export function AddMachine({ s }: { s: ControlSession }) {
           On Windows, in a new PowerShell window:
           <CopyText text={`arugulad join ${s.info.url}`} data-join-cmd-windows />
           {s.teams
-            .filter((t) => !t.locked || t.role === "owner")
+            .filter(movesInto)
             .map((t) => (
               <TeamJoin key={t.team} s={s} t={t} />
             ))}
@@ -92,7 +93,7 @@ export function AddMachine({ s }: { s: ControlSession }) {
   );
 }
 
-/** How a machine joins a team (#332: any member adds their own), in the
+/** How a machine joins a team (#332: its owners and editors add their own, #1184), in the
  * same words on Add a machine and in Teams. */
 export function TeamJoin({ s, t, here }: { s: ControlSession; t: Team; here?: boolean }) {
   return (
