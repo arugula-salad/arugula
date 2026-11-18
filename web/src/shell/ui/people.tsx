@@ -21,6 +21,7 @@ import { colorOf } from "../../shared/chat/avatar";
 import { ShareLinks } from "./share-links";
 import { secretsWarned, shareOpen } from "../hints/private";
 import { CheckIcon, EditIcon } from "../../shared/ui/icons";
+import { openSessionProject } from "./project-dialog";
 
 /** Control mode (M19): people are accounts there, and links go through it.
  * Control's page only: who's signed in, anywhere, is `getSignedIn`. */
@@ -405,6 +406,8 @@ export function ShareDialog({ client }: { client: Client }) {
   useEscape("share.close", session === null ? null : () => setSession(null), [session]);
   if (session === null) return null;
   const name = client.state?.sessions.find((s) => s.id === session)?.name ?? `$${session}`;
+  // The team whose project the session is in: only its share counts (#1162).
+  const sessionTeam = client.state?.sessions.find((s) => s.id === session)?.project?.team;
   // Control mode: where a person it's shared with finds it (#551).
   const machine = control && client.e2e ? (control.daemons.find((d) => d.id === client.e2e!.daemon.id)?.name ?? "this machine") : null;
   const shared = grants.filter((g) => g.session === session);
@@ -657,7 +660,25 @@ export function ShareDialog({ client }: { client: Client }) {
         {control && client.e2e
           ? control.teams
               .filter((t) => t.verified && t.role !== null && !mine.some((g) => g.principal === `team:${t.team}`))
-              .map((t) => (
+              .map((t) =>
+                // A team's share counts only while the session is in one of
+                // the team's projects (#1162): elsewhere it offers the move
+                // instead (Arugula #1182).
+                sessionTeam !== t.team ? (
+                  <p key={t.team} class="share-team" data-share-team-elsewhere={t.team}>
+                    <span class="dim">To share it with everyone in {t.roster.name}, the session has to be in one of {t.roster.name}'s projects.</span>{" "}
+                    <button
+                      class="secondary"
+                      data-share-team-move={t.team}
+                      onClick={() => {
+                        setSession(null);
+                        openSessionProject(client, session, t.team);
+                      }}
+                    >
+                      Move to a {t.roster.name} project…
+                    </button>
+                  </p>
+                ) : (
                 <p key={t.team} class="share-team">
                   <button
                     class="secondary"
@@ -684,7 +705,8 @@ export function ShareDialog({ client }: { client: Client }) {
                   </select>{" "}
                   <span class="dim">(as members come and go)</span>
                 </p>
-              ))
+                ),
+              )
           : null}
         <form
           class="share-add"

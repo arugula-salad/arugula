@@ -1475,6 +1475,29 @@ button.att {
   opacity: 0.6;
 }
 
+/* The session's Project… (Arugula #1177): one project a row, and the
+ * line that says who will see the session, warning when a team will. */
+.session-project-rows {
+  flex-direction: column;
+  flex-wrap: nowrap;
+}
+
+.session-project-rows button {
+  text-align: left;
+}
+
+.session-project-who {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  line-height: 1.45;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--btn-radius);
+}
+
+.session-project-who.warn {
+  border-color: var(--warn);
+}
+
 .prompt-buttons {
   display: flex;
   justify-content: flex-end;
