@@ -198,6 +198,9 @@ struct Fake {
     own: Vec<Cert>,
     /// The daemon's own team (a team daemon): its rosters and certificates.
     team: Option<(Vec<Roster>, AccountCerts)>,
+    /// Control says the machine is the team's box (Arugula #1182), whose
+    /// team's owners own it (#1180).
+    team_box: bool,
     /// Teams it may ask about.
     teams: BTreeMap<String, (Vec<Roster>, AccountCerts)>,
     people: BTreeMap<String, (String, Cert)>,
@@ -218,84 +221,83 @@ fn serve(fake: Shared) -> String {
         routing::{get, post},
     };
     type Q = Query<BTreeMap<String, String>>;
-    let app =
-        Router::new()
-            .route(
-                "/api/daemon/trust",
-                get(|State(f): State<Shared>| async move {
-                    Json(json!({ "certs": f.lock().unwrap().own, "revocations": [] }))
-                }),
-            )
-            .route(
-                "/api/daemon/team",
-                get(|State(f): State<Shared>, Query(q): Q| async move {
-                    let since: u64 = q.get("since").and_then(|s| s.parse().ok()).unwrap_or(0);
-                    let f = f.lock().unwrap();
-                    let (rosters, certs) = f.team.clone().unwrap_or_default();
-                    let rosters: Vec<Roster> = rosters.into_iter().filter(|r| r.version > since).collect();
-                    Json(json!({ "locked": false, "rosters": rosters, "certs": certs }))
-                }),
-            )
-            .route(
-                "/api/daemon/teams",
-                get(|State(f): State<Shared>, Query(q): Q| async move {
-                    let f = f.lock().unwrap();
-                    let mut out = serde_json::Map::new();
-                    for id in q.get("ids").map(String::as_str).unwrap_or("").split(',') {
-                        if let Some((rosters, certs)) = f.teams.get(id) {
-                            out.insert(id.into(), json!({ "locked": false, "rosters": rosters, "certs": certs }));
-                        }
+    let app = Router::new()
+        .route(
+            "/api/daemon/trust",
+            get(|State(f): State<Shared>| async move {
+                let f = f.lock().unwrap();
+                Json(json!({ "certs": f.own, "revocations": [], "team_box": f.team_box }))
+            }),
+        )
+        .route(
+            "/api/daemon/team",
+            get(|State(f): State<Shared>, Query(q): Q| async move {
+                let since: u64 = q.get("since").and_then(|s| s.parse().ok()).unwrap_or(0);
+                let f = f.lock().unwrap();
+                let (rosters, certs) = f.team.clone().unwrap_or_default();
+                let rosters: Vec<Roster> = rosters.into_iter().filter(|r| r.version > since).collect();
+                Json(json!({ "locked": false, "rosters": rosters, "certs": certs }))
+            }),
+        )
+        .route(
+            "/api/daemon/teams",
+            get(|State(f): State<Shared>, Query(q): Q| async move {
+                let f = f.lock().unwrap();
+                let mut out = serde_json::Map::new();
+                for id in q.get("ids").map(String::as_str).unwrap_or("").split(',') {
+                    if let Some((rosters, certs)) = f.teams.get(id) {
+                        out.insert(id.into(), json!({ "locked": false, "rosters": rosters, "certs": certs }));
                     }
-                    Json(Value::Object(out))
-                }),
-            )
-            .route(
-                "/api/daemon/peers",
-                get(|State(f): State<Shared>, Query(q): Q| async move {
-                    let f = f.lock().unwrap();
-                    let mut out = serde_json::Map::new();
-                    for a in q.get("accounts").map(String::as_str).unwrap_or("").split(',') {
-                        if let Some((name, root)) = f.people.get(a).filter(|_| a == "a1" || f.routed.contains(a)) {
-                            out.insert(a.into(), json!({ "name": name, "certs": [root], "revocations": [] }));
-                        }
+                }
+                Json(Value::Object(out))
+            }),
+        )
+        .route(
+            "/api/daemon/peers",
+            get(|State(f): State<Shared>, Query(q): Q| async move {
+                let f = f.lock().unwrap();
+                let mut out = serde_json::Map::new();
+                for a in q.get("accounts").map(String::as_str).unwrap_or("").split(',') {
+                    if let Some((name, root)) = f.people.get(a).filter(|_| a == "a1" || f.routed.contains(a)) {
+                        out.insert(a.into(), json!({ "name": name, "certs": [root], "revocations": [] }));
                     }
-                    Json(Value::Object(out))
-                }),
-            )
-            .route(
-                "/api/daemon/access",
-                post(|State(f): State<Shared>, Json(b): Json<Value>| async move {
-                    f.lock().unwrap().published = serde_json::from_value(b["accounts"].clone()).unwrap();
-                    Json(json!({}))
-                }),
-            )
-            .route(
-                "/api/daemon/push-subs",
-                get(|State(f): State<Shared>| async move {
-                    let f = f.lock().unwrap();
-                    let served = |a: &String| f.routed.contains(a) && f.published.contains(a);
-                    let subs: Vec<&PushSub> = f.subs.iter().filter(|s| served(&s.account)).collect();
-                    Json(json!({ "subs": subs }))
-                }),
-            )
-            .route(
-                "/api/daemon/push",
-                post(|State(f): State<Shared>, Json(b): Json<Value>| async move {
-                    let mut f = f.lock().unwrap();
-                    let endpoint = b["endpoint"].as_str().unwrap_or_default().to_owned();
-                    let Some(account) = f.subs.iter().find(|s| s.endpoint == endpoint).map(|s| s.account.clone())
-                    else {
-                        return StatusCode::NOT_FOUND;
-                    };
-                    if f.refuse || !(f.routed.contains(&account) && f.published.contains(&account)) {
-                        return StatusCode::FORBIDDEN;
-                    }
-                    let body = base64::engine::general_purpose::STANDARD.decode(b["body"].as_str().unwrap()).unwrap();
-                    f.relayed.push((endpoint, body));
-                    StatusCode::OK
-                }),
-            )
-            .with_state(fake);
+                }
+                Json(Value::Object(out))
+            }),
+        )
+        .route(
+            "/api/daemon/access",
+            post(|State(f): State<Shared>, Json(b): Json<Value>| async move {
+                f.lock().unwrap().published = serde_json::from_value(b["accounts"].clone()).unwrap();
+                Json(json!({}))
+            }),
+        )
+        .route(
+            "/api/daemon/push-subs",
+            get(|State(f): State<Shared>| async move {
+                let f = f.lock().unwrap();
+                let served = |a: &String| f.routed.contains(a) && f.published.contains(a);
+                let subs: Vec<&PushSub> = f.subs.iter().filter(|s| served(&s.account)).collect();
+                Json(json!({ "subs": subs }))
+            }),
+        )
+        .route(
+            "/api/daemon/push",
+            post(|State(f): State<Shared>, Json(b): Json<Value>| async move {
+                let mut f = f.lock().unwrap();
+                let endpoint = b["endpoint"].as_str().unwrap_or_default().to_owned();
+                let Some(account) = f.subs.iter().find(|s| s.endpoint == endpoint).map(|s| s.account.clone()) else {
+                    return StatusCode::NOT_FOUND;
+                };
+                if f.refuse || !(f.routed.contains(&account) && f.published.contains(&account)) {
+                    return StatusCode::FORBIDDEN;
+                }
+                let body = base64::engine::general_purpose::STANDARD.decode(b["body"].as_str().unwrap()).unwrap();
+                f.relayed.push((endpoint, body));
+                StatusCode::OK
+            }),
+        )
+        .with_state(fake);
     let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     l.set_nonblocking(true).unwrap();
     let url = format!("http://{}", l.local_addr().unwrap());
@@ -597,6 +599,8 @@ fn on_a_team_daemon_a_members_role_is_enough_to_watch() {
 fn a_teams_other_owner_is_told_not_granted() {
     let w = world_where(TeamRole::Owner);
     w.fake.lock().unwrap().team = Some(w.t1.clone());
+    // The team's box: its team's other owners own it (Arugula #1180).
+    w.fake.lock().unwrap().team_box = true;
     w.route(&w.bea);
     w.route(&w.dee);
     let d = w.daemon(true);
@@ -784,6 +788,8 @@ fn a_library_doc(state: &std::path::Path, title: &str) -> String {
 async fn a_teams_other_owner_cant_answer_a_docs_share_card() {
     let w = world_where(TeamRole::Owner);
     w.fake.lock().unwrap().team = Some(w.t1.clone());
+    // The team's box: its team's other owners own it (Arugula #1180).
+    w.fake.lock().unwrap().team_box = true;
     let d = w.daemon(true);
     arugula_testkit::labs(&d.state, true);
     let (pane, _) = first(&d);
@@ -830,6 +836,8 @@ async fn a_teams_other_owner_cant_answer_a_docs_share_card() {
 async fn a_channel_closes_when_its_owner_is_made_a_viewer_and_its_follow_stops() {
     let w = world_where(TeamRole::Owner);
     w.fake.lock().unwrap().team = Some(w.t1.clone());
+    // The team's box: its team's other owners own it (Arugula #1180).
+    w.fake.lock().unwrap().team_box = true;
     let d = w.daemon(true);
     let (_, session) = first(&d);
     let ticker =
@@ -900,6 +908,8 @@ async fn a_channel_closes_when_its_owner_is_made_a_viewer_and_its_follow_stops()
 async fn remote_input_off_makes_a_team_owners_device_a_viewer() {
     let w = world_where(TeamRole::Owner);
     w.fake.lock().unwrap().team = Some(w.t1.clone());
+    // The team's box: its team's other owners own it (Arugula #1180).
+    w.fake.lock().unwrap().team_box = true;
     let d = w.daemon(true);
     let (pane, session) = first(&d);
     // With remote input off, Dee watches as the team does: the sessions in

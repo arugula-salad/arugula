@@ -357,7 +357,8 @@ pub(crate) struct TokenGrant {
 
 /// What `claims` give here. An owner's token is this machine's owner when
 /// `owns` (`Enrolled::owner_role_owns`: its own account, or anyone on a
-/// machine that's the team's); a team owner on a teammate's machine is a
+/// machine that's the team's or in no team); a team owner on a teammate's
+/// machine is a
 /// teammate, whose owner's role counts as the team's on its projects'
 /// sessions (Arugula #1180). On a hosted machine an editor is the owner too,
 /// as a team roster's editor is (M184). With remote input off, nobody

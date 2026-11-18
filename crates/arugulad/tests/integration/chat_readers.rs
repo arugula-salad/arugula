@@ -50,6 +50,9 @@ struct Fake {
     certs: Arc<Mutex<Vec<Cert>>>,
     /// A team machine's team: its rosters and its members' certificates.
     team: Arc<Mutex<Option<Team>>>,
+    /// Control says the machine is the team's box (Arugula #1182), whose
+    /// team's owners own it (#1180).
+    team_box: Arc<Mutex<bool>>,
     /// Whether control says that team is locked, and its owner's signed
     /// word on it.
     locked: Arc<Mutex<Locked>>,
@@ -144,7 +147,8 @@ async fn trust(State(f): State<Fake>, RawQuery(q): RawQuery) -> Json<Value> {
         json!({ "chat": *f.chat.lock().unwrap() })
     };
     let certs = f.certs.lock().unwrap().clone();
-    Json(json!({ "certs": certs, "revocations": [], "flags": { "account": {}, "team": team } }))
+    let team_box = *f.team_box.lock().unwrap();
+    Json(json!({ "certs": certs, "revocations": [], "flags": { "account": {}, "team": team }, "team_box": team_box }))
 }
 
 async fn team(State(f): State<Fake>, RawQuery(q): RawQuery) -> Json<Value> {
@@ -481,6 +485,8 @@ fn a_teams_other_owner_reads_every_panes_thread_until_the_roster_takes_them_out(
     let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
     let f = Fake::default();
     *f.chat.lock().unwrap() = true;
+    // The team's box: its team's other owners own it (Arugula #1180).
+    *f.team_box.lock().unwrap() = true;
     let url = serve(&rt, f.clone());
     let (alex, alex_root) = device("a1");
     let (_, bea_root) = device("a2");
@@ -521,9 +527,9 @@ fn a_teams_other_owner_reads_every_panes_thread_until_the_roster_takes_them_out(
     d.in_team_project(session.parse().unwrap(), "t1");
     let pane_t = pane.to_string();
     // Bea as an owner reads from the start and isn't watching; Cy by his
-    // team role, which watches the team's projects' sessions (Arugula
-    // #1162). Only accounts the roster names, and never the machine's own.
-    let both = json!([{ "account": "a2", "from": null }, { "account": "a3", "from": null, "watching": true }]);
+    // team role, an editor's on every session of the team's box (Arugula
+    // #1182). Only accounts the roster names, and never the machine's own.
+    let both = json!([{ "account": "a2", "from": null }, { "account": "a3", "from": null }]);
     d.wait_for("the pane's readers", || lists_for(&f, "pane", &pane_t).contains(&both));
     d.wait_for("the session's readers", || lists_for(&f, "session", &session).contains(&both));
 

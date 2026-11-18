@@ -1310,12 +1310,13 @@ impl Enrolled {
     }
 
     /// Whether an owner's role, the roster's or a machine token's, makes
-    /// `account` this machine's owner: its own account always, anyone else
-    /// only on a machine that's the team's ([`Self::the_teams`]). A team
-    /// owner on a teammate's machine sees it as a teammate does (Arugula
-    /// #1180); managing the machine stays theirs in control.
+    /// `account` this machine's owner: its own account always; anyone else
+    /// on a machine that's the team's ([`Self::the_teams`]), or in no team,
+    /// where control's word stands. A team owner on a teammate's machine
+    /// sees it as a teammate does (Arugula #1180); managing the machine
+    /// stays theirs in control.
     pub(crate) fn owner_role_owns(&self, account: &str) -> bool {
-        account == self.saved.cert.account || self.the_teams()
+        account == self.saved.cert.account || self.the_teams() || self.saved.team_id().is_none()
     }
 
     /// The machines that drive this one (M184): on a hosted machine only,
