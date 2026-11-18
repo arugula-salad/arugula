@@ -31,9 +31,16 @@ use crate::{
 pub(crate) async fn takes_hook(app: &App, pane: PaneId, pid: Option<u32>) -> bool {
     let Some(pid) = pid else { return true };
     let Some(h) = app.mux.api(|r| Api::Pane(pane, r)).await.flatten() else { return true };
-    let leader = h.pid_now();
     let sessions = crate::agent::sessions();
     let front = crate::task::spawn_blocking(move || {
+        // A pane just started knows its program's pid only once the shim
+        // has recorded it, a moment after the exec: what the program runs
+        // at once can hook first (Arugula #1179). Until the pane has begun,
+        // it hasn't ended; a pane that has answers at once.
+        let leader = h.pid_now().or_else(|| {
+            h.begun(STARTING);
+            h.pid_now()
+        });
         takes(Some(pid), leader, |leader, pid| crate::procinfo::in_front(leader, pid, |c| sessions.through(c)))
     });
     let takes = front.await.unwrap_or(false);
@@ -42,6 +49,10 @@ pub(crate) async fn takes_hook(app: &App, pane: PaneId, pid: Option<u32>) -> boo
     }
     takes
 }
+
+/// How long [`takes_hook`] waits for a starting pane to know its program:
+/// as long as the pane waits for its shim to say.
+const STARTING: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// [`takes_hook`] for a terminal whose own process is `leader` (none: it
 /// has ended), with `in_front(leader, pid)` the process table's answer.
