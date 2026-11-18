@@ -41,6 +41,7 @@ use std::{
 };
 
 use arugula_proto::{
+    exe::Exe,
     op::ops::{SetupAgent, SetupClaude, SetupControl, SetupGet, SetupTailscale},
     setup::{ControlJoinRequest, Outcome, SetupQuery},
 };
@@ -245,7 +246,13 @@ fn port(app: &App) -> u16 {
 async fn find(app: &App, name: &str, also: &[&str]) -> Option<PathBuf> {
     let shell = app.mux.shell_env.local().await;
     let path = shell.get("PATH").map(str::to_owned).or_else(|| std::env::var("PATH").ok()).unwrap_or_default();
-    std::env::split_paths(&path).map(|d| d.join(name)).chain(also.iter().map(PathBuf::from)).find(|p| p.is_file())
+    find_in(&Exe::here(), name, &path, also)
+}
+
+/// `name` on `path`, else at one of `also`: Windows's way there, with
+/// `name.exe` or `name.cmd` (#1175).
+fn find_in(x: &Exe, name: &str, path: &str, also: &[&str]) -> Option<PathBuf> {
+    x.find(name, path).or_else(|| also.iter().find_map(|p| x.at(Path::new(p))))
 }
 
 /// Runs a command with the shell's PATH: its exit, stdout and stderr.
@@ -507,7 +514,8 @@ async fn start_join(app: &Arc<App>, url: &str, team: Option<&str>) -> Value {
 // ---- claude code
 
 async fn claude(app: &App) -> Option<PathBuf> {
-    let home = std::env::var("HOME").unwrap_or_default();
+    // Windows: %USERPROFILE%, as HOME isn't set there.
+    let home = crate::home().display().to_string();
     let local = [format!("{home}/.local/bin/claude"), format!("{home}/.claude/local/claude")];
     let also: Vec<&str> =
         local.iter().map(String::as_str).chain(["/opt/homebrew/bin/claude", "/usr/local/bin/claude"]).collect();
@@ -517,8 +525,7 @@ async fn claude(app: &App) -> Option<PathBuf> {
 /// The `arugula` CLI that Claude Code should start: beside this daemon,
 /// else on the PATH.
 async fn cli(app: &App) -> Option<PathBuf> {
-    let beside =
-        std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join("arugula"))).filter(|p| p.is_file());
+    let beside = std::env::current_exe().ok().and_then(|e| Exe::here().in_dir(e.parent()?, "arugula"));
     match beside {
         Some(p) => Some(p),
         None => find(app, "arugula", &[]).await,
@@ -660,7 +667,7 @@ async fn agent_cli(app: &App, a: &Adapter) -> Option<PathBuf> {
     if a.kind == Kind::Claude {
         return claude(app).await;
     }
-    let home = std::env::var("HOME").unwrap_or_default();
+    let home = crate::home().display().to_string();
     let local = format!("{home}/.local/bin/{}", a.cli);
     let brew = format!("/opt/homebrew/bin/{}", a.cli);
     let usr = format!("/usr/local/bin/{}", a.cli);
@@ -801,13 +808,34 @@ pub(crate) async fn status(app: &Arc<App>, q: SetupQuery) -> Value {
 
 /// nvim on the owner's PATH, or where Homebrew puts it.
 async fn nvim_found(app: &App) -> bool {
-    let name = if cfg!(windows) { "nvim.exe" } else { "nvim" };
-    find(app, name, &["/opt/homebrew/bin/nvim", "/usr/local/bin/nvim"]).await.is_some()
+    find(app, "nvim", &["/opt/homebrew/bin/nvim", "/usr/local/bin/nvim"]).await.is_some()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #1175: `arugula setup claude` finds Claude Code on a Windows PATH,
+    /// or where its installer puts `claude.exe`.
+    #[test]
+    fn finds_claude_the_windows_way() {
+        let d = std::env::temp_dir().join(format!("arugula-setup-find-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let (npm, local) = (d.join("npm"), d.join(".local/bin"));
+        std::fs::create_dir_all(&npm).unwrap();
+        std::fs::create_dir_all(&local).unwrap();
+        let win = Exe::windows(None);
+        let path = format!("{};{}", d.join("nothing").display(), npm.display());
+        let also = local.join("claude").display().to_string();
+        assert_eq!(find_in(&win, "claude", &path, &[&also]), None);
+        std::fs::write(local.join("claude.exe"), "").unwrap();
+        assert_eq!(find_in(&win, "claude", &path, &[&also]), Some(local.join("claude.exe")));
+        std::fs::write(npm.join("claude.cmd"), "").unwrap();
+        assert_eq!(find_in(&win, "claude", &path, &[&also]), Some(npm.join("claude.cmd")));
+        // Unix's rules: neither is `claude`.
+        assert_eq!(find_in(&Exe::unix(), "claude", &path.replace(';', ":"), &[&also]), None);
+        let _ = std::fs::remove_dir_all(&d);
+    }
 
     #[test]
     fn what_an_install_says_it_did() {

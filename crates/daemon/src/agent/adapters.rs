@@ -3,10 +3,15 @@
 //! from the pins in `defs.rs` (the README's commands are checked against
 //! these in a test). An install older than the pin is out of date (#335):
 //! the same install updates it.
+//!
+//! Programs are found the OS's way (#1175, `arugula_proto::exe`): on Windows
+//! PATH is `;`-separated, Node is `node.exe`, npm is `npm.cmd`, and the
+//! adapter is npm's `.cmd` shim in `node_modules\.bin`.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use arugula_proto::exe::Exe;
 use serde_json::{Value, json};
 
 use super::defs::{CLAUDE_ACP, CODEX_ACP, Kind, agents_dir};
@@ -73,7 +78,13 @@ impl Adapter {
 
     /// Its executable in our agents directory.
     pub fn local_bin(&self, home: &Path) -> PathBuf {
-        agents_dir(home).join(self.dir).join("node_modules/.bin").join(self.bin)
+        self.local_bin_in(home, &Exe::here())
+    }
+
+    /// Windows: npm's `.cmd` shim.
+    fn local_bin_in(&self, home: &Path, x: &Exe) -> PathBuf {
+        let dir = agents_dir(home).join(self.dir).join("node_modules").join(".bin");
+        x.in_dir(&dir, self.bin).unwrap_or_else(|| dir.join(self.bin))
     }
 }
 
@@ -188,13 +199,9 @@ fn path_of(env: &[(String, String)]) -> String {
         .unwrap_or_default()
 }
 
-fn which(name: &str, path: &str) -> Option<PathBuf> {
-    path.split(':').filter(|d| !d.is_empty()).map(|d| Path::new(d).join(name)).find(|p| p.is_file())
-}
-
 /// The Node an adapter would run with: its `--version`, if it runs.
-fn node_version(path: &str) -> Option<String> {
-    let node = which("node", path)?;
+fn node_version(path: &str, x: &Exe) -> Option<String> {
+    let node = x.find("node", path)?;
     let out = Command::new(node).arg("--version").env("PATH", path).output().ok()?;
     let v = String::from_utf8_lossy(&out.stdout).trim().to_owned();
     (out.status.success() && v.starts_with('v')).then_some(v)
@@ -206,16 +213,20 @@ fn major(v: &str) -> Option<u32> {
 
 /// Whether `a` can start on this host, with `env` as an agent block gets.
 pub fn status(a: &'static Adapter, home: &Path, env: &[(String, String)]) -> Status {
+    status_in(a, home, env, &Exe::here())
+}
+
+fn status_in(a: &'static Adapter, home: &Path, env: &[(String, String)], x: &Exe) -> Status {
     let mut env = env.to_vec();
     let before = path_of(&env);
-    with_node_on_path(&mut env, home);
+    with_node_on_path_in(&mut env, home, x);
     let path = path_of(&env);
-    let node_bin = (path != before).then(|| PathBuf::from(path.split(':').next().unwrap_or_default()));
+    let node_bin = (path != before).then(|| x.dirs(&path).into_iter().next()).flatten();
     let npm = a.npm(&shown_dir(home));
-    let state = match node_version(&path) {
+    let state = match node_version(&path, x) {
         None => State::NoNode { found: None },
         Some(v) if major(&v).is_none_or(|m| m < NODE_MAJOR) => State::NoNode { found: Some(v) },
-        Some(_) if a.local_bin(home).exists() => {
+        Some(_) if a.local_bin_in(home, x).exists() => {
             let pkg = agents_dir(home).join(a.dir).join("node_modules").join(a.name()).join("package.json");
             let version = std::fs::read(pkg)
                 .ok()
@@ -223,7 +234,7 @@ pub fn status(a: &'static Adapter, home: &Path, env: &[(String, String)]) -> Sta
                 .and_then(|v| v["version"].as_str().map(str::to_owned));
             State::Installed { version, on_path: false }
         }
-        Some(_) if which(a.bin, &path).is_some() => State::Installed { version: None, on_path: true },
+        Some(_) if x.find(a.bin, &path).is_some() => State::Installed { version: None, on_path: true },
         Some(_) => State::Missing,
     };
     Status { adapter: a, state, npm, node_bin }
@@ -247,9 +258,14 @@ pub fn node_path(home: &Path, env: &[(String, String)]) -> String {
 /// into the real directory, with `path` (`node_path`). `ARUGULA_NPM`
 /// replaces npm. `None` when there's no npm on that PATH.
 pub fn npm_install(a: &Adapter, home: &Path, path: &str) -> Option<Command> {
+    npm_install_in(a, home, path, &Exe::here())
+}
+
+/// Windows: `npm.cmd`, which `Command` runs through cmd.exe.
+fn npm_install_in(a: &Adapter, home: &Path, path: &str, x: &Exe) -> Option<Command> {
     let npm = match std::env::var("ARUGULA_NPM") {
         Ok(other) if !other.is_empty() => PathBuf::from(other),
-        _ => which("npm", path)?,
+        _ => x.find("npm", path)?,
     };
     let mut cmd = Command::new(npm);
     cmd.arg("install")
@@ -264,8 +280,13 @@ pub fn npm_install(a: &Adapter, home: &Path, path: &str) -> Option<Command> {
 
 /// What an *Install* pane runs: the shown command, but into the real
 /// directory and with the Node we found first on PATH. `ARUGULA_NPM`
-/// replaces npm (the browser tests' stand-in).
+/// replaces npm (the browser tests' stand-in). Windows: for PowerShell,
+/// which a pane's command runs in there.
 pub fn install_command(s: &Status, home: &Path) -> String {
+    if cfg!(windows) { install_command_powershell(s, home) } else { install_command_sh(s, home) }
+}
+
+fn install_command_sh(s: &Status, home: &Path) -> String {
     let npm = s.adapter.npm(&quote(&agents_dir(home).display().to_string()));
     let npm = match std::env::var("ARUGULA_NPM") {
         Ok(other) if !other.is_empty() => format!("{}{}", quote(&other), npm.trim_start_matches("npm")),
@@ -279,28 +300,44 @@ pub fn install_command(s: &Status, home: &Path) -> String {
     format!("{npm} && echo && echo 'Installed {}. Start the agent again.'", s.adapter.package)
 }
 
+/// #1175: `npm.cmd`, as `npm` may be npm's `.ps1`, which Windows
+/// PowerShell's script policy can refuse; the package quoted, as `@name` is
+/// splatting there; `$env:PATH`; and `if ($?)`, as Windows PowerShell 5.1
+/// has no `&&`.
+fn install_command_powershell(s: &Status, home: &Path) -> String {
+    let a = s.adapter;
+    let ps = |s: &str| format!("'{}'", s.replace('\'', "''"));
+    let npm = match std::env::var("ARUGULA_NPM") {
+        Ok(other) if !other.is_empty() => format!("& {}", ps(&other)),
+        _ => "npm.cmd".into(),
+    };
+    let dir = agents_dir(home).join(a.dir);
+    let mut cmd = format!("{npm} install {}--prefix {} {}", a.flags, ps(&dir.display().to_string()), ps(a.package));
+    if let Some(bin) = &s.node_bin {
+        cmd = format!("$env:PATH = {} + ';' + $env:PATH; {cmd}", ps(&bin.display().to_string()));
+    }
+    format!("{cmd}; if ($?) {{ echo ''; echo {} }}", ps(&format!("Installed {}. Start the agent again.", a.package)))
+}
+
 /// npm adapters are Node scripts: make sure a Node is on PATH even when the
 /// daemon runs as a service with a bare one. mise's shims won't do: outside
 /// a directory that pins Node they refuse to pick a version. So: a real
 /// `node` already on PATH, else one mise installed (22, the version the
 /// adapters were tested with, else the newest), put first.
 pub fn with_node_on_path(env: &mut Vec<(String, String)>, home: &Path) {
-    let path = env
-        .iter()
-        .rev()
-        .find(|(k, _)| k == "PATH")
-        .map(|(_, v)| v.clone())
-        .or_else(|| std::env::var("PATH").ok())
-        .unwrap_or_default();
+    with_node_on_path_in(env, home, &Exe::here())
+}
+
+fn with_node_on_path_in(env: &mut Vec<(String, String)>, home: &Path, x: &Exe) {
+    let path = path_of(env);
     let shims = home.join(".local/share/mise/shims");
-    let real =
-        path.split(':').filter(|d| !d.is_empty() && Path::new(d) != shims).any(|d| Path::new(d).join("node").is_file());
+    let real = x.dirs(&path).iter().any(|d| *d != shims && x.in_dir(d, "node").is_some());
     if real {
         return;
     }
     let Some(bin) = mise_node(&home.join(".local/share/mise/installs/node")) else { return };
     env.retain(|(k, _)| k != "PATH");
-    env.push(("PATH".into(), format!("{}:{path}", bin.display())));
+    env.push(("PATH".into(), x.prepend(&bin, &path)));
 }
 
 /// The `bin` of a Node that mise installed: 22's if there, else the newest.
@@ -427,5 +464,99 @@ mod tests {
         assert_eq!(s.state, State::NoNode { found: Some("v18.2.0".into()) });
         assert_eq!(s.why(), "Claude Code's adapter needs Node 20+ (this machine has v18.2.0)");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #1175: Windows's rules, here: a `;` PATH, `node.exe`, `npm.cmd` and
+    /// npm's `.cmd` shim. (Unix: the fake `node.exe` runs by its mode.)
+    #[cfg(unix)]
+    #[test]
+    fn finds_node_the_windows_way() {
+        if std::env::var_os("ARUGULA_AGENTS_DIR").is_some() || std::env::var_os("ARUGULA_NPM").is_some() {
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!("arugula-adapters-win-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let home = &dir;
+        let (nodejs, roaming) = (home.join("Program Files/nodejs"), home.join("AppData/Roaming/npm"));
+        std::fs::create_dir_all(&nodejs).unwrap();
+        std::fs::create_dir_all(&roaming).unwrap();
+        let node = nodejs.join("node.exe");
+        std::fs::write(&node, "#!/bin/sh\necho v22.20.0\n").unwrap();
+        std::fs::set_permissions(&node, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        // npm's sh script, beside the .cmd and .ps1 it makes on Windows.
+        for f in ["npm", "npm.cmd", "npm.ps1"] {
+            std::fs::write(nodejs.join(f), "").unwrap();
+        }
+        let path = format!("{};{}", roaming.display(), nodejs.display());
+        let env = vec![("PATH".to_owned(), path.clone())];
+        let win = Exe::windows(Some(".COM;.EXE;.BAT;.CMD;.VBS;.JS;.PS1"));
+        let claude = of(Kind::Claude).unwrap();
+
+        // What 0.70.4 did on Windows: no Node.
+        assert_eq!(status_in(claude, home, &env, &Exe::unix()).state, State::NoNode { found: None });
+        let s = status_in(claude, home, &env, &win);
+        assert_eq!(s.state, State::Missing);
+        assert_eq!(s.node_bin, None, "Node was on PATH: nothing to put first");
+
+        // `arugula setup claude`'s install runs npm.cmd.
+        let cmd = npm_install_in(claude, home, &path, &win).unwrap();
+        assert_eq!(Path::new(cmd.get_program()), nodejs.join("npm.cmd"));
+
+        // On PATH (npm's global shims are .cmd files).
+        std::fs::write(roaming.join("claude-agent-acp.cmd"), "").unwrap();
+        let s = status_in(claude, home, &env, &win);
+        assert_eq!(s.state, State::Installed { version: None, on_path: true });
+        std::fs::remove_file(roaming.join("claude-agent-acp.cmd")).unwrap();
+
+        // Installed in our directory: npm made a .cmd shim in .bin.
+        let pkg = agents_dir(home).join("claude/node_modules");
+        std::fs::create_dir_all(pkg.join(".bin")).unwrap();
+        std::fs::write(pkg.join(".bin/claude-agent-acp.cmd"), "").unwrap();
+        std::fs::create_dir_all(pkg.join(claude.name())).unwrap();
+        std::fs::write(pkg.join(claude.name()).join("package.json"), r#"{"version":"0.85.0"}"#).unwrap();
+        assert_eq!(claude.local_bin_in(home, &win), pkg.join(".bin/claude-agent-acp.cmd"));
+        let s = status_in(claude, home, &env, &win);
+        assert_eq!(s.state, State::Installed { version: Some("0.85.0".into()), on_path: false });
+
+        // A Node mise installed goes first, after a `;`.
+        let bare = home.join("nothing").display().to_string();
+        let mise = home.join(".local/share/mise/installs/node/22.20.0/bin");
+        std::fs::create_dir_all(&mise).unwrap();
+        std::fs::write(mise.join("node"), "").unwrap();
+        let mut env = vec![("PATH".to_owned(), bare.clone())];
+        with_node_on_path_in(&mut env, home, &win);
+        assert_eq!(path_of(&env), format!("{};{bare}", mise.display()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #1175: the *Install* pane's command for PowerShell, a Windows pane's
+    /// shell.
+    #[test]
+    fn the_install_pane_speaks_powershell() {
+        if std::env::var_os("ARUGULA_NPM").is_some() {
+            return;
+        }
+        let home = Path::new("/home/it's me");
+        let claude = of(Kind::Claude).unwrap();
+        let mut s = Status { adapter: claude, state: State::Missing, npm: String::new(), node_bin: None };
+        let dir = agents_dir(home).join("claude").display().to_string().replace('\'', "''");
+        assert_eq!(
+            install_command_powershell(&s, home),
+            format!(
+                "npm.cmd install --prefix '{dir}' '{CLAUDE_ACP}'; if ($?) {{ echo ''; echo 'Installed {CLAUDE_ACP}. Start the agent again.' }}"
+            )
+        );
+        s.node_bin = Some(PathBuf::from(r"C:\mise\node"));
+        assert!(
+            install_command_powershell(&s, home)
+                .starts_with(r"$env:PATH = 'C:\mise\node' + ';' + $env:PATH; npm.cmd install ")
+        );
+        let codex = Status { adapter: of(Kind::Codex).unwrap(), ..s };
+        assert!(install_command_powershell(&codex, home).contains("npm.cmd install --omit=optional --prefix "));
+        // The sh one is as it was.
+        assert!(
+            install_command_sh(&codex, home)
+                .starts_with("env \"PATH=C:\\mise\\node:$PATH\" npm install --omit=optional")
+        );
     }
 }
