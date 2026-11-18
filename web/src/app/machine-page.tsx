@@ -41,6 +41,7 @@ import type { DocMoveRequest } from "../shared/proto.gen";
 import { notePane } from "../platform/places-kept";
 import { popOutIn } from "../shell/ui/panes/pop-out";
 import { PanesList } from "./panes-list";
+import { newSessionsIn } from "../shell/new-session";
 
 export interface Booted {
   machines: Machines;
@@ -172,6 +173,12 @@ export function MachinesPlace({ project, at, session }: { project: string; at: M
 
 function Place({ project, at, b: { machines, cell }, session }: { project: string; at: MachineAt; b: Booted; session: AppSession | null }) {
   useSubscribe((fn) => directory.subscribe(fn));
+  // A session made here starts in this project (Arugula #1163).
+  const projectName = platform.project(project)?.name ?? "";
+  useEffect(() => {
+    newSessionsIn({ id: project, name: projectName });
+    return () => newSessionsIn(null);
+  }, [project, projectName]);
   // A list in the platform's panel: the machines, or Build's home, every machine's panes (Arugula #1083).
   const list = (at.at === "machines" && at.pane === undefined && !at.name) || at.at === "panes";
   // The shell's keys while a machine's page or Swarm is shown, and only then.

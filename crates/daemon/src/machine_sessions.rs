@@ -226,6 +226,7 @@ mod tests {
             work: project.map(|p| WorkRef { project: p.into(), item: item.map(Into::into) }),
             work_by_hand: false,
             project_repo: None,
+            project_default: false,
         }
     }
 

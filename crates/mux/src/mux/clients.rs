@@ -249,9 +249,9 @@ impl Daemon {
     pub(super) fn intent(&mut self, client: Option<ClientId>, intent: Intent) -> Result<(), String> {
         // A new session without a name gets one ("drifting cedar").
         let intent = match intent {
-            Intent::NewSession { name: None, from_pane } => {
+            Intent::NewSession { name: None, from_pane, project } => {
                 let taken = |n: &str| self.mux.sessions.iter().any(|s| s.name == n);
-                Intent::NewSession { name: Some(arugula_core::names::generate(seed(), taken)), from_pane }
+                Intent::NewSession { name: Some(arugula_core::names::generate(seed(), taken)), from_pane, project }
             }
             i => i,
         };

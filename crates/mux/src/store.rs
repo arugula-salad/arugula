@@ -902,7 +902,7 @@ mod tests {
         let state = StateDir::open(dir.clone()).unwrap();
         assert_eq!(state.load_layout().unwrap(), None);
         let mut mux = Mux::new();
-        mux.apply(arugula_core::Intent::NewSession { name: None, from_pane: None }).unwrap();
+        mux.apply(arugula_core::Intent::NewSession { name: None, from_pane: None, project: None }).unwrap();
         let saved = Saved {
             version: LAYOUT_VERSION,
             saved_at_ms: 1,

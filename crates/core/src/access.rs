@@ -122,8 +122,8 @@ mod tests {
 
     fn two_sessions() -> (Mux, SessionId, SessionId) {
         let mut m = Mux::new();
-        m.apply(Intent::NewSession { name: Some("a".into()), from_pane: None }).unwrap();
-        m.apply(Intent::NewSession { name: Some("b".into()), from_pane: None }).unwrap();
+        m.apply(Intent::NewSession { name: Some("a".into()), from_pane: None, project: None }).unwrap();
+        m.apply(Intent::NewSession { name: Some("b".into()), from_pane: None, project: None }).unwrap();
         let (a, b) = (m.sessions[0].id, m.sessions[1].id);
         (m, a, b)
     }
@@ -144,7 +144,7 @@ mod tests {
         assert!(!may(Intent::RenameSession { session: a, name: "x".into() }));
         assert!(!may(Intent::SetSessionProject { session: a, project: None }));
         assert!(!may(Intent::CloseSession { session: a }));
-        assert!(!may(Intent::NewSession { name: None, from_pane: None }));
+        assert!(!may(Intent::NewSession { name: None, from_pane: None, project: None }));
         assert!(!may(Intent::SetOption { scope: OptionScope::Global, name: "x".into(), value: None }));
         assert!(may(Intent::SetOption { scope: OptionScope::Pane(pane_a), name: "x".into(), value: None }));
         // Arranging and focusing a tab are an editor's, not a viewer's.

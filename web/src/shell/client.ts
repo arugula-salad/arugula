@@ -10,6 +10,7 @@ import { cleanTitle } from "../shared/titles";
 import { OPS, opPath } from "./ops";
 import { FLAG_ALIASES, type FLAGS } from "../shared/proto.gen";
 import { pickFollowed, WATCH_MS } from "./follow";
+import { withProject } from "./new-session";
 import {
   decodeFrame,
   encodeFrame,
@@ -1162,6 +1163,7 @@ export class Client {
 
   /** Send `intent`; `refused` hears the daemon's reason if it says no. */
   intent(intent: Intent, refused?: (message: string) => void): number {
+    intent = withProject(intent);
     // Stamp the time only for intents that create panes, tabs, or sessions.
     if (intent.op === "new_session" || intent.op === "new_tab" || intent.op === "split") {
       this.lastMadeAt = Date.now();
