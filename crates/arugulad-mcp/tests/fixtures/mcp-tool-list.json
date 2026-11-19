@@ -6606,7 +6606,7 @@
           "match": {
             "additionalProperties": true,
             "default": null,
-            "description": "create: With event: field and value pairs the event must have, from the\ntype's match fields ({\"issue\": \"#12\"}).",
+            "description": "create: With event: field and value pairs the event must have, from the\ntype's match fields ({\"issue\": \"#12\"}). Without project, a type that\nmatches on it gets the current project's, so #N is its issue.",
             "type": [
               "object",
               "null"

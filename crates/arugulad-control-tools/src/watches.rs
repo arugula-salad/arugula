@@ -16,13 +16,16 @@
 //!   matched on its fields, with the agent's note handed back when it
 //!   fires. Only the cloud's types for now: the daemon's own (a pane's, an
 //!   agent block's) come with local watches. `types` lists the catalog.
+//!   A type that matches on project, given none, gets the current project
+//!   (`Call::current_project`, as `issue_write`'s) when it names an issue by
+//!   `#N` or no subject at all; a subject named by its id is left anywhere.
 //! - **Once.** It fires once, or expires (24 hours unless told, at most 7
 //!   days) with one last message saying it ended without firing.
 
-use arugula_control_wire::events::{self, Home};
+use arugula_control_wire::events;
 use arugula_control_wire::watch::{
-    AGENT_WATCHES, AGENT_WATCHES_CANCEL, NOTE_MAX, WatchCancel, WatchCancelled, WatchCreate, WatchList, WatchMade,
-    WatchState, WatchTarget, expires_ms as expires, until_word_parse as until,
+    AGENT_WATCHES, AGENT_WATCHES_CANCEL, EventTarget, WatchCancel, WatchCancelled, WatchCreate, WatchList, WatchMade,
+    WatchState, WatchTarget, event_target, event_types as types, expires_ms as expires, until_word_parse as until,
 };
 use arugulad_base::forge_wait::PrRef;
 use reqwest::Method;
@@ -99,7 +102,8 @@ pub struct CreateArgs {
     #[serde(default)]
     pub event: Option<String>,
     /// With event: field and value pairs the event must have, from the
-    /// type's match fields ({"issue": "#12"}).
+    /// type's match fields ({"issue": "#12"}). Without project, a type that
+    /// matches on it gets the current project's, so #N is its issue.
     #[serde(default, rename = "match")]
     pub matches: Option<serde_json::Map<String, Value>>,
     /// With event: why you watch, at most 200 characters: it comes back
@@ -219,7 +223,7 @@ fn create_body(a: CreateArgs) -> Result<WatchCreate, String> {
         None if a.parent.is_some() || a.from.is_some() => return Err("parent and from go with a room".into()),
         None => {}
     }
-    let event = event(a.event, a.matches.as_ref(), a.note.as_deref())?;
+    let EventTarget { event, matches, note } = event_target(a.event, a.matches, a.note)?;
     if prs.is_empty() && targets.is_empty() && event.is_none() {
         return Err("create needs something to watch: pr, session, run, room, or event".into());
     }
@@ -231,65 +235,39 @@ fn create_body(a: CreateArgs) -> Result<WatchCreate, String> {
         targets.push(WatchTarget::Pr { repo: r.repo, number: r.number, until });
     }
     let expires_in_ms = a.expires.as_deref().map(expires).transpose()?;
-    let note = event.as_ref().and(a.note.map(|n| n.trim().to_owned()).filter(|n| !n.is_empty()));
-    let matches = event.as_ref().and(a.matches).filter(|m| !m.is_empty());
     Ok(WatchCreate { session: String::new(), session_name: None, targets, expires_in_ms, event, matches, note })
 }
 
-/// The event target's type, checked against the catalog with its match
-/// fields and note; none without one.
-fn event(
-    name: Option<String>,
-    matches: Option<&serde_json::Map<String, Value>>,
-    note: Option<&str>,
-) -> Result<Option<String>, String> {
-    let Some(name) = name.map(|n| n.trim().to_owned()).filter(|n| !n.is_empty()) else {
-        if matches.is_some_and(|m| !m.is_empty()) || note.is_some_and(|n| !n.trim().is_empty()) {
-            return Err("match and note go with an event".into());
-        }
-        return Ok(None);
-    };
-    let Some(t) = events::lookup(&name) else {
-        return Err(format!("event {name}: no such type; watch types lists them"));
-    };
-    if t.home == Home::Daemon {
-        return Err(format!("event {name}: local watches come soon; use wait for a pane"));
-    }
-    for k in matches.into_iter().flat_map(|m| m.keys()) {
-        if !t.matches.iter().any(|f| f.name == k) {
-            let fields: Vec<&str> = t.matches.iter().map(|f| f.name).collect();
-            return Err(format!("match {k}: {name} matches on {}", fields.join(", ")));
-        }
-    }
-    if let Some(n) = note.map(str::trim)
-        && n.chars().count() > NOTE_MAX
+/// Whether `body`'s event target wants the current project in its match:
+/// its type matches on project, and the match names none. That's how `#N`
+/// in it means the current project's.
+fn wants_project(body: &WatchCreate) -> bool {
+    let Some(t) = body.event.as_deref().and_then(events::lookup) else { return false };
+    if !t.matches.iter().any(|f| f.name == "project")
+        || body.matches.as_ref().is_some_and(|m| m.contains_key("project"))
     {
-        return Err(format!("note: {} characters, at most {NOTE_MAX}", n.chars().count()));
+        return false;
     }
-    Ok(Some(name))
-}
-
-/// `types`: the catalog, a type to two lines, and whether this machine can
-/// watch each now (`joined`: it has joined Arugula cloud).
-fn types(joined: bool) -> String {
-    let lines: Vec<String> = events::CATALOG
-        .iter()
-        .map(|t| {
-            let now = match t.home {
-                Home::Cloud if joined => "watchable now",
-                Home::Cloud => "not now: this machine hasn't joined Arugula cloud",
-                Home::Daemon => "not yet: local watches come soon; use wait for a pane",
-            };
-            let fields: Vec<String> = t.matches.iter().map(|f| format!("{} ({})", f.name, f.meaning)).collect();
-            format!("{}: {} [{now}]\n  match: {}", t.name, t.meaning, fields.join("; "))
-        })
-        .collect();
-    lines.join("\n")
+    // A subject named by its id (`iss_…`, `run_…`) is anywhere the owner can
+    // read: limiting it to this project would keep it from ever firing. An
+    // issue's `#N` means this project's, and no subject at all means the
+    // project's own.
+    let named = |k: &str| body.matches.as_ref().and_then(|m| m.get(k)).and_then(Value::as_str);
+    match named("issue") {
+        Some(i) => i.starts_with('#'),
+        None => ["run", "deploy", "session"].iter().all(|k| named(k).is_none()),
+    }
 }
 
 async fn create(c: &Call<'_>, a: CreateArgs) -> Out {
     let mut body = create_body(a)?;
     (body.session, body.session_name) = session(c).await?;
+    // Without one, the watch goes as asked: the cloud says if it needs one.
+    if wants_project(&body)
+        && let Ok(project) = c.current_project(None).await
+    {
+        body.matches.get_or_insert_default().insert("project".into(), Value::String(project));
+    }
     let body = serde_json::to_value(&body).map_err(|e| e.to_string())?;
     let v = c.app().control.cloud(Method::POST, AGENT_WATCHES, Some(&body)).await.map_err(said)?;
     let made: WatchMade =
@@ -355,7 +333,7 @@ async fn cancel(c: &Call<'_>, a: CancelArgs) -> Out {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arugula_control_wire::watch::{EXPIRES_MAX_MS, PrUntil};
+    use arugula_control_wire::watch::{EXPIRES_MAX_MS, NOTE_MAX, PrUntil};
     use serde_json::json;
 
     #[test]
@@ -426,6 +404,18 @@ mod tests {
         assert!(create_body(args(json!({ "event": "issue.closed", "note": "é".repeat(NOTE_MAX) }))).is_ok());
         assert_eq!(err(json!({ "run": "run_1", "note": "why" })), "match and note go with an event");
         assert!(err(json!({})).contains("or event"));
+    }
+
+    #[test]
+    fn a_type_that_matches_on_project_wants_the_current_one() {
+        let wants = |v| wants_project(&create_body(args(v)).unwrap());
+        assert!(wants(json!({ "event": "issue.closed", "match": { "issue": "#12" } })));
+        assert!(wants(json!({ "event": "run.ended" })));
+        assert!(!wants(json!({ "event": "issue.closed", "match": { "issue": "#12", "project": "prj_2" } })));
+        assert!(!wants(json!({ "event": "issue.closed", "match": { "issue": "iss_9" } })), "an id is anywhere");
+        assert!(!wants(json!({ "event": "run.ended", "match": { "run": "run_1" } })), "an id is anywhere");
+        assert!(!wants(json!({ "event": "chat.reply", "match": { "room": "r1" } })), "chat.reply has no project");
+        assert!(!wants(json!({ "run": "run_1" })));
     }
 
     #[test]

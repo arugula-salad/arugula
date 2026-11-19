@@ -3308,12 +3308,34 @@
         {
           "description": "Wake this session when any of `targets` gets there.",
           "properties": {
+            "event": {
+              "description": "An event target too, as [`crate::watch::WatchCreate::event`]'s:\nleft out when none, so a watch without one reads as before. A\n`#N` in its match is the session's project's.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "expires_in_ms": {
               "default": null,
               "format": "uint64",
               "minimum": 0,
               "type": [
                 "integer",
+                "null"
+              ]
+            },
+            "match": {
+              "additionalProperties": true,
+              "description": "With `event`: the type's match fields an event must equal.",
+              "type": [
+                "object",
+                "null"
+              ]
+            },
+            "note": {
+              "description": "With `event`: why the agent watches, handed back when it fires;\nat most [`crate::watch::NOTE_MAX`] characters.",
+              "type": [
+                "string",
                 "null"
               ]
             },
@@ -3457,12 +3479,34 @@
         {
           "description": "Wake this session when any of `targets` gets there.",
           "properties": {
+            "event": {
+              "description": "An event target too, as [`crate::watch::WatchCreate::event`]'s:\nleft out when none, so a watch without one reads as before. A\n`#N` in its match is the session's project's.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "expires_in_ms": {
               "default": null,
               "format": "uint64",
               "minimum": 0,
               "type": [
                 "integer",
+                "null"
+              ]
+            },
+            "match": {
+              "additionalProperties": true,
+              "description": "With `event`: the type's match fields an event must equal.",
+              "type": [
+                "object",
+                "null"
+              ]
+            },
+            "note": {
+              "description": "With `event`: why the agent watches, handed back when it fires;\nat most [`crate::watch::NOTE_MAX`] characters.",
+              "type": [
+                "string",
                 "null"
               ]
             },
