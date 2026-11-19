@@ -1505,6 +1505,67 @@ button.att {
   margin-top: 12px;
 }
 
+/* Send feedback (shell/ui/feedback.tsx, Arugula #1217): the kinds, one
+   text box, the contact box and what's sent. On a phone, a sheet along the
+   bottom, as a side sheet is there. */
+.feedback .feedback-kinds {
+  display: flex;
+  width: fit-content;
+}
+
+.feedback .feedback-text {
+  display: block;
+  width: 100%;
+  min-height: 120px;
+  margin-top: 10px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.feedback .feedback-contact {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-weight: 400;
+}
+
+.feedback .feedback-line,
+.feedback .feedback-done {
+  margin: 10px 0 0;
+  line-height: 1.45;
+}
+
+.feedback .feedback-done {
+  margin-top: 0;
+}
+
+.feedback .feedback-line.dim {
+  color: var(--dim);
+  font-size: var(--text-sm);
+}
+
+.feedback .feedback-line.error {
+  color: var(--danger);
+}
+
+.prompt-backdrop:has(> .feedback.phone) {
+  padding-top: 0;
+  place-items: end stretch;
+}
+
+.feedback.phone {
+  width: auto;
+  max-height: 80vh;
+  overflow-y: auto;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  border-radius: var(--panel-radius) var(--panel-radius) 0 0;
+}
+
+.feedback.phone .feedback-kinds {
+  width: auto;
+}
+
 /* A deploy's approval (M218): the operation's bytes wrap rather than run
    out of the dialog, on a phone too. */
 .deploy-approve pre.deploy-op {

@@ -1,6 +1,7 @@
 // First: this daemon's page key on the page's own requests (local-key.ts).
 import { startPageKey } from "./local-key";
 import { AgentDialogLayer, startAgent } from "./ui/agent-dialog";
+import { FeedbackLayer } from "./ui/feedback";
 import { chat } from "../shared/chat-store";
 import { shellPlatformApi } from "./platform-api";
 import { platformOrigin, setPlatformOrigin } from "./platform-links";
@@ -324,6 +325,7 @@ const draw = () => {
       {!popAt && <Swarm key={client.base} machines={machines} client={client} ready={() => !session || session.phase === "ready"} />}
       <AgentDialogLayer />
       <AppearanceLayer />
+      <FeedbackLayer />
       <MachineTelemetryLayer />
     </PlatformApiContext.Provider>,
     root,
