@@ -85,6 +85,16 @@ don't come from control); hosted machines are run by the operator; and the
 platform plane (chat, Cloud workspaces, Docs, billing) is stored in plain
 text.
 
+**Anything running as you can use your CLI's sign-in.** `arugula login`
+keeps the CLI's session in a file in your config directory. A program
+running as you on that computer, agents you run included, can read it and
+do what you can, on every machine your account reaches: open a shell on
+each, and do what the CLI does with your projects. Control keeps from it
+only what a browser's page does: approving sign-ins, devices, joins and
+deploys, passkeys, and changing a team's members
+([docs/cli.md](docs/cli.md#signing-in-to-arugula-cloud)). `arugula logout`
+ends it.
+
 **Known and accepted:** the update to 0.66.0 doesn't rotate the local
 sign-in token, so a token that could have reached another local port
 through the old cookie keeps working. To make a new one, delete

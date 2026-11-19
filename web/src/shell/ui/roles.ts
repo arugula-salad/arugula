@@ -18,6 +18,6 @@ export function roleAs(role: Role): string {
 /** What each role may do in a team, for the Teams panel. */
 export const ROLE_HELP: [Role, string][] = [
   ["viewer", "sees the team's machines and panes"],
-  ["editor", "also types, answers agents and sends follow-ups, and adds their machines; on a Cloud workspace, full use, as an owner has"],
+  ["editor", "also types, answers agents and sends follow-ups, and adds their machines. Has full use of the team's projects' boxes and secrets, which includes running commands on their cloud workspaces"],
   ["owner", "also invites people, changes roles, takes machines out and locks the team"],
 ];
