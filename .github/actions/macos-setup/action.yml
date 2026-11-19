@@ -61,9 +61,18 @@ runs:
       if: env.SCCACHE_WEBDAV_PASSWORD != ''
       shell: bash
       run: |
+        # Two logins (home-cloud's docs/ci-runners.md): the write one in the
+        # jobs that name the ci-cache environment (the workflow's
+        # SCCACHE_WEBDAV_WRITE), else the read-only one, at a host of its own,
+        # where sccache only reads (SCCACHE_WEBDAV_RW_MODE).
+        if [ "${SCCACHE_WEBDAV_WRITE:-false}" = true ]; then
+          user=arugula-ci-rw endpoint=https://ci-cache.inevitable.fyi mode=READ_WRITE
+        else
+          user=arugula-ci-ro endpoint=https://ci-cache-ro.inevitable.fyi mode=READ_ONLY
+        fi
         # Without it when it's down: sccache won't start (the setup action's).
         if ! curl -fsS -o /dev/null --max-time 10 -X PROPFIND -H 'Depth: 0' \
-            -u "arugula-ci:$SCCACHE_WEBDAV_PASSWORD" https://ci-cache.inevitable.fyi/; then
+            -u "$user:$SCCACHE_WEBDAV_PASSWORD" "$endpoint/"; then
           echo "::warning::ci-cache didn't answer: compiling without sccache"
           exit 0
         fi
@@ -75,8 +84,9 @@ runs:
         conf=$RUNNER_TEMP/sccache.toml
         echo "server_startup_timeout_ms = 60000" > "$conf"
         export SCCACHE_CONF=$conf
-        export SCCACHE_WEBDAV_ENDPOINT=https://ci-cache.inevitable.fyi
-        export SCCACHE_WEBDAV_USERNAME=arugula-ci
+        export SCCACHE_WEBDAV_ENDPOINT=$endpoint
+        export SCCACHE_WEBDAV_USERNAME=$user
+        export SCCACHE_WEBDAV_RW_MODE=$mode
         export SCCACHE_WEBDAV_KEY_PREFIX=arugula
         export SCCACHE_IDLE_TIMEOUT=0
         # A fresh VM has none running, but don't inherit one if it does.
@@ -97,6 +107,7 @@ runs:
           echo "SCCACHE_CONF=$SCCACHE_CONF"
           echo "SCCACHE_WEBDAV_ENDPOINT=$SCCACHE_WEBDAV_ENDPOINT"
           echo "SCCACHE_WEBDAV_USERNAME=$SCCACHE_WEBDAV_USERNAME"
+          echo "SCCACHE_WEBDAV_RW_MODE=$SCCACHE_WEBDAV_RW_MODE"
           echo "SCCACHE_WEBDAV_KEY_PREFIX=$SCCACHE_WEBDAV_KEY_PREFIX"
           echo "SCCACHE_IDLE_TIMEOUT=0"
           echo "CARGO_INCREMENTAL=0"

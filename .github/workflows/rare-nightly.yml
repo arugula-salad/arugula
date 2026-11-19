@@ -58,7 +58,12 @@ concurrency:
 
 env:
   NEXTEST_PROFILE: ci
-  SCCACHE_WEBDAV_PASSWORD: ${{ secrets.SCCACHE_WEBDAV_PASSWORD }}
+  # The compile cache (.github/actions/setup, #868): home-cloud's ci-cache.
+  # Its write login is the ci-cache environment's, which only main and the
+  # merge queue's groups reach, in the jobs that name it; every other job
+  # (and a branch's run by hand) reads with the read-only one.
+  SCCACHE_WEBDAV_WRITE: ${{ secrets.SCCACHE_WEBDAV_RW_PASSWORD != '' }}
+  SCCACHE_WEBDAV_PASSWORD: ${{ secrets.SCCACHE_WEBDAV_RW_PASSWORD || secrets.SCCACHE_WEBDAV_RO_PASSWORD }}
   GITHUB_TOKEN: ${{ github.token }}
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
   CARGO_PROFILE_TEST_DEBUG: line-tables-only
@@ -68,6 +73,9 @@ jobs:
   # CLI.
   rare-build:
     runs-on: ubuntu-24.04
+    environment:
+      name: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/gh-readonly-queue/main/')) && 'ci-cache' || '' }}
+      deployment: false
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -92,6 +100,9 @@ jobs:
   # check.yml's static: the box's binaries, for the test stack.
   rare-static:
     runs-on: ubuntu-24.04
+    environment:
+      name: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/gh-readonly-queue/main/')) && 'ci-cache' || '' }}
+      deployment: false
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -118,6 +129,9 @@ jobs:
   # Docker, run in check.yml's test.
   core:
     runs-on: ubuntu-24.04
+    environment:
+      name: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/gh-readonly-queue/main/')) && 'ci-cache' || '' }}
+      deployment: false
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -187,6 +201,9 @@ jobs:
   # Not named macos: ci.green requires check.yml's macos (test).
   webkit:
     runs-on: [self-hosted, macos-arm64]
+    environment:
+      name: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/gh-readonly-queue/main/')) && 'ci-cache' || '' }}
+      deployment: false
     env:
       ARUGULA_SKIP_DOCKER: "1"
     steps:

@@ -2,9 +2,12 @@
 # How the workflows hold what releases need (docs/secrets-inventory.md):
 # - a job that reads a release, signing or deploy secret names an
 #   environment, which only main or protected tags reach; the repository's
-#   own secrets are only the compile cache's and the forge tests';
+#   own secrets are only the compile cache's read-only login and the forge
+#   tests'. The cache's write login is the ci-cache environment's: a
+#   workflow's env may name it, since a job that doesn't name the environment
+#   gets it empty;
 # - what ships compiles from source: release.yml's Linux builds don't get
-#   the compile cache's password;
+#   the compile cache's passwords;
 # - every action that isn't this repository's is pinned to a commit, and so
 #   is every action the release workflows use.
 #
@@ -20,7 +23,9 @@ import glob, json, re, sys
 import yaml
 
 root = sys.argv[1]
-repo_level = {"GITHUB_TOKEN", "SCCACHE_WEBDAV_PASSWORD", "ARUGULA_GH_AUTHOR_TOKEN", "ARUGULA_GH_REVIEWER_TOKEN", "ARUGULA_GH_APP_PRIVATE_KEY"}
+repo_level = {"GITHUB_TOKEN", "SCCACHE_WEBDAV_RO_PASSWORD", "ARUGULA_GH_AUTHOR_TOKEN", "ARUGULA_GH_REVIEWER_TOKEN", "ARUGULA_GH_APP_PRIVATE_KEY"}
+cache_write = {"SCCACHE_WEBDAV_RW_PASSWORD"}
+cache = {"SCCACHE_WEBDAV_RO_PASSWORD"} | cache_write
 from_source = {"release.yml": ["linux", "linux-arm64"]}
 release = {"release.yml", "app-release.yml"}
 sha = re.compile(r"^[^@]+@[0-9a-f]{40}$")
@@ -50,9 +55,10 @@ for path in sorted(glob.glob(f"{root}/.github/workflows/*.yml")):
     for job_name, job in (w.get("jobs") or {}).items():
         env = job.get("environment")
         held = secrets(job) | top
-        if held - repo_level and not env:
-            fail.append(f"{name}: {job_name} reads {sorted(held - repo_level)} without an environment")
-        if job_name in from_source.get(name, []) and "SCCACHE_WEBDAV_PASSWORD" in held:
+        needs_env = set() if env else held - repo_level - (top & cache_write)
+        if needs_env:
+            fail.append(f"{name}: {job_name} reads {sorted(needs_env)} without an environment")
+        if job_name in from_source.get(name, []) and held & cache:
             fail.append(f"{name}: {job_name} builds what ships, but gets the compile cache's password")
     for u in uses(w):
         if u.startswith("./"):

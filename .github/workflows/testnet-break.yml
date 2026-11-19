@@ -21,11 +21,19 @@ concurrency:
 env:
   GITHUB_TOKEN: ${{ github.token }}
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
-  SCCACHE_WEBDAV_PASSWORD: ${{ secrets.SCCACHE_WEBDAV_PASSWORD }}
+  # The compile cache (.github/actions/setup, #868): home-cloud's ci-cache.
+  # Its write login is the ci-cache environment's, which only main and the
+  # merge queue's groups reach, in the jobs that name it; every other job
+  # (and a branch's run by hand) reads with the read-only one.
+  SCCACHE_WEBDAV_WRITE: ${{ secrets.SCCACHE_WEBDAV_RW_PASSWORD != '' }}
+  SCCACHE_WEBDAV_PASSWORD: ${{ secrets.SCCACHE_WEBDAV_RW_PASSWORD || secrets.SCCACHE_WEBDAV_RO_PASSWORD }}
 
 jobs:
   break:
     runs-on: ubuntu-24.04
+    environment:
+      name: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/gh-readonly-queue/main/')) && 'ci-cache' || '' }}
+      deployment: false
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
