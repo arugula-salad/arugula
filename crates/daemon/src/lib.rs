@@ -706,11 +706,11 @@ fn join_remote_input(dir: &std::path::Path, given: Option<&str>) -> anyhow::Resu
     }
     let now = sharing::remote_input(dir);
     println!(
-        "  Typing from elsewhere: {}. Change it here with `arugulad sharing remote-input {}`.",
+        "  Typing through Arugula cloud: {}. Change it here with `arugulad sharing remote-input {}`.",
         if now {
             "on (as each person's role allows)"
         } else {
-            "off (nobody types here from elsewhere; you can still watch from your other devices)"
+            "off (nobody types here through it, you included; you can still watch from your other devices)"
         },
         if now { "off" } else { "on" },
     );

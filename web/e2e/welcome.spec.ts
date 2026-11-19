@@ -107,7 +107,7 @@ test("the cloud step is one click in Arugula cloud, then joined", async ({ page 
   const panel = page.getByRole("dialog", { name: "Getting started" });
   await expect(panel.locator("[data-start-progress]")).toHaveText("Step 3 / 5 · Cloud");
   await expect(panel.locator("[data-start-join-how]")).toContainText("Click Add there");
-  // Arugula #1194: may people type into it from elsewhere? On this page
+  // Arugula #1194: may people type into it through Arugula cloud? On this page
   // (the machine's own, on loopback) it asks; yes until answered.
   const typing = panel.locator("[data-start-remote-input]");
   await expect(typing).toContainText("May people type into");

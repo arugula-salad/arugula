@@ -239,7 +239,8 @@ fn a_guest_doesnt_see_the_control_state() {
     }
 }
 
-/// Arugula #1194: joining asks whether people may type here from elsewhere.
+/// Arugula #1194: joining asks whether people may type here through
+/// Arugula cloud.
 /// Getting started's answer is taken at the machine (its socket here) and
 /// refused from the owner over the tailnet; `arugulad join --remote-input`
 /// sets it before it joins.
@@ -270,6 +271,24 @@ fn joining_sets_whether_people_may_type_here() {
     let (status, body) = d.raw("POST", "/api/setup/control", Some(json!({ "url": nowhere })));
     assert_eq!(status, 200, "{body}");
     assert_eq!(typing(), false);
+    // The owner's own page on loopback (the local token) answers; an agent
+    // the owner's CLI says runs the request (`x-arugula-agent`) doesn't.
+    let bearer = d.bearer();
+    let post = |body: &str, agent: bool| {
+        let mut headers = vec![("authorization", bearer.as_str()), ("Content-Type", "application/json")];
+        if agent {
+            headers.push(("x-arugula-agent", "claude"));
+        }
+        d.tcp("POST", "/api/setup/control", &headers, Some(body))
+    };
+    let (status, _, body) = post(&ask, false);
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(typing(), true);
+    let off = json!({ "url": nowhere, "remote_input": false }).to_string();
+    let (status, _, body) = post(&off, true);
+    assert_eq!(status, 403, "an agent set it: {body}");
+    assert!(body.contains("set on the machine itself"), "{body}");
+    assert_eq!(typing(), true);
 
     // `arugulad join --remote-input on`: set before it asks control, which
     // isn't there.
@@ -279,7 +298,7 @@ fn joining_sets_whether_people_may_type_here() {
         .output()
         .unwrap();
     assert!(!out.status.success(), "nothing to join");
-    assert!(String::from_utf8_lossy(&out.stdout).contains("Typing from elsewhere: on"), "{out:?}");
+    assert!(String::from_utf8_lossy(&out.stdout).contains("Typing through Arugula cloud: on"), "{out:?}");
     assert_eq!(typing(), true);
     // Not on a terminal and not told: as it was, and it says which.
     std::fs::write(d.state.join("sharing.json"), r#"{ "remote_input": false }"#).unwrap();
@@ -288,6 +307,6 @@ fn joining_sets_whether_people_may_type_here() {
         .arg(&d.state)
         .output()
         .unwrap();
-    assert!(String::from_utf8_lossy(&out.stdout).contains("Typing from elsewhere: off"), "{out:?}");
+    assert!(String::from_utf8_lossy(&out.stdout).contains("Typing through Arugula cloud: off"), "{out:?}");
     assert_eq!(typing(), false);
 }
