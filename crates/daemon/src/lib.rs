@@ -710,7 +710,7 @@ fn join_remote_input(dir: &std::path::Path, given: Option<&str>) -> anyhow::Resu
         if now {
             "on (as each person's role allows)"
         } else {
-            "off (nobody who comes through Arugula cloud types here)"
+            "off (nobody types here from elsewhere; you can still watch from your other devices)"
         },
         if now { "off" } else { "on" },
     );

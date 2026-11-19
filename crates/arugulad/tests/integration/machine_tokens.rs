@@ -293,6 +293,14 @@ async fn remote_input_off_makes_everyone_a_viewer() {
     let (mut ws, ch, said) = open(&r, token(&r, "owner", "r2", &k, |_| {})).await;
     assert!(refused(&said).is_none());
     assert_eq!(ask(&mut ws, &ch, 1, "GET", "/api/links").await, 403);
+    // Arugula #1210: the owner still watches their own sessions (this
+    // machine is in no team, and nothing is shared), and types into none.
+    let pane = r.d.get("/api/panes")[0]["id"].as_u64().unwrap();
+    assert_eq!(ask(&mut ws, &ch, 2, "GET", &format!("/api/panes/{pane}/capture")).await, 200);
+    let (status, body) =
+        send_json(&mut ws, &ch, 3, "POST", &format!("/api/panes/{pane}/send"), Some(json!({ "text": "echo hi" })))
+            .await;
+    assert_eq!(status, 403, "the owner typed with remote input off: {body}");
     drop(ws);
     // Both are in the log, opened and closed.
     r.d.wait_for("the log's closes", || {
