@@ -17,7 +17,7 @@ import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import { ANY, daemonPort, listen } from "./ports";
 import { labs } from "./labs";
-import { ready, run } from "./helpers";
+import { controlPanel, ready, run } from "./helpers";
 import { keyHeaders } from "./local-token";
 import { certBody, deviceId, hex, joinCode, oneClickMac, unhex, type Cert } from "../src/shell/e2e/cert.ts";
 import { generateKeys, signText } from "../src/shell/e2e/keys.ts";
@@ -298,4 +298,36 @@ test("a browser with no device key can't approve a CLI, and points it at arugula
   await expect(dialog.locator("[data-join-cli-command]")).toContainText(`arugula login --browser ${origin}`);
   await expect(dialog.locator("[data-approve-join]")).toHaveCount(0);
   await expect(dialog.getByRole("button", { name: "Turn it down" })).toBeVisible();
+});
+
+// Arugula #960: a panel opened right after signing in, while the page is
+// still switching to the machine, stays open: the overlay mounts again on
+// the switch (`ControlRoot` is keyed by the client's base), and the open
+// panel is held above it. The directory waits until the panel is open, so
+// the switch comes after it.
+test("a panel opened right after signing in is still open once the machine is connected", async ({ page }) => {
+  let release = () => {};
+  const listed = new Promise<void>((r) => (release = r));
+  await page.route(/\/control\.json$/, (r) => r.fulfill({ json: { control: true, url: origin, github: true, passkeys: false, vapid: "" } }));
+  await page.route(/\/\.well-known\/jwks\.json$/, (r) => r.fulfill({ json: jwks() }));
+  await page.route(/\/api\//, async (r) => {
+    const url = new URL(r.request().url());
+    const method = r.request().method();
+    if (url.pathname === "/api/me") return r.fulfill({ json: { account: "a1", login: "me", name: "Me", root: rootDevice, passkeys: 0 } });
+    if (url.pathname === "/api/directory") {
+      await listed;
+      return r.fulfill({ json: { daemons: [{ id: machine.id, name: "box", urls: [origin], online: true, last_seen: null, noise: machine.noise }] } });
+    }
+    if (url.pathname === `/api/machines/${machine.id}/token` && method === "POST") return r.fulfill({ json: { token: token(), expires: Math.floor(Date.now() / 1000) + 300, role: "owner" } });
+    return r.fulfill({ status: 404, json: { error: "not here" } });
+  });
+
+  await page.goto(`${origin}/`);
+  await controlPanel(page, "account");
+  const before = await page.evaluate(() => window.__arugula.client.base);
+  release();
+  await expect.poll(() => page.evaluate((id) => window.__arugula.client.e2e?.daemon.id === id && window.__arugula.client.connected, machine.id), { timeout: 20_000 }).toBe(true);
+  // The page did switch, so the overlay mounted again.
+  expect(await page.evaluate(() => window.__arugula.client.base)).not.toBe(before);
+  await expect(page.getByRole("dialog").getByRole("heading", { name: "Sign-in and account" })).toBeVisible();
 });

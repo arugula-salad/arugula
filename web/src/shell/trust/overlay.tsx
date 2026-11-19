@@ -13,6 +13,7 @@ import { useEffect, useState } from "preact/hooks";
 import { openPlatform, platformOrigin } from "../platform-links";
 import { TelemetryAsk } from "../../shared/ui/account-telemetry";
 import type { MenuItem } from "../../shared/ui/menu";
+import { useSubscribe } from "../../shared/ui/hooks";
 import { Modal } from "../../shared/ui/modal";
 import { ADD_PASSKEY_HASH, inviteInHash, JOIN_HASH, type ControlSession } from "../control";
 import { SharedDocs } from "../ui/shared-docs";
@@ -34,18 +35,34 @@ const TEAMS_HASH = "#teams";
  * above. */
 const PANEL_HASH = /^#(devices|shared-docs)$/;
 
+/** The panel open, held here rather than in the overlay: the overlay
+ * mounts afresh when the page switches machine (`ControlRoot` is keyed by
+ * the client's base), and a panel opened just before stays open (Arugula
+ * #960). Listened for from the start, so an event sent between the two
+ * mounts isn't lost either. */
+let openPanelNow: null | Panel = null;
+const panelListeners = new Set<() => void>();
+const setOpenPanel = (p: null | Panel) => {
+  openPanelNow = p;
+  for (const fn of panelListeners) fn();
+};
+addEventListener("arugula:control-panel", (e) => setOpenPanel((e as CustomEvent<Panel>).detail));
+
 /** Over the app: a join to add, invites, the machines list. */
 export function ControlOverlay({ s }: { s: ControlSession }) {
   useControl(s);
+  useSubscribe((fn) => {
+    panelListeners.add(fn);
+    return () => panelListeners.delete(fn);
+  });
   const [hash, setHash] = useState(location.hash);
-  const [panel, setPanel] = useState<null | Panel>(null);
+  const panel = openPanelNow;
+  const setPanel = setOpenPanel;
   useEffect(() => {
     const on = () => setHash(location.hash);
-    const open = (e: Event) => setPanel((e as CustomEvent<Panel>).detail);
     addEventListener("hashchange", on);
-    addEventListener("arugula:control-panel", open);
-    // Says the panel event has a listener, so a test can wait for it
-    // rather than send one into nothing.
+    // Says the overlay is on the page, so a test can wait for it before
+    // opening a panel.
     document.documentElement.dataset.controlPanels = "";
     // Mounted afresh (the page switches machine when one is approved, and
     // that happens before the prompt clears the hash): catch up with a
@@ -53,7 +70,6 @@ export function ControlOverlay({ s }: { s: ControlSession }) {
     on();
     return () => {
       removeEventListener("hashchange", on);
-      removeEventListener("arugula:control-panel", open);
       delete document.documentElement.dataset.controlPanels;
     };
   }, []);
