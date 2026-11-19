@@ -70,6 +70,7 @@ pub mod boards;
 pub mod chat;
 pub mod chat_sidebar;
 pub mod deploys;
+pub mod events;
 #[cfg(test)]
 mod examples;
 pub mod feedback;
