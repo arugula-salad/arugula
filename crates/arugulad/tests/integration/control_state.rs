@@ -240,10 +240,11 @@ fn a_guest_doesnt_see_the_control_state() {
 }
 
 /// Arugula #1194: joining asks whether people may type here through
-/// Arugula cloud.
-/// Getting started's answer is taken at the machine (its socket here) and
-/// refused from the owner over the tailnet; `arugulad join --remote-input`
-/// sets it before it joins.
+/// Arugula cloud. Getting started's answer is taken at the machine (its
+/// socket here) and refused from the owner over the tailnet or from an
+/// agent; `arugulad join --remote-input` sets it before it joins.
+/// Unanswered, a machine joining for the first time is off, and one joined
+/// or set before stays as it was.
 #[test]
 fn joining_sets_whether_people_may_type_here() {
     let d = arugulad!("ctltyping")
@@ -254,6 +255,11 @@ fn joining_sets_whether_people_may_type_here() {
     assert_eq!(typing(), true, "on until someone answers");
     // Nothing listens at the control: the join fails, the answer stands.
     let nowhere = "http://127.0.0.1:1";
+    // Unanswered (as over the tailnet, where Getting started doesn't ask),
+    // a first join is off.
+    let (status, body) = d.raw("POST", "/api/setup/control", Some(json!({ "url": nowhere })));
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(typing(), false, "unanswered: off");
     let (status, body) = d.raw("POST", "/api/setup/control", Some(json!({ "url": nowhere, "remote_input": false })));
     assert_eq!(status, 200, "{body}");
     assert_eq!(typing(), false);
@@ -267,7 +273,7 @@ fn joining_sets_whether_people_may_type_here() {
     );
     assert_eq!(status, 403, "{body}");
     assert_eq!(typing(), false);
-    // Without an answer, a join leaves it as it is.
+    // Without an answer, a join leaves what was said as it is.
     let (status, body) = d.raw("POST", "/api/setup/control", Some(json!({ "url": nowhere })));
     assert_eq!(status, 200, "{body}");
     assert_eq!(typing(), false);
@@ -307,6 +313,38 @@ fn joining_sets_whether_people_may_type_here() {
         .arg(&d.state)
         .output()
         .unwrap();
-    assert!(String::from_utf8_lossy(&out.stdout).contains("Typing through Arugula cloud: off"), "{out:?}");
+    assert!(String::from_utf8_lossy(&out.stdout).contains("Typing through Arugula cloud: off. "), "{out:?}");
     assert_eq!(typing(), false);
+
+    // A machine joining for the first time, with no terminal and no flag:
+    // off, and it says why and how to allow it. With `ARUGULA_REMOTE_INPUT`,
+    // as told.
+    let join = |dir: &std::path::Path, env: Option<&str>| {
+        let mut c = arugula_testkit::command(env!("CARGO_BIN_EXE_arugulad"));
+        c.args(["join", nowhere, "--state-dir"]).arg(dir).env_remove("ARUGULA_REMOTE_INPUT");
+        if let Some(v) = env {
+            c.env("ARUGULA_REMOTE_INPUT", v);
+        }
+        String::from_utf8_lossy(&c.output().unwrap().stdout).into_owned()
+    };
+    let said = |dir: &std::path::Path| arugula_proto::sharing::remote_input_said(dir);
+    let fresh = d.state.with_file_name(format!("{}-fresh", d.state.file_name().unwrap().to_string_lossy()));
+    let _ = std::fs::remove_dir_all(&fresh);
+    std::fs::create_dir_all(&fresh).unwrap();
+    let out = join(&fresh, None);
+    assert!(out.contains("Typing through Arugula cloud: off (nobody answered, so it's off)"), "{out}");
+    assert!(out.contains("you can still watch from your other devices"), "{out}");
+    assert!(out.contains("--remote-input on"), "{out}");
+    assert_eq!(said(&fresh), Some(false));
+    std::fs::remove_file(fresh.join("sharing.json")).unwrap();
+    let out = join(&fresh, Some("on"));
+    assert!(out.contains("Typing through Arugula cloud: on"), "{out}");
+    assert_eq!(said(&fresh), Some(true));
+    // Already joined, set up before this question: nothing flips.
+    std::fs::remove_file(fresh.join("sharing.json")).unwrap();
+    std::fs::write(fresh.join("control.json"), "{}").unwrap();
+    let out = join(&fresh, None);
+    assert!(out.contains("Typing through Arugula cloud: on"), "{out}");
+    assert_eq!(said(&fresh), None, "nothing written");
+    let _ = std::fs::remove_dir_all(&fresh);
 }

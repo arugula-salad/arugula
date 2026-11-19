@@ -20,7 +20,8 @@ pub struct Args {
     #[arg(long, value_name = "FINGERPRINT")]
     account: Option<String>,
     /// Whether people who reach it through control may type there. On a
-    /// terminal, without it, join asks.
+    /// terminal, without it, join asks; unanswered, a machine joining for
+    /// the first time is off.
     #[arg(long, value_name = "on|off", value_parser = ["on", "off"])]
     remote_input: Option<String>,
 }

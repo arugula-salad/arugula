@@ -673,12 +673,12 @@ fn lasted(secs: u64) -> String {
     }
 }
 
-/// `arugulad sharing`: the machine's sharing settings, one's state, or one
-/// set (native #205). It works on the state directory, not through the
-/// daemon, so only someone at the machine as its owner can.
-/// Before a join (Arugula #1194): may people type into this machine from
-/// elsewhere? `--remote-input` says, else a terminal is asked; with
-/// neither, it stays as it is and join says so.
+/// Before a join (Arugula #1194): may people type into this machine
+/// through Arugula cloud? `--remote-input` (or `ARUGULA_REMOTE_INPUT`)
+/// says, else a terminal is asked. Unanswered (no terminal, the input
+/// ended), a machine joining for the first time is off, and one already
+/// joined or set before stays as it is (`sharing::join_sets`). Join says
+/// which way it is either way.
 fn join_remote_input(dir: &std::path::Path, given: Option<&str>) -> anyhow::Result<()> {
     use arugula_proto::sharing;
     use std::io::{BufRead, IsTerminal, Write};
@@ -693,7 +693,7 @@ fn join_remote_input(dir: &std::path::Path, given: Option<&str>) -> anyhow::Resu
                 std::io::stdout().flush()?;
                 match lines.next() {
                     Some(line) => answer = sharing::remote_input_answer(&line?),
-                    // Ended: as it was.
+                    // Ended: unanswered.
                     None => break,
                 }
             }
@@ -701,23 +701,28 @@ fn join_remote_input(dir: &std::path::Path, given: Option<&str>) -> anyhow::Resu
         }
         None => None,
     };
-    if let Some(on) = on {
+    let joined = dir.join("control.json").exists();
+    let set = sharing::join_sets(on, joined, sharing::remote_input_said(dir));
+    if let Some(on) = set {
         sharing::set_remote_input(dir, on).map_err(|e| anyhow::anyhow!("{e}"))?;
     }
     let now = sharing::remote_input(dir);
-    println!(
-        "  Typing through Arugula cloud: {}. Change it here with `arugulad sharing remote-input {}`.",
-        if now {
-            "on (as each person's role allows)"
-        } else {
-            "off (nobody types here through it, you included; you can still watch from your other devices)"
-        },
-        if now { "off" } else { "on" },
-    );
+    let why = if on.is_none() && set.is_some() { " (nobody answered, so it's off)" } else { "" };
+    if now {
+        println!("  Typing through Arugula cloud: on, as each person's role allows.");
+        println!("  Turn it off here with `arugulad sharing remote-input off`.");
+    } else {
+        println!("  Typing through Arugula cloud: off{why}. Nobody types here through it, you included;");
+        println!("  you can still watch from your other devices. To allow it, run");
+        println!("  `arugulad sharing remote-input on` here, or join with `--remote-input on`.");
+    }
     println!();
     Ok(())
 }
 
+/// `arugulad sharing`: the machine's sharing settings, one's state, or one
+/// set (native #205). It works on the state directory, not through the
+/// daemon, so only someone at the machine as its owner can.
 fn sharing_cli(
     name: Option<args::SharingSetting>,
     switch: Option<args::OnOff>,

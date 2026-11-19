@@ -28,19 +28,24 @@ impl Handle for SetupTailscale {
 
 impl Handle for SetupControl {
     async fn handle(cx: &Cx<'_>, _: (), req: ControlJoinRequest) -> Result<Value, OpError> {
-        // Getting started's answer to "may people type into it from
-        // elsewhere?" (Arugula #1194): set only at the machine, as
+        use arugula_proto::sharing;
+        // Getting started's answer to "may people type into it through
+        // Arugula cloud?" (Arugula #1194): taken only at the machine, as
         // `arugulad sharing remote-input` is.
-        if let Some(on) = req.remote_input {
-            if !cx.at_the_machine() {
-                return Err(OpError::Forbidden(
-                    "whether people may type here through Arugula cloud is set on the machine itself".into(),
-                ));
-            }
-            let dir = cx.app.control.state_dir();
-            arugula_proto::sharing::set_remote_input(dir, on)
-                .map_err(|e| OpError::Failed(format!("couldn't write {}: {e}", arugula_proto::sharing::FILE)))?;
-            tracing::info!(on, "remote input set as the machine joins");
+        if req.remote_input.is_some() && !cx.at_the_machine() {
+            return Err(OpError::Forbidden(
+                "whether people may type here through Arugula cloud is set on the machine itself".into(),
+            ));
+        }
+        // Unanswered (Getting started over the tailnet, which doesn't ask),
+        // a machine joining for the first time is off; one already joined,
+        // or set before, keeps what it has.
+        let dir = cx.app.control.state_dir();
+        let joined = cx.app.control.enrolled().is_some();
+        if let Some(on) = sharing::join_sets(req.remote_input, joined, sharing::remote_input_said(dir)) {
+            sharing::set_remote_input(dir, on)
+                .map_err(|e| OpError::Failed(format!("couldn't write {}: {e}", sharing::FILE)))?;
+            tracing::info!(on, answered = req.remote_input.is_some(), "remote input set as the machine joins");
         }
         Ok(crate::setup::control_join(cx.app, req).await)
     }

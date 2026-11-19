@@ -108,13 +108,13 @@ test("the cloud step is one click in Arugula cloud, then joined", async ({ page 
   await expect(panel.locator("[data-start-progress]")).toHaveText("Step 3 / 5 · Cloud");
   await expect(panel.locator("[data-start-join-how]")).toContainText("Click Add there");
   // Arugula #1194: may people type into it through Arugula cloud? On this page
-  // (the machine's own, on loopback) it asks; yes until answered.
+  // (the machine's own, on loopback) it asks; no until answered.
   const typing = panel.locator("[data-start-remote-input]");
   await expect(typing).toContainText("May people type into");
-  await expect(typing.locator("[data-start-remote-input-on]")).toBeChecked();
-  await typing.locator("[data-start-remote-input-off]").check();
+  await expect(typing.locator("[data-start-remote-input-off]")).toBeChecked();
+  await typing.locator("[data-start-remote-input-on]").check();
   await panel.locator("[data-start-connect]").click();
-  await expect.poll(() => asked).toEqual({ url, remote_input: false });
+  await expect.poll(() => asked).toEqual({ url, remote_input: true });
   await expect(typing).toHaveCount(0);
 
   const add = panel.locator("[data-start-approve]");
