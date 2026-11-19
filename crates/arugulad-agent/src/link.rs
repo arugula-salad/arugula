@@ -891,9 +891,8 @@ async fn drive_vm(
     }
 }
 
-#[cfg(unix)]
 /// What was written to `path` after its first `from` bytes: the last few
-/// lines, short.
+/// lines, short. On every platform: [`stderr_tail`] reads it too.
 fn said_since(path: &Path, from: u64) -> String {
     let Ok(bytes) = std::fs::read(path) else { return String::new() };
     let text = String::from_utf8_lossy(bytes.get(from as usize..).unwrap_or_default());
