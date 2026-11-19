@@ -81,6 +81,11 @@ session/fork copies a session to a new id (it isn't opened, as with
 claude-agent-acp). With $FAKE_ACP_CLAUDE_SESSIONS set, the session it has
 open is in $CLAUDE_CONFIG_DIR/sessions/<pid>.json, as Claude Code lists it.
 
+Run with --no-resume, it doesn't offer session/resume, so a block reopens
+its session with session/load. A method named on a line of
+$FAKE_ACP_DIR/unanswered (read at each request) is never answered: it says
+so on stderr and leaves the request waiting, as an agent that hangs would.
+
 Only clients that declare elicitation {form: {}, url: {}} get questions; the
 others get "I don't have access to an AskUserQuestion tool" (S13).
 
@@ -821,12 +826,20 @@ def handle(m):
             waiting[mid][1] = m.get("result")
             waiting[mid][0].set()
         return
+    try:
+        with open(os.path.join(DIR, "unanswered")) as f:
+            if method in f.read().split():
+                log(f"not answering {method}")
+                return
+    except FileNotFoundError:
+        pass
     if method == "initialize":
         caps.update(p.get("clientCapabilities") or {})
         agent_caps = {"mcpCapabilities": {"http": True}}
         if "--images" in sys.argv:
             agent_caps["promptCapabilities"] = {"image": True}
-        agent_caps.update({"loadSession": True, "sessionCapabilities": {"resume": {}, "fork": {}}})
+        session_caps = {"fork": {}} if "--no-resume" in sys.argv else {"resume": {}, "fork": {}}
+        agent_caps.update({"loadSession": True, "sessionCapabilities": session_caps})
         send({"id": mid, "result": {"protocolVersion": 1, "agentCapabilities": agent_caps,
             "agentInfo": {"name": os.environ.get("FAKE_ACP_NAME", "fake-acp"), "version": "1"}, "authMethods": []}})
     elif method == "session/new":

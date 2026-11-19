@@ -901,6 +901,14 @@ fn said_since(path: &Path, from: u64) -> String {
     lines[lines.len().saturating_sub(3)..].join(" / ").chars().take(400).collect()
 }
 
+/// The last few lines an agent server wrote to stderr (`agent.err`), for
+/// the note when it's stopped for not answering.
+pub fn stderr_tail(dir: &Path) -> Option<String> {
+    let path = dir.join("agent.err");
+    let len = std::fs::metadata(&path).ok()?.len();
+    Some(said_since(&path, len.saturating_sub(4096))).filter(|s| !s.is_empty())
+}
+
 /// The last thing an agent server wrote to stderr (`agent.err`), for the
 /// note when it exits with an error.
 fn last_words(dir: &Path) -> Option<String> {
