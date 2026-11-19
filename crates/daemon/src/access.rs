@@ -483,7 +483,7 @@ fn refusal_page(status: StatusCode, why: &str) -> String {
 pub const PAGE_KEY_HEADER: &str = "x-arugula-key";
 
 fn bearer(headers: &HeaderMap) -> Option<&str> {
-    header_str(headers, header::AUTHORIZATION.as_str()).and_then(|v| v.strip_prefix("Bearer ")).map(str::trim)
+    header_str(headers, header::AUTHORIZATION.as_str()).and_then(crate::mcp::tokens::bearer)
 }
 
 /// `given`'s SHA-256 is `want`, compared in constant time (no early exit
@@ -700,6 +700,11 @@ mod tests {
         assert!(check(&a, &[host, ("authorization", "Bearer ilt_wrong")]).is_err());
         assert!(check(&a, &[host, ("authorization", token)]).is_err(), "not a bearer");
         assert!(a.local_bearer(&headers(&[("authorization", &bearer)])));
+        // The scheme's name in any case, as `/mcp` reads it: the server
+        // checks it as the local token, not as an MCP token's to check.
+        let lower = format!("bearer {token}");
+        assert!(check(&a, &[host, ("authorization", &lower)]).is_ok());
+        assert!(a.local_bearer(&headers(&[("authorization", &lower)])));
         // This daemon's page: its page key, which isn't the token, and
         // isn't a bearer (nor is the token a page key).
         let key = crate::localauth::page_key(token);

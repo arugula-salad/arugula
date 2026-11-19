@@ -646,6 +646,15 @@ fn a_guest_reads_wait_but_not_the_rules() {
         }
         let (status, body) = as_friend("GET", &wait);
         assert_eq!((status, body.as_str()), (200, r#"{"result":"timeout"}"#), "{role}");
+        // Who this daemon is: what their page reads (the name, version and
+        // features), and nothing of the owner's setup.
+        let (status, body) = as_friend("GET", "/api/host");
+        assert_eq!(status, 200, "{role}: {body}");
+        let host: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert!(host["name"].is_string() && host["version"].is_string() && host["features"].is_object(), "{host}");
+        for key in ["tailnet_url", "tailnet_seen", "control", "team", "control_state"] {
+            assert!(host.get(key).is_none(), "{role}: {key} in {host}");
+        }
     }
     // The owner: the rules, the same wait, and the errors it always gave.
     assert_eq!(d.get("/api/rules")["rules"].as_array().unwrap().len(), 0);

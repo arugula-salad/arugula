@@ -270,4 +270,25 @@ async fn the_socket_and_mcp_over_loopback_need_it_too() {
     assert!([401, 403].contains(&mcp(Some("Bearer ilt_wrong".into())).await.unwrap().status().as_u16()));
     let ok = mcp(Some(format!("Bearer {token}"))).await.unwrap().status().as_u16();
     assert!(ok < 300, "the local token as MCP's bearer: {ok}");
+    let lower = mcp(Some(format!("bearer {token}"))).await.unwrap().status().as_u16();
+    assert!(lower < 300, "the scheme's name in lower case: {lower}");
+
+    // The scheme's case changes nothing about which checks a request
+    // passes: with serve's identity header naming someone this machine
+    // doesn't know, the local token is refused either way.
+    let with_login = |auth: String| {
+        reqwest::Client::new()
+            .post(format!("http://127.0.0.1:{}/mcp", d.port))
+            .header("Accept", "application/json, text/event-stream")
+            .header("Content-Type", "application/json")
+            .header("Tailscale-User-Login", "someone@example.com")
+            .header("Authorization", auth)
+            .body(body)
+            .send()
+    };
+    let upper = with_login(format!("Bearer {token}")).await.unwrap().status().as_u16();
+    assert!(upper >= 400, "someone else's request with the local token: {upper}");
+    for auth in [format!("bearer {token}"), format!("BEARER {token}")] {
+        assert_eq!(with_login(auth.clone()).await.unwrap().status().as_u16(), upper, "{auth}");
+    }
 }

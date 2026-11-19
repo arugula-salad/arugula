@@ -1,7 +1,7 @@
 //! The host list's routes (#578): who this daemon is, the other daemons it
 //! lists, adding and removing them. HTTP only, on `hosts.rs`'s router.
-//! `GET /api/host` is anyone's (the owner also hears how the machine stands
-//! with control); the rest are the owner's.
+//! `GET /api/host` is anyone's (the owner also hears where the machine is
+//! reached and how it stands with control); the rest are the owner's.
 
 use arugula_proto::{
     api::Empty,
@@ -14,7 +14,8 @@ use super::{Cx, Handle, OpError, Via};
 
 impl Handle for HostGet {
     async fn handle(cx: &Cx<'_>, _: (), _: Empty) -> Result<HostAnswer, OpError> {
-        // Only the owner hears how this machine stands with control (#325).
+        // Only the owner hears where this machine is reached and how it
+        // stands with control (#325).
         let owner = match &cx.via {
             Via::Http { owner, .. } => *owner,
             Via::Mcp(_) => false,

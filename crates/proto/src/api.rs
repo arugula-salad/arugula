@@ -49,7 +49,7 @@
 //! | GET | `/api/docs/team` | | `DocTeams`: the team a Doc here would move to, if any (the owner's) |
 //! | GET | `/api/agent-can` | | `[AgentCan]`: what an agent here can do for the person, in their words (the owner's) |
 //! | GET | `/api/fs/…`, POST `/api/panes/N/cd` | | files on a host: see [`crate::fs`] |
-//! | GET | `/api/host` | | `HostInfo`: this daemon's name and version, its tailnet URL, whether the tailnet has reached it, the control it joined |
+//! | GET | `/api/host` | | `HostInfo`: this daemon's name, version and features; for the owner also its tailnet URL, whether the tailnet has reached it, the control and team it joined |
 //! | GET | `/api/hosts/self/shell-env` | | `ShellEnv`: the shell environment blocks that run your tools get (#74) |
 //! | POST | `/api/hosts/self/shell-env/refresh` | | the same, resolved again |
 //! | GET, POST | `/api/hosts/self/agents`, `.../agents/refresh` | | `AgentsInventory`: the agents chant found configured here, and which screen rule sets run (#145) |

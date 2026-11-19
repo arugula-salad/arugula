@@ -158,7 +158,9 @@ async fn authenticate(State(app): State<Arc<App>>, mut req: Request, next: Next)
     let bearer = match req.headers().get(header::AUTHORIZATION) {
         None => None,
         Some(v) => {
-            match v.to_str().ok().and_then(|v| v.strip_prefix("Bearer ").or_else(|| v.strip_prefix("bearer "))) {
+            // Read as the server read it (`tokens::bearer`), so the local
+            // token here is one the server checked as the owner's.
+            match v.to_str().ok().and_then(tokens::bearer) {
                 Some(t) => Some(t.trim().to_owned()),
                 None => return refuse(StatusCode::UNAUTHORIZED, "MCP takes a bearer token (Authorization: Bearer …)"),
             }

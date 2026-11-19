@@ -41,6 +41,15 @@ const BLOCK_PREFIX: &str = "ilb_";
 
 pub use arugula_proto::api::{TokenInfo, TokenScope};
 
+/// The token in an `Authorization` value of the Bearer scheme, whose name
+/// is read case-insensitively (RFC 9110 11.1). The server's checks
+/// (`access.rs`) and `/mcp` both read it here, so a token one of them
+/// takes for the local token the other does too.
+pub fn bearer(authorization: &str) -> Option<&str> {
+    let (scheme, token) = authorization.split_once(' ')?;
+    scheme.eq_ignore_ascii_case("bearer").then(|| token.trim())
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 struct Saved {
     name: String,
@@ -201,6 +210,17 @@ pub fn api_routes() -> Router<Arc<App>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The scheme's name in any case; nothing else is a bearer.
+    #[test]
+    fn reads_the_bearer_scheme_in_any_case() {
+        for v in ["Bearer ilt_x", "bearer ilt_x", "BEARER ilt_x", "bEaReR  ilt_x "] {
+            assert_eq!(bearer(v), Some("ilt_x"), "{v}");
+        }
+        for v in ["ilt_x", "Bearerilt_x", "Basic ilt_x", "Token ilt_x", ""] {
+            assert_eq!(bearer(v), None, "{v}");
+        }
+    }
 
     /// An agent block's token from before an update still checks: one made
     /// as illogical made them (#509), too.

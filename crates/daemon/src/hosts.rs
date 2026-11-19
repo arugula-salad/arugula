@@ -308,7 +308,18 @@ pub(crate) fn answer(app: &App, owner: bool) -> HostAnswer {
         team: saved.and_then(|s| s.team()).map(|t| t.roster.as_ref().map_or(t.pin.team.clone(), |r| r.name.clone())),
         features: Some(features(app)),
     };
-    HostAnswer { info, control_state: owner.then(|| crate::setup::control_state(app)) }
+    HostAnswer { info: for_whom(info, owner), control_state: owner.then(|| crate::setup::control_state(app)) }
+}
+
+/// What someone else's page reads here (a guest's, a teammate's, a link
+/// viewer's): the machine's name, its version and protocol, and what it's
+/// set up for, which the menus follow. Where it's reached on the tailnet,
+/// and the control and team it joined, are for the owner's setup.
+fn for_whom(info: HostInfo, owner: bool) -> HostInfo {
+    if owner {
+        return info;
+    }
+    HostInfo { tailnet_url: None, tailnet_seen: false, control: None, team: None, ..info }
 }
 
 /// What this machine is set up for, so the menus offer only that (#180)
@@ -337,6 +348,37 @@ pub(crate) fn features(app: &App) -> HostFeatures {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The owner hears all of it; anyone else the name, version, protocol
+    /// and features their page uses.
+    #[test]
+    fn someone_else_reads_only_what_their_page_uses() {
+        let all = HostInfo {
+            name: "geek".into(),
+            version: "1.2.3".into(),
+            protocol: Some(7),
+            tailnet_url: Some("https://geek.example.ts.net".into()),
+            tailnet_seen: true,
+            control: Some("https://control.example".into()),
+            team: Some("crew".into()),
+            features: Some(HostFeatures { labs: true, blocks: true, ..Default::default() }),
+        };
+        assert_eq!(for_whom(all.clone(), true), all);
+        let theirs = for_whom(all.clone(), false);
+        assert_eq!(
+            theirs,
+            HostInfo {
+                name: "geek".into(),
+                version: "1.2.3".into(),
+                protocol: Some(7),
+                tailnet_url: None,
+                tailnet_seen: false,
+                control: None,
+                team: None,
+                features: all.features.clone(),
+            }
+        );
+    }
 
     fn dir() -> PathBuf {
         static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);

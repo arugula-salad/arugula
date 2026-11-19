@@ -1506,8 +1506,9 @@ pub mod ops {
         type Res = Empty;
     }
 
-    /// `GET /api/host`: who this daemon is. Anyone who reached it may ask; the
-    /// owner also hears how it stands with control (#325).
+    /// `GET /api/host`: who this daemon is. Anyone who reached it may ask
+    /// its name, version and features; the owner also hears where it's
+    /// reached and how it stands with control (#325).
     pub struct HostGet;
 
     impl Op for HostGet {

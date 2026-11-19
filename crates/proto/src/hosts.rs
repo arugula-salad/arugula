@@ -72,7 +72,8 @@ pub struct AddHost {
     pub ssh: Option<String>,
 }
 
-/// `GET /api/host`: who this daemon is.
+/// `GET /api/host`: who this daemon is. Someone other than the owner gets
+/// the name, version, protocol and features; the rest is left out.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", ts(optional_fields))]
