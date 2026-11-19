@@ -292,6 +292,10 @@ pub struct State {
     /// The watches' messages it was told, by watch, oldest first: kept for
     /// a watch's life ([`WATCH_TOLD_FOR_MS`]), not [`TOLD_FOR_MS`].
     watches: Mutex<VecDeque<SavedWatch>>,
+    /// The `wait` calls blocked on a cloud watch, by the watch's session (a
+    /// `wait_…` of the call's own, never a conversation's): its message is
+    /// the call's answer, not a follow-up. In memory only, as the calls are.
+    waits: Mutex<HashMap<String, tokio::sync::oneshot::Sender<String>>>,
 }
 
 impl State {
@@ -368,6 +372,25 @@ impl State {
         }
         drop(w);
         self.save();
+    }
+
+    /// A `wait` blocks on the cloud watch made for `session`: its message
+    /// comes here, once. Until [`State::unwait`].
+    pub fn wait_for(&self, session: &str) -> tokio::sync::oneshot::Receiver<String> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.waits.lock().unwrap().insert(session.to_owned(), tx);
+        rx
+    }
+
+    /// The `wait` on `session`'s watch is over.
+    pub fn unwait(&self, session: &str) {
+        self.waits.lock().unwrap().remove(session);
+    }
+
+    /// Hand a watch's message to the `wait` blocked on it, if one is.
+    fn waited(&self, session: &str, text: &str) -> bool {
+        let tx = self.waits.lock().unwrap().remove(session);
+        tx.is_some_and(|tx| tx.send(text.to_owned()).is_ok())
     }
 
     /// Watch `id`'s message was dropped before its session took it: it
@@ -1497,6 +1520,10 @@ async fn route(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
 /// stops it. With no pane holding that session now, it's `away`, and kept
 /// nowhere: control sends it again.
 async fn watched(app: &impl Daemon, m: &AgentMention, w: &WatchTag) -> OpAnswer {
+    // A `wait`'s watch: the call that waits takes it.
+    if app.mentions().waited(&w.session, &m.text) {
+        return routed(RoutedStep::Named, None, None, true);
+    }
     let by = Driver { who: "watch".into(), name: "Arugula".into() };
     let panes = app.conversations().await.into_iter().filter(|(_, s)| *s == w.session).map(|(p, _)| p);
     for pane in panes.collect::<Vec<_>>() {
@@ -2965,6 +2992,27 @@ mod tests {
         d.state.forget_watch(tag.watch.as_deref().unwrap());
         deliver(&d, &m).await;
         assert_eq!(d.got(2).len(), 2);
+    }
+
+    /// A `wait`'s cloud watch: its message is the waiting call's answer,
+    /// as sent, and no session's follow-up; told once, like any watch's.
+    /// With the wait over, it's `away`, as a watch with no session here.
+    #[tokio::test]
+    async fn a_waits_watch_is_handed_to_the_call() {
+        let d = Fake::new("watch-wait", &[2]).named(&[(2, "mine")]).conversing(&[(2, "c-mine")]);
+        let got = d.state.wait_for("wait_1a2b");
+        let m = watch_message("wch_ab15", "wait_1a2b");
+        assert_eq!(deliver(&d, &m).await, routed(RoutedStep::Named, None, None, true));
+        assert_eq!(got.await.unwrap(), "pr acme/app#7 merged");
+        assert!(d.got(2).is_empty(), "no follow-up");
+        assert_eq!(deliver(&d, &m).await, routed(RoutedStep::Named, None, None, true), "answered as before");
+        let late = d.state.wait_for("wait_3c4d");
+        d.state.unwait("wait_3c4d");
+        drop(late);
+        assert_eq!(
+            deliver(&d, &watch_message("wch_ab16", "wait_3c4d")).await,
+            routed(RoutedStep::Away, None, None, true)
+        );
     }
 
     /// The watches remembered as told are bounded: the oldest go first.

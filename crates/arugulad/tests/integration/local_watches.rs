@@ -79,3 +79,51 @@ fn an_agent_with_no_account_is_woken_when_another_goes_idle() {
     assert_eq!(gone["cancelled"], json!([id]), "{gone}");
     assert_eq!(mcp.call("watch", json!({ "kind": "list" })).unwrap()["watches"], json!([]));
 }
+
+/// `wait` with one of this machine's events
+/// (https://app.arugula.io/issues/iss_1545620a176cab44b21084c27493241e): a
+/// short-lived watch, answered "still running" at its time with the watch
+/// gone, with the watch's message when it happens, and at once when it
+/// already has.
+#[test]
+fn wait_with_an_event_blocks_until_it_happens() {
+    let d = Daemon::child();
+    let mcp = Mcp::bridge(&d, None);
+    let worker = d.open("slow");
+    d.wait_for("its turn", || d.state(worker)["status"] == "working");
+    let idle = json!({ "event": "agent.idle", "match": { "pane": format!("%{worker}") } });
+    let live = || mcp.call("watch", json!({ "kind": "list", "all": true })).unwrap()["watches"].clone();
+
+    let mut early = idle.clone();
+    early["timeout"] = json!(1);
+    let early = mcp.call("wait", early).unwrap();
+    assert_eq!(early["state"], "still running", "{early}");
+    assert!(summary(&early).starts_with("No agent.idle yet after 1s: still running"), "{early}");
+    assert_eq!(live(), json!([]), "its watch is gone");
+
+    // Another client waits while the worker's turn ends.
+    let waiter = Mcp::bridge(&d, None);
+    let mut asked = idle.clone();
+    asked["timeout"] = json!(60);
+    let waited = std::thread::spawn(move || waiter.call("wait", asked));
+    d.wait_for("the wait's watch", || live().as_array().is_some_and(|w| w.len() == 1));
+    d.call(worker, "cancel", json!({}));
+    let fired = waited.join().unwrap().unwrap();
+    assert_eq!(fired["state"], "fired", "{fired}");
+    assert!(
+        summary(&fired).starts_with(&format!("agent.idle: pane %{worker}"))
+            && summary(&fired).ends_with("its agent finished its turn and waits for a prompt."),
+        "the watch's own message: {fired}"
+    );
+    assert_eq!(live(), json!([]), "a fired wait's watch is gone");
+
+    // It has already happened: answered at once, with no watch.
+    let met = mcp.call("wait", idle).unwrap();
+    assert!(summary(&met).starts_with("It has already happened"), "{met}");
+    assert_eq!(met["state"], "already_met", "{met}");
+    // The cloud's types need an account, as watch's do.
+    let cloud = mcp.call("wait", json!({ "event": "issue.closed", "match": { "issue": "#3" } })).unwrap_err();
+    assert!(cloud.contains("hasn't joined Arugula cloud"), "{cloud}");
+    let both = mcp.call("wait", json!({ "event": "agent.idle", "until": "idle", "pane": worker })).unwrap_err();
+    assert!(both.contains("one of them"), "{both}");
+}
