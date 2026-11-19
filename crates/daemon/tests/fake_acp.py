@@ -85,6 +85,8 @@ Run with --no-resume, it doesn't offer session/resume, so a block reopens
 its session with session/load. A method named on a line of
 $FAKE_ACP_DIR/unanswered (read at each request) is never answered: it says
 so on stderr and leaves the request waiting, as an agent that hangs would.
+With $FAKE_ACP_DIR/load-slowly holding "N MS", a session/load first sends N
+updates of a replay, MS milliseconds apart, as a long conversation's would.
 
 Only clients that declare elicitation {form: {}, url: {}} get questions; the
 others get "I don't have access to an AskUserQuestion tool" (S13).
@@ -859,6 +861,15 @@ def handle(m):
         save(p["sessionId"], s)
         holding(p["sessionId"])
         if method == "session/load":
+            try:
+                with open(os.path.join(DIR, "load-slowly")) as f:
+                    n, ms = (int(x) for x in f.read().split())
+            except FileNotFoundError:
+                n, ms = 0, 0
+            for i in range(n):
+                send({"method": "session/update", "params": {"sessionId": p["sessionId"], "update": {
+                    "sessionUpdate": "agent_thought_chunk", "content": {"type": "text", "text": f"replaying {i}"}}}})
+                time.sleep(ms / 1000)
             for u in s["updates"]:
                 send({"method": "session/update", "params": {"sessionId": p["sessionId"], "update": u}})
         send({"id": mid, "result": {"configOptions": CONFIG_OPTIONS}})

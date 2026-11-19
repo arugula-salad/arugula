@@ -126,18 +126,24 @@ fn autonomous_quiet() -> Duration {
         Duration::from_millis(ms.unwrap_or(60_000))
     })
 }
-/// How long the agent server has to answer each request that starts it
-/// (`initialize`, and the `session/new`, `load`, `resume` or `fork` that
-/// opens its session): one that never answers mustn't leave the block
-/// starting for good (https://app.arugula.io/issues/iss_dbc1393e26549eaa3413372b47da2b2d).
-/// `ARUGULA_ACP_STARTUP_MS` overrides it, for tests.
+/// How long the agent server may say nothing while a request that opens
+/// its session (`session/new`, `load`, `resume` or `fork`) is unanswered:
+/// one that never answers mustn't leave the block starting for good
+/// (https://app.arugula.io/issues/iss_dbc1393e26549eaa3413372b47da2b2d).
+/// It's silence, not the whole wait: a `session/load` of a long
+/// conversation replays it before it answers.
 const OPEN_WITHIN: Duration = Duration::from_secs(30);
-fn open_within() -> Duration {
-    static WITHIN: std::sync::OnceLock<Duration> = std::sync::OnceLock::new();
-    *WITHIN.get_or_init(|| {
+/// The same for `initialize`, which can be slow while an adapter installs.
+const INIT_WITHIN: Duration = Duration::from_secs(120);
+/// [`INIT_WITHIN`] or [`OPEN_WITHIN`]; `ARUGULA_ACP_STARTUP_MS` sets both,
+/// for tests.
+fn open_within(init: bool) -> Duration {
+    static WITHIN: std::sync::OnceLock<Option<Duration>> = std::sync::OnceLock::new();
+    let set = *WITHIN.get_or_init(|| {
         let ms = std::env::var("ARUGULA_ACP_STARTUP_MS").ok().and_then(|v| v.parse().ok());
-        ms.map_or(OPEN_WITHIN, Duration::from_millis)
-    })
+        ms.map(Duration::from_millis)
+    });
+    set.unwrap_or(if init { INIT_WITHIN } else { OPEN_WITHIN })
 }
 /// What the transcript says when the earlier conversation couldn't be
 /// reopened and a new one was started in its place.
@@ -420,7 +426,8 @@ struct Inner {
     /// `usage_update`, a prompt of ours, or [`autonomous_quiet`].
     autonomous_at: Option<std::time::Instant>,
     /// The last request that starts the agent or opens its session, and
-    /// when it went: unanswered past [`open_within`], it's given up on.
+    /// when it went or the agent last sent anything since: silent past
+    /// [`open_within`], it's given up on.
     opening: Option<(u64, u64)>,
     /// What it left running in the background (#606): it carries on when
     /// they end, so `wait --idle` waits.
@@ -1213,6 +1220,10 @@ impl Inner {
 
     fn on_in(&mut self, m: &Value, at: u64) -> Vec<Effect> {
         let mut fx = vec![];
+        // Hearing from it at all (a replay's updates, say) means it's busy.
+        if let Some((_, since)) = &mut self.opening {
+            *since = at;
+        }
         let method = m["method"].as_str();
         match (m.get("id"), method) {
             // An answer to one of ours.
@@ -3056,12 +3067,13 @@ fn start_failed(ctx: &AgentCtx, g: &mut Inner, why: &str) {
 }
 
 /// The request that starts the agent or opens its session, if it has gone
-/// unanswered for [`open_within`]: it's given up on, and the block opens a
-/// new session in its place (for a reopened one) or stops.
+/// unanswered while the agent said nothing for [`open_within`]: it's given
+/// up on, and the block opens a new session in its place (for a reopened
+/// one) or stops.
 fn give_up_opening(ctx: &AgentCtx, g: &mut Inner) -> bool {
     let Some((id, at)) = g.opening else { return false };
     let Some(purpose) = g.ours.get(&id).cloned() else { return false };
-    let within = open_within();
+    let within = open_within(purpose == Purpose::Init);
     // A VM's agent is sent `initialize` while its machine starts.
     if now_ms().saturating_sub(at) < within.as_millis() as u64 || (ctx.sprite.is_some() && purpose == Purpose::Init) {
         return false;
@@ -3076,7 +3088,7 @@ fn give_up_opening(ctx: &AgentCtx, g: &mut Inner) -> bool {
     };
     g.opening = None;
     g.note(json!({ "e": "unanswered", "id": id, "method": method }));
-    let why = format!("didn't answer {method} within {} s", within.as_secs_f64());
+    let why = format!("didn't answer {method}, and said nothing for {} s", within.as_secs_f64());
     match purpose {
         Purpose::Load { .. } | Purpose::Resume => act(ctx, g, Effect::SessionLost(why)),
         _ => start_failed(ctx, g, &why),
