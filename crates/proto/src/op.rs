@@ -132,6 +132,8 @@ impl Request for crate::sharing::SharingSetRequest {}
 
 impl Request for crate::telemetry::TelemetryNoteRequest {}
 
+impl Request for crate::feedback::FeedbackSendRequest {}
+
 impl Request for crate::api::WaitRequest {}
 
 impl Request for crate::api::PortsQuery {}
@@ -409,6 +411,7 @@ pub mod ops {
             StudioLoggedIn, StudioLoginRequest, StudioStatus, Subscription, TeamPins, TeamPinsRequest, TokenInfo,
             WaitRequest, WaitResult, WithdrawRequest,
         },
+        feedback::{FeedbackSendRequest, FeedbackSent},
         flags::{FlagInfo, FlagSetRequest},
         hosts::SandboxList,
         sharing::{RemoteSessions, Sharing, SharingSetRequest},
@@ -542,6 +545,23 @@ pub mod ops {
         type Path = ();
         type Req = TelemetryNoteRequest;
         type Res = Empty;
+    }
+
+    /// `POST /api/feedback` (Arugula #1213): send what the person or agent
+    /// wrote to the hosted control, with the context the daemon fills in.
+    /// Declared here for #1216, which handles it and adds it to
+    /// [`every_op!`](crate::every_op) with its route: until then no router
+    /// routes it.
+    pub struct FeedbackSend;
+
+    impl Op for FeedbackSend {
+        const NAME: &'static str = "feedback.send";
+        const METHOD: Method = Method::Post;
+        const PATH: &'static str = "/api/feedback";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = FeedbackSendRequest;
+        type Res = FeedbackSent;
     }
 
     /// `GET /api/sharing` (native #205): the machine's sharing settings

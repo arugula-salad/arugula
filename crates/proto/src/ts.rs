@@ -84,6 +84,16 @@ fn generate() -> String {
     c.visit::<crate::telemetry::TelemetryInfo>();
     c.visit::<crate::telemetry::TelemetrySetRequest>();
     c.visit::<crate::telemetry::TelemetryNoteRequest>();
+    // Feedback (Arugula #1213): through the daemon, and to control from its
+    // page when an account is signed in.
+    c.visit::<crate::feedback::FeedbackSendRequest>();
+    c.visit::<crate::feedback::FeedbackSent>();
+    {
+        use arugula_control_wire::feedback::*;
+        c.visit::<FeedbackSubmit>();
+        c.visit::<FeedbackAck>();
+        c.visit::<FeedbackRefused>();
+    }
     c.visit::<crate::sharing::Sharing>();
     c.visit::<crate::sharing::SharingSetRequest>();
     c.visit::<crate::sharing::RemoteSessions>();

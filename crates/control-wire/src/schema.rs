@@ -65,6 +65,9 @@ fn files() -> Vec<(&'static str, &'static [&'static str], fn(&mut SchemaGenerato
         "deploys" => [
             deploys::DeploySource, deploys::DeployPlan,
         ],
+        "feedback" => [
+            feedback::FeedbackSubmit, feedback::FeedbackKind, feedback::FeedbackSource, feedback::FeedbackSurface, feedback::FeedbackAgent, feedback::FeedbackContext, feedback::FailedCall, feedback::FeedbackWho, feedback::FeedbackStamp, feedback::FeedbackAck, feedback::FeedbackRefused,
+        ],
         "forge" => [
             forge::MachineAgentState, forge::ForgeWatch, forge::Standing, forge::ForgeWatching, forge::Poke, forge::ForgePoke, forge::GithubTokenRequest, forge::GithubToken, forge::Ops, forge::OpAsk, forge::OpDone, forge::DaemonOp, forge::ForgeSend, forge::AgentMention, forge::AgentGrantAsk, forge::MentionsHeldAsk, forge::MentionKey, forge::RepoMoved, forge::DocsListAsk, forge::SessionCardAsk, forge::SessionProjectAsk, forge::MachineDocRow, forge::MachineAgentsAsk, forge::MachineAgent, forge::Routed, forge::RoutedStep, forge::OpAnswer,
         ],

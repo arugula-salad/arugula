@@ -22,6 +22,7 @@ pub mod block_patch;
 pub mod claude_policy;
 pub mod dirs;
 pub mod exe;
+pub mod feedback;
 #[cfg(feature = "fixtures")]
 pub mod fixture;
 pub mod flags;
