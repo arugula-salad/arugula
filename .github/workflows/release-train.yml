@@ -38,7 +38,7 @@ jobs:
     # The rare jobs twice over: testnet alone can take 30 minutes each time.
     timeout-minutes: 100
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: main
           # All of main and every tag: the notes come from the range since the last.

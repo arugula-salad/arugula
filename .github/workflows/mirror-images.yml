@@ -36,7 +36,7 @@ jobs:
       CRANE: v0.22.1
       CRANE_SHA256: 0ab7a1d6932a213aed964ce97666c3077fe691c8606413674a8b3e0b9ec4cda0
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: crane
         run: |
           curl -fsSL --retry 4 --retry-delay 5 --retry-all-errors -o "$RUNNER_TEMP/crane.tgz" "https://github.com/google/go-containerregistry/releases/download/$CRANE/go-containerregistry_Linux_x86_64.tar.gz"

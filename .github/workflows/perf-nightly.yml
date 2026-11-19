@@ -32,7 +32,7 @@ jobs:
   perf-build:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: ./.github/actions/setup
         with:
           cache-key: build
@@ -43,7 +43,7 @@ jobs:
       - run: scripts/ci-env keep debug
       - name: Hand them to the perf job
         run: tar -cf "$RUNNER_TEMP/run-debug.tar" -C "$CI_RUN" debug dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: run-debug
           path: ${{ runner.temp }}/run-debug.tar
@@ -54,7 +54,7 @@ jobs:
     needs: perf-build
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: ./.github/actions/setup
         with:
           rust: "false"
@@ -81,7 +81,7 @@ jobs:
       # Kept a month, for the trend.
       - name: The timings
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: perf-report
           path: ${{ runner.temp }}/perf-report.json
@@ -90,7 +90,7 @@ jobs:
       # A failed spec's screenshot (playwright.config.ts), kept a week.
       - name: Failed specs' screenshots
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: perf-failures
           path: web/test-results/

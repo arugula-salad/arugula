@@ -37,7 +37,7 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       # Zig for Ghostty's lib-vt, as release.yml's windows job.
       - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
@@ -47,7 +47,7 @@ jobs:
       # Linux (the setup action): the checkout's new mtimes rebuild every
       # path crate, and this one most slowly.
       - run: echo "LIBGHOSTTY_VT_SYS_CACHE_DIR=$(cygpath -w "$HOME/.cache/libghostty-vt-sys")" >> "$GITHUB_ENV"
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/libghostty-vt-sys
           key: ghostty-Windows-release-${{ hashFiles('vendor/libghostty-vt-sys/**', '.mise.toml') }}

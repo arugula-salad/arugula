@@ -32,7 +32,7 @@ jobs:
     runs-on: [self-hosted, macos-tart]
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Keep the build
         run: mkdir -p ../target-native-ios && echo "CARGO_TARGET_DIR=$PWD/../target-native-ios" >> "$GITHUB_ENV"
       - name: Rust (rust-toolchain.toml's)
@@ -43,7 +43,7 @@ jobs:
     runs-on: [self-hosted, macos-tart]
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       # The build is kept between runs, beside the checkout (which checkout
       # cleans): the host isn't throwaway. A link, not CARGO_TARGET_DIR,
       # since the scripts and specs take binaries from ./target.
