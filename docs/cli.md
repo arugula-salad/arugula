@@ -32,6 +32,11 @@ tell the two apart answers without saying it's a CLI's session; then plain
 `arugula login` joins this terminal as one of your devices instead (below),
 and `arugula login --browser` stops (#1151).
 
+Anything that runs as you on a computer where the CLI is signed in, agents
+you run included, can do what you can on every machine your account
+reaches: it can read the session's file, or run `arugula --host NAME`, and
+open a shell on any of them. Only the browser's part above is kept from it.
+
 `arugula login --device [URL]` makes this CLI one of the account's devices:
 it shows a code to approve from a device you already have (`--account
 FINGERPRINT` checks the account too, for an older control). Since #1004
