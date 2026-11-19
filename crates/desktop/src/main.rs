@@ -480,13 +480,41 @@ fn home(app: &AppHandle) -> tauri::Url {
 }
 
 /// The daemon's page, control's page and the app's own pages stay in the
-/// window.
+/// window. Of `about:`, only an empty frame (a browser or app block before
+/// it has an address) and a Doc prototype's `srcdoc` frame. Never a
+/// `data:` or `blob:` page: neither is anyone's page of ours.
 fn ours(url: &tauri::Url) -> bool {
     match url.scheme() {
-        "tauri" | "about" | "blob" | "data" => true,
+        "tauri" => true,
+        "about" => matches!(url.path(), "blank" | "srcdoc"),
         "http" | "https" => control_page(url) || daemons(url) || url.host_str() == Some("tauri.localhost"),
         _ => false,
     }
+}
+
+/// A file one of our pages made to save (a Doc's Markdown, recovery
+/// codes): an `<a download>` to a `blob:` of its own origin. WebKitGTK
+/// asks `on_navigation` about these before it turns them into a download,
+/// so a no would stop the download. Only that navigation takes it, not
+/// `ours` (a window, the microphone).
+fn own_download(url: &tauri::Url) -> bool {
+    url.scheme() == "blob"
+        && tauri::Url::parse(url.path())
+            .is_ok_and(|made| matches!(made.scheme(), "http" | "https") && (ours(&made) || platform_page(&made)))
+}
+
+/// Where the daemon's page is, as origins: its address, and `localhost`
+/// on its port, which `daemons` takes as the same page. The `remote`
+/// capability for its page names these (`allow_daemon`), not every
+/// loopback port.
+fn daemon_origins(addr: &str) -> Vec<String> {
+    let mut origins = vec![format!("http://{addr}")];
+    if let Some((host, port)) = addr.rsplit_once(':')
+        && host != "localhost"
+    {
+        origins.push(format!("http://localhost:{port}"));
+    }
+    origins
 }
 
 /// The platform page (`platform.rs`): on the origin control's
@@ -674,7 +702,35 @@ fn allow_control(app: &AppHandle) {
     }
 }
 
+/// The daemon's page's permissions (capabilities/default.json's, which
+/// is for the app's own pages): on the daemon's own origin only, which is
+/// known at run time (`addr`), so it's added here, once.
+fn allow_daemon(app: &AppHandle) {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let mut cap = tauri::ipc::CapabilityBuilder::new("daemon").local(false).window("*");
+        for origin in daemon_origins(addr()) {
+            cap = cap.remote(format!("{origin}/*"));
+        }
+        for p in [
+            "core:default",
+            "core:window:allow-minimize",
+            "core:window:allow-toggle-maximize",
+            "core:window:allow-internal-toggle-maximize",
+            "core:window:allow-close",
+            "core:window:allow-start-dragging",
+            "allow-chat-badge",
+        ] {
+            cap = cap.permission(p);
+        }
+        if let Err(e) = app.add_capability(cap) {
+            eprintln!("arugula: letting the daemon's page at {} use its window: {e}", addr());
+        }
+    });
+}
+
 fn open_window(app: &AppHandle, url: WebviewUrl) -> tauri::Result<tauri::WebviewWindow> {
+    allow_daemon(app);
     allow_control(app);
     // A pane popped out (#497, `#pop=`): a window of its own, for another
     // monitor, never a tab of the window it came from; and pane-sized.
@@ -783,7 +839,7 @@ fn open_window(app: &AppHandle, url: WebviewUrl) -> tauri::Result<tauri::Webview
                 });
                 return false;
             }
-            if ours(url) || platform_page(url) || block_frame(url) {
+            if ours(url) || platform_page(url) || block_frame(url) || own_download(url) {
                 return true;
             }
             open_outside(url);
@@ -1664,6 +1720,57 @@ mod tests {
         assert!(plist.contains(&format!("<key>Label</key>\n  <string>{APP_LABEL}</string>")), "{plist}");
         assert!(plist.contains(&format!("<string>{APP_ID}</string>")), "{plist}");
         assert_eq!(conf["plugins"]["deep-link"]["desktop"]["schemes"], serde_json::json!(["arugula"]));
+    }
+
+    /// The pages that stay in a window: the daemon's, the app's own, and
+    /// the empty and `srcdoc` frames; never a `data:` or `blob:` page.
+    #[test]
+    fn ours_is_the_daemons_page_and_the_apps() {
+        let ours = |u: &str| super::ours(&tauri::Url::parse(u).unwrap());
+        let addr = super::addr();
+        // Another port on the same host: not the daemon's.
+        let (host, port) = addr.rsplit_once(':').unwrap();
+        let other = format!("{host}:{}", port.parse::<u16>().unwrap().wrapping_add(1));
+        assert!(ours(&format!("http://{addr}/")));
+        assert!(!ours(&format!("http://{other}/")));
+        assert!(ours(&format!("http://{addr}/auth?token=x&next=/")));
+        assert!(ours("tauri://localhost/index.html"));
+        assert!(ours("http://tauri.localhost/index.html"));
+        assert!(ours("about:blank"));
+        assert!(ours("about:srcdoc"));
+        for not in [
+            "about:config",
+            "data:text/html,<p>hi",
+            "data:text/html;base64,PHA+aGk=",
+            "blob:null/0c6b6a51-e5d2-4c4c-9a73-7b1f2e2c1b1a",
+            "blob:https://example.com/0c6b6a51-e5d2-4c4c-9a73-7b1f2e2c1b1a",
+            "https://example.com/",
+            "file:///etc/passwd",
+        ] {
+            assert!(!ours(not), "{not}");
+        }
+        // A file our page made to save goes through; nobody else's.
+        let download = |u: &str| super::own_download(&tauri::Url::parse(u).unwrap());
+        assert!(download(&format!("blob:http://{addr}/0c6b6a51-e5d2-4c4c-9a73-7b1f2e2c1b1a")));
+        assert!(!download("blob:https://example.com/0c6b6a51-e5d2-4c4c-9a73-7b1f2e2c1b1a"));
+        assert!(!download(&format!("blob:http://{other}/0c6b6a51-e5d2-4c4c-9a73-7b1f2e2c1b1a")));
+        assert!(!download("blob:null/0c6b6a51-e5d2-4c4c-9a73-7b1f2e2c1b1a"));
+        assert!(!download("data:text/html,<p>hi"));
+        assert!(!download(&format!("http://{addr}/")));
+    }
+
+    /// The daemon's page gets the window's permissions on its own port,
+    /// and the app's capability files name no loopback port at all.
+    #[test]
+    fn only_the_daemons_port_gets_its_permissions() {
+        assert_eq!(super::daemon_origins("127.0.0.1:7681"), ["http://127.0.0.1:7681", "http://localhost:7681"]);
+        assert_eq!(super::daemon_origins("localhost:7690"), ["http://localhost:7690"]);
+        assert_eq!(super::daemon_origins("[::1]:7681"), ["http://[::1]:7681", "http://localhost:7681"]);
+        for f in std::fs::read_dir(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("capabilities")).unwrap() {
+            let path = f.unwrap().path();
+            let cap: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            assert!(cap.get("remote").is_none(), "{}: remote pages get theirs at run time", path.display());
+        }
     }
 
     /// Pages hand the browser web links only: no other program's scheme,
