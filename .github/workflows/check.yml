@@ -73,8 +73,12 @@ concurrency:
 
 env:
   NEXTEST_PROFILE: ci
-  # sccache's cache (.github/actions/setup, #868): home-cloud's ci-cache.
-  SCCACHE_WEBDAV_PASSWORD: ${{ secrets.SCCACHE_WEBDAV_PASSWORD }}
+  # The compile cache (.github/actions/setup, #868): home-cloud's ci-cache.
+  # Its write login is the ci-cache environment's, which only main and the
+  # merge queue's groups reach, in the jobs that name it; every other job
+  # (and a branch's run by hand) reads with the read-only one.
+  SCCACHE_WEBDAV_WRITE: ${{ secrets.SCCACHE_WEBDAV_RW_PASSWORD != '' }}
+  SCCACHE_WEBDAV_PASSWORD: ${{ secrets.SCCACHE_WEBDAV_RW_PASSWORD || secrets.SCCACHE_WEBDAV_RO_PASSWORD }}
   # mise's GitHub downloads (nextest): unauthenticated, they share the
   # runner's IP's rate limit.
   GITHUB_TOKEN: ${{ github.token }}
@@ -123,6 +127,9 @@ jobs:
     needs: changes
     if: needs.changes.outputs.suite == 'true'
     runs-on: ubuntu-24.04
+    environment:
+      name: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/gh-readonly-queue/main/')) && 'ci-cache' || '' }}
+      deployment: false
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -149,6 +156,9 @@ jobs:
     needs: changes
     if: needs.changes.outputs.suite == 'true' || needs.changes.outputs.app == 'true'
     runs-on: ubuntu-24.04
+    environment:
+      name: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/gh-readonly-queue/main/')) && 'ci-cache' || '' }}
+      deployment: false
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -182,6 +192,9 @@ jobs:
     needs: changes
     if: needs.changes.outputs.suite == 'true' || needs.changes.outputs.app == 'true'
     runs-on: ubuntu-24.04
+    environment:
+      name: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/gh-readonly-queue/main/')) && 'ci-cache' || '' }}
+      deployment: false
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -238,6 +251,9 @@ jobs:
     needs: changes
     if: needs.changes.outputs.suite == 'true'
     runs-on: arugula-amd64
+    environment:
+      name: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/gh-readonly-queue/main/')) && 'ci-cache' || '' }}
+      deployment: false
     timeout-minutes: 45
     permissions:
       # scripts/ci-wait-job reads the run's jobs; the rest is the default's.
@@ -289,6 +305,9 @@ jobs:
     needs: changes
     if: needs.changes.outputs.suite == 'true'
     runs-on: arugula-amd64
+    environment:
+      name: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/gh-readonly-queue/main/')) && 'ci-cache' || '' }}
+      deployment: false
     timeout-minutes: 45
     permissions:
       actions: read
@@ -483,6 +502,9 @@ jobs:
     # 5 cores, 6 GiB, from a golden image with Rust, mise, just, Node 24 and
     # pnpm 12), set up by .github/actions/macos-setup.
     runs-on: [self-hosted, macos-arm64]
+    environment:
+      name: ${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/gh-readonly-queue/main/')) && 'ci-cache' || '' }}
+      deployment: false
     timeout-minutes: 30
     env:
       ARUGULA_SKIP_DOCKER: "1"

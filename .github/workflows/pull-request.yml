@@ -24,7 +24,7 @@ name: pull request (hosted)
 # are free for this public repository, so what it costs is wall time.
 #
 # A fork's pull request gets no secrets, and nothing here needs one:
-# without SCCACHE_WEBDAV_PASSWORD .github/actions/setup leaves sccache out
+# without the compile cache's password .github/actions/setup leaves sccache out
 # and the build compiles cold. No pull_request_target: a pull request's code
 # never runs with this repository's secrets or a write token.
 #
@@ -64,8 +64,10 @@ permissions:
   contents: read
 
 env:
-  # Empty on a fork's pull request: the build compiles without sccache.
-  SCCACHE_WEBDAV_PASSWORD: ${{ secrets.SCCACHE_WEBDAV_PASSWORD }}
+  # The compile cache's read-only login (.github/actions/setup): a pull
+  # request's build reads what main's wrote and writes nothing. Empty on a
+  # fork's pull request: the build compiles without sccache.
+  SCCACHE_WEBDAV_PASSWORD: ${{ secrets.SCCACHE_WEBDAV_RO_PASSWORD }}
   # mise's GitHub downloads (Zig's, nextest's) share the runner's IP's rate
   # limit unauthenticated.
   GITHUB_TOKEN: ${{ github.token }}
