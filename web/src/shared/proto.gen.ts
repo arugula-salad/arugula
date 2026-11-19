@@ -228,6 +228,8 @@ pr_block?: number, };
  */
 export type AgentListing = "none" | "names" | "work";
 
+export type Arch = "x86_64" | "aarch64" | "other";
+
 /**
  * The open question or approval behind an `ask` reason.
  */
@@ -2623,6 +2625,186 @@ comments: Array<IssueComment>, };
 export type ExportedPerson = { account: string, name: string, };
 
 /**
+ * An Arugula tool call that failed: which, and what it said. Never its
+ * arguments.
+ */
+export type FailedCall = { 
+/**
+ * The tool (`forge_read`) or CLI command (`arugula run`).
+ */
+tool: string, 
+/**
+ * Its kind, for a tool that has kinds (`issue`).
+ */
+kind: string | null, 
+/**
+ * Its error, at most [`MAX_ERROR`] bytes. Untrusted.
+ */
+error: string, };
+
+/**
+ * A send taken.
+ */
+export type FeedbackAck = { 
+/**
+ * `fbk_…` ([`ID_PREFIX`]).
+ */
+id: string, 
+/**
+ * What people are shown for it: `F-` and a short form (`F-7K2Q9X`).
+ */
+shown: string, };
+
+/**
+ * The agent that wrote it, as it says: each at most [`MAX_SHORT`].
+ * Untrusted.
+ */
+export type FeedbackAgent = { 
+/**
+ * `claude-code`, `codex`.
+ */
+name: string, version: string | null, model: string | null, };
+
+/**
+ * The agent writing it, as it says: `FeedbackAgent`'s fields.
+ */
+export type FeedbackAgentInfo = { name: string, version?: string, model?: string, };
+
+/**
+ * Where the sender was. The daemon fills it in for the CLI and MCP, the
+ * web client for itself; each field is left out when not known.
+ */
+export type FeedbackContext = { 
+/**
+ * Arugula's version: the daemon's, or the web client's.
+ */
+version: string | null, os: Os | null, arch: Arch | null, 
+/**
+ * How far through getting started the sender is: a step's name
+ * (letters, digits, `-` and `_`).
+ */
+onboarding: string | null, 
+/**
+ * The web client's route, without its query or fragment.
+ */
+route: string | null, 
+/**
+ * The last Arugula tool call that failed for the sender, if one did.
+ */
+failed: FailedCall | null, };
+
+/**
+ * What it is.
+ */
+export type FeedbackKind = "bug" | "missing" | "idea" | "praise" | "other";
+
+/**
+ * A send refused (the status each reason has is beside it).
+ */
+export type FeedbackRefused = { 
+/**
+ * [`RATE_LIMITED`], [`ANONYMOUS_OFF`], [`TOO_LARGE`], [`POW_MISSING`]
+ * or [`POW_BAD`]; another is a reason this side doesn't know yet.
+ */
+error: string, 
+/**
+ * The difficulty control asks, with [`POW_MISSING`] and [`POW_BAD`].
+ */
+difficulty: number | null, 
+/**
+ * When to try again (seconds), with [`RATE_LIMITED`].
+ */
+retry_after: number | null, };
+
+/**
+ * `POST /api/feedback` (the `feedback.send` operation): what the person or
+ * agent wrote. Names are `arugula_control_wire::feedback`'s: `kind` is
+ * one of `FeedbackKind`'s, `source` of `FeedbackSource`'s and `surface`
+ * of `FeedbackSurface`'s. The daemon says `source` and `surface` when the
+ * caller doesn't (an MCP call is an agent's, the CLI a person's).
+ */
+export type FeedbackSendRequest = { kind: FeedbackKind, 
+/**
+ * At most 200 characters (`MAX_TITLE`).
+ */
+title: string, 
+/**
+ * At most 8 KB (`MAX_BODY`).
+ */
+body: string, contact_ok: boolean, source?: FeedbackSource, surface?: FeedbackSurface, 
+/**
+ * The agent writing it, when it says.
+ */
+agent?: FeedbackAgentInfo, };
+
+/**
+ * What `feedback.send` answers: control's `FeedbackAck`.
+ */
+export type FeedbackSent = { 
+/**
+ * `fbk_…`.
+ */
+id: string, 
+/**
+ * What people are shown for it: `F-…`.
+ */
+shown: string, };
+
+export type FeedbackSource = "agent" | "person" | "other";
+
+/**
+ * The proof of work for an anonymous send (the module's doc says how).
+ */
+export type FeedbackStamp = { 
+/**
+ * The leading zero bits it was solved for.
+ */
+difficulty: number, nonce: number, };
+
+/**
+ * What someone sends.
+ */
+export type FeedbackSubmit = { kind: FeedbackKind, 
+/**
+ * At most [`MAX_TITLE`] characters, not empty. Untrusted.
+ */
+title: string, 
+/**
+ * At most [`MAX_BODY`] bytes; may be empty. Untrusted.
+ */
+body: string, 
+/**
+ * Whether the sender may be contacted about it: a signed-in account
+ * by its email, a joined machine by its owner's.
+ */
+contact_ok: boolean, 
+/**
+ * Who wrote it.
+ */
+source: FeedbackSource, 
+/**
+ * Where it was sent from.
+ */
+surface: FeedbackSurface, 
+/**
+ * The agent that wrote it, when an agent did and says.
+ */
+agent: FeedbackAgent | null, context: FeedbackContext, who: FeedbackWho, };
+
+export type FeedbackSurface = "mcp" | "cli" | "web" | "desktop" | "other";
+
+/**
+ * An anonymous send's: an install id and its stamp. Empty on a signed
+ * send, whose signature or session says who it's from.
+ */
+export type FeedbackWho = { 
+/**
+ * Random, 16 lowercase hex digits, the install's own: telemetry's when
+ * it has one.
+ */
+install: string | null, stamp: FeedbackStamp | null, };
+
+/**
  * `GET /api/flags`: one row per flag (the `flags.list` operation).
  */
 export type FlagInfo = { name: string, 
@@ -4252,6 +4434,8 @@ export type OptionScope = { "kind": "global" } | { "kind": "session", "id": numb
  * a layout and an older client still load, and nothing reads them.
  */
 export type Options = { global?: { [key in string]: string }, sessions?: Array<[number, { [key in string]: string }]>, tabs?: Array<[number, { [key in string]: string }]>, panes?: Array<[number, { [key in string]: string }]>, };
+
+export type Os = "linux" | "macos" | "windows" | "other";
 
 /**
  * A machine's owner: one pane (M3b), or a tab whose panes share it (M3c).

@@ -72,6 +72,7 @@ pub mod chat_sidebar;
 pub mod deploys;
 #[cfg(test)]
 mod examples;
+pub mod feedback;
 pub mod forge;
 pub mod forge_ops;
 pub mod hosted;
