@@ -54,6 +54,9 @@ test("menus offer only what this machine is set up for", async ({ page }) => {
     // `labs` in flags.json is every flag (#665), and keeps guest ssh on as
     // Guest SSH access, a sharing setting (native #205).
     guest_ssh: true,
+    // People through control may type here until the machine says not
+    // (Arugula #1194), which the machine menu shows.
+    remote_input: true,
     flags: ["sandbox-providers", "studio", "chant-workspaces", "agent-delegation"],
   });
   const [term] = await panes(page);
