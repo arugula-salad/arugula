@@ -42,7 +42,7 @@ use std::{
     sync::Mutex,
 };
 
-use arugula_control_wire::watch::WatchTag;
+use arugula_control_wire::watch::{EXPIRES_MAX_MS, PER_SESSION, WatchTag};
 use arugula_control_wire::{
     chat::{DropWhy as WireWhy, MENTION_STATE, MentionTurn, PutMentionState},
     forge::{
@@ -72,6 +72,16 @@ const MAX_TOLD: usize = 500;
 /// only what it told in the last day.
 const TOLD_FOR_MS: u64 = 24 * 60 * 60 * 1000;
 
+/// How long a watch's message is remembered as told ([`State::watches`]):
+/// a watch's longest life, so a machine back after days away doesn't show
+/// one twice when control sends it again.
+const WATCH_TOLD_FOR_MS: u64 = EXPIRES_MAX_MS;
+
+/// The most watches' messages remembered as told; the oldest go first. A
+/// session has at most [`PER_SESSION`] live watches, each with one message:
+/// this is fifty sessions' worth.
+const MAX_WATCHES_TOLD: usize = 50 * PER_SESSION;
+
 /// The mention a follow-up carries (#540): the message `seq` of `room` in
 /// Arugula control's chat. It rides on the follow-up as the mux's opaque
 /// [`Tag`] (#675, [`to_tag`](Self::to_tag)): the mux passes it along and
@@ -86,6 +96,9 @@ pub struct MentionTag {
     pub headline: String,
     /// The thread it is in, when it may be merged with others of it (#580).
     pub thread: Option<MentionThread>,
+    /// A watch's message: the watch's id (`wch_…`), so one dropped before
+    /// its session took it is forgotten as told ([`State::forget_watch`]).
+    pub watch: Option<String>,
 }
 
 /// What it takes to put several mentions of one thread into one follow-up
@@ -109,6 +122,9 @@ impl MentionTag {
         if let Some(t) = &self.thread {
             v["thread"] = serde_json::json!({ "root": t.root, "head": t.head, "line": t.line, "tail": t.tail });
         }
+        if let Some(w) = &self.watch {
+            v["watch"] = serde_json::json!(w);
+        }
         v
     }
 
@@ -126,6 +142,7 @@ impl MentionTag {
             seq: v["seq"].as_i64()?,
             headline: String::new(),
             thread,
+            watch: v["watch"].as_str().map(str::to_owned),
         })
     }
 
@@ -210,12 +227,25 @@ struct Saved {
     /// Oldest first.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     told: Vec<SavedTold>,
+    /// Oldest first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    watches: Vec<SavedWatch>,
 }
 
 /// A mention the machine was told (#630): its key ([`MentionKey::text`]),
 /// how it was routed, and when.
 #[derive(Clone, Serialize, Deserialize)]
 struct SavedTold {
+    key: String,
+    routed: Routed,
+    at: u64,
+}
+
+/// A watch's message the machine was told: the watch's id, its key as
+/// `held` asks for it ([`MentionKey::text`]), how it was routed, and when.
+#[derive(Clone, Serialize, Deserialize)]
+struct SavedWatch {
+    id: String,
     key: String,
     routed: Routed,
     at: u64,
@@ -253,6 +283,9 @@ pub struct State {
     /// The mentions it was told (#630), oldest first: one sent again is
     /// answered as the first was, and not given to a session twice.
     told: Mutex<VecDeque<SavedTold>>,
+    /// The watches' messages it was told, by watch, oldest first: kept for
+    /// a watch's life ([`WATCH_TOLD_FOR_MS`]), not [`TOLD_FOR_MS`].
+    watches: Mutex<VecDeque<SavedWatch>>,
 }
 
 impl State {
@@ -283,6 +316,7 @@ impl State {
         *s.names.lock().unwrap() = saved.names;
         *s.unvetted.lock().unwrap() = panes;
         *s.told.lock().unwrap() = saved.told.into();
+        *s.watches.lock().unwrap() = saved.watches.into();
         s
     }
 
@@ -302,6 +336,45 @@ impl State {
         }
         drop(t);
         self.save();
+    }
+
+    /// How watch `id`'s message was routed, if it was told in the last
+    /// [`WATCH_TOLD_FOR_MS`].
+    fn watch_told(&self, id: &str, now: u64) -> Option<Routed> {
+        let w = self.watches.lock().unwrap();
+        w.iter().rev().find(|x| x.id == id && now.saturating_sub(x.at) < WATCH_TOLD_FOR_MS).map(|x| x.routed.clone())
+    }
+
+    /// Whether `key` was told: a mention in the last [`TOLD_FOR_MS`], or a
+    /// watch's message in the last [`WATCH_TOLD_FOR_MS`].
+    fn held(&self, key: &str, now: u64) -> bool {
+        self.told(key, now).is_some()
+            || self.watches.lock().unwrap().iter().any(|x| x.key == key && now.saturating_sub(x.at) < WATCH_TOLD_FOR_MS)
+    }
+
+    /// Watch `id`'s message, of `key`, was told, and routed so.
+    fn note_watch(&self, id: String, key: String, routed: Routed, now: u64) {
+        let mut w = self.watches.lock().unwrap();
+        w.retain(|x| x.id != id && now.saturating_sub(x.at) < WATCH_TOLD_FOR_MS);
+        w.push_back(SavedWatch { id, key, routed, at: now });
+        while w.len() > MAX_WATCHES_TOLD {
+            w.pop_front();
+        }
+        drop(w);
+        self.save();
+    }
+
+    /// Watch `id`'s message was dropped before its session took it: it
+    /// wasn't told after all, so control's next try reaches the session.
+    pub fn forget_watch(&self, id: &str) {
+        let mut w = self.watches.lock().unwrap();
+        let before = w.len();
+        w.retain(|x| x.id != id);
+        let changed = w.len() != before;
+        drop(w);
+        if changed {
+            self.save();
+        }
     }
 
     /// Whether a restart left panes no live session has vouched for.
@@ -354,6 +427,7 @@ impl State {
             names: self.names.lock().unwrap().clone(),
             unread: self.unread.lock().unwrap().clone(),
             told: self.told.lock().unwrap().iter().cloned().collect(),
+            watches: self.watches.lock().unwrap().iter().cloned().collect(),
         };
         drop(t);
         let bytes = serde_json::to_vec_pretty(&saved).unwrap_or_default();
@@ -668,7 +742,13 @@ fn tag_of(m: &AgentMention, notes: &[String]) -> MentionTag {
     let room = if m.room_name.is_empty() { m.room.as_str() } else { m.room_name.as_str() };
     let first: String = m.text.lines().next().unwrap_or_default().trim().chars().take(100).collect();
     let headline = format!("{}'s agent mentioned this session in #{}: {first}", m.author, room.trim_start_matches('#'));
-    MentionTag { room: m.room.clone(), seq: m.seq, headline, thread: notes.is_empty().then(|| thread_of(m)) }
+    MentionTag {
+        room: m.room.clone(),
+        seq: m.seq,
+        headline,
+        thread: notes.is_empty().then(|| thread_of(m)),
+        watch: None,
+    }
 }
 
 /// The words that join `m` to the others of its thread (#580): the thread
@@ -785,6 +865,12 @@ pub async fn keep_telling(
         tokio::select! {
             t = turns.recv() => match t {
                 Some((pane, tag, turn)) => {
+                    // A watch's message dropped before its session took it
+                    // wasn't told: control sends it again, and it must reach
+                    // the session then.
+                    if let (Turn::Dropped(_), Some(id)) = (&turn, &tag.watch) {
+                        app.agent_mentions.forget_watch(id);
+                    }
                     let put = PutMentionState {
                         room: tag.room,
                         seq: tag.seq,
@@ -1233,11 +1319,18 @@ pub(crate) async fn sessions_for(app: &impl Daemon, ask: &MachineAgentsAsk) -> O
 
 /// `agents.mention`, once (#630): one control sends again (it didn't hear
 /// the first answer, or the machine was restarting) is answered as the
-/// first was ([`route`]), and no session gets it twice.
+/// first was ([`route`]), and no session gets it twice. A watch's message
+/// is known by its watch, for the watch's life; a mention by its key, for
+/// a day.
 pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
     let key = MentionKey::of(m).text();
     let now = arugula_e2e::now_ms();
-    if let Some(routed) = app.mentions().told(&key, now) {
+    let state = app.mentions();
+    let before = match &m.watch {
+        Some(w) => state.watch_told(&w.id, now),
+        None => state.told(&key, now),
+    };
+    if let Some(routed) = before {
         debug!(room = m.room, seq = m.seq, "a mention told again: answered as before");
         return OpAnswer::Done { url: None, routed: Some(routed) };
     }
@@ -1247,7 +1340,10 @@ pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
     if let OpAnswer::Done { routed: Some(r), .. } = &answer
         && r.step != RoutedStep::Away
     {
-        app.mentions().note_told(key, r.clone(), now);
+        match &m.watch {
+            Some(w) => state.note_watch(w.id.clone(), key, r.clone(), now),
+            None => state.note_told(key, r.clone(), now),
+        }
     }
     answer
 }
@@ -1257,7 +1353,7 @@ pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
 pub(crate) fn held(app: &impl Daemon, ask: &MentionsHeldAsk) -> OpAnswer {
     let now = arugula_e2e::now_ms();
     let state = app.mentions();
-    OpAnswer::Held { held: ask.mentions.iter().map(|k| state.told(&k.text(), now).is_some()).collect() }
+    OpAnswer::Held { held: ask.mentions.iter().map(|k| state.held(&k.text(), now)).collect() }
 }
 
 /// `agents.mention`: route it, or say why not. The answer says which step
@@ -1394,6 +1490,7 @@ async fn watched(app: &impl Daemon, m: &AgentMention, w: &WatchTag) -> OpAnswer 
             seq: m.seq,
             headline: format!("Arugula watch {}: {}", w.id, m.text.lines().next().unwrap_or_default()),
             thread: None,
+            watch: Some(w.id.clone()),
         };
         if let Ok(now) = app.follow_up(pane, watch_framed(m, w), by.clone(), tag).await {
             return routed(RoutedStep::Named, named(app, pane).await, None, handed(app, pane, now).await);
@@ -1775,6 +1872,7 @@ mod tests {
                 line: format!("ada: reply {seq}"),
                 tail: "(tail)".into(),
             }),
+            watch: None,
         };
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let reports = TurnReports(tx);
@@ -1787,7 +1885,7 @@ mod tests {
         );
         assert_eq!(reports.joined(&tags, &reply("ch_x", 21, 20).to_tag()), None, "another thread");
         assert_eq!(reports.joined(&tags, &reply("ch_y", 13, 10).to_tag()), None, "another room");
-        let plain = MentionTag { room: "ch_x".into(), seq: 14, headline: String::new(), thread: None };
+        let plain = MentionTag { room: "ch_x".into(), seq: 14, headline: String::new(), thread: None, watch: None };
         assert_eq!(reports.joined(&tags, &plain.to_tag()), None, "no thread");
         assert_eq!(reports.joined(&[plain.to_tag()], &reply("ch_x", 12, 10).to_tag()), None);
         // A tag that isn't a mention's (not this daemon's words): it joins
@@ -2768,6 +2866,7 @@ mod tests {
         assert!(got[0].contains("```text\npr acme/app#7 merged"), "fenced: {}", got[0]);
         let tags = d.tagged.lock().unwrap().clone();
         assert_eq!((tags[0].1.room.as_str(), tags[0].1.seq, tags[0].1.thread.is_none()), ("wch_ab12", 0, true));
+        assert_eq!(MentionTag::from_tag(&tags[0].1.to_tag()).unwrap().watch.as_deref(), Some("wch_ab12"));
         // Told once: the same message again is answered as before.
         assert_eq!(deliver(&d, &m).await, routed(RoutedStep::Named, Some("other".into()), None, true));
         assert_eq!(d.got(2).len(), 1);
@@ -2794,5 +2893,74 @@ mod tests {
         let d = d.conversing(&[(1, "c-old")]);
         assert_eq!(deliver(&d, &m).await, routed(RoutedStep::Named, Some("chat".into()), None, true));
         assert_eq!(d.got(1).len(), 1);
+    }
+
+    fn bare(step: RoutedStep) -> Routed {
+        Routed { step, session: None, asked: None, queued: false, names: vec![], silenced: false }
+    }
+
+    fn watch_message(id: &str, session: &str) -> AgentMention {
+        AgentMention {
+            room: id.into(),
+            seq: 0,
+            parent: None,
+            author: "Arugula".into(),
+            text: "pr acme/app#7 merged".into(),
+            watch: Some(WatchTag { id: id.into(), session: session.into() }),
+            ..mention()
+        }
+    }
+
+    /// A watch's message is known by its watch for the watch's whole life,
+    /// across a restart: sent again after two days away, or after more
+    /// mentions than `told` keeps, it reaches its session once.
+    #[tokio::test]
+    async fn a_watch_is_told_once_for_its_life() {
+        let mut d = Fake::new("watch-life", &[2]).named(&[(2, "mine")]).conversing(&[(2, "c-mine")]);
+        d.state = State::open(&d.dir);
+        let m = watch_message("wch_ab13", "c-mine");
+        let first = deliver(&d, &m).await;
+        assert_eq!(first, routed(RoutedStep::Named, Some("mine".into()), None, true));
+        let two_days = 2 * 24 * 60 * 60 * 1000;
+        d.state.watches.lock().unwrap()[0].at -= two_days;
+        let now = arugula_e2e::now_ms();
+        for seq in 0..=MAX_TOLD as i64 {
+            d.state.note_told(format!("ch_y/{seq}/"), bare(RoutedStep::Inbox), now);
+        }
+        let d = d.restarted(&[2], &[(2, "mine")]).conversing(&[(2, "c-mine")]);
+        assert_eq!(deliver(&d, &m).await, first);
+        assert!(d.got(2).is_empty(), "told once");
+        assert_eq!(
+            held(&d, &MentionsHeldAsk { mentions: vec![MentionKey::of(&m)] }),
+            OpAnswer::Held { held: vec![true] }
+        );
+        // Past a watch's longest life, it's forgotten.
+        d.state.watches.lock().unwrap()[0].at -= WATCH_TOLD_FOR_MS;
+        assert!(d.state.watch_told("wch_ab13", now).is_none());
+    }
+
+    /// A watch's message dropped from the pane's queue before its session
+    /// took it is forgotten as told, so control's next try reaches it.
+    #[tokio::test]
+    async fn a_dropped_watch_is_not_told() {
+        let d = Fake::new("watch-dropped", &[2]).named(&[(2, "mine")]).conversing(&[(2, "c-mine")]);
+        let m = watch_message("wch_ab14", "c-mine");
+        deliver(&d, &m).await;
+        let tag = d.tagged.lock().unwrap()[0].1.clone();
+        d.state.forget_watch(tag.watch.as_deref().unwrap());
+        deliver(&d, &m).await;
+        assert_eq!(d.got(2).len(), 2);
+    }
+
+    /// The watches remembered as told are bounded: the oldest go first.
+    #[test]
+    fn watches_told_are_bounded() {
+        let s = State::default();
+        let now = arugula_e2e::now_ms();
+        for i in 0..=MAX_WATCHES_TOLD {
+            s.note_watch(format!("wch_{i}"), format!("wch_{i}/0/"), bare(RoutedStep::Named), now);
+        }
+        assert_eq!(s.watches.lock().unwrap().len(), MAX_WATCHES_TOLD);
+        assert!(s.watch_told("wch_0", now).is_none() && s.watch_told("wch_1", now).is_some());
     }
 }
