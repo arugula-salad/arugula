@@ -18,11 +18,11 @@ use arugula_proto::{
         RunRequest, RunResponse, SecretFinding, SendRequest, WaitRequest, WaitResult,
     },
     op::ops::{
-        AdapterInstall, AdaptersList, AgentsGet, AgentsRefresh, ClosePane, FlagSet, FlagsList, ListPanes, MachineReset,
-        MachinesList, NotifyGet, NotifySet, PaneAsk, PaneAskWithdraw, PaneAttention, PaneDetection, PaneDiffOf,
-        PaneDrivers, PaneFollowUp, PaneFollowUpAck, PaneInbox, PaneKeys, PaneMentions, PaneMouse, PaneNvimOpen,
-        PanePermit, PanePorts, PaneProcess, PanePrompt, PaneSend, PaneWait, PushKeyGet, PushSubscribe, PushTest,
-        RemoteSessionsList, RuleForget, RulesForgetAll, RulesList, SharingGet, SharingSet, ShellEnvGet,
+        AdapterInstall, AdaptersList, AgentsGet, AgentsRefresh, ClosePane, FeedbackSend, FlagSet, FlagsList, ListPanes,
+        MachineReset, MachinesList, NotifyGet, NotifySet, PaneAsk, PaneAskWithdraw, PaneAttention, PaneDetection,
+        PaneDiffOf, PaneDrivers, PaneFollowUp, PaneFollowUpAck, PaneInbox, PaneKeys, PaneMentions, PaneMouse,
+        PaneNvimOpen, PanePermit, PanePorts, PaneProcess, PanePrompt, PaneSend, PaneWait, PushKeyGet, PushSubscribe,
+        PushTest, RemoteSessionsList, RuleForget, RulesForgetAll, RulesList, SharingGet, SharingSet, ShellEnvGet,
         ShellEnvRefresh, TelemetryGet, TelemetryNote, TelemetrySet,
     },
 };
@@ -92,6 +92,7 @@ pub fn routes() -> Router<Arc<App>> {
         .op::<TelemetryGet>()
         .op::<TelemetrySet>()
         .op::<TelemetryNote>()
+        .op::<FeedbackSend>()
         .op::<SharingGet>()
         .op::<SharingSet>()
         .op::<RemoteSessionsList>()

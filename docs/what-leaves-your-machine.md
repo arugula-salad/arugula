@@ -35,6 +35,17 @@ telemetry on. It does reach out to these:
   (`crates/daemon/src/selfupdate.rs`, `fetch` and `target`).
 - **Telemetry**, off until the owner says yes: see
   [below](#telemetry-off-until-you-say-yes).
+- **Feedback**, only when you or an agent sends it (`arugula feedback`,
+  the agents' `feedback` tool): what was written, its kind, who wrote it
+  (a person or an agent, and the agent's name and version as its MCP
+  client says), the version, OS and architecture, and for an agent its
+  last failed Arugula tool call's name and error (never its arguments).
+  `POST /api/feedback` on the hosted control (or `ARUGULA_TELEMETRY_URL`),
+  signed if the machine is joined to it, else with a random install id
+  (telemetry's while that's on, else `feedback.install`) and a proof of
+  work. Unsent, it waits in `feedback.queue.json` for up to a week
+  (`crates/daemon/src/feedback.rs`, `crates/daemon/src/ops/feedback.rs`).
+  Telemetry's answer doesn't gate it.
 - **Web Push**, to the push service a browser subscribed with (Google's,
   Apple's, Mozilla's): each notification, encrypted for that browser
   (aes128gcm), with a signed VAPID token (`crates/daemon/src/push.rs`,
@@ -374,6 +385,7 @@ These run only there; a person's machine doesn't send them
 | Update check | `--no-update-check`, `ARUGULA_NO_UPDATE_CHECK` | `crates/daemon/src/args.rs`, `crates/daemon/src/update.rs` |
 | Relay socket | `--no-relay` | `crates/daemon/src/args.rs` |
 | Chat readers | chat off for the account or team, in control | `crates/daemon/src/chat_readers.rs` |
+| Agents' feedback | `arugulad sharing agent-feedback off` (`agent_feedback: false` in `sharing.json`), `ARUGULA_FEEDBACK=off`; people can still send | `crates/proto/src/feedback.rs`, `agents_may` |
 | Agent mentions | `arugulad sharing agent-mentions off` (`agent_mentions: false` in `sharing.json`) | `crates/proto/src/sharing.rs`, `agent_mentions` |
 | Typing through control (machine tokens, aru-141) | `arugulad sharing remote-input off` (`remote_input: false` in `sharing.json`), on the machine only: people who come through control can only watch | `crates/proto/src/sharing.rs`, `remote_input`; `crates/daemon/src/e2e.rs`, `token_grant` |
 | Who came (not a switch: always on) | `remote-sessions.jsonl` in the state directory, one line per remote session opened and closed; read it on the machine's Settings page (Remote sessions) or with `arugulad sharing log` | `crates/daemon/src/remote_log.rs` |

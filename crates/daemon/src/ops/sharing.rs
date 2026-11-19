@@ -19,6 +19,7 @@ fn now(cx: &Cx<'_>) -> Sharing {
         guest_ssh: sharing::guest_ssh(dir),
         agent_mentions: sharing::agent_mentions(dir),
         agent_sessions: sharing::agent_sessions(dir),
+        agent_feedback: sharing::agent_feedback(dir),
         built: crate::lab_flags::BUILT,
     }
 }
@@ -65,6 +66,11 @@ impl Handle for SharingSet {
             sharing::set_agent_sessions(cx.app.control.state_dir(), what)
                 .map_err(|e| OpError::Failed(format!("couldn't write {}: {e}", sharing::FILE)))?;
             tracing::info!(what = what.word(), "agent sessions set");
+        }
+        if let Some(on) = req.agent_feedback {
+            sharing::set_agent_feedback(cx.app.control.state_dir(), on)
+                .map_err(|e| OpError::Failed(format!("couldn't write {}: {e}", sharing::FILE)))?;
+            tracing::info!(on, "agent feedback set");
         }
         Ok(now(cx))
     }

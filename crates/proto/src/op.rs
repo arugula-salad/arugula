@@ -283,6 +283,7 @@ macro_rules! every_op {
         $m!($crate::op::ops::TelemetryGet);
         $m!($crate::op::ops::TelemetrySet);
         $m!($crate::op::ops::TelemetryNote);
+        $m!($crate::op::ops::FeedbackSend);
         $m!($crate::op::ops::SharingGet);
         $m!($crate::op::ops::SharingSet);
         $m!($crate::op::ops::RemoteSessionsList);
@@ -547,11 +548,11 @@ pub mod ops {
         type Res = Empty;
     }
 
-    /// `POST /api/feedback` (Arugula #1213): send what the person or agent
-    /// wrote to the hosted control, with the context the daemon fills in.
-    /// Declared here for #1216, which handles it and adds it to
-    /// [`every_op!`](crate::every_op) with its route: until then no router
-    /// routes it.
+    /// `POST /api/feedback` (Arugula #1213, #1216): send what the person or
+    /// agent wrote to the hosted control, with the context the daemon fills
+    /// in (`arugula feedback`, MCP's `feedback`). Where control can't be
+    /// reached it's queued and sent later. An agent's is refused where the
+    /// owner turned agents' feedback off; a person's never is.
     pub struct FeedbackSend;
 
     impl Op for FeedbackSend {

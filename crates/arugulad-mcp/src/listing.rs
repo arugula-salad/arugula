@@ -84,11 +84,11 @@ impl Session {
         }
     }
 
-    /// Tells the client if what it would list with the flags in `on` is not
-    /// what it has.
-    async fn check(&self, on: On) {
+    /// Tells the client if what it would list with the flags in `on` (and
+    /// agents' feedback on or off, `feedback`) is not what it has.
+    async fn check(&self, on: On, feedback: bool) {
         let Some((peer, scope)) = self.client.lock().unwrap().clone() else { return };
-        if self.due(tools::listed_names(scope, on)) {
+        if self.due(tools::listed_names(scope, on, feedback)) {
             self.listed.tell();
             let _ = peer.notify_tool_list_changed().await;
         }
@@ -104,7 +104,7 @@ async fn sweep() {
     };
     for s in open {
         let on = crate::lab_flags::flags(&s.state_dir);
-        s.check(on).await;
+        s.check(on, arugula_proto::feedback::agents_may(&s.state_dir)).await;
     }
 }
 

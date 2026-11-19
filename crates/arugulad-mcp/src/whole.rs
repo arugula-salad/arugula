@@ -26,7 +26,7 @@ pub fn the_tool_list_and_each_schema_are_unchanged() {
     let mut all = serde_json::Map::new();
     for (scope_name, scope) in [("full", Scope::Full), ("read", Scope::Read), ("block", Scope::Block(1))] {
         for labs in [true, false] {
-            let tools = serde_json::to_value(list(scope, fl(labs))).unwrap();
+            let tools = serde_json::to_value(list(scope, fl(labs), true)).unwrap();
             all.insert(format!("{scope_name}, labs {labs}"), tools);
         }
     }
@@ -51,7 +51,7 @@ pub fn every_description_and_the_instructions_fit_the_cut() {
     let mut wrong = vec![];
     for scope in [Scope::Full, Scope::Read, Scope::Block(1)] {
         for labs in [true, false] {
-            for t in list(scope, fl(labs)) {
+            for t in list(scope, fl(labs), true) {
                 let len = t.description.as_deref().unwrap_or_default().chars().count();
                 let cap = OVER.iter().find(|(n, _)| *n == t.name).map_or(CUT, |(_, cap)| *cap);
                 if len > cap {
@@ -69,8 +69,8 @@ pub fn every_description_and_the_instructions_fit_the_cut() {
 }
 
 pub fn annotations_are_honest() {
-    let all = list(Scope::Full, fl(false));
-    assert_eq!(all.len(), 43 - no_forge());
+    let all = list(Scope::Full, fl(false), true);
+    assert_eq!(all.len(), 44 - no_forge());
     let ro: Vec<&str> = all
         .iter()
         .filter(|t| t.annotations.as_ref().and_then(|a| a.read_only_hint) == Some(true))
@@ -97,7 +97,7 @@ pub fn annotations_are_honest() {
     ];
     want.retain(|n| crate::forges::built() || !FORGE_TOOLS.contains(n));
     assert_eq!(ro, want);
-    assert_eq!(list(Scope::Read, fl(false)).len(), ro.len(), "a read token sees the read-only tools only");
+    assert_eq!(list(Scope::Read, fl(false), true).len(), ro.len(), "a read token sees the read-only tools only");
     let hint = |n: &str| all.iter().find(|t| t.name == n).unwrap().annotations.clone().unwrap();
     assert_eq!(hint("close").destructive_hint, Some(true));
     // A group is as careful as its most careful kind: draft has merge.
@@ -113,7 +113,7 @@ pub fn annotations_are_honest() {
 /// either way.
 pub fn unlisted_tools_are_not_listed_without_labs_but_are_there() {
     for scope in [Scope::Full, Scope::Read] {
-        let with: Vec<String> = list(scope, fl(true)).iter().map(|t| t.name.to_string()).collect();
+        let with: Vec<String> = list(scope, fl(true), true).iter().map(|t| t.name.to_string()).collect();
         for d in all_defs().iter().filter(|d| scope == Scope::Full || d.read_only) {
             if !crate::forges::built() && FORGE_TOOLS.contains(&d.name) {
                 continue;
@@ -129,7 +129,7 @@ pub fn unlisted_tools_are_not_listed_without_labs_but_are_there() {
         // Still there by its kind.
         route(tool, json!({ "kind": kind }), fl(false)).unwrap_or_else(|e| panic!("{tool} {kind}: {e}"));
         // A tool all of whose kinds are flagged (`doc`) isn't listed at all.
-        let Some(t) = list(Scope::Full, fl(false)).into_iter().find(|t| t.name == tool) else {
+        let Some(t) = list(Scope::Full, fl(false), true).into_iter().find(|t| t.name == tool) else {
             assert!(defs(fl(false)).iter().all(|d| d.name != tool), "{tool}");
             continue;
         };
@@ -137,13 +137,13 @@ pub fn unlisted_tools_are_not_listed_without_labs_but_are_there() {
         assert!(!kinds.as_array().unwrap().contains(&json!(kind)), "{tool}: {kinds}");
         assert!(!t.description.as_deref().unwrap().contains(&format!("\n- {kind}")), "{tool}: {kind}");
     }
-    let show = list(Scope::Full, fl(false)).into_iter().find(|t| t.name == "show").unwrap();
+    let show = list(Scope::Full, fl(false), true).into_iter().find(|t| t.name == "show").unwrap();
     for arg in ["app", "env"] {
         assert!(show.input_schema["properties"].get(arg).is_none(), "show takes {arg} without labs");
     }
     // Daemon-side Managoat was removed: its kinds, by either name, and
     // its old tools say where cloud agents went; none is listed.
-    let list_tool = list(Scope::Full, fl(false)).into_iter().find(|t| t.name == "list").unwrap();
+    let list_tool = list(Scope::Full, fl(false), true).into_iter().find(|t| t.name == "list").unwrap();
     for (tool, kind) in [
         ("show", "managoat"),
         ("show", "fountain"),
@@ -173,7 +173,7 @@ pub fn unlisted_tools_are_not_listed_without_labs_but_are_there() {
     {
         assert!(t.input_schema["properties"].get(arg).is_none(), "{} {arg}", t.name);
     }
-    let start = list(Scope::Full, fl(true)).into_iter().find(|t| t.name == "start_agent").unwrap();
+    let start = list(Scope::Full, fl(true), true).into_iter().find(|t| t.name == "start_agent").unwrap();
     for arg in ["managoat_agent", "on", "vault", "environment"] {
         assert!(start.input_schema["properties"].get(arg).is_none(), "start_agent {arg}");
     }
@@ -186,9 +186,9 @@ pub fn unlisted_tools_are_not_listed_without_labs_but_are_there() {
     for name in THREAD_TOOLS {
         assert!(defs(fl(false)).iter().any(|d| d.name == name), "{name} is everyone's");
     }
-    assert_eq!(every.len(), 44);
-    assert_eq!(defs(fl(false)).len(), 43 - no_forge());
-    assert_eq!(defs(fl(true)).len(), 44 - no_forge());
+    assert_eq!(every.len(), 45);
+    assert_eq!(defs(fl(false)).len(), 44 - no_forge());
+    assert_eq!(defs(fl(true)).len(), 45 - no_forge());
     assert_eq!(every.len(), defs(fl(false)).len() + 1 + no_forge(), "and delegate");
 }
 
@@ -262,7 +262,7 @@ pub fn doc_is_listed_with_no_flag() {
     let offer = offers.iter().find(|o| o.kind == "doc").expect("capabilities offers a doc");
     assert_eq!(offer.open, "doc {kind: \"new\"}");
     // The schema carries the outline's shape.
-    let tool = list(Scope::Full, On::none()).into_iter().find(|t| t.name == "doc").unwrap();
+    let tool = list(Scope::Full, On::none(), true).into_iter().find(|t| t.name == "doc").unwrap();
     let schema = Value::Object((*tool.input_schema).clone()).to_string();
     assert!(schema.contains("heading") && schema.contains("intent") && schema.contains("markdown"), "{schema}");
     // ...and the picture's: a file or its bytes.
@@ -306,7 +306,7 @@ fn kinds_of(labs: bool, tool: &str) -> Vec<&'static str> {
 /// an object with a summary, in standard formats.
 pub fn an_output_schema_is_an_object_with_a_summary() {
     let mut with = 0;
-    for tool in list(Scope::Full, fl(true)) {
+    for tool in list(Scope::Full, fl(true), true) {
         let grouped = all_defs().into_iter().any(|d| d.name == tool.name && matches!(d.args, Args::Kinds { .. }));
         let Some(schema) = &tool.output_schema else {
             continue;

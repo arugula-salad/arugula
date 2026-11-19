@@ -63,6 +63,13 @@ pub struct Sharing {
     #[serde(default)]
     #[cfg_attr(feature = "ts", ts(as = "Option<AgentListing>", optional))]
     pub agent_sessions: AgentListing,
+    /// Agents may send feedback to Arugula (Arugula #1216): this machine's
+    /// agents' `feedback` tool and their `arugula feedback`. On by default;
+    /// off (here, or `ARUGULA_FEEDBACK=off`), agents get no tool and their
+    /// sends are refused. People may still send.
+    #[serde(default = "yes")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    pub agent_feedback: bool,
     /// Whether this build has guest ssh. A build without Labs keeps the
     /// setting, and nothing follows. Absent: it has.
     #[serde(default = "yes")]
@@ -127,6 +134,9 @@ pub struct SharingSetRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub agent_sessions: Option<AgentListing>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub agent_feedback: Option<bool>,
 }
 
 /// `GET /api/remote-sessions` (the `remote_sessions.list` operation,
@@ -194,6 +204,13 @@ pub fn guest_ssh(state_dir: &Path) -> bool {
 /// (Arugula #394): on unless the file says `agent_mentions: false`.
 pub fn agent_mentions(state_dir: &Path) -> bool {
     doc(state_dir).get("agent_mentions").and_then(Value::as_bool).unwrap_or(true)
+}
+
+/// Whether this machine's agents may send feedback to Arugula (Arugula
+/// #1216), as the file says: on unless it says `agent_feedback: false`.
+/// `arugula_proto::feedback::agents_may` adds `ARUGULA_FEEDBACK`.
+pub fn agent_feedback(state_dir: &Path) -> bool {
+    doc(state_dir).get("agent_feedback").and_then(Value::as_bool).unwrap_or(true)
 }
 
 /// What teammates and their agents may learn of this machine's sessions
@@ -285,6 +302,12 @@ pub fn set_guest_ssh(state_dir: &Path, on: bool) -> io::Result<()> {
 /// Turns agent mentions on or off, keeping the rest of the file.
 pub fn set_agent_mentions(state_dir: &Path, on: bool) -> io::Result<()> {
     set(state_dir, "agent_mentions", on)
+}
+
+/// Lets this machine's agents send feedback, or not, keeping the rest of
+/// the file.
+pub fn set_agent_feedback(state_dir: &Path, on: bool) -> io::Result<()> {
+    set(state_dir, "agent_feedback", on)
 }
 
 /// Sets what agents may learn of the machine's sessions, keeping the rest
@@ -450,6 +473,17 @@ mod tests {
         assert!(!agent_mentions(&d) && !guest_ssh(&d));
         set_agent_mentions(&d, true).unwrap();
         assert!(agent_mentions(&d));
+        fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn agent_feedback_is_on_until_the_owner_turns_it_off() {
+        let d = dir("feedback");
+        assert!(agent_feedback(&d));
+        set_agent_feedback(&d, false).unwrap();
+        assert!(!agent_feedback(&d) && agent_mentions(&d));
+        set_agent_feedback(&d, true).unwrap();
+        assert!(agent_feedback(&d));
         fs::remove_dir_all(&d).unwrap();
     }
 

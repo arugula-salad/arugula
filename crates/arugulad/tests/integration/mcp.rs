@@ -148,7 +148,7 @@ async fn tools_through_the_stdio_bridge() {
 
     // The tools, with honest annotations: grouped by kind (#349).
     let tools = s.list_all_tools().await.unwrap();
-    assert_eq!(tools.len(), 43 - NO_FORGE);
+    assert_eq!(tools.len(), 44 - NO_FORGE);
     // Studio apps and chant workspaces aren't listed without their flags,
     // and a caller who names one is told how to turn it on (#347); a build
     // without Labs says it isn't built. Daemon-side Managoat was removed: its
@@ -431,7 +431,7 @@ async fn stateless_clients_get_the_cache_hints_claude_code_wants() {
     // (and retries it, then gives up: no tools).
     let tools = s.list_tools(None).await.unwrap();
     assert_eq!((tools.ttl_ms, tools.cache_scope), (Some(0), Some(CacheScope::Private)));
-    assert_eq!(tools.tools.len(), 43 - NO_FORGE, "without labs");
+    assert_eq!(tools.tools.len(), 44 - NO_FORGE, "without labs");
     let t = s.list_resource_templates(None).await.unwrap();
     assert_eq!((t.ttl_ms, t.cache_scope), (Some(0), Some(CacheScope::Private)));
     let r = call(&s, "run", json!({ "command": "echo stateless", "wait": true })).await;
@@ -1110,7 +1110,7 @@ async fn labs_lists_all_the_tools() {
     let s = bridge(&d, Client::named("claude-code")).await;
     let names = |tools: &[rmcp::model::Tool]| tools.iter().map(|t| t.name.to_string()).collect::<Vec<_>>();
     let instructions = |s: &Session| s.peer_info().and_then(|i| i.instructions.clone()).unwrap_or_default();
-    assert_eq!(s.list_all_tools().await.unwrap().len(), 43 - NO_FORGE);
+    assert_eq!(s.list_all_tools().await.unwrap().len(), 44 - NO_FORGE);
     assert!(!instructions(&s).contains("read_thread"), "{}", instructions(&s));
 
     // With Labs built in, the `labs` file lists them.
@@ -1118,7 +1118,7 @@ async fn labs_lists_all_the_tools() {
     {
         arugula_testkit::labs(&d.state, true);
         let with = s.list_all_tools().await.unwrap();
-        assert_eq!(with.len(), 44, "{:?}", names(&with));
+        assert_eq!(with.len(), 45, "{:?}", names(&with));
         assert!(with.iter().any(|t| t.name == "delegate"), "delegate isn't listed with labs");
         for (tool, kind) in [("show", "app"), ("show", "workspace")] {
             assert!(kinds(&with, tool).contains(&kind.to_owned()), "{tool} kind {kind} isn't listed with labs");
@@ -1135,7 +1135,7 @@ async fn labs_lists_all_the_tools() {
         // A `fountain` flag from before #942's F5 changes nothing.
         std::fs::write(d.state.join("flags.json"), r#"{"flags":{"fountain":false}}"#).unwrap();
         let without = s.list_all_tools().await.unwrap();
-        assert_eq!(without.len(), 43 - NO_FORGE);
+        assert_eq!(without.len(), 44 - NO_FORGE);
         assert!(!kinds(&without, "show").contains(&"managoat".to_owned()));
         assert!(!kinds(&without, "show").contains(&"workspace".to_owned()));
     }
@@ -1144,7 +1144,7 @@ async fn labs_lists_all_the_tools() {
     {
         arugula_testkit::labs(&d.state, true);
         let with = s.list_all_tools().await.unwrap();
-        assert_eq!(with.len(), 43 - NO_FORGE, "{:?}", names(&with));
+        assert_eq!(with.len(), 44 - NO_FORGE, "{:?}", names(&with));
         assert!(!kinds(&with, "show").contains(&"managoat".to_owned()));
         assert!(!instructions(&s).contains("read_thread"), "{}", instructions(&s));
         arugula_testkit::labs(&d.state, false);
@@ -4555,4 +4555,98 @@ async fn capture_of_a_board_block_is_the_boards_text() {
     assert!(text.starts_with("Board brd_gone: can't read it: ") && text.trim_end().lines().count() == 1, "{text}");
     s.cancel().await.unwrap();
     drop(d);
+}
+
+/// A fake control's `POST /api/feedback`: each send it took.
+async fn fake_feedback_control() -> (String, Arc<std::sync::Mutex<Vec<Value>>>) {
+    let got: Arc<std::sync::Mutex<Vec<Value>>> = Default::default();
+    let app = axum::Router::new()
+        .route(
+            arugula_control_wire::feedback::FEEDBACK,
+            axum::routing::post(
+                |axum::extract::State(got): axum::extract::State<Arc<std::sync::Mutex<Vec<Value>>>>,
+                 axum::Json(v): axum::Json<Value>| async move {
+                    got.lock().unwrap().push(v);
+                    axum::Json(json!({ "id": "fbk_1", "shown": "F-7K2Q9X" }))
+                },
+            ),
+        )
+        .with_state(got.clone());
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", l.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+    (url, got)
+}
+
+/// `arugula feedback` as a person, or as an agent (CLAUDECODE set).
+fn cli_feedback(d: &Daemon, agent: bool, args: &[&str]) -> std::process::Output {
+    let mut cmd = Command::new(cli_bin());
+    arugula_testkit::scrub_env(&mut cmd);
+    cmd.env_remove("CLAUDECODE").env_remove("AI_AGENT").arg("--socket").arg(d.sock()).arg("feedback").args(args);
+    if agent {
+        cmd.env("CLAUDECODE", "1");
+    }
+    cmd.output().unwrap()
+}
+
+/// #1216: an agent's feedback through MCP carries its client, the
+/// daemon's version and the session's last failed call; the CLI's says a
+/// person or an agent; and the owner's switch takes the tool away and
+/// refuses agents, never people.
+#[tokio::test(flavor = "multi_thread")]
+async fn feedback_goes_to_control_until_agents_are_turned_off() {
+    let (url, got) = fake_feedback_control().await;
+    let d = Daemon::child_env(&[], &[("ARUGULA_TELEMETRY_URL", url.as_str())]);
+    let s = bridge(&d, Client::named("claude-code")).await;
+    let listed = |tools: &[rmcp::model::Tool]| tools.iter().any(|t| t.name == "feedback");
+    assert!(listed(&s.list_all_tools().await.unwrap()));
+
+    refused(&s, "read_file", json!({ "path": "/nonexistent/arugula-feedback" })).await;
+    let v = call(
+        &s,
+        "feedback",
+        json!({ "kind": "bug", "title": "read_file can't find it", "body": "I was reading a file." }),
+    )
+    .await;
+    assert_eq!(v["summary"], "Sent to the Arugula team as feedback F-7K2Q9X. Thanks.", "{v}");
+    assert_eq!(v["shown"], "F-7K2Q9X");
+    let f = got.lock().unwrap()[0].clone();
+    assert_eq!(
+        (f["source"].as_str(), f["surface"].as_str(), f["kind"].as_str()),
+        (Some("agent"), Some("mcp"), Some("bug"))
+    );
+    assert_eq!(f["agent"]["name"], "claude-code", "{f}");
+    assert_eq!(f["agent"]["version"], "1", "{f}");
+    assert!(f["context"]["version"].is_string() && f["context"]["os"].is_string(), "{f}");
+    assert_eq!(f["context"]["failed"]["tool"], "read_file", "{f}");
+    assert!(f["who"]["stamp"].is_object() && f["who"]["install"].is_string(), "unjoined: stamped, {f}");
+
+    // The CLI: the first line is the title; a person, then an agent.
+    let out = cli_feedback(&d, false, &["Love the panes\nThey never die.", "--kind", "praise"]);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("F-7K2Q9X"));
+    let out = cli_feedback(&d, true, &["Missing a thing", "--kind", "missing", "--title", "Wants a thing"]);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    {
+        let got = got.lock().unwrap();
+        assert_eq!((got[1]["source"].as_str(), got[1]["surface"].as_str()), (Some("person"), Some("cli")));
+        assert_eq!(
+            (got[1]["title"].as_str(), got[1]["body"].as_str()),
+            (Some("Love the panes"), Some("They never die."))
+        );
+        assert_eq!((got[2]["source"].as_str(), got[2]["title"].as_str()), (Some("agent"), Some("Wants a thing")));
+        assert_eq!(got[2]["agent"]["name"], "claude-code");
+    }
+
+    // Off: no tool, an agent's call and CLI send refused, a person's goes.
+    d.put("/api/sharing", json!({ "agent_feedback": false }));
+    assert!(!listed(&s.list_all_tools().await.unwrap()));
+    let why = refused(&s, "feedback", json!({ "kind": "idea", "title": "x" })).await;
+    assert!(why.contains("turned off"), "{why}");
+    let out = cli_feedback(&d, true, &["An agent's"]);
+    assert!(!out.status.success() && String::from_utf8_lossy(&out.stderr).contains("turned off"));
+    let out = cli_feedback(&d, false, &["A person's"]);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(got.lock().unwrap().len(), 4);
+    s.cancel().await.unwrap();
 }

@@ -5290,6 +5290,89 @@
       },
       "name": "watch",
       "title": "Watch for something to happen"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Send feedback to Arugula"
+      },
+      "description": "Tell the Arugula team about Arugula itself: a bug (bug), something you needed that isn't there (missing), an idea, or praise. Use it when Arugula got in your way or helped, not for the user's own project; you needn't ask the user first. Say what you were trying to do, what happened and what you expected. Never include secrets, tokens, personal data, or the user's code, file contents or paths: describe them instead. Arugula's version, the OS and your last failed Arugula tool call (its name and error, never its arguments) go with it.",
+      "inputSchema": {
+        "$defs": {
+          "Kind": {
+            "description": "What it is.",
+            "oneOf": [
+              {
+                "enum": [
+                  "idea",
+                  "praise"
+                ],
+                "type": "string"
+              },
+              {
+                "const": "bug",
+                "description": "Something in Arugula doesn't work.",
+                "type": "string"
+              },
+              {
+                "const": "missing",
+                "description": "Something you needed from Arugula isn't there.",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "body": {
+            "default": "",
+            "description": "What you were trying to do, what happened, and what you expected (at\nmost 8 KB). No secrets, personal data or the user's code.",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/$defs/Kind"
+          },
+          "title": {
+            "description": "One line: what it's about (at most 200 characters).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "title"
+        ],
+        "title": "FeedbackArgs",
+        "type": "object"
+      },
+      "name": "feedback",
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "queued": {
+            "description": "Arugula's cloud couldn't be reached: it's kept here and sent later.",
+            "type": "boolean"
+          },
+          "shown": {
+            "description": "What the Arugula team knows it by (`F-…`); absent while it's queued.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "queued",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "title": "Send feedback to Arugula"
     }
   ],
   "block, labs true": [
@@ -10746,6 +10829,89 @@
       },
       "name": "watch",
       "title": "Watch for something to happen"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Send feedback to Arugula"
+      },
+      "description": "Tell the Arugula team about Arugula itself: a bug (bug), something you needed that isn't there (missing), an idea, or praise. Use it when Arugula got in your way or helped, not for the user's own project; you needn't ask the user first. Say what you were trying to do, what happened and what you expected. Never include secrets, tokens, personal data, or the user's code, file contents or paths: describe them instead. Arugula's version, the OS and your last failed Arugula tool call (its name and error, never its arguments) go with it.",
+      "inputSchema": {
+        "$defs": {
+          "Kind": {
+            "description": "What it is.",
+            "oneOf": [
+              {
+                "enum": [
+                  "idea",
+                  "praise"
+                ],
+                "type": "string"
+              },
+              {
+                "const": "bug",
+                "description": "Something in Arugula doesn't work.",
+                "type": "string"
+              },
+              {
+                "const": "missing",
+                "description": "Something you needed from Arugula isn't there.",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "body": {
+            "default": "",
+            "description": "What you were trying to do, what happened, and what you expected (at\nmost 8 KB). No secrets, personal data or the user's code.",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/$defs/Kind"
+          },
+          "title": {
+            "description": "One line: what it's about (at most 200 characters).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "title"
+        ],
+        "title": "FeedbackArgs",
+        "type": "object"
+      },
+      "name": "feedback",
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "queued": {
+            "description": "Arugula's cloud couldn't be reached: it's kept here and sent later.",
+            "type": "boolean"
+          },
+          "shown": {
+            "description": "What the Arugula team knows it by (`F-…`); absent while it's queued.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "queued",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "title": "Send feedback to Arugula"
     }
   ],
   "full, labs false": [
@@ -16039,6 +16205,89 @@
       },
       "name": "watch",
       "title": "Watch for something to happen"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Send feedback to Arugula"
+      },
+      "description": "Tell the Arugula team about Arugula itself: a bug (bug), something you needed that isn't there (missing), an idea, or praise. Use it when Arugula got in your way or helped, not for the user's own project; you needn't ask the user first. Say what you were trying to do, what happened and what you expected. Never include secrets, tokens, personal data, or the user's code, file contents or paths: describe them instead. Arugula's version, the OS and your last failed Arugula tool call (its name and error, never its arguments) go with it.",
+      "inputSchema": {
+        "$defs": {
+          "Kind": {
+            "description": "What it is.",
+            "oneOf": [
+              {
+                "enum": [
+                  "idea",
+                  "praise"
+                ],
+                "type": "string"
+              },
+              {
+                "const": "bug",
+                "description": "Something in Arugula doesn't work.",
+                "type": "string"
+              },
+              {
+                "const": "missing",
+                "description": "Something you needed from Arugula isn't there.",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "body": {
+            "default": "",
+            "description": "What you were trying to do, what happened, and what you expected (at\nmost 8 KB). No secrets, personal data or the user's code.",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/$defs/Kind"
+          },
+          "title": {
+            "description": "One line: what it's about (at most 200 characters).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "title"
+        ],
+        "title": "FeedbackArgs",
+        "type": "object"
+      },
+      "name": "feedback",
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "queued": {
+            "description": "Arugula's cloud couldn't be reached: it's kept here and sent later.",
+            "type": "boolean"
+          },
+          "shown": {
+            "description": "What the Arugula team knows it by (`F-…`); absent while it's queued.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "queued",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "title": "Send feedback to Arugula"
     }
   ],
   "full, labs true": [
@@ -21495,6 +21744,89 @@
       },
       "name": "watch",
       "title": "Watch for something to happen"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Send feedback to Arugula"
+      },
+      "description": "Tell the Arugula team about Arugula itself: a bug (bug), something you needed that isn't there (missing), an idea, or praise. Use it when Arugula got in your way or helped, not for the user's own project; you needn't ask the user first. Say what you were trying to do, what happened and what you expected. Never include secrets, tokens, personal data, or the user's code, file contents or paths: describe them instead. Arugula's version, the OS and your last failed Arugula tool call (its name and error, never its arguments) go with it.",
+      "inputSchema": {
+        "$defs": {
+          "Kind": {
+            "description": "What it is.",
+            "oneOf": [
+              {
+                "enum": [
+                  "idea",
+                  "praise"
+                ],
+                "type": "string"
+              },
+              {
+                "const": "bug",
+                "description": "Something in Arugula doesn't work.",
+                "type": "string"
+              },
+              {
+                "const": "missing",
+                "description": "Something you needed from Arugula isn't there.",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "body": {
+            "default": "",
+            "description": "What you were trying to do, what happened, and what you expected (at\nmost 8 KB). No secrets, personal data or the user's code.",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/$defs/Kind"
+          },
+          "title": {
+            "description": "One line: what it's about (at most 200 characters).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "title"
+        ],
+        "title": "FeedbackArgs",
+        "type": "object"
+      },
+      "name": "feedback",
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "queued": {
+            "description": "Arugula's cloud couldn't be reached: it's kept here and sent later.",
+            "type": "boolean"
+          },
+          "shown": {
+            "description": "What the Arugula team knows it by (`F-…`); absent while it's queued.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "queued",
+          "summary"
+        ],
+        "type": "object"
+      },
+      "title": "Send feedback to Arugula"
     }
   ],
   "read, labs false": [

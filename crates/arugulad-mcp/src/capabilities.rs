@@ -27,7 +27,8 @@ impl ToolCall<'_, '_> {
         let on = crate::lab_flags::flags(app.control.state_dir());
         let forges = forges(app, on).await;
         let hooks = self.hooks().await;
-        let offered = tools::listed_names(self.scope(), on);
+        let feedback = arugula_proto::feedback::agents_may(app.control.state_dir());
+        let offered = tools::listed_names(self.scope(), on, feedback);
         // Boards' reach is asked only where boards are offered and there is
         // a control to ask: the one call `tool_status` needs, and none else.
         let boards = async {
@@ -39,7 +40,7 @@ impl ToolCall<'_, '_> {
         let ((cloud, threads, runs, trackers), boards) = tokio::join!(crate::mcp::registry::reach(app), boards);
         let tool_status = self.tool_status(&offered, &threads, &runs, boards.as_ref());
         let control = control(app, cloud, threads, runs, trackers);
-        let tools = tools::list(self.scope(), on).into_iter().map(|t| t.name.to_string()).collect();
+        let tools = tools::list(self.scope(), on, feedback).into_iter().map(|t| t.name.to_string()).collect();
         let signed: Vec<&str> = forges.iter().filter(|f| f.signed_in).map(|f| f.forge.as_str()).collect();
         let summary = format!(
             "Arugula {}: hooks {}; forges signed in: {}; control: {}; Cloud workspaces: {}; conversations: {}; runs: {}",
@@ -293,7 +294,8 @@ pub(crate) async fn can_do(app: &App) -> Vec<AgentCan> {
     let signed = forges.iter().any(|f| f.signed_in);
     let joined = app.control.enrolled().is_some();
     let issues = threads.scopes.iter().any(|s| s.powers.iter().any(|p| p == "issues.write"));
-    tools::can_do(on, |needs| match needs {
+    let feedback = arugula_proto::feedback::agents_may(app.control.state_dir());
+    let mut can = tools::can_do(on, |needs| match needs {
         Needs::Nothing => true,
         Needs::Forge => signed,
         Needs::Control => joined,
@@ -301,7 +303,9 @@ pub(crate) async fn can_do(app: &App) -> Vec<AgentCan> {
         Needs::Threads => threads.live,
         Needs::Issues => issues,
         Needs::Runs => runs.live,
-    })
+    });
+    can.retain(|c| feedback || c.tool != crate::feedback::TOOL);
+    can
 }
 
 /// This machine's standing with control, the teams it holds rosters of,

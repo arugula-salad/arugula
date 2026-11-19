@@ -28,6 +28,7 @@ pub mod doc_shares;
 pub mod e2e;
 pub mod editors;
 pub mod features;
+pub mod feedback;
 pub mod forge_wait;
 pub mod forges;
 pub mod fs;
@@ -734,6 +735,8 @@ fn sharing_cli(
     let mentions_about = "A teammate's `@<machine>` or reply in a thread reaches this machine's agents.";
     let sessions_about = "What a teammate's agent learns of this machine's sessions: `work`, `names` or `none`.";
     let remote_about = "People reaching this machine through control may type and act here; off, they only watch.";
+    let feedback_about =
+        "This machine's agents may send feedback to Arugula (`ARUGULA_FEEDBACK=off` turns it off too).";
     // `on`/`off` are for the switches; `work`/`names`/`none` for agent-sessions.
     let words = switch.is_some_and(|s| !matches!(s, args::OnOff::On | args::OnOff::Off));
     if words != (name == Some(args::SharingSetting::AgentSessions)) && switch.is_some() {
@@ -747,6 +750,16 @@ fn sharing_cli(
             println!("agent-mentions  {:3}  {mentions_about}", state(sharing::agent_mentions(dir)));
             println!("agent-sessions  {:5}  {sessions_about}", sharing::agent_sessions(dir).word());
             println!("remote-input  {:3}  {remote_about}", state(sharing::remote_input(dir)));
+            println!("agent-feedback  {:3}  {feedback_about}", state(sharing::agent_feedback(dir)));
+        }
+        (Some(args::SharingSetting::AgentFeedback), None) => println!("{}", state(sharing::agent_feedback(dir))),
+        (Some(args::SharingSetting::AgentFeedback), Some(s)) => {
+            let on = s == args::OnOff::On;
+            sharing::set_agent_feedback(dir, on).map_err(|e| anyhow::anyhow!("{e}"))?;
+            println!("agent-feedback is {}", state(on));
+            if daemon_running(dir) {
+                println!("  The running daemon follows at once.");
+            }
         }
         (Some(args::SharingSetting::RemoteInput), None) => println!("{}", state(sharing::remote_input(dir))),
         (Some(args::SharingSetting::RemoteInput), Some(s)) => {
@@ -1197,6 +1210,8 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     // M101: counting starts with the mux; reports, once control is known.
     let telemetry = telemetry::Telemetry::from_env(&state_dir, &home());
     telemetry.start(control.clone());
+    // #1216: feedback queued while control was away goes when it can.
+    feedback::start(&state_dir, control.clone());
     let mux = mux::start(config, store, kept, editors::pane_cards(&ide));
     editors::run_ide(&ide, mux.clone());
     editors::watch_panes(mux.clone());

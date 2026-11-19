@@ -2738,17 +2738,23 @@ body: string, contact_ok: boolean, source?: FeedbackSource, surface?: FeedbackSu
 agent?: FeedbackAgentInfo, };
 
 /**
- * What `feedback.send` answers: control's `FeedbackAck`.
+ * What `feedback.send` answers: control's `FeedbackAck`, or, where
+ * control couldn't be reached, that it's queued to go later (#1216).
  */
 export type FeedbackSent = { 
 /**
- * `fbk_…`.
+ * `fbk_…`. Empty while it's queued.
  */
 id: string, 
 /**
- * What people are shown for it: `F-…`.
+ * What people are shown for it: `F-…`. Empty while it's queued.
  */
-shown: string, };
+shown: string, 
+/**
+ * Not sent yet: control couldn't be reached, and the daemon sends it
+ * when it can.
+ */
+queued?: boolean, };
 
 export type FeedbackSource = "agent" | "person" | "other";
 
@@ -6193,6 +6199,13 @@ agent_mentions?: boolean,
  */
 agent_sessions?: AgentListing, 
 /**
+ * Agents may send feedback to Arugula (Arugula #1216): this machine's
+ * agents' `feedback` tool and their `arugula feedback`. On by default;
+ * off (here, or `ARUGULA_FEEDBACK=off`), agents get no tool and their
+ * sends are refused. People may still send.
+ */
+agent_feedback?: boolean, 
+/**
  * Whether this build has guest ssh. A build without Labs keeps the
  * setting, and nothing follows. Absent: it has.
  */
@@ -6202,7 +6215,7 @@ built?: boolean, };
  * `PUT /api/sharing` (the `sharing.set` operation): the settings to
  * change; one left out stays as it is.
  */
-export type SharingSetRequest = { guest_ssh?: boolean, agent_mentions?: boolean, agent_sessions?: AgentListing, };
+export type SharingSetRequest = { guest_ssh?: boolean, agent_mentions?: boolean, agent_sessions?: AgentListing, agent_feedback?: boolean, };
 
 /**
  * A split's area and how long each child is along the split's direction,
@@ -6773,6 +6786,7 @@ export const OPS = {
   "doc_link.get": { method: "GET", path: "/api/doc-links/{id}" },
   "docs.list": { method: "GET", path: "/api/docs" },
   "docs.team": { method: "GET", path: "/api/docs/team" },
+  "feedback.send": { method: "POST", path: "/api/feedback" },
   "flag.set": { method: "PUT", path: "/api/flags/{name}" },
   "flags.list": { method: "GET", path: "/api/flags" },
   "fs.list": { method: "GET", path: "/api/fs/list" },

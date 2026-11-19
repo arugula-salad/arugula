@@ -166,6 +166,9 @@ pub enum SharingSetting {
     /// What a teammate's agent may learn of this machine's sessions:
     /// `work`, `names` or `none`.
     AgentSessions,
+    /// Whether this machine's agents may send feedback to Arugula. On by
+    /// default; `ARUGULA_FEEDBACK=off` turns it off too.
+    AgentFeedback,
     /// Whether people reaching this machine through control may type and
     /// act here (aru-141). Off, they can only watch. Only set here, on the
     /// machine.

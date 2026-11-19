@@ -98,6 +98,8 @@ pub const OWNERS: &[Entry] = &[
     ("link", None),
     ("project_split", None),
     ("watch", None),
+    // Sent as the owner's machine (#1216).
+    ("feedback", None),
     ("start_run", None),
     ("read_run", None),
     ("plan_deploy", None),

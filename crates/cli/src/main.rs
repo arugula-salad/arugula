@@ -597,6 +597,15 @@ enum Command {
         #[command(subcommand)]
         cmd: telemetry::TelemetryCmd,
     },
+    /// Tell the Arugula team what broke, what's missing, or what works.
+    ///
+    /// `arugula feedback "TEXT" [--kind bug|missing|idea|praise] [--title
+    /// TITLE]`. Without `--title`, the text's first line is the title. It goes
+    /// through the daemon with Arugula's version and your OS, nothing else;
+    /// if Arugula cloud can't be reached it's queued and sent later. Run by
+    /// an agent (CLAUDECODE or AI_AGENT set) it's the agent's, which this
+    /// machine's owner can turn off. Telemetry's answer doesn't matter.
+    Feedback(cmd::feedback::Args),
 }
 
 impl Cli {
@@ -609,6 +618,7 @@ impl Cli {
             && !matches!(
                 self.cmd,
                 Command::Telemetry { .. }
+                    | Command::Feedback(_)
                     | Command::Mcp(_)
                     | Command::Events(_)
                     | Command::Bridge { .. }
@@ -709,6 +719,7 @@ const GROUPS: &[(&str, &[&str])] = &[
             "machine",
             "agent-tokens",
             "telemetry",
+            "feedback",
             "machines",
             "sandboxes",
         ],
@@ -1087,6 +1098,7 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
         Command::Wait(args) => cmd::wait::run(args, ctx),
         Command::Attach { pane } => attach::run(&ctx.sock, util::here(pane)?),
         Command::Telemetry { cmd } => telemetry::run(cmd, ctx, state_dir().as_deref()),
+        Command::Feedback(args) => cmd::feedback::run(args, ctx),
         Command::Export(args) => cmd::export::run(args, ctx),
         Command::Process(args) => cmd::process::run(args, ctx),
         Command::Capture(args) => cmd::capture::run(args, ctx),
