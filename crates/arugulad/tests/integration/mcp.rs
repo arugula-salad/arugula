@@ -4600,6 +4600,10 @@ async fn feedback_goes_to_control_until_agents_are_turned_off() {
     let s = bridge(&d, Client::named("claude-code")).await;
     let listed = |tools: &[rmcp::model::Tool]| tools.iter().any(|t| t.name == "feedback");
     assert!(listed(&s.list_all_tools().await.unwrap()));
+    // The instructions nudge an agent to it while it's listed (#1219).
+    let nudged =
+        |s: &Session| s.peer_info().and_then(|i| i.instructions.clone()).unwrap_or_default().contains("with feedback");
+    assert!(nudged(&s));
 
     refused(&s, "read_file", json!({ "path": "/nonexistent/arugula-feedback" })).await;
     let v = call(
@@ -4647,6 +4651,9 @@ async fn feedback_goes_to_control_until_agents_are_turned_off() {
     // Off: no tool, an agent's call and CLI send refused, a person's goes.
     d.put("/api/sharing", json!({ "agent_feedback": false }));
     assert!(!listed(&s.list_all_tools().await.unwrap()));
+    let s2 = bridge(&d, Client::named("claude-code")).await;
+    assert!(!nudged(&s2), "a new connection isn't told of a tool it doesn't have");
+    s2.cancel().await.unwrap();
     let why = refused(&s, "feedback", json!({ "kind": "idea", "title": "x" })).await;
     assert!(why.contains("turned off"), "{why}");
     let out = cli_feedback(&d, true, &["An agent's"]);

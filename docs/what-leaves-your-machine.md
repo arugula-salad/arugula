@@ -45,7 +45,7 @@ telemetry on. It does reach out to these:
   (telemetry's while that's on, else `feedback.install`) and a proof of
   work. Unsent, it waits in `feedback.queue.json` for up to a week
   (`crates/daemon/src/feedback.rs`, `crates/daemon/src/ops/feedback.rs`).
-  Telemetry's answer doesn't gate it.
+  Telemetry's answer doesn't gate it ([docs/feedback.md](feedback.md)).
 - **Web Push**, to the push service a browser subscribed with (Google's,
   Apple's, Mozilla's): each notification, encrypted for that browser
   (aes128gcm), with a signed VAPID token (`crates/daemon/src/push.rs`,

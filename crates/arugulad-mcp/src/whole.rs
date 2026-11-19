@@ -77,7 +77,7 @@ pub fn every_description_and_the_instructions_fit_the_cut() {
             }
         }
     }
-    let len = crate::instructions().chars().count();
+    let len = crate::instructions(true).chars().count();
     if len > CUT {
         wrong.push(format!("the instructions: {len} characters, at most {CUT}"));
     }
