@@ -212,7 +212,12 @@ pub fn unlisted_tools_are_not_listed_without_labs_but_are_there() {
 /// docs/mcp-permissions.json allows the read-only tools and asks for the
 /// rest, every one of them: a new tool fails this until it's listed there
 /// (#114). docs.arugula.io shows the same snippet, and the site repo's
-/// check-code holds it to this file.
+/// check-code holds it to this file. [`ALLOWED_WRITES`] are allowed too.
+/// The writes the snippet allows without asking (#1216): `feedback` only
+/// sends what the agent wrote to the Arugula team, and the person turns it
+/// off with the machine's switch, not per call.
+const ALLOWED_WRITES: &[&str] = &["feedback"];
+
 pub fn permissions_snippet_is_every_tool() {
     const SNIPPET: &str = include_str!("../../../docs/mcp-permissions.json");
     let list = |key: &str| -> Vec<&str> {
@@ -228,11 +233,13 @@ pub fn permissions_snippet_is_every_tool() {
     };
     // The snippet lists what a stranger sees.
     let defs = defs(fl(false));
-    let want = |ro: bool| -> Vec<&str> { defs.iter().filter(|d| d.read_only == ro).map(|d| d.name).collect() };
+    let want = |allowed: bool| -> Vec<&str> {
+        defs.iter().filter(|d| (d.read_only || ALLOWED_WRITES.contains(&d.name)) == allowed).map(|d| d.name).collect()
+    };
     assert_eq!(
         list("allow"),
         want(true),
-        "docs/mcp-permissions.json's allow list: the read-only tools, in defs() order"
+        "docs/mcp-permissions.json's allow list: the read-only tools and ALLOWED_WRITES, in defs() order"
     );
     assert_eq!(list("ask"), want(false), "docs/mcp-permissions.json's ask list: every other tool, in defs() order");
 }
