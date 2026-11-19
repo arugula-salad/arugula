@@ -17,6 +17,7 @@ import "../src/shared/fields.css";
 import "../src/shared/buttons.css";
 import { PlatformApiContext } from "../src/shared/platform-api";
 import { MenuLayer, PromptLayer } from "../src/shared/ui/menu";
+import { FeedbackLayer } from "../src/shared/ui/feedback";
 import { platformApi } from "../src/platform/api";
 import { PlatformPage } from "../src/platform/page";
 import { localBackend, setSeenBackend } from "../src/shared/seen";
@@ -45,6 +46,7 @@ render(
     <PlatformPage />
     <MenuLayer />
     <PromptLayer />
+    <FeedbackLayer />
   </PlatformApiContext.Provider>,
   root,
 );

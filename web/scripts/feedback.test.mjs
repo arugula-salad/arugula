@@ -1,10 +1,12 @@
-// Send feedback (shell/feedback.ts, Arugula #1217): one text box's first
-// line is the title and the rest the body; a refusal reads as one line; a
-// send is the daemon's `POST /api/feedback`. Run with
-// `node --experimental-strip-types`.
+// Send feedback (shared/feedback.ts, shell/feedback.ts; Arugula #1217,
+// #1240): one text box's first line is the title and the rest the body; a
+// refusal reads as one line; the shell sends to the daemon's `POST
+// /api/feedback`, the platform pages to control's with what control-wire's
+// `FeedbackSubmit` holds. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { refusalLine, sendFeedback, splitFeedback } from "../src/shell/feedback.ts";
+import { browserArch, browserOs, controlOutcome, controlSubmit, refusalLine, splitFeedback } from "../src/shared/feedback.ts";
+import { sendFeedback } from "../src/shell/feedback.ts";
 
 test("the first line with anything on it is the title, the rest the body", () => {
   assert.deepEqual(splitFeedback("Paste drops a newline\n\nIn a pane, pasting two lines\nruns the first.\n"), {
@@ -58,4 +60,38 @@ test("a send the daemon kept for later says queued", async () => {
 test("a refusal comes back as its line", async () => {
   const out = await sendFeedback(answering(403, { error: "Arugula isn't taking feedback from machines that aren't joined to Arugula cloud just now." }).client, {});
   assert.match(out.refused, /aren't joined to Arugula cloud/);
+});
+
+test("control's send: the person's words, the page's context, nobody's install or stamp", () => {
+  const w = { kind: "idea", title: "Boards by owner", body: "", contact_ok: true };
+  assert.deepEqual(controlSubmit(w, { version: "0.71.0", os: "macos", arch: null, route: "/p/x/boards" }), {
+    kind: "idea",
+    title: "Boards by owner",
+    body: "",
+    contact_ok: true,
+    source: "person",
+    surface: "web",
+    agent: null,
+    context: { version: "0.71.0", os: "macos", arch: null, onboarding: null, route: "/p/x/boards", failed: null },
+    who: { install: null, stamp: null },
+  });
+});
+
+test("control's answer: its ack's F- id, or its refusal's code as our line", () => {
+  assert.deepEqual(controlOutcome(200, true, { id: "fbk_1", shown: "F-1" }), { sent: { id: "fbk_1", shown: "F-1", queued: false } });
+  assert.match(controlOutcome(429, false, { error: "feedback_rate_limited", difficulty: null, retry_after: 30 }).refused, /Try again in a minute/);
+  assert.match(controlOutcome(413, false, { error: "feedback_too_large", difficulty: null, retry_after: null }).refused, /too long/);
+  assert.match(controlOutcome(401, false, null).refused, /signed out/);
+});
+
+test("the browser's OS and processor, in control's names", () => {
+  assert.equal(browserOs("macOS"), "macos");
+  assert.equal(browserOs("MacIntel"), "macos");
+  assert.equal(browserOs("Windows"), "windows");
+  assert.equal(browserOs("Linux x86_64"), "linux");
+  assert.equal(browserOs("Android"), "linux");
+  assert.equal(browserOs(""), null);
+  assert.equal(browserArch("arm"), "aarch64");
+  assert.equal(browserArch("x86"), "x86_64");
+  assert.equal(browserArch(undefined), null);
 });
