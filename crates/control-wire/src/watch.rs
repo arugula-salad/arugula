@@ -202,11 +202,8 @@ pub struct WatchCancelled {
 /// On an `agents.mention` that is a watch's message (fired, or ended
 /// without firing): which watch, and the one Claude Code session it is for.
 /// The daemon gives it to that session alone, framed as Arugula's word and
-/// not a teammate's. The owner's opt-outs hold for it as for a mention:
-/// with agent mentions off on the machine it's refused (`cant`), and a pane
-/// silenced for mentions doesn't take it (`away`, with `silenced`). The
-/// daemon knows it by `id` for the watch's whole life, so one sent again
-/// reaches the session once.
+/// not a teammate's, past the owner's switch for teammates' mentions (the
+/// owner's own agent asked for it).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct WatchTag {

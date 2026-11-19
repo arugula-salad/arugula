@@ -1335,8 +1335,8 @@ pub(crate) async fn deliver(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
         return OpAnswer::Done { url: None, routed: Some(routed) };
     }
     let answer = route(app, m).await;
-    // A watch's message that found no session (#631), or only silenced
-    // ones, wasn't told: control sends it again, and it must find it then.
+    // A watch's message that found no session (#631) wasn't told: control
+    // sends it again, and it must find it then.
     if let OpAnswer::Done { routed: Some(r), .. } = &answer
         && r.step != RoutedStep::Away
     {
@@ -1477,30 +1477,14 @@ async fn route(app: &impl Daemon, m: &AgentMention) -> OpAnswer {
 }
 
 /// A watch's message (#631): to the session that made the watch, by its
-/// Claude Code session id, and to no other. The owner's opt-outs hold for
-/// it as for a mention: it's text from control put into a session, which
-/// they are how the owner refuses. With the machine's switch off it's
-/// refused as a mention is, for good; a silenced pane is no taker. With no
-/// pane holding that session now, or only silenced ones, it's `away`, and
-/// kept nowhere: control sends it again (after the owner un-silences it,
-/// the session gets it).
+/// Claude Code session id, and to no other. The owner's switch and silencing
+/// are for teammates' mentions; this is their own agent's watch, so neither
+/// stops it. With no pane holding that session now, it's `away`, and kept
+/// nowhere: control sends it again.
 async fn watched(app: &impl Daemon, m: &AgentMention, w: &WatchTag) -> OpAnswer {
-    if !arugula_proto::sharing::agent_mentions(app.state_dir()) {
-        return OpAnswer::Cant { why: "the owner turned agent mentions off on this machine".into() };
-    }
     let by = Driver { who: "watch".into(), name: "Arugula".into() };
-    let silent = app.silenced().await;
-    let panes: Vec<PaneId> =
-        app.conversations().await.into_iter().filter(|(_, s)| *s == w.session).map(|(p, _)| p).collect();
-    // A silenced pane holding it: by its session's name, when it has one.
-    let mut skipped: Option<Option<String>> = None;
-    for pane in panes {
-        if silent.contains(&pane) {
-            if skipped.is_none() {
-                skipped = Some(named(app, pane).await.map(|n| slug(&n)));
-            }
-            continue;
-        }
+    let panes = app.conversations().await.into_iter().filter(|(_, s)| *s == w.session).map(|(p, _)| p);
+    for pane in panes.collect::<Vec<_>>() {
         let tag = MentionTag {
             room: m.room.clone(),
             seq: m.seq,
@@ -1512,20 +1496,7 @@ async fn watched(app: &impl Daemon, m: &AgentMention, w: &WatchTag) -> OpAnswer 
             return routed(RoutedStep::Named, named(app, pane).await, None, handed(app, pane, now).await);
         }
     }
-    match skipped {
-        Some(asked) => OpAnswer::Done {
-            url: None,
-            routed: Some(Routed {
-                step: RoutedStep::Away,
-                session: None,
-                asked,
-                queued: false,
-                names: vec![],
-                silenced: true,
-            }),
-        },
-        None => routed(RoutedStep::Away, None, None, true),
-    }
+    routed(RoutedStep::Away, None, None, true)
 }
 
 /// What a session is told of its watch (#631): Arugula's words, ids and
@@ -1544,18 +1515,6 @@ fn watch_framed(m: &AgentMention, w: &WatchTag) -> String {
 pub(crate) async fn unhooked(app: &App, pane: PaneId) -> bool {
     let panes = app.mux.api(Api::Panes).await.unwrap_or_default();
     panes.iter().any(|p| p.info.id == pane && p.info.unhooked)
-}
-
-/// Why a watch made in `pane` could never reach it, if it couldn't: the
-/// owner turned agent mentions off on this machine, or silenced the pane.
-pub async fn watch_refused(app: &App, pane: PaneId) -> Option<String> {
-    if !arugula_proto::sharing::agent_mentions(app.state_dir()) {
-        return Some("the owner turned agent mentions off on this machine, and a watch wakes a session as one".into());
-    }
-    if Daemon::silenced(app).await.contains(&pane) {
-        return Some(format!("the owner silenced mentions for %{pane}, and a watch wakes a session as one"));
-    }
-    None
 }
 
 /// The answer for a mention that waits in the inbox because the session it
@@ -2879,12 +2838,15 @@ mod tests {
 
     /// A watch's message (#631) goes to the one session that made it, by its
     /// Claude Code session id, framed as Arugula's: never to the session the
-    /// room's poster or a name would pick.
+    /// room's poster or a name would pick, and past the owner's switch and
+    /// silencing, which are for teammates.
     #[tokio::test]
     async fn a_watch_reaches_its_own_session_alone() {
         let d = Fake::new("watch-own", &[1, 2])
             .named(&[(1, "chat"), (2, "other")])
-            .conversing(&[(1, "c-other"), (2, "c-mine")]);
+            .conversing(&[(1, "c-other"), (2, "c-mine")])
+            .silenced(&[2]);
+        arugula_proto::sharing::set_agent_mentions(&d.dir, false).unwrap();
         d.state.note_post("wch_ab12", 1);
         let m = AgentMention {
             room: "wch_ab12".into(),
@@ -2947,47 +2909,6 @@ mod tests {
             watch: Some(WatchTag { id: id.into(), session: session.into() }),
             ..mention()
         }
-    }
-
-    /// The owner's switch for the machine refuses a watch's message as it
-    /// does a mention, and nothing is told or kept.
-    #[tokio::test]
-    async fn the_owners_switch_refuses_a_watch() {
-        let d = Fake::new("watch-switch", &[2]).named(&[(2, "mine")]).conversing(&[(2, "c-mine")]);
-        arugula_proto::sharing::set_agent_mentions(&d.dir, false).unwrap();
-        let m = watch_message("wch_ef56", "c-mine");
-        assert!(matches!(deliver(&d, &m).await, OpAnswer::Cant { .. }));
-        assert!(d.got(2).is_empty());
-        assert_eq!(
-            held(&d, &MentionsHeldAsk { mentions: vec![MentionKey::of(&m)] }),
-            OpAnswer::Held { held: vec![false] }
-        );
-    }
-
-    /// A pane silenced for mentions doesn't take its own session's watch:
-    /// it's `away`, saying so, isn't told, and reaches the session once the
-    /// owner un-silences it and control sends it again.
-    #[tokio::test]
-    async fn a_silenced_pane_takes_no_watch_until_unsilenced() {
-        let d = Fake::new("watch-silenced", &[2]).named(&[(2, "Mine")]).conversing(&[(2, "c-mine")]).silenced(&[2]);
-        let m = watch_message("wch_ef57", "c-mine");
-        let away = OpAnswer::Done {
-            url: None,
-            routed: Some(Routed {
-                step: RoutedStep::Away,
-                session: None,
-                asked: Some("mine".into()),
-                queued: false,
-                names: vec![],
-                silenced: true,
-            }),
-        };
-        assert_eq!(deliver(&d, &m).await, away);
-        assert!(d.got(2).is_empty());
-        assert!(d.notices.lock().unwrap().is_empty(), "no card for a watch");
-        let d = d.silenced(&[]);
-        assert_eq!(deliver(&d, &m).await, routed(RoutedStep::Named, Some("Mine".into()), None, true));
-        assert_eq!(d.got(2).len(), 1);
     }
 
     /// A watch's message is known by its watch for the watch's whole life,
