@@ -517,6 +517,15 @@ mod tests {
             err(json!({ "event": "issue.closed", "match": { "label": "bug" } })),
             "match label: issue.closed matches on issue, project, by"
         );
+        assert_eq!(
+            err(json!({ "event": "github.push", "match": { "pr": "1" } })),
+            "match pr: github.push matches on repo, branch, by"
+        );
+        let merged = json!({ "event": "github.pr.merged", "match": { "repo": "o/r", "outside": true } });
+        assert_eq!(create_body(args(merged)).unwrap().event.as_deref(), Some("github.pr.merged"));
+        assert!(
+            create_body(args(json!({ "event": "issue.labeled", "match": { "issue": "#3", "label": "bug" } }))).is_ok()
+        );
         assert!(err(json!({ "event": "issue.closed", "note": "x".repeat(NOTE_MAX + 1) })).contains("at most 200"));
         assert!(create_body(args(json!({ "event": "issue.closed", "note": "é".repeat(NOTE_MAX) }))).is_ok());
         assert_eq!(err(json!({ "run": "run_1", "note": "why" })), "match and note go with an event");
@@ -541,6 +550,10 @@ mod tests {
         assert_eq!(joined.lines().count(), 2 * events::CATALOG.len(), "{joined}");
         assert!(joined.contains("issue.closed: A native issue was closed. [watchable now]\n  match: issue (the issue, iss_… or its #N in the project); project (the project, prj_…); by (the login of who closed it)"), "{joined}");
         assert!(joined.contains("pane.exited: A pane's process exited. [watchable now, by this machine]"), "{joined}");
+        for name in ["issue.labeled", "draft.answered", "machine.updated", "github.pr.checks_done", "github.push"] {
+            assert!(joined.contains(&format!("\n{name}: ")), "{name}: {joined}");
+        }
+        assert!(joined.contains("outside (true for a fork's PR or a non-member's"), "{joined}");
         let alone = types(Watcher::Machine, false);
         assert!(
             alone.contains(

@@ -203,6 +203,15 @@ const fn m(name: &'static str, meaning: &'static str) -> MatchField {
 const ISSUE: MatchField = m("issue", "the issue, iss_… or its #N in the project");
 const PROJECT: MatchField = m("project", "the project, prj_…");
 const PANE: MatchField = m("pane", "the pane or agent block, by its id");
+const REPO: MatchField = m("repo", "the linked repo, owner/name");
+const PR: MatchField = m("pr", "the pull request's number");
+const BRANCH: MatchField = m("branch", "the branch: a PR's head, or the one pushed to");
+const BY: MatchField = m("by", "the GitHub login of who did it");
+const OUTSIDE: MatchField =
+    m("outside", "true for a fork's PR or a non-member's: such an event matches only a watch that asks for it");
+const GITHUB_PR: &[MatchField] = &[REPO, PR, BRANCH, BY, OUTSIDE];
+const GITHUB_CHECKS: &[MatchField] = &[REPO, PR, BRANCH, OUTSIDE];
+const BASE: MatchField = m("base", "the branch it's to merge into");
 
 /// Every type this side knows. Issues and sessions ride `cloud.drive` until
 /// they have read powers of their own, as PR watches do.
@@ -232,6 +241,13 @@ pub const CATALOG: &[EventType] = &[
         name: "issue.assigned",
         meaning: "Someone was assigned a native issue.",
         matches: &[ISSUE, PROJECT, m("assignee", "the login of who was assigned")],
+        home: Home::Cloud,
+        power: Some("cloud.drive"),
+    },
+    EventType {
+        name: "issue.labeled",
+        meaning: "A native issue gained a label.",
+        matches: &[ISSUE, PROJECT, m("label", "the label it gained"), m("by", "the login of who labelled it")],
         home: Home::Cloud,
         power: Some("cloud.drive"),
     },
@@ -275,6 +291,100 @@ pub const CATALOG: &[EventType] = &[
         ],
         home: Home::Cloud,
         power: Some("threads.read"),
+    },
+    EventType {
+        name: "draft.answered",
+        meaning: "A forge draft was sent, discarded or failed.",
+        matches: &[
+            m("draft", "the draft, by its id"),
+            m("state", "how it was answered: sent, discarded or failed"),
+            REPO,
+        ],
+        home: Home::Cloud,
+        power: Some("cloud.drive"),
+    },
+    EventType {
+        name: "machine.updated",
+        meaning: "A machine's daemon version changed.",
+        matches: &[m("machine", "the machine, by its id"), m("version", "the daemon version it runs now")],
+        home: Home::Cloud,
+        power: Some("cloud.drive"),
+    },
+    EventType {
+        name: "github.pr.opened",
+        meaning: "A pull request was opened on a linked GitHub repo.",
+        matches: &[REPO, PR, BRANCH, BASE, BY, OUTSIDE],
+        home: Home::Cloud,
+        power: Some("cloud.drive"),
+    },
+    EventType {
+        name: "github.pr.closed",
+        meaning: "A pull request on a linked GitHub repo was closed, merged or not (merged says which).",
+        matches: GITHUB_PR,
+        home: Home::Cloud,
+        power: Some("cloud.drive"),
+    },
+    EventType {
+        name: "github.pr.merged",
+        meaning: "A pull request on a linked GitHub repo was merged.",
+        matches: GITHUB_PR,
+        home: Home::Cloud,
+        power: Some("cloud.drive"),
+    },
+    EventType {
+        name: "github.pr.checks_done",
+        meaning: "None of the checks on a pull request's head commit is still running (once per head).",
+        matches: GITHUB_CHECKS,
+        home: Home::Cloud,
+        power: Some("cloud.drive"),
+    },
+    EventType {
+        name: "github.pr.checks_failed",
+        meaning: "A check on a pull request's head commit failed (once per head).",
+        matches: GITHUB_CHECKS,
+        home: Home::Cloud,
+        power: Some("cloud.drive"),
+    },
+    EventType {
+        name: "github.pr.ready",
+        meaning: "A pull request's checks are green and GitHub says it can merge cleanly (once per head).",
+        matches: GITHUB_CHECKS,
+        home: Home::Cloud,
+        power: Some("cloud.drive"),
+    },
+    EventType {
+        name: "github.check.failed",
+        meaning: "A check run or commit status failed on a linked repo's commit, on any branch.",
+        matches: &[
+            REPO,
+            m("sha", "the commit it ran on"),
+            m("branches", "a branch it's on: its head's, or one of its PRs' bases"),
+            m("conclusion", "failure or timed_out for a check run; failure or error for a status"),
+            OUTSIDE,
+        ],
+        home: Home::Cloud,
+        power: Some("cloud.drive"),
+    },
+    EventType {
+        name: "github.pr.reviewed",
+        meaning: "A review was submitted on a linked repo's pull request.",
+        matches: &[REPO, PR, m("state", "approved, changes_requested, commented or dismissed"), BY, OUTSIDE],
+        home: Home::Cloud,
+        power: Some("cloud.drive"),
+    },
+    EventType {
+        name: "github.pr.review_commented",
+        meaning: "An inline review comment was made on a linked repo's pull request.",
+        matches: &[REPO, PR, BY, OUTSIDE],
+        home: Home::Cloud,
+        power: Some("cloud.drive"),
+    },
+    EventType {
+        name: "github.push",
+        meaning: "A branch of a linked GitHub repo was pushed to: its new head.",
+        matches: &[REPO, BRANCH, BY],
+        home: Home::Cloud,
+        power: Some("cloud.drive"),
     },
     EventType {
         name: "agent.idle",
@@ -397,8 +507,10 @@ mod tests {
             let mut fields = std::collections::HashSet::new();
             assert!(t.matches.iter().all(|f| name_well_formed(&format!("x.{}", f.name)) && fields.insert(f.name)));
             assert_eq!(t.power.is_none(), t.home == Home::Daemon, "{}: a cloud type needs a power", t.name);
-            // Arugula's own are `<object>.<verb>`: no third party's prefix.
-            assert!(![SOURCE_GITHUB, SOURCE_PLANE].contains(&t.name.split('.').next().unwrap()), "{}", t.name);
+            // A third party's carry its name first, and are the cloud's.
+            if [SOURCE_GITHUB, SOURCE_PLANE].contains(&t.name.split('.').next().unwrap()) {
+                assert_eq!(t.home, Home::Cloud, "{}", t.name);
+            }
         }
         for good in ["issue.closed", "pane.command.ended", "github.pr.merged", "agent.needs_input"] {
             assert!(name_well_formed(good), "{good}");
@@ -416,7 +528,18 @@ mod tests {
         assert_eq!(lookup("chat.reply").unwrap().power, Some("threads.read"));
         assert_eq!(lookup("pane.exited").unwrap().home, Home::Daemon);
         assert!(lookup("issue.closed").unwrap().matches.iter().any(|f| f.name == "issue"));
-        assert!(lookup("github.pr.merged").is_none());
+        for name in ["issue.labeled", "draft.answered", "machine.updated", "github.pr.checks_failed", "github.push"] {
+            assert_eq!(lookup(name).unwrap().power, Some("cloud.drive"), "{name}");
+        }
+        assert!(lookup("doc.share.answered").is_none(), "no producer yet");
+        assert!(!lookup("github.push").unwrap().matches.iter().any(|f| f.name == "outside"), "a push needs write");
+        assert!(lookup("github.pr.merged").unwrap().matches.iter().any(|f| f.name == "outside"));
+        assert!(lookup("github.push").unwrap().matches.iter().any(|f| f.name == "branch"));
+        assert!(lookup("github.pr.reopened").is_none());
+        for name in ["github.check.failed", "github.pr.reviewed", "github.pr.review_commented"] {
+            assert_eq!(lookup(name).unwrap().home, Home::Cloud, "{name}");
+        }
+        assert!(lookup("github.pr.opened").unwrap().matches.iter().any(|f| f.name == "base"));
         assert!(lookup("").is_none());
     }
 }
