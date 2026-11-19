@@ -17,6 +17,7 @@ import { settingsItems } from "./commands";
 import { openSettings } from "./settings-route";
 import { ariaKeys, keyHint } from "./keys";
 import { openPalette } from "./palette";
+import { openFeedback } from "./feedback";
 import { UpdateChip } from "./update";
 import { WindowButtons } from "../../shared/ui/window-buttons";
 import { countView } from "../../shared/telemetry";
@@ -145,6 +146,8 @@ export function AccountButton({ client }: { client: Client | null }) {
     if (!rail) countView("settings");
     // Your presence is Chat's "you" row (Arugula #1079), not this menu's.
     const items: MenuItem[] = [...mine, ...settings];
+    // Arugula #1217; the palette's Help has it too.
+    if (client?.state) items.push("separator", { label: "Send feedback…", run: () => openFeedback(client) });
     if (account) items.push("separator", { label: "Sign out", run: () => account!.signOut() });
     // Right-aligned under the button; the menu keeps itself on screen.
     openMenu({ clientX: r.right, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() }, items, e.currentTarget as HTMLElement);

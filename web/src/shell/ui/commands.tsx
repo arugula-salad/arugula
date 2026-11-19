@@ -41,6 +41,7 @@ import { bigTipsOn, setBigTips, setTips, tipsOn } from "../../shared/seen";
 import { clientTarget, EDITORS, editorShown, openInEditor, setEditorPref } from "../open-in-editor";
 import { openWhatsNew } from "./whats-new";
 import { openPanel } from "./control-panel";
+import { openFeedback } from "./feedback";
 import { addPlugin, NVIM_DOCS, openHelp, openHelpCard, removePlugin, runsNvim, useNvim } from "../hints/nvim";
 import { type Tone } from "../../shared/ui/state-chip";
 
@@ -363,6 +364,8 @@ export function helpItems(client: Client): MenuItem[] {
     // pane menu's "nvim help" (that pane's), so the palette lists both.
     { label: "nvim in Arugula", hint: "The help card, over an nvim pane of the tab", run: () => openHelpCard(client, undefined) },
     { label: "What's new", hint: "The newest releases' headlines", run: () => void openWhatsNew(client) },
+    // Arugula #1217: through this machine's daemon.
+    { label: "Send feedback…", hint: "A bug, something missing, an idea", run: () => openFeedback(client) },
   ];
 }
 
@@ -438,6 +441,8 @@ export const COMMANDS: Record<string, (client: Client, args: Record<string, stri
     openPortAt(client, { split: Number(pane), host: mine?.id, local: !mine }, Number(port));
   },
   "palette.open": (client) => openPalette(client),
+  /** Send feedback (Arugula #1217). */
+  "feedback.open": (client) => openFeedback(client),
   /** Getting started at its Agents step: Use Claude Code with Arugula. */
   "getting-started.agents": (client) => openGettingStarted("agents", client),
   /** Board… beside the shown tab's pane. */

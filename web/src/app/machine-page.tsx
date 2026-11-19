@@ -26,6 +26,7 @@ import { followSource, Machines } from "../shell/machines";
 import { shellPlatformApi } from "../shell/platform-api";
 import { SwarmView } from "../shell/swarm/view";
 import { AgentDialogLayer, startAgent } from "../shell/ui/agent-dialog";
+import { FeedbackLayer } from "../shell/ui/feedback";
 import { measureCell, type Cell } from "../shell/ui/cells";
 import { installKeys } from "../shell/ui/keys";
 import { MachineView, Swarm } from "../shell/views";
@@ -243,6 +244,7 @@ function Place({ project, at, b: { machines, cell }, session }: { project: strin
       {/* The machine page's own Swarm (`#swarm`), as on control's page. */}
       <Swarm machines={machines} client={client} ready={() => true} />
       <AgentDialogLayer />
+      <FeedbackLayer />
     </PlatformApiContext.Provider>
   );
 }
