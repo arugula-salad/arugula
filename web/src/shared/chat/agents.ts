@@ -4,6 +4,7 @@
 // (scripts/agents.test.mjs).
 
 import type { ChatMessage, ChatRoomAgent } from "../proto";
+import { ciWriter } from "../agent-label";
 
 /** A line the platform wrote in a room (#122: a grant let agents in), not
  * a person: no author, and `via` says so. Drawn as a note, not a message. */
@@ -21,7 +22,7 @@ export function githubLogin(m: ChatMessage): string | null {
 /** What CI wrote (native #774): no author, `via` `ci:<source>`. Its
  * name, "chant CI", or null for any other message. */
 export function ciName(m: ChatMessage): string | null {
-  return !m.author && m.via?.startsWith("ci:") && m.via.length > 3 ? `${m.via.slice(3)} CI` : null;
+  return !m.author && m.via?.startsWith("ci:") && m.via.length > 3 ? ciWriter(m.via.slice(3)) : null;
 }
 
 /** What a channel's webhook posted (Arugula iss_ac4da877095b74a5a21af8f9fbd70acb):
