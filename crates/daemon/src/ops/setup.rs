@@ -28,6 +28,20 @@ impl Handle for SetupTailscale {
 
 impl Handle for SetupControl {
     async fn handle(cx: &Cx<'_>, _: (), req: ControlJoinRequest) -> Result<Value, OpError> {
+        // Getting started's answer to "may people type into it from
+        // elsewhere?" (Arugula #1194): set only at the machine, as
+        // `arugulad sharing remote-input` is.
+        if let Some(on) = req.remote_input {
+            if !cx.at_the_machine() {
+                return Err(OpError::Forbidden(
+                    "whether people may type here from elsewhere is set on the machine itself".into(),
+                ));
+            }
+            let dir = cx.app.control.state_dir();
+            arugula_proto::sharing::set_remote_input(dir, on)
+                .map_err(|e| OpError::Failed(format!("couldn't write {}: {e}", arugula_proto::sharing::FILE)))?;
+            tracing::info!(on, "remote input set as the machine joins");
+        }
         Ok(crate::setup::control_join(cx.app, req).await)
     }
 }

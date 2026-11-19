@@ -356,6 +356,11 @@ async fn guard(
     if let Some(f) = forwarded {
         app.identify.saw_forwarded(&f).await;
     }
+    // Over the tailnet (serve's header, or a tailnet node): not someone at
+    // this machine, for what only the machine may set (`Cx::at_the_machine`).
+    if app.access.via_tailnet(req.headers(), &peer) {
+        req.extensions_mut().insert(crate::access::ViaTailnet);
+    }
     // Checked: nothing past here (a handler) sees
     // it, but the sign-in link's page, which hands it back.
     if !signin {

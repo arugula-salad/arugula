@@ -61,7 +61,7 @@ const SEEN = "getting-started";
 const OLD_KEY = "arugula.getting-started";
 
 /** What `/api/host` says about this daemon (the parts for this panel). */
-type HostSays = Pick<HostInfo, "name" | "tailnet_url" | "tailnet_seen" | "control" | "team"> & {
+type HostSays = Pick<HostInfo, "name" | "tailnet_url" | "tailnet_seen" | "control" | "team" | "features"> & {
   /** #325: joined, not joined, or dropped by control (sent beside `HostInfo`). */
   control_state?: ControlState;
 };
@@ -664,6 +664,12 @@ function Cloud({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Arugula #1194: may people type into it from elsewhere? Asked as it
+  // joins, on the machine's own page (the daemon takes the answer from
+  // nowhere else); what it says now until it's answered.
+  const [typing, setTyping] = useState<boolean | null>(null);
+  const allow = typing ?? host?.features?.remote_input ?? true;
+  const atTheMachine = loopback(location.hostname);
   // The control part comes back first (the rest waits on Tailscale): a
   // code waiting for approval shows at once.
   const c = setup?.control ?? early ?? undefined;
@@ -678,7 +684,7 @@ function Cloud({
   const connect = async () => {
     setBusy(true);
     setError(null);
-    const r = await post(opPath("setup.control"), { url: control });
+    const r = await post(opPath("setup.control"), atTheMachine ? { url: control, remote_input: allow } : { url: control });
     if (r.error) setError(r.error);
     else if (r.pending) setSetup((s) => (s ? { ...s, control: { ...s.control, pending: r.pending as NonNullable<Setup["control"]["pending"]> } } : s));
     await refresh();
@@ -698,13 +704,19 @@ function Cloud({
       </p>
     </div>
   );
+  const asking = atTheMachine && !manual && !joined && !c?.pending && !c?.elsewhere;
   return (
     <section class="start-step">
       <h2 data-start-cloud-title>{joined ? "Use it from anywhere" : dropped ? `Put ${name} back in your account or team` : `Add ${name} to your account or team`}</h2>
       <p class="start-lede">
         Arugula cloud reaches this machine from any browser, with no tailnet, and lets your team in on the sessions you share. It decides who reaches
-        this machine, and it can read the terminal traffic it relays, though it keeps none of it. To let people who come through it only watch, run{" "}
-        <code>arugulad sharing remote-input off</code> here.
+        this machine, and it can read the terminal traffic it relays, though it keeps none of it.
+        {asking ? null : (
+          <>
+            {" "}
+            To let people who come through it only watch, run <code>arugulad sharing remote-input off</code> here.
+          </>
+        )}
       </p>
       {manual ? (
         <>
@@ -758,6 +770,28 @@ function Cloud({
       ) : (
         <>
           {droppedNote}
+          {asking && (
+            <fieldset class="start-typing" data-start-remote-input>
+              <legend>May people type into {name} from elsewhere?</legend>
+              <label>
+                <input type="radio" name="start-remote-input" checked={allow} onClick={() => setTyping(true)} data-start-remote-input-on />
+                <span>
+                  <b>Yes.</b> Whoever reaches it through Arugula cloud types as their role allows: you from your other devices, and people you share a
+                  session with.
+                </span>
+              </label>
+              <label>
+                <input type="radio" name="start-remote-input" checked={!allow} onClick={() => setTyping(false)} data-start-remote-input-off />
+                <span>
+                  <b>No.</b> Nobody who comes through Arugula cloud types here, you included from another device: at most they watch what's shared
+                  with them. This machine's own windows work either way.
+                </span>
+              </label>
+              <p class="start-dim">
+                Change it later on this machine: <code>arugulad sharing remote-input on</code> (or <code>off</code>).
+              </p>
+            </fieldset>
+          )}
           <p class="start-dim" data-start-join-how>
             Connect opens Arugula cloud with {name}'s code. Click Add there, picking your account or a team, and it's in.
           </p>
@@ -773,6 +807,11 @@ function Cloud({
       )}
     </section>
   );
+}
+
+/** This page is the daemon's own, on this machine's loopback. */
+function loopback(host: string): boolean {
+  return host === "localhost" || host === "[::1]" || host === "::1" || /^127\./.test(host);
 }
 
 /** #335: "Use Claude Code with Arugula": its adapter (installed, or

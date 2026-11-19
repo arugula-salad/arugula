@@ -238,3 +238,56 @@ fn a_guest_doesnt_see_the_control_state() {
         assert!(v["control_state"].is_null(), "{v}");
     }
 }
+
+/// Arugula #1194: joining asks whether people may type here from elsewhere.
+/// Getting started's answer is taken at the machine (its socket here) and
+/// refused from the owner over the tailnet; `arugulad join --remote-input`
+/// sets it before it joins.
+#[test]
+fn joining_sets_whether_people_may_type_here() {
+    let d = arugulad!("ctltyping")
+        .no_provider()
+        .args(["--owner", "me@example.com", "--tailscale-socket", "/nonexistent/sock"])
+        .start();
+    let typing = || d.get("/api/host")["features"]["remote_input"].clone();
+    assert_eq!(typing(), true, "on until someone answers");
+    // Nothing listens at the control: the join fails, the answer stands.
+    let nowhere = "http://127.0.0.1:1";
+    let (status, body) = d.raw("POST", "/api/setup/control", Some(json!({ "url": nowhere, "remote_input": false })));
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(typing(), false);
+    // The owner over the tailnet: refused, and nothing changes.
+    let ask = json!({ "url": nowhere, "remote_input": true }).to_string();
+    let (status, _, body) = d.tcp(
+        "POST",
+        "/api/setup/control",
+        &[("tailscale-user-login", "me@example.com"), ("Content-Type", "application/json")],
+        Some(&ask),
+    );
+    assert_eq!(status, 403, "{body}");
+    assert_eq!(typing(), false);
+    // Without an answer, a join leaves it as it is.
+    let (status, body) = d.raw("POST", "/api/setup/control", Some(json!({ "url": nowhere })));
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(typing(), false);
+
+    // `arugulad join --remote-input on`: set before it asks control, which
+    // isn't there.
+    let out = arugula_testkit::command(env!("CARGO_BIN_EXE_arugulad"))
+        .args(["join", nowhere, "--remote-input", "on", "--state-dir"])
+        .arg(&d.state)
+        .output()
+        .unwrap();
+    assert!(!out.status.success(), "nothing to join");
+    assert!(String::from_utf8_lossy(&out.stdout).contains("Typing from elsewhere: on"), "{out:?}");
+    assert_eq!(typing(), true);
+    // Not on a terminal and not told: as it was, and it says which.
+    std::fs::write(d.state.join("sharing.json"), r#"{ "remote_input": false }"#).unwrap();
+    let out = arugula_testkit::command(env!("CARGO_BIN_EXE_arugulad"))
+        .args(["join", nowhere, "--state-dir"])
+        .arg(&d.state)
+        .output()
+        .unwrap();
+    assert!(String::from_utf8_lossy(&out.stdout).contains("Typing from elsewhere: off"), "{out:?}");
+    assert_eq!(typing(), false);
+}

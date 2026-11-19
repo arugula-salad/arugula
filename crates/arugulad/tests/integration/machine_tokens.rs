@@ -311,6 +311,39 @@ async fn remote_input_off_makes_everyone_a_viewer() {
     });
 }
 
+/// Arugula #1194: the machine menu reads whether people may type here from
+/// `/api/host`, through control too; and the answer Getting started sends
+/// as a machine joins is refused through control, owner or not, leaving the
+/// switch as it was.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn remote_input_shows_through_control_and_isnt_set_through_it() {
+    let r = rig().await;
+    let k = issuer();
+    let (mut ws, ch, said) = open(&r, token(&r, "owner", "s1", &k, |_| {})).await;
+    assert!(refused(&said).is_none());
+    let (status, host) = ask_json(&mut ws, &ch, 1, "GET", "/api/host").await;
+    assert_eq!(status, 200, "{host}");
+    assert_eq!(host["features"]["remote_input"], true);
+    for (id, on) in [(2, false), (3, true)] {
+        let body = Some(json!({ "remote_input": on }));
+        let (status, v) = send_json(&mut ws, &ch, id, "POST", "/api/setup/control", body).await;
+        assert_eq!(status, 403, "{v}");
+        assert!(v.to_string().contains("on the machine itself"), "{v}");
+    }
+    assert!(!r.d.state.join("sharing.json").exists(), "nothing written");
+    // Turned off on the machine: a new channel (a viewer's now) reads that.
+    drop(ws);
+    std::fs::write(r.d.state.join("sharing.json"), r#"{ "remote_input": false }"#).unwrap();
+    let (mut ws, ch, _) = open(&r, token(&r, "owner", "s2", &k, |_| {})).await;
+    let (status, host) = ask_json(&mut ws, &ch, 1, "GET", "/api/host").await;
+    assert_eq!(status, 200, "{host}");
+    assert_eq!(host["features"]["remote_input"], false);
+    let (status, _) =
+        send_json(&mut ws, &ch, 2, "POST", "/api/setup/control", Some(json!({ "remote_input": true }))).await;
+    assert_eq!(status, 403);
+    assert_eq!(std::fs::read_to_string(r.d.state.join("sharing.json")).unwrap(), r#"{ "remote_input": false }"#);
+}
+
 /// Remote input off holds for a session shared with someone, too: a guest
 /// whose token gives nothing machine-wide types into a session shared with
 /// them as an editor while it's on; with it off, their channel that could

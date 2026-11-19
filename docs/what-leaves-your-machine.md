@@ -163,7 +163,9 @@ signed-in session.
   who comes with a machine token a viewer, a session shared with them
   included, and other people's devices too
   (`crates/proto/src/sharing.rs`, `remote_input`). Nothing through control
-  can turn it back on.
+  can turn it back on. Joining asks (`arugulad join` on a terminal, or
+  `--remote-input on|off`; Getting started on the machine's own page), and
+  the machine menu says which it is.
 - **A CLI's sign-in is a file on its machine:** `arugula login` keeps a
   session of your account in `cli-session.json` in the config dir
   (`crates/cli/src/control.rs`), readable by your user, and so by any agent

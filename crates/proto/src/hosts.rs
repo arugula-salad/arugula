@@ -297,6 +297,12 @@ pub struct HostFeatures {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub guest_ssh: Option<bool>,
+    /// Whether people who reach this machine through control may type here
+    /// ([`crate::sharing::remote_input`]), which the machine menu shows.
+    /// Set only on the machine. Absent from a daemon before it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub remote_input: Option<bool>,
     /// The names of the Labs flags that are on, whatever else each needs
     /// (a login, a provider). `None` from a daemon before #665: see `labs`.
     #[serde(default, skip_serializing_if = "Option::is_none")]

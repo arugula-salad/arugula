@@ -479,6 +479,11 @@ fn refusal_page(status: StatusCode, why: &str) -> String {
     )
 }
 
+/// A request that came over the tailnet, as the server's checks found:
+/// the owner's, maybe, but not from this machine.
+#[derive(Debug, Clone, Copy)]
+pub struct ViaTailnet;
+
 /// The header this daemon's page sends its page key in.
 pub const PAGE_KEY_HEADER: &str = "x-arugula-key";
 

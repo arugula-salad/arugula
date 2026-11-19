@@ -89,10 +89,12 @@ test("the cloud step is one click in Arugula cloud, then joined", async ({ page 
   const code = "ABCDE-FGHJK.MNPQ-RSTV-WXYZ-0123";
   const pending = { code, approve: `${url}/#join=${code}`, expires_ms: Date.now() + 15 * 60_000 };
   let state: "none" | "pending" | "joined" = "none";
+  let asked: Record<string, unknown> | null = null;
   const control = () => ({ url, ...(state === "pending" ? { pending } : state === "joined" ? { joined: url } : {}) });
   await page.route(/\/api\/setup(\/control)?(\?.*)?$/, async (r) => {
     const u = new URL(r.request().url());
     if (u.pathname === "/api/setup/control") {
+      asked = r.request().postDataJSON() as Record<string, unknown>;
       state = "pending";
       return r.fulfill({ json: { pending } });
     }
@@ -105,7 +107,15 @@ test("the cloud step is one click in Arugula cloud, then joined", async ({ page 
   const panel = page.getByRole("dialog", { name: "Getting started" });
   await expect(panel.locator("[data-start-progress]")).toHaveText("Step 3 / 5 · Cloud");
   await expect(panel.locator("[data-start-join-how]")).toContainText("Click Add there");
+  // Arugula #1194: may people type into it from elsewhere? On this page
+  // (the machine's own, on loopback) it asks; yes until answered.
+  const typing = panel.locator("[data-start-remote-input]");
+  await expect(typing).toContainText("May people type into");
+  await expect(typing.locator("[data-start-remote-input-on]")).toBeChecked();
+  await typing.locator("[data-start-remote-input-off]").check();
   await panel.locator("[data-start-connect]").click();
+  await expect.poll(() => asked).toEqual({ url, remote_input: false });
+  await expect(typing).toHaveCount(0);
 
   const add = panel.locator("[data-start-approve]");
   await expect(add).toHaveText("Add it in Arugula cloud");

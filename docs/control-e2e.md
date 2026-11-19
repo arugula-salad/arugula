@@ -70,8 +70,13 @@ terminal traffic is TLS to the relay.
   was on closes and comes back as a viewer's.
   It's in `sharing.json` (`remote_input`), and nothing that comes through
   control can turn it back on (`crates/proto/src/sharing.rs`,
-  `remote_input`). It's set from the command line only; the machine's
-  Settings page says which way it is, under Remote sessions.
+  `remote_input`). It's set on the machine only: `arugulad sharing
+  remote-input`, or the answer when it joins (Arugula #1194: `arugulad join`
+  asks on a terminal, or takes `--remote-input on|off`, and Getting started
+  asks on the machine's own page on loopback; `POST /api/setup/control`
+  refuses the answer through control or the tailnet, `Cx::at_the_machine`).
+  The machine menu says which way it is (`/api/host`'s
+  `features.remote_input`), and so does Settings, under Remote sessions.
 - **A team's members, roles, invites and lock are control's** (#1005). An
   owner signed in on control's page changes them with no device's
   signature: control writes the roster version, the invite link or the

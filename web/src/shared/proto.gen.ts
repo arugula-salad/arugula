@@ -3166,6 +3166,12 @@ studio: boolean,
  */
 guest_ssh?: boolean, 
 /**
+ * Whether people who reach this machine through control may type here
+ * ([`crate::sharing::remote_input`]), which the machine menu shows.
+ * Set only on the machine. Absent from a daemon before it.
+ */
+remote_input?: boolean, 
+/**
  * The names of the Labs flags that are on, whatever else each needs
  * (a login, a provider). `None` from a daemon before #665: see `labs`.
  */

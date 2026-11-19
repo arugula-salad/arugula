@@ -35,7 +35,7 @@ import { PickerLayer } from "./picker";
 import { InstallHint } from "./notify";
 import { DeploysWaitingNote } from "./deploys-waiting";
 import { GettingStartedLayer, useFirstRun } from "./welcome";
-import { machineSettingsItems, machineShown } from "./commands";
+import { machineSettingsItems, machineShown, remoteInputItems } from "./commands";
 import { PaletteLayer } from "./palette";
 import { ControlBanner } from "./control-state";
 import { MovingNote } from "./moving-note";
@@ -114,7 +114,9 @@ export function App({ client, cell, frame = "own", onSwarm }: { client: Client; 
       setMachineItems(() => {
         const mine = machineSettingsItems(client);
         const page = ws && mine.length > 0 && (platformHere() || !platformOrigin());
-        return page ? [{ label: "Machine settings…", run: () => openSettings("machine", machineShown(client)) }] : mine;
+        const rows = page ? [{ label: "Machine settings…", run: () => openSettings("machine", machineShown(client)) }] : mine;
+        // Arugula #1194: whether people may type here from elsewhere.
+        return [...remoteInputItems(client), ...rows];
       }),
     [client, ws],
   );
