@@ -91,6 +91,13 @@ impl Handle for FeedbackSend {
             version: a.version.as_deref().map(short),
             model: a.model.as_deref().map(short),
         });
+        // A page's path only: its query or fragment could carry a token.
+        let route = req
+            .route
+            .as_deref()
+            .map(|r| r.split(['?', '#']).next().unwrap_or_default().trim())
+            .filter(|r| !r.is_empty())
+            .map(short);
         let send = FeedbackSubmit {
             kind,
             title: req.title.trim().to_owned(),
@@ -104,7 +111,7 @@ impl Handle for FeedbackSend {
                 os: Some(os()),
                 arch: Some(arch()),
                 onboarding: None,
-                route: None,
+                route,
                 failed,
             },
             who: Default::default(),
@@ -189,6 +196,7 @@ impl McpOp for FeedbackSend {
                 source: Some("agent".into()),
                 surface: Some("mcp".into()),
                 agent,
+                route: None,
             },
         ))
     }

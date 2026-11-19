@@ -2735,7 +2735,13 @@ body: string, contact_ok: boolean, source?: FeedbackSource, surface?: FeedbackSu
 /**
  * The agent writing it, when it says.
  */
-agent?: FeedbackAgentInfo, };
+agent?: FeedbackAgentInfo, 
+/**
+ * The web client's page when it was written (#1217), without its
+ * query or fragment: the daemon cuts it to 200 bytes (`MAX_SHORT`)
+ * and passes it on as `FeedbackContext`'s `route`.
+ */
+route?: string, };
 
 /**
  * What `feedback.send` answers: control's `FeedbackAck`, or, where

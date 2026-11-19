@@ -89,6 +89,7 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
         source: Some(if agent_runs { "agent" } else { "person" }.into()),
         surface: Some("cli".into()),
         agent: agent_runs.then(agent_info).flatten(),
+        route: None,
     };
     let (sent, v) = call_raw::<FeedbackSend>(&sock, &(), &req)?;
     match json_out {

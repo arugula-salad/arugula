@@ -64,6 +64,12 @@ pub struct FeedbackSendRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub agent: Option<FeedbackAgentInfo>,
+    /// The web client's page when it was written (#1217), without its
+    /// query or fragment: the daemon cuts it to 200 bytes (`MAX_SHORT`)
+    /// and passes it on as `FeedbackContext`'s `route`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub route: Option<String>,
 }
 
 /// The agent writing it, as it says: `FeedbackAgent`'s fields.

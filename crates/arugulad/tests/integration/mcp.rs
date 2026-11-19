@@ -4638,6 +4638,12 @@ async fn feedback_goes_to_control_until_agents_are_turned_off() {
         assert_eq!(got[2]["agent"]["name"], "claude-code");
     }
 
+    // The web client's page goes as the route, without its query.
+    let v =
+        d.post("/api/feedback", json!({ "kind": "idea", "title": "From the page", "route": "/settings?token=x#a" }));
+    assert_eq!(v["shown"], "F-7K2Q9X", "{v}");
+    assert_eq!(got.lock().unwrap()[3]["context"]["route"], "/settings");
+
     // Off: no tool, an agent's call and CLI send refused, a person's goes.
     d.put("/api/sharing", json!({ "agent_feedback": false }));
     assert!(!listed(&s.list_all_tools().await.unwrap()));
@@ -4647,6 +4653,6 @@ async fn feedback_goes_to_control_until_agents_are_turned_off() {
     assert!(!out.status.success() && String::from_utf8_lossy(&out.stderr).contains("turned off"));
     let out = cli_feedback(&d, false, &["A person's"]);
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
-    assert_eq!(got.lock().unwrap().len(), 4);
+    assert_eq!(got.lock().unwrap().len(), 5);
     s.cancel().await.unwrap();
 }
