@@ -34,7 +34,7 @@ impl Handle for SetupControl {
         if let Some(on) = req.remote_input {
             if !cx.at_the_machine() {
                 return Err(OpError::Forbidden(
-                    "whether people may type here from elsewhere is set on the machine itself".into(),
+                    "whether people may type here through Arugula cloud is set on the machine itself".into(),
                 ));
             }
             let dir = cx.app.control.state_dir();

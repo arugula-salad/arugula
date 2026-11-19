@@ -216,7 +216,9 @@ pub fn sessions_shown(state_dir: &Path) -> AgentListing {
 /// token (aru-141) may type and act here: on unless the file says
 /// `remote_input: false`. Off, every such channel is a viewer's, whatever
 /// is shared with them, and so are other people's devices'; the machine's
-/// owner still watches every session on it (Arugula #1210). Only
+/// owner still watches every session on it (Arugula #1210). Not held to
+/// it: the devices of the account whose root this machine pinned when it
+/// joined (`e2e.rs`, `own_device`), read-only links, and the tailnet. Only
 /// `arugulad sharing remote-input` on the machine sets it: it isn't in
 /// [`SharingSetRequest`], so nothing that comes through control can turn
 /// it back on.
@@ -227,16 +229,18 @@ pub fn remote_input(state_dir: &Path) -> bool {
 /// What `arugulad join` asks before it joins (Arugula #1194), on a
 /// terminal: the answer sets [`remote_input`].
 pub const REMOTE_INPUT_QUESTION: &str = "\
-  May people type into this machine from elsewhere?
+  May people type into this machine through Arugula cloud?
   Yes: whoever reaches it through Arugula cloud may type here as their role
   allows: you from your other devices, and people you share a session with.
-  No: nobody, you included, types here from elsewhere. You can still watch
-  from your other devices, and others watch what's shared with them. This
-  machine's own terminals and page work either way.
+  No: nobody types here through Arugula cloud, you included. You can still
+  watch from your other devices, and others watch what's shared with them.
+  It doesn't cover this machine's own terminals and page, the tailnet, or a
+  device of yours this machine trusts by its own key (`arugula login
+  --device`, older apps).
   Change it later, here: arugulad sharing remote-input on (or off).";
 
 /// The question's prompt line.
-pub const REMOTE_INPUT_PROMPT: &str = "  Allow typing from elsewhere? [Y/n] ";
+pub const REMOTE_INPUT_PROMPT: &str = "  Allow typing through Arugula cloud? [Y/n] ";
 
 /// An answer to [`REMOTE_INPUT_PROMPT`]: yes (or nothing, the default) or
 /// no; `None` for anything else, which asks again.

@@ -541,7 +541,7 @@ export function remoteInputItems(client: Client): MenuItem[] {
         }
       : {
           label: "Remote typing: off",
-          hint: "Nobody, its owner included, types here through Arugula cloud. Its owner still watches from other devices, and others watch what's shared with them. On the machine, `arugulad sharing remote-input on` lets them type.",
+          hint: "Nobody types here through Arugula cloud, its owner included: its owner still watches from other devices, and others watch what's shared with them. Not covered: the machine's own windows, the tailnet, and devices of its owner it trusts by their own key. On the machine, `arugulad sharing remote-input on` lets them type.",
           disabled: true,
           run: () => {},
         },

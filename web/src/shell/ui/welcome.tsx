@@ -664,7 +664,7 @@ function Cloud({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Arugula #1194: may people type into it from elsewhere? Asked as it
+  // Arugula #1194: may people type into it through Arugula cloud? Asked as it
   // joins, on the machine's own page (the daemon takes the answer from
   // nowhere else); what it says now until it's answered.
   const [typing, setTyping] = useState<boolean | null>(null);
@@ -772,7 +772,7 @@ function Cloud({
           {droppedNote}
           {asking && (
             <fieldset class="start-typing" data-start-remote-input>
-              <legend>May people type into {name} from elsewhere?</legend>
+              <legend>May people type into {name} through Arugula cloud?</legend>
               <label>
                 <input type="radio" name="start-remote-input" checked={allow} onClick={() => setTyping(true)} data-start-remote-input-on />
                 <span>
@@ -783,8 +783,9 @@ function Cloud({
               <label>
                 <input type="radio" name="start-remote-input" checked={!allow} onClick={() => setTyping(false)} data-start-remote-input-off />
                 <span>
-                  <b>No.</b> Nobody, you included, types here from elsewhere. You can still watch from your other devices, and others watch what's
-                  shared with them. This machine's own windows work either way.
+                  <b>No.</b> Nobody types here through Arugula cloud, you included. You can still watch from your other devices, and others watch
+                  what's shared with them. It doesn't cover this machine's own windows, the tailnet, or a device of yours this machine trusts by its
+                  own key.
                 </span>
               </label>
               <p class="start-dim">

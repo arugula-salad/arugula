@@ -65,7 +65,7 @@ pub struct ControlJoinRequest {
     pub url: Option<String>,
     /// A team to put it in ahead of time (its id).
     pub team: Option<String>,
-    /// The owner's answer to "may people type into it from elsewhere?"
+    /// The owner's answer to "may people type into it through Arugula cloud?"
     /// ([`crate::sharing::remote_input`]), asked as it joins. Taken only
     /// from the owner on this machine (its socket, or its own page on
     /// loopback): through control or the tailnet it's refused.

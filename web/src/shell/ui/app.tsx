@@ -115,7 +115,7 @@ export function App({ client, cell, frame = "own", onSwarm }: { client: Client; 
         const mine = machineSettingsItems(client);
         const page = ws && mine.length > 0 && (platformHere() || !platformOrigin());
         const rows = page ? [{ label: "Machine settings…", run: () => openSettings("machine", machineShown(client)) }] : mine;
-        // Arugula #1194: whether people may type here from elsewhere.
+        // Arugula #1194: whether people may type here through Arugula cloud.
         return [...remoteInputItems(client), ...rows];
       }),
     [client, ws],
