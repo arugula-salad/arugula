@@ -19,7 +19,7 @@ test("a send: its kind, title and body go to the daemon, and the F- id comes bac
   const sent: unknown[] = [];
   await page.route("**/api/feedback", async (r) => {
     sent.push(r.request().postDataJSON());
-    await r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "fbk_1", shown: "F-7K2Q9X" }) });
+    await r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "fbk_1", shown: "F-7K2Q9X", queued: false }) });
   });
   await openFeedback(page);
   const d = dialog(page);
@@ -29,28 +29,42 @@ test("a send: its kind, title and body go to the daemon, and the F- id comes bac
   const send = d.getByRole("button", { name: "Send", exact: true });
   await expect(send).toBeDisabled();
 
+  // Words and a kind, both: the daemon takes no feedback without one.
+  await d.getByRole("textbox", { name: "Your feedback" }).fill("Paste drops a newline\n\nPasting two lines runs the first.");
+  await expect(send).toBeDisabled();
   await d.getByRole("button", { name: "Bug", exact: true }).click();
   await expect(d.getByRole("button", { name: "Bug", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await d.getByRole("textbox", { name: "Your feedback" }).fill("Paste drops a newline\n\nPasting two lines runs the first.");
   await send.click();
 
   await expect(d.getByText("Thanks — sent as F-7K2Q9X.")).toBeVisible();
   expect(sent).toEqual([
-    { kind: "bug", title: "Paste drops a newline", body: "Pasting two lines runs the first.", contact_ok: false, source: "person", surface: "web" },
+    { kind: "bug", title: "Paste drops a newline", body: "Pasting two lines runs the first.", contact_ok: false, source: "person", surface: "web", route: "/" },
   ]);
   await d.getByRole("button", { name: "Done" }).click();
   await expect(dialog(page)).toHaveCount(0);
 });
 
-test("a refusal is one line, and what was written stays", async ({ page }) => {
+test("kept for later: it says it goes when the machine is back online", async ({ page }) => {
   await page.route("**/api/feedback", (r) =>
-    r.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ error: "feedback_anonymous_off" }) }),
+    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "", shown: "", queued: true }) }),
   );
   await openFeedback(page);
   const d = dialog(page);
   await d.getByRole("textbox", { name: "Your feedback" }).fill("An idea");
+  await d.getByRole("button", { name: "Idea", exact: true }).click();
   await d.getByRole("button", { name: "Send", exact: true }).click();
-  await expect(d.locator("[data-feedback-refused]")).toHaveText(/Sign in, or join this machine, to send it\./);
+  await expect(d.getByText("Thanks — saved. It goes when this machine is back online.")).toBeVisible();
+});
+
+test("a refusal is the daemon's one line, and what was written stays", async ({ page }) => {
+  const said = "Arugula isn't taking feedback from machines that aren't joined to Arugula cloud just now. Join this one (`arugula join`), or send it while signed in at app.arugula.io. Thanks for writing.";
+  await page.route("**/api/feedback", (r) => r.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ error: said }) }));
+  await openFeedback(page);
+  const d = dialog(page);
+  await d.getByRole("textbox", { name: "Your feedback" }).fill("An idea");
+  await d.getByRole("button", { name: "Idea", exact: true }).click();
+  await d.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(d.locator("[data-feedback-refused]")).toHaveText(said);
   await expect(d.getByRole("textbox", { name: "Your feedback" })).toHaveValue("An idea");
 });
 

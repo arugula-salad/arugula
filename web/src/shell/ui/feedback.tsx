@@ -59,15 +59,17 @@ function FeedbackDialog({ client, close }: { client: Client; close: () => void }
 
   const send = async (e: Event) => {
     e.preventDefault();
-    if (busy || !title || tooLong) return;
+    if (busy || !kind || !title || tooLong) return;
     setBusy(true);
     const req: FeedbackSendRequest = {
-      kind: kind ?? "other",
+      kind,
       title,
       body,
       contact_ok: signedIn && contact,
       source: "person",
       surface: desktopApp() ? "desktop" : "web",
+      // The page's path only: a query or fragment could carry a token.
+      route: location.pathname,
     };
     const out = await sendFeedback(client, req).catch((err: unknown) => ({ refused: `Couldn't reach this machine (${err instanceof Error ? err.message : String(err)}). Try again in a moment.` }));
     setBusy(false);
@@ -76,7 +78,8 @@ function FeedbackDialog({ client, close }: { client: Client; close: () => void }
 
   const cls = phone ? "feedback phone" : "feedback";
   if (outcome && "sent" in outcome) {
-    const { sent, queued } = outcome;
+    const { sent } = outcome;
+    const queued = !!sent.queued;
     return (
       <Modal
         class={cls}
@@ -105,14 +108,14 @@ function FeedbackDialog({ client, close }: { client: Client; close: () => void }
       onSubmit={(e) => void send(e)}
       root={{ "data-feedback": "write" }}
       buttons={
-        <button class="primary" type="submit" disabled={busy || !title || tooLong} aria-busy={busy}>
+        <button class="primary" type="submit" disabled={busy || !kind || !title || tooLong} aria-busy={busy}>
           Send
         </button>
       }
     >
       <div class="seg feedback-kinds" role="group" aria-label="What it is">
         {KINDS.map(([k, label]) => (
-          <button key={k} type="button" aria-pressed={kind === k} onClick={() => setKind(kind === k ? null : k)}>
+          <button key={k} type="button" aria-pressed={kind === k} onClick={() => setKind(k)}>
             {label}
           </button>
         ))}

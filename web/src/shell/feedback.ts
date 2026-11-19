@@ -3,7 +3,7 @@
 // this machine's daemon. The dialog is ./ui/feedback.tsx.
 
 import type { Client } from "./client";
-import type { FeedbackKind, FeedbackSendRequest, FeedbackSent } from "../shared/proto.gen";
+import { OPS, type FeedbackKind, type FeedbackSendRequest, type FeedbackSent } from "../shared/proto.gen.ts";
 
 /** The chips, in the order they're shown. */
 export const KINDS: [FeedbackKind, string][] = [
@@ -35,16 +35,18 @@ export function splitFeedback(text: string): { title: string; body: string } {
   return { title: `${chars.slice(0, MAX_TITLE - 1).join("")}…`, body: rest ? `${first}\n\n${rest}` : first };
 }
 
-/** What the daemon answered, as words. `queued`: #1216's daemon may keep a
- * send for when it's back online (202, or `queued` in its answer). */
-export type Outcome = { sent: FeedbackSent; queued: boolean } | { refused: string };
+/** What the daemon answered: what it sent (or queued, `sent.queued`), or
+ * the line to show for a refusal. */
+export type Outcome = { sent: FeedbackSent } | { refused: string };
 
 const RATE_LIMITED = "feedback_rate_limited";
 const ANONYMOUS_OFF = "feedback_anonymous_off";
 const TOO_LARGE = "feedback_too_large";
 
-/** A refusal's one line. */
+/** A refusal's one line. The daemon says why in a sentence of its own
+ * (`refused_words`), shown as it is; a bare code or status gets ours. */
 export function refusalLine(status: number, error: string | undefined, retryAfter?: number | null): string {
+  if (error && !/^feedback_\w+$/.test(error)) return error;
   if (error === RATE_LIMITED || status === 429) {
     const mins = retryAfter ? Math.max(1, Math.ceil(retryAfter / 60)) : 0;
     return mins ? `That's a lot of feedback at once. Try again in ${mins === 1 ? "a minute" : `${mins} minutes`}.` : "That's a lot of feedback at once. Try again in a little while.";
@@ -55,11 +57,12 @@ export function refusalLine(status: number, error: string | undefined, retryAfte
   return `Couldn't send it (${error || status}). Try again in a moment.`;
 }
 
-/** Send through `client`'s daemon. */
+/** Send through `client`'s daemon (`feedback.send`). */
 export async function sendFeedback(client: Client, req: FeedbackSendRequest): Promise<Outcome> {
-  // Not in OPS yet: #1216 adds `feedback.send` to the daemon's router.
-  const res = await client.request("POST", "/api/feedback", req);
-  const answer = await res.json<Partial<FeedbackSent> & { queued?: boolean; error?: string; retry_after?: number | null }>().catch(() => null);
-  if (res.ok) return { sent: { id: answer?.id ?? "", shown: answer?.shown ?? "" }, queued: res.status === 202 || !!answer?.queued };
+  // Its route has no holes: OPS's own, not through ../ops (opPath).
+  const op = OPS["feedback.send"];
+  const res = await client.request(op.method, op.path, req);
+  const answer = await res.json<Partial<FeedbackSent> & { error?: string; retry_after?: number | null }>().catch(() => null);
+  if (res.ok) return { sent: { id: answer?.id ?? "", shown: answer?.shown ?? "", queued: !!answer?.queued } };
   return { refused: refusalLine(res.status, answer?.error, answer?.retry_after) };
 }
