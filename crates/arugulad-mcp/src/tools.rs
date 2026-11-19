@@ -4369,7 +4369,7 @@ mod tests {
     /// everyone's since M198.)
     #[test]
     fn the_prose_leaves_out_what_a_stranger_cant_use() {
-        let mut prose = vec![super::super::instructions()];
+        let mut prose = vec![super::super::instructions(true)];
         prose.extend(list(Scope::Full, fl(false), true).iter().map(|t| {
             format!(
                 "{}: {} {}",
@@ -4418,8 +4418,12 @@ mod tests {
         let start = with.iter().find(|t| t.name == "start_agent").unwrap();
         let managoat = Value::Object((*start.input_schema).clone()).to_string().contains("\"managoat\"");
         assert!(!managoat, "retired direct execution is never advertised");
-        let text = super::super::instructions();
+        let text = super::super::instructions(true);
         assert!(!text.contains("thread") && !text.contains("@agent"), "{text}");
+        // The feedback sentence only while the tool is listed (#1219).
+        assert!(text.contains("tell the Arugula team with feedback"), "{text}");
+        let off = super::super::instructions(false);
+        assert!(!off.contains("feedback") && off.len() < text.len(), "{off}");
         // Everyone's since Docs left Labs (native #204): the Doc sentence.
         assert!(text.contains(flags::DOCS_STEERING), "{text}");
         assert!(text.contains("not an Artifact") && text.contains("`doc share`"), "{text}");

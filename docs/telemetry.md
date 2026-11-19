@@ -3,7 +3,9 @@
 Arugula can send usage counts from your machine to Arugula. It sends nothing
 until you say yes, and you can see exactly what it would send before and
 after you do. This page says what is sent, when, where, and how to turn it
-off. The plan behind it is #989.
+off. The plan behind it is #989. Feedback, which someone writes and sends,
+is separate, and telemetry's answer doesn't gate it: see
+[feedback.md](feedback.md).
 
 ## Yes, no, and what keeps it off
 

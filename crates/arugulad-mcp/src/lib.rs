@@ -266,34 +266,45 @@ const INSTRUCTIONS_HEAD: &str = "Arugula runs commands in durable terminal panes
 
 /// The tool tour, short: each tool's own description says what it does.
 const INSTRUCTIONS_TOUR: &str = "wait (until idle or needs_input), \
-don't poll; read_output pages (pass next_offset as offset). show a block, don't describe it; \
+don't poll; show a block, don't describe it; \
 once you open a pull request, or one is ready for review or merge, show it (kind pr), not a link; \
 use draft for the merge.";
 
 /// The hooks paragraph, last.
-const INSTRUCTIONS_HOOKS: &str = "Claude Code hooks put your questions (arugula ask), permission prompts (arugula hook), \
-follow-ups (arugula inbox) and attention on cards; without them questions stay in the terminal. \
-`arugula hooks install` adds them: ask first. \
+const INSTRUCTIONS_HOOKS: &str = "Claude Code hooks (`arugula hooks install`: ask first) put your questions, \
+permission prompts and follow-ups (arugula inbox) on cards; without them questions stay in the terminal. \
 Run each `arugula ...` command alone, not piped or `&&`-chained, to match allow rules.";
+
+/// When to tell the Arugula team (#1219): said only while the `feedback`
+/// tool is listed, so not when the owner or `ARUGULA_FEEDBACK` turned
+/// agents' feedback off (#1216).
+const INSTRUCTIONS_FEEDBACK: &str = "When an Arugula tool fails you, lacks something you need or gets in your \
+way, tell the Arugula team with feedback: say what you were trying to do; don't paste secrets or code.";
 
 /// The server's instructions. Claude Code shows an agent only their first
 /// 2048 characters (#606), so the steering comes first, then a short tour
 /// and the hooks: the Doc sentence (`flags::DOCS_STEERING`, which
 /// `arugula hook` also gives on `SessionStart`, #1486; everyone's since
 /// Docs left Labs, native #204), the issues sentence
-/// (`flags::ISSUES_STEERING`) and the boards sentence
-/// (`flags::BOARDS_STEERING`; everyone's since boards left Labs, native
-/// #191). Chat isn't in the instructions (#1095): how to reach a
-/// teammate's agent is in the thread tools' descriptions (#574).
-pub fn instructions() -> String {
+/// (`flags::ISSUES_STEERING`), the feedback sentence while this machine's
+/// agents may send it (`feedback`, from `arugula_proto::feedback::agents_may`)
+/// and the boards sentence (`flags::BOARDS_STEERING`; everyone's since
+/// boards left Labs, native #191). Chat isn't in the instructions (#1095):
+/// how to reach a teammate's agent is in the thread tools' descriptions
+/// (#574).
+pub fn instructions(feedback: bool) -> String {
     [
-        INSTRUCTIONS_HEAD,
-        flags::DOCS_STEERING,
-        flags::ISSUES_STEERING,
-        flags::BOARDS_STEERING,
-        INSTRUCTIONS_TOUR,
-        INSTRUCTIONS_HOOKS,
+        Some(INSTRUCTIONS_HEAD),
+        Some(flags::DOCS_STEERING),
+        Some(flags::ISSUES_STEERING),
+        feedback.then_some(INSTRUCTIONS_FEEDBACK),
+        Some(flags::BOARDS_STEERING),
+        Some(INSTRUCTIONS_TOUR),
+        Some(INSTRUCTIONS_HOOKS),
     ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
     .join(" ")
 }
 
@@ -308,7 +319,7 @@ impl ServerHandler for McpServer {
             ServerCapabilities::builder().enable_tools().enable_tool_list_changed().enable_resources().build(),
         )
         .with_server_info(Implementation::new("arugula", arugula_core::version::get()))
-        .with_instructions(instructions())
+        .with_instructions(instructions(arugula_proto::feedback::agents_may(self.app.control.state_dir())))
     }
 
     async fn list_tools(
