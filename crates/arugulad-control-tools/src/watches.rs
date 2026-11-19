@@ -17,7 +17,8 @@
 //!   fires. Only the cloud's types for now: the daemon's own (a pane's, an
 //!   agent block's) come with local watches. `types` lists the catalog.
 //!   A type that matches on project, given none, gets the current project
-//!   (`Call::current_project`, as `issue_write`'s), so `#N` is its issue.
+//!   (`Call::current_project`, as `issue_write`'s) when it names an issue by
+//!   `#N` or no subject at all; a subject named by its id is left anywhere.
 //! - **Once.** It fires once, or expires (24 hours unless told, at most 7
 //!   days) with one last message saying it ended without firing.
 
@@ -242,7 +243,20 @@ fn create_body(a: CreateArgs) -> Result<WatchCreate, String> {
 /// in it means the current project's.
 fn wants_project(body: &WatchCreate) -> bool {
     let Some(t) = body.event.as_deref().and_then(events::lookup) else { return false };
-    t.matches.iter().any(|f| f.name == "project") && body.matches.as_ref().is_none_or(|m| !m.contains_key("project"))
+    if !t.matches.iter().any(|f| f.name == "project")
+        || body.matches.as_ref().is_some_and(|m| m.contains_key("project"))
+    {
+        return false;
+    }
+    // A subject named by its id (`iss_…`, `run_…`) is anywhere the owner can
+    // read: limiting it to this project would keep it from ever firing. An
+    // issue's `#N` means this project's, and no subject at all means the
+    // project's own.
+    let named = |k: &str| body.matches.as_ref().and_then(|m| m.get(k)).and_then(Value::as_str);
+    match named("issue") {
+        Some(i) => i.starts_with('#'),
+        None => ["run", "deploy", "session"].iter().all(|k| named(k).is_none()),
+    }
 }
 
 async fn create(c: &Call<'_>, a: CreateArgs) -> Out {
@@ -398,6 +412,8 @@ mod tests {
         assert!(wants(json!({ "event": "issue.closed", "match": { "issue": "#12" } })));
         assert!(wants(json!({ "event": "run.ended" })));
         assert!(!wants(json!({ "event": "issue.closed", "match": { "issue": "#12", "project": "prj_2" } })));
+        assert!(!wants(json!({ "event": "issue.closed", "match": { "issue": "iss_9" } })), "an id is anywhere");
+        assert!(!wants(json!({ "event": "run.ended", "match": { "run": "run_1" } })), "an id is anywhere");
         assert!(!wants(json!({ "event": "chat.reply", "match": { "room": "r1" } })), "chat.reply has no project");
         assert!(!wants(json!({ "run": "run_1" })));
     }
