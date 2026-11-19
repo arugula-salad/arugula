@@ -235,16 +235,16 @@ impl ForgeBlock {
             Ok(x) => x,
             Err(Error::Denied(e)) => {
                 *self.adapter.lock().unwrap() = None;
-                return self.fail(format!("the forge refused the login: {e}"));
+                return self.read_failed(format!("the forge refused the login: {e}"));
             }
-            Err(e) => return self.fail(e.to_string()),
+            Err(e) => return self.read_failed(e),
         };
         let had = self.state.lock().unwrap().issue.clone();
         let moved = force || had.is_none() || self.fingerprint.lock().unwrap().as_deref() != Some(&fp);
         let (events, linked) = if moved {
             match a.issue_events(&repo, number).await {
                 Ok(r) => r,
-                Err(e) => return self.fail(e.to_string()),
+                Err(e) => return self.read_failed(e),
             }
         } else {
             let h = had.clone().unwrap_or_default();
