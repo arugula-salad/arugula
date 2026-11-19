@@ -1168,40 +1168,49 @@ fn tail_block(
 /// soon as a call returns; others go by the daemon's attention.
 pub(crate) async fn wait_attention(app: &App, id: PaneId, needs_input: bool) -> Res<WaitResult> {
     use arugula_proto::Attention;
-    use arugula_proto::ask::Ask;
     loop {
-        let block = app.mux.api(|r| Api::Block(id, r)).await.flatten().map(|b| b.state());
-        let found = block.and_then(|s| {
-            let a = serde_json::from_value::<Attention>(s["attention"].clone()).ok()?;
-            // #606: an agent that will carry on by itself (its turn held for
-            // background work, or tasks it left running) isn't idle yet.
-            let carries_on = s["held"] == true || s["background"].as_array().is_some_and(|b| !b.is_empty());
-            let a = if carries_on && a != Attention::NeedsInput { Attention::Working } else { a };
-            // The question it waits on: the first one not already opened.
-            let ask = s["asks"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .find(|a| a["accepted"] != true)
-                .and_then(|a| serde_json::from_value::<Ask>(a.clone()).ok());
-            Some((a, ask))
-        });
-        let (state, ask) = match found {
-            Some(f) => f,
-            None => {
-                let summaries = app.mux.api(Api::Panes).await.unwrap_or_default();
-                match summaries.into_iter().find(|p| p.info.id == id) {
-                    Some(p) => (p.info.attention, p.info.ask),
-                    None => return Err(ApiError(StatusCode::GONE, format!("%{id} closed"))),
-                }
-            }
-        };
+        let (state, ask) = attention_of(app, id).await?;
         let done = if needs_input { state == Attention::NeedsInput } else { state != Attention::Working };
         if done {
             let ask = ask.filter(|_| state == Attention::NeedsInput);
             return Ok(WaitResult::Attention { state, ask: ask.map(Box::new) });
         }
         tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+}
+
+/// Where pane or block `id`'s attention is now, as `wait` reads it, with
+/// the question it waits on: an agent that will carry on by itself is
+/// still working. Gone once it's closed.
+pub(crate) async fn attention_of(
+    app: &App,
+    id: PaneId,
+) -> Res<(arugula_proto::Attention, Option<arugula_proto::ask::Ask>)> {
+    use arugula_proto::Attention;
+    use arugula_proto::ask::Ask;
+    let block = app.mux.api(|r| Api::Block(id, r)).await.flatten().map(|b| b.state());
+    let found = block.and_then(|s| {
+        let a = serde_json::from_value::<Attention>(s["attention"].clone()).ok()?;
+        // #606: an agent that will carry on by itself (its turn held for
+        // background work, or tasks it left running) isn't idle yet.
+        let carries_on = s["held"] == true || s["background"].as_array().is_some_and(|b| !b.is_empty());
+        let a = if carries_on && a != Attention::NeedsInput { Attention::Working } else { a };
+        // The question it waits on: the first one not already opened.
+        let ask = s["asks"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|a| a["accepted"] != true)
+            .and_then(|a| serde_json::from_value::<Ask>(a.clone()).ok());
+        Some((a, ask))
+    });
+    if let Some(f) = found {
+        return Ok(f);
+    }
+    let summaries = app.mux.api(Api::Panes).await.unwrap_or_default();
+    match summaries.into_iter().find(|p| p.info.id == id) {
+        Some(p) => Ok((p.info.attention, p.info.ask)),
+        None => Err(ApiError(StatusCode::GONE, format!("%{id} closed"))),
     }
 }
 
