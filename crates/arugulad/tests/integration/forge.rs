@@ -810,7 +810,8 @@ fn a_remotes_host_is_matched_to_a_login_or_you_pick_one() {
     // A host nobody knows: the block says so, and lists the logins.
     let block = open(&d, json!({ "repo": REPO, "number": 84, "host": "nowhere.example" }));
     let st = read(&d, block);
-    assert!(st["error"].as_str().unwrap().starts_with("no tea login for nowhere.example"), "{st}");
+    let want = format!("Forgejo (nowhere.example): {REPO}#84: no tea login for nowhere.example");
+    assert!(st["error"].as_str().unwrap().starts_with(&want), "{st}");
     let names: Vec<&str> = st["logins"].as_array().unwrap().iter().filter_map(|l| l["name"].as_str()).collect();
     assert_eq!(names, ["other", "forgejo"]);
     // Picking one: kept, and it reads.
@@ -831,7 +832,9 @@ fn no_tea_says_so() {
     let d = Daemon::child_labs_env(&[], &[("PATH", "/usr/bin:/bin"), ("ARUGULA_FORGE_POLL_MS", "250,250")]);
     let block = open_pr(&d, &forge);
     let st = read(&d, block);
-    assert!(st["error"].as_str().unwrap().starts_with("no tea here"), "{st}");
+    // It names what it tried: Forgejo, as the link says.
+    let e = st["error"].as_str().unwrap();
+    assert!(e.starts_with("Forgejo (") && e.contains(&format!("): {REPO}#84: no tea here")), "{st}");
     assert_eq!(info(&d, block)["attention"], "idle");
 }
 

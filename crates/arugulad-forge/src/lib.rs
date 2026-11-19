@@ -791,6 +791,28 @@ impl ForgeBlock {
         self.ctx.changed();
     }
 
+    /// A read that failed: the error names the forge, host and item it
+    /// tried (https://app.arugula.io/issues/iss_96d13b3ceb03e938a263a8750fabc090), so a GitHub
+    /// block that can't be read never reads as a missing `tea`.
+    fn read_failed(&self, e: impl std::fmt::Display) {
+        self.fail(format!("{}: {e}", self.tried()))
+    }
+
+    /// `GitHub: o/r#7`, `GitHub (ghe.example): o/r#7`, `Forgejo (git.example): o/r#7`.
+    fn tried(&self) -> String {
+        let (p, host, repo, n) = self.live_key();
+        let forge = match p {
+            Provider::Github => "GitHub",
+            Provider::Forgejo => "Forgejo",
+            Provider::Gitlab => "GitLab",
+        };
+        let on = match (p, host.as_str()) {
+            (_, "") | (Provider::Github, "github.com") | (Provider::Gitlab, "gitlab.com") => String::new(),
+            (_, h) => format!(" ({h})"),
+        };
+        format!("{forge}{on}: {repo}#{n}")
+    }
+
     /// A poll, and a whole read when something moved (or `force`).
     async fn read(&self, force: bool) {
         let _one = self.reading.lock().await;
@@ -806,9 +828,14 @@ impl ForgeBlock {
         if self.read_pinned().await {
             return;
         }
+        // Labs' refusal says why on its own; anything else names the forge.
+        let provider = self.config.lock().unwrap().provider;
+        if let Err(e) = crate::lab_flags::forge_allowed(provider, &self.ctx.state_dir) {
+            return self.fail(e);
+        }
         let a = match self.connect().await {
             Ok(a) => a,
-            Err(e) => return self.fail(e),
+            Err(e) => return self.read_failed(e),
         };
         if self.you.lock().unwrap().is_none() {
             match a.me().await {
@@ -826,16 +853,16 @@ impl ForgeBlock {
             Ok(p) => p,
             Err(Error::Denied(e)) => {
                 *self.adapter.lock().unwrap() = None;
-                return self.fail(format!("the forge refused the login: {e}"));
+                return self.read_failed(format!("the forge refused the login: {e}"));
             }
-            Err(e) => return self.fail(e.to_string()),
+            Err(e) => return self.read_failed(e),
         };
         let had = self.state.lock().unwrap().pr.clone();
         let moved = force || had.is_none() || self.fingerprint.lock().unwrap().as_deref() != Some(&polled.fingerprint);
         let (reviews, requested, events) = if moved {
             match a.rest(&repo, number).await {
                 Ok(r) => r,
-                Err(e) => return self.fail(e.to_string()),
+                Err(e) => return self.read_failed(e),
             }
         } else {
             let h = had.clone().unwrap_or_default();

@@ -182,7 +182,10 @@ async fn user_teams(State(f): State<Fake>, h: HeaderMap) -> Response {
     answer(&f, "teams", &h, t, None)
 }
 
-async fn pull(State(f): State<Fake>, h: HeaderMap) -> Response {
+async fn pull(State(f): State<Fake>, h: HeaderMap, UrlPath((_, _, n)): UrlPath<(String, String, u64)>) -> Response {
+    if n != N {
+        return (StatusCode::NOT_FOUND, Json(json!({ "message": "Not Found" }))).into_response();
+    }
     let it = f.with(|i| i.item.clone());
     answer(&f, "pull", &h, it, None)
 }
@@ -956,7 +959,34 @@ fn a_host_gh_is_logged_in_to_is_github_enterprise() {
     d.wait_for("read", || d.state(block)["updated_ms"].as_u64().is_some_and(|t| t > 0));
     let st = d.state(block);
     assert_eq!(st["provider"], "forgejo");
-    assert!(st["error"].as_str().unwrap().starts_with("no tea login here"), "{st}");
+    assert!(st["error"].as_str().unwrap().starts_with("Forgejo (nowhere.example): o/r#3: no tea login here"), "{st}");
+}
+
+/// https://app.arugula.io/issues/iss_96d13b3ceb03e938a263a8750fabc090:
+/// OWNER/REPO#N with no clone to say its forge (no dir, or a dir that
+/// isn't a clone) is GitHub's with Labs on too, on a machine with no `tea`;
+/// and a PR it can't read says it tried GitHub, not that tea is missing.
+#[cfg(feature = "labs")]
+#[test]
+fn owner_repo_n_without_a_clone_is_githubs() {
+    let dir = scratch("bare");
+    let hub = Hub::start(&dir, "someone", &[], &[]);
+    std::fs::remove_file(hub.bin.join("tea")).unwrap();
+    let d = hub.daemon_labs();
+    let elsewhere = dir.join("not-a-clone");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    let r = format!("{REPO}#{N}");
+    for config in [json!({ "pr": r }), json!({ "pr": r, "dir": elsewhere })] {
+        let block = open(&d, config.clone());
+        let st = read(&d, block);
+        assert_eq!(st["error"], Value::Null, "{config}: {st}");
+        assert_eq!((st["provider"].as_str(), st["api"].as_str()), (Some("github"), Some(hub.origin.as_str())), "{st}");
+        assert_eq!(st["pr"]["item"]["title"], "fix: preserve percent-encoded path in DisplayURL");
+    }
+    let block = open(&d, json!({ "pr": format!("{REPO}#1") }));
+    let e = read(&d, block)["error"].as_str().unwrap().to_owned();
+    assert!(e.starts_with(&format!("GitHub: {REPO}#1: ")), "{e}");
+    assert!(!e.contains("tea"), "{e}");
 }
 
 #[test]
