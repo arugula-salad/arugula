@@ -19,13 +19,17 @@ pub struct Args {
     /// Add too: added to another account, it doesn't join.
     #[arg(long, value_name = "FINGERPRINT")]
     account: Option<String>,
+    /// Whether people who reach it through control may type there. On a
+    /// terminal, without it, join asks.
+    #[arg(long, value_name = "on|off", value_parser = ["on", "off"])]
+    remote_input: Option<String>,
 }
 
 pub fn run(args: &Args, cli: &Cli) -> anyhow::Result<i32> {
-    let Args { url, name, team, account } = args;
+    let Args { url, name, team, account, remote_input } = args;
     let control = url.clone().unwrap_or_else(|| ssh::CONTROL.to_owned());
     let mut args = vec!["join".to_owned(), control.clone()];
-    for (flag, v) in [("--name", name), ("--team", team), ("--account", account)] {
+    for (flag, v) in [("--name", name), ("--team", team), ("--account", account), ("--remote-input", remote_input)] {
         if let Some(v) = v {
             args.extend([flag.to_owned(), v.clone()]);
         }

@@ -118,6 +118,8 @@ pub enum Via<'a> {
         agent: bool,
         acting: Option<Principal>,
         caller: Option<Box<crate::e2e::Caller>>,
+        /// It came over the tailnet (`access::ViaTailnet`).
+        tailnet: bool,
     },
     /// An MCP tool call, with its caller's scope.
     Mcp(&'a Call<'a>),
@@ -166,6 +168,13 @@ impl Cx<'_> {
     /// account, which is what the Doc links' keys belong to (#1066).
     pub fn co_owner(&self) -> bool {
         matches!(self.via, Via::Http { acting: Some(_), .. })
+    }
+
+    /// The owner at this machine: on its socket, or its own page on
+    /// loopback. Not through control, not over the tailnet, not an agent:
+    /// what only the machine may set (remote input, Arugula #1194) asks.
+    pub fn at_the_machine(&self) -> bool {
+        matches!(self.via, Via::Http { owner: true, agent: false, tailnet: false, caller: None, .. })
     }
 
     /// An agent, or someone who isn't the owner: what the owner keeps for
@@ -264,6 +273,7 @@ where
     let agent = crate::invite::agent(&parts.headers);
     let caller = parts.extensions.get::<crate::e2e::Caller>().cloned().map(Box::new);
     let acting = caller.as_ref().filter(|_| owner).and_then(|c| app.control.co_owner_of(&c.account));
+    let tailnet = parts.extensions.get::<crate::access::ViaTailnet>().is_some();
     let body = match <O::Req as Request>::without_body() {
         Some(none) => none,
         // A GET's request is its query string.
@@ -289,7 +299,7 @@ where
     if O::ACCESS == Access::Owner && !owner {
         return ApiError(StatusCode::FORBIDDEN, "only the owner can".into()).into_response();
     }
-    let cx = Cx { app: &app, via: Via::Http { who, owner, agent, acting, caller } };
+    let cx = Cx { app: &app, via: Via::Http { who, owner, agent, acting, caller, tailnet } };
     match <O as Handle<M>>::handle(&cx, path, body).await {
         Ok(res) => Json(res).into_response(),
         Err(OpError::Text(code, why)) => (code, why).into_response(),

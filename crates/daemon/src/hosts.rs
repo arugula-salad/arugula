@@ -330,6 +330,8 @@ pub(crate) fn features(app: &App) -> HostFeatures {
         studio: on.has(flags::STUDIO) && crate::lab_hooks::labs().studio_here(),
         // A sharing setting, not a flag (native #205).
         guest_ssh: Some(crate::lab_flags::BUILT && arugula_proto::sharing::guest_ssh(dir)),
+        // Arugula #1194: the machine menu says whether people may type here.
+        remote_input: Some(arugula_proto::sharing::remote_input(dir)),
         flags: Some(on.names().map(str::to_owned).collect()),
     }
 }

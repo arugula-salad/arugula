@@ -524,6 +524,30 @@ export function machineSettingsItems(client: Client): MenuItem[] {
   ];
 }
 
+/** Arugula #1194: whether people who reach the shown machine through
+ * Arugula cloud may type there (`/api/host`'s `features.remote_input`),
+ * which only the machine sets. Shown to anyone with the machine menu: a
+ * viewer learns why they can't type. */
+export function remoteInputItems(client: Client): MenuItem[] {
+  const on = client.features?.remote_input;
+  if (on === undefined || !(directory.control || directory.joined)) return [];
+  return [
+    on
+      ? {
+          label: "Remote typing: on",
+          hint: "People who reach this machine through Arugula cloud may type here, as their role allows. On the machine, `arugulad sharing remote-input off` makes them all watch.",
+          disabled: true,
+          run: () => {},
+        }
+      : {
+          label: "Remote typing: off",
+          hint: "Nobody who reaches this machine through Arugula cloud may type here, its owner included from another device: at most they watch what's shared with them. On the machine, `arugulad sharing remote-input on` lets them type.",
+          disabled: true,
+          run: () => {},
+        },
+  ];
+}
+
 /** The shown machine's id on control, where it has one. */
 export function machineShown(client: Client): string | undefined {
   return client.e2e?.daemon.id ?? directory.find(directory.current)?.id;

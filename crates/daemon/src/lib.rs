@@ -522,9 +522,10 @@ pub fn main(version: &'static str) -> anyhow::Result<()> {
         }
         Some(Command::Uninstall) => install::uninstall(),
         Some(Command::Update { yes }) => selfupdate::cli(yes, &args.run.update_url),
-        Some(Command::Join { url, token, name, team, account, state_dir }) => {
+        Some(Command::Join { url, token, name, team, account, remote_input, state_dir }) => {
             let name = name.unwrap_or_else(|| hostname().unwrap_or_else(|| "arugula".into()));
             let dir = state_dir.unwrap_or_else(default_state_dir);
+            join_remote_input(&dir, remote_input.as_deref())?;
             let rt = tokio::runtime::Runtime::new()?;
             match token {
                 // aru-141: at once, on control's word.
@@ -675,6 +676,48 @@ fn lasted(secs: u64) -> String {
 /// `arugulad sharing`: the machine's sharing settings, one's state, or one
 /// set (native #205). It works on the state directory, not through the
 /// daemon, so only someone at the machine as its owner can.
+/// Before a join (Arugula #1194): may people type into this machine from
+/// elsewhere? `--remote-input` says, else a terminal is asked; with
+/// neither, it stays as it is and join says so.
+fn join_remote_input(dir: &std::path::Path, given: Option<&str>) -> anyhow::Result<()> {
+    use arugula_proto::sharing;
+    use std::io::{BufRead, IsTerminal, Write};
+    let on = match given {
+        Some(word) => Some(word == "on"),
+        None if std::io::stdin().is_terminal() && std::io::stdout().is_terminal() => {
+            println!("{}", sharing::REMOTE_INPUT_QUESTION);
+            let mut answer = None;
+            let mut lines = std::io::stdin().lock().lines();
+            while answer.is_none() {
+                print!("{}", sharing::REMOTE_INPUT_PROMPT);
+                std::io::stdout().flush()?;
+                match lines.next() {
+                    Some(line) => answer = sharing::remote_input_answer(&line?),
+                    // Ended: as it was.
+                    None => break,
+                }
+            }
+            answer
+        }
+        None => None,
+    };
+    if let Some(on) = on {
+        sharing::set_remote_input(dir, on).map_err(|e| anyhow::anyhow!("{e}"))?;
+    }
+    let now = sharing::remote_input(dir);
+    println!(
+        "  Typing from elsewhere: {}. Change it here with `arugulad sharing remote-input {}`.",
+        if now {
+            "on (as each person's role allows)"
+        } else {
+            "off (nobody who comes through Arugula cloud types here)"
+        },
+        if now { "off" } else { "on" },
+    );
+    println!();
+    Ok(())
+}
+
 fn sharing_cli(
     name: Option<args::SharingSetting>,
     switch: Option<args::OnOff>,

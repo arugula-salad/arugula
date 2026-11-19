@@ -77,6 +77,11 @@ pub enum Command {
         /// a one-click Add too: added to another account, it doesn't join.
         #[arg(long, value_name = "FINGERPRINT")]
         account: Option<String>,
+        /// Whether people who reach this machine through control may type
+        /// here (`arugulad sharing remote-input`). On a terminal, without
+        /// it, join asks; otherwise it's left as it is.
+        #[arg(long, value_name = "on|off", value_parser = ["on", "off"])]
+        remote_input: Option<String>,
         /// The daemon's state directory [default: as the daemon's].
         #[arg(long, env = "ARUGULA_STATE_DIR")]
         state_dir: Option<PathBuf>,

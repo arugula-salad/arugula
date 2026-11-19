@@ -223,6 +223,30 @@ pub fn remote_input(state_dir: &Path) -> bool {
     doc(state_dir).get("remote_input").and_then(Value::as_bool).unwrap_or(true)
 }
 
+/// What `arugulad join` asks before it joins (Arugula #1194), on a
+/// terminal: the answer sets [`remote_input`].
+pub const REMOTE_INPUT_QUESTION: &str = "\
+  May people type into this machine from elsewhere?
+  Yes: whoever reaches it through Arugula cloud may type here as their role
+  allows: you from your other devices, and people you share a session with.
+  No: nobody who comes through Arugula cloud types here, you included from
+  another device; at most they watch what's shared with them. This
+  machine's own terminals and page work either way.
+  Change it later, here: arugulad sharing remote-input on (or off).";
+
+/// The question's prompt line.
+pub const REMOTE_INPUT_PROMPT: &str = "  Allow typing from elsewhere? [Y/n] ";
+
+/// An answer to [`REMOTE_INPUT_PROMPT`]: yes (or nothing, the default) or
+/// no; `None` for anything else, which asks again.
+pub fn remote_input_answer(line: &str) -> Option<bool> {
+    match line.trim().to_ascii_lowercase().as_str() {
+        "" | "y" | "yes" => Some(true),
+        "n" | "no" => Some(false),
+        _ => None,
+    }
+}
+
 /// Turns remote input on or off, keeping the rest of the file.
 pub fn set_remote_input(state_dir: &Path, on: bool) -> io::Result<()> {
     set(state_dir, "remote_input", on)
@@ -292,6 +316,24 @@ mod tests {
         let s: Sharing = serde_json::from_str(&text).unwrap();
         assert_eq!((s.guest_ssh, s.agent_mentions, s.agent_sessions), (true, true, AgentListing::Names));
         fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// Joining asks (Arugula #1194): nothing is yes, as remote input was
+    /// before anyone asked; anything but yes or no asks again.
+    #[test]
+    fn the_join_question_reads_yes_no_and_nothing() {
+        for (said, means) in [
+            ("", Some(true)),
+            ("\n", Some(true)),
+            ("y", Some(true)),
+            (" Yes \n", Some(true)),
+            ("n", Some(false)),
+            ("NO\n", Some(false)),
+            ("maybe", None),
+            ("yess", None),
+        ] {
+            assert_eq!(remote_input_answer(said), means, "{said:?}");
+        }
     }
 
     #[test]
