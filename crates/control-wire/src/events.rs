@@ -203,6 +203,12 @@ const fn m(name: &'static str, meaning: &'static str) -> MatchField {
 const ISSUE: MatchField = m("issue", "the issue, iss_… or its #N in the project");
 const PROJECT: MatchField = m("project", "the project, prj_…");
 const PANE: MatchField = m("pane", "the pane or agent block, by its id");
+const REPO: MatchField = m("repo", "the repository, owner/repo");
+const PR: MatchField = m("pr", "the pull request, owner/repo#N");
+const BY: MatchField = m("by", "the login of who did it");
+const OUTSIDE: MatchField =
+    m("outside", "true for a fork's or a non-member's event; a watch only matches those when it asks");
+const GITHUB_PR: &[MatchField] = &[REPO, PR, BY, OUTSIDE];
 
 /// Every type this side knows. Issues and sessions ride `cloud.drive` until
 /// they have read powers of their own, as PR watches do.
@@ -232,6 +238,13 @@ pub const CATALOG: &[EventType] = &[
         name: "issue.assigned",
         meaning: "Someone was assigned a native issue.",
         matches: &[ISSUE, PROJECT, m("assignee", "the login of who was assigned")],
+        home: Home::Cloud,
+        power: Some("cloud.drive"),
+    },
+    EventType {
+        name: "issue.labeled",
+        meaning: "A native issue gained a label.",
+        matches: &[ISSUE, PROJECT, m("label", "the label it gained"), m("by", "the login of who labelled it")],
         home: Home::Cloud,
         power: Some("cloud.drive"),
     },
@@ -277,6 +290,73 @@ pub const CATALOG: &[EventType] = &[
         power: Some("threads.read"),
     },
     EventType {
+        name: "draft.answered",
+        meaning: "A forge draft was sent, discarded or failed.",
+        matches: &[
+            m("draft", "the draft, by its id"),
+            m("state", "how it was answered: sent, discarded or failed"),
+            REPO,
+        ],
+        home: Home::Cloud,
+        power: Some("cloud.drive"),
+    },
+    EventType {
+        name: "machine.updated",
+        meaning: "A machine's daemon version changed.",
+        matches: &[m("machine", "the machine, by its id"), m("version", "the daemon version it runs now")],
+        home: Home::Cloud,
+        power: Some("cloud.drive"),
+    },
+    EventType {
+        name: "github.pr.opened",
+        meaning: "A pull request on GitHub was opened.",
+        matches: GITHUB_PR,
+        home: Home::Cloud,
+        power: Some("cloud.drive"),
+    },
+    EventType {
+        name: "github.pr.closed",
+        meaning: "A pull request on GitHub was closed without merging.",
+        matches: GITHUB_PR,
+        home: Home::Cloud,
+        power: Some("cloud.drive"),
+    },
+    EventType {
+        name: "github.pr.merged",
+        meaning: "A pull request on GitHub was merged.",
+        matches: GITHUB_PR,
+        home: Home::Cloud,
+        power: Some("cloud.drive"),
+    },
+    EventType {
+        name: "github.pr.checks_done",
+        meaning: "A pull request's checks on GitHub all finished.",
+        matches: GITHUB_PR,
+        home: Home::Cloud,
+        power: Some("cloud.drive"),
+    },
+    EventType {
+        name: "github.pr.checks_failed",
+        meaning: "A check on a GitHub pull request failed.",
+        matches: GITHUB_PR,
+        home: Home::Cloud,
+        power: Some("cloud.drive"),
+    },
+    EventType {
+        name: "github.pr.ready",
+        meaning: "A draft pull request on GitHub was marked ready for review.",
+        matches: GITHUB_PR,
+        home: Home::Cloud,
+        power: Some("cloud.drive"),
+    },
+    EventType {
+        name: "github.push",
+        meaning: "Commits were pushed to a branch on GitHub.",
+        matches: &[REPO, m("branch", "the branch pushed to"), BY, OUTSIDE],
+        home: Home::Cloud,
+        power: Some("cloud.drive"),
+    },
+    EventType {
         name: "agent.idle",
         meaning: "An agent on this machine finished its turn and waits for a prompt.",
         matches: &[PANE],
@@ -301,6 +381,13 @@ pub const CATALOG: &[EventType] = &[
         name: "pane.exited",
         meaning: "A pane's process exited.",
         matches: &[PANE, m("exit", "its exit code")],
+        home: Home::Daemon,
+        power: None,
+    },
+    EventType {
+        name: "doc.share.answered",
+        meaning: "A Doc share card on this machine was answered.",
+        matches: &[m("doc", "the Doc, by its id"), m("answer", "how it was answered: shared, declined or lapsed")],
         home: Home::Daemon,
         power: None,
     },
@@ -397,8 +484,10 @@ mod tests {
             let mut fields = std::collections::HashSet::new();
             assert!(t.matches.iter().all(|f| name_well_formed(&format!("x.{}", f.name)) && fields.insert(f.name)));
             assert_eq!(t.power.is_none(), t.home == Home::Daemon, "{}: a cloud type needs a power", t.name);
-            // Arugula's own are `<object>.<verb>`: no third party's prefix.
-            assert!(![SOURCE_GITHUB, SOURCE_PLANE].contains(&t.name.split('.').next().unwrap()), "{}", t.name);
+            // A third party's carry its name first, and are the cloud's.
+            if [SOURCE_GITHUB, SOURCE_PLANE].contains(&t.name.split('.').next().unwrap()) {
+                assert_eq!(t.home, Home::Cloud, "{}", t.name);
+            }
         }
         for good in ["issue.closed", "pane.command.ended", "github.pr.merged", "agent.needs_input"] {
             assert!(name_well_formed(good), "{good}");
@@ -416,7 +505,13 @@ mod tests {
         assert_eq!(lookup("chat.reply").unwrap().power, Some("threads.read"));
         assert_eq!(lookup("pane.exited").unwrap().home, Home::Daemon);
         assert!(lookup("issue.closed").unwrap().matches.iter().any(|f| f.name == "issue"));
-        assert!(lookup("github.pr.merged").is_none());
+        for name in ["issue.labeled", "draft.answered", "machine.updated", "github.pr.checks_failed", "github.push"] {
+            assert_eq!(lookup(name).unwrap().power, Some("cloud.drive"), "{name}");
+        }
+        assert_eq!(lookup("doc.share.answered").unwrap().home, Home::Daemon);
+        assert!(lookup("github.pr.merged").unwrap().matches.iter().any(|f| f.name == "outside"));
+        assert!(lookup("github.push").unwrap().matches.iter().any(|f| f.name == "branch"));
+        assert!(lookup("github.pr.reopened").is_none());
         assert!(lookup("").is_none());
     }
 }
