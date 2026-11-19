@@ -380,8 +380,8 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
   const last = useRef<ProjectDocView | null>(null);
   /** The boards that list this Doc (#517). */
   const [onBoards, setOnBoards] = useState<BoardOfDoc[]>([]);
-  /** The title is being edited in place (#979). */
-  const [editing, setEditing] = useState(false);
+  /** Opens the title's editor in place (#979), for ⋯'s Rename: TitleEdit's own. */
+  const rename = useRef<(() => void) | null>(null);
 
   const show = (v: ProjectDocView) => {
     // A section written since the page last had it is highlighted, as in the block.
@@ -442,8 +442,8 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
           fresh={fresh}
           load={noImages}
           link="page"
-          titleView={view && writer ? <TitleEdit project={project} view={view} editing={editing} setEditing={setEditing} wrote={show} /> : undefined}
-          share={view && <PlatformDocActions p={p} doc={view.doc} menu deleter={deleter} gone={() => go(pathOf({ page: "docs", project }, names))} undone={() => go(pathOf({ page: "doc", project, doc }, names))} writer={writer} edit={() => setEditing(true)} />}
+          titleView={view && writer ? <TitleEdit project={project} view={view} opener={rename} wrote={show} /> : undefined}
+          share={view && <PlatformDocActions p={p} doc={view.doc} menu deleter={deleter} gone={() => go(pathOf({ page: "docs", project }, names))} undone={() => go(pathOf({ page: "doc", project, doc }, names))} writer={writer} edit={() => rename.current?.()} />}
           byline={
             view && (
               <>
@@ -479,19 +479,31 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
 /** For owners and editors: the title, as a button that edits it in place (#979).
  * Enter saves, Escape cancels and leaving the field saves; a title the platform
  * refuses stays in the field with its reason. */
-function TitleEdit({ project, view, editing, setEditing, wrote }: { project: string; view: ProjectDocView; editing: boolean; setEditing: (on: boolean) => void; wrote: (v: ProjectDocView) => void }) {
+function TitleEdit({ project, view, opener, wrote }: { project: string; view: ProjectDocView; opener: { current: (() => void) | null }; wrote: (v: ProjectDocView) => void }) {
+  const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(view.doc.title);
   const [why, setWhy] = useState<string | null>(null);
-  const input = useRef<HTMLInputElement>(null);
+  const input = useRef<HTMLInputElement | null>(null);
   // Set when Escape or a save has settled it, so the blur that follows doesn't save again.
   const settled = useRef(false);
-  useEffect(() => {
-    if (!editing) return;
+  // The draft is set with the editor's opening, not after it's drawn, so a key
+  // typed at once isn't overwritten by the old title (Arugula #991).
+  const open = () => {
     settled.current = false;
     setDraft(view.doc.title);
     setWhy(null);
-    queueMicrotask(() => input.current?.select());
-  }, [editing]);
+    setEditing(true);
+  };
+  opener.current = open;
+  // The field has the keys, its title selected, as it's put in the page.
+  const mounted = useMemo(
+    () => (el: HTMLInputElement | null) => {
+      input.current = el;
+      el?.focus();
+      el?.select();
+    },
+    [],
+  );
   const stop = () => {
     settled.current = true;
     setEditing(false);
@@ -514,14 +526,14 @@ function TitleEdit({ project, view, editing, setEditing, wrote }: { project: str
   };
   if (!editing)
     return (
-      <button type="button" class="doc-title-edit" title="Rename" data-doc-title-edit onClick={() => setEditing(true)}>
+      <button type="button" class="doc-title-edit" title="Rename" data-doc-title-edit onClick={open}>
         {view.doc.title || "Untitled"}
       </button>
     );
   return (
     <>
       <input
-        ref={input}
+        ref={mounted}
         class="field doc-title-input"
         type="text"
         value={draft}
