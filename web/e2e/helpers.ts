@@ -234,9 +234,9 @@ export async function withPasskey(page: Page) {
 }
 
 /** Opens one of the control overlay's panels ("devices", "account",
- * "teams", ...) once the overlay listens for the event: sent before that,
- * it's lost. Checking and sending in one evaluate means the overlay can't
- * unmount in between. */
+ * "teams", ...) once the overlay is on the page. The open panel is held
+ * above the overlay, so it stays open when the page switches machine and
+ * the overlay mounts again (Arugula #960). */
 export const controlPanel = (page: Page, panel: string) =>
   page.waitForFunction(
     (p) => {
