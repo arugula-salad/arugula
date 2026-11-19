@@ -56,6 +56,7 @@ pub mod lab_flags;
 // What the base asks of Labs (crates/arugulad-labs), which registers it.
 pub mod lab_hooks;
 mod listening;
+pub mod local_watches;
 mod localauth;
 mod machine_sessions;
 mod machine_token;
@@ -1264,6 +1265,8 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     );
     // Control hears where the turns that took teammates' mentions are (#540).
     crate::task::spawn(agent_mentions::keep_telling(app.clone(), turns_rx));
+    // The watches it holds itself, on its own panes and blocks.
+    crate::task::spawn(local_watches::keep(app.clone()));
     // What the inbox still holds from before a restart is a card again (#551).
     let reraised = app.clone();
     crate::task::spawn(async move { agent_mentions::reraise(&reraised).await });

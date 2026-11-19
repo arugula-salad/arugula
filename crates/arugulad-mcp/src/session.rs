@@ -36,7 +36,7 @@ use std::{
 
 use arugula_control_wire::{
     project_docs::{DocView, DocWrite, NewDoc, NewSection},
-    watch::{EventTarget, WatchState, WatchTarget, event_target, event_types, expires_ms, until_word_parse},
+    watch::{EventTarget, WatchState, WatchTarget, Watcher, event_target, event_types, expires_ms, until_word_parse},
     work::{
         SessionIssuesAsk, SessionIssuesGiven, SessionIssuesOp, SessionWatchAsk, SessionWatchGiven, SessionWatchOp,
         WORK_SESSION_ISSUES, WORK_SESSION_WATCH,
@@ -233,7 +233,7 @@ fn watch_create(a: WatchArgs) -> Result<SessionWatchOp, String> {
     if a.matches.as_ref().is_some_and(|m| m.contains_key("project")) {
         return Err("match project: a session watches its own project's events, and #N is its issue".into());
     }
-    let EventTarget { event, matches, note } = event_target(a.event, a.matches, a.note)?;
+    let EventTarget { event, matches, note } = event_target(Watcher::HostedSession, a.event, a.matches, a.note)?;
     if targets.is_empty() && event.is_none() {
         return Err("watch create needs something to watch: pr, agent_session, run, room or event".into());
     }
@@ -372,9 +372,10 @@ impl Server {
                 }
                 SessionWatchOp::Cancel { id, all: a.all }
             }
-            // A hosted session's box has joined: every cloud type is watchable.
+            // A hosted session's box has joined: every cloud type is
+            // watchable, and no machine's own.
             "types" => {
-                let text = event_types(true);
+                let text = event_types(Watcher::HostedSession, true);
                 return done(text.clone(), json!({ "types": text }));
             }
             k => return Err(format!("watch kind {k}: create, list, cancel or types")),
@@ -832,7 +833,10 @@ mod tests {
             err(json!({ "event": "issue.closed", "match": { "label": "bug" } })),
             "match label: issue.closed matches on issue, project, by"
         );
-        assert!(err(json!({ "event": "pane.exited" })).contains("local watches come soon"));
+        assert_eq!(
+            err(json!({ "event": "pane.exited" })),
+            "event pane.exited: a machine's own event, watched by an agent on that machine; a hosted session watches the cloud's types"
+        );
         assert!(err(json!({ "event": "issue.closed", "note": "x".repeat(201) })).contains("at most 200"));
         assert_eq!(err(json!({ "run": "run_1", "match": { "issue": "#1" } })), "match and note go with an event");
         assert!(err(json!({ "event": "issue.closed", "match": { "project": "prj_2" } })).starts_with("match project"));

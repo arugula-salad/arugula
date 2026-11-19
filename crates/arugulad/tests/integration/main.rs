@@ -91,6 +91,7 @@ mod invite;
 #[cfg(unix)]
 mod join_tokens;
 mod local_auth;
+mod local_watches;
 #[cfg(unix)]
 mod machine_tokens;
 mod mcp;

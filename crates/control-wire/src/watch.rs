@@ -314,11 +314,21 @@ pub struct EventTarget {
     pub note: Option<String>,
 }
 
-/// An event target, checked before it's sent: the type is in the catalog
-/// and served by the cloud (a daemon's own come with local watches), each
-/// match key is one of its match fields, and the note is at most
-/// [`NOTE_MAX`] characters. Match and note need an event.
+/// Which `watch` tool checks an event target: a machine's, whose daemon
+/// holds watches on its own types (local watches), or a hosted session's,
+/// which has no panes of its own to watch that way. Not on the wire.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Watcher {
+    Machine,
+    HostedSession,
+}
+
+/// An event target, checked before it's sent: the type is in the catalog,
+/// and a daemon's own only for [`Watcher::Machine`], each match key is one
+/// of its match fields, and the note is at most [`NOTE_MAX`] characters.
+/// Match and note need an event.
 pub fn event_target(
+    watcher: Watcher,
     event: Option<String>,
     matches: Option<serde_json::Map<String, serde_json::Value>>,
     note: Option<String>,
@@ -334,8 +344,10 @@ pub fn event_target(
     let Some(t) = events::lookup(&name) else {
         return Err(format!("event {name}: no such type; watch types lists them"));
     };
-    if t.home == Home::Daemon {
-        return Err(format!("event {name}: local watches come soon; use wait for a pane"));
+    if t.home == Home::Daemon && watcher == Watcher::HostedSession {
+        return Err(format!(
+            "event {name}: a machine's own event, watched by an agent on that machine; a hosted session watches the cloud's types"
+        ));
     }
     for k in matches.iter().flat_map(|m| m.keys()) {
         if !t.matches.iter().any(|f| f.name == k) {
@@ -352,15 +364,17 @@ pub fn event_target(
 }
 
 /// `watch types`' answer: the catalog, a type to two lines, and whether
-/// this machine can watch each now (`joined`: it has joined Arugula cloud).
-pub fn event_types(joined: bool) -> String {
+/// `watcher` can watch each now (`joined`: its machine has joined Arugula
+/// cloud).
+pub fn event_types(watcher: Watcher, joined: bool) -> String {
     let lines: Vec<String> = events::CATALOG
         .iter()
         .map(|t| {
             let now = match t.home {
                 Home::Cloud if joined => "watchable now",
                 Home::Cloud => "not now: this machine hasn't joined Arugula cloud",
-                Home::Daemon => "not yet: local watches come soon; use wait for a pane",
+                Home::Daemon if watcher == Watcher::Machine => "watchable now, by this machine",
+                Home::Daemon => "not here: a machine's own, watched by an agent on that machine",
             };
             let fields: Vec<String> = t.matches.iter().map(|f| format!("{} ({})", f.name, f.meaning)).collect();
             format!("{}: {} [{now}]\n  match: {}", t.name, t.meaning, fields.join("; "))
@@ -384,5 +398,35 @@ pub fn expires_ms(word: &str) -> Result<u64, String> {
         0 => Err("expires: more than nothing".into()),
         ms if ms > EXPIRES_MAX_MS => Err(format!("expires {w}: at most 7d")),
         ms => Ok(ms),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_daemons_own_event_is_a_machines_to_watch() {
+        let pane = || Some(serde_json::json!({ "pane": "4" }).as_object().unwrap().clone());
+        let t = event_target(Watcher::Machine, Some("pane.exited".into()), pane(), None).unwrap();
+        assert_eq!(t.event.as_deref(), Some("pane.exited"));
+        let e = event_target(Watcher::HostedSession, Some("pane.exited".into()), pane(), None).unwrap_err();
+        assert!(e.contains("a machine's own event"), "{e}");
+        let e = event_target(Watcher::Machine, Some("pane.exited".into()), Some(Default::default()), None);
+        assert!(e.is_ok());
+        let bad = serde_json::json!({ "issue": "#1" }).as_object().unwrap().clone();
+        let e = event_target(Watcher::Machine, Some("pane.exited".into()), Some(bad), None).unwrap_err();
+        assert!(e.contains("matches on pane"), "{e}");
+    }
+
+    #[test]
+    fn types_say_who_can_watch_a_daemons_own() {
+        let machine = event_types(Watcher::Machine, false);
+        assert!(machine.contains("agent.idle: "), "{machine}");
+        assert!(machine.contains("[watchable now, by this machine]"));
+        assert!(machine.contains("[not now: this machine hasn't joined Arugula cloud]"));
+        let hosted = event_types(Watcher::HostedSession, true);
+        assert!(hosted.contains("[not here: a machine's own, watched by an agent on that machine]"));
+        assert!(!hosted.contains("by this machine"));
     }
 }
