@@ -130,9 +130,11 @@ test("a deleted Doc opens in the preview with who, when, the days left and Resto
   await shoot(page, "docs-deleted-open");
 
   await p.locator("[data-doc-restore]").click();
+  // The Deleted group goes first: until the trash is read again the restored
+  // Doc can be drawn twice, back in the list and still under Deleted.
+  await expect(deleted(page)).toHaveCount(0);
   await expect(row(page, "Old roadmap")).toBeVisible();
   await expect(row(page, "Old roadmap")).not.toHaveAttribute("data-trashed-doc");
-  await expect(deleted(page)).toHaveCount(0);
 });
 
 test("a viewer sees a deleted Doc without Restore, and who may restore it", async ({ page }) => {
