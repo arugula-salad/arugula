@@ -41,9 +41,19 @@ else
   ed25519=""
   : >"$key"
   : >"$key.probe"
-  echo "(no openssl with Ed25519: the signature cases check that install.sh says it can't tell)"
+  echo "(no openssl with Ed25519: install.sh checks signatures with ssh-keygen here)"
   printf 'unchecked\n' >"$rel/SHA256SUMS.sig"
 fi
+
+# SHA256SUMS.sshsig, signed with an SSH key of the test's own (KEY.ssh, an
+# allowed-signers line, and KEY.ssh.probe), as install.sh checks it where
+# openssl can't.
+command -v ssh-keygen >/dev/null || { echo "FAIL  needs ssh-keygen"; exit 1; }
+sshsign() { ssh-keygen -q -Y sign -f "$1" -n arugula-release; }
+ssh-keygen -q -t ed25519 -N '' -C test -f "$work/release-ssh" </dev/null >/dev/null
+printf 'arugula-release %s\n' "$(cut -d' ' -f1,2 "$work/release-ssh.pub")" >"$key.ssh"
+printf 'arugula release key' | sshsign "$work/release-ssh" >"$key.ssh.probe"
+sshsign "$work/release-ssh" <"$rel/SHA256SUMS" >"$rel/SHA256SUMS.sshsig"
 
 # The app's release (app-latest, #393): a stand-in zip per Mac, which the
 # ditto stand-in "unpacks" into an arugula.app that names it.
@@ -211,11 +221,70 @@ if [ -n "$ed25519" ]; then
     bad sig-sums-changed "installed with SHA256SUMS changed after it was signed"
   fi
   cp "$work/good.sums" "$rel/SHA256SUMS"
-else
-  run sig-cant-tell Linux x86_64
-  if [ "$status" = 0 ] && grep -q "no openssl with Ed25519 here" <<<"$out"; then ok "can't check signatures here: says so"; else bad sig-cant-tell "didn't say it couldn't check"; fi
 fi
-rm "$rel/SHA256SUMS.sig"
+
+# Where openssl can't check Ed25519 (macOS's LibreSSL; here an openssl that
+# fails), ssh-keygen checks SHA256SUMS.sshsig instead.
+cp "$rel/SHA256SUMS.sshsig" "$work/good.sshsig"
+cp "$rel/SHA256SUMS" "$work/good.sums"
+nossl=$work/nossl
+mkdir -p "$nossl"
+printf '#!/bin/sh\nexit 1\n' >"$nossl/openssl"
+chmod +x "$nossl/openssl"
+path=$nossl:$stubs:$PATH
+run ssh-signed Darwin arm64
+if [ "$status" = 0 ] && [ -f "$home/calls" ] && grep -q 'SHA256SUMS.sshsig$' "$home/fetched"; then
+  ok "no openssl Ed25519: SHA256SUMS.sshsig checked with ssh-keygen"
+else
+  bad ssh-signed "didn't install with a good SHA256SUMS.sshsig"
+fi
+ssh-keygen -q -t ed25519 -N '' -C other -f "$work/other-ssh" </dev/null >/dev/null
+sshsign "$work/other-ssh" <"$rel/SHA256SUMS" >"$rel/SHA256SUMS.sshsig"
+run ssh-other-key Darwin arm64
+if [ "$status" != 0 ] && grep -q "isn't signed by the release key" <<<"$out" && [ ! -f "$home/calls" ]; then
+  ok "SHA256SUMS.sshsig by another key refused"
+else
+  bad ssh-other-key "installed a release whose SHA256SUMS another SSH key signed"
+fi
+cp "$work/good.sshsig" "$rel/SHA256SUMS.sshsig"
+printf '%s  extra.tar.gz\n' "$(printf x | { sha256sum 2>/dev/null || shasum -a 256; } | cut -d' ' -f1)" >>"$rel/SHA256SUMS"
+run ssh-sums-changed Darwin arm64
+if [ "$status" != 0 ] && grep -q "isn't signed by the release key" <<<"$out" && [ ! -f "$home/calls" ]; then
+  ok "SHA256SUMS changed after its SSH signing refused"
+else
+  bad ssh-sums-changed "installed with SHA256SUMS changed after it was signed"
+fi
+cp "$work/good.sums" "$rel/SHA256SUMS"
+rm "$rel/SHA256SUMS.sshsig"
+run ssh-sig-missing Darwin arm64
+if [ "$status" != 0 ] && grep -q "no SHA256SUMS.sshsig" <<<"$out" && [ ! -f "$home/calls" ]; then
+  ok "no openssl Ed25519 and no SHA256SUMS.sshsig refused"
+else
+  bad ssh-sig-missing "installed a release it couldn't check"
+fi
+cp "$work/good.sshsig" "$rel/SHA256SUMS.sshsig"
+# Neither: an ssh-keygen without -Y (before OpenSSH 8.1) can't check it
+# either, and install.sh stops unless ARUGULA_ALLOW_UNSIGNED=1.
+cp "$nossl/openssl" "$nossl/ssh-keygen"
+for allow in "" 1; do
+  with=(ARUGULA_ALLOW_UNSIGNED="$allow")
+  run "no-tool${allow:+-allowed}" Darwin arm64
+  with=()
+  if [ -z "$allow" ]; then
+    if [ "$status" != 0 ] && grep -q "can't check the signature" <<<"$out" && grep -q "ARUGULA_ALLOW_UNSIGNED=1 installs it anyway" <<<"$out" && [ ! -f "$home/calls" ]; then
+      ok "nothing to check the signature with: refused"
+    else
+      bad no-tool "installed what it couldn't check, or didn't say why"
+    fi
+  elif [ "$status" = 0 ] && [ -f "$home/calls" ] && grep -q "installing it anyway" <<<"$out"; then
+    ok "nothing to check the signature with, ARUGULA_ALLOW_UNSIGNED=1: installed"
+  else
+    bad no-tool-allowed "didn't install with ARUGULA_ALLOW_UNSIGNED=1"
+  fi
+done
+path=$stubs:$PATH
+
+rm "$rel/SHA256SUMS.sig" "$rel/SHA256SUMS.sshsig"
 run sig-missing Linux x86_64
 if [ "$status" != 0 ] && grep -q "isn't signed (no SHA256SUMS.sig)" <<<"$out" && [ ! -f "$home/calls" ]; then
   ok "unsigned release refused"
@@ -227,6 +296,7 @@ run sig-missing-allowed Linux x86_64
 with=()
 if [ "$status" = 0 ] && grep -q "installing it anyway" <<<"$out"; then ok "unsigned release with ARUGULA_ALLOW_UNSIGNED=1"; else bad sig-missing-allowed "didn't install with ARUGULA_ALLOW_UNSIGNED=1"; fi
 cp "$work/good.sig" "$rel/SHA256SUMS.sig"
+cp "$work/good.sshsig" "$rel/SHA256SUMS.sshsig"
 
 # app NAME OS ARCH ARM64 ZIP [ARG...]: the daemon as above, then the Mac
 # app ZIP from app-latest, checked against app-latest's SHA256SUMS, in
@@ -322,7 +392,7 @@ if [ -e "$home/Apps/illogical.app" ]; then bad mac-old-app "left illogical.app b
 # PATH without systemctl: the stubs and the few tools install.sh uses.
 nosd=$work/nosd
 mkdir -p "$nosd"
-for c in sh mktemp rm mkdir cp mv ln grep cut sed tar gzip sha256sum shasum id cat tr basename dirname sleep chmod; do
+for c in sh mktemp rm mkdir cp mv ln grep cut sed tar gzip sha256sum shasum id cat tr basename dirname sleep chmod openssl ssh-keygen; do
   w=$(command -v "$c" 2>/dev/null) && ln -sf "$w" "$nosd/$c"
 done
 path=$stubs:$nosd

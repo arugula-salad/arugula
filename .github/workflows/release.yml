@@ -215,7 +215,8 @@ jobs:
   # gives it its notes first, from the tag's message, and the formula step writes the Homebrew
   # formula's template there. The publish stages every target, then
   # reveals them in order: the tarballs, the Windows zip, the extension,
-  # SHA256SUMS and its signature (sign-sums, with RELEASE_SUMS_KEY) and
+  # SHA256SUMS and its signatures (sign-sums, with RELEASE_SUMS_KEY and
+  # RELEASE_SUMS_SSH_KEY) and
   # chant's provenance statement on the draft, published as
   # latest; Formula/arugula.rb in the tap, pushed over SSH with its deploy
   # key (HOMEBREW_TAP_KEY); the extension on the VS Code Marketplace and
@@ -258,10 +259,13 @@ jobs:
           path: dist/release
       - run: scripts/release sums "$GITHUB_REF_NAME" dist/release
       # SHA256SUMS.sig, which `arugulad update` and install.sh check
-      # SHA256SUMS against: the key is this environment's alone.
+      # SHA256SUMS against, and SHA256SUMS.sshsig, which install.sh and
+      # install.ps1 check with ssh-keygen where openssl can't (a stock Mac,
+      # Windows): the keys are this environment's alone.
       - run: scripts/release sign-sums dist/release
         env:
           RELEASE_SUMS_KEY: ${{ secrets.RELEASE_SUMS_KEY }}
+          RELEASE_SUMS_SSH_KEY: ${{ secrets.RELEASE_SUMS_SSH_KEY }}
       - run: scripts/release formula "$GITHUB_REF_NAME" dist/release
       - run: scripts/release draft "$GITHUB_REF_NAME"
         env:

@@ -520,10 +520,15 @@ version, or when you want different notes.
    [arugula-salad/site](https://github.com/arugula-salad/site), which deploys
    on merge; arugula.io serves `scripts/install.sh` and `install.ps1` as the
    newest release's commit has them, so a change to them goes out with the
-   next release. The release's `SHA256SUMS` is signed (`SHA256SUMS.sig`,
-   `scripts/release sign-sums` with the `marketplace` environment's
-   `RELEASE_SUMS_KEY`); `arugulad update` and `install.sh` check it against
-   the key in `crates/proto/src/release_sums.rs`.
+   next release. The release's `SHA256SUMS` is signed twice by
+   `scripts/release sign-sums`, with the `marketplace` environment's keys:
+   `SHA256SUMS.sig` (Ed25519, `RELEASE_SUMS_KEY`), which `arugulad update`
+   and `install.sh` check against the key in
+   `crates/proto/src/release_sums.rs`, and `SHA256SUMS.sshsig`
+   (`ssh-keygen -Y sign`, `RELEASE_SUMS_SSH_KEY`), which `install.sh`
+   checks where openssl can't do Ed25519 (a stock Mac) and `install.ps1`
+   always checks. Where neither can be checked, both stop unless
+   `ARUGULA_ALLOW_UNSIGNED=1`.
 
 A build from main (`just build`, `just dist`) reports the version
 `Cargo.toml` has, which stays at the last version a commit set (0.66.12,

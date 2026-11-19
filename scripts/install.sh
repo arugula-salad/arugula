@@ -32,9 +32,11 @@
 #                           are, instead of GitHub
 # ARUGULA_APP_DIR=DIR     where Arugula.app goes, instead of
 #                           /Applications or ~/Applications
-# ARUGULA_ALLOW_UNSIGNED=1  install a release whose SHA256SUMS has no
-#                           signature (one from before releases were
-#                           signed, or a local build)
+# ARUGULA_ALLOW_UNSIGNED=1  install a release whose SHA256SUMS's signature
+#                           can't be checked: one from before releases
+#                           were signed, a local build, or a machine with
+#                           neither openssl with Ed25519 nor ssh-keygen
+#                           (OpenSSH 8.1 or later)
 set -eu
 
 repo=https://github.com/arugula-salad/arugula
@@ -51,10 +53,25 @@ sums_key='-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAsD4YB+GbXgEt8eueJnob85euFZyEZYmLeTfOJhrdsVo=
 -----END PUBLIC KEY-----'
 sums_probe=XB4HUMx0sSs4lma1VQrfL/DGf4X94D1Sdxeas/al96ifurSl/0UcUHyt0VOv/Yyb608YY2/3zmlg3z+cmn0LAg==
-# scripts/tests/install.sh's own key: KEY (a PEM) and KEY.probe.
+# The SSH key that signs it too (SHA256SUMS.sshsig, `ssh-keygen -Y sign`,
+# namespace arugula-release; scripts/release has the same key), as an
+# allowed-signers line, and its signature of the same words: where openssl
+# can't check Ed25519, ssh-keygen (OpenSSH 8.1 or later, which macOS has)
+# checks this one.
+sums_ssh_key='arugula-release ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIQvxZLSOJnbNQGrK2Q72gdNqHXBmDtixUemY9RCpsKs'
+sums_ssh_probe='-----BEGIN SSH SIGNATURE-----
+U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAghC/FktI4mds1AasrZDvaB02odc
+GYO2LFR6Zj1EKmwqwAAAAPYXJ1Z3VsYS1yZWxlYXNlAAAAAAAAAAZzaGE1MTIAAABTAAAA
+C3NzaC1lZDI1NTE5AAAAQJdemiJv1aEH10IKH/NSs8FbDIgzFvtIbwVy9817CSrDRCvl3I
+IXO9z3CPM1HBnm8CgJnkc8eFVrPQaVOEMQEgA=
+-----END SSH SIGNATURE-----'
+# scripts/tests/install.sh's own keys: KEY (a PEM) and KEY.probe, and
+# KEY.ssh (an allowed-signers line) and KEY.ssh.probe.
 if [ -n "${ARUGULA_TEST_RELEASE_KEY:-}" ]; then
   sums_key=$(cat "$ARUGULA_TEST_RELEASE_KEY")
   sums_probe=$(cat "$ARUGULA_TEST_RELEASE_KEY.probe")
+  sums_ssh_key=$(cat "$ARUGULA_TEST_RELEASE_KEY.ssh")
+  sums_ssh_probe=$(cat "$ARUGULA_TEST_RELEASE_KEY.ssh.probe")
 fi
 # The Developer ID team the Mac app is signed by.
 app_team=HNDPMQPF22
@@ -70,6 +87,27 @@ signed() {
   openssl pkeyutl -verify -pubin -inkey "$k/key.pem" -rawin -in "$k/probe" -sigfile "$k/probe.sig" >/dev/null 2>&1 || return 2
   tr -d '\r\n' <"$2" | openssl base64 -d -A >"$k/sig" 2>/dev/null || return 1
   openssl pkeyutl -verify -pubin -inkey "$k/key.pem" -rawin -in "$1" -sigfile "$k/sig" >/dev/null 2>&1 || return 1
+}
+
+# ssh_signed FILE SIG: the same, for the SSH release key's signature, with
+# ssh-keygen; 2 when there's none here that checks signatures.
+ssh_signed() {
+  command -v ssh-keygen >/dev/null 2>&1 || return 2
+  k=$(mktemp -d "$tmp/sshsig.XXXXXX")
+  printf '%s\n' "$sums_ssh_key" >"$k/allowed"
+  printf '%s\n' "$sums_ssh_probe" >"$k/probe.sig"
+  printf 'arugula release key' | ssh-keygen -Y verify -f "$k/allowed" -I arugula-release -n arugula-release -s "$k/probe.sig" >/dev/null 2>&1 || return 2
+  ssh-keygen -Y verify -f "$k/allowed" -I arugula-release -n arugula-release -s "$2" <"$1" >/dev/null 2>&1 || return 1
+}
+
+# unchecked WHY: SHA256SUMS's signature can't be checked; stop, unless
+# ARUGULA_ALLOW_UNSIGNED=1 says to go on with the checksums alone.
+unchecked() {
+  if [ "${ARUGULA_ALLOW_UNSIGNED:-}" = 1 ]; then
+    say "$1: installing it anyway (ARUGULA_ALLOW_UNSIGNED=1)"
+  else
+    die "$1. ARUGULA_ALLOW_UNSIGNED=1 installs it anyway"
+  fi
 }
 
 # The Mac app: by default when this is someone's own session at the screen
@@ -138,20 +176,30 @@ say "downloading $name"
 curl -fsSL -o "$tmp/$name.tar.gz" "$base/$name.tar.gz" || die "no $name.tar.gz in release $version"
 curl -fsSL -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" || die "no SHA256SUMS in release $version"
 # SHA256SUMS must be the release key's: whoever could swap the tarball could
-# swap SHA256SUMS too, but not sign it.
+# swap SHA256SUMS too, but not sign it. With openssl (SHA256SUMS.sig), or
+# where that can't check Ed25519, with ssh-keygen (SHA256SUMS.sshsig).
+# rc: 0 signed, 1 not by the release key, 2 nothing here can check it,
+# 3 no signature, 4 openssl can't and there's no SHA256SUMS.sshsig.
+rc=3
 if curl -fsSL -o "$tmp/SHA256SUMS.sig" "$base/SHA256SUMS.sig"; then
   rc=0
   signed "$tmp/SHA256SUMS" "$tmp/SHA256SUMS.sig" || rc=$?
-  case $rc in
-    0) ;;
-    1) die "release $version's SHA256SUMS isn't signed by the release key: not installing it" ;;
-    *) say "(no openssl with Ed25519 here to check SHA256SUMS's signature: checking the download against it only)" ;;
-  esac
-elif [ "${ARUGULA_ALLOW_UNSIGNED:-}" = 1 ]; then
-  say "release $version's SHA256SUMS isn't signed: installing it anyway (ARUGULA_ALLOW_UNSIGNED=1)"
-else
-  die "release $version's SHA256SUMS isn't signed (no SHA256SUMS.sig): ARUGULA_ALLOW_UNSIGNED=1 installs it anyway"
 fi
+if [ "$rc" -ge 2 ]; then
+  if curl -fsSL -o "$tmp/SHA256SUMS.sshsig" "$base/SHA256SUMS.sshsig"; then
+    rc=0
+    ssh_signed "$tmp/SHA256SUMS" "$tmp/SHA256SUMS.sshsig" || rc=$?
+  elif [ "$rc" = 2 ]; then
+    rc=4
+  fi
+fi
+case $rc in
+  0) ;;
+  1) die "release $version's SHA256SUMS isn't signed by the release key: not installing it" ;;
+  2) unchecked "can't check the signature of release $version's SHA256SUMS here: that takes openssl with Ed25519, or ssh-keygen from OpenSSH 8.1 or later" ;;
+  3) unchecked "release $version's SHA256SUMS isn't signed (no SHA256SUMS.sig)" ;;
+  *) unchecked "this machine's openssl can't check Ed25519, and release $version has no SHA256SUMS.sshsig for ssh-keygen" ;;
+esac
 
 want=$(grep " $name.tar.gz\$" "$tmp/SHA256SUMS" | cut -d' ' -f1)
 [ -n "$want" ] || die "$name.tar.gz isn't in SHA256SUMS"
