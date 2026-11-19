@@ -67,7 +67,11 @@ terminal traffic is TLS to the relay.
   team's roster, which says whose devices get in, is control's word); only
   the devices of the machine's own account, which chain to the root it
   pinned when it joined, are as they were. A channel that opened while it
-  was on closes and comes back as a viewer's.
+  was on closes and comes back as a viewer's. The machine's owner (whoever
+  would get in as the owner with it on) watches every session on the
+  machine, team or not, and types into none (Arugula #1210,
+  `acl::Hold::owner_watching`); before, a personal machine showed them
+  nothing.
   It's in `sharing.json` (`remote_input`), and nothing that comes through
   control can turn it back on (`crates/proto/src/sharing.rs`,
   `remote_input`). It's set on the machine only: `arugulad sharing

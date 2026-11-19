@@ -312,7 +312,8 @@ async fn serve_token(
     // #1005): control's word, a guest's included. With remote input off,
     // nothing raises it past a viewer: not the roster, not a grant on a
     // session, not a team's.
-    let hold = crate::acl::Hold::token(grant.role, !input);
+    let hold =
+        if grant.everywhere { crate::acl::Hold::owner_watching() } else { crate::acl::Hold::token(grant.role, !input) };
     app.acl.hold(&id, hold);
     let caller = Caller { account: claims.sub.clone(), device: id.clone(), name: claims.name.clone() };
     let log = Opened {
@@ -353,6 +354,9 @@ pub(crate) struct TokenGrant {
     pub(crate) role: Option<arugula_core::Role>,
     /// The role to log.
     pub(crate) shown: &'static str,
+    /// The role counts on every session here (Arugula #1210): who would be
+    /// the owner, held to watching by remote input off.
+    pub(crate) everywhere: bool,
 }
 
 /// What `claims` give here. An owner's token is this machine's owner when
@@ -362,7 +366,8 @@ pub(crate) struct TokenGrant {
 /// teammate, whose owner's role counts as the team's on its projects'
 /// sessions (Arugula #1180). On a hosted machine an editor is the owner too,
 /// as a team roster's editor is (M184). With remote input off, nobody
-/// through control is more than a viewer.
+/// through control is more than a viewer, and who would be the owner
+/// watches every session (Arugula #1210).
 pub(crate) fn token_grant(
     claims: &arugula_control_wire::machine_token::MachineClaims,
     hosted: bool,
@@ -375,18 +380,29 @@ pub(crate) fn token_grant(
         || crate::acl::Principal::User { id: format!("account:{}", claims.sub), name: claims.name.clone(), pic: None };
     let types = matches!(claims.role, TokenRole::Owner | TokenRole::Editor);
     if types && !remote_input {
-        return TokenGrant { principal: user(), role: Some(Role::Viewer), shown: "viewer" };
+        // Who would be the owner still watches every session here (Arugula
+        // #1210); anyone else, what's shared with them or their team's.
+        let owner = token_owns(claims.role, hosted, owns, true);
+        return TokenGrant { principal: user(), role: Some(Role::Viewer), shown: "viewer", everywhere: owner };
     }
     match claims.role {
-        TokenRole::Owner if owns => TokenGrant { principal: crate::acl::Principal::Owner, role: None, shown: "owner" },
-        TokenRole::Owner => TokenGrant { principal: user(), role: Some(Role::Owner), shown: "owner" },
-        TokenRole::Editor if hosted => {
-            TokenGrant { principal: crate::acl::Principal::Owner, role: None, shown: "editor" }
+        TokenRole::Owner if owns => {
+            TokenGrant { principal: crate::acl::Principal::Owner, role: None, shown: "owner", everywhere: false }
         }
-        TokenRole::Editor => TokenGrant { principal: user(), role: Some(Role::Editor), shown: "editor" },
-        TokenRole::Viewer => TokenGrant { principal: user(), role: Some(Role::Viewer), shown: "viewer" },
+        TokenRole::Owner => {
+            TokenGrant { principal: user(), role: Some(Role::Owner), shown: "owner", everywhere: false }
+        }
+        TokenRole::Editor if hosted => {
+            TokenGrant { principal: crate::acl::Principal::Owner, role: None, shown: "editor", everywhere: false }
+        }
+        TokenRole::Editor => {
+            TokenGrant { principal: user(), role: Some(Role::Editor), shown: "editor", everywhere: false }
+        }
+        TokenRole::Viewer => {
+            TokenGrant { principal: user(), role: Some(Role::Viewer), shown: "viewer", everywhere: false }
+        }
         // Only what's shared with `account:<sub>`.
-        TokenRole::Guest => TokenGrant { principal: user(), role: None, shown: "guest" },
+        TokenRole::Guest => TokenGrant { principal: user(), role: None, shown: "guest", everywhere: false },
     }
 }
 
@@ -1062,6 +1078,15 @@ mod token_grants {
         };
         assert_eq!(teammate(true), (user.clone(), Some(Role::Owner)));
         assert_eq!(teammate(false), (user, Some(Role::Viewer)));
+        // Arugula #1210: with it off, who would be the owner watches every
+        // session; nobody else does.
+        let everywhere = |r, hosted, owns, input| token_grant(&claims(r), hosted, owns, input).everywhere;
+        assert!(everywhere(TokenRole::Owner, false, true, false));
+        assert!(everywhere(TokenRole::Editor, true, true, false));
+        assert!(!everywhere(TokenRole::Owner, false, false, false), "a teammate");
+        assert!(!everywhere(TokenRole::Editor, false, true, false));
+        assert!(!everywhere(TokenRole::Viewer, false, true, false));
+        assert!(!everywhere(TokenRole::Owner, false, true, true), "the owner, with it on");
     }
 
     #[test]

@@ -215,7 +215,8 @@ pub fn sessions_shown(state_dir: &Path) -> AgentListing {
 /// Whether people reaching this machine through control with a machine
 /// token (aru-141) may type and act here: on unless the file says
 /// `remote_input: false`. Off, every such channel is a viewer's, whatever
-/// is shared with them, and so are other people's devices'. Only
+/// is shared with them, and so are other people's devices'; the machine's
+/// owner still watches every session on it (Arugula #1210). Only
 /// `arugulad sharing remote-input` on the machine sets it: it isn't in
 /// [`SharingSetRequest`], so nothing that comes through control can turn
 /// it back on.
@@ -229,8 +230,8 @@ pub const REMOTE_INPUT_QUESTION: &str = "\
   May people type into this machine from elsewhere?
   Yes: whoever reaches it through Arugula cloud may type here as their role
   allows: you from your other devices, and people you share a session with.
-  No: nobody who comes through Arugula cloud types here, you included from
-  another device; at most they watch what's shared with them. This
+  No: nobody, you included, types here from elsewhere. You can still watch
+  from your other devices, and others watch what's shared with them. This
   machine's own terminals and page work either way.
   Change it later, here: arugulad sharing remote-input on (or off).";
 

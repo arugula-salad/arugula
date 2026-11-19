@@ -87,12 +87,22 @@ pub struct Hold {
     /// It opened with remote input off: while it's open its principal is
     /// a viewer at most, on every session.
     pub viewer_only: bool,
+    /// Its role counts on every session here, not only on the team's
+    /// projects' (Arugula #1210): the machine's owner, with remote input
+    /// off, watching their own machine.
+    pub everywhere: bool,
 }
 
 impl Hold {
     /// A machine token's channel: its role in place of the roster's.
     pub fn token(role: Option<Role>, viewer_only: bool) -> Self {
-        Self { role, replaces: true, viewer_only }
+        Self { role, replaces: true, viewer_only, everywhere: false }
+    }
+
+    /// The machine's owner through control with remote input off (Arugula
+    /// #1210): a viewer of every session, typing into none.
+    pub fn owner_watching() -> Self {
+        Self { role: Some(Role::Viewer), replaces: true, viewer_only: true, everywhere: true }
     }
 }
 
@@ -247,7 +257,7 @@ impl Acl {
                     .find(|g| g.session == session && &g.principal == id)
                     .map(|g| g.role);
                 let project_team = self.session_team(session);
-                let team = if *self.hosted.read().unwrap() {
+                let team = if *self.hosted.read().unwrap() || self.everywhere(id) {
                     self.team_role_of(id)
                 } else {
                     self.team_role_of(id).filter(|_| self.team_watches(session)).map(|r| r.min(Role::Viewer))
@@ -341,6 +351,12 @@ impl Acl {
             self.team.read().unwrap().get(id).copied()
         };
         if holds.iter().any(|h| h.viewer_only) { role.min(Some(Role::Viewer)) } else { role }
+    }
+
+    /// Whether a channel of `id`'s holds a role on every session (the
+    /// owner watching, Arugula #1210).
+    fn everywhere(&self, id: &str) -> bool {
+        self.held.read().unwrap().get(id).is_some_and(|h| h.iter().any(|h| h.everywhere))
     }
 
     /// Whether a channel of `id`'s that opened with remote input off is
@@ -736,6 +752,32 @@ mod tests {
         assert_eq!((acl.team_role(&bea), acl.role(&bea, 5)), (Some(Role::Viewer), Some(Role::Viewer)));
         acl.release("account:b1", device);
         assert_eq!((acl.team_role(&bea), acl.role(&bea, 5)), (Some(Role::Editor), Some(Role::Viewer)));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// Arugula #1210: the machine's owner through control with remote
+    /// input off watches every session on it, team or not, and types into
+    /// none; another account's token with it off still gets only what's
+    /// shared with it, or its team's.
+    #[test]
+    fn with_remote_input_off_the_owner_watches_every_session() {
+        let (dir, acl) = opened("owner-watching");
+        acl.set_session_teams([(1, "t1".to_owned())]);
+        let me = Principal::User { id: "account:a1".into(), name: "me".into(), pic: None };
+        let them = Principal::User { id: "account:b1".into(), name: "bea".into(), pic: None };
+        acl.set(2, "account:a1", "me", Some(Role::Editor), "owner").unwrap();
+        assert_eq!((acl.role(&me, 1), acl.role(&me, 2), acl.role(&me, 3)), (None, Some(Role::Editor), None));
+        let watching = Hold::owner_watching();
+        acl.hold("account:a1", watching);
+        assert_eq!(
+            (acl.role(&me, 1), acl.role(&me, 2), acl.role(&me, 3)),
+            (Some(Role::Viewer), Some(Role::Viewer), Some(Role::Viewer))
+        );
+        // Someone else's owner-sized token, held to a viewer: as before.
+        acl.hold("account:b1", Hold::token(Some(Role::Viewer), true));
+        assert_eq!((acl.role(&them, 1), acl.role(&them, 3)), (None, None));
+        acl.release("account:a1", watching);
+        assert_eq!((acl.role(&me, 1), acl.role(&me, 3)), (None, None));
         std::fs::remove_dir_all(dir).unwrap();
     }
 

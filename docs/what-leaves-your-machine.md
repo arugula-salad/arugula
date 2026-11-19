@@ -162,7 +162,8 @@ signed-in session.
   `arugulad sharing remote-input off`, run on the machine, makes everyone
   who comes with a machine token a viewer, a session shared with them
   included, and other people's devices too
-  (`crates/proto/src/sharing.rs`, `remote_input`). Nothing through control
+  (`crates/proto/src/sharing.rs`, `remote_input`). Its owner still watches
+  every session on it from other devices, and types into none. Nothing through control
   can turn it back on. Joining asks (`arugulad join` on a terminal, or
   `--remote-input on|off`; Getting started on the machine's own page), and
   the machine menu says which it is.

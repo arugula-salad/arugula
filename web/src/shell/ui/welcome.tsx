@@ -783,8 +783,8 @@ function Cloud({
               <label>
                 <input type="radio" name="start-remote-input" checked={!allow} onClick={() => setTyping(false)} data-start-remote-input-off />
                 <span>
-                  <b>No.</b> Nobody who comes through Arugula cloud types here, you included from another device: at most they watch what's shared
-                  with them. This machine's own windows work either way.
+                  <b>No.</b> Nobody, you included, types here from elsewhere. You can still watch from your other devices, and others watch what's
+                  shared with them. This machine's own windows work either way.
                 </span>
               </label>
               <p class="start-dim">
