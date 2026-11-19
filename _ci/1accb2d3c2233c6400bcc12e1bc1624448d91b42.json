@@ -2,8 +2,8 @@
   "schema": 1,
   "commit": "1accb2d3c2233c6400bcc12e1bc1624448d91b42",
   "branch": "main",
-  "state": "pending",
-  "at": "2026-11-19T05:30:17Z",
+  "state": "green",
+  "at": "2026-11-19T05:44:50Z",
   "phases": {
     "lint": {
       "verdict": "pass",
@@ -30,7 +30,7 @@
       ]
     },
     "build": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
@@ -48,43 +48,43 @@
         {
           "name": "clippy",
           "id": 135359580599,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/44464419507/job/135359580599"
         }
       ]
     },
     "test": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "test",
           "id": 135359580648,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/44464419507/job/135359580648"
         },
         {
           "name": "test-2",
           "id": 135359580590,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/44464419507/job/135359580590"
         }
       ]
     },
     "e2e": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "e2e (1)",
           "id": 135360280467,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/44464419507/job/135360280467"
         },
         {
           "name": "e2e (10)",
           "id": 135360280463,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/44464419507/job/135360280463"
         },
         {
@@ -96,7 +96,7 @@
         {
           "name": "e2e (12)",
           "id": 135360280475,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/44464419507/job/135360280475"
         },
         {
@@ -114,7 +114,7 @@
         {
           "name": "e2e (4)",
           "id": 135360280427,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/44464419507/job/135360280427"
         },
         {
@@ -132,19 +132,19 @@
         {
           "name": "e2e (7)",
           "id": 135360280434,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/44464419507/job/135360280434"
         },
         {
           "name": "e2e (8)",
           "id": 135360280462,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/44464419507/job/135360280462"
         },
         {
           "name": "e2e (9)",
           "id": 135360280512,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/44464419507/job/135360280512"
         },
         {
@@ -156,25 +156,25 @@
       ]
     },
     "claims": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "desktop-xvfb",
           "id": 135359580671,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/44464419507/job/135359580671"
         }
       ]
     },
     "macos": {
-      "verdict": "pending",
+      "verdict": "pass",
       "build": "newest",
       "runs": [
         {
           "name": "macos (test)",
           "id": 135359580687,
-          "conclusion": null,
+          "conclusion": "success",
           "url": "https://github.com/arugula-salad/arugula/actions/runs/44464419507/job/135359580687"
         }
       ]
