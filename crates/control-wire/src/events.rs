@@ -211,6 +211,7 @@ const OUTSIDE: MatchField =
     m("outside", "true for a fork's PR or a non-member's: such an event matches only a watch that asks for it");
 const GITHUB_PR: &[MatchField] = &[REPO, PR, BRANCH, BY, OUTSIDE];
 const GITHUB_CHECKS: &[MatchField] = &[REPO, PR, BRANCH, OUTSIDE];
+const BASE: MatchField = m("base", "the branch it's to merge into");
 
 /// Every type this side knows. Issues and sessions ride `cloud.drive` until
 /// they have read powers of their own, as PR watches do.
@@ -312,7 +313,7 @@ pub const CATALOG: &[EventType] = &[
     EventType {
         name: "github.pr.opened",
         meaning: "A pull request was opened on a linked GitHub repo.",
-        matches: GITHUB_PR,
+        matches: &[REPO, PR, BRANCH, BASE, BY, OUTSIDE],
         home: Home::Cloud,
         power: Some("cloud.drive"),
     },
@@ -348,6 +349,33 @@ pub const CATALOG: &[EventType] = &[
         name: "github.pr.ready",
         meaning: "A pull request's checks are green and GitHub says it can merge cleanly (once per head).",
         matches: GITHUB_CHECKS,
+        home: Home::Cloud,
+        power: Some("cloud.drive"),
+    },
+    EventType {
+        name: "github.check.failed",
+        meaning: "A check run or commit status failed on a linked repo's commit, on any branch.",
+        matches: &[
+            REPO,
+            m("sha", "the commit it ran on"),
+            m("branches", "a branch it's on: its head's, or one of its PRs' bases"),
+            m("conclusion", "failure or timed_out for a check run; failure or error for a status"),
+            OUTSIDE,
+        ],
+        home: Home::Cloud,
+        power: Some("cloud.drive"),
+    },
+    EventType {
+        name: "github.pr.reviewed",
+        meaning: "A review was submitted on a linked repo's pull request.",
+        matches: &[REPO, PR, m("state", "approved, changes_requested, commented or dismissed"), BY, OUTSIDE],
+        home: Home::Cloud,
+        power: Some("cloud.drive"),
+    },
+    EventType {
+        name: "github.pr.review_commented",
+        meaning: "An inline review comment was made on a linked repo's pull request.",
+        matches: &[REPO, PR, BY, OUTSIDE],
         home: Home::Cloud,
         power: Some("cloud.drive"),
     },
@@ -508,6 +536,10 @@ mod tests {
         assert!(lookup("github.pr.merged").unwrap().matches.iter().any(|f| f.name == "outside"));
         assert!(lookup("github.push").unwrap().matches.iter().any(|f| f.name == "branch"));
         assert!(lookup("github.pr.reopened").is_none());
+        for name in ["github.check.failed", "github.pr.reviewed", "github.pr.review_commented"] {
+            assert_eq!(lookup(name).unwrap().home, Home::Cloud, "{name}");
+        }
+        assert!(lookup("github.pr.opened").unwrap().matches.iter().any(|f| f.name == "base"));
         assert!(lookup("").is_none());
     }
 }
