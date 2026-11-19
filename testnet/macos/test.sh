@@ -172,7 +172,7 @@ t_launchd() {
   local h=/tmp/arugula-macos-ssh
   rm -rf /tmp/arugula-macos-ssh; mkdir -p "$h"
   out=$(HOME=$h XDG_RUNTIME_DIR=$h XDG_CONFIG_HOME=$h/config XDG_CACHE_HOME=$h/cache ARUGULA_SSH_INSTALL=yes \
-    ARUGULA_SSH="ssh -i $HERE/.state/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR" \
+    ARUGULA_SSH="ssh -F $HERE/.state/$VM.ssh_config -i $HERE/.state/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR" \
     "$BIN/arugula" --ssh "$USER_NAME@$(v ip)" ls </dev/null 2>&1) || true
   for sock in "$h"/arugula-ssh/*; do [ -S "$sock" ] && ssh -o ControlPath="$sock" -O exit x >/dev/null 2>&1; done
   rm -rf /tmp/arugula-macos-ssh

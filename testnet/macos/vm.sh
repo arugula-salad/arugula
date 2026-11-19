@@ -70,8 +70,19 @@ have() { tart list -q 2>/dev/null | grep -qx "$1"; }
 # A base made before the rename keeps its name.
 if [ "$BASE" = arugula-macos-base ] && ! have "$BASE" && have illogical-macos-base; then BASE=illogical-macos-base; fi
 
+# ssh reaches the guest through tart's guest agent, not the VM's network
+# address. On jake-mini's macos-tart runner, a job can't connect to
+# 192.168.64.x at all, while a shell on the same Mac can: every nightly
+# from 2026-11-12 failed in wait_ssh with the VM up (Arugula #1172). The
+# agent's channel needs no network, so the same path works in both.
+# `-F` takes this file in place of ~/.ssh/config, and anything that takes
+# an ssh command line (ARUGULA_SSH in test.sh) can pass it too.
+SSH_CONFIG="$STATE/$name.ssh_config"
+mkdir -p "$STATE"
+printf 'Host *\n  ProxyCommand %q exec -i %q /usr/bin/nc localhost 22\n' "$(command -v tart)" "$name" >"$SSH_CONFIG"
+
 # Fresh VMs get fresh host keys, so none are kept.
-SSH_OPTS=(-i "$STATE/id_ed25519" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=no
+SSH_OPTS=(-F "$SSH_CONFIG" -i "$STATE/id_ed25519" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=no
   -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=5 -o ServerAliveInterval=5)
 
 vssh() {
@@ -137,7 +148,7 @@ case "$cmd" in
   down)
     tart stop "$name" >/dev/null 2>&1 || true
     tart delete "$name" 2>/dev/null || true
-    rm -f "$STATE/$name.log"
+    rm -f "$STATE/$name.log" "$SSH_CONFIG"
     ;;
   ip) ip ;;
   sshcmd) printf '%q ' ssh "${SSH_OPTS[@]}" "admin@$(ip)"; echo ;;
