@@ -19,18 +19,35 @@ fn fl(labs: bool) -> arugula_proto::flags::On {
 /// forge too): a build without Labs has no golden of its own, so it
 /// checks the listing in
 /// `unlisted_tools_are_not_listed_without_labs_but_are_there`.
+///
+/// Each tool as listed is written once, under `tools`, by its name (`name
+/// #2` and on for a tool listed differently somewhere, as `show`'s kinds
+/// are with labs), and `listings` gives each scope's list as those keys,
+/// in order. Written out per listing, the six repeated the same tools and
+/// passed `scripts/check-binaries`' 1 MiB.
 pub fn the_tool_list_and_each_schema_are_unchanged() {
     if !crate::lab_flags::BUILT {
         return;
     }
-    let mut all = serde_json::Map::new();
+    let mut tools = serde_json::Map::new();
+    let mut listings = serde_json::Map::new();
     for (scope_name, scope) in [("full", Scope::Full), ("read", Scope::Read), ("block", Scope::Block(1))] {
         for labs in [true, false] {
-            let tools = serde_json::to_value(list(scope, fl(labs))).unwrap();
-            all.insert(format!("{scope_name}, labs {labs}"), tools);
+            let mut keys = Vec::new();
+            for tool in list(scope, fl(labs), true) {
+                let v = serde_json::to_value(&tool).unwrap();
+                let key = (1..)
+                    .map(|n| if n == 1 { tool.name.to_string() } else { format!("{} #{n}", tool.name) })
+                    .find(|k| tools.get(k).is_none_or(|have| *have == v))
+                    .unwrap();
+                tools.insert(key.clone(), v);
+                keys.push(Value::String(key));
+            }
+            listings.insert(format!("{scope_name}, labs {labs}"), Value::Array(keys));
         }
     }
-    let got = serde_json::to_string_pretty(&Value::Object(all)).unwrap() + "\n";
+    let all = serde_json::json!({ "listings": listings, "tools": tools });
+    let got = serde_json::to_string_pretty(&all).unwrap() + "\n";
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mcp-tool-list.json");
     if std::env::var_os("ARUGULA_BLESS").is_some() {
         std::fs::write(&path, &got).unwrap();
@@ -51,7 +68,7 @@ pub fn every_description_and_the_instructions_fit_the_cut() {
     let mut wrong = vec![];
     for scope in [Scope::Full, Scope::Read, Scope::Block(1)] {
         for labs in [true, false] {
-            for t in list(scope, fl(labs)) {
+            for t in list(scope, fl(labs), true) {
                 let len = t.description.as_deref().unwrap_or_default().chars().count();
                 let cap = OVER.iter().find(|(n, _)| *n == t.name).map_or(CUT, |(_, cap)| *cap);
                 if len > cap {
@@ -69,8 +86,8 @@ pub fn every_description_and_the_instructions_fit_the_cut() {
 }
 
 pub fn annotations_are_honest() {
-    let all = list(Scope::Full, fl(false));
-    assert_eq!(all.len(), 43 - no_forge());
+    let all = list(Scope::Full, fl(false), true);
+    assert_eq!(all.len(), 44 - no_forge());
     let ro: Vec<&str> = all
         .iter()
         .filter(|t| t.annotations.as_ref().and_then(|a| a.read_only_hint) == Some(true))
@@ -97,7 +114,7 @@ pub fn annotations_are_honest() {
     ];
     want.retain(|n| crate::forges::built() || !FORGE_TOOLS.contains(n));
     assert_eq!(ro, want);
-    assert_eq!(list(Scope::Read, fl(false)).len(), ro.len(), "a read token sees the read-only tools only");
+    assert_eq!(list(Scope::Read, fl(false), true).len(), ro.len(), "a read token sees the read-only tools only");
     let hint = |n: &str| all.iter().find(|t| t.name == n).unwrap().annotations.clone().unwrap();
     assert_eq!(hint("close").destructive_hint, Some(true));
     // A group is as careful as its most careful kind: draft has merge.
@@ -113,7 +130,7 @@ pub fn annotations_are_honest() {
 /// either way.
 pub fn unlisted_tools_are_not_listed_without_labs_but_are_there() {
     for scope in [Scope::Full, Scope::Read] {
-        let with: Vec<String> = list(scope, fl(true)).iter().map(|t| t.name.to_string()).collect();
+        let with: Vec<String> = list(scope, fl(true), true).iter().map(|t| t.name.to_string()).collect();
         for d in all_defs().iter().filter(|d| scope == Scope::Full || d.read_only) {
             if !crate::forges::built() && FORGE_TOOLS.contains(&d.name) {
                 continue;
@@ -129,7 +146,7 @@ pub fn unlisted_tools_are_not_listed_without_labs_but_are_there() {
         // Still there by its kind.
         route(tool, json!({ "kind": kind }), fl(false)).unwrap_or_else(|e| panic!("{tool} {kind}: {e}"));
         // A tool all of whose kinds are flagged (`doc`) isn't listed at all.
-        let Some(t) = list(Scope::Full, fl(false)).into_iter().find(|t| t.name == tool) else {
+        let Some(t) = list(Scope::Full, fl(false), true).into_iter().find(|t| t.name == tool) else {
             assert!(defs(fl(false)).iter().all(|d| d.name != tool), "{tool}");
             continue;
         };
@@ -137,13 +154,13 @@ pub fn unlisted_tools_are_not_listed_without_labs_but_are_there() {
         assert!(!kinds.as_array().unwrap().contains(&json!(kind)), "{tool}: {kinds}");
         assert!(!t.description.as_deref().unwrap().contains(&format!("\n- {kind}")), "{tool}: {kind}");
     }
-    let show = list(Scope::Full, fl(false)).into_iter().find(|t| t.name == "show").unwrap();
+    let show = list(Scope::Full, fl(false), true).into_iter().find(|t| t.name == "show").unwrap();
     for arg in ["app", "env"] {
         assert!(show.input_schema["properties"].get(arg).is_none(), "show takes {arg} without labs");
     }
     // Daemon-side Managoat was removed: its kinds, by either name, and
     // its old tools say where cloud agents went; none is listed.
-    let list_tool = list(Scope::Full, fl(false)).into_iter().find(|t| t.name == "list").unwrap();
+    let list_tool = list(Scope::Full, fl(false), true).into_iter().find(|t| t.name == "list").unwrap();
     for (tool, kind) in [
         ("show", "managoat"),
         ("show", "fountain"),
@@ -173,7 +190,7 @@ pub fn unlisted_tools_are_not_listed_without_labs_but_are_there() {
     {
         assert!(t.input_schema["properties"].get(arg).is_none(), "{} {arg}", t.name);
     }
-    let start = list(Scope::Full, fl(true)).into_iter().find(|t| t.name == "start_agent").unwrap();
+    let start = list(Scope::Full, fl(true), true).into_iter().find(|t| t.name == "start_agent").unwrap();
     for arg in ["managoat_agent", "on", "vault", "environment"] {
         assert!(start.input_schema["properties"].get(arg).is_none(), "start_agent {arg}");
     }
@@ -186,16 +203,21 @@ pub fn unlisted_tools_are_not_listed_without_labs_but_are_there() {
     for name in THREAD_TOOLS {
         assert!(defs(fl(false)).iter().any(|d| d.name == name), "{name} is everyone's");
     }
-    assert_eq!(every.len(), 44);
-    assert_eq!(defs(fl(false)).len(), 43 - no_forge());
-    assert_eq!(defs(fl(true)).len(), 44 - no_forge());
+    assert_eq!(every.len(), 45);
+    assert_eq!(defs(fl(false)).len(), 44 - no_forge());
+    assert_eq!(defs(fl(true)).len(), 45 - no_forge());
     assert_eq!(every.len(), defs(fl(false)).len() + 1 + no_forge(), "and delegate");
 }
 
 /// docs/mcp-permissions.json allows the read-only tools and asks for the
 /// rest, every one of them: a new tool fails this until it's listed there
 /// (#114). docs.arugula.io shows the same snippet, and the site repo's
-/// check-code holds it to this file.
+/// check-code holds it to this file. [`ALLOWED_WRITES`] are allowed too.
+/// The writes the snippet allows without asking (#1216): `feedback` only
+/// sends what the agent wrote to the Arugula team, and the person turns it
+/// off with the machine's switch, not per call.
+const ALLOWED_WRITES: &[&str] = &["feedback"];
+
 pub fn permissions_snippet_is_every_tool() {
     const SNIPPET: &str = include_str!("../../../docs/mcp-permissions.json");
     let list = |key: &str| -> Vec<&str> {
@@ -211,11 +233,13 @@ pub fn permissions_snippet_is_every_tool() {
     };
     // The snippet lists what a stranger sees.
     let defs = defs(fl(false));
-    let want = |ro: bool| -> Vec<&str> { defs.iter().filter(|d| d.read_only == ro).map(|d| d.name).collect() };
+    let want = |allowed: bool| -> Vec<&str> {
+        defs.iter().filter(|d| (d.read_only || ALLOWED_WRITES.contains(&d.name)) == allowed).map(|d| d.name).collect()
+    };
     assert_eq!(
         list("allow"),
         want(true),
-        "docs/mcp-permissions.json's allow list: the read-only tools, in defs() order"
+        "docs/mcp-permissions.json's allow list: the read-only tools and ALLOWED_WRITES, in defs() order"
     );
     assert_eq!(list("ask"), want(false), "docs/mcp-permissions.json's ask list: every other tool, in defs() order");
 }
@@ -262,7 +286,7 @@ pub fn doc_is_listed_with_no_flag() {
     let offer = offers.iter().find(|o| o.kind == "doc").expect("capabilities offers a doc");
     assert_eq!(offer.open, "doc {kind: \"new\"}");
     // The schema carries the outline's shape.
-    let tool = list(Scope::Full, On::none()).into_iter().find(|t| t.name == "doc").unwrap();
+    let tool = list(Scope::Full, On::none(), true).into_iter().find(|t| t.name == "doc").unwrap();
     let schema = Value::Object((*tool.input_schema).clone()).to_string();
     assert!(schema.contains("heading") && schema.contains("intent") && schema.contains("markdown"), "{schema}");
     // ...and the picture's: a file or its bytes.
@@ -306,7 +330,7 @@ fn kinds_of(labs: bool, tool: &str) -> Vec<&'static str> {
 /// an object with a summary, in standard formats.
 pub fn an_output_schema_is_an_object_with_a_summary() {
     let mut with = 0;
-    for tool in list(Scope::Full, fl(true)) {
+    for tool in list(Scope::Full, fl(true), true) {
         let grouped = all_defs().into_iter().any(|d| d.name == tool.name && matches!(d.args, Args::Kinds { .. }));
         let Some(schema) = &tool.output_schema else {
             continue;

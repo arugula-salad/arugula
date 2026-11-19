@@ -142,6 +142,23 @@ function SharingSwitches({ sharing, error, set }: ReturnType<typeof useSharing>)
           </select>
         </label>
       )}
+      <p class="dim">
+        Agents here may tell the Arugula team what broke or is missing, with Arugula's version and their last failed Arugula tool call. Never
+        your code or files. You can still send feedback yourself with <code>arugula feedback</code>.
+      </p>
+      {sharing && (
+        <label class="sharing-switch">
+          <input
+            type="checkbox"
+            role="switch"
+            class="sw-switch"
+            data-sharing-agent-feedback
+            checked={sharing.agent_feedback ?? true}
+            onChange={(e) => void set({ agent_feedback: e.currentTarget.checked })}
+          />{" "}
+          Agents may send feedback to Arugula
+        </label>
+      )}
     </>
   );
 }

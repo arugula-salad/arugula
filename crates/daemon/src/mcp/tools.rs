@@ -335,13 +335,16 @@ pub struct Call<'a> {
 
 /// What an MCP session was last told it has: the tools it listed, and the
 /// kinds of the grouped ones (`show:board`), sorted. `None` until its
-/// client has listed.
+/// client has listed. And the session's last Arugula tool call that
+/// failed, which its agent's feedback carries (#1216): one per session, so
+/// one per agent block (each has a session of its own).
 #[derive(Default)]
 pub struct Listed {
     names: std::sync::Mutex<Option<Vec<String>>>,
     /// A `notifications/tools/list_changed` went to the client since it
     /// last listed.
     told: std::sync::atomic::AtomicBool,
+    failed: std::sync::Mutex<Option<arugula_control_wire::feedback::FailedCall>>,
 }
 
 impl Listed {
@@ -364,6 +367,17 @@ impl Listed {
     /// Whether the client was told since it last listed.
     pub fn was_told(&self) -> bool {
         self.told.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// A call in this session failed: its tool, its kind and its error
+    /// (cut to `MAX_ERROR`), never its arguments.
+    pub fn failed(&self, tool: &str, kind: Option<String>, error: &str) {
+        *self.failed.lock().unwrap() = Some(arugula_control_wire::feedback::FailedCall::new(tool, kind, error));
+    }
+
+    /// The last call in this session that failed, if one did.
+    pub fn last_failed(&self) -> Option<arugula_control_wire::feedback::FailedCall> {
+        self.failed.lock().unwrap().clone()
     }
 }
 

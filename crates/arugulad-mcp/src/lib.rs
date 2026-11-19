@@ -26,8 +26,8 @@ use arugula_mux::{acl, block, history, keys, mux, osc, pane, store};
 #[cfg(unix)]
 use arugulad_base::upload;
 use arugulad_base::{
-    agent, api, features, forge_wait, forges, fs, lab_flags, lab_hooks, mcp, ops, review, server, task, telemetry,
-    work, worktree,
+    agent, api, features, feedback, forge_wait, forges, fs, lab_flags, lab_hooks, mcp, ops, review, server, task,
+    telemetry, work, worktree,
 };
 
 use std::sync::Arc;
@@ -318,8 +318,9 @@ impl ServerHandler for McpServer {
     ) -> Result<ListToolsResult, McpError> {
         let scope = self.caller(&ctx).scope;
         let on = self.flags();
-        self.session.listing(ctx.peer.clone(), scope, tools::listed_names(scope, on));
-        Ok(fresh(ListToolsResult::with_all_items(tools::list(scope, on))))
+        let feedback = arugula_proto::feedback::agents_may(self.app.control.state_dir());
+        self.session.listing(ctx.peer.clone(), scope, tools::listed_names(scope, on, feedback));
+        Ok(fresh(ListToolsResult::with_all_items(tools::list(scope, on, feedback))))
     }
 
     async fn call_tool(
@@ -342,8 +343,16 @@ impl ServerHandler for McpServer {
             "mcp call"
         );
         let args = request.arguments.map(serde_json::Value::Object).unwrap_or_else(|| serde_json::json!({}));
+        let kind = args.get("kind").and_then(|k| k.as_str()).map(str::to_owned);
         let call = Call::new(&self.app, caller, client, &ctx).in_session(self.session.listed.clone());
-        Ok(ToolCall(&call).dispatch(&request.name, args).await.into())
+        let result = ToolCall(&call).dispatch(&request.name, args).await;
+        // The agent's feedback says what last failed for it (#1216); its
+        // own failing isn't news to it.
+        if result.is_error == Some(true) && request.name != crate::feedback::TOOL {
+            let error: Vec<&str> = result.content.iter().filter_map(|c| c.as_text()).map(|t| t.text.as_str()).collect();
+            self.session.listed.failed(&request.name, kind, &error.join("\n"));
+        }
+        Ok(result.into())
     }
 
     async fn list_resources(

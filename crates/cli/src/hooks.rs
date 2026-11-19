@@ -133,6 +133,12 @@ const READ_RULES: &[&str] = &[
 /// lists it under `ask`, with the other writes.
 const OWN_WRITE_RULES: &[&str] = &["mcp__arugula__doc"];
 
+/// What `install` adds by default beside those (#1216): feedback only sends
+/// what the agent wrote to the Arugula team, and the person turns it off
+/// with the machine's switch, not per call. docs/mcp-permissions.json
+/// allows it.
+const FEEDBACK_RULES: &[&str] = &["mcp__arugula__feedback"];
+
 /// What `install --allow-acting` adds beside [`READ_RULES`] (#655): what
 /// types into panes, starts agents, closes things or shares. Allowing these
 /// lets an agent do all of that without asking.
@@ -399,12 +405,13 @@ fn allow_list(root: &mut Map<String, Value>) -> anyhow::Result<&mut Vec<Value>> 
     }
 }
 
-/// The rules (the default tier: read-only and [`OWN_WRITE_RULES`]; and the
+/// The rules (the default tier: read-only, [`OWN_WRITE_RULES`] and
+/// [`FEEDBACK_RULES`]; and the
 /// acting one with `allow_acting`) that `allow` doesn't have, added at the
 /// end. Whether any were.
 fn add_rules(allow: &mut Vec<Value>, allow_acting: bool, plugin: bool) -> bool {
     let acting = if allow_acting { ACTING_RULES } else { &[] };
-    let by_default = READ_RULES.iter().chain(OWN_WRITE_RULES);
+    let by_default = READ_RULES.iter().chain(OWN_WRITE_RULES).chain(FEEDBACK_RULES);
     let mut rules: Vec<String> = by_default.clone().chain(acting).map(|r| (*r).to_owned()).collect();
     if plugin {
         // The plugin's MCP tools go by another name (#229).
@@ -628,7 +635,8 @@ impl Tier {
     }
 }
 
-/// The default tier (read-only, and [`OWN_WRITE_RULES`]) and the acting tier
+/// The default tier (read-only, [`OWN_WRITE_RULES`] and [`FEEDBACK_RULES`])
+/// and the acting tier
 /// of `settings`' `permissions.allow`.
 fn tiers(settings: &Value) -> (Tier, Tier) {
     let allow = settings["permissions"]["allow"].as_array().map(Vec::as_slice).unwrap_or_default();
@@ -640,7 +648,7 @@ fn tiers(settings: &Value) -> (Tier, Tier) {
             _ => Tier::Partial,
         }
     };
-    let default: Vec<&str> = READ_RULES.iter().chain(OWN_WRITE_RULES).copied().collect();
+    let default: Vec<&str> = READ_RULES.iter().chain(OWN_WRITE_RULES).chain(FEEDBACK_RULES).copied().collect();
     (tier(&default), tier(ACTING_RULES))
 }
 
@@ -885,7 +893,10 @@ mod tests {
         assert!(changed);
         assert_eq!(v["model"], "opus");
         assert_eq!(v["permissions"]["allow"][0], "Bash(ls:*)");
-        assert_eq!(v["permissions"]["allow"].as_array().unwrap().len(), 1 + READ_RULES.len() + OWN_WRITE_RULES.len());
+        assert_eq!(
+            v["permissions"]["allow"].as_array().unwrap().len(),
+            1 + READ_RULES.len() + OWN_WRITE_RULES.len() + FEEDBACK_RULES.len()
+        );
         let pre = v["hooks"]["PreToolUse"].as_array().unwrap();
         assert_eq!(pre[0]["hooks"][0]["command"], "my-lint");
         assert_eq!(pre.len(), 3);
@@ -1102,7 +1113,8 @@ mod tests {
         // docs/mcp-permissions.json is what the daemon's own test checks
         // against `read_only` (tools.rs), so tying the CLI's lists to it
         // ties them to the tools. `delegate` is the one it leaves out (a
-        // flag's); `doc`, a write it asks for, an install allows (#963).
+        // flag's); `doc`, a write it asks for, an install allows (#963);
+        // `feedback`, a write it allows, an install allows too (#1216).
         let snippet: Value = serde_json::from_str(include_str!("../../../docs/mcp-permissions.json")).unwrap();
         let list = |key: &str| -> Vec<String> {
             snippet["permissions"][key].as_array().unwrap().iter().map(|s| s.as_str().unwrap().to_owned()).collect()
@@ -1114,7 +1126,12 @@ mod tests {
         let flagged = ["mcp__arugula__delegate"];
         let without =
             |v: &[String]| -> Vec<String> { v.iter().filter(|r| !flagged.contains(&r.as_str())).cloned().collect() };
-        assert_eq!(without(&read), list("allow"));
+        let mut allowed = without(&read);
+        allowed.extend(mcp(FEEDBACK_RULES));
+        let mut want_allowed = list("allow");
+        allowed.sort();
+        want_allowed.sort();
+        assert_eq!(allowed, want_allowed);
         let mut a = without(&acting);
         a.extend(mcp(OWN_WRITE_RULES));
         let mut want = list("ask");
@@ -1128,7 +1145,7 @@ mod tests {
         let (v, changed) = merged("{}");
         assert!(changed);
         // The read tier, and the one write that is a Doc's own (#963).
-        let want: Vec<&str> = READ_RULES.iter().chain(OWN_WRITE_RULES).copied().collect();
+        let want: Vec<&str> = READ_RULES.iter().chain(OWN_WRITE_RULES).chain(FEEDBACK_RULES).copied().collect();
         assert_eq!(allowed(&v), want);
         assert!(allowed(&v).iter().all(|r| !ACTING_RULES.contains(&r.as_str())));
         assert_eq!(tiers(&v), (Tier::Present, Tier::Missing));
@@ -1172,10 +1189,13 @@ mod tests {
             [json!("Bash(ls:*)"), json!("Bash(arugula ls:*)"), json!("Bash(arugula lsx:*)"), json!(7)]
         );
         let rules = allowed_strings(allow);
-        for rule in READ_RULES.iter().chain(OWN_WRITE_RULES).chain(ACTING_RULES) {
+        for rule in READ_RULES.iter().chain(OWN_WRITE_RULES).chain(FEEDBACK_RULES).chain(ACTING_RULES) {
             assert_eq!(rules.iter().filter(|r| *r == rule).count(), 1, "{rule}");
         }
-        assert_eq!(allow.len(), 4 + READ_RULES.len() + OWN_WRITE_RULES.len() + ACTING_RULES.len() - 1);
+        assert_eq!(
+            allow.len(),
+            4 + READ_RULES.len() + OWN_WRITE_RULES.len() + FEEDBACK_RULES.len() + ACTING_RULES.len() - 1
+        );
         assert_eq!(v["permissions"]["deny"], json!(["Bash(rm:*)"]));
         assert_eq!(v["model"], "opus");
         assert_eq!(tiers(&v), (Tier::Present, Tier::Present));

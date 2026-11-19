@@ -17,7 +17,7 @@ use arugula_proto::{
     api::{ActRequest, HistoryEntry, HistoryKind, OpenRequest, RunRequest, WaitResult},
     flags::{self, On},
     forge::{ForgeState, ItemKind, ReviewEvent, Write},
-    op::ops::{ClosePane, ListPanes},
+    op::ops::{ClosePane, FeedbackSend, ListPanes},
 };
 use rmcp::{
     handler::server::common::schema_for_type,
@@ -1333,6 +1333,7 @@ fn all_defs() -> Vec<Def> {
                 Needs::Nothing,
             ),
         },
+        crate::mcp::ops::def::<FeedbackSend>(),
     ];
     // A feature crate's, where each says (#232).
     crate::mcp::registry::add(&mut defs);
@@ -1473,10 +1474,17 @@ pub struct DeviceCallArgs {
     pub timeout: Option<f64>,
 }
 
-/// The tools `scope` may call, with the flags in `on`.
-pub fn list(scope: Scope, on: On) -> Vec<Tool> {
-    defs(on)
-        .into_iter()
+/// The tools `tools/list` shows with the flags in `on`, where `feedback`
+/// says whether this machine's agents may send feedback (#1216): off, the
+/// `feedback` tool isn't listed.
+fn shown(on: On, feedback: bool) -> impl Iterator<Item = Def> {
+    defs(on).into_iter().filter(move |d| feedback || d.name != crate::feedback::TOOL)
+}
+
+/// The tools `scope` may call, with the flags in `on` (and `feedback`, as
+/// [`shown`] says).
+pub fn list(scope: Scope, on: On, feedback: bool) -> Vec<Tool> {
+    shown(on, feedback)
         .filter(|d| scope != Scope::Read || d.read_only)
         .map(|d| {
             let (description, schema) = match &d.args {
@@ -1505,9 +1513,9 @@ pub fn list(scope: Scope, on: On) -> Vec<Tool> {
 /// What `tools/list` shows `scope` with the flags in `on`, by name: each
 /// tool, and `tool:kind` for each kind of a grouped one, sorted. A session
 /// is up to date while this is what it was last given (#370).
-pub fn listed_names(scope: Scope, on: On) -> Vec<String> {
+pub fn listed_names(scope: Scope, on: On, feedback: bool) -> Vec<String> {
     let mut out = Vec::new();
-    for d in defs(on).into_iter().filter(|d| scope != Scope::Read || d.read_only) {
+    for d in shown(on, feedback).filter(|d| scope != Scope::Read || d.read_only) {
         out.push(d.name.to_owned());
         if let Args::Kinds { kinds, .. } = &d.args {
             out.extend(kinds.iter().map(|k| format!("{}:{}", d.name, k.name)));
@@ -1642,6 +1650,7 @@ impl ToolCall<'_, '_> {
                 Err(e) => Err(e),
             },
             ("close", _) => crate::mcp::ops::call::<ClosePane>(self, args).await,
+            (crate::feedback::TOOL, _) => crate::mcp::ops::call::<FeedbackSend>(self, args).await,
             ("history", _) => match parse(args) {
                 Ok(a) => self.history_or_output(a).await,
                 Err(e) => Err(e),
@@ -4107,6 +4116,18 @@ mod tests {
         if labs { arugula_proto::flags::On::all() } else { arugula_proto::flags::On::none() }
     }
 
+    /// Agents' feedback (#1216) is listed for everyone, with no flag and
+    /// no account, until the owner turns it off.
+    #[test]
+    fn feedback_is_listed_until_it_is_turned_off() {
+        let has = |feedback| listed_names(Scope::Full, fl(false), feedback).iter().any(|n| n == crate::feedback::TOOL);
+        assert!(has(true) && !has(false));
+        let tool = list(Scope::Full, fl(false), true).into_iter().find(|t| t.name == crate::feedback::TOOL).unwrap();
+        let text = tool.description.unwrap_or_default();
+        assert!(text.contains("trying to do") && text.contains("secrets") && text.contains("code"), "{text}");
+        assert!(!list(Scope::Full, fl(false), false).iter().any(|t| t.name == crate::feedback::TOOL));
+    }
+
     #[test]
     fn who_may_start_what_where() {
         use super::may_start;
@@ -4190,7 +4211,7 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
         assert!(!labs, "labs is on in a build without it");
         for scope in [Scope::Full, Scope::Read, Scope::Block(1)] {
-            let tools = serde_json::to_string(&list(scope, fl(labs))).unwrap().to_lowercase();
+            let tools = serde_json::to_string(&list(scope, fl(labs), true)).unwrap().to_lowercase();
             assert!(!tools.contains("fountain") && !tools.contains("managoat"), "the tool list mentions Managoat");
             assert!(!tools.contains("studio"), "the tool list mentions studio");
             // Cloud workspaces (#1094) are everyone's; chant's are Labs'.
@@ -4349,7 +4370,7 @@ mod tests {
     #[test]
     fn the_prose_leaves_out_what_a_stranger_cant_use() {
         let mut prose = vec![super::super::instructions()];
-        prose.extend(list(Scope::Full, fl(false)).iter().map(|t| {
+        prose.extend(list(Scope::Full, fl(false), true).iter().map(|t| {
             format!(
                 "{}: {} {}",
                 t.name,
@@ -4387,7 +4408,7 @@ mod tests {
             }
         }
         // With labs, run and start_agent take them again.
-        let with = list(Scope::Full, fl(true));
+        let with = list(Scope::Full, fl(true), true);
         for (tool, args, _) in UNLISTED_ARGS {
             let t = with.iter().find(|t| t.name == tool).unwrap();
             for arg in args {
