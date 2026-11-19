@@ -126,6 +126,28 @@ fn autonomous_quiet() -> Duration {
         Duration::from_millis(ms.unwrap_or(60_000))
     })
 }
+/// How long the agent server may say nothing while a request that opens
+/// its session (`session/new`, `load`, `resume` or `fork`) is unanswered:
+/// one that never answers mustn't leave the block starting for good
+/// (https://app.arugula.io/issues/iss_dbc1393e26549eaa3413372b47da2b2d).
+/// It's silence, not the whole wait: a `session/load` of a long
+/// conversation replays it before it answers.
+const OPEN_WITHIN: Duration = Duration::from_secs(30);
+/// The same for `initialize`, which can be slow while an adapter installs.
+const INIT_WITHIN: Duration = Duration::from_secs(120);
+/// [`INIT_WITHIN`] or [`OPEN_WITHIN`]; `ARUGULA_ACP_STARTUP_MS` sets both,
+/// for tests.
+fn open_within(init: bool) -> Duration {
+    static WITHIN: std::sync::OnceLock<Option<Duration>> = std::sync::OnceLock::new();
+    let set = *WITHIN.get_or_init(|| {
+        let ms = std::env::var("ARUGULA_ACP_STARTUP_MS").ok().and_then(|v| v.parse().ok());
+        ms.map(Duration::from_millis)
+    });
+    set.unwrap_or(if init { INIT_WITHIN } else { OPEN_WITHIN })
+}
+/// What the transcript says when the earlier conversation couldn't be
+/// reopened and a new one was started in its place.
+const RESUME_LOST: &str = "Couldn't resume the earlier conversation; started a new one.";
 /// When an agent says "retry shortly".
 const RETRY_AFTER: Duration = Duration::from_secs(5);
 const MAX_RETRIES: u32 = 12;
@@ -360,6 +382,8 @@ enum Effect {
     SessionOpen { fresh: bool },
     /// Reopening failed: make a new session instead.
     SessionLost(String),
+    /// Starting the agent or its session failed: it stops, saying why.
+    StartFailed(String),
     /// A turn ended: send what's queued.
     TurnEnded,
     /// A cycle the agent woke for by itself ended: send what's queued
@@ -401,6 +425,10 @@ struct Inner {
     /// by a finished background task; it ends with an autonomous
     /// `usage_update`, a prompt of ours, or [`autonomous_quiet`].
     autonomous_at: Option<std::time::Instant>,
+    /// The last request that starts the agent or opens its session, and
+    /// when it went or the agent last sent anything since: silent past
+    /// [`open_within`], it's given up on.
+    opening: Option<(u64, u64)>,
     /// What it left running in the background (#606): it carries on when
     /// they end, so `wait --idle` waits.
     background: background::Background,
@@ -713,6 +741,7 @@ impl Inner {
             prompt_id: None,
             result_in: false,
             autonomous_at: None,
+            opening: None,
             background: Default::default(),
             queue: VecDeque::new(),
             mention_turn: vec![],
@@ -1064,6 +1093,17 @@ impl Inner {
                 self.status = Status::Stopped;
                 self.t.note("Continued in Arugula", at);
             }
+            // A request that starts it, given up on after [`open_within`]:
+            // a late answer is ignored.
+            "unanswered" => {
+                let purpose = e["id"].as_u64().and_then(|id| self.ours.remove(&id));
+                if matches!(purpose, Some(Purpose::Load { .. } | Purpose::Resume)) {
+                    self.replay = None;
+                    if !self.cfg.follow {
+                        self.t.note(RESUME_LOST, at);
+                    }
+                }
+            }
             "error" => {
                 let msg = e["message"].as_str().unwrap_or("error").to_owned();
                 self.t.note(msg.clone(), at);
@@ -1149,6 +1189,12 @@ impl Inner {
                     }
                     _ => Purpose::Other,
                 };
+                if matches!(
+                    purpose,
+                    Purpose::Init | Purpose::New | Purpose::Load { .. } | Purpose::Resume | Purpose::Fork
+                ) {
+                    self.opening = Some((id, at));
+                }
                 self.ours.insert(id, purpose);
             }
             // Our answer to one of the agent's requests.
@@ -1174,6 +1220,10 @@ impl Inner {
 
     fn on_in(&mut self, m: &Value, at: u64) -> Vec<Effect> {
         let mut fx = vec![];
+        // Hearing from it at all (a replay's updates, say) means it's busy.
+        if let Some((_, since)) = &mut self.opening {
+            *since = at;
+        }
         let method = m["method"].as_str();
         match (m.get("id"), method) {
             // An answer to one of ours.
@@ -1232,6 +1282,9 @@ impl Inner {
                     }
                     (Purpose::Load { .. } | Purpose::Resume, Some(e)) => {
                         self.replay = None;
+                        if !self.cfg.follow {
+                            self.t.note(RESUME_LOST, at);
+                        }
                         fx.push(Effect::SessionLost(e));
                     }
                     // An agent that's still provisioning: "retry shortly".
@@ -1285,9 +1338,9 @@ impl Inner {
                         self.t.note(format!("Couldn't switch to permission mode {mode}: {e}"), at);
                         self.error = Some(format!("permission mode {mode}: {e}"));
                     }
+                    // The agent stops, saying why (its exit's note).
                     (Purpose::Init | Purpose::New, Some(e)) => {
-                        self.t.note(format!("The agent couldn't start a session: {e}{login}"), at);
-                        self.error = Some(format!("{e}{login}"));
+                        fx.push(Effect::StartFailed(format!("couldn't start a session: {e}{login}")));
                     }
                     (_, Some(e)) => warn!(error = e, "agent request failed"),
                     _ => {}
@@ -2535,6 +2588,9 @@ async fn run(agent: Agent, mut rx: mpsc::UnboundedReceiver<Msg>) {
             _ = tick.tick() => {
                 {
                     let mut g = inner.lock().unwrap();
+                    if give_up_opening(&ctx, &mut g) {
+                        dirty = true;
+                    }
                     if g.autonomous_at.is_some_and(|t| t.elapsed() >= autonomous_quiet()) {
                         g.autonomous_at = None;
                         g.end_woken(now_ms());
@@ -2756,11 +2812,12 @@ fn act(ctx: &AgentCtx, g: &mut Inner, f: Effect) {
             follow_failed(g, &format!("couldn't load the conversation ({why})"));
         }
         Effect::SessionLost(why) => {
-            g.t.note(format!("Couldn't reopen the session ({why}); starting a new one"), now_ms());
+            info!(block = ctx.id, why, "couldn't reopen the session; starting a new one");
             g.cfg.session_id = None;
             let cwd = g.cfg.cwd.clone().unwrap_or_else(|| ctx.home.display().to_string());
             new_session(ctx, g, &cwd);
         }
+        Effect::StartFailed(why) => start_failed(ctx, g, &why),
         Effect::SessionOpen { fresh: _ } => {
             // An imported conversation goes on with the model it had (a
             // resume resets it to the adapter's default, S20).
@@ -2991,6 +3048,52 @@ fn follow_failed(g: &mut Inner, why: &str) {
     // Its process's own exit (the signal) isn't news: this is why it stopped.
     g.generation += 1;
     g.note(json!({ "e": "exit", "why": format!("stopped: {why}; Follow never starts a new conversation") }));
+}
+
+/// The agent didn't start, or didn't open its session: it stops, saying
+/// why with the last of its stderr, rather than leave the block starting.
+fn start_failed(ctx: &AgentCtx, g: &mut Inner, why: &str) {
+    warn!(block = ctx.id, why, "the agent didn't start");
+    if let Some(l) = g.link.take() {
+        l.stop();
+    }
+    // Its process's own exit (the signal) isn't news: this is why it stopped.
+    g.generation += 1;
+    let why = match link::stderr_tail(&ctx.dir) {
+        Some(tail) => format!("{why}. Its stderr: {tail}"),
+        None => why.to_owned(),
+    };
+    g.note(json!({ "e": "exit", "why": why }));
+}
+
+/// The request that starts the agent or opens its session, if it has gone
+/// unanswered while the agent said nothing for [`open_within`]: it's given
+/// up on, and the block opens a new session in its place (for a reopened
+/// one) or stops.
+fn give_up_opening(ctx: &AgentCtx, g: &mut Inner) -> bool {
+    let Some((id, at)) = g.opening else { return false };
+    let Some(purpose) = g.ours.get(&id).cloned() else { return false };
+    let within = open_within(purpose == Purpose::Init);
+    // A VM's agent is sent `initialize` while its machine starts.
+    if now_ms().saturating_sub(at) < within.as_millis() as u64 || (ctx.sprite.is_some() && purpose == Purpose::Init) {
+        return false;
+    }
+    let method = match purpose {
+        Purpose::Init => "initialize",
+        Purpose::New => "session/new",
+        Purpose::Load { .. } => "session/load",
+        Purpose::Resume => "session/resume",
+        Purpose::Fork => "session/fork",
+        _ => return false,
+    };
+    g.opening = None;
+    g.note(json!({ "e": "unanswered", "id": id, "method": method }));
+    let why = format!("didn't answer {method}, and said nothing for {} s", within.as_secs_f64());
+    match purpose {
+        Purpose::Load { .. } | Purpose::Resume => act(ctx, g, Effect::SessionLost(why)),
+        _ => start_failed(ctx, g, &why),
+    }
+    true
 }
 
 /// The agent's own `_meta` (Claude's `settingSources: []`), if it has one.

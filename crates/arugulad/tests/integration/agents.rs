@@ -484,6 +484,71 @@ fn after_a_reboot_the_transcript_is_back_and_the_session_resumes() {
     d.wait(id, "idle");
 }
 
+/// An agent that never answers `session/load` after a reboot: the block
+/// gives up on it, says so and starts a new session; one that doesn't answer
+/// `session/new` either stops the block, with its stderr
+/// (https://app.arugula.io/issues/iss_dbc1393e26549eaa3413372b47da2b2d).
+#[test]
+fn an_agent_that_never_reopens_its_session_gets_a_new_one_or_stops() {
+    let mut d = Daemon::child_env(&[], &[("ARUGULA_ACP_STARTUP_MS", "1500")]);
+    let config =
+        json!({ "agent": "acp", "command": [PYTHON, fake(), "--no-resume"], "cwd": d.sessions, "prompt": "hello" });
+    let id = d.open_with(json!({ "type": "agent", "config": config }));
+    d.wait(id, "idle");
+    let first = d.state(id)["session_id"].clone();
+    let reboot = |d: &mut Daemon| {
+        let pid = d.state(id)["pid"].as_u64().unwrap();
+        d.stop();
+        d.wait_for("the agent to die with it", || !alive(pid));
+        d.start();
+        d.wait_for("the block", || d.raw("GET", &format!("/api/blocks/{id}"), None).0 == 200);
+    };
+
+    std::fs::write(d.sessions.join("unanswered"), "session/load\n").unwrap();
+    reboot(&mut d);
+    d.wait_for("a new session", || d.state(id)["status"] == "ready");
+    let s = d.state(id);
+    assert!(s["session_id"].is_string() && s["session_id"] != first, "{s}");
+    let text = d.raw("GET", &format!("/api/panes/{id}/capture"), None).1;
+    assert!(text.contains("Couldn't resume the earlier conversation; started a new one."), "{text}");
+    d.call(id, "send", json!({ "text": "hello" }));
+    assert_eq!(d.wait(id, "idle"), "done");
+
+    std::fs::write(d.sessions.join("unanswered"), "session/load\nsession/new\n").unwrap();
+    reboot(&mut d);
+    d.wait_for("the block to stop", || d.state(id)["status"] == "exited");
+    let error = d.state(id)["error"].as_str().unwrap_or_default().to_owned();
+    assert!(error.contains("didn't answer session/new, and said nothing for 1.5 s"), "{error}");
+    assert!(error.contains("not answering session/new"), "its stderr: {error}");
+}
+
+/// A `session/load` that replays a long conversation takes longer than the
+/// bound, but the agent isn't silent while it does: the block waits for it
+/// and resumes, rather than starting a new session.
+#[test]
+fn a_session_load_that_replays_for_a_while_is_waited_for() {
+    let mut d = Daemon::child_env(&[], &[("ARUGULA_ACP_STARTUP_MS", "1000")]);
+    let config = json!({ "agent": "acp", "command": [PYTHON, fake(), "--no-resume"], "cwd": d.sessions, "prompt": "remember kestrel" });
+    let id = d.open_with(json!({ "type": "agent", "config": config }));
+    d.wait(id, "idle");
+    let first = d.state(id)["session_id"].clone();
+    let pid = d.state(id)["pid"].as_u64().unwrap();
+    // 15 updates 200 ms apart: 3 s of replay, under a 1 s bound of silence.
+    std::fs::write(d.sessions.join("load-slowly"), "15 200").unwrap();
+    d.stop();
+    d.wait_for("the agent to die with it", || !alive(pid));
+    d.start();
+    d.wait_for("the block", || d.raw("GET", &format!("/api/blocks/{id}"), None).0 == 200);
+    d.wait_for("the session", || d.state(id)["status"] == "ready");
+    let s = d.state(id);
+    assert_eq!(s["session_id"], first, "the same session: {s}");
+    let text = d.raw("GET", &format!("/api/panes/{id}/capture"), None).1;
+    assert!(!text.contains("Couldn't resume"), "{text}");
+    d.call(id, "send", json!({ "text": "recall" }));
+    d.wait(id, "idle");
+    assert!(entries(&d.state(id)).iter().any(|e| e["text"] == "You said kestrel."), "the session came back");
+}
+
 const CUT_PROMPT: &str = "Arugula restarted while you were working and your last turn was cut off. Check what you had started (background shells may still be running), then carry on.";
 
 /// #680: a turn the daemon's restart cut off comes back as a card with
