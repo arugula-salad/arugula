@@ -1,6 +1,6 @@
 //! The access routes: the ACL over HTTP, as operations (M12, M19).
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use arugula_core::SessionId;
 use arugula_proto::op::ops::{LinkRevoke, LinksList};
@@ -21,6 +21,9 @@ pub fn routes() -> Router<Arc<App>> {
 pub fn link_routes() -> Router<Arc<App>> {
     Router::new().op::<LinksList>().op::<LinkRevoke>()
 }
+
+/// How long sharing waits for control to hear of it.
+const SHARE_WAIT: Duration = Duration::from_secs(2);
 
 fn refuse(status: StatusCode, why: impl Into<String>) -> ApiError {
     ApiError(status, why.into())
@@ -142,7 +145,16 @@ pub(crate) async fn set(app: &App, b: AclSetRequest) -> Result<Value, ApiError> 
     // certificates fetched. An error too: it may have happened all the same
     // (`Acl::commit`).
     app.mux.send(Cmd::AclChanged);
-    app.control.poke();
+    // Control hears of it before this answers, so whoever was just let in
+    // sees the machine at once, not at their page's next look, up to 10 s
+    // later (https://app.arugula.io/issues/iss_95da03e1067fa2c47b9e06d14b6aabd3).
+    // Only so long: a slow or absent control costs the call [`SHARE_WAIT`],
+    // and the grant stands either way, to go out on a later refresh.
+    if app.control.enrolled().is_some() {
+        app.control.refresh_now(SHARE_WAIT).await;
+    } else {
+        app.control.poke();
+    }
     if let Err(e) = set {
         return Err(refuse(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
     }
