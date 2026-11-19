@@ -65,12 +65,16 @@ test("a board row's link in a block goes to the issue in the app, in place", asy
   await expect(link).toHaveAttribute("href", `/issues/${ISSUE}`);
   const tabs = page.context().pages().length;
   await page.evaluate(() => ((window as unknown as { stayed: boolean }).stayed = true));
+  const entries = await page.evaluate(() => history.length);
   await link.click();
   // The app finds the issue's project and puts its full address in place.
   await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/issues/${ISSUE}[^/]*$`));
   expect(page.context().pages().length).toBe(tabs);
   // In place: the same page, not a reload.
   expect(await page.evaluate(() => (window as unknown as { stayed?: boolean }).stayed)).toBe(true);
+  // One step pushed (the find's address replaced by the issue's, not a
+  // second step), and landed before Back reads the history (Arugula #1091).
+  await expect.poll(() => page.evaluate(() => history.length)).toBe(entries + 1);
   // Back climbs to the machine's pane.
   await page.goBack();
   await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines`));
