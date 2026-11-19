@@ -25,8 +25,10 @@ Arugula #1213 to #1220.
   was trying to do, never secrets or code. An agent doesn't ask you first.
   `arugula feedback` run by an agent (`CLAUDECODE` or `AI_AGENT` set) counts
   as the agent's.
-- **From the web client and the desktop app:** *Send feedback*, in the
-  account menu and the command palette (Arugula #1217, coming).
+- **From the web client and the desktop app:** *Send feedback…*, in the
+  account menu and the command palette (`feedback.open`). On the hosted
+  pages (app.arugula.io) it's in the account menu too, and sends as the
+  person signed in.
 
 Each one taken answers with an id such as `F-7K2Q9X`. The body is at most
 8 KB.
