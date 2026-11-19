@@ -65,6 +65,9 @@ fn files() -> Vec<(&'static str, &'static [&'static str], fn(&mut SchemaGenerato
         "deploys" => [
             deploys::DeploySource, deploys::DeployPlan,
         ],
+        "events" => [
+            events::Event, events::EventScope, events::Actor, events::ActorKind,
+        ],
         "feedback" => [
             feedback::FeedbackSubmit, feedback::FeedbackKind, feedback::FeedbackSource, feedback::FeedbackSurface, feedback::FeedbackAgent, feedback::FeedbackContext, feedback::FailedCall, feedback::FeedbackWho, feedback::FeedbackStamp, feedback::FeedbackAck, feedback::FeedbackRefused,
         ],

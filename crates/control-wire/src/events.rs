@@ -1,0 +1,422 @@
+//! The event bus's envelope and catalog (Arugula #1224; the plan is the Doc
+//! "Event bus: watch on one event log"). Every source writes its events in
+//! one envelope, [`Event`], to one log, and `watch` waits on a filter over
+//! it: an event type, a subject and a few of the type's match fields.
+//!
+//! The catalog, [`CATALOG`], lists the types this side knows: what each
+//! means, the fields a watch may match on, where it's served (the daemon,
+//! for a machine's own panes and agent blocks, which work offline; or the
+//! cloud) and the grant power an agent needs to watch it. Cloud-only types
+//! may also live in the cloud's repository; a type this side doesn't list
+//! still reads as an [`Event`].
+//!
+//! Naming: Arugula's own types are `<object>.<verb>` (`issue.closed`,
+//! `session.settled`, `pane.command.ended` for an object's part); a third
+//! party's carry its name first (`github.pr.merged`, `plane.issue.moved`).
+//! Each part is lowercase ASCII letters, digits and `_`
+//! ([`name_well_formed`]).
+//!
+//! An event's `data` is metadata only: ids, states, logins and times, at
+//! most [`DATA_MAX_BYTES`]. Never a title, body, comment or diff: what an
+//! event carries reaches agents, and text written by someone else is
+//! untrusted. [`data_check`] says whether some `data` may go in.
+
+use serde::{Deserialize, Serialize};
+
+/// An event's id prefix: `evt_…`.
+pub const ID_PREFIX: &str = "evt_";
+
+/// [`Event::source`] for Arugula's own events.
+pub const SOURCE_ARUGULA: &str = "arugula";
+/// [`Event::source`] for GitHub's, through the App's webhook or the poller.
+pub const SOURCE_GITHUB: &str = "github";
+/// [`Event::source`] for Plane's.
+pub const SOURCE_PLANE: &str = "plane";
+
+/// The most an event's `data` may be, as compact JSON: 4 KB.
+pub const DATA_MAX_BYTES: usize = 4096;
+
+/// Keys `data` may not have, at any depth: the words for text someone
+/// wrote. [`data_check`] refuses them; it can't see every such field, so a
+/// producer still puts only ids, states, logins and times in.
+pub const DATA_TEXT_KEYS: &[&str] = &["title", "body", "comment", "diff", "text", "message", "description"];
+
+/// One event in the log.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct Event {
+    /// `evt_…`.
+    pub id: String,
+    /// Its place in the log, in commit order: a reader by `seq` misses
+    /// none.
+    pub seq: u64,
+    /// Its type, a name in the catalog (`issue.closed`), or one this side
+    /// doesn't know yet.
+    #[serde(rename = "type")]
+    pub kind: String,
+    /// The version of its type's `data`, from 1.
+    #[serde(default = "v1")]
+    pub v: u32,
+    /// Who it came from: [`SOURCE_ARUGULA`], [`SOURCE_GITHUB`],
+    /// [`SOURCE_PLANE`], or another adapter's name.
+    pub source: String,
+    pub scope: EventScope,
+    /// What it's about, as a ref Arugula already reads: `iss_…`,
+    /// `owner/repo#12`, `run_…`, `dep_…`, `ses_…`, a pane's id, or a room
+    /// and thread (`room_…#12`).
+    pub subject: String,
+    /// Who did it, when anyone did.
+    #[serde(default)]
+    pub actor: Option<Actor>,
+    /// When it happened, as its source says, in ms since the epoch.
+    pub at_ms: i64,
+    /// When the log took it, in ms since the epoch.
+    pub recorded_ms: i64,
+    /// The type's fields: metadata only, at most [`DATA_MAX_BYTES`]
+    /// ([`data_check`]). Null when it has none.
+    #[serde(default)]
+    pub data: serde_json::Value,
+    /// Its identity for deduplication: a second event with the same key is
+    /// dropped (a webhook's delivery id, `issue.closed:iss_…:3`).
+    pub key: String,
+}
+
+fn v1() -> u32 {
+    1
+}
+
+/// Where an event belongs: who may see it is decided from here.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct EventScope {
+    /// The team's id.
+    pub team: String,
+    /// The project's id (`prj_…`), when it's in one.
+    #[serde(default)]
+    pub project: Option<String>,
+}
+
+/// Who did what an event says.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct Actor {
+    pub kind: ActorKind,
+    /// The account's or agent session's id; for an external actor, its id
+    /// at the source.
+    pub id: String,
+    /// Their login as people read it, when they have one. An external
+    /// one's is what the source said, untrusted.
+    #[serde(default)]
+    pub login: Option<String>,
+}
+
+/// What kind of actor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(transform = crate::open_enum))]
+#[serde(rename_all = "snake_case")]
+pub enum ActorKind {
+    /// A person's Arugula account.
+    Account,
+    /// An agent, acting for its owner.
+    Agent,
+    /// Someone at a third party (a GitHub login), not known to Arugula.
+    External,
+    /// A kind this side doesn't know yet.
+    #[serde(other)]
+    Other,
+}
+
+impl Event {
+    /// Whether its `data` may go in the log ([`data_check`]).
+    pub fn data_check(&self) -> Result<(), String> {
+        data_check(&self.data)
+    }
+}
+
+/// Whether `data` may be an event's: null or an object, at most
+/// [`DATA_MAX_BYTES`] as compact JSON, with none of [`DATA_TEXT_KEYS`].
+pub fn data_check(data: &serde_json::Value) -> Result<(), String> {
+    use serde_json::Value;
+    match data {
+        Value::Null => return Ok(()),
+        Value::Object(_) => {}
+        _ => return Err("an event's data is an object".into()),
+    }
+    let len = serde_json::to_vec(data).map(|b| b.len()).unwrap_or(usize::MAX);
+    if len > DATA_MAX_BYTES {
+        return Err(format!("an event's data is {len} bytes, more than {DATA_MAX_BYTES}"));
+    }
+    fn text_key(v: &Value) -> Option<&str> {
+        match v {
+            Value::Object(o) => o
+                .iter()
+                .find_map(|(k, v)| DATA_TEXT_KEYS.contains(&k.as_str()).then_some(k.as_str()).or_else(|| text_key(v))),
+            Value::Array(a) => a.iter().find_map(text_key),
+            _ => None,
+        }
+    }
+    match text_key(data) {
+        Some(k) => Err(format!("an event's data is metadata only: no {k}")),
+        None => Ok(()),
+    }
+}
+
+/// Where a type is served.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Home {
+    /// The machine's daemon, from its panes' and blocks' states: works
+    /// with no account.
+    Daemon,
+    /// The cloud's log: needs the machine to be joined.
+    Cloud,
+}
+
+/// One field a watch may match an event on, by equality.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MatchField {
+    pub name: &'static str,
+    /// What it holds, in a line.
+    pub meaning: &'static str,
+}
+
+/// One type in the catalog.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EventType {
+    /// `issue.closed` ([`name_well_formed`]).
+    pub name: &'static str,
+    /// What it means, in a line.
+    pub meaning: &'static str,
+    /// The fields a watch may match on.
+    pub matches: &'static [MatchField],
+    pub home: Home,
+    /// The grant power an agent needs to watch it (`agent_may`), checked
+    /// when the watch is made and when it fires. None for a daemon's own
+    /// types: the machine's owner's agents watch its panes.
+    pub power: Option<&'static str>,
+}
+
+const fn m(name: &'static str, meaning: &'static str) -> MatchField {
+    MatchField { name, meaning }
+}
+
+const ISSUE: MatchField = m("issue", "the issue, iss_… or its #N in the project");
+const PROJECT: MatchField = m("project", "the project, prj_…");
+const PANE: MatchField = m("pane", "the pane or agent block, by its id");
+
+/// Every type this side knows. Issues and sessions ride `cloud.drive` until
+/// they have read powers of their own, as PR watches do.
+pub const CATALOG: &[EventType] = &[
+    EventType {
+        name: "issue.created",
+        meaning: "A native issue was opened.",
+        matches: &[PROJECT, m("author", "the login of who opened it"), m("label", "a label it was opened with")],
+        home: Home::Cloud,
+        power: Some("cloud.drive"),
+    },
+    EventType {
+        name: "issue.closed",
+        meaning: "A native issue was closed.",
+        matches: &[ISSUE, PROJECT, m("by", "the login of who closed it")],
+        home: Home::Cloud,
+        power: Some("cloud.drive"),
+    },
+    EventType {
+        name: "issue.reopened",
+        meaning: "A closed native issue was opened again.",
+        matches: &[ISSUE, PROJECT, m("by", "the login of who reopened it")],
+        home: Home::Cloud,
+        power: Some("cloud.drive"),
+    },
+    EventType {
+        name: "issue.assigned",
+        meaning: "Someone was assigned a native issue.",
+        matches: &[ISSUE, PROJECT, m("assignee", "the login of who was assigned")],
+        home: Home::Cloud,
+        power: Some("cloud.drive"),
+    },
+    EventType {
+        name: "session.settled",
+        meaning: "A hosted agent session stopped working: done, waiting for input, failed or stopped.",
+        matches: &[
+            m("session", "the session, ses_…"),
+            PROJECT,
+            m("state", "how it settled: done, waiting, failed or stopped"),
+        ],
+        home: Home::Cloud,
+        power: Some("cloud.drive"),
+    },
+    EventType {
+        name: "run.ended",
+        meaning: "A run finished, however it finished.",
+        matches: &[m("run", "the run, run_…"), PROJECT, m("state", "how it ended: succeeded, failed or cancelled")],
+        home: Home::Cloud,
+        power: Some("runs.read"),
+    },
+    EventType {
+        name: "deploy.ended",
+        meaning: "A deploy finished, however it finished.",
+        matches: &[
+            m("deploy", "the deploy, dep_…"),
+            PROJECT,
+            m("environment", "the environment it deployed to"),
+            m("state", "how it ended: succeeded, failed or cancelled"),
+        ],
+        home: Home::Cloud,
+        power: Some("runs.read"),
+    },
+    EventType {
+        name: "chat.reply",
+        meaning: "A message was posted in a chat thread, or in a room.",
+        matches: &[
+            m("room", "the room, by its id"),
+            m("thread", "the thread, its root message's number"),
+            m("from", "the login of who wrote it"),
+        ],
+        home: Home::Cloud,
+        power: Some("threads.read"),
+    },
+    EventType {
+        name: "agent.idle",
+        meaning: "An agent on this machine finished its turn and waits for a prompt.",
+        matches: &[PANE],
+        home: Home::Daemon,
+        power: None,
+    },
+    EventType {
+        name: "agent.needs_input",
+        meaning: "An agent on this machine asks a person something: a permission or a question.",
+        matches: &[PANE],
+        home: Home::Daemon,
+        power: None,
+    },
+    EventType {
+        name: "pane.command.ended",
+        meaning: "A command in a pane's shell finished.",
+        matches: &[PANE, m("exit", "its exit code")],
+        home: Home::Daemon,
+        power: None,
+    },
+    EventType {
+        name: "pane.exited",
+        meaning: "A pane's process exited.",
+        matches: &[PANE, m("exit", "its exit code")],
+        home: Home::Daemon,
+        power: None,
+    },
+];
+
+/// The catalog's entry for a type, by its name.
+pub fn lookup(name: &str) -> Option<&'static EventType> {
+    CATALOG.iter().find(|t| t.name == name)
+}
+
+/// Whether `name` is a type's name: at least two parts joined by `.`, each
+/// lowercase ASCII letters, digits and `_`, starting with a letter.
+pub fn name_well_formed(name: &str) -> bool {
+    let mut parts = 0;
+    for part in name.split('.') {
+        parts += 1;
+        let mut chars = part.chars();
+        if !chars.next().is_some_and(|c| c.is_ascii_lowercase())
+            || !chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+        {
+            return false;
+        }
+    }
+    parts >= 2
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn closed() -> serde_json::Value {
+        json!({
+            "id": "evt_01", "seq": 42, "type": "issue.closed", "v": 1, "source": "arugula",
+            "scope": { "team": "team_1", "project": "prj_1" },
+            "subject": "iss_90dd",
+            "actor": { "kind": "account", "id": "acc_1", "login": "jdoe" },
+            "at_ms": 1_763_500_000_000_i64, "recorded_ms": 1_763_500_000_015_i64,
+            "data": { "issue": "iss_90dd", "number": 812, "state": "closed", "by": "jdoe" },
+            "key": "issue.closed:iss_90dd:3",
+        })
+    }
+
+    #[test]
+    fn an_event_round_trips() {
+        let e: Event = serde_json::from_value(closed()).unwrap();
+        assert_eq!(e.kind, "issue.closed");
+        assert_eq!(e.actor.as_ref().unwrap().kind, ActorKind::Account);
+        assert_eq!(serde_json::to_value(&e).unwrap(), closed());
+        assert!(e.data_check().is_ok());
+    }
+
+    #[test]
+    fn an_event_reads_leniently() {
+        let mut v = closed();
+        let o = v.as_object_mut().unwrap();
+        for k in ["v", "actor", "data"] {
+            o.remove(k);
+        }
+        o.insert("source".into(), json!("linear"));
+        o.insert("scope".into(), json!({ "team": "team_1" }));
+        o.insert("later".into(), json!(true));
+        let e: Event = serde_json::from_value(v).unwrap();
+        assert_eq!((e.v, e.source.as_str(), &e.actor, &e.data), (1, "linear", &None, &serde_json::Value::Null));
+        assert_eq!(e.scope.project, None);
+        // Nulls stay nulls on the way out.
+        let out = serde_json::to_value(&e).unwrap();
+        assert_eq!((&out["actor"], &out["scope"]["project"]), (&json!(null), &json!(null)));
+        let a: Actor = serde_json::from_value(json!({ "kind": "bot", "id": "1" })).unwrap();
+        assert_eq!((a.kind, a.login), (ActorKind::Other, None));
+    }
+
+    #[test]
+    fn data_is_metadata_only() {
+        assert!(data_check(&json!(null)).is_ok());
+        assert!(data_check(&json!({ "pr": "o/r#1", "checks": [{ "name": "ci", "state": "failed" }] })).is_ok());
+        assert!(data_check(&json!("closed")).is_err());
+        assert!(data_check(&json!({ "title": "x" })).unwrap_err().contains("title"));
+        assert!(data_check(&json!({ "reviews": [{ "body": "lgtm" }] })).unwrap_err().contains("body"));
+        let fits = json!({ "s": "a".repeat(DATA_MAX_BYTES - 8) });
+        assert_eq!(serde_json::to_vec(&fits).unwrap().len(), DATA_MAX_BYTES);
+        assert!(data_check(&fits).is_ok());
+        let over = json!({ "s": "a".repeat(DATA_MAX_BYTES - 7) });
+        assert!(data_check(&over).unwrap_err().contains("more than"));
+    }
+
+    #[test]
+    fn the_catalogs_names_are_unique_and_well_formed() {
+        let mut seen = std::collections::HashSet::new();
+        for t in CATALOG {
+            assert!(name_well_formed(t.name), "{}", t.name);
+            assert!(seen.insert(t.name), "{} twice", t.name);
+            assert!(!t.meaning.is_empty() && !t.matches.is_empty(), "{}", t.name);
+            let mut fields = std::collections::HashSet::new();
+            assert!(t.matches.iter().all(|f| name_well_formed(&format!("x.{}", f.name)) && fields.insert(f.name)));
+            assert_eq!(t.power.is_none(), t.home == Home::Daemon, "{}: a cloud type needs a power", t.name);
+            // Arugula's own are `<object>.<verb>`: no third party's prefix.
+            assert!(![SOURCE_GITHUB, SOURCE_PLANE].contains(&t.name.split('.').next().unwrap()), "{}", t.name);
+        }
+        for good in ["issue.closed", "pane.command.ended", "github.pr.merged", "agent.needs_input"] {
+            assert!(name_well_formed(good), "{good}");
+        }
+        for bad in ["issue", "Issue.closed", "issue..closed", ".closed", "issue.closed.", "issue.1st", "issue-x.closed"]
+        {
+            assert!(!name_well_formed(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn lookup_finds_by_name() {
+        let t = lookup("run.ended").unwrap();
+        assert_eq!((t.home, t.power), (Home::Cloud, Some("runs.read")));
+        assert_eq!(lookup("chat.reply").unwrap().power, Some("threads.read"));
+        assert_eq!(lookup("pane.exited").unwrap().home, Home::Daemon);
+        assert!(lookup("issue.closed").unwrap().matches.iter().any(|f| f.name == "issue"));
+        assert!(lookup("github.pr.merged").is_none());
+        assert!(lookup("").is_none());
+    }
+}
