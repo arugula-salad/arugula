@@ -15,6 +15,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::events::{self, Home};
+
 /// `POST`: make a watch, [`WatchCreate`], answered [`WatchMade`]. `GET`
 /// with [`WatchListQuery`]: the machine's live watches, [`WatchList`].
 pub const AGENT_WATCHES: &str = "/api/daemon/watches";
@@ -300,6 +302,71 @@ pub fn until_word_parse(word: Option<&str>) -> Result<PrUntil, String> {
         "ready" => Ok(PrUntil::Ready),
         w => Err(format!("until {w}: a watch on a PR waits until merged, closed, checks_done, checks_failed or ready")),
     }
+}
+
+/// A watch's event target as the `watch` tools check it, for
+/// [`WatchCreate`]'s `event`, `matches` and `note`: each none when it isn't
+/// given, and match and note none without an event.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct EventTarget {
+    pub event: Option<String>,
+    pub matches: Option<serde_json::Map<String, serde_json::Value>>,
+    pub note: Option<String>,
+}
+
+/// An event target, checked before it's sent: the type is in the catalog
+/// and served by the cloud (a daemon's own come with local watches), each
+/// match key is one of its match fields, and the note is at most
+/// [`NOTE_MAX`] characters. Match and note need an event.
+pub fn event_target(
+    event: Option<String>,
+    matches: Option<serde_json::Map<String, serde_json::Value>>,
+    note: Option<String>,
+) -> Result<EventTarget, String> {
+    let matches = matches.filter(|m| !m.is_empty());
+    let note = note.map(|n| n.trim().to_owned()).filter(|n| !n.is_empty());
+    let Some(name) = event.map(|n| n.trim().to_owned()).filter(|n| !n.is_empty()) else {
+        if matches.is_some() || note.is_some() {
+            return Err("match and note go with an event".into());
+        }
+        return Ok(EventTarget::default());
+    };
+    let Some(t) = events::lookup(&name) else {
+        return Err(format!("event {name}: no such type; watch types lists them"));
+    };
+    if t.home == Home::Daemon {
+        return Err(format!("event {name}: local watches come soon; use wait for a pane"));
+    }
+    for k in matches.iter().flat_map(|m| m.keys()) {
+        if !t.matches.iter().any(|f| f.name == k) {
+            let fields: Vec<&str> = t.matches.iter().map(|f| f.name).collect();
+            return Err(format!("match {k}: {name} matches on {}", fields.join(", ")));
+        }
+    }
+    if let Some(n) = &note
+        && n.chars().count() > NOTE_MAX
+    {
+        return Err(format!("note: {} characters, at most {NOTE_MAX}", n.chars().count()));
+    }
+    Ok(EventTarget { event: Some(name), matches, note })
+}
+
+/// `watch types`' answer: the catalog, a type to two lines, and whether
+/// this machine can watch each now (`joined`: it has joined Arugula cloud).
+pub fn event_types(joined: bool) -> String {
+    let lines: Vec<String> = events::CATALOG
+        .iter()
+        .map(|t| {
+            let now = match t.home {
+                Home::Cloud if joined => "watchable now",
+                Home::Cloud => "not now: this machine hasn't joined Arugula cloud",
+                Home::Daemon => "not yet: local watches come soon; use wait for a pane",
+            };
+            let fields: Vec<String> = t.matches.iter().map(|f| format!("{} ({})", f.name, f.meaning)).collect();
+            format!("{}: {} [{now}]\n  match: {}", t.name, t.meaning, fields.join("; "))
+        })
+        .collect();
+    lines.join("\n")
 }
 
 /// `expires`' words, in ms: `30m`, `6h`, `3d`, at most [`EXPIRES_MAX_MS`].

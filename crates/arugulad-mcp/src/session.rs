@@ -36,7 +36,7 @@ use std::{
 
 use arugula_control_wire::{
     project_docs::{DocView, DocWrite, NewDoc, NewSection},
-    watch::{WatchState, WatchTarget, expires_ms, until_word_parse},
+    watch::{EventTarget, WatchState, WatchTarget, event_target, event_types, expires_ms, until_word_parse},
     work::{
         SessionIssuesAsk, SessionIssuesGiven, SessionIssuesOp, SessionWatchAsk, SessionWatchGiven, SessionWatchOp,
         WORK_SESSION_ISSUES, WORK_SESSION_WATCH,
@@ -175,7 +175,8 @@ pub enum Ids {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct WatchArgs {
-    /// create (the default), list or cancel.
+    /// create (the default), list, cancel, or types (the event types event
+    /// takes).
     #[serde(default)]
     pub kind: Option<String>,
     /// create: a pull request, OWNER/REPO#N or its link, or several.
@@ -200,6 +201,18 @@ pub struct WatchArgs {
     /// create, with room: only a reply by this person (login or name).
     #[serde(default)]
     pub from: Option<String>,
+    /// create: an event type (kind types lists them): fires when an event
+    /// of it happens that has every match field given.
+    #[serde(default)]
+    pub event: Option<String>,
+    /// create, with event: field and value pairs the event must have, from
+    /// the type's match fields ({"issue": "#12"}, this project's #12).
+    #[serde(default, rename = "match")]
+    pub matches: Option<serde_json::Map<String, Value>>,
+    /// create, with event: why you watch, at most 200 characters: it comes
+    /// back with the event when it fires.
+    #[serde(default)]
+    pub note: Option<String>,
     /// create: how long before it ends without firing: 30m, 6h, 3d. Default
     /// 24h, at most 7d.
     #[serde(default)]
@@ -212,7 +225,23 @@ pub struct WatchArgs {
     pub all: bool,
 }
 
-/// What `watch create` waits for, from its arguments.
+/// What `watch create` asks for, from its arguments: its targets and its
+/// event target, checked as the machine's `watch` checks them.
+fn watch_create(a: WatchArgs) -> Result<SessionWatchOp, String> {
+    let targets = watch_targets(&a)?;
+    // The session's project is control's to say, here as everywhere.
+    if a.matches.as_ref().is_some_and(|m| m.contains_key("project")) {
+        return Err("match project: a session watches its own project's events, and #N is its issue".into());
+    }
+    let EventTarget { event, matches, note } = event_target(a.event, a.matches, a.note)?;
+    if targets.is_empty() && event.is_none() {
+        return Err("watch create needs something to watch: pr, agent_session, run, room or event".into());
+    }
+    let expires_in_ms = a.expires.as_deref().map(expires_ms).transpose()?;
+    Ok(SessionWatchOp::Create { targets, expires_in_ms, event, matches, note })
+}
+
+/// What `watch create` waits for besides an event, from its arguments.
 fn watch_targets(a: &WatchArgs) -> Result<Vec<WatchTarget>, String> {
     let until = until_word_parse(a.until.as_deref())?;
     let ids = |i: &Option<Ids>| match i {
@@ -243,9 +272,6 @@ fn watch_targets(a: &WatchArgs) -> Result<Vec<WatchTarget>, String> {
         Some(room) => out.push(WatchTarget::Thread { room: room.to_owned(), parent: a.parent, from: a.from.clone() }),
         None if a.parent.is_some() || a.from.is_some() => return Err("parent and from go with a room".into()),
         None => {}
-    }
-    if out.is_empty() {
-        return Err("watch create needs something to watch: pr, agent_session, run or room".into());
     }
     Ok(out)
 }
@@ -308,7 +334,7 @@ fn tools() -> Vec<Tool> {
         .with_annotations(read_doc),
         Tool::new(
             WATCH,
-            "Wake this session later, when something happens, without polling or holding your turn open: create a watch (kind create), then end your turn; what happened (ids and states only) comes as your next prompt, from Arugula, once. Targets, any of which fires it: pr (OWNER/REPO#N, in a repo linked to Arugula's GitHub App) until merged, closed, checks_done, checks_failed or ready; agent_session (another ses_) until it settles; run (run_ or dep_) until it ends; room (a chat room's id, with parent for one thread and from for one person) until a reply you didn't write. It expires after 24 hours unless you say (expires, at most 7d), and then you're told it ended without firing. If it has happened already, create says so and makes none. kind list shows this session's watches; kind cancel takes one by id, or all.",
+            "Wake this session later, when something happens, without polling or holding your turn open: create a watch (kind create), then end your turn; what happened (ids and states only) comes as your next prompt, from Arugula, once. Targets, any of which fires it: pr (OWNER/REPO#N, in a repo linked to Arugula's GitHub App) until merged, closed, checks_done, checks_failed or ready; agent_session (another ses_) until it settles; run (run_ or dep_) until it ends; room (a chat room's id, with parent for one thread and from for one person) until a reply you didn't write; event (a type from kind types, like issue.closed) with match (some of the type's match fields, like {\"issue\": \"#12\"}, this project's #12) and note (why you watch, at most 200 characters, handed back when it fires). It expires after 24 hours unless you say (expires, at most 7d), and then you're told it ended without firing. If it has happened already, create says so and makes none. kind list shows this session's watches; kind cancel takes one by id, or all; kind types lists the event types and their match fields.",
             schema_for_type::<WatchArgs>(),
         )
         .with_title("Watch for something to happen")
@@ -331,14 +357,13 @@ struct Server {
 struct Caller(String);
 
 impl Server {
-    /// `watch`: make, list or cancel this session's watches.
+    /// `watch`: make, list or cancel this session's watches, or list the
+    /// event types.
     async fn watch(&self, session: &str, args: Value) -> Out {
         let a: WatchArgs = parse(args)?;
-        let op = match a.kind.as_deref().map(str::trim).unwrap_or("create") {
-            "" | "create" => SessionWatchOp::Create {
-                targets: watch_targets(&a)?,
-                expires_in_ms: a.expires.as_deref().map(expires_ms).transpose()?,
-            },
+        let kind = a.kind.clone().unwrap_or_default();
+        let op = match kind.trim() {
+            "" | "create" => watch_create(a)?,
             "list" => SessionWatchOp::List,
             "cancel" => {
                 let id = a.id.as_deref().map(str::trim).filter(|i| !i.is_empty()).map(str::to_owned);
@@ -347,7 +372,12 @@ impl Server {
                 }
                 SessionWatchOp::Cancel { id, all: a.all }
             }
-            k => return Err(format!("watch kind {k}: create, list or cancel")),
+            // A hosted session's box has joined: every cloud type is watchable.
+            "types" => {
+                let text = event_types(true);
+                return done(text.clone(), json!({ "types": text }));
+            }
+            k => return Err(format!("watch kind {k}: create, list, cancel or types")),
         };
         let ask = SessionWatchAsk { session: session.to_owned(), op };
         let got: SessionWatchGiven = self
@@ -768,5 +798,44 @@ mod tests {
         assert_eq!(number("#12"), Ok(12));
         assert_eq!(number(" 7 "), Ok(7));
         assert!(number("iss_0123456789abcdef0123456789abcdef").is_err(), "only a number in the project");
+    }
+
+    fn create(v: Value) -> Result<SessionWatchOp, String> {
+        watch_create(serde_json::from_value(v).unwrap())
+    }
+
+    /// An event target goes to control as the machine's watch sends it,
+    /// checked the same way, and a watch without one is the bytes it was.
+    #[test]
+    fn watch_create_takes_an_event_target() {
+        let op = create(json!({
+            "event": "issue.closed",
+            "match": { "issue": "#12" },
+            "note": " ship once it's closed ",
+        }))
+        .unwrap();
+        let ask = serde_json::to_value(SessionWatchAsk { session: "ses_1".into(), op }).unwrap();
+        assert_eq!(
+            ask,
+            json!({ "session": "ses_1", "op": "create", "targets": [], "expires_in_ms": null,
+                    "event": "issue.closed", "match": { "issue": "#12" }, "note": "ship once it's closed" })
+        );
+        let old = serde_json::to_value(create(json!({ "run": "run_1" })).unwrap()).unwrap();
+        let keys: Vec<&str> = old.as_object().unwrap().keys().map(String::as_str).collect();
+        assert_eq!(keys, ["expires_in_ms", "op", "targets"]);
+        let err = |v| create(v).err().unwrap();
+        assert_eq!(
+            err(json!({ "event": "issue.renamed" })),
+            "event issue.renamed: no such type; watch types lists them"
+        );
+        assert_eq!(
+            err(json!({ "event": "issue.closed", "match": { "label": "bug" } })),
+            "match label: issue.closed matches on issue, project, by"
+        );
+        assert!(err(json!({ "event": "pane.exited" })).contains("local watches come soon"));
+        assert!(err(json!({ "event": "issue.closed", "note": "x".repeat(201) })).contains("at most 200"));
+        assert_eq!(err(json!({ "run": "run_1", "match": { "issue": "#1" } })), "match and note go with an event");
+        assert!(err(json!({ "event": "issue.closed", "match": { "project": "prj_2" } })).starts_with("match project"));
+        assert!(err(json!({})).ends_with("room or event"));
     }
 }

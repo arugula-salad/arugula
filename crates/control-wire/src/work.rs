@@ -1076,6 +1076,18 @@ pub enum SessionWatchOp {
         targets: Vec<crate::watch::WatchTarget>,
         #[serde(default)]
         expires_in_ms: Option<u64>,
+        /// An event target too, as [`crate::watch::WatchCreate::event`]'s:
+        /// left out when none, so a watch without one reads as before. A
+        /// `#N` in its match is the session's project's.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        event: Option<String>,
+        /// With `event`: the type's match fields an event must equal.
+        #[serde(default, rename = "match", skip_serializing_if = "Option::is_none")]
+        matches: Option<serde_json::Map<String, serde_json::Value>>,
+        /// With `event`: why the agent watches, handed back when it fires;
+        /// at most [`crate::watch::NOTE_MAX`] characters.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        note: Option<String>,
     },
     /// Its live watches.
     List,
