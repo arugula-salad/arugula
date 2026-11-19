@@ -96,7 +96,23 @@ pub struct WatchCreate {
     /// at most [`EXPIRES_MAX_MS`].
     #[serde(default)]
     pub expires_in_ms: Option<u64>,
+    /// An event target too (the event bus, Arugula #1230): a type in
+    /// [`crate::events::CATALOG`] that the cloud serves. Fires it like any
+    /// target. Left out when none, so a watch without one reads as before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub event: Option<String>,
+    /// With `event`: the type's match fields an event must equal, each one
+    /// of its [`crate::events::EventType::matches`].
+    #[serde(default, rename = "match", skip_serializing_if = "Option::is_none")]
+    pub matches: Option<serde_json::Map<String, serde_json::Value>>,
+    /// With `event`: why the agent watches, handed back when it fires; at
+    /// most [`NOTE_MAX`] characters.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
+
+/// The longest [`WatchCreate::note`], in characters.
+pub const NOTE_MAX: usize = 200;
 
 /// The most targets one watch may have.
 pub const TARGETS_MAX: usize = 10;
