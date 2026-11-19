@@ -507,6 +507,8 @@ pub fn cli() -> ! {
 /// _seal`, the secrets on its stdin). What went wrong, as [`Refused`].
 pub async fn seal(state_dir: &Path, sandbox: &str, plan: &SetupPlan, repos: &[Cloned]) -> Result<Wiped, Refused> {
     use tokio::io::AsyncWriteExt as _;
+    // The builder's ticket went when it enrolled; never one in a snapshot.
+    let _ = std::fs::remove_file(super::enroll::ticket_file());
     let needles = needles(plan)?;
     let ask = SealAsk {
         state_dir: state_dir.to_owned(),

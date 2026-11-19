@@ -18,8 +18,10 @@
 //!   box's: it enrolls.
 //! - **Enrolls itself** ([`enroll`]) with a ticket in its environment
 //!   (`ARUGULA_HOSTED_TICKET`, when it starts after the box is made: loam,
-//!   testnet) or else its sandbox id, at `ARUGULA_CONTROL_URL` (or
-//!   `--control`), and then dials the relay like any machine.
+//!   testnet), else the ticket the platform writes into the box
+//!   ([`enroll::TICKET_FILE`]), else its sandbox id, at
+//!   `ARUGULA_CONTROL_URL` (or `--control`), and then dials the relay like
+//!   any machine.
 //! - **Redials at once after a resume** ([`resume`]).
 //! - **Ends `/etc/resolv.conf` with a newline** ([`resolv`], Arugula #263),
 //!   at its start and after each resume, as envd leaves none and Zig
@@ -218,7 +220,8 @@ pub fn start(app: &Arc<App>, state_dir: PathBuf, control_url: String) {
             return;
         }
         let c = control.clone();
-        enroll::run(url, ticket, state_dir, id_file, move || c.poke()).await;
+        let from = enroll::Sources { ticket, ticket_file: enroll::ticket_file(), id_file, wait: enroll::TICKET_WAIT };
+        enroll::run(url, from, state_dir, move || c.poke()).await;
     });
 }
 
