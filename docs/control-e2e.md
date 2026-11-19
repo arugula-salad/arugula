@@ -76,8 +76,10 @@ terminal traffic is TLS to the relay.
   control can turn it back on (`crates/proto/src/sharing.rs`,
   `remote_input`). It's set on the machine only: `arugulad sharing
   remote-input`, or the answer when it joins (Arugula #1194: `arugulad join`
-  asks on a terminal, or takes `--remote-input on|off`, and Getting started
-  asks on the machine's own page on loopback; `POST /api/setup/control`
+  asks on a terminal, or takes `--remote-input on|off` or
+  `ARUGULA_REMOTE_INPUT`, and Getting started asks on the machine's own page
+  on loopback; unanswered, a machine joining for the first time is off, and
+  one already joined or set before keeps what it has, `sharing::join_sets`; `POST /api/setup/control`
   refuses the answer through control or the tailnet, `Cx::at_the_machine`).
   The machine menu says which way it is (`/api/host`'s
   `features.remote_input`), and so does Settings, under Remote sessions.

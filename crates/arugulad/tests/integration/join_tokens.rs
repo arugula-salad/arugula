@@ -167,6 +167,8 @@ fn join_with(d: &Daemon, url: &str, token: &str) -> (bool, String) {
         .args(["join", url, "--name", "box", "--state-dir"])
         .arg(&d.state)
         .env("ARUGULA_JOIN_TOKEN", token)
+        // The owner's token below types here: answered as a script would.
+        .env("ARUGULA_REMOTE_INPUT", "on")
         .output()
         .unwrap();
     let said = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));

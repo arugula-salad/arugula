@@ -666,9 +666,9 @@ function Cloud({
   const [error, setError] = useState<string | null>(null);
   // Arugula #1194: may people type into it through Arugula cloud? Asked as it
   // joins, on the machine's own page (the daemon takes the answer from
-  // nowhere else); what it says now until it's answered.
+  // nowhere else). No until it's answered, as an unanswered join is.
   const [typing, setTyping] = useState<boolean | null>(null);
-  const allow = typing ?? host?.features?.remote_input ?? true;
+  const allow = typing ?? false;
   const atTheMachine = loopback(location.hostname);
   // The control part comes back first (the rest waits on Tailscale): a
   // code waiting for approval shows at once.

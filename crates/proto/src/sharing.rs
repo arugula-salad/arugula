@@ -223,7 +223,26 @@ pub fn sessions_shown(state_dir: &Path) -> AgentListing {
 /// [`SharingSetRequest`], so nothing that comes through control can turn
 /// it back on.
 pub fn remote_input(state_dir: &Path) -> bool {
-    doc(state_dir).get("remote_input").and_then(Value::as_bool).unwrap_or(true)
+    remote_input_said(state_dir).unwrap_or(true)
+}
+
+/// What the file says of [`remote_input`], if it says anything: an
+/// answer someone gave, or `arugulad sharing remote-input`.
+pub fn remote_input_said(state_dir: &Path) -> Option<bool> {
+    doc(state_dir).get("remote_input").and_then(Value::as_bool)
+}
+
+/// What a join sets [`remote_input`] to (Arugula #1194): the answer to the
+/// question, when there is one; else off, for a machine that isn't joined
+/// yet and where nobody has said. A machine already joined, or whose owner
+/// already said, keeps what it has: an unanswered join never flips one
+/// that was set up before. `None`: leave the file alone.
+pub fn join_sets(answer: Option<bool>, joined: bool, said: Option<bool>) -> Option<bool> {
+    match answer {
+        Some(on) => Some(on),
+        None if joined || said.is_some() => None,
+        None => Some(false),
+    }
 }
 
 /// What `arugulad join` asks before it joins (Arugula #1194), on a
@@ -237,17 +256,18 @@ pub const REMOTE_INPUT_QUESTION: &str = "\
   It doesn't cover this machine's own terminals and page, the tailnet, or a
   device of yours this machine trusts by its own key (`arugula login
   --device`, older apps).
-  Change it later, here: arugulad sharing remote-input on (or off).";
+  Unanswered, it's no. Change it later, here: arugulad sharing remote-input
+  on (or off).";
 
 /// The question's prompt line.
-pub const REMOTE_INPUT_PROMPT: &str = "  Allow typing through Arugula cloud? [Y/n] ";
+pub const REMOTE_INPUT_PROMPT: &str = "  Allow typing through Arugula cloud? [y/N] ";
 
-/// An answer to [`REMOTE_INPUT_PROMPT`]: yes (or nothing, the default) or
-/// no; `None` for anything else, which asks again.
+/// An answer to [`REMOTE_INPUT_PROMPT`]: yes, or no (or nothing, the
+/// default); `None` for anything else, which asks again.
 pub fn remote_input_answer(line: &str) -> Option<bool> {
     match line.trim().to_ascii_lowercase().as_str() {
-        "" | "y" | "yes" => Some(true),
-        "n" | "no" => Some(false),
+        "y" | "yes" => Some(true),
+        "" | "n" | "no" => Some(false),
         _ => None,
     }
 }
@@ -323,13 +343,13 @@ mod tests {
         fs::remove_dir_all(&d).unwrap();
     }
 
-    /// Joining asks (Arugula #1194): nothing is yes, as remote input was
-    /// before anyone asked; anything but yes or no asks again.
+    /// Joining asks (Arugula #1194): nothing is no; anything but yes or no
+    /// asks again.
     #[test]
     fn the_join_question_reads_yes_no_and_nothing() {
         for (said, means) in [
-            ("", Some(true)),
-            ("\n", Some(true)),
+            ("", Some(false)),
+            ("\n", Some(false)),
             ("y", Some(true)),
             (" Yes \n", Some(true)),
             ("n", Some(false)),
@@ -339,6 +359,27 @@ mod tests {
         ] {
             assert_eq!(remote_input_answer(said), means, "{said:?}");
         }
+    }
+
+    /// An unanswered join turns remote input off on a machine joining for
+    /// the first time where nobody has said, and leaves every other one
+    /// as it is; an answer always counts.
+    #[test]
+    fn an_unanswered_join_is_off_and_flips_nothing_set_up_before() {
+        for joined in [false, true] {
+            for said in [None, Some(false), Some(true)] {
+                assert_eq!(join_sets(Some(true), joined, said), Some(true));
+                assert_eq!(join_sets(Some(false), joined, said), Some(false));
+            }
+        }
+        assert_eq!(join_sets(None, false, None), Some(false));
+        assert_eq!(join_sets(None, true, None), None, "joined before: as it was");
+        assert_eq!(join_sets(None, false, Some(true)), None, "said before: as it was");
+        let d = dir("said");
+        assert_eq!((remote_input_said(&d), remote_input(&d)), (None, true));
+        set_remote_input(&d, false).unwrap();
+        assert_eq!((remote_input_said(&d), remote_input(&d)), (Some(false), false));
+        fs::remove_dir_all(&d).unwrap();
     }
 
     #[test]
