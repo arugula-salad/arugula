@@ -15,6 +15,7 @@ import { follow, go, pathOf, useRoute, type Route } from "./router";
 import { controlOrigin, session } from "./session";
 import { openStatusPage, statusPage } from "./status-page";
 import { signOut } from "./signin";
+import { openPlatformFeedback } from "./feedback";
 import { names } from "./links";
 import { AccountPicture } from "../shared/chat/avatar";
 import { barProject, where } from "./where";
@@ -177,6 +178,8 @@ export function AccountButton({ compact = false }: { compact?: boolean }) {
       { header: me.login || me.name || "Signed in", name: !!(me.login || me.name) },
       { label: "Your account…", run: () => go("/settings") },
       ...(status ? [{ label: "Status", external: true, hint: "Whether hosted Arugula is up", attrs: { "data-status-page": "" }, run: () => openStatusPage(status) }] : []),
+      // Arugula #1240: straight to control, as the person signed in.
+      { label: "Send feedback…", run: openPlatformFeedback },
       "separator",
       // This page only: the hub's session, on control's page, stays.
       { label: "Sign out of this page", run: () => void signOut().then(() => location.reload()) },

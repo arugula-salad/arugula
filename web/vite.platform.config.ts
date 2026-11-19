@@ -1,4 +1,4 @@
-import { copyFileSync, renameSync, writeFileSync } from "node:fs";
+import { copyFileSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig, type Plugin } from "vite";
 
@@ -47,10 +47,22 @@ function platformBuild(): Plugin {
   };
 }
 
+/** This build's version, the workspace's (Cargo.toml), as vite.config.ts
+ * reads it: what Send feedback says it was sent from (#1240). */
+function version(): string {
+  const toml = readFileSync(resolve(import.meta.dirname, "../Cargo.toml"), "utf8");
+  const v = toml.match(/^\[workspace\.package\][^[]*?^version = "([^"]+)"/m)?.[1];
+  if (!v) throw new Error("Cargo.toml: no [workspace.package] version");
+  return v;
+}
+
 export default defineConfig({
   plugins: [platformBuild()],
   publicDir: false,
-  define: { "import.meta.env.VITE_CONTROL_ORIGIN": JSON.stringify(process.env.VITE_CONTROL_ORIGIN ?? "") },
+  define: {
+    "import.meta.env.VITE_CONTROL_ORIGIN": JSON.stringify(process.env.VITE_CONTROL_ORIGIN ?? ""),
+    "import.meta.env.VITE_ARUGULA_VERSION": JSON.stringify(version()),
+  },
   // The page serves every route itself: an address Vite doesn't know is app.html.
   appType: "spa",
   server: {

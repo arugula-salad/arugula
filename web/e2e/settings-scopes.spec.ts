@@ -133,7 +133,7 @@ test.describe("on a computer", () => {
     await expect(section(page, "account")).toBeVisible();
     await expect(row(page, "status-page")).toHaveCount(0);
     await expect(page.locator("[data-status-page]")).toHaveCount(0);
-    await expect(await menu()).toHaveText(["Your account…", "Sign out of this page"]);
+    await expect(await menu()).toHaveText(["Your account…", "Send feedback…", "Sign out of this page"]);
     await page.keyboard.press("Escape");
 
     // Hosted Arugula: control says it's the hub on every answer on the app's host.
@@ -153,7 +153,7 @@ test.describe("on a computer", () => {
     await expect(link).toHaveAttribute("rel", "noopener");
     // The menu: Status after Your account…, opening a tab that can't reach back into this one.
     const items = await menu();
-    await expect(items).toHaveText(["Your account…", /^Status/, "Sign out of this page"]);
+    await expect(items).toHaveText(["Your account…", /^Status/, "Send feedback…", "Sign out of this page"]);
     const tab = context.waitForEvent("page");
     await page.locator(".menu-item[data-status-page]").click();
     const status = await tab;

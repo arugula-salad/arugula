@@ -30,6 +30,7 @@ import { setProtoOrigin } from "../shared/ui/prototype-frame";
 import "../shared/ui/prototype-storage";
 import { PlatformApiContext } from "../shared/platform-api";
 import { AppearanceLayer } from "../shared/ui/appearance";
+import { FeedbackLayer } from "../shared/ui/feedback";
 import { MenuLayer, PromptLayer } from "../shared/ui/menu";
 import { platformApi } from "../platform/api";
 import { names } from "../platform/links";
@@ -111,6 +112,8 @@ render(
     <PromptLayer />
     {/* Appearance…, from the account menu and Settings: the shell's dialog. */}
     <AppearanceLayer />
+    {/* Send feedback…, from the account menus and the palette (#1217, #1240). */}
+    <FeedbackLayer />
   </PlatformApiContext.Provider>,
   document.getElementById("root")!,
 );
