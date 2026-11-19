@@ -19,7 +19,11 @@ export const isSession = (agent: Agent) => agent.machine.startsWith("ses_");
 export const isCi = (agent: Agent) => agent.machine.startsWith("ci:");
 
 /** CI's name, as the platform gives it, else from its id: "chant CI". */
-const ciLabel = (agent: Agent) => agent.machine_name || `${agent.machine.slice(3)} CI`;
+const ciLabel = (agent: Agent) => agent.machine_name || ciWriter(agent.machine.slice(3));
+
+/** A CI source's name: "chant CI", or "Arugula feedback" for the issues
+ * control files from feedback (Arugula #1218). */
+export const ciWriter = (source: string) => (source === "feedback" ? "Arugula feedback" : `${source} CI`);
 
 /** A token's name, without the " (MCP)" the platform names it with as a
  * machine (grants.rs's token_label). */

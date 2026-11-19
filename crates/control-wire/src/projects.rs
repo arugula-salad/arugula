@@ -43,6 +43,19 @@ mod tests {
 
     use super::{Project, ProjectCreate, ProjectOwner, ProjectOwnerRef, ProjectPatch};
     use serde_json::json;
+    /// CI is "<source> CI", feedback's issues are "Arugula feedback", and
+    /// the web client says the same (`ciWriter` in agent-label.ts).
+    #[test]
+    fn ci_names() {
+        assert_eq!(super::ci_name("ci:chant").as_deref(), Some("chant CI"));
+        assert_eq!(super::ci_name("ci:feedback").as_deref(), Some(super::FEEDBACK_WRITER));
+        assert_eq!(super::ci_name("ci:"), None);
+        assert_eq!(super::ci_name("github:x"), None);
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../web/src/shared/agent-label.ts");
+        let ts = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        let want = format!("source === {:?} ? {:?}", super::FEEDBACK_SOURCE, super::FEEDBACK_WRITER);
+        assert!(ts.contains(&want), "{} must say {want}", path.display());
+    }
 
     /// An older control's project has no `owner`, `slug` or `archived`, and
     /// goes back without them. A newer one's go back as they came.
@@ -1007,11 +1020,22 @@ impl std::fmt::Debug for CiAlertsKey {
 /// machine's agent.
 pub const CI_VIA: &str = "ci:";
 
-/// The name a CI writer is shown by: `chant CI` for `ci:chant`. `None` for
-/// anything else.
+/// The name a CI writer is shown by: `chant CI` for `ci:chant`, and
+/// `Arugula feedback` for `ci:feedback`, the issues control files from
+/// feedback (Arugula #1218). `None` for anything else.
 pub fn ci_name(via: &str) -> Option<String> {
-    via.strip_prefix(CI_VIA).filter(|s| !s.is_empty()).map(|s| format!("{s} CI"))
+    match via.strip_prefix(CI_VIA)? {
+        "" => None,
+        FEEDBACK_SOURCE => Some(FEEDBACK_WRITER.to_string()),
+        s => Some(format!("{s} CI")),
+    }
 }
+
+/// The CI source control's feedback issues are written as (`ci:feedback`).
+pub const FEEDBACK_SOURCE: &str = "feedback";
+
+/// What feedback's issues and posts are shown as written by.
+pub const FEEDBACK_WRITER: &str = "Arugula feedback";
 
 /// What an agent's write to a tracker does, per kind: `allow` sends it at
 /// once, `approve` keeps it for a person. An edit that is several kinds goes
