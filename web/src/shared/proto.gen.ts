@@ -3172,7 +3172,8 @@ guest_ssh?: boolean,
 flags?: Array<string>, };
 
 /**
- * `GET /api/host`: who this daemon is.
+ * `GET /api/host`: who this daemon is. Someone other than the owner gets
+ * the name, version, protocol and features; the rest is left out.
  */
 export type HostInfo = { name: string, version: string, 
 /**
