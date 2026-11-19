@@ -6,7 +6,7 @@
 //!
 //! Control's tools (`arugulad-control-tools`) also say what the base asks
 //! of them: whether they reach control from here, and `wait` on a run
-//! ([`ControlTools`]).
+//! or an event ([`ControlTools`]).
 
 use std::{
     sync::{Mutex, OnceLock},
@@ -41,6 +41,14 @@ pub trait ControlTools: Send + Sync + 'static {
     fn wait_run<'a>(&'a self, call: &'a Call<'a>, run: &'a str, limit: Duration) -> BoxFuture<'a, Out>;
     /// `wait` with `agent_session`: until any of them settles, or `limit`.
     fn wait_sessions<'a>(&'a self, call: &'a Call<'a>, ids: &'a str, limit: Duration) -> BoxFuture<'a, Out>;
+    /// `wait` with `event`: a short-lived watch, until it fires or `limit`.
+    fn wait_event<'a>(
+        &'a self,
+        call: &'a Call<'a>,
+        event: &'a str,
+        matches: Option<serde_json::Map<String, Value>>,
+        limit: Duration,
+    ) -> BoxFuture<'a, Out>;
 }
 
 static CONTROL_TOOLS: OnceLock<Box<dyn ControlTools>> = OnceLock::new();
@@ -91,6 +99,19 @@ pub async fn wait_sessions(call: &Call<'_>, ids: &str, limit: Duration) -> Out {
     match CONTROL_TOOLS.get() {
         Some(c) => c.wait_sessions(call, ids, limit).await,
         None => Err(format!("{NO_CONTROL_TOOLS}: it can't wait on sessions")),
+    }
+}
+
+/// `wait` with `event` ([`ControlTools::wait_event`]).
+pub async fn wait_event(
+    call: &Call<'_>,
+    event: &str,
+    matches: Option<serde_json::Map<String, Value>>,
+    limit: Duration,
+) -> Out {
+    match CONTROL_TOOLS.get() {
+        Some(c) => c.wait_event(call, event, matches, limit).await,
+        None => Err(format!("{NO_CONTROL_TOOLS}: it can't wait on an event")),
     }
 }
 

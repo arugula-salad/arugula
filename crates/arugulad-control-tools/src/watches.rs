@@ -24,6 +24,10 @@
 //!   rules. `list` shows them with the cloud's, and `cancel` takes either.
 //! - **Once.** It fires once, or expires (24 hours unless told, at most 7
 //!   days) with one last message saying it ended without firing.
+//! - **Waits.** `wait` with an event is a short-lived watch, made and
+//!   checked as `create`'s ([`wait_event`],
+//!   https://app.arugula.io/issues/iss_1545620a176cab44b21084c27493241e):
+//!   the call blocks until it fires, and its message is the answer.
 
 use arugula_control_wire::events;
 use arugula_control_wire::watch::{
@@ -31,6 +35,8 @@ use arugula_control_wire::watch::{
     WatchState, WatchTarget, Watcher, event_target, event_types as types, expires_ms as expires,
     until_word_parse as until,
 };
+use std::time::Duration;
+
 use arugula_proto::PaneId;
 use arugulad_base::forge_wait::PrRef;
 use arugulad_base::local_watches::{self, On};
@@ -75,7 +81,7 @@ pub(crate) const KINDS: &[Kind] = &[
     },
 ];
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Default, Deserialize, JsonSchema)]
 pub struct CreateArgs {
     /// A pull request: OWNER/REPO#N, or its link on github.com, or several.
     #[serde(default)]
@@ -185,6 +191,7 @@ fn local_ask(a: CreateArgs, on: On) -> Result<local_watches::Ask, String> {
         exit,
         note,
         expires_in_ms: a.expires.as_deref().map(expires).transpose()?,
+        wait: false,
     })
 }
 
@@ -341,6 +348,134 @@ async fn create(c: &Call<'_>, a: CreateArgs) -> Out {
     let made: WatchMade =
         serde_json::from_value(v).map_err(|e| format!("Arugula cloud sent an answer I can't read: {e}"))?;
     made_said(made, "Arugula cloud made no watch, and said nothing of why")
+}
+
+/// How much longer than its call a wait's watch lives: it's cancelled when
+/// the call ends, so this only bounds one whose cancel was lost.
+const WAIT_SLACK_MS: u64 = 5 * 60_000;
+
+/// `wait` with `event`: a short-lived watch on it, checked as `create`
+/// checks one, whose message is the call's answer instead of a follow-up.
+/// What has already happened answers at once. It's cancelled when the call
+/// ends without it: at `limit` ("still running"), or when its client goes
+/// away.
+///
+/// The watch has a session of its own (`wait_…`), never a conversation's:
+/// no follow-up queue takes its message, and the call listens for it before
+/// the cloud makes it, so one that fires at once isn't missed.
+pub(crate) async fn wait_event(
+    c: &Call<'_>,
+    event: &str,
+    matches: Option<serde_json::Map<String, Value>>,
+    limit: Duration,
+) -> Out {
+    c.owners_own("wait with event").await?;
+    let a = CreateArgs { event: Some(event.trim().to_owned()), matches, ..CreateArgs::default() };
+    let session =
+        format!("wait_{}", arugulad_base::push::random::<8>().iter().map(|b| format!("{b:02x}")).collect::<String>());
+    let session_name = match c.own_pane() {
+        Some(p) => arugulad_base::agent_mentions::session_name(c.app(), p).await,
+        None => None,
+    };
+    let expires_in_ms = Some(u64::try_from(limit.as_millis()).unwrap_or(u64::MAX).saturating_add(WAIT_SLACK_MS));
+    let what = format!("waiting for {}", event.trim());
+    if let Some(on) = local(&a) {
+        let ask = local_watches::Ask { session, session_name, expires_in_ms, wait: true, ..local_ask(a, on)? };
+        let made = local_watches::make(c.app(), ask).await?;
+        let Some(id) = made.id.clone().filter(|_| made.state == WatchState::Live) else {
+            return already(made, "This machine made no watch, and said nothing of why");
+        };
+        let watching = local_watches::Waiting::new(&c.app().local_watches, id);
+        return match c.waiting(&what, limit, c.app().local_watches.fired(&watching.id)).await {
+            Some(Some(text)) => fired(&watching.id, text),
+            Some(None) => Err(format!("its watch {} was cancelled before it fired", watching.id)),
+            None => not_yet(on.name(), &watching.id, limit),
+        };
+    }
+    if c.app().control.enrolled().is_some_and(|e| e.saved.is_hosted()) {
+        return Err("wait with event doesn't hear the cloud's events on a hosted box yet: use watch from a terminal or an agent block on a machine".into());
+    }
+    let mut body = create_body(a)?;
+    (body.session, body.session_name, body.expires_in_ms) = (session.clone(), session_name, expires_in_ms);
+    if wants_project(&body)
+        && let Ok(project) = c.current_project(None).await
+    {
+        body.matches.get_or_insert_default().insert("project".into(), Value::String(project));
+    }
+    let event = body.event.clone().unwrap_or_default();
+    let listening = Listening::new(c.app(), session);
+    let got = c.app().agent_mentions.wait_for(&listening.session);
+    let body = serde_json::to_value(&body).map_err(|e| e.to_string())?;
+    let v = c.app().control.cloud(Method::POST, AGENT_WATCHES, Some(&body)).await.map_err(said)?;
+    let made: WatchMade =
+        serde_json::from_value(v).map_err(|e| format!("Arugula cloud sent an answer I can't read: {e}"))?;
+    let Some(id) = made.id.clone().filter(|_| made.state == WatchState::Live) else {
+        return already(made, "Arugula cloud made no watch, and said nothing of why");
+    };
+    *listening.watch.lock().unwrap() = Some(id.clone());
+    match c.waiting(&what, limit, got).await {
+        Some(Ok(text)) => {
+            listening.watch.lock().unwrap().take();
+            fired(&id, text)
+        }
+        Some(Err(_)) => Err(format!("its watch {id} stopped being listened for before it fired")),
+        None => not_yet(&event, &id, limit),
+    }
+}
+
+/// A wait's cloud watch while its call listens: dropped, the call stops
+/// listening, and a watch that didn't fire is cancelled.
+struct Listening {
+    app: std::sync::Arc<arugulad_base::server::App>,
+    session: String,
+    /// The watch, once made, until it fired.
+    watch: std::sync::Mutex<Option<String>>,
+}
+
+impl Listening {
+    fn new(app: &std::sync::Arc<arugulad_base::server::App>, session: String) -> Self {
+        Listening { app: app.clone(), session, watch: Default::default() }
+    }
+}
+
+impl Drop for Listening {
+    fn drop(&mut self) {
+        self.app.agent_mentions.unwait(&self.session);
+        let Some(id) = self.watch.lock().unwrap().take() else { return };
+        let (app, session) = (self.app.clone(), self.session.clone());
+        arugulad_base::task::spawn(async move {
+            let body = WatchCancel { session, id: Some(id), all: false };
+            let body = serde_json::to_value(body).unwrap_or_default();
+            // One that can't be cancelled expires soon ([`WAIT_SLACK_MS`]),
+            // and its message reaches no one.
+            let _ = app.control.cloud(Method::POST, AGENT_WATCHES_CANCEL, Some(&body)).await;
+        });
+    }
+}
+
+/// A wait's answer when what it waits for had already happened.
+fn already(made: WatchMade, nothing: &str) -> Out {
+    match made.state {
+        WatchState::AlreadyMet => {
+            let text = format!("It has already happened: {}.", made.met.as_deref().unwrap_or("met"));
+            done(text, serde_json::json!({ "state": "already_met", "met": made.met }))
+        }
+        _ => Err(nothing.into()),
+    }
+}
+
+/// A wait's answer when its watch fired: the watch's own message.
+fn fired(id: &str, text: String) -> Out {
+    done(text.clone(), serde_json::json!({ "state": "fired", "watch": id, "text": text }))
+}
+
+/// A wait's answer at its time: still running.
+fn not_yet(event: &str, id: &str, waited: Duration) -> Out {
+    let secs = waited.as_secs();
+    done(
+        format!("No {event} yet after {secs}s: still running. Its watch {id} is cancelled; call wait again."),
+        serde_json::json!({ "state": "still running", "event": event }),
+    )
 }
 
 /// What a create's answer says.
