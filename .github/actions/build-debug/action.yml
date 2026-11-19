@@ -19,7 +19,7 @@ runs:
     - name: Hand them to the jobs that need them
       shell: bash
       run: tar -cf "$RUNNER_TEMP/run-debug.tar" -C "$CI_RUN" debug dist
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
         name: run-debug
         path: ${{ runner.temp }}/run-debug.tar

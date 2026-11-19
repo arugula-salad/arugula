@@ -43,7 +43,7 @@ runs:
       with:
         tool: just
     # Linux's: Node 24 and pnpm 12 (.github/actions/setup).
-    - uses: actions/setup-node@v4
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
       if: steps.have.outputs.node != 'true'
       with:
         node-version: 24
@@ -111,18 +111,18 @@ runs:
     - name: Ghostty's cache
       shell: bash
       run: echo "LIBGHOSTTY_VT_SYS_CACHE_DIR=$HOME/.cache/libghostty-vt-sys" >> "$GITHUB_ENV"
-    - uses: actions/cache@v4
+    - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ~/.cache/libghostty-vt-sys
         key: ghostty-${{ runner.os }}-${{ runner.arch }}-${{ inputs.cache-key }}-${{ hashFiles('vendor/libghostty-vt-sys/**', '.mise.toml') }}
     # mise's Zig (for libghostty) and nextest, kept between runs: Zig's
     # community mirror answered 429 once and failed the job (#524).
-    - uses: actions/cache@v4
+    - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ~/.local/share/mise/installs
         key: mise-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.mise.toml') }}
     # Playwright's browsers: a fresh VM has none.
-    - uses: actions/cache@v4
+    - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ~/Library/Caches/ms-playwright
         key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ inputs.cache-key }}-${{ hashFiles('web/pnpm-lock.yaml') }}

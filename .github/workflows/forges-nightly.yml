@@ -35,7 +35,7 @@ jobs:
           else
             echo "run=true" >> "$GITHUB_OUTPUT"
           fi
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         if: steps.have.outputs.run == 'true'
       # Its build kept by GitHub's cache (a nightly runs on main, so it saves).
       - uses: ./.github/actions/setup
@@ -51,7 +51,7 @@ jobs:
   forges:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: ./.github/actions/setup
         with:
           cache-key: nightly-forges
