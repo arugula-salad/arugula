@@ -102,6 +102,8 @@ struct Fake {
     revoked: Arc<Mutex<Vec<String>>>,
     /// The secrets it gives a deploy's run, when not `APP_TOKEN` (M222).
     given: Arc<Mutex<Option<Vec<Secret>>>>,
+    /// The ticket the box enrolled with, if it sent one.
+    ticket: Arc<Mutex<Option<String>>>,
 }
 
 impl Fake {
@@ -143,6 +145,7 @@ impl Fake {
             revoke_at: Default::default(),
             revoked: Default::default(),
             given: Default::default(),
+            ticket: Default::default(),
         }
     }
 
@@ -273,6 +276,7 @@ async fn enroll(Axum(f): Axum<Fake>, Json(b): Json<EnrollRequest>) -> Response {
         passkey_origins: Some(arugula_e2e::passkey::origins_of_sites(["https://c.test"])),
         purpose: f.purpose.lock().unwrap().clone(),
     };
+    *f.ticket.lock().unwrap() = b.ticket.clone();
     *f.enrolled.lock().unwrap() = Some((e.clone(), b.sign));
     Json(e).into_response()
 }
@@ -778,6 +782,37 @@ fn a_hosted_agent_holds_the_credential_its_turn_says() {
 /// never took the start, being down). A daemon that dies alone, its run's
 /// pane surviving, follows the run to its end after the restart and
 /// reports it, without starting it again.
+/// A box from a snapshot never sees the env it was made with: it enrolls
+/// with the ticket the platform wrote into it, and removes it after.
+#[test]
+fn a_hosted_box_enrolls_with_the_ticket_file_and_removes_it() {
+    let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+    let f = Fake::new();
+    let url = serve(&rt, f.clone());
+    let marks: PathBuf = std::env::temp_dir().join(format!("arugula-hosted-ticketfile-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&marks);
+    std::fs::create_dir_all(&marks).unwrap();
+    let ticket = marks.join("ticket");
+    std::fs::write(&ticket, "ticket-from-file\n").unwrap();
+    let _d = arugulad!("hostedticketfile")
+        .no_provider()
+        .no_tailscale()
+        .args(["--hosted"])
+        .env_remove("ARUGULA_HOSTED_TICKET")
+        .env("ARUGULA_HOSTED_TICKET_FILE", &ticket)
+        .env("ARUGULA_E2B_ID_FILE", marks.join("no-sandbox-id"))
+        .env("ARUGULA_CONTROL_URL", &url)
+        .env("ARUGULA_HOSTED_RUN_USER", "")
+        .env("ARUGULA_HOSTED_SESSION_USERS", "")
+        .env("RUST_LOG", "info")
+        .args(["--log-file", &marks.join("arugulad.log").to_string_lossy()])
+        .wait_secs(30)
+        .start();
+    wait(&marks, &f, "the box enrolled", || !f.device().is_empty());
+    assert_eq!(f.ticket.lock().unwrap().as_deref(), Some("ticket-from-file"));
+    wait(&marks, &f, "the ticket file removed", || !ticket.exists());
+}
+
 #[test]
 fn a_run_a_crash_interrupts_fails_and_never_runs_again() {
     let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();

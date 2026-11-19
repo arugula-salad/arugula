@@ -972,10 +972,16 @@ that project only.
   a one-time enrollment (`HubPort::hosted_enrollment`), bound to the
   project and the workspace (`hw_…`), under the project's newest live
   delegation. Two kinds, both once only:
-  - **a ticket**, made by the hub (32 random bytes), for the box's env
-    (`ARUGULA_HOSTED_TICKET`), good for 15 minutes: boxes started fresh,
-    loam, and testnet;
-  - **the box's sandbox id**, which the platform passes when it creates
+  - **a ticket**, made by the hub (32 random bytes), good for 15
+    minutes: in the box's env (`ARUGULA_HOSTED_TICKET`) for boxes started
+    fresh, loam, and testnet; for a box started from a running snapshot
+    (E2B), written by the platform into
+    `/home/user/.arugula-hosted/ticket` (a directory only the box's `user`
+    reads) through E2B's envd, with the access token the box's create
+    answered. The daemon waits 45 s for it and removes it once the hub has
+    answered;
+  - **the box's sandbox id** (going: for boxes whose daemon doesn't read
+    the ticket file yet), which the platform passes when it creates
     the box, good for 2 minutes: a box started from a running snapshot
     (E2B) can't read the env it was made with, but it can read its own
     sandbox id (`/run/e2b/.E2B_SANDBOX_ID`). The box makes its key when it

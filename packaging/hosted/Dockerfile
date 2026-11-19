@@ -158,11 +158,15 @@ RUN chmod 0755 /usr/local/bin/arugula-tools \
  && chmod 0644 /etc/profile.d/arugula-tools.sh
 # ---- end Arugula #215 ---------------------------------------------------
 
-# The adapters where the daemon looks first (agent/adapters.rs).
+# The adapters where the daemon looks first (agent/adapters.rs). And the
+# directory the platform writes a new box's one-time enrollment ticket into
+# (crates/arugulad-hosted/src/enroll.rs, TICKET_FILE): `user`'s alone, so
+# `runner` (in `user`'s group) and the session users never read it.
 USER user
 WORKDIR /home/user
 RUN npm install --no-fund --no-audit --prefix /opt/arugula/agents/claude "$CLAUDE_ACP" \
  && npm install --no-fund --no-audit --omit=optional --prefix /opt/arugula/agents/codex "$CODEX_ACP" \
  && npm cache clean --force \
  && mkdir -p /home/user/.local/share/arugula \
- && ln -s /opt/arugula/agents /home/user/.local/share/arugula/agents
+ && ln -s /opt/arugula/agents /home/user/.local/share/arugula/agents \
+ && install -d -m 0700 /home/user/.arugula-hosted

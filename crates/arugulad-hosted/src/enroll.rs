@@ -4,7 +4,16 @@
 //! - **A one-time ticket** in `ARUGULA_HOSTED_TICKET`, when the daemon was
 //!   started after the box was made (loam, testnet, a plain VM): it's in
 //!   the process's environment.
-//! - **Else its E2B sandbox id.** The template's daemon was snapshotted
+//! - **Else a one-time ticket in [`TICKET_FILE`]**, which the platform
+//!   writes into an E2B box once it's made, through envd with the box's
+//!   access token (the daemon was snapshotted running, so it never sees
+//!   the create's environment, below). The file is in a directory only the
+//!   box's `user` can read (0700, made by the template), and the daemon
+//!   removes it once control has answered it. It waits [`TICKET_WAIT`] for
+//!   one before it falls back to its sandbox id.
+//! - **Else its E2B sandbox id**, for a platform that writes no ticket
+//!   (this release only: it goes once every box is made by a platform that
+//!   writes one). The template's daemon was snapshotted
 //!   running, so it never sees the environment a box is created with: E2B's
 //!   envd keeps that in memory and serves it (`GET :49983/envs`) only with
 //!   the box's access token, which only its creator has. What the daemon
@@ -41,6 +50,29 @@ pub enum Claim {
     Sandbox(String),
 }
 
+/// Where the platform writes a box's one-time ticket: in `user`'s home,
+/// in a directory the template makes 0700, outside the daemon's state
+/// directory (which a box from a workspace's snapshot clears at its first
+/// start, perhaps after the ticket came).
+pub const TICKET_FILE: &str = "/home/user/.arugula-hosted/ticket";
+
+/// [`TICKET_FILE`], or another for tests (`ARUGULA_HOSTED_TICKET_FILE`).
+pub fn ticket_file() -> PathBuf {
+    std::env::var_os("ARUGULA_HOSTED_TICKET_FILE").filter(|v| !v.is_empty()).map_or(TICKET_FILE.into(), PathBuf::from)
+}
+
+/// How long a box with no ticket in its environment waits for the
+/// platform's [`TICKET_FILE`] before it enrolls with its sandbox id: well
+/// inside the two minutes control takes a sandbox id for.
+pub const TICKET_WAIT: Duration = Duration::from_secs(45);
+
+/// The ticket in `file`, if there's one there.
+pub fn read_ticket(file: &Path) -> Option<String> {
+    let t = std::fs::read_to_string(file).ok()?;
+    let t = t.trim();
+    (!t.is_empty() && t.len() <= 256).then(|| t.to_owned())
+}
+
 /// Why an enrollment didn't happen.
 #[derive(Debug)]
 pub enum NotEnrolled {
@@ -74,12 +106,36 @@ pub async fn new_box(file: &Path, snapshot_of: Option<&str>) -> String {
 }
 
 /// What this box enrolls with: the ticket in its environment, else the
-/// sandbox id in `file`.
-pub fn claim(ticket: Option<String>, file: &Path) -> Option<Claim> {
+/// one in `ticket_file`, else the sandbox id in `id_file`.
+pub fn claim(ticket: Option<String>, ticket_file: &Path, id_file: &Path) -> Option<Claim> {
     if let Some(t) = ticket.filter(|t| !t.is_empty()) {
         return Some(Claim::Ticket(t));
     }
-    resume::stamp(file).map(|(id, _)| id).filter(|id| !id.is_empty()).map(Claim::Sandbox)
+    if let Some(t) = read_ticket(ticket_file) {
+        return Some(Claim::Ticket(t));
+    }
+    resume::stamp(id_file).map(|(id, _)| id).filter(|id| !id.is_empty()).map(Claim::Sandbox)
+}
+
+/// [`claim`], once there's a ticket: in the environment at once, else in
+/// `ticket_file` within `wait`, else whatever [`claim`] finds then.
+pub async fn wait_for_claim(
+    ticket: Option<String>,
+    ticket_file: &Path,
+    id_file: &Path,
+    wait: Duration,
+) -> Option<Claim> {
+    if ticket.as_deref().is_some_and(|t| !t.is_empty()) {
+        return claim(ticket, ticket_file, id_file);
+    }
+    let until = tokio::time::Instant::now() + wait;
+    while tokio::time::Instant::now() < until {
+        if let Some(t) = read_ticket(ticket_file) {
+            return Some(Claim::Ticket(t));
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+    claim(None, ticket_file, id_file)
 }
 
 /// Enroll this machine in control at `url` with `claim` (M178's
@@ -145,20 +201,44 @@ pub fn request(claim: &Claim, keys: &DeviceKeys, at: u64) -> hosted::EnrollReque
     hosted::EnrollRequest { ticket, sandbox, noise, sign, at, proof }
 }
 
+/// Where a box finds what it enrolls with.
+pub struct Sources {
+    /// `ARUGULA_HOSTED_TICKET`'s.
+    pub ticket: Option<String>,
+    /// [`ticket_file`].
+    pub ticket_file: PathBuf,
+    /// The sandbox id's file (`resume::sandbox_id_file`).
+    pub id_file: PathBuf,
+    /// [`TICKET_WAIT`], or less for tests.
+    pub wait: Duration,
+}
+
 /// Enroll with this box's claim, trying again while control can't be
-/// reached; `enrolled` once in. A refused claim is the end: a ticket is
-/// spent, and a box whose sandbox id was taken is deleted by the platform
-/// (fail closed).
-pub async fn run(url: String, ticket: Option<String>, state_dir: PathBuf, file: PathBuf, enrolled: impl Fn()) {
-    let Some(claim) = claim(ticket, &file) else {
-        warn!("hosted: no ticket in {} and no sandbox id: can't enroll", super::TICKET_ENV);
+/// reached; `enrolled` once in. A refused claim is the end (a ticket is
+/// spent, and a box whose sandbox id was taken is deleted by the platform:
+/// fail closed), unless the ticket file holds another ticket by then: the
+/// platform's, written after this box read one left from before, or after
+/// it gave up waiting. The ticket file goes once control has answered.
+pub async fn run(url: String, from: Sources, state_dir: PathBuf, enrolled: impl Fn()) {
+    let Some(mut claim) = wait_for_claim(from.ticket.clone(), &from.ticket_file, &from.id_file, from.wait).await else {
+        warn!(
+            "hosted: no ticket in {} or {} and no sandbox id: can't enroll",
+            super::TICKET_ENV,
+            from.ticket_file.display()
+        );
         return;
+    };
+    let forget = || match std::fs::remove_file(&from.ticket_file) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => warn!(error = %e, "hosted: can't remove the ticket file"),
     };
     let mut backoff = Duration::from_millis(250);
     loop {
         match enroll(&url, &claim, &state_dir).await {
             Ok(()) => {
                 info!(control = url, "hosted: enrolled");
+                forget();
                 enrolled();
                 return;
             }
@@ -168,7 +248,16 @@ pub async fn run(url: String, ticket: Option<String>, state_dir: PathBuf, file: 
                 backoff = (backoff * 2).min(Duration::from_secs(10));
             }
             Err(NotEnrolled::Refused(why)) => {
+                if from.ticket.is_none()
+                    && let Some(t) = read_ticket(&from.ticket_file)
+                    && claim != Claim::Ticket(t.clone())
+                {
+                    info!("hosted: control refused this box's claim; trying the ticket the platform wrote since");
+                    claim = Claim::Ticket(t);
+                    continue;
+                }
                 warn!(%why, "hosted: control refused this box's enrollment");
+                forget();
                 return;
             }
         }
@@ -218,11 +307,22 @@ mod tests {
 
     #[tokio::test]
     async fn a_ticket_first_else_the_boxs_own_sandbox_id() {
-        let file = super::super::scratch("enroll").join(".E2B_SANDBOX_ID");
-        assert_eq!(claim(None, &file), None);
-        assert_eq!(claim(Some("t1".into()), &file), Some(Claim::Ticket("t1".into())));
+        let dir = super::super::scratch("enroll");
+        let (file, tf) = (dir.join(".E2B_SANDBOX_ID"), dir.join("ticket"));
+        assert_eq!(claim(None, &tf, &file), None);
+        assert_eq!(claim(Some("t1".into()), &tf, &file), Some(Claim::Ticket("t1".into())));
         std::fs::write(&file, "box1\n").unwrap();
-        assert_eq!(claim(Some(String::new()), &file), Some(Claim::Sandbox("box1".into())));
+        assert_eq!(claim(Some(String::new()), &tf, &file), Some(Claim::Sandbox("box1".into())));
+        // The platform's ticket file, before the sandbox id; the
+        // environment's before both.
+        std::fs::write(&tf, "t2\n").unwrap();
+        assert_eq!(claim(None, &tf, &file), Some(Claim::Ticket("t2".into())));
+        assert_eq!(claim(Some("t1".into()), &tf, &file), Some(Claim::Ticket("t1".into())));
+        std::fs::write(&tf, "  \n").unwrap();
+        assert_eq!(claim(None, &tf, &file), Some(Claim::Sandbox("box1".into())), "an empty file is no ticket");
+        std::fs::write(&tf, "x".repeat(300)).unwrap();
+        assert_eq!(claim(None, &tf, &file), Some(Claim::Sandbox("box1".into())), "nor is one too long");
+        std::fs::remove_file(&tf).unwrap();
         // The snapshot's id isn't a new box: only another is.
         let waiting = crate::task::spawn({
             let file = file.clone();
@@ -232,5 +332,27 @@ mod tests {
         assert!(!waiting.is_finished());
         std::fs::write(&file, "box2").unwrap();
         assert_eq!(waiting.await.unwrap(), "box2");
+    }
+
+    /// A box waits for the platform's ticket file, and falls back to its
+    /// sandbox id when none comes in time.
+    #[tokio::test]
+    async fn a_box_waits_for_the_ticket_file_then_takes_its_sandbox_id() {
+        let dir = super::super::scratch("enroll-wait");
+        let (file, tf) = (dir.join(".E2B_SANDBOX_ID"), dir.join("ticket"));
+        std::fs::write(&file, "box1").unwrap();
+        let waiting = crate::task::spawn({
+            let (file, tf) = (file.clone(), tf.clone());
+            async move { wait_for_claim(None, &tf, &file, Duration::from_secs(10)).await }
+        });
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(!waiting.is_finished(), "it waits for the ticket");
+        std::fs::write(&tf, "t1").unwrap();
+        assert_eq!(waiting.await.unwrap(), Some(Claim::Ticket("t1".into())));
+        std::fs::remove_file(&tf).unwrap();
+        let none = wait_for_claim(None, &tf, &file, Duration::from_millis(300)).await;
+        assert_eq!(none, Some(Claim::Sandbox("box1".into())), "none came: its sandbox id");
+        let env = wait_for_claim(Some("t0".into()), &tf, &file, Duration::from_secs(10)).await;
+        assert_eq!(env, Some(Claim::Ticket("t0".into())), "the environment's, at once");
     }
 }
