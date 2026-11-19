@@ -112,6 +112,8 @@ fn control_puts_a_session_on_a_card_and_takes_it_back() {
     enroll(&d.state, &url);
     d.start();
     d.wait_for("the relay", || f.to_daemon.lock().unwrap().is_some());
+    // Its operations come just after it's on the relay.
+    d.wait_for("the daemon's operations", || f.said.lock().unwrap().iter().any(|v| v["t"] == "ops"));
     let ops = f.said.lock().unwrap().iter().find(|v| v["t"] == "ops").cloned().unwrap();
     assert!(ops["ops"].as_array().unwrap().contains(&json!("sessions.set_card")), "{ops}");
 
@@ -174,6 +176,8 @@ fn control_moves_a_session_to_a_project_by_hand() {
     enroll(&d.state, &url);
     d.start();
     d.wait_for("the relay", || f.to_daemon.lock().unwrap().is_some());
+    // Its operations come just after it's on the relay.
+    d.wait_for("the daemon's operations", || f.said.lock().unwrap().iter().any(|v| v["t"] == "ops"));
     let ops = f.said.lock().unwrap().iter().find(|v| v["t"] == "ops").cloned().unwrap();
     assert!(ops["ops"].as_array().unwrap().contains(&json!("sessions.set_project")), "{ops}");
 

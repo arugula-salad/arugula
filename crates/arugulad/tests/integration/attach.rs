@@ -196,6 +196,61 @@ async fn unknown_offset_falls_back_to_snapshot() {
     assert_eq!(f.kind, FrameKind::Snapshot);
 }
 
+/// Read what comes within `quiet` and return where the output got to.
+async fn drain(ws: &mut Ws, mut end: u64, quiet: Duration) -> u64 {
+    while let Ok(Some(Ok(m))) = timeout(quiet, ws.next()).await {
+        if let Message::Binary(b) = m
+            && let Ok(f) = Frame::decode(&b)
+            && f.kind == FrameKind::Output
+        {
+            end = end.max(f.offset + f.data.len() as u64);
+        }
+    }
+    end
+}
+
+/// The screen alone (`history: 0`, after a resync or for a hidden tab shown
+/// again on a thin link, Arugula #443): a small gap is replayed, and one
+/// bigger than the screen is the screen instead.
+#[tokio::test]
+async fn the_screen_alone_replays_only_a_gap_smaller_than_the_screen() {
+    let screen = |offset| ClientMsg::Attach {
+        panes: vec![AttachPane { pane: 1, offset: Some(offset), history: Some(0) }],
+        zstd: false,
+        acks: false,
+        kitty_keys: false,
+    };
+    let d = start().await;
+    let (mut ws, _) = connect(&d).await;
+    attach(&mut ws, None).await;
+    let _size = recv_attach(&mut ws).await;
+    let In::Frame(snap) = recv_attach(&mut ws).await else { panic!() };
+    type_line(&mut ws, "echo here-$((1+1))").await;
+    let end = read_until(&mut ws, Some(snap.offset), "here-2").await;
+    let end = drain(&mut ws, end, Duration::from_millis(500)).await;
+
+    send(&mut ws, ClientMsg::Detach { panes: vec![1] }).await;
+    type_line(&mut ws, "echo small-$((2+2))").await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    send(&mut ws, screen(end)).await;
+    let end = read_until(&mut ws, Some(end), "small-4").await;
+    let end = drain(&mut ws, end, Duration::from_millis(500)).await;
+
+    // About 230 KB while detached: well within what the log replays.
+    send(&mut ws, ClientMsg::Detach { panes: vec![1] }).await;
+    type_line(&mut ws, "seq 1 40000; echo big-$((3+3))").await;
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    send(&mut ws, screen(end)).await;
+    let f = until(&mut ws, |m| match m {
+        In::Frame(f) => Some(f.clone()),
+        _ => None,
+    })
+    .await;
+    assert_eq!(f.kind, FrameKind::Snapshot);
+    assert!(f.data.len() < 64 * 1024, "the screen alone, not {} bytes", f.data.len());
+    assert!(String::from_utf8_lossy(&f.data).contains("big-6"));
+}
+
 #[tokio::test]
 async fn snapshot_shows_a_full_screen_app() {
     let d = start().await;

@@ -55,6 +55,9 @@ const MAX_REPLAY_BYTES: u64 = 1024 * 1024;
 const RING_BYTES: usize = MAX_REPLAY_BYTES as usize;
 /// Smaller snapshots go uncompressed: not worth a client's decoder.
 const MIN_ZSTD_BYTES: usize = 4096;
+/// A gap this small is replayed even to a client that asked for the screen
+/// alone: a screen costs about as much, and the replay keeps its scrollback.
+const SMALL_GAP_BYTES: usize = 4096;
 /// Chunks of a local program's output (up to 64 KB each) waiting for the
 /// pane; past this the program waits.
 const PROGRAM_QUEUE: usize = 64;
@@ -2525,20 +2528,21 @@ impl State {
         // screen without scrollback instead of a full snapshot.
         let offset = offset.filter(|o| floor.is_none_or(|f| *o >= f));
         let replay = offset.filter(|o| end.saturating_sub(*o) <= MAX_REPLAY_BYTES).and_then(|o| self.ring.since(o));
+        let (id, from) = (self.id, offset.unwrap_or(end));
+        let output = |data| Frame { kind: FrameKind::Output, pane: id, offset: from, data };
         let frame = match replay {
             Some(bytes) if bytes.is_empty() => None,
-            Some(bytes) => Some(Frame { kind: FrameKind::Output, pane: self.id, offset: offset.unwrap(), data: bytes }),
+            // The screen alone (after a resync, or a hidden tab shown again
+            // on a thin link, Arugula #443): the gap only if it's no bigger
+            // than the screen, so a busy pane doesn't send what scrolled by.
+            Some(bytes) if history == Some(0) && bytes.len() > SMALL_GAP_BYTES => {
+                let screen = self.snapshot_frame(Some(0), zstd, end);
+                Some(if bytes.len() <= screen.data.len() { output(bytes) } else { screen })
+            }
+            Some(bytes) => Some(output(bytes)),
             None => {
                 let history = if floor.is_some() { Some(0) } else { history.map(|h| h as usize) };
-                let data = self.engine.snapshot_history(history);
-                // Snapshots are mostly runs of the same few escape sequences
-                // (S10: 3.9 MB to 183 KB gzipped).
-                let packed =
-                    (zstd && data.len() >= MIN_ZSTD_BYTES).then(|| zstd::encode_all(&data[..], 3).ok()).flatten();
-                Some(match packed {
-                    Some(data) => Frame { kind: FrameKind::SnapshotZstd, pane: self.id, offset: end, data },
-                    None => Frame { kind: FrameKind::Snapshot, pane: self.id, offset: end, data },
-                })
+                Some(self.snapshot_frame(history, zstd, end))
             }
         };
         debug!(pane = self.id, client = sub.client, ?offset, end, kind = ?frame.as_ref().map(|f| f.kind), "attach");
@@ -2563,6 +2567,18 @@ impl State {
             self.flows.remove(&sub.client);
         }
         self.subs.insert(sub.client, sub);
+    }
+
+    /// The screen and at most `history` rows above it, as of `end`.
+    fn snapshot_frame(&mut self, history: Option<usize>, zstd: bool, end: u64) -> Frame {
+        let data = self.engine.snapshot_history(history);
+        // Snapshots are mostly runs of the same few escape sequences
+        // (S10: 3.9 MB to 183 KB gzipped).
+        let packed = (zstd && data.len() >= MIN_ZSTD_BYTES).then(|| zstd::encode_all(&data[..], 3).ok()).flatten();
+        match packed {
+            Some(data) => Frame { kind: FrameKind::SnapshotZstd, pane: self.id, offset: end, data },
+            None => Frame { kind: FrameKind::Snapshot, pane: self.id, offset: end, data },
+        }
     }
 
     fn resize(&mut self, cols: u16, rows: u16) {
