@@ -7,7 +7,9 @@
 //! - **Its session.** A watch is keyed to the calling pane's Claude Code
 //!   session: a terminal's from its hooks, or an agent block's. A pane that
 //!   can't take follow-ups (no hooks heard, or no agent) is refused, since
-//!   nothing could ever wake it. So is a hosted box's session, for now.
+//!   nothing could ever wake it. So is a hosted box's session, for now, and
+//!   one the owner's mention opt-outs would keep its message from (agent
+//!   mentions off on the machine, or silenced for the pane).
 //! - **Its targets.** A pull request on github.com in a repo linked through
 //!   Arugula's GitHub App, until it merges or closes. Control refuses a repo
 //!   without the App, and a PR the owner can't see answers as one that
@@ -152,6 +154,16 @@ async fn session(c: &Call<'_>) -> Result<(String, Option<String>), String> {
     Ok((id, name))
 }
 
+/// Refuses a watch the owner's opt-outs would keep from ever reaching the
+/// calling pane: mentions off on the machine, or silenced for the pane.
+async fn reachable(c: &Call<'_>) -> Result<(), String> {
+    let Some(pane) = c.own_pane() else { return Ok(()) };
+    match arugulad_base::agent_mentions::watch_refused(c.app(), pane).await {
+        Some(why) => Err(format!("%{pane} can't be woken: {why}")),
+        None => Ok(()),
+    }
+}
+
 /// When, as people read it: UTC to the minute, `2026-11-14T10:42Z`.
 fn when(ms: i64) -> String {
     let t = arugula_e2e::deploy::chant::timestamp(u64::try_from(ms).unwrap_or(0));
@@ -198,6 +210,7 @@ async fn create(c: &Call<'_>, a: CreateArgs) -> Out {
     }
     let expires_in_ms = a.expires.as_deref().map(expires).transpose()?;
     let (session, session_name) = session(c).await?;
+    reachable(c).await?;
     let body = WatchCreate { session, session_name, targets, expires_in_ms };
     let body = serde_json::to_value(&body).map_err(|e| e.to_string())?;
     let v = c.app().control.cloud(Method::POST, AGENT_WATCHES, Some(&body)).await.map_err(said)?;

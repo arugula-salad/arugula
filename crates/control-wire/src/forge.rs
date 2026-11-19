@@ -676,7 +676,9 @@ pub struct Routed {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub names: Vec<String>,
     /// The session it named is there, but its owner silenced mentions for it
-    /// (#579): the message waits in the inbox. With `asked`.
+    /// (#579): the message waits in the inbox. With `asked`. With `away`, a
+    /// watch's message whose session is only in silenced panes: control
+    /// sends it again later.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub silenced: bool,
 }
@@ -695,8 +697,9 @@ pub enum RoutedStep {
     /// No session took it: the machine's inbox.
     Inbox,
     /// A watch's message (Arugula #631) whose session is in none of the
-    /// machine's panes now: nothing took it and nothing kept it, so control
-    /// sends it again later. Only ever for a watch.
+    /// machine's panes now, or only in ones silenced for mentions: nothing
+    /// took it and nothing kept it, so control sends it again later. Only
+    /// ever for a watch.
     Away,
 }
 
