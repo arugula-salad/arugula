@@ -72,10 +72,13 @@ const LAG_MS = 30_000;
 /** How long the terminals loading behind the shown tab wait for a snapshot
  * that may never come (a pane this person may not read sends none). */
 const SNAPSHOT_WAIT_MS = 1000;
+/** A probe answered later than this says the link is thin: the pong waited
+ * behind that much output (Arugula #443). */
+const SLOW_MS = 1000;
 /** The probe's timings; a test sets `window.__arugulaLag` to shorten them. */
 function lagTimes() {
-  const o = (globalThis as { __arugulaLag?: { probeMs: number; lagMs: number } }).__arugulaLag;
-  return o ?? { probeMs: PROBE_MS, lagMs: LAG_MS };
+  const o = (globalThis as { __arugulaLag?: { probeMs: number; lagMs: number; slowMs?: number } }).__arugulaLag;
+  return { probeMs: PROBE_MS, lagMs: LAG_MS, slowMs: SLOW_MS, ...o };
 }
 
 export interface PaneEntry {
@@ -271,6 +274,53 @@ export class Client {
 
   /** How an end-to-end client is connected, for the host chip. */
   path: "direct" | "relayed" | null = null;
+
+  /** A probe on this page waited behind the link's output for over
+   * `SLOW_MS` (Arugula #443). It stays so for the page's life: once hidden
+   * tabs stop streaming, the probes come back quick on the same link. */
+  private slow = false;
+  /** Arugula #443: the ping timing the link, for a client that shows panes
+   * (the fleet's probe is for its summaries), and the timer sending one. */
+  private slowProbe: { id: number; at: number } | null = null;
+  private slowTimer: ReturnType<typeof setInterval> | undefined;
+
+  /** Every `probeMs`, while the page is seen, ping and time the pong: one
+   * later than `slowMs`, answered or not, says the link is slow. This only
+   * measures; it never drops a link. */
+  private timeLink() {
+    if (this.summary || this.slowTimer !== undefined) return;
+    const { probeMs, slowMs } = lagTimes();
+    this.slowTimer = setInterval(() => {
+      if (this.slow || !this.connected) return;
+      if (document.hidden) {
+        // Its timers run late: no judging.
+        this.slowProbe = null;
+        return;
+      }
+      if (this.slowProbe) {
+        if (Date.now() - this.slowProbe.at > slowMs) this.slowed();
+        return;
+      }
+      this.slowProbe = { id: this.nextId++, at: Date.now() };
+      this.send({ type: "ping", id: this.slowProbe.id });
+    }, probeMs);
+  }
+
+  private slowed() {
+    this.slow = true;
+    this.slowProbe = null;
+    clearInterval(this.slowTimer);
+    this.emit();
+  }
+
+  /** Arugula #443: the link is thin (control's relay, or a link a probe
+   * found slow), so panes in hidden tabs don't stream: a busy hidden tab's
+   * output would queue ahead of the tab being shown. They're detached, and
+   * shown again they resume from their offset. A direct link streams every
+   * pane, so a switch there sends nothing. */
+  get thin(): boolean {
+    return this.path === "relayed" || this.slow;
+  }
 
   /** M30: the daemon said this person's access was removed. */
   revoked = false;
@@ -1129,6 +1179,7 @@ export class Client {
    * so a sandbox isn't kept awake, and let go of its terminals. */
   close() {
     this.closed = true;
+    clearInterval(this.slowTimer);
     const link = this.link;
     this.link = undefined;
     this.connected = false;
@@ -1274,6 +1325,9 @@ export class Client {
         this.probedAt = this.helloAt;
         this.loadingBehind.clear();
         this.snapshotsDue.clear();
+        this.parked.clear();
+        this.slowProbe = null;
+        this.timeLink();
         if (this.summary) this.send({ type: "subscribe", summary: true });
         // #713: agent blocks' states as what changed, and (#739) only for
         // the ones the tab we view shows. A daemon from before ignores this
@@ -1289,6 +1343,11 @@ export class Client {
       case "pong":
         // #713: the pong to the probe's ping says the link is current.
         if (this.probe?.id === msg.id) this.probe = null;
+        // Arugula #443: and how far behind it is.
+        if (this.slowProbe?.id === msg.id) {
+          if (Date.now() - this.slowProbe.at > lagTimes().slowMs) this.slowed();
+          this.slowProbe = null;
+        }
         break;
       case "state": {
         // Someone changed what you may do here (#551): say so, or the
@@ -1313,7 +1372,7 @@ export class Client {
         // otherwise sends the screen alone rather than the history again
         // (which, behind a flood, puts us behind again).
         const p = this.panes.get(msg.pane);
-        if (p) this.attach([{ pane: msg.pane, offset: p.offset, history: p.offset === null ? undefined : 0 }]);
+        if (p && !this.parked.has(msg.pane)) this.attach([{ pane: msg.pane, offset: p.offset, history: p.offset === null ? undefined : 0 }]);
         break;
       }
       case "error":
@@ -1414,6 +1473,7 @@ export class Client {
       if (!live.has(id)) {
         entry.view.dispose();
         this.panes.delete(id);
+        this.parked.delete(id);
       }
     }
     for (const [id, entry] of this.blocks) {
@@ -1467,11 +1527,17 @@ export class Client {
       }
     }
     // A new connection's history comes for the tab on screen first; the
-    // other terminals load behind it, or as soon as they're shown.
-    const later = reconnect ? attach.filter((a) => a.offset === null && !this.isShown(a.pane)) : [];
-    const now = attach.filter((a) => !later.includes(a));
+    // other terminals load behind it, or as soon as they're shown. On a
+    // thin link, hidden ones wait until they're shown (Arugula #443).
+    const thin = this.thin;
+    const hidden = attach.filter((a) => !this.isShown(a.pane));
+    const later = reconnect || thin ? hidden.filter((a) => a.offset === null) : [];
+    const parked = thin ? hidden.filter((a) => a.offset !== null) : [];
+    const now = attach.filter((a) => !later.includes(a) && !parked.includes(a));
+    for (const a of attach) this.parked.delete(a.pane);
     for (const a of now) this.loadingBehind.delete(a.pane);
     for (const a of later) this.loadingBehind.add(a.pane);
+    for (const a of parked) this.parked.add(a.pane);
     if (now.length) this.attachFirst(now);
     this.loadNextBehind();
     this.emit();
@@ -1508,19 +1574,56 @@ export class Client {
 
   /** A tab just shown doesn't wait its turn. */
   private attachShown() {
+    this.settleHidden();
     if (!this.loadingBehind.size || !this.connected) return;
     const shown = [...this.loadingBehind].filter((pane) => this.isShown(pane));
     for (const pane of shown) this.loadingBehind.delete(pane);
     if (shown.length) this.attachFirst(shown.map((pane) => ({ pane, offset: null })));
   }
 
-  /** One more terminal, when the last is written and the page is idle. */
+  // ---- hidden tabs on a thin link (Arugula #443)
+
+  /** Terminals detached while hidden on a thin link, each still at the
+   * offset it drew to. */
+  private parked = new Set<PaneId>();
+
+  /** On a thin link, detach the terminals of hidden tabs and resume those
+   * shown again; on a link that isn't, resume them all. A resume asks for
+   * the screen alone, as after a resync: the daemon replays a gap smaller
+   * than the screen, and otherwise sends the screen, the scrollback kept
+   * here under a rule. Attention needs no stream: the daemon reads it. */
+  private settleHidden() {
+    if (!this.connected || this.summary) return;
+    const thin = this.thin;
+    const view = this.tab === null ? undefined : this.tabView(this.tab);
+    const shown = new Set(view ? paneIds(view) : []);
+    const resume: AttachPane[] = [];
+    for (const pane of this.parked) {
+      if (thin && !shown.has(pane)) continue;
+      this.parked.delete(pane);
+      const offset = this.panes.get(pane)?.offset ?? null;
+      resume.push({ pane, offset, history: offset === null ? undefined : 0 });
+    }
+    if (resume.length) this.attachFirst(resume);
+    if (!thin) return;
+    const detach: PaneId[] = [];
+    for (const pane of this.panes.keys()) {
+      if (this.parked.has(pane) || this.loadingBehind.has(pane) || shown.has(pane)) continue;
+      this.parked.add(pane);
+      this.snapshotsDue.delete(pane);
+      detach.push(pane);
+    }
+    if (detach.length) this.send({ type: "detach", panes: detach });
+  }
+
+  /** One more terminal, when the last is written and the page is idle. On a
+   * thin link they wait to be shown. */
   private loadNextBehind() {
-    if (this.nextBehindQueued || this.snapshotsDue.size || !this.loadingBehind.size) return;
+    if (this.thin || this.nextBehindQueued || this.snapshotsDue.size || !this.loadingBehind.size) return;
     this.nextBehindQueued = true;
     whenIdle(() => {
       this.nextBehindQueued = false;
-      if (!this.connected || this.closed || this.snapshotsDue.size) return;
+      if (!this.connected || this.closed || this.thin || this.snapshotsDue.size) return;
       const [pane] = this.loadingBehind;
       if (pane === undefined) return;
       this.loadingBehind.delete(pane);
@@ -1664,9 +1767,10 @@ export class Client {
     if (f.kind !== FrameKind.Output || p.offset === null) return;
     let data = f.data;
     if (f.offset > p.offset) {
-      // A gap we can't fill: start over from a snapshot.
+      // A gap we can't fill: start over from a snapshot (once shown, if
+      // it's parked).
       p.offset = null;
-      this.attach([{ pane: f.pane, offset: null }]);
+      if (!this.parked.has(f.pane)) this.attach([{ pane: f.pane, offset: null }]);
       return;
     }
     if (f.offset < p.offset) {

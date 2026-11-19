@@ -1,0 +1,7 @@
+---
+section: Fixed
+title: Tab switches over the relay stay quick
+line: Through control's relay or on a slow link, panes in tabs you aren't looking at stop streaming, so switching to a tab shows its panes at once instead of after seconds of other tabs' output.
+headline: no
+---
+On a direct link nothing changes: every pane keeps streaming, so a switch sends nothing. Through control's relay, or once a link is measured slow (the page's lag probe waits behind its output for over a second), a hidden tab's terminals are detached and come back when it's shown: what they printed meanwhile if that's no bigger than the screen, else the screen, with a rule marking the skipped output. Attention (a bell, a question, an agent that's done) is read by the daemon, so it still reaches every screen and your phone while a tab is hidden.
