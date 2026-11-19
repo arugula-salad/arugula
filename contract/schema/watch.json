@@ -75,6 +75,13 @@
       "additionalProperties": false,
       "description": "`POST /api/daemon/watches`: a watch for one Claude Code session on the\nmachine.",
       "properties": {
+        "event": {
+          "description": "An event target too (the event bus, Arugula #1230): a type in\n[`crate::events::CATALOG`] that the cloud serves. Fires it like any\ntarget. Left out when none, so a watch without one reads as before.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "expires_in_ms": {
           "default": null,
           "description": "How long it lives, in milliseconds. None: [`EXPIRES_DEFAULT_MS`];\nat most [`EXPIRES_MAX_MS`].",
@@ -82,6 +89,21 @@
           "minimum": 0,
           "type": [
             "integer",
+            "null"
+          ]
+        },
+        "match": {
+          "additionalProperties": true,
+          "description": "With `event`: the type's match fields an event must equal, each one\nof its [`crate::events::EventType::matches`].",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "note": {
+          "description": "With `event`: why the agent watches, handed back when it fires; at\nmost [`NOTE_MAX`] characters.",
+          "type": [
+            "string",
             "null"
           ]
         },
