@@ -19,18 +19,35 @@ fn fl(labs: bool) -> arugula_proto::flags::On {
 /// forge too): a build without Labs has no golden of its own, so it
 /// checks the listing in
 /// `unlisted_tools_are_not_listed_without_labs_but_are_there`.
+///
+/// Each tool as listed is written once, under `tools`, by its name (`name
+/// #2` and on for a tool listed differently somewhere, as `show`'s kinds
+/// are with labs), and `listings` gives each scope's list as those keys,
+/// in order. Written out per listing, the six repeated the same tools and
+/// passed `scripts/check-binaries`' 1 MiB.
 pub fn the_tool_list_and_each_schema_are_unchanged() {
     if !crate::lab_flags::BUILT {
         return;
     }
-    let mut all = serde_json::Map::new();
+    let mut tools = serde_json::Map::new();
+    let mut listings = serde_json::Map::new();
     for (scope_name, scope) in [("full", Scope::Full), ("read", Scope::Read), ("block", Scope::Block(1))] {
         for labs in [true, false] {
-            let tools = serde_json::to_value(list(scope, fl(labs), true)).unwrap();
-            all.insert(format!("{scope_name}, labs {labs}"), tools);
+            let mut keys = Vec::new();
+            for tool in list(scope, fl(labs), true) {
+                let v = serde_json::to_value(&tool).unwrap();
+                let key = (1..)
+                    .map(|n| if n == 1 { tool.name.to_string() } else { format!("{} #{n}", tool.name) })
+                    .find(|k| tools.get(k).is_none_or(|have| *have == v))
+                    .unwrap();
+                tools.insert(key.clone(), v);
+                keys.push(Value::String(key));
+            }
+            listings.insert(format!("{scope_name}, labs {labs}"), Value::Array(keys));
         }
     }
-    let got = serde_json::to_string_pretty(&Value::Object(all)).unwrap() + "\n";
+    let all = serde_json::json!({ "listings": listings, "tools": tools });
+    let got = serde_json::to_string_pretty(&all).unwrap() + "\n";
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mcp-tool-list.json");
     if std::env::var_os("ARUGULA_BLESS").is_some() {
         std::fs::write(&path, &got).unwrap();
