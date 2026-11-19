@@ -9,7 +9,7 @@
 use std::{
     sync::{
         Arc, Mutex,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -30,20 +30,24 @@ use tokio_tungstenite::tungstenite::Message;
 
 type Ws = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
-/// Every `links_until` the machine told control, in order.
+/// Every access list the machine told control, in order.
 type Told = Arc<Mutex<Vec<Value>>>;
 
 /// A control that trusts this device (the account's root) and this daemon,
-/// keeps what it's told about links and counts the machine's refreshes.
-async fn fake_control(certs: Vec<Cert>, told: Told, refreshes: Arc<AtomicUsize>) -> String {
+/// keeps the access lists it's told and counts the machine's refreshes.
+/// While `stall` is set it doesn't answer an access list.
+async fn fake_control(certs: Vec<Cert>, told: Told, refreshes: Arc<AtomicUsize>, stall: Arc<AtomicBool>) -> String {
     let trust = json!({ "certs": certs, "revocations": [] });
     let trust = move || async move {
         refreshes.fetch_add(1, Ordering::SeqCst);
         Json(trust)
     };
     let info = json!({ "control": true, "daemon_auth": 2 });
-    let access = post(|State(told): State<Told>, Json(b): Json<Value>| async move {
-        told.lock().unwrap().push(b["links_until"].clone());
+    let access = post(move |State(told): State<Told>, Json(b): Json<Value>| async move {
+        if stall.load(Ordering::SeqCst) {
+            tokio::time::sleep(Duration::from_secs(30)).await;
+        }
+        told.lock().unwrap().push(b);
         Json(json!({}))
     });
     let app = Router::new()
@@ -64,6 +68,7 @@ struct Rig {
     daemon: DeviceKeys,
     told: Told,
     refreshes: Arc<AtomicUsize>,
+    stall: Arc<AtomicBool>,
 }
 
 /// A machine joined to control, with a session, started with `args` too.
@@ -84,7 +89,8 @@ async fn rig(args: &[&str]) -> Rig {
     let certs = vec![root, cert.clone()];
     let told = Told::default();
     let refreshes = Arc::new(AtomicUsize::new(0));
-    let control = fake_control(certs.clone(), told.clone(), refreshes.clone()).await;
+    let stall = Arc::new(AtomicBool::new(false));
+    let control = fake_control(certs.clone(), told.clone(), refreshes.clone(), stall.clone()).await;
     let saved = json!({
         "url": control,
         "trust": { "account": "a1", "root": device.id() },
@@ -97,7 +103,7 @@ async fn rig(args: &[&str]) -> Rig {
     d.start();
     d.wait_for("joined", || d.get("/api/host")["control_state"]["state"] == "joined");
     d.wait_for("a session", || d.get("/api/panes")[0]["session"].is_u64());
-    Rig { d, daemon, told, refreshes }
+    Rig { d, daemon, told, refreshes, stall }
 }
 
 fn session(d: &Daemon) -> u64 {
@@ -190,7 +196,9 @@ async fn revoking_a_link_removes_it_and_closes_its_channel_at_once() {
     assert_eq!(r.d.get("/api/links").as_array().unwrap().len(), 1);
 
     // Control knows there's a link to let viewers through to.
-    r.d.wait_for("control told of the link", || r.told.lock().unwrap().last().is_some_and(|u| u.is_u64()));
+    r.d.wait_for("control told of the link", || {
+        r.told.lock().unwrap().last().is_some_and(|b| b["links_until"].is_u64())
+    });
 
     // Another link stays when this one goes; so does control's word.
     let other_id = mint(&r.d, s, &other);
@@ -221,7 +229,9 @@ async fn revoking_a_link_removes_it_and_closes_its_channel_at_once() {
     // With the last one gone, control hears there's nothing to let through.
     assert_eq!(r.d.raw("DELETE", &format!("/api/links/{other_id}"), None).0, 200);
     while next(&mut other_ws, &other_ch).await.is_some() {}
-    r.d.wait_for("control told there's nothing left", || r.told.lock().unwrap().last().is_some_and(Value::is_null));
+    r.d.wait_for("control told there's nothing left", || {
+        r.told.lock().unwrap().last().is_some_and(|b| b["links_until"].is_null())
+    });
     assert_eq!(r.d.get("/api/links"), json!([]));
 
     // The log says so.
@@ -250,7 +260,9 @@ async fn closing_a_session_ends_its_links_viewers_at_once() {
     let id = mint(&r.d, s, &key);
     let (mut ws, ch, said) = open(&r, &key).await;
     assert!(Welcome::decode(&said).is_some(), "welcomed");
-    r.d.wait_for("control told of the link", || r.told.lock().unwrap().last().is_some_and(|u| u.is_u64()));
+    r.d.wait_for("control told of the link", || {
+        r.told.lock().unwrap().last().is_some_and(|b| b["links_until"].is_u64())
+    });
     // Just after a look at control, so the next on its own is far off.
     let seen = r.refreshes.load(Ordering::SeqCst);
     r.d.wait_for("a refresh", || r.refreshes.load(Ordering::SeqCst) > seen);
@@ -265,11 +277,48 @@ async fn closing_a_session_ends_its_links_viewers_at_once() {
     }
     assert_eq!(r.refreshes.load(Ordering::SeqCst), refreshed, "closed by the machine, not a look at control");
     assert!(told_why, "the viewer hears why");
-    r.d.wait_for("control told there's nothing left", || r.told.lock().unwrap().last().is_some_and(Value::is_null));
+    r.d.wait_for("control told there's nothing left", || {
+        r.told.lock().unwrap().last().is_some_and(|b| b["links_until"].is_null())
+    });
     assert!(before.elapsed() < Duration::from_secs(5), "control told in {:?}", before.elapsed());
     assert_eq!(r.d.get("/api/links"), json!([]));
     let (_ws, _, said) = open(&r, &key).await;
     assert_eq!(Refusal::decode(&said), Some(Refusal::unknown_device()), "link:{id} won't reopen");
+}
+
+/// Sharing a session tells control before the call answers, so the person
+/// let in sees the machine at once rather than at their page's next look
+/// (https://app.arugula.io/issues/iss_95da03e1067fa2c47b9e06d14b6aabd3).
+/// A control that doesn't answer holds the call only about 2 s, and the
+/// share stands.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn sharing_tells_control_before_it_answers() {
+    let r = rig(&["--no-relay"]).await;
+    let s = session(&r.d);
+    let told_of = |who: &str| {
+        r.told.lock().unwrap().last().is_some_and(|b| b["accounts"].as_array().unwrap().iter().any(|a| a == who))
+    };
+    // Just after a look at control, so the next on its own is far off.
+    let seen = r.refreshes.load(Ordering::SeqCst);
+    r.d.wait_for("a refresh", || r.refreshes.load(Ordering::SeqCst) > seen);
+
+    let before = std::time::Instant::now();
+    r.d.post("/api/acl", json!({ "session": s, "principal": "account:b1", "role": "viewer" }));
+    assert!(told_of("b1"), "control told before the answer: {:?}", r.told.lock().unwrap().last());
+    assert!(before.elapsed() < Duration::from_secs(2), "answered in {:?}", before.elapsed());
+
+    // Control stalls: the call waits its bound, no more, and still shares.
+    r.stall.store(true, Ordering::SeqCst);
+    let before = std::time::Instant::now();
+    let (status, body) =
+        r.d.raw("POST", "/api/acl", Some(json!({ "session": s, "principal": "account:b2", "role": "viewer" })));
+    let took = before.elapsed();
+    assert_eq!(status, 200, "{body}");
+    assert!(took >= Duration::from_millis(1900) && took < Duration::from_secs(5), "answered in {took:?}");
+    assert!(!told_of("b2"));
+    let grants = r.d.get("/api/acl")["grants"].clone();
+    assert!(grants.as_array().unwrap().iter().any(|g| g["principal"] == "account:b2"), "{grants}");
+    r.stall.store(false, Ordering::SeqCst);
 }
 
 /// Only the machine's owner: someone a session is shared with, whatever
