@@ -160,6 +160,12 @@ impl MentionTag {
         Some(m)
     }
 
+    /// Whether it's a local watch's message (`local_watches`): one with no
+    /// room in control's chat.
+    pub fn is_local_watch(&self) -> bool {
+        self.watch.is_some() && self.room.is_empty()
+    }
+
     /// Whether `other` is a message of the same thread: the same room and
     /// root.
     fn same_thread(&self, other: &MentionTag) -> bool {
@@ -870,6 +876,15 @@ pub async fn keep_telling(
                     // the session then.
                     if let (Turn::Dropped(_), Some(id)) = (&turn, &tag.watch) {
                         app.agent_mentions.forget_watch(id);
+                    }
+                    // A local watch's message is the daemon's own: control
+                    // has no turn of it to hear, and a dropped one is the
+                    // daemon's to send again (`local_watches`).
+                    if tag.is_local_watch() {
+                        if let (Turn::Dropped(_), Some(id)) = (&turn, &tag.watch) {
+                            app.local_watches.untold(id);
+                        }
+                        continue;
                     }
                     let put = PutMentionState {
                         room: tag.room,

@@ -74,6 +74,9 @@ pub struct App {
     /// Which session last posted in each thread, and the mentions no
     /// session took (Arugula #394). Memory only.
     pub agent_mentions: crate::agent_mentions::State,
+    /// The watches this daemon holds itself, on its own panes and blocks
+    /// (`local_watches`).
+    pub local_watches: crate::local_watches::Store,
 }
 
 impl App {
@@ -93,6 +96,7 @@ impl App {
         rules: Arc<crate::rules::Rules>,
     ) -> Arc<Self> {
         let agent_mentions = crate::agent_mentions::State::open(control.state_dir());
+        let local_watches = crate::local_watches::Store::open(control.state_dir());
         Arc::new(Self {
             access,
             identify,
@@ -110,6 +114,7 @@ impl App {
             tailnet_seen: Default::default(),
             hooks_heard: Default::default(),
             agent_mentions,
+            local_watches,
         })
     }
 
