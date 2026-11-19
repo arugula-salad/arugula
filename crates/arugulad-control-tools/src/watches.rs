@@ -12,12 +12,17 @@
 //!   Arugula's GitHub App, until it merges or closes. Control refuses a repo
 //!   without the App, and a PR the owner can't see answers as one that
 //!   doesn't exist.
+//! - **Events.** A type in the event bus's catalog (`events::CATALOG`),
+//!   matched on its fields, with the agent's note handed back when it
+//!   fires. Only the cloud's types for now: the daemon's own (a pane's, an
+//!   agent block's) come with local watches. `types` lists the catalog.
 //! - **Once.** It fires once, or expires (24 hours unless told, at most 7
 //!   days) with one last message saying it ended without firing.
 
+use arugula_control_wire::events::{self, Home};
 use arugula_control_wire::watch::{
-    AGENT_WATCHES, AGENT_WATCHES_CANCEL, WatchCancel, WatchCancelled, WatchCreate, WatchList, WatchMade, WatchState,
-    WatchTarget, expires_ms as expires, until_word_parse as until,
+    AGENT_WATCHES, AGENT_WATCHES_CANCEL, NOTE_MAX, WatchCancel, WatchCancelled, WatchCreate, WatchList, WatchMade,
+    WatchState, WatchTarget, expires_ms as expires, until_word_parse as until,
 };
 use arugulad_base::forge_wait::PrRef;
 use reqwest::Method;
@@ -31,13 +36,13 @@ use crate::mcp::tools::{Call, Kind, Out, done, parse};
 
 pub(crate) const TOOL: &str = "watch";
 
-pub(crate) const DESCRIPTION: &str = "Wake this session later, when something happens, without polling or holding your turn open: create a watch, then end your turn. When it fires, you get a follow-up saying what happened (ids and states only), as a chat mention arrives. It fires once. It expires after 24 hours unless you say (expires, at most 7d), and then you get one message saying it ended without firing. Targets, any of which fires it: pr (OWNER/REPO#N or its link) until merged, closed, checks_done, checks_failed or ready (checks green and it can merge cleanly), in a repo linked to Arugula's GitHub App (else use wait with pr); session (a hosted agent session, ses_) until it settles; run (run_ or dep_) until it ends; room (a chat room's id, with parent for one thread and from for one person) until a reply you didn't write. If it has already happened, create says so and makes no watch. A watch belongs to this Claude Code session: a new session in this pane doesn't get it. Works from a terminal with Arugula's hooks installed, or an agent block. list shows this session's watches; cancel takes one by id, or all.";
+pub(crate) const DESCRIPTION: &str = "Wake this session later, when something happens: create a watch, then end your turn (watch ends your turn; wait instead blocks it until something happens). When it fires, you get a follow-up saying what happened (ids and states only), as a chat mention arrives. It fires once. It expires after 24 hours unless you say (expires, at most 7d), and then you get one message saying it ended without firing. Targets, any of which fires it: pr (OWNER/REPO#N or its link) until merged, closed, checks_done, checks_failed or ready (checks green and it can merge cleanly), in a repo linked to Arugula's GitHub App (else use wait with pr); session (a hosted agent session, ses_) until it settles; run (run_ or dep_) until it ends; room (a chat room's id, with parent for one thread and from for one person) until a reply you didn't write; event (a type from kind types, like issue.closed) with match (some of the type's match fields, like {\"issue\": \"#12\"}) and note (why you watch, at most 200 characters, handed back when it fires). If it has already happened, create says so and makes no watch. A watch belongs to this Claude Code session: a new session in this pane doesn't get it. Works from a terminal with Arugula's hooks installed, or an agent block. list shows this session's watches; cancel takes one by id, or all; types lists the event types, their match fields, and which this machine can watch now.";
 
 /// `watch`'s kinds.
 pub(crate) const KINDS: &[Kind] = &[
     Kind {
         name: "create",
-        description: "Wake this session when a PR, a hosted session, a thread, a run or a deploy gets somewhere. End your turn after.",
+        description: "Wake this session when a PR, a hosted session, a chat room, a run or a deploy gets somewhere, or an event happens. End your turn after.",
         schema: schema_for_type::<CreateArgs>,
         flag: None,
     },
@@ -51,6 +56,12 @@ pub(crate) const KINDS: &[Kind] = &[
         name: "cancel",
         description: "Cancel one of this session's watches by id, or all of them.",
         schema: schema_for_type::<CancelArgs>,
+        flag: None,
+    },
+    Kind {
+        name: "types",
+        description: "The event types create's event takes: what each means, its match fields, and whether this machine can watch it now.",
+        schema: schema_for_type::<TypesArgs>,
         flag: None,
     },
 ];
@@ -83,6 +94,18 @@ pub struct CreateArgs {
     /// merge cleanly).
     #[serde(default)]
     pub until: Option<String>,
+    /// An event type (types lists them): fires when an event of it happens
+    /// that has every match field given.
+    #[serde(default)]
+    pub event: Option<String>,
+    /// With event: field and value pairs the event must have, from the
+    /// type's match fields ({"issue": "#12"}).
+    #[serde(default, rename = "match")]
+    pub matches: Option<serde_json::Map<String, Value>>,
+    /// With event: why you watch, at most 200 characters: it comes back
+    /// with the event when it fires.
+    #[serde(default)]
+    pub note: Option<String>,
     /// How long to wait before it ends without firing: 30m, 6h, 3d. Default
     /// 24h, at most 7d.
     #[serde(default)]
@@ -103,6 +126,9 @@ pub struct ListArgs {
     #[serde(default)]
     pub all: bool,
 }
+
+#[derive(Deserialize, JsonSchema)]
+pub struct TypesArgs {}
 
 #[derive(Deserialize, JsonSchema)]
 pub struct CancelArgs {
@@ -132,6 +158,11 @@ pub(crate) async fn watch(c: &Call<'_>, kind: &str, args: Value) -> Out {
         "create" => create(c, parse(args)?).await,
         "list" => list(c, parse(args)?).await,
         "cancel" => cancel(c, parse(args)?).await,
+        "types" => {
+            let _: TypesArgs = parse(args)?;
+            let text = types(c.app().control.enrolled().is_some());
+            done(text.clone(), serde_json::json!({ "types": text }))
+        }
         k => Err(format!("{TOOL} kind {k} isn't wired up")),
     }
 }
@@ -158,7 +189,9 @@ fn when(ms: i64) -> String {
     format!("{}Z", t.get(..16).unwrap_or(&t))
 }
 
-async fn create(c: &Call<'_>, a: CreateArgs) -> Out {
+/// What `create` asks for: its targets, event and expiry, checked here,
+/// before the session is known.
+fn create_body(a: CreateArgs) -> Result<WatchCreate, String> {
     let until = until(a.until.as_deref())?;
     let list = |l: Option<PrList>| match l {
         None => vec![],
@@ -186,8 +219,9 @@ async fn create(c: &Call<'_>, a: CreateArgs) -> Out {
         None if a.parent.is_some() || a.from.is_some() => return Err("parent and from go with a room".into()),
         None => {}
     }
-    if prs.is_empty() && targets.is_empty() {
-        return Err("create needs something to watch: pr, session, run, or room".into());
+    let event = event(a.event, a.matches.as_ref(), a.note.as_deref())?;
+    if prs.is_empty() && targets.is_empty() && event.is_none() {
+        return Err("create needs something to watch: pr, session, run, room, or event".into());
     }
     for p in &prs {
         let r = PrRef::parse(p).ok_or_else(|| format!("pr {p}: OWNER/REPO#N, or its link on github.com"))?;
@@ -197,8 +231,65 @@ async fn create(c: &Call<'_>, a: CreateArgs) -> Out {
         targets.push(WatchTarget::Pr { repo: r.repo, number: r.number, until });
     }
     let expires_in_ms = a.expires.as_deref().map(expires).transpose()?;
-    let (session, session_name) = session(c).await?;
-    let body = WatchCreate { session, session_name, targets, expires_in_ms };
+    let note = event.as_ref().and(a.note.map(|n| n.trim().to_owned()).filter(|n| !n.is_empty()));
+    let matches = event.as_ref().and(a.matches).filter(|m| !m.is_empty());
+    Ok(WatchCreate { session: String::new(), session_name: None, targets, expires_in_ms, event, matches, note })
+}
+
+/// The event target's type, checked against the catalog with its match
+/// fields and note; none without one.
+fn event(
+    name: Option<String>,
+    matches: Option<&serde_json::Map<String, Value>>,
+    note: Option<&str>,
+) -> Result<Option<String>, String> {
+    let Some(name) = name.map(|n| n.trim().to_owned()).filter(|n| !n.is_empty()) else {
+        if matches.is_some_and(|m| !m.is_empty()) || note.is_some_and(|n| !n.trim().is_empty()) {
+            return Err("match and note go with an event".into());
+        }
+        return Ok(None);
+    };
+    let Some(t) = events::lookup(&name) else {
+        return Err(format!("event {name}: no such type; watch types lists them"));
+    };
+    if t.home == Home::Daemon {
+        return Err(format!("event {name}: local watches come soon; use wait for a pane"));
+    }
+    for k in matches.into_iter().flat_map(|m| m.keys()) {
+        if !t.matches.iter().any(|f| f.name == k) {
+            let fields: Vec<&str> = t.matches.iter().map(|f| f.name).collect();
+            return Err(format!("match {k}: {name} matches on {}", fields.join(", ")));
+        }
+    }
+    if let Some(n) = note.map(str::trim)
+        && n.chars().count() > NOTE_MAX
+    {
+        return Err(format!("note: {} characters, at most {NOTE_MAX}", n.chars().count()));
+    }
+    Ok(Some(name))
+}
+
+/// `types`: the catalog, a type to two lines, and whether this machine can
+/// watch each now (`joined`: it has joined Arugula cloud).
+fn types(joined: bool) -> String {
+    let lines: Vec<String> = events::CATALOG
+        .iter()
+        .map(|t| {
+            let now = match t.home {
+                Home::Cloud if joined => "watchable now",
+                Home::Cloud => "not now: this machine hasn't joined Arugula cloud",
+                Home::Daemon => "not yet: local watches come soon; use wait for a pane",
+            };
+            let fields: Vec<String> = t.matches.iter().map(|f| format!("{} ({})", f.name, f.meaning)).collect();
+            format!("{}: {} [{now}]\n  match: {}", t.name, t.meaning, fields.join("; "))
+        })
+        .collect();
+    lines.join("\n")
+}
+
+async fn create(c: &Call<'_>, a: CreateArgs) -> Out {
+    let mut body = create_body(a)?;
+    (body.session, body.session_name) = session(c).await?;
     let body = serde_json::to_value(&body).map_err(|e| e.to_string())?;
     let v = c.app().control.cloud(Method::POST, AGENT_WATCHES, Some(&body)).await.map_err(said)?;
     let made: WatchMade =
@@ -265,6 +356,7 @@ async fn cancel(c: &Call<'_>, a: CancelArgs) -> Out {
 mod tests {
     use super::*;
     use arugula_control_wire::watch::{EXPIRES_MAX_MS, PrUntil};
+    use serde_json::json;
 
     #[test]
     fn expires_reads_minutes_hours_and_days_up_to_a_week() {
@@ -284,6 +376,77 @@ mod tests {
         assert_eq!(until(Some("ready")), Ok(PrUntil::Ready));
         assert_eq!(until(Some("checks_failed")), Ok(PrUntil::ChecksFailed));
         assert!(until(Some("green")).is_err());
+    }
+
+    fn args(v: Value) -> CreateArgs {
+        serde_json::from_value(v).unwrap()
+    }
+
+    #[test]
+    fn an_event_target_goes_in_the_watch() {
+        let body = create_body(args(json!({
+            "event": "issue.closed",
+            "match": { "issue": "#12", "by": "ada" },
+            "note": " ship the fix once it's closed ",
+            "run": "run_1",
+        })))
+        .unwrap();
+        assert_eq!(body.event.as_deref(), Some("issue.closed"));
+        assert_eq!(body.note.as_deref(), Some("ship the fix once it's closed"));
+        assert_eq!(body.targets, vec![WatchTarget::Run { id: "run_1".into() }]);
+        let wire = serde_json::to_value(&body).unwrap();
+        assert_eq!(wire["event"], json!("issue.closed"));
+        assert_eq!(wire["match"], json!({ "issue": "#12", "by": "ada" }));
+        assert_eq!(wire["note"], json!("ship the fix once it's closed"));
+        // Alone, it's enough to watch.
+        let alone = create_body(args(json!({ "event": "run.ended" }))).unwrap();
+        assert!(alone.targets.is_empty() && alone.matches.is_none() && alone.note.is_none());
+        // Without one, the body is what it was.
+        let old = serde_json::to_value(create_body(args(json!({ "session": "ses_1" }))).unwrap()).unwrap();
+        let keys: Vec<&str> = old.as_object().unwrap().keys().map(String::as_str).collect();
+        assert_eq!(keys, ["expires_in_ms", "session", "session_name", "targets"]);
+    }
+
+    #[test]
+    fn an_event_target_is_checked_against_the_catalog() {
+        let err = |v| create_body(args(v)).err().unwrap();
+        assert_eq!(
+            err(json!({ "event": "issue.renamed" })),
+            "event issue.renamed: no such type; watch types lists them"
+        );
+        assert_eq!(
+            err(json!({ "event": "issue.closed", "match": { "label": "bug" } })),
+            "match label: issue.closed matches on issue, project, by"
+        );
+        assert_eq!(
+            err(json!({ "event": "pane.exited", "match": { "pane": "3" } })),
+            "event pane.exited: local watches come soon; use wait for a pane"
+        );
+        assert!(err(json!({ "event": "issue.closed", "note": "x".repeat(NOTE_MAX + 1) })).contains("at most 200"));
+        assert!(create_body(args(json!({ "event": "issue.closed", "note": "é".repeat(NOTE_MAX) }))).is_ok());
+        assert_eq!(err(json!({ "run": "run_1", "note": "why" })), "match and note go with an event");
+        assert!(err(json!({})).contains("or event"));
+    }
+
+    #[test]
+    fn types_lists_the_catalog_and_what_this_machine_can_watch() {
+        let joined = types(true);
+        assert_eq!(joined.lines().count(), 2 * events::CATALOG.len(), "{joined}");
+        assert!(joined.contains("issue.closed: A native issue was closed. [watchable now]\n  match: issue (the issue, iss_… or its #N in the project); project (the project, prj_…); by (the login of who closed it)"), "{joined}");
+        assert!(
+            joined.contains(
+                "pane.exited: A pane's process exited. [not yet: local watches come soon; use wait for a pane]"
+            ),
+            "{joined}"
+        );
+        let alone = types(false);
+        assert!(
+            alone.contains(
+                "issue.closed: A native issue was closed. [not now: this machine hasn't joined Arugula cloud]"
+            ),
+            "{alone}"
+        );
+        assert!(!alone.contains("watchable now"));
     }
 
     #[test]
