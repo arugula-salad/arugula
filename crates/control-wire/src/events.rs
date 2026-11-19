@@ -209,6 +209,8 @@ const BRANCH: MatchField = m("branch", "the branch: a PR's head, or the one push
 const BY: MatchField = m("by", "the GitHub login of who did it");
 const OUTSIDE: MatchField =
     m("outside", "true for a fork's PR or a non-member's: such an event matches only a watch that asks for it");
+const IDENT: MatchField = m("ident", "the Plane work item, as IDENT-N (such as ALL-2212)");
+const BOARD: MatchField = m("board", "the board, brd_…");
 const GITHUB_PR: &[MatchField] = &[REPO, PR, BRANCH, BY, OUTSIDE];
 const GITHUB_CHECKS: &[MatchField] = &[REPO, PR, BRANCH, OUTSIDE];
 const BASE: MatchField = m("base", "the branch it's to merge into");
@@ -387,6 +389,70 @@ pub const CATALOG: &[EventType] = &[
         power: Some("cloud.drive"),
     },
     EventType {
+        name: "plane.issue.created",
+        meaning: "A work item was made in a connected Plane project.",
+        matches: &[
+            PROJECT,
+            m("state", "the name of the state it was made in, as the Plane project names it"),
+            m("state_group", "its state's group: backlog, unstarted, started, completed or cancelled"),
+            m("labels", "a label it was made with, by name"),
+            m("assignees", "the Plane user id of someone it was assigned to"),
+        ],
+        home: Home::Cloud,
+        power: Some("cloud.drive"),
+    },
+    EventType {
+        name: "plane.issue.updated",
+        meaning: "A connected Plane work item's state, assignees or labels changed.",
+        matches: &[
+            IDENT,
+            PROJECT,
+            m("state", "the name of the state it is in now, such as Done"),
+            m("state_group", "its state's group now: backlog, unstarted, started, completed or cancelled"),
+            m("closed", "whether it is closed now (true once its group is completed or cancelled)"),
+            m("changed", "what changed: state, assignees or labels"),
+            m("labels", "a label it has now, by name"),
+            m("assignees", "the Plane user id of someone it is assigned to now"),
+            m("by", "the Plane user id of who changed it"),
+        ],
+        home: Home::Cloud,
+        power: Some("cloud.drive"),
+    },
+    EventType {
+        name: "plane.issue.deleted",
+        meaning: "A connected Plane work item was deleted.",
+        matches: &[IDENT, PROJECT],
+        home: Home::Cloud,
+        power: Some("cloud.drive"),
+    },
+    EventType {
+        name: "board.row.added",
+        meaning: "A row was added to a board, by a person or their agent.",
+        matches: &[BOARD, PROJECT, m("by", "the login of who added it, or whose agent did")],
+        home: Home::Cloud,
+        power: Some("boards.read"),
+    },
+    EventType {
+        name: "board.lane.overridden",
+        meaning: "A person moved a board's row to a lane its work doesn't derive.",
+        matches: &[
+            BOARD,
+            PROJECT,
+            m("row", "the row, row_…"),
+            m("lane", "the lane it was moved to: next, doing or review"),
+            m("by", "the login of who moved it"),
+        ],
+        home: Home::Cloud,
+        power: Some("boards.read"),
+    },
+    EventType {
+        name: "board.closed",
+        meaning: "A board was closed, its goal met.",
+        matches: &[BOARD, PROJECT, m("by", "the login of who closed it, or whose agent did")],
+        home: Home::Cloud,
+        power: Some("boards.read"),
+    },
+    EventType {
         name: "agent.idle",
         meaning: "An agent on this machine finished its turn and waits for a prompt.",
         matches: &[PANE],
@@ -536,6 +602,8 @@ mod tests {
         assert!(lookup("github.pr.merged").unwrap().matches.iter().any(|f| f.name == "outside"));
         assert!(lookup("github.push").unwrap().matches.iter().any(|f| f.name == "branch"));
         assert!(lookup("github.pr.reopened").is_none());
+        assert_eq!(lookup("plane.issue.updated").unwrap().home, Home::Cloud);
+        assert_eq!(lookup("board.closed").unwrap().power, Some("boards.read"));
         for name in ["github.check.failed", "github.pr.reviewed", "github.pr.review_commented"] {
             assert_eq!(lookup(name).unwrap().home, Home::Cloud, "{name}");
         }
