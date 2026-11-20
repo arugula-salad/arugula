@@ -47,12 +47,17 @@ unsafe fn text(p: *const c_char) -> String {
 }
 
 unsafe fn set_err(err: *mut *mut c_char, e: &anyhow::Error) {
-    if err.is_null() {
-        return;
+    if !err.is_null() {
+        unsafe { *err = to_c(error_json(e).to_string()) };
     }
+}
+
+/// A failure as the app reads it, `{"status", "error", "reason"}`: the same
+/// for Swift's `*err` and Kotlin's `CoreError`.
+pub(crate) fn error_json(e: &anyhow::Error) -> Value {
     // Signed out, wherever it came from: the app asks for a sign-in again.
     let refused = e.chain().find_map(|c| c.downcast_ref::<Refused>());
-    let v = if let Some(r) = refused {
+    if let Some(r) = refused {
         let reason = if r.signed_out() { Some("signed_out") } else { r.reason.as_deref() };
         json!({ "status": r.status, "error": r.error, "reason": reason })
     } else if e.downcast_ref::<UpdateApp>().is_some() {
@@ -63,8 +68,7 @@ unsafe fn set_err(err: *mut *mut c_char, e: &anyhow::Error) {
         json!({ "error": format!("{e:#}"), "reason": r.code })
     } else {
         json!({ "error": format!("{e:#}") })
-    };
-    unsafe { *err = to_c(v.to_string()) };
+    }
 }
 
 /// A result as the C side takes it: NULL and `*err` on failure.
@@ -100,7 +104,7 @@ pub unsafe extern "C" fn aru_check_app(url: *const c_char, err: *mut *mut c_char
     }
 }
 
-pub struct AruSignIn(SignIn);
+pub struct AruSignIn(pub(crate) SignIn);
 
 /// Ask control at `url` for a sign-in. `name` says what this is on the page
 /// where someone signed in allows it.
@@ -216,12 +220,12 @@ unsafe impl Send for Ctx {}
 pub type AruNotify = extern "C" fn(ctx: *mut c_void);
 
 pub struct AruLink {
-    link: Link,
-    events: Mutex<LinkState>,
+    pub(crate) link: Link,
+    pub(crate) events: Mutex<LinkState>,
 }
 
 #[derive(Default)]
-struct LinkState {
+pub(crate) struct LinkState {
     state: Option<String>,
     said: Option<String>,
     closed: Option<String>,
@@ -482,7 +486,7 @@ pub unsafe extern "C" fn aru_link_free(l: *mut AruLink) {
 
 // ---- chat's live stream
 
-pub struct AruChatLive(ChatLive);
+pub struct AruChatLive(pub(crate) ChatLive);
 
 /// Chat's live stream. `notify` is called from its thread when an event is
 /// queued: `aru_chat_live_next` on the main thread then takes it. NULL, with
@@ -530,7 +534,7 @@ pub unsafe extern "C" fn aru_chat_live_free(l: *mut AruChatLive) {
 // ---- the terminal
 
 pub struct AruTerm {
-    pane: Pane,
+    pub(crate) pane: Pane,
     render: RenderState<'static>,
     rows: RowIterator<'static>,
     cells: CellIterator<'static>,

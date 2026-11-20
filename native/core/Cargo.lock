@@ -126,6 +126,7 @@ dependencies = [
  "aws-lc-rs",
  "getrandom 0.4.3",
  "hex",
+ "jni",
  "libghostty-vt",
  "nix",
  "rustls",

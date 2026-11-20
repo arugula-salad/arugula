@@ -9,12 +9,17 @@
 //!   with a machine token, its requests and its panes.
 //! - [`Pane`]: one pane's terminal.
 //!
+//! Swift reaches it through [`ffi`]'s C functions, and Kotlin through
+//! `kotlin`'s JNI over the same functions (the `jni` feature).
+//!
 //! The session stays in the platform's keychain, so nothing here reads or
 //! writes a file: [`control::Session`] crosses as JSON.
 
 pub mod chat_live;
 pub mod control;
 pub mod ffi;
+#[cfg(feature = "jni")]
+pub mod kotlin;
 pub mod link;
 mod net;
 
