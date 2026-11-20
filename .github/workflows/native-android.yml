@@ -49,7 +49,7 @@ jobs:
       - name: TEMP maven diagnostics
         run: |
           java -version 2>&1; echo "JAVA_HOME=$JAVA_HOME"
-          cd native/android && ./gradlew help --info 2>&1 | grep -iE "gson|status code|Could not|HTTP|resource|cached" | head -40 || true
+          cd native/android && ./gradlew help --info 2>&1 | grep -E "repo.maven.apache.org|plugins.gradle.org" | head -30 || true
       # Into the runner's own SDK: the NDK, emulator and image setup.sh pins.
       - run: native/android/setup.sh
       - run: just native-android
