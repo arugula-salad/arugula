@@ -1,0 +1,12 @@
+---
+section: Added
+title: Tell a board or start a New idea from the phone
+line: New on the iPhone and iPad app's home posts in a board's thread, which reaches its lead, or turns what you say into an idea an agent asks about and writes up as a Doc.
+---
+New idea files what you say (typed, or dictated with the keyboard's mic) as an
+issue titled "Idea: …" and hands it to an agent in Arugula cloud, as Agent on
+this does. The agent may ask a question or two in the idea's thread, then
+writes a project Doc and posts its link there; ask it in the thread to make a
+board from it. The idea's conversation is listed on home under New ideas.
+Where Arugula cloud can't run it for you, the app says why and offers to run
+it on one of your machines instead.

@@ -29,6 +29,19 @@ its last lines, a reply to its agent, Silence (the owner's: teammates'
 agents can't mention it), Stop (asked first) and its terminal or thread. A
 viewer of a machine's session reads it, with no buttons.
 
+**New** on home (`Arugula/New.swift`, #1257) tells a board (its thread opens,
+and a post there reaches the session that leads it) or starts a **New idea**.
+What you say (typed, or dictated with the keyboard's mic) becomes a native
+issue, "Idea: …", whose body holds the agent's instructions (ask at most two
+questions in the thread, write a project Doc, with a prototype when one fits,
+post its link, and make a board when asked) and your words. `POST
+/api/issues/{issue}/agent` then starts a hosted session on it, as Agent on
+this does, and its thread is the conversation, listed under New ideas. When
+Arugula cloud can't run it for the account (no hosted workspace, no standing
+grant), the app says why and offers your online machines. There it starts a
+Claude Code agent block on the same issue (`POST /api/blocks` over the link),
+told to talk in the issue's thread.
+
 - **On a phone or an iPad:** `just native-phone DEVICE` on a Mac signed in to the
   Apple team (`xcrun devicectl list devices` has the id). It builds, signs with
   the team's development profile, installs and launches. A new device has to be
@@ -40,7 +53,9 @@ viewer of a machine's session reads it, with no buttons.
   board the claim made on home with its row's question under Needs you, opens
   the board's thread, posts there and opens its lanes; peeks at a stand-in
   agent, allows its permission prompt and answers its question and the
-  board's from home (the claim checks the agent went on), then reads projects,
+  board's from home (the claim checks the agent went on); tells the board and
+  starts a New idea (testnet has no hosted sessions, so it runs on
+  box-systemd, which the claim checks), then reads projects,
   posts in chat and runs a command in a relayed terminal.
   `ARUGULA_SIM_FAMILY=iPad` on the Mac runs it on an iPad.
 - **Signing in** is the desktop app's and the CLI's way (#999): the app opens
