@@ -610,6 +610,12 @@ export class ChatStore {
     return this.took(await call<ChatRoom>("POST", `/api/chat/teams/${enc(team)}/dms`, { with: first, and }));
   }
 
+  /** The reader's staff room in a team's project (Arugula #1275): a DM of
+   * them and their own agents, the chief of staff's, made the first time. */
+  async staffRoom(project: string): Promise<ChatRoom> {
+    return this.took(await call<ChatRoom>("POST", `/api/chat/projects/${enc(project)}/staff`));
+  }
+
   /** The team's public channels, joined or not (#118). */
   async channels(team: string, q = ""): Promise<ChatChannel[]> {
     const r = await call<ChatChannels>("GET", `/api/chat/teams/${enc(team)}/channels${q ? `?q=${enc(q)}` : ""}`);

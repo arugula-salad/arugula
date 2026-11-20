@@ -488,6 +488,10 @@
       "request": "ChatNewDm",
       "response": "ChatRoom"
     },
+    "POST /api/chat/projects/{project}/staff": {
+      "handler": "crates/platform-chat/src/chat.rs#staff_room",
+      "response": "ChatRoom"
+    },
     "GET /api/chat/threads": {
       "handler": "crates/platform-chat/src/chat/threads.rs#followed",
       "response": "ChatThreads"

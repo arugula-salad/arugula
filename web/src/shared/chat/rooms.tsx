@@ -366,7 +366,7 @@ export function RoomsView({ route, store, fit = {}, scope }: { route: ChatRoute;
         class={`chat-row${r.id === picked?.id ? " selected" : ""}${bold(r) ? " unread" : ""}${r.last ? "" : " quiet"}${r.archived || r.level === "nothing" ? " muted" : ""}${dragging === r.id ? " dragging" : ""}`}
         data-chat-room={r.id}
         data-room-kind={r.kind}
-        title={r.kind === "channel" ? `#${r.name} in ${teamName(api, r.team)}${r.topic ? `\n${r.topic}` : ""}` : r.kind === "dm" ? r.others.length > 1 ? `You and ${r.others.map((p) => p.name).join(", ")}` : `You and ${r.with?.name ?? "them"}` : `${r.name} on ${machineName(api, r.machine, r.machine_name ?? "")}`}
+        title={r.kind === "channel" ? `#${r.name} in ${teamName(api, r.team)}${r.topic ? `\n${r.topic}` : ""}` : r.kind === "dm" ? r.staff ? `You and your agents${r.lead ? `: ${r.lead.session} on ${r.lead.machine_name || "a machine"} leads it` : ""}` : r.others.length > 1 ? `You and ${r.others.map((p) => p.name).join(", ")}` : `You and ${r.with?.name ?? "them"}` : `${r.name} on ${machineName(api, r.machine, r.machine_name ?? "")}`}
         draggable={!phone}
         onDragStart={(e) => {
           e.dataTransfer?.setData("text/x-arugula-room", r.id);

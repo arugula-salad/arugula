@@ -185,6 +185,16 @@
             "null"
           ]
         },
+        "lead": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatRoomLead"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "name": {
           "description": "A channel's name (without `#`), or an object thread's (`issue #12`).",
           "type": "string"
@@ -214,6 +224,11 @@
             "string",
             "null"
           ]
+        },
+        "staff": {
+          "default": false,
+          "description": "The owner's staff room (Arugula #1275), and the session leading it.",
+          "type": "boolean"
         },
         "target": {
           "description": "An object thread's global id, and its project.",
@@ -1998,6 +2013,17 @@
           "format": "int64",
           "type": "integer"
         },
+        "lead": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChatRoomLead"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The session that leads a staff room: the person's posts there are\ndelivered to it, as a board thread's are to the board's lead (#414)."
+        },
         "level": {
           "$ref": "#/$defs/NotifyLevel",
           "default": "mentions",
@@ -2065,6 +2091,11 @@
         "read": {
           "format": "int64",
           "type": "integer"
+        },
+        "staff": {
+          "default": false,
+          "description": "A staff room (Arugula #1275): a DM of one person and their own\nagents, one per person per project (`project`), the chief of\nstaff's. Only that person and the agents their grants over their\nDMs reach read it.",
+          "type": "boolean"
         },
         "target": {
           "description": "The pane or session id there, or an object thread's global id.",
@@ -2227,6 +2258,26 @@
       "required": [
         "room",
         "people"
+      ],
+      "type": "object"
+    },
+    "ChatRoomLead": {
+      "description": "The session leading a staff room ([`ChatRoom::lead`]): its machine, the\nmachine's name (\"\" for one that's gone) and the session's name there.",
+      "properties": {
+        "machine": {
+          "type": "string"
+        },
+        "machine_name": {
+          "type": "string"
+        },
+        "session": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "machine",
+        "machine_name",
+        "session"
       ],
       "type": "object"
     },
@@ -2876,6 +2927,22 @@
           "type": "object"
         }
       ]
+    },
+    "LeadRoom": {
+      "description": "`POST` to [`agent_room_lead`]: the calling session (`session`, its name\non its machine) leads the staff room, or with `release` nobody does (the\nlead's own machine's agents only, as a board's).",
+      "properties": {
+        "release": {
+          "default": false,
+          "type": "boolean"
+        },
+        "session": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
     },
     "MachineAgent": {
       "description": "A session of a machine a teammate's agent may mention (#577).",
