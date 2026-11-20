@@ -1098,15 +1098,31 @@ pub enum SessionWatchOp {
         #[serde(default)]
         all: bool,
     },
+    /// Its project's events after `after` (Arugula #1273), as
+    /// [`crate::events::AGENT_EVENTS`] reads a machine's: those its asker
+    /// may read, answered [`SessionWatchGiven::Events`].
+    Events {
+        #[serde(default)]
+        after: u64,
+        /// Only these types ([`crate::events::read_types`]). Empty: every
+        /// type.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        types: Vec<String>,
+        /// At most this many: [`crate::events::READ_LIMIT_DEFAULT`] when
+        /// none.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        limit: Option<u32>,
+    },
 }
 
 /// [`WORK_SESSION_WATCH`]'s answer.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SessionWatchGiven {
     Made { made: crate::watch::WatchMade },
     List { list: crate::watch::WatchList },
     Cancelled { cancelled: crate::watch::WatchCancelled },
+    Events { page: crate::events::EventsPage },
     Refused { why: String },
 }

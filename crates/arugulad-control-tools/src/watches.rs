@@ -29,7 +29,7 @@
 //!   https://app.arugula.io/issues/iss_1545620a176cab44b21084c27493241e):
 //!   the call blocks until it fires, and its message is the answer.
 
-use arugula_control_wire::events;
+use arugula_control_wire::events::{self, AGENT_EVENTS, EventsPage};
 use arugula_control_wire::watch::{
     AGENT_WATCHES, AGENT_WATCHES_CANCEL, EventTarget, TARGETS_MAX, WatchCancel, WatchCancelled, WatchCreate, WatchList,
     WatchMade, WatchState, WatchTarget, Watcher, event_target, event_types as types, expires_ms as expires,
@@ -51,7 +51,7 @@ use crate::mcp::tools::{Call, Kind, Out, done, parse};
 
 pub(crate) const TOOL: &str = "watch";
 
-pub(crate) const DESCRIPTION: &str = "Wake this session later, when something happens: create a watch, then end your turn (watch ends your turn; wait instead blocks it until something happens). When it fires, you get a follow-up saying what happened (ids and states only), as a chat mention arrives. It fires once. It expires after 24 hours unless you say (expires, at most 7d), and then you get one message saying it ended without firing. Targets, any of which fires it: pr (OWNER/REPO#N or its link) until merged, closed, checks_done, checks_failed or ready (checks green and it can merge cleanly), in a repo linked to Arugula's GitHub App (else use wait with pr); session (a hosted agent session, ses_) until it settles; run (run_ or dep_) until it ends; room (a chat room's id, with parent for one thread and from for one person) until a reply you didn't write; event (a type from kind types, like issue.closed) with match (some of the type's match fields, like {\"issue\": \"#12\"}) and note (why you watch, at most 200 characters, handed back when it fires). This machine's own (agent.idle, pane.exited; match {\"pane\": \"4\"}) need no account. If it has already happened, create says so and makes no watch. A watch belongs to this Claude Code session: a new session in this pane doesn't get it. Works from a terminal with Arugula's hooks installed, or an agent block. list shows this session's watches; cancel takes one by id, or all; types lists the event types, their match fields, and which this machine can watch now.";
+pub(crate) const DESCRIPTION: &str = "Wake this session later, when something happens: create a watch, then end your turn (watch ends your turn; wait instead blocks it until something happens). When it fires, you get a follow-up saying what happened (ids and states only), as a chat mention arrives. It fires once. It expires after 24 hours unless you say (expires, at most 7d), and then you get one message saying it ended without firing. Targets, any of which fires it: pr (OWNER/REPO#N or its link) until merged, closed, checks_done, checks_failed or ready (checks green and it can merge cleanly), in a repo linked to Arugula's GitHub App (else use wait with pr); session (a hosted agent session, ses_) until it settles; run (run_ or dep_) until it ends; room (a chat room's id, with parent for one thread and from for one person) until a reply you didn't write; event (a type from kind types, like issue.closed) with match (some of the type's match fields, like {\"issue\": \"#12\"}) and note (why you watch, at most 200 characters, handed back when it fires). This machine's own (agent.idle, pane.exited; match {\"pane\": \"4\"}) need no account. If it has already happened, create says so and makes no watch. A watch belongs to this Claude Code session: a new session in this pane doesn't get it. Works from a terminal with Arugula's hooks installed, or an agent block.";
 
 /// `watch`'s kinds.
 pub(crate) const KINDS: &[Kind] = &[
@@ -77,6 +77,12 @@ pub(crate) const KINDS: &[Kind] = &[
         name: "types",
         description: "The event types create's event takes: what each means, its match fields, and whether this machine can watch it now.",
         schema: schema_for_type::<TypesArgs>,
+        flag: None,
+    },
+    Kind {
+        name: "events",
+        description: "A project's event log after a number, oldest first: the events you could watch, and where to read on.",
+        schema: schema_for_type::<EventsArgs>,
         flag: None,
     },
 ];
@@ -145,6 +151,23 @@ pub struct ListArgs {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct TypesArgs {}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct EventsArgs {
+    /// The project (prj_… or its name). Default: the current project.
+    #[serde(default)]
+    pub project: Option<String>,
+    /// Events numbered after this: 0 for the oldest kept, or the last
+    /// read's next_after.
+    #[serde(default)]
+    pub after: u64,
+    /// Only these types (types lists them), or one.
+    #[serde(default)]
+    pub types: Option<PrList>,
+    /// At most this many (default 50, at most 200).
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
 
 #[derive(Deserialize, JsonSchema)]
 pub struct CancelArgs {
@@ -236,6 +259,7 @@ pub(crate) async fn watch(c: &Call<'_>, kind: &str, args: Value) -> Out {
             let text = types(Watcher::Machine, c.app().control.enrolled().is_some());
             done(text.clone(), serde_json::json!({ "types": text }))
         }
+        "events" => read_events(c, parse(args)?).await,
         k => Err(format!("{TOOL} kind {k} isn't wired up")),
     }
 }
@@ -606,6 +630,43 @@ async fn list(c: &Call<'_>, a: ListArgs) -> Out {
     done(text, got)
 }
 
+/// `events`: the project's log after `after`, as the cloud lets this
+/// machine's agents watch it (Arugula #1273).
+async fn read_events(c: &Call<'_>, a: EventsArgs) -> Out {
+    let types = match &a.types {
+        None => vec![],
+        Some(PrList::One(t)) => events::read_types([t.as_str()])?,
+        Some(PrList::Many(ts)) => events::read_types(ts.iter().map(String::as_str))?,
+    };
+    if c.app().control.enrolled().is_none() {
+        return Err(said(CloudRefused::NotJoined));
+    }
+    let project = c.current_project(a.project.as_deref()).await?;
+    let v = c.app().control.cloud(Method::GET, &events_path(project, a.after, &types, a.limit), None).await;
+    let v = v.map_err(|e| match e {
+        CloudRefused::OldControl | CloudRefused::Said { status: 404 | 405, .. } => {
+            "Arugula cloud doesn't serve the event log to agents yet".into()
+        }
+        e => said(e),
+    })?;
+    let page: EventsPage =
+        serde_json::from_value(v).map_err(|e| format!("Arugula cloud sent an answer I can't read: {e}"))?;
+    done(events::page_text(&page), page)
+}
+
+/// [`AGENT_EVENTS`] with its query, [`events::EventsQuery`].
+fn events_path(project: String, after: u64, types: &[String], limit: Option<u32>) -> String {
+    let mut q = url::form_urlencoded::Serializer::new(String::new());
+    q.append_pair("project", &project).append_pair("after", &after.to_string());
+    if !types.is_empty() {
+        q.append_pair("types", &types.join(","));
+    }
+    if let Some(l) = limit {
+        q.append_pair("limit", &l.clamp(1, events::READ_LIMIT_MAX).to_string());
+    }
+    format!("{AGENT_EVENTS}?{}", q.finish())
+}
+
 async fn cancel(c: &Call<'_>, a: CancelArgs) -> Out {
     let id = a.id.map(|i| i.trim().to_owned()).filter(|i| !i.is_empty());
     if id.is_none() && !a.all {
@@ -748,6 +809,16 @@ mod tests {
         assert!(!wants(json!({ "event": "run.ended", "match": { "run": "run_1" } })), "an id is anywhere");
         assert!(!wants(json!({ "event": "chat.reply", "match": { "room": "r1" } })), "chat.reply has no project");
         assert!(!wants(json!({ "run": "run_1" })));
+    }
+
+    #[test]
+    fn events_asks_for_a_projects_log_after_a_number() {
+        assert_eq!(events_path("prj_1".into(), 0, &[], None), "/api/daemon/events?project=prj_1&after=0");
+        let types = ["issue.closed".to_owned(), "run.ended".to_owned()];
+        assert_eq!(
+            events_path("prj_1".into(), 41, &types, Some(1000)),
+            "/api/daemon/events?project=prj_1&after=41&types=issue.closed%2Crun.ended&limit=200"
+        );
     }
 
     #[test]
