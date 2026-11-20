@@ -19,6 +19,7 @@
 // (#1133). One opens in the preview with who deleted it, when, the days it
 // has left, and Restore for those who may.
 
+import type { ComponentChildren } from "preact";
 import { Card } from "../../shared/ui/card";
 import { BlockLoading, EmptyState } from "../../shared/ui/block-states";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
@@ -34,6 +35,8 @@ import { ListPreview, type ListRowParts, type ListTicked } from "../../shared/ui
 import { Modal } from "../../shared/ui/modal";
 import { Time } from "../../shared/ui/time";
 import { DocBlock } from "../../shared/docs/doc-render";
+import { DocComments } from "../../shared/docs/doc-comments";
+import { reachOf } from "../../shared/docs/doc-reach";
 import { docFacts, DocsList, Outline } from "../../shared/docs/docs-list";
 import { modeOf } from "../../shared/docs/docs-mode";
 import { noImages, projectItem, shapeOf, stateOf, useProjectDoc, useProjectDocs } from "../../shared/docs/project-docs";
@@ -435,6 +438,7 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
         </p>
       )}
       {!missing || view ? (
+        <Commented project={project} view={view}>
         <DocBlock
           id={0}
           docKey={doc}
@@ -452,6 +456,7 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
             )
           }
         />
+        </Commented>
       ) : null}
       {view && <PublicLinkBar project={project} view={view} reload={again} />}
       {onBoards.length > 0 && (
@@ -473,6 +478,18 @@ export function DocPage({ project, doc }: { project: string; doc: string }) {
       )}
       {view && writer && <DocWriter project={project} view={view} wrote={show} />}
     </section>
+  );
+}
+
+/** The Doc with its comments in the margin (#1258), once it's read. */
+function Commented({ project, view, children }: { project: string; view: ProjectDocView | null; children: ComponentChildren }) {
+  const headings = useMemo(() => new Map(view?.sections.map((s) => [s.id, s.heading]) ?? []), [view]);
+  if (!view) return <>{children}</>;
+  const reach = reachOf(view.doc);
+  return (
+    <DocComments doc={view.doc.id} url={`${location.origin}/p/${project}/docs/${view.doc.id}`} headings={headings} mention={reach.mention} reaches={reach.label}>
+      {children}
+    </DocComments>
   );
 }
 

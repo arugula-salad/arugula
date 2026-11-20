@@ -393,7 +393,12 @@ async fn doc_new_team(
     }
     let cloud: Arc<dyn Cloud> = call.app().control.clone();
     let plan: Vec<(String, String)> = sections.into_iter().map(|s| (s.heading, s.intent)).collect();
-    let view = team::make(&*cloud, &chosen.id, &title, &plan, layout.name()).await?;
+    // The session making it, by name, for a comment to mention (#1258).
+    let session = match call.own_pane() {
+        Some(pane) => arugulad_base::agent_mentions::session_name(call.app(), pane).await,
+        None => None,
+    };
+    let view = team::make(&*cloud, &chosen.id, &title, &plan, layout.name(), session).await?;
     let id = view.doc.id.clone();
     let req = OpenRequest {
         kind: BlockType::Doc,

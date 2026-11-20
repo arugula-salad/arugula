@@ -4081,7 +4081,13 @@ layout?: string,
  * [`AGENT_PROJECT_DOCS`]: kept as the Doc's [`Doc::moved_from`]. Its
  * `machine` must be the one signing; a person never sends it.
  */
-moved_from?: ProjectDocMovedFrom, };
+moved_from?: ProjectDocMovedFrom, 
+/**
+ * The name of the agent session that made it (#1258), over
+ * [`AGENT_PROJECT_DOCS`]: kept as its [`Doc::agent`]'s `session`, so a
+ * comment on the Doc can mention that session. A person's is ignored.
+ */
+session?: string, };
 
 /**
  * A new Doc's section: a heading, and its Markdown now or an intent for
