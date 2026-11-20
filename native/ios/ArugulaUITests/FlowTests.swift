@@ -79,6 +79,39 @@ final class FlowTests: XCTestCase {
         (beside.exists ? beside : named.exists ? named : app.navigationBars.buttons.element(boundBy: 0)).tap()
     }
 
+    /// Pick a project from the switcher heading the tab that's open.
+    private func pick(_ app: XCUIApplication, _ name: String) {
+        let switcher = app.buttons["project-switcher"].firstMatch
+        XCTAssertTrue(switcher.shows(within: 15), "no project switcher")
+        for _ in 0..<3 where !switcher.label.lowercased().contains(name.lowercased()) {
+            clearAlerts()
+            switcher.tap()
+            let item = app.buttons[name].firstMatch
+            if item.shows(within: 10) { item.tap() }
+            let by = Date().addingTimeInterval(10)
+            while !switcher.label.lowercased().contains(name.lowercased()) && Date() < by { usleep(300_000) }
+        }
+        XCTAssertTrue(switcher.label.lowercased().contains(name.lowercased()), "not in \(name): \(switcher.label)")
+    }
+
+    /// Peek at the lead over the open thread: its session's last lines say
+    /// the stand-in is ready. Then close the peek.
+    private func peekAtLead(_ app: XCUIApplication, _ name: String) {
+        let peek = app.buttons["lead-peek"]
+        XCTAssertTrue(peek.shows(within: 30), "no peek at the lead: \(app.debugDescription)")
+        clearAlerts()
+        peek.tap()
+        let lines = app.descendants(matching: .any)["peek-lines"]
+        XCTAssertTrue(lines.shows(within: 20), "no peek")
+        let by = Date().addingTimeInterval(20)
+        while !lines.label.contains("cos ready") && Date() < by { sleep(1) }
+        shot(app, name)
+        XCTAssertTrue(lines.label.contains("cos ready"), "the lead's peek shows: \(lines.label)")
+        app.buttons["peek-close"].tap()
+        let closedBy = Date().addingTimeInterval(10)
+        while lines.exists && Date() < closedBy { usleep(200_000) }
+    }
+
     func testSignInProjectsChatAndATerminal() throws {
         continueAfterFailure = false
         let env = ProcessInfo.processInfo.environment
@@ -326,6 +359,61 @@ final class FlowTests: XCTestCase {
             let listed = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'home-idea-' AND label CONTAINS %@", idea)).firstMatch
             XCTAssertTrue(listed.shows(within: 45), "the idea isn't under New ideas: \(app.debugDescription)")
             shot(app, "4-ideas")
+        }
+
+        // The chief of staff (Arugula #1279), in the team's project the
+        // script made: the staff room first on home, led by the script's
+        // stand-in session; ask it something there and peek at its session.
+        // Then Boards: the board it leads, whose lead opens the board's
+        // thread, and a peek from there. Then back to Default.
+        if let team = env["ARUGULA_STAFF_PROJECT"], !team.isEmpty, let led = env["ARUGULA_STAFF_BOARD"], !led.isEmpty {
+            let lead = env["ARUGULA_STAFF_LEAD"] ?? "cos"
+            go(app, "Home")
+            pick(app, team)
+            let staff = app.buttons["home-staff"]
+            XCTAssertTrue(staff.shows(within: 45), "home has no chief of staff in \(team): \(app.debugDescription)")
+            let ledBy = Date().addingTimeInterval(45)
+            while !staff.label.contains("Led by \(lead)") && Date() < ledBy { sleep(1) }
+            clearAlerts()
+            shot(app, "5-staff-home")
+            XCTAssertTrue(staff.label.contains("Led by \(lead)"), "home's chief of staff says: \(staff.label)")
+            staff.tap()
+            XCTAssertTrue(app.staticTexts["staff-lead"].shows(within: 30), "the staff room didn't open")
+            let morning = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "One board moved overnight")).firstMatch
+            XCTAssertTrue(morning.shows(within: 20), "the chief of staff's message isn't in the room")
+            let ask = "what-moved-\(Int.random(in: 1000...9999))"
+            let draft = app.textFields["chat-draft"]
+            XCTAssertTrue(draft.shows(within: 15))
+            focus(app, draft)
+            draft.typeText(ask)
+            send(app)
+            XCTAssertTrue(app.staticTexts[ask].shows(within: 20), "the staff room didn't take the ask")
+            try ask.write(to: handoff.appendingPathComponent("staff"), atomically: true, encoding: .utf8)
+            shot(app, "5-staff-room")
+            peekAtLead(app, "5-staff-peek")
+            if !iPad { goBack(app) }
+
+            go(app, "Boards")
+            let chip = app.buttons["board-lead-\(led)"]
+            XCTAssertTrue(chip.shows(within: 45), "Boards has no lead on \(led): \(app.debugDescription)")
+            XCTAssertTrue(chip.label.contains("Led by \(lead)"), "the board's lead says: \(chip.label)")
+            shot(app, "5-boards")
+            chip.tap()
+            let thread = app.staticTexts["board-lead"]
+            XCTAssertTrue(thread.shows(within: 30), "the lead didn't open the board's thread")
+            XCTAssertTrue(thread.label.contains(lead), "the thread's lead says: \(thread.label)")
+            let toLead = "to-the-lead-\(Int.random(in: 1000...9999))"
+            let leadDraft = app.textFields["chat-draft"]
+            XCTAssertTrue(leadDraft.shows(within: 15))
+            focus(app, leadDraft)
+            leadDraft.typeText(toLead)
+            send(app)
+            XCTAssertTrue(app.staticTexts[toLead].shows(within: 20), "the board's thread didn't take the post")
+            shot(app, "5-lead-thread")
+            peekAtLead(app, "5-lead-peek")
+            goBack(app)
+            XCTAssertTrue(chip.shows(within: 15), "not back on Boards")
+            pick(app, "Default")
         }
 
         // Chat: post to the room the script made, and see it come back.

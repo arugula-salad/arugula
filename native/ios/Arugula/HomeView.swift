@@ -36,7 +36,7 @@ struct HomeView: View {
             PhoneHome(control: control, model: model, fleet: fleet, live: live)
                 .tabItem { Label(AppTab.home.rawValue, systemImage: AppTab.home.symbol) }
                 .tag(AppTab.home)
-            BoardsView(control: control)
+            BoardsView(control: control, model: model, fleet: fleet, live: live)
                 .tabItem { Label(AppTab.boards.rawValue, systemImage: AppTab.boards.symbol) }
                 .tag(AppTab.boards)
             ChatRoomsView(control: control, live: live)
@@ -309,11 +309,23 @@ struct IssuesView: View {
     }
 }
 
-/// The current project's boards as cards; a board opens to its lanes.
+/// A board's thread, pushed from its lead on Boards.
+struct BoardThreadRef: Hashable { let board: Board }
+
+/// The current project's boards as cards; a board opens to its lanes, and
+/// its lead (Arugula #1279) to its thread, where a post reaches the lead.
+/// Sessions on its cards and the lead itself open a peek there, as on home.
 struct BoardsView: View {
     let control: Control
+    /// Home's, for the boards' threads and the sessions on their cards.
+    @ObservedObject var model: HomeModel
+    @ObservedObject var fleet: HomeFleet
+    @ObservedObject var live: LiveChat
     @EnvironmentObject private var scope: Scope
     @State private var path = NavigationPath()
+    @State private var peek: Peeked?
+    @State private var terminal: PhoneHome.PaneOpen?
+    @State private var said: String?
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -322,11 +334,7 @@ struct BoardsView: View {
                     Loaded(load: { try await control.get("/api/projects/\(project.id)/boards", as: BoardList.self) }) { l in
                         ScrollView {
                             LazyVGrid(columns: [GridItem(.adaptive(minimum: 320), spacing: 14)], spacing: 14) {
-                                ForEach(l.boards) { b in
-                                    NavigationLink(value: b) { BoardCard(board: b) }
-                                        .buttonStyle(.plain)
-                                        .accessibilityIdentifier("board-\(b.title)")
-                                }
+                                ForEach(l.boards) { b in boardCard(b) }
                             }
                             .padding()
                         }
@@ -341,11 +349,78 @@ struct BoardsView: View {
             .background(Palette.void)
             .tabHeading("Boards", project: true)
             .navigationDestination(for: Board.self) { BoardScreen(control: control, board: $0) }
+            .navigationDestination(for: BoardThreadRef.self) { ref in
+                BoardThread(control: control, board: ref.board, model: model, fleet: fleet, live: live, sessions: sessions(ref.board)) { peek = $0 }
+                    .backBesideTabs("Boards") { path.removeLast() }
+            }
+            .navigationDestination(for: BoardLanes.self) {
+                BoardScreen(control: control, board: $0.board).backBesideTabs("Thread") { path.removeLast() }
+            }
+            .navigationDestination(for: SessionWave.Row.self) { s in
+                ChatRoomView(control: control, room: s.thread, live: live, thread: s.parent)
+                    .backBesideTabs("Back") { path.removeLast() }
+            }
             .navigationDestination(for: IssueRef.self) { ref in
                 Loaded(load: { try await control.get("/api/issues/\(ref.id)", as: Issue.self) }) { IssueView(issue: $0) }
             }
         }
+        .sheet(item: $peek) { p in
+            SessionPeek(
+                control: control, peeked: p,
+                openPane: { m, pane in
+                    // After the sheet has gone: one presentation at a time.
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(450))
+                        terminal = PhoneHome.PaneOpen(session: m, pane: pane)
+                    }
+                },
+                openThread: { path.append($0) },
+                toast: show)
+        }
+        .fullScreenCover(item: $terminal) { t in TerminalScreen(session: t.session, pane: t.pane) }
+        .overlay(alignment: .bottom) {
+            if let said { Toast(text: said).transition(.opacity).allowsHitTesting(false) }
+        }
         .onChange(of: scope.current?.id) { _, _ in path = NavigationPath() }
+    }
+
+    /// A board's card, which opens its lanes, and under it its lead, which
+    /// opens its thread.
+    private func boardCard(_ b: Board) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            NavigationLink(value: b) { BoardCard(board: b) }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("board-\(b.title)")
+            if let lead = b.lead {
+                Button { path.append(BoardThreadRef(board: b)) } label: {
+                    HStack(spacing: 6) {
+                        LeadChip(lead: LeadLine(lead, fleet: fleet))
+                        Spacer(minLength: 4)
+                        Image(systemName: "bubble.left").font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.accent)
+                    }
+                    .padding(.top, 8)
+                    .overlay(alignment: .top) { Rectangle().fill(Palette.raised).frame(height: 1) }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("board-lead-\(b.title)")
+            }
+        }
+        .card(.accent)
+    }
+
+    /// The sessions on a board's cards in flight, as home reads them.
+    private func sessions(_ b: Board) -> [BoardSession] {
+        guard let p = scope.current else { return [] }
+        return HomeState(project: p, fleet: fleet, model: model).sessions[b.id] ?? []
+    }
+
+    private func show(_ text: String) {
+        withAnimation { said = text }
+        Task {
+            try? await Task.sleep(for: .seconds(1.8))
+            if said == text { withAnimation { said = nil } }
+        }
     }
 }
 
@@ -424,7 +499,7 @@ struct BoardCard: View {
                 }
             }
         }
-        .card(.accent)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

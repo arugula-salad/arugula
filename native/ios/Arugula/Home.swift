@@ -18,6 +18,9 @@ import SwiftUI
 enum Opened: Hashable {
     case board(Board)
     case room(ChatRoom)
+    /// The reader's staff room in a project (Arugula #1275): where they talk
+    /// to their chief of staff.
+    case staff(project: String)
     case session(SessionWave.Row)
     /// A New idea's conversation: its session's thread (`room`, and the
     /// message it hangs off), or the issue's thread when it has no session.
@@ -72,11 +75,14 @@ extension EnvironmentValues {
 @MainActor
 final class HomeFleet: ObservableObject {
     @Published private(set) var machines: [MachineSession] = []
+    /// Every machine the directory lists, online or not: whose each is.
+    @Published private(set) var directory: [Machine] = []
     private var watching: [String: AnyCancellable] = [:]
     private static let atOnce = 4
 
     func load(_ control: Control) async {
         guard let d = try? await control.get("/api/directory", as: Directory.self) else { return }
+        directory = d.daemons
         let online = d.daemons.filter { $0.online == true }
         let ids = Set(online.map(\.id))
         for gone in machines where !ids.contains(gone.machine.id) {
@@ -187,6 +193,21 @@ final class HomeModel: ObservableObject {
         await load(control, project: project)
     }
     private var pending = false
+
+    /// The reader's staff room in a project, as the rooms list has it: its
+    /// lead and unread count. None until it's first opened.
+    func staffListed(project: String) -> ChatRoom? {
+        rooms.first { $0.isStaff && $0.project == project }
+    }
+
+    /// The reader's staff room in a team's project (Arugula #1275), made the
+    /// first time it's opened.
+    func staff(_ control: Control, project: String) async throws -> ChatRoom {
+        let d = try await control.call("POST", "/api/chat/projects/\(project)/staff")
+        let room = try JSONDecoder().decode(ChatRoom.self, from: d)
+        if !rooms.contains(room) { rooms.append(room) }
+        return room
+    }
 
     /// The board's thread, made the first time someone opens it.
     func thread(_ control: Control, board: Board) async throws -> ChatRoom {
@@ -347,9 +368,45 @@ struct BoardSession: Identifiable {
     var id: String { peeked.id }
 }
 
+/// A lead, a board's (#414) or a staff room's (Arugula #1275), as its chip
+/// reads it, as the web's (web/src/shell/swarm/overview.ts `boardLead`): how
+/// its session stands from its panes on its machine (none when no machine
+/// here tells), its name, a teammate's with theirs, and its machine. Its
+/// session's agent pane, else its worst pane, is what a peek opens.
+struct LeadLine {
+    let lead: Board.Lead
+    /// A teammate's name, when the lead runs on their machine.
+    let who: String?
+    let machine: String
+    let standing: Standing?
+    let peeked: Peeked?
+
+    var name: String { who.map { "\($0)'s \(lead.session)" } ?? lead.session }
+
+    @MainActor
+    init(_ lead: Board.Lead, fleet: HomeFleet) {
+        self.lead = lead
+        let listed = fleet.directory.first { $0.id == lead.machine }
+        // A team's own box has no one to name.
+        who = listed.flatMap { $0.team_box == true ? nil : $0.owner_name }.flatMap { $0.isEmpty ? nil : $0 }
+        machine = (lead.machine_name ?? "").isEmpty ? (listed?.name ?? "") : lead.machine_name!
+        guard let m = fleet.machines.first(where: { $0.machine.id == lead.machine }) else {
+            standing = nil
+            peeked = nil
+            return
+        }
+        let tabs = Set(m.sessions.filter { $0.name == lead.session }.flatMap(\.tabs))
+        let panes = (m.agents + m.panes.filter { p in !m.agents.contains { $0.id == p.id } }).filter { tabs.contains($0.tab) }
+        standing = panes.map(\.standing).min()
+        let best = panes.min { ($0.isAgent ? 0 : 1, $0.standing) < ($1.isAgent ? 0 : 1, $1.standing) }
+        peeked = best.map { .pane(m, $0) }
+    }
+}
+
 /// One open board as home's row reads it.
 struct BoardLine: Identifiable {
     let board: Board
+    let lead: LeadLine?
     let done: Int, review: Int, doing: Int, total: Int
     let standing: Standing
     /// What's going on, the worst first: `1 needs you · 2 working`.
@@ -450,7 +507,7 @@ struct HomeState {
             }
             let p = b.progress
             boards.append(BoardLine(
-                board: b, done: p?.done ?? 0, review: p?.review ?? 0, doing: p?.doing ?? 0, total: p?.total ?? 0,
+                board: b, lead: b.lead.map { LeadLine($0, fleet: fleet) }, done: p?.done ?? 0, review: p?.review ?? 0, doing: p?.doing ?? 0, total: p?.total ?? 0,
                 standing: flight.min() ?? .idle, says: says, still: flight.isEmpty))
         }
         boards.sort { a, b in
@@ -605,8 +662,10 @@ struct PhoneHome: View {
             Group {
                 switch opened {
                 case .board(let b):
-                    BoardThread(control: control, board: b, model: model, live: live, sessions: state.sessions[b.id] ?? []) { peek = $0 }
+                    BoardThread(control: control, board: b, model: model, fleet: fleet, live: live, sessions: state.sessions[b.id] ?? []) { peek = $0 }
                 case .room(let r): ChatRoomView(control: control, room: r, live: live)
+                case .staff(let project):
+                    StaffRoom(control: control, project: project, model: model, fleet: fleet, live: live) { peek = $0 }
                 case .session(let s): ChatRoomView(control: control, room: s.thread, live: live, thread: s.parent)
                 case .idea(let room, let parent, let issue, let title):
                     IdeaThread(control: control, room: room, parent: parent, issue: issue, title: title, live: live)
@@ -701,9 +760,24 @@ struct PhoneHome: View {
     private var list: some View {
         let state = self.state
         let needs = state.needs.filter { !folded.contains("\($0.id)|\($0.ask)") }
-        let people = model.rooms.filter { $0.isConversation && !$0.archived && scope.showsRoom($0) }
+        // The staff room has its own row, first.
+        let people = model.rooms.filter { $0.isConversation && !$0.isStaff && !$0.archived && scope.showsRoom($0) }
             .sorted { ($0.unread > 0 ? 1 : 0, $0.last) > ($1.unread > 0 ? 1 : 0, $1.last) }
         return List(selection: $opened) {
+            // The chief of staff, first (Arugula #1279): the reader's staff
+            // room in the project, a team's only, as chat is a team's.
+            if let project = scope.current, project.team != nil {
+                Section {
+                    let room = model.staffListed(project: project.id)
+                    NavigationLink(value: Opened.staff(project: project.id)) {
+                        StaffRow(room: room, lead: room?.lead.map { LeadLine($0, fleet: fleet) }, open: opened == .staff(project: project.id))
+                    }
+                    .voidRow()
+                    .accessibilityIdentifier("home-staff")
+                } header: {
+                    Caps("Chief of staff")
+                }
+            }
             Section {
                 if needs.isEmpty {
                     Text(model.loaded ? "Nothing needs you." : "Looking…")
@@ -909,16 +983,41 @@ struct BoardLineRow: View {
             }
             .font(Face.ui(13))
             .lineLimit(2)
-            Text(BoardLineRow.lead(line.board.lead)).font(Face.mono(11)).foregroundStyle(Palette.dim).lineLimit(1)
+            LeadChip(lead: line.lead)
         }
         .padding(.vertical, 4)
     }
 
-    /// Who leads it: a session on a machine, or nobody.
+    /// Who leads it, in words: a session on a machine, or nobody.
     static func lead(_ l: Board.Lead?) -> String {
         guard let l else { return "No lead" }
         let on = (l.machine_name ?? "").isEmpty ? "" : " on \(l.machine_name!)"
         return "Led by \(l.session)\(on)"
+    }
+}
+
+/// Who leads a board or a staff room, on one line: a dot for how its session
+/// stands (hollow where nothing here tells), its name, a teammate's with
+/// theirs, and its machine; or nobody.
+struct LeadChip: View {
+    let lead: LeadLine?
+    var none = "No lead"
+
+    var body: some View {
+        Group {
+            if let lead {
+                (Text(lead.standing == nil ? "○ " : "● ")
+                    .foregroundColor(lead.standing?.tone.color ?? Palette.dim)
+                    + Text("Led by ").foregroundColor(Palette.dim)
+                    + Text(lead.name).font(Face.mono(11, "Bold")).foregroundColor(Palette.fg)
+                    + Text(lead.machine.isEmpty ? "" : " on \(lead.machine)").foregroundColor(Palette.dim)
+                    + Text(lead.standing.map { $0 == .idle ? "" : " · \($0.word)" } ?? "").foregroundColor(lead.standing?.tone.color ?? Palette.dim))
+            } else {
+                Text(none).foregroundColor(Palette.dim)
+            }
+        }
+        .font(Face.mono(11))
+        .lineLimit(1)
     }
 }
 
@@ -963,6 +1062,7 @@ struct BoardThread: View {
     let control: Control
     let board: Board
     @ObservedObject var model: HomeModel
+    @ObservedObject var fleet: HomeFleet
     @ObservedObject var live: LiveChat
     let sessions: [BoardSession]
     let peek: (Peeked) -> Void
@@ -1008,8 +1108,7 @@ struct BoardThread: View {
             LaneBar(done: done, review: review, doing: doing, total: max(total, 1))
             Text("\(done) done · \(review) review · \(doing) doing · \(max(0, total - done - review - doing)) next")
                 .font(Face.mono(11)).foregroundStyle(Palette.dim)
-            Text(BoardLineRow.lead(line.lead)).font(Face.mono(11)).foregroundStyle(Palette.subtle)
-                .accessibilityIdentifier("board-lead")
+            LeadHeading(lead: line.lead.map { LeadLine($0, fleet: fleet) }, id: "board-lead", peek: peek)
             if !sessions.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
@@ -1037,6 +1136,29 @@ struct BoardThread: View {
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Palette.void)
+    }
+}
+
+/// Who leads a thread, over it: the lead's chip, and Peek at its session
+/// when a machine here tells of it.
+struct LeadHeading: View {
+    let lead: LeadLine?
+    let id: String
+    var none = "No lead"
+    let peek: (Peeked) -> Void
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            LeadChip(lead: lead, none: none).accessibilityIdentifier(id)
+            Spacer(minLength: 4)
+            if let p = lead?.peeked {
+                Button { peek(p) } label: {
+                    Text("Peek").font(Face.mono(11, "Bold")).foregroundStyle(Palette.accent)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("lead-peek")
+            }
+        }
     }
 }
 
@@ -1082,6 +1204,87 @@ struct IdeaThread: View {
                 problem = describe(error)
             }
         }
+    }
+}
+
+/// The staff room on home: ask the chief of staff, who leads it, and how
+/// many messages wait there.
+struct StaffRow: View {
+    let room: ChatRoom?
+    let lead: LeadLine?
+    let open: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Image(systemName: "person.badge.key").font(.system(size: 14, weight: .semibold)).foregroundStyle(Palette.accent)
+                Text("Ask your chief of staff").font(Face.ui(15, "SemiBold")).foregroundStyle(Palette.fg).lineLimit(1)
+                Spacer(minLength: 4)
+                if let room, room.unread > 0, !open {
+                    Text(verbatim: "\(room.unread)")
+                        .font(Face.mono(11, "Bold"))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(Palette.accent, in: Capsule())
+                        .foregroundStyle(Palette.void)
+                }
+            }
+            LeadChip(lead: lead, none: "Nobody leads it yet")
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+/// The reader's staff room in a project (Arugula #1275, #1279): them and
+/// their own agents, where they talk to the chief of staff, the session
+/// that leads it. Its lead over it, with a peek at its session.
+struct StaffRoom: View {
+    let control: Control
+    let project: String
+    @ObservedObject var model: HomeModel
+    @ObservedObject var fleet: HomeFleet
+    @ObservedObject var live: LiveChat
+    let peek: (Peeked) -> Void
+    @State private var room: ChatRoom?
+    @State private var problem: String?
+
+    var body: some View {
+        Group {
+            if let room {
+                ChatRoomView(control: control, room: room, live: live, title: "Chief of staff", heading: AnyView(heading))
+            } else if let problem {
+                Problem(message: problem) { Task { await open() } }
+            } else {
+                ProgressView().tint(Palette.accent).frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .background(Palette.bg)
+        .task { await open() }
+    }
+
+    private func open() async {
+        do {
+            room = try await model.staff(control, project: project)
+            problem = nil
+        } catch {
+            problem = describe(error)
+        }
+    }
+
+    private var heading: some View {
+        // The rooms list is the newer word on who leads it.
+        let lead = (model.staffListed(project: project) ?? room)?.lead
+        return VStack(alignment: .leading, spacing: 4) {
+            LeadHeading(lead: lead.map { LeadLine($0, fleet: fleet) }, id: "staff-lead", none: "Nobody leads it yet", peek: peek)
+            Text(lead == nil
+                ? "Only you and your own agents are here. What you post waits until one of your sessions takes the lead."
+                : "Only you and your own agents are here. What you post reaches the session that leads it.")
+                .font(Face.ui(12)).foregroundStyle(Palette.dim)
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Palette.void)
     }
 }
 
