@@ -30,10 +30,14 @@ struct IssueList: Decodable { var issues: [Issue] }
 
 struct Board: Decodable, Identifiable, Hashable {
     struct Progress: Decodable { var done: Int?; var review: Int?; var doing: Int?; var total: Int? }
+    /// The session that leads it: a post on its thread reaches it.
+    struct Lead: Decodable { var machine: String; var machine_name: String?; var session: String }
     var id: String
     var title: String
     var goal: String?
     var progress: Progress?
+    var closed_at: Int?
+    var lead: Lead?
     static func == (a: Board, b: Board) -> Bool { a.id == b.id }
     func hash(into h: inout Hasher) { h.combine(id) }
 }
@@ -41,16 +45,25 @@ struct Board: Decodable, Identifiable, Hashable {
 /// One board: its lanes (Next, Doing, Review, Done) with their rows, and its
 /// groups. Only what the board screen shows.
 struct BoardDetail: Decodable {
-    struct Info: Decodable { var title: String; var goal: String? }
+    struct Info: Decodable { var title: String; var goal: String?; var closed_at: Int?; var lead: Board.Lead? }
     /// The issue's or PR's state as the board read it.
-    struct Live: Decodable { var kind: String?; var number: Int?; var title: String?; var state: String? }
-    struct Pointer: Decodable { var kind: String; var id: String?; var url: String? }
+    struct Live: Decodable { var kind: String?; var number: Int?; var title: String?; var state: String?; var repo: String? }
+    /// What a row points at; a block names its machine and pane.
+    struct Pointer: Decodable { var kind: String; var id: String?; var url: String?; var machine: String?; var pane: String? }
+    /// The row's one open question: `mine` when it's for the reader.
+    struct Ask: Decodable { var id: String; var question: String; var options: [String]; var mine: Bool; var can_answer: Bool?; var asked_by: String?; var raised: Bool?; var created_at: Int? }
+    struct Attachment: Decodable { var role: String; var pointer: Pointer; var released: Bool?; var live: Live? }
+    struct Mark: Decodable { var kind: String }
     struct Row: Decodable, Identifiable {
         var id: String
         var note: String?
         var group: String?
+        var lane: String?
         var live: Live?
         var pointer: Pointer?
+        var ask: Ask?
+        var attachments: [Attachment]?
+        var marks: [Mark]?
         var updated_at: Int?
     }
     struct Lane: Decodable, Identifiable { var id: String; var title: String; var rows: [Row] }
@@ -146,7 +159,17 @@ struct Machine: Decodable, Identifiable, Hashable {
 struct Directory: Decodable { var daemons: [Machine] }
 
 struct PaneRow: Decodable, Identifiable, Hashable {
-    struct Reason: Decodable, Hashable { var kind: String; var headline: String }
+    struct Reason: Decodable, Hashable { var kind: String; var headline: String; var since_ms: Int? }
+    /// What it asks while it waits on a person: a permission, questions.
+    struct Ask: Decodable, Hashable { var id: String; var kind: String; var message: String; var tool: String?; var at_ms: Int? }
+    struct ProjectRef: Decodable, Hashable { var id: String }
+    /// The card its agent was started on.
+    struct OnIssue: Decodable, Hashable {
+        struct OnBoard: Decodable, Hashable { var board: String; var row: String }
+        var issue: String
+        var project: String?
+        var boards: [OnBoard]?
+    }
     var id: UInt32
     var tab: UInt32
     var tab_name: String?
@@ -164,6 +187,12 @@ struct PaneRow: Decodable, Identifiable, Hashable {
     var project: String?
     var branch: String?
     var last_ms: Int?
+    /// `agent` for an agent block.
+    var type: String?
+    var kind: String?
+    var ask: Ask?
+    var session_project: ProjectRef?
+    var on_issue: OnIssue?
 
     /// The program, without its arguments: "claude", "vim".
     var program: String? {
@@ -240,4 +269,27 @@ struct TabLayout: Decodable, Identifiable, Equatable {
     var cells: [Cell]
 
     var terminals: [UInt32] { cells.filter { ($0.kind ?? "terminal") == "terminal" }.map(\.pane) }
+}
+
+/// A project's agent sessions in Arugula cloud, newest first
+/// (`GET /api/projects/{p}/sessions`): what each waits on the reader for.
+struct SessionWave: Decodable {
+    struct Issue: Decodable, Hashable { var id: String; var number: Int; var title: String }
+    struct Row: Decodable, Identifiable, Hashable {
+        var session: String
+        /// Its thread: the room and the message it hangs off.
+        var room: String
+        var parent: Int
+        var state: String
+        var issue: Issue?
+        /// What waits on the reader, in a few words ("its question", "a
+        /// permission", "its PR to send"), if anything.
+        var waiting: String?
+        var question: String?
+        var updated_at: Int
+        var id: String { session }
+        static func == (a: Row, b: Row) -> Bool { a.session == b.session }
+        func hash(into h: inout Hasher) { h.combine(session) }
+    }
+    var sessions: [Row]
 }
