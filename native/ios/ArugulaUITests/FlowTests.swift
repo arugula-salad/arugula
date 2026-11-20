@@ -2,7 +2,7 @@
 // (native/ios/test-sim.sh): sign in, the tab bar, home, the project's issues,
 // a board's thread and its lanes,
 // an agent's permission prompt and question answered from home, projects,
-// chat, a terminal. The script
+// a Doc in a room, chat, a terminal. The script
 // allows the sign-in from outside, as a signed-in browser would, and hands back
 // the address the Allow was sent to, which a web sheet would have caught.
 
@@ -50,6 +50,22 @@ final class FlowTests: XCTestCase {
         let t = tab(app, name)
         XCTAssertTrue(t.shows(within: 10), "no \(name) tab: \(app.debugDescription)")
         t.tap()
+    }
+
+    /// Send what's in the room's draft. A tap while the on-screen keyboard is
+    /// still coming up can land where the button was: tap again until the
+    /// draft is empty.
+    private func send(_ app: XCUIApplication) {
+        let draft = app.textFields["chat-draft"]
+        for _ in 0..<3 {
+            app.buttons["chat-send"].tap()
+            let by = Date().addingTimeInterval(3)
+            while Date() < by {
+                let v = draft.value as? String ?? ""
+                if v.isEmpty || v == draft.placeholderValue { return }
+                usleep(250_000)
+            }
+        }
     }
 
     /// Back one screen: the bar's back button (on an iPad the sidebar's
@@ -123,6 +139,62 @@ final class FlowTests: XCTestCase {
         app.buttons["issues-done"].tap()
         XCTAssertTrue(switcher.shows(within: 10), "not back home from the issues")
 
+        // A Doc in a conversation (Arugula #1259): its card opens the Doc's page
+        // in a web view, signed in as the app; on an iPad in the right-hand
+        // column, beside the room, and on a phone over it. A comment made in
+        // the page saves, and its prototype runs.
+        if let doc = env["ARUGULA_DOC"], !doc.isEmpty, let roomName = env["ARUGULA_DOC_ROOM"], !roomName.isEmpty {
+            let row = app.buttons["home-room-\(roomName)"]
+            XCTAssertTrue(row.waitForExistence(timeout: 45), "home has no room \(roomName)")
+            row.tap()
+            let card = app.buttons["doc-card-\(doc)"]
+            XCTAssertTrue(card.waitForExistence(timeout: 30), "the room has no card for \(doc)")
+            card.tap()
+            let web = app.webViews.firstMatch
+            XCTAssertTrue(web.waitForExistence(timeout: 30), "no web view for the Doc")
+            let para = env["ARUGULA_DOC_PARA"] ?? ""
+            let paragraph = web.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", para)).firstMatch
+            let drew = paragraph.waitForExistence(timeout: 45)
+            shot(app, "2-doc")
+            XCTAssertTrue(drew, "the Doc's page never drew its paragraph: \(app.debugDescription)")
+            if iPad {
+                XCTAssertTrue(app.textFields["chat-draft"].exists, "the room isn't beside the Doc")
+            }
+            paragraph.tap()
+            let box = web.textViews.firstMatch
+            XCTAssertTrue(box.waitForExistence(timeout: 15), "no comment box")
+            box.tap()
+            let said = "from-the-app-\(Int.random(in: 1000...9999))"
+            box.typeText(said)
+            web.buttons["Save"].tap()
+            let saved = web.staticTexts[said].waitForExistence(timeout: 20)
+            shot(app, "2-doc-comment")
+            XCTAssertTrue(saved, "the comment didn't come back into the page")
+            try said.write(to: handoff.appendingPathComponent("comment"), atomically: true, encoding: .utf8)
+            if let proto = env["ARUGULA_DOC_PROTO"], !proto.isEmpty {
+                let run = web.buttons[proto]
+                XCTAssertTrue(run.waitForExistence(timeout: 30), "the prototype never showed its button")
+                // A tap into the frame can land before the prototype has
+                // wired its button (the runner writes it in): tap again, a
+                // few times, until it says so.
+                var ran = false
+                for _ in 0..<4 where !ran {
+                    run.tap()
+                    ran = web.staticTexts["prototype ran"].waitForExistence(timeout: 5)
+                }
+                shot(app, "2-doc-prototype")
+                XCTAssertTrue(ran, "the prototype didn't run")
+            }
+            // Close the Doc: on an iPad home's list and the room are back; on a
+            // phone, back out of the room to home.
+            app.buttons["doc-close"].tap()
+            if iPad {
+                XCTAssertTrue(app.buttons["home-room-\(roomName)"].waitForExistence(timeout: 10), "home's list didn't come back")
+            } else {
+                goBack(app)
+            }
+        }
+
         // Home (Arugula #1255): the board the script made, its row's question
         // under Needs you, its thread and its lanes, and back.
         if let title = env["ARUGULA_BOARD"], !title.isEmpty {
@@ -141,7 +213,7 @@ final class FlowTests: XCTestCase {
             XCTAssertTrue(draft.shows(within: 15))
             focus(app, draft)
             draft.typeText(said)
-            app.buttons["chat-send"].tap()
+            send(app)
             XCTAssertTrue(app.staticTexts[said].shows(within: 20), "the board's thread didn't take the post")
             shot(app, "2-board-thread")
             clearAlerts()
@@ -218,17 +290,24 @@ final class FlowTests: XCTestCase {
             XCTAssertTrue(draft.shows(within: 15))
             focus(app, draft)
             draft.typeText(told)
-            app.buttons["chat-send"].tap()
+            send(app)
             XCTAssertTrue(app.staticTexts[told].shows(within: 20), "the board's thread didn't take it")
             shot(app, "4-told")
             if !iPad { goBack(app) }
 
             XCTAssertTrue(new.shows(within: 15), "not back home")
-            new.tap()
-            XCTAssertTrue(app.buttons["new-idea"].shows(within: 10), "no New idea")
+            // Home slides back in: a tap before it settles opens nothing, so
+            // wait for New to take taps, and tap again if its menu didn't come.
+            for _ in 0..<3 where !app.buttons["new-idea"].exists {
+                _ = new.waitFor(hittable: true, timeout: 5)
+                new.tap()
+                _ = app.buttons["new-idea"].shows(within: 5)
+            }
+            XCTAssertTrue(app.buttons["new-idea"].exists, "no New idea")
             app.buttons["new-idea"].tap()
+            // Which kind of field it is is known once the sheet is up.
+            XCTAssertTrue(app.descendants(matching: .any)["idea-words"].shows(within: 10), "no words for the idea")
             let words = app.textViews["idea-words"].exists ? app.textViews["idea-words"] : app.textFields["idea-words"]
-            XCTAssertTrue(words.shows(within: 10), "no words for the idea")
             focus(app, words)
             let idea = "Chat that keeps working on the train \(Int.random(in: 1000...9999))"
             words.typeText(idea)
@@ -264,7 +343,7 @@ final class FlowTests: XCTestCase {
         focus(app, draft)
         let marker = "from-the-simulator-\(Int.random(in: 1000...9999))"
         draft.typeText(marker)
-        app.buttons["chat-send"].tap()
+        send(app)
         XCTAssertTrue(app.staticTexts[marker].shows(within: 20), "the message didn't come back")
         shot(app, "3-chat")
 
@@ -319,6 +398,15 @@ final class FlowTests: XCTestCase {
 }
 
 private extension XCUIElement {
+    func waitFor(hittable: Bool, timeout: TimeInterval) -> Bool {
+        let end = Date().addingTimeInterval(timeout)
+        while Date() < end {
+            if exists && isHittable == hittable { return true }
+            usleep(300_000)
+        }
+        return false
+    }
+
     /// As `waitForExistence`, answering iOS's notification alert (#1260)
     /// while it waits: it comes over the app when the app asks, whenever
     /// that is, and takes the next tap.

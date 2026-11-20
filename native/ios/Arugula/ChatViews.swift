@@ -339,6 +339,8 @@ struct MessageView: View {
                             .foregroundStyle(Palette.accent)
                             .buttonStyle(.plain)
                     }
+                    // The Docs it links to (Arugula #1259), each a card that opens it.
+                    ForEach(DocRef.all(in: message.text)) { DocCard(ref: $0) }
                 }
                 if message.edited != nil {
                     Text("(edited)").font(Face.mono(10)).foregroundStyle(Palette.muted)

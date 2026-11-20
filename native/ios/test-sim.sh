@@ -5,6 +5,10 @@
 # HANDOFF/callback.
 # The cloud repository's testnet native-sim claim drives it. ARUGULA_SIM_FAMILY=iPad
 # runs it on an iPad (the side-by-side layout) instead of an iPhone.
+# ARUGULA_DOC is a Doc whose card the room ARUGULA_DOC_ROOM (a name, under
+# home's people) has (Arugula #1259): the test opens it, comments on its
+# paragraph ARUGULA_DOC_PARA and taps the prototype's button ARUGULA_DOC_PROTO,
+# whose page then says "prototype ran".
 # ARUGULA_BOARD names a board home should show, and ARUGULA_ASK its row's
 # question to the person signed in. ARUGULA_AGENT=1: a stand-in agent on
 # MACHINE asks for a permission and a question, for home to answer.
@@ -30,6 +34,8 @@ device=$(xcrun simctl create arugula-ui-test "$type" "$runtime")
 trap 'xcrun simctl shutdown "$device" 2>/dev/null || true; xcrun simctl delete "$device"' EXIT
 TEST_RUNNER_ARUGULA_CONTROL_URL="$url" TEST_RUNNER_ARUGULA_MACHINE="$machine" TEST_RUNNER_ARUGULA_HANDOFF="$handoff" \
   TEST_RUNNER_ARUGULA_BOARD="${ARUGULA_BOARD:-}" TEST_RUNNER_ARUGULA_ASK="${ARUGULA_ASK:-}" TEST_RUNNER_ARUGULA_AGENT="${ARUGULA_AGENT:-}" \
+  TEST_RUNNER_ARUGULA_DOC="${ARUGULA_DOC:-}" TEST_RUNNER_ARUGULA_DOC_ROOM="${ARUGULA_DOC_ROOM:-}" \
+  TEST_RUNNER_ARUGULA_DOC_PARA="${ARUGULA_DOC_PARA:-}" TEST_RUNNER_ARUGULA_DOC_PROTO="${ARUGULA_DOC_PROTO:-}" \
   xcodebuild test -project Arugula.xcodeproj -scheme Arugula -sdk iphonesimulator \
   -destination "platform=iOS Simulator,id=$device" -derivedDataPath build/dd \
   CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= \
