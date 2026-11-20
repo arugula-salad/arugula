@@ -34,10 +34,10 @@ there (`native/ios/build.sh archive`), and signs and uploads it with
 build. Testers see it once it's processed.
 
 - **The key:** an App Store Connect API key with the App Manager role, in
-  Infisical (project arugula, env prod, `/illogical/release`) as `ASC_KEY_ID`,
-  `ASC_ISSUER_ID` and `ASC_KEY_P8`. The script reads them while it runs and
+  Infisical (project arugula, env prod, `/illogical/release`) as `APPLE_ASC_KEY_ID`,
+  `APPLE_ASC_ISSUER_ID` and `APPLE_ASC_KEY_P8` (Team Key "arugula-testflight"). The script reads them while it runs and
   passes the .p8 over ssh to a temporary file on the Mac, which only the user
-  can read and which is removed afterwards. `xcodebuild -allowProvisioningUpdates
+  can read and which is overwritten and removed afterwards. `xcodebuild -allowProvisioningUpdates
   -authenticationKey…` uses it to make the distribution signing and to
   upload, so no Apple ID is signed in. Other secret names:
   `ASC_KEY_ID_SECRET=… ASC_ISSUER_ID_SECRET=… ASC_KEY_P8_SECRET=…`.
