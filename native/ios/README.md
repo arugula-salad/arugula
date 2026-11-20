@@ -19,6 +19,16 @@ button opens its lanes; then the channels and DMs. The tabs from before
 (Issues, Boards, Chat, Machines, You) are in home's menu, and each has a way
 back. On an iPad home is the left column, and what it opens sits beside it.
 
+A row of Needs you is **answered where it is** (`Arugula/Answer.swift`, #1256),
+and folds away with a word of what was done: a pane's permission (Allow,
+Deny) or question (its choices) through its daemon's `POST
+/api/attention/act` over the link, a hosted session's through control's
+`POST /api/sessions/{ses}/actions`, a board's ask through its answer route.
+Tapping a session, in Needs you or on a board's thread, opens its **peek**:
+its last lines, a reply to its agent, Silence (the owner's: teammates'
+agents can't mention it), Stop (asked first) and its terminal or thread. A
+viewer of a machine's session reads it, with no buttons.
+
 - **On a phone or an iPad:** `just native-phone DEVICE` on a Mac signed in to the
   Apple team (`xcrun devicectl list devices` has the id). It builds, signs with
   the team's development profile, installs and launches. A new device has to be
@@ -28,7 +38,9 @@ back. On an iPad home is the left column, and what it opens sits beside it.
   native-sim` there, with this repository's branch at `~/src/native-app` on the
   Mac (`ARUGULA_NATIVE_SIM_DIR` names another). Its UI test signs in, finds the
   board the claim made on home with its row's question under Needs you, opens
-  the board's thread, posts there and opens its lanes, then reads projects,
+  the board's thread, posts there and opens its lanes; peeks at a stand-in
+  agent, allows its permission prompt and answers its question and the
+  board's from home (the claim checks the agent went on), then reads projects,
   posts in chat and runs a command in a relayed terminal.
   `ARUGULA_SIM_FAMILY=iPad` on the Mac runs it on an iPad.
 - **Signing in** is the desktop app's and the CLI's way (#999): the app opens
@@ -103,5 +115,5 @@ with a change an older build can't follow. After that, control raises
 `native_api_min` only once no supported build needs the older one: the
 current build and the one before it (`contract/README.md`).
 
-What isn't here yet: text selection in the terminal, and answering from home
-or from a notification.
+What isn't here yet: text selection in the terminal, and answering from a
+notification.

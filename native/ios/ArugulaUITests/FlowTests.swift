@@ -1,6 +1,7 @@
 // The app as a person takes it, on a simulator against a real control
 // (native/ios/test-sim.sh): sign in, home, a board's thread and its lanes,
-// projects, chat, a terminal. The script
+// an agent's permission prompt and question answered from home, projects,
+// chat, a terminal. The script
 // allows the sign-in from outside, as a signed-in browser would, and hands back
 // the address the Allow was sent to, which a web sheet would have caught.
 
@@ -22,13 +23,29 @@ final class FlowTests: XCTestCase {
 
     private var iPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
 
+    /// iOS's own alert asking to send notifications (#1260) comes over the
+    /// app whenever the app asks, and takes the next tap: answer it first.
+    private func clearAlerts() {
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        for name in ["Allow", "Don’t Allow"] where springboard.alerts.buttons[name].exists {
+            springboard.alerts.buttons[name].tap()
+            return
+        }
+    }
+
     /// A tab, from home's menu or from the tab bar once one is open.
     private func go(_ app: XCUIApplication, _ name: String) {
+        clearAlerts()
         let menu = app.buttons["home-menu"]
         if menu.exists {
-            menu.tap()
+            // Once more if the menu closed as home moved under it.
             let item = app.buttons[name].firstMatch
-            XCTAssertTrue(item.waitForExistence(timeout: 10), "no \(name) in home's menu")
+            for _ in 0..<3 where !item.exists {
+                menu.tap()
+                _ = item.shows(within: 5)
+            }
+            if !item.exists { shot(app, "fail-menu-\(name)") }
+            XCTAssertTrue(item.exists, "no \(name) in home's menu: \(app.debugDescription)")
             item.tap()
         } else {
             tab(app, name).tap()
@@ -38,6 +55,7 @@ final class FlowTests: XCTestCase {
     /// Back one screen: the bar's back button (on an iPad the sidebar's
     /// button comes first, so by its name).
     private func goBack(_ app: XCUIApplication) {
+        clearAlerts()
         let named = app.navigationBars.buttons["Back"].firstMatch
         (named.exists ? named : app.navigationBars.buttons.element(boundBy: 0)).tap()
     }
@@ -53,11 +71,11 @@ final class FlowTests: XCTestCase {
 
         // Sign in: the ticket goes to the script, which allows it and hands back
         // the address the page was sent to.
-        XCTAssertTrue(app.buttons["signin-start"].waitForExistence(timeout: 30), "no sign-in")
+        XCTAssertTrue(app.buttons["signin-start"].shows(within: 30), "no sign-in")
         shot(app, "1-signin")
         app.buttons["signin-start"].tap()
         let ticket = app.staticTexts["signin-ticket"]
-        let asked = ticket.waitForExistence(timeout: 30)
+        let asked = ticket.shows(within: 30)
         if !asked { shot(app, "1-no-ticket") }
         XCTAssertTrue(asked, "no ticket: \(app.staticTexts["signin-problem"].exists ? app.staticTexts["signin-problem"].label : "")")
         try FileManager.default.createDirectory(at: handoff, withIntermediateDirectories: true)
@@ -78,7 +96,7 @@ final class FlowTests: XCTestCase {
 
         // In a project, as the signed-in account: the personal one at first, named
         // Default since the cloud repo's #148.
-        let signedIn = app.buttons["project-switcher"].waitForExistence(timeout: 60)
+        let signedIn = app.buttons["project-switcher"].shows(within: 60)
         if !signedIn { shot(app, "1-never-signed-in") }
         XCTAssertTrue(signedIn, "never signed in: \(app.staticTexts["signin-problem"].exists ? app.staticTexts["signin-problem"].label : "still waiting")")
         let switcher = app.buttons["project-switcher"]
@@ -91,37 +109,83 @@ final class FlowTests: XCTestCase {
         // under Needs you, its thread and its lanes, and back.
         if let title = env["ARUGULA_BOARD"], !title.isEmpty {
             let board = app.buttons["home-board-\(title)"]
-            XCTAssertTrue(board.waitForExistence(timeout: 45), "home has no board \(title): \(app.debugDescription)")
+            XCTAssertTrue(board.shows(within: 45), "home has no board \(title): \(app.debugDescription)")
             if let ask = env["ARUGULA_ASK"], !ask.isEmpty {
                 let asked = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", ask)).firstMatch
-                XCTAssertTrue(asked.waitForExistence(timeout: 30), "Needs you hasn't the board's question")
+                XCTAssertTrue(asked.shows(within: 30), "Needs you hasn't the board's question")
             }
+            clearAlerts()
             shot(app, "2-home")
             board.tap()
-            XCTAssertTrue(app.staticTexts["board-lead"].waitForExistence(timeout: 30), "no board thread")
+            XCTAssertTrue(app.staticTexts["board-lead"].shows(within: 30), "no board thread")
             let said = "to-the-board-\(Int.random(in: 1000...9999))"
             let draft = app.textFields["chat-draft"]
-            XCTAssertTrue(draft.waitForExistence(timeout: 15))
+            XCTAssertTrue(draft.shows(within: 15))
+            clearAlerts()
             draft.tap()
             draft.typeText(said)
             app.buttons["chat-send"].tap()
-            XCTAssertTrue(app.staticTexts[said].waitForExistence(timeout: 20), "the board's thread didn't take the post")
+            XCTAssertTrue(app.staticTexts[said].shows(within: 20), "the board's thread didn't take the post")
             shot(app, "2-board-thread")
+            clearAlerts()
             app.buttons["open-board"].tap()
-            XCTAssertTrue(app.staticTexts["NEXT"].waitForExistence(timeout: 30), "no lanes")
+            XCTAssertTrue(app.staticTexts["NEXT"].shows(within: 30), "no lanes")
             shot(app, "2-board-lanes")
             goBack(app)
-            XCTAssertTrue(app.staticTexts["board-lead"].waitForExistence(timeout: 15), "not back on the thread")
+            XCTAssertTrue(app.staticTexts["board-lead"].shows(within: 15), "not back on the thread")
             if !iPad {
                 goBack(app)
-                XCTAssertTrue(board.waitForExistence(timeout: 15), "not back home")
+                XCTAssertTrue(board.shows(within: 15), "not back home")
             }
+        }
+
+        // Answered in the row (Arugula #1256): the stand-in agent's permission
+        // prompt (after a peek at it) and its question, then the board's ask.
+        // The script checks that the agent went on with the answers.
+        if env["ARUGULA_AGENT"] == "1" {
+            let asking = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "phone-allowed")).firstMatch
+            XCTAssertTrue(asking.shows(within: 60), "no permission prompt on home: \(app.debugDescription)")
+            clearAlerts()
+            asking.tap()
+            let lines = app.descendants(matching: .any)["peek-lines"]
+            XCTAssertTrue(lines.shows(within: 20), "no peek")
+            let peekBy = Date().addingTimeInterval(20)
+            while !lines.label.contains("Read src/main.rs") && Date() < peekBy { sleep(1) }
+            XCTAssertTrue(lines.label.contains("Read src/main.rs"), "the peek shows: \(lines.label)")
+            shot(app, "3-peek")
+            app.buttons["peek-close"].tap()
+            // The sheet goes before its row is tapped.
+            let closedBy = Date().addingTimeInterval(10)
+            while lines.exists && Date() < closedBy { usleep(200_000) }
+            let allow = app.buttons["answer-Allow"]
+            XCTAssertTrue(allow.shows(within: 15), "no Allow in the row")
+            clearAlerts()
+            allow.tap()
+            XCTAssertTrue(app.staticTexts["toast"].shows(within: 15) || !allow.exists, "Allow wasn't taken")
+            let green = app.buttons["answer-Green"]
+            XCTAssertTrue(green.shows(within: 45), "the agent's question didn't come after the Allow")
+            clearAlerts()
+            shot(app, "3-question")
+            green.tap()
+            let goneBy = Date().addingTimeInterval(30)
+            while green.exists && Date() < goneBy { sleep(1) }
+            XCTAssertFalse(green.exists, "the question's row didn't fold away")
+            let yes = app.buttons["answer-Yes"]
+            if yes.shows(within: 10) {
+                clearAlerts()
+                yes.tap()
+                let yesBy = Date().addingTimeInterval(30)
+                while yes.exists && Date() < yesBy { sleep(1) }
+                if yes.exists { shot(app, "fail-board-ask") }
+                XCTAssertFalse(yes.exists, "the board's ask didn't fold away: \(app.debugDescription)")
+            }
+            shot(app, "3-answered")
         }
 
         // Chat: post to the room the script made, and see it come back.
         go(app, "Chat")
         let room = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'room-'")).firstMatch
-        XCTAssertTrue(room.waitForExistence(timeout: 30), "no chat room")
+        XCTAssertTrue(room.shows(within: 30), "no chat room")
         room.tap()
         // The room is live: chat's stream is open.
         let liveMark = app.staticTexts["chat-live"]
@@ -129,12 +193,13 @@ final class FlowTests: XCTestCase {
         while !(liveMark.exists && liveMark.label == "LIVE") && Date() < liveBy { sleep(1) }
         XCTAssertEqual(liveMark.exists ? liveMark.label : "missing", "LIVE", "chat's stream never opened")
         let draft = app.textFields["chat-draft"]
-        XCTAssertTrue(draft.waitForExistence(timeout: 15))
+        XCTAssertTrue(draft.shows(within: 15))
+        clearAlerts()
         draft.tap()
         let marker = "from-the-simulator-\(Int.random(in: 1000...9999))"
         draft.typeText(marker)
         app.buttons["chat-send"].tap()
-        XCTAssertTrue(app.staticTexts[marker].waitForExistence(timeout: 20), "the message didn't come back")
+        XCTAssertTrue(app.staticTexts[marker].shows(within: 20), "the message didn't come back")
         shot(app, "3-chat")
 
         // A terminal on a machine, through the relay. On an iPhone, back out of the
@@ -143,14 +208,14 @@ final class FlowTests: XCTestCase {
         if !iPad { app.navigationBars.buttons.firstMatch.tap() }
         go(app, "Machines")
         let machine = app.buttons[env["ARUGULA_MACHINE"].map { "machine-\($0)" } ?? "machine-box-systemd"]
-        XCTAssertTrue(machine.waitForExistence(timeout: 30), "machine not listed")
+        XCTAssertTrue(machine.shows(within: 30), "machine not listed")
         machine.tap()
         let new = app.buttons["new-terminal"]
-        XCTAssertTrue(new.waitForExistence(timeout: 30))
+        XCTAssertTrue(new.shows(within: 30))
         XCTAssertTrue(new.waitFor(enabled: true, timeout: 45), "never connected: \(app.staticTexts["machine-problem"].label)")
         new.tap()
         let terminal = app.descendants(matching: .any)["terminal-view"]
-        let opened = terminal.waitForExistence(timeout: 30)
+        let opened = terminal.shows(within: 30)
         shot(app, "4-after-new-terminal")
         XCTAssertTrue(opened, "no terminal: \(app.debugDescription)")
         sleep(2)
@@ -169,19 +234,33 @@ final class FlowTests: XCTestCase {
         app.buttons["terminal-done"].tap()
         sleep(3)
         shot(app, "6-machine")
-        XCTAssertTrue(app.buttons["new-terminal"].waitForExistence(timeout: 10), "not back on the machine")
+        XCTAssertTrue(app.buttons["new-terminal"].shows(within: 10), "not back on the machine")
 
         // Signing out ends it here: the sign-in again.
         go(app, "You")
         let signOut = app.buttons["sign-out"]
-        XCTAssertTrue(signOut.waitForExistence(timeout: 30), "no sign-out")
+        XCTAssertTrue(signOut.shows(within: 30), "no sign-out")
         shot(app, "7-you")
         signOut.tap()
-        XCTAssertTrue(app.buttons["signin-start"].waitForExistence(timeout: 15), "still signed in")
+        XCTAssertTrue(app.buttons["signin-start"].shows(within: 15), "still signed in")
     }
 }
 
 private extension XCUIElement {
+    /// As `waitForExistence`, answering iOS's notification alert (#1260)
+    /// while it waits: it comes over the app when the app asks, whenever
+    /// that is, and takes the next tap.
+    func shows(within timeout: TimeInterval) -> Bool {
+        let end = Date().addingTimeInterval(timeout)
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        repeat {
+            if springboard.alerts.buttons["Allow"].exists { springboard.alerts.buttons["Allow"].tap() }
+            if exists { return true }
+            usleep(300_000)
+        } while Date() < end
+        return exists
+    }
+
     func waitFor(enabled: Bool, timeout: TimeInterval) -> Bool {
         let end = Date().addingTimeInterval(timeout)
         while Date() < end {

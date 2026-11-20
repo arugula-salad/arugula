@@ -18,6 +18,11 @@ final class MachineSession: ObservableObject {
     /// The machine's tabs as it lays them out, and its sessions, which hold them.
     @Published var tabs: [TabLayout] = []
     @Published var sessions: [MuxSession] = []
+    /// Its agent blocks, for home (the views here are terminals').
+    @Published var agents: [PaneRow] = []
+    /// This person's role in each session; nil when the machine says none
+    /// (its owner, as the web's fleet reads it).
+    @Published var roles: [UInt32: String]?
     private var link: OpaquePointer?
     private var conversationsAt = Date.distantPast
     /// The terminal being driven, full screen, which takes that pane's bytes.
@@ -99,6 +104,8 @@ final class MachineSession: ObservableObject {
             panes = list.panes
             tabs = list.tabs ?? []
             sessions = list.sessions ?? []
+            agents = list.agents ?? []
+            roles = list.roles.map { Dictionary($0.map { ($0.session, $0.role) }, uniquingKeysWith: { a, _ in a }) }
             // A pane's conversation changes rarely: look again at most every 20 seconds.
             if Date().timeIntervalSince(conversationsAt) > 20 {
                 conversationsAt = Date()
@@ -195,6 +202,29 @@ final class MachineSession: ObservableObject {
             var block: UInt32?
         }
         var body: Body
+    }
+
+    /// This person's role in a pane's session: `owner`, `editor` or `viewer`.
+    func role(of pane: PaneRow) -> String {
+        guard let roles else { return "owner" }
+        guard let session = sessions.first(where: { $0.tabs.contains(pane.tab) }) else { return "viewer" }
+        return roles[session.id] ?? "viewer"
+    }
+
+    /// One request to the machine's API over the link: its answer's body
+    /// (JSON, or a capture's text as a string).
+    func request(_ method: String, _ path: String, _ body: [String: Any]? = nil) async throws -> Any? {
+        guard let l = link else { throw CoreError("not connected to \(machine.name)") }
+        let p = UInt(bitPattern: l)
+        let json = try body.map { String(decoding: try JSONSerialization.data(withJSONObject: $0), as: UTF8.self) }
+        let s: String = try await Task.detached(priority: .userInitiated) {
+            var err: UnsafeMutablePointer<CChar>?
+            let got = aru_link_request(OpaquePointer(bitPattern: p), method, path, json, &err)
+            guard let s = takeString(got) else { throw err.map(CoreError.init(taking:)) ?? CoreError("no answer") }
+            return s
+        }.value
+        let v = try JSONSerialization.jsonObject(with: Data(s.utf8), options: [.fragmentsAllowed]) as? [String: Any]
+        return v?["body"]
     }
 
     /// A new shell on the machine: its pane.
@@ -462,7 +492,7 @@ struct SessionRail: View {
     /// The sessions with their tabs, and any tab no session lists, last.
     private var groups: [(UInt32, String, String?, [TabLayout])] {
         let byID = Dictionary(session.tabs.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        var out = session.sessions.map { s in (s.id, s.name, s.project, s.tabs.compactMap { byID[$0] }) }
+        var out = session.sessions.map { s in (s.id, s.name, s.project?.name, s.tabs.compactMap { byID[$0] }) }
         let listed = Set(session.sessions.flatMap(\.tabs))
         let rest = session.tabs.filter { !listed.contains($0.id) }
         if !rest.isEmpty { out.append((UInt32.max, "Other tabs", nil, rest)) }
@@ -657,7 +687,7 @@ struct PaneCard: View {
         var bits = ["%\(pane.id)"]
         if let p = pane.program { bits.append(p) }
         if let project = pane.project {
-            bits.append(pane.branch.map { "\(project) ⎇ \($0)" } ?? project)
+            bits.append(pane.branch.map { "\(project.name) ⎇ \($0)" } ?? project.name)
         } else if let cwd = pane.cwd {
             bits.append(cwd.split(separator: "/").last.map(String.init) ?? cwd)
         }

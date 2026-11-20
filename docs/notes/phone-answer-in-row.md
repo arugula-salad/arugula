@@ -1,0 +1,12 @@
+---
+section: Added
+title: Answer agents from the iPhone and iPad app's home
+line: Allow or deny an agent's permission prompt, answer its question or a board's, right in the row on home, and peek at a session to reply, silence or stop it.
+---
+Each row of Needs you on the app's home answers in place: Allow or Deny for
+a permission prompt, a button per choice for a question (an agent's on one of
+your machines, a hosted session's, or a board's), and the row folds away once
+it's sent. Tapping a session, in Needs you or on a board's thread, opens a
+peek with its last lines, a box to reply to its agent, Silence, Stop (asked
+first) and its terminal. Someone who can only view a machine's session sees
+the peek without the buttons.
