@@ -4410,6 +4410,52 @@
         ]
       }
     },
+    "/api/machines/{id}/token": {
+      "post": {
+        "operationId": "POST_api_machines_id_token",
+        "x-arugula-clients": [
+          "page",
+          "cli",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-arugula-untyped": [
+          "response: a JSON object built in place"
+        ]
+      }
+    },
     "/api/me": {
       "get": {
         "operationId": "GET_api_me",
@@ -6436,6 +6482,164 @@
         ],
         "x-arugula-untyped": [
           "query and response: local to the handler"
+        ]
+      }
+    },
+    "/auth/app": {
+      "post": {
+        "operationId": "POST_auth_app",
+        "x-arugula-clients": [
+          "app",
+          "cli",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK"
+          }
+        },
+        "x-arugula-untyped": [
+          "request: Ask (a native app sends `features: [\"native\"]` and `callback: \"arugula://signin\"`, #1247)",
+          "response: a JSON object built in place"
+        ]
+      }
+    },
+    "/auth/app/{id}/redeem": {
+      "post": {
+        "operationId": "POST_auth_app_id_redeem",
+        "x-arugula-clients": [
+          "page",
+          "cli",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-arugula-untyped": [
+          "request: Redeem",
+          "response: 204, the session in Set-Cookie"
+        ]
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "operationId": "POST_auth_logout",
+        "x-arugula-clients": [
+          "page",
+          "cli",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK"
+          }
+        },
+        "x-arugula-untyped": [
+          "response: a JSON object built in place"
+        ]
+      }
+    },
+    "/control.json": {
+      "get": {
+        "operationId": "GET_control_json",
+        "x-arugula-clients": [
+          "page",
+          "daemon",
+          "cli",
+          "app",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK"
+          }
+        },
+        "x-arugula-untyped": [
+          "response: a JSON object built in place"
         ]
       }
     }

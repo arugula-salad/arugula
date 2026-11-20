@@ -93,3 +93,5 @@ Where: `crates/e2e/src/cert.rs`, `crates/control/src/auth.rs`, `crates/control/s
 From: Arugula native #597, #600, the Native iPhone app board.
 
 **Amended by aru-141, "Machines trust control: the hub's tokens replace device keys"** (Jake, 2026-11-13). With no device kinds, the iPhone app is a signed-in client like the web page: it asks the hub for machine tokens and keeps no device keys.
+
+The app signs in with a session, not a device key (#1247, the hub half of #999): it opens control's Allow page in the system's sign-in sheet, takes the grant on its `arugula://signin` callback, and redeems it with its verifier for a native app's login, which counts where routes.toml lists `native`, as its signature did. The paired signature works beside it until the app moves (#999) and #1007 deletes it.

@@ -778,6 +778,38 @@
       "untyped": [
         "query and response: local to the handler"
       ]
+    },
+    "POST /api/machines/{id}/token": {
+      "handler": "crates/control/src/machine_token.rs#token",
+      "untyped": [
+        "response: a JSON object built in place"
+      ]
+    },
+    "GET /control.json": {
+      "handler": "crates/control/src/lib.rs#control_json",
+      "untyped": [
+        "response: a JSON object built in place"
+      ]
+    },
+    "POST /auth/app": {
+      "handler": "crates/control/src/app_login.rs#ask",
+      "untyped": [
+        "request: Ask (a native app sends `features: [\"native\"]` and `callback: \"arugula://signin\"`, #1247)",
+        "response: a JSON object built in place"
+      ]
+    },
+    "POST /auth/app/{id}/redeem": {
+      "handler": "crates/control/src/app_login.rs#redeem",
+      "untyped": [
+        "request: Redeem",
+        "response: 204, the session in Set-Cookie"
+      ]
+    },
+    "POST /auth/logout": {
+      "handler": "crates/control/src/auth.rs#logout",
+      "untyped": [
+        "response: a JSON object built in place"
+      ]
     }
   }
 }

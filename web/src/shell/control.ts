@@ -755,6 +755,28 @@ const REFUSED: Record<string, string> = {
 /** Refusals that mean this browser itself isn't trusted. */
 const SELF_REFUSED = new Set(["approver_untrusted", "bad_signature"]);
 
+/** Where an allowed sign-in sends this page, if it may go there: the
+ * app's or CLI's loopback port, or (#1247) a native app's callback with
+ * this ticket and its grant and nothing else. Anything else throws. */
+export function followed(redirect: string, id: string, kind?: AppLogin["kind"]): string {
+  if (kind === "native") {
+    const [to, query = ""] = redirect.split("?", 2);
+    const q = new URLSearchParams(query);
+    if (
+      NATIVE_CALLBACKS.includes(to) &&
+      [...q.keys()].join() === "ticket,grant" &&
+      q.get("ticket") === id &&
+      /^[0-9a-f]{64}$/.test(q.get("grant") ?? "")
+    )
+      return redirect;
+    throw new Error("Arugula cloud sent the sign-in somewhere other than the Arugula app: not following it");
+  }
+  const url = new URL(redirect);
+  if (url.protocol !== "http:" || url.hostname !== "127.0.0.1" || url.pathname !== "/arugula-signin")
+    throw new Error("Arugula cloud sent the sign-in somewhere other than the app on this computer: not following it");
+  return url.href;
+}
+
 /** A desktop app asking to sign in (`GET /api/app-login/{id}`). */
 export interface AppLogin {
   name: string;
@@ -765,10 +787,16 @@ export interface AppLogin {
   code?: string;
   /** From #758 on: the public half of the app's device keys, hex. */
   device?: { noise: string; sign: string };
-  /** Which one asks (#1018): the CLI's `arugula login`, or the desktop
-   * app. None from a control before then. */
-  kind?: "app" | "cli";
+  /** Which one asks (#1018): the CLI's `arugula login`, the desktop
+   * app, or (#1247) a native app on a phone, in its sign-in sheet. None
+   * from a control before then. */
+  kind?: "app" | "cli" | "native";
 }
+
+/** Where a native app hears its grant (#1247): its own scheme, which the
+ * phone's sign-in sheet this page is in hands back to the app that opened
+ * it. Control names one of these exactly. */
+const NATIVE_CALLBACKS = ["arugula://signin"];
 
 /** A browser's name in its account's device list. */
 export function deviceName(): string {
@@ -2049,13 +2077,13 @@ export class ControlSession {
   /** Allow it: control answers with the app's loopback address, which this
    * browser hands the grant to (only the app on this computer hears it).
    * Since aru-141 (#1004) no certificate goes with it: the app's window
-   * reaches machines with tokens, and isn't one of the account's devices. */
-  async allowAppLogin(id: string): Promise<string> {
+   * reaches machines with tokens, and isn't one of the account's devices.
+   * A native app's sign-in (#1247) goes to its callback instead, and only
+   * a native app's does: the sheet hands it to the app, whose verifier
+   * alone redeems it. */
+  async allowAppLogin(id: string, kind?: AppLogin["kind"]): Promise<string> {
     const r = await api<{ redirect: string }>(`/api/app-login/${encodeURIComponent(id)}/allow`, {});
-    const url = new URL(r.redirect);
-    if (url.protocol !== "http:" || url.hostname !== "127.0.0.1" || url.pathname !== "/arugula-signin")
-      throw new Error("Arugula cloud sent the sign-in somewhere other than the app on this computer: not following it");
-    return url.href;
+    return followed(r.redirect, id, kind);
   }
 
   /** Answer a share someone offered: accepted, it's listed and reachable. */
