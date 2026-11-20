@@ -11,22 +11,35 @@ import UIKit
 struct HomeView: View {
     let control: Control
     @StateObject private var scope = Scope()
+    @ObservedObject private var push = PushCenter.shared
+    @State private var tab = Tab.issues
+
+    enum Tab { case issues, boards, chat, machines, you }
 
     var body: some View {
         VStack(spacing: 0) {
-            TabView {
+            TabView(selection: $tab) {
                 // What's in the current project, then the account's machines and
                 // the account itself. Tabs and titles in the theme (Theme.swift).
                 IssuesView(control: control)
-                    .tabItem { Label("Issues", systemImage: "smallcircle.filled.circle") }
+                    .tabItem { Label("Issues", systemImage: "smallcircle.filled.circle") }.tag(Tab.issues)
                 BoardsView(control: control)
-                    .tabItem { Label("Boards", systemImage: "rectangle.split.3x1") }
+                    .tabItem { Label("Boards", systemImage: "rectangle.split.3x1") }.tag(Tab.boards)
                 ChatRoomsView(control: control)
-                    .tabItem { Label("Chat", systemImage: "bubble.left.and.bubble.right") }
+                    .tabItem { Label("Chat", systemImage: "bubble.left.and.bubble.right") }.tag(Tab.chat)
                 MachinesView(control: control)
-                    .tabItem { Label("Machines", systemImage: "terminal") }
+                    .tabItem { Label("Machines", systemImage: "terminal") }.tag(Tab.machines)
                 YouView(control: control)
-                    .tabItem { Label("You", systemImage: "person.crop.circle") }
+                    .tabItem { Label("You", systemImage: "person.crop.circle") }.tag(Tab.you)
+            }
+        }
+        // A tapped notification (#1260): its tab, whose view opens the thing.
+        .onChange(of: push.route, initial: true) { _, route in
+            switch route {
+            case .pane: tab = .machines
+            case .room: tab = .chat
+            case .issue: tab = .issues
+            case nil: break
             }
         }
         .background(Palette.void)
@@ -228,6 +241,7 @@ struct Empty: View {
 struct IssuesView: View {
     let control: Control
     @EnvironmentObject private var scope: Scope
+    @ObservedObject private var push = PushCenter.shared
     @State private var picked: Issue?
     @State private var columns = NavigationSplitViewVisibility.all
 
@@ -263,6 +277,14 @@ struct IssuesView: View {
         // Another project: nothing of the last one stays open. (Not an `id` on
         // the split view: rebuilding it under a laying-out bar aborts UIKit.)
         .onChange(of: scope.current?.id) { _, _ in picked = nil }
+        // A notification about an issue (#1260): that issue, whichever project.
+        .onChange(of: push.route, initial: true) { _, route in
+            guard case .issue(let id)? = route else { return }
+            push.route = nil
+            Task {
+                if let issue = try? await control.get("/api/issues/\(id)", as: Issue.self) { picked = issue }
+            }
+        }
     }
 }
 

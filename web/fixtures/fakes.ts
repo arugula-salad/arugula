@@ -1,10 +1,13 @@
 // The outside services arugula-control talks to, faked: GitHub sign-in,
-// Stripe and a Web Push endpoint. `web/control-smoke.ts` starts them in its
+// Stripe, a Web Push endpoint and APNs. `web/control-smoke.ts` starts them in its
 // own process; the test stack's `control` profile (testnet/) runs them in a
 // container with `fakes-serve.ts`. Each records what it was sent, for the
 // test to check.
 
+import { randomUUID } from "node:crypto";
+import { appendFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server } from "node:http";
+import { createServer as createHttp2Server } from "node:http2";
 
 /** A request a fake got: its path, headers, and body. */
 export interface Call {
@@ -112,6 +115,33 @@ export function fakeStripe(port: number, host = "127.0.0.1") {
     else reply({});
   }).listen(port, host);
   return { server, calls };
+}
+
+/** APNs (#1260), as control reaches it in tests (`--apns-host`): HTTP/2
+ * with no TLS, `POST /3/device/<token>`. A token starting `dead` isn't a
+ * device it knows (400, `BadDeviceToken`); every other takes it. With `log`,
+ * each one it took is a line of JSON there too (its token, its APNs headers
+ * and body), for a test outside the process to read. */
+export function fakeApns(port: number, host = "127.0.0.1", log?: string) {
+  const sent: { token: string; headers: Record<string, string>; body: string }[] = [];
+  const server = createHttp2Server((req, res) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (c: Buffer) => chunks.push(c));
+    req.on("end", () => {
+      const token = /^\/3\/device\/([0-9a-f]+)$/.exec(req.url)?.[1];
+      if (req.method !== "POST" || !token) return res.writeHead(404).end();
+      if (token.startsWith("dead")) {
+        return res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ reason: "BadDeviceToken" }));
+      }
+      const headers: Record<string, string> = {};
+      for (const k of ["authorization", "apns-topic", "apns-push-type", "apns-priority", "apns-expiration"]) headers[k] = String(req.headers[k] ?? "");
+      const got = { token, headers, body: Buffer.concat(chunks).toString() };
+      sent.push(got);
+      if (log) appendFileSync(log, JSON.stringify(got) + "\n");
+      res.writeHead(200, { "apns-id": randomUUID() }).end();
+    });
+  }).listen(port, host);
+  return { server, sent };
 }
 
 /** A Web Push endpoint (any path) that takes every notification. */

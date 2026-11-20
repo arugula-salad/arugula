@@ -463,6 +463,8 @@ native-ios:
     (cd ../ios && ./build.sh sim && xcodebuild -project Arugula.xcodeproj -scheme Arugula -configuration Debug \
       -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build/dd \
       CODE_SIGNING_ALLOWED=NO build-for-testing -quiet)
+    # Push's decrypting against RFC 8291's example and a daemon's bytes (#1260).
+    ../ios/PushTests/run.sh
     # The newest iOS runtime, and an iPhone it supports, as "runtime type".
     pick=$(xcrun simctl list -j runtimes available | python3 -c '
     import json, sys

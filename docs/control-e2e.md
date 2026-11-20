@@ -254,7 +254,8 @@ Of the device-key design; for what holds for every machine now, see
   - the daemon encrypts the notification (RFC 8291) to a subscription
     the device signed, or, since machines trust control (aru-141), to one
     control vouches for;
-  - control only adds the VAPID signature and posts it;
+  - control only adds the VAPID signature and posts it (or, for the
+    iPhone app, puts it in an APNs notification);
   - control's own notices (something waits for approval, someone came in
     on an invite, a reset) it encrypts itself, and they say what happened;
   - chat's pushes (M122) are control's own too: who, where, and the
@@ -1987,6 +1988,16 @@ leaves it. So:
   - it hands control `{endpoint, body}` in a signed
     `POST /api/daemon/push`;
   - control signs the VAPID JWT and posts it.
+- **The iPhone app (#1260):** its push service is APNs. It subscribes with
+  its native login, unsigned, at its device's address there
+  (`https://api.push.apple.com/3/device/<token>`, or the sandbox's from a
+  development build), with an ECDH key and a secret it made and keeps in a
+  keychain group its Notification Service Extension shares. A native login
+  may subscribe only that kind, and a page may not. Control sends APNs,
+  signed in with a token from the team's APNs key, an alert that says only
+  that something came, with the ciphertext beside it (`e`); the extension
+  decrypts it on the phone and shows the real words. A ciphertext that
+  doesn't fit in APNs' 4 KB goes without it, as that alert alone.
 - **What control and the push service see:** endpoint, size and timing.
   Control logs the daemon, its account and the push service's status.
 - **Control's own notices:** a new device waiting for the account, someone

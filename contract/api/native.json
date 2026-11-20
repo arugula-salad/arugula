@@ -589,6 +589,20 @@
         "response: a JSON object built in place"
       ]
     },
+    "POST /api/push/subscribe": {
+      "handler": "crates/control/src/push.rs#subscribe",
+      "untyped": [
+        "request: Subscribe, local to the handler: `{sub: PushSub}`; a native app's endpoint is its device at APNs (`https://api.push.apple.com/3/device/<token>`, or api.sandbox.push.apple.com from a development build), and it may subscribe no other kind (#1260)",
+        "response: a JSON object built in place"
+      ]
+    },
+    "POST /api/push/unsubscribe": {
+      "handler": "crates/control/src/push.rs#unsubscribe",
+      "untyped": [
+        "request: Unsubscribe, local to the handler: `{endpoint}`, its device at APNs (#1260)",
+        "response: a JSON object built in place"
+      ]
+    },
     "GET /api/people": {
       "handler": "crates/control/src/teams.rs#person",
       "untyped": [

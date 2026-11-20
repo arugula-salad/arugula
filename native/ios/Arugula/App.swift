@@ -4,6 +4,7 @@ import SwiftUI
 
 @main
 struct ArugulaApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var model = AppModel()
     @Environment(\.scenePhase) private var phase
 
@@ -68,7 +69,9 @@ final class AppModel: ObservableObject {
         guard let stored = SessionStore.load() else { return }
         url = Self.url(of: stored) ?? url
         do {
-            control = try Control(stored: stored)
+            let c = try Control(stored: stored)
+            control = c
+            PushCenter.shared.start(c)
         } catch {
             SessionStore.forget()
             notice = "Sign in again: \(error.localizedDescription)"
@@ -79,7 +82,9 @@ final class AppModel: ObservableObject {
         try SessionStore.save(stored)
         url = Self.url(of: stored) ?? url
         notice = nil
-        control = try Control(stored: stored)
+        let c = try Control(stored: stored)
+        control = c
+        PushCenter.shared.start(c)
     }
 
     /// Ask control whether it still serves this build: as the app opens or
@@ -106,7 +111,13 @@ final class AppModel: ObservableObject {
         let c = control
         SessionStore.forget()
         control = nil
-        if let c { Task { await c.signOut() } }
+        // This device's notifications stop, then the session ends.
+        if let c {
+            Task {
+                await PushCenter.shared.stop(c)
+                await c.signOut()
+            }
+        }
     }
 }
 

@@ -25,6 +25,34 @@ a list sits beside what's open from it (a project, a chat room, a machine).
   key control's directory lists for it. It needs `ARUGULA_NATIVE_CLIENTS` on the
   hub; without it the app says this Arugula isn't taking its sign-in yet.
 
+## Push
+
+Notifications come through APNs (#1260), encrypted for this device the way
+a browser's Web Push is, so neither control nor Apple reads them:
+
+- **Subscribing:** signed in, the app asks to notify, and APNs hands it a
+  device token. It subscribes with control (`POST /api/push/subscribe`, which
+  a native login may call for an APNs device and nothing else) at
+  `https://api.push.apple.com/3/device/<token>`, or `api.sandbox.push.apple.com`
+  when the build's profile says `aps-environment` development, with an ECDH
+  key and a secret it makes once (RFC 8291's `p256dh` and `auth`). They're
+  kept in the keychain group `HNDPMQPF22.io.arugula.ios.shared`, which the
+  extension shares. Signing out unsubscribes it.
+- **Sending:** daemons encrypt for that subscription and relay it as for any
+  other; control sends APNs an alert that says only that something came,
+  with the ciphertext as `e`.
+- **Showing it:** `ArugulaNotify`, a Notification Service Extension, decrypts
+  `e` with CryptoKit (`Shared/WebPush.swift`) and shows the real title and
+  body; one per pane or room, the newest replacing the last.
+- **Tapping it** opens what it's about: a pane on a machine (an agent's
+  question), a chat room or an issue.
+
+`PushTests/run.sh` checks the decrypting on a Mac against RFC 8291's example
+and a daemon's own bytes (`just native-ios` runs it). The App IDs need Push
+Notifications (`io.arugula.ios`) and to exist (`io.arugula.ios.notify`):
+`build.sh` with `ASC_KEY_PATH`, `ASC_KEY_ID` and `ASC_ISSUER_ID` set signs
+with the App Store Connect key in place of Xcode's account.
+
 ## TestFlight
 
 `just native-testflight` on geek uploads `origin/main` to TestFlight (#603).
@@ -62,4 +90,4 @@ with a change an older build can't follow. After that, control raises
 current build and the one before it (`contract/README.md`).
 
 What isn't here yet: live chat (an open room looks again every few seconds), text
-selection in the terminal, sessions, approvals and push.
+selection in the terminal, sessions, and approvals (from a notification too).

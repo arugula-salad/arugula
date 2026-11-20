@@ -145,4 +145,23 @@ mod tests {
         swapped.p256dh = "BXXX".into();
         assert!(!swapped.signed_by(&c));
     }
+
+    /// A daemon's notification for RFC 8291's example keys, with its
+    /// sender key and salt, so it's the same every time: the iPhone app's
+    /// decrypting is checked against these bytes (native/ios/PushTests,
+    /// #1260).
+    #[test]
+    fn the_iphone_apps_example() {
+        use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD as B64};
+        let d = |s: &str| B64.decode(s).unwrap();
+        let local = SecretKey::from_slice(&d("yfWPiYE-n46HLnH0KqZOF1fJJU3MYrct3AELtAQ-oRw")).unwrap();
+        let ua = d("BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4");
+        let salt: [u8; 16] = d("DGv6ra1nlYgDCS1FRnbzlw").try_into().unwrap();
+        let said = br#"{"title":"Needs you","body":"Run the tests?","pane":3,"tag":"pane-3","daemon":"d1"}"#;
+        let body = encrypt(said, &ua, &d("BTBZMqHH6r4Tts7J_aSIgg"), &local, &salt).unwrap();
+        assert_eq!(
+            B64.encode(body),
+            "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_e3c9cFr7_NBuenescvlYf5Grx9_cXCMaB6jpGw4jlRbTLVj1jFGvJQhKtjFONkFoXCqdCsknxnqpyt5HaaijivSrqnYoAV6nZYqUtFGYK-r132x169JHllw6vmltNz-cPpCqU"
+        );
+    }
 }
