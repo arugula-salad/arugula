@@ -312,15 +312,42 @@ struct IssuesView: View {
 /// A board's thread, pushed from its lead on Boards.
 struct BoardThreadRef: Hashable { let board: Board }
 
+/// A lead's chip that follows its session on the fleet.
+struct LiveLeadChip: View {
+    let lead: Board.Lead
+    @ObservedObject var fleet: HomeFleet
+
+    var body: some View { LeadChip(lead: LeadLine(lead, fleet: fleet)) }
+}
+
+/// A board's thread from Boards, with the sessions on its cards in flight
+/// as home reads them.
+struct BoardsThread: View {
+    let control: Control
+    let board: Board
+    @ObservedObject var model: HomeModel
+    @ObservedObject var fleet: HomeFleet
+    let live: LiveChat
+    let peek: (Peeked) -> Void
+    @EnvironmentObject private var scope: Scope
+
+    var body: some View {
+        let sessions = scope.current.map { HomeState(project: $0, fleet: fleet, model: model).sessions[board.id] ?? [] } ?? []
+        BoardThread(control: control, board: board, model: model, fleet: fleet, live: live, sessions: sessions, peek: peek)
+    }
+}
+
 /// The current project's boards as cards; a board opens to its lanes, and
 /// its lead (Arugula #1279) to its thread, where a post reaches the lead.
 /// Sessions on its cards and the lead itself open a peek there, as on home.
 struct BoardsView: View {
     let control: Control
-    /// Home's, for the boards' threads and the sessions on their cards.
-    @ObservedObject var model: HomeModel
-    @ObservedObject var fleet: HomeFleet
-    @ObservedObject var live: LiveChat
+    /// Home's, for the boards' threads and the sessions on their cards:
+    /// watched only by what shows them, as the fleet changes with every
+    /// pane's output.
+    let model: HomeModel
+    let fleet: HomeFleet
+    let live: LiveChat
     @EnvironmentObject private var scope: Scope
     @State private var path = NavigationPath()
     @State private var peek: Peeked?
@@ -350,7 +377,7 @@ struct BoardsView: View {
             .tabHeading("Boards", project: true)
             .navigationDestination(for: Board.self) { BoardScreen(control: control, board: $0) }
             .navigationDestination(for: BoardThreadRef.self) { ref in
-                BoardThread(control: control, board: ref.board, model: model, fleet: fleet, live: live, sessions: sessions(ref.board)) { peek = $0 }
+                BoardsThread(control: control, board: ref.board, model: model, fleet: fleet, live: live) { peek = $0 }
                     .backBesideTabs("Boards") { path.removeLast() }
             }
             .navigationDestination(for: BoardLanes.self) {
@@ -394,7 +421,7 @@ struct BoardsView: View {
             if let lead = b.lead {
                 NavigationLink(value: BoardThreadRef(board: b)) {
                     HStack(spacing: 6) {
-                        LeadChip(lead: LeadLine(lead, fleet: fleet))
+                        LiveLeadChip(lead: lead, fleet: fleet)
                         Spacer(minLength: 4)
                         Image(systemName: "bubble.left").font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.accent)
                     }
@@ -407,12 +434,6 @@ struct BoardsView: View {
             }
         }
         .card(.accent)
-    }
-
-    /// The sessions on a board's cards in flight, as home reads them.
-    private func sessions(_ b: Board) -> [BoardSession] {
-        guard let p = scope.current else { return [] }
-        return HomeState(project: p, fleet: fleet, model: model).sessions[b.id] ?? []
     }
 
     private func show(_ text: String) {
