@@ -78,6 +78,26 @@ function useThread(doc: string): { room: string | null; messages: ChatMessage[];
   return { room, messages: room ? (chat.messages(room)?.list ?? []) : [], error };
 }
 
+/** How much of the window's foot an on-screen keyboard covers, while
+ * `watch`: a phone's or an iPad's keyboard shrinks the visual viewport and
+ * not the layout one, so a sheet fixed to the foot would sit behind it. */
+function useKeyboard(watch: boolean): number {
+  const [covered, setCovered] = useState(0);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!watch || !vv) return setCovered(0);
+    const measure = () => setCovered(Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)));
+    measure();
+    vv.addEventListener("resize", measure);
+    vv.addEventListener("scroll", measure);
+    return () => {
+      vv.removeEventListener("resize", measure);
+      vv.removeEventListener("scroll", measure);
+    };
+  }, [watch]);
+  return covered;
+}
+
 /** The words of `el`, on one line. */
 const wordsOf = (el: Element) => (el.textContent ?? "").replace(/\s+/g, " ").trim();
 
@@ -103,6 +123,7 @@ export function DocComments({ doc, url, headings, mention, reaches, readOnly, ch
   /** The box: where it is and what it's on. */
   const [open, setOpen] = useState<{ anchor: Anchor; at: HTMLElement } | null>(null);
   const [tops, setTops] = useState<Map<string, number>>(new Map());
+  const keyboard = useKeyboard(narrow && !!open);
   const [, redraw] = useState(0);
 
   const comments = useMemo(
@@ -202,7 +223,7 @@ export function DocComments({ doc, url, headings, mention, reaches, readOnly, ch
         </section>
       )}
       {narrow && open && (
-        <div class="doc-comment-sheet">
+        <div class="doc-comment-sheet" style={{ bottom: `${keyboard}px` }} data-doc-comment-sheet>
           <Box key={`${open.anchor.section}:${open.anchor.quote}`} {...{ doc, url, headings, mention, reaches, room: room!, anchor: open.anchor }} quote done={() => setOpen(null)} />
         </div>
       )}

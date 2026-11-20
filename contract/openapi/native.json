@@ -6715,9 +6715,9 @@
         ]
       }
     },
-    "/p/{project}/docs/{doc}": {
+    "/embed/p/{project}/docs/{doc}": {
       "get": {
-        "operationId": "GET_p_project_docs_doc",
+        "operationId": "GET_embed_p_project_docs_doc",
         "x-arugula-clients": [
           "browser",
           "native"
