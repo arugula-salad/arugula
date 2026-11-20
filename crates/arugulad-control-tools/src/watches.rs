@@ -31,8 +31,8 @@
 
 use arugula_control_wire::events;
 use arugula_control_wire::watch::{
-    AGENT_WATCHES, AGENT_WATCHES_CANCEL, EventTarget, WatchCancel, WatchCancelled, WatchCreate, WatchList, WatchMade,
-    WatchState, WatchTarget, Watcher, event_target, event_types as types, expires_ms as expires,
+    AGENT_WATCHES, AGENT_WATCHES_CANCEL, EventTarget, TARGETS_MAX, WatchCancel, WatchCancelled, WatchCreate, WatchList,
+    WatchMade, WatchState, WatchTarget, Watcher, event_target, event_types as types, expires_ms as expires,
     until_word_parse as until,
 };
 use std::time::Duration;
@@ -371,15 +371,9 @@ pub(crate) async fn wait_event(
 ) -> Out {
     c.owners_own("wait with event").await?;
     let a = CreateArgs { event: Some(event.trim().to_owned()), matches, ..CreateArgs::default() };
-    let session =
-        format!("wait_{}", arugulad_base::push::random::<8>().iter().map(|b| format!("{b:02x}")).collect::<String>());
-    let session_name = match c.own_pane() {
-        Some(p) => arugulad_base::agent_mentions::session_name(c.app(), p).await,
-        None => None,
-    };
-    let expires_in_ms = Some(u64::try_from(limit.as_millis()).unwrap_or(u64::MAX).saturating_add(WAIT_SLACK_MS));
     let what = format!("waiting for {}", event.trim());
     if let Some(on) = local(&a) {
+        let (session, session_name, expires_in_ms) = wait_session(c, limit).await;
         let ask = local_watches::Ask { session, session_name, expires_in_ms, wait: true, ..local_ask(a, on)? };
         let made = local_watches::make(c.app(), ask).await?;
         let Some(id) = made.id.clone().filter(|_| made.state == WatchState::Live) else {
@@ -396,30 +390,105 @@ pub(crate) async fn wait_event(
         return Err("wait with event doesn't hear the cloud's events on a hosted box yet: use watch from a terminal or an agent block on a machine".into());
     }
     let mut body = create_body(a)?;
-    (body.session, body.session_name, body.expires_in_ms) = (session.clone(), session_name, expires_in_ms);
     if wants_project(&body)
         && let Ok(project) = c.current_project(None).await
     {
         body.matches.get_or_insert_default().insert("project".into(), Value::String(project));
     }
     let event = body.event.clone().unwrap_or_default();
-    let listening = Listening::new(c.app(), session);
+    match cloud_wait(c, body, &what, limit).await? {
+        CloudWaited::Fired(id, text) => fired(&id, text),
+        CloudWaited::Already(made) => already(made, "Arugula cloud made no watch, and said nothing of why"),
+        CloudWaited::NotYet(id) => not_yet(&event, &id, limit),
+        CloudWaited::Lost(id) => Err(format!("its watch {id} stopped being listened for before it fired")),
+    }
+}
+
+/// A wait's watch's session (`wait_…`, the call's own), its name as
+/// people read it (the calling pane's session's), and how long it lives.
+async fn wait_session(c: &Call<'_>, limit: Duration) -> (String, Option<String>, Option<u64>) {
+    let session =
+        format!("wait_{}", arugulad_base::push::random::<8>().iter().map(|b| format!("{b:02x}")).collect::<String>());
+    let name = match c.own_pane() {
+        Some(p) => arugulad_base::agent_mentions::session_name(c.app(), p).await,
+        None => None,
+    };
+    let expires = u64::try_from(limit.as_millis()).unwrap_or(u64::MAX).saturating_add(WAIT_SLACK_MS);
+    (session, name, Some(expires))
+}
+
+/// What a wait's cloud watch came to.
+enum CloudWaited {
+    /// It fired: its id and message.
+    Fired(String, String),
+    /// No watch was made: what had already happened, or nothing said.
+    Already(WatchMade),
+    /// The call ended first (its time, or its client went away): the
+    /// watch is cancelled.
+    NotYet(String),
+    /// Its message can't reach the call any more.
+    Lost(String),
+}
+
+/// A short-lived cloud watch for `body`'s targets, on a session of the
+/// call's own (`wait_…`), which the call listens on before the cloud makes
+/// it, so one that fires at once isn't missed; cancelled unless it fired.
+/// Err when the cloud made none: why.
+async fn cloud_wait(c: &Call<'_>, mut body: WatchCreate, what: &str, limit: Duration) -> Result<CloudWaited, String> {
+    (body.session, body.session_name, body.expires_in_ms) = wait_session(c, limit).await;
+    let listening = Listening::new(c.app(), body.session.clone());
     let got = c.app().agent_mentions.wait_for(&listening.session);
     let body = serde_json::to_value(&body).map_err(|e| e.to_string())?;
     let v = c.app().control.cloud(Method::POST, AGENT_WATCHES, Some(&body)).await.map_err(said)?;
     let made: WatchMade =
         serde_json::from_value(v).map_err(|e| format!("Arugula cloud sent an answer I can't read: {e}"))?;
     let Some(id) = made.id.clone().filter(|_| made.state == WatchState::Live) else {
-        return already(made, "Arugula cloud made no watch, and said nothing of why");
+        return Ok(CloudWaited::Already(made));
     };
     *listening.watch.lock().unwrap() = Some(id.clone());
-    match c.waiting(&what, limit, got).await {
+    Ok(match c.waiting(what, limit, got).await {
         Some(Ok(text)) => {
             listening.watch.lock().unwrap().take();
-            fired(&id, text)
+            CloudWaited::Fired(id, text)
         }
-        Some(Err(_)) => Err(format!("its watch {id} stopped being listened for before it fired")),
-        None => not_yet(&event, &id, limit),
+        Some(Err(_)) => CloudWaited::Lost(id),
+        None => CloudWaited::NotYet(id),
+    })
+}
+
+/// How long `wait` reads, at least, once its watch fired with its time
+/// nearly up: what fired it is read from control at once.
+pub(crate) const READ_AFTER: Duration = Duration::from_secs(10);
+
+/// What `wait`'s run or session targets got from their watch.
+pub(crate) enum Watched {
+    /// It happened (fired, or already had): read it as the long-poll would.
+    Happened,
+    /// The call ended first: its watch is cancelled.
+    NotYet,
+    /// No watch to wait on (not joined, a hosted box, an agent a guest
+    /// stands behind, or the cloud refused it): long-poll as before.
+    Unwatched,
+}
+
+/// `wait` with `run` or `agent_session`, served underneath as `event` is:
+/// a short-lived cloud watch on `targets` (any of them fires it), which the
+/// cloud fires from its event log, so the call asks control nothing until
+/// then (https://app.arugula.io/issues/iss_1545620a176cab44b21084c27493241e).
+/// The caller reads what happened after, as it did, for the same answer.
+pub(crate) async fn watched(c: &Call<'_>, targets: Vec<WatchTarget>, what: &str, limit: Duration) -> Watched {
+    let joined = c.app().control.enrolled().is_some_and(|e| !e.saved.is_hosted());
+    // More than a watch takes are long-polled.
+    if !joined || targets.len() > TARGETS_MAX || c.owners_own("wait").await.is_err() {
+        return Watched::Unwatched;
+    }
+    let body = WatchCreate { targets, ..WatchCreate::default() };
+    match cloud_wait(c, body, what, limit).await {
+        Ok(CloudWaited::Fired(..)) => Watched::Happened,
+        Ok(CloudWaited::Already(made)) if made.state == WatchState::AlreadyMet => Watched::Happened,
+        Ok(CloudWaited::NotYet(_)) => Watched::NotYet,
+        // Refused, made none, or its message can't reach the call.
+        Ok(CloudWaited::Already(_) | CloudWaited::Lost(_)) | Err(_) => Watched::Unwatched,
     }
 }
 

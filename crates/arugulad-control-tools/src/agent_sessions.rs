@@ -21,7 +21,9 @@
 //! who started them; `read_session` reads one with its last answer whole
 //! (the thread has only its end); and `wait` with `agent_session` holds
 //! until any of a wave's sessions finishes its turn, with its branch and
-//! head, so a lead doesn't poll. The parameter that names one is
+//! head, so a lead doesn't poll: underneath, a short-lived cloud watch on
+//! them, then the reads, or control's long-poll where it keeps no watches
+//! (`watches::watched`). The parameter that names one is
 //! `agent_session` (`ses_…`), since `session` means the group of tabs
 //! elsewhere; `session`, and the kind `sessions`, are its old names, read
 //! as the new (`arugulad-mcp`'s `ARG_ALIASES`, Arugula #668).
@@ -34,6 +36,7 @@ use arugula_control_wire::sessions::{
     AGENT_SESSIONS, AGENT_SESSIONS_WAIT, AgentSessionStart, AgentSessionStop, SESSION_WAIT_MAX, STOP_REASON_MAX,
     agent_project_sessions, agent_session, agent_session_reply, agent_session_stop,
 };
+use arugula_control_wire::watch::WatchTarget;
 use reqwest::Method;
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -43,6 +46,7 @@ use crate::mcp::{
     issues::Native,
     tools::{Call, Out, done},
 };
+use crate::watches::{self, Watched};
 use crate::{control::CloudRefused, mux::Api};
 
 pub(crate) const START_TOOL: &str = "session_start";
@@ -429,11 +433,21 @@ pub(crate) async fn read_session(c: &Call<'_>, a: ReadSessionArgs) -> Out {
 
 /// `wait` with `agent_session`: until any of them settles (its turn
 /// finished, it waits on a person, or it ended), or `limit`. Each
-/// settled one comes back read whole.
+/// settled one comes back read whole. A cloud watch on them waits first
+/// ([`watches::watched`], any of them fires it); once it fires, or with
+/// none, control is asked as before, which answers at once for those
+/// settled.
 pub(crate) async fn wait_sessions(c: &Call<'_>, ids: &str, limit: Duration) -> Out {
     let ids = session_ids(ids)?;
     let started = Instant::now();
     let body = |wait: u64| json!({ "sessions": ids, "wait": wait });
+    let what = format!("waiting for {}", ids.join(", "));
+    let targets = ids.iter().map(|id| WatchTarget::Session { id: id.clone() }).collect();
+    let left = match watches::watched(c, targets, &what, limit).await {
+        Watched::NotYet => return none_settled(c, &body(0), started, None).await,
+        Watched::Happened => limit.saturating_sub(started.elapsed()).max(watches::READ_AFTER),
+        Watched::Unwatched => limit.saturating_sub(started.elapsed()),
+    };
     // Why control didn't answer the last ask, if it didn't.
     let missed = std::sync::Mutex::new(None::<String>);
     let poll = async {
@@ -462,28 +476,15 @@ pub(crate) async fn wait_sessions(c: &Call<'_>, ids: &str, limit: Duration) -> O
             }
         }
     };
-    let what = format!("waiting for {}", ids.join(", "));
-    let Some(v) = c.waiting(&what, limit, poll).await else {
-        let secs = started.elapsed().as_secs();
-        let mut missed = missed.into_inner().unwrap();
-        let rows = match c.app().control.cloud(Method::POST, AGENT_SESSIONS_WAIT, Some(&body(0))).await {
-            Ok(v) => v["sessions"].as_array().cloned().unwrap_or_default(),
-            Err(e @ (CloudRefused::Unreachable(_) | CloudRefused::Maintenance)) => {
-                missed = Some(e.to_string());
-                vec![]
-            }
-            Err(e) => return Err(said(e)),
-        };
-        let mut s = format!("None finished after {secs}s: call wait with agent_session again.");
-        if let Some(m) = missed {
-            s += &format!(" The last time control was asked it didn't answer ({m}).");
-        }
-        for r in &rows {
-            s += &format!("\n{}", row_line(r));
-        }
-        return done(s, json!({ "state": "still running", "sessions": rows }));
+    let Some(v) = c.waiting(&what, left, poll).await else {
+        return none_settled(c, &body(0), started, missed.into_inner().unwrap()).await;
     };
-    let v = v?;
+    settled_answer(c, v?).await
+}
+
+/// `wait` with `agent_session`'s answer once some settled (`v`, control's
+/// wait's answer): each of them read whole, and the rest as they are.
+async fn settled_answer(c: &Call<'_>, v: Value) -> Out {
     let settled: Vec<String> =
         v["settled"].as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_owned).collect();
     let mut reads = Vec::new();
@@ -504,6 +505,32 @@ pub(crate) async fn wait_sessions(c: &Call<'_>, ids: &str, limit: Duration) -> O
         );
     }
     done(s, json!({ "state": "settled", "settled": reads, "sessions": v["sessions"] }))
+}
+
+/// `wait` with `agent_session`'s answer when none settled by its time:
+/// each as it is now (`now` asks control, waiting for none), and why
+/// control didn't answer the last ask (`missed`), if it didn't. Some that
+/// settled after all (their watch's message lost on the way) answer as
+/// settled.
+async fn none_settled(c: &Call<'_>, now: &Value, started: Instant, mut missed: Option<String>) -> Out {
+    let secs = started.elapsed().as_secs();
+    let rows = match c.app().control.cloud(Method::POST, AGENT_SESSIONS_WAIT, Some(now)).await {
+        Ok(v) if v["settled"].as_array().is_some_and(|s| !s.is_empty()) => return settled_answer(c, v).await,
+        Ok(v) => v["sessions"].as_array().cloned().unwrap_or_default(),
+        Err(e @ (CloudRefused::Unreachable(_) | CloudRefused::Maintenance)) => {
+            missed = Some(e.to_string());
+            vec![]
+        }
+        Err(e) => return Err(said(e)),
+    };
+    let mut s = format!("None finished after {secs}s: call wait with agent_session again.");
+    if let Some(m) = missed {
+        s += &format!(" The last time control was asked it didn't answer ({m}).");
+    }
+    for r in &rows {
+        s += &format!("\n{}", row_line(r));
+    }
+    done(s, json!({ "state": "still running", "sessions": rows }))
 }
 
 #[cfg(test)]
