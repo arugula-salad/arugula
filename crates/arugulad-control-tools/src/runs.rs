@@ -15,11 +15,14 @@
 //!   machine, and runs under the project's standing grant like any
 //!   trigger's. Nothing here approves anything: a deploy's approval is an
 //!   owner device's (M218).
-//! - **Waiting** asks the platform for the run, which answers once it
-//!   moves (`since` and `wait`, at most 15 s a time), until it ends or the
-//!   wait's timeout. Each ask is one read, counted apart from the others;
-//!   past the platform's cap on waits open at once it backs off and asks
-//!   again. Once it ends, it reads the log's tail.
+//! - **Waiting** is a short-lived cloud watch on the run, which the cloud
+//!   fires from its event log when it ends (`watches::watched`); then the
+//!   run is read as below. Where the cloud keeps no watches, it asks the
+//!   platform for the run, which answers once it moves (`since` and
+//!   `wait`, at most 15 s a time), until it ends or the wait's timeout.
+//!   Each ask is one read, counted apart from the others; past the
+//!   platform's cap on waits open at once it backs off and asks again.
+//!   Once it ends, it reads the log's tail.
 //! - **The log** is the platform's durable copy (M213), paged by byte
 //!   offset. Until the platform keeps one, a read says where the output is:
 //!   the run's pane on its machine, which the project's people watch end to
@@ -34,6 +37,7 @@ use std::time::{Duration, Instant};
 use arugula_control_wire::runs::{
     AGENT_RUN_REACH, AgentRunStart, RUN_WAIT_MAX, agent_project_runs, agent_run, agent_run_log,
 };
+use arugula_control_wire::watch::WatchTarget;
 use reqwest::Method;
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -43,6 +47,7 @@ use crate::mcp::{
     results::{RunsProject, RunsReach},
     tools::{Call, Out, PAGE, PAGE_MAX, done},
 };
+use crate::watches::{self, Watched};
 use crate::{control::CloudRefused, mux::Api};
 
 pub(crate) const START_TOOL: &str = "start_run";
@@ -275,11 +280,20 @@ async fn run_log(c: &Call<'_>, run: &str, offset: u64, max: usize) -> Result<Val
     runs_call(c, Method::GET, &format!("{}?offset={offset}&max={max}", agent_run_log(run)), None).await
 }
 
-/// `wait` with `run`: until it ends, or `limit`.
+/// `wait` with `run`: until it ends, or `limit`. A cloud watch on it waits
+/// first ([`watches::watched`]); once it fires, or with none, control is
+/// asked as before, which answers at once for one that ended.
 pub(crate) async fn wait_run(c: &Call<'_>, run: &str, limit: Duration) -> Out {
     owners_runs(c, "wait with run").await?;
     let run = run_id(run)?;
     let started = Instant::now();
+    let what = format!("waiting for {run}");
+    let target = vec![WatchTarget::Run { id: run.to_owned() }];
+    let left = match watches::watched(c, target, &what, limit).await {
+        Watched::NotYet => return still_running(c, run, started, None).await,
+        Watched::Happened => limit.saturating_sub(started.elapsed()).max(watches::READ_AFTER),
+        Watched::Unwatched => limit.saturating_sub(started.elapsed()),
+    };
     // Why control didn't answer the last ask, if it didn't.
     let missed = std::sync::Mutex::new(None::<String>);
     let poll = async {
@@ -312,29 +326,40 @@ pub(crate) async fn wait_run(c: &Call<'_>, run: &str, limit: Duration) -> Out {
             since = r["last_seq"].as_u64();
         }
     };
-    let Some(r) = c.waiting(&format!("waiting for {run}"), limit, poll).await else {
-        let secs = started.elapsed().as_secs();
-        let missed = missed.into_inner().unwrap();
-        return match c.app().control.cloud(Method::GET, &agent_run(run), None).await {
-            Ok(r) => {
-                let mut s = format!("{} hasn't ended after {secs}s: call wait with run again", line(&r));
-                if let Some(m) = missed {
-                    s += &format!(". The last time control was asked it didn't answer ({m})");
-                }
-                done(s, json!({ "state": "still running", "run": r }))
-            }
-            Err(e @ (CloudRefused::Unreachable(_) | CloudRefused::Maintenance)) => done(
-                format!("{run} hadn't ended after {secs}s, as far as control said: call wait with run again. {e}"),
-                json!({ "state": "still running" }),
-            ),
-            Err(e) => Err(said(e)),
-        };
+    let Some(r) = c.waiting(&what, left, poll).await else {
+        return still_running(c, run, started, missed.into_inner().unwrap()).await;
     };
-    let r = r?;
-    // The end of its log, as kept.
+    ended_answer(c, run, r?).await
+}
+
+/// `wait` with `run`'s answer once it ended: it, and the end of its log.
+async fn ended_answer(c: &Call<'_>, run: &str, r: Value) -> Out {
     let path = format!("{}?tail=true&max={PAGE}", agent_run_log(run));
     let log = runs_call(c, Method::GET, &path, None).await.unwrap_or_else(|e| json!({ "note": e }));
     done(format!("{} ended.\n{}", line(&r), log_text(&log)), json!({ "state": r["state"], "run": r, "log": log }))
+}
+
+/// `wait` with `run`'s answer when it hasn't ended by its time: as it is
+/// now, and why control didn't answer the last ask (`missed`), if it didn't.
+/// One that ended after all (its watch's message lost on the way) answers
+/// as ended.
+async fn still_running(c: &Call<'_>, run: &str, started: Instant, missed: Option<String>) -> Out {
+    let secs = started.elapsed().as_secs();
+    match c.app().control.cloud(Method::GET, &agent_run(run), None).await {
+        Ok(r) if ended(&r) => ended_answer(c, run, r).await,
+        Ok(r) => {
+            let mut s = format!("{} hasn't ended after {secs}s: call wait with run again", line(&r));
+            if let Some(m) = missed {
+                s += &format!(". The last time control was asked it didn't answer ({m})");
+            }
+            done(s, json!({ "state": "still running", "run": r }))
+        }
+        Err(e @ (CloudRefused::Unreachable(_) | CloudRefused::Maintenance)) => done(
+            format!("{run} hadn't ended after {secs}s, as far as control said: call wait with run again. {e}"),
+            json!({ "state": "still running" }),
+        ),
+        Err(e) => Err(said(e)),
+    }
 }
 
 /// Whether run tools are live here, for `capabilities`: joined, and a

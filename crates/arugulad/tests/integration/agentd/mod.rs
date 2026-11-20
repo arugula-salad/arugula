@@ -458,6 +458,16 @@ impl Mcp {
         }
         Ok(r.structured_content.unwrap_or_default())
     }
+
+    /// [`Mcp::call`], given up on after `within`: none if it hadn't
+    /// answered by then. Dropping the client after is its going away.
+    pub fn call_within(&self, tool: &str, args: Value, within: Duration) -> Option<Result<Value, String>> {
+        let s = self.session.as_ref().unwrap();
+        let params = rmcp::model::CallToolRequestParams::new(tool.to_owned())
+            .with_arguments(args.as_object().cloned().unwrap_or_default());
+        let r = self.rt.block_on(async { tokio::time::timeout(within, s.call_tool(params)).await }).ok()?;
+        Some(r.map_err(|e| format!("{tool}: {e}")).map(|r| r.structured_content.unwrap_or_default()))
+    }
 }
 
 impl Drop for Mcp {

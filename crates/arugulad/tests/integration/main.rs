@@ -132,6 +132,7 @@ mod telemetry;
 mod upgrade;
 mod version;
 mod vm_layout;
+mod wait_watched;
 mod waits;
 mod windows;
 mod windows_agents;
