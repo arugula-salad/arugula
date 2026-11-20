@@ -91,6 +91,7 @@
     {"method":"POST","path":"/api/issues/{issue}/agent","auth":"session","clients":["page","native"]},
     {"method":"POST","path":"/api/join","auth":"join_proof","clients":["daemon","cli","native"]},
     {"method":"GET","path":"/api/join/{code}","auth":"poll_token","clients":["daemon","cli","native"]},
+    {"method":"POST","path":"/api/machines/{id}/token","auth":"session","clients":["page","cli","native"]},
     {"method":"GET","path":"/api/me","auth":"session","clients":["page","cli","native"]},
     {"method":"GET","path":"/api/people","auth":"session","clients":["page","native"]},
     {"method":"GET","path":"/api/projects","auth":"session","clients":["page","cli","native"]},
@@ -222,6 +223,10 @@
     {"method":"POST","path":"/api/sessions/{ses}/stop","auth":"session","clients":["page","native"]},
     {"method":"POST","path":"/api/sessions/{ses}/try","auth":"session","clients":["page","native"]},
     {"method":"GET","path":"/api/teams","auth":"session","clients":["page","cli","native"]},
-    {"method":"GET","path":"/api/teams/{id}/rosters","auth":"session","clients":["page","native"]}
+    {"method":"GET","path":"/api/teams/{id}/rosters","auth":"session","clients":["page","native"]},
+    {"method":"POST","path":"/auth/app","auth":"public","clients":["app","cli","native"]},
+    {"method":"POST","path":"/auth/app/{id}/redeem","auth":"app_ticket","clients":["page","cli","native"]},
+    {"method":"POST","path":"/auth/logout","auth":"session","clients":["page","cli","native"]},
+    {"method":"GET","path":"/control.json","auth":"public","clients":["page","daemon","cli","app","native"]}
   ]
 }

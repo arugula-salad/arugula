@@ -2070,6 +2070,24 @@ takes the page's session cookie alone (`auth::PageSession`):
 - recovery codes;
 - adding a passkey (which reads the cookie itself, `session_of`).
 
+A native app's login (#1247) is the same kind of thing on a phone. A phone
+has no browser on its own computer to hand a grant to a loopback port, so
+the app asks `/auth/app` with the `native` feature and a `callback`, which
+control takes only as one of the app's own URLs exactly (today
+`arugula://signin`; a universal link once the app is in the site's AASA,
+#604). The app opens the page in the system's sign-in sheet
+(`ASWebAuthenticationSession`, or a Custom Tab on Android); Allow sends
+the sheet to `arugula://signin?ticket=<id>&grant=<grant>` (the page goes
+there only for a native app's sign-in, and only with that ticket and a
+grant), and the sheet hands it to the app that opened it. Any app could
+claim the scheme, so the grant alone redeems nothing: the app redeems it
+from its own code with the verifier only it holds, once, as the CLI does.
+Its session is a native app's (`sessions.via = native`): a session only
+where `clients` lists `native`, with `--native-clients` on; the platform
+hears it as a CLI's, so it approves no deploy and signs no standing grant
+whatever its row lists, and it takes none of the page-only actions above.
+Those stay with the page until the app has passkeys of its own (#604).
+
 **Adding a passkey** (`passkey.rs`) takes more than a session, since
 attestation is `none` and a passkey made in software can claim to verify
 anyone. Never from the desktop app's window (`sessions.via = app`), and:

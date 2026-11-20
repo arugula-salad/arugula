@@ -31,6 +31,7 @@ export function AppLoginPrompt({ s, id }: { s: ControlSession; id: string }) {
     s.showAppLogin(id).then(setA, (e: Error) => setErr(e.message));
   }, [id]);
   const cli = a?.kind === "cli";
+  const native = a?.kind === "native";
   return (
     <Modal close={clearHash}>
       <h2 data-app-login-kind={a?.kind ?? ""}>{cli ? "Sign in the CLI?" : "Sign in the app?"}</h2>
@@ -53,6 +54,12 @@ export function AppLoginPrompt({ s, id }: { s: ControlSession; id: string }) {
               It asked from another network ({a.from}) than this browser's. If you didn't start it yourself, on a computer of yours, cancel.
             </p>
           )}
+          {native ? (
+            <p data-app-login-native>
+              It reaches your machines, chat and projects, as this page does. It can't approve sign-ins, devices or deploys, or add passkeys: do those
+              in a browser.
+            </p>
+          ) : null}
           {cli ? (
             <p data-app-login-cli>
               It reaches your machines and does what the command line does. It can't approve sign-ins, devices or deploys, add passkeys or change a
@@ -72,8 +79,9 @@ export function AppLoginPrompt({ s, id }: { s: ControlSession; id: string }) {
               onClick={async () => {
                 setBusy(true);
                 try {
-                  // To the app's loopback port; it sends this page back.
-                  location.href = await s.allowAppLogin(id);
+                  // To the app's loopback port, which sends this page back;
+                  // or a native app's callback, which closes its sheet.
+                  location.href = await s.allowAppLogin(id, a.kind);
                 } catch (e) {
                   setErr((e as Error).message);
                   setBusy(false);
