@@ -9,17 +9,13 @@ import SwiftUI
 
 struct ChatRoomsView: View {
     let control: Control
+    /// The app's one stream, home's.
+    @ObservedObject var live: LiveChat
     @EnvironmentObject private var scope: Scope
-    @StateObject private var live: LiveChat
     @ObservedObject private var push = PushCenter.shared
     @State private var picked: ChatRoom?
     @State private var columns = NavigationSplitViewVisibility.all
     @Environment(\.scenePhase) private var phase
-
-    init(control: Control) {
-        self.control = control
-        _live = StateObject(wrappedValue: LiveChat(control: control))
-    }
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columns) {
@@ -109,6 +105,13 @@ struct ChatRoomView: View {
     let control: Control
     let room: ChatRoom
     @ObservedObject var live: LiveChat
+    /// What to call it, when not the room's name: a board's thread is the board's.
+    var title: String?
+    /// Over the messages: a board's lane bar.
+    var heading: AnyView?
+    /// The replies in the thread of this message instead of the room's list:
+    /// a session's conversation hangs off its first message.
+    var thread: Int?
     @State private var messages: [ChatMessage] = []
     @State private var draft = ""
     @State private var problem: String?
@@ -116,6 +119,7 @@ struct ChatRoomView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if let heading { heading }
             ScrollViewReader { proxy in
                 ScrollView {
                     let shown = messages.filter { $0.deleted == nil }
@@ -142,7 +146,7 @@ struct ChatRoomView: View {
             }
             if room.writable {
                 HStack(alignment: .bottom, spacing: 8) {
-                    TextField("Message \(room.title)", text: $draft, axis: .vertical)
+                    TextField(thread == nil ? "Message \(title ?? room.title)" : "Reply", text: $draft, axis: .vertical)
                         .lineLimit(1...6)
                         .font(Face.ui(16))
                         .padding(.horizontal, 12)
@@ -168,7 +172,7 @@ struct ChatRoomView: View {
             }
         }
         .background(Palette.bg)
-        .detailTitle(room.title)
+        .detailTitle(title ?? room.title)
         // The stream says when this room changed; a slow look again covers a
         // stream that's down.
         .task {
@@ -207,11 +211,13 @@ struct ChatRoomView: View {
 
     private func load() async {
         do {
-            let page = try await control.get("/api/chat/rooms/\(room.id)/messages", as: ChatMessages.self)
+            let path = "/api/chat/rooms/\(room.id)/messages" + (thread.map { "?thread=\($0)" } ?? "")
+            let page = try await control.get(path, as: ChatMessages.self)
             messages = page.messages.sorted { $0.seq < $1.seq }
             problem = nil
             if let last = messages.last?.seq {
-                _ = try? await control.call("POST", "/api/chat/rooms/\(room.id)/read", body: ["seq": last])
+                let read = thread.map { "/api/chat/rooms/\(room.id)/threads/\($0)/read" } ?? "/api/chat/rooms/\(room.id)/read"
+                _ = try? await control.call("POST", read, body: ["seq": last])
             }
         } catch is CancellationError {
         } catch {
@@ -223,7 +229,9 @@ struct ChatRoomView: View {
         sending = true
         defer { sending = false }
         do {
-            _ = try await control.call("POST", "/api/chat/rooms/\(room.id)/messages", body: ["text": draft])
+            var body: [String: Any] = ["text": draft]
+            if let thread { body["parent"] = thread }
+            _ = try await control.call("POST", "/api/chat/rooms/\(room.id)/messages", body: body)
             draft = ""
             await load()
         } catch {

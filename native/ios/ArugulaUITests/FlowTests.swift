@@ -1,5 +1,6 @@
 // The app as a person takes it, on a simulator against a real control
-// (native/ios/test-sim.sh): sign in, projects, chat, a terminal. The script
+// (native/ios/test-sim.sh): sign in, home, a board's thread and its lanes,
+// projects, chat, a terminal. The script
 // allows the sign-in from outside, as a signed-in browser would, and hands back
 // the address the Allow was sent to, which a web sheet would have caught.
 
@@ -20,6 +21,26 @@ final class FlowTests: XCTestCase {
     }
 
     private var iPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
+
+    /// A tab, from home's menu or from the tab bar once one is open.
+    private func go(_ app: XCUIApplication, _ name: String) {
+        let menu = app.buttons["home-menu"]
+        if menu.exists {
+            menu.tap()
+            let item = app.buttons[name].firstMatch
+            XCTAssertTrue(item.waitForExistence(timeout: 10), "no \(name) in home's menu")
+            item.tap()
+        } else {
+            tab(app, name).tap()
+        }
+    }
+
+    /// Back one screen: the bar's back button (on an iPad the sidebar's
+    /// button comes first, so by its name).
+    private func goBack(_ app: XCUIApplication) {
+        let named = app.navigationBars.buttons["Back"].firstMatch
+        (named.exists ? named : app.navigationBars.buttons.element(boundBy: 0)).tap()
+    }
 
     func testSignInProjectsChatAndATerminal() throws {
         continueAfterFailure = false
@@ -66,8 +87,39 @@ final class FlowTests: XCTestCase {
         XCTAssertTrue(switcher.label.lowercased().contains("default"), "not in the Default project: \(switcher.label)")
         shot(app, "2-projects")
 
+        // Home (Arugula #1255): the board the script made, its row's question
+        // under Needs you, its thread and its lanes, and back.
+        if let title = env["ARUGULA_BOARD"], !title.isEmpty {
+            let board = app.buttons["home-board-\(title)"]
+            XCTAssertTrue(board.waitForExistence(timeout: 45), "home has no board \(title): \(app.debugDescription)")
+            if let ask = env["ARUGULA_ASK"], !ask.isEmpty {
+                let asked = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", ask)).firstMatch
+                XCTAssertTrue(asked.waitForExistence(timeout: 30), "Needs you hasn't the board's question")
+            }
+            shot(app, "2-home")
+            board.tap()
+            XCTAssertTrue(app.staticTexts["board-lead"].waitForExistence(timeout: 30), "no board thread")
+            let said = "to-the-board-\(Int.random(in: 1000...9999))"
+            let draft = app.textFields["chat-draft"]
+            XCTAssertTrue(draft.waitForExistence(timeout: 15))
+            draft.tap()
+            draft.typeText(said)
+            app.buttons["chat-send"].tap()
+            XCTAssertTrue(app.staticTexts[said].waitForExistence(timeout: 20), "the board's thread didn't take the post")
+            shot(app, "2-board-thread")
+            app.buttons["open-board"].tap()
+            XCTAssertTrue(app.staticTexts["NEXT"].waitForExistence(timeout: 30), "no lanes")
+            shot(app, "2-board-lanes")
+            goBack(app)
+            XCTAssertTrue(app.staticTexts["board-lead"].waitForExistence(timeout: 15), "not back on the thread")
+            if !iPad {
+                goBack(app)
+                XCTAssertTrue(board.waitForExistence(timeout: 15), "not back home")
+            }
+        }
+
         // Chat: post to the room the script made, and see it come back.
-        tab(app, "Chat").tap()
+        go(app, "Chat")
         let room = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'room-'")).firstMatch
         XCTAssertTrue(room.waitForExistence(timeout: 30), "no chat room")
         room.tap()
@@ -89,7 +141,7 @@ final class FlowTests: XCTestCase {
         // room first: its keyboard covers the tab bar. On an iPad the room sits
         // beside the list, so the tabs stay in reach.
         if !iPad { app.navigationBars.buttons.firstMatch.tap() }
-        tab(app, "Machines").tap()
+        go(app, "Machines")
         let machine = app.buttons[env["ARUGULA_MACHINE"].map { "machine-\($0)" } ?? "machine-box-systemd"]
         XCTAssertTrue(machine.waitForExistence(timeout: 30), "machine not listed")
         machine.tap()
@@ -120,7 +172,7 @@ final class FlowTests: XCTestCase {
         XCTAssertTrue(app.buttons["new-terminal"].waitForExistence(timeout: 10), "not back on the machine")
 
         // Signing out ends it here: the sign-in again.
-        tab(app, "You").tap()
+        go(app, "You")
         let signOut = app.buttons["sign-out"]
         XCTAssertTrue(signOut.waitForExistence(timeout: 30), "no sign-out")
         shot(app, "7-you")

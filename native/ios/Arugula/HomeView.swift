@@ -1,6 +1,7 @@
-// One navigation: projects, chat and machines are tabs of one app, whichever
-// process behind control answers them. Each tab is a list beside what's picked
-// in it on an iPad, and one screen at a time on an iPhone.
+// One navigation: home (Home.swift) in front, and projects, chat and machines
+// as tabs a menu away from it, whichever process behind control answers them.
+// Each tab is a list beside what's picked in it on an iPad, and one screen at
+// a time on an iPhone.
 
 import SwiftUI
 import UIKit
@@ -12,25 +13,24 @@ struct HomeView: View {
     let control: Control
     @StateObject private var scope = Scope()
     @ObservedObject private var push = PushCenter.shared
-    @State private var tab = Tab.issues
+    /// What home reads, kept while a tab is open, so coming back is at once.
+    @StateObject private var model = HomeModel()
+    @StateObject private var fleet = HomeFleet()
+    @StateObject private var live: LiveChat
+    /// The tab open, or none: home (Arugula #1255).
+    @State private var tab: AppTab?
 
-    enum Tab { case issues, boards, chat, machines, you }
+    init(control: Control) {
+        self.control = control
+        _live = StateObject(wrappedValue: LiveChat(control: control))
+    }
 
     var body: some View {
-        VStack(spacing: 0) {
-            TabView(selection: $tab) {
-                // What's in the current project, then the account's machines and
-                // the account itself. Tabs and titles in the theme (Theme.swift).
-                IssuesView(control: control)
-                    .tabItem { Label("Issues", systemImage: "smallcircle.filled.circle") }.tag(Tab.issues)
-                BoardsView(control: control)
-                    .tabItem { Label("Boards", systemImage: "rectangle.split.3x1") }.tag(Tab.boards)
-                ChatRoomsView(control: control)
-                    .tabItem { Label("Chat", systemImage: "bubble.left.and.bubble.right") }.tag(Tab.chat)
-                MachinesView(control: control)
-                    .tabItem { Label("Machines", systemImage: "terminal") }.tag(Tab.machines)
-                YouView(control: control)
-                    .tabItem { Label("You", systemImage: "person.crop.circle") }.tag(Tab.you)
+        Group {
+            if let tab {
+                tabs(tab)
+            } else {
+                PhoneHome(control: control, model: model, fleet: fleet, live: live) { tab = $0 }
             }
         }
         // A tapped notification (#1260): its tab, whose view opens the thing.
@@ -44,7 +44,30 @@ struct HomeView: View {
         }
         .background(Palette.void)
         .environmentObject(scope)
+        .environment(\.goHome, { tab = nil })
         .task { await scope.load(control) }
+    }
+
+    private func tabs(_ open: AppTab) -> some View {
+        TabView(selection: Binding(get: { tab ?? open }, set: { tab = $0 })) {
+            // What's in the current project, then the account's machines and
+            // the account itself. Tabs and titles in the theme (Theme.swift).
+            IssuesView(control: control)
+                .tabItem { Label(AppTab.issues.rawValue, systemImage: AppTab.issues.symbol) }
+                .tag(AppTab.issues)
+            BoardsView(control: control)
+                .tabItem { Label(AppTab.boards.rawValue, systemImage: AppTab.boards.symbol) }
+                .tag(AppTab.boards)
+            ChatRoomsView(control: control, live: live)
+                .tabItem { Label(AppTab.chat.rawValue, systemImage: AppTab.chat.symbol) }
+                .tag(AppTab.chat)
+            MachinesView(control: control)
+                .tabItem { Label(AppTab.machines.rawValue, systemImage: AppTab.machines.symbol) }
+                .tag(AppTab.machines)
+            YouView(control: control)
+                .tabItem { Label(AppTab.you.rawValue, systemImage: AppTab.you.symbol) }
+                .tag(AppTab.you)
+        }
     }
 }
 
@@ -92,6 +115,7 @@ struct TabHeading: ViewModifier {
     let title: String
     var project = false
     @EnvironmentObject private var scope: Scope
+    @Environment(\.goHome) private var goHome
 
     func body(content: Content) -> some View {
         content
@@ -99,6 +123,13 @@ struct TabHeading: ViewModifier {
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .top, spacing: 0) {
                 VStack(alignment: .leading, spacing: 2) {
+                    if let goHome {
+                        Button(action: goHome) {
+                            Label("Home", systemImage: "chevron.left").font(Face.mono(12, "Bold"))
+                        }
+                        .foregroundStyle(Palette.accent)
+                        .accessibilityIdentifier("go-home")
+                    }
                     if project {
                         Menu {
                             ForEach(scope.projects) { p in

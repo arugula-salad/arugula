@@ -5,8 +5,19 @@ channel to a machine and the terminal ([aru-132](../../docs/decisions/)). The co
 to Swift through a small C interface, `Arugula/arugula_core.h` and
 `../core/src/ffi.rs`, mostly as JSON.
 
-One app for both: on an iPhone each tab is one screen at a time, and on an iPad
+One app for both: on an iPhone each screen is one at a time, and on an iPad
 a list sits beside what's open from it (a project, a chat room, a machine).
+
+**Home** (`Arugula/Home.swift`, #1255) is what opens: the current project's
+conversations, sorted by what needs you, as the desktop's Overview reads them.
+Needs you merges every online machine's panes that ask or failed (a link to
+each, as the web's fleet opens them), the boards' rows that ask you, fail
+their checks or wait for review, and the hosted sessions that wait on you,
+worst first. Then one row per open board (its lane bar, `done/total`, what's
+going on and who leads it), which opens the board's thread, whose Board
+button opens its lanes; then the channels and DMs. The tabs from before
+(Issues, Boards, Chat, Machines, You) are in home's menu, and each has a way
+back. On an iPad home is the left column, and what it opens sits beside it.
 
 - **On a phone or an iPad:** `just native-phone DEVICE` on a Mac signed in to the
   Apple team (`xcrun devicectl list devices` has the id). It builds, signs with
@@ -15,8 +26,11 @@ a list sits beside what's open from it (a project, a chat room, a machine).
 - **On a simulator, end to end:** control's hub lives in the cloud repository, so
   its testnet drives this: `ARUGULA_NATIVE_SIM_HOST=MAC just testnet test control
   native-sim` there, with this repository's branch at `~/src/native-app` on the
-  Mac. Its UI test signs in, reads projects, posts in chat and runs a command in
-  a relayed terminal. `ARUGULA_SIM_FAMILY=iPad` on the Mac runs it on an iPad.
+  Mac (`ARUGULA_NATIVE_SIM_DIR` names another). Its UI test signs in, finds the
+  board the claim made on home with its row's question under Needs you, opens
+  the board's thread, posts there and opens its lanes, then reads projects,
+  posts in chat and runs a command in a relayed terminal.
+  `ARUGULA_SIM_FAMILY=iPad` on the Mac runs it on an iPad.
 - **Signing in** is the desktop app's and the CLI's way (#999): the app opens
   control's page in a web sheet (`ASWebAuthenticationSession`), someone signed
   in clicks Allow, and the page sends a one-time grant to `arugula://signin`.
@@ -89,5 +103,5 @@ with a change an older build can't follow. After that, control raises
 `native_api_min` only once no supported build needs the older one: the
 current build and the one before it (`contract/README.md`).
 
-What isn't here yet: live chat (an open room looks again every few seconds), text
-selection in the terminal, sessions, and approvals (from a notification too).
+What isn't here yet: text selection in the terminal, and answering from home
+or from a notification.
