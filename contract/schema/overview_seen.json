@@ -1,0 +1,41 @@
+{
+  "$defs": {
+    "OverviewSeen": {
+      "description": "The head a person's Overview of a project last showed them.",
+      "properties": {
+        "at_ms": {
+          "description": "When it was kept, in ms since the epoch: 0 when they never looked.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "seq": {
+          "description": "The log's number they had seen up to: 0 when they never looked.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "seq",
+        "at_ms"
+      ],
+      "type": "object"
+    },
+    "OverviewSeenPut": {
+      "description": "`PUT`: the head the Overview showed. A number past the log's head is\nkept as the head, and one below what's kept leaves it as it was, so\ntwo tabs never move it back.",
+      "properties": {
+        "seq": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "seq"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "arugula_control_wire::overview_seen"
+}

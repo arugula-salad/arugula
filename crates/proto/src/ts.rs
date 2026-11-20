@@ -174,6 +174,10 @@ fn generate() -> String {
     }
     // The sessions a person pinned (Arugula iss_c0fd27ac196647fa7c857dc3659a0098).
     c.visit::<arugula_control_wire::session_pins::SessionPins>();
+    // The event log as a person reads it, and where their Overview last looked (Arugula #1277).
+    c.visit::<arugula_control_wire::events::EventsPage>();
+    c.visit::<arugula_control_wire::overview_seen::OverviewSeen>();
+    c.visit::<arugula_control_wire::overview_seen::OverviewSeenPut>();
     // The platform page's projects (M150).
     c.visit::<arugula_control_wire::projects::Projects>();
     // Making a project, and renaming, archiving and moving one (Arugula #892).

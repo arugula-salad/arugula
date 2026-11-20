@@ -66,7 +66,7 @@ fn files() -> Vec<(&'static str, &'static [&'static str], fn(&mut SchemaGenerato
             deploys::DeploySource, deploys::DeployPlan,
         ],
         "events" => [
-            events::Event, events::EventScope, events::Actor, events::ActorKind, events::EventsQuery, events::EventsPage,
+            events::Event, events::EventScope, events::Actor, events::ActorKind, events::EventsQuery, events::ProjectEventsQuery, events::EventsPage,
         ],
         "feedback" => [
             feedback::FeedbackSubmit, feedback::FeedbackKind, feedback::FeedbackSource, feedback::FeedbackSurface, feedback::FeedbackAgent, feedback::FeedbackContext, feedback::FailedCall, feedback::FeedbackWho, feedback::FeedbackStamp, feedback::FeedbackAck, feedback::FeedbackRefused,
@@ -97,6 +97,9 @@ fn files() -> Vec<(&'static str, &'static [&'static str], fn(&mut SchemaGenerato
         ],
         "machine_token" => [
             machine_token::TokenRole, machine_token::MachineClaims, machine_token::MachineTokenResponse, machine_token::TokenHello, machine_token::BlockGrantRequest, machine_token::BlockClaims, machine_token::BlockGrantResponse, machine_token::BlockTokenHello, machine_token::Jwk, machine_token::Jwks,
+        ],
+        "overview_seen" => [
+            overview_seen::OverviewSeen, overview_seen::OverviewSeenPut,
         ],
         "projects" => [
             projects::Projects, projects::Me, projects::Project, projects::ProjectOwner, projects::ProjectOwnerRef, projects::ProjectCreate, projects::ProjectPatch, projects::ProjectTeam, projects::ProjectMember, projects::LinkedRepos, projects::LinkedRepo, projects::RepoSettings, projects::LinkRepo, projects::TrackerConnections, projects::TrackerConnection, projects::CiAlerts, projects::CiAlertOpen, projects::CiAlertsSettings, projects::CiAlertsKey, projects::ConnectTracker, projects::TrackerSettings, projects::TrackerWritePolicy, projects::TrackerClose, projects::TrackerWrite, projects::TrackerWriteDone, projects::TrackerFields, projects::TrackerFieldState, projects::TrackerFieldName, projects::TrackerPendingWrite, projects::TrackerPendingWrites, projects::TrackerHistory, projects::TrackerEvent, projects::TrackerReach, projects::TrackerReachProject, projects::TrackerReachConnection, projects::ForgeItems, projects::WithheldRepo, projects::ForgeItem, projects::ForgeChecks, projects::ForgeCheck, projects::ForgeEvents, projects::ForgeEvent, projects::ForgeContent, projects::ForgeText, projects::ForgeRepo, projects::NewDraft, projects::DraftCreated, projects::DraftDiscarded, projects::ForgeDrafts, projects::ForgeDraft, projects::Inbox, projects::InboxEntry, projects::InboxMark, projects::InboxMarked, projects::SendDraft, projects::DraftSent, projects::MachineSending,

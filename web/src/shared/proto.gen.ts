@@ -2631,6 +2631,29 @@ commits?: number, force?: boolean, };
 
 export type EventKind = "commented" | "review_comment" | "reviewed" | "review_requested" | "review_request_removed" | "review_dismissed" | "pushed" | "labeled" | "assigned" | "renamed" | "referenced" | "merged" | "closed" | "reopened" | "branch_deleted" | "milestone" | "mentioned" | "other";
 
+/**
+ * A read of the log: its events in `seq` order, as stored (metadata
+ * only), and where to read on from.
+ */
+export type EventsPage = { events: Array<LogEvent>, 
+/**
+ * The next read's `after`: past every event this one looked at,
+ * including those it left out (another project's or type's, or one
+ * the agent may not see), so none is read twice.
+ */
+next_after: number, 
+/**
+ * The log's newest number when it was read. `next_after` below it:
+ * there's more to read.
+ */
+head: number, 
+/**
+ * The log no longer keeps the events after `after` numbered below
+ * this: they were older than it keeps them, and are gone. None when it
+ * had them all.
+ */
+gone_before?: number | null, };
+
 export type ExportedIssue = { issue: NativeIssue, events: Array<IssueEvent>, 
 /**
  * Oldest first; deleted ones left out.
@@ -3926,6 +3949,95 @@ process?: string,
 pane?: boolean, };
 
 /**
+ * Who did what an event says.
+ */
+export type LogActor = { kind: LogActorKind, 
+/**
+ * The account's or agent session's id; for an external actor, its id
+ * at the source.
+ */
+id: string, 
+/**
+ * Their login as people read it, when they have one. An external
+ * one's is what the source said, untrusted.
+ */
+login: string | null, };
+
+/**
+ * What kind of actor.
+ */
+export type LogActorKind = "account" | "agent" | "external" | "other";
+
+/**
+ * One event in the log.
+ */
+export type LogEvent = { 
+/**
+ * `evt_…`.
+ */
+id: string, 
+/**
+ * Its place in the log, in commit order: a reader by `seq` misses
+ * none.
+ */
+seq: number, 
+/**
+ * Its type, a name in the catalog (`issue.closed`), or one this side
+ * doesn't know yet.
+ */
+type: string, 
+/**
+ * The version of its type's `data`, from 1.
+ */
+v: number, 
+/**
+ * Who it came from: [`SOURCE_ARUGULA`], [`SOURCE_GITHUB`],
+ * [`SOURCE_PLANE`], or another adapter's name.
+ */
+source: string, scope: LogEventScope, 
+/**
+ * What it's about, as a ref Arugula already reads: `iss_…`,
+ * `owner/repo#12`, `run_…`, `dep_…`, `ses_…`, a pane's id, or a room
+ * and thread (`room_…#12`).
+ */
+subject: string, 
+/**
+ * Who did it, when anyone did.
+ */
+actor: LogActor | null, 
+/**
+ * When it happened, as its source says, in ms since the epoch.
+ */
+at_ms: number, 
+/**
+ * When the log took it, in ms since the epoch.
+ */
+recorded_ms: number, 
+/**
+ * The type's fields: metadata only, at most [`DATA_MAX_BYTES`]
+ * ([`data_check`]). Null when it has none.
+ */
+data: Record<string, unknown> | null, 
+/**
+ * Its identity for deduplication: a second event with the same key is
+ * dropped (a webhook's delivery id, `issue.closed:iss_…:3`).
+ */
+key: string, };
+
+/**
+ * Where an event belongs: who may see it is decided from here.
+ */
+export type LogEventScope = { 
+/**
+ * The team's id.
+ */
+team: string, 
+/**
+ * The project's id (`prj_…`), when it's in one.
+ */
+project: string | null, };
+
+/**
  * A machine that blocks can run on instead of this host: a throwaway
  * sandbox from the provider (a loam microVM) owned by one pane or tab,
  * and deleted when that closes.
@@ -4472,6 +4584,26 @@ export type OptionScope = { "kind": "global" } | { "kind": "session", "id": numb
 export type Options = { global?: { [key in string]: string }, sessions?: Array<[number, { [key in string]: string }]>, tabs?: Array<[number, { [key in string]: string }]>, panes?: Array<[number, { [key in string]: string }]>, };
 
 export type Os = "linux" | "macos" | "windows" | "other";
+
+/**
+ * The head a person's Overview of a project last showed them.
+ */
+export type OverviewSeen = { 
+/**
+ * The log's number they had seen up to: 0 when they never looked.
+ */
+seq: number, 
+/**
+ * When it was kept, in ms since the epoch: 0 when they never looked.
+ */
+at_ms: number, };
+
+/**
+ * `PUT`: the head the Overview showed. A number past the log's head is
+ * kept as the head, and one below what's kept leaves it as it was, so
+ * two tabs never move it back.
+ */
+export type OverviewSeenPut = { seq: number, };
 
 /**
  * A machine's owner: one pane (M3b), or a tab whose panes share it (M3c).
