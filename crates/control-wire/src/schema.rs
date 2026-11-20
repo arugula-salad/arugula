@@ -110,6 +110,9 @@ fn files() -> Vec<(&'static str, &'static [&'static str], fn(&mut SchemaGenerato
         "runs" => [
             runs::RunStart, runs::RunRevoke, runs::RunListQuery, runs::RunQuery, runs::RunLogQuery, runs::AgentRunStart, runs::RunView, runs::RunDeployView, runs::RunEventView, runs::RunArtifactView, runs::RunList, runs::RunLogPage, runs::RunReach, runs::RunReachProject,
         ],
+        "session_pins" => [
+            session_pins::SessionPin, session_pins::SessionPins,
+        ],
         "sessions" => [
             sessions::SessionCard, sessions::SessionPlace, sessions::SessionIssueLink, sessions::SessionMove, sessions::ChatAsk, sessions::ChatAskAnswer, sessions::SessionTry, sessions::SessionTryAsk, sessions::SessionPick, sessions::SessionTurn, sessions::SessionFinish, sessions::SessionOpen, sessions::SessionAnswered, sessions::SessionPort, sessions::SessionLine, sessions::SessionView, sessions::SessionAct, sessions::SessionPr, sessions::SessionPrEdit, sessions::SessionPrSend, sessions::SessionPrSent, sessions::SessionSettings, sessions::SessionStats, sessions::IssueAgent, sessions::AgentSessionStart, sessions::AgentSessionStarted, sessions::AgentSessionReply, sessions::AgentSessionReplied, sessions::AgentSessionStop, sessions::SessionWaveQuery, sessions::SessionIssue, sessions::SessionRow, sessions::SessionWave, sessions::AgentSessionRead, sessions::SessionAnswer, sessions::AgentSessionWait, sessions::AgentSessionsWaited,
         ],

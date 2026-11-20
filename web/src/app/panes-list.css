@@ -77,3 +77,29 @@
 .panes-row.last {
   box-shadow: inset 2px 0 0 var(--accent);
 }
+
+/* The sessions you pinned, first: a sub-heading each, its panes below. */
+.platform-section .panes-pinned-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+  font: 600 var(--text-md) var(--f-ui);
+}
+.panes-pinned-session + .panes-pinned-session {
+  margin-top: var(--space-2);
+}
+.panes-pinned-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0 var(--space-2);
+  font: 500 var(--text-sm) var(--f-ui);
+}
+.panes-pinned-name {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

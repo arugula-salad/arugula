@@ -37,7 +37,10 @@ import { needsYou, placeOf, sortNeedsYou } from "../../shared/needs-you";
 import { Chip } from "../../shared/ui/state-chip";
 import { PaneCardChip } from "./pane-card";
 import type { ComponentChildren } from "preact";
-import { ArrowIcon, AttachIcon, ChevronIcon, PipeKeyIcon, SlashKeyIcon, TildeKeyIcon } from "../../shared/ui/icons";
+import { ArrowIcon, AttachIcon, ChevronIcon, PinIcon, PipeKeyIcon, SlashKeyIcon, TildeKeyIcon } from "../../shared/ui/icons";
+import { sessionGroups } from "../../shared/session-pins";
+import { sessionPins } from "../../shared/session-pins-store";
+import { pinnedHere } from "../pins";
 
 export function PhoneHeader({ client }: { client: Client }) {
   const [open, setOpen] = useState(false);
@@ -107,6 +110,23 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
   // likely reason to have opened this on a phone), the other asks, then
   // the failures, each oldest first.
   const wanting = sortNeedsYou(state.panes.filter(needsYou), (p) => placeOf(p, p.id));
+  // The sessions as the sidebar puts them: those that need you, then the
+  // ones you pinned (Arugula iss_c0fd27ac196647fa7c857dc3659a0098), then
+  // the rest as they were.
+  useSubscribe((fn) => sessionPins.subscribe(fn));
+  const pinned = pinnedHere(client);
+  const asks = (id: number) =>
+    state.sessions
+      .find((s) => s.id === id)!
+      .tabs.flatMap((t) => {
+        const v = client.tabView(t);
+        return v ? paneIds(v) : [];
+      })
+      .some((p) => {
+        const i = client.info(p);
+        return !!i && needsYou(i);
+      });
+  const sessions = sessionGroups(state.sessions, pinned, (s) => ({ id: s.id, group: asks(s.id) ? "needs" : "idle" })).flatMap((g) => g.rows);
   // Cards that belong to no pane (#551): a mention no session took.
   const notices = sortNotices((state.notices ?? []).map((n) => ({ n })));
   const act = (fn: () => void) => () => {
@@ -242,14 +262,20 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
               )}
             <section class="sheet-sessions">
               <h2>Sessions</h2>
-              {state.sessions.map((s) => {
+              {sessions.map((s) => {
                 const open = unfolded.has(s.id);
                 const here = s.id === session;
+                const pin = pinned.includes(s.id);
                 return (
                   <div key={s.id} class={here ? "sheet-card sheet-session here" : "sheet-card sheet-session"}>
-                    <button class="sheet-session-head" aria-expanded={open} data-session={s.id} onClick={() => fold(s.id)}>
+                    <button class="sheet-session-head" aria-expanded={open} data-session={s.id} data-session-pinned={pin || undefined} onClick={() => fold(s.id)}>
                       <span class="fold"><ChevronIcon open={open} /></span>
                       <span class="name">{s.name}</span>
+                      {pin && (
+                        <span class="sheet-pinned" role="img" title="Pinned" aria-label="Pinned">
+                          <PinIcon size="xs" />
+                        </span>
+                      )}
                       <span class="sheet-count">
                         {s.tabs.length} tab{s.tabs.length === 1 ? "" : "s"}
                       </span>

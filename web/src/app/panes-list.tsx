@@ -2,14 +2,20 @@
 // section per machine, read from the fleet's summaries as Swarm's are.
 // The machine is a filter over it, not where it starts, and Agents only
 // another (#1082: where the Sessions page's agents went); a row opens the
-// pane on its machine's page. Opinionated: no options but the filters.
+// pane on its machine's page. The sessions you pinned come first, each
+// with its panes, which aren't listed again under their machine (Arugula
+// iss_c0fd27ac196647fa7c857dc3659a0098). Opinionated: no options but the
+// filters.
 
 import "./panes-list.css";
 import { parseMachines, type MachineAt } from "../shared/machine-paths";
 import { needsYou, NEEDS_YOU } from "../shared/needs-you";
 import { EmptyState } from "../shared/ui/block-states";
 import { usePhone, useSubscribe } from "../shared/ui/hooks";
-import { Caret } from "../shared/ui/icons";
+import { Caret, IconButton, PinIcon } from "../shared/ui/icons";
+import { PINNED, pinnedPanes, stateOf, unpin, type PinnedPanes } from "../shared/session-pins";
+import { sessionPins } from "../shared/session-pins-store";
+import { machineOfHost } from "../shell/pins";
 import { menuBelow, openMenu } from "../shared/ui/menu";
 import { PageHeader } from "../shared/ui/page-header";
 import { Chip, StateChip } from "../shared/ui/state-chip";
@@ -54,6 +60,7 @@ export function PanesList({ project, fleet, machine, agents }: { project: string
   useSubscribe((fn) => directory.subscribe(fn));
   useSubscribe((fn) => fleet.subscribe(fn));
   useSubscribe(onShownProject);
+  useSubscribe((fn) => sessionPins.subscribe(fn));
   const phone = usePhone();
   const to = (at: MachineAt) => pathOf({ page: "machines", project, at }, names);
   // This list, filtered so: the machine's and Agents only's links keep each other.
@@ -68,6 +75,11 @@ export function PanesList({ project, fleet, machine, agents }: { project: string
   const groups = agents ? mine.map((g) => ({ ...g, panes: g.panes.filter(isAgent) })).filter((g) => machine || g.panes.length) : mine;
   const panes = groups.reduce((n, g) => n + g.panes.length, 0);
   const asking = groups.reduce((n, g) => n + g.panes.filter((p) => needsYou(p.info)).length, 0);
+  // Your pins on every machine, filtered as the rest is; none on a page
+  // whose machines control doesn't name.
+  const idOf = (g: PaneGroup) => g.id ?? machineOfHost(g.name);
+  if (groups.some(idOf)) sessionPins.want();
+  const { pinned, groups: below } = pinnedPanes(groups, sessionPins.on ? sessionPins.pins : [], idOf, (p) => p.session?.id);
   const pick = (e: MouseEvent) =>
     openMenu(
       menuBelow(e.currentTarget as HTMLElement),
@@ -134,8 +146,54 @@ export function PanesList({ project, fleet, machine, agents }: { project: string
           data-panes-no-agents
         />
       ) : (
-        groups.map((g) => <Group key={g.name} g={g} to={to} last={lastPane(project)} phone={phone} agents={agents} />)
+        <>
+          {pinned.length > 0 && <Pinned pinned={pinned} to={to} last={lastPane(project)} phone={phone} />}
+          {below.map((g) => (
+            <Group key={g.name} g={g} to={to} last={lastPane(project)} phone={phone} agents={agents} />
+          ))}
+        </>
       )}
+    </section>
+  );
+}
+
+/** The sessions you pinned, in pin order: each its state, name and
+ * machine, an unpin button, and its panes. */
+function Pinned({ pinned, to, last, phone }: { pinned: PinnedPanes<PaneGroup>[]; to: (at: MachineAt) => string; last: { machine?: string; pane: number } | null; phone: boolean }) {
+  return (
+    <section class="panes-machine panes-pinned" data-panes-pinned aria-labelledby="panes-pinned-head">
+      <header class="panes-machine-head">
+        <span class="panes-pinned-title" role="heading" aria-level={2} id="panes-pinned-head">
+          <PinIcon size="sm" /> {PINNED}
+        </span>
+      </header>
+      {pinned.map(({ pin, group: g, panes }) => {
+        const name = panes[0].session?.name ?? `Session ${pin.session}`;
+        const state = stateOf(panes, (p) => needsYou(p.info), (p) => p.info.attention === "working");
+        return (
+          <div key={`${pin.machine}/${pin.session}`} class="panes-pinned-session" data-panes-pinned-session={`${pin.machine}/${pin.session}`}>
+            <h3 class="panes-pinned-head">
+              <span class={`ws-dot ${state}`} aria-hidden="true" />
+              <span class="panes-pinned-name">{name}</span>
+              <span class="dim">on {shortHost(g.name)}</span>
+              <IconButton
+                label={`Unpin ${name}`}
+                title="Unpin session"
+                class="panes-unpin"
+                data-panes-unpin
+                onClick={() => void sessionPins.edit((pins) => unpin(pins, pin.machine, pin.session))}
+              >
+                <PinIcon size="sm" />
+              </IconButton>
+            </h3>
+            <ul class="panes-rows">
+              {panes.map((p) => (
+                <Row key={p.key} p={p} to={to(machineAt(g, p.id))} last={isLast(last, g, p)} phone={phone} />
+              ))}
+            </ul>
+          </div>
+        );
+      })}
     </section>
   );
 }

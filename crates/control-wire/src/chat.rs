@@ -1473,6 +1473,9 @@ pub enum ChatLive {
     /// The reader's sidebar changed (another of their pages; #120): fetch
     /// it again. Only they hear it.
     Sidebar {},
+    /// The reader's pinned sessions changed (another of their pages;
+    /// [`crate::session_pins`]): fetch them again. Only they hear it.
+    Pins {},
     /// The reader's saved messages changed (#116: another of their pages
     /// saved, finished or removed one, or a reminder came due): read them
     /// again. Sent to that account only.
