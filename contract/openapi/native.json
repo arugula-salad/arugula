@@ -5987,6 +5987,92 @@
         ]
       }
     },
+    "/api/sessions/pins": {
+      "get": {
+        "operationId": "GET_api_sessions_pins",
+        "x-arugula-clients": [
+          "page",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionPins"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "PUT_api_sessions_pins",
+        "x-arugula-clients": [
+          "page",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionPins"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionPins"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/sessions/{ses}": {
       "get": {
         "operationId": "GET_api_sessions_ses",
@@ -14193,6 +14279,40 @@
         "required": [
           "session"
         ],
+        "type": "object"
+      },
+      "SessionPin": {
+        "description": "One pinned session.",
+        "properties": {
+          "machine": {
+            "description": "The machine's id in control's directory.",
+            "type": "string"
+          },
+          "session": {
+            "description": "The session's id on that machine.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "machine",
+          "session"
+        ],
+        "type": "object"
+      },
+      "SessionPins": {
+        "description": "`GET /api/sessions/pins`, and the body of `PUT` (which replaces it).",
+        "properties": {
+          "pins": {
+            "default": [],
+            "description": "In the order they were pinned, oldest first; each once, at most\n[`MAX_PINS`].",
+            "items": {
+              "$ref": "#/components/schemas/SessionPin"
+            },
+            "type": "array"
+          }
+        },
         "type": "object"
       },
       "SessionPlace": {
