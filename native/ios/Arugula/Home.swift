@@ -395,8 +395,15 @@ struct LeadLine {
             peeked = nil
             return
         }
+        // The daemon names a lead by its Claude Code conversation's title (an
+        // agent block's own title), else as the web does, by its session's.
         let tabs = Set(m.sessions.filter { $0.name == lead.session }.flatMap(\.tabs))
-        let panes = (m.agents + m.panes.filter { p in !m.agents.contains { $0.id == p.id } }).filter { tabs.contains($0.tab) }
+        let all = m.agents + m.panes.filter { p in !m.agents.contains { $0.id == p.id } }
+        let panes = all.filter { p in
+            m.conversations[p.id] == lead.session
+                || (p.type == "agent" && p.title?.trimmingCharacters(in: .whitespaces) == lead.session)
+                || tabs.contains(p.tab)
+        }
         standing = panes.map(\.standing).min()
         let best = panes.min { ($0.isAgent ? 0 : 1, $0.standing) < ($1.isAgent ? 0 : 1, $1.standing) }
         peeked = best.map { .pane(m, $0) }
