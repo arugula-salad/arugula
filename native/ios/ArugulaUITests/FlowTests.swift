@@ -370,6 +370,17 @@ final class FlowTests: XCTestCase {
             let lead = env["ARUGULA_STAFF_LEAD"] ?? "cos"
             go(app, "Home")
             pick(app, team)
+            // Home and Boards in the team's project as they look, before
+            // anything is asked of them: on main's app, the Before shots.
+            let boardShown = app.buttons["board-\(led)"]
+            _ = app.buttons["home-board-\(led)"].shows(within: 45)
+            sleep(2)
+            shot(app, "5-team-home")
+            go(app, "Boards")
+            _ = boardShown.shows(within: 45)
+            sleep(2)
+            shot(app, "5-team-boards")
+            go(app, "Home")
             let staff = app.buttons["home-staff"]
             XCTAssertTrue(staff.shows(within: 45), "home has no chief of staff in \(team): \(app.debugDescription)")
             let ledBy = Date().addingTimeInterval(45)
