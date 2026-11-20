@@ -333,6 +333,35 @@ test.describe("on a computer", () => {
     await expect(panel.locator("[data-ov-talk-none]")).toBeVisible();
   });
 
+  test("the reader's staff room is the talk panel's first tab, pinned, saying which session hears it (Arugula #1275)", async ({ page }) => {
+    await overview(page);
+    const panel = page.locator("[data-ov-panel]");
+    await page.waitForFunction(() => (window as unknown as { __chat?: { on: boolean | null } }).__chat?.on === false);
+    // No staff room yet: no pinned tab.
+    await expect(panel.locator("[data-ov-tab]")).toHaveCount(0);
+    await page.evaluate((P) => {
+      const room = { id: "dm_cos", kind: "dm", team: "t", name: "Chief of staff · Arugula", machine: null, machine_name: null, target: null, project: P, with: null, others: [], private: false, last: 1, read: 0, unread: 1, mentions: 0, wants: 1, muted: false, level: "all", level_own: false, archived: false, writable: true, topic: "", description: "", pins: 0, topic_writable: true, staff: true, lead: { machine: "m_geek", machine_name: "geek", session: "cos" } };
+      const said = [{ seq: 1, at: Date.now() - 60_000, author: "acct_me", name: "Me's agent on geek", text: "3 boards moved since this morning.", quote: null, pane: null, mentions: [], edited: null, deleted: null, imported: null, agent: { machine: "m_geek", machine_name: "geek" }, reactions: [], files: [], pinned: false, also: false }];
+      const json = (body: unknown) => new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
+      const before = window.fetch;
+      window.fetch = async (input, init) => {
+        const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.href);
+        if (url.pathname === "/api/chat/rooms/dm_cos/messages") return json({ room, messages: said, more: false });
+        return before(input, init);
+      };
+      const c = (window as unknown as { __chat: { on: boolean | null; rooms: unknown[]; emit(): void } }).__chat;
+      c.on = true;
+      c.rooms = [...c.rooms, room];
+      c.emit();
+    }, P);
+    const tab = panel.locator('[data-ov-tab="staff:dm_cos"]');
+    await expect(tab.getByRole("tab")).toHaveText("Chief of staff");
+    await expect(tab.getByRole("tab")).toHaveAttribute("aria-selected", "true");
+    await expect(tab.locator("[data-ov-tab-close]")).toHaveCount(0);
+    await expect(panel.locator("[data-ov-tab]").first()).toHaveAttribute("data-ov-tab", "staff:dm_cos");
+    await expect(panel.locator('[data-ov-staff="dm_cos"]')).toContainText("3 boards moved since this morning.");
+  });
+
   test("the hub's sessions by card add the sessions the machines don't show here", async ({ page }) => {
     const byCard = {
       project: P,
