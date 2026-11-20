@@ -171,7 +171,7 @@ export function answerVia(m: ChatMessage, name: string): { label: string; title:
   return { label: `agent session ${short}`, title: `What agent session ${short} said at the end of a turn, posted for ${name}` };
 }
 
-async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
+export async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await platformFetch(path, {
     method,
     headers: body === undefined ? {} : { "Content-Type": "application/json" },

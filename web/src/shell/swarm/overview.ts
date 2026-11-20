@@ -69,6 +69,8 @@ export interface OvSession {
   panes: OvPane[];
   /** A cloud workspace's session, by the hub's id. */
   hosted?: string;
+  /** Its branch, where the hub says (a session the machines don't show here). */
+  branch?: string | null;
 }
 
 export interface OvCard {
@@ -203,7 +205,7 @@ export function overviewOf(project: string, views: BoardView[], panes: OvPane[],
   // The hub's sessions the machines don't show here: named, where they run, no pane.
   for (const { card, s } of unseen) {
     const where = s.on.kind === "hosted" ? "Arugula cloud" : s.on.name;
-    put(card, { key: `${s.kind}:${s.on.kind === "machine" ? `${s.on.id}:` : ""}${s.id}`, name: s.name, where, standing: hubStanding(s), panes: [], ...(s.kind === "hosted" ? { hosted: s.id } : {}) });
+    put(card, { key: `${s.kind}:${s.on.kind === "machine" ? `${s.on.id}:` : ""}${s.id}`, name: s.name, where, standing: hubStanding(s), panes: [], branch: s.branch, ...(s.kind === "hosted" ? { hosted: s.id } : {}) });
   }
 
   const boards: OvBoard[] = [];

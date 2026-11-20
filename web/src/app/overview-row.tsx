@@ -4,7 +4,8 @@
 // card, one line too. Hovering a row, or focusing it from the keyboard,
 // opens its preview under it: each session on it, where it runs and its
 // pane's last line, read from its machine only while the preview is open.
-// An open board's row (#1085) holds them.
+// A click on a row, or a session in a preview, peeks at it in the talk
+// panel (./overview-peek.tsx). An open board's row (#1085) holds them.
 
 import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
@@ -122,7 +123,7 @@ export function CardRow({ c, fleet, open, openSession, current, faceOf }: { c: O
         c.sessions.length
           ? () =>
               c.sessions.map((s) => (
-                <button key={s.key} type="button" class="ov-peek" disabled={!s.lead && !s.hosted} title={s.lead || s.hosted ? `${s.name}: open it` : `${s.name}, on ${s.where}: not reachable from here`} data-ov-session={s.key} data-ov-session-standing={s.standing} data-ov-panes={s.panes.map((p) => p.key).join(" ")} onClick={() => openSession(s)}>
+                <button key={s.key} type="button" class="ov-peek" title={`${s.name}: peek at it`} data-ov-session={s.key} data-ov-session-standing={s.standing} data-ov-panes={s.panes.map((p) => p.key).join(" ")} onClick={() => openSession(s)}>
                   <Peek s={s} fleet={fleet} />
                 </button>
               ))
@@ -134,12 +135,10 @@ export function CardRow({ c, fleet, open, openSession, current, faceOf }: { c: O
 
 /** A session on no card: its name, its word and where it runs; its last line in its preview. */
 export function SessionRow({ s, fleet, open }: { s: OvSession; fleet: Fleet; open: () => void }) {
-  const can = !!s.lead || !!s.hosted;
   return (
     <OvRow
       open={open}
-      disabled={!can}
-      title={can ? `${s.name}: open it` : `${s.name}, on ${s.where}: not reachable from here`}
+      title={s.lead || s.hosted ? `${s.name}: peek at it` : `${s.name}, on ${s.where}: not reachable from here`}
       data-ov-session={s.key}
       data-ov-session-standing={s.standing}
       data-ov-panes={s.panes.map((p) => p.key).join(" ")}

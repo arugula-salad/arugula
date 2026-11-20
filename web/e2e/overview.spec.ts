@@ -6,9 +6,13 @@
 // stands; none of the old home's lists, and the team's faces in the header
 // only while chat is on; a card's preview, on hover or keyboard
 // focus, showing the session on it (an agent block on the card, with the
-// terminal in its session) and its last line, and Not on a card last; a card opening the
-// board's drawer, its address and the path in the bar, Esc and the path
-// climbing back; a session opening on its machine's page; a question in a
+// terminal in its session) and its last line, and Not on a card last; a
+// card with no session opening the board's drawer (one with a session, by
+// its peek's card link), its address and the path in the bar, Esc and the
+// path climbing back; a session opening on its machine's page from its
+// peek; a session's peek (#1271): an agent block's and a shell's last lines
+// and a box that reaches them, Silence and Stop, a cloud workspace's last
+// answer, and a far machine's read-only; a question in a
 // card's session pulsing its row and answered in place on Needs you; the
 // card's drawer drawing its session live with its question (#987's, as on
 // the board); the hub's sessions by card adding a cloud workspace's
@@ -186,7 +190,9 @@ test.describe("on a computer", () => {
   test("a card opens the board's drawer; Esc and the path climb back; a session opens on its machine", async ({ page }, info) => {
     const { agent } = await overview(page);
     await openLaunch(page);
+    // #12 has a session: its row peeks at it, and the peek's card link is the drawer.
     await tile(page, "row_b").locator("[data-ov-row-open]").click();
+    await page.locator("[data-ov-peek-card]").click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/?]*\\?board=${B}&card=row_b$`));
     const drawer = page.locator('[data-board-drawer="row_b"]');
     await expect(drawer).toBeVisible();
@@ -202,9 +208,10 @@ test.describe("on a computer", () => {
     await expect(page.locator("[data-app-path] [data-path=board]")).toHaveAttribute("href", new RegExp(`/p/${P}[^/]*/boards/${B}`));
     await page.locator("[data-app-path] [data-path=home]").click();
     await expect(page.locator("[data-board-drawer]")).toHaveCount(0);
-    // A session, from its card's preview: its machine's page, on its pane.
+    // A session, from its card's preview: its peek, and Open in Panes is its machine's page, on its pane.
     await tile(page, "row_b").hover();
     await tile(page, "row_b").locator("[data-ov-session]").click();
+    await page.locator("[data-ov-peek-panes]").click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines.*pane=${agent}`));
     await expect(page.locator(`[data-pane="${agent}"]`)).toBeVisible();
     // Plan on the rail opens on the Overview, back.
@@ -251,6 +258,7 @@ test.describe("on a computer", () => {
     const { term } = await overview(page, null, true);
     await openLaunch(page);
     await tile(page, "row_b").locator("[data-ov-row-open]").click();
+    await page.locator("[data-ov-peek-card]").click();
     const drawer = page.locator('[data-board-drawer="row_b"]');
     const live = drawer.locator("[data-board-drawer-live]");
     await expect(live.locator(`[data-live-slot="${term}"] .xterm`)).toBeVisible({ timeout: 20_000 });
@@ -333,6 +341,57 @@ test.describe("on a computer", () => {
     await expect(panel.locator("[data-ov-talk-none]")).toBeVisible();
   });
 
+  test("a card's row peeks at its agent, and a session on no card at its shell: last lines, a box that reaches them, Silence and Stop (Arugula #1271)", async ({ page }, info) => {
+    await overview(page);
+    await openLaunch(page);
+    const panel = page.locator("[data-ov-panel]");
+    // #12's row: a peek tab on its session, its agent block's lines read live from its machine.
+    await tile(page, "row_b").locator("[data-ov-row-open]").click();
+    const peek = panel.locator("[data-ov-peek]");
+    await expect(peek).toHaveAttribute("data-ov-peek-kind", "block");
+    await expect(panel.locator('[data-ov-tab^="peek:"] [role="tab"]')).toHaveAttribute("aria-selected", "true");
+    await expect(peek.locator("[data-ov-peek-name]")).toHaveText("Agent");
+    await expect(peek.locator("[data-ov-peek-where]")).not.toBeEmpty();
+    await expect(peek.locator("[data-ov-peek-tail]")).toHaveAttribute("data-ov-peek-live", "");
+    // The field stays where it is.
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*$`));
+    // Its box goes in as its composer's does: the agent answers it.
+    const reply = peek.locator("[data-ov-peek-reply] input");
+    await reply.fill("env PEEK_1271");
+    await reply.press("Enter");
+    await expect(peek.locator("[data-ov-peek-said]")).toContainText("next tool call");
+    await expect(reply).toHaveValue("");
+    await expect(peek.locator("[data-ov-peek-tail]")).toContainText("ENV PEEK_1271", { timeout: 20_000 });
+    // Silence holds its mentions, on its machine; Allow lets them in again.
+    await peek.locator('[data-ov-peek-silence="silence"]').click();
+    await expect(peek.locator('[data-ov-peek-silence="allow"]')).toBeVisible({ timeout: 10_000 });
+    await page.screenshot({ path: info.outputPath("overview-peek-agent.png") });
+    await peek.locator('[data-ov-peek-silence="allow"]').click();
+    await expect(peek.locator('[data-ov-peek-silence="silence"]')).toBeVisible({ timeout: 10_000 });
+    // The scratch session, on no card: a shell, its box typed with Enter, its lines live.
+    await page.locator("[data-ov-loose] [data-ov-session] [data-ov-row-open]").click();
+    await expect(panel.locator('[data-ov-tab^="peek:"]')).toHaveCount(2);
+    await expect(peek).toHaveAttribute("data-ov-peek-kind", "shell");
+    await expect(peek.locator("[data-ov-peek-silence]")).toHaveCount(0);
+    await reply.fill("echo PEEK-$((6*7))");
+    await reply.press("Enter");
+    await expect(peek.locator("[data-ov-peek-tail]")).toContainText("PEEK-42", { timeout: 20_000 });
+    await page.screenshot({ path: info.outputPath("overview-peek-shell.png") });
+    // Stop is Ctrl-C to a shell: a sleep ends.
+    await reply.fill("sleep 300; echo SL''EPT");
+    await reply.press("Enter");
+    await peek.locator("[data-ov-peek-stop]").click();
+    await expect(peek.locator("[data-ov-peek-said]")).toHaveText("Stopped.");
+    await reply.fill("echo AFTER-$((2+2))");
+    await reply.press("Enter");
+    await expect(peek.locator("[data-ov-peek-tail]")).toContainText("AFTER-4", { timeout: 20_000 });
+    await expect(peek.locator("[data-ov-peek-tail]")).not.toContainText("SLEPT");
+    // Open in Panes: the shell on its machine's page.
+    const shell = ((await page.locator("[data-ov-loose] [data-ov-session]").getAttribute("data-ov-panes")) ?? "").split(":").pop();
+    await peek.locator("[data-ov-peek-panes]").click();
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines.*pane=${shell}$`));
+  });
+
   test("the hub's sessions by card add the sessions the machines don't show here", async ({ page }) => {
     const byCard = {
       project: P,
@@ -348,10 +407,24 @@ test.describe("on a computer", () => {
     await expect(hosted).toContainText("arugula/13-tidy-docs");
     await expect(hosted.locator("[data-ov-where]")).toHaveText("Arugula cloud");
     await expect(tile(page, "row_c")).toHaveAttribute("data-ov-standing", "working");
-    // A machine this page doesn't reach: named, on no card, and not a link.
+    // Its peek: its box is paused, so its last answer (with chat off, its history), and Stop on the platform.
+    await page.route("**/api/sessions/hs_e2e", (r) =>
+      r.fulfill({ json: { card: { session: "hs_e2e", project: P, room: "room_hs", parent: 1, state: "working", branch: "arugula/13-tidy-docs", machine: null, block: null, parked: false }, may: true, asked: true, now: Date.now(), events: [{ seq: 1, kind: "turn", from: null, to: "working", at: 1, signed: true, text: "Tidied the docs index; pushed." }] } }),
+    );
+    await hosted.click();
+    const peek = page.locator("[data-ov-panel] [data-ov-peek]");
+    await expect(peek).toHaveAttribute("data-ov-peek-kind", "hosted");
+    await expect(peek.locator("[data-ov-peek-where]")).toHaveText("Arugula cloud · arugula/13-tidy-docs");
+    await expect(peek.locator("[data-ov-peek-tail]")).toHaveText("Tidied the docs index; pushed.");
+    await expect(peek.locator("[data-ov-peek-tail]")).not.toHaveAttribute("data-ov-peek-live", "");
+    await expect(peek.locator("[data-ov-peek-stop]")).toBeVisible();
+    // A machine this page doesn't reach: named, on no card; its peek says so and writes nothing.
     const far = page.locator("[data-ov-loose] [data-ov-session]", { hasText: "release" });
     await expect(far.locator("[data-ov-where]")).toHaveText("far-away");
-    await expect(far.locator("[data-ov-row-open]")).toBeDisabled();
+    await far.locator("[data-ov-row-open]").click();
+    await expect(peek).toHaveAttribute("data-ov-peek-readonly", "");
+    await expect(peek.locator("[data-ov-peek-tail]")).toContainText("far-away");
+    await expect(peek.locator("[data-ov-peek-reply], [data-ov-peek-stop]")).toHaveCount(0);
   });
 });
 

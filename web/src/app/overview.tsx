@@ -8,12 +8,14 @@
 // group. The talk panel on the right (./overview-talk.tsx, #1270; under
 // the field on a narrow window) holds Needs you on its top (first on a
 // phone; one quiet line when nothing does), Swarm's rail scoped to the
-// project, its cards naming their card; and below it the conversations a
-// board's row opens, its thread. The old home's lists aren't here (#1088): only where there
-// is no Overview (./machines.tsx). A
-// card opens the board's own drawer over the page (its address names it,
-// so the path and Esc climb back); a session opens on its machine's page,
-// on its pane. The grouping is ../shell/swarm/overview.ts; the machines are
+// project, its cards naming their card; and below it the conversations
+// the field opens: a board's thread, from its row, and a session's peek
+// (./overview-peek.tsx, #1271), from a card's row or a session's on no
+// card. The old home's lists aren't here (#1088): only where there is no
+// Overview (./machines.tsx). A card with no session opens the board's own
+// drawer over the page (its address names it, so the path and Esc climb
+// back), as its peek's card link does; Open in Panes opens a session on
+// its machine's page, on its pane. The grouping is ../shell/swarm/overview.ts; the machines are
 // the machine page's (./machine-page), booted once.
 
 import "./overview.css";
@@ -41,6 +43,7 @@ import { session as platform } from "../platform/session";
 import { where } from "../platform/where";
 import { boot, type Booted } from "./machine-page";
 import { CardRow, SessionRow, Word } from "./overview-row";
+import { PeekContext, peekKey, type PeekPlace } from "./overview-peek";
 import { TalkPanel, useTalk, type TalkTab } from "./overview-talk";
 import type { AppSession } from "./session";
 
@@ -205,7 +208,7 @@ function OverviewBody({ project, board, card, fleet }: { project: string; board?
     const machine = fleet.host(pane.host)?.id;
     go(pathOf({ page: "machines", project, at: machine ? { at: "machine", machine, pane: pane.id, ...(share ? { share: true as const } : {}) } : { at: "machines", name: pane.host, pane: pane.id } }, names));
   };
-  const openSession = (s: OvSession) => {
+  const openPanes = (s: OvSession) => {
     if (s.lead) paneAt(s.lead);
     else if (s.hosted) go(api.sessionHref?.(project, s.hosted) ?? pathOf({ page: "session", project, session: s.hosted }, names));
   };
@@ -269,6 +272,20 @@ function OverviewBody({ project, board, card, fleet }: { project: string; board?
   const talkTo = (t: TalkTab) => {
     talk.open(t);
     requestAnimationFrame(() => document.querySelector("[data-ov-talk]")?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+  };
+  // A card's row, or a session's, opens its peek there (#1271); a card with no session, its drawer.
+  const openSession = (s: OvSession) => talkTo({ kind: "peek", id: peekKey(s), title: s.name });
+  const ovCards = o.boards.flatMap((b) => [...b.doing, ...b.review]);
+  const peeks: PeekPlace = {
+    fleet,
+    find: (key) => {
+      for (const c of ovCards) for (const s of c.sessions) if (peekKey(s) === key) return { s, card: c };
+      const s = o.loose.find((x) => peekKey(x) === key);
+      return s && { s, card: null };
+    },
+    openPanes,
+    openCard,
+    askLead: chat.on ? (id) => talkTo({ kind: "thread", id, title: o.boards.find((b) => b.id === id)?.title ?? "Board" }) : undefined,
   };
 
   const any = o.boards.length > 0 || o.loose.length > 0;
@@ -351,7 +368,7 @@ function OverviewBody({ project, board, card, fleet }: { project: string; board?
   return (
     <div class={phone ? "ov phone" : "ov"} data-overview={project} style={{ "--ov-bar-bottom": `${phone ? 0 : barBottom}px` }}>
       {/* On a phone, a list with Needs you on top and the talk under the field. */}
-      {phone ? [rail, field, talk.tabs.length > 0 && <TalkPanel talk={talk} pinned={chief} phone />] : [field, <TalkPanel talk={talk} pinned={chief} needs={rail} phone={false} />]}
+      <PeekContext.Provider value={peeks}>{phone ? [rail, field, talk.tabs.length > 0 && <TalkPanel talk={talk} pinned={chief} phone />] : [field, <TalkPanel talk={talk} pinned={chief} needs={rail} phone={false} />]}</PeekContext.Provider>
       {opened && shownView && (
         <Drawer
           r={opened}
@@ -415,7 +432,7 @@ function BoardRow({ b, open, setOpen, project, fleet, openCard, openSession, ope
         <div class="ov-board-rows" id={id}>
           <ul class="ov-rows">
             {rows.map((c) => (
-              <CardRow key={c.row.id} c={c} fleet={fleet} open={() => openCard(c)} openSession={openSession} current={opened === c.row.id} faceOf={faceOf} />
+              <CardRow key={c.row.id} c={c} fleet={fleet} open={() => (c.sessions.length ? openSession(c.sessions[0]) : openCard(c))} openSession={openSession} current={opened === c.row.id} faceOf={faceOf} />
             ))}
           </ul>
           {more > 0 && (
