@@ -1,0 +1,11 @@
+#!/bin/bash
+# Gradle at the version gradle/wrapper/gradle-wrapper.properties pins, as
+# setup.sh installs it: the repository keeps no binaries, so not Gradle's
+# wrapper jar. Android Studio reads the same properties file and fetches its
+# own.
+set -euo pipefail
+here=$(cd "$(dirname "$0")" && pwd)
+v=$(sed -n 's/^distributionUrl=.*gradle-\(.*\)-bin\.zip$/\1/p' "$here/gradle/wrapper/gradle-wrapper.properties")
+gradle="${ARUGULA_GRADLE_HOME:-$HOME/.local/share/gradle}/gradle-$v/bin/gradle"
+[ -x "$gradle" ] || { echo "gradlew: no Gradle $v at $gradle: run native/android/setup.sh" >&2; exit 1; }
+exec "$gradle" -p "$here" "$@"

@@ -1,0 +1,49 @@
+# The native clients' core for Android (#1248): built for both ABIs as its
+# Kotlin library, and its instrumented tests (the terminal, and TLS checked
+# by Android's trust store) on an emulator. Nightly on main and by hand
+# (`gh workflow run native-android.yml`).
+#
+# Not on pull requests: CI is held to fewer jobs (2026-11-16), and a cold
+# Android build is minutes on a runner (the NDK, aws-lc and Ghostty's Zig
+# build for two more targets), where `just native-check`'s host build is
+# seconds. native-check still lints and tests the JNI side on the host
+# (--all-features), so a wire change that breaks it shows up on the PR.
+# The flow against a real control and machine is the cloud repository's
+# testnet `native-android` claim.
+name: native-android
+on:
+  schedule:
+    - cron: "27 8 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-android
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  native-android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: native-android
+          base-packages: "false"
+      # GitHub's Ubuntu runners have KVM, behind a group the runner user
+      # isn't in.
+      - name: KVM for the emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - run: mise install
+      # Into the runner's own SDK: the NDK, emulator and image setup.sh pins.
+      - run: native/android/setup.sh
+      - run: just native-android

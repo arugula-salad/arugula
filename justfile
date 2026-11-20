@@ -427,15 +427,25 @@ native-testflight mode="upload" rev="origin/main" host="jake-air":
     scripts/native-testflight {{mode}} {{rev}} {{host}}
 
 # The native clients' shared core (native/core, a workspace of its own):
-# rustfmt, clippy, its tests and its smoke test, on this machine.
+# rustfmt, clippy, its tests and its smoke test, on this machine. Its Kotlin
+# side (the jni feature) too, built for this machine: the Android build is
+# `just native-android`, nightly.
 native-check:
     #!/usr/bin/env bash
     set -euo pipefail
     cd native/core
     mise exec -- cargo fmt --check
-    mise exec -- cargo clippy --all-targets -- -D warnings
-    mise exec -- cargo test
+    mise exec -- cargo clippy --all-targets --all-features -- -D warnings
+    mise exec -- cargo test --all-features
     mise exec -- cargo run --example smoke
+
+# The core for Android: both ABIs as its Kotlin library (native/android/core),
+# then its instrumented tests on an emulator (the terminal, and TLS against
+# control.arugula.io). Needs native/android/setup.sh's toolchain, and /dev/kvm on
+# Linux. native-android.yml runs it nightly.
+native-android:
+    cd native/android && mise exec -- ./gradlew -q :core:assembleRelease
+    mise exec -- native/android/test-emulator.sh
 
 # The core for iPhones and the iOS simulator, on a Mac with Xcode's iOS SDK
 # (the macos-arm64 runners' Tart images don't have it), and its smoke test on

@@ -8,8 +8,13 @@ publish = false
 
 [lib]
 # rlib for the probe and the smoke test; staticlib for the iPhone app, which
-# links it through its arugula_core.h.
+# links it through its arugula_core.h. Android's app loads it as a shared
+# library: `cargo rustc --crate-type cdylib --features jni` (native/android).
 crate-type = ["rlib", "staticlib"]
+
+[features]
+# The Kotlin side (`jni.rs`), for Android's app.
+jni = ["dep:jni"]
 
 [dependencies]
 anyhow = "1"
@@ -20,6 +25,9 @@ arugula-control-wire = { path = "../../crates/control-wire" }
 arugula-proto = { path = "../../crates/proto" }
 getrandom = "0.4.3"
 hex = "0.4"
+# The same major as rustls-platform-verifier's, which takes Android's
+# context through it.
+jni = { version = "0.22.4", optional = true, default-features = false }
 # The same pin as crates/vt: the daemon and this client parse a pane's bytes
 # with one engine, which a test here checks.
 libghostty-vt = { git = "https://github.com/Uzaaft/libghostty-rs.git", rev = "8953a74" }
