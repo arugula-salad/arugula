@@ -740,6 +740,15 @@
       "query": "RunLogQuery",
       "response": "RunLogPage"
     },
+    "GET /api/sessions/pins": {
+      "handler": "crates/platform-chat/src/chat/session_pins.rs#get",
+      "response": "SessionPins"
+    },
+    "PUT /api/sessions/pins": {
+      "handler": "crates/platform-chat/src/chat/session_pins.rs#put",
+      "request": "SessionPins",
+      "response": "SessionPins"
+    },
     "GET /api/sessions/{ses}": {
       "handler": "crates/platform-chat/src/session_live.rs#show",
       "response": "SessionView"
