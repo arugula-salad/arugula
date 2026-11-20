@@ -40,6 +40,12 @@ export const TAB_KINDS = {
     Body: ({ tab, phone }) => <ThreadTab board={tab.id} title={tab.title} phone={phone} />,
     unread: (tab) => (objectRoom(tab.id)?.unread ?? 0) > 0,
   },
+  /** The reader's staff room with their own agents (#1275), the chief of
+   * staff's: pinned first, by its room's id. */
+  staff: {
+    Body: ({ tab, phone }) => <StaffTab room={tab.id} title={tab.title} phone={phone} />,
+    unread: (tab) => (chat.rooms.find((r) => r.id === tab.id)?.unread ?? 0) > 0,
+  },
 } satisfies Record<string, TabKind>;
 export type TalkKind = keyof typeof TAB_KINDS;
 
@@ -170,6 +176,28 @@ function useFitWindow(on: boolean) {
     };
   }, [on]);
   return ref;
+}
+
+/** The reader's staff room in `project` (#1275), once it exists: the chief
+ * of staff's session (or the reader) makes it, and its tab is pinned first. */
+export function staffTab(project: string): TalkTab | null {
+  const r = chat.rooms.find((x) => x.staff && x.project === project);
+  return r ? { kind: "staff", id: r.id, title: "Chief of staff" } : null;
+}
+
+/** The staff room: its messages, which its lead session hears, and the box. */
+function StaffTab({ room, title, phone }: { room: string; title: string; phone: boolean }) {
+  useSubscribe((fn) => chat.subscribe(fn));
+  const r = chat.rooms.find((x) => x.id === room);
+  if (!r) return <p class="dim ov-talk-note">Loading the room…</p>;
+  const why = r.lead
+    ? `What you write here goes to ${r.lead.session} on ${r.lead.machine_name || "its machine"}. Only you and your agents read it.`
+    : "No session leads this room yet, so what you write waits here. Only you and your agents read it.";
+  return (
+    <div class="chat-thread ov-talk-room" data-ov-staff={r.id}>
+      <RoomBody key={r.id} room={r} phone={phone} embedded name={title} empty={{ title: "Nothing said to your chief of staff yet.", why }} />
+    </div>
+  );
 }
 
 /** A board's thread: its room, its messages and the box to write in. */

@@ -41,7 +41,7 @@ import { session as platform } from "../platform/session";
 import { where } from "../platform/where";
 import { boot, type Booted } from "./machine-page";
 import { CardRow, SessionRow, Word } from "./overview-row";
-import { TalkPanel, useTalk, type TalkTab } from "./overview-talk";
+import { staffTab, TalkPanel, useTalk, type TalkTab } from "./overview-talk";
 import type { AppSession } from "./session";
 
 export function OverviewPlace({ project, board, card, session }: { project: string; board?: string; card?: string; session: AppSession | null }) {
@@ -180,6 +180,8 @@ function useOpened(project: string): [Map<string, boolean>, (board: string, open
 function OverviewBody({ project, board, card, fleet }: { project: string; board?: string; card?: string; fleet: Fleet }) {
   useSubscribe((fn) => fleet.subscribe(fn));
   useSubscribe((fn) => platform.subscribe(fn));
+  // The chief of staff's room shows as the talk panel's first tab once chat lists it.
+  useSubscribe((fn) => chat.subscribe(fn));
   const api = usePlatformApi();
   const phone = usePhone();
   const { views, put } = useBoardViews(project);
@@ -347,11 +349,11 @@ function OverviewBody({ project, board, card, fleet }: { project: string; board?
     </section>
   );
   // The chief of staff's tab, pinned first, once it has a room (#1275).
-  const chief: TalkTab | null = null;
+  const chief: TalkTab | null = staffTab(project);
   return (
     <div class={phone ? "ov phone" : "ov"} data-overview={project} style={{ "--ov-bar-bottom": `${phone ? 0 : barBottom}px` }}>
       {/* On a phone, a list with Needs you on top and the talk under the field. */}
-      {phone ? [rail, field, talk.tabs.length > 0 && <TalkPanel talk={talk} pinned={chief} phone />] : [field, <TalkPanel talk={talk} pinned={chief} needs={rail} phone={false} />]}
+      {phone ? [rail, field, (talk.tabs.length > 0 || chief) && <TalkPanel talk={talk} pinned={chief} phone />] : [field, <TalkPanel talk={talk} pinned={chief} needs={rail} phone={false} />]}
       {opened && shownView && (
         <Drawer
           r={opened}
