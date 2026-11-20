@@ -298,8 +298,12 @@ final class FlowTests: XCTestCase {
             XCTAssertTrue(app.staticTexts[toLead].shows(within: 20), "the board's thread didn't take the post")
             shot(app, "5-lead-thread")
             peekAtLead(app, "5-lead-peek")
-            goBack(app)
-            XCTAssertTrue(chip.shows(within: 15), "not back on Boards")
+            // Back as the peek's sheet goes can land on nothing: again.
+            for _ in 0..<3 where !chip.exists {
+                goBack(app)
+                _ = chip.shows(within: 5)
+            }
+            XCTAssertTrue(chip.shows(within: 10), "not back on Boards: \(app.debugDescription)")
             pick(app, "Default")
             go(app, "Home")
         }
