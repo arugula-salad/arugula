@@ -725,6 +725,8 @@ mod tests {
             err(json!({ "event": "github.push", "match": { "pr": "1" } })),
             "match pr: github.push matches on repo, branch, by"
         );
+        let release = json!({ "event": "github.release.published", "match": { "repo": "o/r", "tag": "v1.2.0" } });
+        assert_eq!(create_body(args(release)).unwrap().event.as_deref(), Some("github.release.published"));
         let merged = json!({ "event": "github.pr.merged", "match": { "repo": "o/r", "outside": true } });
         assert_eq!(create_body(args(merged)).unwrap().event.as_deref(), Some("github.pr.merged"));
         assert!(
@@ -754,7 +756,14 @@ mod tests {
         assert_eq!(joined.lines().count(), 2 * events::CATALOG.len(), "{joined}");
         assert!(joined.contains("issue.closed: A native issue was closed. [watchable now]\n  match: issue (the issue, iss_… or its #N in the project); project (the project, prj_…); by (the login of who closed it)"), "{joined}");
         assert!(joined.contains("pane.exited: A pane's process exited. [watchable now, by this machine]"), "{joined}");
-        for name in ["issue.labeled", "draft.answered", "machine.updated", "github.pr.checks_done", "github.push"] {
+        for name in [
+            "issue.labeled",
+            "draft.answered",
+            "machine.updated",
+            "github.pr.checks_done",
+            "github.push",
+            "github.release.published",
+        ] {
             assert!(joined.contains(&format!("\n{name}: ")), "{name}: {joined}");
         }
         assert!(joined.contains("outside (true for a fork's PR or a non-member's"), "{joined}");

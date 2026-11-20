@@ -389,6 +389,18 @@ pub const CATALOG: &[EventType] = &[
         power: Some("cloud.drive"),
     },
     EventType {
+        name: "github.release.published",
+        meaning: "A release of a linked GitHub repo was published, a draft's included (once per release).",
+        matches: &[
+            REPO,
+            m("tag", "the release's tag, such as v1.2.0"),
+            m("prerelease", "true for a release marked as a pre-release"),
+            BY,
+        ],
+        home: Home::Cloud,
+        power: Some("cloud.drive"),
+    },
+    EventType {
         name: "plane.issue.created",
         meaning: "A work item was made in a connected Plane project.",
         matches: &[
@@ -608,6 +620,10 @@ mod tests {
             assert_eq!(lookup(name).unwrap().home, Home::Cloud, "{name}");
         }
         assert!(lookup("github.pr.opened").unwrap().matches.iter().any(|f| f.name == "base"));
+        let release = lookup("github.release.published").unwrap();
+        assert_eq!((release.home, release.power), (Home::Cloud, Some("cloud.drive")));
+        assert!(release.matches.iter().any(|f| f.name == "tag"));
+        assert!(!release.matches.iter().any(|f| f.name == "outside"), "a release needs write");
         assert!(lookup("").is_none());
     }
 }
