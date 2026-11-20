@@ -33,7 +33,7 @@ import { usePhone, useSubscribe } from "../shared/ui/hooks";
 import { ChevronIcon, ThreadIcon } from "../shared/ui/icons";
 import type { Fleet, FleetPane } from "../shell/fleet";
 import { activityOf, holdStill, kindOf, readableCommand, shownNow, whatItDoes } from "../shell/swarm/model";
-import { asksYou, boardSays, inFlight, overviewOf, statsLine, type OvBoard, type OvCard, type OvPane, type OvSession, type Standing } from "../shell/swarm/overview";
+import { asksYou, boardSays, inFlight, overviewOf, statsLine, type OvBoard, type OvCard, type OvLead, type OvPane, type OvSession, type Standing, STATE_WORD } from "../shell/swarm/overview";
 import { Card as RailCard, bundlesOf, type Bundle } from "../shell/swarm/view";
 import { names } from "../platform/links";
 import { mayWrite } from "../platform/pages/issues";
@@ -288,6 +288,12 @@ function OverviewBody({ project, board, card, fleet }: { project: string; board?
     askLead: chat.on ? (id) => talkTo({ kind: "thread", id, title: o.boards.find((b) => b.id === id)?.title ?? "Board" }) : undefined,
   };
 
+  // A lead on a teammate's machine is named with them (a team's own box has no one to name).
+  const teammateOf = (machine: string) => {
+    const h = fleet.hostById(machine);
+    return h && !h.team ? h.owner : undefined;
+  };
+
   const any = o.boards.length > 0 || o.loose.length > 0;
   const field = (
     <div class="ov-field" data-ov-field>
@@ -311,7 +317,7 @@ function OverviewBody({ project, board, card, fleet }: { project: string; board?
       {o.boards.length > 0 && (
         <ul class="ov-boards" data-ov-boards>
           {o.boards.map((b) => (
-            <BoardRow key={b.id} b={b} open={isOpen(b)} setOpen={(v) => setOpen(b.id, v)} project={project} fleet={fleet} openCard={openCard} openSession={openSession} opened={card} faceOf={faceOf} talk={chat.on ? () => talkTo({ kind: "thread", id: b.id, title: b.title }) : undefined} />
+            <BoardRow key={b.id} b={b} leadWho={b.lead && teammateOf(b.lead.machine)} open={isOpen(b)} setOpen={(v) => setOpen(b.id, v)} project={project} fleet={fleet} openCard={openCard} openSession={openSession} opened={card} faceOf={faceOf} talk={chat.on ? () => talkTo({ kind: "thread", id: b.id, title: b.title }) : undefined} />
           ))}
         </ul>
       )}
@@ -387,11 +393,37 @@ function OverviewBody({ project, board, card, fleet }: { project: string; board?
   );
 }
 
+/** A board's lead (#414, #1272): a dot for how its session stands (none
+ * where no machine or the hub tells), its name, a teammate's with theirs,
+ * and its machine. With chat on it opens the board's thread, which reaches
+ * the lead. */
+function LeadChip({ lead, who, talk }: { lead: OvLead; who?: string; talk?: () => void }) {
+  const name = who ? `${who}'s ${lead.session}` : lead.session;
+  const says = lead.standing ? STATE_WORD[lead.standing] : "";
+  const title = `Led by ${name}${lead.machineName ? ` on ${lead.machineName}` : ""}${says ? `, ${says}` : ""}`;
+  const inner = (
+    <>
+      <i class="ov-lead-dot" data-ov-lead-standing={lead.standing ?? undefined} aria-hidden="true" />
+      <span class="ov-lead-name">{name}</span>
+      {lead.machineName && <span class="ov-lead-machine">{lead.machineName}</span>}
+    </>
+  );
+  return talk ? (
+    <button type="button" class="ov-lead" title={`${title}: talk to it in the board's thread`} aria-label={`${title}: talk to it in the board's thread`} data-ov-board-lead={lead.session} onClick={talk}>
+      {inner}
+    </button>
+  ) : (
+    <span class="ov-lead" title={title} data-ov-board-lead={lead.session}>
+      {inner}
+    </span>
+  );
+}
+
 /** A board, one hairline row: the way to open it (when it has cards in
  * flight), its title (the board), its lane bar, its count and what's going
  * on in words; open, its cards in flight, one line each, the worst first,
  * up to eight, and how many more (to the board). */
-function BoardRow({ b, open, setOpen, project, fleet, openCard, openSession, opened, faceOf, talk }: { b: OvBoard; open: boolean; setOpen: (open: boolean) => void; project: string; fleet: Fleet; openCard: (c: OvCard) => void; openSession: (s: OvSession) => void; opened?: string; faceOf: (name: string) => string | undefined; talk?: () => void }) {
+function BoardRow({ b, leadWho, open, setOpen, project, fleet, openCard, openSession, opened, faceOf, talk }: { b: OvBoard; leadWho?: string; open: boolean; setOpen: (open: boolean) => void; project: string; fleet: Fleet; openCard: (c: OvCard) => void; openSession: (s: OvSession) => void; opened?: string; faceOf: (name: string) => string | undefined; talk?: () => void }) {
   const to = pathOf({ page: "board", project, board: b.id }, names);
   const e = epicLine({ done: b.done, total: b.total, proven: b.proven, review: b.review.length, doing: b.doing.length });
   const flight = b.doing.length + b.review.length > 0;
@@ -401,7 +433,7 @@ function BoardRow({ b, open, setOpen, project, fleet, openCard, openSession, ope
   return (
     <li class={`ov-board${shown ? " ov-board-open" : ""}${flight ? "" : " ov-board-still"}`} data-ov-board={b.id} data-ov-open={shown ? "" : undefined} data-ov-standing={b.standing} data-ov-panes={[...b.doing, ...b.review].flatMap((c) => c.sessions.flatMap((s) => s.panes.map((p) => p.key))).join(" ")}>
       {/* The row opens with a click anywhere on it but its title, which is the board. */}
-      <div class="ov-board-line" onClick={(ev) => flight && !(ev.target as Element).closest("a, button") && setOpen(!open)}>
+      <div class="ov-board-line" onClick={(ev) => flight && !(ev.target as Element).closest("a, button, [data-ov-board-lead]") && setOpen(!open)}>
         <button type="button" class="ov-board-toggle" disabled={!flight} aria-expanded={flight ? shown : undefined} aria-controls={shown ? id : undefined} aria-label={shown ? `Close ${b.title}` : `Open ${b.title}`} data-ov-board-toggle onClick={() => setOpen(!open)}>
           {flight && <ChevronIcon dir={shown ? "down" : "right"} size="sm" />}
         </button>
@@ -421,8 +453,9 @@ function BoardRow({ b, open, setOpen, project, fleet, openCard, openSession, ope
             <Word key={x.standing} standing={x.standing} words={x.words} />
           ))}
         </span>
-        {/* Its thread, in the talk panel (while chat is on). */}
-        {talk && (
+        <span class="ov-board-lead-cell">{b.lead && <LeadChip lead={b.lead} who={leadWho} talk={talk} />}</span>
+        {/* Its thread, in the talk panel (while chat is on); a led board's chip is the way there. */}
+        {talk && !b.lead && (
           <button type="button" class="ov-board-talk" aria-label={`Talk in ${b.title}'s thread`} title="Talk in its thread" data-ov-board-talk onClick={talk}>
             <ThreadIcon size="sm" />
           </button>

@@ -56,23 +56,25 @@ const ROWS: [string, Lane, number, string][] = [
   ["row_d", "done", 15, "Pick a name"],
 ];
 /** `live`: #12's work is the suite's daemon's pane (the machine `m_suite` on the fixture page), as #987's drawer draws it. */
-const launch = (live?: number) =>
-  view(B, "Launch", ROWS, live === undefined ? {} : { row_b: [{ id: "att_term", role: "work", pointer: { kind: "block", machine: "m_suite", pane: String(live) }, block: { state: "working", title: "Fixer" } }] });
+const launch = (live?: number, lead?: unknown) => {
+  const v = view(B, "Launch", ROWS, live === undefined ? {} : { row_b: [{ id: "att_term", role: "work", pointer: { kind: "block", machine: "m_suite", pane: String(live) }, block: { state: "working", title: "Fixer" } }] });
+  return lead ? { ...v, board: { ...v.board, lead } } : v;
+};
 
 /** The platform's boards for the project, and the hub's sessions by card (`null`: the route isn't there yet, 404). */
-async function serve(page: Page, byCard: unknown = null, live?: number) {
+async function serve(page: Page, byCard: unknown = null, live?: number, lead?: () => unknown) {
   await page.route(`**/api/projects/${P}/boards`, (r) => r.fulfill({ json: { project: P, boards: [board(B, "Launch"), board(LATER, "Later")] } }));
-  await page.route(`**/api/boards/${B}`, (r) => r.fulfill({ json: launch(live) }));
+  await page.route(`**/api/boards/${B}`, (r) => r.fulfill({ json: launch(live, lead?.()) }));
   await page.route(`**/api/boards/${LATER}`, (r) => r.fulfill({ json: view(LATER, "Later", [["row_z", "next", 21, "Someday"]]) }));
   await page.route(`**/api/projects/${P}/sessions/by-card`, (r) => (byCard ? r.fulfill({ json: byCard }) : r.fulfill({ status: 404, json: { error: "not found" } })));
   await page.route("**/api/issues/iss_*", (r) => r.fulfill({ status: 404, json: { error: "not found" } }));
 }
 
 /** The app on the project's Overview, with an agent block on #12 beside the reset's terminal (in its session), and a second session in the project on no card. */
-async function overview(page: Page, byCard: unknown = null, live = false): Promise<{ term: number; agent: number; scratch: number }> {
+async function overview(page: Page, byCard: unknown = null, live = false, lead?: () => unknown): Promise<{ term: number; agent: number; scratch: number }> {
   await reset(page);
   const [term] = await panes(page);
-  await serve(page, byCard, live ? term : undefined);
+  await serve(page, byCard, live ? term : undefined, lead);
   const body = await fixturePage("./app-frame-page.tsx");
   await page.route(new RegExp(`/p/${P}`), (r) => r.fulfill({ contentType: "text/html", body }));
   await page.goto(`/p/${P}`);
@@ -111,6 +113,44 @@ async function overview(page: Page, byCard: unknown = null, live = false): Promi
     return c.state!.panes.find((p) => p.session === session)?.id ?? null;
   }, scratchSession!);
   return { term, agent: made.agent, scratch: scratch! };
+}
+
+/** Launch's room on control, its messages and what's posted in it (in
+ * `window.said`): the fixture page answers chat itself, so it's made up in
+ * the page. */
+async function launchRoom(page: Page) {
+  await page.evaluate((B) => {
+    const room = { id: "room_launch", kind: "object", team: null, name: "Launch", machine: null, machine_name: null, target: B, project: null, with: null, others: [], private: false, last: 1, read: 1, unread: 0, mentions: 0, wants: 0, muted: false, level: "all", level_own: false, archived: false, writable: true, topic: "", description: "", pins: 0, topic_writable: true };
+    const msg = (seq: number, name: string, text: string) => ({ seq, at: Date.now() - 60_000 + seq, author: `acct_${name}`, name, text, quote: null, pane: null, mentions: [], edited: null, deleted: null, imported: null, agent: null, reactions: [], files: [], pinned: false, also: false });
+    const said = [msg(1, "Jo", "Release notes are drafted.")];
+    (window as unknown as { said: typeof said }).said = said;
+    const now = () => ({ ...room, last: said.length, read: said.length });
+    const json = (body: unknown) => new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
+    const before = window.fetch;
+    window.fetch = async (input, init) => {
+      const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.href);
+      if (url.pathname === "/api/chat/targets") return json(now());
+      if (url.pathname === "/api/chat/rooms/room_launch/messages") {
+        if (init?.method === "POST") {
+          said.push(msg(said.length + 1, "Me", (JSON.parse(String(init.body)) as { text: string }).text));
+          return json({ seq: said.length, mentions: [], unreached: [] });
+        }
+        const after = Number(url.searchParams.get("after") ?? 0);
+        return json({ room: now(), messages: said.filter((m) => m.seq > after), more: false });
+      }
+      return before(input, init);
+    };
+  }, B);
+}
+
+/** Chat on, as the page reads it once it has said it's off. */
+async function chatOn(page: Page) {
+  await page.waitForFunction(() => (window as unknown as { __chat?: { on: boolean | null } }).__chat?.on === false);
+  await page.evaluate(() => {
+    const c = (window as unknown as { __chat: { on: boolean | null; emit(): void } }).__chat;
+    c.on = true;
+    c.emit();
+  });
 }
 
 const tile = (page: Page, row: string) => page.locator(`[data-ov-card="${row}"]`);
@@ -281,41 +321,13 @@ test.describe("on a computer", () => {
 
   test("a board's thread opens as a tab in the talk panel, under Needs you, with its messages and a box that posts (Arugula #1270)", async ({ page }, info) => {
     await overview(page);
-    // The board's room on control, its messages and what's posted in it: the
-    // fixture page answers chat itself, so it's made up in the page.
-    await page.evaluate((B) => {
-      const room = { id: "room_launch", kind: "object", team: null, name: "Launch", machine: null, machine_name: null, target: B, project: null, with: null, others: [], private: false, last: 1, read: 1, unread: 0, mentions: 0, wants: 0, muted: false, level: "all", level_own: false, archived: false, writable: true, topic: "", description: "", pins: 0, topic_writable: true };
-      const msg = (seq: number, name: string, text: string) => ({ seq, at: Date.now() - 60_000 + seq, author: `acct_${name}`, name, text, quote: null, pane: null, mentions: [], edited: null, deleted: null, imported: null, agent: null, reactions: [], files: [], pinned: false, also: false });
-      const said = [msg(1, "Jo", "Release notes are drafted.")];
-      (window as unknown as { said: typeof said }).said = said;
-      const now = () => ({ ...room, last: said.length, read: said.length });
-      const json = (body: unknown) => new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
-      const before = window.fetch;
-      window.fetch = async (input, init) => {
-        const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.href);
-        if (url.pathname === "/api/chat/targets") return json(now());
-        if (url.pathname === "/api/chat/rooms/room_launch/messages") {
-          if (init?.method === "POST") {
-            said.push(msg(said.length + 1, "Me", (JSON.parse(String(init.body)) as { text: string }).text));
-            return json({ seq: said.length, mentions: [], unreached: [] });
-          }
-          const after = Number(url.searchParams.get("after") ?? 0);
-          return json({ room: now(), messages: said.filter((m) => m.seq > after), more: false });
-        }
-        return before(input, init);
-      };
-    }, B);
+    await launchRoom(page);
     const panel = page.locator("[data-ov-panel]");
     // Needs you is the panel's top; no tab yet, and with chat off a row has no way to its thread.
     await expect(panel.locator("> [data-ov-needs]")).toBeVisible();
     await expect(panel.locator("[data-ov-talk-none]")).toBeVisible();
     await expect(page.locator("[data-ov-board-talk]")).toHaveCount(0);
-    await page.waitForFunction(() => (window as unknown as { __chat?: { on: boolean | null } }).__chat?.on === false);
-    await page.evaluate(() => {
-      const c = (window as unknown as { __chat: { on: boolean | null; emit(): void } }).__chat;
-      c.on = true;
-      c.emit();
-    });
+    await chatOn(page);
     const width = await page.locator("[data-ov-field]").evaluate((e) => e.getBoundingClientRect().width);
     await page.locator(`[data-ov-board="${B}"] [data-ov-board-talk]`).click();
     const tab = panel.locator(`[data-ov-tab="thread:${B}"]`);
@@ -390,6 +402,38 @@ test.describe("on a computer", () => {
     const shell = ((await page.locator("[data-ov-loose] [data-ov-session]").getAttribute("data-ov-panes")) ?? "").split(":").pop();
     await peek.locator("[data-ov-peek-panes]").click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines.*pane=${shell}$`));
+  });
+
+  test("a board's lead is a chip on its row, with its session's dot, name and machine, that opens the board's thread and doesn't toggle the row (Arugula #1272)", async ({ page }, info) => {
+    // Launch is led by the project's scratch session on the suite's daemon, which this page knows by its name; Later has no lead.
+    let led: unknown;
+    await overview(page, null, false, () => led);
+    const tile = page.locator("[data-ov-loose] [data-ov-panes]");
+    await expect(tile).toHaveAttribute("data-ov-panes", /:/);
+    const host = (await tile.getAttribute("data-ov-panes"))!.split(":")[0];
+    led = { machine: "m_suite", machine_name: host, session: "scratch", at: 1 };
+    await page.reload();
+    await expect(page.locator("[data-overview]")).toBeVisible({ timeout: 20_000 });
+    await launchRoom(page);
+    const lead = page.locator(`[data-ov-board="${B}"] [data-ov-board-lead]`);
+    await expect(lead).toHaveAttribute("data-ov-board-lead", "scratch");
+    await expect(lead.locator(".ov-lead-name")).toHaveText("scratch");
+    await expect(lead.locator(".ov-lead-machine")).toHaveText(host);
+    // Its session's panes are on this page, so its dot says how it stands.
+    await expect(lead.locator("[data-ov-lead-standing]")).toHaveCount(1);
+    await expect(page.locator(`[data-ov-board="${LATER}"] [data-ov-board-lead]`)).toHaveCount(0);
+    // With chat off it's a label, and a click on it doesn't toggle the row.
+    await expect(lead).not.toHaveRole("button");
+    await lead.click();
+    await expect(page.locator(`[data-ov-board="${B}"]`)).not.toHaveAttribute("data-ov-open", "");
+    await chatOn(page);
+    await expect(lead).toHaveRole("button");
+    await lead.click();
+    const panel = page.locator("[data-ov-panel]");
+    await expect(panel.locator(`[data-ov-tab="thread:${B}"]`).getByRole("tab")).toHaveAttribute("aria-selected", "true");
+    await expect(panel.locator(`[data-ov-talk-open="thread:${B}"] [data-room="room_launch"]`)).toContainText("Release notes are drafted.");
+    await expect(page.locator(`[data-ov-board="${B}"]`)).not.toHaveAttribute("data-ov-open", "");
+    await page.screenshot({ path: info.outputPath("overview-lead.png") });
   });
 
   test("the hub's sessions by card add the sessions the machines don't show here", async ({ page }) => {
