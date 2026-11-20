@@ -26,6 +26,7 @@
     {"method":"POST","path":"/api/chat/live/open","auth":"session","clients":["page","native"]},
     {"method":"POST","path":"/api/chat/presence","auth":"session","clients":["page"]},
     {"method":"GET","path":"/api/chat/previews/image","auth":"session","clients":["page","native"]},
+    {"method":"POST","path":"/api/chat/projects/{project}/staff","auth":"session","clients":["page","native"]},
     {"method":"GET","path":"/api/chat/rooms/{id}","auth":"session","clients":["page","native"]},
     {"method":"PATCH","path":"/api/chat/rooms/{id}","auth":"session","clients":["page","native"]},
     {"method":"POST","path":"/api/chat/rooms/{id}/files","auth":"session","clients":["page","native"]},

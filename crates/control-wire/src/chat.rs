@@ -156,6 +156,35 @@ pub struct ChatRoom {
     /// owners.
     #[serde(default)]
     pub topic_writable: bool,
+    /// A staff room (Arugula #1275): a DM of one person and their own
+    /// agents, one per person per project (`project`), the chief of
+    /// staff's. Only that person and the agents their grants over their
+    /// DMs reach read it.
+    #[serde(default)]
+    pub staff: bool,
+    /// The session that leads a staff room: the person's posts there are
+    /// delivered to it, as a board thread's are to the board's lead (#414).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub lead: Option<ChatRoomLead>,
+}
+
+/// The session leading a staff room ([`ChatRoom::lead`]): its machine, the
+/// machine's name ("" for one that's gone) and the session's name there.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatRoomLead {
+    pub machine: String,
+    pub machine_name: String,
+    pub session: String,
+}
+
+/// `POST`, no body: the reader's staff room in `project` (Arugula #1275),
+/// made the first time, answered a [`ChatRoom`]. A team's project only:
+/// chat is a team's.
+pub fn chat_staff_room(project: &str) -> String {
+    format!("/api/chat/projects/{project}/staff")
 }
 
 /// `GET /api/chat`: every room the reader sees.
@@ -1666,6 +1695,31 @@ pub fn agent_messages(room: &str) -> String {
     format!("{AGENT_ROOMS}/{room}/messages")
 }
 
+/// The owner's staff room in `project` (Arugula #1275) as their agent
+/// opens it (`POST`, no body, `threads.read` or `threads.post` over the
+/// owner's DMs), made the first time, answered an [`AgentRoom`].
+pub fn agent_staff_room(project: &str) -> String {
+    format!("/api/daemon/chat/projects/{project}/staff")
+}
+
+/// A staff room's lead (`POST` a [`LeadRoom`], `threads.read`): the calling
+/// session takes it, or it's released. Answered an [`AgentRoom`].
+pub fn agent_room_lead(room: &str) -> String {
+    format!("{AGENT_ROOMS}/{room}/lead")
+}
+
+/// `POST` to [`agent_room_lead`]: the calling session (`session`, its name
+/// on its machine) leads the staff room, or with `release` nobody does (the
+/// lead's own machine's agents only, as a board's).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct LeadRoom {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<String>,
+    #[serde(default)]
+    pub release: bool,
+}
+
 /// An agent's file uploads (`POST` the bytes, `?name=`, answered a
 /// [`ChatFile`]) and, with `/{file}`, its downloads (#107).
 pub fn agent_files(room: &str) -> String {
@@ -1737,6 +1791,11 @@ pub struct AgentRoom {
     pub topic: String,
     #[serde(default)]
     pub description: String,
+    /// The owner's staff room (Arugula #1275), and the session leading it.
+    #[serde(default)]
+    pub staff: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lead: Option<ChatRoomLead>,
 }
 
 /// A scope a machine's agent grants reach.

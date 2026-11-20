@@ -1732,7 +1732,19 @@ pins: number,
  * Whether the reader may set the topic: a team can leave it to its
  * owners.
  */
-topic_writable: boolean, };
+topic_writable: boolean, 
+/**
+ * A staff room (Arugula #1275): a DM of one person and their own
+ * agents, one per person per project (`project`), the chief of
+ * staff's. Only that person and the agents their grants over their
+ * DMs reach read it.
+ */
+staff: boolean, 
+/**
+ * The session that leads a staff room: the person's posts there are
+ * delivered to it, as a board thread's are to the board's lead (#414).
+ */
+lead?: ChatRoomLead, };
 
 /**
  * A machine whose agents reach a room through its owner's grant (M197).
@@ -1783,6 +1795,12 @@ can_manage: boolean,
  * in the room to see: "Jake's agents on geek can read and post here".
  */
 agents: Array<ChatRoomAgent>, };
+
+/**
+ * The session leading a staff room ([`ChatRoom::lead`]): its machine, the
+ * machine's name ("" for one that's gone) and the session's name there.
+ */
+export type ChatRoomLead = { machine: string, machine_name: string, session: string, };
 
 /**
  * `GET /api/chat`: every room the reader sees.

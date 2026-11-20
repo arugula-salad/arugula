@@ -1393,6 +1393,55 @@
         ]
       }
     },
+    "/api/chat/projects/{project}/staff": {
+      "post": {
+        "operationId": "POST_api_chat_projects_project_staff",
+        "x-arugula-clients": [
+          "page",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatRoom"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
     "/api/chat/rooms/{id}": {
       "get": {
         "operationId": "GET_api_chat_rooms_id",
@@ -9328,6 +9377,17 @@
             "format": "int64",
             "type": "integer"
           },
+          "lead": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChatRoomLead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The session that leads a staff room: the person's posts there are\ndelivered to it, as a board thread's are to the board's lead (#414)."
+          },
           "level": {
             "$ref": "#/components/schemas/NotifyLevel",
             "default": "mentions",
@@ -9395,6 +9455,11 @@
           "read": {
             "format": "int64",
             "type": "integer"
+          },
+          "staff": {
+            "default": false,
+            "description": "A staff room (Arugula #1275): a DM of one person and their own\nagents, one per person per project (`project`), the chief of\nstaff's. Only that person and the agents their grants over their\nDMs reach read it.",
+            "type": "boolean"
           },
           "target": {
             "description": "The pane or session id there, or an object thread's global id.",
@@ -9557,6 +9622,26 @@
         "required": [
           "room",
           "people"
+        ],
+        "type": "object"
+      },
+      "ChatRoomLead": {
+        "description": "The session leading a staff room ([`ChatRoom::lead`]): its machine, the\nmachine's name (\"\" for one that's gone) and the session's name there.",
+        "properties": {
+          "machine": {
+            "type": "string"
+          },
+          "machine_name": {
+            "type": "string"
+          },
+          "session": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "machine",
+          "machine_name",
+          "session"
         ],
         "type": "object"
       },
