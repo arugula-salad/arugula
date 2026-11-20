@@ -25,6 +25,53 @@ pub const CALLBACK: &str = "arugula://signin";
 /// The scheme of [`CALLBACK`], for the platform's web sheet.
 pub const CALLBACK_SCHEME: &str = "arugula";
 
+/// The native app API this build reads and sends (#603). Raise it with a
+/// change to what the app calls on control that an older build can't
+/// follow; control's `/control.json` names the oldest it still serves
+/// (`native_api_min`), and an older build says to update the app.
+pub const NATIVE_API: u64 = 1;
+
+/// Control no longer serves this build of the app: it's older than
+/// `/control.json`'s `native_api_min`.
+#[derive(Debug)]
+pub struct UpdateApp {
+    pub url: String,
+    pub needs: u64,
+}
+
+impl fmt::Display for UpdateApp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Arugula cloud at {} needs a newer version of this app: update the app", self.url)
+    }
+}
+
+impl std::error::Error for UpdateApp {}
+
+/// Whether control serves this build: its `/control.json`, read before
+/// anything else so an app it's left behind says so instead of failing on
+/// what it can't read. A control that can't be reached isn't an answer.
+fn serves_this_app(site: &Site, url: &str) -> Result<()> {
+    let got = site.request("GET", arugula_control_wire::CONTROL_JSON, &[], &[])?;
+    ensure!((200..300).contains(&got.status), "control answered {} to /control.json", got.status);
+    let said: arugula_control_wire::ControlNative =
+        serde_json::from_slice(&got.body).context("control's /control.json")?;
+    serves(said.native_api_min, url)
+}
+
+fn serves(native_api_min: u64, url: &str) -> Result<()> {
+    if native_api_min > NATIVE_API {
+        return Err(UpdateApp { url: url.to_owned(), needs: native_api_min }.into());
+    }
+    Ok(())
+}
+
+/// Whether control at `url` serves this build of the app, before signing in
+/// or as it opens: [`UpdateApp`] when it doesn't.
+pub fn check_app(url: &str) -> Result<()> {
+    let url = url.trim().trim_end_matches('/');
+    serves_this_app(&Site::parse(url)?, url)
+}
+
 /// What control answers when it refuses: its status and words.
 #[derive(Debug)]
 pub struct Refused {
@@ -161,6 +208,12 @@ impl SignIn {
             site.tls || private_host(&site.host),
             "control's address must be https:// (or http on this network, for testing)"
         );
+        // Anything else wrong with /control.json, the sign-in says better.
+        if let Err(e) = serves_this_app(&site, &url)
+            && e.is::<UpdateApp>()
+        {
+            return Err(e);
+        }
         let verifier = hex::encode(random::<32>());
         let challenge = hex::encode(Sha256::digest(verifier.as_bytes()));
         let ask = json!({
@@ -365,6 +418,15 @@ mod tests {
         assert!(private_host("127.0.0.1") && private_host("10.1.2.3") && private_host("localhost"));
         assert!(private_host("[::1]"));
         assert!(!private_host("8.8.8.8") && !private_host("control.arugula.io"));
+    }
+
+    #[test]
+    fn an_app_older_than_control_serves_is_told_to_update() {
+        assert!(serves(0, "u").is_ok() && serves(NATIVE_API, "u").is_ok());
+        let e = serves(NATIVE_API + 1, "https://control.test").unwrap_err();
+        let u = e.downcast_ref::<UpdateApp>().expect("UpdateApp");
+        assert_eq!(u.needs, NATIVE_API + 1);
+        assert!(e.to_string().contains("update the app"));
     }
 
     #[test]

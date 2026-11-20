@@ -368,6 +368,18 @@ fn join_secret_is_read_on_its_own() {
     assert_eq!(parse::<ControlJoinSecret>(&json!({ "daemon_auth": 2 })).join_secret, 0);
 }
 
+/// A native app reads only `native_api_min` before it signs in (#603); an
+/// older control doesn't say, which serves every app.
+#[test]
+fn native_api_min_is_read_on_its_own() {
+    let c: ControlNative = parse(&json!({ "native_api_min": 2, "vapid": 5, "guest_ssh": "nope" }));
+    assert_eq!(c.native_api_min, 2);
+    assert_eq!(parse::<ControlNative>(&json!({ "daemon_auth": 2 })).native_api_min, 0);
+    let said: ControlInfo = parse(&json!({ "native_api_min": 1 }));
+    assert_eq!(said.native_api_min, 1);
+    assert!(serde_json::to_value(ControlInfo::default()).unwrap().get("native_api_min").is_none());
+}
+
 /// A `/control.json` with a field this daemon can't take still says how to
 /// sign, and still has its jump host.
 #[test]

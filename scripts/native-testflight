@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Uploads the iPhone and iPad app to TestFlight from geek: reads the App Store
+# Connect API key from Infisical, archives and uploads on a Mac that signs
+# (jake-air) through native/ios/testflight.sh, then waits for App Store Connect
+# to process the build. The key is never written into the repo or a log: its
+# .p8 goes over ssh's stdin to a file only this user can read, removed after.
+#   scripts/native-testflight [upload|export] [REV] [HOST]
+# REV (default origin/main) is checked out in HOST's ~/src/arugula-testflight.
+# export signs the app for the App Store and keeps the .ipa on HOST, with no
+# key and no upload. The secrets' names can be changed with ASC_KEY_ID_SECRET,
+# ASC_ISSUER_ID_SECRET and ASC_KEY_P8_SECRET.
+set -euo pipefail
+mode=${1:-upload} rev=${2:-origin/main} host=${3:-jake-air}
+case "$mode" in upload|export) ;; *) echo "native-testflight: upload or export" >&2; exit 2 ;; esac
+clone='~/src/arugula-testflight'
+secret() {
+  infisical secrets get "$1" --projectId 16bb0f03-4f52-4d75-aaa3-089323b66601 --env prod \
+    --path "${ASC_SECRETS_PATH:-/illogical/release}" --plain --silent
+}
+
+ssh "$host" "set -e; [ -d $clone ] || git clone -q https://github.com/arugula-salad/arugula.git $clone
+  cd $clone && git fetch -q origin && git checkout -q --detach $rev && git log --oneline -1"
+
+args=()
+if [ "$mode" = upload ]; then
+  key_id=$(secret "${ASC_KEY_ID_SECRET:-ASC_KEY_ID}")
+  issuer=$(secret "${ASC_ISSUER_ID_SECRET:-ASC_ISSUER_ID}")
+  p8=$(ssh "$host" 'umask 077; mktemp -t asc-key')
+  trap 'ssh "$host" "rm -f $p8"' EXIT
+  secret "${ASC_KEY_P8_SECRET:-ASC_KEY_P8}" | ssh "$host" "cat > $p8"
+  args=("$key_id" "$issuer" "$p8")
+  started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+fi
+
+ssh "$host" "cd $clone && native/ios/gui.sh native/ios/testflight.sh $mode ${args[*]-}"
+
+[ "$mode" = upload ] || exit 0
+# The build App Store Connect made of it: wait for TestFlight to process it.
+secret "${ASC_KEY_P8_SECRET:-ASC_KEY_P8}" | ASC_KEY_ID=$key_id ASC_ISSUER_ID=$issuer \
+  python3 "$(dirname "$0")/native-testflight-wait.py" io.arugula.ios "$started"

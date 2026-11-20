@@ -218,6 +218,11 @@ pub struct ControlInfo {
     /// control enrolls none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hosted_key: Option<String>,
+    /// The oldest native app API control still serves (#603): an iPhone or
+    /// Android app built for an older one says to update the app instead of
+    /// failing on what it can't read. 0, or not said: every one.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub native_api_min: u64,
 }
 
 /// Just the signature version from `/control.json`, for a daemon deciding
@@ -239,6 +244,16 @@ pub struct ControlAuth {
 pub struct ControlCliJoin {
     #[serde(default)]
     pub cli_join: Option<u64>,
+}
+
+/// Just the oldest native app API control serves, from `/control.json`
+/// (#603), read apart from [`ControlInfo`] like the others: a native app
+/// reads nothing else of it before it signs in.
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct ControlNative {
+    #[serde(default)]
+    pub native_api_min: u64,
 }
 
 fn is_zero(n: &u64) -> bool {

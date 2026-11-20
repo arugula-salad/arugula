@@ -117,6 +117,8 @@ struct SignInView: View {
             try model.signedIn(try await s.finish(back))
         } catch let e as ASWebAuthenticationSessionError where e.code == .canceledLogin {
             // Closed without allowing: nothing to say.
+        } catch let e as CoreError where e.reason == "update_app" {
+            model.mustUpdate(at: url)
         } catch let e as CoreError where e.reason == "older_control" {
             problem = "This Arugula isn't taking the \(device) app's sign-in yet. Its operator has to turn native clients on."
         } catch {

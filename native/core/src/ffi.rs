@@ -4,7 +4,8 @@
 //! and a field added here breaks nothing there. A failed call returns NULL and
 //! sets `*err` to JSON, `{"status": 401, "error": "...", "reason": "..."}`, or
 //! just `{"error": "..."}`. A `reason` of `signed_out` means the session has
-//! ended; `older_control`, that control doesn't take the app's sign-in. Free
+//! ended; `older_control`, that control doesn't take the app's sign-in;
+//! `update_app`, that control no longer serves this build of the app. Free
 //! both kinds of string with `aru_string_free`.
 //! Only the terminal's rows cross as C structs, because they're drawn each
 //! frame.
@@ -30,7 +31,7 @@ use serde_json::{Value, json};
 use crate::{
     Pane,
     chat_live::{ChatLive, Event as ChatEvent},
-    control::{CALLBACK_SCHEME, Control, OlderControl, Refused, Session, SignIn},
+    control::{self, CALLBACK_SCHEME, Control, OlderControl, Refused, Session, SignIn, UpdateApp},
     link::{self, Event, Link},
 };
 
@@ -54,6 +55,8 @@ unsafe fn set_err(err: *mut *mut c_char, e: &anyhow::Error) {
     let v = if let Some(r) = refused {
         let reason = if r.signed_out() { Some("signed_out") } else { r.reason.as_deref() };
         json!({ "status": r.status, "error": r.error, "reason": reason })
+    } else if e.downcast_ref::<UpdateApp>().is_some() {
+        json!({ "error": format!("{e:#}"), "reason": "update_app" })
     } else if e.downcast_ref::<OlderControl>().is_some() {
         json!({ "error": format!("{e:#}"), "reason": "older_control" })
     } else if let Some(r) = e.downcast_ref::<link::Refused>() {
@@ -83,6 +86,19 @@ pub unsafe extern "C" fn aru_string_free(s: *mut c_char) {
 }
 
 // ---- signing in
+
+/// Whether control at `url` serves this build of the app: 1, or 0 and
+/// `*err` (`update_app` when it doesn't, else why it couldn't tell). Blocks.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aru_check_app(url: *const c_char, err: *mut *mut c_char) -> i32 {
+    match control::check_app(&unsafe { text(url) }) {
+        Ok(()) => 1,
+        Err(e) => {
+            unsafe { set_err(err, &e) };
+            0
+        }
+    }
+}
 
 pub struct AruSignIn(SignIn);
 

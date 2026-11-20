@@ -34,6 +34,17 @@ extension Notification.Name {
     static let arugulaSignedOut = Notification.Name("arugulaSignedOut")
 }
 
+/// Whether control at `url` serves this build of the app (#603): false when it
+/// says to update the app, nil when it couldn't tell (offline, say).
+func appServed(at url: String) async -> Bool? {
+    await Task.detached(priority: .utility) {
+        var err: UnsafeMutablePointer<CChar>?
+        if aru_check_app(url, &err) == 1 { return true }
+        let e = err.map(CoreError.init(taking:))
+        return e?.reason == "update_app" ? false : nil
+    }.value
+}
+
 /// The sign-in: where, and the session control gave. In the keychain, on this
 /// device only and never synced.
 enum SessionStore {
