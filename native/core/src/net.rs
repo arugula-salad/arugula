@@ -20,6 +20,14 @@ const ANSWER: Duration = Duration::from_secs(30);
 /// as gone.
 const QUIET: Duration = Duration::from_secs(90);
 
+/// An answer, whole.
+pub(crate) struct Answer {
+    pub status: u16,
+    pub body: Vec<u8>,
+    /// The first cookie it set, `name=value`.
+    pub cookie: Option<String>,
+}
+
 /// Where control is.
 #[derive(Clone, Debug)]
 pub(crate) struct Site {
@@ -69,7 +77,7 @@ impl Site {
 
     /// One request, its whole answer. Control's JSON and the like: not a
     /// stream, which has no end.
-    pub fn request(&self, method: &str, path: &str, headers: &[(&str, &str)], body: &[u8]) -> Result<(u16, Vec<u8>)> {
+    pub fn request(&self, method: &str, path: &str, headers: &[(&str, &str)], body: &[u8]) -> Result<Answer> {
         let mut s = self.connect()?;
         let mut head = format!("{method} {path} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n", self.authority);
         for (k, v) in headers {
@@ -95,7 +103,7 @@ impl Site {
         s.write_all(head.as_bytes())?;
         s.flush()?;
         let mut r = BufReader::new(s);
-        let (status, _, chunked) = read_head(&mut r)?;
+        let Head { status, chunked, .. } = read_head(&mut r)?;
         shut.set_read_timeout(Some(QUIET))?;
         let body: Box<dyn BufRead + Send> =
             if chunked { Box::new(BufReader::new(Dechunk { r, left: 0, done: false })) } else { Box::new(r) };
@@ -150,13 +158,19 @@ fn tls() -> Result<Arc<rustls::ClientConfig>> {
     Ok(CONFIG.get_or_init(|| Arc::new(c)).clone())
 }
 
-/// An answer's status line and headers: its status, its length if it says
-/// one, and whether it's chunked.
-fn read_head(r: &mut impl BufRead) -> Result<(u16, Option<usize>, bool)> {
+/// An answer's status line and what its headers say.
+struct Head {
+    status: u16,
+    length: Option<usize>,
+    chunked: bool,
+    cookie: Option<String>,
+}
+
+fn read_head(r: &mut impl BufRead) -> Result<Head> {
     let mut line = String::new();
     r.read_line(&mut line).context("reading control's answer")?;
     let status: u16 = line.split_whitespace().nth(1).and_then(|s| s.parse().ok()).context("not an HTTP answer")?;
-    let (mut length, mut chunked) = (None, false);
+    let (mut length, mut chunked, mut cookie) = (None, false, None);
     loop {
         line.clear();
         if r.read_line(&mut line)? == 0 {
@@ -171,15 +185,18 @@ fn read_head(r: &mut impl BufRead) -> Result<(u16, Option<usize>, bool)> {
             match k.to_ascii_lowercase().as_str() {
                 "content-length" => length = v.parse::<usize>().ok(),
                 "transfer-encoding" => chunked = v.eq_ignore_ascii_case("chunked"),
+                "set-cookie" if cookie.is_none() => {
+                    cookie = v.split(';').next().map(str::trim).filter(|c| c.contains('=')).map(str::to_owned);
+                }
                 _ => {}
             }
         }
     }
-    Ok((status, length, chunked))
+    Ok(Head { status, length, chunked, cookie })
 }
 
-fn read_answer(mut r: impl BufRead) -> Result<(u16, Vec<u8>)> {
-    let (status, length, chunked) = read_head(&mut r)?;
+fn read_answer(mut r: impl BufRead) -> Result<Answer> {
+    let Head { status, length, chunked, cookie } = read_head(&mut r)?;
     let mut line = String::new();
     let mut body = Vec::new();
     if chunked {
@@ -202,7 +219,7 @@ fn read_answer(mut r: impl BufRead) -> Result<(u16, Vec<u8>)> {
     } else {
         r.read_to_end(&mut body)?;
     }
-    Ok((status, body))
+    Ok(Answer { status, body, cookie })
 }
 
 /// A socket, plain or under TLS.
@@ -257,15 +274,30 @@ impl Write for Sock {
 mod tests {
     use super::*;
 
+    fn answer(raw: &[u8]) -> (u16, Vec<u8>) {
+        let a = read_answer(raw).unwrap();
+        (a.status, a.body)
+    }
+
     #[test]
     fn an_answer_with_a_length_chunks_or_neither() {
         let plain = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nhi and more".as_slice();
-        assert_eq!(read_answer(plain).unwrap(), (200, b"hi".to_vec()));
+        assert_eq!(answer(plain), (200, b"hi".to_vec()));
         let chunks =
             b"HTTP/1.1 201 Created\r\nTransfer-Encoding: chunked\r\n\r\n2\r\nhi\r\n3\r\nyou\r\n0\r\n\r\n".as_slice();
-        assert_eq!(read_answer(chunks).unwrap(), (201, b"hiyou".to_vec()));
+        assert_eq!(answer(chunks), (201, b"hiyou".to_vec()));
         let until_closed = b"HTTP/1.1 404 Not Found\r\n\r\nno".as_slice();
-        assert_eq!(read_answer(until_closed).unwrap(), (404, b"no".to_vec()));
+        assert_eq!(answer(until_closed), (404, b"no".to_vec()));
+    }
+
+    #[test]
+    fn the_session_is_the_first_cookie_set() {
+        let raw = b"HTTP/1.1 204 No Content\r\nSet-Cookie: ilg_session=abc; Path=/; HttpOnly\r\n\
+                    set-cookie: other=1\r\nContent-Length: 0\r\n\r\n"
+            .as_slice();
+        assert_eq!(read_answer(raw).unwrap().cookie.as_deref(), Some("ilg_session=abc"));
+        let none = b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n".as_slice();
+        assert_eq!(read_answer(none).unwrap().cookie, None);
     }
 
     #[test]

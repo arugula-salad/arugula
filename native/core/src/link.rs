@@ -1,7 +1,10 @@
 //! A Noise channel to a machine through control's relay. A thread owns the
 //! socket: it seals what's queued, in order, and hands back what arrives.
-//! Control carries the channel's bytes and can't read them; the machine's
-//! certificate is checked back to the account's root first.
+//! Control carries the channel's bytes and can't read them. As the CLI opens
+//! one (aru-141, #998): to the Noise key control's directory gives for the
+//! machine, with a key made for this channel alone, and a machine token from
+//! control (`POST /api/machines/{id}/token`) in its first message, which the
+//! machine checks itself.
 
 use std::{
     io::{ErrorKind, Read, Write},
@@ -15,17 +18,20 @@ use std::{
 };
 
 use anyhow::{Context, Result, anyhow, bail};
+use arugula_control_wire::machine_token::{TokenHello, token_path};
 use arugula_e2e::{
-    Cert, Kind,
-    cert::request_auth,
     channel::{Channel, Initiator, Msg, Refusal, RequestHead, ResponseHead, prologue},
+    keys::DeviceKeys,
 };
 use arugula_proto::{AttachPane, ClientMsg, Frame, FrameKind, ServerMsg, State};
 use nix::poll::{PollFd, PollFlags, PollTimeout, poll};
-use serde_json::Value;
+use serde_json::{Value, json};
 use tungstenite::{Message, WebSocket, client::IntoClientRequest};
 
-use crate::{control::Control, net::Sock};
+use crate::{
+    control::{Control, Machine},
+    net::Sock,
+};
 
 const HANDSHAKE: Duration = Duration::from_secs(20);
 
@@ -64,23 +70,31 @@ pub struct Link {
     pub events: std::sync::Mutex<mpsc::Receiver<Event>>,
 }
 
-/// A machine's certificate, by the account's own devices: `id` has to chain
-/// back to the root this device pinned, whatever the directory says.
-fn machine_cert(c: &Control, id: &str) -> Result<Cert> {
-    let trusted = c.trusted()?;
-    ensure_device(&trusted, &c.cert.device)?;
-    trusted
-        .get(id)
-        .filter(|m| m.kind == Kind::Daemon)
-        .cloned()
-        .with_context(|| format!("{id} isn't a machine this account trusts"))
+/// The machine's refusal of a channel opened with a machine token, with its
+/// code: `machine-token` (the token wasn't taken), or `malformed` (a daemon
+/// from before machine tokens).
+#[derive(Debug)]
+pub struct Refused {
+    pub code: String,
+    pub message: String,
 }
 
-fn ensure_device(trusted: &arugula_e2e::cert::Trusted, me: &str) -> Result<()> {
-    if trusted.get(me).is_none() {
-        bail!("this device isn't one of the account's any more (removed?): pair it again");
+impl std::fmt::Display for Refused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.code == "malformed" {
+            write!(f, "the machine's arugulad is older than machine tokens (0.70.4): update it there")
+        } else {
+            write!(f, "the machine refused: {}", self.message)
+        }
     }
-    Ok(())
+}
+
+impl std::error::Error for Refused {}
+
+/// A machine token for machine `id`, fresh: the machine takes each once.
+fn machine_token(c: &Control, id: &str) -> Result<String> {
+    let v = c.post(&token_path(id), &json!({})).context("Arugula cloud gave no token for this machine")?;
+    v["token"].as_str().filter(|t| !t.is_empty()).map(str::to_owned).context("Arugula cloud's answer has no token")
 }
 
 impl Link {
@@ -90,16 +104,31 @@ impl Link {
     }
 
     /// The same, calling `notify` from the socket's thread each time an event
-    /// is queued: a UI's cue to look, with no polling.
+    /// is queued: a UI's cue to look, with no polling. A machine that refuses
+    /// the token itself gets one more, fresh: it refuses a token issued before
+    /// it started, which right after a restart can be a new one when
+    /// control's clock is behind the machine's.
     pub fn open_notifying(c: &Control, id: &str, notify: impl Fn() + Send + 'static) -> Result<Self> {
-        let cert = machine_cert(c, id)?;
-        let path = format!("/api/relay/c/{id}");
-        let auth = request_auth(&c.keys, "GET", &path, b"");
+        let m = c.machine(id)?;
+        match Self::connect(c, &m) {
+            Err(e) if e.downcast_ref::<Refused>().is_some_and(|r| r.code == "machine-token") => {}
+            r => return r.and_then(|(ws, ch)| Self::run(ws, ch, notify)),
+        }
+        let (ws, ch) = Self::connect(c, &m)?;
+        Self::run(ws, ch, notify)
+    }
+
+    /// The relay's WebSocket and the handshake on it.
+    fn connect(c: &Control, m: &Machine) -> Result<(WebSocket<Sock>, Channel)> {
+        let path = format!("/api/relay/c/{}", m.id);
         let scheme = if c.site.tls { "wss" } else { "ws" };
         let mut req = format!("{scheme}://{}{path}", c.site.authority).into_client_request()?;
         let h = req.headers_mut();
-        h.insert("x-arugula-auth", auth.parse()?);
-        h.insert("origin", c.url.parse()?);
+        for (k, v) in c.auth() {
+            h.insert(k, v.parse()?);
+        }
+        // A hosted machine that's asleep is woken (M182): the app opens a
+        // machine only when someone asks it to.
         h.insert("x-arugula-wake", "1".parse()?);
         let sock = c.site.connect()?;
         let (mut ws, _) = tungstenite::client(req, sock).map_err(|e| match e {
@@ -114,13 +143,16 @@ impl Link {
             tungstenite::HandshakeError::Failure(e) => anyhow::Error::from(e).context("the relay's websocket"),
             tungstenite::HandshakeError::Interrupted(_) => anyhow!("the relay's websocket was interrupted"),
         })?;
-        let (init, m1) = Initiator::start(&c.keys, &cert.noise_key(), &prologue(&cert.device))?;
+        // Asked for only now that the socket is there: the machine takes each
+        // token once.
+        let hello = TokenHello { machine_token: machine_token(c, &m.id)? }.encode();
+        let (init, m1) = Initiator::start_with(&DeviceKeys::generate(), &m.noise, &prologue(&m.id), &hello)?;
         ws.send(Message::Binary(m1.into()))?;
         let began = std::time::Instant::now();
         let m2 = loop {
             match ws.read() {
                 Ok(Message::Binary(b)) => break b,
-                Ok(Message::Close(_)) => bail!("closed during the handshake (not an approved device?)"),
+                Ok(Message::Close(_)) => bail!("{} closed the channel during the handshake", m.name),
                 Ok(_) => {}
                 Err(tungstenite::Error::Io(e))
                     if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut)
@@ -130,9 +162,14 @@ impl Link {
         };
         let (said, channel) = init.finish(&m2)?;
         if let Some(r) = Refusal::decode(&said) {
-            bail!("the machine refused: {}", r.message);
+            return Err(Refused { code: r.refused, message: r.message }.into());
         }
         ws.get_ref().nonblocking()?;
+        Ok((ws, channel))
+    }
+
+    /// The socket's thread, from an open channel.
+    fn run(ws: WebSocket<Sock>, channel: Channel, notify: impl Fn() + Send + 'static) -> Result<Self> {
         let (out, rx) = mpsc::channel();
         let (events_tx, events) = mpsc::channel();
         let (wake, woken) = UnixStream::pair()?;

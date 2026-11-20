@@ -1,19 +1,29 @@
-//! Control, as a native app reaches it: pairing by code from a signed-in
-//! browser, and requests signed with the device's key (aru-131).
+//! Control, as a native app reaches it: signing in with the account, as the
+//! desktop app and the CLI do (aru-141, #999), and requests that go with the
+//! session it gives.
+//!
+//! The app asks `/auth/app` for a ticket, naming itself a native app and its
+//! callback (`arugula://signin`, Arugula #1247), with the challenge of a
+//! verifier only it keeps. A signed-in browser that clicks Allow is sent to
+//! the callback with a one-time grant, which the platform's web sheet hands
+//! back to the app. The app swaps the grant and its verifier for a session:
+//! any app can claim the scheme, so the grant alone redeems nothing. No key
+//! and no certificate: control decides who reaches a machine ([`crate::link`]).
 
 use std::fmt;
 
 use anyhow::{Context, Result, bail, ensure};
-use arugula_control_wire as wire;
-use arugula_e2e::{
-    Cert, Kind, Revocation, Trust,
-    cert::{self, join_proof_body, request_auth},
-    keys::DeviceKeys,
-    now_ms,
-};
-use serde_json::Value;
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 
 use crate::net::Site;
+
+/// Where the browser's Allow sends the grant: the app's own scheme.
+pub const CALLBACK: &str = "arugula://signin";
+
+/// The scheme of [`CALLBACK`], for the platform's web sheet.
+pub const CALLBACK_SCHEME: &str = "arugula";
 
 /// What control answers when it refuses: its status and words.
 #[derive(Debug)]
@@ -32,40 +42,72 @@ impl fmt::Display for Refused {
 
 impl std::error::Error for Refused {}
 
-/// A device paired to an account: signs every request with its key.
+impl Refused {
+    fn of(status: u16, got: &[u8]) -> Self {
+        let v: Value = serde_json::from_slice(got).unwrap_or(Value::Null);
+        let error = v["error"].as_str().map_or_else(|| String::from_utf8_lossy(got).into_owned(), str::to_owned);
+        let reason = v["reason"].as_str().map(str::to_owned);
+        Self { status, error, reason }
+    }
+
+    /// The session has ended (signed out elsewhere, or expired): sign in
+    /// again. A route only a browser's page may call refuses with
+    /// `page_only`, which isn't that.
+    pub fn signed_out(&self) -> bool {
+        self.status == 401 && self.reason.as_deref() != Some("page_only")
+    }
+}
+
+/// What the app keeps (in the keychain): where it's signed in, and the
+/// session control gave it.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Session {
+    pub url: String,
+    /// Control's own origin, which a request riding on the cookie names:
+    /// its page's, which may not be the address the app reaches it at.
+    #[serde(default)]
+    pub origin: String,
+    /// The session's cookie, `name=value`, as control set it.
+    pub cookie: String,
+    pub account: String,
+    /// The account's login, or its name: what the app shows.
+    #[serde(default)]
+    pub login: String,
+}
+
+/// An app signed in to an account: every request goes with its session.
 pub struct Control {
     pub url: String,
     pub(crate) site: Site,
-    pub keys: DeviceKeys,
-    pub cert: Cert,
-    /// The account's root, pinned when it paired, which every certificate is
-    /// checked back to. Control's word about who's trusted isn't enough.
-    pub trust: Trust,
+    pub session: Session,
 }
 
 impl Control {
-    pub fn new(url: &str, keys: DeviceKeys, cert: Cert, trust: Trust) -> Result<Self> {
-        let url = url.trim_end_matches('/').to_owned();
+    pub fn new(session: Session) -> Result<Self> {
+        let url = session.url.trim_end_matches('/').to_owned();
         let site = Site::parse(&url)?;
-        Ok(Self { url, site, keys, cert, trust })
+        Ok(Self { url, site, session })
     }
 
-    /// A signed request: its JSON, or [`Refused`].
+    /// Who's asking, for a request to control: the session's cookie, and
+    /// control's own origin, which a change made with a cookie needs.
+    pub(crate) fn auth(&self) -> [(&'static str, &str); 2] {
+        let origin = if self.session.origin.is_empty() { &self.url } else { &self.session.origin };
+        [("cookie", self.session.cookie.as_str()), ("origin", origin.as_str())]
+    }
+
+    /// A request as the account: its JSON, or [`Refused`].
     pub fn call(&self, method: &str, path: &str, body: Option<&Value>) -> Result<Value> {
         let bytes = body.map(serde_json::to_vec).transpose()?.unwrap_or_default();
-        let auth = request_auth(&self.keys, method, path, &bytes);
-        let mut headers = vec![("x-arugula-auth", auth.as_str()), (wire::FEATURES_HEADER, wire::APP_DEVICES)];
+        let mut headers = self.auth().to_vec();
         if body.is_some() {
             headers.push(("Content-Type", "application/json"));
         }
-        let (status, got) = self.site.request(method, path, &headers, &bytes)?;
-        let v: Value = serde_json::from_slice(&got).unwrap_or(Value::Null);
-        if !(200..300).contains(&status) {
-            let error = v["error"].as_str().map_or_else(|| String::from_utf8_lossy(&got).into_owned(), str::to_owned);
-            let reason = v["reason"].as_str().map(str::to_owned);
-            return Err(Refused { status, error, reason }.into());
+        let got = self.site.request(method, path, &headers, &bytes)?;
+        if !(200..300).contains(&got.status) {
+            return Err(Refused::of(got.status, &got.body).into());
         }
-        Ok(v)
+        Ok(serde_json::from_slice(&got.body).unwrap_or(Value::Null))
     }
 
     pub fn get(&self, path: &str) -> Result<Value> {
@@ -76,101 +118,260 @@ impl Control {
         self.call("POST", path, Some(body))
     }
 
-    /// Who's trusted now, by the account's pinned root and not by control's
-    /// say: what's listed that doesn't chain back to it counts for nothing.
-    pub fn trusted(&self) -> Result<cert::Trusted> {
-        let v = self.get("/api/devices")?;
-        let certs: Vec<Cert> = serde_json::from_value(v["certs"].clone()).context("control's device list")?;
-        let revs: Vec<Revocation> =
-            serde_json::from_value(v["revocations"].clone()).context("control's device list")?;
-        Ok(self.trust.evaluate(&certs, &revs))
+    /// End the session at control. The app forgets it whatever this says.
+    pub fn sign_out(&self) -> Result<()> {
+        self.post("/auth/logout", &json!({})).map(drop)
     }
 }
 
-/// A device asking to join: control has its request, and a signed-in browser
-/// hasn't approved it yet.
-pub struct Pairing {
+/// Control is older than a native app's sign-in (Arugula #1247), or doesn't
+/// take native apps: it didn't answer `"kind": "native"`.
+#[derive(Debug)]
+pub struct OlderControl(pub String);
+
+impl fmt::Display for OlderControl {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Arugula cloud at {} isn't taking the app's sign-in yet", self.0)
+    }
+}
+
+impl std::error::Error for OlderControl {}
+
+/// A sign-in waiting for a browser's Allow: control has the ticket, and the
+/// app keeps the verifier.
+pub struct SignIn {
     url: String,
     site: Site,
-    keys: DeviceKeys,
-    ask: Cert,
-    code: String,
-    poll: String,
-    secret: String,
+    ticket: String,
+    verifier: String,
+    origin: String,
+    /// What the web sheet opens: control's page, where someone signed in
+    /// clicks Allow.
+    pub link: String,
     pub expires_in_secs: u64,
 }
 
-impl Pairing {
-    /// Ask control. `keys` are new, and go in the keychain once this has
-    /// answered with a [`Control`]. `name` says what it is on the device list.
-    pub fn start(url: &str, keys: DeviceKeys, name: &str) -> Result<Self> {
-        let url = url.trim_end_matches('/').to_owned();
+impl SignIn {
+    /// Ask control at `url` for a ticket. `name` says what this is on the
+    /// Allow page ("Arugula on Jake's iPhone").
+    pub fn start(url: &str, name: &str) -> Result<Self> {
+        let url = url.trim().trim_end_matches('/').to_owned();
         let site = Site::parse(&url)?;
-        let ask = Cert::new(&keys, "", Kind::Browser, name);
-        ensure!(!ask.from_app(), "\"{name}\" would read as an old desktop window (aru-131): name it something else");
-        let ms = now_ms();
-        let proof = wire::JoinProof { ms, sig: hex::encode(keys.signature(join_proof_body(&ask, ms).as_bytes())) };
-        let body = wire::CliJoinRequest { cert: ask.clone(), proof, features: cert::JOIN_SECRET.to_owned() };
-        let (status, got) =
-            site.request("POST", wire::JOIN, &[("Content-Type", "application/json")], &serde_json::to_vec(&body)?)?;
         ensure!(
-            status == 200,
-            "control at {url} wouldn't pair this device ({status}): {}",
-            String::from_utf8_lossy(&got)
+            site.tls || private_host(&site.host),
+            "control's address must be https:// (or http on this network, for testing)"
         );
-        let started: wire::JoinStarted = serde_json::from_slice(&got).context("control's answer to a join")?;
-        ensure!(started.code == cert::join_code(&ask), "control sent a code that isn't this key's: not pairing");
-        Ok(Self {
-            url,
-            site,
-            keys,
-            ask,
-            code: started.code,
-            poll: started.poll,
-            secret: cert::join_secret(),
-            expires_in_secs: started.expires_in_secs,
-        })
+        let verifier = hex::encode(random::<32>());
+        let challenge = hex::encode(Sha256::digest(verifier.as_bytes()));
+        let ask = json!({
+            "name": name,
+            "challenge": challenge,
+            "features": ["no-code", "native"],
+            "callback": CALLBACK,
+        });
+        let got = site
+            .request("POST", "/auth/app", &[("Content-Type", "application/json")], &serde_json::to_vec(&ask)?)
+            .with_context(|| format!("can't reach Arugula cloud at {url}"))?;
+        // A control that takes no native apps refuses the ask outright.
+        if got.status == 400 || got.status == 404 {
+            return Err(OlderControl(url).into());
+        }
+        if !(200..300).contains(&got.status) {
+            return Err(Refused::of(got.status, &got.body).into());
+        }
+        let t: Value = serde_json::from_slice(&got.body).context("control's answer to a sign-in")?;
+        if t["kind"] != "native" {
+            return Err(OlderControl(url).into());
+        }
+        let ticket = t["ticket"].as_str().filter(|t| !t.is_empty() && t.bytes().all(|c| c.is_ascii_hexdigit()));
+        let ticket = ticket.context("control's answer has no ticket")?.to_owned();
+        let link = t["url"].as_str().filter(|l| l.starts_with("https://") || l.starts_with("http://"));
+        let link = link.context("control's answer has no link")?.to_owned();
+        let origin = origin_of(&link).context("control's link has no origin")?;
+        let expires_in_secs = t["expires_in_secs"].as_u64().unwrap_or(600);
+        Ok(Self { url, site, ticket, verifier, origin, link, expires_in_secs })
     }
 
-    /// What a signed-in browser opens to approve it. The secret is after the
-    /// `#`, so it never reaches control.
-    pub fn link(&self) -> String {
-        format!("{}/#join={}", self.url, self.whole_code())
+    /// The ticket control gave: the callback names it.
+    pub fn ticket(&self) -> &str {
+        &self.ticket
     }
 
-    /// The whole code, for typing into a signed-in browser.
-    pub fn whole_code(&self) -> String {
-        format!("{}.{}", self.code, self.secret)
+    /// Swap the grant in `callback` (where the browser's Allow sent it) and
+    /// the verifier for a session, and read whose it is.
+    pub fn finish(&self, callback: &str) -> Result<Control> {
+        let grant = grant_in(callback, &self.ticket).context("that isn't this sign-in's answer: start again")?;
+        let body = json!({ "grant": grant, "verifier": self.verifier });
+        // No origin: control takes a native app's ticket from the app that
+        // asked.
+        let got = self.site.request(
+            "POST",
+            &format!("/auth/app/{}/redeem", self.ticket),
+            &[("Content-Type", "application/json")],
+            &serde_json::to_vec(&body)?,
+        )?;
+        if !(200..300).contains(&got.status) {
+            return Err(Refused::of(got.status, &got.body)).context("control didn't sign this app in");
+        }
+        let cookie = got.cookie.context("control signed this app in, but sent no session")?;
+        let mut c = Control::new(Session {
+            url: self.url.clone(),
+            origin: self.origin.clone(),
+            cookie,
+            account: String::new(),
+            login: String::new(),
+        })?;
+        let me = c.get("/api/me").context("reading who this app is signed in as")?;
+        let account = me["account"].as_str().filter(|a| !a.is_empty()).context("control didn't say which account")?;
+        c.session.account = account.to_owned();
+        c.session.login =
+            me["login"].as_str().filter(|l| !l.is_empty()).or(me["name"].as_str()).unwrap_or_default().to_owned();
+        Ok(c)
+    }
+}
+
+/// The grant in the callback address for `ticket`:
+/// `arugula://signin?ticket=…&grant=…`.
+fn grant_in(callback: &str, ticket: &str) -> Option<String> {
+    let rest = callback.trim().strip_prefix(CALLBACK)?;
+    let query = rest.strip_prefix('?')?.split('#').next().unwrap_or_default();
+    let param = |k: &str| query.split('&').find_map(|kv| kv.strip_prefix(k)?.strip_prefix('='));
+    if param("ticket")? != ticket {
+        return None;
+    }
+    let grant = param("grant")?;
+    (!grant.is_empty() && grant.len() <= 256 && grant.bytes().all(|c| c.is_ascii_hexdigit())).then(|| grant.to_owned())
+}
+
+/// `scheme://authority` of a link.
+fn origin_of(link: &str) -> Option<String> {
+    let (scheme, rest) = link.split_once("://")?;
+    let authority = rest.split(['/', '?', '#']).next().filter(|a| !a.is_empty())?;
+    Some(format!("{scheme}://{authority}"))
+}
+
+/// Loopback or a private address (or `localhost`): plain http is allowed
+/// there, for tests and labs.
+fn private_host(host: &str) -> bool {
+    match host.trim_matches(['[', ']']).parse::<std::net::IpAddr>() {
+        Ok(std::net::IpAddr::V4(v4)) => v4.is_loopback() || v4.is_private(),
+        Ok(std::net::IpAddr::V6(v6)) => v6.is_loopback() || (v6.segments()[0] & 0xfe00) == 0xfc00,
+        Err(_) => host == "localhost",
+    }
+}
+
+fn random<const N: usize>() -> [u8; N] {
+    let mut b = [0u8; N];
+    getrandom::fill(&mut b).expect("the OS random source");
+    b
+}
+
+/// A machine in control's directory, as a channel to it needs it.
+#[derive(Clone, Debug)]
+pub struct Machine {
+    pub id: String,
+    pub name: String,
+    /// Its Noise key: control's word for it (#994), else the certificate
+    /// listed beside it (a hosted machine's, or another account's chain).
+    pub noise: [u8; 32],
+}
+
+impl Control {
+    /// Machine `id` from control's directory, with the Noise key a channel
+    /// to it is opened to.
+    pub fn machine(&self, id: &str) -> Result<Machine> {
+        let dir = self.get("/api/directory")?;
+        let d = dir["daemons"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|d| d["id"] == id)
+            .with_context(|| format!("{id} isn't one of the machines Arugula cloud lists for you"))?;
+        let name = d["name"].as_str().unwrap_or(id).to_owned();
+        let Some(noise) = listed_noise(d).as_deref().and_then(noise_key) else {
+            bail!("Arugula cloud lists {name}, but gives no key to reach it with");
+        };
+        Ok(Machine { id: id.to_owned(), name, noise })
+    }
+}
+
+/// A directory entry's Noise key, hex: its own, else the one in the
+/// certificate beside it, as the page and the CLI take it (`tokenEntry`).
+fn listed_noise(d: &Value) -> Option<String> {
+    if let Some(n) = d["noise"].as_str() {
+        return Some(n.to_owned());
+    }
+    if d.get("hosted").is_some_and(|h| !h.is_null()) {
+        return d["hosted"]["cert"]["noise"].as_str().map(str::to_owned);
+    }
+    d["chain"]["certs"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|c| c["device"] == d["id"] && c["kind"] == "daemon")
+        .and_then(|c| c["noise"].as_str())
+        .map(str::to_owned)
+}
+
+/// A Noise public key in hex, as control lists one.
+fn noise_key(hex: &str) -> Option<[u8; 32]> {
+    hex::decode(hex.trim()).ok()?.try_into().ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_grant_is_taken_from_this_tickets_callback_only() {
+        let ok = "arugula://signin?ticket=ab12&grant=00ff";
+        assert_eq!(grant_in(ok, "ab12").as_deref(), Some("00ff"));
+        assert_eq!(grant_in("arugula://signin?grant=00ff&ticket=ab12", "ab12").as_deref(), Some("00ff"));
+        // Another ticket's, another scheme's, a grant that isn't hex, none.
+        assert_eq!(grant_in(ok, "cd34"), None);
+        assert_eq!(grant_in("https://evil.example/signin?ticket=ab12&grant=00ff", "ab12"), None);
+        assert_eq!(grant_in("arugula://signinx?ticket=ab12&grant=00ff", "ab12"), None);
+        assert_eq!(grant_in("arugula://signin?ticket=ab12&grant=zz", "ab12"), None);
+        assert_eq!(grant_in("arugula://signin?ticket=ab12", "ab12"), None);
     }
 
-    /// Look once: `Err(self)` while nobody has approved it. Approved, it
-    /// answers only if control's answer checks out against the link's secret
-    /// and the account's certificates: the device is never saved otherwise.
-    pub fn poll(self) -> Result<Result<Control, Self>> {
-        let path = wire::JoinPoll::path(&self.code, &self.poll);
-        let (status, got) = self.site.request("GET", &path, &[], b"")?;
-        if status == 404 {
-            bail!("the code expired: start again for a new one");
-        }
-        ensure!(status == 200, "control's answer about the approval ({status})");
-        let v: wire::JoinPoll = serde_json::from_slice(&got).context("control's answer about the approval")?;
-        if let Some(on) = &v.rejected {
-            bail!("turned down on {on}");
-        }
-        if !v.approved {
-            return Ok(Err(self));
-        }
-        let cert = v.cert.context("control approved it but sent no certificate")?;
-        let trust = v.trust.context("control sent no account root")?;
-        ensure!(cert.same_request(&self.ask), "control sent back a certificate for a different key: not pairing");
-        if let Some(r) = trust.refusal(&v.certs, &v.revocations, &cert) {
-            bail!("the approval doesn't check out against the account's devices: {}", r.check());
-        }
-        let mac = v.mac.context("the approval came without the answer to this link's secret: not pairing")?;
-        ensure!(
-            cert::join_mac_ok(&self.secret, &trust, &cert, &mac),
-            "the approval doesn't match the secret in this device's link: not pairing"
-        );
-        Control::new(&self.url, self.keys, cert, trust).map(Ok)
+    #[test]
+    fn a_machines_noise_key_is_controls_word_else_its_certificate() {
+        let k = "11".repeat(32);
+        let own = json!({ "id": "m1", "noise": k });
+        assert_eq!(listed_noise(&own).as_deref(), Some(k.as_str()));
+        let hosted = json!({ "id": "m2", "hosted": { "cert": { "noise": k } } });
+        assert_eq!(listed_noise(&hosted).as_deref(), Some(k.as_str()));
+        let chained = json!({ "id": "m3", "chain": { "certs": [
+            { "device": "other", "kind": "daemon", "noise": "22".repeat(32) },
+            { "device": "m3", "kind": "browser", "noise": "33".repeat(32) },
+            { "device": "m3", "kind": "daemon", "noise": k },
+        ] } });
+        assert_eq!(listed_noise(&chained).as_deref(), Some(k.as_str()));
+        assert_eq!(listed_noise(&json!({ "id": "m4" })), None);
+        assert_eq!(noise_key(&k), Some([0x11; 32]));
+        assert_eq!(noise_key("11"), None);
+    }
+
+    #[test]
+    fn requests_name_controls_own_origin() {
+        assert_eq!(origin_of("https://app.arugula.io/#app=ab12").as_deref(), Some("https://app.arugula.io"));
+        assert_eq!(origin_of("http://control.test:8443#app=1").as_deref(), Some("http://control.test:8443"));
+        assert_eq!(origin_of("https:///x"), None);
+    }
+
+    #[test]
+    fn plain_http_only_on_this_network() {
+        assert!(private_host("127.0.0.1") && private_host("10.1.2.3") && private_host("localhost"));
+        assert!(private_host("[::1]"));
+        assert!(!private_host("8.8.8.8") && !private_host("control.arugula.io"));
+    }
+
+    #[test]
+    fn signed_out_isnt_a_page_only_route() {
+        let r = |status, reason: Option<&str>| Refused { status, error: String::new(), reason: reason.map(Into::into) };
+        assert!(r(401, None).signed_out());
+        assert!(!r(401, Some("page_only")).signed_out());
+        assert!(!r(403, None).signed_out());
     }
 }

@@ -124,7 +124,7 @@ dependencies = [
  "arugula-e2e",
  "arugula-proto",
  "aws-lc-rs",
- "ed25519-dalek",
+ "getrandom 0.4.3",
  "hex",
  "libghostty-vt",
  "nix",
@@ -132,6 +132,7 @@ dependencies = [
  "rustls-platform-verifier",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
  "tungstenite",
 ]
 

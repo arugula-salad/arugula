@@ -3,7 +3,7 @@ name = "arugula-native-core"
 version = "0.0.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
-description = "What Arugula's native clients share: signing, encrypted channels, pane streams and the terminal"
+description = "What Arugula's native clients share: signing in, encrypted channels, pane streams and the terminal"
 publish = false
 
 [lib]
@@ -13,10 +13,12 @@ crate-type = ["rlib", "staticlib"]
 
 [dependencies]
 anyhow = "1"
+# Only for the Noise channel to a machine: the device keys and certificates
+# in it go with #1007.
 arugula-e2e = { path = "../../crates/e2e" }
 arugula-control-wire = { path = "../../crates/control-wire" }
 arugula-proto = { path = "../../crates/proto" }
-ed25519-dalek = "3"
+getrandom = "0.4.3"
 hex = "0.4"
 # The same pin as crates/vt: the daemon and this client parse a pane's bytes
 # with one engine, which a test here checks.
@@ -26,6 +28,7 @@ rustls = "0.23.45"
 rustls-platform-verifier = "0.7.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.11.0"
 tungstenite = "0.30.0"
 
 [dev-dependencies]

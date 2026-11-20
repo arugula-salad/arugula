@@ -1,15 +1,16 @@
-//! What Arugula's native clients share under their native screens: signing a
-//! request, the encrypted channel to a daemon, a pane's stream and the
-//! terminal that draws it (aru-132). Screens don't belong here.
+//! What Arugula's native clients share under their native screens: signing
+//! in, the encrypted channel to a daemon, a pane's stream and the terminal
+//! that draws it (aru-132). Screens don't belong here.
 //!
-//! - [`control`]: pairing by code, and requests to control, signed.
+//! - [`control`]: signing in with the account (#999), and requests to
+//!   control with the session.
 //! - [`chat_live`]: chat's live stream, what to fetch again as it happens.
-//! - [`link`]: a Noise channel to a machine through control's relay, its
-//!   requests and its panes.
+//! - [`link`]: a Noise channel to a machine through control's relay, opened
+//!   with a machine token, its requests and its panes.
 //! - [`Pane`]: one pane's terminal.
 //!
-//! A client's keys stay in the platform's keychain, so nothing here reads or
-//! writes a key file: [`device`] takes them as bytes (aru-131).
+//! The session stays in the platform's keychain, so nothing here reads or
+//! writes a file: [`control::Session`] crosses as JSON.
 
 pub mod chat_live;
 pub mod control;
@@ -18,26 +19,14 @@ pub mod link;
 mod net;
 
 use anyhow::Result;
-use ed25519_dalek::SigningKey;
 use libghostty_vt::{
     Terminal,
     key::{self, Key, Mods},
 };
 
 pub use arugula_control_wire as wire;
-pub use arugula_e2e::{
-    self as e2e,
-    cert::request_auth,
-    channel::{Channel, Initiator, Msg, prologue},
-    keys::DeviceKeys,
-};
 pub use arugula_proto as proto;
 pub use libghostty_vt;
-
-/// A device's keys from the bytes the keychain holds.
-pub fn device(noise_private: [u8; 32], noise_public: [u8; 32], sign_seed: [u8; 32]) -> DeviceKeys {
-    DeviceKeys { noise_private, noise_public, sign: SigningKey::from_bytes(&sign_seed) }
-}
 
 /// One pane's terminal on the client, fed its snapshot and output and read by
 /// a renderer. It never answers terminal queries: the daemon's terminal does.

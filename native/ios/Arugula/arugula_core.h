@@ -1,12 +1,13 @@
 // The core's C interface (native/core/src/ffi.rs). Almost everything crosses as
-// JSON. A failed call returns NULL and sets *err. Free strings with
+// JSON. A failed call returns NULL and sets *err, whose "reason" may be
+// "signed_out" (sign in again) or "older_control". Free strings with
 // aru_string_free.
 #pragma once
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
-typedef struct AruPairing AruPairing;
+typedef struct AruSignIn AruSignIn;
 typedef struct Control AruControl;
 typedef struct AruLink AruLink;
 typedef struct AruChatLive AruChatLive;
@@ -39,13 +40,17 @@ typedef void (*AruRowFn)(void *ctx, uint16_t row, const AruRun *runs, size_t n);
 
 void aru_string_free(char *s);
 
-AruPairing *aru_pairing_start(const char *url, const char *name, char **err);
-char *aru_pairing_info(const AruPairing *p);
-char *aru_pairing_poll(AruPairing *p, char **err);
-void aru_pairing_free(AruPairing *p);
+// Signing in: the web sheet opens info's "link" and waits for its
+// "callback_scheme"; finish swaps the address it came back with for the session
+// to keep in the keychain.
+AruSignIn *aru_signin_start(const char *url, const char *name, char **err);
+char *aru_signin_info(const AruSignIn *s);
+char *aru_signin_finish(const AruSignIn *s, const char *callback, char **err);
+void aru_signin_free(AruSignIn *s);
 
 AruControl *aru_control_open(const char *stored, char **err);
 char *aru_control_call(const AruControl *c, const char *method, const char *path, const char *body, char **err);
+void aru_control_sign_out(const AruControl *c);
 void aru_control_free(AruControl *c);
 
 AruLink *aru_link_open(const AruControl *c, const char *machine, AruNotify notify, void *ctx, char **err);

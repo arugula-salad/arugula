@@ -10,51 +10,41 @@ use std::{
 
 use anyhow::{Context, Result, bail, ensure};
 use arugula_native_core::{
-    DeviceKeys, Pane,
-    control::{Control, Pairing},
-    e2e::{Cert, Trust},
+    Pane,
+    control::{Control, Session, SignIn},
     link::{Event, Link},
     proto::api::{RunRequest, RunResponse},
 };
-use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-#[derive(Serialize, Deserialize)]
-struct Saved {
-    url: String,
-    cert: Cert,
-    trust: Trust,
-}
-
 fn load(state: &str) -> Result<Control> {
-    let s: Saved = serde_json::from_slice(&fs::read(state).with_context(|| format!("reading {state}"))?)?;
-    let keys = DeviceKeys::load(format!("{state}.key").as_ref())?;
-    Control::new(&s.url, keys, s.cert, s.trust)
+    let s: Session = serde_json::from_slice(&fs::read(state).with_context(|| format!("reading {state}"))?)?;
+    Control::new(s)
 }
 
-/// Print the link, and wait for a signed-in browser to approve it.
-fn pair(url: &str, name: &str, state: &str) -> Result<()> {
-    let mut p = Pairing::start(url, DeviceKeys::generate(), name)?;
-    println!("#join={}", p.whole_code());
-    let end = Instant::now() + Duration::from_secs(p.expires_in_secs.min(120));
-    let c = loop {
-        ensure!(Instant::now() < end, "nobody approved it");
-        match p.poll()? {
-            Ok(c) => break c,
-            Err(still) => p = still,
+/// Sign in as the app does: print the ticket, and wait for the address the
+/// browser's Allow was sent to (`arugula://signin?ticket=…&grant=…`) in
+/// `STATE.callback`, where the web sheet would hand it back.
+fn signin(url: &str, name: &str, state: &str) -> Result<()> {
+    let s = SignIn::start(url, name)?;
+    println!("ticket={}", s.ticket());
+    println!("link={}", s.link);
+    let callback = format!("{state}.callback");
+    let _ = fs::remove_file(&callback);
+    let end = Instant::now() + Duration::from_secs(s.expires_in_secs.min(120));
+    let to = loop {
+        ensure!(Instant::now() < end, "nobody allowed it");
+        if let Ok(to) = fs::read_to_string(&callback)
+            && !to.trim().is_empty()
+        {
+            break to;
         }
-        std::thread::sleep(Duration::from_millis(500));
+        std::thread::sleep(Duration::from_millis(300));
     };
-    c.keys.save(format!("{state}.key").as_ref())?;
-    fs::write(state, serde_json::to_vec(&Saved { url: c.url.clone(), cert: c.cert.clone(), trust: c.trust.clone() })?)?;
-    println!("paired {}", c.cert.device);
+    let c = s.finish(to.trim())?;
+    fs::write(state, serde_json::to_vec(&c.session)?)?;
+    println!("signed in as {}", c.session.account);
     Ok(())
-}
-
-/// Swap the device's key for a stranger's, for the claim's BREAK=1: everything
-/// it signs after this has to be refused.
-fn rekey(state: &str) -> Result<()> {
-    DeviceKeys::generate().save(format!("{state}.key").as_ref())
 }
 
 /// The startup call: who it is, and what it has.
@@ -139,13 +129,10 @@ fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let a: Vec<&str> = args.iter().map(String::as_str).collect();
     match a.as_slice() {
-        ["pair", url, name, state] => pair(url, name, state),
-        ["rekey", state] => rekey(state),
+        ["signin", url, name, state] => signin(url, name, state),
         ["start", state] => start(&load(state)?),
         ["chat", state, room, marker] => chat(&load(state)?, room, marker),
         ["term", state, name, marker] => term(&load(state)?, name, marker),
-        _ => bail!(
-            "usage: pair URL NAME STATE | rekey STATE | start STATE | chat STATE ROOM MARKER | term STATE MACHINE MARKER"
-        ),
+        _ => bail!("usage: signin URL NAME STATE | start STATE | chat STATE ROOM MARKER | term STATE MACHINE MARKER"),
     }
 }
