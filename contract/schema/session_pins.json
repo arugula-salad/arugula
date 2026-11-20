@@ -1,0 +1,40 @@
+{
+  "$defs": {
+    "SessionPin": {
+      "description": "One pinned session.",
+      "properties": {
+        "machine": {
+          "description": "The machine's id in control's directory.",
+          "type": "string"
+        },
+        "session": {
+          "description": "The session's id on that machine.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "machine",
+        "session"
+      ],
+      "type": "object"
+    },
+    "SessionPins": {
+      "description": "`GET /api/sessions/pins`, and the body of `PUT` (which replaces it).",
+      "properties": {
+        "pins": {
+          "default": [],
+          "description": "In the order they were pinned, oldest first; each once, at most\n[`MAX_PINS`].",
+          "items": {
+            "$ref": "#/$defs/SessionPin"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "arugula_control_wire::session_pins"
+}

@@ -8261,6 +8261,19 @@
             "type": "object"
           },
           {
+            "description": "The reader's pinned sessions changed (another of their pages;\n[`crate::session_pins`]): fetch them again. Only they hear it.",
+            "properties": {
+              "type": {
+                "const": "pins",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "type": "object"
+          },
+          {
             "description": "The reader's saved messages changed (#116: another of their pages\nsaved, finished or removed one, or a reminder came due): read them\nagain. Sent to that account only.",
             "properties": {
               "type": {
