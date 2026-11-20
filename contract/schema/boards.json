@@ -441,6 +441,17 @@
             "null"
           ]
         },
+        "needs": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NeedsKind"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "With `needs_input`: whether it asks a question or a permission\n(Arugula #1274), for control's `session.needs_input` event. Never\nwhat it asks. Like `project`, a daemon leaves it out for a control\nthat refuses it."
+        },
         "project": {
           "description": "The project the block works in: a `prj_…` id.",
           "type": [
@@ -1933,6 +1944,21 @@
         }
       },
       "type": "object"
+    },
+    "NeedsKind": {
+      "description": "What an agent block that needs input asks a person for (Arugula #1274).",
+      "oneOf": [
+        {
+          "const": "ask",
+          "description": "A question, or a prompt some other way.",
+          "type": "string"
+        },
+        {
+          "const": "permission",
+          "description": "To approve something: a tool's use, an edit, a gate.",
+          "type": "string"
+        }
+      ]
     },
     "NewAsk": {
       "additionalProperties": false,
