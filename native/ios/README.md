@@ -8,16 +8,20 @@ to Swift through a small C interface, `Arugula/arugula_core.h` and
 One app for both: on an iPhone each screen is one at a time, and on an iPad
 a list sits beside what's open from it (a project, a chat room, a machine).
 
-**Home** (`Arugula/Home.swift`, #1255) is what opens: the current project's
+The tab bar is always there (#1262): **Home · Boards · Chat · Machines · You**.
+Issues aren't a tab: a board's rows open their issues, and the project's menu
+(the project name heading Home, Boards and Chat) opens its list.
+
+**Home** (`Arugula/Home.swift`, #1255) is the first tab: the current project's
 conversations, sorted by what needs you, as the desktop's Overview reads them.
 Needs you merges every online machine's panes that ask or failed (a link to
 each, as the web's fleet opens them), the boards' rows that ask you, fail
 their checks or wait for review, and the hosted sessions that wait on you,
 worst first. Then one row per open board (its lane bar, `done/total`, what's
 going on and who leads it), which opens the board's thread, whose Board
-button opens its lanes; then the channels and DMs. The tabs from before
-(Issues, Boards, Chat, Machines, You) are in home's menu, and each has a way
-back. On an iPad home is the left column, and what it opens sits beside it.
+button opens its lanes; then the channels and DMs. On an iPad home is the
+left column, and what it opens sits beside it. A notification opens its tab:
+a pane's on Machines, a room's on Chat, an issue's beside home.
 
 A row of Needs you is **answered where it is** (`Arugula/Answer.swift`, #1256),
 and folds away with a word of what was done: a pane's permission (Allow,
