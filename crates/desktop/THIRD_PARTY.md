@@ -13,6 +13,7 @@ Arugula is MIT OR Apache-2.0. Its binaries include the software below.
   The Apache License 2.0 text is below.
 - **The web client** bundles npm packages: xterm.js, preact, fzstd and three.js (below). three.js draws the swarm's city and loads only when that theme is picked.
   It also carries the swarm's fonts, Big Shoulders Display, Instrument Sans and JetBrains Mono (Fontsource's builds, SIL Open Font License 1.1, below).
+  The iPhone and iPad app (`native/ios`) carries the same three fonts, Google Fonts' builds of them under the same license, fetched by its `build.sh`.
 - **Lucide** (the web client's icons for chevrons, check, close, expand, external link, command, copy, pencil, star, reload, back, trash and arrows: paths copied into `web/src/shared/ui/icons.tsx`, not a dependency): ISC, Copyright (c) 2026 Lucide Icons and Contributors. <https://lucide.dev>
   Some of those icons derive from Feather, MIT, Copyright (c) 2013-present Cole Bemis. Both licences are below.
 - **Rust crates**, by license:
