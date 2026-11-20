@@ -21,6 +21,7 @@ cd "$(dirname "$0")"
 url=${1:-} machine=${2:-} room=${3:-} handoff=${4:-}
 [ -z "$url" ] || [ -n "$handoff" ] || { echo "usage: test-emulator.sh [URL MACHINE ROOM HANDOFF]" >&2; exit 2; }
 export ANDROID_HOME=${ANDROID_HOME:-$HOME/Android/Sdk}
+export ANDROID_AVD_HOME=${ANDROID_AVD_HOME:-$HOME/.android/avd}
 adb() { "$ANDROID_HOME/platform-tools/adb" "$@"; }
 pkg=io.arugula.core.test
 log=$(mktemp -d)

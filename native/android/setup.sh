@@ -14,6 +14,11 @@
 set -euo pipefail
 only=${1:-all}
 sdk=${ANDROID_HOME:-$HOME/Android/Sdk}
+# Where the AVD goes, said outright: avdmanager otherwise picks
+# ~/.config/.android when ~/.android doesn't exist, where the emulator
+# doesn't look. test-emulator.sh says the same.
+export ANDROID_AVD_HOME=${ANDROID_AVD_HOME:-$HOME/.android/avd}
+mkdir -p "$ANDROID_AVD_HOME"
 
 # What's pinned. sdkmanager installs the newest emulator and platform-tools
 # there are; these paths are the versions that matter to the build.
