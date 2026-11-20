@@ -185,6 +185,20 @@ pub extern "system" fn Java_io_arugula_core_Native_init<'l>(env: EnvUnowned<'l>,
 
 // ---- signing in
 
+/// As `aru_check_app`: throws `CoreError` (`update_app` when control no
+/// longer serves this build).
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_io_arugula_core_Native_checkApp<'l>(env: EnvUnowned<'l>, _: JClass<'l>, url: JString<'l>) {
+    run(env, |env| {
+        let url = c(&text(env, &url)?);
+        let mut err = ptr::null_mut();
+        if unsafe { ffi::aru_check_app(url.as_ptr(), &mut err) } == 0 {
+            answer(env, ptr::null_mut(), err)?;
+        }
+        Ok(())
+    })
+}
+
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_io_arugula_core_Native_signInStart<'l>(
     env: EnvUnowned<'l>,

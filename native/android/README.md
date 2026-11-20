@@ -45,7 +45,7 @@ On Linux the emulator needs `/dev/kvm`, so the user has to be in the `kvm`
 group (`sudo usermod -aG kvm $USER`, then log in again).
 
 The emulator tests with no Arugula are the terminal's and TLS's (against
-app.arugula.io; `ARUGULA_NO_TLS_CHECK=1` skips it). `native-android.yml` runs
+control.arugula.io; `ARUGULA_NO_TLS_CHECK=1` skips it). `native-android.yml` runs
 them nightly on a GitHub runner. The whole flow (sign in a fresh account
 through the native callback, list projects, post in chat, and type into a
 relayed pane) runs against the cloud repository's test stack:

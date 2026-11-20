@@ -14,6 +14,8 @@ internal object Native {
 
     @JvmStatic external fun init(context: Context)
 
+    @JvmStatic external fun checkApp(url: String)
+
     @JvmStatic external fun signInStart(url: String, name: String): Long
     @JvmStatic external fun signInInfo(h: Long): String
     @JvmStatic external fun signInFinish(h: Long, callback: String): String

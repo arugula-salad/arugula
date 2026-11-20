@@ -441,7 +441,7 @@ native-check:
 
 # The core for Android: both ABIs as its Kotlin library (native/android/core),
 # then its instrumented tests on an emulator (the terminal, and TLS against
-# app.arugula.io). Needs native/android/setup.sh's toolchain, and /dev/kvm on
+# control.arugula.io). Needs native/android/setup.sh's toolchain, and /dev/kvm on
 # Linux. native-android.yml runs it nightly.
 native-android:
     cd native/android && mise exec -- ./gradlew -q :core:assembleRelease

@@ -14,6 +14,9 @@ object Core {
     /** Once, before anything else: TLS checks control's certificate against Android's trust store through it. */
     fun init(context: Context) = Native.init(context.applicationContext)
 
+    /** Whether control at [url] still serves this build: throws [CoreError] with `updateApp` when it doesn't. Blocks. */
+    fun checkApp(url: String) = Native.checkApp(url)
+
     /** Where control's page sends a sign-in's grant: `arugula://signin?ticket=…&grant=…`. */
     const val CALLBACK_SCHEME = "arugula"
 }
@@ -21,7 +24,8 @@ object Core {
 /**
  * What the core refused, as Swift's `CoreError`: control's status and words,
  * and a `reason` an app acts on: `signed_out` (sign in again),
- * `older_control` (control doesn't take the app's sign-in), or a machine's
+ * `update_app` (control no longer serves this build), `older_control`
+ * (control doesn't take the app's sign-in), or a machine's
  * code (`machine-token`, `malformed`).
  */
 class CoreError(val json: String) : Exception(errorOf(json)) {
@@ -29,6 +33,9 @@ class CoreError(val json: String) : Exception(errorOf(json)) {
     val status: Int? = v?.optInt("status", -1)?.takeIf { it >= 0 }
     val reason: String? = v?.optString("reason")?.takeIf { it.isNotEmpty() && it != "null" }
     val signedOut get() = reason == "signed_out"
+
+    /** Control no longer serves this build: say to update the app. */
+    val updateApp get() = reason == "update_app"
 
     private companion object {
         fun errorOf(json: String) = runCatching { JSONObject(json).getString("error") }.getOrDefault(json)

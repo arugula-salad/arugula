@@ -52,15 +52,23 @@ class FlowTest {
         }
     }
 
-    /** TLS to the real Arugula, checked against Android's trust store: a made-up session is refused by control, not by TLS. */
+    /**
+     * TLS to the real Arugula, checked against Android's trust store: it
+     * serves this build, and a made-up session is refused by control, not by TLS.
+     */
     @Test
     fun tlsIsCheckedByAndroid() {
         assumeTrue("TLS check off (-e tls off)", args.getString("tls") != "off")
-        val made = JSONObject(mapOf("url" to "https://app.arugula.io", "cookie" to "arugula_session=none", "account" to "nobody"))
+        Core.checkApp(ARUGULA)
+        val made = JSONObject(mapOf("url" to ARUGULA, "cookie" to "arugula_session=none", "account" to "nobody"))
         Control(made.toString()).use { c ->
             val e = runCatching { c.get("/api/projects") }.exceptionOrNull()
             assertTrue("expected control's refusal, got $e", e is CoreError && e.status == 401)
         }
+    }
+
+    private companion object {
+        const val ARUGULA = "https://control.arugula.io"
     }
 
     /** The CLI's way: the ticket goes to whoever allows it, and the callback comes back. */
