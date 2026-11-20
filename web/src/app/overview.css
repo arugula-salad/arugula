@@ -37,7 +37,7 @@
 }
 .ov-board-line {
   display: grid;
-  grid-template-columns: 20px minmax(0, 1.3fr) minmax(80px, 1fr) 52px minmax(0, 1.6fr) 24px;
+  grid-template-columns: 20px minmax(0, 1.3fr) minmax(80px, 1fr) 52px minmax(0, 1.4fr) minmax(0, 1.3fr) 24px;
   gap: var(--space-3);
   align-items: center;
   padding: var(--space-2) var(--space-1);
@@ -97,6 +97,69 @@
 .ov-board-says .tone-plain {
   color: var(--dim);
 }
+/* Its lead (#1272): a chip with a dot for how its session stands, its name and its machine; it opens the board's thread. */
+.ov-board-lead-cell {
+  min-width: 0;
+  display: flex;
+}
+.ov-lead {
+  min-width: 0;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: none;
+  font: 500 var(--text-xs) var(--f-ui);
+  color: var(--muted);
+  white-space: nowrap;
+}
+button.ov-lead {
+  cursor: pointer;
+}
+button.ov-lead:hover,
+button.ov-lead:focus-visible {
+  background: var(--raised);
+  color: var(--fg);
+}
+/* The machine gives way before the name does. */
+.ov-lead-name,
+.ov-lead-machine {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ov-lead-name {
+  flex: 0 1 auto;
+  color: var(--fg);
+}
+.ov-lead-machine {
+  flex: 0 100 auto;
+  color: var(--dim);
+}
+.ov-lead-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: 1px solid var(--subtle);
+}
+.ov-lead-dot[data-ov-lead-standing] {
+  border: 0;
+  background: var(--warn);
+}
+.ov-lead-dot[data-ov-lead-standing="working"] {
+  background: var(--ok);
+}
+.ov-lead-dot[data-ov-lead-standing="needs"] {
+  background: var(--accent);
+}
+.ov-lead-dot[data-ov-lead-standing="failed"] {
+  background: var(--danger);
+}
+
 /* The way to the board's thread, in the talk panel: quiet until the row's hovered. */
 .ov-board-talk {
   display: grid;
@@ -142,6 +205,13 @@
 .ov.phone .ov-board-says {
   grid-column: 2 / -1;
   grid-row: 3;
+}
+.ov.phone .ov-board-lead-cell {
+  grid-column: 2 / -1;
+  grid-row: 4;
+}
+.ov.phone .ov-board-lead-cell:empty {
+  display: none;
 }
 .ov.phone .ov-board-rows {
   padding-left: 0;
@@ -448,6 +518,67 @@ button.ov-peek:disabled {
 .ov-talk-note {
   margin: 0;
   padding: var(--space-2) var(--space-3);
+}
+
+/* A session's peek (#1271): its head, its last lines, its buttons, and its box at the foot. */
+.ov-peek-tab {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3) var(--space-3);
+}
+.ov-peek-tab-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+  font-size: var(--text-md);
+}
+.ov-peek-tab-head .mono {
+  font: var(--text-sm) var(--mono);
+}
+.ov-peek-card-link {
+  margin-left: auto;
+}
+.ov-peek-why,
+.ov-peek-said {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+.ov-peek-tail {
+  flex: 1 1 auto;
+  min-height: 8em;
+  margin: 0;
+  overflow: auto;
+  padding: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--field-radius);
+  background: var(--surface);
+  font: var(--text-xs) / 1.5 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ov-peek-acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.ov-peek-panes {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+}
+.ov-peek-reply {
+  display: flex;
+  gap: var(--space-2);
+}
+.ov-peek-reply input {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 /* A narrow window, or a phone: the panel docks under the field, at its own height. */

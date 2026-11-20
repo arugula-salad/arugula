@@ -6,9 +6,13 @@
 // stands; none of the old home's lists, and the team's faces in the header
 // only while chat is on; a card's preview, on hover or keyboard
 // focus, showing the session on it (an agent block on the card, with the
-// terminal in its session) and its last line, and Not on a card last; a card opening the
-// board's drawer, its address and the path in the bar, Esc and the path
-// climbing back; a session opening on its machine's page; a question in a
+// terminal in its session) and its last line, and Not on a card last; a
+// card with no session opening the board's drawer (one with a session, by
+// its peek's card link), its address and the path in the bar, Esc and the
+// path climbing back; a session opening on its machine's page from its
+// peek; a session's peek (#1271): an agent block's and a shell's last lines
+// and a box that reaches them, Silence and Stop, a cloud workspace's last
+// answer, and a far machine's read-only; a question in a
 // card's session pulsing its row and answered in place on Needs you; the
 // card's drawer drawing its session live with its question (#987's, as on
 // the board); the hub's sessions by card adding a cloud workspace's
@@ -52,23 +56,25 @@ const ROWS: [string, Lane, number, string][] = [
   ["row_d", "done", 15, "Pick a name"],
 ];
 /** `live`: #12's work is the suite's daemon's pane (the machine `m_suite` on the fixture page), as #987's drawer draws it. */
-const launch = (live?: number) =>
-  view(B, "Launch", ROWS, live === undefined ? {} : { row_b: [{ id: "att_term", role: "work", pointer: { kind: "block", machine: "m_suite", pane: String(live) }, block: { state: "working", title: "Fixer" } }] });
+const launch = (live?: number, lead?: unknown) => {
+  const v = view(B, "Launch", ROWS, live === undefined ? {} : { row_b: [{ id: "att_term", role: "work", pointer: { kind: "block", machine: "m_suite", pane: String(live) }, block: { state: "working", title: "Fixer" } }] });
+  return lead ? { ...v, board: { ...v.board, lead } } : v;
+};
 
 /** The platform's boards for the project, and the hub's sessions by card (`null`: the route isn't there yet, 404). */
-async function serve(page: Page, byCard: unknown = null, live?: number) {
+async function serve(page: Page, byCard: unknown = null, live?: number, lead?: () => unknown) {
   await page.route(`**/api/projects/${P}/boards`, (r) => r.fulfill({ json: { project: P, boards: [board(B, "Launch"), board(LATER, "Later")] } }));
-  await page.route(`**/api/boards/${B}`, (r) => r.fulfill({ json: launch(live) }));
+  await page.route(`**/api/boards/${B}`, (r) => r.fulfill({ json: launch(live, lead?.()) }));
   await page.route(`**/api/boards/${LATER}`, (r) => r.fulfill({ json: view(LATER, "Later", [["row_z", "next", 21, "Someday"]]) }));
   await page.route(`**/api/projects/${P}/sessions/by-card`, (r) => (byCard ? r.fulfill({ json: byCard }) : r.fulfill({ status: 404, json: { error: "not found" } })));
   await page.route("**/api/issues/iss_*", (r) => r.fulfill({ status: 404, json: { error: "not found" } }));
 }
 
 /** The app on the project's Overview, with an agent block on #12 beside the reset's terminal (in its session), and a second session in the project on no card. */
-async function overview(page: Page, byCard: unknown = null, live = false): Promise<{ term: number; agent: number; scratch: number }> {
+async function overview(page: Page, byCard: unknown = null, live = false, lead?: () => unknown): Promise<{ term: number; agent: number; scratch: number }> {
   await reset(page);
   const [term] = await panes(page);
-  await serve(page, byCard, live ? term : undefined);
+  await serve(page, byCard, live ? term : undefined, lead);
   const body = await fixturePage("./app-frame-page.tsx");
   await page.route(new RegExp(`/p/${P}`), (r) => r.fulfill({ contentType: "text/html", body }));
   await page.goto(`/p/${P}`);
@@ -107,6 +113,44 @@ async function overview(page: Page, byCard: unknown = null, live = false): Promi
     return c.state!.panes.find((p) => p.session === session)?.id ?? null;
   }, scratchSession!);
   return { term, agent: made.agent, scratch: scratch! };
+}
+
+/** Launch's room on control, its messages and what's posted in it (in
+ * `window.said`): the fixture page answers chat itself, so it's made up in
+ * the page. */
+async function launchRoom(page: Page) {
+  await page.evaluate((B) => {
+    const room = { id: "room_launch", kind: "object", team: null, name: "Launch", machine: null, machine_name: null, target: B, project: null, with: null, others: [], private: false, last: 1, read: 1, unread: 0, mentions: 0, wants: 0, muted: false, level: "all", level_own: false, archived: false, writable: true, topic: "", description: "", pins: 0, topic_writable: true };
+    const msg = (seq: number, name: string, text: string) => ({ seq, at: Date.now() - 60_000 + seq, author: `acct_${name}`, name, text, quote: null, pane: null, mentions: [], edited: null, deleted: null, imported: null, agent: null, reactions: [], files: [], pinned: false, also: false });
+    const said = [msg(1, "Jo", "Release notes are drafted.")];
+    (window as unknown as { said: typeof said }).said = said;
+    const now = () => ({ ...room, last: said.length, read: said.length });
+    const json = (body: unknown) => new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
+    const before = window.fetch;
+    window.fetch = async (input, init) => {
+      const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.href);
+      if (url.pathname === "/api/chat/targets") return json(now());
+      if (url.pathname === "/api/chat/rooms/room_launch/messages") {
+        if (init?.method === "POST") {
+          said.push(msg(said.length + 1, "Me", (JSON.parse(String(init.body)) as { text: string }).text));
+          return json({ seq: said.length, mentions: [], unreached: [] });
+        }
+        const after = Number(url.searchParams.get("after") ?? 0);
+        return json({ room: now(), messages: said.filter((m) => m.seq > after), more: false });
+      }
+      return before(input, init);
+    };
+  }, B);
+}
+
+/** Chat on, as the page reads it once it has said it's off. */
+async function chatOn(page: Page) {
+  await page.waitForFunction(() => (window as unknown as { __chat?: { on: boolean | null } }).__chat?.on === false);
+  await page.evaluate(() => {
+    const c = (window as unknown as { __chat: { on: boolean | null; emit(): void } }).__chat;
+    c.on = true;
+    c.emit();
+  });
 }
 
 const tile = (page: Page, row: string) => page.locator(`[data-ov-card="${row}"]`);
@@ -186,7 +230,9 @@ test.describe("on a computer", () => {
   test("a card opens the board's drawer; Esc and the path climb back; a session opens on its machine", async ({ page }, info) => {
     const { agent } = await overview(page);
     await openLaunch(page);
+    // #12 has a session: its row peeks at it, and the peek's card link is the drawer.
     await tile(page, "row_b").locator("[data-ov-row-open]").click();
+    await page.locator("[data-ov-peek-card]").click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/?]*\\?board=${B}&card=row_b$`));
     const drawer = page.locator('[data-board-drawer="row_b"]');
     await expect(drawer).toBeVisible();
@@ -202,9 +248,10 @@ test.describe("on a computer", () => {
     await expect(page.locator("[data-app-path] [data-path=board]")).toHaveAttribute("href", new RegExp(`/p/${P}[^/]*/boards/${B}`));
     await page.locator("[data-app-path] [data-path=home]").click();
     await expect(page.locator("[data-board-drawer]")).toHaveCount(0);
-    // A session, from its card's preview: its machine's page, on its pane.
+    // A session, from its card's preview: its peek, and Open in Panes is its machine's page, on its pane.
     await tile(page, "row_b").hover();
     await tile(page, "row_b").locator("[data-ov-session]").click();
+    await page.locator("[data-ov-peek-panes]").click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines.*pane=${agent}`));
     await expect(page.locator(`[data-pane="${agent}"]`)).toBeVisible();
     // Plan on the rail opens on the Overview, back.
@@ -251,6 +298,7 @@ test.describe("on a computer", () => {
     const { term } = await overview(page, null, true);
     await openLaunch(page);
     await tile(page, "row_b").locator("[data-ov-row-open]").click();
+    await page.locator("[data-ov-peek-card]").click();
     const drawer = page.locator('[data-board-drawer="row_b"]');
     const live = drawer.locator("[data-board-drawer-live]");
     await expect(live.locator(`[data-live-slot="${term}"] .xterm`)).toBeVisible({ timeout: 20_000 });
@@ -273,41 +321,13 @@ test.describe("on a computer", () => {
 
   test("a board's thread opens as a tab in the talk panel, under Needs you, with its messages and a box that posts (Arugula #1270)", async ({ page }, info) => {
     await overview(page);
-    // The board's room on control, its messages and what's posted in it: the
-    // fixture page answers chat itself, so it's made up in the page.
-    await page.evaluate((B) => {
-      const room = { id: "room_launch", kind: "object", team: null, name: "Launch", machine: null, machine_name: null, target: B, project: null, with: null, others: [], private: false, last: 1, read: 1, unread: 0, mentions: 0, wants: 0, muted: false, level: "all", level_own: false, archived: false, writable: true, topic: "", description: "", pins: 0, topic_writable: true };
-      const msg = (seq: number, name: string, text: string) => ({ seq, at: Date.now() - 60_000 + seq, author: `acct_${name}`, name, text, quote: null, pane: null, mentions: [], edited: null, deleted: null, imported: null, agent: null, reactions: [], files: [], pinned: false, also: false });
-      const said = [msg(1, "Jo", "Release notes are drafted.")];
-      (window as unknown as { said: typeof said }).said = said;
-      const now = () => ({ ...room, last: said.length, read: said.length });
-      const json = (body: unknown) => new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
-      const before = window.fetch;
-      window.fetch = async (input, init) => {
-        const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.href);
-        if (url.pathname === "/api/chat/targets") return json(now());
-        if (url.pathname === "/api/chat/rooms/room_launch/messages") {
-          if (init?.method === "POST") {
-            said.push(msg(said.length + 1, "Me", (JSON.parse(String(init.body)) as { text: string }).text));
-            return json({ seq: said.length, mentions: [], unreached: [] });
-          }
-          const after = Number(url.searchParams.get("after") ?? 0);
-          return json({ room: now(), messages: said.filter((m) => m.seq > after), more: false });
-        }
-        return before(input, init);
-      };
-    }, B);
+    await launchRoom(page);
     const panel = page.locator("[data-ov-panel]");
     // Needs you is the panel's top; no tab yet, and with chat off a row has no way to its thread.
     await expect(panel.locator("> [data-ov-needs]")).toBeVisible();
     await expect(panel.locator("[data-ov-talk-none]")).toBeVisible();
     await expect(page.locator("[data-ov-board-talk]")).toHaveCount(0);
-    await page.waitForFunction(() => (window as unknown as { __chat?: { on: boolean | null } }).__chat?.on === false);
-    await page.evaluate(() => {
-      const c = (window as unknown as { __chat: { on: boolean | null; emit(): void } }).__chat;
-      c.on = true;
-      c.emit();
-    });
+    await chatOn(page);
     const width = await page.locator("[data-ov-field]").evaluate((e) => e.getBoundingClientRect().width);
     await page.locator(`[data-ov-board="${B}"] [data-ov-board-talk]`).click();
     const tab = panel.locator(`[data-ov-tab="thread:${B}"]`);
@@ -362,6 +382,89 @@ test.describe("on a computer", () => {
     await expect(panel.locator('[data-ov-staff="dm_cos"]')).toContainText("3 boards moved since this morning.");
   });
 
+  test("a card's row peeks at its agent, and a session on no card at its shell: last lines, a box that reaches them, Silence and Stop (Arugula #1271)", async ({ page }, info) => {
+    await overview(page);
+    await openLaunch(page);
+    const panel = page.locator("[data-ov-panel]");
+    // #12's row: a peek tab on its session, its agent block's lines read live from its machine.
+    await tile(page, "row_b").locator("[data-ov-row-open]").click();
+    const peek = panel.locator("[data-ov-peek]");
+    await expect(peek).toHaveAttribute("data-ov-peek-kind", "block");
+    await expect(panel.locator('[data-ov-tab^="peek:"] [role="tab"]')).toHaveAttribute("aria-selected", "true");
+    await expect(peek.locator("[data-ov-peek-name]")).toHaveText("Agent");
+    await expect(peek.locator("[data-ov-peek-where]")).not.toBeEmpty();
+    await expect(peek.locator("[data-ov-peek-tail]")).toHaveAttribute("data-ov-peek-live", "");
+    // The field stays where it is.
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*$`));
+    // Its box goes in as its composer's does: the agent answers it.
+    const reply = peek.locator("[data-ov-peek-reply] input");
+    await reply.fill("env PEEK_1271");
+    await reply.press("Enter");
+    await expect(peek.locator("[data-ov-peek-said]")).toContainText("next tool call");
+    await expect(reply).toHaveValue("");
+    await expect(peek.locator("[data-ov-peek-tail]")).toContainText("ENV PEEK_1271", { timeout: 20_000 });
+    // Silence holds its mentions, on its machine; Allow lets them in again.
+    await peek.locator('[data-ov-peek-silence="silence"]').click();
+    await expect(peek.locator('[data-ov-peek-silence="allow"]')).toBeVisible({ timeout: 10_000 });
+    await page.screenshot({ path: info.outputPath("overview-peek-agent.png") });
+    await peek.locator('[data-ov-peek-silence="allow"]').click();
+    await expect(peek.locator('[data-ov-peek-silence="silence"]')).toBeVisible({ timeout: 10_000 });
+    // The scratch session, on no card: a shell, its box typed with Enter, its lines live.
+    await page.locator("[data-ov-loose] [data-ov-session] [data-ov-row-open]").click();
+    await expect(panel.locator('[data-ov-tab^="peek:"]')).toHaveCount(2);
+    await expect(peek).toHaveAttribute("data-ov-peek-kind", "shell");
+    await expect(peek.locator("[data-ov-peek-silence]")).toHaveCount(0);
+    await reply.fill("echo PEEK-$((6*7))");
+    await reply.press("Enter");
+    await expect(peek.locator("[data-ov-peek-tail]")).toContainText("PEEK-42", { timeout: 20_000 });
+    await page.screenshot({ path: info.outputPath("overview-peek-shell.png") });
+    // Stop is Ctrl-C to a shell: a sleep ends.
+    await reply.fill("sleep 300; echo SL''EPT");
+    await reply.press("Enter");
+    await peek.locator("[data-ov-peek-stop]").click();
+    await expect(peek.locator("[data-ov-peek-said]")).toHaveText("Stopped.");
+    await reply.fill("echo AFTER-$((2+2))");
+    await reply.press("Enter");
+    await expect(peek.locator("[data-ov-peek-tail]")).toContainText("AFTER-4", { timeout: 20_000 });
+    await expect(peek.locator("[data-ov-peek-tail]")).not.toContainText("SLEPT");
+    // Open in Panes: the shell on its machine's page.
+    const shell = ((await page.locator("[data-ov-loose] [data-ov-session]").getAttribute("data-ov-panes")) ?? "").split(":").pop();
+    await peek.locator("[data-ov-peek-panes]").click();
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines.*pane=${shell}$`));
+  });
+
+  test("a board's lead is a chip on its row, with its session's dot, name and machine, that opens the board's thread and doesn't toggle the row (Arugula #1272)", async ({ page }, info) => {
+    // Launch is led by the project's scratch session on the suite's daemon, which this page knows by its name; Later has no lead.
+    let led: unknown;
+    await overview(page, null, false, () => led);
+    const tile = page.locator("[data-ov-loose] [data-ov-panes]");
+    await expect(tile).toHaveAttribute("data-ov-panes", /:/);
+    const host = (await tile.getAttribute("data-ov-panes"))!.split(":")[0];
+    led = { machine: "m_suite", machine_name: host, session: "scratch", at: 1 };
+    await page.reload();
+    await expect(page.locator("[data-overview]")).toBeVisible({ timeout: 20_000 });
+    await launchRoom(page);
+    const lead = page.locator(`[data-ov-board="${B}"] [data-ov-board-lead]`);
+    await expect(lead).toHaveAttribute("data-ov-board-lead", "scratch");
+    await expect(lead.locator(".ov-lead-name")).toHaveText("scratch");
+    await expect(lead.locator(".ov-lead-machine")).toHaveText(host);
+    // Its session's panes are on this page, so its dot says how it stands.
+    await expect(lead.locator("[data-ov-lead-standing]")).toHaveCount(1);
+    await expect(page.locator(`[data-ov-board="${LATER}"] [data-ov-board-lead]`)).toHaveCount(0);
+    // With chat off it's a label, and a click on it doesn't toggle the row.
+    await expect(lead).not.toHaveRole("button");
+    await lead.click();
+    await expect(page.locator(`[data-ov-board="${B}"]`)).not.toHaveAttribute("data-ov-open", "");
+    await chatOn(page);
+    await expect(lead).toHaveRole("button");
+    await lead.click();
+    const panel = page.locator("[data-ov-panel]");
+    await expect(panel.locator(`[data-ov-tab="thread:${B}"]`).getByRole("tab")).toHaveAttribute("aria-selected", "true");
+    await expect(panel.locator(`[data-ov-talk-open="thread:${B}"] [data-room="room_launch"]`)).toContainText("Release notes are drafted.");
+    await expect(page.locator(`[data-ov-board="${B}"]`)).not.toHaveAttribute("data-ov-open", "");
+    await page.screenshot({ path: info.outputPath("overview-lead.png") });
+  });
+
   test("the hub's sessions by card add the sessions the machines don't show here", async ({ page }) => {
     const byCard = {
       project: P,
@@ -377,10 +480,24 @@ test.describe("on a computer", () => {
     await expect(hosted).toContainText("arugula/13-tidy-docs");
     await expect(hosted.locator("[data-ov-where]")).toHaveText("Arugula cloud");
     await expect(tile(page, "row_c")).toHaveAttribute("data-ov-standing", "working");
-    // A machine this page doesn't reach: named, on no card, and not a link.
+    // Its peek: its box is paused, so its last answer (with chat off, its history), and Stop on the platform.
+    await page.route("**/api/sessions/hs_e2e", (r) =>
+      r.fulfill({ json: { card: { session: "hs_e2e", project: P, room: "room_hs", parent: 1, state: "working", branch: "arugula/13-tidy-docs", machine: null, block: null, parked: false }, may: true, asked: true, now: Date.now(), events: [{ seq: 1, kind: "turn", from: null, to: "working", at: 1, signed: true, text: "Tidied the docs index; pushed." }] } }),
+    );
+    await hosted.click();
+    const peek = page.locator("[data-ov-panel] [data-ov-peek]");
+    await expect(peek).toHaveAttribute("data-ov-peek-kind", "hosted");
+    await expect(peek.locator("[data-ov-peek-where]")).toHaveText("Arugula cloud · arugula/13-tidy-docs");
+    await expect(peek.locator("[data-ov-peek-tail]")).toHaveText("Tidied the docs index; pushed.");
+    await expect(peek.locator("[data-ov-peek-tail]")).not.toHaveAttribute("data-ov-peek-live", "");
+    await expect(peek.locator("[data-ov-peek-stop]")).toBeVisible();
+    // A machine this page doesn't reach: named, on no card; its peek says so and writes nothing.
     const far = page.locator("[data-ov-loose] [data-ov-session]", { hasText: "release" });
     await expect(far.locator("[data-ov-where]")).toHaveText("far-away");
-    await expect(far.locator("[data-ov-row-open]")).toBeDisabled();
+    await far.locator("[data-ov-row-open]").click();
+    await expect(peek).toHaveAttribute("data-ov-peek-readonly", "");
+    await expect(peek.locator("[data-ov-peek-tail]")).toContainText("far-away");
+    await expect(peek.locator("[data-ov-peek-reply], [data-ov-peek-stop]")).toHaveCount(0);
   });
 });
 

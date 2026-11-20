@@ -9,6 +9,10 @@ package io.arugula.app
 import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.material3.VerticalDivider
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -212,9 +216,7 @@ fun Shell(api: Api, model: AppModel) {
         ) { padding ->
             Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
                 val top = stack.lastOrNull()
-                if (top != null) {
-                    Destination(api, top, home, fleet, live)
-                } else {
+                val list: @Composable () -> Unit = {
                     when (tab) {
                         AppTab.HOME -> HomeScreen(api, home, fleet, live)
                         AppTab.BOARDS -> BoardsScreen(api)
@@ -223,8 +225,40 @@ fun Shell(api: Api, model: AppModel) {
                         AppTab.YOU -> YouScreen(model)
                     }
                 }
+                BoxWithConstraints(Modifier.fillMaxSize()) {
+                    // A tablet, as the iPad: the tab's list beside what it
+                    // opened. A terminal takes the whole width.
+                    if (maxWidth >= 840.dp && tab != AppTab.YOU && top !is Dest.Terminal) {
+                        Row(Modifier.fillMaxSize()) {
+                            Box(Modifier.width(380.dp).fillMaxHeight()) { list() }
+                            VerticalDivider(color = Palette.raised)
+                            Box(Modifier.weight(1f).fillMaxHeight()) {
+                                if (top != null) Destination(api, top, home, fleet, live) else Pick(tab)
+                            }
+                        }
+                    } else if (top != null) {
+                        Destination(api, top, home, fleet, live)
+                    } else {
+                        list()
+                    }
+                }
             }
         }
+    }
+}
+
+/** What a tablet's detail shows before anything is picked. */
+@Composable
+private fun Pick(tab: AppTab) {
+    val words = when (tab) {
+        AppTab.HOME -> "Pick a conversation"
+        AppTab.BOARDS -> "Pick a board"
+        AppTab.CHAT -> "Pick a room"
+        else -> "Pick a machine"
+    }
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterVertically), horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(tab.icon, null, Modifier.size(34.dp), tint = Palette.muted)
+        Caps(words)
     }
 }
 
