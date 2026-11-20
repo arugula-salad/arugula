@@ -4,8 +4,9 @@
 // sessions, worst first; then one row per open board, with its lane bar,
 // its count, its lead and what's going on in words; then the people, its
 // channels and DMs. A board's row opens the board's thread, whose Board
-// button opens its lanes. The tabs are a menu away. On an iPad home is the
-// left column of a split view, and what it opens sits beside it. A row of
+// button opens its lanes. Home is the first of the app's tabs (Arugula #1262).
+// On an iPad home is the left column of a split view, and what it opens sits
+// beside it. A row of
 // Needs you is answered where it is (Answer.swift), and a session opens a
 // peek. New tells a board or starts a New idea (New.swift), whose
 // conversations are listed under New ideas.
@@ -21,15 +22,19 @@ enum Opened: Hashable {
     /// A New idea's conversation: its session's thread (`room`, and the
     /// message it hangs off), or the issue's thread when it has no session.
     case idea(room: String?, parent: Int?, issue: String? = nil, title: String)
+    /// A native issue, by its id: a notification about one opens it here.
+    case issue(String)
 }
 
-/// The tabs of the app before home, still a menu away.
+/// The app's tabs, always on its bar (Arugula #1262): home first. Issues
+/// aren't a tab: a board's rows open theirs, and the project's menu opens
+/// the list.
 enum AppTab: String, CaseIterable, Identifiable {
-    case issues = "Issues", boards = "Boards", chat = "Chat", machines = "Machines", you = "You"
+    case home = "Home", boards = "Boards", chat = "Chat", machines = "Machines", you = "You"
     var id: String { rawValue }
     var symbol: String {
         switch self {
-        case .issues: "smallcircle.filled.circle"
+        case .home: "house"
         case .boards: "rectangle.split.3x1"
         case .chat: "bubble.left.and.bubble.right"
         case .machines: "terminal"
@@ -42,11 +47,21 @@ private struct GoHomeKey: EnvironmentKey {
     static let defaultValue: (() -> Void)? = nil
 }
 
+private struct ShowIssuesKey: EnvironmentKey {
+    static let defaultValue: (() -> Void)? = nil
+}
+
 extension EnvironmentValues {
-    /// Back to home from a tab.
+    /// Select the Home tab.
     var goHome: (() -> Void)? {
         get { self[GoHomeKey.self] }
         set { self[GoHomeKey.self] = newValue }
+    }
+
+    /// Open the current project's issues, from its menu.
+    var showIssues: (() -> Void)? {
+        get { self[ShowIssuesKey.self] }
+        set { self[ShowIssuesKey.self] = newValue }
     }
 }
 
@@ -465,7 +480,7 @@ struct PhoneHome: View {
     @ObservedObject var model: HomeModel
     @ObservedObject var fleet: HomeFleet
     @ObservedObject var live: LiveChat
-    let go: (AppTab) -> Void
+    @ObservedObject private var push = PushCenter.shared
     @EnvironmentObject private var scope: Scope
     @Environment(\.scenePhase) private var phase
     @State private var opened: Opened?
@@ -488,7 +503,7 @@ struct PhoneHome: View {
     var body: some View {
         NavigationSplitView(columnVisibility: $columns) {
             list
-                .homeHeading(go: go) { making = true }
+                .homeHeading { making = true }
                 .background(Palette.void)
         } detail: {
             NavigationStack(path: $path) {
@@ -500,12 +515,17 @@ struct PhoneHome: View {
                     case .session(let s): ChatRoomView(control: control, room: s.thread, live: live, thread: s.parent)
                     case .idea(let room, let parent, let issue, let title):
                         IdeaThread(control: control, room: room, parent: parent, issue: issue, title: title, live: live)
+                    case .issue(let id):
+                        Loaded(load: { try await control.get("/api/issues/\(id)", as: Issue.self) }) { IssueView(issue: $0) }
                     case nil: Empty(text: "Pick a conversation", symbol: "bubble.left.and.bubble.right")
                     }
                 }
-                .navigationDestination(for: BoardLanes.self) { BoardScreen(control: control, board: $0.board) }
+                .navigationDestination(for: BoardLanes.self) {
+                    BoardScreen(control: control, board: $0.board).backBesideTabs("Thread") { path.removeLast() }
+                }
                 .navigationDestination(for: IssueRef.self) { ref in
                     Loaded(load: { try await control.get("/api/issues/\(ref.id)", as: Issue.self) }) { IssueView(issue: $0) }
+                        .backBesideTabs("Back") { path.removeLast() }
                 }
             }
             .id(opened)
@@ -536,6 +556,12 @@ struct PhoneHome: View {
         }
         .onChange(of: opened) { _, _ in path = NavigationPath() }
         .onChange(of: scope.current?.id) { _, _ in opened = nil }
+        // A notification about an issue (#1260): that issue, beside home.
+        .onChange(of: push.route, initial: true) { _, route in
+            guard case .issue(let id)? = route else { return }
+            push.route = nil
+            opened = .issue(id)
+        }
         .task {
             live.start()
             await fleet.load(control)
@@ -685,9 +711,9 @@ struct PhoneHome: View {
 /// The label for what needs you, as the web's (web/src/shared/needs-you.ts).
 let NEEDS_YOU = "Needs you"
 
-/// Home's heading: the project, as a menu of every project and of the tabs.
+/// Home's heading: the project, as a menu of every project and its issues,
+/// and New.
 struct HomeHeading: ViewModifier {
-    let go: (AppTab) -> Void
     let new: () -> Void
     @EnvironmentObject private var scope: Scope
 
@@ -699,13 +725,7 @@ struct HomeHeading: ViewModifier {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(alignment: .firstTextBaseline) {
                         Menu {
-                            Section("Projects") {
-                                ForEach(scope.projects) { p in
-                                    Button { scope.pick(p) } label: {
-                                        if p == scope.current { Label(p.name, systemImage: "checkmark") } else { Text(p.name) }
-                                    }
-                                }
-                            }
+                            ProjectMenu()
                         } label: {
                             HStack(alignment: .firstTextBaseline, spacing: 8) {
                                 Text((scope.current?.name ?? "Arugula").uppercased())
@@ -718,17 +738,6 @@ struct HomeHeading: ViewModifier {
                         Button("New", action: new)
                             .buttonStyle(AnswerButton(primary: true))
                             .accessibilityIdentifier("home-new")
-                        Menu {
-                            ForEach(AppTab.allCases) { t in
-                                Button { go(t) } label: { Label(t.rawValue, systemImage: t.symbol) }
-                                    .accessibilityIdentifier("go-\(t.rawValue)")
-                            }
-                        } label: {
-                            Image(systemName: "square.grid.2x2").font(.system(size: 18, weight: .semibold)).foregroundStyle(Palette.accent)
-                                .frame(width: 36, height: 36)
-                        }
-                        .accessibilityLabel("Go to")
-                        .accessibilityIdentifier("home-menu")
                     }
                     if let team = scope.current?.team {
                         Caps("\(team.name) · \(team.role)")
@@ -746,8 +755,29 @@ struct HomeHeading: ViewModifier {
 }
 
 extension View {
-    func homeHeading(go: @escaping (AppTab) -> Void, new: @escaping () -> Void) -> some View {
-        modifier(HomeHeading(go: go, new: new))
+    func homeHeading(new: @escaping () -> Void) -> some View { modifier(HomeHeading(new: new)) }
+}
+
+/// The project menu's items: every project to pick, then the current one's
+/// issues.
+struct ProjectMenu: View {
+    @EnvironmentObject private var scope: Scope
+    @Environment(\.showIssues) private var showIssues
+
+    var body: some View {
+        Section("Projects") {
+            ForEach(scope.projects) { p in
+                Button { scope.pick(p) } label: {
+                    if p == scope.current { Label(p.name, systemImage: "checkmark") } else { Text(p.name) }
+                }
+            }
+        }
+        if let showIssues {
+            Section {
+                Button(action: showIssues) { Label("Issues", systemImage: "smallcircle.filled.circle") }
+                    .accessibilityIdentifier("project-issues")
+            }
+        }
     }
 }
 
@@ -971,5 +1001,33 @@ struct IdeaThread: View {
                 problem = describe(error)
             }
         }
+    }
+}
+
+/// Back, where iPadOS's tabs cover it (Arugula #1262): on an iPad the tab bar
+/// floats over the top of the split view, across the detail's back button,
+/// so what home's detail pushes gets one on the other side ("‹ Thread", as
+/// the prototype has it). An iPhone keeps its own.
+struct BackBesideTabs: ViewModifier {
+    let title: String
+    let back: () -> Void
+    @Environment(\.horizontalSizeClass) private var width
+
+    func body(content: Content) -> some View {
+        content.toolbar {
+            if width == .regular {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(action: back) { Label(title, systemImage: "chevron.left").labelStyle(.titleAndIcon) }
+                        .font(Face.mono(12, "Bold"))
+                        .accessibilityIdentifier("detail-back")
+                }
+            }
+        }
+    }
+}
+
+extension View {
+    func backBesideTabs(_ title: String, back: @escaping () -> Void) -> some View {
+        modifier(BackBesideTabs(title: title, back: back))
     }
 }

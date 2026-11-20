@@ -1,5 +1,6 @@
 // The app as a person takes it, on a simulator against a real control
-// (native/ios/test-sim.sh): sign in, home, a board's thread and its lanes,
+// (native/ios/test-sim.sh): sign in, the tab bar, home, the project's issues,
+// a board's thread and its lanes,
 // an agent's permission prompt and question answered from home, projects,
 // chat, a terminal. The script
 // allows the sign-in from outside, as a signed-in browser would, and hands back
@@ -43,31 +44,23 @@ final class FlowTests: XCTestCase {
         }
     }
 
-    /// A tab, from home's menu or from the tab bar once one is open.
+    /// A tab, from the tab bar (always there, Arugula #1262).
     private func go(_ app: XCUIApplication, _ name: String) {
         clearAlerts()
-        let menu = app.buttons["home-menu"]
-        if menu.exists {
-            // Once more if the menu closed as home moved under it.
-            let item = app.buttons[name].firstMatch
-            for _ in 0..<3 where !item.exists {
-                menu.tap()
-                _ = item.shows(within: 5)
-            }
-            if !item.exists { shot(app, "fail-menu-\(name)") }
-            XCTAssertTrue(item.exists, "no \(name) in home's menu: \(app.debugDescription)")
-            item.tap()
-        } else {
-            tab(app, name).tap()
-        }
+        let t = tab(app, name)
+        XCTAssertTrue(t.shows(within: 10), "no \(name) tab: \(app.debugDescription)")
+        t.tap()
     }
 
     /// Back one screen: the bar's back button (on an iPad the sidebar's
-    /// button comes first, so by its name).
+    /// button comes first, so by its name; or home's own, beside the tabs).
     private func goBack(_ app: XCUIApplication) {
         clearAlerts()
+        // On an iPad the tabs float over the detail's back button: home's
+        // detail has its own, on the other side.
+        let beside = app.buttons["detail-back"].firstMatch
         let named = app.navigationBars.buttons["Back"].firstMatch
-        (named.exists ? named : app.navigationBars.buttons.element(boundBy: 0)).tap()
+        (beside.exists ? beside : named.exists ? named : app.navigationBars.buttons.element(boundBy: 0)).tap()
     }
 
     func testSignInProjectsChatAndATerminal() throws {
@@ -114,6 +107,21 @@ final class FlowTests: XCTestCase {
         while !switcher.label.lowercased().contains("default") && Date() < deadline0 { sleep(1) }
         XCTAssertTrue(switcher.label.lowercased().contains("default"), "not in the Default project: \(switcher.label)")
         shot(app, "2-projects")
+
+        // The tab bar is there from the start, Home first (Arugula #1262), and
+        // the project's issues open from its menu.
+        for name in ["Home", "Boards", "Chat", "Machines", "You"] {
+            XCTAssertTrue(tab(app, name).shows(within: 10), "no \(name) on the tab bar")
+        }
+        XCTAssertFalse(tab(app, "Issues").exists, "Issues is still a tab")
+        switcher.tap()
+        let issuesItem = app.buttons["project-issues"]
+        XCTAssertTrue(issuesItem.shows(within: 10), "no Issues in the project's menu")
+        issuesItem.tap()
+        XCTAssertTrue(app.buttons["issues-done"].shows(within: 15), "the project's issues didn't open")
+        shot(app, "2-issues")
+        app.buttons["issues-done"].tap()
+        XCTAssertTrue(switcher.shows(within: 10), "not back home from the issues")
 
         // Home (Arugula #1255): the board the script made, its row's question
         // under Needs you, its thread and its lanes, and back.
@@ -289,7 +297,13 @@ final class FlowTests: XCTestCase {
         XCTAssertTrue(seen.contains("SIM-42"), "the terminal showed: \(seen)")
 
         // Back from driving it: the machine's screen (on an iPad, its tab whole).
-        app.buttons["terminal-done"].tap()
+        // Done again if the sheet stayed (a tap as the keyboard settles can miss).
+        for _ in 0..<3 where app.buttons["terminal-done"].exists {
+            clearAlerts()
+            app.buttons["terminal-done"].tap()
+            let goneBy = Date().addingTimeInterval(4)
+            while app.buttons["terminal-done"].exists && Date() < goneBy { usleep(300_000) }
+        }
         sleep(3)
         shot(app, "6-machine")
         XCTAssertTrue(app.buttons["new-terminal"].shows(within: 10), "not back on the machine")

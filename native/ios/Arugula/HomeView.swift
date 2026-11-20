@@ -1,7 +1,9 @@
-// One navigation: home (Home.swift) in front, and projects, chat and machines
-// as tabs a menu away from it, whichever process behind control answers them.
-// Each tab is a list beside what's picked in it on an iPad, and one screen at
-// a time on an iPhone.
+// One navigation: tabs always on the bar (Arugula #1262), home (Home.swift)
+// first, then the project's boards, chat, the account's machines and the
+// account, whichever process behind control answers them. The project's
+// issues open from its menu and from a board's rows. Each tab is a list
+// beside what's picked in it on an iPad, and one screen at a time on an
+// iPhone.
 
 import SwiftUI
 import UIKit
@@ -13,12 +15,13 @@ struct HomeView: View {
     let control: Control
     @StateObject private var scope = Scope()
     @ObservedObject private var push = PushCenter.shared
-    /// What home reads, kept while a tab is open, so coming back is at once.
+    /// What home reads, kept while another tab is open, so coming back is at once.
     @StateObject private var model = HomeModel()
     @StateObject private var fleet = HomeFleet()
     @StateObject private var live: LiveChat
-    /// The tab open, or none: home (Arugula #1255).
-    @State private var tab: AppTab?
+    @State private var tab = AppTab.home
+    /// The project's issues, from its menu.
+    @State private var issues = false
 
     init(control: Control) {
         self.control = control
@@ -26,35 +29,13 @@ struct HomeView: View {
     }
 
     var body: some View {
-        Group {
-            if let tab {
-                tabs(tab)
-            } else {
-                PhoneHome(control: control, model: model, fleet: fleet, live: live) { tab = $0 }
-            }
-        }
-        // A tapped notification (#1260): its tab, whose view opens the thing.
-        .onChange(of: push.route, initial: true) { _, route in
-            switch route {
-            case .pane: tab = .machines
-            case .room: tab = .chat
-            case .issue: tab = .issues
-            case nil: break
-            }
-        }
-        .background(Palette.void)
-        .environmentObject(scope)
-        .environment(\.goHome, { tab = nil })
-        .task { await scope.load(control) }
-    }
-
-    private func tabs(_ open: AppTab) -> some View {
-        TabView(selection: Binding(get: { tab ?? open }, set: { tab = $0 })) {
-            // What's in the current project, then the account's machines and
-            // the account itself. Tabs and titles in the theme (Theme.swift).
-            IssuesView(control: control)
-                .tabItem { Label(AppTab.issues.rawValue, systemImage: AppTab.issues.symbol) }
-                .tag(AppTab.issues)
+        TabView(selection: $tab) {
+            // Home, then what's in the current project, then the account's
+            // machines and the account itself. Tabs and titles in the theme
+            // (Theme.swift).
+            PhoneHome(control: control, model: model, fleet: fleet, live: live)
+                .tabItem { Label(AppTab.home.rawValue, systemImage: AppTab.home.symbol) }
+                .tag(AppTab.home)
             BoardsView(control: control)
                 .tabItem { Label(AppTab.boards.rawValue, systemImage: AppTab.boards.symbol) }
                 .tag(AppTab.boards)
@@ -68,11 +49,31 @@ struct HomeView: View {
                 .tabItem { Label(AppTab.you.rawValue, systemImage: AppTab.you.symbol) }
                 .tag(AppTab.you)
         }
+        // A tapped notification (#1260): its tab, whose view opens the thing;
+        // an issue opens beside home.
+        .onChange(of: push.route, initial: true) { _, route in
+            switch route {
+            case .pane: tab = .machines
+            case .room: tab = .chat
+            case .issue: tab = .home
+            case nil: break
+            }
+        }
+        .sheet(isPresented: $issues) {
+            IssuesView(control: control) { issues = false }
+                .environmentObject(scope)
+                .environment(\.showIssues, nil)
+        }
+        .background(Palette.void)
+        .environmentObject(scope)
+        .environment(\.goHome, { tab = .home })
+        .environment(\.showIssues, { issues = true })
+        .task { await scope.load(control) }
     }
 }
 
 /// The project the app is in, as the web's current project (Arugula #880):
-/// Issues, Boards and Chat show what's in it. Kept on this device; the
+/// Home, Boards, Chat and its issues show what's in it. Kept on this device; the
 /// reader's personal project until they pick another.
 @MainActor
 final class Scope: ObservableObject {
@@ -106,16 +107,16 @@ final class Scope: ObservableObject {
     }
 }
 
-/// The heading at the top of a tab's list. In a project's tabs (Issues,
-/// Boards, Chat) it's the current project, as a pull-down menu of every
-/// project, with whose it is: there's no separate bar for something that's
+/// The heading at the top of a tab's list. In a project's tabs (Boards,
+/// Chat, and its Issues) it's the current project, as a pull-down menu of
+/// every project and its issues, with whose it is: there's no separate bar
+/// for something that's
 /// seldom changed, and the tab's own name is already in the tab bar. Machines
 /// and You, the account's, are headed by their name.
 struct TabHeading: ViewModifier {
     let title: String
     var project = false
     @EnvironmentObject private var scope: Scope
-    @Environment(\.goHome) private var goHome
 
     func body(content: Content) -> some View {
         content
@@ -123,20 +124,9 @@ struct TabHeading: ViewModifier {
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .top, spacing: 0) {
                 VStack(alignment: .leading, spacing: 2) {
-                    if let goHome {
-                        Button(action: goHome) {
-                            Label("Home", systemImage: "chevron.left").font(Face.mono(12, "Bold"))
-                        }
-                        .foregroundStyle(Palette.accent)
-                        .accessibilityIdentifier("go-home")
-                    }
                     if project {
                         Menu {
-                            ForEach(scope.projects) { p in
-                                Button { scope.pick(p) } label: {
-                                    if p == scope.current { Label(p.name, systemImage: "checkmark") } else { Text(p.name) }
-                                }
-                            }
+                            ProjectMenu()
                         } label: {
                             HStack(alignment: .firstTextBaseline, spacing: 8) {
                                 Text((scope.current?.name ?? title).uppercased())
@@ -268,11 +258,12 @@ struct Empty: View {
     }
 }
 
-/// The current project's open issues, beside the one that's open.
+/// The current project's open issues, beside the one that's open: from the
+/// project's menu, over the tabs, with Done to close.
 struct IssuesView: View {
     let control: Control
+    var close: (() -> Void)?
     @EnvironmentObject private var scope: Scope
-    @ObservedObject private var push = PushCenter.shared
     @State private var picked: Issue?
     @State private var columns = NavigationSplitViewVisibility.all
 
@@ -294,6 +285,13 @@ struct IssuesView: View {
             }
             .tabHeading("Issues", project: true)
             .background(Palette.void)
+            .toolbar {
+                if let close {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done", action: close).accessibilityIdentifier("issues-done")
+                    }
+                }
+            }
         } detail: {
             NavigationStack {
                 if let picked {
@@ -308,14 +306,6 @@ struct IssuesView: View {
         // Another project: nothing of the last one stays open. (Not an `id` on
         // the split view: rebuilding it under a laying-out bar aborts UIKit.)
         .onChange(of: scope.current?.id) { _, _ in picked = nil }
-        // A notification about an issue (#1260): that issue, whichever project.
-        .onChange(of: push.route, initial: true) { _, route in
-            guard case .issue(let id)? = route else { return }
-            push.route = nil
-            Task {
-                if let issue = try? await control.get("/api/issues/\(id)", as: Issue.self) { picked = issue }
-            }
-        }
     }
 }
 
