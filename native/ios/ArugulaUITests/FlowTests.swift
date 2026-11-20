@@ -33,6 +33,16 @@ final class FlowTests: XCTestCase {
         }
     }
 
+    /// Tap a text field until the keyboard is up for it: a tap as the view
+    /// settles (or as an alert goes) can land without giving it focus.
+    private func focus(_ app: XCUIApplication, _ field: XCUIElement) {
+        for _ in 0..<4 {
+            clearAlerts()
+            field.tap()
+            if app.keyboards.firstMatch.shows(within: 3) { return }
+        }
+    }
+
     /// A tab, from home's menu or from the tab bar once one is open.
     private func go(_ app: XCUIApplication, _ name: String) {
         clearAlerts()
@@ -121,8 +131,7 @@ final class FlowTests: XCTestCase {
             let said = "to-the-board-\(Int.random(in: 1000...9999))"
             let draft = app.textFields["chat-draft"]
             XCTAssertTrue(draft.shows(within: 15))
-            clearAlerts()
-            draft.tap()
+            focus(app, draft)
             draft.typeText(said)
             app.buttons["chat-send"].tap()
             XCTAssertTrue(app.staticTexts[said].shows(within: 20), "the board's thread didn't take the post")
@@ -182,6 +191,56 @@ final class FlowTests: XCTestCase {
             shot(app, "3-answered")
         }
 
+        // New (Arugula #1257): tell the board, which opens its thread; then
+        // a New idea, filed as an issue and handed to an agent (on testnet,
+        // which has no hosted sessions, a machine's: box-systemd's), whose
+        // conversation opens and is listed under New ideas.
+        if let title = env["ARUGULA_BOARD"], !title.isEmpty {
+            let new = app.buttons["home-new"]
+            XCTAssertTrue(new.shows(within: 15), "no New on home")
+            new.tap()
+            XCTAssertTrue(app.buttons["new-board"].shows(within: 10), "no Tell a board")
+            app.buttons["new-board"].tap()
+            let pick = app.buttons["tell-\(title)"]
+            XCTAssertTrue(pick.shows(within: 10), "the board isn't offered")
+            pick.tap()
+            XCTAssertTrue(app.staticTexts["board-lead"].shows(within: 20), "telling the board didn't open its thread")
+            let told = "told-the-board-\(Int.random(in: 1000...9999))"
+            let draft = app.textFields["chat-draft"]
+            XCTAssertTrue(draft.shows(within: 15))
+            focus(app, draft)
+            draft.typeText(told)
+            app.buttons["chat-send"].tap()
+            XCTAssertTrue(app.staticTexts[told].shows(within: 20), "the board's thread didn't take it")
+            shot(app, "4-told")
+            if !iPad { goBack(app) }
+
+            XCTAssertTrue(new.shows(within: 15), "not back home")
+            new.tap()
+            XCTAssertTrue(app.buttons["new-idea"].shows(within: 10), "no New idea")
+            app.buttons["new-idea"].tap()
+            let words = app.textViews["idea-words"].exists ? app.textViews["idea-words"] : app.textFields["idea-words"]
+            XCTAssertTrue(words.shows(within: 10), "no words for the idea")
+            focus(app, words)
+            let idea = "Chat that keeps working on the train \(Int.random(in: 1000...9999))"
+            words.typeText(idea)
+            shot(app, "4-idea")
+            app.buttons["idea-start"].tap()
+            // Hosted, it opens at once; else a machine to run it on.
+            let machine = app.buttons[env["ARUGULA_MACHINE"].map { "idea-on-\($0)" } ?? "idea-on-box-systemd"]
+            if machine.shows(within: 20) {
+                shot(app, "4-idea-machine")
+                machine.tap()
+            }
+            let reply = app.textFields["chat-draft"]
+            XCTAssertTrue(reply.shows(within: 30), "the idea's conversation didn't open: \(app.debugDescription)")
+            shot(app, "4-idea-thread")
+            if !iPad { goBack(app) }
+            let listed = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'home-idea-' AND label CONTAINS %@", idea)).firstMatch
+            XCTAssertTrue(listed.shows(within: 45), "the idea isn't under New ideas: \(app.debugDescription)")
+            shot(app, "4-ideas")
+        }
+
         // Chat: post to the room the script made, and see it come back.
         go(app, "Chat")
         let room = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'room-'")).firstMatch
@@ -194,8 +253,7 @@ final class FlowTests: XCTestCase {
         XCTAssertEqual(liveMark.exists ? liveMark.label : "missing", "LIVE", "chat's stream never opened")
         let draft = app.textFields["chat-draft"]
         XCTAssertTrue(draft.shows(within: 15))
-        clearAlerts()
-        draft.tap()
+        focus(app, draft)
         let marker = "from-the-simulator-\(Int.random(in: 1000...9999))"
         draft.typeText(marker)
         app.buttons["chat-send"].tap()

@@ -7,7 +7,8 @@
 // button opens its lanes. The tabs are a menu away. On an iPad home is the
 // left column of a split view, and what it opens sits beside it. A row of
 // Needs you is answered where it is (Answer.swift), and a session opens a
-// peek.
+// peek. New tells a board or starts a New idea (New.swift), whose
+// conversations are listed under New ideas.
 
 import Combine
 import SwiftUI
@@ -17,6 +18,9 @@ enum Opened: Hashable {
     case board(Board)
     case room(ChatRoom)
     case session(SessionWave.Row)
+    /// A New idea's conversation: its session's thread (`room`, and the
+    /// message it hangs off), or the issue's thread when it has no session.
+    case idea(room: String?, parent: Int?, issue: String? = nil, title: String)
 }
 
 /// The tabs of the app before home, still a menu away.
@@ -103,6 +107,10 @@ final class HomeModel: ObservableObject {
     @Published private(set) var threads: [String: ChatRoom] = [:]
     @Published private(set) var problem: String?
     @Published private(set) var loaded = false
+    /// The project's open New ideas: its issues titled "Idea: …".
+    @Published private(set) var ideas: [Issue] = []
+    /// What the reader is called, for an idea's agent.
+    @Published private(set) var me: String?
     /// When it last asked, to space out what the stream sets off.
     private(set) var loadedAt: Date?
     private var project: String?
@@ -119,6 +127,8 @@ final class HomeModel: ObservableObject {
         async let b = control.get("/api/projects/\(project)/boards", as: BoardList.self)
         async let r = control.get("/api/chat", as: ChatRooms.self)
         async let s = control.get("/api/projects/\(project)/sessions", as: SessionWave.self)
+        async let i = control.get("/api/projects/\(project)/issues", as: IssueList.self)
+        async let who = control.get("/api/projects", as: Projects.self)
         do {
             let open = try await b.boards.filter { $0.closed_at == nil }
             var read: [String: BoardDetail] = [:]
@@ -145,6 +155,8 @@ final class HomeModel: ObservableObject {
             if let v = try? await control.get("/api/sessions/\(w.session)", as: SessionView.self) { asks[w.session] = v }
         }
         opened = asks
+        ideas = ((try? await i.issues) ?? []).filter { $0.title.hasPrefix("Idea: ") }
+        if me == nil { me = try? await who.me.name }
         loaded = true
         await openThreads(control)
     }
@@ -464,6 +476,7 @@ struct PhoneHome: View {
     @State private var folded: Set<String> = []
     @State private var said: String?
     @State private var peek: Peeked?
+    @State private var making = false
 
     /// A pane's terminal, over everything.
     struct PaneOpen: Identifiable {
@@ -475,7 +488,7 @@ struct PhoneHome: View {
     var body: some View {
         NavigationSplitView(columnVisibility: $columns) {
             list
-                .homeHeading(go: go)
+                .homeHeading(go: go) { making = true }
                 .background(Palette.void)
         } detail: {
             NavigationStack(path: $path) {
@@ -485,6 +498,8 @@ struct PhoneHome: View {
                         BoardThread(control: control, board: b, model: model, live: live, sessions: state.sessions[b.id] ?? []) { peek = $0 }
                     case .room(let r): ChatRoomView(control: control, room: r, live: live)
                     case .session(let s): ChatRoomView(control: control, room: s.thread, live: live, thread: s.parent)
+                    case .idea(let room, let parent, let issue, let title):
+                        IdeaThread(control: control, room: room, parent: parent, issue: issue, title: title, live: live)
                     case nil: Empty(text: "Pick a conversation", symbol: "bubble.left.and.bubble.right")
                     }
                 }
@@ -497,6 +512,12 @@ struct PhoneHome: View {
         }
         .navigationSplitViewStyle(.balanced)
         .fullScreenCover(item: $terminal) { t in TerminalScreen(session: t.session, pane: t.pane) }
+        .sheet(isPresented: $making) {
+            NewSheet(control: control, model: model, fleet: fleet, open: { opened = $0 }, toast: show) {
+                Task { await refresh() }
+            }
+                .environmentObject(scope)
+        }
         .sheet(item: $peek) { p in
             SessionPeek(
                 control: control, peeked: p,
@@ -550,6 +571,13 @@ struct PhoneHome: View {
         if soon { await model.soon(control, project: p.id) } else { await model.load(control, project: p.id) }
     }
 
+    /// The New ideas, newest first, each with its session if it has one.
+    private var ideaLines: [IdeaLine] {
+        model.ideas.sorted { $0.number > $1.number }.map { i in
+            IdeaLine(issue: i, session: model.hosted.first { $0.issue?.id == i.id })
+        }
+    }
+
     private var state: HomeState {
         scope.current.map { HomeState(project: $0, fleet: fleet, model: model) } ?? HomeState()
     }
@@ -579,6 +607,26 @@ struct PhoneHome: View {
                 ForEach(needs) { n in needRow(n) }
             } header: {
                 Caps(needs.isEmpty ? NEEDS_YOU : "\(NEEDS_YOU) · \(needs.count)")
+            }
+            if !ideaLines.isEmpty {
+                Section {
+                    ForEach(ideaLines) { line in
+                        Button {
+                            if let s = line.session {
+                                opened = .idea(room: s.room, parent: s.parent, title: line.issue.title)
+                            } else {
+                                opened = .idea(room: nil, parent: nil, issue: line.issue.id, title: line.issue.title)
+                            }
+                        } label: {
+                            IdeaRow(line: line)
+                        }
+                        .buttonStyle(.plain)
+                        .voidRow()
+                        .accessibilityIdentifier("home-idea-\(line.issue.number)")
+                    }
+                } header: {
+                    Caps("New ideas")
+                }
             }
             Section {
                 if model.loaded && state.boards.isEmpty {
@@ -640,6 +688,7 @@ let NEEDS_YOU = "Needs you"
 /// Home's heading: the project, as a menu of every project and of the tabs.
 struct HomeHeading: ViewModifier {
     let go: (AppTab) -> Void
+    let new: () -> Void
     @EnvironmentObject private var scope: Scope
 
     func body(content: Content) -> some View {
@@ -666,6 +715,9 @@ struct HomeHeading: ViewModifier {
                         }
                         .accessibilityIdentifier("project-switcher")
                         Spacer(minLength: 8)
+                        Button("New", action: new)
+                            .buttonStyle(AnswerButton(primary: true))
+                            .accessibilityIdentifier("home-new")
                         Menu {
                             ForEach(AppTab.allCases) { t in
                                 Button { go(t) } label: { Label(t.rawValue, systemImage: t.symbol) }
@@ -694,7 +746,9 @@ struct HomeHeading: ViewModifier {
 }
 
 extension View {
-    func homeHeading(go: @escaping (AppTab) -> Void) -> some View { modifier(HomeHeading(go: go)) }
+    func homeHeading(go: @escaping (AppTab) -> Void, new: @escaping () -> Void) -> some View {
+        modifier(HomeHeading(go: go, new: new))
+    }
 }
 
 /// A row of Needs you: a dot, who, how it stands, where, and what it asks.
@@ -881,5 +935,41 @@ extension SessionWave.Row {
         ChatRoom(
             id: room, kind: "thread", name: issue.map { "#\($0.number) \($0.title)" } ?? "Session", last: 0, unread: 0,
             mentions: 0, archived: false, writable: true)
+    }
+}
+
+/// A New idea's conversation: its session's thread, or its issue's.
+struct IdeaThread: View {
+    let control: Control
+    let room: String?
+    let parent: Int?
+    let issue: String?
+    let title: String
+    @ObservedObject var live: LiveChat
+    @State private var found: String?
+    @State private var problem: String?
+
+    var body: some View {
+        Group {
+            if let id = room ?? found {
+                ChatRoomView(
+                    control: control,
+                    room: ChatRoom(id: id, kind: "thread", name: title, last: 0, unread: 0, mentions: 0, archived: false, writable: true),
+                    live: live, title: title, thread: parent)
+            } else if let problem {
+                Problem(message: problem)
+            } else {
+                ProgressView().tint(Palette.accent).frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .task {
+            guard room == nil, let issue else { return }
+            do {
+                let d = try await control.call("POST", "/api/chat/targets", body: ["machine": "", "kind": "object", "target": issue])
+                found = try JSONDecoder().decode(ChatRoom.self, from: d).id
+            } catch {
+                problem = describe(error)
+            }
+        }
     }
 }
