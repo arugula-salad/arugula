@@ -1,5 +1,62 @@
 {
   "$defs": {
+    "Actor": {
+      "description": "Who did what an event says.",
+      "properties": {
+        "id": {
+          "description": "The account's or agent session's id; for an external actor, its id\nat the source.",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ActorKind"
+        },
+        "login": {
+          "default": null,
+          "description": "Their login as people read it, when they have one. An external\none's is what the source said, untrusted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "id"
+      ],
+      "type": "object"
+    },
+    "ActorKind": {
+      "anyOf": [
+        {
+          "oneOf": [
+            {
+              "const": "account",
+              "description": "A person's Arugula account.",
+              "type": "string"
+            },
+            {
+              "const": "agent",
+              "description": "An agent, acting for its owner.",
+              "type": "string"
+            },
+            {
+              "const": "external",
+              "description": "Someone at a third party (a GitHub login), not known to Arugula.",
+              "type": "string"
+            },
+            {
+              "const": "other",
+              "description": "A kind this side doesn't know yet.",
+              "type": "string"
+            }
+          ]
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "description": "What kind of actor."
+    },
     "AgentSessionWork": {
       "description": "An agent session on this machine's workspace that hasn't ended.",
       "properties": {
@@ -1307,6 +1364,144 @@
         "at",
         "by",
         "hash"
+      ],
+      "type": "object"
+    },
+    "Event2": {
+      "description": "One event in the log.",
+      "properties": {
+        "actor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Actor"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Who did it, when anyone did."
+        },
+        "at_ms": {
+          "description": "When it happened, as its source says, in ms since the epoch.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "data": {
+          "default": null,
+          "description": "The type's fields: metadata only, at most [`DATA_MAX_BYTES`]\n([`data_check`]). Null when it has none."
+        },
+        "id": {
+          "description": "`evt_…`.",
+          "type": "string"
+        },
+        "key": {
+          "description": "Its identity for deduplication: a second event with the same key is\ndropped (a webhook's delivery id, `issue.closed:iss_…:3`).",
+          "type": "string"
+        },
+        "recorded_ms": {
+          "description": "When the log took it, in ms since the epoch.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "scope": {
+          "$ref": "#/$defs/EventScope"
+        },
+        "seq": {
+          "description": "Its place in the log, in commit order: a reader by `seq` misses\nnone.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "source": {
+          "description": "Who it came from: [`SOURCE_ARUGULA`], [`SOURCE_GITHUB`],\n[`SOURCE_PLANE`], or another adapter's name.",
+          "type": "string"
+        },
+        "subject": {
+          "description": "What it's about, as a ref Arugula already reads: `iss_…`,\n`owner/repo#12`, `run_…`, `dep_…`, `ses_…`, a pane's id, or a room\nand thread (`room_…#12`).",
+          "type": "string"
+        },
+        "type": {
+          "description": "Its type, a name in the catalog (`issue.closed`), or one this side\ndoesn't know yet.",
+          "type": "string"
+        },
+        "v": {
+          "default": 1,
+          "description": "The version of its type's `data`, from 1.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "seq",
+        "type",
+        "source",
+        "scope",
+        "subject",
+        "at_ms",
+        "recorded_ms",
+        "key"
+      ],
+      "type": "object"
+    },
+    "EventScope": {
+      "description": "Where an event belongs: who may see it is decided from here.",
+      "properties": {
+        "project": {
+          "default": null,
+          "description": "The project's id (`prj_…`), when it's in one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "team": {
+          "description": "The team's id.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "team"
+      ],
+      "type": "object"
+    },
+    "EventsPage": {
+      "description": "A read of the log: its events in `seq` order, as stored (metadata\nonly), and where to read on from.",
+      "properties": {
+        "events": {
+          "items": {
+            "$ref": "#/$defs/Event2"
+          },
+          "type": "array"
+        },
+        "gone_before": {
+          "description": "The log no longer keeps the events after `after` numbered below\nthis: they were older than it keeps them, and are gone. None when it\nhad them all.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "head": {
+          "description": "The log's newest number when it was read. `next_after` below it:\nthere's more to read.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "next_after": {
+          "description": "The next read's `after`: past every event this one looked at,\nincluding those it left out (another project's or type's, or one\nthe agent may not see), so none is read twice.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "events",
+        "next_after",
+        "head"
       ],
       "type": "object"
     },
@@ -3399,6 +3594,41 @@
             "op"
           ],
           "type": "object"
+        },
+        {
+          "description": "Its project's events after `after` (Arugula #1273), as\n[`crate::events::AGENT_EVENTS`] reads a machine's: those its asker\nmay read, answered [`SessionWatchGiven::Events`].",
+          "properties": {
+            "after": {
+              "default": 0,
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "limit": {
+              "description": "At most this many: [`crate::events::READ_LIMIT_DEFAULT`] when\nnone.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "op": {
+              "const": "events",
+              "type": "string"
+            },
+            "types": {
+              "description": "Only these types ([`crate::events::read_types`]). Empty: every\ntype.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
         }
       ],
       "properties": {
@@ -3459,6 +3689,22 @@
           "required": [
             "kind",
             "cancelled"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "events",
+              "type": "string"
+            },
+            "page": {
+              "$ref": "#/$defs/EventsPage"
+            }
+          },
+          "required": [
+            "kind",
+            "page"
           ],
           "type": "object"
         },
@@ -3564,6 +3810,41 @@
             "op": {
               "const": "cancel",
               "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Its project's events after `after` (Arugula #1273), as\n[`crate::events::AGENT_EVENTS`] reads a machine's: those its asker\nmay read, answered [`SessionWatchGiven::Events`].",
+          "properties": {
+            "after": {
+              "default": 0,
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "limit": {
+              "description": "At most this many: [`crate::events::READ_LIMIT_DEFAULT`] when\nnone.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "op": {
+              "const": "events",
+              "type": "string"
+            },
+            "types": {
+              "description": "Only these types ([`crate::events::read_types`]). Empty: every\ntype.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           },
           "required": [

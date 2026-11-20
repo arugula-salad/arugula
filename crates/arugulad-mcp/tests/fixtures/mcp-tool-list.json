@@ -6558,7 +6558,7 @@
         "readOnlyHint": false,
         "title": "Watch for something to happen"
       },
-      "description": "Wake this session later, when something happens: create a watch, then end your turn (watch ends your turn; wait instead blocks it until something happens). When it fires, you get a follow-up saying what happened (ids and states only), as a chat mention arrives. It fires once. It expires after 24 hours unless you say (expires, at most 7d), and then you get one message saying it ended without firing. Targets, any of which fires it: pr (OWNER/REPO#N or its link) until merged, closed, checks_done, checks_failed or ready (checks green and it can merge cleanly), in a repo linked to Arugula's GitHub App (else use wait with pr); session (a hosted agent session, ses_) until it settles; run (run_ or dep_) until it ends; room (a chat room's id, with parent for one thread and from for one person) until a reply you didn't write; event (a type from kind types, like issue.closed) with match (some of the type's match fields, like {\"issue\": \"#12\"}) and note (why you watch, at most 200 characters, handed back when it fires). This machine's own (agent.idle, pane.exited; match {\"pane\": \"4\"}) need no account. If it has already happened, create says so and makes no watch. A watch belongs to this Claude Code session: a new session in this pane doesn't get it. Works from a terminal with Arugula's hooks installed, or an agent block. list shows this session's watches; cancel takes one by id, or all; types lists the event types, their match fields, and which this machine can watch now.\n- create {event?, expires?, from?, match?, note?, parent?, pr?, room?, run?, session?, until?}: Wake this session when a PR, a hosted session, a chat room, a run or a deploy gets somewhere, or an event happens (an agent or a pane on this machine's too). End your turn after.\n- list {all?}: This session's live watches (all: every session's on this machine).\n- cancel {all?, id?}: Cancel one of this session's watches by id, or all of them.\n- types: The event types create's event takes: what each means, its match fields, and whether this machine can watch it now.",
+      "description": "Wake this session later, when something happens: create a watch, then end your turn (watch ends your turn; wait instead blocks it until something happens). When it fires, you get a follow-up saying what happened (ids and states only), as a chat mention arrives. It fires once. It expires after 24 hours unless you say (expires, at most 7d), and then you get one message saying it ended without firing. Targets, any of which fires it: pr (OWNER/REPO#N or its link) until merged, closed, checks_done, checks_failed or ready (checks green and it can merge cleanly), in a repo linked to Arugula's GitHub App (else use wait with pr); session (a hosted agent session, ses_) until it settles; run (run_ or dep_) until it ends; room (a chat room's id, with parent for one thread and from for one person) until a reply you didn't write; event (a type from kind types, like issue.closed) with match (some of the type's match fields, like {\"issue\": \"#12\"}) and note (why you watch, at most 200 characters, handed back when it fires). This machine's own (agent.idle, pane.exited; match {\"pane\": \"4\"}) need no account. If it has already happened, create says so and makes no watch. A watch belongs to this Claude Code session: a new session in this pane doesn't get it. Works from a terminal with Arugula's hooks installed, or an agent block.\n- create {event?, expires?, from?, match?, note?, parent?, pr?, room?, run?, session?, until?}: Wake this session when a PR, a hosted session, a chat room, a run or a deploy gets somewhere, or an event happens (an agent or a pane on this machine's too). End your turn after.\n- list {all?}: This session's live watches (all: every session's on this machine).\n- cancel {all?, id?}: Cancel one of this session's watches by id, or all of them.\n- types: The event types create's event takes: what each means, its match fields, and whether this machine can watch it now.\n- events {after?, limit?, project?, types?}: A project's event log after a number, oldest first: the events you could watch, and where to read on.",
       "inputSchema": {
         "$defs": {
           "PrList": {
@@ -6578,6 +6578,13 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "after": {
+            "default": 0,
+            "description": "events: Events numbered after this: 0 for the oldest kept, or the last\nread's next_after.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
           "all": {
             "default": false,
             "description": "list: Every session's watches on this machine, not only this session's. cancel: All of this session's watches.",
@@ -6621,9 +6628,20 @@
               "create",
               "list",
               "cancel",
-              "types"
+              "types",
+              "events"
             ],
             "type": "string"
+          },
+          "limit": {
+            "default": null,
+            "description": "events: At most this many (default 50, at most 200).",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "match": {
             "additionalProperties": true,
@@ -6662,6 +6680,14 @@
             ],
             "description": "create: A pull request: OWNER/REPO#N, or its link on github.com, or several."
           },
+          "project": {
+            "default": null,
+            "description": "events: The project (prj_… or its name). Default: the current project.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "room": {
             "default": null,
             "description": "create: A chat room (its id, as read_thread gives it): until a reply in it\nthat this session didn't write.",
@@ -6691,6 +6717,17 @@
               }
             ],
             "description": "create: A hosted agent session (ses_…), or several: until it settles (done,\nwaiting for input, failed or stopped)."
+          },
+          "types": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PrList"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "events: Only these types (types lists them), or one."
           },
           "until": {
             "default": null,

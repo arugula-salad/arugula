@@ -494,6 +494,102 @@ pub const CATALOG: &[EventType] = &[
     },
 ];
 
+/// `GET` with [`EventsQuery`]: a project's events after a number, for an
+/// agent on the machine (Arugula #1273), answered [`EventsPage`]. A hosted
+/// session reads the same through its watch route
+/// (`work::SessionWatchOp::Events`), in its own project. Each event is
+/// one the agent could watch: its type's [`EventType::power`] is the
+/// machine's over the project, and its owner may read what it's about now,
+/// as a watch on it is checked when it's made and when it fires.
+pub const AGENT_EVENTS: &str = "/api/daemon/events";
+
+/// How many events a read returns when it isn't told.
+pub const READ_LIMIT_DEFAULT: u32 = 50;
+/// The most one read returns.
+pub const READ_LIMIT_MAX: u32 = 200;
+
+/// `GET /api/daemon/events`: which events.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct EventsQuery {
+    /// The project's id, `prj_…`.
+    pub project: String,
+    /// Events numbered after this: 0 for the oldest the log keeps, or a
+    /// page's [`EventsPage::next_after`].
+    #[serde(default)]
+    pub after: u64,
+    /// Only these types, joined by `,` ([`read_types`]). None: every type
+    /// the agent may watch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub types: Option<String>,
+    /// At most this many: [`READ_LIMIT_DEFAULT`] when none, at most
+    /// [`READ_LIMIT_MAX`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+}
+
+/// A read of the log: its events in `seq` order, as stored (metadata
+/// only), and where to read on from.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct EventsPage {
+    pub events: Vec<Event>,
+    /// The next read's `after`: past every event this one looked at,
+    /// including those it left out (another project's or type's, or one
+    /// the agent may not see), so none is read twice.
+    pub next_after: u64,
+    /// The log's newest number when it was read. `next_after` below it:
+    /// there's more to read.
+    pub head: u64,
+    /// The log no longer keeps the events after `after` numbered below
+    /// this: they were older than it keeps them, and are gone. None when it
+    /// had them all.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gone_before: Option<u64>,
+}
+
+/// A read's `types`, from a list joined by `,` or given one by one: each
+/// a type in the catalog that the cloud's log holds. Empty: every type.
+pub fn read_types<'a>(types: impl IntoIterator<Item = &'a str>) -> Result<Vec<String>, String> {
+    let mut out: Vec<String> = vec![];
+    for name in types.into_iter().flat_map(|t| t.split(',')).map(str::trim).filter(|t| !t.is_empty()) {
+        match lookup(name) {
+            None => return Err(format!("type {name}: no such type; watch types lists them")),
+            Some(t) if t.home == Home::Daemon => {
+                return Err(format!("type {name}: a machine's own, never in the cloud's log; watch it instead"));
+            }
+            Some(_) if out.iter().any(|o| o == name) => {}
+            Some(_) => out.push(name.to_owned()),
+        }
+    }
+    Ok(out)
+}
+
+/// A read's events as an agent reads them: one line each, then where to
+/// read on from.
+pub fn page_text(p: &EventsPage) -> String {
+    let mut lines = vec![];
+    if let Some(n) = p.gone_before {
+        lines.push(format!(
+            "The log no longer keeps events before #{n}: those after your after were older than it keeps, and are gone."
+        ));
+    }
+    for e in &p.events {
+        let by = e.actor.as_ref().map(|a| format!(" by {}", a.login.as_deref().unwrap_or(&a.id))).unwrap_or_default();
+        let data = match &e.data {
+            serde_json::Value::Null => String::new(),
+            d => format!(" {d}"),
+        };
+        lines.push(format!("#{} {} {}{by}{data}", e.seq, e.kind, e.subject));
+    }
+    if p.events.is_empty() {
+        lines.push("No events.".into());
+    }
+    let more = if p.next_after < p.head { "; there's more" } else { "" };
+    lines.push(format!("Read on with after {} (the log's head is #{}{more}).", p.next_after, p.head));
+    lines.join("\n")
+}
+
 /// The catalog's entry for a type, by its name.
 pub fn lookup(name: &str) -> Option<&'static EventType> {
     CATALOG.iter().find(|t| t.name == name)
@@ -597,6 +693,30 @@ mod tests {
         {
             assert!(!name_well_formed(bad), "{bad}");
         }
+    }
+
+    #[test]
+    fn a_reads_types_are_the_clouds() {
+        assert_eq!(read_types(["issue.closed, run.ended", "issue.closed"]).unwrap(), ["issue.closed", "run.ended"]);
+        assert!(read_types(["", " "]).unwrap().is_empty());
+        assert!(read_types(["issue.shut"]).unwrap_err().contains("no such type"));
+        assert!(read_types(["pane.exited"]).unwrap_err().contains("never in the cloud's log"));
+        let q = EventsQuery { project: "prj_1".into(), after: 3, types: None, limit: None };
+        assert_eq!(serde_json::to_value(&q).unwrap(), json!({ "project": "prj_1", "after": 3 }));
+    }
+
+    #[test]
+    fn a_page_reads_as_a_line_an_event_and_where_to_read_on() {
+        let e: Event = serde_json::from_value(closed()).unwrap();
+        let p = EventsPage { events: vec![e], next_after: 42, head: 50, gone_before: Some(40) };
+        let text = page_text(&p);
+        assert!(text.starts_with("The log no longer keeps events before #40"), "{text}");
+        assert!(text.contains("#42 issue.closed iss_90dd by jdoe {"), "{text}");
+        assert!(text.ends_with("Read on with after 42 (the log's head is #50; there's more)."), "{text}");
+        let none = page_text(&EventsPage { next_after: 50, head: 50, ..Default::default() });
+        assert_eq!(none, "No events.\nRead on with after 50 (the log's head is #50).");
+        let v = serde_json::to_value(EventsPage::default()).unwrap();
+        assert!(v.get("gone_before").is_none(), "{v}");
     }
 
     #[test]

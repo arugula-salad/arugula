@@ -35,6 +35,7 @@ use std::{
 };
 
 use arugula_control_wire::{
+    events::{READ_LIMIT_MAX, page_text, read_types},
     project_docs::{DocView, DocWrite, NewDoc, NewSection},
     watch::{EventTarget, WatchState, WatchTarget, Watcher, event_target, event_types, expires_ms, until_word_parse},
     work::{
@@ -175,8 +176,8 @@ pub enum Ids {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct WatchArgs {
-    /// create (the default), list, cancel, or types (the event types event
-    /// takes).
+    /// create (the default), list, cancel, types (the event types event
+    /// takes), or events (this project's event log).
     #[serde(default)]
     pub kind: Option<String>,
     /// create: a pull request, OWNER/REPO#N or its link, or several.
@@ -223,6 +224,16 @@ pub struct WatchArgs {
     /// cancel: all of this session's watches.
     #[serde(default)]
     pub all: bool,
+    /// events: those numbered after this: 0 for the oldest kept, or the
+    /// last read's next_after.
+    #[serde(default)]
+    pub after: u64,
+    /// events: only these types (kind types lists them), or one.
+    #[serde(default)]
+    pub types: Option<Ids>,
+    /// events: at most this many (default 50, at most 200).
+    #[serde(default)]
+    pub limit: Option<u32>,
 }
 
 /// What `watch create` asks for, from its arguments: its targets and its
@@ -334,7 +345,7 @@ fn tools() -> Vec<Tool> {
         .with_annotations(read_doc),
         Tool::new(
             WATCH,
-            "Wake this session later, when something happens, without polling or holding your turn open: create a watch (kind create), then end your turn; what happened (ids and states only) comes as your next prompt, from Arugula, once. Targets, any of which fires it: pr (OWNER/REPO#N, in a repo linked to Arugula's GitHub App) until merged, closed, checks_done, checks_failed or ready; agent_session (another ses_) until it settles; run (run_ or dep_) until it ends; room (a chat room's id, with parent for one thread and from for one person) until a reply you didn't write; event (a type from kind types, like issue.closed) with match (some of the type's match fields, like {\"issue\": \"#12\"}, this project's #12) and note (why you watch, at most 200 characters, handed back when it fires). It expires after 24 hours unless you say (expires, at most 7d), and then you're told it ended without firing. If it has happened already, create says so and makes none. kind list shows this session's watches; kind cancel takes one by id, or all; kind types lists the event types and their match fields.",
+            "Wake this session later, when something happens, without polling or holding your turn open: create a watch (kind create), then end your turn; what happened (ids and states only) comes as your next prompt, from Arugula, once. Targets, any of which fires it: pr (OWNER/REPO#N, in a repo linked to Arugula's GitHub App) until merged, closed, checks_done, checks_failed or ready; agent_session (another ses_) until it settles; run (run_ or dep_) until it ends; room (a chat room's id, with parent for one thread and from for one person) until a reply you didn't write; event (a type from kind types, like issue.closed) with match (some of the type's match fields, like {\"issue\": \"#12\"}, this project's #12) and note (why you watch, at most 200 characters, handed back when it fires). It expires after 24 hours unless you say (expires, at most 7d), and then you're told it ended without firing. If it has happened already, create says so and makes none. kind list shows this session's watches; kind cancel takes one by id, or all; kind types lists the event types and their match fields; kind events reads this project's event log after a number (after), as you could watch it, and says where to read on.",
             schema_for_type::<WatchArgs>(),
         )
         .with_title("Watch for something to happen")
@@ -378,7 +389,15 @@ impl Server {
                 let text = event_types(Watcher::HostedSession, true);
                 return done(text.clone(), json!({ "types": text }));
             }
-            k => return Err(format!("watch kind {k}: create, list, cancel or types")),
+            "events" => {
+                let types = match &a.types {
+                    None => vec![],
+                    Some(Ids::One(t)) => read_types([t.as_str()])?,
+                    Some(Ids::Many(ts)) => read_types(ts.iter().map(String::as_str))?,
+                };
+                SessionWatchOp::Events { after: a.after, types, limit: a.limit.map(|l| l.clamp(1, READ_LIMIT_MAX)) }
+            }
+            k => return Err(format!("watch kind {k}: create, list, cancel, types or events")),
         };
         let ask = SessionWatchAsk { session: session.to_owned(), op };
         let got: SessionWatchGiven = self
@@ -417,6 +436,7 @@ impl Server {
                 };
                 done(text, cancelled)
             }
+            SessionWatchGiven::Events { page } => done(page_text(&page), page),
         }
     }
 

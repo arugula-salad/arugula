@@ -156,6 +156,80 @@
         "team"
       ],
       "type": "object"
+    },
+    "EventsPage": {
+      "description": "A read of the log: its events in `seq` order, as stored (metadata\nonly), and where to read on from.",
+      "properties": {
+        "events": {
+          "items": {
+            "$ref": "#/$defs/Event"
+          },
+          "type": "array"
+        },
+        "gone_before": {
+          "description": "The log no longer keeps the events after `after` numbered below\nthis: they were older than it keeps them, and are gone. None when it\nhad them all.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "head": {
+          "description": "The log's newest number when it was read. `next_after` below it:\nthere's more to read.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "next_after": {
+          "description": "The next read's `after`: past every event this one looked at,\nincluding those it left out (another project's or type's, or one\nthe agent may not see), so none is read twice.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "events",
+        "next_after",
+        "head"
+      ],
+      "type": "object"
+    },
+    "EventsQuery": {
+      "description": "`GET /api/daemon/events`: which events.",
+      "properties": {
+        "after": {
+          "default": 0,
+          "description": "Events numbered after this: 0 for the oldest the log keeps, or a\npage's [`EventsPage::next_after`].",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "limit": {
+          "description": "At most this many: [`READ_LIMIT_DEFAULT`] when none, at most\n[`READ_LIMIT_MAX`].",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "project": {
+          "description": "The project's id, `prj_…`.",
+          "type": "string"
+        },
+        "types": {
+          "description": "Only these types, joined by `,` ([`read_types`]). None: every type\nthe agent may watch.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "project"
+      ],
+      "type": "object"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
