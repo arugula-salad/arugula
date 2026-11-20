@@ -6,7 +6,8 @@
 # The cloud repository's testnet native-sim claim drives it. ARUGULA_SIM_FAMILY=iPad
 # runs it on an iPad (the side-by-side layout) instead of an iPhone.
 # ARUGULA_BOARD names a board home should show, and ARUGULA_ASK its row's
-# question to the person signed in.
+# question to the person signed in. ARUGULA_AGENT=1: a stand-in agent on
+# MACHINE asks for a permission and a question, for home to answer.
 #   native/ios/test-sim.sh URL MACHINE HANDOFF
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -28,7 +29,7 @@ read -r runtime type <<<"$pick"
 device=$(xcrun simctl create arugula-ui-test "$type" "$runtime")
 trap 'xcrun simctl shutdown "$device" 2>/dev/null || true; xcrun simctl delete "$device"' EXIT
 TEST_RUNNER_ARUGULA_CONTROL_URL="$url" TEST_RUNNER_ARUGULA_MACHINE="$machine" TEST_RUNNER_ARUGULA_HANDOFF="$handoff" \
-  TEST_RUNNER_ARUGULA_BOARD="${ARUGULA_BOARD:-}" TEST_RUNNER_ARUGULA_ASK="${ARUGULA_ASK:-}" \
+  TEST_RUNNER_ARUGULA_BOARD="${ARUGULA_BOARD:-}" TEST_RUNNER_ARUGULA_ASK="${ARUGULA_ASK:-}" TEST_RUNNER_ARUGULA_AGENT="${ARUGULA_AGENT:-}" \
   xcodebuild test -project Arugula.xcodeproj -scheme Arugula -sdk iphonesimulator \
   -destination "platform=iOS Simulator,id=$device" -derivedDataPath build/dd \
   CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= \

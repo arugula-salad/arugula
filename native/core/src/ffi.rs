@@ -19,7 +19,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, ensure};
-use arugula_proto::{BlockType, State};
+use arugula_proto::{BlockType, Delta, PaneInfo, State, TabView};
 use libghostty_vt::{
     key::{Key, Mods},
     render::{CellIterator, Dirty, RenderState, RowIterator},
@@ -226,6 +226,8 @@ pub struct AruLink {
 
 #[derive(Default)]
 pub(crate) struct LinkState {
+    /// The machine's state as it stands, the deltas applied.
+    full: Option<State>,
     state: Option<String>,
     said: Option<String>,
     closed: Option<String>,
@@ -235,37 +237,51 @@ pub(crate) struct LinkState {
 /// they're laid out (`tabs`: each one's grid and every pane's rectangle in it,
 /// blocks too, so a client can draw the whole tab), and its sessions, which
 /// hold the tabs, in order.
+///
+/// Each pane also says what home answers (Arugula #1256): its reason whole
+/// (with what it asks), its own ask card, its block type, the project and
+/// card it works on, and whether teammates' agents may mention it; `agents`
+/// are the agent blocks, the same way; `roles` is this person's role in each
+/// session (none: the owner).
 fn summary(s: &State) -> String {
-    let panes: Vec<Value> = s
-        .tabs
-        .iter()
-        .flat_map(|t| {
-            t.layout.panes.iter().filter_map(move |(p, r)| {
-                // Terminals only: a browser or a diff block is a web page, for
-                // later (web views).
-                let info = s.panes.iter().find(|i| i.id == *p && i.kind == BlockType::Terminal)?;
-                Some(json!({
-                    "id": info.id,
-                    "tab": t.id,
-                    "tab_name": t.name,
-                    "command": info.command,
-                    "cwd": info.cwd,
-                    "running": info.running,
-                    // What tells panes apart: whether it wants you and why,
-                    // what its program calls it, what it's busy with, where.
-                    "attention": info.attention,
-                    "reason": info.reason.as_ref().map(|r| json!({ "kind": r.kind, "headline": r.headline })),
-                    "title": info.title,
-                    "work": info.work,
-                    "resumes": info.resumes,
-                    "project": info.project.as_ref().map(|p| &p.name),
-                    "branch": info.branch,
-                    "last_ms": info.activity.as_ref().map(|a| a.last_ms),
-                    "rect": { "x": r.x, "y": r.y, "cols": r.cols, "rows": r.rows },
-                }))
-            })
+    let pane = |info: &PaneInfo, tab: &TabView| {
+        json!({
+            "id": info.id,
+            "tab": tab.id,
+            "tab_name": tab.name,
+            "command": info.command,
+            "cwd": info.cwd,
+            "running": info.running,
+            // What tells panes apart: whether it wants you and why (with what
+            // it asks), what its program calls it, what it's busy with, where.
+            "attention": info.attention,
+            "reason": info.reason,
+            "ask": info.ask,
+            "type": info.kind,
+            "title": info.title,
+            "work": info.work,
+            "resumes": info.resumes,
+            "project": info.project.as_ref().map(|p| &p.name),
+            "session_project": info.session_project,
+            "on_issue": info.on_issue,
+            "mentions_off": info.mentions_off,
+            "branch": info.branch,
+            "last_ms": info.activity.as_ref().map(|a| a.last_ms),
         })
-        .collect();
+    };
+    // Terminals, and agent blocks apart: a browser or a diff block is a web
+    // page, for later (web views).
+    let of = |kind: BlockType| -> Vec<Value> {
+        s.tabs
+            .iter()
+            .flat_map(|t| {
+                t.layout.panes.iter().filter_map(move |(p, _)| {
+                    let info = s.panes.iter().find(|i| i.id == *p && i.kind == kind)?;
+                    Some(pane(info, t))
+                })
+            })
+            .collect()
+    };
     let tabs: Vec<Value> = s
         .tabs
         .iter()
@@ -287,7 +303,61 @@ fn summary(s: &State) -> String {
         .iter()
         .map(|x| json!({ "id": x.id, "name": x.name, "project": x.project.as_ref().map(|p| &p.name), "tabs": x.tabs }))
         .collect();
-    json!({ "panes": panes, "tabs": tabs, "sessions": sessions }).to_string()
+    json!({
+        "panes": of(BlockType::Terminal),
+        "agents": of(BlockType::Agent),
+        "tabs": tabs,
+        "sessions": sessions,
+        "roles": s.roles,
+    })
+    .to_string()
+}
+
+/// Apply a delta to the last state, as the web's client does: each pane's
+/// changed fields over what it had (`null`: back to its default), panes
+/// gone, and machines, presence and notices whole when sent.
+fn apply(s: &mut State, d: Delta) {
+    for patch in d.panes {
+        let Some(id) = patch.get("id").and_then(Value::as_u64) else { continue };
+        let at = s.panes.iter().position(|p| u64::from(p.id) == id);
+        let mut v = at.and_then(|i| serde_json::to_value(&s.panes[i]).ok()).unwrap_or_else(|| json!({}));
+        for (k, x) in patch {
+            if x.is_null() {
+                v.as_object_mut().map(|o| o.remove(&k));
+            } else {
+                v[k] = x;
+            }
+        }
+        let Ok(p) = serde_json::from_value::<PaneInfo>(v) else { continue };
+        match at {
+            Some(i) => s.panes[i] = p,
+            None => s.panes.push(p),
+        }
+    }
+    s.panes.retain(|p| !d.gone.contains(&p.id));
+    if let Some(m) = d.machines {
+        s.machines = m;
+    }
+    if let Some(p) = d.presence {
+        s.presence = p;
+    }
+    if let Some(n) = d.notices {
+        s.notices = n;
+    }
+}
+
+/// A state or a delta: the app's summary again. True when it changed.
+fn take_state(st: &mut LinkState, e: Event) -> bool {
+    match e {
+        Event::State(s) => st.full = Some(*s),
+        Event::Delta(d) => match st.full.as_mut() {
+            Some(s) => apply(s, *d),
+            None => return false,
+        },
+        _ => return false,
+    }
+    st.state = st.full.as_ref().map(summary);
+    true
 }
 
 /// `notify` is called from the socket's thread when there's something to look
@@ -324,9 +394,10 @@ pub unsafe extern "C" fn aru_link_feed(l: *mut AruLink, term: *mut AruTerm, pane
     let mut flags = 0;
     while let Ok(e) = l.link.events.lock().unwrap().try_recv() {
         match e {
-            Event::State(s) => {
-                st.state = Some(summary(&s));
-                flags |= 2;
+            e @ (Event::State(_) | Event::Delta(_)) => {
+                if take_state(&mut st, e) {
+                    flags |= 2;
+                }
             }
             Event::Snapshot { pane: p, data } if p == pane && !term.is_null() => {
                 unsafe { &mut *term }.pane.snapshot(&data);
@@ -390,9 +461,10 @@ pub unsafe extern "C" fn aru_link_feed_many(
     let mut flags = 0;
     while let Ok(e) = l.link.events.lock().unwrap().try_recv() {
         match e {
-            Event::State(s) => {
-                st.state = Some(summary(&s));
-                flags |= 2;
+            e @ (Event::State(_) | Event::Delta(_)) => {
+                if take_state(&mut st, e) {
+                    flags |= 2;
+                }
             }
             Event::Snapshot { pane, data } => {
                 if let Some(t) = term_of(pane) {
@@ -789,4 +861,40 @@ pub unsafe extern "C" fn aru_term_render(t: *mut AruTerm, ctx: *mut c_void, row_
         f.cursor_y = c.y;
     }
     let _ = snap.set_dirty(Dirty::Clean);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Delta, State, apply};
+    use serde_json::json;
+
+    /// A machine with one idle terminal pane.
+    fn state() -> State {
+        let pane = json!({
+            "id": 2, "epoch": 0, "cwd": null, "command": "bash", "running": true, "policy": { "kind": "shell" },
+            "current": null, "last": null, "attention": "idle", "integration": false, "type": "terminal", "host": null,
+        });
+        serde_json::from_value(
+            json!({ "rev": 1, "sessions": [], "tabs": [], "panes": [pane], "machines": [], "options": {} }),
+        )
+        .expect("a state")
+    }
+
+    #[test]
+    fn a_delta_brings_what_a_pane_asks_and_null_takes_it_away() {
+        let mut s = state();
+        let asks = json!({
+            "id": 2, "attention": "needs_input",
+            "reason": { "kind": "ask", "since_ms": 5, "headline": "Bash: echo hi", "actions": ["allow", "deny"],
+                        "ask": { "id": "toolu_1", "what": "approve", "agent": "claude" } },
+        });
+        apply(&mut s, serde_json::from_value::<Delta>(json!({ "panes": [asks] })).unwrap());
+        let r = s.panes[0].reason.as_ref().expect("a reason");
+        assert_eq!(r.ask.as_ref().map(|a| a.id.as_str()), Some("toolu_1"));
+        assert_eq!(s.panes[0].command.as_deref(), Some("bash"), "fields the delta didn't name stay");
+        apply(&mut s, serde_json::from_value::<Delta>(json!({ "panes": [{ "id": 2, "reason": null }] })).unwrap());
+        assert!(s.panes[0].reason.is_none());
+        apply(&mut s, serde_json::from_value::<Delta>(json!({ "gone": [2] })).unwrap());
+        assert!(s.panes.is_empty());
+    }
 }

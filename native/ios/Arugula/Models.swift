@@ -159,9 +159,38 @@ struct Machine: Decodable, Identifiable, Hashable {
 struct Directory: Decodable { var daemons: [Machine] }
 
 struct PaneRow: Decodable, Identifiable, Hashable {
-    struct Reason: Decodable, Hashable { var kind: String; var headline: String; var since_ms: Int? }
+    struct Reason: Decodable, Hashable {
+        var kind: String
+        var headline: String
+        var since_ms: Int?
+        /// What it asks, answered by its `id` (`POST /api/attention/act`).
+        var ask: AskRef?
+    }
+    /// A pending question or approval: `approve` or `question`.
+    struct AskRef: Decodable, Hashable {
+        struct Option: Decodable, Hashable { var label: String; var description: String? }
+        struct Question: Decodable, Hashable {
+            var question: String
+            var header: String?
+            var multiSelect: Bool?
+            var options: [Option]
+        }
+        var id: String
+        var what: String
+        var agent: String?
+        var tool: String?
+        var questions: [Question]?
+    }
     /// What it asks while it waits on a person: a permission, questions.
-    struct Ask: Decodable, Hashable { var id: String; var kind: String; var message: String; var tool: String?; var at_ms: Int? }
+    struct Ask: Decodable, Hashable {
+        var id: String
+        /// `questions`, `form`, `url` or `permission`.
+        var kind: String
+        var message: String
+        var tool: String?
+        var at_ms: Int?
+        var questions: [AskRef.Question]?
+    }
     struct ProjectRef: Decodable, Hashable { var id: String }
     /// The card its agent was started on.
     struct OnIssue: Decodable, Hashable {
@@ -184,15 +213,17 @@ struct PaneRow: Decodable, Identifiable, Hashable {
     var work: String?
     /// What a restart resumes: "Claude Code conversation <title>".
     var resumes: String?
-    var project: String?
+    /// Its git project, by name (the daemon sends `{name, root}`).
+    var project: Named?
     var branch: String?
     var last_ms: Int?
-    /// `agent` for an agent block.
+    /// `terminal`, or `agent` for an agent block.
     var type: String?
-    var kind: String?
     var ask: Ask?
     var session_project: ProjectRef?
     var on_issue: OnIssue?
+    /// Teammates' agents may not mention it (#579).
+    var mentions_off: Bool?
 
     /// The program, without its arguments: "claude", "vim".
     var program: String? {
@@ -208,7 +239,7 @@ struct PaneRow: Decodable, Identifiable, Hashable {
         let shellTitle = cleaned.range(of: #"^[^\s@]+@[^\s:]+:"#, options: .regularExpression) != nil
         if Self.readable(cleaned), !shellTitle, cleaned != program, cleaned.lowercased() != "claude code" { return cleaned }
         if let r = resumes?.replacingOccurrences(of: "Claude Code conversation ", with: ""), Self.readable(r) { return r }
-        if let project { return "\(program ?? "shell") in \(project)" }
+        if let project { return "\(program ?? "shell") in \(project.name)" }
         if let cwd {
             // A home folder is "~", as the web writes it.
             let home = cwd.range(of: #"^/(home|Users)/[^/]+/?$"#, options: .regularExpression) != nil
@@ -239,15 +270,43 @@ struct PaneRow: Decodable, Identifiable, Hashable {
 
 struct PaneList: Decodable {
     var panes: [PaneRow]
+    /// Agent blocks, apart from the terminals.
+    var agents: [PaneRow]?
     var tabs: [TabLayout]?
     var sessions: [MuxSession]?
+    /// This person's role in each session, `[session, role]`; none: the owner.
+    var roles: [RoleOf]?
+
+    enum CodingKeys: String, CodingKey { case panes, agents, tabs, sessions, roles }
+
+    /// One at a time: a pane or session this build can't read is left out,
+    /// not the machine's whole list.
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        panes = try c.decode([Lenient<PaneRow>].self, forKey: .panes).compactMap(\.value)
+        agents = try? c.decodeIfPresent([Lenient<PaneRow>].self, forKey: .agents)?.compactMap(\.value)
+        tabs = try? c.decodeIfPresent([Lenient<TabLayout>].self, forKey: .tabs)?.compactMap(\.value)
+        sessions = try? c.decodeIfPresent([Lenient<MuxSession>].self, forKey: .sessions)?.compactMap(\.value)
+        roles = try? c.decodeIfPresent([RoleOf].self, forKey: .roles)
+    }
+
+    struct RoleOf: Decodable {
+        var session: UInt32
+        var role: String
+        init(from d: Decoder) throws {
+            var c = try d.unkeyedContainer()
+            session = try c.decode(UInt32.self)
+            role = try c.decode(String.self)
+        }
+    }
 }
 
 /// One of a machine's sessions: a named group of its tabs, maybe in a project.
 struct MuxSession: Decodable, Identifiable, Equatable {
     var id: UInt32
     var name: String
-    var project: String?
+    /// The Arugula project it's in (`{id, name}`).
+    var project: Named?
     var tabs: [UInt32]
 }
 
@@ -292,4 +351,52 @@ struct SessionWave: Decodable {
         func hash(into h: inout Hasher) { h.combine(session) }
     }
     var sessions: [Row]
+}
+
+/// One hosted session (`GET /api/sessions/{ses}`): what it asks now, whether
+/// the reader may answer it, and its history in words.
+struct SessionView: Decodable {
+    struct Open: Decodable {
+        var request: String?
+        /// `permission` or `question`.
+        var ask: String?
+        var question: String?
+        var options: [String]
+    }
+    struct Answered: Decodable { var kind: String; var name: String? }
+    struct Card: Decodable {
+        var session: String
+        var state: String
+        var open: Open?
+        var answered: Answered?
+    }
+    struct Line: Decodable { var seq: Int; var text: String }
+    var card: Card
+    /// An owner or editor of its project: it may answer it and stop it.
+    var may: Bool
+    var events: [Line]
+}
+
+/// Something named: a project as a daemon sends it, `{name, ...}`, or by its
+/// name alone.
+struct Named: Decodable, Hashable, CustomStringConvertible {
+    var name: String
+    var description: String { name }
+
+    private struct Object: Decodable { var name: String }
+
+    init(from d: Decoder) throws {
+        if let s = try? d.singleValueContainer().decode(String.self) {
+            name = s
+        } else {
+            name = try Object(from: d).name
+        }
+    }
+}
+
+/// An element of a list that decodes, or nil, so one odd element doesn't
+/// cost the list.
+struct Lenient<T: Decodable>: Decodable {
+    var value: T?
+    init(from d: Decoder) throws { value = try? T(from: d) }
 }

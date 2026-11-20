@@ -5,7 +5,9 @@
 // its count, its lead and what's going on in words; then the people, its
 // channels and DMs. A board's row opens the board's thread, whose Board
 // button opens its lanes. The tabs are a menu away. On an iPad home is the
-// left column of a split view, and what it opens sits beside it.
+// left column of a split view, and what it opens sits beside it. A row of
+// Needs you is answered where it is (Answer.swift), and a session opens a
+// peek.
 
 import Combine
 import SwiftUI
@@ -95,6 +97,8 @@ final class HomeModel: ObservableObject {
     @Published private(set) var views: [String: BoardDetail] = [:]
     @Published private(set) var rooms: [ChatRoom] = []
     @Published private(set) var hosted: [SessionWave.Row] = []
+    /// What each hosted session that waits on you asks, and whether you may answer.
+    @Published private(set) var opened: [String: SessionView] = [:]
     /// Each open board's thread, by the board's id: its changes come on it.
     @Published private(set) var threads: [String: ChatRoom] = [:]
     @Published private(set) var problem: String?
@@ -136,6 +140,11 @@ final class HomeModel: ObservableObject {
         if let rooms = try? await r.rooms { self.rooms = rooms }
         // A hub or an account without hosted sessions has none to wait on.
         hosted = (try? await s.sessions) ?? []
+        var asks: [String: SessionView] = [:]
+        for w in hosted where w.waiting != nil {
+            if let v = try? await control.get("/api/sessions/\(w.session)", as: SessionView.self) { asks[w.session] = v }
+        }
+        opened = asks
         loaded = true
         await openThreads(control)
     }
@@ -230,7 +239,7 @@ extension PaneRow {
         return attention == "working" ? .working : .quiet
     }
 
-    var isAgent: Bool { type == "agent" || kind == "agent" }
+    var isAgent: Bool { type == "agent" || work == "agent" }
 }
 
 extension SessionWave.Row {
@@ -281,10 +290,14 @@ extension BoardDetail.Row {
 struct Need: Identifiable {
     enum Target {
         case pane(MachineSession, PaneRow)
-        case board(Board)
+        /// A board's row: its ask, its failing checks, its review.
+        case board(Board, BoardDetail.Row?)
         case session(SessionWave.Row)
     }
     let id: String
+    /// What it asks, exactly: answered, the row folds away until it asks
+    /// something else.
+    let ask: String
     let rank: Int
     let since: Int
     /// Who or what: an agent, a board's asker, a PR.
@@ -295,6 +308,16 @@ struct Need: Identifiable {
     let text: String
     let mono: Bool
     let target: Target
+}
+
+/// A session working on one of a board's cards, as its thread lists it.
+struct BoardSession: Identifiable {
+    let peeked: Peeked
+    let name: String
+    /// The card: `#983 · Its title`.
+    let card: String
+    let standing: Standing
+    var id: String { peeked.id }
 }
 
 /// One open board as home's row reads it.
@@ -313,6 +336,8 @@ struct BoardLine: Identifiable {
 struct HomeState {
     var needs: [Need] = []
     var boards: [BoardLine] = []
+    /// The sessions on each board's cards in flight, by the board's id.
+    var sessions: [String: [BoardSession]] = [:]
 
     init() {}
 
@@ -322,7 +347,7 @@ struct HomeState {
         // The project's panes: its sessions', its cards', or none's in the personal project.
         var panes: [(MachineSession, PaneRow)] = []
         for m in fleet.machines {
-            for p in m.panes {
+            for p in m.panes + m.agents {
                 let mine = p.session_project?.id == project.id || p.on_issue?.project == project.id
                     || (personal && p.session_project == nil && p.on_issue?.project == nil)
                 if mine { panes.append((m, p)) }
@@ -333,10 +358,11 @@ struct HomeState {
             let card = p.on_issue.map { " · \($0.issue)" } ?? ""
             let text = p.reason?.headline.isEmpty == false ? p.reason!.headline : (p.ask?.message ?? "")
             needs.append(Need(
-                id: "pane:\(m.machine.id):\(p.id)", rank: p.needsYouRank,
+                id: "pane:\(m.machine.id):\(p.id)", ask: p.asking?.id ?? "\(p.reason?.kind ?? ""):\(p.reason?.since_ms ?? 0)",
+                rank: p.needsYouRank,
                 since: p.reason?.since_ms ?? p.ask?.at_ms ?? 0,
                 who: m.conversations[p.id] ?? p.name, standing: p.standing, on: m.machine.name + card,
-                text: text, mono: p.ask?.kind == "permission" || p.failed, target: .pane(m, p)))
+                text: text, mono: p.asking?.approve == true || p.failed, target: .pane(m, p)))
         }
 
         for b in model.boards {
@@ -345,15 +371,15 @@ struct HomeState {
                 let where_ = "\(b.title) · \(r.words)"
                 if let a = r.ask, a.mine {
                     needs.append(Need(
-                        id: "ask:\(b.id):\(r.id)", rank: 1, since: a.created_at ?? 0,
+                        id: "ask:\(b.id):\(r.id)", ask: a.id, rank: 1, since: a.created_at ?? 0,
                         who: (a.asked_by ?? "").isEmpty ? "The board" : a.asked_by!, standing: .asks, on: where_,
-                        text: a.question, mono: false, target: .board(b)))
+                        text: a.question, mono: false, target: .board(b, r)))
                 } else if let worst = r.says.min(), worst == .checksFailing || worst == .review {
                     needs.append(Need(
-                        id: "row:\(b.id):\(r.id)", rank: worst == .checksFailing ? 2 : 3, since: r.updated_at ?? 0,
+                        id: "row:\(b.id):\(r.id)", ask: "\(worst)", rank: worst == .checksFailing ? 2 : 3, since: r.updated_at ?? 0,
                         who: r.words, standing: worst, on: b.title,
                         text: worst == .checksFailing ? "Its checks fail." : "It's ready for review.", mono: false,
-                        target: .board(b)))
+                        target: .board(b, r)))
                 }
             }
         }
@@ -362,7 +388,7 @@ struct HomeState {
             guard let waiting = s.waiting else { continue }
             let asks = waiting.contains("question") || waiting.contains("permission")
             needs.append(Need(
-                id: "hosted:\(s.session)", rank: asks ? 1 : 2, since: s.updated_at,
+                id: "hosted:\(s.session)", ask: model.opened[s.session]?.card.open?.request ?? waiting, rank: asks ? 1 : 2, since: s.updated_at,
                 who: s.issue.map { "#\($0.number) \($0.title)" } ?? "A session", standing: .needs,
                 on: "Arugula cloud", text: s.question ?? waiting, mono: false, target: .session(s)))
         }
@@ -371,12 +397,20 @@ struct HomeState {
         for b in model.boards {
             let v = model.views[b.id]
             let rows = v?.zones.flatMap(\.rows) ?? []
+            var on: [BoardSession] = []
             let flight = rows.filter(\.inFlight).map { r -> Standing in
                 var all = r.says
-                for (m, p) in panes where Self.on(r, board: b.id, machine: m.machine.id, pane: p) { all.append(p.standing) }
-                for s in model.hosted where s.issue?.id == r.pointer?.id && r.pointer?.kind == "issue" { all.append(s.standing) }
+                for (m, p) in panes where Self.on(r, board: b.id, machine: m.machine.id, pane: p) {
+                    all.append(p.standing)
+                    on.append(BoardSession(peeked: .pane(m, p), name: m.conversations[p.id] ?? p.name, card: r.words, standing: p.standing))
+                }
+                for s in model.hosted where s.issue?.id == r.pointer?.id && r.pointer?.kind == "issue" {
+                    all.append(s.standing)
+                    on.append(BoardSession(peeked: .hosted(s), name: "Arugula cloud", card: r.words, standing: s.standing))
+                }
                 return all.min() ?? .idle
             }
+            sessions[b.id] = on.sorted { ($0.standing, $0.name) < ($1.standing, $1.name) }
             var says = [Standing.needs, .asks, .failed, .checksFailing, .quiet, .working, .checksRunning, .review]
                 .map { st in (st, flight.filter { $0 == st }.count) }
                 .filter { $0.1 > 0 }
@@ -426,6 +460,10 @@ struct PhoneHome: View {
     @State private var columns = NavigationSplitViewVisibility.all
     @State private var terminal: PaneOpen?
     @State private var path = NavigationPath()
+    /// What was answered here, by need and ask: folded away.
+    @State private var folded: Set<String> = []
+    @State private var said: String?
+    @State private var peek: Peeked?
 
     /// A pane's terminal, over everything.
     struct PaneOpen: Identifiable {
@@ -443,7 +481,8 @@ struct PhoneHome: View {
             NavigationStack(path: $path) {
                 Group {
                     switch opened {
-                    case .board(let b): BoardThread(control: control, board: b, model: model, live: live)
+                    case .board(let b):
+                        BoardThread(control: control, board: b, model: model, live: live, sessions: state.sessions[b.id] ?? []) { peek = $0 }
                     case .room(let r): ChatRoomView(control: control, room: r, live: live)
                     case .session(let s): ChatRoomView(control: control, room: s.thread, live: live, thread: s.parent)
                     case nil: Empty(text: "Pick a conversation", symbol: "bubble.left.and.bubble.right")
@@ -458,6 +497,22 @@ struct PhoneHome: View {
         }
         .navigationSplitViewStyle(.balanced)
         .fullScreenCover(item: $terminal) { t in TerminalScreen(session: t.session, pane: t.pane) }
+        .sheet(item: $peek) { p in
+            SessionPeek(
+                control: control, peeked: p,
+                openPane: { m, pane in
+                    // After the sheet has gone: one presentation at a time.
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(450))
+                        terminal = PaneOpen(session: m, pane: pane)
+                    }
+                },
+                openThread: { opened = .session($0) },
+                toast: show)
+        }
+        .overlay(alignment: .bottom) {
+            if let said { Toast(text: said).transition(.opacity).allowsHitTesting(false) }
+        }
         .onChange(of: opened) { _, _ in path = NavigationPath() }
         .onChange(of: scope.current?.id) { _, _ in opened = nil }
         .task {
@@ -495,21 +550,35 @@ struct PhoneHome: View {
         if soon { await model.soon(control, project: p.id) } else { await model.load(control, project: p.id) }
     }
 
+    private var state: HomeState {
+        scope.current.map { HomeState(project: $0, fleet: fleet, model: model) } ?? HomeState()
+    }
+
+    /// A short word of what was done.
+    private func show(_ text: String) {
+        withAnimation { said = text }
+        Task {
+            try? await Task.sleep(for: .seconds(1.8))
+            if said == text { withAnimation { said = nil } }
+        }
+    }
+
     private var list: some View {
-        let state = scope.current.map { HomeState(project: $0, fleet: fleet, model: model) } ?? HomeState()
+        let state = self.state
+        let needs = state.needs.filter { !folded.contains("\($0.id)|\($0.ask)") }
         let people = model.rooms.filter { $0.isConversation && !$0.archived && scope.showsRoom($0) }
             .sorted { ($0.unread > 0 ? 1 : 0, $0.last) > ($1.unread > 0 ? 1 : 0, $1.last) }
         return List(selection: $opened) {
             Section {
-                if state.needs.isEmpty {
+                if needs.isEmpty {
                     Text(model.loaded ? "Nothing needs you." : "Looking…")
                         .font(Face.ui(14)).foregroundStyle(Palette.dim)
                         .voidRow()
                         .accessibilityIdentifier("needs-none")
                 }
-                ForEach(state.needs) { n in needRow(n) }
+                ForEach(needs) { n in needRow(n) }
             } header: {
-                Caps(state.needs.isEmpty ? NEEDS_YOU : "\(NEEDS_YOU) · \(state.needs.count)")
+                Caps(needs.isEmpty ? NEEDS_YOU : "\(NEEDS_YOU) · \(needs.count)")
             }
             Section {
                 if model.loaded && state.boards.isEmpty {
@@ -540,23 +609,28 @@ struct PhoneHome: View {
         }
     }
 
-    @ViewBuilder
+    /// A row of Needs you: tapped, a session's peek or a board's thread;
+    /// its answer under it.
     private func needRow(_ n: Need) -> some View {
-        switch n.target {
-        case .pane(let m, let p):
-            Button { terminal = PaneOpen(session: m, pane: p) } label: { NeedRow(need: n) }
-                .buttonStyle(.plain)
-                .voidRow()
-                .accessibilityIdentifier("need-\(n.id)")
-        case .board(let b):
-            NavigationLink(value: Opened.board(b)) { NeedRow(need: n) }
-                .voidRow()
-                .accessibilityIdentifier("need-\(n.id)")
-        case .session(let s):
-            NavigationLink(value: Opened.session(s)) { NeedRow(need: n) }
-                .voidRow()
-                .accessibilityIdentifier("need-\(n.id)")
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                switch n.target {
+                case .pane(let m, let p): peek = .pane(m, p)
+                case .board(let b, _): opened = .board(b)
+                case .session(let s): peek = .hosted(s)
+                }
+            } label: {
+                NeedRow(need: n)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("need-\(n.id)")
+            NeedAnswer(need: n, control: control, model: model) { said in
+                withAnimation { _ = folded.insert("\(n.id)|\(n.ask)") }
+                show("\(n.who): \(said)")
+                Task { await refresh(soon: true) }
+            }
         }
+        .voidRow()
     }
 }
 
@@ -718,12 +792,15 @@ struct PersonRow: View {
 struct BoardLanes: Hashable { let board: Board }
 
 /// A board's thread: its lane bar and who leads it over the conversation,
-/// which reaches the session that leads it. Board opens its lanes.
+/// which reaches the session that leads it, and the sessions on its cards,
+/// each opening its peek. Board opens its lanes.
 struct BoardThread: View {
     let control: Control
     let board: Board
     @ObservedObject var model: HomeModel
     @ObservedObject var live: LiveChat
+    let sessions: [BoardSession]
+    let peek: (Peeked) -> Void
     @State private var room: ChatRoom?
     @State private var problem: String?
 
@@ -768,6 +845,28 @@ struct BoardThread: View {
                 .font(Face.mono(11)).foregroundStyle(Palette.dim)
             Text(BoardLineRow.lead(line.lead)).font(Face.mono(11)).foregroundStyle(Palette.subtle)
                 .accessibilityIdentifier("board-lead")
+            if !sessions.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(sessions) { s in
+                            Button { peek(s.peeked) } label: {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    HStack(spacing: 6) {
+                                        Circle().fill(s.standing.tone.color).frame(width: 6, height: 6)
+                                        Text(s.name).font(Face.ui(13, "SemiBold")).foregroundStyle(Palette.fg).lineLimit(1)
+                                    }
+                                    Text("\(s.card) · \(s.standing == .idle ? "quiet" : s.standing.word)")
+                                        .font(Face.mono(10)).foregroundStyle(Palette.dim).lineLimit(1)
+                                }
+                                .frame(maxWidth: 240, alignment: .leading)
+                                .card(s.standing.tone)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("board-session-\(s.id)")
+                        }
+                    }
+                }
+            }
         }
         .padding(.horizontal)
         .padding(.vertical, 8)

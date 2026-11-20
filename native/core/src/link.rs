@@ -23,7 +23,7 @@ use arugula_e2e::{
     channel::{Channel, Initiator, Msg, Refusal, RequestHead, ResponseHead, prologue},
     keys::DeviceKeys,
 };
-use arugula_proto::{AttachPane, ClientMsg, Frame, FrameKind, ServerMsg, State};
+use arugula_proto::{AttachPane, ClientMsg, Delta, Frame, FrameKind, ServerMsg, State};
 use nix::poll::{PollFd, PollFlags, PollTimeout, poll};
 use serde_json::{Value, json};
 use tungstenite::{Message, WebSocket, client::IntoClientRequest};
@@ -40,6 +40,8 @@ const HANDSHAKE: Duration = Duration::from_secs(20);
 pub enum Event {
     /// The machine's state changed, or first said hello.
     State(Box<State>),
+    /// Panes' fields that changed since the last `State` or `Delta`.
+    Delta(Box<Delta>),
     /// VT bytes that reproduce the pane: start over from them.
     Snapshot {
         pane: u32,
@@ -229,7 +231,9 @@ impl Link {
         self.put(Out::Send(Msg::Binary(f.encode())))
     }
 
-    /// One request to the machine's own API, over the channel.
+    /// One request to the machine's own API, over the channel: its status
+    /// and its answer, JSON as itself and anything else (a capture's text) as
+    /// a string.
     pub fn request(&self, method: &str, path: &str, body: Option<&Value>, wait: Duration) -> Result<(u16, Value)> {
         let id = self.next.fetch_add(1, Ordering::Relaxed);
         let bytes = body.map(serde_json::to_vec).transpose()?.unwrap_or_default();
@@ -244,7 +248,11 @@ impl Link {
         self.put(Out::Ask(id, Msg::Request { id, head, body: bytes }, tx))?;
         let (head, got) =
             rx.recv_timeout(wait).map_err(|_| anyhow!("no answer from the machine to {method} {path}"))?;
-        Ok((head.status, serde_json::from_slice(&got).unwrap_or(Value::Null)))
+        // JSON as itself; any other answer (a pane's text) as a string.
+        let v = serde_json::from_slice(&got).unwrap_or_else(|_| {
+            if got.is_empty() { Value::Null } else { Value::String(String::from_utf8_lossy(&got).into_owned()) }
+        });
+        Ok((head.status, v))
     }
 }
 
@@ -342,6 +350,7 @@ fn seal(ws: &mut WebSocket<Sock>, channel: &Channel, m: &Msg) -> Result<()> {
 fn server_event(t: &str) -> Option<Event> {
     match serde_json::from_str(t).ok()? {
         ServerMsg::Hello { state, .. } | ServerMsg::State { state } => Some(Event::State(Box::new(state))),
+        ServerMsg::Delta { delta } => Some(Event::Delta(Box::new(delta))),
         ServerMsg::Error { message, .. } => Some(Event::Said(message)),
         _ => None,
     }
