@@ -315,8 +315,15 @@ final class FlowTests: XCTestCase {
             }
             clearAlerts()
             shot(app, "2-home")
-            board.tap()
-            let threadOpened = app.staticTexts["board-lead"].shows(within: 30)
+            // Home reloads its list after the project switch above: a tap as
+            // it does opens nothing, so tap again until the thread is there.
+            var threadOpened = false
+            for _ in 0..<3 where !threadOpened {
+                _ = board.waitFor(hittable: true, timeout: 5)
+                clearAlerts()
+                board.tap()
+                threadOpened = app.staticTexts["board-lead"].shows(within: 10)
+            }
             if !threadOpened { shot(app, "fail-board-thread") }
             XCTAssertTrue(threadOpened, "no board thread: \(app.debugDescription)")
             let said = "to-the-board-\(Int.random(in: 1000...9999))"

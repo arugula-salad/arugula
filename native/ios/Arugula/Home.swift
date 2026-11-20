@@ -1,15 +1,15 @@
 // Home (Arugula #1255): the project's conversations, sorted by what needs you,
-// as the desktop's Overview reads them (web/src/app/overview.tsx). Needs you
-// first, merged from every machine's panes, the boards' rows and the hosted
-// sessions, worst first; then one row per open board, with its lane bar,
-// its count, its lead and what's going on in words; then the people, its
-// channels and DMs. A board's row opens the board's thread, whose Board
-// button opens its lanes. Home is the first of the app's tabs (Arugula #1262).
-// On an iPad home is the left column of a split view, and what it opens sits
-// beside it. A row of
-// Needs you is answered where it is (Answer.swift), and a session opens a
-// peek. New tells a board or starts a New idea (New.swift), whose
-// conversations are listed under New ideas.
+// as the desktop's Overview reads them (web/src/app/overview.tsx). In a team's
+// project the chief of staff comes first (Arugula #1279): the reader's staff
+// room and who leads it. Then Needs you, merged from every machine's panes,
+// the boards' rows and the hosted sessions, worst first; then one row per open
+// board, with its lane bar, its count, its lead and what's going on in words;
+// then the people, its channels and DMs. A board's row opens the board's
+// thread, whose Board button opens its lanes. Home is the first of the app's
+// tabs (Arugula #1262). On an iPad home is the left column of a split view,
+// and what it opens sits beside it. A row of Needs you is answered where it is
+// (Answer.swift), and a session opens a peek. New tells a board or starts a
+// New idea (New.swift), whose conversations are listed under New ideas.
 
 import Combine
 import SwiftUI
