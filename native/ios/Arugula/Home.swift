@@ -190,6 +190,9 @@ final class HomeModel: ObservableObject {
         let wait = 5 - Date().timeIntervalSince(loadedAt ?? .distantPast)
         if wait > 0 { try? await Task.sleep(for: .seconds(wait)) }
         pending = false
+        // Another project was picked meanwhile: its own load has run, and
+        // this one would put the last project's back.
+        guard project == self.project else { return }
         await load(control, project: project)
     }
     private var pending = false

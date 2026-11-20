@@ -330,6 +330,7 @@ final class FlowTests: XCTestCase {
             // it does opens nothing, so tap again until the thread is there.
             var threadOpened = false
             for _ in 0..<3 where !threadOpened {
+                guard board.shows(within: 15) else { break }
                 _ = board.waitFor(hittable: true, timeout: 5)
                 clearAlerts()
                 board.tap()
