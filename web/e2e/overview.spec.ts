@@ -17,8 +17,9 @@
 // card's drawer drawing its session live with its question (#987's, as on
 // the board); the hub's sessions by card adding a cloud workspace's
 // session; a board's thread opened from its row as a tab in the talk
-// panel under Needs you, its messages and a box that posts (#1270); and on
-// a phone, one list with Needs you on top. The platform's boards and the
+// panel under Needs you, its messages and a box that posts (#1270); the
+// briefing line counted from the event log since the reader last looked
+// (#1277); and on a phone, one list with Needs you on top. The platform's boards and the
 // hub's sessions are made up here; the panes are the daemon's own.
 import { fileURLToPath } from "node:url";
 import { devices, expect, test, type Page } from "@playwright/test";
@@ -463,6 +464,96 @@ test.describe("on a computer", () => {
     await expect(panel.locator(`[data-ov-talk-open="thread:${B}"] [data-room="room_launch"]`)).toContainText("Release notes are drafted.");
     await expect(page.locator(`[data-ov-board="${B}"]`)).not.toHaveAttribute("data-ov-open", "");
     await page.screenshot({ path: info.outputPath("overview-lead.png") });
+  });
+
+  test("the briefing line counts the event log since the reader last looked, says the chief of staff's latest sentence, opens its tab, and keeps the head it showed when the reader leaves (Arugula #1277)", async ({ page }, info) => {
+    // Last looked at 18:04 yesterday, at #100 of the log; the head is #120.
+    const d = new Date();
+    const at = new Date(d.getFullYear(), d.getMonth(), d.getDate() - 1, 18, 4).getTime();
+    const ev = (seq: number, type: string, subject: string, data: Record<string, unknown>) => ({ id: `evt_${seq}`, seq, type, v: 1, source: "github", scope: { team: "t", project: P }, subject, actor: null, at_ms: at + seq, recorded_ms: at + seq, data, key: `k${seq}` });
+    const events = [
+      // Two merged, one of them told twice.
+      ev(101, "github.pr.merged", "o/app#5", { repo: "o/app", pr: 5 }),
+      ev(102, "github.pr.merged", "o/app#6", { repo: "o/app", pr: 6 }),
+      ev(103, "github.pr.merged", "o/app#6", { repo: "o/app", pr: 6 }),
+      // main red twice (two checks) and #13's card's branch: two went red. A PR into main isn't main, nor is a branch on no card.
+      ev(104, "github.check.failed", "o/app@aa", { repo: "o/app", heads: ["main"], branches: ["main"] }),
+      ev(105, "github.check.failed", "o/app@aa", { repo: "o/app", heads: ["main"], branches: ["main"] }),
+      ev(106, "github.check.failed", "o/app@bb", { repo: "o/app", heads: ["13-tidy-docs"], branches: ["13-tidy-docs", "main"] }),
+      ev(107, "github.check.failed", "o/app@cc", { repo: "o/app", heads: ["someone-else"], branches: ["someone-else", "main"] }),
+      // Ready: #7 asks the reader's review, #8 doesn't.
+      ev(108, "github.pr.ready", "o/app#7", { repo: "o/app", pr: 7, branch: "x" }),
+      ev(109, "github.pr.ready", "o/app#8", { repo: "o/app", pr: 8, branch: "y" }),
+    ];
+    const put: unknown[] = [];
+    const reads: string[] = [];
+    await page.route(`**/api/projects/${P}/overview/seen`, async (r) => {
+      if (r.request().method() === "PUT") {
+        put.push(r.request().postDataJSON());
+        return r.fulfill({ json: { seq: 120, at_ms: Date.now() } });
+      }
+      return r.fulfill({ json: { seq: 100, at_ms: at } });
+    });
+    await page.route(`**/api/projects/${P}/events?*`, (r) => {
+      const q = new URL(r.request().url()).searchParams;
+      reads.push(`${q.get("after")} ${q.get("types")}`);
+      return r.fulfill({ json: { events, next_after: 120, head: 120 } });
+    });
+    const byCard = { project: P, groups: [{ card: { id: "iss_13", number: 13, title: "Tidy the docs" }, sessions: [{ kind: "hosted", id: "hs_e2e", name: "arugula/13-tidy-docs", on: { kind: "hosted" }, state: "working", branch: "13-tidy-docs", updated_at: 0 }] }] };
+    await overview(page, byCard);
+    const line = page.locator("[data-ov-briefing]");
+    await expect(line.locator("[data-ov-briefing-counts]")).toHaveText(/^since \d{1,2}:04\s?(PM|pm)? yesterday: 2 merged · 2 went red$/);
+    expect(reads[0]).toBe("100 github.pr.merged,github.check.failed,github.pr.ready");
+    await expect(line).toHaveAttribute("data-ov-briefing", "120");
+    // No staff room yet: a line, not a button.
+    await page.waitForFunction(() => (window as unknown as { __chat?: { on: boolean | null } }).__chat?.on === false);
+    await expect(line).not.toHaveRole("button");
+    // The staff room: the chief of staff's latest message's first sentence beside the counts, and a click opens its tab.
+    await page.evaluate((P) => {
+      const room = { id: "dm_cos", kind: "dm", team: "t", name: "Chief of staff · Arugula", machine: null, machine_name: null, target: null, project: P, with: null, others: [], private: false, last: 2, read: 2, unread: 0, mentions: 0, wants: 0, muted: false, level: "all", level_own: false, archived: false, writable: true, topic: "", description: "", pins: 0, topic_writable: true, staff: true, lead: { machine: "m_geek", machine_name: "geek", session: "cos" } };
+      const msg = (seq: number, text: string, agent: boolean) => ({ seq, at: Date.now() - 60_000 + seq, author: "acct_me", name: agent ? "Me's agent on geek" : "Me", text, quote: null, pane: null, mentions: [], edited: null, deleted: null, imported: null, agent: agent ? { machine: "m_geek", machine_name: "geek" } : null, reactions: [], files: [], pinned: false, also: false });
+      const said = [msg(1, "Main went red at 02:14 and the launch lead reverted it. Two PRs wait on you.", true), msg(2, "thanks", false)];
+      const json = (body: unknown) => new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
+      const before = window.fetch;
+      window.fetch = async (input, init) => {
+        const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.href);
+        if (url.pathname === "/api/chat/rooms/dm_cos/messages") return json({ room, messages: said, more: false });
+        return before(input, init);
+      };
+      const c = (window as unknown as { __chat: { on: boolean | null; rooms: unknown[]; emit(): void } }).__chat;
+      c.on = true;
+      c.rooms = [...c.rooms, room];
+      c.emit();
+    }, P);
+    await expect(line.locator("[data-ov-briefing-said]")).toHaveText("Main went red at 02:14 and the launch lead reverted it.");
+    await expect(line).toHaveRole("button");
+    const panel = page.locator("[data-ov-panel]");
+    await page.locator(`[data-ov-board="${B}"] [data-ov-board-talk]`).click();
+    await expect(panel.locator(`[data-ov-tab="thread:${B}"]`).getByRole("tab")).toHaveAttribute("aria-selected", "true");
+    await page.screenshot({ path: info.outputPath("overview-briefing.png") });
+    await line.click();
+    await expect(panel.locator('[data-ov-tab="staff:dm_cos"]').getByRole("tab")).toHaveAttribute("aria-selected", "true");
+    // Hiding the window keeps the head this page showed.
+    expect(put).toEqual([]);
+    await page.evaluate(() => {
+      Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await expect.poll(() => put).toEqual([{ seq: 120 }]);
+    // Coming back reads it again. Now the reader's inbox asks their review on #7 (and #9, which isn't ready), so #7 counts.
+    await page.evaluate(() => {
+      const entry = (n: number, reason: string) => ({ item: `fi_${n}`, reason, repo: "o/app", number: n, kind: "pr", state: "open", title: "A PR", author: "jo", url: "", project: null, seen_at: null });
+      const before = window.fetch;
+      window.fetch = async (input, init) => {
+        const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.href);
+        if (url.pathname === "/api/inbox") return new Response(JSON.stringify({ entries: [entry(7, "review_requested"), entry(9, "review_requested"), entry(8, "mentioned")] }), { headers: { "Content-Type": "application/json" } });
+        return before(input, init);
+      };
+      Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await expect(line.locator("[data-ov-briefing-counts]")).toHaveText(/yesterday: 2 merged · 2 went red · 1 waits on your review$/);
+    expect(reads.length).toBe(2);
   });
 
   test("the hub's sessions by card add the sessions the machines don't show here", async ({ page }) => {

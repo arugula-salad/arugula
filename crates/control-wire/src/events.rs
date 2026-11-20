@@ -44,6 +44,7 @@ pub const DATA_TEXT_KEYS: &[&str] = &["title", "body", "comment", "diff", "text"
 /// One event in the log.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "LogEvent"))]
 pub struct Event {
     /// `evt_…`.
     pub id: String,
@@ -75,6 +76,7 @@ pub struct Event {
     /// The type's fields: metadata only, at most [`DATA_MAX_BYTES`]
     /// ([`data_check`]). Null when it has none.
     #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(type = "Record<string, unknown> | null"))]
     pub data: serde_json::Value,
     /// Its identity for deduplication: a second event with the same key is
     /// dropped (a webhook's delivery id, `issue.closed:iss_…:3`).
@@ -88,6 +90,7 @@ fn v1() -> u32 {
 /// Where an event belongs: who may see it is decided from here.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "LogEventScope"))]
 pub struct EventScope {
     /// The team's id.
     pub team: String,
@@ -99,6 +102,7 @@ pub struct EventScope {
 /// Who did what an event says.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "LogActor"))]
 pub struct Actor {
     pub kind: ActorKind,
     /// The account's or agent session's id; for an external actor, its id
@@ -113,6 +117,7 @@ pub struct Actor {
 /// What kind of actor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "LogActorKind"))]
 #[cfg_attr(feature = "schema", schemars(transform = crate::open_enum))]
 #[serde(rename_all = "snake_case")]
 pub enum ActorKind {
@@ -522,6 +527,13 @@ pub const CATALOG: &[EventType] = &[
 /// as a watch on it is checked when it's made and when it fires.
 pub const AGENT_EVENTS: &str = "/api/daemon/events";
 
+/// `GET` with [`ProjectEventsQuery`]: the same read for a person, on the
+/// page (Arugula #1277): their project's events after a number that their
+/// account may read now, answered [`EventsPage`]. A person has no machine
+/// grants to check, so it's their sight alone, as a hosted session's read
+/// is its asker's. The Overview counts its briefing line from it.
+pub const PROJECT_EVENTS: &str = "/api/projects/{project}/events";
+
 /// How many events a read returns when it isn't told.
 pub const READ_LIMIT_DEFAULT: u32 = 50;
 /// The most one read returns.
@@ -547,10 +559,24 @@ pub struct EventsQuery {
     pub limit: Option<u32>,
 }
 
+/// [`PROJECT_EVENTS`]: which events, as [`EventsQuery`] says, the project
+/// being the path's.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+pub struct ProjectEventsQuery {
+    #[serde(default)]
+    pub after: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub types: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+}
+
 /// A read of the log: its events in `seq` order, as stored (metadata
 /// only), and where to read on from.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct EventsPage {
     pub events: Vec<Event>,
     /// The next read's `after`: past every event this one looked at,

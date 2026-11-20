@@ -131,6 +131,14 @@
       "why": "Not in the first app"
     },
     {
+      "match": "/overview/seen$",
+      "why": "The Overview's briefing line is on the web for now (Arugula #1277)"
+    },
+    {
+      "match": "^/api/projects/\\{project\\}/events$",
+      "why": "The Overview's briefing line is on the web for now (Arugula #1277)"
+    },
+    {
       "match": "/sessions/\\{kind\\}/\\{id\\}/card$",
       "why": "Not in the first app"
     },

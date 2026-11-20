@@ -1,5 +1,7 @@
 // The project's Overview (Arugula inversion, L6): Swarm for this project,
-// the view the app opens on, the window's width (#1085). The field is the
+// the view the app opens on, the window's width (#1085). Under its stats,
+// the briefing line: what happened since the reader last looked, from the
+// event log (./overview-briefing.tsx, #1277). The field is the
 // project's open boards, one hairline row each: its title, its lane bar,
 // its count (`13/18`) and what's going on in words. A board that asks you
 // is open; a click opens any other, to its cards in Doing and Review as
@@ -42,6 +44,7 @@ import { follow, go, pathOf } from "../platform/router";
 import { session as platform } from "../platform/session";
 import { where } from "../platform/where";
 import { boot, type Booted } from "./machine-page";
+import { BriefingLine, useBriefing } from "./overview-briefing";
 import { CardRow, SessionRow, Word } from "./overview-row";
 import { PeekContext, peekKey, type PeekPlace } from "./overview-peek";
 import { staffTab, TalkPanel, useTalk, type TalkTab } from "./overview-talk";
@@ -189,6 +192,7 @@ function OverviewBody({ project, board, card, fleet }: { project: string; board?
   const phone = usePhone();
   const { views, put } = useBoardViews(project);
   const byCard = useByCard(project);
+  const briefing = useBriefing(project, byCard);
   const hostOf = (m: string) => fleet.hostById(m)?.name ?? fleet.host(m)?.name;
   const o = overviewOf(project, views ?? [], fleet.panes.map((p) => ovPane(fleet, p)), byCard, hostOf);
   const mine = fleet.panes.filter((p) => o.cardOf.has(p.key));
@@ -296,12 +300,23 @@ function OverviewBody({ project, board, card, fleet }: { project: string; board?
     return h && !h.team ? h.owner : undefined;
   };
 
+  // The chief of staff's tab, pinned first, once it has a room (#1275).
+  const chief: TalkTab | null = staffTab(project);
+
+  // Its pinned tab is picked, not opened, so it never takes one of the tabs' places.
+  const pickChief = (t: TalkTab) => {
+    talk.pick(`${t.kind}:${t.id}`);
+    requestAnimationFrame(() => document.querySelector("[data-ov-talk]")?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+  };
+
   const any = o.boards.length > 0 || o.loose.length > 0;
   const field = (
     <div class="ov-field" data-ov-field>
       <p class="dim ov-stats" data-ov-stats>
         {statsLine(o, needs)}
       </p>
+      {/* Since the reader last looked (#1277), counted from the event log; it opens the chief of staff's tab. */}
+      <BriefingLine b={briefing} staffRoom={chief?.id} open={chief ? () => pickChief(chief) : undefined} />
       {views === null && <p class="dim">Loading…</p>}
       {views !== null && !any && (
         <EmptyState
@@ -371,8 +386,6 @@ function OverviewBody({ project, board, card, fleet }: { project: string; board?
       </div>
     </section>
   );
-  // The chief of staff's tab, pinned first, once it has a room (#1275).
-  const chief: TalkTab | null = staffTab(project);
   return (
     <div class={phone ? "ov phone" : "ov"} data-overview={project} style={{ "--ov-bar-bottom": `${phone ? 0 : barBottom}px` }}>
       {/* On a phone, a list with Needs you on top and the talk under the field. */}

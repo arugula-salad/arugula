@@ -82,6 +82,7 @@ pub mod join;
 pub mod machine;
 pub mod machine_token;
 pub mod maintenance;
+pub mod overview_seen;
 pub mod project_docs;
 pub mod projects;
 pub mod push;

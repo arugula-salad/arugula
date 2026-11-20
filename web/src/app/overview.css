@@ -23,6 +23,43 @@
 .ov-stats {
   margin: 0;
 }
+/* The briefing line (#1277): what happened since the reader last looked,
+   then the chief of staff's latest sentence; a button that opens its tab
+   once it has a room. One line, the sentence giving way first. */
+.ov-briefing {
+  min-width: 0;
+  max-width: 100%;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: calc(-1 * var(--space-2)) 0 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: var(--text-sm) var(--f-ui);
+  color: var(--fg);
+  text-align: left;
+  white-space: nowrap;
+}
+button.ov-briefing {
+  cursor: pointer;
+}
+button.ov-briefing:hover .ov-briefing-said,
+button.ov-briefing:focus-visible .ov-briefing-said {
+  color: var(--fg);
+}
+.ov-briefing-counts {
+  flex: 0 0 auto;
+}
+.ov-briefing-said {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted);
+}
+.ov-briefing-said::before {
+  content: "· ";
+}
 
 /* A board: one hairline row. Its toggle, title, lane bar, count and words
    line up down the list, as columns do. */

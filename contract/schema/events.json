@@ -230,6 +230,32 @@
         "project"
       ],
       "type": "object"
+    },
+    "ProjectEventsQuery": {
+      "description": "[`PROJECT_EVENTS`]: which events, as [`EventsQuery`] says, the project\nbeing the path's.",
+      "properties": {
+        "after": {
+          "default": 0,
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "limit": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "types": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
