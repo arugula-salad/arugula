@@ -25,5 +25,41 @@ a list sits beside what's open from it (a project, a chat room, a machine).
   key control's directory lists for it. It needs `ARUGULA_NATIVE_CLIENTS` on the
   hub; without it the app says this Arugula isn't taking its sign-in yet.
 
+## TestFlight
+
+`just native-testflight` on geek uploads `origin/main` to TestFlight (#603).
+It checks the commit out in jake-air's `~/src/arugula-testflight`, archives it
+there (`native/ios/build.sh archive`), and signs and uploads it with
+`native/ios/testflight.sh`. It then waits until TestFlight has processed the
+build. Testers see it once it's processed.
+
+- **The key:** an App Store Connect API key with the App Manager role, in
+  Infisical (project arugula, env prod, `/illogical/release`) as `ASC_KEY_ID`,
+  `ASC_ISSUER_ID` and `ASC_KEY_P8`. The script reads them while it runs and
+  passes the .p8 over ssh to a temporary file on the Mac, which only the user
+  can read and which is removed afterwards. `xcodebuild -allowProvisioningUpdates
+  -authenticationKey…` uses it to make the distribution signing and to
+  upload, so no Apple ID is signed in. Other secret names:
+  `ASC_KEY_ID_SECRET=… ASC_ISSUER_ID_SECRET=… ASC_KEY_P8_SECRET=…`.
+- **Build numbers:** App Store Connect gives each upload the next number
+  (`manageAppVersionAndBuildNumber`), so the project's `CURRENT_PROJECT_VERSION`
+  stays at 1. The marketing version is `MARKETING_VERSION` in
+  `project.pbxproj`. Raise it for a release testers should see as new.
+- **Without uploading:** `just native-testflight export` signs the app for the
+  App Store with Xcode's signed-in account and leaves the `.ipa` in jake-air's
+  `~/src/arugula-testflight/native/ios/build/export`.
+- **Another commit or Mac:** `just native-testflight upload REV HOST`.
+
+No CI job runs this yet.
+
+**Too old for control.** The core's `NATIVE_API` is what this build reads and
+sends of control's native API. Control's `/control.json` names the oldest it
+still serves (`native_api_min`). When that's newer, the app shows "Update
+Arugula" in place of everything else. It checks as it opens and when it comes
+back, at most every ten minutes, and before a sign-in. Raise `NATIVE_API`
+with a change an older build can't follow. After that, control raises
+`native_api_min` only once no supported build needs the older one: the
+current build and the one before it (`contract/README.md`).
+
 What isn't here yet: live chat (an open room looks again every few seconds), text
 selection in the terminal, sessions, approvals and push.

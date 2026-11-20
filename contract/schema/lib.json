@@ -141,6 +141,12 @@
           "minimum": 0,
           "type": "integer"
         },
+        "native_api_min": {
+          "description": "The oldest native app API control still serves (#603): an iPhone or\nAndroid app built for an older one says to update the app instead of\nfailing on what it can't read. 0, or not said: every one.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
         "passkeys": {
           "default": false,
           "description": "Passkeys need a domain name: WebAuthn refuses IP addresses.",
@@ -210,6 +216,18 @@
             }
           ],
           "default": null
+        }
+      },
+      "type": "object"
+    },
+    "ControlNative": {
+      "description": "Just the oldest native app API control serves, from `/control.json`\n(#603), read apart from [`ControlInfo`] like the others: a native app\nreads nothing else of it before it signs in.",
+      "properties": {
+        "native_api_min": {
+          "default": 0,
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
         }
       },
       "type": "object"

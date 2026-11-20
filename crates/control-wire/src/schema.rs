@@ -87,7 +87,7 @@ fn files() -> Vec<(&'static str, &'static [&'static str], fn(&mut SchemaGenerato
             join::JoinRequest, join::CliJoinRequest, join::JoinProof, join::JoinStarted, join::JoinPoll, join::PollQuery, join::JoinTeam, join::JoinTokenRequest, join::JoinTokenMade, join::TokenJoinRequest, join::Joined, join::JoinedTeam,
         ],
         "lib" => [
-            ControlInfo, ControlAuth, ControlCliJoin, ControlJoinSecret, ControlWhere, ControlDocs, ControlJump, GuestJump, Ack, RemovedAnswer, RemovedAt, DialQuery,
+            ControlInfo, ControlAuth, ControlCliJoin, ControlJoinSecret, ControlWhere, ControlDocs, ControlJump, ControlNative, GuestJump, Ack, RemovedAnswer, RemovedAt, DialQuery,
         ],
         "project_docs" => [
             project_docs::Doc, project_docs::Section, project_docs::DocView, project_docs::DocList, project_docs::Trashed, project_docs::TrashList, project_docs::NewSection, project_docs::NewDoc, project_docs::DocWrite, project_docs::Asset, project_docs::AssetData, project_docs::MovedFrom, project_docs::DocMove, project_docs::Shared, project_docs::PublicLink, project_docs::PublicMake, project_docs::PublicServed,

@@ -4,18 +4,21 @@
 #   native/ios/build.sh device [DEVICE]  for an iPhone, signed with the team's
 #                                        development profile; with a devicectl
 #                                        id, installs and launches it
+#   native/ios/build.sh archive          a Release archive for the App Store,
+#                                        in build/Arugula.xcarchive
+#                                        (native/ios/testflight.sh uploads it)
 # Signing needs the logged-in GUI session's keychain, so from an ssh shell run
 # it through native/ios/gui.sh.
 set -euo pipefail
 cd "$(dirname "$0")"
-kind=${1:?usage: build.sh sim|device [DEVICE]}
+kind=${1:?usage: build.sh sim|device [DEVICE]|archive}
 device=${2:-}
 export PATH="$HOME/.cargo/bin:$HOME/.local/bin:/opt/homebrew/bin:$PATH"
 export IPHONEOS_DEPLOYMENT_TARGET=17.0
 case "$kind" in
   sim) target=aarch64-apple-ios-sim sdk=iphonesimulator ;;
-  device) target=aarch64-apple-ios sdk=iphoneos ;;
-  *) echo "build.sh: sim or device" >&2; exit 2 ;;
+  device|archive) target=aarch64-apple-ios sdk=iphoneos ;;
+  *) echo "build.sh: sim, device or archive" >&2; exit 2 ;;
 esac
 out=$PWD/build
 # The swarm's fonts, as the web sets them (shared/fonts.css): Big Shoulders
@@ -42,6 +45,21 @@ mkdir -p "$out/lib/$sdk"
 cp "$CARGO_TARGET_DIR/$target/release/libarugula_native_core.a" "$out/lib/$sdk/"
 if [ "$kind" = sim ]; then
   echo "built the core for the simulator: $out/lib/$sdk"
+  exit 0
+fi
+if [ "$kind" = archive ]; then
+  # Signed for development here; exporting it signs it for the App Store.
+  # ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_PATH, when set, let Xcode fetch the
+  # profiles with an App Store Connect API key instead of its signed-in account.
+  auth=()
+  [ -n "${ASC_KEY_PATH:-}" ] && auth=(-authenticationKeyPath "$ASC_KEY_PATH" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
+  rm -rf "$out/Arugula.xcarchive"
+  xcodebuild -project Arugula.xcodeproj -scheme Arugula -configuration Release -destination generic/platform=iOS \
+    -archivePath "$out/Arugula.xcarchive" -derivedDataPath "$out/archive-dd" -allowProvisioningUpdates ${auth[@]+"${auth[@]}"} \
+    DEVELOPMENT_TEAM="${DEVELOPMENT_TEAM:-HNDPMQPF22}" archive \
+    | grep -E '^\*\* |error:|warning: unre|Signing|requires a provisioning' || true
+  [ -d "$out/Arugula.xcarchive/Products/Applications/Arugula.app" ] || { echo "build.sh: no archive was made" >&2; exit 1; }
+  echo "archived: $out/Arugula.xcarchive"
   exit 0
 fi
 # By target, with no destination: naming one needs Xcode's copy of the phone's

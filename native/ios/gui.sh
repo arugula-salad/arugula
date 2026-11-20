@@ -4,7 +4,9 @@
 # errSecInternalComponent). Prints the command's output when it's done.
 #   native/ios/gui.sh COMMAND...
 set -eu
-label=io.arugula.native.gui
+# A label of its own, so two of these at once (an install and an archive)
+# don't boot each other out.
+label=io.arugula.native.gui.$$
 dir=$(mktemp -d)
 plist=$dir/job.plist
 cmd=$(printf '%q ' "$@")

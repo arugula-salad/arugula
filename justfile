@@ -419,6 +419,13 @@ desktop-check:
 native-phone device:
     native/ios/gui.sh native/ios/build.sh device {{device}}
 
+# The iPhone and iPad app to TestFlight, from geek: archives and uploads REV
+# on jake-air with the App Store Connect API key in Infisical, then waits for
+# TestFlight to process it. `export` signs it for the App Store and keeps the
+# .ipa on the Mac, with no key and no upload (native/ios/README.md).
+native-testflight mode="upload" rev="origin/main" host="jake-air":
+    scripts/native-testflight {{mode}} {{rev}} {{host}}
+
 # The native clients' shared core (native/core, a workspace of its own):
 # rustfmt, clippy, its tests and its smoke test, on this machine.
 native-check:

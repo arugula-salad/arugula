@@ -1,7 +1,7 @@
 // The core's C interface (native/core/src/ffi.rs). Almost everything crosses as
 // JSON. A failed call returns NULL and sets *err, whose "reason" may be
-// "signed_out" (sign in again) or "older_control". Free strings with
-// aru_string_free.
+// "signed_out" (sign in again), "older_control" or "update_app" (control no
+// longer serves this build). Free strings with aru_string_free.
 #pragma once
 #include <stdbool.h>
 #include <stddef.h>
@@ -39,6 +39,9 @@ typedef void (*AruNotify)(void *ctx);
 typedef void (*AruRowFn)(void *ctx, uint16_t row, const AruRun *runs, size_t n);
 
 void aru_string_free(char *s);
+
+// Whether control at url serves this build of the app: 1, or 0 and *err.
+int32_t aru_check_app(const char *url, char **err);
 
 // Signing in: the web sheet opens info's "link" and waits for its
 // "callback_scheme"; finish swaps the address it came back with for the session
