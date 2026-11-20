@@ -1,8 +1,8 @@
 #!/bin/bash
 # Android's toolchain for the core and its emulator test, in this user's home
 # (no system packages): the SDK's command-line tools, platform, build tools,
-# NDK, emulator and a system image, an AVD called arugula-core, Rust's two
-# Android targets and cargo-ndk. Run it again to check; it only adds what's
+# NDK, emulator and a system image, an AVD called arugula-core, Gradle, Rust's
+# two Android targets and cargo-ndk. Run it again to check; it only adds what's
 # missing.
 #
 #   native/android/setup.sh             everything (Linux or macOS)
@@ -27,6 +27,9 @@ NDK=29.0.14206865    # r29, as core/build.gradle.kts's ndkVersion
 PLATFORM=android-36
 BUILD_TOOLS=36.0.0
 CARGO_NDK=4.1.2
+# gradlew runs this Gradle (the version gradle-wrapper.properties names).
+GRADLE=9.9.2
+GRADLE_SHA256=971fcd7150ca4ba04852c0b2ca0d2d0ab9468e14b03473eab19528809914c76b
 
 case "$(uname -s)-$(uname -m)" in
   Linux-x86_64) os=linux abi=x86_64 ;;
@@ -63,6 +66,18 @@ if [ "$os" = linux ] && [ ! -w /dev/kvm ]; then
 fi
 
 [ "$only" = emulator ] && exit 0
+
+gradle_home=${ARUGULA_GRADLE_HOME:-$HOME/.local/share/gradle}
+if [ ! -x "$gradle_home/gradle-$GRADLE/bin/gradle" ]; then
+  echo "setup.sh: Gradle $GRADLE into $gradle_home"
+  tmp=$(mktemp -d)
+  curl -fsSLo "$tmp/gradle.zip" "https://services.gradle.org/distributions/gradle-$GRADLE-bin.zip"
+  echo "$GRADLE_SHA256  $tmp/gradle.zip" | sha256sum -c --quiet 2>/dev/null ||
+    echo "$GRADLE_SHA256  $tmp/gradle.zip" | shasum -a 256 -c --quiet
+  mkdir -p "$gradle_home"
+  unzip -q "$tmp/gradle.zip" -d "$gradle_home"
+  rm -rf "$tmp"
+fi
 
 rustup target add aarch64-linux-android x86_64-linux-android >/dev/null
 if [ "$(cargo ndk --version 2>/dev/null | awk '{print $2}')" != "$CARGO_NDK" ]; then

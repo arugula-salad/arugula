@@ -11,7 +11,8 @@ next, in this Gradle project beside `core`.
   (`gradle.properties`): `arm64-v8a` for phones, `x86_64` for the emulator.
 - `setup.sh`: the toolchain, into your home: the SDK's command-line tools,
   platform 36, build tools, NDK r29, the emulator and an image, the AVD
-  `arugula-core`, Rust's two Android targets and cargo-ndk 4.1.2. Run it again
+  `arugula-core`, Gradle 9.9.2 (which `gradlew` runs: the repository keeps no
+  binaries, so no wrapper jar), Rust's two Android targets and cargo-ndk 4.1.2. Run it again
   to check. `setup.sh emulator` installs only what an emulator needs.
 - `test-emulator.sh`: the instrumented tests (`core/src/androidTest`) on a
   device: the one adb already has (`ANDROID_SERIAL`), else the AVD, booted
