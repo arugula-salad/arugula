@@ -54,7 +54,11 @@ val cargoNdk by tasks.registering(Exec::class) {
     inputs.property("abis", abis)
     outputs.dir(out)
     val ndk = androidComponents.sdkComponents.ndkDirectory
-    doFirst { environment("ANDROID_NDK_HOME", ndk.get().asFile.path) }
+    doFirst {
+        // Both, or cargo-ndk warns when a machine's ANDROID_NDK_ROOT is another NDK.
+        environment("ANDROID_NDK_HOME", ndk.get().asFile.path)
+        environment("ANDROID_NDK_ROOT", ndk.get().asFile.path)
+    }
     commandLine(
         listOf("cargo", "ndk") + abis.flatMap { listOf("-t", it) } +
             listOf("-P", "26", "-o", out.path, "rustc", "--lib", "--release", "--features", "jni", "--crate-type", "cdylib"),

@@ -15,8 +15,6 @@ on:
   schedule:
     - cron: "27 8 * * *"
   workflow_dispatch:
-  push:
-    branches: [feat/1248-android-core]
 
 permissions:
   contents: read
@@ -46,10 +44,6 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - run: mise install
-      - name: TEMP maven diagnostics
-        run: |
-          java -version 2>&1; echo "JAVA_HOME=$JAVA_HOME"
-          cd native/android && ./gradlew help --info 2>&1 | grep -E "repo.maven.apache.org|plugins.gradle.org" | head -30 || true
       # Into the runner's own SDK: the NDK, emulator and image setup.sh pins.
       - run: native/android/setup.sh
       - run: just native-android
