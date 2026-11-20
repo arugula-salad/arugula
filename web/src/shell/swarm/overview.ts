@@ -9,7 +9,7 @@
 // of its block; then by the hub's sessions by card, and by its session (a
 // session's card is its panes' card).
 
-import type { BoardRow, BoardView, OnIssue } from "../../shared/proto";
+import type { BoardLead, BoardRow, BoardView, OnIssue } from "../../shared/proto";
 import { hubStanding, panesOf, type SessionsByCard, type ProjectSession } from "../../shared/project-sessions.ts";
 
 /** How a card or a session stands, most urgent first: a session waits on
@@ -91,6 +91,18 @@ export interface OvBoard {
   proven: number;
   total: number;
   standing: Standing;
+  /** The session that leads it (#414), when one does. */
+  lead?: OvLead;
+}
+
+/** A board's lead: its machine (id and name) and its session's name there;
+ * `standing` is how it stands where the machines or the hub tell of it
+ * (null: neither does). */
+export interface OvLead {
+  machine: string;
+  machineName: string;
+  session: string;
+  standing: Standing | null;
 }
 
 export interface Overview {
@@ -234,11 +246,23 @@ export function overviewOf(project: string, views: BoardView[], panes: OvPane[],
       proven: work.filter((r) => r.lane === "done" && r.proof).length,
       total: work.length,
       standing: worst([...doing, ...review].map((c) => c.standing)),
+      ...(v.board.lead ? { lead: boardLead(v.board.lead, panes, byCard, hostOf) } : {}),
     });
   }
   const still = (b: OvBoard) => Number(!b.doing.length && !b.review.length);
   boards.sort((a, b) => still(a) - still(b) || rank(a.standing) - rank(b.standing) || a.title.localeCompare(b.title));
   return { boards, loose: sortSessions(loose), cardOf };
+}
+
+/** A board's lead as the row names it: how it stands from its session's
+ * panes on its machine, else from the hub's sessions by card. */
+function boardLead(l: BoardLead, panes: OvPane[], byCard: SessionsByCard | null, hostOf: (machine: string) => string | undefined): OvLead {
+  // A pane whose machine has no id here (a daemon's own page) is matched by its name.
+  const on = (p: OvPane) => (p.machine ? p.machine === l.machine : !!l.machine_name && p.host === l.machine_name);
+  const mine = panes.filter((p) => on(p) && p.session?.name === l.session);
+  const hub = byCard?.groups.flatMap((g) => g.sessions).find((s) => s.on.kind === "machine" && s.on.id === l.machine && s.name === l.session);
+  const standing = mine.length ? worst(mine.map((p) => p.standing)) : hub ? hubStanding(hub) : null;
+  return { machine: l.machine, machineName: l.machine_name || hostOf(l.machine) || "", session: l.session, standing };
 }
 
 /** What a row says of itself, besides its sessions: its question for you

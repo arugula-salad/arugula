@@ -186,3 +186,19 @@ test("a group's panes: an agent block is its own pane, a session lists its panes
   assert.deepEqual(panesOf(BY_CARD.groups[0].sessions), [{ machine: "m_ws", pane: 12 }, { machine: "m_ws", pane: 13 }]);
   assert.deepEqual(panesOf(BY_CARD.groups[1].sessions), [{ machine: "m_b1", pane: 4 }]);
 });
+
+test("a board's lead stands as its session's panes on its machine, else as the hub names it, else is told plain (#1272)", () => {
+  const led = (session) => view("brd_l", "Launch", [row("r1", "doing", 1)], { lead: { machine: "m_ws", machine_name: "", session, at: 1 } });
+  const panes = [pane("workstation", 1, { machine: "m_ws", session: { id: 3, name: "launch" }, standing: "working" }), pane("workstation", 2, { machine: "m_ws", session: { id: 3, name: "launch" }, standing: "needs" })];
+  const byCard = { project: P, groups: [{ card: null, sessions: [{ kind: "machine", id: "s9", name: "docs", on: { kind: "machine", id: "m_ws", name: "workstation" }, panes: [{ pane: 9, kind: "agent", work_item: null, state: "failed" }], updated_at: 1 }] }] };
+  // Its machine's panes in its session: the worst of them; its machine named from the fleet when the board can't.
+  assert.deepEqual(overviewOf(P, [led("launch")], panes, byCard, hostOf).boards[0].lead, { machine: "m_ws", machineName: "workstation", session: "launch", standing: "needs" });
+  // Not here, the hub's session of that name on that machine.
+  assert.equal(overviewOf(P, [led("docs")], panes, byCard, hostOf).boards[0].lead.standing, "failed");
+  // A pane whose machine has no id here (a daemon's own page) is matched by the machine's name.
+  const named = view("brd_l", "Launch", [row("r1", "doing", 1)], { lead: { machine: "m_ws", machine_name: "workstation", session: "launch", at: 1 } });
+  assert.equal(overviewOf(P, [named], [pane("workstation", 1, { session: { id: 3, name: "launch" }, standing: "working" })], null, hostOf).boards[0].lead.standing, "working");
+  // Neither tells: no standing. A board no one leads has no lead.
+  assert.equal(overviewOf(P, [led("gone")], panes, byCard, hostOf).boards[0].lead.standing, null);
+  assert.equal(overviewOf(P, [view("brd_x", "X", [row("r1", "doing", 1)])], [], null, hostOf).boards[0].lead, undefined);
+});
