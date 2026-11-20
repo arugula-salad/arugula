@@ -450,6 +450,67 @@ button.ov-peek:disabled {
   padding: var(--space-2) var(--space-3);
 }
 
+/* A session's peek (#1271): its head, its last lines, its buttons, and its box at the foot. */
+.ov-peek-tab {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3) var(--space-3);
+}
+.ov-peek-tab-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+  font-size: var(--text-md);
+}
+.ov-peek-tab-head .mono {
+  font: var(--text-sm) var(--mono);
+}
+.ov-peek-card-link {
+  margin-left: auto;
+}
+.ov-peek-why,
+.ov-peek-said {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+.ov-peek-tail {
+  flex: 1 1 auto;
+  min-height: 8em;
+  margin: 0;
+  overflow: auto;
+  padding: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--field-radius);
+  background: var(--surface);
+  font: var(--text-xs) / 1.5 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ov-peek-acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.ov-peek-panes {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+}
+.ov-peek-reply {
+  display: flex;
+  gap: var(--space-2);
+}
+.ov-peek-reply input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 /* A narrow window, or a phone: the panel docks under the field, at its own height. */
 @media (max-width: 1000px) {
   .ov {

@@ -1,12 +1,14 @@
 // The Overview's talk panel (Arugula #1270): beside the field on a
 // computer, Needs you on its top, then a strip of conversation tabs and the
 // open one, which holds its own box to write in. The field opens a tab
-// (a board's thread, from its row) and never goes anywhere; × closes one.
-// A tab's kind says what it shows: `TAB_KINDS` is where the session peek
-// (#1271) and the chief of staff's room (#1275) add theirs. The chief of
-// staff's tab is pinned first, with no ×, once it has a room; until then
-// its slot is empty (`pinned` null). The tabs a reader opened are kept for
-// the browser tab, per project, as the field's open boards are.
+// (a board's thread from its row, a session's peek from its row) and never
+// goes anywhere; × closes one.
+// A tab's kind says what it shows (`TAB_KINDS`): a board's thread, or a
+// session's peek (./overview-peek.tsx, #1271); the chief of staff's room
+// (#1275) adds its own. The chief of staff's tab is pinned first, with no
+// ×, once it has a room; until then its slot is empty (`pinned` null). The
+// tabs a reader opened are kept for the browser tab, per project, as the
+// field's open boards are.
 
 import type { ComponentChildren, JSX } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
@@ -17,6 +19,7 @@ import { RoomBody } from "../shared/chat/room";
 import { EmptyLine } from "../shared/ui/block-states";
 import { useSubscribe } from "../shared/ui/hooks";
 import { CloseIcon, IconButton } from "../shared/ui/icons";
+import { PeekTab } from "./overview-peek";
 
 /** A conversation in the panel: what kind it is, what it's on (a board's
  * id for a thread), and what its tab says. */
@@ -39,6 +42,11 @@ export const TAB_KINDS = {
   thread: {
     Body: ({ tab, phone }) => <ThreadTab board={tab.id} title={tab.title} phone={phone} />,
     unread: (tab) => (objectRoom(tab.id)?.unread ?? 0) > 0,
+  },
+  /** A session's peek (#1271): its last lines, live while open, and a box to write to it. */
+  peek: {
+    Body: ({ tab }) => <PeekTab id={tab.id} />,
+    unread: () => false,
   },
 } satisfies Record<string, TabKind>;
 export type TalkKind = keyof typeof TAB_KINDS;
@@ -140,7 +148,7 @@ export function TalkPanel({ talk, pinned, needs, phone }: { talk: Talk; pinned: 
             <Body key={keyOf(open)} tab={open} phone={phone} />
           </div>
         ) : (
-          !phone && <EmptyLine data-ov-talk-none>Talk in a board's thread from its row: it opens here.</EmptyLine>
+          !phone && <EmptyLine data-ov-talk-none>A board's thread, or a session from its row, opens here.</EmptyLine>
         )}
       </section>
     </aside>
