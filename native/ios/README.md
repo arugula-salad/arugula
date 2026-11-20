@@ -70,25 +70,31 @@ with the App Store Connect key in place of Xcode's account.
 ## TestFlight
 
 `just native-testflight` on geek uploads `origin/main` to TestFlight (#603).
-It checks the commit out in jake-air's `~/src/arugula-testflight`, archives it
-there (`native/ios/build.sh archive`), and signs and uploads it with
-`native/ios/testflight.sh`. It then waits until TestFlight has processed the
-build. Testers see it once it's processed.
+It checks the commit out in jake-mini's `~/src/arugula-testflight`. That's a
+clone of its own, so the testnet simulator claim's `~/src/native-app` is left
+alone. It archives there, unsigned (`native/ios/build.sh archive`), and
+`native/ios/testflight.sh` signs and uploads it. It then waits until
+TestFlight has processed the build. Testers see it once it's processed.
 
 - **The key:** an App Store Connect API key with the App Manager role, in
-  Infisical (project arugula, env prod, `/illogical/release`) as `APPLE_ASC_KEY_ID`,
-  `APPLE_ASC_ISSUER_ID` and `APPLE_ASC_KEY_P8` (Team Key "arugula-testflight"). The script reads them while it runs and
-  passes the .p8 over ssh to a temporary file on the Mac, which only the user
-  can read and which is overwritten and removed afterwards. `xcodebuild -allowProvisioningUpdates
-  -authenticationKey…` uses it to make the distribution signing and to
-  upload, so no Apple ID is signed in. Other secret names:
-  `ASC_KEY_ID_SECRET=… ASC_ISSUER_ID_SECRET=… ASC_KEY_P8_SECRET=…`.
+  Infisical (project arugula, env prod, `/illogical/release`) as
+  `APPLE_ASC_KEY_ID`, `APPLE_ASC_ISSUER_ID` and `APPLE_ASC_KEY_P8` (Team Key
+  "arugula-testflight").
+  - The script reads them while it runs, and passes the .p8 over ssh to a
+    temporary file on the Mac that only the user can read. It's overwritten
+    and removed afterwards.
+  - With it, `xcodebuild -exportArchive -allowProvisioningUpdates
+    -authenticationKey…` signs with the team's cloud-managed distribution
+    certificate and uploads. No Apple ID is signed in, and the Mac's keychain
+    needs no signing identity.
+  - Other secret names: `ASC_KEY_ID_SECRET=… ASC_ISSUER_ID_SECRET=…
+    ASC_KEY_P8_SECRET=…`.
 - **Build numbers:** App Store Connect gives each upload the next number
   (`manageAppVersionAndBuildNumber`), so the project's `CURRENT_PROJECT_VERSION`
   stays at 1. The marketing version is `MARKETING_VERSION` in
   `project.pbxproj`. Raise it for a release testers should see as new.
-- **Without uploading:** `just native-testflight export` signs the app for the
-  App Store with Xcode's signed-in account and leaves the `.ipa` in jake-air's
+- **Without uploading:** `just native-testflight export` signs the app the same
+  way and leaves the `.ipa` in jake-mini's
   `~/src/arugula-testflight/native/ios/build/export`.
 - **Another commit or Mac:** `just native-testflight upload REV HOST`.
 
