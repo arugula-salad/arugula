@@ -1,0 +1,171 @@
+// The Overview's talk panel (Arugula #1270): beside the field on a
+// computer, Needs you on its top, then a strip of conversation tabs and the
+// open one, which holds its own box to write in. The field opens a tab
+// (a board's thread, from its row) and never goes anywhere; × closes one.
+// A tab's kind says what it shows: `TAB_KINDS` is where the session peek
+// (#1271) and the chief of staff's room (#1275) add theirs. The chief of
+// staff's tab is pinned first, with no ×, once it has a room; until then
+// its slot is empty (`pinned` null). The tabs a reader opened are kept for
+// the browser tab, per project, as the field's open boards are.
+
+import type { ComponentChildren, JSX } from "preact";
+import { useEffect, useState } from "preact/hooks";
+import type { ChatRoom } from "../shared/proto";
+import { boards } from "../shared/boards/store";
+import { chat } from "../shared/chat-store";
+import { RoomBody } from "../shared/chat/room";
+import { EmptyLine } from "../shared/ui/block-states";
+import { useSubscribe } from "../shared/ui/hooks";
+import { CloseIcon, IconButton } from "../shared/ui/icons";
+
+/** A conversation in the panel: what kind it is, what it's on (a board's
+ * id for a thread), and what its tab says. */
+export interface TalkTab {
+  kind: TalkKind;
+  id: string;
+  title: string;
+}
+
+/** What a kind of tab draws and how it says it has something new. */
+interface TabKind {
+  Body: (p: { tab: TalkTab; phone: boolean }) => JSX.Element;
+  /** Something in it the reader hasn't seen: the tab's dot. */
+  unread(tab: TalkTab): boolean;
+}
+
+/** The kinds of tab. */
+export const TAB_KINDS = {
+  /** A board's thread: the room on the board, as chat draws it. */
+  thread: {
+    Body: ({ tab, phone }) => <ThreadTab board={tab.id} title={tab.title} phone={phone} />,
+    unread: (tab) => (objectRoom(tab.id)?.unread ?? 0) > 0,
+  },
+} satisfies Record<string, TabKind>;
+export type TalkKind = keyof typeof TAB_KINDS;
+
+/** The most tabs besides the pinned one; opening another drops the oldest. */
+export const TABS_MAX = 5;
+
+const keyOf = (t: TalkTab) => `${t.kind}:${t.id}`;
+const objectRoom = (target: string) => chat.rooms.find((r) => r.kind === "object" && r.target === target);
+
+export interface Talk {
+  tabs: TalkTab[];
+  /** The open tab's key, if any. */
+  active: string | null;
+  /** Open a tab (or bring back the one already open on the same thing). */
+  open(t: TalkTab): void;
+  close(key: string): void;
+  pick(key: string): void;
+}
+
+/** The panel's tabs on this project's Overview, kept for the browser tab. */
+export function useTalk(project: string): Talk {
+  const store = `arugula.ov-talk:${project}`;
+  const [s, setS] = useState<{ tabs: TalkTab[]; active: string | null }>(() => {
+    try {
+      const v = JSON.parse(sessionStorage.getItem(store) ?? "null") as { tabs: TalkTab[]; active: string | null } | null;
+      // A kind this page no longer has is dropped.
+      if (v) return { tabs: v.tabs.filter((t) => t.kind in TAB_KINDS), active: v.active };
+    } catch {
+      // Unreadable: start empty.
+    }
+    return { tabs: [], active: null };
+  });
+  const put = (change: (was: typeof s) => typeof s) =>
+    setS((was) => {
+      const next = change(was);
+      try {
+        sessionStorage.setItem(store, JSON.stringify(next));
+      } catch {
+        // Not kept: it holds for this page.
+      }
+      return next;
+    });
+  return {
+    ...s,
+    open: (t) =>
+      put(({ tabs }) => {
+        const k = keyOf(t);
+        if (tabs.some((x) => keyOf(x) === k)) return { tabs: tabs.map((x) => (keyOf(x) === k ? t : x)), active: k };
+        return { tabs: [...tabs, t].slice(-TABS_MAX), active: k };
+      }),
+    close: (k) =>
+      put(({ tabs, active }) => {
+        const i = tabs.findIndex((x) => keyOf(x) === k);
+        const left = tabs.filter((x) => keyOf(x) !== k);
+        // Closing the open tab opens its neighbour.
+        const next = active !== k ? active : left.length ? keyOf(left[Math.min(i, left.length - 1)]) : null;
+        return { tabs: left, active: next };
+      }),
+    pick: (k) => put((was) => ({ ...was, active: k })),
+  };
+}
+
+/** The panel: `needs` (Needs you) on top, then the tabs, `pinned` first. */
+export function TalkPanel({ talk, pinned, needs, phone }: { talk: Talk; pinned: TalkTab | null; needs?: ComponentChildren; phone: boolean }) {
+  useSubscribe((fn) => chat.subscribe(fn));
+  const tabs = pinned ? [pinned, ...talk.tabs.filter((t) => keyOf(t) !== keyOf(pinned))] : talk.tabs;
+  const open = tabs.find((t) => keyOf(t) === talk.active) ?? (pinned && !talk.active ? pinned : undefined);
+  const Body = open && TAB_KINDS[open.kind].Body;
+  return (
+    <aside class={`ov-panel${open ? " ov-panel-talking" : ""}`} data-ov-panel>
+      {needs}
+      <section class="ov-talk" aria-label="Talk" data-ov-talk>
+        {tabs.length > 0 && (
+          <div class="ov-tabs" role="tablist" data-ov-tabs>
+            {tabs.map((t) => {
+              const k = keyOf(t);
+              const on = open !== undefined && keyOf(open) === k;
+              const dot = !on && TAB_KINDS[t.kind].unread(t);
+              return (
+                <div key={k} class={`ov-tab${on ? " ov-tab-on" : ""}`} data-ov-tab={k} data-ov-tab-unread={dot ? "" : undefined}>
+                  <button type="button" role="tab" aria-selected={on} aria-controls={on ? "ov-talk-open" : undefined} title={t.title} onClick={() => talk.pick(k)}>
+                    {dot && <i class="ov-tab-dot" aria-label="Unread" />}
+                    <span>{t.title}</span>
+                  </button>
+                  {t !== pinned && (
+                    <IconButton class="ov-tab-close" label={`Close ${t.title}`} data-ov-tab-close onClick={() => talk.close(k)}>
+                      <CloseIcon size="xs" />
+                    </IconButton>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {open && Body ? (
+          <div class="ov-talk-open" id="ov-talk-open" role="tabpanel" data-ov-talk-open={keyOf(open)}>
+            <Body key={keyOf(open)} tab={open} phone={phone} />
+          </div>
+        ) : (
+          !phone && <EmptyLine data-ov-talk-none>Talk in a board's thread from its row: it opens here.</EmptyLine>
+        )}
+      </section>
+    </aside>
+  );
+}
+
+/** A board's thread: its room, its messages and the box to write in. */
+function ThreadTab({ board, title, phone }: { board: string; title: string; phone: boolean }) {
+  useSubscribe((fn) => chat.subscribe(fn));
+  const [room, setRoom] = useState<ChatRoom | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const on = chat.on;
+  useEffect(() => {
+    if (!on) return;
+    let live = true;
+    boards.thread(board).then(
+      (r) => live && setRoom(r),
+      (e: Error) => live && setError(e.message),
+    );
+    return () => void (live = false);
+  }, [board, on]);
+  if (on === false) return <p class="dim ov-talk-note">Threads come with chat, which is off for you. A team owner turns it on for the team under Teams.</p>;
+  if (!room) return <p class="dim ov-talk-note">{error ? `The thread didn't load: ${error}` : "Loading the thread…"}</p>;
+  return (
+    <div class="chat-thread ov-talk-room" data-ov-thread={room.id}>
+      <RoomBody key={room.id} room={room} phone={phone} embedded name={title} empty={{ title: "Nothing said in this board's thread yet.", why: "Everyone in the project reads it. Write @name to notify someone." }} />
+    </div>
+  );
+}

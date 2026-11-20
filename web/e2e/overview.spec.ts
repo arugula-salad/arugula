@@ -12,7 +12,9 @@
 // card's session pulsing its row and answered in place on Needs you; the
 // card's drawer drawing its session live with its question (#987's, as on
 // the board); the hub's sessions by card adding a cloud workspace's
-// session; and on a phone, one list with Needs you on top. The platform's boards and the
+// session; a board's thread opened from its row as a tab in the talk
+// panel under Needs you, its messages and a box that posts (#1270); and on
+// a phone, one list with Needs you on top. The platform's boards and the
 // hub's sessions are made up here; the panes are the daemon's own.
 import { fileURLToPath } from "node:url";
 import { devices, expect, test, type Page } from "@playwright/test";
@@ -267,6 +269,57 @@ test.describe("on a computer", () => {
     await ask.getByRole("button", { name: "Submit" }).click();
     await expect(ask).toHaveCount(0);
     await expect.poll(() => page.evaluate(async (p) => (await fetch(`/api/panes/${p}/capture?format=text`)).text(), term)).toContain('"Which colour do you prefer?":"Blue"');
+  });
+
+  test("a board's thread opens as a tab in the talk panel, under Needs you, with its messages and a box that posts (Arugula #1270)", async ({ page }, info) => {
+    // The board's room on control, its messages and what's posted in it.
+    const room = { id: "room_launch", kind: "object", team: null, name: "Launch", machine: null, machine_name: null, target: B, project: P, with: null, others: [], private: false, last: 1, read: 1, unread: 0, mentions: 0, wants: 0, muted: false, level: "all", level_own: false, archived: false, writable: true, topic: "", description: "", pins: 0, topic_writable: true };
+    const msg = (seq: number, name: string, text: string) => ({ seq, at: Date.now() - 60_000 + seq, author: `acct_${name}`, name, text, quote: null, pane: null, mentions: [], edited: null, deleted: null, imported: null, agent: null, reactions: [], files: [], pinned: false, also: false });
+    const said = [msg(1, "Jo", "Release notes are drafted.")];
+    await page.route("**/api/chat/targets", (r) => r.fulfill({ json: { ...room, last: said.length, read: said.length } }));
+    await page.route("**/api/chat/rooms/room_launch/messages*", (r) => {
+      if (r.request().method() === "POST") {
+        said.push(msg(said.length + 1, "Me", (r.request().postDataJSON() as { text: string }).text));
+        return r.fulfill({ json: { seq: said.length, mentions: [], unreached: [] } });
+      }
+      const after = Number(new URL(r.request().url()).searchParams.get("after") ?? 0);
+      return r.fulfill({ json: { room: { ...room, last: said.length, read: said.length }, messages: said.filter((m) => m.seq > after), more: false } });
+    });
+    await overview(page);
+    const panel = page.locator("[data-ov-panel]");
+    // Needs you is the panel's top; no tab yet, and with chat off a row has no way to its thread.
+    await expect(panel.locator("> [data-ov-needs]")).toBeVisible();
+    await expect(panel.locator("[data-ov-talk-none]")).toBeVisible();
+    await expect(page.locator("[data-ov-board-talk]")).toHaveCount(0);
+    await page.waitForFunction(() => (window as unknown as { __chat?: { on: boolean | null } }).__chat?.on === false);
+    await page.evaluate(() => {
+      const c = (window as unknown as { __chat: { on: boolean | null; emit(): void } }).__chat;
+      c.on = true;
+      c.emit();
+    });
+    const width = await page.locator("[data-ov-field]").evaluate((e) => e.getBoundingClientRect().width);
+    await page.locator(`[data-ov-board="${B}"] [data-ov-board-talk]`).click();
+    const tab = panel.locator(`[data-ov-tab="thread:${B}"]`);
+    await expect(tab.getByRole("tab")).toHaveAttribute("aria-selected", "true");
+    await expect(tab.getByRole("tab")).toHaveText("Launch");
+    const open = panel.locator(`[data-ov-talk-open="thread:${B}"]`);
+    await expect(open.locator('[data-room="room_launch"]')).toContainText("Release notes are drafted.");
+    // The field keeps its width and its place.
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*$`));
+    expect(await page.locator("[data-ov-field]").evaluate((e) => e.getBoundingClientRect().width)).toBe(width);
+    // The box posts in the board's room.
+    const box = open.locator(".thread-compose textarea");
+    await box.fill("Ship it on Tuesday.");
+    await box.press("Enter");
+    await expect(open.locator('[data-room="room_launch"]')).toContainText("Ship it on Tuesday.");
+    expect(said.map((m) => m.text)).toContain("Ship it on Tuesday.");
+    await page.screenshot({ path: info.outputPath("overview-talk.png") });
+    // Opening it again doesn't make a second tab; × closes it.
+    await page.locator(`[data-ov-board="${B}"] [data-ov-board-talk]`).click();
+    await expect(panel.locator("[data-ov-tab]")).toHaveCount(1);
+    await tab.locator("[data-ov-tab-close]").click();
+    await expect(panel.locator("[data-ov-tab]")).toHaveCount(0);
+    await expect(panel.locator("[data-ov-talk-none]")).toBeVisible();
   });
 
   test("the hub's sessions by card add the sessions the machines don't show here", async ({ page }) => {
