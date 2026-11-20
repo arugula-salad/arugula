@@ -5,7 +5,7 @@
 //!
 //! A dropped stream isn't resumed here: it ends with [`Event::Closed`], and the
 //! app opens another, whose `hello` is its cue to load what it missed (the web
-//! does the same). So the device's keys stay with [`Control`].
+//! does the same). So the session stays with [`Control`].
 
 use std::{
     io::{BufRead, Read},
@@ -17,8 +17,6 @@ use std::{
 };
 
 use anyhow::Result;
-use arugula_control_wire as wire;
-use arugula_e2e::cert::request_auth;
 use serde_json::Value;
 
 use crate::control::{Control, Refused};
@@ -45,13 +43,8 @@ impl ChatLive {
     /// Open the stream, calling `notify` from its thread each time an event is
     /// queued: a UI's cue to take them with [`ChatLive::next`].
     pub fn open(c: &Control, notify: impl Fn() + Send + 'static) -> Result<Self> {
-        let auth = request_auth(&c.keys, "GET", PATH, b"");
-        let headers = [
-            ("x-arugula-auth", auth.as_str()),
-            (wire::FEATURES_HEADER, wire::APP_DEVICES),
-            ("Accept", "text/event-stream"),
-            ("Cache-Control", "no-cache"),
-        ];
+        let [cookie, origin] = c.auth();
+        let headers = [cookie, origin, ("Accept", "text/event-stream"), ("Cache-Control", "no-cache")];
         let (status, body, shut) = c.site.stream(PATH, &headers)?;
         if !(200..300).contains(&status) {
             let mut said = String::new();

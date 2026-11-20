@@ -1,6 +1,8 @@
 #!/bin/bash
 # The app's UI test on a throwaway simulator, against the control at URL.
-# Something else approves the pairing: this writes its code to HANDOFF/code.
+# Something else allows the sign-in: the UI test writes its ticket to
+# HANDOFF/ticket, and waits for the address the Allow was sent to in
+# HANDOFF/callback.
 # The cloud repository's testnet native-sim claim drives it. ARUGULA_SIM_FAMILY=iPad
 # runs it on an iPad (the side-by-side layout) instead of an iPhone.
 #   native/ios/test-sim.sh URL MACHINE HANDOFF

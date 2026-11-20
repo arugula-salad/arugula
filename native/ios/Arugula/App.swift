@@ -1,4 +1,4 @@
-// The app: pair, then one navigation over projects, chat and machines.
+// The app: sign in, then one navigation over projects, chat and machines.
 
 import SwiftUI
 
@@ -17,7 +17,7 @@ struct ArugulaApp: App {
                 if let control = model.control {
                     HomeView(control: control).environmentObject(model)
                 } else {
-                    PairView().environmentObject(model)
+                    SignInView().environmentObject(model)
                 }
             }
             .tint(Palette.accent)
@@ -31,7 +31,9 @@ struct ArugulaApp: App {
 @MainActor
 final class AppModel: ObservableObject {
     @Published var control: Control?
-    @Published var loadError: String?
+    /// Why the app is asking for a sign-in again, if it's again.
+    @Published var notice: String?
+    private var signedOut: NSObjectProtocol?
 
     /// Where control is. A test or a dev build can point elsewhere.
     static var defaultURL: String {
@@ -39,23 +41,39 @@ final class AppModel: ObservableObject {
     }
 
     init() {
-        if ProcessInfo.processInfo.environment["ARUGULA_RESET"] == "1" { DeviceStore.forget() }
-        guard let stored = DeviceStore.load() else { return }
+        if ProcessInfo.processInfo.environment["ARUGULA_RESET"] == "1" { SessionStore.forget() }
+        if SessionStore.forgetPairedDevice() {
+            notice = "Arugula now signs this \(device) in with your account. Sign in once more."
+        }
+        signedOut = NotificationCenter.default.addObserver(forName: .arugulaSignedOut, object: nil, queue: .main) { [weak self] n in
+            MainActor.assumeIsolated {
+                // Only the session in use: an old one's late answer ends nothing.
+                guard let self, let c = n.object as? Control, c === self.control else { return }
+                SessionStore.forget()
+                self.control = nil
+                self.notice = "Your sign-in has ended. Sign in again."
+            }
+        }
+        guard let stored = SessionStore.load() else { return }
         do {
             control = try Control(stored: stored)
         } catch {
-            loadError = error.localizedDescription
+            SessionStore.forget()
+            notice = "Sign in again: \(error.localizedDescription)"
         }
     }
 
-    func paired(_ stored: String) throws {
-        try DeviceStore.save(stored)
+    func signedIn(_ stored: String) throws {
+        try SessionStore.save(stored)
+        notice = nil
         control = try Control(stored: stored)
     }
 
-    func forget() {
-        DeviceStore.forget()
+    func signOut() {
+        let c = control
+        SessionStore.forget()
         control = nil
+        if let c { Task { await c.signOut() } }
     }
 }
 

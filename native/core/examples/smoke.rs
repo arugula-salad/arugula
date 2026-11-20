@@ -3,28 +3,26 @@
 //! that the C and Zig libraries link and work. Prints "ok" or fails.
 
 use anyhow::{Result, ensure};
-use arugula_native_core::{DeviceKeys, Initiator, Msg, Pane, device, e2e, libghostty_vt::key, prologue, request_auth};
+use arugula_control_wire::machine_token::TokenHello;
+use arugula_e2e::{
+    channel::{Initiator, Msg, Responder, prologue},
+    keys::DeviceKeys,
+};
+use arugula_native_core::{Pane, libghostty_vt::key};
 
 fn main() -> Result<()> {
     // aws-lc's own code, which rustls and RS256 passkeys reach.
     let sum = aws_lc_rs::digest::digest(&aws_lc_rs::digest::SHA256, b"abc");
     ensure!(hex::encode(sum) == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "aws-lc's SHA-256");
 
-    // A device's keys as the keychain would give them back.
-    let made = DeviceKeys::generate();
-    let keys = device(made.noise_private, made.noise_public, made.sign.to_bytes());
-    ensure!(keys.id() == made.id(), "the device's id changed through its bytes");
-
-    // A signed request, in the form control reads.
-    let auth = request_auth(&keys, "GET", "/api/me", b"");
-    let fields: Vec<&str> = auth.split(' ').collect();
-    ensure!(fields.len() == 5 && fields[0] == "v2" && fields[1] == keys.id(), "request_auth: {auth}");
-
-    // A Noise channel to a daemon, both ends here, and a message each way.
+    // A Noise channel to a daemon, both ends here, opened as the app opens
+    // one: a key made for it alone and a machine token in its first message.
     let daemon = DeviceKeys::generate();
     let pro = prologue(&daemon.id());
-    let (initiator, msg1) = Initiator::start(&keys, &daemon.noise_public, &pro)?;
-    let (responder, _, _) = e2e::channel::Responder::read(&daemon, &pro, &msg1)?;
+    let hello = TokenHello { machine_token: "a.token.here".into() }.encode();
+    let (initiator, msg1) = Initiator::start_with(&DeviceKeys::generate(), &daemon.noise_public, &pro, &hello)?;
+    let (responder, _, said) = Responder::read(&daemon, &pro, &msg1)?;
+    ensure!(TokenHello::decode(&said).is_some_and(|t| t.machine_token == "a.token.here"), "the token hello");
     let (msg2, theirs) = responder.finish(b"welcome")?;
     let (welcome, ours) = initiator.finish(&msg2)?;
     ensure!(welcome == b"welcome", "the daemon's welcome");

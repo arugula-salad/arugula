@@ -665,9 +665,11 @@ struct YouView: View {
                         Caps("Signed in as")
                     }
                     Section {
-                        Button("Forget this \(device)", role: .destructive) { model.forget() }.voidRow()
+                        Button("Sign out", role: .destructive) { model.signOut() }
+                            .voidRow()
+                            .accessibilityIdentifier("sign-out")
                     } footer: {
-                        Text("Deletes this \(device)'s keys. Remove it from your devices in a browser too, and it can't come back with them.")
+                        Text("Ends this \(device)'s sign-in to Arugula. Sign in again to come back.")
                             .font(Face.ui(12)).foregroundStyle(Palette.dim)
                     }
                 }

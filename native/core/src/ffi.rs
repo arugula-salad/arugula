@@ -3,7 +3,9 @@
 //! Almost everything crosses as a JSON string, so the app's types are its own
 //! and a field added here breaks nothing there. A failed call returns NULL and
 //! sets `*err` to JSON, `{"status": 401, "error": "...", "reason": "..."}`, or
-//! just `{"error": "..."}`. Free both kinds of string with `aru_string_free`.
+//! just `{"error": "..."}`. A `reason` of `signed_out` means the session has
+//! ended; `older_control`, that control doesn't take the app's sign-in. Free
+//! both kinds of string with `aru_string_free`.
 //! Only the terminal's rows cross as C structs, because they're drawn each
 //! frame.
 #![allow(clippy::missing_safety_doc)]
@@ -15,8 +17,7 @@ use std::{
     time::Duration,
 };
 
-use anyhow::{Context, Result, anyhow, ensure};
-use arugula_e2e::{Cert, Trust};
+use anyhow::{Context, Result, ensure};
 use arugula_proto::{BlockType, State};
 use libghostty_vt::{
     key::{Key, Mods},
@@ -24,55 +25,17 @@ use libghostty_vt::{
     style::RgbColor,
     terminal::ScrollViewport,
 };
-use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::{
-    DeviceKeys, Pane,
+    Pane,
     chat_live::{ChatLive, Event as ChatEvent},
-    control::{Control, Pairing, Refused},
-    device,
-    link::{Event, Link},
+    control::{CALLBACK_SCHEME, Control, OlderControl, Refused, Session, SignIn},
+    link::{self, Event, Link},
 };
 
 /// A request to a machine waits this long.
 const MACHINE_ANSWER: Duration = Duration::from_secs(30);
-
-/// What the app keeps in the keychain: the device, and where it's paired.
-#[derive(Serialize, Deserialize)]
-struct Stored {
-    #[serde(default)]
-    url: String,
-    keys: StoredKeys,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    cert: Option<Cert>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    trust: Option<Trust>,
-}
-
-#[derive(Serialize, Deserialize)]
-struct StoredKeys {
-    noise_private: String,
-    noise_public: String,
-    sign: String,
-}
-
-impl StoredKeys {
-    fn of(k: &DeviceKeys) -> Self {
-        Self {
-            noise_private: hex::encode(k.noise_private),
-            noise_public: hex::encode(k.noise_public),
-            sign: hex::encode(k.sign.to_bytes()),
-        }
-    }
-
-    fn keys(&self) -> Result<DeviceKeys> {
-        let b = |s: &str| -> Result<[u8; 32]> {
-            hex::decode(s)?.try_into().map_err(|_| anyhow!("a device key isn't 32 bytes"))
-        };
-        Ok(device(b(&self.noise_private)?, b(&self.noise_public)?, b(&self.sign)?))
-    }
-}
 
 fn to_c(s: String) -> *mut c_char {
     CString::new(s).map_or(ptr::null_mut(), CString::into_raw)
@@ -86,9 +49,17 @@ unsafe fn set_err(err: *mut *mut c_char, e: &anyhow::Error) {
     if err.is_null() {
         return;
     }
-    let v = match e.downcast_ref::<Refused>() {
-        Some(r) => json!({ "status": r.status, "error": r.error, "reason": r.reason }),
-        None => json!({ "error": format!("{e:#}") }),
+    // Signed out, wherever it came from: the app asks for a sign-in again.
+    let refused = e.chain().find_map(|c| c.downcast_ref::<Refused>());
+    let v = if let Some(r) = refused {
+        let reason = if r.signed_out() { Some("signed_out") } else { r.reason.as_deref() };
+        json!({ "status": r.status, "error": r.error, "reason": reason })
+    } else if e.downcast_ref::<OlderControl>().is_some() {
+        json!({ "error": format!("{e:#}"), "reason": "older_control" })
+    } else if let Some(r) = e.downcast_ref::<link::Refused>() {
+        json!({ "error": format!("{e:#}"), "reason": r.code })
+    } else {
+        json!({ "error": format!("{e:#}") })
     };
     unsafe { *err = to_c(v.to_string()) };
 }
@@ -111,19 +82,21 @@ pub unsafe extern "C" fn aru_string_free(s: *mut c_char) {
     }
 }
 
-// ---- pairing
+// ---- signing in
 
-pub struct AruPairing(Option<Pairing>);
+pub struct AruSignIn(SignIn);
 
+/// Ask control at `url` for a sign-in. `name` says what this is on the page
+/// where someone signed in allows it.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn aru_pairing_start(
+pub unsafe extern "C" fn aru_signin_start(
     url: *const c_char,
     name: *const c_char,
     err: *mut *mut c_char,
-) -> *mut AruPairing {
+) -> *mut AruSignIn {
     let (url, name) = unsafe { (text(url), text(name)) };
-    match Pairing::start(&url, DeviceKeys::generate(), &name) {
-        Ok(p) => Box::into_raw(Box::new(AruPairing(Some(p)))),
+    match SignIn::start(&url, &name) {
+        Ok(s) => Box::into_raw(Box::new(AruSignIn(s))),
         Err(e) => {
             unsafe { set_err(err, &e) };
             ptr::null_mut()
@@ -131,57 +104,48 @@ pub unsafe extern "C" fn aru_pairing_start(
     }
 }
 
-/// `{"link": ..., "code": ..., "expires_in_secs": ...}`.
+/// `{"link": ..., "callback_scheme": "arugula", "expires_in_secs": ...}`:
+/// what the web sheet opens, and the scheme it waits for.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn aru_pairing_info(p: *const AruPairing) -> *mut c_char {
-    let Some(p) = (unsafe { &*p }).0.as_ref() else { return ptr::null_mut() };
-    to_c(json!({ "link": p.link(), "code": p.whole_code(), "expires_in_secs": p.expires_in_secs }).to_string())
+pub unsafe extern "C" fn aru_signin_info(s: *const AruSignIn) -> *mut c_char {
+    let s = &unsafe { &*s }.0;
+    let v = json!({
+        "link": s.link,
+        "ticket": s.ticket(),
+        "callback_scheme": CALLBACK_SCHEME,
+        "expires_in_secs": s.expires_in_secs,
+    });
+    to_c(v.to_string())
 }
 
-/// Look once. Still waiting: NULL with `*err` left NULL. Approved: what to put
-/// in the keychain. Failed: NULL and `*err`, and it can't be polled again.
+/// Swap the grant in `callback` (the address the web sheet came back with)
+/// for a session: what to put in the keychain. Blocks.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn aru_pairing_poll(p: *mut AruPairing, err: *mut *mut c_char) -> *mut c_char {
-    let slot = &mut unsafe { &mut *p }.0;
-    let r = slot.take().context("this pairing has ended").and_then(Pairing::poll);
-    match r {
-        Ok(Err(still)) => {
-            *slot = Some(still);
-            ptr::null_mut()
-        }
-        Ok(Ok(c)) => {
-            let saved = Stored {
-                url: c.url.clone(),
-                keys: StoredKeys::of(&c.keys),
-                cert: Some(c.cert.clone()),
-                trust: Some(c.trust.clone()),
-            };
-            unsafe { give(serde_json::to_string(&saved).map_err(Into::into), err, to_c) }
-        }
-        Err(e) => {
-            unsafe { set_err(err, &e) };
-            ptr::null_mut()
-        }
-    }
+pub unsafe extern "C" fn aru_signin_finish(
+    s: *const AruSignIn,
+    callback: *const c_char,
+    err: *mut *mut c_char,
+) -> *mut c_char {
+    let s = &unsafe { &*s }.0;
+    let r = s.finish(&unsafe { text(callback) }).and_then(|c| Ok(serde_json::to_string(&c.session)?));
+    unsafe { give(r, err, to_c) }
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn aru_pairing_free(p: *mut AruPairing) {
-    if !p.is_null() {
-        drop(unsafe { Box::from_raw(p) });
+pub unsafe extern "C" fn aru_signin_free(s: *mut AruSignIn) {
+    if !s.is_null() {
+        drop(unsafe { Box::from_raw(s) });
     }
 }
 
 // ---- control
 
-/// From what the keychain holds.
+/// From what the keychain holds (`aru_signin_finish`'s answer).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aru_control_open(stored: *const c_char, err: *mut *mut c_char) -> *mut Control {
     let open = || -> Result<Control> {
-        let s: Stored = serde_json::from_str(&unsafe { text(stored) }).context("the saved device")?;
-        let cert = s.cert.context("the saved device has no certificate")?;
-        let trust = s.trust.context("the saved device has no account root")?;
-        Control::new(&s.url, s.keys.keys()?, cert, trust)
+        let s: Session = serde_json::from_str(&unsafe { text(stored) }).context("the saved sign-in")?;
+        Control::new(s)
     };
     match open() {
         Ok(c) => Box::into_raw(Box::new(c)),
@@ -192,8 +156,15 @@ pub unsafe extern "C" fn aru_control_open(stored: *const c_char, err: *mut *mut 
     }
 }
 
-/// A signed request: its JSON. `body` is JSON or NULL. Blocks: call it off the
-/// main thread.
+/// End the session at control. Blocks. The app forgets it either way.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aru_control_sign_out(c: *const Control) {
+    let _ = unsafe { &*c }.sign_out();
+}
+
+/// A request as the account: its JSON. `body` is JSON or NULL. Blocks: call it
+/// off the main thread. A session that has ended answers `"reason":
+/// "signed_out"`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aru_control_call(
     c: *const Control,
