@@ -48,9 +48,8 @@ jobs:
       - run: mise install
       - name: TEMP maven diagnostics
         run: |
-          curl -sSI https://repo.maven.apache.org/maven2/com/google/code/gson/gson/2.11.0/gson-2.11.0.pom | head -5 || true
-          ls -la ~/.gradle ~/.gradle/init.d 2>/dev/null; cat ~/.gradle/init.d/* ~/.gradle/gradle.properties ~/.m2/settings.xml 2>/dev/null | head -40
-          env | grep -iE "gradle|maven|proxy|java_home" || true
+          java -version 2>&1; echo "JAVA_HOME=$JAVA_HOME"
+          cd native/android && ./gradlew help --info 2>&1 | grep -iE "gson|status code|Could not|HTTP|resource|cached" | head -40 || true
       # Into the runner's own SDK: the NDK, emulator and image setup.sh pins.
       - run: native/android/setup.sh
       - run: just native-android
