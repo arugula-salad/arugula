@@ -810,6 +810,12 @@
       "untyped": [
         "response: a JSON object built in place"
       ]
+    },
+    "GET /p/{project}/docs/{doc}": {
+      "handler": "crates/control/src/doc_embed.rs#page",
+      "untyped": [
+        "response: the Doc's embed page (web/embed.html), HTML, for the app's web view with its session's cookie (#1258)"
+      ]
     }
   }
 }

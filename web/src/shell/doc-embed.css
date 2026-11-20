@@ -1,0 +1,24 @@
+/* The Doc's embed page (#1258, doc-embed.tsx): the shared Doc's house look
+   (doc-view.css, with the app's style.css inside it), the fields and buttons
+   its comment box uses, and the Doc page's own rules. One stylesheet, by
+   @import, so none of these becomes a chunk the app shares, which would
+   reorder the app's cascade (doc-link.spec.ts checks the share page's). */
+@import "./doc-view.css";
+@import "../shared/fields.css";
+@import "../shared/buttons.css";
+@import "../shared/docs/docs.css";
+
+/* The house pair, as doc-view.css has it: the build writes the palettes in
+   for the markers (vite.config.ts's docPalette), which it can't do through
+   the @import above. */
+:root:root {
+  /* PALETTES: slate */
+}
+
+@media (prefers-color-scheme: light) {
+  :root:root {
+    /* PALETTES: latte */
+    /* The page is the Doc's paper: no darker letterbox around it. */
+    --letterbox: var(--bg);
+  }
+}

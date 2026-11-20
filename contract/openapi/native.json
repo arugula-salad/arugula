@@ -6642,6 +6642,59 @@
           "response: a JSON object built in place"
         ]
       }
+    },
+    "/p/{project}/docs/{doc}": {
+      "get": {
+        "operationId": "GET_p_project_docs_doc",
+        "x-arugula-clients": [
+          "browser",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK"
+          }
+        },
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "doc",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-arugula-untyped": [
+          "response: the Doc's embed page (web/embed.html), HTML, for the app's web view with its session's cookie (#1258)"
+        ]
+      }
     }
   },
   "components": {
@@ -11959,6 +12012,13 @@
               "$ref": "#/components/schemas/NewSection"
             },
             "type": "array"
+          },
+          "session": {
+            "description": "The name of the agent session that made it (#1258), over\n[`AGENT_PROJECT_DOCS`]: kept as its [`Doc::agent`]'s `session`, so a\ncomment on the Doc can mention that session. A person's is ignored.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "title": {
             "type": "string"

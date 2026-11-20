@@ -227,6 +227,7 @@
     {"method":"POST","path":"/auth/app","auth":"public","clients":["app","cli","native"]},
     {"method":"POST","path":"/auth/app/{id}/redeem","auth":"app_ticket","clients":["page","cli","native"]},
     {"method":"POST","path":"/auth/logout","auth":"session","clients":["page","cli","native"]},
-    {"method":"GET","path":"/control.json","auth":"public","clients":["page","daemon","cli","app","native"]}
+    {"method":"GET","path":"/control.json","auth":"public","clients":["page","daemon","cli","app","native"]},
+    {"method":"GET","path":"/p/{project}/docs/{doc}","auth":"public","clients":["browser","native"]}
   ]
 }

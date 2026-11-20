@@ -1,0 +1,164 @@
+/* Comments on a Doc (#1258, ./doc-comments.tsx): the Doc with a margin
+   beside it, each comment at its paragraph's height; under the Doc, those
+   that have no paragraph (a section gone, another tab), or all of them on a
+   page too narrow for a margin, with the box coming up from the bottom. */
+
+.doc-commented {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 236px;
+  gap: var(--space-3);
+  align-items: start;
+  min-width: 0;
+}
+
+.doc-commented-narrow {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.doc-commented-doc {
+  min-width: 0;
+}
+
+/* The paragraphs that can take a comment say so as the pointer passes. */
+.doc-commented-doc .doc-body :is(p, li, blockquote, pre, td, th, h3, h4, h5, h6, dd, dt) {
+  border-radius: 4px;
+}
+
+.doc-commented-doc .doc-body :is(p, li, blockquote, td, th, h3, h4):hover {
+  background: color-mix(in srgb, var(--doc-live) 8%, transparent);
+  cursor: text;
+}
+
+.doc-commented-p {
+  background: color-mix(in srgb, var(--warn) 18%, transparent);
+}
+
+.doc-comment-at {
+  background: color-mix(in srgb, var(--warn) 30%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--warn) 60%, transparent);
+}
+
+.doc-margin {
+  position: relative;
+  align-self: stretch;
+  min-height: 100%;
+}
+
+.doc-margin > .doc-comment {
+  position: absolute;
+  inset-inline: 0;
+}
+
+.doc-margin-hint {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-sm);
+}
+
+.doc-comment {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: var(--text-sm);
+  min-width: 0;
+}
+
+.doc-comment-head {
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.doc-comment-text .md > :first-child {
+  margin-top: 0;
+}
+
+.doc-comment-text .md > :last-child {
+  margin-bottom: 0;
+}
+
+.doc-comment-quote {
+  margin: 0;
+  padding: 0 0 0 var(--space-2);
+  border: 0;
+  border-left: 2px solid var(--warn);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--text-xs);
+  text-align: start;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+button.doc-comment-quote:not(:disabled) {
+  cursor: pointer;
+}
+
+.doc-comment-reply {
+  margin-top: var(--space-1);
+  padding-top: var(--space-1);
+  border-top: 1px solid var(--line);
+}
+
+.doc-comment-box textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+.doc-comment-box {
+  border-color: var(--warn);
+  z-index: 1;
+}
+
+.doc-comment-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.doc-comment-reaches {
+  font-size: var(--text-xs);
+}
+
+.doc-comment-why {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--text-xs);
+}
+
+.doc-comment-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: var(--lead-measure);
+  margin-inline: auto;
+  width: 100%;
+}
+
+.doc-comment-list-head {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-md);
+}
+
+/* On a narrow page the box is a sheet over the foot of the window, with room
+   left under the Doc so the last comment can be scrolled above it. */
+.doc-commented-writing {
+  padding-bottom: 200px;
+}
+
+.doc-comment-sheet {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 20;
+  padding: var(--space-2) var(--space-2) calc(var(--space-2) + env(safe-area-inset-bottom));
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+  box-shadow: var(--shadow-md);
+}

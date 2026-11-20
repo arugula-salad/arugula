@@ -4,8 +4,9 @@ import { defineConfig, runnerImport, type Plugin } from "vite";
 import { releases } from "../scripts/whats-new.mjs";
 
 // `just dev` runs a dev daemon on 7682 that accepts this server's origin.
-// Three pages: the app, the read-only viewer behind share links, and the
-// viewer of a shared Doc (doc.html, #1066). This is the shell, which the
+// Four pages: the app, the read-only viewer behind share links, the
+// viewer of a shared Doc (doc.html, #1066) and a project Doc on its own for
+// the native app's web view (embed.html, #1258). This is the shell, which the
 // daemon embeds: its module ids go to dist.modules.json for the bundle
 // check (`check-imports.mjs --bundle … --forbid platform`, M155), so none of
 // them may be the platform's or the app's.
@@ -34,12 +35,14 @@ function docPalette(): Plugin {
     name: "arugula-doc-palette",
     enforce: "pre",
     async transform(code, id) {
-      if (!id.split("?")[0].endsWith("/shell/doc-view.css")) return;
+      // The Doc's embed page (#1258) takes doc-view.css by @import, which
+      // this doesn't see, so its own stylesheet has the markers too.
+      if (!/\/shell\/doc-(view|embed)\.css$/.test(id.split("?")[0])) return;
       appearance ??= runnerImport<Appearance>(resolve(import.meta.dirname, "src/shared/appearance.ts"), { configFile: false, logLevel: "silent" }).then((r) => r.module);
       const { houseColours, legible, PALETTES } = await appearance;
       for (const [mark, [palette, scheme]] of Object.entries(MARKS)) {
         const p = PALETTES.find((q) => q.id === palette);
-        if (!p || !code.includes(mark)) this.error(`doc-view.css: no ${palette} palette or no \`${mark}\` to put it in`);
+        if (!p || !code.includes(mark)) this.error(`${id}: no ${palette} palette or no \`${mark}\` to put it in`);
         const vars = [...Object.entries(legible(p)).map(([k, v]) => `--${k}: ${v};`), ...Object.entries(houseColours(scheme)).map(([k, v]) => `--doc-${k}: ${v};`)].join("\n    ");
         code = code.replace(mark, vars);
       }
@@ -78,7 +81,7 @@ export default defineConfig({
     outDir: "dist",
     emptyOutDir: true,
     target: "es2022",
-    rollupOptions: { input: { main: "index.html", share: "share.html", doc: "doc.html" } },
+    rollupOptions: { input: { main: "index.html", share: "share.html", doc: "doc.html", embed: "embed.html" } },
     // Follow mode's CodeMirror (M28) is a chunk of its own, about 510 kB
     // (180 kB gzipped), loaded only when someone follows an editor.
     chunkSizeWarningLimit: 560,

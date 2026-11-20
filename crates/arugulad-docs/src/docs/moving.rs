@@ -183,6 +183,7 @@ async fn make(cloud: &dyn Cloud, machine: &str, id: &str, to: &Target, c: &Conte
             .collect(),
         layout: (!c.layout.is_doc()).then(|| c.layout.as_str().to_owned()),
         moved_from: Some(MovedFrom { machine: machine.to_owned(), doc: id.to_owned() }),
+        session: None,
     };
     let body = serde_json::to_value(new).map_err(|e| e.to_string())?;
     cloud.call("POST", agent_project_docs(&to.project), Body::Json(body)).await.map_err(|e| e.sentence())

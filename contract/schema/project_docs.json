@@ -344,6 +344,13 @@
           },
           "type": "array"
         },
+        "session": {
+          "description": "The name of the agent session that made it (#1258), over\n[`AGENT_PROJECT_DOCS`]: kept as its [`Doc::agent`]'s `session`, so a\ncomment on the Doc can mention that session. A person's is ignored.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "title": {
           "type": "string"
         }

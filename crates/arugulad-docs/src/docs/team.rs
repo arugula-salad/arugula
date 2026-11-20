@@ -144,13 +144,15 @@ fn cloud() -> Option<Arc<dyn Cloud>> {
 
 /// `doc new` in a team's project: the Doc made at once, its sections
 /// pending (or written, where the caller had the Markdown), as the owner's
-/// agent. Control's own sentence on a refusal.
+/// agent, by `session` when it has a name (#1258: a comment on the Doc
+/// mentions it). Control's own sentence on a refusal.
 pub async fn make(
     cloud: &dyn Cloud,
     project: &str,
     title: &str,
     sections: &[(String, String)],
     layout: &str,
+    session: Option<String>,
 ) -> Result<DocView, String> {
     let new = NewDoc {
         title: title.to_owned(),
@@ -160,6 +162,7 @@ pub async fn make(
             .collect(),
         layout: Some(layout.to_owned()).filter(|l| l != "doc"),
         moved_from: None,
+        session,
     };
     let body = serde_json::to_value(new).map_err(|e| e.to_string())?;
     let got = cloud.call("POST", agent_project_docs(project), Body::Json(body)).await.map_err(|e| e.sentence())?;
@@ -1057,7 +1060,9 @@ mod tests {
                         let new: NewDoc = serde_json::from_value(v).unwrap();
                         let sections: Vec<(&str, Option<&str>)> =
                             new.sections.iter().map(|s| (s.heading.as_str(), s.markdown.as_deref())).collect();
-                        let view = doc_view("prj_t", "pdc_1", 1, &sections);
+                        let mut view = doc_view("prj_t", "pdc_1", 1, &sections);
+                        // As the platform keeps it: on the agent that made it.
+                        view.doc.agent.as_mut().unwrap().session = new.session.clone();
                         *held = Some(view.clone());
                         Ok(serde_json::to_value(view).unwrap())
                     }
@@ -1279,16 +1284,18 @@ mod tests {
     }
 
     /// `doc new` in a team: one POST with the outline pending and the layout
-    /// said only off `doc`; its sections are the platform's ids.
+    /// said only off `doc`; its sections are the platform's ids, and the
+    /// session that made it is said, for a comment to mention (#1258).
     #[tokio::test]
     async fn making_a_team_doc_is_one_post_with_pending_sections() {
         let fake = Arc::new(Fake::default());
         let sections = vec![("Goal".to_owned(), "why".to_owned()), ("Risks".to_owned(), String::new())];
-        let view = make(&*fake, "prj_t", "Plan", &sections, "tabs").await.unwrap();
+        let view = make(&*fake, "prj_t", "Plan", &sections, "tabs", Some("docs-agent".into())).await.unwrap();
         assert_eq!(fake.calls(), [("POST".to_owned(), "/api/daemon/projects/prj_t/docs".to_owned())]);
         assert_eq!(view.sections.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(), ["s1", "s2"]);
+        assert_eq!(view.doc.agent.unwrap().session.as_deref(), Some("docs-agent"));
         *fake.refuse.lock().unwrap() = Some(Refused::Said("no docs.write".into()));
-        assert_eq!(make(&*fake, "prj_t", "Plan", &sections, "doc").await.unwrap_err(), "no docs.write");
+        assert_eq!(make(&*fake, "prj_t", "Plan", &sections, "doc", None).await.unwrap_err(), "no docs.write");
     }
 
     /// `doc share` of a team Doc makes a public link (Arugula #871): the

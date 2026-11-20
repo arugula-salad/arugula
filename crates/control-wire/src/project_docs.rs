@@ -354,6 +354,12 @@ pub struct NewDoc {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub moved_from: Option<MovedFrom>,
+    /// The name of the agent session that made it (#1258), over
+    /// [`AGENT_PROJECT_DOCS`]: kept as its [`Doc::agent`]'s `session`, so a
+    /// comment on the Doc can mention that session. A person's is ignored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub session: Option<String>,
 }
 
 /// `POST` [`PROJECT_DOC_MOVE`]: move a Doc written on the platform to `to`.
@@ -475,9 +481,9 @@ mod tests {
         assert_eq!(serde_json::from_value::<OldDoc>(serde_json::to_value(&tabs).unwrap()).unwrap().title, "T");
         // The writes are omitted when none, so an older platform takes them.
         assert!(serde_json::to_value(DocWrite::default()).unwrap().get("layout").is_none());
-        let n = NewDoc { title: "T".into(), sections: vec![], layout: None, moved_from: None };
+        let n = NewDoc { title: "T".into(), sections: vec![], layout: None, moved_from: None, session: None };
         let n = serde_json::to_value(n).unwrap();
-        assert!(n.get("layout").is_none() && n.get("moved_from").is_none());
+        assert!(n.get("layout").is_none() && n.get("moved_from").is_none() && n.get("session").is_none());
     }
 
     #[test]
