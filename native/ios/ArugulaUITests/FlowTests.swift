@@ -240,7 +240,9 @@ final class FlowTests: XCTestCase {
             clearAlerts()
             shot(app, "2-home")
             board.tap()
-            XCTAssertTrue(app.staticTexts["board-lead"].shows(within: 30), "no board thread")
+            let threadOpened = app.staticTexts["board-lead"].shows(within: 30)
+            if !threadOpened { shot(app, "fail-board-thread") }
+            XCTAssertTrue(threadOpened, "no board thread: \(app.debugDescription)")
             let said = "to-the-board-\(Int.random(in: 1000...9999))"
             let draft = app.textFields["chat-draft"]
             XCTAssertTrue(draft.shows(within: 15))
