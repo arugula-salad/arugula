@@ -279,7 +279,12 @@ final class FlowTests: XCTestCase {
             chip.tap()
             let thread = app.staticTexts["board-lead"]
             let threadShown = thread.shows(within: 30)
-            if !threadShown { shot(app, "fail-lead-thread") }
+            if !threadShown {
+                shot(app, "fail-lead-thread")
+                app.buttons["board-\(led)"].tap()
+                let lanes = app.staticTexts["NEXT"].shows(within: 15)
+                shot(app, "fail-lead-card-\(lanes)")
+            }
             XCTAssertTrue(threadShown, "the lead didn't open the board's thread: \(app.debugDescription)")
             XCTAssertTrue(thread.label.contains(lead), "the thread's lead says: \(thread.label)")
             let toLead = "to-the-lead-\(Int.random(in: 1000...9999))"
