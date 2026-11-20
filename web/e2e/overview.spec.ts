@@ -272,20 +272,31 @@ test.describe("on a computer", () => {
   });
 
   test("a board's thread opens as a tab in the talk panel, under Needs you, with its messages and a box that posts (Arugula #1270)", async ({ page }, info) => {
-    // The board's room on control, its messages and what's posted in it.
-    const room = { id: "room_launch", kind: "object", team: null, name: "Launch", machine: null, machine_name: null, target: B, project: P, with: null, others: [], private: false, last: 1, read: 1, unread: 0, mentions: 0, wants: 0, muted: false, level: "all", level_own: false, archived: false, writable: true, topic: "", description: "", pins: 0, topic_writable: true };
-    const msg = (seq: number, name: string, text: string) => ({ seq, at: Date.now() - 60_000 + seq, author: `acct_${name}`, name, text, quote: null, pane: null, mentions: [], edited: null, deleted: null, imported: null, agent: null, reactions: [], files: [], pinned: false, also: false });
-    const said = [msg(1, "Jo", "Release notes are drafted.")];
-    await page.route("**/api/chat/targets", (r) => r.fulfill({ json: { ...room, last: said.length, read: said.length } }));
-    await page.route("**/api/chat/rooms/room_launch/messages*", (r) => {
-      if (r.request().method() === "POST") {
-        said.push(msg(said.length + 1, "Me", (r.request().postDataJSON() as { text: string }).text));
-        return r.fulfill({ json: { seq: said.length, mentions: [], unreached: [] } });
-      }
-      const after = Number(new URL(r.request().url()).searchParams.get("after") ?? 0);
-      return r.fulfill({ json: { room: { ...room, last: said.length, read: said.length }, messages: said.filter((m) => m.seq > after), more: false } });
-    });
     await overview(page);
+    // The board's room on control, its messages and what's posted in it: the
+    // fixture page answers chat itself, so it's made up in the page.
+    await page.evaluate((B) => {
+      const room = { id: "room_launch", kind: "object", team: null, name: "Launch", machine: null, machine_name: null, target: B, project: null, with: null, others: [], private: false, last: 1, read: 1, unread: 0, mentions: 0, wants: 0, muted: false, level: "all", level_own: false, archived: false, writable: true, topic: "", description: "", pins: 0, topic_writable: true };
+      const msg = (seq: number, name: string, text: string) => ({ seq, at: Date.now() - 60_000 + seq, author: `acct_${name}`, name, text, quote: null, pane: null, mentions: [], edited: null, deleted: null, imported: null, agent: null, reactions: [], files: [], pinned: false, also: false });
+      const said = [msg(1, "Jo", "Release notes are drafted.")];
+      (window as unknown as { said: typeof said }).said = said;
+      const now = () => ({ ...room, last: said.length, read: said.length });
+      const json = (body: unknown) => new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
+      const before = window.fetch;
+      window.fetch = async (input, init) => {
+        const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.href);
+        if (url.pathname === "/api/chat/targets") return json(now());
+        if (url.pathname === "/api/chat/rooms/room_launch/messages") {
+          if (init?.method === "POST") {
+            said.push(msg(said.length + 1, "Me", (JSON.parse(String(init.body)) as { text: string }).text));
+            return json({ seq: said.length, mentions: [], unreached: [] });
+          }
+          const after = Number(url.searchParams.get("after") ?? 0);
+          return json({ room: now(), messages: said.filter((m) => m.seq > after), more: false });
+        }
+        return before(input, init);
+      };
+    }, B);
     const panel = page.locator("[data-ov-panel]");
     // Needs you is the panel's top; no tab yet, and with chat off a row has no way to its thread.
     await expect(panel.locator("> [data-ov-needs]")).toBeVisible();
@@ -312,7 +323,7 @@ test.describe("on a computer", () => {
     await box.fill("Ship it on Tuesday.");
     await box.press("Enter");
     await expect(open.locator('[data-room="room_launch"]')).toContainText("Ship it on Tuesday.");
-    expect(said.map((m) => m.text)).toContain("Ship it on Tuesday.");
+    expect(await page.evaluate(() => (window as unknown as { said: { text: string }[] }).said.map((m) => m.text))).toContain("Ship it on Tuesday.");
     await page.screenshot({ path: info.outputPath("overview-talk.png") });
     // Opening it again doesn't make a second tab; × closes it.
     await page.locator(`[data-ov-board="${B}"] [data-ov-board-talk]`).click();

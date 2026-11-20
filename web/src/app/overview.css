@@ -315,7 +315,8 @@ button.ov-peek:disabled {
 }
 
 /* The talk panel: Needs you on its top, the tabs under it. While a tab is
-   open it takes the window's height, Needs you at most half of it and the
+   open it reaches the window's foot (overview-talk's useFitWindow sets its
+   height as the page scrolls), Needs you at most half of it and the
    conversation the rest, its box at the foot. */
 .ov-panel {
   width: 380px;
@@ -329,6 +330,7 @@ button.ov-peek:disabled {
 }
 .ov-panel.ov-panel-talking {
   height: calc(100vh - 80px);
+  max-height: none;
 }
 .ov-panel .ov-needs {
   flex: 0 1 auto;

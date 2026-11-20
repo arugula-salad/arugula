@@ -9,7 +9,7 @@
 // the browser tab, per project, as the field's open boards are.
 
 import type { ComponentChildren, JSX } from "preact";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { ChatRoom } from "../shared/proto";
 import { boards } from "../shared/boards/store";
 import { chat } from "../shared/chat-store";
@@ -108,8 +108,9 @@ export function TalkPanel({ talk, pinned, needs, phone }: { talk: Talk; pinned: 
   const tabs = pinned ? [pinned, ...talk.tabs.filter((t) => keyOf(t) !== keyOf(pinned))] : talk.tabs;
   const open = tabs.find((t) => keyOf(t) === talk.active) ?? (pinned && !talk.active ? pinned : undefined);
   const Body = open && TAB_KINDS[open.kind].Body;
+  const fit = useFitWindow(!!open);
   return (
-    <aside class={`ov-panel${open ? " ov-panel-talking" : ""}`} data-ov-panel>
+    <aside ref={fit} class={`ov-panel${open ? " ov-panel-talking" : ""}`} data-ov-panel>
       {needs}
       <section class="ov-talk" aria-label="Talk" data-ov-talk>
         {tabs.length > 0 && (
@@ -144,6 +145,31 @@ export function TalkPanel({ talk, pinned, needs, phone }: { talk: Talk; pinned: 
       </section>
     </aside>
   );
+}
+
+/** While `on`, a panel held beside the field (sticky) reaches from where
+ * its top is to the window's foot, as the page scrolls, so the box to write
+ * in is always in sight; docked under the field, it keeps its CSS height. */
+function useFitWindow(on: boolean) {
+  const ref = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (!on) return void el.style.removeProperty("height");
+    const size = () => {
+      if (getComputedStyle(el).position !== "sticky") return void el.style.removeProperty("height");
+      el.style.height = `${Math.max(320, Math.round(window.innerHeight - Math.max(0, el.getBoundingClientRect().top) - 12))}px`;
+    };
+    size();
+    // The page scrolls in the frame's main, not the window: listen in the capture phase.
+    document.addEventListener("scroll", size, { capture: true, passive: true });
+    window.addEventListener("resize", size);
+    return () => {
+      document.removeEventListener("scroll", size, { capture: true });
+      window.removeEventListener("resize", size);
+    };
+  }, [on]);
+  return ref;
 }
 
 /** A board's thread: its room, its messages and the box to write in. */
