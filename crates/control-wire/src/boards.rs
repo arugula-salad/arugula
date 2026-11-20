@@ -1334,6 +1334,24 @@ pub struct BlockStateReport {
     /// The card it works on: a native issue's id, or `#N`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_item: Option<String>,
+    /// With `needs_input`: whether it asks a question or a permission
+    /// (Arugula #1274), for control's `session.needs_input` event. Never
+    /// what it asks. Like `project`, a daemon leaves it out for a control
+    /// that refuses it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub needs: Option<NeedsKind>,
+}
+
+/// What an agent block that needs input asks a person for (Arugula #1274).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardNeedsKind"))]
+#[serde(rename_all = "snake_case")]
+pub enum NeedsKind {
+    /// A question, or a prompt some other way.
+    Ask,
+    /// To approve something: a tool's use, an edit, a gate.
+    Permission,
 }
 
 impl From<BlockState> for BlockStateReport {
@@ -1348,6 +1366,7 @@ impl From<BlockState> for BlockStateReport {
             diffstat: b.diffstat.map(Into::into),
             project: None,
             work_item: None,
+            needs: None,
         }
     }
 }

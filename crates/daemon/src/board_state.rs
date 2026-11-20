@@ -59,9 +59,9 @@ use std::{
 
 use arugula_control_wire::boards::{
     AGENT_BLOCK_STATE, AGENT_MACHINE_SESSIONS, BLOCK_STATE_EVERY_MS, BlockState, BlockStateReport, BlockWord, Diffstat,
-    PutBlockState,
+    NeedsKind, PutBlockState,
 };
-use arugula_proto::{Attention, BlockType, EventKind, PaneId, api::Work};
+use arugula_proto::{AskWhat, Attention, BlockType, EventKind, PaneId, Reason, ReasonKind, api::Work};
 use reqwest::Method;
 use tokio::sync::broadcast::error::RecvError;
 use tracing::{debug, warn};
@@ -288,6 +288,8 @@ pub async fn keep_reporting(app: Arc<App>) {
     // Each agent block's project and card, as last read: a closed one's go
     // with its close.
     let mut places: HashMap<PaneId, Place> = HashMap::new();
+    // What each agent block that needs input asks for, as last read.
+    let mut needs: HashMap<PaneId, NeedsKind> = HashMap::new();
     let mut sessions = Sessions::default();
     let mut tick = tokio::time::interval(EVERY);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -346,7 +348,9 @@ pub async fn keep_reporting(app: Arc<App>) {
                 }
                 let mut failed = false;
                 if !pending.0.is_empty() {
-                    places.extend(agent_places(&app).await);
+                    let (now_places, now_needs) = agent_places(&app).await;
+                    places.extend(now_places);
+                    needs = now_needs;
                 }
                 let mut batch = pending.take().into_iter();
                 while let Some((id, kept)) = batch.next() {
@@ -358,13 +362,14 @@ pub async fn keep_reporting(app: Arc<App>) {
                     }
                     let state = body(kept.word, repo, title_of(&app, id).await);
                     let place = places.get(&id).cloned().unwrap_or_default();
+                    let asks = needs.get(&id).copied().filter(|_| kept.word == BlockWord::NeedsInput);
                     if kept.word == BlockWord::Closed {
                         agents.remove(&id);
                         repos.remove(&id);
                         places.remove(&id);
                     }
                     let age = u64::try_from(kept.seen.elapsed().as_millis()).unwrap_or(u64::MAX);
-                    match send(&app, id, &state, &place, age, &mut takes).await {
+                    match send(&app, id, &state, &place, asks, age, &mut takes).await {
                         Ok(()) => debug!(pane = id, "told control a block's state"),
                         Err(Wait::Dropped(why)) => warn!(pane = id, "control refused a block's state: {why}"),
                         // This report failed: the rest go on, and it is
@@ -417,10 +422,29 @@ async fn send_again(app: &App, pending: &mut Queue, agents: &mut HashSet<PaneId>
     }
 }
 
-/// Each live agent block's project and card.
-async fn agent_places(app: &App) -> HashMap<PaneId, Place> {
+/// Each live agent block's project and card, and what each that needs
+/// input asks for.
+async fn agent_places(app: &App) -> (HashMap<PaneId, Place>, HashMap<PaneId, NeedsKind>) {
     let panes = app.mux.api(Api::Panes).await.unwrap_or_default();
-    panes.iter().filter(|p| p.info.kind == BlockType::Agent).map(|p| (p.info.id, Pane::of(p).place)).collect()
+    let agents = || panes.iter().filter(|p| p.info.kind == BlockType::Agent);
+    let places = agents().map(|p| (p.info.id, Pane::of(p).place)).collect();
+    let needs =
+        agents().filter_map(|p| Some((p.info.id, needs_of(p.info.attention, p.info.reason.as_ref())?))).collect();
+    (places, needs)
+}
+
+/// What a pane that needs input asks for (Arugula #1274): a permission to
+/// approve (a tool's use, an edit, a gate), else a question. Only the kind:
+/// never what is asked.
+fn needs_of(attention: Attention, reason: Option<&Reason>) -> Option<NeedsKind> {
+    if attention != Attention::NeedsInput {
+        return None;
+    }
+    let approve = reason.is_some_and(|r| {
+        matches!(r.kind, ReasonKind::Diff | ReasonKind::Gate)
+            || r.ask.as_ref().is_some_and(|a| a.what == AskWhat::Approve)
+    });
+    Some(if approve { NeedsKind::Permission } else { NeedsKind::Ask })
 }
 
 /// Send the list of this machine's sessions, if it's time and it changed.
@@ -514,6 +538,9 @@ struct Takes {
     plain: bool,
     /// Its project and card: control is from before Arugula inversion L2.
     bare: bool,
+    /// What a block that needs input asks for: control is from before
+    /// Arugula #1274.
+    kindless: bool,
 }
 
 async fn send(
@@ -521,6 +548,7 @@ async fn send(
     id: PaneId,
     state: &BlockState,
     place: &Place,
+    needs: Option<NeedsKind>,
     age: u64,
     takes: &mut Takes,
 ) -> Result<(), Wait> {
@@ -533,17 +561,48 @@ async fn send(
             Ok(Err(e)) => Err(wait_of(e)),
         }
     };
-    send_with(put, id, state, place, age, takes).await
+    send_with(put, id, state, place, needs, age, takes).await
 }
 
 /// A block's report, through `put`, with what control is known to take of
-/// it: without its project and card, or its age, once control was seen to
-/// refuse them.
+/// it: without what it needs, its project and card, or its age, once control
+/// was seen to refuse them.
 async fn send_with<F, Fut>(
     put: F,
     id: PaneId,
     state: &BlockState,
     place: &Place,
+    needs: Option<NeedsKind>,
+    age: u64,
+    takes: &mut Takes,
+) -> Result<(), Wait>
+where
+    F: Fn(PutBlockState) -> Fut,
+    Fut: Future<Output = Result<(), Wait>>,
+{
+    let Some(needs) = needs.filter(|_| !takes.kindless) else {
+        return send_placed(&put, id, state, place, None, age, takes).await;
+    };
+    match send_placed(&put, id, state, place, Some(needs), age, takes).await {
+        // A control from before Arugula #1274 refuses a field it doesn't
+        // know: if the same report without it goes through, it's that.
+        Err(Wait::Dropped(_)) => {}
+        sent => return sent,
+    }
+    send_placed(&put, id, state, place, None, age, takes).await?;
+    takes.kindless = true;
+    debug!("control takes a block's state without what it needs");
+    Ok(())
+}
+
+/// A block's report, with its project and card unless control was seen to
+/// refuse them.
+async fn send_placed<F, Fut>(
+    put: &F,
+    id: PaneId,
+    state: &BlockState,
+    place: &Place,
+    needs: Option<NeedsKind>,
     age: u64,
     takes: &mut Takes,
 ) -> Result<(), Wait>
@@ -556,12 +615,13 @@ where
         if placed {
             (block.project, block.work_item) = (place.project.clone(), place.work_item.clone());
         }
+        block.needs = needs;
         block
     };
     if place.is_none() || takes.bare {
-        return send_aged(&put, id, report(false), age, &mut takes.plain).await;
+        return send_aged(put, id, report(false), age, &mut takes.plain).await;
     }
-    match send_aged(&put, id, report(true), age, &mut takes.plain).await {
+    match send_aged(put, id, report(true), age, &mut takes.plain).await {
         // Any 4xx: a control from before them refuses a field it doesn't
         // know (a 422), and one that checks them against a grant may refuse
         // them (a 403). If the same report without them goes through, it's
@@ -570,7 +630,7 @@ where
         Err(Wait::For(d, _)) if d == NO_GRANT => {}
         sent => return sent,
     }
-    send_aged(&put, id, report(false), age, &mut takes.plain).await?;
+    send_aged(put, id, report(false), age, &mut takes.plain).await?;
     takes.bare = true;
     debug!("control takes a block's state without its project and card");
     Ok(())
@@ -763,14 +823,19 @@ mod tests {
         }
 
         async fn send(&self, place: &Place, takes: &mut Takes) -> Result<(), Wait> {
-            let state = body(BlockWord::Working, &Repo::default(), None);
+            self.send_needing(place, None, takes).await
+        }
+
+        async fn send_needing(&self, place: &Place, needs: Option<NeedsKind>, takes: &mut Takes) -> Result<(), Wait> {
+            let word = if needs.is_some() { BlockWord::NeedsInput } else { BlockWord::Working };
+            let state = body(word, &Repo::default(), None);
             let put = |p: PutBlockState| {
                 let v = serde_json::to_value(&p).unwrap();
                 let answer = (self.answer)(&v);
                 self.sent.lock().unwrap().push(v);
                 async move { answer }
             };
-            send_with(put, 3, &state, place, 0, takes).await
+            send_with(put, 3, &state, place, needs, 0, takes).await
         }
 
         fn sent(&self) -> Vec<serde_json::Value> {
@@ -797,6 +862,70 @@ mod tests {
         );
         control.send(&Place::default(), &mut takes).await.unwrap();
         assert_eq!(control.sent()[0]["block"], serde_json::json!({ "state": "working" }), "none: none said");
+    }
+
+    /// A block that needs input says whether it asks a question or a
+    /// permission; a control from before Arugula #1274 refuses that, and
+    /// gets the report without it (its project and card kept) until every
+    /// block is sent again.
+    #[tokio::test]
+    async fn a_report_says_what_it_needs_unless_control_refuses_it() {
+        let control = Fake::new(|_| Ok(()));
+        let mut takes = Takes::default();
+        control.send_needing(&placed(), Some(NeedsKind::Permission), &mut takes).await.unwrap();
+        assert_eq!(
+            control.sent()[0]["block"],
+            serde_json::json!({ "state": "needs_input", "project": "prj_1", "work_item": "#7", "needs": "permission" })
+        );
+
+        let control = Fake::new(|v| match v["block"].get("needs") {
+            Some(_) => Err(Wait::Dropped("unknown field `needs`".into())),
+            None => Ok(()),
+        });
+        control.send_needing(&placed(), Some(NeedsKind::Ask), &mut takes).await.expect("not lost");
+        let sent = control.sent();
+        assert_eq!(
+            sent.last().unwrap()["block"],
+            serde_json::json!({ "state": "needs_input", "project": "prj_1", "work_item": "#7" }),
+            "{sent:?}"
+        );
+        assert!(takes.kindless && !takes.bare && !takes.plain);
+        control.send_needing(&placed(), Some(NeedsKind::Ask), &mut takes).await.unwrap();
+        assert_eq!(control.sent().len(), 1, "remembered: one request");
+    }
+
+    /// What a pane asks for, by its reason: an approval is a permission,
+    /// anything else a question; a pane that doesn't need input asks for
+    /// nothing.
+    #[test]
+    fn what_a_pane_needs_is_its_kind_alone() {
+        use arugula_proto::AskRef;
+        let reason = |kind, what: Option<AskWhat>| Reason {
+            kind,
+            since_ms: 1,
+            headline: "Bash: rm -rf /tmp/x".into(),
+            command: None,
+            exit: None,
+            duration_ms: None,
+            bundle: None,
+            ask: what.map(|what| AskRef { id: "a1".into(), what, agent: "claude".into(), tool: None, questions: None }),
+            gate: None,
+            diff: None,
+            actions: vec![],
+        };
+        let at = |a, r: Option<Reason>| needs_of(a, r.as_ref());
+        assert_eq!(
+            at(Attention::NeedsInput, Some(reason(ReasonKind::Ask, Some(AskWhat::Approve)))),
+            Some(NeedsKind::Permission)
+        );
+        assert_eq!(at(Attention::NeedsInput, Some(reason(ReasonKind::Diff, None))), Some(NeedsKind::Permission));
+        assert_eq!(
+            at(Attention::NeedsInput, Some(reason(ReasonKind::Ask, Some(AskWhat::Question)))),
+            Some(NeedsKind::Ask)
+        );
+        assert_eq!(at(Attention::NeedsInput, Some(reason(ReasonKind::Input, None))), Some(NeedsKind::Ask));
+        assert_eq!(at(Attention::NeedsInput, None), Some(NeedsKind::Ask));
+        assert_eq!(at(Attention::Idle, Some(reason(ReasonKind::Ask, Some(AskWhat::Approve)))), None);
     }
 
     /// A control from before them refuses a report with a project and card

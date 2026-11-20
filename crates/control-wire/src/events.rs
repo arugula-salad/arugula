@@ -214,6 +214,8 @@ const BOARD: MatchField = m("board", "the board, brd_…");
 const GITHUB_PR: &[MatchField] = &[REPO, PR, BRANCH, BY, OUTSIDE];
 const GITHUB_CHECKS: &[MatchField] = &[REPO, PR, BRANCH, OUTSIDE];
 const BASE: MatchField = m("base", "the branch it's to merge into");
+const BLOCK: MatchField = m("session", "the agent block, as <machine>/<pane>");
+const MACHINE: MatchField = m("machine", "the machine, by its id");
 
 /// Every type this side knows. Issues and sessions ride `cloud.drive` until
 /// they have read powers of their own, as PR watches do.
@@ -263,6 +265,23 @@ pub const CATALOG: &[EventType] = &[
         ],
         home: Home::Cloud,
         power: Some("cloud.drive"),
+    },
+    // A machine's agent blocks, from the state its daemon reports for boards
+    // (Arugula #1274): ids, a kind and times, never what is asked. Who may
+    // watch them is who sees a block's state on a board.
+    EventType {
+        name: "session.needs_input",
+        meaning: "An agent block on a machine started asking a person something: a question or a permission.",
+        matches: &[BLOCK, PROJECT, MACHINE, PANE, m("kind", "what it asks for: ask or permission")],
+        home: Home::Cloud,
+        power: Some("boards.read"),
+    },
+    EventType {
+        name: "session.idle",
+        meaning: "An agent block on a machine finished its turn, or was answered and went idle.",
+        matches: &[BLOCK, PROJECT, MACHINE, PANE],
+        home: Home::Cloud,
+        power: Some("boards.read"),
     },
     EventType {
         name: "run.ended",
@@ -616,6 +635,12 @@ mod tests {
         assert!(lookup("github.pr.reopened").is_none());
         assert_eq!(lookup("plane.issue.updated").unwrap().home, Home::Cloud);
         assert_eq!(lookup("board.closed").unwrap().power, Some("boards.read"));
+        for name in ["session.needs_input", "session.idle"] {
+            let t = lookup(name).unwrap();
+            assert_eq!((t.home, t.power), (Home::Cloud, Some("boards.read")), "{name}");
+            assert!(["session", "project", "machine", "pane"].iter().all(|f| t.matches.iter().any(|m| m.name == *f)));
+        }
+        assert!(lookup("session.needs_input").unwrap().matches.iter().any(|f| f.name == "kind"));
         for name in ["github.check.failed", "github.pr.reviewed", "github.pr.review_commented"] {
             assert_eq!(lookup(name).unwrap().home, Home::Cloud, "{name}");
         }
