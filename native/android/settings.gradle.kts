@@ -22,3 +22,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "arugula-android"
 include(":core")
+include(":app")

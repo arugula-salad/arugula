@@ -136,10 +136,12 @@ access work there as described in its AGENTS.md.
 - `native/core`: what native clients share (signing, channels, panes, the
   terminal; aru-132). Its own workspace, outside `crates/` so it isn't a hub
   input. `just native-check`, and `just native-ios` on a Mac.
-- `native/android`: the core's Kotlin side for Android (`core`, over JNI in
-  `native/core/src/kotlin.rs`), a Gradle project; the app comes next
-  (#1249). `native/android/setup.sh` installs the toolchain into your home,
-  and `just native-android` builds it and runs its emulator tests.
+- `native/android`: the Android app (`app`, Jetpack Compose) and the core's
+  Kotlin side it runs on (`core`, over JNI in `native/core/src/kotlin.rs`), a
+  Gradle project. `native/android/setup.sh` installs the toolchain into your
+  home, and `just native-android` builds both and runs the core's emulator
+  tests; `native/android/test-app.sh` runs the app's UI test against a
+  control (testnet's `native-android` claim).
 - `crates/desktop`: the desktop app (Tauri). Outside the Cargo workspace, with
   its own `Cargo.lock`, so it releases on its own (#388).
 - `web/`: the web client (TypeScript, Preact, xterm.js). The daemon embeds its

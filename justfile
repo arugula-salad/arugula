@@ -440,11 +440,12 @@ native-check:
     mise exec -- cargo run --example smoke
 
 # The core for Android: both ABIs as its Kotlin library (native/android/core),
-# then its instrumented tests on an emulator (the terminal, and TLS against
+# and the app on it (a debug APK, with its UI test), then the core's
+# instrumented tests on an emulator (the terminal, and TLS against
 # control.arugula.io). Needs native/android/setup.sh's toolchain, and /dev/kvm on
 # Linux. native-android.yml runs it nightly.
 native-android:
-    cd native/android && mise exec -- ./gradlew -q :core:assembleRelease
+    cd native/android && mise exec -- ./gradlew -q :core:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest
     mise exec -- native/android/test-emulator.sh
 
 # The core for iPhones and the iOS simulator, on a Mac with Xcode's iOS SDK
