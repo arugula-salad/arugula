@@ -24,7 +24,9 @@ mkdir -p "$ANDROID_AVD_HOME"
 # there are; these paths are the versions that matter to the build.
 TOOLS_BUILD=15641748 # cmdline-tools 19.0
 NDK=29.0.14206865    # r29, as core/build.gradle.kts's ndkVersion
-PLATFORM=android-36
+PLATFORM=android-36 # the emulator's image
+# The app compiles against 37: Compose and AndroidX ask for it.
+COMPILE_PLATFORM=android-37.2
 BUILD_TOOLS=36.0.0
 CARGO_NDK=4.1.2
 # gradlew runs this Gradle (the version gradle-wrapper.properties names).
@@ -52,7 +54,7 @@ sdkmanager() { "$sdk/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$sdk" "$@"
 
 yes | sdkmanager --licenses >/dev/null 2>&1 || true
 packages=(platform-tools emulator "$image")
-[ "$only" = emulator ] || packages+=("platforms;$PLATFORM" "build-tools;$BUILD_TOOLS" "ndk;$NDK")
+[ "$only" = emulator ] || packages+=("platforms;$PLATFORM" "platforms;$COMPILE_PLATFORM" "build-tools;$BUILD_TOOLS" "ndk;$NDK")
 sdkmanager --install "${packages[@]}" | grep -v '^\[' || true
 
 if ! "$sdk/cmdline-tools/latest/bin/avdmanager" list avd -c | grep -qx arugula-core; then

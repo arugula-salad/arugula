@@ -1,9 +1,17 @@
 # Android
 
-The Rust core in `../core` (signing in, the channel to a machine, the
-terminal) for Kotlin, as the Android app will use it. The app itself comes
-next, in this Gradle project beside `core`.
+The Android app, and the Rust core in `../core` (signing in, the channel to a
+machine, the terminal) for Kotlin, which it runs on.
 
+- `app/`: the app (#1249), Jetpack Compose on Material 3 in Arugula's look. It
+  does what the iPhone app does: signs in through a Custom Tab and the
+  `arugula://signin` callback, keeping the session encrypted under a Keystore
+  key in `noBackupFilesDir`; a tab bar that's always there, Home · Boards ·
+  Chat · Machines · You; Home's Needs you (answered in the row), New ideas,
+  boards and people, and New; a board's thread and lanes; chat rooms on the
+  live stream; a machine's panes and a pane's terminal. Its fonts are fetched
+  into the build at a pinned commit and checked, as the iPhone's are. A debug
+  build reads `-Parugula.control=URL` for another control.
 - `core/`: an Android library. Its Kotlin (`io.arugula.core`) calls the core
   over JNI (`../core/src/kotlin.rs`), which goes through the same `aru_*`
   functions the iPhone app's Swift calls, so both apps behave the same. Its
@@ -39,7 +47,14 @@ no part: a machine is reached with a machine token from control.
 ```sh
 native/android/setup.sh             # once per machine, and after a pin changes
 export ANDROID_HOME=~/Android/Sdk
-just native-android                 # both ABIs, then the emulator tests
+just native-android                 # both ABIs and the app, then the emulator tests
+```
+
+The app's debug APK, for a phone (arm64) and the emulator:
+
+```sh
+native/android/gradlew :app:assembleDebug   # app/build/outputs/apk/debug/app-debug.apk
+adb install -r native/android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
 On Linux the emulator needs `/dev/kvm`, so the user has to be in the `kvm`
@@ -57,3 +72,15 @@ native/android/test-emulator.sh http://127.0.0.1:PORT box-systemd ROOM /tmp/hand
 
 It writes the sign-in's ticket to `HANDOFF/ticket` and waits for the address
 the Allow was sent to in `HANDOFF/callback`, as the iPhone's `test-sim.sh` does.
+
+The app's own UI test (`app/src/androidTest`) taps the same flow through the
+app, as the iPhone's `FlowTests.swift` does: sign in, every tab, the board's
+question answered on Home, a message in chat, a command in a new terminal,
+sign out. Testnet's `native-android` claim runs it, with the same arguments:
+
+```sh
+ARUGULA_BOARD=TITLE ARUGULA_ASK=QUESTION \
+  native/android/test-app.sh http://127.0.0.1:PORT box-systemd ROOM /tmp/handoff
+```
+
+Its screenshots land in the handoff directory.

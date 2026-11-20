@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The window behind Compose: the void, before the first frame. -->
+    <style name="Theme.Arugula" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/void_</item>
+        <item name="android:statusBarColor">@color/void_</item>
+        <item name="android:navigationBarColor">@color/void_</item>
+    </style>
+</resources>
