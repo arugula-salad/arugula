@@ -33,6 +33,7 @@ import { desktopApp, desktopPlatform, openInNewWindow } from "../../shared/deskt
 import { keyHint } from "./keys";
 import { confirmCloseTab } from "./close-tab";
 import { sessionThreadItems, threadItems } from "./threads";
+import { pinItems } from "../pins";
 import { docShareItems } from "./doc-share";
 import { focusItems } from "./panes/layout";
 import { canPopOut, popOut } from "./panes/pop-out";
@@ -269,8 +270,10 @@ export function newTabItems(client: Client, session: SessionId): MenuItem[] {
 export function sessionItems(client: Client, session: SessionId, rename: () => void): MenuItem[] {
   // A guest's: the session's thread and notifications. Making, renaming
   // and closing sessions are the machine owner's (M113).
-  if (client.state?.roles) return [...sessionThreadItems(client, session), ...agentNotifyItems(client, session)];
+  // Pinning is the reader's own, for anyone who sees the session.
+  if (client.state?.roles) return [...pinItems(client, session), ...sessionThreadItems(client, session), ...agentNotifyItems(client, session)];
   return [
+    ...pinItems(client, session),
     { label: "Rename session", run: rename },
     // The project it's in, which says who sees it (Arugula #1177): moved here.
     {
@@ -316,6 +319,7 @@ function sessionCardItems(client: Client, session: SessionId): MenuItem[] {
 export function sessionMenuHint(items: MenuItem[]): string {
   const has = (re: RegExp) => items.some((i) => typeof i === "object" && "label" in i && re.test(i.label));
   const words = [
+    has(/^(Pin|Unpin) session/) && "pin",
     has(/^Rename/) && "rename",
     has(/^Project/) && "its project",
     has(/card/) && "its card",

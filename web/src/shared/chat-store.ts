@@ -39,6 +39,7 @@ import { reacted } from "./chat/reactions";
 import { chatUnread, listedInChat } from "./chat/unread";
 import { presence } from "./chat/presence";
 import { emptySidebar } from "./chat/sidebar";
+import { sessionPins } from "./session-pins-store";
 import { ThreadState } from "./chat/thread-state";
 import { burstOf, typingBody, Warming } from "./chat/warm";
 
@@ -339,6 +340,7 @@ export class ChatStore {
         // Anything missed while there was no stream.
         this.roomsSoon();
         void this.loadSidebar();
+        sessionPins.heard();
         for (const room of this.loaded.keys()) void this.newer(room);
         for (const room of this.loading()) this.again.add(room);
         for (const room of this.pinned.keys()) void this.loadPins(room);
@@ -392,6 +394,9 @@ export class ChatStore {
       }
       case "sidebar":
         void this.loadSidebar();
+        return;
+      case "pins":
+        sessionPins.heard();
         return;
       case "room":
         this.detail.delete(ev.room);

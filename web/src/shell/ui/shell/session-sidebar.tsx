@@ -1,7 +1,8 @@
 // The sessions on the shown machine (M108, #1023): a sidebar beside the
-// panes, grouped by what they need from you, and the header's session
-// breadcrumb, whose menu switches sessions and holds the session's
-// commands.
+// panes, grouped by what they need from you, with the ones you pinned
+// below Needs you (Arugula iss_c0fd27ac196647fa7c857dc3659a0098), and the
+// header's session breadcrumb, whose menu switches sessions and holds the
+// session's commands.
 
 import { EmptyLine } from "../../../shared/ui/block-states";
 import { Fragment } from "preact";
@@ -18,7 +19,10 @@ import { openFresh } from "../open-fresh";
 import { closePlace, currentPlace, openOverview } from "../places";
 import { openAttention } from "./attention-drawer";
 import { sessionUnread } from "../threads";
-import { BranchIcon, Caret, MoreIcon, PanesIcon, PlusIcon, TabsIcon } from "../../../shared/ui/icons";
+import { BranchIcon, Caret, MoreIcon, PanesIcon, PinIcon, PlusIcon, TabsIcon } from "../../../shared/ui/icons";
+import { PINNED, sessionGroups, type Group as ListGroup } from "../../../shared/session-pins";
+import { sessionPins } from "../../../shared/session-pins-store";
+import { pinnedHere, pinsMachine, togglePin } from "../../pins";
 import { setSidebarOpen, setSidebarWidth, takeSearchFocus, useSidebar } from "./prefs";
 import { offlineWhy } from "./live";
 import { RenameInput, type Renaming } from "./rename-input";
@@ -34,11 +38,7 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 // ---- what a session row says, from real state only
 
 type Group = "needs" | "working" | "idle";
-const GROUPS: { id: Group; label: string }[] = [
-  { id: "needs", label: NEEDS_YOU },
-  { id: "working", label: "Working" },
-  { id: "idle", label: "Idle" },
-];
+const LABELS: Record<ListGroup, string> = { needs: NEEDS_YOU, pinned: PINNED, working: "Working", idle: "Idle" };
 
 export interface SessionSummary {
   session: Session;
@@ -142,13 +142,19 @@ export function SessionSidebar({
     if (open && takeSearchFocus()) search.current?.focus();
   });
   useSubscribe(onShownProject);
+  useSubscribe((fn) => sessionPins.subscribe(fn));
   // The shown project's (Arugula #1164): another's isn't here at all.
   const all = client.shownSessions().map((s) => summarize(client, s));
   const project = shownProject();
   const q = query.trim().toLowerCase();
   const shown = q ? all.filter((r) => r.session.name.toLowerCase().includes(q) || (r.context ?? "").toLowerCase().includes(q)) : all;
+  // Needs you, Pinned, Working, Idle: a pinned session that needs you is
+  // in Needs you until it's answered.
+  const pinned = pinnedHere(client);
+  const canPin = !!pinsMachine(client);
+  const groups = sessionGroups(shown, pinned, (r) => ({ id: r.session.id, group: r.group }));
   // In the order they're drawn, for the arrow keys.
-  const ordered = GROUPS.flatMap((g) => shown.filter((r) => r.group === g.id));
+  const ordered = groups.flatMap((g) => g.rows);
   const hiId = ordered.some((r) => r.session.id === hiPick) ? hiPick! : ordered[0]?.session.id;
   if (!open) return null;
   const choose = (id: SessionId) => {
@@ -229,8 +235,8 @@ export function SessionSidebar({
         onKeyDown={onKey}
       />
       <div class="ws-session-list" id="ws-session-list" aria-label="Sessions">
-        {GROUPS.map((g) => {
-          const rows = shown.filter((r) => r.group === g.id);
+        {groups.map((g) => {
+          const rows = g.rows;
           if (!rows.length) return null;
           return (
             <Fragment key={g.id}>
@@ -238,12 +244,13 @@ export function SessionSidebar({
                 {g.id === "needs" ? (
                   // M111: what each one asks, in the attention drawer.
                   <button class="ws-group-open" data-open-attention-group title="See what needs you, on every machine (looking doesn't answer it)" onClick={() => openAttention()}>
-                    {g.label} <span class="ws-group-count">{rows.length}</span>
+                    {LABELS[g.id]} <span class="ws-group-count">{rows.length}</span>
                     {offline && <span class="ws-group-stale"> · last known</span>}
                   </button>
                 ) : (
                   <>
-                    {g.label} <span class="ws-group-count">{rows.length}</span>
+                    {g.id === "pinned" && <PinIcon size="xs" />}
+                    {LABELS[g.id]} <span class="ws-group-count">{rows.length}</span>
                     {offline && <span class="ws-group-stale"> · last known</span>}
                   </>
                 )}
@@ -256,6 +263,7 @@ export function SessionSidebar({
                   row={r}
                   current={r.session.id === client.session}
                   hi={!!q && r.session.id === hiId}
+                  pinned={canPin ? pinned.includes(r.session.id) : undefined}
                   renaming={renaming?.kind === "session" && renaming.id === r.session.id}
                   setRenaming={setRenaming}
                   choose={choose}
@@ -303,6 +311,7 @@ function SessionRow({
   row,
   current,
   hi,
+  pinned,
   renaming,
   setRenaming,
   choose,
@@ -311,6 +320,8 @@ function SessionRow({
   row: SessionSummary;
   current: boolean;
   hi: boolean;
+  /** Whether you pinned it; undefined where this page can't pin. */
+  pinned: boolean | undefined;
   renaming: boolean;
   setRenaming: (r: Renaming) => void;
   choose: (id: SessionId) => void;
@@ -383,6 +394,21 @@ function SessionRow({
           <ObjectChip title={row.work.title} data-session-work>{row.work.label}</ObjectChip>
         ))}
         <AttentionBadge state={row.attention} reason={row.reason} pane={row.pane} client={client} />
+        {pinned !== undefined && (
+          <button
+            class="ws-icon-button ws-session-more ws-session-pin"
+            aria-label={`${pinned ? "Unpin" : "Pin"} ${s.name}`}
+            aria-pressed={pinned}
+            title={pinned ? "Unpin session" : "Pin session: keep it in Pinned, below Needs you"}
+            data-session-pin-button
+            onClick={(e) => {
+              e.stopPropagation();
+              togglePin(client, s.id);
+            }}
+          >
+            <PinIcon size="sm" />
+          </button>
+        )}
         <button class="ws-icon-button ws-session-more" aria-label={`Actions for ${s.name}`} title={cap(sessionMenuHint(items()))} onClick={menu}>
           <MoreIcon />
         </button>

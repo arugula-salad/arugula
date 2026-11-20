@@ -358,10 +358,11 @@ export const ClockIcon = () => (
   </Row>
 );
 
-export const PinIcon = () => (
-  <Row>
+/** A pushpin: a message pinned to a room, and a pinned session. */
+export const PinIcon = ({ size = "md" }: Sized) => (
+  <Svg size={size}>
     <path d="M9 3.75h6l-.75 6 3 3.75H6.75l3-3.75zM12 13.5v6.75" />
-  </Row>
+  </Svg>
 );
 
 export const ThreadIcon = ({ size = "md" }: Sized) => (

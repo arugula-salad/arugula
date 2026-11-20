@@ -1266,7 +1266,7 @@ export type ChatLevel = { level: NotifyLevel | null, };
  * behind, or missed more events than control keeps) gets `resync`: reload
  * the rooms.
  */
-export type ChatLive = { "type": "hello", stream: string, } | { "type": "message", room: string, seq: number, } | { "type": "pinned", room: string, } | { "type": "changed", room: string, seq: number, } | { "type": "reacted", room: string, seq: number, } | { "type": "reply", room: string, parent: number, seq: number, } | { "type": "threadread", room: string, parent: number, seq: number, } | { "type": "room", room: string, } | { "type": "read", room: string, seq: number, } | { "type": "object", room: string, target: string, } | { "type": "session", room: string, ses: string, } | { "type": "typing", room: string, account: string, name: string, } | { "type": "sidebar", } | { "type": "saved", } | { "type": "github", room: string, seq: number, github: ChatToGithub, } | { "type": "resync", };
+export type ChatLive = { "type": "hello", stream: string, } | { "type": "message", room: string, seq: number, } | { "type": "pinned", room: string, } | { "type": "changed", room: string, seq: number, } | { "type": "reacted", room: string, seq: number, } | { "type": "reply", room: string, parent: number, seq: number, } | { "type": "threadread", room: string, parent: number, seq: number, } | { "type": "room", room: string, } | { "type": "read", room: string, seq: number, } | { "type": "object", room: string, target: string, } | { "type": "session", room: string, ses: string, } | { "type": "typing", room: string, account: string, name: string, } | { "type": "sidebar", } | { "type": "pins", } | { "type": "saved", } | { "type": "github", room: string, seq: number, github: ChatToGithub, } | { "type": "resync", };
 
 /**
  * How far a [`ChatMentionStatus`] has got.
@@ -5872,6 +5872,29 @@ options: Array<string>, at: number, };
  * [`SESSION_PICK`]'s body: the session kept, one of the Try 3's.
  */
 export type SessionPick = { session: string, };
+
+/**
+ * One pinned session.
+ */
+export type SessionPin = { 
+/**
+ * The machine's id in control's directory.
+ */
+machine: string, 
+/**
+ * The session's id on that machine.
+ */
+session: number, };
+
+/**
+ * `GET /api/sessions/pins`, and the body of `PUT` (which replaces it).
+ */
+export type SessionPins = { 
+/**
+ * In the order they were pinned, oldest first; each once, at most
+ * [`MAX_PINS`].
+ */
+pins: Array<SessionPin>, };
 
 /**
  * One of a project's workspaces, as Move to… lists it.

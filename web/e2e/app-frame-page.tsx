@@ -33,6 +33,7 @@ import { signedInOf } from "../src/app/signed-in";
 import { setSignedIn } from "../src/shell/signed-in";
 import { setPlatformHere } from "../src/shell/platform-links";
 import { followPlatformLinks } from "../src/app/platform-here";
+import { setHomeMachine } from "../src/shell/pins";
 
 // The daemon's page key on this page's requests, as its own page has.
 await startPageKey();
@@ -80,6 +81,8 @@ setSeenBackend(localBackend());
 
 /** The suite's daemon as Settings' This machine names it: a machine's id is hex. */
 const SUITE = "5e771e0000000001";
+// And what a pin names it by (session-pins.spec.ts stubs the pins).
+setHomeMachine(SUITE);
 
 // In the frame, as app.html's root is (shared/frame.css).
 const root = document.getElementById("root")!;

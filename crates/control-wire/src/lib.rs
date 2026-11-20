@@ -89,6 +89,7 @@ pub mod run_logs;
 pub mod runs;
 #[cfg(all(test, feature = "schema"))]
 mod schema;
+pub mod session_pins;
 pub mod sessions;
 pub mod team;
 pub mod telemetry;

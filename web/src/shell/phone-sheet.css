@@ -134,3 +134,10 @@
   vertical-align: 2px;
 }
 
+
+/* A session you pinned: it comes after those that need you. */
+.sheet-session-head .sheet-pinned {
+  display: inline-flex;
+  flex: none;
+  color: var(--dim);
+}

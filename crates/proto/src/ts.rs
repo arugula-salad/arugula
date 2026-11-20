@@ -172,6 +172,8 @@ fn generate() -> String {
         c.visit::<ChatSection>();
         c.visit::<ChatSort>();
     }
+    // The sessions a person pinned (Arugula iss_c0fd27ac196647fa7c857dc3659a0098).
+    c.visit::<arugula_control_wire::session_pins::SessionPins>();
     // The platform page's projects (M150).
     c.visit::<arugula_control_wire::projects::Projects>();
     // Making a project, and renaming, archiving and moving one (Arugula #892).
