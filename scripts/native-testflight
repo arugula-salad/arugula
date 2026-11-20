@@ -18,8 +18,9 @@ secret() {
     --path "${ASC_SECRETS_PATH:-/illogical/release}" --plain --silent
 }
 
-ssh "$host" "set -e; [ -d $clone ] || git clone -q https://github.com/arugula-salad/arugula.git $clone
-  cd $clone && git fetch -q origin && git checkout -q --detach $rev && git log --oneline -1"
+ssh "$host" "set -e; export PATH=\$HOME/.local/bin:/opt/homebrew/bin:\$PATH
+  [ -d $clone ] || git clone -q https://github.com/arugula-salad/arugula.git $clone
+  cd $clone && git fetch -q origin && git checkout -q --detach $rev && mise trust -q . && git log --oneline -1"
 
 args=()
 if [ "$mode" = upload ]; then
