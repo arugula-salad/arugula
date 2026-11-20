@@ -106,8 +106,8 @@ export function HostedMachines({ s }: { s: ControlSession }) {
       ) : null}
       {projects.length ? (
         <p class="dim control-explain">
-          <b>Allow</b> signs, with this device, that Arugula may enroll cloud workspaces into the project until you stop it. Stopping ends new
-          ones; the ones there stay until they're removed.
+          <b>Allow</b> lets Arugula enroll cloud workspaces into the project until you stop it. It's signed with this browser's device key,
+          which only accounts from before device keys were retired have. Stopping ends new ones; the ones there stay until they're removed.
         </p>
       ) : null}
       {err ? <p class="control-error">{err}</p> : null}

@@ -223,7 +223,7 @@ export function Access({ p }: { p: PlatformProject }) {
                 {v.allow.delegation === null
                   ? "control couldn't say whether an owner allowed them"
                   : v.allow.delegation.live
-                    ? "allowed: an owner's device delegated this project to control"
+                    ? "allowed: an owner allowed cloud workspaces on Control"
                     : "not allowed: no live delegation"}
               </span>
             </li>
