@@ -3,7 +3,8 @@
 # Connect API key from Infisical, archives and uploads on a Mac that signs
 # (jake-air) through native/ios/testflight.sh, then waits for App Store Connect
 # to process the build. The key is never written into the repo or a log: its
-# .p8 goes over ssh's stdin to a file only this user can read, removed after.
+# .p8 goes over ssh's stdin to a file only this user can read, overwritten and
+# removed when the upload ends.
 #   scripts/native-testflight [upload|export] [REV] [HOST]
 # REV (default origin/main) is checked out in HOST's ~/src/arugula-testflight.
 # export signs the app for the App Store and keeps the .ipa on HOST, with no
@@ -24,11 +25,11 @@ ssh "$host" "set -e; export PATH=\$HOME/.local/bin:/opt/homebrew/bin:\$PATH
 
 args=()
 if [ "$mode" = upload ]; then
-  key_id=$(secret "${ASC_KEY_ID_SECRET:-ASC_KEY_ID}")
-  issuer=$(secret "${ASC_ISSUER_ID_SECRET:-ASC_ISSUER_ID}")
+  key_id=$(secret "${ASC_KEY_ID_SECRET:-APPLE_ASC_KEY_ID}")
+  issuer=$(secret "${ASC_ISSUER_ID_SECRET:-APPLE_ASC_ISSUER_ID}")
   p8=$(ssh "$host" 'umask 077; mktemp -t asc-key')
-  trap 'ssh "$host" "rm -f $p8"' EXIT
-  secret "${ASC_KEY_P8_SECRET:-ASC_KEY_P8}" | ssh "$host" "cat > $p8"
+  trap 'ssh "$host" "rm -P $p8 2>/dev/null || rm -f $p8"' EXIT
+  secret "${ASC_KEY_P8_SECRET:-APPLE_ASC_KEY_P8}" | ssh "$host" "cat > $p8"
   args=("$key_id" "$issuer" "$p8")
   started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 fi
@@ -37,5 +38,5 @@ ssh "$host" "cd $clone && native/ios/gui.sh native/ios/testflight.sh $mode ${arg
 
 [ "$mode" = upload ] || exit 0
 # The build App Store Connect made of it: wait for TestFlight to process it.
-secret "${ASC_KEY_P8_SECRET:-ASC_KEY_P8}" | ASC_KEY_ID=$key_id ASC_ISSUER_ID=$issuer \
+secret "${ASC_KEY_P8_SECRET:-APPLE_ASC_KEY_P8}" | ASC_KEY_ID=$key_id ASC_ISSUER_ID=$issuer \
   python3 "$(dirname "$0")/native-testflight-wait.py" io.arugula.ios "$started"
