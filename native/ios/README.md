@@ -46,6 +46,17 @@ grant), the app says why and offers your online machines. There it starts a
 Claude Code agent block on the same issue (`POST /api/blocks` over the link),
 told to talk in the issue's thread.
 
+A Doc linked in a message is a card that opens the Doc's page from control
+(`/embed/p/:project/docs/:doc`) in a web view (`DocViews.swift`). Control
+sets no cookie there: the app puts its own session's cookie in the view's
+store, so the page reads and comments as the app, a native session. The
+page's links to a board, an issue, a room or another Doc come back as intents
+on `window.webkit.messageHandlers.arugula` and open in the app. On an iPhone
+the Doc is over everything; on an iPad it's a third column beside the
+conversation, home's list folded away until Close. Debug builds allow plain
+http to `*.localhost` (`Arugula-Debug-Info.plist`) so a testnet's prototype
+runner loads.
+
 - **On a phone or an iPad:** `just native-phone DEVICE` on a Mac signed in to the
   Apple team (`xcrun devicectl list devices` has the id). It builds, signs with
   the team's development profile, installs and launches. A new device has to be

@@ -78,6 +78,9 @@ struct BoardDetail: Decodable {
 /// A native issue to load by its id, as a board's row names it.
 struct IssueRef: Hashable { var id: String }
 
+/// An issue by its number in a project, as a page's address names it.
+struct ProjectIssue: Hashable { var project: String; var number: String }
+
 struct BoardList: Decodable { var boards: [Board] }
 
 struct ChatRoom: Decodable, Identifiable, Hashable {

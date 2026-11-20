@@ -492,6 +492,11 @@ struct PhoneHome: View {
     @State private var said: String?
     @State private var peek: Peeked?
     @State private var making = false
+    /// The Doc open (Arugula #1259): the right-hand column on an iPad, over
+    /// everything on a phone.
+    @State private var doc: DocRef?
+    @State private var docOver: DocRef?
+    @Environment(\.horizontalSizeClass) private var width
 
     /// A pane's terminal, over everything.
     struct PaneOpen: Identifiable {
@@ -501,35 +506,28 @@ struct PhoneHome: View {
     }
 
     var body: some View {
-        NavigationSplitView(columnVisibility: $columns) {
-            list
-                .homeHeading { making = true }
-                .background(Palette.void)
-        } detail: {
-            NavigationStack(path: $path) {
-                Group {
-                    switch opened {
-                    case .board(let b):
-                        BoardThread(control: control, board: b, model: model, live: live, sessions: state.sessions[b.id] ?? []) { peek = $0 }
-                    case .room(let r): ChatRoomView(control: control, room: r, live: live)
-                    case .session(let s): ChatRoomView(control: control, room: s.thread, live: live, thread: s.parent)
-                    case .idea(let room, let parent, let issue, let title):
-                        IdeaThread(control: control, room: room, parent: parent, issue: issue, title: title, live: live)
-                    case .issue(let id):
-                        Loaded(load: { try await control.get("/api/issues/\(id)", as: Issue.self) }) { IssueView(issue: $0) }
-                    case nil: Empty(text: "Pick a conversation", symbol: "bubble.left.and.bubble.right")
-                    }
+        Group {
+            // With a Doc open, an iPad's three columns: home's list, the
+            // conversation, the Doc. Without one, the list and the conversation,
+            // as on a phone that's wide enough.
+            if width == .regular, let doc {
+                NavigationSplitView(columnVisibility: $columns) {
+                    sidebar
+                } content: {
+                    conversation
+                } detail: {
+                    DocScreen(ref: doc, close: closeDoc, open: follow).id(doc)
                 }
-                .navigationDestination(for: BoardLanes.self) {
-                    BoardScreen(control: control, board: $0.board).backBesideTabs("Thread") { path.removeLast() }
-                }
-                .navigationDestination(for: IssueRef.self) { ref in
-                    Loaded(load: { try await control.get("/api/issues/\(ref.id)", as: Issue.self) }) { IssueView(issue: $0) }
-                        .backBesideTabs("Back") { path.removeLast() }
+            } else {
+                NavigationSplitView(columnVisibility: $columns) {
+                    sidebar
+                } detail: {
+                    conversation
                 }
             }
-            .id(opened)
         }
+        .environment(\.openDoc) { d in present(d) }
+        .fullScreenCover(item: $docOver) { d in DocScreen(ref: d, close: { docOver = nil }, open: follow) }
         .navigationSplitViewStyle(.balanced)
         .fullScreenCover(item: $terminal) { t in TerminalScreen(session: t.session, pane: t.pane) }
         .sheet(isPresented: $making) {
@@ -554,7 +552,11 @@ struct PhoneHome: View {
         .overlay(alignment: .bottom) {
             if let said { Toast(text: said).transition(.opacity).allowsHitTesting(false) }
         }
-        .onChange(of: opened) { _, _ in path = NavigationPath() }
+        .onChange(of: opened) { _, _ in
+            path = NavigationPath()
+            // The Doc was the conversation's: another conversation, no Doc.
+            if doc != nil { closeDoc() }
+        }
         .onChange(of: scope.current?.id) { _, _ in opened = nil }
         // A notification about an issue (#1260): that issue, beside home.
         .onChange(of: push.route, initial: true) { _, route in
@@ -589,6 +591,85 @@ struct PhoneHome: View {
                     await refresh()
                 }
             }
+        }
+    }
+
+    private var sidebar: some View {
+        list
+            .homeHeading { making = true }
+            .background(Palette.void)
+    }
+
+    private var conversation: some View {
+        NavigationStack(path: $path) {
+            Group {
+                switch opened {
+                case .board(let b):
+                    BoardThread(control: control, board: b, model: model, live: live, sessions: state.sessions[b.id] ?? []) { peek = $0 }
+                case .room(let r): ChatRoomView(control: control, room: r, live: live)
+                case .session(let s): ChatRoomView(control: control, room: s.thread, live: live, thread: s.parent)
+                case .idea(let room, let parent, let issue, let title):
+                    IdeaThread(control: control, room: room, parent: parent, issue: issue, title: title, live: live)
+                case .issue(let id):
+                    Loaded(load: { try await control.get("/api/issues/\(id)", as: Issue.self) }) { IssueView(issue: $0) }
+                case nil: Empty(text: "Pick a conversation", symbol: "bubble.left.and.bubble.right")
+                }
+            }
+            .navigationDestination(for: BoardLanes.self) {
+                BoardScreen(control: control, board: $0.board).backBesideTabs("Thread") { path.removeLast() }
+            }
+            .navigationDestination(for: IssueRef.self) { ref in
+                Loaded(load: { try await control.get("/api/issues/\(ref.id)", as: Issue.self) }) { IssueView(issue: $0) }
+                    .backBesideTabs("Back") { path.removeLast() }
+            }
+            .navigationDestination(for: ProjectIssue.self) { ref in
+                Loaded(load: { try await control.get("/api/projects/\(ref.project)/issues/\(ref.number)", as: Issue.self) }) {
+                    IssueView(issue: $0)
+                }
+                    .backBesideTabs("Back") { path.removeLast() }
+            }
+        }
+        .id(opened)
+    }
+
+    /// A Doc, opened: on an iPad in the right-hand column, with home's list
+    /// folded away so the conversation and the Doc share the width (the
+    /// sidebar button brings it back); on a phone over everything.
+    private func present(_ d: DocRef) {
+        if width == .regular {
+            doc = d
+            columns = .doubleColumn
+        } else {
+            docOver = d
+        }
+    }
+
+    /// The iPad's Doc closed: back to the list and the conversation.
+    private func closeDoc() {
+        doc = nil
+        columns = .all
+    }
+
+    /// A link in a Doc (Arugula #1259): another Doc opens in its place; a
+    /// board or a room the app knows opens as home would open it; an issue in
+    /// the conversation's column; anything else in the browser.
+    private func follow(_ link: DocLink) {
+        switch link {
+        case .doc(let d):
+            present(d)
+        case .board(_, let id, _):
+            guard let b = model.boards.first(where: { $0.id == id }) else { return link.openOutside() }
+            docOver = nil
+            opened = .board(b)
+        case .room(let id, _):
+            guard let r = model.rooms.first(where: { $0.id == id }) else { return link.openOutside() }
+            docOver = nil
+            opened = .room(r)
+        case .issue(let project, let id):
+            docOver = nil
+            if id.hasPrefix("iss_") { path.append(IssueRef(id: id)) } else { path.append(ProjectIssue(project: project, number: id)) }
+        case .web(let u):
+            UIApplication.shared.open(u)
         }
     }
 
