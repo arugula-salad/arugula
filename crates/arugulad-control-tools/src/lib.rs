@@ -134,6 +134,16 @@ impl ControlTools for Reach {
     fn wait_sessions<'a>(&'a self, call: &'a Call<'a>, ids: &'a str, limit: Duration) -> BoxFuture<'a, Out> {
         Box::pin(agent_sessions::wait_sessions(call, ids, limit))
     }
+
+    fn wait_event<'a>(
+        &'a self,
+        call: &'a Call<'a>,
+        event: &'a str,
+        matches: Option<serde_json::Map<String, Value>>,
+        limit: Duration,
+    ) -> BoxFuture<'a, Out> {
+        Box::pin(watches::wait_event(call, event, matches, limit))
+    }
 }
 
 // ---------------------------------------------------------------- calls

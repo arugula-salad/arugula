@@ -15,6 +15,12 @@
 //! inbox hook, the told-once record and a dropped message's resend are the
 //! same. The watches and their messages until told are kept in [`FILE`] in
 //! the state dir, so they survive a restart.
+//!
+//! `wait` with an event of these types is a short-lived watch
+//! ([`Ask::wait`], https://app.arugula.io/issues/iss_1545620a176cab44b21084c27493241e):
+//! its message goes to the call that waits ([`Store::fired`]), never to a
+//! session's queue, and it's gone when the wait ends ([`Waiting`]). It
+//! isn't kept in [`FILE`]: a restart ends the call too.
 
 use std::{
     path::{Path, PathBuf},
@@ -101,6 +107,8 @@ pub struct Ask {
     pub exit: Option<i32>,
     pub note: Option<String>,
     pub expires_in_ms: Option<u64>,
+    /// A `wait`'s: its message goes to the call, not the session's queue.
+    pub wait: bool,
 }
 
 /// What was seen of a pane: as it is now, or as an event says. A field that
@@ -140,6 +148,9 @@ struct Watch {
     /// Its one message, once it fired or ended: none while it's live.
     #[serde(default)]
     told: Option<Told>,
+    /// A `wait`'s ([`Ask::wait`]): not saved, and not sent.
+    #[serde(skip)]
+    wait: bool,
 }
 
 /// A watch's one message.
@@ -234,6 +245,8 @@ pub struct Store {
     watches: Mutex<Vec<Watch>>,
     /// A watch was made, or a message is to be sent again: [`keep`] looks.
     changed: tokio::sync::Notify,
+    /// A watch fired or ended: a `wait` on one looks ([`Store::fired`]).
+    told: tokio::sync::Notify,
 }
 
 impl Store {
@@ -252,12 +265,13 @@ impl Store {
                 vec![]
             }
         };
-        Store { file: Some(path), watches: Mutex::new(watches), changed: Default::default() }
+        Store { file: Some(path), watches: Mutex::new(watches), ..Store::default() }
     }
 
     fn save(&self, w: &[Watch]) {
         let Some(path) = &self.file else { return };
-        let bytes = serde_json::to_vec_pretty(w).unwrap_or_default();
+        let kept: Vec<&Watch> = w.iter().filter(|w| !w.wait).collect();
+        let bytes = serde_json::to_vec_pretty(&kept).unwrap_or_default();
         if let Err(e) = arugula_mux::store::write_atomic(path, &bytes) {
             warn!(error = %e, "can't save the local watches");
         }
@@ -292,6 +306,7 @@ impl Store {
             created_ms: now,
             expires_ms: now.saturating_add(i64::try_from(expires_in).unwrap_or(i64::MAX)),
             told: None,
+            wait: ask.wait,
         };
         if let Some(what) = w.met(seen) {
             return Ok(WatchMade {
@@ -302,8 +317,9 @@ impl Store {
             });
         }
         self.with(|all| {
-            let live = all.iter().filter(|x| x.live() && x.session == w.session).count();
-            if live >= PER_SESSION {
+            // A wait's is over with its call: it counts for none.
+            let live = all.iter().filter(|x| x.live() && !x.wait && x.session == w.session).count();
+            if !w.wait && live >= PER_SESSION {
                 let err = format!("this session has {live} live watches, the most it may: cancel one first");
                 return (Err(err), false);
             }
@@ -322,7 +338,7 @@ impl Store {
     /// What was seen of `pane`: the live watches on it that it meets fire,
     /// and those on a pane that's gone end. Whether any did.
     pub fn see(&self, pane: PaneId, seen: &Seen, now: i64) -> bool {
-        self.with(|all| {
+        let any = self.with(|all| {
             let mut any = false;
             for w in all.iter_mut().filter(|w| w.live() && w.pane == pane) {
                 if let Some(t) = title(seen.title.as_deref()) {
@@ -340,7 +356,11 @@ impl Store {
                 }
             }
             (any, any)
-        })
+        });
+        if any {
+            self.told.notify_waiters();
+        }
+        any
     }
 
     /// End the live watches whose time ran out, each with its one message,
@@ -358,6 +378,9 @@ impl Store {
                 );
                 w.tell(WatchState::Expired, head, now);
                 any = true;
+            }
+            if any {
+                self.told.notify_waiters();
             }
             let before = all.len();
             let max = i64::try_from(EXPIRES_MAX_MS).unwrap_or(i64::MAX);
@@ -386,6 +409,7 @@ impl Store {
     fn untaken(&self) -> Vec<(String, String, String)> {
         let w = self.watches.lock().unwrap();
         w.iter()
+            .filter(|w| !w.wait)
             .filter_map(|w| {
                 let t = w.told.as_ref().filter(|t| !t.delivered)?;
                 Some((w.id.clone(), w.session.clone(), t.text.clone()))
@@ -443,7 +467,7 @@ impl Store {
     /// Cancel `session`'s live watch `id`, or (`id` none) all of them: no
     /// message follows. The ids cancelled.
     pub fn cancel(&self, session: &str, id: Option<&str>) -> Vec<String> {
-        self.with(|all| {
+        let gone = self.with(|all| {
             let mut gone = vec![];
             all.retain(|w| {
                 let it = w.live() && w.session == session && id.is_none_or(|i| w.id == i);
@@ -454,7 +478,54 @@ impl Store {
             });
             let changed = !gone.is_empty();
             (gone, changed)
-        })
+        });
+        if !gone.is_empty() {
+            self.told.notify_waiters();
+        }
+        gone
+    }
+
+    /// A wait's watch `id`'s message, once it fires or ends, and the watch
+    /// with it; none if it's gone without one (cancelled).
+    pub async fn fired(&self, id: &str) -> Option<String> {
+        loop {
+            let told = self.told.notified();
+            tokio::pin!(told);
+            told.as_mut().enable();
+            {
+                let mut all = self.watches.lock().unwrap();
+                let at = all.iter().position(|w| w.id == id)?;
+                if all[at].told.is_some() {
+                    return all.remove(at).told.map(|t| t.text);
+                }
+            }
+            told.await;
+        }
+    }
+
+    /// Forget a wait's watch `id`, live or not: its call is over.
+    fn forget_wait(&self, id: &str) {
+        let mut all = self.watches.lock().unwrap();
+        all.retain(|w| !(w.wait && w.id == id));
+    }
+}
+
+/// A wait's watch, while its call waits: dropped (the wait answered, timed
+/// out, or its client went away), the watch is gone.
+pub struct Waiting<'a> {
+    store: &'a Store,
+    pub id: String,
+}
+
+impl<'a> Waiting<'a> {
+    pub fn new(store: &'a Store, id: String) -> Self {
+        Waiting { store, id }
+    }
+}
+
+impl Drop for Waiting<'_> {
+    fn drop(&mut self) {
+        self.store.forget_wait(&self.id);
     }
 }
 
@@ -623,6 +694,7 @@ mod tests {
             exit: None,
             note: Some("ship it once it's done".into()),
             expires_in_ms: None,
+            wait: false,
         }
     }
 
@@ -755,6 +827,51 @@ mod tests {
         assert_eq!(s.cancel("c-mine", None).len(), PER_SESSION);
         assert!(texts(&s).is_empty(), "no message for a cancelled watch");
         assert_eq!(s.list(None).len(), 1);
+    }
+
+    /// A wait's watch: its message is the call's, never a session's queue,
+    /// it's gone once the call has it or ends, and it isn't kept.
+    #[tokio::test]
+    async fn a_waits_watch_fires_to_its_call_and_is_gone_after() {
+        let s = Store::default();
+        let id = s.make(Ask { wait: true, ..ask(On::Idle, 4) }, &working(), 0).unwrap().id.unwrap();
+        let fired = s.fired(&id);
+        tokio::pin!(fired);
+        assert!(futures_util::poll!(fired.as_mut()).is_pending());
+        assert!(s.see(4, &idle(), 1));
+        assert!(s.untaken().is_empty(), "no session's queue gets it");
+        assert_eq!(
+            fired.await.as_deref(),
+            Some(
+                "agent.idle: pane %4 (\"Worker\"): its agent finished its turn and waits for a prompt.\nYour note: ship it once it's done"
+            )
+        );
+        assert!(!s.has(&id));
+        // The call ends without it: the watch is gone, and nothing is told.
+        let id = s.make(Ask { wait: true, ..ask(On::Idle, 5) }, &working(), 2).unwrap().id.unwrap();
+        drop(Waiting::new(&s, id.clone()));
+        assert!(!s.has(&id) && s.list(None).is_empty());
+        assert!(!s.see(5, &idle(), 3));
+        // Cancelled from elsewhere, its call hears it.
+        let id = s.make(Ask { wait: true, ..ask(On::Idle, 6) }, &working(), 4).unwrap().id.unwrap();
+        s.cancel("c-mine", None);
+        assert_eq!(s.fired(&id).await, None);
+    }
+
+    #[test]
+    fn a_waits_watch_isnt_kept_or_counted() {
+        let dir = std::env::temp_dir().join(format!("local-watches-wait-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let s = Store::open(&dir);
+        for i in 0..PER_SESSION {
+            s.make(ask(On::Idle, i as PaneId + 10), &working(), 0).unwrap();
+        }
+        let id = s.make(Ask { wait: true, ..ask(On::Idle, 4) }, &working(), 0).unwrap().id.unwrap();
+        assert!(s.has(&id));
+        assert!(!Store::open(&dir).has(&id), "not kept: a restart ends its call");
+        assert_eq!(Store::open(&dir).list(None).len(), PER_SESSION);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

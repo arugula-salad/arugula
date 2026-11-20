@@ -264,7 +264,9 @@ pub struct WaitArgs {
     /// sessions.
     #[serde(default)]
     pub pane: Option<PaneArg>,
-    pub until: Until,
+    /// What to wait for (not with event).
+    #[serde(default)]
+    pub until: Option<Until>,
     /// For until: match, a regular expression.
     #[serde(default)]
     pub pattern: Option<String>,
@@ -292,6 +294,14 @@ pub struct WaitArgs {
     /// ready, merged or closed: when any of them gets there.
     #[serde(default)]
     pub pr: Option<PrArgs>,
+    /// Or an event, with no until: a type watch's types lists (issue.closed,
+    /// agent.idle), until one happens that has every match field given.
+    #[serde(default)]
+    pub event: Option<String>,
+    /// With event: field and value pairs the event must have, from the
+    /// type's match fields ({"issue": "#12"}, {"pane": "4"}).
+    #[serde(default, rename = "match")]
+    pub matches: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -1138,7 +1148,7 @@ fn all_defs() -> Vec<Def> {
         Def {
             name: "wait",
             title: "Wait for a pane",
-            description: "Wait, blocking your turn (watch instead ends it and wakes you later), until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). An agent block that's idle comes back with turn: its last message and the work it left (branch, pushed, uncommitted files, commits since the turn began) and what it has spent. Or, instead of pane, one of a Cloud workspace's agent blocks (cloud_workspace and agent_block, its pane number there) until idle or needs_input. Or a run in Arugula cloud (run) until it ends. Or agent sessions in Arugula cloud (agent_session: ses_… ids) until done: when any of them finishes its turn (or waits on a person, or ends), with each finished one's branch, HEAD and whole last answer; call it again with the rest. Or pull requests on GitHub (pr: OWNER/REPO#N, its link or a PR block, one or several; until checks_done, checks_failed, ready (checks green and mergeable clean) or merged or closed): when any of them gets there, with one verdict each: checks counted by state, the failing ones' names, mergeable, whether it's in the merge queue, and who merged it; read from GitHub itself with the user's login, and a PR they can't see answers as one that doesn't exist. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
+            description: "Wait, blocking your turn (watch instead ends it and wakes you later), until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). An agent block that's idle comes back with turn: its last message and the work it left (branch, pushed, uncommitted files, commits since the turn began) and what it has spent. Or, instead of pane, one of a Cloud workspace's agent blocks (cloud_workspace and agent_block, its pane number there) until idle or needs_input. Or a run in Arugula cloud (run) until it ends. Or agent sessions in Arugula cloud (agent_session: ses_… ids) until done: when any of them finishes its turn (or waits on a person, or ends), with each finished one's branch, HEAD and whole last answer; call it again with the rest. Or pull requests on GitHub (pr: OWNER/REPO#N, its link or a PR block, one or several; until checks_done, checks_failed, ready (checks green and mergeable clean) or merged or closed): when any of them gets there, with one verdict each: checks counted by state, the failing ones' names, mergeable, whether it's in the merge queue, and who merged it; read from GitHub itself with the user's login, and a PR they can't see answers as one that doesn't exist. Or an event (event: a type watch's types lists, like issue.closed or agent.idle, with match: some of its match fields, like {\"issue\": \"#12\"} or {\"pane\": \"4\"}; no until): a short-lived watch, answered with the message that watch would send when one happens, or at once if it already has. This machine's own types need no account. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
             args: Args::One(schema_for_type::<WaitArgs>),
             read_only: true,
             destructive: false,
@@ -2425,6 +2435,29 @@ impl ToolCall<'_, '_> {
     }
 
     async fn wait(&self, a: WaitArgs) -> Out {
+        // An event: a short-lived watch on it (watch's own matcher).
+        if let Some(event) = a.event {
+            if a.pane.is_some()
+                || a.agent_block.is_some()
+                || a.cloud_workspace.is_some()
+                || a.run.is_some()
+                || a.agent_session.is_some()
+                || a.pr.is_some()
+            {
+                return Err(
+                    "give a pane, a Cloud workspace's agent block, a run, agent sessions, pr, or event: one of them"
+                        .into(),
+                );
+            }
+            if a.until.is_some() || a.pattern.is_some() {
+                return Err("an event waits until one happens: give match, not until or pattern".into());
+            }
+            return crate::mcp::registry::wait_event(self, &event, a.matches, Call::limit(a.timeout)).await;
+        }
+        if a.matches.is_some() {
+            return Err("match goes with an event".into());
+        }
+        let until = a.until.ok_or("wait until what? give until (or an event)")?;
         if let Some(pr) = &a.pr {
             if a.pane.is_some()
                 || a.agent_block.is_some()
@@ -2436,9 +2469,9 @@ impl ToolCall<'_, '_> {
                     "give a pane, a Cloud workspace's agent block, a run, agent sessions, or pr: one of them".into()
                 );
             }
-            return self.wait_prs(pr, &a.until, Call::limit(a.timeout)).await;
+            return self.wait_prs(pr, &until, Call::limit(a.timeout)).await;
         }
-        if matches!(a.until, Until::ChecksDone | Until::ChecksFailed | Until::Ready | Until::Merged | Until::Closed) {
+        if matches!(until, Until::ChecksDone | Until::ChecksFailed | Until::Ready | Until::Merged | Until::Closed) {
             return Err("until checks_done, checks_failed, ready, merged and closed are for pull requests (pr)".into());
         }
         // Fleet 5: agent sessions, in control.
@@ -2448,12 +2481,12 @@ impl ToolCall<'_, '_> {
                     "give a pane, a Cloud workspace's agent block, a run, or agent sessions: one of them".into()
                 );
             }
-            if !matches!(a.until, Until::Done | Until::Idle) {
+            if !matches!(until, Until::Done | Until::Idle) {
                 return Err("an agent session waits until its turn is done: until done".into());
             }
             return crate::mcp::registry::wait_sessions(self, ses, Call::limit(a.timeout)).await;
         }
-        if matches!(a.until, Until::Done) {
+        if matches!(until, Until::Done) {
             return Err(
                 "until done is for agent sessions (agent_session: ses_…); a pane waits until idle or command_end"
                     .into(),
@@ -2464,7 +2497,7 @@ impl ToolCall<'_, '_> {
             if a.pane.is_some() || a.agent_block.is_some() || a.cloud_workspace.is_some() {
                 return Err("give a pane, a Cloud workspace's agent block, or a run: one of them".into());
             }
-            if !matches!(a.until, Until::CommandEnd | Until::Exit) {
+            if !matches!(until, Until::CommandEnd | Until::Exit) {
                 return Err("a run waits until it ends: until command_end".into());
             }
             return crate::mcp::registry::wait_run(self, run, Call::limit(a.timeout)).await;
@@ -2483,7 +2516,7 @@ impl ToolCall<'_, '_> {
                 .map(str::trim)
                 .filter(|w| !w.is_empty())
                 .ok_or("a Cloud workspace's agent block needs its cloud_workspace (hw_… or its name) too")?;
-            let until = match a.until {
+            let until = match until {
                 Until::Idle => "idle",
                 Until::NeedsInput => "needs_input",
                 _ => return Err("a Cloud workspace's agent block waits until idle or needs_input".into()),
@@ -2498,7 +2531,7 @@ impl ToolCall<'_, '_> {
             .ok_or("wait for what? give a pane, or a Cloud workspace's agent block (cloud_workspace and agent_block)")?
             .id()?;
         let p = self.readable(pane).await?;
-        let until = match a.until {
+        let until = match until {
             Until::CommandEnd => "command-end",
             Until::Exit => "exit",
             Until::Match => "match",
