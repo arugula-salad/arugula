@@ -392,7 +392,7 @@ struct BoardsView: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("board-\(b.title)")
             if let lead = b.lead {
-                Button { path.append(BoardThreadRef(board: b)) } label: {
+                NavigationLink(value: BoardThreadRef(board: b)) {
                     HStack(spacing: 6) {
                         LeadChip(lead: LeadLine(lead, fleet: fleet))
                         Spacer(minLength: 4)
