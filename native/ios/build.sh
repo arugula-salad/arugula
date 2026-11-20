@@ -4,9 +4,10 @@
 #   native/ios/build.sh device [DEVICE]  for an iPhone, signed with the team's
 #                                        development profile; with a devicectl
 #                                        id, installs and launches it
-#   native/ios/build.sh archive          a Release archive for the App Store,
-#                                        in build/Arugula.xcarchive
-#                                        (native/ios/testflight.sh uploads it)
+#   native/ios/build.sh archive          an unsigned Release archive, in
+#                                        build/Arugula.xcarchive
+#                                        (native/ios/testflight.sh signs and
+#                                        uploads it)
 # Signing needs the logged-in GUI session's keychain, so from an ssh shell run
 # it through native/ios/gui.sh.
 set -euo pipefail
@@ -53,13 +54,28 @@ fi
 auth=()
 [ -n "${ASC_KEY_PATH:-}" ] && auth=(-authenticationKeyPath "$ASC_KEY_PATH" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
 if [ "$kind" = archive ]; then
-  # Signed for development here; exporting it signs it for the App Store.
+  # Not signed with an identity: exporting it signs it for the App Store
+  # (testflight.sh) with the team's cloud-managed distribution certificate, so
+  # this Mac needs no signing identity of its own.
   rm -rf "$out/Arugula.xcarchive"
   xcodebuild -project Arugula.xcodeproj -scheme Arugula -configuration Release -destination generic/platform=iOS \
-    -archivePath "$out/Arugula.xcarchive" -derivedDataPath "$out/archive-dd" -allowProvisioningUpdates ${auth[@]+"${auth[@]}"} \
-    DEVELOPMENT_TEAM="${DEVELOPMENT_TEAM:-HNDPMQPF22}" archive \
-    | grep -E '^\*\* |error:|warning: unre|Signing|requires a provisioning' || true
-  [ -d "$out/Arugula.xcarchive/Products/Applications/Arugula.app" ] || { echo "build.sh: no archive was made" >&2; exit 1; }
+    -archivePath "$out/Arugula.xcarchive" -derivedDataPath "$out/archive-dd" \
+    DEVELOPMENT_TEAM="${DEVELOPMENT_TEAM:-HNDPMQPF22}" CODE_SIGNING_ALLOWED=NO archive \
+    | grep -E '^\*\* |error:|warning: unre' || true
+  app="$out/Arugula.xcarchive/Products/Applications/Arugula.app"
+  [ -d "$app" ] || { echo "build.sh: no archive was made" >&2; exit 1; }
+  # An unsigned bundle carries no entitlements, and the export signs with the
+  # ones it finds (push, the keychain groups). So sign each ad hoc with its
+  # NAME.entitlements here, its extensions first.
+  ents=$(mktemp -d)
+  for b in "$app"/PlugIns/*.appex "$app"; do
+    [ -d "$b" ] || continue
+    name=$(basename "$b"); name=${name%.*}
+    [ -f "$name.entitlements" ] || { echo "build.sh: no $name.entitlements for $name" >&2; exit 1; }
+    sed "s/\$(AppIdentifierPrefix)/${DEVELOPMENT_TEAM:-HNDPMQPF22}./g" "$name.entitlements" > "$ents/$name.entitlements"
+    codesign --force --sign - --entitlements "$ents/$name.entitlements" --generate-entitlement-der "$b"
+  done
+  rm -rf "$ents"
   echo "archived: $out/Arugula.xcarchive"
   exit 0
 fi

@@ -420,10 +420,10 @@ native-phone device:
     native/ios/gui.sh native/ios/build.sh device {{device}}
 
 # The iPhone and iPad app to TestFlight, from geek: archives and uploads REV
-# on jake-air with the App Store Connect API key in Infisical, then waits for
-# TestFlight to process it. `export` signs it for the App Store and keeps the
-# .ipa on the Mac, with no key and no upload (native/ios/README.md).
-native-testflight mode="upload" rev="origin/main" host="jake-air":
+# on jake-mini, signed and uploaded with the App Store Connect API key in
+# Infisical, then waits for TestFlight to process it. `export` signs it the
+# same way and keeps the .ipa on the Mac (native/ios/README.md).
+native-testflight mode="upload" rev="origin/main" host="jake-mini":
     scripts/native-testflight {{mode}} {{rev}} {{host}}
 
 # The native clients' shared core (native/core, a workspace of its own):
