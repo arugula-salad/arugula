@@ -1,6 +1,7 @@
 /* The project's Overview (./overview.tsx): the field of boards on the left,
-   the window's width, Needs you on the right; on a phone, one list with
-   Needs you on top. A board is a hairline row, open to its cards' one-line
+   the window's width, the talk panel on the right (Needs you on its top,
+   then conversation tabs), under the field on a narrow window; on a phone,
+   one list with Needs you on top and the talk at its foot. A board is a hairline row, open to its cards' one-line
    rows; Needs you holds Swarm's own rail cards, or one quiet line. */
 
 .ov {
@@ -36,7 +37,7 @@
 }
 .ov-board-line {
   display: grid;
-  grid-template-columns: 20px minmax(0, 1.3fr) minmax(80px, 1fr) 52px minmax(0, 1.6fr);
+  grid-template-columns: 20px minmax(0, 1.3fr) minmax(80px, 1fr) 52px minmax(0, 1.6fr) 24px;
   gap: var(--space-3);
   align-items: center;
   padding: var(--space-2) var(--space-1);
@@ -96,6 +97,24 @@
 .ov-board-says .tone-plain {
   color: var(--dim);
 }
+/* The way to the board's thread, in the talk panel: quiet until the row's hovered. */
+.ov-board-talk {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--field-radius);
+  background: none;
+  color: var(--subtle);
+  cursor: pointer;
+}
+.ov-board-talk:hover,
+.ov-board-talk:focus-visible {
+  background: var(--raised);
+  color: var(--fg);
+}
 .ov-board-rows {
   padding: 0 var(--space-1) var(--space-2) calc(20px + var(--space-3));
 }
@@ -113,7 +132,7 @@
 
 /* On a phone, a board's row is two lines: its title and count, then its bar and words. */
 .ov.phone .ov-board-line {
-  grid-template-columns: 20px minmax(0, 1fr) auto;
+  grid-template-columns: 20px minmax(0, 1fr) auto auto;
   gap: var(--space-1) var(--space-2);
 }
 .ov.phone .ov-board-line .board-bar {
@@ -295,8 +314,12 @@ button.ov-peek:disabled {
   text-overflow: ellipsis;
 }
 
-.ov-needs {
-  width: 300px;
+/* The talk panel: Needs you on its top, the tabs under it. While a tab is
+   open it reaches the window's foot (overview-talk's useFitWindow sets its
+   height as the page scrolls), Needs you at most half of it and the
+   conversation the rest, its box at the foot. */
+.ov-panel {
+  width: 380px;
   position: sticky;
   top: 0;
   max-height: calc(100vh - 80px);
@@ -305,18 +328,27 @@ button.ov-peek:disabled {
   border-left: 1px solid var(--line);
   min-width: 0;
 }
+.ov-panel.ov-panel-talking {
+  height: calc(100vh - 80px);
+  max-height: none;
+}
+.ov-panel .ov-needs {
+  flex: 0 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.ov-panel-talking .ov-needs {
+  max-height: 50%;
+}
 .ov-needs.ov-needs-none {
-  width: auto;
-  border-left: 0;
+  padding: 0 var(--space-3);
 }
 .ov-needs.ov-needs-none p {
   margin: 0;
 }
 .ov.phone .ov-needs {
   width: auto;
-  position: static;
-  max-height: none;
-  border-left: 0;
 }
 .ov-needs header {
   display: flex;
@@ -331,6 +363,117 @@ button.ov-peek:disabled {
 .ov-needs header span {
   font: 500 var(--text-xs) var(--f-mono);
   color: var(--subtle);
+}
+
+.ov-talk {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--line);
+}
+.ov-talk > .empty-line {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+}
+/* A tab: its unread dot, its name, its ×. They scroll sideways, not wrap. */
+.ov-tabs {
+  flex: none;
+  display: flex;
+  gap: 2px;
+  padding: var(--space-1) var(--space-2) 0;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--line);
+}
+.ov-tab {
+  flex: none;
+  max-width: 11rem;
+  display: flex;
+  align-items: center;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.ov-tab.ov-tab-on {
+  border-bottom-color: var(--accent);
+}
+.ov-tab button {
+  border: 0;
+  background: none;
+  color: var(--dim);
+  cursor: pointer;
+}
+.ov-tab [role="tab"] {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2);
+  font: 500 var(--text-sm) var(--f-ui);
+}
+.ov-tab [role="tab"] span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ov-tab.ov-tab-on [role="tab"],
+.ov-tab button:hover {
+  color: var(--fg);
+}
+.ov-tab-close {
+  display: grid;
+  place-items: center;
+  padding: 2px;
+  border-radius: var(--field-radius);
+}
+.ov-tab-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+/* The open conversation: chat's own room, its list scrolling, its box at the foot. */
+.ov-talk-open {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.ov-talk-room {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.ov-talk-note {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+}
+
+/* A narrow window, or a phone: the panel docks under the field, at its own height. */
+@media (max-width: 1000px) {
+  .ov {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ov-panel {
+    width: auto;
+    position: static;
+    max-height: none;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+  .ov-panel.ov-panel-talking {
+    height: 70vh;
+  }
+}
+.ov.phone .ov-panel {
+  width: auto;
+  position: static;
+  max-height: none;
+  border-left: 0;
+}
+.ov.phone .ov-panel.ov-panel-talking {
+  height: 70vh;
 }
 
 /* The card's drawer leaves the bar uncovered: its path climbs back. */
