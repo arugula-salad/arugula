@@ -1,6 +1,7 @@
-// A project Doc on its own (#1258): `/p/:project/docs/:doc?embed=1` on
-// control's site, for the native app's web view. Only the Doc, with its
-// comments in the margin (or under it on a phone): no rail, header,
+// A project Doc on its own (#1258): `/embed/p/:project/docs/:doc` on
+// control's site, for the native app's web view. Under `/embed`, a hub path
+// the platform page's host never answers, so it's no page of the platform's.
+// Only the Doc, with its comments in the margin (or under it on a phone): no rail, header,
 // onboarding or first-run dialog. The app puts its session's cookie in the
 // web view, and that session stays a native one: the page reads through the
 // routes control lists for `native` (the Doc, the reader, the Doc's thread)
@@ -70,9 +71,9 @@ export function intentOf(url: URL): EmbedIntent {
   return kind ? { kind, project: id(parts[1]!), id: id(parts[3]!), url: url.href } : { kind: "link", url: url.href };
 }
 
-/** The Doc's address: `/p/:project/docs/:doc`, a slug after either id. */
+/** The Doc's address: `/embed/p/:project/docs/:doc`, a slug after either id. */
 function where(): { project: string; doc: string } | null {
-  const m = /^\/p\/(prj_[0-9a-f]+)(?:-[^/]*)?\/docs\/(pdc_[0-9a-f]+)(?:-[^/]*)?\/?$/.exec(location.pathname);
+  const m = /^\/embed\/p\/(prj_[0-9a-f]+)(?:-[^/]*)?\/docs\/(pdc_[0-9a-f]+)(?:-[^/]*)?\/?$/.exec(location.pathname);
   return m ? { project: m[1]!, doc: m[2]! } : null;
 }
 

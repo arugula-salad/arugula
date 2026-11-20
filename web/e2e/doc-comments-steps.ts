@@ -135,7 +135,7 @@ export async function embed(page: Page, width: number) {
     (window as unknown as { webkit: unknown }).webkit = { messageHandlers: { arugula: { postMessage: (m: unknown) => told.push(m) } } };
   });
   await page.setViewportSize({ width, height: 900 });
-  await page.goto(`/p/${SITE}/docs/${DOC}?embed=1`);
+  await page.goto(`/embed/p/${SITE}/docs/${DOC}`);
   await expect(page.locator("[data-embed] .doc-title")).toHaveText("Chat on a bad network");
 }
 
