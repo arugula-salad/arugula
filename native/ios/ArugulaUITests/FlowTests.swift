@@ -255,8 +255,15 @@ final class FlowTests: XCTestCase {
             clearAlerts()
             shot(app, "5-staff-home")
             XCTAssertTrue(staff.label.contains("Led by \(lead)"), "home's chief of staff says: \(staff.label)")
-            staff.tap()
-            XCTAssertTrue(app.staticTexts["staff-lead"].shows(within: 30), "the staff room didn't open")
+            // A tap as home's list redraws can open nothing: again.
+            let room = app.staticTexts["staff-lead"]
+            for _ in 0..<3 where !room.exists {
+                _ = staff.waitFor(hittable: true, timeout: 5)
+                clearAlerts()
+                staff.tap()
+                _ = room.shows(within: 10)
+            }
+            XCTAssertTrue(room.exists, "the staff room didn't open: \(app.debugDescription)")
             let morning = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "One board moved overnight")).firstMatch
             XCTAssertTrue(morning.shows(within: 20), "the chief of staff's message isn't in the room")
             let ask = "what-moved-\(Int.random(in: 1000...9999))"
