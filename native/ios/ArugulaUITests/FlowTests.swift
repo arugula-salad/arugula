@@ -292,6 +292,7 @@ final class FlowTests: XCTestCase {
             goBack(app)
             XCTAssertTrue(chip.shows(within: 15), "not back on Boards")
             pick(app, "Default")
+            go(app, "Home")
         }
 
         // Home (Arugula #1255): the board the script made, its row's question
