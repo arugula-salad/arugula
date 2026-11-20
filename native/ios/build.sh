@@ -47,12 +47,13 @@ if [ "$kind" = sim ]; then
   echo "built the core for the simulator: $out/lib/$sdk"
   exit 0
 fi
+# ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_PATH, when set, let Xcode fetch the
+# profiles (and turn on the App IDs' capabilities, such as push) with an App
+# Store Connect API key instead of its signed-in account.
+auth=()
+[ -n "${ASC_KEY_PATH:-}" ] && auth=(-authenticationKeyPath "$ASC_KEY_PATH" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
 if [ "$kind" = archive ]; then
   # Signed for development here; exporting it signs it for the App Store.
-  # ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_PATH, when set, let Xcode fetch the
-  # profiles with an App Store Connect API key instead of its signed-in account.
-  auth=()
-  [ -n "${ASC_KEY_PATH:-}" ] && auth=(-authenticationKeyPath "$ASC_KEY_PATH" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
   rm -rf "$out/Arugula.xcarchive"
   xcodebuild -project Arugula.xcodeproj -scheme Arugula -configuration Release -destination generic/platform=iOS \
     -archivePath "$out/Arugula.xcarchive" -derivedDataPath "$out/archive-dd" -allowProvisioningUpdates ${auth[@]+"${auth[@]}"} \
@@ -64,7 +65,7 @@ if [ "$kind" = archive ]; then
 fi
 # By target, with no destination: naming one needs Xcode's copy of the phone's
 # iOS platform, which signing and installing don't.
-xcodebuild -project Arugula.xcodeproj -target Arugula -configuration Debug -sdk iphoneos -allowProvisioningUpdates \
+xcodebuild -project Arugula.xcodeproj -target Arugula -configuration Debug -sdk iphoneos -allowProvisioningUpdates ${auth[@]+"${auth[@]}"} \
   SYMROOT="$out/xb" OBJROOT="$out/xb/obj" DEVELOPMENT_TEAM="${DEVELOPMENT_TEAM:-HNDPMQPF22}" build \
   | grep -E '^\*\* |error:|warning: unre|Signing|requires a provisioning' || true
 app="$out/xb/Debug-iphoneos/Arugula.app"

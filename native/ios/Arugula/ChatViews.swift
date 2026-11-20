@@ -11,6 +11,7 @@ struct ChatRoomsView: View {
     let control: Control
     @EnvironmentObject private var scope: Scope
     @StateObject private var live: LiveChat
+    @ObservedObject private var push = PushCenter.shared
     @State private var picked: ChatRoom?
     @State private var columns = NavigationSplitViewVisibility.all
     @Environment(\.scenePhase) private var phase
@@ -53,6 +54,15 @@ struct ChatRoomsView: View {
         }
         .navigationSplitViewStyle(.balanced)
         .onChange(of: scope.current?.id) { _, _ in picked = nil }
+        // A notification from a room (#1260): that room.
+        .onChange(of: push.route, initial: true) { _, route in
+            guard case .room(let id)? = route else { return }
+            push.route = nil
+            Task {
+                let rooms = try? await control.get("/api/chat", as: ChatRooms.self)
+                if let room = rooms?.rooms.first(where: { $0.id == id }) { picked = room }
+            }
+        }
         .task { live.start() }
         .onChange(of: phase) { _, now in
             if now == .active { live.start() }

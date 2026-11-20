@@ -5721,6 +5721,78 @@
         ]
       }
     },
+    "/api/push/subscribe": {
+      "post": {
+        "operationId": "POST_api_push_subscribe",
+        "x-arugula-clients": [
+          "page",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK"
+          }
+        },
+        "x-arugula-untyped": [
+          "request: Subscribe, local to the handler: `{sub: PushSub}`; a native app's endpoint is its device at APNs (`https://api.push.apple.com/3/device/<token>`, or api.sandbox.push.apple.com from a development build), and it may subscribe no other kind (#1260)",
+          "response: a JSON object built in place"
+        ]
+      }
+    },
+    "/api/push/unsubscribe": {
+      "post": {
+        "operationId": "POST_api_push_unsubscribe",
+        "x-arugula-clients": [
+          "page",
+          "native"
+        ],
+        "security": [
+          {
+            "deviceSignature": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Refusal"
+                }
+              }
+            }
+          },
+          "2XX": {
+            "description": "OK"
+          }
+        },
+        "x-arugula-untyped": [
+          "request: Unsubscribe, local to the handler: `{endpoint}`, its device at APNs (#1260)",
+          "response: a JSON object built in place"
+        ]
+      }
+    },
     "/api/relay/c/{id}": {
       "get": {
         "operationId": "GET_api_relay_c_id",

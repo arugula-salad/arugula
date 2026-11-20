@@ -215,7 +215,10 @@ final class MachineSession: ObservableObject {
 
 struct MachinesView: View {
     let control: Control
+    @ObservedObject private var push = PushCenter.shared
     @State private var picked: Machine?
+    /// A pane to open as its machine connects: a notification's (#1260).
+    @State private var opening: (machine: String, pane: UInt32)?
     @State private var columns = NavigationSplitViewVisibility.all
 
     var body: some View {
@@ -244,18 +247,30 @@ struct MachinesView: View {
         } detail: {
             NavigationStack {
                 if let picked {
-                    MachineView(control: control, machine: picked)
+                    MachineView(control: control, machine: picked, pane: opening?.machine == picked.id ? opening?.pane : nil)
                 } else {
                     Empty(text: "Pick a machine", symbol: "terminal")
                 }
             }
-            .id(picked?.id)
+            .id("\(picked?.id ?? "")/\(opening?.pane ?? 0)")
         }
         .navigationSplitViewStyle(.balanced)
         // A machine takes the whole width once it's picked (a tab's panes want
         // it); the sidebar button brings the list back.
         .onChange(of: picked) { _, now in
+            if now?.id != opening?.machine { opening = nil }
             if now != nil { withAnimation { columns = .detailOnly } }
+        }
+        // A notification about a pane (#1260): its machine, with the pane open.
+        .onChange(of: push.route, initial: true) { _, route in
+            guard case .pane(let machine, let want)? = route else { return }
+            push.route = nil
+            Task {
+                let d = try? await control.get("/api/directory", as: Directory.self)
+                guard let m = d?.daemons.first(where: { $0.id == machine }) else { return }
+                opening = (machine, want)
+                picked = m
+            }
         }
     }
 }
@@ -272,8 +287,9 @@ struct MachineView: View {
     @Environment(\.scenePhase) private var phase
     @Environment(\.horizontalSizeClass) private var width
 
-    init(control: Control, machine: Machine) {
+    init(control: Control, machine: Machine, pane: UInt32? = nil) {
         _session = StateObject(wrappedValue: MachineSession(control: control, machine: machine))
+        _pendingPane = State(initialValue: pane)
     }
 
     var body: some View {

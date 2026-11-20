@@ -209,6 +209,8 @@
     {"method":"DELETE","path":"/api/projects/{project}/workspaces/{id}/secrets/{name}","auth":"cloud_driver","clients":["cli","daemon"]},
     {"method":"PUT","path":"/api/projects/{project}/workspaces/{id}/secrets/{name}","auth":"cloud_driver","clients":["cli","daemon"]},
     {"method":"PUT","path":"/api/projects/{project}/workspaces/{id}/spec","auth":"cloud_driver","clients":["cli","daemon"]},
+    {"method":"POST","path":"/api/push/subscribe","auth":"session","clients":["page","native"]},
+    {"method":"POST","path":"/api/push/unsubscribe","auth":"session","clients":["page","native"]},
     {"method":"GET","path":"/api/relay/c/{id}","auth":"session_or_daemon","clients":["page","daemon","cli","native"]},
     {"method":"GET","path":"/api/relay/m","auth":"session","clients":["page","native"]},
     {"method":"GET","path":"/api/runs/{run}","auth":"session","clients":["page","cli","native"]},
