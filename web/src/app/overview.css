@@ -902,6 +902,7 @@ button.ov-peek:disabled {
 }
 .ov-work-paused .ov-peek-tail {
   max-height: 40vh;
+}
 
 /* The Board level (#1288): the head beside the lead's card, then the open
    tickets by group, a row each with its agents' chips; Done folded. */
