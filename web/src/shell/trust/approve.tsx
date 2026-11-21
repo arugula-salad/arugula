@@ -11,7 +11,7 @@ import { CopyText } from "../../shared/ui/copy";
 import { Modal } from "../../shared/ui/modal";
 import { RefusedError, takesSecret, type ControlSession, type JoinRequest } from "../control";
 import { fingerprint, normalizeCode, normalizeSecret, splitJoinCode } from "../e2e/cert.ts";
-import { addsInOneClick, cantAdd } from "../team-adds.ts";
+import { addsInOneClick, cantAdd } from "../../shared/team-adds.ts";
 import { WhosePicker } from "./whose";
 import { clearHash } from "./common";
 

@@ -5,8 +5,9 @@
 // finish, corners and density, the dialog's controls drawn in place, and
 // under them your preferences (Tips, the editor), which are the account's
 // (Arugula #1318; `preferences`' old address lands here). Then what's on control's
-// page (sign-in and passkeys, machines, teams, shared Docs until Docs has
-// them, Arugula #1315), as ↗ rows that open it at that dialog; the products linked to the account (M229);
+// page (sign-in and passkeys, teams, shared Docs until Docs has them,
+// Arugula #1315), as ↗ rows that open it at that dialog (your machines are
+// in Team and billing's Machines); the products linked to the account (M229);
 // which machines' agents read and post (M197); agents with no machine
 // (M230); and the apps that may use Claude for you, with what your own key
 // spent (M231). Plan and billing are each owner's, in Team and billing.
@@ -143,11 +144,12 @@ function Preferences() {
   );
 }
 
-/** What's on control's page: sign-in and passkeys, your machines, teams
- * and the Docs you shared with a link, each a ↗ row to its dialog there.
- * The Docs are in Docs' Shared by you once the hub serves them here
- * (Arugula #1315), and their row goes. Adding a phone or browser went with
- * device approvals (#1004). */
+/** What's on control's page: sign-in and passkeys, teams and the Docs
+ * you shared with a link, each a ↗ row to its dialog there. The Docs are
+ * in Docs' Shared by you once the hub serves them here (Arugula #1315),
+ * and their row goes. Your machines are in Team and billing's Machines,
+ * each owner's. Adding a phone or browser went with device approvals
+ * (#1004). */
 function Account() {
   useSubscribe((fn) => docLinks.subscribe(fn));
   useEffect(() => void docLinks.load(), []);
@@ -156,14 +158,13 @@ function Account() {
   return (
     <Section
       id="account"
-      title="Sign-in and machines"
+      title="Sign-in and teams"
       summary="On your machines page"
       lede="These are on your machines page, so each opens it at that dialog."
       hooks={{ "data-settings-account": "" }}
     >
       <ul class="platform-list settings-rows">
         <ControlRow href={`${controlOrigin()}/#account`} label="Sign-in and account" why="Passkeys, GitHub, email and where you're signed in" hook="account" />
-        <ControlRow href={`${controlOrigin()}/#devices`} label="Machines" why="Your machines, and removing one" hook="devices" />
         <ControlRow href={`${controlOrigin()}/#teams`} label="Teams" why="The teams you're in, and inviting people" hook="teams" />
         {!docLinks.served() && <ControlRow href={`${controlOrigin()}/#shared-docs`} label="Shared Docs" why="Docs you shared with a link" hook="shared-docs" />}
       </ul>
