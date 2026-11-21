@@ -32,6 +32,7 @@
 
 use std::time::{Duration, Instant};
 
+use arugula_control_wire::chat::agent_staff_room;
 use arugula_control_wire::sessions::{
     AGENT_SESSIONS, AGENT_SESSIONS_WAIT, AgentSessionStart, AgentSessionStop, SESSION_WAIT_MAX, STOP_REASON_MAX,
     agent_project_sessions, agent_session, agent_session_reply, agent_session_stop,
@@ -62,7 +63,7 @@ pub(crate) const LIST: crate::mcp::tools::Kind = crate::mcp::tools::Kind {
     flag: None,
 };
 
-pub(crate) const START_DESCRIPTION: &str = "Start an agent session in Arugula cloud as your person: @arugula on a native issue (issue: #N in the current project, or iss_…) or in a project's channel (room, and thread: a message's seq to ask in its thread). The current project is the project you pass, else the one your block was started on (start_agent's issue), else your session's, else the one this clone's GitHub repo is linked to, else your person's default project. It runs on the project's cloud workspace, as your person (the asker, who pays for it), and its card says it was started by their agent on this machine. Needs their sessions.start grant over the project. prompt is what to ask (it may name the repo, owner/name, and a model); on an issue it defaults to working on it. Returns the session (ses_…), or what the platform said instead: why not, or which repo it asks (ask again there with the repo, owner/name, in prompt). session_reply answers it or prompts it after.";
+pub(crate) const START_DESCRIPTION: &str = "Start an agent session in Arugula cloud as your person: @arugula on a native issue (issue: #N in the current project, or iss_…) or in a project's channel (room, and thread: a message's seq to ask in its thread). The current project is the project you pass, else the one your block was started on (start_agent's issue), else your session's, else the one this clone's GitHub repo is linked to, else your person's default project. It runs on the project's cloud workspace, as your person (the asker, who pays for it), and its card says it was started by their agent on this machine. Needs their sessions.start grant over the project. prompt is what to ask (it may name the repo, owner/name, and a model); on an issue it defaults to working on it. Returns the session (ses_…), or what the platform said instead: why not, or which repo it asks (ask again there with the repo, owner/name, in prompt). session_reply answers it or prompts it after. recipe chief-of-staff starts your person's chief of staff instead, in their staff room, which it leads: it reads the project's event log, wakes on watches, and tells them what matters.";
 
 pub(crate) const READ_DESCRIPTION: &str = "Read an agent session in Arugula cloud (ses_…): its state, Cloud workspace, branch, HEAD and last push (and its workspace's latest error since, such as a failed push), what its latest turn left (commits, diffstat, its finish step), what it asks while it waits on a person, and its last answer whole, as its machine sent it (the thread's copy keeps only its end). Needs your person's sessions.start, sessions.reply or threads.read grant over its project. wait with agent_session waits for its turn to finish.";
 
@@ -88,7 +89,25 @@ pub struct SessionStartArgs {
     /// project.
     #[serde(default)]
     pub project: Option<String>,
+    /// Start it as one of Arugula's recipes instead: chief-of-staff, your
+    /// person's chief of staff in the project, in their staff room (no
+    /// issue or room), its standing instructions as its first prompt and
+    /// prompt after them.
+    #[serde(default)]
+    pub recipe: Option<String>,
 }
+
+/// The recipes `session_start` starts a session as: its name, and its
+/// standing instructions (Arugula #1276).
+pub(crate) const RECIPES: &[(&str, &str)] = &[(CHIEF_OF_STAFF, include_str!("recipes/chief-of-staff.md"))];
+
+/// The chief of staff (Arugula #1276): it starts in the person's staff room,
+/// which it leads.
+pub(crate) const CHIEF_OF_STAFF: &str = "chief-of-staff";
+
+/// What `room` names for the person's staff room in the project, as
+/// read_thread and post_thread take it.
+const STAFF: &str = "staff";
 
 #[derive(Deserialize, JsonSchema)]
 pub struct SessionReplyArgs {
@@ -257,7 +276,21 @@ fn said(e: CloudRefused) -> String {
 /// number is sent with its project, which the caller resolved.
 pub(crate) fn start_body(a: &SessionStartArgs, project: Option<String>) -> Result<AgentSessionStart, String> {
     let room = a.room.as_deref().map(str::trim).filter(|r| !r.is_empty());
-    let prompt = a.prompt.as_deref().map(str::trim).filter(|p| !p.is_empty()).map(str::to_owned);
+    let mut prompt = a.prompt.as_deref().map(str::trim).filter(|p| !p.is_empty()).map(str::to_owned);
+    if let Some(name) = a.recipe.as_deref().map(str::trim).filter(|r| !r.is_empty()) {
+        let Some((_, text)) = RECIPES.iter().find(|(n, _)| *n == name) else {
+            let names: Vec<&str> = RECIPES.iter().map(|(n, _)| *n).collect();
+            return Err(format!("recipe {name}: no such recipe ({})", names.join(", ")));
+        };
+        if a.issue.is_some() || room.is_some_and(|r| r != STAFF) || a.thread.is_some() {
+            return Err(format!("recipe {name} starts in your person's staff room: leave issue, room and thread out"));
+        }
+        prompt = Some(match prompt {
+            Some(p) => format!("{}\n\n{p}", text.trim_end()),
+            None => text.trim_end().to_owned(),
+        });
+        return Ok(AgentSessionStart { room: Some(STAFF.to_owned()), prompt, ..Default::default() });
+    }
     match (a.issue.as_deref().map(str::trim).filter(|i| !i.is_empty()), room) {
         (Some(_), Some(_)) => Err("say where: an issue or a room, not both".into()),
         (None, None) => Err("say where: issue (#N or iss_…), or room (a project's channel)".into()),
@@ -304,7 +337,15 @@ pub(crate) async fn session_start(c: &Call<'_>, a: SessionStartArgs) -> Out {
         true => Some(c.current_project(a.project.as_deref()).await?),
         false => None,
     };
-    let body = serde_json::to_value(start_body(&a, project)?).map_err(|e| e.to_string())?;
+    let mut start = start_body(&a, project)?;
+    // `staff` is the person's staff room in the project (Arugula #1275),
+    // made the first time; a session there leads it (Arugula #1276).
+    if start.room.as_deref() == Some(STAFF) {
+        let project = c.current_project(a.project.as_deref()).await?;
+        let v = c.app().control.cloud(Method::POST, &agent_staff_room(&project), None).await.map_err(said)?;
+        start.room = Some(v["id"].as_str().ok_or("Arugula cloud named no staff room")?.to_owned());
+    }
+    let body = serde_json::to_value(start).map_err(|e| e.to_string())?;
     let v = sessions_call(c, AGENT_SESSIONS, body).await?;
     let at = format!("seq {} in {}", v["seq"], v["room"].as_str().unwrap_or("?"));
     let s = match v["session"].as_str() {
@@ -571,6 +612,31 @@ mod tests {
         assert!(start_body(&args(json!({ "room": "ch_1" })), None).unwrap_err().contains("prompt"));
         assert!(start_body(&args(json!({ "issue": "#1", "thread": 2 })), None).unwrap_err().contains("thread"));
         assert!(start_body(&args(json!({ "issue": "o/r#1" })), None).unwrap_err().contains("#N"));
+    }
+
+    /// The chief of staff (Arugula #1276): its standing instructions first,
+    /// in the person's staff room, and nowhere else.
+    #[test]
+    fn a_recipe_starts_in_the_staff_room_with_its_instructions() {
+        let b = start_body(&args(json!({ "recipe": "chief-of-staff" })), None).unwrap();
+        assert_eq!(b.room.as_deref(), Some("staff"));
+        let p = b.prompt.unwrap();
+        assert!(p.starts_with("You are this project's chief of staff"), "{p}");
+        assert!(p.contains("watch` kind `events`") && p.contains("Never start, stop or close"), "{p}");
+        let b = start_body(&args(json!({ "recipe": "chief-of-staff", "prompt": "brief me" })), None).unwrap();
+        assert!(b.prompt.unwrap().ends_with("\n\nbrief me"));
+        let b = start_body(&args(json!({ "recipe": "chief-of-staff", "room": "staff" })), None).unwrap();
+        assert_eq!(b.room.as_deref(), Some("staff"));
+        for elsewhere in [json!({ "issue": "#1" }), json!({ "room": "ch_1" }), json!({ "thread": 3 })] {
+            let mut a = elsewhere.clone();
+            a["recipe"] = json!("chief-of-staff");
+            assert!(start_body(&args(a), None).unwrap_err().contains("staff room"), "{elsewhere}");
+        }
+        assert!(start_body(&args(json!({ "recipe": "ceo" })), None).unwrap_err().contains("chief-of-staff"));
+        // Every tool the recipe names is a hosted session's.
+        for tool in ["read_session_issues", "read_session_thread", "post_session_thread", "create_session_issue"] {
+            assert!(RECIPES[0].1.contains(tool), "{tool}");
+        }
     }
 
     #[test]

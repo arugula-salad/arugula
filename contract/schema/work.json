@@ -3090,6 +3090,77 @@
             "op"
           ],
           "type": "object"
+        },
+        {
+          "description": "A room's messages, as the session's asker may read them (Arugula\n#1276): `room` is `staff` (the asker's staff room in the project) or\na room of the project (a board's or an issue's thread, a channel).\nOldest first, after `after`, or the newest page; with `thread`, the\nreplies under that message.",
+          "properties": {
+            "after": {
+              "default": null,
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "limit": {
+              "default": null,
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "op": {
+              "const": "thread_read",
+              "type": "string"
+            },
+            "room": {
+              "type": "string"
+            },
+            "thread": {
+              "default": null,
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "op",
+            "room"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A post in such a room as the asker's agent, labelled with the\nsession: under `parent` when given. It reaches whom an agent's post\nthere reaches: a board's lead, the person in their staff room, an\nagent it names.",
+          "properties": {
+            "op": {
+              "const": "thread_post",
+              "type": "string"
+            },
+            "parent": {
+              "default": null,
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "room": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "room",
+            "text"
+          ],
+          "type": "object"
         }
       ],
       "properties": {
@@ -3239,6 +3310,60 @@
           "type": "object"
         },
         {
+          "description": "A room's messages (`ThreadRead`): its id, oldest first, and the seq\nto read on after.",
+          "properties": {
+            "kind": {
+              "const": "thread",
+              "type": "string"
+            },
+            "messages": {
+              "items": {
+                "$ref": "#/$defs/ChatMessage"
+              },
+              "type": "array"
+            },
+            "next_after": {
+              "default": null,
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "room": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "room",
+            "messages"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Posted (`ThreadPost`), as this message of the room.",
+          "properties": {
+            "kind": {
+              "const": "posted",
+              "type": "string"
+            },
+            "room": {
+              "type": "string"
+            },
+            "seq": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "room",
+            "seq"
+          ],
+          "type": "object"
+        },
+        {
           "description": "Not done, and why (the agent reads it).",
           "properties": {
             "kind": {
@@ -3258,7 +3383,7 @@
       ]
     },
     "SessionIssuesOp": {
-      "description": "What a session's agent does in its project: read, comment on and open\nits native issues, and make, write and read its Docs (aru-118), nothing\nelse. The route kept its first name, `session/issues`, for the boxes\nalready calling it.",
+      "description": "What a session's agent does in its project: read, comment on and open\nits native issues, make, write and read its Docs (aru-118), and read and\npost in its rooms as its asker's agent (Arugula #1276), nothing else. The route kept its first name, `session/issues`, for the boxes\nalready calling it.",
       "oneOf": [
         {
           "description": "A page of the project's issues, newest first.",
@@ -3402,6 +3527,77 @@
           },
           "required": [
             "op"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A room's messages, as the session's asker may read them (Arugula\n#1276): `room` is `staff` (the asker's staff room in the project) or\na room of the project (a board's or an issue's thread, a channel).\nOldest first, after `after`, or the newest page; with `thread`, the\nreplies under that message.",
+          "properties": {
+            "after": {
+              "default": null,
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "limit": {
+              "default": null,
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "op": {
+              "const": "thread_read",
+              "type": "string"
+            },
+            "room": {
+              "type": "string"
+            },
+            "thread": {
+              "default": null,
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "op",
+            "room"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A post in such a room as the asker's agent, labelled with the\nsession: under `parent` when given. It reaches whom an agent's post\nthere reaches: a board's lead, the person in their staff room, an\nagent it names.",
+          "properties": {
+            "op": {
+              "const": "thread_post",
+              "type": "string"
+            },
+            "parent": {
+              "default": null,
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "room": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "room",
+            "text"
           ],
           "type": "object"
         }

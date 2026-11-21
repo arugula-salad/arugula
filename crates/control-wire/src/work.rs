@@ -829,8 +829,8 @@ pub struct SessionIssuesAsk {
 }
 
 /// What a session's agent does in its project: read, comment on and open
-/// its native issues, and make, write and read its Docs (aru-118), nothing
-/// else. The route kept its first name, `session/issues`, for the boxes
+/// its native issues, make, write and read its Docs (aru-118), and read and
+/// post in its rooms as its asker's agent (Arugula #1276), nothing else. The route kept its first name, `session/issues`, for the boxes
 /// already calling it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
@@ -862,6 +862,30 @@ pub enum SessionIssuesOp {
     DocRead {
         #[serde(default)]
         id: Option<String>,
+    },
+    /// A room's messages, as the session's asker may read them (Arugula
+    /// #1276): `room` is `staff` (the asker's staff room in the project) or
+    /// a room of the project (a board's or an issue's thread, a channel).
+    /// Oldest first, after `after`, or the newest page; with `thread`, the
+    /// replies under that message.
+    ThreadRead {
+        room: String,
+        #[serde(default)]
+        thread: Option<i64>,
+        #[serde(default)]
+        after: Option<i64>,
+        #[serde(default)]
+        limit: Option<u32>,
+    },
+    /// A post in such a room as the asker's agent, labelled with the
+    /// session: under `parent` when given. It reaches whom an agent's post
+    /// there reaches: a board's lead, the person in their staff room, an
+    /// agent it names.
+    ThreadPost {
+        room: String,
+        text: String,
+        #[serde(default)]
+        parent: Option<i64>,
     },
 }
 
@@ -903,6 +927,19 @@ pub enum SessionIssuesGiven {
     /// The project's Docs.
     Docs {
         list: crate::project_docs::DocList,
+    },
+    /// A room's messages (`ThreadRead`): its id, oldest first, and the seq
+    /// to read on after.
+    Thread {
+        room: String,
+        messages: Vec<crate::chat::ChatMessage>,
+        #[serde(default)]
+        next_after: Option<i64>,
+    },
+    /// Posted (`ThreadPost`), as this message of the room.
+    Posted {
+        room: String,
+        seq: i64,
     },
     /// Not done, and why (the agent reads it).
     Refused {

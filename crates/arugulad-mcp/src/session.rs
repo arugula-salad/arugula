@@ -7,8 +7,9 @@
 //! gets none of `/mcp`'s tools: those start and drive panes as the daemon.
 //! What it gets instead is this: a loopback listener that serves only
 //! [`READ`], [`COMMENT`], [`CREATE`], [`CREATE_DOC`], [`FILL_DOC`] and
-//! [`READ_DOC`], each a call to control's `POST
-//! /api/hosted/work/session/issues` for the agent's session, and [`WATCH`]
+//! [`READ_DOC`], [`READ_THREAD`] and [`POST_THREAD`] (Arugula #1276), each a
+//! call to control's `POST /api/hosted/work/session/issues` for the agent's
+//! session, and [`WATCH`]
 //! (Arugula #1035), its `POST /api/hosted/work/session/watch`.
 //!
 //! - **Who is calling is the socket's owner, not a secret.** The listener
@@ -68,7 +69,7 @@ use serde_json::{Value, json};
 use tracing::{info, warn};
 
 use crate::mcp::{
-    session::{COMMENT, CREATE, CREATE_DOC, FILL_DOC, READ, READ_DOC, WATCH},
+    session::{COMMENT, CREATE, CREATE_DOC, FILL_DOC, POST_THREAD, READ, READ_DOC, READ_THREAD, WATCH},
     tools::{Out, done, parse},
 };
 use crate::server::App;
@@ -77,7 +78,7 @@ use crate::server::App;
 const COMMENTS_IN_CHAT: &str =
     "its comments are in chat, which is off for the person who asked you, so they aren't shown";
 
-const INSTRUCTIONS: &str = "You are an agent session of an Arugula project. read_session_issues lists the project's own (native) issues, or reads one with its timeline and newest comments; comment_session_issue comments on one (mention a person by @login when you need them to decide or answer: a comment that names nobody reaches no one's inbox); create_session_issue opens one and returns its link. create_session_doc makes a Doc in the project (a title and its sections, each a heading and its markdown, or an intent for later) and returns its link; fill_session_doc writes a section of a Doc you made, or adds one; read_project_doc lists the project's Docs or reads one. When someone asks for a native Doc, make one with create_session_doc and post its link. They act with the rights of the person who asked you, in this project only, and a comment, issue or Doc you make is this session's own; an issue is its number, #N, and a Doc its id, pdc_ and 32 hex digits. watch wakes this session later, when a PR merges or its checks get somewhere, another session settles, a thread gets a reply, or a run or deploy ends: create one, end your turn, and Arugula sends you what happened as your next prompt, once.";
+const INSTRUCTIONS: &str = "You are an agent session of an Arugula project. read_session_issues lists the project's own (native) issues, or reads one with its timeline and newest comments; comment_session_issue comments on one (mention a person by @login when you need them to decide or answer: a comment that names nobody reaches no one's inbox); create_session_issue opens one and returns its link. create_session_doc makes a Doc in the project (a title and its sections, each a heading and its markdown, or an intent for later) and returns its link; fill_session_doc writes a section of a Doc you made, or adds one; read_project_doc lists the project's Docs or reads one. read_session_thread reads a room (staff, the asker's own room with their agents, or one of the project's: a board's thread, a channel), and post_session_thread posts there as the asker's agent: a board's lead hears a post on its board's thread, and the asker is told of one in their staff room. When someone asks for a native Doc, make one with create_session_doc and post its link. They act with the rights of the person who asked you, in this project only, and a comment, issue or Doc you make is this session's own; an issue is its number, #N, and a Doc its id, pdc_ and 32 hex digits. watch wakes this session later, when a PR merges or its checks get somewhere, another session settles, a thread gets a reply, or a run or deploy ends: create one, end your turn, and Arugula sends you what happened as your next prompt, once.";
 
 #[derive(Deserialize, JsonSchema)]
 pub struct ReadArgs {
@@ -157,6 +158,36 @@ pub struct FillDocArgs {
     /// The section's body, in Markdown (at most 64 KB).
     #[serde(default)]
     pub markdown: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct ReadThreadArgs {
+    /// staff (the asker's own room with their agents, in this project), or a
+    /// room of this project by its id: a board's thread, an issue's, a
+    /// channel.
+    pub room: String,
+    /// The replies under this message (its seq) instead of the room.
+    #[serde(default)]
+    pub thread: Option<i64>,
+    /// Messages after this seq, oldest first (a previous read's next_after).
+    /// Without it: the newest page.
+    #[serde(default)]
+    pub after: Option<i64>,
+    /// At most this many (default 50, at most 200).
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct PostThreadArgs {
+    /// staff, or a room of this project by its id, as read_session_thread
+    /// takes.
+    pub room: String,
+    /// The message, in markdown; @login mentions a person.
+    pub text: String,
+    /// Reply in the thread of this message (its seq).
+    #[serde(default)]
+    pub parent: Option<i64>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -296,6 +327,9 @@ fn tools() -> Vec<Tool> {
     let fill_doc =
         ToolAnnotations::with_title("Write a section of a Doc").read_only(false).destructive(false).open_world(false);
     let read_doc = ToolAnnotations::with_title("Read the project's Docs").read_only(true).open_world(false);
+    let read_thread = ToolAnnotations::with_title("Read a room").read_only(true).open_world(false);
+    let post_thread =
+        ToolAnnotations::with_title("Post in a room").read_only(false).destructive(false).open_world(false);
     let watch = ToolAnnotations::with_title("Watch for something to happen")
         .read_only(false)
         .destructive(false)
@@ -343,6 +377,20 @@ fn tools() -> Vec<Tool> {
         )
         .with_title("Read the project's Docs")
         .with_annotations(read_doc),
+        Tool::new(
+            READ_THREAD,
+            "Read a room in this project as the person who asked you may: staff (their own room with their agents, made the first time) or a room's id (a board's thread, an issue's, a channel). Oldest first after a seq (after), or the newest page; thread reads the replies under one message. Returns the messages (seq, who, text) and next_after.",
+            schema_for_type::<ReadThreadArgs>(),
+        )
+        .with_title("Read a room")
+        .with_annotations(read_thread),
+        Tool::new(
+            POST_THREAD,
+            "Post in a room read_session_thread reads (staff, or a room of this project), as the asker's agent, labelled with this session: parent replies in a thread. It reaches whom an agent's post there reaches: the asker, in their staff room; a board's lead, on its board's thread; a person named by @login. Returns its seq.",
+            schema_for_type::<PostThreadArgs>(),
+        )
+        .with_title("Post in a room")
+        .with_annotations(post_thread),
         Tool::new(
             WATCH,
             "Wake this session later, when something happens, without polling or holding your turn open: create a watch (kind create), then end your turn; what happened (ids and states only) comes as your next prompt, from Arugula, once. Targets, any of which fires it: pr (OWNER/REPO#N, in a repo linked to Arugula's GitHub App) until merged, closed, checks_done, checks_failed or ready; agent_session (another ses_) until it settles; run (run_ or dep_) until it ends; room (a chat room's id, with parent for one thread and from for one person) until a reply you didn't write; event (a type from kind types, like issue.closed) with match (some of the type's match fields, like {\"issue\": \"#12\"}, this project's #12) and note (why you watch, at most 200 characters, handed back when it fires). It expires after 24 hours unless you say (expires, at most 7d), and then you're told it ended without firing. If it has happened already, create says so and makes none. kind list shows this session's watches; kind cancel takes one by id, or all; kind types lists the event types and their match fields; kind events reads this project's event log after a number (after), as you could watch it, and says where to read on.",
@@ -579,12 +627,55 @@ impl Server {
         )
     }
 
+    async fn read_thread(&self, session: &str, args: Value) -> Out {
+        let a: ReadThreadArgs = parse(args)?;
+        let op = SessionIssuesOp::ThreadRead { room: a.room, thread: a.thread, after: a.after, limit: a.limit };
+        let SessionIssuesGiven::Thread { room, messages, next_after } = self.ask(session, op).await? else {
+            return Err("control answered something else".into());
+        };
+        let text = messages.iter().map(message_line).collect::<Vec<_>>().join("\n");
+        let after = next_after.map_or(String::new(), |n| format!(", next_after {n}"));
+        done(
+            format!("{} message(s) in room {room}{after}", messages.len()),
+            json!({ "room": room, "messages": messages, "next_after": next_after, "text": text, "session": session }),
+        )
+    }
+
+    async fn post_thread(&self, session: &str, args: Value) -> Out {
+        let a: PostThreadArgs = parse(args)?;
+        if a.text.trim().is_empty() {
+            return Err("say something".into());
+        }
+        match self.ask(session, SessionIssuesOp::ThreadPost { room: a.room, text: a.text, parent: a.parent }).await? {
+            SessionIssuesGiven::Posted { room, seq } => done(
+                format!("Posted in room {room} (message {seq})"),
+                json!({ "room": room, "seq": seq, "session": session }),
+            ),
+            _ => Err("control answered something else".into()),
+        }
+    }
+
     async fn doc(&self, session: &str, op: SessionIssuesOp) -> Result<(DocView, String), String> {
         match self.ask(session, op).await? {
             SessionIssuesGiven::Doc { view, url } => Ok((view, url)),
             _ => Err("control answered something else".into()),
         }
     }
+}
+
+/// One message of a room, on a line: its seq, under which thread, who
+/// wrote it (an agent's as its owner's agent) and its text.
+fn message_line(m: &arugula_control_wire::chat::ChatMessage) -> String {
+    let who = match (&m.agent, m.name.is_empty()) {
+        (Some(a), false) => format!("{}'s agent on {}", m.name, a.machine_name),
+        (Some(a), true) => format!("an agent on {}", a.machine_name),
+        (None, false) => m.name.clone(),
+        (None, true) if m.author.is_empty() => "Arugula".to_owned(),
+        (None, true) => m.author.clone(),
+    };
+    let thread = m.thread.as_ref().map_or(String::new(), |_| " [has replies]".to_owned());
+    let under = m.parent.map_or(String::new(), |p| format!(" (in {p})"));
+    format!("{}{under} {who}: {}{thread}", m.seq, m.text.replace('\n', " "))
 }
 
 /// A made or written Doc's answer: its id, sections and link.
@@ -647,6 +738,8 @@ impl ServerHandler for Server {
             CREATE_DOC => self.create_doc(&session, args).await,
             FILL_DOC => self.fill_doc(&session, args).await,
             READ_DOC => self.read_doc(&session, args).await,
+            READ_THREAD => self.read_thread(&session, args).await,
+            POST_THREAD => self.post_thread(&session, args).await,
             WATCH => self.watch(&session, args).await,
             other => Err(format!("no tool {other}")),
         };
@@ -808,6 +901,8 @@ mod tests {
                 "create_session_doc",
                 "fill_session_doc",
                 "read_project_doc",
+                "read_session_thread",
+                "post_session_thread",
                 "watch",
             ]
         );
