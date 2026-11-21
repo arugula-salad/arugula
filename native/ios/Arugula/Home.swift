@@ -645,8 +645,15 @@ struct PhoneHome: View {
         }
         .onChange(of: opened) { _, _ in
             path = NavigationPath()
-            if let card = zoomingTo { path.append(card) }
-            zoomingTo = nil
+            if let card = zoomingTo {
+                zoomingTo = nil
+                // Once the board is up: on an iPhone a path set as it opens
+                // is lost to its push.
+                Task {
+                    try? await Task.sleep(for: .milliseconds(450))
+                    if opened == .board(board(card.board)) { path.append(card) }
+                }
+            }
             // The Doc was the conversation's: another conversation, no Doc.
             if doc != nil { closeDoc() }
         }
