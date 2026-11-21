@@ -146,6 +146,20 @@ final class TerminalUIView: UIView, UIKeyInput, UITextInputTraits {
     override func didMoveToWindow() {
         super.didMoveToWindow()
         if window != nil, fixed == nil { _ = becomeFirstResponder() }
+        // A Work level's terminal (Arugula #1307) takes its pane's bytes while
+        // it's on screen: SwiftUI can make a second view and drop it unseen,
+        // so the one in a window is the one that draws.
+        if typeable {
+            MainActor.assumeIsolated {
+                if window != nil {
+                    session.register(self)
+                    session.drawAlone(pane)
+                } else {
+                    session.unregister(self)
+                    session.stopAlone(pane)
+                }
+            }
+        }
     }
 
     @objc private func tapped() { _ = becomeFirstResponder() }

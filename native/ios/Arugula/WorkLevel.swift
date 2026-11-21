@@ -373,22 +373,12 @@ struct TypeTerminal: UIViewRepresentable {
 
     func makeUIView(context: Context) -> TerminalUIView {
         let v = TerminalUIView(session: session, tab: pane.tab, pane: pane.id, fontSize: size, fixed: (cols, rows), typeable: typeable)
+        // It takes the pane's bytes while it's in a window (TerminalView.swift).
         v.accessibilityIdentifier = "work-terminal-\(pane.id)"
-        session.register(v)
-        // Once it's laid out at its grid, as a tab's watch asks.
-        let s = session, id = pane.id
-        DispatchQueue.main.async { s.drawAlone(id) }
         return v
     }
 
     func updateUIView(_ v: TerminalUIView, context: Context) {}
-
-    static func dismantleUIView(_ v: TerminalUIView, coordinator: ()) {
-        MainActor.assumeIsolated {
-            v.session.unregister(v)
-            v.session.stopAlone(v.pane)
-        }
-    }
 }
 
 /// An agent block: what it says, as it says it, and a box that types to it.
