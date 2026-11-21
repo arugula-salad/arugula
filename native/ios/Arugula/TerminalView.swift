@@ -74,6 +74,10 @@ final class TerminalUIView: UIView, UIKeyInput, UITextInputTraits {
     /// Watching, not driving: the pane's own grid, drawn as it is, with no
     /// keyboard and no say in its size (a tab's overview). `nil`: driving.
     let fixed: (UInt16, UInt16)?
+    /// Watching, and typed into too (the Overview's Work level, Arugula
+    /// #1307): a tap brings up the keyboard, and keys go to the pane, at the
+    /// pane's own size.
+    let typeable: Bool
     private var grid: (UInt16, UInt16) = (0, 0)
     private var attached = false
     private var rowLayers: [CALayer] = []
@@ -84,11 +88,14 @@ final class TerminalUIView: UIView, UIKeyInput, UITextInputTraits {
     private var ctrlButton: UIButton?
     private var scrollCarry: CGFloat = 0
 
-    @MainActor init(session: MachineSession, tab: UInt32, pane: UInt32, fontSize: CGFloat = 12, fixed: (UInt16, UInt16)? = nil) {
+    @MainActor init(
+        session: MachineSession, tab: UInt32, pane: UInt32, fontSize: CGFloat = 12, fixed: (UInt16, UInt16)? = nil, typeable: Bool = false
+    ) {
         self.session = session
         self.tab = tab
         self.pane = pane
         self.fixed = fixed
+        self.typeable = typeable
         pad = fixed == nil ? 4 : 0
         term = aru_term_new(fixed?.0 ?? 80, fixed?.1 ?? 24)
         font = CTFontCreateWithName("Menlo" as CFString, fontSize, nil)
@@ -114,6 +121,8 @@ final class TerminalUIView: UIView, UIKeyInput, UITextInputTraits {
         if fixed == nil {
             addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapped)))
             addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(panned)))
+        } else if typeable {
+            addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapped)))
         } else {
             isUserInteractionEnabled = false
         }
@@ -133,10 +142,24 @@ final class TerminalUIView: UIView, UIKeyInput, UITextInputTraits {
     required init?(coder: NSCoder) { fatalError("made in code") }
     deinit { aru_term_free(term) }
 
-    override var canBecomeFirstResponder: Bool { fixed == nil }
+    override var canBecomeFirstResponder: Bool { fixed == nil || typeable }
     override func didMoveToWindow() {
         super.didMoveToWindow()
         if window != nil, fixed == nil { _ = becomeFirstResponder() }
+        // A Work level's terminal (Arugula #1307) takes its pane's bytes while
+        // it's on screen: SwiftUI can make a second view and drop it unseen,
+        // so the one in a window is the one that draws.
+        if typeable {
+            MainActor.assumeIsolated {
+                if window != nil {
+                    session.register(self)
+                    session.drawAlone(pane)
+                } else {
+                    session.unregister(self)
+                    session.stopAlone(pane)
+                }
+            }
+        }
     }
 
     @objc private func tapped() { _ = becomeFirstResponder() }

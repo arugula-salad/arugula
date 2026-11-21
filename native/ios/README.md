@@ -30,6 +30,15 @@ lead** (that agent) and **Board thread** as two buttons (or, with no lead in a
 team's project, a way to ask the chief of staff to start one), and its open
 tickets as the board groups them, each with its PR or checks, a word (working,
 in review, next, asks you) and the agents on it, whose names open them.
+The **Work level** (`Arugula/WorkLevel.swift`, #1307) shows the card's
+sessions live: a terminal is drawn by the core at the pane's own size, scaled
+to fit (`aru_link_watch` of its tab, claiming nothing, so nobody's panes
+resize), and a tap types into it; an agent block shows its screen as it goes
+(`/api/panes/{id}/capture`) with a box that types to it; a hosted session its
+last events and a reply in its thread. An agent's question, permission or
+failure sits over the panes with its answers, as Needs you answers it. Up to
+four panes side by side on an iPad, the rest in a strip; one at a time on an
+iPhone. A viewer's panes are read, not typed into.
 In a team's project it starts with the **chief of staff** (#1279): the
 reader's staff room (`POST /api/chat/projects/{project}/staff`), which only
 they and their own agents read, with the session that leads it.

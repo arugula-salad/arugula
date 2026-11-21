@@ -32,6 +32,10 @@ final class MachineSession: ObservableObject {
     private final class Weak { weak var view: TerminalUIView? }
     /// The tab being watched, to watch again after a pane was driven.
     private var watchedTab: TabLayout?
+    /// Panes drawn on their own, from any tab, by how many views hold each
+    /// (the Overview's Work level, Arugula #1307): attached again after a
+    /// reconnect.
+    private var alone: [UInt32: Int] = [:]
 
     init(control: Control, machine: Machine) {
         self.control = control
@@ -67,6 +71,7 @@ final class MachineSession: ObservableObject {
             screen?.linkOpened()
             pump()
             if screen == nil { rewatch() }
+            attachAlone(Array(alone.keys))
         } catch {
             problem = describe(error)
         }
@@ -134,7 +139,8 @@ final class MachineSession: ObservableObject {
         // Detach everything first, the tab's own panes too: attached again, each
         // comes with a fresh snapshot for the views drawing it now (a pane
         // still attached from being driven would only send what's new).
-        let gone = Array(Set((watchedTab?.terminals ?? []) + tab.terminals))
+        // A pane drawn on its own elsewhere stays, unless this tab has it.
+        let gone = Array(Set((watchedTab?.terminals ?? []) + tab.terminals)).filter { alone[$0] == nil || tab.terminals.contains($0) }
         if !gone.isEmpty { gone.withUnsafeBufferPointer { aru_link_detach(l, $0.baseAddress, gone.count) } }
         watchedTab = tab
         let panes = tab.terminals
@@ -158,6 +164,54 @@ final class MachineSession: ObservableObject {
     /// Watch the last tab again: after a pane was driven, or a new channel.
     func rewatch() {
         if let t = watchedTab { watch(t) }
+    }
+
+    /// Draw `pane` on its own, at its own size, whatever tab it's in, until
+    /// `stopAlone`: a fresh snapshot for the view that now draws it.
+    func drawAlone(_ pane: UInt32) {
+        alone[pane, default: 0] += 1
+        guard let l = link else { return }
+        [pane].withUnsafeBufferPointer { aru_link_detach(l, $0.baseAddress, 1) }
+        attachAlone([pane])
+    }
+
+    func stopAlone(_ pane: UInt32) {
+        guard let n = alone[pane] else { return }
+        if n > 1 {
+            alone[pane] = n - 1
+            return
+        }
+        alone[pane] = nil
+        // The tab being watched, or the terminal being driven, still wants it.
+        if watchedTab?.terminals.contains(pane) == true || screen?.pane == pane { return }
+        guard let l = link else { return }
+        [pane].withUnsafeBufferPointer { aru_link_detach(l, $0.baseAddress, 1) }
+    }
+
+    /// Each pane as its tab's watch asks for it: a view of its tab that
+    /// claims nothing, so nobody's panes resize, and the pane attached.
+    private func attachAlone(_ panes: [UInt32]) {
+        guard let l = link else { return }
+        for pane in panes {
+            guard let t = tabs.first(where: { $0.cells.contains { $0.pane == pane } }) else {
+                [pane].withUnsafeBufferPointer { aru_link_attach_panes(l, $0.baseAddress, 1) }
+                continue
+            }
+            [pane].withUnsafeBufferPointer { aru_link_watch(l, t.id, $0.baseAddress, 1, t.cols, t.rows) }
+        }
+        // The tab being watched is the view again.
+        if let t = watchedTab {
+            let mine = t.terminals.filter { !panes.contains($0) }
+            if !mine.isEmpty { mine.withUnsafeBufferPointer { aru_link_watch(l, t.id, $0.baseAddress, 0, t.cols, t.rows) } }
+        }
+    }
+
+    /// Where a pane sits in its tab, at the machine's size: its columns and rows.
+    func grid(of pane: UInt32) -> (UInt16, UInt16)? {
+        for t in tabs {
+            if let c = t.cells.first(where: { $0.pane == pane }) { return (c.cols, c.rows) }
+        }
+        return nil
     }
 
     func register(_ v: TerminalUIView) {

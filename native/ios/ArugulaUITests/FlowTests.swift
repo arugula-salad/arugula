@@ -88,6 +88,14 @@ final class FlowTests: XCTestCase {
         (beside.exists ? beside : named.exists ? named : app.navigationBars.buttons.element(boundBy: 0)).tap()
     }
 
+    /// Back until `there` shows: a tap as a screen settles can be lost.
+    private func goBack(_ app: XCUIApplication, until there: XCUIElement) {
+        for _ in 0..<3 where !there.exists {
+            goBack(app)
+            _ = there.shows(within: 8)
+        }
+    }
+
     /// Pick a project from the switcher heading the tab that's open.
     private func pick(_ app: XCUIApplication, _ name: String) {
         let switcher = app.buttons["project-switcher"].firstMatch
@@ -118,10 +126,15 @@ final class FlowTests: XCTestCase {
     private func peekAtLead(_ app: XCUIApplication, _ name: String) {
         let peek = app.buttons["lead-peek"]
         XCTAssertTrue(peek.shows(within: 30), "no peek at the lead: \(app.debugDescription)")
-        clearAlerts()
-        peek.tap()
         let lines = app.descendants(matching: .any)["peek-lines"]
-        XCTAssertTrue(lines.shows(within: 20), "no peek")
+        // A tap as the room settles can open nothing: again.
+        for _ in 0..<3 where !lines.exists {
+            _ = peek.waitFor(hittable: true, timeout: 5)
+            clearAlerts()
+            peek.tap()
+            _ = lines.shows(within: 10)
+        }
+        XCTAssertTrue(lines.exists, "no peek")
         let by = Date().addingTimeInterval(20)
         while !lines.label.contains("cos ready") && Date() < by { sleep(1) }
         shot(app, name)
@@ -303,11 +316,18 @@ final class FlowTests: XCTestCase {
             shot(app, "5-board-level-led")
             app.buttons["lead-talk"].tap()
             XCTAssertTrue(leadNamed.shows(within: 30), "Talk to the lead didn't open the lead: \(app.debugDescription)")
+            shot(app, "5-lead-talk")
             goBack(app)
-            XCTAssertTrue(leadCard.shows(within: 15), "not back on the led board")
-            app.buttons["zoom-path-overview"].tap()
+            if !leadCard.shows(within: 15) { shot(app, "fail-led-board") }
+            XCTAssertTrue(leadCard.exists, "not back on the led board: \(app.debugDescription)")
             let homeThread = app.buttons["home-thread-\(led)"]
-            XCTAssertTrue(homeThread.shows(within: 15), "no Board thread on home's row")
+            // A tap as the board settles can be lost: again until home is there.
+            for _ in 0..<3 where !homeThread.exists {
+                clearAlerts()
+                if app.buttons["zoom-path-overview"].exists { app.buttons["zoom-path-overview"].tap() }
+                _ = homeThread.shows(within: 10)
+            }
+            XCTAssertTrue(homeThread.exists, "no Board thread on home's row: \(app.debugDescription)")
             // Home slides back in: a tap as it settles opens nothing, so again.
             let homeThreadLead = app.descendants(matching: .any)["board-lead"]
             for _ in 0..<3 where !homeThreadLead.exists {
@@ -321,7 +341,7 @@ final class FlowTests: XCTestCase {
             let threadWho = app.staticTexts["who-line"].firstMatch
             XCTAssertTrue(threadWho.label.contains("board's thread"), "the thread's who-line: \(threadWho.label)")
             shot(app, "5-home-thread")
-            if !iPad { goBack(app) }
+            if !iPad { goBack(app, until: app.buttons["home-staff"]) }
             let staff = app.buttons["home-staff"]
             XCTAssertTrue(staff.shows(within: 45), "home has no chief of staff in \(team): \(app.debugDescription)")
             let ledBy = Date().addingTimeInterval(45)
@@ -466,10 +486,47 @@ final class FlowTests: XCTestCase {
             let addressBy = Date().addingTimeInterval(10)
             while !address.contains("/card/row_") && Date() < addressBy {
                 address = path.value as? String ?? ""
-                if !address.contains("/card/row_") { usleep(300_000) }
+                if !address.contains("/card/row_") { sleep(1) }
             }
             XCTAssertTrue(address.contains("/card/row_"), "the Work level's address: \(address)")
             shot(app, "2-work-level")
+            // The Work level (Arugula #1307): the stand-in's terminal, live
+            // at its own size; its permission prompt over it, answered
+            // there; and the terminal typed into where it is.
+            if env["ARUGULA_CARD_AGENT"] == "1" {
+                let term = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'work-terminal-'")).firstMatch
+                XCTAssertTrue(term.shows(within: 30), "no live terminal on the Work level: \(app.debugDescription)")
+                var seen = ""
+                let seenBy = Date().addingTimeInterval(30)
+                while !seen.contains("Read src/main.rs") && Date() < seenBy {
+                    seen = term.value as? String ?? ""
+                    if !seen.contains("Read src/main.rs") { sleep(1) }
+                }
+                XCTAssertTrue(seen.contains("Read src/main.rs"), "the Work level's terminal shows: \(seen)")
+                // The ask over the panes: on an iPad home's Needs you, to its
+                // left, has its own Allow.
+                let allows = app.buttons.matching(identifier: "answer-Allow")
+                XCTAssertTrue(allows.firstMatch.shows(within: 60), "no permission prompt over the panes: \(app.debugDescription)")
+                let allowHere = allows.allElementsBoundByIndex.max { $0.frame.minX < $1.frame.minX }!
+                shot(app, "2-work-ask")
+                clearAlerts()
+                allowHere.tap()
+                let allowGone = Date().addingTimeInterval(20)
+                while allowHere.exists && Date() < allowGone { sleep(1) }
+                XCTAssertFalse(allowHere.exists, "the permission over the panes didn't fold away")
+                clearAlerts()
+                term.tap()
+                _ = app.keyboards.firstMatch.shows(within: 5)
+                term.typeText("zoom-typed")
+                var typed = ""
+                let typedBy = Date().addingTimeInterval(20)
+                while !typed.contains("zoom-typed") && Date() < typedBy {
+                    typed = term.value as? String ?? ""
+                    if !typed.contains("zoom-typed") { sleep(1) }
+                }
+                shot(app, "2-work-typed")
+                XCTAssertTrue(typed.contains("zoom-typed"), "what was typed at the Work level didn't show: \(typed)")
+            }
             // Out to the board by the path bar, then its thread and its lanes.
             app.buttons["zoom-path-board"].tap()
             XCTAssertTrue(level.shows(within: 10), "the path bar didn't zoom out to the board")
@@ -504,7 +561,7 @@ final class FlowTests: XCTestCase {
             let landedBy = Date().addingTimeInterval(10)
             while landed != address && Date() < landedBy {
                 landed = path.value as? String ?? ""
-                if landed != address { usleep(300_000) }
+                if landed != address { sleep(1) }
             }
             XCTAssertEqual(landed, address, "the link landed elsewhere")
             shot(app, "2-work-by-address")
@@ -515,26 +572,30 @@ final class FlowTests: XCTestCase {
         // Answered in the row (Arugula #1256): the stand-in agent's permission
         // prompt (after a peek at it) and its question, then the board's ask.
         // The script checks that the agent went on with the answers.
+        // With the agent on the board's card, its permission was answered at
+        // the Work level (Arugula #1307): home answers its question.
         if env["ARUGULA_AGENT"] == "1" {
-            let asking = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "phone-allowed")).firstMatch
-            XCTAssertTrue(asking.shows(within: 60), "no permission prompt on home: \(app.debugDescription)")
-            clearAlerts()
-            asking.tap()
-            let lines = app.descendants(matching: .any)["peek-lines"]
-            XCTAssertTrue(lines.shows(within: 20), "no peek")
-            let peekBy = Date().addingTimeInterval(20)
-            while !lines.label.contains("Read src/main.rs") && Date() < peekBy { sleep(1) }
-            XCTAssertTrue(lines.label.contains("Read src/main.rs"), "the peek shows: \(lines.label)")
-            shot(app, "3-peek")
-            app.buttons["peek-close"].tap()
-            // The sheet goes before its row is tapped.
-            let closedBy = Date().addingTimeInterval(10)
-            while lines.exists && Date() < closedBy { usleep(200_000) }
-            let allow = app.buttons["answer-Allow"]
-            XCTAssertTrue(allow.shows(within: 15), "no Allow in the row")
-            clearAlerts()
-            allow.tap()
-            XCTAssertTrue(app.staticTexts["toast"].shows(within: 15) || !allow.exists, "Allow wasn't taken")
+            if env["ARUGULA_CARD_AGENT"] != "1" {
+                let asking = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "phone-allowed")).firstMatch
+                XCTAssertTrue(asking.shows(within: 60), "no permission prompt on home: \(app.debugDescription)")
+                clearAlerts()
+                asking.tap()
+                let lines = app.descendants(matching: .any)["peek-lines"]
+                XCTAssertTrue(lines.shows(within: 20), "no peek")
+                let peekBy = Date().addingTimeInterval(20)
+                while !lines.label.contains("Read src/main.rs") && Date() < peekBy { sleep(1) }
+                XCTAssertTrue(lines.label.contains("Read src/main.rs"), "the peek shows: \(lines.label)")
+                shot(app, "3-peek")
+                app.buttons["peek-close"].tap()
+                // The sheet goes before its row is tapped.
+                let closedBy = Date().addingTimeInterval(10)
+                while lines.exists && Date() < closedBy { usleep(200_000) }
+                let allow = app.buttons["answer-Allow"]
+                XCTAssertTrue(allow.shows(within: 15), "no Allow in the row")
+                clearAlerts()
+                allow.tap()
+                XCTAssertTrue(app.staticTexts["toast"].shows(within: 15) || !allow.exists, "Allow wasn't taken")
+            }
             let green = app.buttons["answer-Green"]
             XCTAssertTrue(green.shows(within: 45), "the agent's question didn't come after the Allow")
             clearAlerts()
@@ -686,10 +747,14 @@ private extension XCUIElement {
         let end = Date().addingTimeInterval(timeout)
         while Date() < end {
             if exists && isHittable == hittable { return true }
-            usleep(300_000)
+            usleep(1_000_000)
         }
         return false
     }
+
+    // Once a second: each look snapshots the app's accessibility tree, and
+    // looking faster on an iPad, with a live terminal beside home's list,
+    // floods the app's log until XCTest's log hook takes it down.
 
     /// As `waitForExistence`, answering iOS's notification alert (#1260)
     /// while it waits: it comes over the app when the app asks, whenever
@@ -700,7 +765,7 @@ private extension XCUIElement {
         repeat {
             if springboard.alerts.buttons["Allow"].exists { springboard.alerts.buttons["Allow"].tap() }
             if exists { return true }
-            usleep(300_000)
+            usleep(1_000_000)
         } while Date() < end
         return exists
     }
@@ -709,7 +774,7 @@ private extension XCUIElement {
         let end = Date().addingTimeInterval(timeout)
         while Date() < end {
             if exists && isEnabled == enabled { return true }
-            usleep(300_000)
+            usleep(1_000_000)
         }
         return false
     }
