@@ -102,7 +102,9 @@ export function ContextHeader({
   // The session's own parts (where you are in it, Share) are the panes'.
   const panes = at === "panes" || at === "overview";
   const state = client.state!;
-  const session = state.sessions.find((s) => s.id === client.session) ?? state.sessions[0];
+  // The shown project's only (Arugula #1347): none when it has none here.
+  const shown = client.shownSessions();
+  const session = shown.find((s) => s.id === client.session) ?? shown[0];
   const tab = client.tabView();
   return (
     <header class="ws-head" data-tauri-drag-region>

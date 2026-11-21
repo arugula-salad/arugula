@@ -1722,6 +1722,16 @@ export class Client {
     return s.sessions.filter((x) => inShown(x.project, !s.roles));
   }
 
+  /** The panes of the sessions the view shows (Arugula #1347). */
+  shownPanes(): PaneId[] {
+    return this.shownSessions().flatMap((s) =>
+      s.tabs.flatMap((t) => {
+        const v = this.tabView(t);
+        return v ? paneIds(v) : [];
+      }),
+    );
+  }
+
   /** The view shows another project: show your last session in it here,
    * else its first, else none. */
   reselect() {
