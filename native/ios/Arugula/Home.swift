@@ -725,7 +725,7 @@ struct PhoneHome: View {
                 switch opened {
                 case .board(let b):
                     if let p = scope.current {
-                        BoardLevel(control: control, project: p.id, board: b, model: model)
+                        BoardLevel(control: control, project: p, board: b, model: model, fleet: fleet, askChief: askChief(b, in: p))
                     }
                 case .thread(let b):
                     BoardThread(control: control, board: b, model: model, fleet: fleet, live: live, sessions: state.sessions[b.id] ?? []) { peek = $0 }
@@ -852,6 +852,26 @@ struct PhoneHome: View {
             }
         case .work(let key):
             opened = .work(key)
+        }
+    }
+
+    /// A board no one leads, in a team's project where the reader has a
+    /// staff room: ask the chief of staff to start a lead there, and open the
+    /// room to read the answer (Arugula #1306).
+    private func askChief(_ b: Board, in p: Projects.Project) -> (() -> Void)? {
+        guard p.team != nil, (model.boards.first { $0.id == b.id } ?? b).lead == nil,
+              let room = model.staffListed(project: p.id) else { return nil }
+        return {
+            Task {
+                do {
+                    _ = try await control.call("POST", "/api/chat/rooms/\(room.id)/messages", body: [
+                        "text": "Please start a session to lead the board \"\(b.title)\" (\(b.id)): read its goal and open tickets, then lead it.",
+                    ])
+                    opened = .staff(project: p.id)
+                } catch {
+                    show("Couldn't ask the chief of staff: \(describe(error))")
+                }
+            }
         }
     }
 
