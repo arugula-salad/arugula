@@ -281,9 +281,16 @@ final class FlowTests: XCTestCase {
             app.buttons["zoom-path-overview"].tap()
             let homeThread = app.buttons["home-thread-\(led)"]
             XCTAssertTrue(homeThread.shows(within: 15), "no Board thread on home's row")
-            _ = homeThread.waitFor(hittable: true, timeout: 5)
-            homeThread.tap()
-            XCTAssertTrue(app.staticTexts["board-lead"].shows(within: 15), "Board thread didn't open the thread: \(app.debugDescription)")
+            // Home slides back in: a tap as it settles opens nothing, so again.
+            let homeThreadLead = app.staticTexts["board-lead"]
+            for _ in 0..<3 where !homeThreadLead.exists {
+                _ = homeThread.waitFor(hittable: true, timeout: 5)
+                clearAlerts()
+                homeThread.tap()
+                _ = homeThreadLead.shows(within: 10)
+            }
+            if !homeThreadLead.exists { shot(app, "fail-home-thread") }
+            XCTAssertTrue(homeThreadLead.exists, "Board thread didn't open the thread: \(app.debugDescription)")
             let threadWho = app.staticTexts["who-line"].firstMatch
             XCTAssertTrue(threadWho.label.contains("board's thread"), "the thread's who-line: \(threadWho.label)")
             shot(app, "5-home-thread")
