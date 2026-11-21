@@ -478,7 +478,7 @@ final class FlowTests: XCTestCase {
             let addressBy = Date().addingTimeInterval(10)
             while !address.contains("/card/row_") && Date() < addressBy {
                 address = path.value as? String ?? ""
-                if !address.contains("/card/row_") { usleep(300_000) }
+                if !address.contains("/card/row_") { sleep(1) }
             }
             XCTAssertTrue(address.contains("/card/row_"), "the Work level's address: \(address)")
             shot(app, "2-work-level")
@@ -504,7 +504,7 @@ final class FlowTests: XCTestCase {
                 clearAlerts()
                 allowHere.tap()
                 let allowGone = Date().addingTimeInterval(20)
-                while allowHere.exists && Date() < allowGone { usleep(300_000) }
+                while allowHere.exists && Date() < allowGone { sleep(1) }
                 XCTAssertFalse(allowHere.exists, "the permission over the panes didn't fold away")
                 clearAlerts()
                 term.tap()
@@ -553,7 +553,7 @@ final class FlowTests: XCTestCase {
             let landedBy = Date().addingTimeInterval(10)
             while landed != address && Date() < landedBy {
                 landed = path.value as? String ?? ""
-                if landed != address { usleep(300_000) }
+                if landed != address { sleep(1) }
             }
             XCTAssertEqual(landed, address, "the link landed elsewhere")
             shot(app, "2-work-by-address")
@@ -739,10 +739,14 @@ private extension XCUIElement {
         let end = Date().addingTimeInterval(timeout)
         while Date() < end {
             if exists && isHittable == hittable { return true }
-            usleep(300_000)
+            usleep(1_000_000)
         }
         return false
     }
+
+    // Once a second: each look snapshots the app's accessibility tree, and
+    // looking faster on an iPad, with a live terminal beside home's list,
+    // floods the app's log until XCTest's log hook takes it down.
 
     /// As `waitForExistence`, answering iOS's notification alert (#1260)
     /// while it waits: it comes over the app when the app asks, whenever
@@ -753,7 +757,7 @@ private extension XCUIElement {
         repeat {
             if springboard.alerts.buttons["Allow"].exists { springboard.alerts.buttons["Allow"].tap() }
             if exists { return true }
-            usleep(300_000)
+            usleep(1_000_000)
         } while Date() < end
         return exists
     }
@@ -762,7 +766,7 @@ private extension XCUIElement {
         let end = Date().addingTimeInterval(timeout)
         while Date() < end {
             if exists && isEnabled == enabled { return true }
-            usleep(300_000)
+            usleep(1_000_000)
         }
         return false
     }
