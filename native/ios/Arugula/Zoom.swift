@@ -171,14 +171,14 @@ struct ZoomPath: View {
                 if let board {
                     sep
                     if work == nil {
-                        Text(board.title).font(Face.mono(12, "Bold")).foregroundStyle(Palette.fg).lineLimit(1)
+                        leaf(board.title)
                     } else {
                         part(board.title, id: "zoom-path-board") { zoom?(.board(board.id)) }
                     }
                 }
                 if let work {
                     sep
-                    Text(work).font(Face.mono(12, "Bold")).foregroundStyle(Palette.fg).lineLimit(1)
+                    leaf(work)
                 }
             }
             .padding(.horizontal)
@@ -187,9 +187,13 @@ struct ZoomPath: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Palette.void)
         .overlay(alignment: .bottom) { Rectangle().fill(Palette.raised).frame(height: 1) }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("zoom-path")
-        .accessibilityValue(ZoomRoute(project: project, zoom: here).url.absoluteString)
+    }
+
+    /// Where it is now: its value is the level's address.
+    private func leaf(_ text: String) -> some View {
+        Text(text).font(Face.mono(12, "Bold")).foregroundStyle(Palette.fg).lineLimit(1)
+            .accessibilityIdentifier("zoom-path")
+            .accessibilityValue(ZoomRoute(project: project, zoom: here).url.absoluteString)
     }
 
     private var sep: some View {

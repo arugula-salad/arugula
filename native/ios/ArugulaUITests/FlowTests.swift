@@ -345,7 +345,8 @@ final class FlowTests: XCTestCase {
             if !zoomed { shot(app, "fail-board-level") }
             XCTAssertTrue(zoomed, "the board's row didn't zoom to its Board level: \(app.debugDescription)")
             let path = app.descendants(matching: .any)["zoom-path"]
-            XCTAssertTrue(path.shows(within: 10), "no path bar over the Board level")
+            if !path.shows(within: 10) { shot(app, "fail-zoom-path") }
+            XCTAssertTrue(path.exists, "no path bar over the Board level: \(app.debugDescription)")
             XCTAssertTrue((path.value as? String ?? "").contains("/board/brd_"), "the Board level's address: \(path.value ?? "none")")
             let ticket = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'ticket-'")).firstMatch
             XCTAssertTrue(ticket.shows(within: 30), "the Board level lists no ticket: \(app.debugDescription)")
