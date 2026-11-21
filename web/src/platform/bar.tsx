@@ -126,6 +126,13 @@ function Path({ r, project }: { r: Route; project: string | undefined }) {
       crumbs.push({ label: SECTION_LABEL.home, to: pathOf({ page: "project", project }, names), data: "home" });
       crumbs.push({ label: boards.title(r.board) ?? "Board", to: pathOf({ page: "board", project, board: r.board }, names), data: "board" });
       crumbs.push({ label: where.cardLabel(r.card) ?? "Card", data: "card" });
+    } else if (r.page === "project" && r.zoom) {
+      // The Overview zoomed in (Arugula #1287): Overview › Board › #N title, each a level up.
+      const z = r.zoom;
+      crumbs.push({ label: SECTION_LABEL.home, to: pathOf({ page: "project", project }, names), data: "home" });
+      if ("board" in z) crumbs.push({ label: boards.title(z.board) ?? "Board", to: pathOf({ page: "project", project, zoom: { board: z.board } }, names), data: "board" });
+      if ("board" in z && z.card) crumbs.push({ label: where.cardLabel(z.card) ?? "Card", data: "card" });
+      if ("session" in z) crumbs.push({ label: where.cardLabel(z.session) ?? "Session", data: "session" });
     } else if (r.page === "machines" && r.at.at === "panes") crumbs.push({ label: "Panes", to: pathOf({ page: "machines", project, at: { at: "panes" } }, names), data: "panes" });
     else if (r.page === "machines") crumbs.push({ label: "Machines", to: pathOf({ page: "machines", project, at: { at: "machines" } }, names), data: "machines" });
     else if (section && section !== "home") crumbs.push({ label: SECTION_LABEL[section], to: sectionPath(section, project) ?? undefined, data: section });

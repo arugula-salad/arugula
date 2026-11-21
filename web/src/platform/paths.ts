@@ -9,7 +9,14 @@
 //                                  `machines` or `projects`: the shell's
 //                                  buttons, on to that place in the current
 //                                  project)
-//   /p/:project                    a project's home
+//   /p/:project                    a project's home: the Overview, at its
+//                                  Project level (Arugula #1287)
+//   /p/:project/board/:board       the Overview zoomed to a board (its
+//                                  Board level)
+//   /p/:project/board/:board/card/:row
+//                                  zoomed to a card's work (its Work level)
+//   /p/:project/work/:session      zoomed to a session on no card, by its
+//                                  key on the Overview
 //   /p/:project/chat               its chat
 //   /p/:project/chat/:room         a room in it (`?msg=N`: at that message)
 //   /p/:project/chat/activity      Activity
@@ -88,6 +95,7 @@
 // Routes for changes wait for step 6 rather than shipping empty.
 
 import { machinesPath, parseMachines, type MachineAt } from "../shared/machine-paths.ts";
+import type { OverviewZoom } from "../shared/platform-api.tsx";
 
 /** The first path segments the routes above start with (and `/`). The
  * platform server answers any other with this page as a 404 (UI audit
@@ -99,8 +107,9 @@ export const TOP = ["p", "chat", "dm", "issues", "runs", "installed", "inbox", "
 export type Route =
   /** `to`: a shell button's place, to open in the current project (./current-project). */
   | { page: "home"; to?: "projects" | "docs" | "boards" | "chat" | "machines" }
-  /** The Overview; with `board` and `card`, that card's drawer open over it. */
-  | { page: "project"; project: string; board?: string; card?: string }
+  /** The Overview; with `board` and `card`, that card's drawer open over
+   * it; with `zoom`, zoomed in to a board or some work (Arugula #1287). */
+  | { page: "project"; project: string; board?: string; card?: string; zoom?: OverviewZoom }
   | { page: "issues"; project: string; state?: "closed"; q?: string; label?: string; assignee?: string }
   | { page: "new-issue"; project: string }
   | { page: "issue"; project: string; issue: string; msg?: number; thread?: number }
@@ -287,6 +296,23 @@ export function parse(path: string, search = "", hash = ""): Route {
     const board = q.get("board");
     const card = q.get("card");
     return board && card && BOARD_ID.test(board) && ROW_ID.test(card) ? { page: "project", project, board, card } : { page: "project", project };
+  }
+  // The Overview, zoomed in (Arugula #1287).
+  if (parts[2] === "board" && (parts.length === 4 || (parts.length === 6 && parts[4] === "card"))) {
+    // An id with its slug, or any board id the query form takes.
+    const board = idOf(parts[3]) ?? (BOARD_ID.test(parts[3]) ? parts[3] : null);
+    if (!board?.startsWith("brd_")) return missing;
+    if (parts.length === 4) return { page: "project", project, zoom: { board } };
+    return ROW_ID.test(parts[5]) ? { page: "project", project, zoom: { board, card: parts[5] } } : missing;
+  }
+  if (parts[2] === "work" && parts.length === 4) {
+    let session = "";
+    try {
+      session = decodeURIComponent(parts[3]);
+    } catch {
+      // Not a key, then.
+    }
+    return session && session.length <= 200 ? { page: "project", project, zoom: { session } } : missing;
   }
   if (parts[2] === "machines") {
     const at = parseMachines(parts.slice(3), q);
@@ -479,6 +505,9 @@ export function pathOf(r: Route, names: Names = () => null): string {
     case "home":
       return "/";
     case "project":
+      if (r.zoom && "session" in r.zoom) return `/p/${s(r.project)}/work/${encodeURIComponent(r.zoom.session)}`;
+      // A board's slug only where its id reads back from it (`idOf`).
+      if (r.zoom) return `/p/${s(r.project)}/board/${idOf(r.zoom.board) === r.zoom.board ? s(r.zoom.board) : encodeURIComponent(r.zoom.board)}${r.zoom.card ? `/card/${encodeURIComponent(r.zoom.card)}` : ""}`;
       return `/p/${s(r.project)}${r.board && r.card ? `?board=${encodeURIComponent(r.board)}&card=${encodeURIComponent(r.card)}` : ""}`;
     case "chat": {
       const base = `/p/${s(r.project)}/chat`;

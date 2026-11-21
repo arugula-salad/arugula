@@ -10,6 +10,11 @@ import { useContext } from "preact/hooks";
 import type { PaneQuote } from "./chat-store";
 import type { MachineAt } from "./machine-paths";
 
+/** Where a project's Overview is zoomed in to (Arugula #1287): a board
+ * (its Board level), a card on it, or a session on no card by its key on
+ * the Overview (its Work level). None: its Project level. */
+export type OverviewZoom = { board: string; card?: string } | { session: string };
+
 /** A team this account is in, as the platform's views read it: control's
  * `Team` has these and more. */
 export interface PlatformTeam {
@@ -127,7 +132,7 @@ export interface PlatformApi {
    * whose drawer is open. Its children are the project's page as it was,
    * shown only where there is no Overview (the page doesn't reach
    * machines, #1088). A page without it shows those alone. */
-  Overview?: ComponentType<{ project: string; board?: string; card?: string; children?: ComponentChildren }>;
+  Overview?: ComponentType<{ project: string; board?: string; card?: string; zoom?: OverviewZoom; children?: ComponentChildren }>;
   /** A machine's own settings as sections of Settings' This machine
    * (Arugula #1107): Access, Permission rules, Usage and crash reports,
    * Guest SSH access and Developer settings, read from the machine through

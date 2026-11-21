@@ -19,7 +19,11 @@
 // session; a board's thread opened from its row as a tab in the talk
 // panel under Needs you, its messages and a box that posts (#1270); the
 // briefing line counted from the event log since the reader last looked
-// (#1277); and on a phone, one list with Needs you on top. The platform's boards and the
+// (#1277); zooming in place (#1287): a board's row to its Board level, a
+// ticket to its Work level, Esc out a level at a time, each with its
+// address, the bar's path, the level pill and the talk panel's front tab,
+// and a Needs you card to the work that asks; and on a phone, one list
+// with Needs you on top. The platform's boards and the
 // hub's sessions are made up here; the panes are the daemon's own.
 import { fileURLToPath } from "node:url";
 import { devices, expect, test, type Page } from "@playwright/test";
@@ -180,10 +184,10 @@ test.describe("on a computer", () => {
     await expect(later.locator("[data-ov-board-says]")).toHaveText("nothing in flight");
     await expect(later.locator("[data-ov-board-toggle]")).toBeDisabled();
     await expect.poll(() => page.locator("[data-ov-board]").evaluateAll((els) => els.map((e) => e.getAttribute("data-ov-board")))).toEqual([B, LATER]);
-    // Nothing asks you, so Launch is closed; a click on its row opens it, its title is the board.
+    // Nothing asks you, so Launch is closed; its chevron opens it in place, and its title zooms to it (#1287).
     await expect(launch.locator("[data-ov-card]")).toHaveCount(0);
-    await expect(launch.locator("[data-ov-board-title]")).toHaveAttribute("href", new RegExp(`/boards/${B}`));
-    await launch.locator("[data-ov-board-says]").click();
+    await expect(launch.locator("[data-ov-board-title]")).toHaveAttribute("href", new RegExp(`/board/${B}$`));
+    await launch.locator("[data-ov-board-toggle]").click();
     await expect(launch).toHaveAttribute("data-ov-open", "");
     // Doing and Review in one list, no lane headings, no Open board link; under four, so no "more".
     await expect(launch.locator("[data-ov-card]")).toHaveCount(3);
@@ -217,7 +221,7 @@ test.describe("on a computer", () => {
     await expect(page.locator("[data-ov-preview]")).toHaveCount(0);
     // Not on a card: the scratch session, after the boards.
     await expect(page.locator("[data-ov-loose] [data-ov-session]")).toHaveCount(1);
-    const order = await page.locator("[data-ov-field] > *").evaluateAll((els) => els.map((e) => (e.hasAttribute("data-ov-boards") ? "boards" : e.hasAttribute("data-ov-loose") ? "loose" : "")).filter(Boolean));
+    const order = await page.locator("[data-ov-field] [data-ov-stage] > *").evaluateAll((els) => els.map((e) => (e.hasAttribute("data-ov-boards") ? "boards" : e.hasAttribute("data-ov-loose") ? "loose" : "")).filter(Boolean));
     expect(order).toEqual(["boards", "loose"]);
     // None of the old home's lists: no chat, no people, no issues, runs, repos or workspaces.
     await expect(page.locator("[data-project-rooms], [data-chat-off], [data-project-members], [data-project-runs], [data-project-repos], [data-project-envs], [data-project-boards], [data-ov-more]")).toHaveCount(0);
@@ -286,6 +290,12 @@ test.describe("on a computer", () => {
     await expect(tile(page, "row_b").locator("[data-ov-session] b")).toHaveText("Agent");
     await page.waitForTimeout(400);
     await page.screenshot({ path: info.outputPath("overview-needs.png") });
+    // Its title zooms to the work that asks: #12's (#1287), and Back comes home.
+    await card.locator(".ct").click();
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/board/${B}[^/]*/card/row_b$`));
+    await expect(page.locator('[data-ov-level-work="row_b"]')).toBeVisible();
+    await page.goBack();
+    await expect(page.locator(`[data-ov-board="${B}"]`)).toBeVisible();
     const q = (n: number) => card.locator(`[data-question="${n}"]`);
     await q(0).getByRole("radio", { name: /^Blue/ }).click();
     await q(1).getByRole("checkbox", { name: /Pear/ }).check();
@@ -432,6 +442,70 @@ test.describe("on a computer", () => {
     const shell = ((await page.locator("[data-ov-loose] [data-ov-session]").getAttribute("data-ov-panes")) ?? "").split(":").pop();
     await peek.locator("[data-ov-peek-panes]").click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines.*pane=${shell}$`));
+  });
+
+  test("zooming: a board's row to its Board level, a ticket to its Work level, Esc out twice; the address, the path, the pill and the front tab right at each (Arugula #1287)", async ({ page }, info) => {
+    // Launch is led by the project's scratch session, so its lead's tab is that session's.
+    let led: unknown;
+    await overview(page, null, true, () => led);
+    const loose = page.locator("[data-ov-loose] [data-ov-panes]");
+    await expect(loose).toHaveAttribute("data-ov-panes", /:/);
+    led = { machine: "m_suite", machine_name: (await loose.getAttribute("data-ov-panes"))!.split(":")[0], session: "scratch", at: 1 };
+    await page.reload();
+    await expect(page.locator("[data-overview]")).toBeVisible({ timeout: 20_000 });
+    const pill = (l: string) => page.locator(`[data-ov-level-pill="${l}"]`);
+    const front = page.locator("[data-ov-tabs] .ov-tab-on");
+    // The lead's tab is its session's peek, by its key past the card's.
+    const lead = `peek:${(await page.locator("[data-ov-loose] [data-ov-session]").getAttribute("data-ov-session"))!.split("|")[1]}`;
+    await expect(pill("project")).toHaveAttribute("aria-current", "true");
+    await expect(page.locator("[data-ov-zoom-bar] .ov-zoom-hint")).toHaveCount(0);
+
+    // In: the row's title, to the board, its cards in flight a row each.
+    await page.locator(`[data-ov-board="${B}"] [data-ov-board-title]`).click();
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/board/${B}[^/]*$`));
+    await expect(page.locator(`[data-ov-level-board="${B}"]`)).toBeVisible();
+    await expect(page.locator("[data-ov-boards]")).toHaveCount(0);
+    await expect(page.locator("[data-ov-ticket]")).toHaveCount(3);
+    await expect(pill("board")).toHaveAttribute("aria-current", "true");
+    await expect(pill("work")).toBeDisabled();
+    await expect(page.locator('[data-app-path] [data-path="board"]')).toHaveText("Launch");
+    await expect(front).toHaveAttribute("data-ov-tab", lead);
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: info.outputPath("overview-zoom-board.png") });
+
+    // In again: #12, its sessions, its agent's tab in front and its row outlined.
+    await page.locator('[data-ov-ticket="row_b"]').click();
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/board/${B}[^/]*/card/row_b$`));
+    const work = page.locator('[data-ov-level-work="row_b"]');
+    await expect(work).toBeVisible();
+    await expect(work.locator("h2")).toHaveText("#12 Fix the installer");
+    await expect(page.locator('[data-app-path] [data-path="card"]')).toHaveText("#12 · Fix the installer");
+    await expect(pill("work")).toHaveAttribute("aria-current", "true");
+    await expect(work.locator("[data-ov-work-session]")).not.toHaveCount(0);
+    await expect(work.locator("[data-ov-talking]")).toHaveCount(1);
+    await expect(front).toHaveAttribute("data-ov-tab", /^peek:/);
+    await expect(front).not.toHaveAttribute("data-ov-tab", lead);
+    // The lead's tab is still open beside it.
+    await expect(page.locator(`[data-ov-tab="${lead}"]`)).toHaveCount(1);
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: info.outputPath("overview-zoom-work.png") });
+    // A reload lands on it.
+    await page.reload();
+    await expect(work).toBeVisible({ timeout: 20_000 });
+
+    // Out: Esc to the board, the lead's tab in front again; Esc to the project.
+    await page.keyboard.press("Escape");
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/board/${B}[^/]*$`));
+    await expect(front).toHaveAttribute("data-ov-tab", lead);
+    await page.keyboard.press("Escape");
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/?]*$`));
+    await expect(page.locator(`[data-ov-board="${B}"]`)).toBeVisible();
+    await expect(pill("project")).toHaveAttribute("aria-current", "true");
+    // Back goes in again, and the pill comes out.
+    await page.goBack();
+    await expect(page.locator(`[data-ov-level-board="${B}"]`)).toBeVisible();
+    await pill("project").click();
+    await expect(page.locator("[data-ov-boards]")).toBeVisible();
   });
 
   test("a board's lead is a chip on its row, with its session's dot, name and machine, that opens the board's thread and doesn't toggle the row (Arugula #1272)", async ({ page }, info) => {
