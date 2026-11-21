@@ -317,7 +317,7 @@ test("a project's Docs and one Doc (aru-118)", () => {
 
 test("the shell's hand-off: `/?to=` names a place for the current project", () => {
   assert.deepEqual(parse("/", "?to=docs"), { page: "home", to: "docs" });
-  for (const to of ["projects", "boards", "chat"]) assert.deepEqual(parse("/", `?to=${to}`), { page: "home", to });
+  for (const to of ["projects", "boards", "chat", "machines", "runs"]) assert.deepEqual(parse("/", `?to=${to}`), { page: "home", to });
   assert.deepEqual(parse("/", "?to=inbox"), { page: "home" });
   assert.deepEqual(parse("/", "?to="), { page: "home" });
 });

@@ -69,10 +69,11 @@ test("each entry point opens the current project's page, or the global one witho
   assert.equal(entryPath("docs", team), `/p/${P}/docs`);
   assert.equal(entryPath("boards", team), `/p/${P}/boards`);
   assert.equal(entryPath("chat", team), `/p/${P}/chat`);
+  assert.equal(entryPath("runs", team), `/p/${P}/runs`);
   // Personal has no team chat: the chat page, as before.
   assert.equal(entryPath("chat", personal), "/chat");
   assert.equal(entryPath("docs", personal), `/p/${Q}/docs`);
-  for (const [entry, path] of [["projects", "/"], ["docs", "/docs"], ["boards", "/boards"], ["chat", "/chat"]]) {
+  for (const [entry, path] of [["projects", "/"], ["docs", "/docs"], ["boards", "/boards"], ["chat", "/chat"], ["runs", "/"]]) {
     assert.equal(entryPath(entry, undefined), path, entry);
   }
 });

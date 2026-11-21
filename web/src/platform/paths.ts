@@ -6,7 +6,7 @@
 // stay in fragments"): they stay in the shell's fragments.
 //
 //   /                              the projects (`?to=docs`, `boards`, `chat`,
-//                                  `machines` or `projects`: the shell's
+//                                  `machines`, `runs` or `projects`: the shell's
 //                                  buttons, on to that place in the current
 //                                  project)
 //   /p/:project                    a project's home: the Overview, at its
@@ -107,7 +107,7 @@ export const TOP = ["p", "chat", "dm", "issues", "runs", "installed", "inbox", "
 
 export type Route =
   /** `to`: a shell button's place, to open in the current project (./current-project). */
-  | { page: "home"; to?: "projects" | "docs" | "boards" | "chat" | "machines" }
+  | { page: "home"; to?: "projects" | "docs" | "boards" | "chat" | "machines" | "runs" }
   /** The Overview; with `board` and `card`, that card's drawer open over
    * it; with `zoom`, zoomed in to a board or some work (Arugula #1287). */
   | { page: "project"; project: string; board?: string; card?: string; zoom?: OverviewZoom }
@@ -237,7 +237,7 @@ export function parse(path: string, search = "", hash = ""): Route {
   const missing: Route = { page: "missing", path };
   if (parts.length === 0) {
     const to = q.get("to");
-    return to === "projects" || to === "docs" || to === "boards" || to === "chat" || to === "machines" ? { page: "home", to } : { page: "home" };
+    return to === "projects" || to === "docs" || to === "boards" || to === "chat" || to === "machines" || to === "runs" ? { page: "home", to } : { page: "home" };
   }
   // `?all=1` opens these across every project, not the current one's (Arugula #881).
   const all = q.get("all") === "1" ? { all: true as const } : {};

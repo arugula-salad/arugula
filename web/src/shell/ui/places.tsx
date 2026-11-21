@@ -35,9 +35,11 @@ export const CHAT_TO = "/?to=chat";
 export const BOARDS_TO = "/?to=boards";
 export const DOCS_TO = "/?to=docs";
 export const PROJECTS_TO = "/?to=projects";
-export const MACHINES_TO = "/?to=machines";
-/** Build's home in the app (Arugula #1083), which only the app has. */
-const PANES_TO = machinesPath({ at: "panes" });
+export const RUNS_TO = "/?to=runs";
+/** The Inbox is across projects: its own address. */
+export const INBOX_TO = "/inbox";
+/** The Machines page in the app (Arugula #1346), which only the app has. */
+const MACHINES_PAGE = machinesPath({ at: "machines" });
 
 /** Chat, on the platform page (M153): the current project's team's. */
 export function openChat() {
@@ -225,17 +227,18 @@ export function Places({ client, at }: { client: Client; at: Place }) {
   );
 }
 
-/** Build's places, in a machine's bar on a computer (Arugula #637, #1080):
- * the bar is what you're in, the machine, then Panes, Swarm and Machines,
- * as the app's Build is. Machines is the app's list, where control has a
- * platform page; a machine's own Docs are Plan's Docs there, so only a
- * machine on its own keeps a Docs place. Recipes is this machine's. */
+/** Machines' views, in a machine's bar on a computer (Arugula #637,
+ * #1345): the bar is what you're in, the machine, then Machines and Runs, as
+ * the app's Machines are. Machines is the app's Machines page, and
+ * Runs its runs, where control has a platform page; a machine on its own
+ * keeps its Panes and Swarm, and its own Docs (the app's Docs are the
+ * rail's). Recipes is this machine's. */
 export function MachinePlaces({ client, at, onSwarm }: { client: Client; at: Place; onSwarm?: () => void }) {
   const owner = !client.state?.roles;
   const recipes = client.flag("agent-delegation") && owner;
   const panes = at === "panes" || at === "overview";
-  const machines = !!platformHref(MACHINES_TO);
-  const home = platformHere();
+  const app = !!platformHref(MACHINES_PAGE);
+  const runs = !!platformHref(RUNS_TO);
   const docs = owner && !platformHref(DOCS_TO);
   const item = (name: string, hook: string, here: boolean, title: string, go: () => void) => (
     <button
@@ -248,17 +251,20 @@ export function MachinePlaces({ client, at, onSwarm }: { client: Client; at: Pla
       {name}
     </button>
   );
+  const back = () => {
+    if (at !== "panes") closePlace(at);
+    else if (app) openPlatform(MACHINES_PAGE);
+    else client.viewOf(client.active() ?? -1)?.focus();
+  };
   return (
-    <nav class="places" aria-label="Build's places" data-machine-places>
-      {/* In the app, Panes is every machine's (Arugula #1083), a step up from here. */}
-      {item("Panes", "panes", panes, home ? "Panes: every pane on every machine, by machine" : "Your panes: back to this session's last tab and pane", () => {
-        if (at !== "panes") closePlace(at);
-        else if (home) openPlatform(PANES_TO);
-        else client.viewOf(client.active() ?? -1)?.focus();
-      })}
-      {/* In the app (Arugula #989), Swarm is its route; here, this page's. */}
-      {item("Swarm", "swarm", at === "swarm", `Swarm: ${SWARM_ABOUT}`, () => at !== "swarm" && (onSwarm ? onSwarm() : openSwarm()))}
-      {machines && item("Machines", "machines", false, "Machines: your team's computers and cloud workspaces", () => openPlatform(MACHINES_TO))}
+    <nav class="places" aria-label="Machines' views" data-machine-places>
+      {/* In the app, Machines is the Machines page (Arugula #1346), a step up from here. */}
+      {app
+        ? item("Machines", "machines", panes, "Machines: every machine's sessions and panes", back)
+        : item("Panes", "panes", panes, "Your panes: back to this session's last tab and pane", back)}
+      {runs && item("Runs", "runs", false, "Runs: your project's runs", () => openPlatform(RUNS_TO))}
+      {/* The app's Swarm is the Overview's (Arugula #1345); a page of its own keeps its own. */}
+      {!platformHere() && item("Swarm", "swarm", at === "swarm", `Swarm: ${SWARM_ABOUT}`, () => at !== "swarm" && (onSwarm ? onSwarm() : openSwarm()))}
       {docs && item("Docs", "docs", at === "docs", "Docs: the Docs your agents wrote on this machine, to open again", () => at !== "docs" && openDocsPage())}
       {recipes && item("Recipes", "recipes", at === "agents", "Recipes: this machine's recipes and your team's agents", () => at !== "agents" && openAgentsPage())}
     </nav>

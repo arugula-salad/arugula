@@ -1,11 +1,11 @@
-// The app's rail (#377; the project-rooted rail of Arugula #989; three
-// spaces since Arugula #1080): the same one as a machine's own page's
-// (shared/ui/rail), down the left on a computer. The project tile at the
-// top is the switcher. Then the three kinds of work: Plan (Overview,
-// Boards, Docs), Build (Panes, Swarm, Machines) and Talk (Chat); at the
-// foot the Inbox, Settings and you. A space's places are the bar's
-// (`SpacePlaces`), beside the path to where you are (./bar). A phone has no
-// rail: the spaces and the Inbox are a bar along the bottom (`PhoneTabs`).
+// The app's rail (#377; the project-rooted rail of Arugula #989; one
+// button per place since Arugula #1345): the same one as a machine's own
+// page's (shared/ui/rail), down the left on a computer. The project tile at
+// the top is the switcher. Then the places: Overview, Boards, Docs,
+// Machines and Chat; at the foot the Inbox, Settings and you. A place's
+// views are the bar's (`PlaceViews`), beside the path to where you are
+// (./bar). A phone has no rail: the places are a bar along the bottom
+// (`PhoneTabs`), and the Inbox a bell in the top bar (`PhoneInbox`).
 
 import type { ComponentChildren } from "preact";
 import { useRef, useState } from "preact/hooks";
@@ -13,7 +13,7 @@ import { chat } from "../shared/chat-store";
 import { chatUnread, projectUnread } from "../shared/chat/unread";
 import { usePlatformApi } from "../shared/platform-api";
 import { usePhone, useSubscribe } from "../shared/ui/hooks";
-import { BellIcon, BuildIcon, PlanIcon, SettingsIcon, TalkIcon } from "../shared/ui/icons";
+import { BellIcon, BoardsIcon, ChatIcon, DocsIcon, MachinesIcon, OverviewIcon, SettingsIcon } from "../shared/ui/icons";
 import { pressedShut } from "../shared/ui/menu";
 import { Rail, type RailItem } from "../shared/ui/rail";
 import { Count } from "../shared/ui/state-chip";
@@ -29,7 +29,7 @@ import { Switcher } from "./switcher";
 import { subscribeSeen } from "../shared/seen";
 import { barProject, where } from "./where";
 
-/** A space on the rail or the phone's bar, or a place in a space's bar. */
+/** A place on the rail or the phone's bar, or a view in a place's bar. */
 interface PlaceLink {
   key: string;
   label: string;
@@ -40,12 +40,12 @@ interface PlaceLink {
   count?: { n: number; mention: boolean };
 }
 
-/** The three kinds of work (Arugula #1080). */
-export type Space = "plan" | "build" | "talk";
+/** The rail's places (Arugula #1345). */
+export type PlaceKey = "overview" | "boards" | "docs" | "machines" | "chat";
 
 const none = { n: 0, mention: false };
 
-/** The spaces and their places, for the project the page is in (else the
+/** The places and their views, for the project the page is in (else the
  * current one, else Personal's), as the rail, the bar and the phone's bar
  * draw them. */
 function usePlaces() {
@@ -55,6 +55,7 @@ function usePlaces() {
   useSubscribe(onCurrentProject);
   useSubscribe(subscribeSeen);
   const r = useRoute();
+  const phone = usePhone();
   const { Machines } = usePlatformApi();
   const inbox = useInboxCount();
   const shown = barProject(r);
@@ -63,45 +64,48 @@ function usePlaces() {
   const unknown = !!shown && !p && session.state === "ready";
   const section = unknown ? null : sectionOf(r);
   const project = p ?? session.project(currentProject()) ?? session.personal();
-  const at = (page: "project" | "boards" | "docs") => (project ? pathOf({ page, project: project.id } as Route, names) : "/");
+  const at = (page: "project" | "boards" | "docs" | "runs" | "workspaces") => (project ? pathOf({ page, project: project.id } as Route, names) : "/");
   const talk = !unknown ? chatUnread(chat.rooms, chatTeam(p, project)) : none;
   const chatTo = shown ? chatPath(shown) : entryPath("chat", project, names);
   // What's new in the threads on the project's issues (Boards) and runs (Machines, which holds Runs).
   const issues = !unknown && project && chat.on !== false ? projectUnread(chat.rooms, project.id, "iss_") : none;
   const runs = !unknown && project ? projectUnread(chat.rooms, project.id, "run_") : none;
 
-  const plan: PlaceLink[] = [
-    { key: "overview", label: "Overview", tip: "Overview: this project's work", to: at("project"), here: section === "home" },
-    { key: "boards", label: "Boards", tip: "Boards: this project's boards and tickets", to: at("boards"), here: section === "boards" && !!shown, count: issues },
-    { key: "docs", label: "Docs", tip: "Docs: this project's Docs", to: at("docs"), here: section === "docs" },
-  ];
   // The machines are the app's own places where it has them; else control's page.
   const m = r.page === "machines" ? r.at : null;
-  const list = !!m && m.at === "machines" && m.pane === undefined && !m.name;
-  const machinesList = project ? pathOf({ page: "machines", project: project.id, at: { at: "machines" } }, names) : "/";
-  // Build opens on every machine's panes, by machine (Arugula #1083); a pane opens on its machine's page, still Panes'.
-  const panesTo = Machines && project ? pathOf({ page: "machines", project: project.id, at: { at: "panes" } }, names) : `${controlOrigin()}/`;
-  const build: PlaceLink[] = !Machines || !project
+  const machines = !!Machines && !!project;
+  const swarm = m?.at === "swarm";
+  // Machines opens on the Machines page (Arugula #1346); a pane opens on its machine's page.
+  const machinesTo = machines ? pathOf({ page: "machines", project: project.id, at: { at: "machines" } }, names) : `${controlOrigin()}/`;
+  // The Swarm is the Overview's view (Arugula #1348 moves it in): its route lights the Overview.
+  const overviewViews: PlaceLink[] = machines && !phone
+    ? [
+        { key: "overview", label: "Overview", tip: "Overview: this project's work", to: at("project"), here: section === "home" },
+        { key: "swarm", label: "Swarm", tip: "Swarm: every pane on every machine", to: pathOf({ page: "machines", project: project.id, at: { at: "swarm" } }, names), here: swarm },
+      ]
+    : [];
+  // A run is a session in a cloud workspace (decision 6): Runs and Workspaces are Machines' (Arugula #1082).
+  const machineViews: PlaceLink[] = !machines
     ? []
     : [
-        { key: "panes", label: "Panes", tip: "Panes: every pane on every machine, by machine", to: panesTo, here: !!m && !list && m.at !== "swarm" },
-        { key: "swarm", label: "Swarm", tip: "Swarm: every pane on every machine", to: pathOf({ page: "machines", project: project.id, at: { at: "swarm" } }, names), here: m?.at === "swarm" },
-        // A run is a session in a cloud workspace (decision 6): Runs and Workspaces are under Machines (Arugula #1082).
-        { key: "machines", label: "Machines", tip: "Machines: your team's computers, cloud workspaces and runs", to: machinesList, here: list || section === "workspaces" || section === "runs", count: runs },
+        { key: "machines", label: "Machines", tip: "Machines: every machine's sessions and panes", to: machinesTo, here: !!m && !swarm },
+        { key: "runs", label: "Runs", tip: "Runs: this project's runs", to: at("runs"), here: section === "runs", count: runs },
+        ...(session.hosted ? [{ key: "workspaces", label: "Workspaces", tip: "Workspaces: this project's cloud workspaces", to: at("workspaces"), here: section === "workspaces" }] : []),
       ];
-  // Deploys is hidden for v1 (Arugula #1078) but its page still opens from a link: it's planning's.
-  const inPlan = !!section && ["home", "boards", "docs", "deploys"].includes(section);
-  const spaces: (PlaceLink & { key: Space; places: PlaceLink[] })[] = [
-    { key: "plan", label: "Plan", tip: "Plan: this project's overview, boards and Docs", icon: <PlanIcon />, to: at("project"), here: inPlan, count: issues, places: plan },
-    { key: "build", label: "Build", tip: "Build: your panes, the swarm and your team's machines", icon: <BuildIcon />, to: panesTo, here: r.page === "machines" || section === "workspaces" || section === "runs", count: runs, places: build },
-    { key: "talk", label: "Talk", tip: "Talk: your team's rooms", icon: <TalkIcon />, to: chatTo, here: section === "chat", count: talk, places: [] },
+  const places: (PlaceLink & { key: PlaceKey; views: PlaceLink[] })[] = [
+    // Deploys is hidden for v1 (Arugula #1078) but its page still opens from a link: it's the Overview's.
+    { key: "overview", label: "Overview", tip: "Overview: this project's work", icon: <OverviewIcon />, to: at("project"), here: section === "home" || section === "deploys" || swarm, views: overviewViews },
+    { key: "boards", label: "Boards", tip: "Boards: this project's boards and tickets", icon: <BoardsIcon />, to: at("boards"), here: section === "boards", count: issues, views: [] },
+    { key: "docs", label: "Docs", tip: "Docs: this project's Docs", icon: <DocsIcon />, to: at("docs"), here: section === "docs", views: [] },
+    { key: "machines", label: "Machines", tip: "Machines: your team's computers, their panes, cloud workspaces and runs", icon: <MachinesIcon />, to: machinesTo, here: (!!m && !swarm) || section === "workspaces" || section === "runs", count: runs, views: machineViews },
+    { key: "chat", label: "Chat", tip: "Chat: your team's rooms", icon: <ChatIcon />, to: chatTo, here: section === "chat", count: talk, views: [] },
   ];
   const foot: PlaceLink[] = [
     { key: "inbox", label: "Inbox", tip: inbox.title || "Inbox: what wants you, across your projects", icon: <BellIcon />, to: "/inbox", here: section === "inbox", count: { n: inbox.n, mention: inbox.waiting > 0 } },
     // Settings at the project you're in (Arugula #2594), else yours; account settings are also the avatar's menu.
     { key: "settings", label: "Settings", tip: shown ? "Settings: this project's" : "Settings", icon: <SettingsIcon />, to: shown && project ? pathOf({ page: "settings", scope: "project", project: project.id }, names) : "/settings", here: section === "settings" },
   ];
-  return { spaces, foot, project, shown };
+  return { places, foot, project, shown };
 }
 
 const external = (to: string) => /^https?:/.test(to);
@@ -120,28 +124,28 @@ const railItem = (p: PlaceLink): RailItem => ({
 });
 
 export function PlatformRail() {
-  const { spaces, foot, project, shown } = usePlaces();
+  const { places, foot, project, shown } = usePlaces();
   const brand = <ProjectTile project={project} shown={shown} />;
-  return <Rail brand={brand} items={spaces.map(railItem)} bottom={foot.map(railItem)} foot={<AccountButton compact />} />;
+  return <Rail brand={brand} items={places.map(railItem)} bottom={foot.map(railItem)} foot={<AccountButton compact />} />;
 }
 
-/** The space you're in's places, in the bar (Arugula #1080), as a
- * machine's page has its own (shell/ui/places' MachinePlaces). Talk has
- * none: Chat is the whole of it. */
-export function SpacePlaces() {
-  const { spaces } = usePlaces();
-  const space = spaces.find((s) => s.here && s.places.length);
-  if (!space) return null;
+/** The place you're in's views, in the bar (Arugula #1345): the Overview's
+ * Swarm, Machines' Runs and Workspaces, as a machine's page has its own
+ * (shell/ui/places' MachinePlaces). Boards, Docs and Chat have none. */
+export function PlaceViews() {
+  const { places } = usePlaces();
+  const place = places.find((s) => s.here && s.views.length);
+  if (!place) return null;
   return (
-    <nav class="places" aria-label={`${space.label}'s places`} data-space-places={space.key}>
-      {space.places.map((p) => (
+    <nav class="places" aria-label={`${place.label}'s views`} data-place-views={place.key}>
+      {place.views.map((p) => (
         <a
           key={p.key}
           class={p.here ? "place frame-place here" : "place frame-place"}
           href={p.to}
           title={p.tip}
           aria-current={p.here ? "page" : undefined}
-          {...{ [`data-space-${p.key}`]: "" }}
+          {...{ [`data-view-${p.key}`]: "" }}
           onClick={(e) => !external(p.to) && follow(e, p.to)}
         >
           {p.label}
@@ -181,15 +185,14 @@ function ProjectTile({ project, shown }: { project: ReturnType<typeof session.pr
   );
 }
 
-/** The phone's bar along the bottom (decision 15; Arugula #1080): Plan,
- * Build, Talk and the Inbox. A space's places are the top bar's; Settings
- * is under your picture. */
+/** The phone's bar along the bottom (decision 15; Arugula #1345): the
+ * rail's five places. A place's views are the top bar's; the Inbox is its
+ * bell (`PhoneInbox`) and Settings is under your picture. */
 export function PhoneTabs() {
-  const { spaces, foot } = usePlaces();
-  const tabs = [...spaces, foot.find((p) => p.key === "inbox")!];
+  const { places } = usePlaces();
   return (
     <nav class="app-tabs" aria-label="Places" data-phone-tabs>
-      {tabs.map((p) => (
+      {places.map((p) => (
         <a key={p.key} class={p.here ? "app-tab here" : "app-tab"} href={p.to} aria-current={p.here ? "page" : undefined} {...{ [`data-tab-${p.key}`]: "" }} onClick={(e) => !external(p.to) && (e.preventDefault(), go(p.to))}>
           {p.icon}
           <span>{p.label}</span>
@@ -197,6 +200,27 @@ export function PhoneTabs() {
         </a>
       ))}
     </nav>
+  );
+}
+
+/** The Inbox on a phone (Arugula #1345): a bell in the top bar, with its count. */
+export function PhoneInbox() {
+  const { foot } = usePlaces();
+  const inbox = foot.find((p) => p.key === "inbox")!;
+  const n = inbox.count?.n ?? 0;
+  return (
+    <a
+      class={inbox.here ? "platform-inbox-bell here" : "platform-inbox-bell"}
+      href={inbox.to}
+      title={inbox.tip}
+      aria-label={n ? `Inbox, ${n}${inbox.count?.mention ? ", for you" : ""}` : "Inbox"}
+      aria-current={inbox.here ? "page" : undefined}
+      data-phone-inbox
+      onClick={(e) => follow(e, inbox.to)}
+    >
+      <BellIcon />
+      {!!n && <span class={inbox.count?.mention ? "ws-rail-count mention" : "ws-rail-count"}>{inbox.count?.mention ? `@${n}` : n}</span>}
+    </a>
   );
 }
 

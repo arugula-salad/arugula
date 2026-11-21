@@ -121,26 +121,21 @@ export const SettingsIcon = () => (
   </Svg>
 );
 
-/** The rail's three spaces (Arugula #1080): Plan, a page of lines;
- * Build, a prompt; Talk, two bubbles. */
-export const PlanIcon = () => (
+/** The rail's places (Arugula #1345) the icons above don't draw: the
+ * Overview, four tiles of a dashboard; Machines, a screen on a stand. */
+export const OverviewIcon = () => (
   <Svg>
-    <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
-    <path d="M7.5 9.5h1.5M11 9.5h5.5M7.5 14.5h1.5M11 14.5h5.5" />
+    <rect x="4" y="4" width="7" height="9" rx="1.5" />
+    <rect x="13" y="4" width="7" height="5" rx="1.5" />
+    <rect x="4" y="15" width="7" height="5" rx="1.5" />
+    <rect x="13" y="11" width="7" height="9" rx="1.5" />
   </Svg>
 );
 
-export const BuildIcon = () => (
+export const MachinesIcon = () => (
   <Svg>
-    <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
-    <path d="M7.5 10l3 2-3 2M12.5 15h4.5" />
-  </Svg>
-);
-
-export const TalkIcon = () => (
-  <Svg>
-    <path d="M3.5 5.5h11.5v8H8.5l-4 3v-3h-1z" />
-    <path d="M17.5 9.5h3v8l-3-2h-6v-2" />
+    <rect x="3.5" y="4.5" width="17" height="11.5" rx="2" />
+    <path d="M12 16v3.5M8 19.5h8" />
   </Svg>
 );
 

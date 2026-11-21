@@ -1,9 +1,9 @@
 // The app's bar (M150; the zoom path of Arugula #989): where you are, as a
 // path you can climb (the team, the project, the place). It's the shell's
 // workspace head (shared/frame.css, #1018), so the two pages sit in one
-// frame. The space you're in's places follow it (./rail's SpacePlaces). On
-// a phone, with no rail, the bar has the project's switcher, those places
-// and you, and the spaces and the Inbox are a bar along the bottom.
+// frame. The place you're in's views follow it (./rail's PlaceViews). On a
+// phone, with no rail, the bar has the project's switcher, those views, the
+// Inbox's bell and you, and the places are a bar along the bottom.
 
 import type { ComponentChildren } from "preact";
 import { usePhone, useSubscribe } from "../shared/ui/hooks";
@@ -24,6 +24,7 @@ import { Caret, ChevronIcon } from "../shared/ui/icons";
 import { ownerKey, ownerNamed } from "./owners";
 import { Switcher } from "./switcher";
 import { boards } from "../shared/boards/store";
+import { PhoneInbox } from "./rail";
 
 /** The bar's place a route is under (UI audit #159): a project's cloud
  * workspaces and its deploys (Deploy… and a deploy) have places of their
@@ -222,7 +223,7 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
   useSubscribe((fn) => session.subscribe(fn));
   useSubscribe((fn) => where.subscribe(fn));
   const r = useRoute();
-  // A phone has no rail (#377): the bar keeps the switcher; the Inbox is a tab.
+  // A phone has no rail (#377): the bar keeps the switcher and the Inbox's bell (Arugula #1345).
   const rail = !usePhone();
   // The bar keeps the current project while Boards, Docs and the Inbox are scoped to it (Arugula #881).
   const project = barProject(r) ?? (scopable(r) ? scopeOf(r, currentProject(), (id) => !!session.project(id)) : undefined);
@@ -232,6 +233,7 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
       {rail ? <Path r={r} project={project} /> : <PhoneTop r={r} project={project} name={project ? (p?.name ?? "…") : "All projects"} />}
       {children}
       <div class="bar-fill" data-tauri-drag-region />
+      {!rail && <PhoneInbox />}
       {!rail && <AccountButton compact />}
       {/* In the desktop app on Linux the bar is the titlebar (M157). */}
       <WindowButtons />

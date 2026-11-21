@@ -55,14 +55,14 @@ export function onCurrentProject(fn: () => void): () => void {
 }
 
 /** The places a button can open in the current project. */
-export const ENTRIES = ["projects", "docs", "boards", "chat", "machines"] as const;
+export const ENTRIES = ["projects", "docs", "boards", "chat", "machines", "runs"] as const;
 export type Entry = (typeof ENTRIES)[number];
 
 /** Where `entry` opens for `project` (the reader's, as the session knows it),
  * or the global page when there's none. Chat is its team's; Personal has no
  * team chat, so it keeps the chat page. */
 export function entryPath(entry: Entry, project: { id: string; team?: unknown } | undefined, names?: Names): string {
-  if (!project) return { projects: "/", docs: "/docs", boards: "/boards", chat: "/chat", machines: "/" }[entry];
+  if (!project) return { projects: "/", docs: "/docs", boards: "/boards", chat: "/chat", machines: "/", runs: "/" }[entry];
   const id = project.id;
   switch (entry) {
     case "projects":
@@ -75,6 +75,8 @@ export function entryPath(entry: Entry, project: { id: string; team?: unknown } 
       return project.team ? pathOf({ page: "chat", project: id }, names) : "/chat";
     case "machines":
       return pathOf({ page: "machines", project: id, at: { at: "machines" } }, names);
+    case "runs":
+      return pathOf({ page: "runs", project: id }, names);
   }
 }
 
