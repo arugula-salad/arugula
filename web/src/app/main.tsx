@@ -44,6 +44,7 @@ import { appMachineSettings } from "./settings";
 import { AppSession } from "./session";
 import { signedInOf } from "./signed-in";
 import { setSignedIn } from "../shell/signed-in";
+import { lendFrom } from "../shell/hand";
 import { setPlatformHere } from "../shell/platform-links";
 import { followPlatformLinks } from "./platform-here";
 import { accountBackend, setSeenBackend } from "../shared/seen";
@@ -99,12 +100,16 @@ const api: PlatformApi = {
 // Your prefs (where you were, per project; hints seen) are your account's
 // once you're signed in here: the hub's `/api/me/prefs`, through the app's
 // host. Until the hub answers there, they're this browser's (shared/seen.ts).
+// This device's tools, lent to agents on the account's machines while its
+// switch (Settings › You) is on, as control's page lends them: through
+// the hub, with the app's machine tokens.
 let prefsFor: string | null = null;
 session.subscribe(() => {
   const account = session.state === "ready" ? (session.me?.account ?? null) : null;
   if (!account || account === prefsFor) return;
   prefsFor = account;
   setSeenBackend(accountBackend(() => appSession().prefs(), (changes) => appSession().setPrefs(changes)));
+  lendFrom(appSession());
 });
 render(
   <PlatformApiContext.Provider value={api}>

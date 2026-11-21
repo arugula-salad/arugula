@@ -8,7 +8,9 @@ import { UsageReports } from "../../shared/ui/account-telemetry";
 import { agentName, api, passkeyRemoval, passkeyRemove, shownName, type ControlSession, type PasskeyRemoval } from "../control";
 import { desktopApp } from "../../shared/desktop";
 import { BrowserStep, browserButton } from "../../shared/ui/browser-step";
-import { currentHand, lending, setLending } from "../hand";
+import { lendReached, lending, onLending, setLend } from "../../shared/lending";
+import { useSubscribe } from "../../shared/ui/hooks";
+import { appOrigin, type PagesFlag } from "../app-redirect";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { Time } from "../../shared/ui/time";
 import { EmailSection } from "./email";
@@ -526,24 +528,27 @@ function DeleteAccount({ s, back }: { s: ControlSession; back: () => void }) {
   );
 }
 
-/** S33: this device's tools for agents on your machines. */
+/** S33: this device's tools for agents on your machines. Where the app
+ * is, its switch is there (Settings › You), and here only while it's on,
+ * to turn off what this page lends. */
 function LendDevice({ s }: { s: ControlSession }) {
-  const [on, setOn] = useState(lending());
-  const [, tick] = useState(0);
-  useEffect(() => {
-    const h = currentHand();
-    if (!h) return;
-    const fn = () => tick((n) => n + 1);
-    h.listeners.add(fn);
-    return () => void h.listeners.delete(fn);
-  }, [on]);
-  const reached = currentHand()?.connected() ?? 0;
+  useSubscribe(onLending);
+  const on = lending();
+  const app = appOrigin(s.info as PagesFlag);
+  if (app && !on) return null;
+  const reached = lendReached();
   return (
     <>
       <h3 class="control-group">Lend this device to agents</h3>
       <p class="dim">
         Agents on your machines may ask to use this device: its location, camera, microphone, clipboard, or you. You allow or
         deny each request here, while this page is open.
+        {app ? (
+          <>
+            {" "}
+            The app lends it from <a href={`${app}/settings/you/appearance`}>Settings › You</a>.
+          </>
+        ) : null}
       </p>
       <label class="control-check">
         <input
@@ -552,11 +557,7 @@ function LendDevice({ s }: { s: ControlSession }) {
           class="sw-switch"
           data-lend-device
           checked={on}
-          onChange={(e) => {
-            const v = (e.target as HTMLInputElement).checked;
-            setLending(s, v);
-            setOn(v);
-          }}
+          onChange={(e) => setLend((e.target as HTMLInputElement).checked)}
         />{" "}
         Lend this device{on ? ` (reaching ${reached} machine${reached === 1 ? "" : "s"})` : ""}
       </label>

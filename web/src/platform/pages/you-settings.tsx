@@ -2,8 +2,9 @@
 // (Arugula #897), in a flat list (Arugula #1108, #1317). First how loud
 // chat is and quiet hours, words that notify you, and which of your phones
 // and browsers are pushed what. Then Appearance: this device's palette,
-// finish, corners and density, the dialog's controls drawn in place, and
-// under them your preferences (Tips, the editor), which are the account's
+// finish, corners and density, the dialog's controls drawn in place,
+// whether this device is lent to agents (its hand runs in the app,
+// shared/lending.ts), and under them your preferences (Tips, the editor), which are the account's
 // (Arugula #1318; `preferences`' old address lands here). Then what's on control's
 // page (sign-in and passkeys, machines, teams, shared Docs until Docs has
 // them, Arugula #1315), as ↗ rows that open it at that dialog; the products linked to the account (M229);
@@ -18,6 +19,7 @@
 
 import { useEffect } from "preact/hooks";
 import { onAppearance, palette, appearance, FINISHES } from "../../shared/appearance";
+import { lendReached, lending, onLending, setLend } from "../../shared/lending";
 import { EDITORS, editorShown, setEditorPref, type Editor } from "../../shared/editor-pref";
 import { bigTipsOn, setBigTips, setTips, subscribeSeen, tipsOn } from "../../shared/seen";
 import { AppearanceControls, ResetAppearance } from "../../shared/ui/appearance";
@@ -79,20 +81,44 @@ function PhonesAndBrowsers() {
 function Appearance() {
   useSubscribe(onAppearance);
   useSubscribe(subscribeSeen);
+  useSubscribe(onLending);
   const finish = FINISHES.find((f) => f.id === appearance().finish)?.name;
   return (
     <Section
       id="appearance"
       title="Appearance"
-      summary={joined(`${palette().name}${finish ? `, ${finish}` : ""} on this device`, preferencesSaid())}
-      lede="Palette, finish, corners and chat density on this device, and your preferences."
+      summary={joined(`${palette().name}${finish ? `, ${finish}` : ""} on this device`, lending() && "lent to agents", preferencesSaid())}
+      lede="Palette, finish, corners and chat density on this device, whether agents may use it, and your preferences."
     >
       <AppearanceControls />
       <div class="prompt-buttons">
         <ResetAppearance />
       </div>
+      <LendDevice />
       <Preferences />
     </Section>
+  );
+}
+
+/** S33: this device's tools (location, camera, mic, clipboard) for
+ * agents on your machines, while this page is open: this device only. */
+function LendDevice() {
+  useSubscribe(onLending);
+  const on = lending();
+  const reached = lendReached();
+  return (
+    <ul class="platform-list settings-rows">
+      <li>
+        <label class="settings-switch">
+          <input type="checkbox" role="switch" class="sw-switch" checked={on} data-lend-device onChange={(e) => setLend(e.currentTarget.checked)} />
+          <span>Lend this device to agents</span>
+        </label>
+        <span class="dim">
+          Agents on your machines may ask for its location, camera, microphone or clipboard, or ask you; you allow or deny each
+          while this page is open. This device only{on ? `, reaching ${reached} machine${reached === 1 ? "" : "s"}` : ""}.
+        </span>
+      </li>
+    </ul>
   );
 }
 

@@ -11,7 +11,7 @@ import { PlatformApiContext } from "../shared/platform-api";
 // Arugula web client: tabs and splits of terminals owned by the daemon.
 
 import { OPS, opPath } from "./ops";
-import { setLending } from "./hand";
+import { lendFrom } from "./hand";
 import { type TeamPins, type TeamPinsRequest } from "../shared/proto";
 import { render } from "preact";
 import "../shared/fonts.css";
@@ -130,7 +130,7 @@ if (info && linkMatch) {
   history.replaceState(null, "", "/");
 }
 // S33: lend this device's tools to agents, if it was turned on.
-setLending(session);
+lendFrom(session);
 // What this person has seen (hints, What's new): the account's once it's
 // signed in on control's page, else this browser's.
 if (!session) setSeenBackend(localBackend());
