@@ -3,6 +3,14 @@
 
 import SwiftUI
 
+/// DEBUG (#1307): lines to ARUGULA_DEBUG_FILE.
+func dbg(_ s: String) {
+    guard let p = ProcessInfo.processInfo.environment["ARUGULA_DEBUG_FILE"], !p.isEmpty else { return }
+    let line = "\(Date().timeIntervalSince1970) \(s)\n"
+    if let h = FileHandle(forWritingAtPath: p) { h.seekToEndOfFile(); h.write(Data(line.utf8)); h.closeFile() }
+    else { try? line.write(toFile: p, atomically: false, encoding: .utf8) }
+}
+
 /// An open channel to one machine. Its socket's thread tells this object when
 /// there's something to look at; everything else happens on the main thread.
 @MainActor
@@ -67,6 +75,7 @@ final class MachineSession: ObservableObject {
                 return UInt(bitPattern: got)
             }.value
             link = OpaquePointer(bitPattern: p)
+            dbg("\(machine.name) connected alone=\(alone)")
             connected = true
             screen?.linkOpened()
             pump()
@@ -80,6 +89,7 @@ final class MachineSession: ObservableObject {
     var linkPointer: OpaquePointer? { link }
 
     func disconnect() {
+        dbg("\(machine.name) disconnect")
         guard let l = link else { return }
         link = nil
         connected = false
@@ -104,6 +114,7 @@ final class MachineSession: ObservableObject {
         let flags = ids.withUnsafeBufferPointer { p in
             terms.withUnsafeBufferPointer { t in aru_link_feed_many(l, p.baseAddress, t.baseAddress, ids.count) }
         }
+        if !watching.isEmpty || flags & 13 != 0 { dbg("\(machine.name) pump ids=\(ids) flags=\(flags)") }
         if flags & 2 != 0, let s = takeString(aru_link_panes(l)),
             let list = try? JSONDecoder().decode(PaneList.self, from: Data(s.utf8)) {
             panes = list.panes
@@ -125,6 +136,7 @@ final class MachineSession: ObservableObject {
         if flags & 8 != 0, let said = takeString(aru_link_said(l)) { problem = said }
         if flags & 4 != 0 {
             let why = takeString(aru_link_closed(l))
+            dbg("\(machine.name) closed \(why ?? "")")
             disconnect()
             if why != "closed" { problem = why }
         }
@@ -171,12 +183,14 @@ final class MachineSession: ObservableObject {
     /// `stopAlone`: a fresh snapshot for the view that now draws it.
     func drawAlone(_ pane: UInt32) {
         alone[pane, default: 0] += 1
+        dbg("\(machine.name) drawAlone \(pane) n=\(alone[pane]!) link=\(link != nil) tabs=\(tabs.map { "\($0.id):\($0.cells.map(\.pane))" })")
         guard let l = link else { return }
         [pane].withUnsafeBufferPointer { aru_link_detach(l, $0.baseAddress, 1) }
         attachAlone([pane])
     }
 
     func stopAlone(_ pane: UInt32) {
+        dbg("\(machine.name) stopAlone \(pane) n=\(alone[pane] ?? 0)")
         guard let n = alone[pane] else { return }
         if n > 1 {
             alone[pane] = n - 1
@@ -219,6 +233,7 @@ final class MachineSession: ObservableObject {
     }
 
     func register(_ v: TerminalUIView) {
+        dbg("\(machine.name) register \(v.pane) \(ObjectIdentifier(v).hashValue)")
         let w = Weak()
         w.view = v
         watching[v.pane] = w

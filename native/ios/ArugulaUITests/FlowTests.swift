@@ -146,6 +146,7 @@ final class FlowTests: XCTestCase {
         app.launchEnvironment["ARUGULA_RESET"] = "1"
         app.launchEnvironment["ARUGULA_SIGNIN_BY_HAND"] = "1"
         app.launchEnvironment["ARUGULA_CONTROL_URL"] = env["ARUGULA_CONTROL_URL"] ?? ""
+        app.launchEnvironment["ARUGULA_DEBUG_FILE"] = handoff.appendingPathComponent("app-debug.log").path
         app.launch()
 
         // Sign in: the ticket goes to the script, which allows it and hands back
