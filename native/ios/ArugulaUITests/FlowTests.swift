@@ -309,8 +309,10 @@ final class FlowTests: XCTestCase {
             shot(app, "5-board-level-led")
             app.buttons["lead-talk"].tap()
             XCTAssertTrue(leadNamed.shows(within: 30), "Talk to the lead didn't open the lead: \(app.debugDescription)")
+            shot(app, "5-lead-talk")
             goBack(app)
-            XCTAssertTrue(leadCard.shows(within: 15), "not back on the led board")
+            if !leadCard.shows(within: 15) { shot(app, "fail-led-board") }
+            XCTAssertTrue(leadCard.exists, "not back on the led board: \(app.debugDescription)")
             app.buttons["zoom-path-overview"].tap()
             let homeThread = app.buttons["home-thread-\(led)"]
             XCTAssertTrue(homeThread.shows(within: 15), "no Board thread on home's row")
