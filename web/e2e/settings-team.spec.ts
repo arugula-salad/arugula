@@ -2,9 +2,11 @@
 // two bands (the team's own, then Every project). Members lists the roster,
 // and inviting and roles (signed by an owner's device) is a ↗ row opening
 // control's page; Machines lists what control's directory says is the
-// owner's, one of yours opening its settings; Labs is a ↗ row until the app
-// reaches its flags. On #971's fixture page (move-to-project-page.tsx): the
-// platform's answers are this spec's.
+// owner's, one of yours opening its settings; Labs is control's Teams
+// panel's list of flags (Arugula #1118), only with `dev`, and a ↗ row from
+// a control that doesn't answer `/api/flags` on the app's host. On #971's
+// fixture page (move-to-project-page.tsx): the platform's answers are this
+// spec's.
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { fixturePage } from "./fixture-page";
 
@@ -31,8 +33,16 @@ const directory = [
   { id: "dmn_mill", name: "mill", urls: [], online: true, last_seen: Date.now(), team: "tm_2", account: "acct_b", owner_name: "Jo" },
 ];
 
-/** The fixture page at `path`, with the platform's answers. */
-async function open(page: Page, path: string, { role = "owner", dir = true }: { role?: string; dir?: boolean } = {}) {
+// `GET /api/flags`: yours, and each team's with whether you own it.
+const kept = (dev = true) => ({
+  account: { studio: true },
+  teams: { tm_1: { flags: { "sandbox-providers": false }, owner: true }, tm_2: { flags: {}, owner: false } },
+  dev,
+});
+
+/** The fixture page at `path`, with the platform's answers. `flags` is
+ * `/api/flags`' answer, or null for a control that doesn't answer it here. */
+async function open(page: Page, path: string, { role = "owner", dir = true, flags = kept() as unknown }: { role?: string; dir?: boolean; flags?: unknown } = {}) {
   const json = (r: Route, body: unknown, status = 200) => r.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
   // What this spec doesn't answer, nobody does.
   await page.route(/\/api\//, (r) => json(r, { error: "not here" }, 404));
@@ -40,6 +50,7 @@ async function open(page: Page, path: string, { role = "owner", dir = true }: { 
   await page.route(/\/api\/(projects|owners)\/[^/]+\/settings$/, (r) => json(r, []));
   // Settings' This machine lists the machines with grants: orchard, not attic.
   await page.route(/\/api\/grants$/, (r) => json(r, { grants: [{ id: "g1", live: true, power: "threads.read", subject: { kind: "daemon", id: "dmn_orchard", name: "orchard" }, scope: { kind: "account", id: "acct_a" } }] }));
+  await page.route(/\/api\/flags$/, (r) => (flags === null ? r.fulfill({ status: 404, body: "" }) : json(r, flags)));
   await page.route(/\/api\/directory$/, (r) => (dir ? json(r, { daemons: directory, offers: [] }) : json(r, { error: "control is down" }, 500)));
   const body = await fixturePage("./move-to-project-page.tsx");
   await page.route(/\/(p\/prj_|settings|t\/)/, (r) => (r.request().resourceType() === "document" ? r.fulfill({ contentType: "text/html", body }) : r.fallback()));
@@ -51,7 +62,7 @@ const section = (page: Page, id: string) => page.locator(`[data-settings-section
 
 test.use({ viewport: { width: 1280, height: 900 } });
 
-test("a team's owner: two bands, the roster with a ↗ to change it, the team's machines, and Labs on control's page", async ({ page }) => {
+test("a team's owner: two bands, the roster with a ↗ to change it, the team's machines, and its Labs flags", async ({ page }) => {
   await open(page, "/settings/team/tm_1");
   // The team's own, then what every project starts with.
   await expect(page.locator(".settings-list .list-group-title")).toHaveText(["Team", "Every project"]);
@@ -72,8 +83,38 @@ test("a team's owner: two bands, the roster with a ↗ to change it, the team's 
   // Mine opens its settings.
   await machines.locator('[data-owner-machine-open="dmn_orchard"]').click();
   await expect(page).toHaveURL(/\/settings\/machine\/dmn_orchard/);
-  // Labs: control's page, said plainly.
+  // Labs: the team's flags, which its owner sets here.
   await page.goto("/settings/team/tm_1/labs");
+  const labs = section(page, "labs");
+  await expect(row(page, "labs").locator(".list-row-detail")).toHaveText("1 set");
+  await expect(labs.locator('[data-labs-flag="sandbox-providers"] select')).toHaveValue("off");
+  await expect(labs.locator('[data-labs-flag="agent-delegation"]')).toHaveCount(0);
+  const sent: unknown[] = [];
+  await page.route(/\/api\/flags$/, (r) =>
+    r.request().method() === "POST"
+      ? (sent.push(r.request().postDataJSON()), r.fulfill({ contentType: "application/json", body: JSON.stringify({ flags: { "sandbox-providers": false, studio: true } }) }))
+      : r.fallback(),
+  );
+  await labs.locator('[data-labs-flag="studio"] select').selectOption("on");
+  await expect(row(page, "labs").locator(".list-row-detail")).toHaveText("2 set");
+  expect(sent).toEqual([{ name: "studio", on: true, team: "tm_1" }]);
+});
+
+test("Labs: yours to set on Just you, a team's to read for its viewers, and none without Developer settings", async ({ page }) => {
+  await open(page, "/settings/team/personal/labs");
+  await expect(section(page, "labs").locator('[data-labs-flag="studio"] select')).toHaveValue("on");
+  await page.goto("/settings/team/tm_2/labs");
+  const theirs = section(page, "labs");
+  await expect(theirs).toContainText("Bakery's owners set its own");
+  await expect(theirs.locator("[data-labs-flag] select")).toHaveCount(0);
+  await expect(theirs.locator('[data-labs-flag="studio"]')).toContainText("Not set");
+  // Strangers never see Labs.
+  await open(page, "/settings/team/tm_1", { flags: kept(false) });
+  await expect(page.locator("[data-settings-row]")).toHaveText([/^Members/, /^Machines/, /^Default project/, /^Project defaults/]);
+});
+
+test("Labs from a control that doesn't answer its flags on the app's host: control's page, said plainly", async ({ page }) => {
+  await open(page, "/settings/team/tm_1/labs", { flags: null });
   await expect(section(page, "labs").locator('[data-settings-control="labs"]')).toHaveAttribute("href", /\/#teams$/);
   await expect(section(page, "labs")).toContainText("Labs for Acme's machines");
 });

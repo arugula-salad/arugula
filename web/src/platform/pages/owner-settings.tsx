@@ -5,8 +5,9 @@
 // The owner's own: Members, Machines (../settings/owner-machines), Chat
 // (the team chat's owners-only switches), Plan and billing, and Labs. Then
 // Every project: its default project, and Project defaults. What a device
-// signs (the roster, a machine joining a team) and what the app can't reach
-// yet (Labs' flags) is a ↗ row in place, opening control's page (#1106).
+// signs (the roster, a machine joining a team) is a ↗ row in place, opening
+// control's page (#1106). Labs' flags are control's Teams panel's list
+// (Arugula #1118), read and set through the app's host.
 //
 // Project defaults is a table: a row per key a project overrides, the
 // owner's default first, then a column per project that isn't archived,
@@ -21,6 +22,7 @@ import type { ProjectMember, SessionSettings } from "../../shared/proto";
 import { platformFetch } from "../../shared/maintenance";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { Section } from "../../shared/ui/settings-section";
+import { LabsFlagList, PUSHED, type LabsFlags } from "../../shared/ui/labs-flags";
 import { Chip } from "../../shared/ui/state-chip";
 import { useHoldLeaving } from "../router";
 import { runs, type HostedWorkspace } from "../runs";
@@ -107,7 +109,7 @@ export function OwnerSettings({ owner }: { owner: string }) {
       <OwnerMachines owner={owner} name={name} band={band} teams={owners(session.projects).some((o) => o.kind === "team")} />
       {team && <TeamChat team={owner} name={name} role={role} band={band} />}
       <PlanAndBilling team={team ? owner : undefined} band={band} />
-      <Labs owner={owner} name={name} role={role} band={band} />
+      <Labs owner={owner} name={name} band={band} />
       <General owner={owner} projects={projects} role={role} band={every} />
       <ProjectDefaults owner={owner} name={name} projects={projects} role={role} band={every} />
     </>
@@ -149,24 +151,80 @@ function Members({ owner, name, role, members, band }: { owner: string; name: st
   );
 }
 
-/** Labs: the flags control sets for the owner's machines. The app can't
- * reach them yet (Arugula #1106's follow-up), so this opens control's page,
- * where Teams lists them. */
-function Labs({ owner, name, role, band }: { owner: string; name: string; role: string | undefined; band: string }) {
+/** Labs: the flags control sets for the owner's machines (Arugula #1118),
+ * as control's Teams panel lists them: yours on Personal, a team's on its
+ * own, which its owners set and everyone else reads. Only for someone with
+ * a machine that has Developer settings (`dev`): strangers never see Labs.
+ * A control that doesn't answer `/api/flags` on this host yet (a bare 404)
+ * gets the ↗ row to its Teams panel. */
+function Labs({ owner, name, band }: { owner: string; name: string; band: string }) {
   const team = owner !== "personal";
+  const [kept, setKept] = useState<LabsFlags | null>(null);
+  const [elsewhere, setElsewhere] = useState(false);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    let live = true;
+    platformFetch("/api/flags", { credentials: "same-origin" }).then(
+      async (r) => {
+        const v = (await r.json().catch(() => ({}))) as Partial<LabsFlags> & { error?: string };
+        if (!live) return;
+        if (r.status === 404 && !v.error) return setElsewhere(true);
+        if (!r.ok) return setErr(v.error ?? `Request failed (${r.status})`);
+        setKept(v as LabsFlags);
+      },
+      (e: Error) => live && setErr(e.message),
+    );
+    return () => void (live = false);
+  }, []);
+  const lede = team ? `Labs features turned on for ${name}'s machines.` : "Labs features turned on for every machine of yours.";
+  if (elsewhere || err)
+    return (
+      <Section id="labs" title="Labs" band={band} summary={err ? "Couldn't load" : "On your machines page"} lede={lede} hooks={{ "data-owner-labs": owner }}>
+        {err ? (
+          <p class="control-error">{err}</p>
+        ) : (
+          <ul class="platform-list settings-rows">
+            <ControlRow href={`${controlOrigin()}/#teams`} label={team ? `Labs for ${name}'s machines` : "Labs for your machines"} why="Only your machines page reaches these for now." hook="labs" />
+          </ul>
+        )}
+      </Section>
+    );
+  const mine = kept?.dev ? (team ? kept.teams[owner] : { flags: kept.account, owner: true }) : undefined;
+  if (!mine) return null;
+  const set = async (flag: string, on: boolean | null) => {
+    setErr("");
+    try {
+      const { flags } = await call<{ flags: Record<string, boolean> }>("POST", "/api/flags", { name: flag, on, team: team ? owner : undefined });
+      setKept((k) => k && (team ? { ...k, teams: { ...k.teams, [owner]: { ...k.teams[owner], flags } } } : { ...k, account: flags }));
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  };
+  const named = PUSHED.filter((f) => mine.flags[f.name] !== undefined).length;
   return (
     <Section
       id="labs"
       title="Labs"
       band={band}
-      summary="On your machines page"
-      lede={team ? `Labs features turned on for ${name}'s machines.` : "Labs features turned on for every machine of yours."}
-      more={<p>A machine's own Developer settings win over these, yours over a team's.{team && role !== "owner" ? ` ${name}'s owners set its own.` : ""}</p>}
+      summary={named ? `${named} set` : "None set"}
+      lede={lede}
+      more={<p>A machine's own Developer settings win over these, yours over a team's.{team && !mine.owner ? ` ${name}'s owners set its own.` : ""}</p>}
       hooks={{ "data-owner-labs": owner }}
     >
-      <ul class="platform-list settings-rows">
-        <ControlRow href={`${controlOrigin()}/#teams`} label={team ? `Labs for ${name}'s machines` : "Labs for your machines"} why="Only your machines page reaches these for now." hook="labs" />
-      </ul>
+      <LabsFlagList
+        scope={team ? name : "your machines"}
+        what={
+          !team
+            ? "For every machine of yours. A machine's own Developer settings win over these, and these over a team's."
+            : mine.owner
+              ? "For the team's machines. A machine's own Developer settings win over these, and so do its owner's settings for their machines."
+              : "For the team's machines, set by its owners. A machine's own Developer settings win over these."
+        }
+        flags={mine.flags}
+        edit={mine.owner}
+        set={(flag, on) => void set(flag, on)}
+        open
+      />
     </Section>
   );
 }
