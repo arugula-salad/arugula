@@ -129,7 +129,7 @@ struct WorkLevel: View {
             let text = p.reason?.headline.isEmpty == false ? p.reason!.headline : (p.ask?.message ?? "")
             return Need(
                 id: "pane:\(m.machine.id):\(p.id)", ask: p.asking?.id ?? "\(p.reason?.kind ?? ""):\(p.reason?.since_ms ?? 0)",
-                rank: p.needsYouRank, since: p.reason?.since_ms ?? 0, who: m.conversations[p.id] ?? p.name, standing: p.standing,
+                rank: p.needsYouRank, since: p.reason?.since_ms ?? 0, who: slot.peeked.name, standing: p.standing,
                 on: m.machine.name, text: text, mono: p.asking?.approve == true || p.failed, target: .pane(m, p))
         case .hosted(let s):
             guard let waiting = s.waiting else { return nil }
