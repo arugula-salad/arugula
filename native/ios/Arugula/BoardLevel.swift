@@ -230,8 +230,9 @@ struct TicketCard: View {
                         Text(word).font(Face.mono(11, "Bold")).foregroundStyle(tone.color)
                             .accessibilityIdentifier("ticket-word")
                     }
-                    Text(prLine ?? (agents.isEmpty ? "no agent yet" : ""))
-                        .font(Face.mono(11)).foregroundStyle(Palette.dim).lineLimit(1)
+                    if let line = prLine ?? (agents.isEmpty ? "no agent yet" : nil) {
+                        Text(line).font(Face.mono(11)).foregroundStyle(Palette.dim).lineLimit(1)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
