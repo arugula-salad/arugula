@@ -194,8 +194,42 @@ async function openLaunch(page: Page) {
   await expect(page.locator(`[data-ov-board="${B}"]`)).toHaveAttribute("data-ov-open", "");
 }
 
+/** Launch's board with a group, "UX11", holding a native ticket and a GitHub item from a long-named repo, as a board opened from Overview draws them. */
+async function groupedLaunch(page: Page) {
+  const v = view(B, "Launch", [["row_n", "next", 413, "A native ticket"]]);
+  const gh = { ...v.zones[0].rows[0], id: "row_g", pointer: { kind: "forge_item", id: "fi_1622" }, live: { state: "open", kind: "issue", repo: "arugula-salad/arugula", number: 1622, title: "A GitHub ticket" } };
+  v.zones[0].rows.push(gh);
+  const grouped = { ...v, groups: [{ id: "zon_ux11", rev: 1, title: "UX11" }], zones: v.zones.map((z) => ({ ...z, rows: z.rows.map((r) => ({ ...r, group: "zon_ux11" })) })) };
+  await page.route(`**/api/boards/${B}`, (r) => r.fulfill({ json: grouped }));
+  await page.route(`**/api/projects/${P}/boards/views`, (r) => r.fulfill({ json: [grouped, view(LATER, "Later", [["row_z", "next", 21, "Someday"]])] }));
+  await page.goto(`/p/${P}/board/${B}`);
+  await expect(page.locator("[data-overview]")).toBeVisible({ timeout: 20_000 });
+  return page.locator(`[data-ov-level-board="${B}"]`);
+}
+
+/** The board level's boxes don't run into each other: the group's title and count apart, and a GitHub row's pointer short, on one line and clear of the row's second line. */
+async function expectSpaced(page: Page) {
+  const level = await groupedLaunch(page);
+  const head = level.locator('[data-ov-group="UX11"] h3');
+  const [title, count] = await Promise.all([head.locator("span").first().boundingBox(), head.locator("span.dim").boundingBox()]);
+  expect(count!.x).toBeGreaterThan(title!.x + title!.width);
+  const row = level.locator('[data-ov-ticket="row_g"]');
+  const num = row.locator("[data-ov-ticket-num]");
+  await expect(num).toHaveText("arugula#1622");
+  await expect(num).toHaveAttribute("title", "arugula-salad/arugula#1622");
+  const [n, line, cell] = await Promise.all([num.boundingBox(), row.locator("[data-ov-ticket-pr]").boundingBox(), row.locator(".ov-bl-what").boundingBox()]);
+  expect(n!.height).toBeLessThan(24);
+  expect(n!.x + n!.width).toBeLessThanOrEqual(cell!.x);
+  expect(n!.x + n!.width <= line!.x || n!.y + n!.height <= line!.y || line!.y + line!.height <= n!.y).toBe(true);
+}
+
 test.describe("on a computer", () => {
   test.use({ viewport: { width: 1280, height: 800 } });
+
+  test("a board's group title and count are apart, and a GitHub pointer is short and on one line", async ({ page }) => {
+    await overview(page);
+    await expectSpaced(page);
+  });
 
   test("a row per board, opened to the cards in Doing and Review, a line each; a card's preview holds its sessions; Not on a card last", async ({ page }, info) => {
     const { term, agent } = await overview(page);
@@ -996,5 +1030,10 @@ test.describe("on a phone", () => {
     await expect(page.locator("[data-phone-tabs] [data-tab-plan]")).toHaveAttribute("aria-current", "page");
     await expect(page.locator("[data-platform-bar] [data-space-overview]")).toHaveAttribute("aria-current", "page");
     await page.screenshot({ path: info.outputPath("overview-phone.png") });
+  });
+
+  test("on a phone a board's group title and count are apart, and a GitHub pointer is short and on one line", async ({ page }) => {
+    await overview(page);
+    await expectSpaced(page);
   });
 });

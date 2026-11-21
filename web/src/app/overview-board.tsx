@@ -85,7 +85,8 @@ export function OverviewBoard({ project, board: b, view, zoomCard, talkTo, leadW
           <section key={g.title ?? `-${i}`} class="ov-bl-group" data-ov-group={g.title ?? ""}>
             {grouped && (
               <h3>
-                {g.title ?? "No group"} <span class="dim">{g.rows.length} open</span>
+                <span>{g.title ?? "No group"}</span>
+                <span class="dim">{g.rows.length} open</span>
               </h3>
             )}
             <ul class="ov-bl-tickets">{g.rows.map(ticket)}</ul>
@@ -172,9 +173,13 @@ function TicketRow({ r, c, project, board, zoom, talkTo }: { r: BoardRow; c?: Ov
   const sessions = c?.sessions ?? [];
   const line = prLine(r) ?? (r.lane !== "done" && !sessions.length ? "no agent yet" : null);
   const to = pathOf({ page: "project", project, zoom: { board, card: r.id } }, names);
+  // `owner/repo#N` in full for the title; the column says `repo#N`, as a PR's chip does.
+  const pointer = pointerLabel(r.pointer, r.live);
   return (
     <li class="ov-bl-ticket" data-ov-ticket={r.id} data-ov-ticket-lane={r.lane} onClick={(ev) => !(ev.target as Element).closest("a, button") && !getSelection()?.toString() && zoom()}>
-      <span class="mono dim ov-bl-num">{pointerLabel(r.pointer, r.live)}</span>
+      <span class="mono dim ov-bl-num" title={pointer} data-ov-ticket-num>
+        {pointer.replace(/^[^#/]*\//, "")}
+      </span>
       <span class="ov-bl-what">
         <a class="ov-bl-title" href={to} onClick={(ev) => follow(ev, to)} title={`Zoom in to ${titleOf(r)}`} data-ov-ticket-title>
           {titleOf(r)}
