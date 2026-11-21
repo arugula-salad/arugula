@@ -101,7 +101,7 @@
           ]
         },
         "note": {
-          "description": "With `event`: why the agent watches, handed back when it fires; at\nmost [`NOTE_MAX`] characters.",
+          "description": "Why the agent watches, with any target: handed back when it fires or\nexpires; at most [`NOTE_MAX`] characters.",
           "type": [
             "string",
             "null"
