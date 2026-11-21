@@ -46,12 +46,18 @@ test("each route parses", () => {
   assert.deepEqual(parse(`/p/${P}/settings`, "", "#ci-alerts"), { page: "settings", scope: "project", project: P, section: "ci-alerts" });
   assert.deepEqual(parse("/settings/you/linked", "", "#tokens"), { page: "settings", scope: "you", section: "linked" });
   assert.deepEqual(parse("/settings", "", "#Not a section"), { page: "settings", scope: "you" });
-  // Your machines' agents are each machine's now (Arugula #1107): the old addresses open This machine's.
+  // Your machines' agents are each machine's now (Arugula #1107): the old addresses open Machines'.
   assert.deepEqual(parse("/settings", "", "#agents"), { page: "settings", scope: "machine", section: "agents" });
   assert.deepEqual(parse("/settings/you/agents"), { page: "settings", scope: "machine", section: "agents" });
   assert.equal(pathOf({ page: "settings", scope: "machine", section: "agents" }), "/settings/machine#agents");
   assert.deepEqual(parse("/settings/machine", "", "#agents"), { page: "settings", scope: "machine", section: "agents" });
   assert.equal(pathOf({ page: "settings", scope: "machine", machine: "0a1b2c3d", section: "agents" }), "/settings/machine/0a1b2c3d/agents");
+  // A machine's sections, four now: each old one lands on the one holding it, by path or `#section`.
+  for (const [old, now] of [["access", "access"], ["guest-ssh", "access"], ["remote-sessions", "access"], ["rules", "agents"], ["grants", "agents"], ["reports", "advanced"], ["developer", "advanced"]]) {
+    assert.deepEqual(parse(`/settings/machine/0a1b2c3d/${old}`), { page: "settings", scope: "machine", machine: "0a1b2c3d", section: now }, old);
+    assert.deepEqual(parse("/settings/machine", "", `#${old}`), { page: "settings", scope: "machine", section: now }, old);
+  }
+  assert.deepEqual(parse("/settings/machine/0a1b2c3d/constructor"), { page: "settings", scope: "machine", machine: "0a1b2c3d", section: "constructor" });
   for (const p of ["/settings/x", "/settings/you/a/b", "/settings/you/Bad", "/settings/project", "/settings/project/nope", "/settings/machine/geek", "/settings/team/personal/a/b", "/settings/personal/plan"]) {
     assert.equal(parse(p).page, "missing", p);
   }

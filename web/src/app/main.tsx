@@ -86,7 +86,7 @@ const api: PlatformApi = {
   machineDocs: appMachineDocs(appSession),
   // A board card's session, drawn in its drawer with the app's own clients.
   ...appLive(appSession),
-  // Settings' This machine: each machine's own settings, through the hub.
+  // Settings › Machines: each machine's own settings, through the hub.
   MachineSettings: appMachineSettings(appSession),
   goToPane: (machine, pane, quote) =>
     here() ? go(pathOf({ page: "find", what: "machines", at: { at: "machine", machine, pane: Number(pane) } }, names)) : platformApi.goToPane(machine, pane, quote),

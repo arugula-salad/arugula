@@ -1,10 +1,10 @@
-// Settings' This machine in the app (Arugula #1107): a machine's own
+// Settings › Machines in the app (Arugula #1107): a machine's own
 // settings (shell/ui/machine-settings), read through the app's own client
 // to it (./machine-client), the hub's machine token on app.arugula.io.
 // Each section's summary says when the app can't reach the machine: the
 // hub doesn't let it from this host, it's offline, or it doesn't answer.
 // A chunk of its own (./settings), so Settings doesn't load the daemon's
-// client until This machine is shown.
+// client until Machines is shown.
 
 import type { ComponentChildren } from "preact";
 import { useEffect, useState } from "preact/hooks";
@@ -17,7 +17,19 @@ import { useLive, type Reach } from "./machine-client";
 /** How long a machine the hub lists may take to answer before the sections say it doesn't. */
 const PATIENCE_MS = 15_000;
 
-export function MachineSettingsPlace({ machine, name, reach, children }: { machine: string; name: string; reach: Reach; children?: ComponentChildren }) {
+export function MachineSettingsPlace({
+  machine,
+  name,
+  reach,
+  grants,
+  children,
+}: {
+  machine: string;
+  name: string;
+  reach: Reach;
+  grants?: ComponentChildren;
+  children?: ComponentChildren;
+}) {
   const s = reach.session;
   useSubscribe((fn) => s?.subscribe(fn) ?? (() => {}));
   const live = useLive(machine, reach);
@@ -49,7 +61,7 @@ export function MachineSettingsPlace({ machine, name, reach, children }: { machi
           ? { summary: "Not answering", line: `${name} isn't answering. Its daemon may be older than this page: update it.`, out }
           : undefined;
   return (
-    <MachineSections client={client} away={away}>
+    <MachineSections client={client} away={away} grants={grants}>
       {children}
     </MachineSections>
   );

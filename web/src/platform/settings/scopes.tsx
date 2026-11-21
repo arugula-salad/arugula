@@ -1,5 +1,5 @@
-// Settings' scopes (Arugula #1104), the one list of them: You, This
-// machine, Project, and Team and billing. Each says its name, whose its
+// Settings' scopes (Arugula #1104), the one list of them: You,
+// Machines, Project, and Team and billing. Each says its name, whose its
 // settings are, what its picker chooses (a scope of many), and draws its
 // sections: every one of them, each a `Section` (shared/ui/settings-section)
 // with an id, a title, a summary and its controls. The page
@@ -41,7 +41,7 @@ export const SCOPES: { [K in SettingsScopeKey]: SettingsScope<K> } = {
   },
   machine: {
     key: "machine",
-    title: "This machine",
+    title: "Machines",
     whose: "One of your machines.",
     pick: "Machine",
     sections: (r) => <MachineSettings machine={r.machine} section={r.section} />,

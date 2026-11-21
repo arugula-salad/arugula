@@ -66,7 +66,7 @@ export function RemoteSessionsSection({ client }: { client: Client }) {
   if (!owner || !got) return null;
   const { sessions } = got;
   const open = sessions.filter((s) => s.open).length;
-  const summary = sessions.length ? `${sessions.length} ${sessions.length === 1 ? "session" : "sessions"}${open ? `, ${open} open` : ""}` : "None yet";
+  const summary = sessions.length ? `${sessions.length} ${sessions.length === 1 ? "session" : "sessions"}${open ? `, ${open} open` : ""}` : "No remote sessions";
   return (
     <Section
       id="remote-sessions"

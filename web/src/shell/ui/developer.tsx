@@ -3,7 +3,7 @@
 // so the list is the shown host's, and the owner's alone: the daemon refuses
 // anyone else. Offered in the menus once the machine has asked for it
 // (`arugulad flags`); the desktop app's Daemon menu and `#developer` open it
-// either way. Settings' This machine has it as a section (Arugula #1107).
+// either way. Settings › Machines has it in Advanced (Arugula #1107).
 
 import { useEffect, useState } from "preact/hooks";
 import { Modal } from "../../shared/ui/modal";
@@ -163,7 +163,7 @@ function Developer({ client, close }: { client: Client; close: () => void }) {
   );
 }
 
-/** Developer settings as a section of Settings' This machine (Arugula #1107). */
+/** Developer settings as a part of Settings › Machines' Advanced (Arugula #1107). */
 export function DeveloperSection({ client }: { client: Client }) {
   const f = useFlags(client);
   return (

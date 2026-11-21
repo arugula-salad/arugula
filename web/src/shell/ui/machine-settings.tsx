@@ -1,16 +1,21 @@
-// Settings' This machine (Arugula #1107): the machine's own settings, the
+// Settings' Machines (Arugula #1107): the machine's own settings, the
 // ones its menu opens as dialogs (`machineSettingsItems` in ./commands),
-// as sections of the app's Settings, each the dialog's own controls. The
+// as parts of the app's Settings, each the dialog's own controls. The
 // daemon keeps them and answers its owner alone, so they're read through a
 // client to it; one that isn't connected, or isn't the owner's, draws each
 // section saying why in its summary, so the list and its addresses stay.
-// Who reached it through Arugula cloud (./remote-sessions) is last, and
-// only where the machine answers (Arugula #1110: it was control's
-// `#settings`).
+//
+// Four sections, in two bands (the Settings Doc's Machines tab): Access
+// and sharing (who reaches it, Guest SSH access, and who reached it through
+// Arugula cloud, ./remote-sessions), Agents (what they may do on Arugula
+// cloud, the page's, and its permission rules), then the page's Name, and
+// Advanced (usage and crash reports, developer settings). The old
+// sections' addresses land on the one each is part of now (`MOVED` in
+// platform/paths).
 
 import type { ComponentChildren } from "preact";
 import { useSubscribe } from "../../shared/ui/hooks";
-import { Section } from "../../shared/ui/settings-section";
+import { Band, Section } from "../../shared/ui/settings-section";
 import type { Client } from "../client";
 import { AccessSection } from "./access";
 import { DeveloperSection } from "./developer";
@@ -19,15 +24,13 @@ import { ReportsSection } from "./machine-telemetry";
 import { RulesSection } from "./rules";
 import { SharingSection } from "./sharing";
 
-/** The machine's own sections, in Settings' order: Access first, then
- * what the page puts after it (`children`), then the rest. */
-export const MACHINE_SECTIONS = [
-  { id: "access", title: "Access" },
-  { id: "rules", title: "Permission rules" },
-  { id: "reports", title: "Usage and crash reports" },
-  { id: "guest-ssh", title: "Guest SSH access" },
-  { id: "developer", title: "Developer settings" },
-] as const;
+/** The machine's own sections, in Settings' order. Name, the page's, goes
+ * between Agents and Advanced. */
+export const MACHINE_SECTIONS = {
+  access: { title: "Access and sharing", lede: "Who can reach it, how, and who did." },
+  agents: { title: "Agents", lede: "What its agents may do on Arugula cloud, and on this machine without asking." },
+  advanced: { title: "Advanced", lede: "Its usage and crash reports, and developer settings." },
+} as const;
 
 /** Why the sections can't show, in a few words for the list and a line
  * under each heading; `out`, where else to go for them (a row to the
@@ -38,8 +41,22 @@ export interface Away {
   out?: ComponentChildren;
 }
 
-/** Each section, or why not: `away`, when it's known the client won't do. */
-export function MachineSections({ client, away, children }: { client: Client | null; away?: Away; children?: ComponentChildren }) {
+type Id = keyof typeof MACHINE_SECTIONS;
+
+/** One of the sections, with what it holds. */
+function Sec({ id, summary, hooks, children }: { id: Id; summary?: string; hooks?: Record<`data-${string}`, string>; children: ComponentChildren }) {
+  const s = MACHINE_SECTIONS[id];
+  return (
+    <Section id={id} title={s.title} summary={summary} lede={s.lede} hooks={hooks}>
+      {children}
+    </Section>
+  );
+}
+
+/** Each section, or why not: `away`, when it's known the client won't do.
+ * `grants`, the page's part of Agents; `children`, its sections about the
+ * machine (its Name), listed before Advanced. */
+export function MachineSections({ client, away, grants, children }: { client: Client | null; away?: Away; grants?: ComponentChildren; children?: ComponentChildren }) {
   useSubscribe((fn) => client?.subscribe(fn) ?? (() => {}));
   const why: Away | undefined =
     away ??
@@ -48,32 +65,46 @@ export function MachineSections({ client, away, children }: { client: Client | n
       : client.state.roles
         ? { summary: "Its owner's", line: "Only its owner sees and changes these." }
         : undefined);
-  if (why) {
-    const [first, ...rest] = MACHINE_SECTIONS;
-    const stand = (s: (typeof MACHINE_SECTIONS)[number]) => (
-      <Section key={s.id} id={s.id} title={s.title} summary={why.summary} hooks={{ "data-machine-away": "" }}>
-        <p class="dim">{why.line}</p>
-        {why.out}
-      </Section>
-    );
-    return (
-      <>
-        {stand(first)}
-        {children}
-        {rest.map(stand)}
-      </>
-    );
-  }
   const c = client!;
+  const said = (
+    <>
+      <p class="dim">{why?.line}</p>
+      {why?.out}
+    </>
+  );
+  const stand = { "data-machine-away": "" } as const;
   return (
     <>
-      <AccessSection client={c} />
-      {children}
-      <RulesSection client={c} />
-      <ReportsSection client={c} />
-      <SharingSection client={c} />
-      <DeveloperSection client={c} />
-      <RemoteSessionsSection client={c} />
+      <Band title="Who and what">
+        {why ? (
+          <Sec id="access" summary={why.summary} hooks={stand}>
+            {said}
+          </Sec>
+        ) : (
+          <Sec id="access">
+            <AccessSection client={c} />
+            <SharingSection client={c} />
+            <RemoteSessionsSection client={c} />
+          </Sec>
+        )}
+        <Sec id="agents">
+          {grants}
+          {why ? said : <RulesSection client={c} />}
+        </Sec>
+      </Band>
+      <Band title="About it">
+        {children}
+        {why ? (
+          <Sec id="advanced" summary={why.summary} hooks={stand}>
+            {said}
+          </Sec>
+        ) : (
+          <Sec id="advanced">
+            <ReportsSection client={c} />
+            <DeveloperSection client={c} />
+          </Sec>
+        )}
+      </Band>
     </>
   );
 }
