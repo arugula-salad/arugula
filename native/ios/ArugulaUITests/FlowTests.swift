@@ -118,10 +118,15 @@ final class FlowTests: XCTestCase {
     private func peekAtLead(_ app: XCUIApplication, _ name: String) {
         let peek = app.buttons["lead-peek"]
         XCTAssertTrue(peek.shows(within: 30), "no peek at the lead: \(app.debugDescription)")
-        clearAlerts()
-        peek.tap()
         let lines = app.descendants(matching: .any)["peek-lines"]
-        XCTAssertTrue(lines.shows(within: 20), "no peek")
+        // A tap as the room settles can open nothing: again.
+        for _ in 0..<3 where !lines.exists {
+            _ = peek.waitFor(hittable: true, timeout: 5)
+            clearAlerts()
+            peek.tap()
+            _ = lines.shows(within: 10)
+        }
+        XCTAssertTrue(lines.exists, "no peek")
         let by = Date().addingTimeInterval(20)
         while !lines.label.contains("cos ready") && Date() < by { sleep(1) }
         shot(app, name)
