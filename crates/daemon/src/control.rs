@@ -1577,6 +1577,9 @@ pub struct Control {
     connects: watch::Sender<u64>,
     /// Resumes so far, for a dial that failed as one came (M182).
     resumes: std::sync::atomic::AtomicU64,
+    /// Holds on the relay's next dial ([`Control::hold_dial`]): a hosted box
+    /// looks for a newer daemon before it dials in (Arugula #1284).
+    holds: watch::Sender<u32>,
     /// The hub's keys and the machine tokens already taken (aru-141).
     tokens: crate::machine_token::Verifier,
 }
@@ -1894,6 +1897,7 @@ impl Control {
             activity: watch::channel(None).0,
             resumed: tokio::sync::Notify::new(),
             resumes: Default::default(),
+            holds: watch::channel(0).0,
             tokens: Default::default(),
             connects: watch::channel(0).0,
         });
@@ -2338,6 +2342,27 @@ impl Control {
     pub fn resumed(&self) {
         self.resumes.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         self.resumed.notify_waiters();
+    }
+
+    /// Keep the relay from dialing until the hold is dropped (Arugula
+    /// #1284): a hosted box first looks for a newer daemon, so that the hub
+    /// never sees, and starts no session on, the one it's replacing. A
+    /// socket that's up stays up. Past [`HOLD_MAX`] the relay dials anyway.
+    pub fn hold_dial(&self) -> DialHold {
+        self.holds.send_modify(|n| *n += 1);
+        DialHold(self.holds.clone())
+    }
+
+    /// Until nothing holds the next dial, or [`HOLD_MAX`].
+    async fn dial_held(&self) {
+        let mut holds = self.holds.subscribe();
+        if *holds.borrow() == 0 {
+            return;
+        }
+        info!("relay: waiting to dial while the box looks for a newer daemon");
+        if tokio::time::timeout(HOLD_MAX, holds.wait_for(|n| *n == 0)).await.is_err() {
+            warn!(secs = HOLD_MAX.as_secs(), "relay: dialing though a hold is still on");
+        }
     }
 
     /// Look again now and wait for it (#232): true once a refresh that
@@ -3702,6 +3727,19 @@ fn file_stamp(dir: &Path) -> Option<std::time::SystemTime> {
 /// dialed after the pause.
 const RESUME_QUIET: Duration = Duration::from_secs(2);
 
+/// The longest a [`DialHold`] keeps the relay from dialing: well within
+/// the hub's wait for a woken box (the platform's `DIAL_WAIT`, a minute).
+pub const HOLD_MAX: Duration = Duration::from_secs(45);
+
+/// [`Control::hold_dial`]'s hold, dropped to let the relay dial.
+pub struct DialHold(watch::Sender<u32>);
+
+impl Drop for DialHold {
+    fn drop(&mut self) {
+        self.0.send_modify(|n| *n = n.saturating_sub(1));
+    }
+}
+
 /// The relay socket, redialled with backoff while enrolled.
 async fn keep_relay(control: Arc<Control>, app: Arc<App>) {
     let (accept, mut streams) = mpsc::unbounded_channel();
@@ -3723,6 +3761,7 @@ async fn keep_relay(control: Arc<Control>, app: Arc<App>) {
     let mut backoff = Duration::from_secs(1);
     let mut resumes = control.resumes.load(std::sync::atomic::Ordering::SeqCst);
     loop {
+        control.dial_held().await;
         let Some(e) = control.enrolled() else { return };
         let started = std::time::Instant::now();
         let mut wait = None;
@@ -6036,6 +6075,29 @@ pub(crate) mod tests {
         registry.insert(2, ("forges", "additional-forges"));
         assert_eq!(registry, wire::FLAG_ALIASES);
         assert!(arugula_proto::flags::retired("additional-forges").is_some());
+    }
+
+    /// Arugula #1284: a hold keeps the relay's next dial until the last
+    /// one is dropped.
+    #[tokio::test]
+    async fn a_hold_keeps_the_dial_until_dropped() {
+        let dir = std::env::temp_dir().join(format!("arugula-dialhold-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let c = Control::new(&dir, vec![], String::new(), Arc::new(Acl::open(&dir)), false);
+        let quick = Duration::from_millis(50);
+        assert!(tokio::time::timeout(quick, c.dial_held()).await.is_ok(), "nothing holds it");
+        let (a, b) = (c.hold_dial(), c.hold_dial());
+        assert!(tokio::time::timeout(quick, c.dial_held()).await.is_err(), "held");
+        drop(a);
+        assert!(tokio::time::timeout(quick, c.dial_held()).await.is_err(), "still held by the other");
+        let waiting = tokio::spawn({
+            let c = c.clone();
+            async move { c.dial_held().await }
+        });
+        drop(b);
+        tokio::time::timeout(Duration::from_secs(5), waiting).await.unwrap().unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// #347: a machine with Developer settings says so to control, which

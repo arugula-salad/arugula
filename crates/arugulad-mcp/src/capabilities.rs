@@ -56,6 +56,12 @@ impl ToolCall<'_, '_> {
             if control.threads.live { "yes" } else { "no" },
             if control.runs.live { "yes" } else { "no" },
         );
+        // A hosted box behind control's release (Arugula #1284): why a tool
+        // the session expects isn't here.
+        let summary = match arugulad_base::hosted::follow::note() {
+            Some(note) => format!("{summary}. Note: {note}"),
+            None => summary,
+        };
         done(
             summary,
             Capabilities {
