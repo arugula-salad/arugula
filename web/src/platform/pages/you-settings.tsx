@@ -4,9 +4,11 @@
 // and browsers are pushed what. Then Appearance: this device's palette,
 // finish, corners and density, the dialog's controls drawn in place, and
 // under them your preferences (Tips, the editor), which are the account's
-// (Arugula #1318; `preferences`' old address lands here). Then what's on control's
-// page (sign-in and passkeys, machines, teams, shared Docs), as ↗ rows that
-// open it at that dialog; the products linked to the account (M229);
+// (Arugula #1318; `preferences`' old address lands here). Then Sign-in and
+// security, control's dialog drawn in place (./you-security.tsx, Arugula
+// #1311; `account`'s old address lands there), and what's still only on
+// control's page (machines, teams, shared Docs), as ↗ rows that open it at
+// that dialog; the products linked to the account (M229);
 // which machines' agents read and post (M197); agents with no machine
 // (M230); and the apps that may use Claude for you, with what your own key
 // spent (M231). Plan and billing are each owner's, in Team and billing.
@@ -35,6 +37,7 @@ import { ControlRow } from "../settings/owner-machines";
 import { statusPage } from "../status-page";
 import { ExternalIcon } from "../../shared/ui/icons";
 import { joined } from "../settings/summary";
+import { SignInAndSecurity } from "./you-security";
 
 export function YouSettings() {
   useSubscribe((fn) => session.subscribe(fn));
@@ -44,7 +47,8 @@ export function YouSettings() {
       <ChatAlerts />
       <PhonesAndBrowsers />
       <Appearance />
-      <Account />
+      <SignInAndSecurity />
+      <MachinesAndTeams />
       <Status />
       <LinkedProducts />
       <AgentTokens />
@@ -141,22 +145,22 @@ function Preferences() {
   );
 }
 
-/** What's on control's page: sign-in and passkeys, your machines, teams
- * and the Docs shared with you, each a ↗ row to its dialog there. Adding a
- * phone or browser went with device approvals (#1004). */
-function Account() {
+/** What's still only on control's page: your machines, teams and the Docs
+ * shared with you, each a ↗ row to its dialog there. Adding a phone or
+ * browser went with device approvals (#1004); sign-in is in place, in
+ * Sign-in and security. */
+function MachinesAndTeams() {
   // Plan and billing are each owner's, in Team and billing.
   const plans = owners(session.projects).map((o) => ({ ...o, href: pathOf({ page: "settings", scope: "team", owner: o.key, section: "plan" }, names) }));
   return (
     <Section
-      id="account"
-      title="Sign-in and machines"
+      id="machines-teams"
+      title="Machines and teams"
       summary="On your machines page"
       lede="These are on your machines page, so each opens it at that dialog."
       hooks={{ "data-settings-account": "" }}
     >
       <ul class="platform-list settings-rows">
-        <ControlRow href={`${controlOrigin()}/#account`} label="Sign-in and account" why="Passkeys, GitHub, email and where you're signed in" hook="account" />
         <ControlRow href={`${controlOrigin()}/#devices`} label="Machines" why="Your machines, and removing one" hook="devices" />
         <ControlRow href={`${controlOrigin()}/#teams`} label="Teams" why="The teams you're in, and inviting people" hook="teams" />
         <ControlRow href={`${controlOrigin()}/#shared-docs`} label="Shared Docs" why="Docs people shared with you" hook="shared-docs" />
