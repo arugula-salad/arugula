@@ -1,4 +1,4 @@
-// What a machine's agents may do, in This machine's settings (Arugula
+// What a machine's agents may do, in Settings › Machines' Agents (Arugula
 // #1107): a row per project, and your DMs, with eight columns. Threads &
 // issues (M197) lets the machine's agents read and post in the project's
 // threads and write its issues; Runs (M216) lets them read its runs and
@@ -247,8 +247,8 @@ function useGrantSwitches() {
   return { grants, err, note, busy, turnCell, turnBoards };
 }
 
-/** What a machine's agents may do (Arugula #1107), in This machine's
- * settings: a row per project and one for your DMs, a switch per column.
+/** What a machine's agents may do (Arugula #1107), a part of Settings ›
+ * Machines' Agents: a row per project and one for your DMs, a switch per column.
  * "Agents on your machines" (You) and the machine's read-only *Agents'
  * grants…* were two views of these; this is the one. */
 export function MachineAgentGrants({ machine }: { machine: { id: string; name: string } }) {
@@ -258,7 +258,7 @@ export function MachineAgentGrants({ machine }: { machine: { id: string; name: s
   const lede = `What the agents on ${machine.name} may do on Arugula cloud, as you. Off until you turn one on, and never more than you can read or do.`;
   if (grants === null)
     return (
-      <Section id="agents" title={title} summary={err ? "Couldn't load" : undefined} lede={lede}>
+      <Section id="grants" title={title} summary={err ? "Couldn't load" : undefined} lede={lede}>
         {err ? <p class="control-error">{err}</p> : <p class="dim">Loading…</p>}
       </Section>
     );
@@ -287,7 +287,7 @@ export function MachineAgentGrants({ machine }: { machine: { id: string; name: s
   };
   return (
     <Section
-      id="agents"
+      id="grants"
       title={title}
       summary={machineGrantsSummary(grants, machine.id)}
       lede={lede}

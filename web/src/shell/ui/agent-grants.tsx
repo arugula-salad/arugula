@@ -1,7 +1,7 @@
 // What this machine's agents may do on Arugula cloud (Discovery 10): the
 // words for the grants `GET /api/grants` lists (`arugula grants ls`), as
 // Access shows this machine's live ones. They're given and taken back in
-// Settings' This machine, under Agents' grants (Arugula #1107), which
+// Settings › Machines, under Agents (Arugula #1107), which
 // *Agents' grants…* in the machine's settings opens: one editable view
 // where there were two (that and a read-only dialog here).
 
@@ -51,7 +51,7 @@ export function grantsOf(all: Grant[], machine: { id?: string; name: string }): 
 /** Whether the page can open Settings, where the grants are changed. */
 export const agentGrantsShown = () => !!platformOrigin();
 
-/** *Agents' grants…*: machine `id`'s, in Settings' This machine. */
+/** *Agents' grants…*: machine `id`'s, in Settings › Machines' Agents. */
 export function openAgentGrants(id?: string) {
   openPlatform(id ? `/settings/machine/${id}/agents` : "/settings/machine#agents");
 }

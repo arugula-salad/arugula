@@ -6,9 +6,9 @@
 // word (aru-141, Arugula #1005).
 
 import { useEffect, useState } from "preact/hooks";
-import { FLAGS } from "../../shared/proto.gen";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { CopyText } from "../../shared/ui/copy";
+import { LabsFlagList } from "../../shared/ui/labs-flags";
 import { Modal } from "../../shared/ui/modal";
 import { expiresIn } from "../../shared/team-roster";
 import type { ControlSession, LabsFlags, PresignedInvite, Team } from "../control";
@@ -17,10 +17,6 @@ import type { TeamRole } from "../e2e/team.ts";
 import { machineState } from "../ui/hosts";
 import { ROLE_HELP, roleAs, roleLabel } from "../ui/roles";
 import { TeamJoin } from "./machines";
-
-/** The flags control may set: guest ssh and the agent catalog are each
- * machine's alone (`local_only`), set in its own Developer settings. */
-const PUSHED = FLAGS.filter((f) => !f.local_only);
 
 /** Chat's on/off for a team, as control keeps it (the platform's
  * `chat::FLAG`). Not a Labs flag (native #203): every member sees it, and
@@ -42,52 +38,6 @@ function TeamChat({ team, on, edit, set }: { team: Team; on: boolean; edit: bool
         </span>
       </label>
     </>
-  );
-}
-
-/** Labs flags set on control (#347), for an account's machines or a team's:
- * each unset (a machine follows its default), on or off. A machine's own
- * Developer settings win over these, and the account's over the team's. */
-function LabsFlagList({ scope, what, flags, edit, set }: { scope: string; what: string; flags: Record<string, boolean>; edit: boolean; set: (name: string, on: boolean | null) => void }) {
-  const named = PUSHED.filter((f) => flags[f.name] !== undefined).length;
-  return (
-    <details class="labs-flags" data-labs-flags={scope}>
-      <summary>
-        Developer settings <span class="dim">· {named ? `${named} set` : "none set"}</span>
-      </summary>
-      <p class="dim">{what}</p>
-      <ul class="control-devices">
-        {PUSHED.map((f) => {
-          const v = flags[f.name];
-          const value = v === undefined ? "" : v ? "on" : "off";
-          return (
-            <li key={f.name} data-labs-flag={f.name}>
-              <span>
-                {f.title}
-                <span class="control-device-label dim">{f.about}</span>
-              </span>
-              {edit ? (
-                <select
-                  class="field"
-                  value={value}
-                  aria-label={`${f.title} for ${scope}`}
-                  onChange={(e) => {
-                    const x = (e.target as HTMLSelectElement).value;
-                    set(f.name, x === "" ? null : x === "on");
-                  }}
-                >
-                  <option value="">Not set</option>
-                  <option value="on">On</option>
-                  <option value="off">Off</option>
-                </select>
-              ) : (
-                <span class="dim">{v === undefined ? "Not set" : v ? "On" : "Off"}</span>
-              )}
-            </li>
-          );
-        })}
-      </ul>
-    </details>
   );
 }
 

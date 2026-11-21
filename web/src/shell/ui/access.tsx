@@ -254,7 +254,7 @@ function AccessDialog({ client, close }: { client: Client; close: () => void }) 
           <h3>Its agents&apos; powers</h3>
           <p class="dim">
             What the agents on {name} may do on Arugula cloud, as you. That is Arugula cloud&apos;s word, not this machine&apos;s: change it in
-            Settings, under This machine, or with <code>arugula grants</code>.
+            Settings, under Machines › Agents, or with <code>arugula grants</code>.
           </p>
           <Powers v={view} />
         </>
@@ -268,12 +268,12 @@ function AccessDialog({ client, close }: { client: Client; close: () => void }) 
   );
 }
 
-/** Access as a section of Settings' This machine (Arugula #1107). Its
- * agents' powers are the section beside it there. */
+/** Access as a part of Settings › Machines' Access and sharing (Arugula
+ * #1107). Its agents' powers are in Agents there. */
 export function AccessSection({ client }: { client: Client }) {
   const { view, error } = useAccess(client);
   return (
-    <Section id="access" title="Access" summary={error ? "Couldn't load" : view ? accessSummary(view) : undefined} lede={HELP}>
+    <Section id="who" title="Who can reach it" summary={error ? "Couldn't load" : view ? accessSummary(view) : undefined} lede={HELP}>
       <div class="rules access-view machine-sec">
         {error && (
           <p class="error" data-access-error>
