@@ -466,7 +466,10 @@ extension Peeked {
     @MainActor
     var name: String {
         switch self {
-        case .pane(let m, let p): m.conversations[p.id] ?? p.name
+        // Its conversation's title, an agent block's own, else its session's
+        // name (a lead's, as its chip names it), else what the pane shows.
+        case .pane(let m, let p):
+            m.conversations[p.id] ?? (p.isAgent ? nil : m.sessions.first { $0.tabs.contains(p.tab) }?.name) ?? p.name
         case .hosted(let s): s.issue.map { "#\($0.number) \($0.title)" } ?? "Arugula cloud"
         }
     }
