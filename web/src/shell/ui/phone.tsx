@@ -52,7 +52,10 @@ export function PhoneHeader({ client }: { client: Client }) {
     <>
       <header class="bar phone-bar">
         <button class="sheet-button" aria-expanded={open} onClick={() => setOpen(!open)}>
-          {client.state?.panes.some(needsYou) || client.state?.notices?.length ? <span class="att needs_input">●</span> : "☰"} <HostCrumb />
+          {client.shownPanes().some((p) => {
+            const i = client.info(p);
+            return !!i && needsYou(i);
+          }) || client.state?.notices?.length ? <span class="att needs_input">●</span> : "☰"} <HostCrumb />
           {session && (
             <>
               <span class="crumb">{session.name}</span> <ChevronIcon dir="right" />{" "}
@@ -109,14 +112,20 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
   // (#451): gates first (M34: a release waiting for a person is the most
   // likely reason to have opened this on a phone), the other asks, then
   // the failures, each oldest first.
-  const wanting = sortNeedsYou(state.panes.filter(needsYou), (p) => placeOf(p, p.id));
+  // The shown project's sessions only, as the sidebar (Arugula #1347).
+  const shown = client.shownSessions();
+  const inView = new Set(client.shownPanes());
+  const wanting = sortNeedsYou(
+    state.panes.filter((p) => inView.has(p.id) && needsYou(p)),
+    (p) => placeOf(p, p.id),
+  );
   // The sessions as the sidebar puts them: those that need you, then the
   // ones you pinned (Arugula iss_c0fd27ac196647fa7c857dc3659a0098), then
   // the rest as they were.
   useSubscribe((fn) => sessionPins.subscribe(fn));
   const pinned = pinnedHere(client);
   const asks = (id: number) =>
-    state.sessions
+    shown
       .find((s) => s.id === id)!
       .tabs.flatMap((t) => {
         const v = client.tabView(t);
@@ -126,7 +135,7 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
         const i = client.info(p);
         return !!i && needsYou(i);
       });
-  const sessions = sessionGroups(state.sessions, pinned, (s) => ({ id: s.id, group: asks(s.id) ? "needs" : "idle" })).flatMap((g) => g.rows);
+  const sessions = sessionGroups(shown, pinned, (s) => ({ id: s.id, group: asks(s.id) ? "needs" : "idle" })).flatMap((g) => g.rows);
   // Cards that belong to no pane (#551): a mention no session took.
   const notices = sortNotices((state.notices ?? []).map((n) => ({ n })));
   const act = (fn: () => void) => () => {
@@ -311,7 +320,7 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                   </div>
                 );
               })}
-              {state.sessions.length === 0 && (
+              {shown.length === 0 && (
                 <EmptyState
                   where="page"
                   data-sheet-no-sessions

@@ -206,12 +206,13 @@ export function commands(client: Client, phone: boolean, workspace: string | nul
   if (account) out.push(...fromMenu("Account", labelled([...account.items(), { label: "Sign out", danger: true, run: () => account.signOut() }])));
 
   // Jumps: this machine's sessions, tabs, panes and workspaces by name
-  // (M111: every pane, in any session).
+  // (M111: every pane, in any session the view shows: the shown project's
+  // only, Arugula #1347).
   const toPane = (p: PaneId) => {
     client.setActive(p);
     requestAnimationFrame(() => client.viewOf(p)?.focus());
   };
-  for (const s of state.sessions) {
+  for (const s of client.shownSessions()) {
     if (s.id !== session) out.push({ key: `Go/session ${s.id}`, group: "Go to", kind: "Sessions", label: `Go to session ${s.name}`, run: () => showSession(client, s.id) });
     for (const tid of s.tabs) {
       const t = client.tabView(tid);
@@ -316,7 +317,14 @@ export function commands(client: Client, phone: boolean, workspace: string | nul
  * the palette's *Go to the next pane that needs you* and its key. */
 export function nextNeedingYou(client: Client): PaneId | undefined {
   const pane = client.active();
-  const wanting = (client.state?.panes ?? []).filter(needsYou).map((p) => p.id);
+  // The shown project's only (Arugula #1347).
+  const wanting = client
+    .shownPanes()
+    .filter((p) => {
+      const i = client.info(p);
+      return !!i && needsYou(i);
+    })
+    .sort((a, b) => a - b);
   return wanting.find((p) => p > (pane ?? -1)) ?? wanting[0];
 }
 

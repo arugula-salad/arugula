@@ -9,6 +9,7 @@ import { EmptyLine } from "../../../shared/ui/block-states";
 import { useEffect, useLayoutEffect, useRef } from "preact/hooks";
 import { paneIds, tabLabel, type Client } from "../../client";
 import { directory } from "../../hosts";
+import { onShownProject, shownProject } from "../../project-view";
 import { cleanTitle } from "../../../shared/titles";
 import type { PaneId, PaneInfo, SessionId, TabId } from "../../../shared/proto";
 import { AttentionBadge } from "../attention";
@@ -70,8 +71,8 @@ function goToSession(client: Client, s: SessionId) {
 
 export function SessionOverview({ client, session }: { client: Client; session?: number }) {
   useSubscribe((fn) => directory.subscribe(fn));
+  useSubscribe(onShownProject);
   const root = useRef<HTMLElement>(null);
-  const state = client.state!;
   const host = directory.current || "this machine";
   // The named session in view, else the whole page; keys start here.
   useLayoutEffect(() => {
@@ -93,9 +94,12 @@ export function SessionOverview({ client, session }: { client: Client; session?:
     addEventListener("keydown", fn);
     return () => removeEventListener("keydown", fn);
   }, [client]);
-  const rows = state.sessions.map((s) => summarize(client, s));
+  // The shown project's sessions only, as the sidebar lists them
+  // (Arugula #1347); the daemon's own page shows every one.
+  const project = shownProject();
+  const rows = client.shownSessions().map((s) => summarize(client, s));
   const panes = rows.reduce((n, r) => n + r.panes, 0);
-  const needs = state.panes.filter((p) => p.attention === "needs_input").length;
+  const needs = client.shownPanes().filter((p) => client.info(p)?.attention === "needs_input").length;
   const active = client.active();
   return (
     <section class="ws-overview" aria-label={`Sessions on ${host}`} data-overview tabIndex={-1} ref={root}>
@@ -118,7 +122,9 @@ export function SessionOverview({ client, session }: { client: Client; session?:
           Back to panes
         </button>
       </header>
-      {rows.length === 0 && <EmptyLine role="status">No sessions on {host}.</EmptyLine>}
+      {rows.length === 0 && (
+        <EmptyLine role="status">{project ? `No ${project.name} sessions on ${host}.` : `No sessions on ${host}.`}</EmptyLine>
+      )}
       <div class="ws-ov-grid">
         {rows.map((row) => {
           const s = row.session;
