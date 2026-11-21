@@ -26,6 +26,9 @@ use crate::chat::ChatAgent;
 /// `GET`: a project's boards, [`BoardList`]; `POST` [`NewBoard`]: make one,
 /// answered [`BoardView`].
 pub const PROJECT_BOARDS: &str = "/api/projects/{project}/boards";
+/// `GET`: every open board of a project as [`BOARD`] answers it, in the
+/// project's order: a list of [`BoardView`] (Arugula #1296).
+pub const PROJECT_BOARD_VIEWS: &str = "/api/projects/{project}/boards/views";
 /// `GET`: a board with its zones and rows in order, [`BoardView`]. `PATCH`
 /// [`EditBoard`]: set its title or goal (owners and editors), answered
 /// [`BoardView`].

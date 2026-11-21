@@ -58,6 +58,19 @@ export const boards = {
     for (const b of l.boards) titles.set(b.id, b.title);
     return l;
   },
+  /** Every open board of the project as `get` reads it, in the project's order, in one read (#1296); null from a hub that has no such route yet. */
+  async views(project: string): Promise<BoardView[] | null> {
+    let v: BoardView[];
+    try {
+      v = await call<BoardView[]>("GET", `/api/projects/${enc(project)}/boards/views`);
+    } catch (e) {
+      if (e instanceof BoardError && e.status === 404) return null;
+      throw e;
+    }
+    if (!Array.isArray(v)) return null;
+    for (const b of v) titles.set(b.board.id, b.board.title);
+    return v;
+  },
   async create(project: string, title: string): Promise<BoardView> {
     const v = await call<BoardView>("POST", `/api/projects/${enc(project)}/boards`, { title });
     titles.set(v.board.id, v.board.title);
@@ -130,7 +143,7 @@ export const boards = {
   /** A person's new item in a Plane connection: lands at once; its `fi_` id is `item`. */
   planeCreate: (project: string, connection: string, title: string) =>
     call<TrackerWriteDone>("POST", `/api/projects/${enc(project)}/trackers/${enc(connection)}/writes`, { kind: "create", connection: null, title, body: null, state: null }),
-  /** The board's thread (made the first time someone opens it): the room
+  /** The board's thread (made the first time someone opens it, or when the project's `views` are read): the room
    * the platform pushes a change on, so a view hears of it live. */
   thread: (id: string) => chat.openObject(id),
 };

@@ -85,6 +85,16 @@ button.ov-briefing:focus-visible .ov-briefing-said {
 .ov-board:not(.ov-board-still) > .ov-board-line:hover {
   background: var(--surface);
 }
+/* The boards' rows before their views land: bars where the title, bar and words go, not moving. */
+.ov-skel-bar {
+  display: block;
+  height: 10px;
+  border-radius: var(--field-radius);
+  background: var(--surface);
+}
+.ov-skeleton .ov-board-line {
+  min-height: 36px;
+}
 .ov-board-toggle {
   display: grid;
   place-items: center;
