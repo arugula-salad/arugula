@@ -125,14 +125,24 @@ export interface Briefing {
   counts: BriefingCounts | null;
 }
 
-/** The project's briefing, read when the Overview comes up and when the
- * reader comes back to its window; the head it showed is kept when they
- * leave or hide it. null until read, and where the hub has no such routes. */
-export function useBriefing(project: string, byCard: SessionsByCard | null): Briefing | null {
+/** The project's briefing, read when the Overview comes up and again when
+ * `refocus` goes up (the page came back after a while, #1297); the head it
+ * showed is kept when they leave or hide it. null until read, and where the
+ * hub has no such routes. */
+export function useBriefing(project: string, byCard: SessionsByCard | null, refocus: number): Briefing | null {
   const [b, setB] = useState<Briefing | null>(null);
   const shown = useRef<number | null>(null);
   const branches = new Set((byCard?.groups ?? []).filter((g) => g.card).flatMap((g) => g.sessions.flatMap((s) => [s.branch ?? "", ...(s.kind === "machine" ? s.panes.map((p) => p.branch ?? "") : [])]).filter(Boolean)));
   const [events, setEvents] = useState<{ list: LogEvent[]; more: boolean; reviews: Set<string> | null } | null>(null);
+
+  const reread = useRef<() => void>(() => {});
+  const first = useRef(refocus);
+  useEffect(() => {
+    if (first.current !== refocus) {
+      first.current = refocus;
+      reread.current();
+    }
+  }, [refocus]);
 
   useEffect(() => {
     let live = true;
@@ -174,7 +184,8 @@ export function useBriefing(project: string, byCard: SessionsByCard | null): Bri
       if (head === null) return;
       void platformFetch(seenPath(project), { method: "PUT", credentials: "same-origin", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ seq: head }) }).catch(() => {});
     };
-    const vis = () => (document.visibilityState === "hidden" ? keep() : void read());
+    const vis = () => document.visibilityState === "hidden" && keep();
+    reread.current = () => void read();
     void read();
     document.addEventListener("visibilitychange", vis);
     window.addEventListener("pagehide", keep);
