@@ -354,6 +354,8 @@ struct WorkTerminal: View {
                 TypeTerminal(session: session, pane: pane, cols: cols, rows: rows, size: size, typeable: session.role(of: pane) != "viewer")
                     .id("\(pane.id)-\(cols)x\(rows)@\(size)")
                     .frame(width: w, height: h)
+                    // At the top of its slot, not in the middle of it.
+                    .frame(width: max(w, g.size.width), height: max(h, g.size.height), alignment: .topLeading)
             }
             .scrollDisabled(w <= g.size.width && h <= g.size.height)
             .frame(width: g.size.width, height: g.size.height, alignment: .topLeading)

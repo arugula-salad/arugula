@@ -236,14 +236,7 @@ final class TerminalUIView: UIView, UIKeyInput, UITextInputTraits {
             x: pad + CGFloat(frame.cursor_x) * cellW, y: pad + CGFloat(frame.cursor_y) * cellH, width: cellW, height: cellH)
         CATransaction.commit()
         accessibilityValue = rowText.prefix(Int(frame.rows)).joined(separator: "\n")
-        renders += 1
-        if typeable {
-            MainActor.assumeIsolated {
-                accessibilityLabel = "Terminal r\(renders) g\(grid.0)x\(grid.1) w\(Int(bounds.width)) s\(session.debugSent) t\(session.debugTabbed) d\(session.debugDrawn) n\(session.debugNoLink) c\(session.connected)"
-            }
-        }
     }
-    private var renders = 0
 
     private func draw(row: Int, runs: UnsafeBufferPointer<AruRun>) {
         let scale = traitCollection.displayScale

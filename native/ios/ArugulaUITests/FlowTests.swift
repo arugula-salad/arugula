@@ -146,7 +146,6 @@ final class FlowTests: XCTestCase {
         app.launchEnvironment["ARUGULA_RESET"] = "1"
         app.launchEnvironment["ARUGULA_SIGNIN_BY_HAND"] = "1"
         app.launchEnvironment["ARUGULA_CONTROL_URL"] = env["ARUGULA_CONTROL_URL"] ?? ""
-        app.launchEnvironment["ARUGULA_DEBUG_FILE"] = handoff.appendingPathComponent("app-debug.log").path
         app.launch()
 
         // Sign in: the ticket goes to the script, which allows it and hands back
@@ -313,9 +312,14 @@ final class FlowTests: XCTestCase {
             goBack(app)
             if !leadCard.shows(within: 15) { shot(app, "fail-led-board") }
             XCTAssertTrue(leadCard.exists, "not back on the led board: \(app.debugDescription)")
-            app.buttons["zoom-path-overview"].tap()
             let homeThread = app.buttons["home-thread-\(led)"]
-            XCTAssertTrue(homeThread.shows(within: 15), "no Board thread on home's row")
+            // A tap as the board settles can be lost: again until home is there.
+            for _ in 0..<3 where !homeThread.exists {
+                clearAlerts()
+                if app.buttons["zoom-path-overview"].exists { app.buttons["zoom-path-overview"].tap() }
+                _ = homeThread.shows(within: 10)
+            }
+            XCTAssertTrue(homeThread.exists, "no Board thread on home's row: \(app.debugDescription)")
             // Home slides back in: a tap as it settles opens nothing, so again.
             let homeThreadLead = app.descendants(matching: .any)["board-lead"]
             for _ in 0..<3 where !homeThreadLead.exists {
@@ -490,7 +494,7 @@ final class FlowTests: XCTestCase {
                     seen = term.value as? String ?? ""
                     if !seen.contains("Read src/main.rs") { sleep(1) }
                 }
-                XCTAssertTrue(seen.contains("Read src/main.rs"), "the Work level's terminal shows: \(seen) [\(term.label)] \(term.frame)")
+                XCTAssertTrue(seen.contains("Read src/main.rs"), "the Work level's terminal shows: \(seen)")
                 let allowHere = app.buttons["answer-Allow"]
                 XCTAssertTrue(allowHere.shows(within: 60), "no permission prompt over the panes: \(app.debugDescription)")
                 shot(app, "2-work-ask")
