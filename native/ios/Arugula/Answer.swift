@@ -338,6 +338,7 @@ struct SessionPeek: View {
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 12) {
+                WhoLine(text: who)
                 ScrollViewReader { proxy in
                     ScrollView {
                         Text(lines.isEmpty ? "…" : lines)
@@ -431,6 +432,22 @@ struct SessionPeek: View {
         switch peeked {
         case .pane(let m, let p): m.conversations[p.id] ?? p.name
         case .hosted(let s): s.issue.map { "#\($0.number) \($0.title)" } ?? "Session"
+        }
+    }
+
+    /// Who this is and where a reply goes (Arugula #1305).
+    private var who: String {
+        switch peeked {
+        case .pane(let m, let p):
+            let on = "\(title) on \(m.machine.name)"
+            if m.role(of: p) == "viewer" { return "Watching \(on): you can read it, not type to it." }
+            return p.isAgent || m.conversations[p.id] != nil
+                ? "Talking to \(on): a reply goes straight to this agent."
+                : "Typing into \(on): a reply goes to this terminal."
+        case .hosted:
+            return may
+                ? "Talking to \(title) in Arugula cloud: a reply goes to its session's thread, which it reads."
+                : "Watching \(title) in Arugula cloud: you can read it, not reply."
         }
     }
 
