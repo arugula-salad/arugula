@@ -108,6 +108,64 @@ export function LivePane({ machine, pane, reach }: { machine: string; pane: stri
   );
 }
 
+/** A pane as the Overview's Work level draws it (Arugula #1289): the
+ * same view Panes mounts, filling its slot, typed into where you may.
+ * `watch` holds your keys back (a teammate's session); so does a pane
+ * whose session you only view. */
+export function WorkSlot({ machine, pane, reach, watch }: { machine: string; pane: string; reach: Reach; watch?: boolean }) {
+  const c = useLive(machine, reach);
+  const client = c === "unreachable" ? null : c;
+  const id = Number(pane);
+  const ref = useRef<HTMLDivElement>(null);
+  const info = client?.connected ? client.info(id) : undefined;
+  const view = info ? client!.viewOf(id) : undefined;
+  useLayoutEffect(() => {
+    const slot = ref.current;
+    if (!view || !slot) return;
+    slot.appendChild(view.host);
+    view.setVisible(true);
+    return () => {
+      if (view.host.parentElement !== slot) return;
+      view.host.remove();
+      view.setVisible(false);
+    };
+  }, [view]);
+  // Its stream comes though its tab isn't the one the client shows.
+  useEffect(() => (info ? client!.drawAlone(id) : undefined), [client, !!info, id]);
+  const readOnly = !!watch || (!!info && !mayAnswer(client!, id));
+  // A pane you watch takes no keys: they stop here, before its terminal hears them.
+  useEffect(() => {
+    const slot = ref.current;
+    if (!slot || !readOnly) return;
+    const stop = (e: Event) => {
+      e.stopImmediatePropagation();
+      e.preventDefault();
+    };
+    const kinds = ["keydown", "keypress", "beforeinput", "input", "paste", "drop", "compositionend"];
+    for (const k of kinds) slot.addEventListener(k, stop, true);
+    return () => kinds.forEach((k) => slot.removeEventListener(k, stop, true));
+  }, [readOnly, !!view]);
+  if (c === "unreachable")
+    return (
+      <p class="dim ov-work-note" data-live-unreachable>
+        Its machine can't be reached from here.
+      </p>
+    );
+  if (!client?.connected)
+    return (
+      <p class="dim ov-work-note" data-live-reaching>
+        Reaching its machine…
+      </p>
+    );
+  if (!info)
+    return (
+      <p class="dim ov-work-note" data-live-gone>
+        Its pane isn't on its machine now.
+      </p>
+    );
+  return <div ref={ref} class="live-slot ov-work-slot" data-live-slot={pane} data-ov-work-readonly={readOnly ? "" : undefined} data-keys-own={readOnly ? undefined : ""} />;
+}
+
 /** What the pane asks, at the drawer's top, with its choices. */
 export function LiveAsk({ machine, pane, reach }: { machine: string; pane: string; reach: Reach }) {
   const c = useLive(machine, reach);

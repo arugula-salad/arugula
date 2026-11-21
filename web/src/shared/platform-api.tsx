@@ -118,6 +118,8 @@ export interface PlatformApi {
   machineDocs?: { watch(fn: () => void): () => void; here(machine: string): boolean; move(machine: string, doc: string, project: string): Promise<string | null> };
   /** A live pane in a fixed slot: the shell draws its own PaneSlot; a page that can't draw one leaves it out and the drawer shows the session's state card. */
   LivePane?: ComponentType<{ machine: string; pane: string }>;
+  /** A pane at the Overview's Work level (Arugula #1289): the view Panes mounts, filling its slot, typed into unless `watch` (a teammate's session) or the reader only views it. Where the page reaches machines itself (the app). */
+  LiveWork?: ComponentType<{ machine: string; pane: string; watch?: boolean }>;
   /** A pane's question and its choices, answered in place as Swarm's cards answer them; nothing while it asks none. Where the page reaches machines itself (the app): a board drawer draws it at its top, and with it says when a row has no session yet. Control's page leaves it out. */
   LiveAsk?: ComponentType<{ machine: string; pane: string }>;
   /** The bottom of a board drawer whose live session is an agent block on a machine (Arugula #1019): why its pane's session is on this card, where the page can tell, and Change card, the pane chip's picker on that session. Where the page reaches machines itself (the app); a page without it shows neither. */

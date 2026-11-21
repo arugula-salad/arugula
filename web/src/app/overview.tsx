@@ -391,6 +391,12 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
     return chat.on ? { kind: "thread", id: b.id, title: b.title } : null;
   }
 
+  // A card no agent works on offers its board's lead (#1289): its tab, as the Board level opens it.
+  const askLeadOf = (b: OvBoard) => {
+    const t = leadTab(b);
+    return t ? () => talkTo(t) : undefined;
+  };
+
   const any = o.boards.length > 0 || o.loose.length > 0;
   const projectLevel = (
     <>
@@ -448,7 +454,7 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
       ) : !zoomedRow ? (
         <EmptyLine data-ov-level-gone>That card isn't on this board now.</EmptyLine>
       ) : (
-        <OverviewWork project={project} fleet={fleet} card={{ board: zoomedBoard.id, boardTitle: zoomedBoard.title, row: zoomedRow, standing: zoomedCard?.standing ?? "idle" }} sessions={workSessions} talking={talkingPeek} talkTo={(s) => talkTo(peekTab(s))} openPanes={openPanes} />
+        <OverviewWork project={project} fleet={fleet} card={{ board: zoomedBoard.id, boardTitle: zoomedBoard.title, row: zoomedRow, standing: zoomedCard?.standing ?? "idle" }} sessions={workSessions} talking={talkingPeek} talkTo={(s) => talkTo(peekTab(s))} openPanes={openPanes} askLead={askLeadOf(zoomedBoard)} />
       )
     ) : (
       <OverviewWork project={project} fleet={fleet} card={null} sessions={workSessions} talking={talkingPeek} talkTo={(s) => talkTo(peekTab(s))} openPanes={openPanes} />
