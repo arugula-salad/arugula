@@ -96,8 +96,17 @@ struct ChatRoom: Decodable, Identifiable, Hashable {
     var team: String?
     var with: Person?
     var others: [Person]?
+    /// The project an object's thread or a staff room is in.
+    var project: String?
+    /// A staff room (Arugula #1275): a DM of the reader and their own
+    /// agents, one per project, the chief of staff's.
+    var staff: Bool?
+    /// The session that leads a staff room: the reader's posts there reach it.
+    var lead: Board.Lead?
     struct Person: Decodable { var name: String }
     static func == (a: ChatRoom, b: ChatRoom) -> Bool { a.id == b.id }
+
+    var isStaff: Bool { staff == true }
 
     /// A channel or a DM: what the chat list shows. An issue's, a pane's or a
     /// session's thread belongs with its thing.
@@ -109,6 +118,7 @@ struct ChatRoom: Decodable, Identifiable, Hashable {
         switch kind {
         case "channel": return "# \(name)"
         case "dm":
+            if isStaff { return "Chief of staff" }
             if !name.isEmpty { return name }
             let people = (others ?? []).map(\.name).joined(separator: ", ")
             return people.isEmpty ? (with?.name ?? "Direct message") : people
@@ -155,6 +165,10 @@ struct Machine: Decodable, Identifiable, Hashable {
     var name: String
     var online: Bool?
     var account: String?
+    /// Someone else's (M19): its owner's name.
+    var owner_name: String?
+    /// The team's own box, not a person's machine (Arugula #1182).
+    var team_box: Bool?
     static func == (a: Machine, b: Machine) -> Bool { a.id == b.id }
     func hash(into h: inout Hasher) { h.combine(id) }
 }

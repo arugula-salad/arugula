@@ -14,6 +14,9 @@ Issues aren't a tab: a board's rows open their issues, and the project's menu
 
 **Home** (`Arugula/Home.swift`, #1255) is the first tab: the current project's
 conversations, sorted by what needs you, as the desktop's Overview reads them.
+In a team's project it starts with the **chief of staff** (#1279): the
+reader's staff room (`POST /api/chat/projects/{project}/staff`), which only
+they and their own agents read, with the session that leads it.
 Needs you merges every online machine's panes that ask or failed (a link to
 each, as the web's fleet opens them), the boards' rows that ask you, fail
 their checks or wait for review, and the hosted sessions that wait on you,
@@ -28,6 +31,10 @@ and folds away with a word of what was done: a pane's permission (Allow,
 Deny) or question (its choices) through its daemon's `POST
 /api/attention/act` over the link, a hosted session's through control's
 `POST /api/sessions/{ses}/actions`, a board's ask through its answer route.
+On **Boards**, a board's lead (its state dot, its session, a teammate's with
+their name, and its machine) opens the board's thread. A lead's session is
+found by its conversation's title, an agent block's title or its session's
+name on its machine; Peek over the staff room or a board's thread opens it.
 Tapping a session, in Needs you or on a board's thread, opens its **peek**:
 its last lines, a reply to its agent, Silence (the owner's: teammates'
 agents can't mention it), Stop (asked first) and its terminal or thread. A

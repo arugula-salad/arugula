@@ -79,6 +79,39 @@ final class FlowTests: XCTestCase {
         (beside.exists ? beside : named.exists ? named : app.navigationBars.buttons.element(boundBy: 0)).tap()
     }
 
+    /// Pick a project from the switcher heading the tab that's open.
+    private func pick(_ app: XCUIApplication, _ name: String) {
+        let switcher = app.buttons["project-switcher"].firstMatch
+        XCTAssertTrue(switcher.shows(within: 15), "no project switcher")
+        for _ in 0..<3 where !switcher.label.lowercased().contains(name.lowercased()) {
+            clearAlerts()
+            switcher.tap()
+            let item = app.buttons[name].firstMatch
+            if item.shows(within: 10) { item.tap() }
+            let by = Date().addingTimeInterval(10)
+            while !switcher.label.lowercased().contains(name.lowercased()) && Date() < by { usleep(300_000) }
+        }
+        XCTAssertTrue(switcher.label.lowercased().contains(name.lowercased()), "not in \(name): \(switcher.label)")
+    }
+
+    /// Peek at the lead over the open thread: its session's last lines say
+    /// the stand-in is ready. Then close the peek.
+    private func peekAtLead(_ app: XCUIApplication, _ name: String) {
+        let peek = app.buttons["lead-peek"]
+        XCTAssertTrue(peek.shows(within: 30), "no peek at the lead: \(app.debugDescription)")
+        clearAlerts()
+        peek.tap()
+        let lines = app.descendants(matching: .any)["peek-lines"]
+        XCTAssertTrue(lines.shows(within: 20), "no peek")
+        let by = Date().addingTimeInterval(20)
+        while !lines.label.contains("cos ready") && Date() < by { sleep(1) }
+        shot(app, name)
+        XCTAssertTrue(lines.label.contains("cos ready"), "the lead's peek shows: \(lines.label)")
+        app.buttons["peek-close"].tap()
+        let closedBy = Date().addingTimeInterval(10)
+        while lines.exists && Date() < closedBy { usleep(200_000) }
+    }
+
     func testSignInProjectsChatAndATerminal() throws {
         continueAfterFailure = false
         let env = ProcessInfo.processInfo.environment
@@ -195,6 +228,93 @@ final class FlowTests: XCTestCase {
             }
         }
 
+        // The chief of staff (Arugula #1279), in the team's project the
+        // script made: the staff room first on home, led by the script's
+        // stand-in session; ask it something there and peek at its session.
+        // Then Boards: the board it leads, whose lead opens the board's
+        // thread, and a peek from there. Then back to Default.
+        if let team = env["ARUGULA_STAFF_PROJECT"], !team.isEmpty, let led = env["ARUGULA_STAFF_BOARD"], !led.isEmpty {
+            let lead = env["ARUGULA_STAFF_LEAD"] ?? "cos"
+            go(app, "Home")
+            pick(app, team)
+            // Home and Boards in the team's project as they look, before
+            // anything is asked of them: on main's app, the Before shots.
+            let boardShown = app.buttons["board-\(led)"]
+            _ = app.buttons["home-board-\(led)"].shows(within: 45)
+            sleep(2)
+            shot(app, "5-team-home")
+            go(app, "Boards")
+            _ = boardShown.shows(within: 45)
+            sleep(2)
+            shot(app, "5-team-boards")
+            go(app, "Home")
+            let staff = app.buttons["home-staff"]
+            XCTAssertTrue(staff.shows(within: 45), "home has no chief of staff in \(team): \(app.debugDescription)")
+            let ledBy = Date().addingTimeInterval(45)
+            while !staff.label.contains("Led by \(lead)") && Date() < ledBy { sleep(1) }
+            clearAlerts()
+            shot(app, "5-staff-home")
+            XCTAssertTrue(staff.label.contains("Led by \(lead)"), "home's chief of staff says: \(staff.label)")
+            // A tap as home's list redraws can open nothing: again.
+            let room = app.staticTexts["staff-lead"]
+            for _ in 0..<3 where !room.exists {
+                _ = staff.waitFor(hittable: true, timeout: 5)
+                clearAlerts()
+                staff.tap()
+                _ = room.shows(within: 10)
+            }
+            XCTAssertTrue(room.exists, "the staff room didn't open: \(app.debugDescription)")
+            let morning = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "One board moved overnight")).firstMatch
+            XCTAssertTrue(morning.shows(within: 20), "the chief of staff's message isn't in the room")
+            let ask = "what-moved-\(Int.random(in: 1000...9999))"
+            let draft = app.textFields["chat-draft"]
+            XCTAssertTrue(draft.shows(within: 15))
+            focus(app, draft)
+            draft.typeText(ask)
+            send(app)
+            XCTAssertTrue(app.staticTexts[ask].shows(within: 20), "the staff room didn't take the ask")
+            try ask.write(to: handoff.appendingPathComponent("staff"), atomically: true, encoding: .utf8)
+            shot(app, "5-staff-room")
+            peekAtLead(app, "5-staff-peek")
+            if !iPad { goBack(app) }
+
+            go(app, "Boards")
+            let chip = app.buttons["board-lead-\(led)"]
+            XCTAssertTrue(chip.shows(within: 45), "Boards has no lead on \(led): \(app.debugDescription)")
+            XCTAssertTrue(chip.label.contains("Led by \(lead)"), "the board's lead says: \(chip.label)")
+            shot(app, "5-boards")
+            // Boards reloads its list as it comes back: a tap as it does
+            // opens nothing, so tap again until the thread is there.
+            let thread = app.staticTexts["board-lead"]
+            var threadShown = false
+            for _ in 0..<3 where !threadShown {
+                _ = chip.waitFor(hittable: true, timeout: 5)
+                clearAlerts()
+                chip.tap()
+                threadShown = thread.shows(within: 10)
+            }
+            if !threadShown { shot(app, "fail-lead-thread") }
+            XCTAssertTrue(threadShown, "the lead didn't open the board's thread: \(app.debugDescription)")
+            XCTAssertTrue(thread.label.contains(lead), "the thread's lead says: \(thread.label)")
+            let toLead = "to-the-lead-\(Int.random(in: 1000...9999))"
+            let leadDraft = app.textFields["chat-draft"]
+            XCTAssertTrue(leadDraft.shows(within: 15))
+            focus(app, leadDraft)
+            leadDraft.typeText(toLead)
+            send(app)
+            XCTAssertTrue(app.staticTexts[toLead].shows(within: 20), "the board's thread didn't take the post")
+            shot(app, "5-lead-thread")
+            peekAtLead(app, "5-lead-peek")
+            // Back as the peek's sheet goes can land on nothing: again.
+            for _ in 0..<3 where !chip.exists {
+                goBack(app)
+                _ = chip.shows(within: 5)
+            }
+            XCTAssertTrue(chip.shows(within: 10), "not back on Boards: \(app.debugDescription)")
+            pick(app, "Default")
+            go(app, "Home")
+        }
+
         // Home (Arugula #1255): the board the script made, its row's question
         // under Needs you, its thread and its lanes, and back.
         if let title = env["ARUGULA_BOARD"], !title.isEmpty {
@@ -206,8 +326,18 @@ final class FlowTests: XCTestCase {
             }
             clearAlerts()
             shot(app, "2-home")
-            board.tap()
-            XCTAssertTrue(app.staticTexts["board-lead"].shows(within: 30), "no board thread")
+            // Home reloads its list after the project switch above: a tap as
+            // it does opens nothing, so tap again until the thread is there.
+            var threadOpened = false
+            for _ in 0..<3 where !threadOpened {
+                guard board.shows(within: 15) else { break }
+                _ = board.waitFor(hittable: true, timeout: 5)
+                clearAlerts()
+                board.tap()
+                threadOpened = app.staticTexts["board-lead"].shows(within: 10)
+            }
+            if !threadOpened { shot(app, "fail-board-thread") }
+            XCTAssertTrue(threadOpened, "no board thread: \(app.debugDescription)")
             let said = "to-the-board-\(Int.random(in: 1000...9999))"
             let draft = app.textFields["chat-draft"]
             XCTAssertTrue(draft.shows(within: 15))
