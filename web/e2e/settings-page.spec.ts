@@ -62,7 +62,9 @@ test("#settings=<section> opens at it, and a reload stays there", async ({ page 
   await expect(page.locator(".settings-index a", { hasText: "Appearance" })).toHaveAttribute("href", "#settings=appearance");
   // Preferences is part of Appearance now: its old link opens there.
   await expect(page.locator(".settings-index a", { hasText: "Preferences" })).toHaveCount(0);
+  // A fresh load (a hash change alone doesn't reopen the page at a section).
   await page.goto("/#settings=preferences");
+  await page.reload();
   await expect(page.locator("#appearance-h")).toBeInViewport();
 });
 
