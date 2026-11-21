@@ -518,7 +518,8 @@ test.describe("on a computer", () => {
   test("with every ask yours, Needs you has no heading", async ({ page }) => {
     await overview(page);
     await asking(page, [{ host: "mine", person: ME, ask: "ls mine" }]);
-    await expect(page.locator("[data-ov-needs] [data-ov-ask]")).toHaveCount(1);
+    // The daemon's own agent may add a Finished row of yours, as above: count the asks.
+    await expect(page.locator('[data-ov-needs] [data-ov-ask][data-kind="ask"]')).toHaveCount(1);
     await expect(page.locator("[data-ov-needs] [data-ov-asks-head]")).toHaveCount(0);
   });
 
