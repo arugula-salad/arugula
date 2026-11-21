@@ -963,6 +963,9 @@ button.ov-peek:disabled {
   margin-top: var(--space-2);
 }
 .ov-bl-group h3 {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
   margin: 0 0 var(--space-1);
   font: 600 var(--text-sm) var(--f-ui);
 }
@@ -977,7 +980,7 @@ button.ov-peek:disabled {
 }
 .ov-bl-ticket {
   display: grid;
-  grid-template-columns: 4rem minmax(0, 1fr) 5.5rem minmax(0, 16rem);
+  grid-template-columns: 6.5rem minmax(0, 1fr) 5.5rem minmax(0, 16rem);
   gap: var(--space-3);
   align-items: center;
   padding: var(--space-2);
@@ -990,6 +993,10 @@ button.ov-peek:disabled {
   background: var(--raised);
 }
 .ov-bl-num {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: var(--text-xs);
 }
 .ov-bl-what {
@@ -1043,7 +1050,7 @@ button.ov-peek:disabled {
   grid-template-columns: minmax(0, 1fr);
 }
 .ov.phone .ov-bl-ticket {
-  grid-template-columns: 3rem minmax(0, 1fr) auto;
+  grid-template-columns: 5.5rem minmax(0, 1fr) auto;
 }
 .ov.phone .ov-bl-word {
   justify-self: end;
