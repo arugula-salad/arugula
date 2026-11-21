@@ -49,7 +49,8 @@ import type { Fleet, FleetPane } from "../shell/fleet";
 import { activityOf, holdStill, kindOf, readableCommand, shownNow, whatItDoes } from "../shell/swarm/model";
 import { cleanTitle } from "../shared/titles";
 import { asksYou, boardSays, inFlight, overviewOf, statsLine, type OvBoard, type OvCard, type OvLead, type OvPane, type OvSession, type Standing, STATE_WORD } from "../shell/swarm/overview";
-import { Card as RailCard, bundlesOf, type Bundle } from "../shell/swarm/view";
+import { bundlesOf, type Bundle } from "../shell/swarm/view";
+import { Asks } from "./overview-asks";
 import { names } from "../platform/links";
 import { mayWrite } from "../platform/pages/issues";
 import { useBoards } from "../platform/pages/boards";
@@ -333,7 +334,11 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
 
   // Needs you: Swarm's rail, for this project's panes, held still under the pointer as Swarm's is.
   const bundles = bundlesOf(mine);
-  const [held, setHeld] = useState(false);
+  const [over, setHeld] = useState(false);
+  // An open ask holds the list still too, whether or not the pointer is on it.
+  const [pinned, setPinned] = useState<ReadonlySet<string>>(new Set());
+  const pin = (key: string, on: boolean) => setPinned((s) => (s.has(key) === on ? s : new Set(on ? [...s, key] : [...s].filter((k) => k !== key))));
+  const held = over || pinned.size > 0;
   const kept = useRef<Bundle[]>([]);
   const acted = useRef(new Set<string>());
   const railed = holdStill(held, kept.current, bundles, (b) => ({ ...b, gone: true }), acted.current);
@@ -606,24 +611,24 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
         {needs > 0 && <span data-ov-needs-count>{needs}</span>}
       </header>
       <div class="swarm-cards" onPointerEnter={() => setHeld(true)} onPointerLeave={() => setHeld(false)}>
-        {railed.map((b) => {
-          const first = b.panes[0];
-          const at = o.cardOf.get(first.key);
-          return (
-            <RailCard
-              key={b.key}
-              b={b}
-              fleet={fleet}
-              work={at ? cardWords(at.row) : "Not on a card"}
-              show={() => zoomToWork(first.key)}
-              open={() => paneAt(first)}
-              share={() => paneAt(first, true)}
-              follow={() => paneAt(first)}
-              acted={() => acted.current.add(b.key)}
-              back={() => {}}
-            />
-          );
-        })}
+        <Asks
+          asks={railed}
+          fleet={fleet}
+          pin={pin}
+          card={(b) => {
+            const first = b.panes[0];
+            const at = o.cardOf.get(first.key);
+            return {
+              work: at ? cardWords(at.row) : "Not on a card",
+              show: () => zoomToWork(first.key),
+              open: () => paneAt(first),
+              share: () => paneAt(first, true),
+              follow: () => paneAt(first),
+              acted: () => acted.current.add(b.key),
+              back: () => {},
+            };
+          }}
+        />
       </div>
     </section>
   );

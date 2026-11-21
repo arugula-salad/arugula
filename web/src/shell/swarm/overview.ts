@@ -339,6 +339,32 @@ export function asksYou(b: Pick<OvBoard, "standing">): boolean {
   return b.standing === "needs" || b.standing === "asks";
 }
 
+/** One owner's asks in Needs you (#1333): yours, or a person's or a team's by name. */
+export interface AskGroup<T> {
+  /** `me`, or the name it's grouped under. */
+  key: string;
+  /** Null for yours. */
+  name: string | null;
+  items: T[];
+}
+
+/** Needs you's asks by owner (#1333): yours first, then one group per
+ * other name, the one with more asks first and then by name; each keeps
+ * the order it came in (`byNeedsYou`'s). `ownerOf` says whose an ask is:
+ * null for yours, else the name to group it under. */
+export function groupByOwner<T>(items: T[], ownerOf: (t: T) => string | null): AskGroup<T>[] {
+  const groups = new Map<string, AskGroup<T>>();
+  for (const t of items) {
+    const name = ownerOf(t);
+    const key = name === null ? "me" : `name:${name}`;
+    const g = groups.get(key) ?? groups.set(key, { key, name, items: [] }).get(key)!;
+    g.items.push(t);
+  }
+  const mine = groups.get("me");
+  const others = [...groups.values()].filter((g) => g.name !== null).sort((a, b) => b.items.length - a.items.length || a.name!.localeCompare(b.name!));
+  return mine ? [mine, ...others] : others;
+}
+
 /** The bar's line: `7 cards in flight · 4 sessions working · 2 need you`. */
 export function statsLine(o: Pick<Overview, "boards" | "loose">, needs: number): string {
   const cards = o.boards.reduce((n, b) => n + b.doing.length + b.review.length, 0);

@@ -874,11 +874,15 @@ export function Card({
   acted,
   back,
   work,
+  bare,
 }: {
   b: Bundle;
   fleet: Fleet;
   /** The card its panes work on, as the Overview names it (`#983 · Title`). */
   work?: string | null;
+  /** Only the body, for a row that draws the title and who and where
+   * itself (Overview's, #1333); the card's name goes to `show` from its work line. */
+  bare?: boolean;
   focus?: { host: string; pane: number } | null;
   show: () => void;
   open: () => void;
@@ -936,24 +940,33 @@ export function Card({
       data-kind={r.kind}
       style={{ "--c": `rgb(${REASON_COL[r.kind]})` }}
     >
-      <div class="ch">
-        {/* A real button (UI audit #172): Space works too. */}
-        <button class="ct" title="Find it in the swarm" onClick={show}>
-          {cardTitle(r, n, machines.map(shortHost))}
-        </button>
-        <Watching fleet={fleet} panes={b.panes} />
-        {n > 1 && <span class="n">×{n}</span>}
-      </div>
-      <div class="cm" title={ids}>
-        {whose ? <b class="whose">{whose} · </b> : null}
-        {n === 1 ? whatItDoes(first) : `${n} panes`} · {session ? `${session} · ` : ""}
-        {machines.length > 1 ? `${machines.length} machines` : shortHost(machines[0])} · {project}
-      </div>
-      {work && (
-        <div class="cm" data-card-work>
-          {work}
+      {!bare && (
+        <>
+        <div class="ch">
+          {/* A real button (UI audit #172): Space works too. */}
+          <button class="ct" title="Find it in the swarm" onClick={show}>
+            {cardTitle(r, n, machines.map(shortHost))}
+          </button>
+          <Watching fleet={fleet} panes={b.panes} />
+          {n > 1 && <span class="n">×{n}</span>}
         </div>
+        <div class="cm" title={ids}>
+          {whose ? <b class="whose">{whose} · </b> : null}
+          {n === 1 ? whatItDoes(first) : `${n} panes`} · {session ? `${session} · ` : ""}
+          {machines.length > 1 ? `${machines.length} machines` : shortHost(machines[0])} · {project}
+        </div>
+        </>
       )}
+      {work &&
+        (bare ? (
+          <button class="cm cm-work" data-card-work title="Show the card" onClick={show}>
+            {work}
+          </button>
+        ) : (
+          <div class="cm" data-card-work>
+            {work}
+          </div>
+        ))}
       {diff ? null : ask?.kind === "permission" ? (
         <PermissionBody ask={ask} />
       ) : (

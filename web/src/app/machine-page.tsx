@@ -89,6 +89,9 @@ export function boot(session: AppSession | null): Promise<Booted> {
         get client() {
           return machines.client;
         },
+        get fleet() {
+          return machines.fleet;
+        },
         text: (pane: number) => machines.client.panes.get(pane)?.view.text() ?? "",
       },
     });
