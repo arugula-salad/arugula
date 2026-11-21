@@ -47,6 +47,7 @@ import { usePhone, useSubscribe } from "../shared/ui/hooks";
 import { ChevronIcon, ThreadIcon } from "../shared/ui/icons";
 import type { Fleet, FleetPane } from "../shell/fleet";
 import { activityOf, holdStill, kindOf, readableCommand, shownNow, whatItDoes } from "../shell/swarm/model";
+import { cleanTitle } from "../shared/titles";
 import { asksYou, boardSays, inFlight, overviewOf, statsLine, type OvBoard, type OvCard, type OvLead, type OvPane, type OvSession, type Standing, STATE_WORD } from "../shell/swarm/overview";
 import { Card as RailCard, bundlesOf, type Bundle } from "../shell/swarm/view";
 import { names } from "../platform/links";
@@ -101,6 +102,7 @@ function ovPane(fleet: Fleet, p: FleetPane): OvPane {
     session: p.session,
     project: p.info.session_project?.id ?? null,
     on_issue: p.info.on_issue,
+    title: cleanTitle(p.info.title ?? ""),
     name: sessionName(p),
     agent: kindOf(p) === "agent",
     standing: standingOf(p),

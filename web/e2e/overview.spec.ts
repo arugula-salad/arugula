@@ -770,6 +770,40 @@ test.describe("on a computer", () => {
     await page.screenshot({ path: info.outputPath("overview-lead-thread.png") });
   });
 
+  test("your own terminal's Claude Code session leads a board by its conversation's title, not its session's name, and opens as a live peek with Open in Panes, not a far one (Arugula #1331)", async ({ page }) => {
+    // The daemon names a lead by the title of the conversation in its pane; the pane here is in the session `scratch`.
+    let led: unknown;
+    await overview(page, null, false, () => led);
+    const tile = page.locator("[data-ov-loose] [data-ov-panes]");
+    await expect(tile).toHaveAttribute("data-ov-panes", /:/);
+    const host = (await tile.getAttribute("data-ov-panes"))!.split(":")[0];
+    const scratch = await expect
+      .poll(() => page.evaluate(async () => ((await (await fetch("/api/panes")).json()) as { id: number; session_name: string }[]).find((p) => p.session_name === "scratch")?.id ?? null))
+      .not.toBeNull()
+      .then(() => page.evaluate(async () => ((await (await fetch("/api/panes")).json()) as { id: number; session_name: string }[]).find((p) => p.session_name === "scratch")!.id));
+    const sent = await page.evaluate((id) => fetch(`/api/panes/${id}/send`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: "printf '\\033]0;Product Improvements\\007'", enter: true }) }).then(async (r) => r.status), scratch);
+    expect(sent).toBe(200);
+    await expect.poll(() => page.evaluate(async (id) => ((await (await fetch("/api/panes")).json()) as { id: number; title?: string }[]).find((p) => p.id === id)?.title, scratch)).toBe("Product Improvements");
+    led = { machine: "m_suite", machine_name: host, session: "Product Improvements", at: 1 };
+    await page.reload();
+    await expect(page.locator("[data-overview]")).toBeVisible({ timeout: 20_000 });
+    await launchRoom(page);
+    await page.locator(`[data-ov-board="${B}"] [data-ov-board-lead]`).click();
+    const panel = page.locator("[data-ov-panel]");
+    const peek = panel.locator("[data-ov-peek]");
+    await expect(peek).toHaveAttribute("data-ov-peek-kind", "shell");
+    await expect(peek).not.toHaveAttribute("data-ov-peek-readonly", "");
+    await expect(panel.locator("[data-ov-peek-tail]")).toHaveAttribute("data-ov-peek-live", "");
+    await expect(panel.locator("[data-ov-peek-panes]")).toBeEnabled();
+    await expect(panel.locator('[data-ov-who="peek"]')).toContainText("Typing into");
+    await expect(panel.locator('[data-ov-who="peek"]')).not.toContainText("Watching");
+    await expect(panel.locator("[data-ov-peek-tail]")).not.toContainText("doesn't reach");
+    // It takes a message, typed into its terminal.
+    await panel.locator("[data-ov-peek-reply] input").fill("echo from-the-lead");
+    await panel.locator("[data-ov-peek-reply] button").click();
+    await expect(panel.locator("[data-ov-peek-said]")).toHaveText("Typed, with Enter.");
+  });
+
   test("the Board level: its goal and bar, its lead's card with Talk to the lead and Board thread apart, its open tickets with their word and the agents on them, Done folded; a board no one leads asks the chief of staff for one (Arugula #1288)", async ({ page }, info) => {
     // Launch is led by the project's scratch session, and #12's agent is on it; Later has no lead.
     let led: unknown;

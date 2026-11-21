@@ -18,7 +18,7 @@ const view = (id, title, rows, extra = {}) => ({
   groups: [],
   docs: [],
 });
-const pane = (host, id, extra = {}) => ({ key: `${host}:${id}`, host, id, session: { id: 1, name: "main" }, project: P, on_issue: null, name: `pane ${id}`, agent: false, standing: "quiet", last: 0, ...extra });
+const pane = (host, id, extra = {}) => ({ key: `${host}:${id}`, host, id, session: { id: 1, name: "main" }, project: P, on_issue: null, title: "", name: `pane ${id}`, agent: false, standing: "quiet", last: 0, ...extra });
 const hosts = { m_ws: "workstation", m_b1: "build-01" };
 const hostOf = (m) => hosts[m];
 
@@ -185,6 +185,15 @@ test("the hub's route: 404 is not yet, an answer is read, anything else throws",
 test("a group's panes: an agent block is its own pane, a session lists its panes, a cloud workspace's has none", () => {
   assert.deepEqual(panesOf(BY_CARD.groups[0].sessions), [{ machine: "m_ws", pane: 12 }, { machine: "m_ws", pane: 13 }]);
   assert.deepEqual(panesOf(BY_CARD.groups[1].sessions), [{ machine: "m_b1", pane: 4 }]);
+});
+
+test("a lead named by its Claude Code conversation's title finds the terminal pane that shows it, whatever its session is called (#1331)", () => {
+  const led = view("brd_l", "Launch", [row("r1", "doing", 1)], { lead: { machine: "m_ws", machine_name: "workstation", session: "Product Improvements", at: 1 } });
+  const panes = [pane("workstation", 5, { session: { id: 9, name: "main" }, title: "Product Improvements", standing: "working" }), pane("workstation", 6, { session: { id: 9, name: "main" } }), pane("workstation", 7, { session: { id: 4, name: "other" }, title: "Other" })];
+  const { peek } = overviewOf(P, [led], panes, null, hostOf).boards[0].lead;
+  assert.deepEqual([peek.lead.key, peek.panes.map((p) => p.id), peek.name], ["workstation:5", [5, 6], "Product Improvements"]);
+  // A title on another machine isn't it.
+  assert.equal(overviewOf(P, [led], [pane("build-01", 5, { machine: "m_b1", title: "Product Improvements" })], null, hostOf).boards[0].lead.peek.lead, undefined);
 });
 
 test("a board's lead stands as its session's panes on its machine, else as the hub names it, else is told plain (#1272)", () => {

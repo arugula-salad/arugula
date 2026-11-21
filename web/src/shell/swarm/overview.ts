@@ -46,6 +46,8 @@ export interface OvPane {
   /** The project its session is in (`prj_…`). */
   project?: string | null;
   on_issue?: OnIssue | null;
+  /** Its title as people read it: the Claude Code conversation's name in a terminal or an agent block, which is how a session is named to the hub and to a board's lead. */
+  title: string;
   /** Its agent and title, or what it runs: `Claude · #983 cloud half`. */
   name: string;
   /** Whether it's an agent (it leads its session's tile). */
@@ -261,7 +263,10 @@ export function overviewOf(project: string, views: BoardView[], panes: OvPane[],
 function boardLead(l: BoardLead, panes: OvPane[], byCard: SessionsByCard | null, hostOf: (machine: string) => string | undefined): OvLead {
   // A pane whose machine has no id here (a daemon's own page) is matched by its name.
   const on = (p: OvPane) => (p.machine ? p.machine === l.machine : !!l.machine_name && p.host === l.machine_name);
-  const mine = panes.filter((p) => on(p) && p.session?.name === l.session);
+  // The daemon names a lead by its Claude Code conversation's title (#429), not by the session its pane sits in: a terminal's session is the tab group's own name. So a session by name, else the session of the pane with that title.
+  const named = panes.filter((p) => on(p) && p.session?.name === l.session);
+  const titled = new Set(panes.filter((p) => on(p) && p.session && p.title === l.session).map((p) => `${p.host}#${p.session!.id}`));
+  const mine = named.length ? named : panes.filter((p) => p.session && titled.has(`${p.host}#${p.session.id}`));
   const hub = byCard?.groups.flatMap((g) => g.sessions).find((s) => s.on.kind === "machine" && s.on.id === l.machine && s.name === l.session);
   const standing = mine.length ? worst(mine.map((p) => p.standing)) : hub ? hubStanding(hub) : null;
   const machineName = l.machine_name || hostOf(l.machine) || "";
