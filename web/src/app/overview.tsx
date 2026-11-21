@@ -132,11 +132,35 @@ function cardWords(r: BoardRow): string {
   return [label, title].filter(Boolean).join(" · ") || "A card";
 }
 
+/** How long the page is hidden before coming back to it reads again. A shorter
+ * absence misses nothing: the live pushes ran while it was hidden. */
+const REFOCUS_AFTER_MS = 30_000;
+
+/** A count that goes up when the page comes back into view after being hidden
+ * for `REFOCUS_AFTER_MS`: the one refocus the boards and the briefing share (#1297). */
+function useRefocus(): number {
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    let hidden: number | null = document.visibilityState === "hidden" ? Date.now() : null;
+    const vis = () => {
+      if (document.visibilityState === "hidden") hidden ??= Date.now();
+      else {
+        const long = hidden !== null && Date.now() - hidden >= REFOCUS_AFTER_MS;
+        hidden = null;
+        if (long) setN((x) => x + 1);
+      }
+    };
+    document.addEventListener("visibilitychange", vis);
+    return () => document.removeEventListener("visibilitychange", vis);
+  }, []);
+  return n;
+}
+
 /** The project's open boards' views from one read of the hub, so they paint
  * together (#1296), each read again when the platform says it changed, and
- * all of them when the page comes back into view. `views` is null until they
- * land. */
-function useBoardViews(project: string): { views: BoardView[] | null; put(v: BoardView): void } {
+ * all of them when the page comes back into view after a while (`refocus`).
+ * `views` is null until they land. */
+function useBoardViews(project: string, refocus: number): { views: BoardView[] | null; put(v: BoardView): void } {
   const list = useBoards(project);
   const [read, setRead] = useState<Map<string, BoardView> | null>(null);
   // The hub makes each open board's thread as it answers the one read: that is what pushes a board's change.
@@ -150,6 +174,7 @@ function useBoardViews(project: string): { views: BoardView[] | null; put(v: Boa
   const whole = useRef<() => void>(() => {});
   const asked = useRef("");
   const eachNow = useRef(false);
+  const again = useRef<() => void>(() => {});
   eachNow.current = each;
   useEffect(() => {
     let live = true;
@@ -172,13 +197,18 @@ function useBoardViews(project: string): { views: BoardView[] | null; put(v: Boa
       );
     };
     whole.current();
-    const back = () => document.visibilityState === "visible" && !eachNow.current && whole.current();
-    document.addEventListener("visibilitychange", back);
     return () => {
       live = false;
-      document.removeEventListener("visibilitychange", back);
     };
   }, [project]);
+  // Back after a while: the one read of every board, or, from a hub without the route, each board alone.
+  const seen = useRef(refocus);
+  useEffect(() => {
+    if (seen.current === refocus) return;
+    seen.current = refocus;
+    if (!eachNow.current) whole.current();
+    else again.current();
+  }, [refocus]);
   // A board opened since that read (the list says so) is read for.
   useEffect(() => {
     if (read && !each && asked.current !== key && ids.some((id) => !read.has(id))) {
@@ -207,13 +237,10 @@ function useBoardViews(project: string): { views: BoardView[] | null; put(v: Boa
         }),
       ).then((got) => live && setRead((m) => new Map([...(m ?? []), ...got.flatMap((g) => (g ? [g] : []))])));
     }
-    // The refocus re-reads each board here, as the page did (#1297).
-    const back = () => document.visibilityState === "visible" && each && ids.forEach((id) => void again(id));
-    document.addEventListener("visibilitychange", back);
+    again.current = () => ids.forEach((id) => void again(id));
     return () => {
       live = false;
       offs.forEach((off) => off());
-      document.removeEventListener("visibilitychange", back);
     };
   }, [key, each, list !== null]);
   const views = list === null || read === null ? null : ids.flatMap((id) => (read.has(id) ? [read.get(id)!] : []));
@@ -292,9 +319,10 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
   useSubscribe((fn) => chat.subscribe(fn));
   const api = usePlatformApi();
   const phone = usePhone();
-  const { views, put } = useBoardViews(project);
+  const refocus = useRefocus();
+  const { views, put } = useBoardViews(project, refocus);
   const byCard = useByCard(project);
-  const briefing = useBriefing(project, byCard);
+  const briefing = useBriefing(project, byCard, refocus);
   const hostOf = (m: string) => fleet.hostById(m)?.name ?? fleet.host(m)?.name;
   const o = overviewOf(project, views ?? [], fleet.panes.map((p) => ovPane(fleet, p)), byCard, hostOf);
   const mine = fleet.panes.filter((p) => o.cardOf.has(p.key));

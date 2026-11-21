@@ -26,7 +26,9 @@
 // (#1289), a shell and an agent block typed into and a question answered
 // above them; the boards' views read in one request, painted together
 // behind a skeleton, with no thread opened by the page, and read one by one
-// from a hub that has no such route yet (#1296); and on a phone, one list
+// from a hub that has no such route yet (#1296); coming back to the page
+// after 30 seconds reading the boards once and the briefing once, and after
+// less reading nothing (#1297); and on a phone, one list
 // with Needs you on top. The platform's boards and the
 // hub's sessions are made up here; the panes are the daemon's own.
 import { fileURLToPath } from "node:url";
@@ -295,6 +297,50 @@ test.describe("on a computer", () => {
     await expect(page.locator(`[data-ov-board="${B}"] [data-ov-board-count]`)).toHaveText("1/5");
     expect(asked.filter((a) => a === `GET /api/boards/${B}` || a === `GET /api/boards/${LATER}`).sort()).toEqual([`GET /api/boards/${B}`, `GET /api/boards/${LATER}`].sort());
     expect(await opened(page)).toEqual([B, LATER].sort());
+  });
+
+  test("coming back after a short absence reads nothing; after a long one, one read of the boards and one of the briefing (Arugula #1297)", async ({ page }) => {
+    const asked: string[] = [];
+    page.on("request", (r) => {
+      const u = new URL(r.url());
+      if (u.pathname.startsWith("/api/") && r.method() === "GET") asked.push(u.pathname);
+    });
+    await overview(page);
+    await expect(page.locator("[data-ov-board]")).toHaveCount(2);
+    const reads = () => ({
+      views: asked.filter((a) => /^\/api\/projects\/[^/]+\/boards\/views$/.test(a)).length,
+      boards: asked.filter((a) => a.startsWith("/api/boards/")).length,
+      briefing: asked.filter((a) => a.endsWith("/overview/seen")).length,
+    });
+    await expect.poll(() => reads().briefing).toBe(1);
+    expect(reads()).toEqual({ views: 1, boards: 0, briefing: 1 });
+    // The page's clock runs ahead by what the test says: no wait.
+    await page.evaluate(() => {
+      const w = window as unknown as { __skew: number };
+      w.__skew = 0;
+      const now = Date.now.bind(Date);
+      Date.now = () => now() + w.__skew;
+    });
+    const show = (state: "hidden" | "visible") =>
+      page.evaluate((state) => {
+        Object.defineProperty(document, "visibilityState", { value: state, configurable: true });
+        document.dispatchEvent(new Event("visibilitychange"));
+      }, state);
+    const away = async (ms: number) => {
+      await show("hidden");
+      await page.evaluate((ms) => ((window as unknown as { __skew: number }).__skew += ms), ms);
+      await show("visible");
+    };
+    // Out for 29 s: the live pushes kept running, so nothing is read.
+    await away(29_000);
+    // A read after it would have been asked by now: the page answers a round trip first.
+    await page.evaluate(() => fetch("/api/projects").catch(() => {}));
+    expect(reads()).toEqual({ views: 1, boards: 0, briefing: 1 });
+    // Out for 30 s: one read of every board, and the briefing's.
+    await away(30_000);
+    await expect.poll(() => reads()).toEqual({ views: 2, boards: 0, briefing: 2 });
+    await page.evaluate(() => fetch("/api/projects").catch(() => {}));
+    expect(reads()).toEqual({ views: 2, boards: 0, briefing: 2 });
   });
 
   test("a card opens the board's drawer; Esc and the path climb back; a session opens on its machine", async ({ page }, info) => {
@@ -860,11 +906,15 @@ test.describe("on a computer", () => {
     // Hiding the window keeps the head this page showed.
     expect(put).toEqual([]);
     await page.evaluate(() => {
+      const w = window as unknown as { __skew: number };
+      w.__skew = 0;
+      const now = Date.now.bind(Date);
+      Date.now = () => now() + w.__skew;
       Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
       document.dispatchEvent(new Event("visibilitychange"));
     });
     await expect.poll(() => put).toEqual([{ seq: 120 }]);
-    // Coming back reads it again. Now the reader's inbox asks their review on #7 (and #9, which isn't ready), so #7 counts.
+    // Coming back after a while reads it again. Now the reader's inbox asks their review on #7 (and #9, which isn't ready), so #7 counts.
     await page.evaluate(() => {
       const entry = (n: number, reason: string) => ({ item: `fi_${n}`, reason, repo: "o/app", number: n, kind: "pr", state: "open", title: "A PR", author: "jo", url: "", project: null, seen_at: null });
       const before = window.fetch;
@@ -873,6 +923,7 @@ test.describe("on a computer", () => {
         if (url.pathname === "/api/inbox") return new Response(JSON.stringify({ entries: [entry(7, "review_requested"), entry(9, "review_requested"), entry(8, "mentioned")] }), { headers: { "Content-Type": "application/json" } });
         return before(input, init);
       };
+      (window as unknown as { __skew: number }).__skew += 30_000;
       Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
       document.dispatchEvent(new Event("visibilitychange"));
     });
