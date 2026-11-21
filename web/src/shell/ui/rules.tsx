@@ -161,13 +161,13 @@ function Rules({ client, close }: { client: Client; close: () => void }) {
   );
 }
 
-/** Permission rules as a section of Settings' This machine (Arugula #1107). */
+/** Permission rules as a part of Settings › Machines' Agents (Arugula #1107). */
 export function RulesSection({ client }: { client: Client }) {
   const r = useRules(client);
   const [forgetting, setForgetting] = useState(false);
   const n = r.rules?.length;
   return (
-    <Section id="rules" title="Permission rules" summary={r.error ? "Couldn't load" : n === undefined ? undefined : n ? `${n} ${n === 1 ? "rule" : "rules"}` : "None yet"} lede={HELP}>
+    <Section id="rules" title="Permission rules" summary={r.error ? "Couldn't load" : n === undefined ? undefined : n ? `${n} ${n === 1 ? "rule" : "rules"}` : "No rules yet"} lede={HELP}>
       <div class="rules machine-sec">
         <RulesList {...r} />
         {n !== undefined && n > 1 && (

@@ -4,12 +4,13 @@
 // Editor preference, open a tip's :help, show the help card.
 
 import type { Client } from "../client";
-import type { NvimPluginRemoved, PaneId } from "../../shared/proto";
+import type { PaneId } from "../../shared/proto";
 import { opPath } from "../ops";
 import { showHint, type Fact } from "./index";
 import { setEditorPref } from "../open-in-editor";
 import { local, NVIM_DOCS, NVIM_HELP, nvimRuns } from "./nvim-facts";
 import { NVIM_TIPS, tipDocs } from "./nvim-tips";
+import { removePluginSaid } from "./nvim-remove";
 
 export { NVIM_DOCS } from "./nvim-facts";
 export { runsNvim } from "../open-in-editor";
@@ -30,28 +31,9 @@ export async function addPlugin(client: Client, pane: PaneId) {
   }
 }
 
-/** Delete the copies of arugula.nvim Arugula installed on this machine
- * (`nvim_plugin.remove`, #1733): Settings › Editor › Remove arugula.nvim.
- * A copy a plugin manager installed has no marker and stays. */
+/** Remove arugula.nvim (./nvim-remove), said in a toast: the machine menu's row. */
 export async function removePlugin(client: Client) {
-  try {
-    const res = await client.request("DELETE", opPath("nvim_plugin.remove", {}));
-    if (!res.ok) {
-      const why = (await res.json<{ error?: string }>().catch(() => null))?.error;
-      client.toast(why ? `Couldn't remove arugula.nvim: ${why}` : `Couldn't remove arugula.nvim (${res.status})`);
-      return;
-    }
-    const removed = (await res.json<NvimPluginRemoved>().catch(() => null))?.removed ?? [];
-    client.toast(
-      removed.length === 0
-        ? "No copy of arugula.nvim that Arugula installed is on this machine"
-        : removed.length === 1
-          ? `Removed arugula.nvim from ${removed[0]}`
-          : `Removed arugula.nvim from ${removed.length} places: ${removed.join(", ")}`,
-    );
-  } catch {
-    client.toast("Couldn't remove arugula.nvim");
-  }
+  client.toast((await removePluginSaid(client)).said);
 }
 
 /** Open in editor opens files in nvim from now on: #1731's Editor

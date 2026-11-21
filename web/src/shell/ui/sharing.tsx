@@ -4,8 +4,8 @@
 // until they turn it on; control has no say in it. *Guest SSH access…* in
 // the machine's settings (the machine menu, or the account menu's *This
 // machine*, and the phone's sheet) opens it. With it on, a pane's menu has
-// *Invite over ssh…*. Settings' This machine has it as a section (Arugula
-// #1107).
+// *Invite over ssh…*. Settings › Machines has it in Access and
+// sharing (Arugula #1107).
 
 import { useEffect, useState } from "preact/hooks";
 import { Modal } from "../../shared/ui/modal";
@@ -180,7 +180,7 @@ function SharingDialog({ client, close }: { client: Client; close: () => void })
   );
 }
 
-/** Guest SSH access as a section of Settings' This machine (Arugula #1107). */
+/** Guest SSH access as a part of Settings › Machines' Access and sharing (Arugula #1107). */
 export function SharingSection({ client }: { client: Client }) {
   const s = useSharing(client);
   return (

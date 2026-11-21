@@ -1,19 +1,20 @@
-// Settings' This machine scope (Arugula #1104, #1107): one of your
-// machines, by the picker. Its own settings (Access, Permission rules,
-// usage and crash reports, Guest SSH access, Developer settings) are the
-// machine's, which the page draws where it reaches machines
-// (`PlatformApi.MachineSettings`, the app's); a page that doesn't links to
-// the machine's page for them. Then what Arugula cloud keeps about it: what
-// its agents may do (../settings/agents), after Access, and its name, last.
-// The machines are those the platform's grants name (`/api/grants`, which
-// lists every machine of yours).
+// Settings' Machines scope (Arugula #1104, #1107): one of your machines,
+// by the picker, in four sections (the Settings Doc's Machines tab):
+// Access and sharing, Agents, Name and Advanced. Most of what's in them is
+// the machine's own (who reaches it, its permission rules, reports,
+// developer settings), which the page draws where it reaches machines
+// (`PlatformApi.MachineSettings`, the app's). Then what Arugula cloud
+// keeps about it: what its agents may do (../settings/agents), a part of
+// Agents, and its name. A page that doesn't reach machines draws those
+// two, and says the rest aren't here. The machines are those the platform's grants name
+// (`/api/grants`, which lists every machine of yours).
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import { usePlatformApi } from "../../shared/platform-api";
 import { Section } from "../../shared/ui/settings-section";
 import { names } from "../links";
-import { follow, go, pathOf } from "../router";
+import { go, pathOf } from "../router";
 import { controlOrigin } from "../session";
 import { MachineAgentGrants } from "../settings/agents";
 import { ControlRow } from "../settings/owner-machines";
@@ -69,7 +70,7 @@ export function MachineSettings({ machine, section }: { machine?: string; sectio
   }, [machine, first]);
   if (err) {
     return (
-      <Section id="machine" title="This machine" summary="Couldn't load">
+      <Section id="machine" title="Machines" summary="Couldn't load">
         <p class="control-error">{err}</p>
       </Section>
     );
@@ -78,47 +79,40 @@ export function MachineSettings({ machine, section }: { machine?: string; sectio
   const m = machines.find((x) => x.id === machine);
   if (!m) {
     return (
-      <Section id="machine" title="This machine" summary={machines.length ? "Not one of yours" : "No machines yet"} hooks={{ "data-machine-settings": "" }}>
+      <Section id="machine" title="Machines" summary={machines.length ? "Not one of yours" : "No machines yet"} hooks={{ "data-machine-settings": "" }}>
         <p class="dim">{machines.length ? "That machine isn't one of yours (or it's gone). Pick one above." : "No machines on your account yet."}</p>
       </Section>
     );
   }
   const Own = api.MachineSettings;
-  return (
+  const grants = <MachineAgentGrants machine={m} />;
+  const name = <MachineName key={m.id} m={m} />;
+  return Own ? (
+    <Own key={m.id} machine={m.id} name={m.name} grants={grants}>
+      {name}
+    </Own>
+  ) : (
     <>
-      {Own ? (
-        <Own key={m.id} machine={m.id} name={m.name}>
-          <MachineAgentGrants machine={m} />
-        </Own>
-      ) : (
-        <>
-          <OnItsPage m={m} />
-          <MachineAgentGrants machine={m} />
-        </>
-      )}
-      <MachineName key={m.id} m={m} />
+      <NotHere m={m} />
+      <>
+        <Section id="agents" title="Agents" lede="What its agents may do on Arugula cloud.">
+          {grants}
+        </Section>
+      </>
+      {name}
     </>
   );
 }
 
-/** Where the page reaches no machines: the way to the machine's own page, where its settings are. */
-function OnItsPage({ m }: { m: Machine }) {
-  const page = pathOf({ page: "find", what: "machines", at: { at: "machine", machine: m.id } }, names);
+/** Where the page reaches no machines: that the machine's own settings
+ * aren't here, and why. No way off to its page (Arugula #1314). */
+function NotHere({ m }: { m: Machine }) {
   return (
-    <Section
-      id="machine"
-      title="Its own settings"
-      summary="On its own page"
-      lede={`${m.name}'s own settings are on its page, under This machine in its menu: who can reach it, permission rules, reports, guest SSH and developer settings.`}
-      hooks={{ "data-machine-settings": m.id }}
-    >
-      <ul class="platform-list settings-rows">
-        <li>
-          <a class="settings-open" href={page} data-machine-settings-open={m.id} onClick={(e) => follow(e, page)}>
-            <span class="settings-open-name">Open {m.name}'s page</span>
-          </a>
-        </li>
-      </ul>
+    <Section id="machine" title="Its own settings" summary="Not from this page" hooks={{ "data-machine-settings": m.id }}>
+      <p class="settings-away-note" role="status">
+        This page doesn&apos;t reach machines, so {m.name}&apos;s own settings (who can reach it, permission rules, reports, guest SSH and
+        developer settings) aren&apos;t here. Settings in the app has them.
+      </p>
     </Section>
   );
 }

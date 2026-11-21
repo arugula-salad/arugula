@@ -618,6 +618,11 @@ struct PhoneHome: View {
         }
         .environment(\.openDoc) { d in present(d) }
         .environment(\.zoom) { z in zoom(z) }
+        // A lead's or an agent's name opens that agent (Arugula #1305): over
+        // what's open, so Back comes back to it.
+        .environment(\.talkTo) { key in
+            if opened == nil { opened = .work(key) } else { path.append(WorkKey(key: key)) }
+        }
         .fullScreenCover(item: $docOver) { d in DocScreen(ref: d, close: { docOver = nil }, open: follow) }
         .navigationSplitViewStyle(.balanced)
         .fullScreenCover(item: $terminal) { t in TerminalScreen(session: t.session, pane: t.pane) }
@@ -757,6 +762,14 @@ struct PhoneHome: View {
                         terminal = PaneOpen(session: m, pane: pane)
                     }
                     .backBesideTabs("Board") { path.removeLast() }
+                }
+            }
+            .navigationDestination(for: WorkKey.self) { w in
+                if let p = scope.current {
+                    WorkLevel(control: control, project: p, session: w.key, model: model, fleet: fleet, peek: { peek = $0 }) { m, pane in
+                        terminal = PaneOpen(session: m, pane: pane)
+                    }
+                    .backBesideTabs("Back") { path.removeLast() }
                 }
             }
             .navigationDestination(for: IssueRef.self) { ref in
@@ -956,10 +969,16 @@ struct PhoneHome: View {
                 if model.loaded && state.boards.isEmpty {
                     Text("No open boards").font(Face.ui(14)).foregroundStyle(Palette.dim).voidRow()
                 }
+                // The row zooms to the board; its lead's name opens that
+                // agent, and the board's thread is a button of its own
+                // (Arugula #1305).
                 ForEach(state.boards) { b in
-                    NavigationLink(value: Opened.board(b.board)) { BoardLineRow(line: b) }
-                        .voidRow()
-                        .accessibilityIdentifier("home-board-\(b.board.title)")
+                    BoardLineRow(
+                        line: b,
+                        zoom: { zoom(.board(b.board.id)) },
+                        talk: b.lead.map { l in { zoom(.work(l.opening)) } },
+                        thread: { opened = .thread(b.board) })
+                    .voidRow()
                 }
             } header: {
                 Caps("Boards")
@@ -1106,29 +1125,50 @@ struct NeedRow: View {
     }
 }
 
-/// A board on home: its title and count, its lane bar, what's going on and
-/// who leads it.
+/// A board on home: its title and count, its lane bar and what's going on,
+/// which zoom to the board; under them who leads it, which opens that agent,
+/// and the board's thread (Arugula #1305).
 struct BoardLineRow: View {
     let line: BoardLine
+    var zoom: () -> Void = {}
+    var talk: (() -> Void)?
+    var thread: () -> Void = {}
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(line.board.title).font(Face.ui(15, "SemiBold")).foregroundStyle(Palette.fg).lineLimit(2)
+        VStack(alignment: .leading, spacing: 6) {
+            Button(action: zoom) {
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(line.board.title).font(Face.ui(15, "SemiBold")).foregroundStyle(Palette.fg).lineLimit(2)
+                        Spacer(minLength: 4)
+                        Text(verbatim: line.total > 0 ? "\(line.done)/\(line.total)" : "–")
+                            .font(Face.mono(12, "Bold")).foregroundStyle(Palette.dim)
+                            .accessibilityIdentifier("board-count")
+                    }
+                    LaneBar(done: line.done, review: line.review, doing: line.doing, total: max(line.total, 1))
+                    line.says.enumerated().reduce(Text("")) { acc, x in
+                        let (i, s) = x
+                        let word = Text(s.1).foregroundColor(s.0 == .idle ? Palette.dim : s.0.tone.color)
+                        return i == 0 ? word : acc + Text(" · ").foregroundColor(Palette.dim) + word
+                    }
+                    .font(Face.ui(13))
+                    .lineLimit(2)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .accessibilityIdentifier("home-board-\(line.board.title)")
+            HStack(spacing: 8) {
+                if let talk {
+                    Button(action: talk) { LeadChip(lead: line.lead) }
+                        .buttonStyle(.borderless)
+                        .accessibilityIdentifier("home-lead-\(line.board.title)")
+                } else {
+                    LeadChip(lead: line.lead)
+                }
                 Spacer(minLength: 4)
-                Text(verbatim: line.total > 0 ? "\(line.done)/\(line.total)" : "–")
-                    .font(Face.mono(12, "Bold")).foregroundStyle(Palette.dim)
-                    .accessibilityIdentifier("board-count")
+                ThreadButton(action: thread).accessibilityIdentifier("home-thread-\(line.board.title)")
             }
-            LaneBar(done: line.done, review: line.review, doing: line.doing, total: max(line.total, 1))
-            line.says.enumerated().reduce(Text("")) { acc, x in
-                let (i, s) = x
-                let word = Text(s.1).foregroundColor(s.0 == .idle ? Palette.dim : s.0.tone.color)
-                return i == 0 ? word : acc + Text(" · ").foregroundColor(Palette.dim) + word
-            }
-            .font(Face.ui(13))
-            .lineLimit(2)
-            LeadChip(lead: line.lead)
         }
         .padding(.vertical, 4)
     }
@@ -1254,6 +1294,7 @@ struct BoardThread: View {
             Text("\(done) done · \(review) review · \(doing) doing · \(max(0, total - done - review - doing)) next")
                 .font(Face.mono(11)).foregroundStyle(Palette.dim)
             LeadHeading(lead: line.lead.map { LeadLine($0, fleet: fleet) }, id: "board-lead", peek: peek)
+            WhoLine(text: "Talking in \(line.title)'s thread: a post goes to the board's thread, where its lead and anyone mentioned read it.")
             if !sessions.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
@@ -1284,17 +1325,40 @@ struct BoardThread: View {
     }
 }
 
-/// Who leads a thread, over it: the lead's chip, and Peek at its session
-/// when a machine here tells of it.
+/// A board's thread, as a button of its own: where a post reaches its lead
+/// and anyone mentioned, not the lead alone (Arugula #1305).
+struct ThreadButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label("Board thread", systemImage: "bubble.left")
+                .font(Face.mono(11, "Bold"))
+                .foregroundStyle(Palette.accent)
+                .labelStyle(.titleAndIcon)
+        }
+        .buttonStyle(.borderless)
+        .accessibilityHint("Its lead and anyone mentioned read it")
+    }
+}
+
+/// Who leads a thread, over it: the lead's chip, whose name opens that agent
+/// (Arugula #1305), and Peek at its session when a machine here tells of it.
 struct LeadHeading: View {
     let lead: LeadLine?
     let id: String
     var none = "No lead"
     let peek: (Peeked) -> Void
+    @Environment(\.talkTo) private var talkTo
+    @EnvironmentObject private var scope: Scope
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            LeadChip(lead: lead, none: none).accessibilityIdentifier(id)
+            LeadChip(lead: lead, none: none)
+                .accessibilityIdentifier(id)
+                .onTapGesture { talk() }
+                .accessibilityAction { talk() }
+                .accessibilityHint(lead == nil ? "" : "Opens the lead")
             Spacer(minLength: 4)
             if let p = lead?.peeked {
                 Button { peek(p) } label: {
@@ -1304,6 +1368,24 @@ struct LeadHeading: View {
                 .accessibilityIdentifier("lead-peek")
             }
         }
+    }
+
+    private func talk() {
+        guard let lead else { return }
+        openAgent(lead.opening, talkTo: talkTo, project: scope.current?.id)
+    }
+}
+
+/// Under a conversation's heading: who you're talking to, and where what you
+/// post goes (Arugula #1305).
+struct WhoLine: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(Face.ui(12)).foregroundStyle(Palette.dim)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityIdentifier("who-line")
     }
 }
 

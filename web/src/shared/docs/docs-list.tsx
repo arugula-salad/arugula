@@ -185,6 +185,8 @@ export interface DocsListProps<T> {
   under?: ComponentChildren;
   /** The deleted Docs, the latest deleted first: a folded Deleted group at the foot, when there are any. */
   deleted?: T[];
+  /** After the rows, scrolling with them: the links the reader shared (Arugula #1315). */
+  below?: ComponentChildren;
   /** In the list's place with none at all. */
   empty: ComponentChildren;
   /** Said while they load: nothing, once loading failed and `notice` says why. */
@@ -199,7 +201,7 @@ export interface DocsListProps<T> {
   selection?: (ticked: ListTicked<T>) => ComponentChildren;
 }
 
-export function DocsList<T>({ mode, docs, item, splitKey, sub, title, back, actions, stats, narrow, under, deleted, empty, loading, notice, row, preview, onOpen, selectable, selection }: DocsListProps<T>) {
+export function DocsList<T>({ mode, docs, item, splitKey, sub, title, back, actions, stats, narrow, under, deleted, below, empty, loading, notice, row, preview, onOpen, selectable, selection }: DocsListProps<T>) {
   const [saved, setTab] = useTab();
   const tab = mode.kind === "team" ? saved : null;
   const [query, setQuery] = useState("");
@@ -286,6 +288,7 @@ export function DocsList<T>({ mode, docs, item, splitKey, sub, title, back, acti
       onOpen={onOpen}
       notice={notice}
       status={status && <div class="list-status">{status}</div>}
+      below={below}
       selectable={selectable?.(tab) ?? false}
       selection={selection}
       row={(d) => {

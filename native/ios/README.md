@@ -41,10 +41,15 @@ and folds away with a word of what was done: a pane's permission (Allow,
 Deny) or question (its choices) through its daemon's `POST
 /api/attention/act` over the link, a hosted session's through control's
 `POST /api/sessions/{ses}/actions`, a board's ask through its answer route.
-On **Boards**, a board's lead (its state dot, its session, a teammate's with
-their name, and its machine) opens the board's thread. A lead's session is
-found by its conversation's title, an agent block's title or its session's
-name on its machine; Peek over the staff room or a board's thread opens it.
+A lead's or an agent's name opens **that agent** (#1305): on Home's board
+rows, on **Boards** (where a lead shows its state dot, its session, a
+teammate's with their name, and its machine) and over a board's thread or the
+staff room, it opens the session's Work level, where you type to it; one on
+a machine this device doesn't reach says where it runs. **Board thread** is
+a button of its own, and a line under a thread or a peek says who you're
+talking to and where a post goes. A lead's session is found by its
+conversation's title, an agent block's title or its session's name on its
+machine; Peek over the staff room or a board's thread opens it too.
 Tapping a session, in Needs you or on a board's thread, opens its **peek**:
 its last lines, a reply to its agent, Silence (the owner's: teammates'
 agents can't mention it), Stop (asked first) and its terminal or thread. A

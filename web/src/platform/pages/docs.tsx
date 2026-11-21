@@ -13,6 +13,8 @@
 // A personal project's Docs are kept in the reader's cloud, not on a
 // machine (Arugula #865): a line above the list says so, and offers Move to
 // a team (the selection, and each row's ⋯) or Download (the row's ⋯).
+// At its foot, Shared by you: the Docs the reader shared with a link from a
+// machine (Arugula #1315, ./shared-by-you.tsx).
 //
 // A team's deleted Docs wait in its trash for `TRASH_DAYS` (Arugula #866):
 // a folded Deleted group at the list's foot, there only when there are any
@@ -45,7 +47,8 @@ import "../../shared/docs/docs.css";
 import { homes, names } from "../links";
 import { follow, go, pathOf } from "../router";
 import { SectionHead } from "../../shared/ui/section-head";
-import { session, type PlatformProject } from "../session";
+import { controlOrigin, session, type PlatformProject } from "../session";
+import { docLinks } from "../doc-links";
 import { toast } from "../toast";
 import { mayWrite } from "./issues";
 import { currentProject, onCurrentProject } from "../current-project";
@@ -53,6 +56,7 @@ import { scopeOf } from "../scope";
 import { Missing } from "./project";
 import { MoveConfirm, PlatformDocActions, RowMenu, TRASH_DAYS } from "./doc-actions";
 import { PublicLinkBar } from "./doc-public";
+import { SharedByYou } from "./shared-by-you";
 
 /** Who's who in `p`, for a Doc's maker. */
 function nameOf(p: PlatformProject) {
@@ -98,15 +102,26 @@ function DocRows({ p, list }: { p: PlatformProject; list: ProjectDoc[] }) {
 /** `/docs` is the current project's Docs, else the reader's own: one
  * project's, as `/p/:project/docs` is (Arugula #864). A team's project has
  * My Docs and Team Docs; a personal one, My Docs alone. */
-export function DocsPage({ project }: { project?: string; all?: boolean }) {
+export function DocsPage({ project, shared }: { project?: string; all?: boolean; shared?: boolean }) {
   useSubscribe((fn) => session.subscribe(fn));
   useSubscribe((fn) => onCurrentProject(fn));
+  useSubscribe((fn) => docLinks.subscribe(fn));
+  // `?shared=1` is control's Shared Docs… (Arugula #1315): My Docs, at
+  // Shared by you. Where this host doesn't serve the links yet, they're
+  // still on control's page, so it goes back there.
+  const links = docLinks.get();
+  useEffect(() => {
+    if (shared) void docLinks.load();
+  }, [shared]);
+  useEffect(() => {
+    if (shared && links === "absent") location.replace(`${controlOrigin()}/#shared-docs`);
+  }, [shared, links]);
   const one = project ? session.project(project) : undefined;
   if (project && !one) return <Missing what="That project isn't one of yours (or it's gone)." />;
-  const at = project ? undefined : scopeOf({ page: "docs" }, currentProject(), (id) => !!session.project(id));
+  const at = project || shared ? undefined : scopeOf({ page: "docs" }, currentProject(), (id) => !!session.project(id));
   const p = one ?? (at ? session.project(at) : undefined) ?? session.projects.find((x) => modeOf(x).kind === "personal") ?? session.projects[0];
   if (!p) return <EmptyState where="page" data-docs-none title="No Docs yet." why="Ask any agent for a Doc (a write-up, a plan, a comparison) and it keeps it here." />;
-  return <DocList key={p.id} p={p} />;
+  return <DocList key={p.id} p={p} shared={shared} />;
 }
 
 const docPath = (p: PlatformProject, d: ProjectDoc) => pathOf({ page: "doc", project: p.id, doc: d.id }, names);
@@ -126,7 +141,7 @@ function useTrash(p: PlatformProject, docs: ProjectDoc[] | null): ProjectDocTras
   return p.team ? trash : null;
 }
 
-function DocList({ p }: { p: PlatformProject }) {
+function DocList({ p, shared }: { p: PlatformProject; shared?: boolean }) {
   const mode = modeOf(p);
   const me = session.me?.account;
   const { docs, reload } = useProjectDocs(p.id);
@@ -163,6 +178,8 @@ function DocList({ p }: { p: PlatformProject }) {
           </>
         }
         deleted={trash?.docs.map((t) => t.doc)}
+        // The links are the account's, not a team's: under its own Docs.
+        below={mode.kind === "personal" && <SharedByYou focus={shared} />}
         loading={<BlockLoading inline data-docs-loading what="the Docs" />}
         empty={<EmptyState where="page" data-docs-none title="No Docs yet." why="Ask any agent for a Doc (a write-up, a plan, a comparison) and it keeps it here." />}
         selectable={() => mode.kind === "personal" && teams.length > 0}

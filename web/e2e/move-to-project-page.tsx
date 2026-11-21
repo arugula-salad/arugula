@@ -2,7 +2,8 @@
 // pages (the platform's router, rail and pages), with every platform answer
 // the spec's (move-to-project.spec.ts routes them), and one machine the page
 // reaches, `m_mac`, whose Doc moves are kept on `window.__movedDocs` for the
-// spec to read. Built with Vite and served at /p/… on the daemon's origin.
+// spec to read, and its Docs shared by link (docs-shared.spec.ts). Built
+// with Vite and served at /p/… on the daemon's origin.
 
 import { render } from "preact";
 import "../src/shared/fonts.css";
@@ -24,6 +25,10 @@ import { localBackend, setSeenBackend } from "../src/shared/seen";
 
 const moved: [string, string, string][] = [];
 (window as unknown as { __movedDocs: typeof moved }).__movedDocs = moved;
+// Docs' Shared by you (Arugula #1315): `m_mac` answers and titles its
+// links; `m_off` is offline. What's asked of them is on `window.__links`.
+const links: string[] = [];
+(window as unknown as { __links: typeof links }).__links = links;
 
 setSeenBackend(localBackend());
 
@@ -33,6 +38,15 @@ render(
   <PlatformApiContext.Provider
     value={{
       ...platformApi,
+      docLinks: {
+        watch: () => () => {},
+        here: (machine) => machine === "m_mac",
+        name: (machine) => ({ m_mac: "mac", m_off: "laptop" })[machine],
+        titles: async (machine) => new Map(machine === "m_mac" ? [["lnk_mac", "Launch plan"]] : []),
+        url: async (_, link) => `https://share.example/d/${link}#key`,
+        open: async (machine, link) => (links.push(`open ${machine} ${link}`), 7),
+        unshare: async (machine, link) => (links.push(`unshare ${machine} ${link}`), false),
+      },
       machineDocs: {
         watch: () => () => {},
         here: (machine) => machine === "m_mac",

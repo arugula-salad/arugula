@@ -31,6 +31,7 @@ import { directUrls } from "../shared/hosted.ts";
 import { expiresIn, grantBody, grantRevokeBody, newGrant, newGrantRevoke, passkeyChallenge, type GrantRevoke, type PasskeyAssertion, type ProjectGrant } from "./e2e/run-grant.ts";
 import type { E2ETarget } from "./client";
 import { agentName } from "../shared/account";
+import type { LabsFlags } from "../shared/ui/labs-flags";
 import { desktopApp } from "../shared/desktop";
 import { platformFetch, refusalOf } from "../shared/maintenance";
 import { automated, counting, startCounting, stopCounting, type PageCounts } from "../shared/telemetry";
@@ -381,13 +382,8 @@ export class RefusedError extends Error {
   }
 }
 
-/** `GET /api/flags` on control (#347). */
-export type LabsFlags = {
-  account: Record<string, boolean>;
-  teams: Record<string, { flags: Record<string, boolean>; owner: boolean }>;
-  /** A machine of the account has Developer settings: only then does the page offer these (strangers never see Labs). */
-  dev?: boolean;
-};
+/** `GET /api/flags` on control (#347): shared with the app's Settings (Arugula #1118). */
+export type { LabsFlags } from "../shared/ui/labs-flags";
 
 export async function api<T>(path: string, body?: unknown, send: (path: string, init: RequestInit) => Promise<Response> = fetch): Promise<T> {
   const res = await send(path, {

@@ -50,7 +50,15 @@ final class FlowTests: XCTestCase {
         clearAlerts()
         let t = tab(app, name)
         XCTAssertTrue(t.shows(within: 10), "no \(name) tab: \(app.debugDescription)")
-        t.tap()
+        // A tap as a screen slides back can be lost: again until it's picked.
+        for _ in 0..<3 {
+            t.tap()
+            // Once a second: a quicker poll floods XCTest's log on an iPad,
+            // which then takes the app down.
+            for _ in 0..<3 where !t.isSelected { sleep(1) }
+            if t.isSelected { return }
+            clearAlerts()
+        }
     }
 
     /// Send what's in the room's draft. A tap while the on-screen keyboard is
@@ -118,6 +126,9 @@ final class FlowTests: XCTestCase {
         while !lines.label.contains("cos ready") && Date() < by { sleep(1) }
         shot(app, name)
         XCTAssertTrue(lines.label.contains("cos ready"), "the lead's peek shows: \(lines.label)")
+        // Who it is, and that a reply goes to it (Arugula #1305).
+        let who = app.staticTexts["who-line"].firstMatch
+        XCTAssertTrue(who.label.contains("straight to this agent"), "the peek's who-line: \(who.label)")
         app.buttons["peek-close"].tap()
         let closedBy = Date().addingTimeInterval(10)
         while lines.exists && Date() < closedBy { usleep(200_000) }
@@ -259,6 +270,39 @@ final class FlowTests: XCTestCase {
             sleep(2)
             shot(app, "5-team-boards")
             go(app, "Home")
+            // A lead's name on home opens that agent, not its board's thread
+            // (Arugula #1305); the thread is a button of its own.
+            let homeLead = app.buttons["home-lead-\(led)"]
+            XCTAssertTrue(homeLead.shows(within: 45), "home's board has no lead to tap: \(app.debugDescription)")
+            let work = app.descendants(matching: .any)["work-level"]
+            for _ in 0..<3 where !work.exists {
+                _ = homeLead.waitFor(hittable: true, timeout: 5)
+                clearAlerts()
+                homeLead.tap()
+                _ = work.shows(within: 10)
+            }
+            XCTAssertTrue(work.exists, "the lead's name didn't open the agent: \(app.debugDescription)")
+            let leadNamed = app.staticTexts.matching(NSPredicate(format: "label == %@", lead)).firstMatch
+            XCTAssertTrue(leadNamed.shows(within: 30), "the lead's session isn't on its Work level: \(app.debugDescription)")
+            XCTAssertFalse(app.descendants(matching: .any)["board-lead"].exists, "the lead's name opened the board's thread")
+            shot(app, "5-home-lead")
+            app.buttons["zoom-path-overview"].tap()
+            let homeThread = app.buttons["home-thread-\(led)"]
+            XCTAssertTrue(homeThread.shows(within: 15), "no Board thread on home's row")
+            // Home slides back in: a tap as it settles opens nothing, so again.
+            let homeThreadLead = app.descendants(matching: .any)["board-lead"]
+            for _ in 0..<3 where !homeThreadLead.exists {
+                _ = homeThread.waitFor(hittable: true, timeout: 5)
+                clearAlerts()
+                homeThread.tap()
+                _ = homeThreadLead.shows(within: 10)
+            }
+            if !homeThreadLead.exists { shot(app, "fail-home-thread") }
+            XCTAssertTrue(homeThreadLead.exists, "Board thread didn't open the thread: \(app.debugDescription)")
+            let threadWho = app.staticTexts["who-line"].firstMatch
+            XCTAssertTrue(threadWho.label.contains("board's thread"), "the thread's who-line: \(threadWho.label)")
+            shot(app, "5-home-thread")
+            if !iPad { goBack(app) }
             let staff = app.buttons["home-staff"]
             XCTAssertTrue(staff.shows(within: 45), "home has no chief of staff in \(team): \(app.debugDescription)")
             let ledBy = Date().addingTimeInterval(45)
@@ -267,7 +311,7 @@ final class FlowTests: XCTestCase {
             shot(app, "5-staff-home")
             XCTAssertTrue(staff.label.contains("Led by \(lead)"), "home's chief of staff says: \(staff.label)")
             // A tap as home's list redraws can open nothing: again.
-            let room = app.staticTexts["staff-lead"]
+            let room = app.descendants(matching: .any)["staff-lead"]
             for _ in 0..<3 where !room.exists {
                 _ = staff.waitFor(hittable: true, timeout: 5)
                 clearAlerts()
@@ -294,18 +338,32 @@ final class FlowTests: XCTestCase {
             XCTAssertTrue(chip.shows(within: 45), "Boards has no lead on \(led): \(app.debugDescription)")
             XCTAssertTrue(chip.label.contains("Led by \(lead)"), "the board's lead says: \(chip.label)")
             shot(app, "5-boards")
-            // Boards reloads its list as it comes back: a tap as it does
-            // opens nothing, so tap again until the thread is there.
-            let thread = app.staticTexts["board-lead"]
-            var threadShown = false
-            for _ in 0..<3 where !threadShown {
+            // The lead's name opens that agent (Arugula #1305). Boards
+            // reloads its list as it comes back: a tap as it does opens
+            // nothing, so tap again until the agent is there.
+            for _ in 0..<3 where !work.exists {
                 _ = chip.waitFor(hittable: true, timeout: 5)
                 clearAlerts()
                 chip.tap()
+                _ = work.shows(within: 10)
+            }
+            XCTAssertTrue(work.exists, "the lead's name on Boards didn't open the agent: \(app.debugDescription)")
+            XCTAssertTrue(leadNamed.shows(within: 30), "the lead's session isn't on its Work level")
+            shot(app, "5-boards-lead")
+            goBack(app)
+            // Board thread, beside it, opens the board's thread.
+            let threadButton = app.buttons["board-thread-\(led)"]
+            let thread = app.descendants(matching: .any)["board-lead"]
+            var threadShown = false
+            for _ in 0..<3 where !threadShown {
+                guard threadButton.shows(within: 15) else { break }
+                _ = threadButton.waitFor(hittable: true, timeout: 5)
+                clearAlerts()
+                threadButton.tap()
                 threadShown = thread.shows(within: 10)
             }
             if !threadShown { shot(app, "fail-lead-thread") }
-            XCTAssertTrue(threadShown, "the lead didn't open the board's thread: \(app.debugDescription)")
+            XCTAssertTrue(threadShown, "Board thread didn't open the board's thread: \(app.debugDescription)")
             XCTAssertTrue(thread.label.contains(lead), "the thread's lead says: \(thread.label)")
             let toLead = "to-the-lead-\(Int.random(in: 1000...9999))"
             let leadDraft = app.textFields["chat-draft"]
@@ -378,7 +436,7 @@ final class FlowTests: XCTestCase {
             XCTAssertTrue(level.shows(within: 10), "the path bar didn't zoom out to the board")
             XCTAssertTrue(app.buttons["board-thread"].shows(within: 10), "no Thread on the Board level")
             app.buttons["board-thread"].tap()
-            XCTAssertTrue(app.staticTexts["board-lead"].shows(within: 15), "no board thread: \(app.debugDescription)")
+            XCTAssertTrue(app.descendants(matching: .any)["board-lead"].shows(within: 15), "no board thread: \(app.debugDescription)")
             let said = "to-the-board-\(Int.random(in: 1000...9999))"
             let draft = app.textFields["chat-draft"]
             XCTAssertTrue(draft.shows(within: 15))
@@ -392,7 +450,7 @@ final class FlowTests: XCTestCase {
             XCTAssertTrue(app.staticTexts["NEXT"].shows(within: 30), "no lanes")
             shot(app, "2-board-lanes")
             goBack(app)
-            XCTAssertTrue(app.staticTexts["board-lead"].shows(within: 15), "not back on the thread")
+            XCTAssertTrue(app.descendants(matching: .any)["board-lead"].shows(within: 15), "not back on the thread")
             goBack(app)
             XCTAssertTrue(level.shows(within: 15), "not back on the Board level")
             // Out to home by the path bar.
@@ -471,7 +529,7 @@ final class FlowTests: XCTestCase {
             let pick = app.buttons["tell-\(title)"]
             XCTAssertTrue(pick.shows(within: 10), "the board isn't offered")
             pick.tap()
-            XCTAssertTrue(app.staticTexts["board-lead"].shows(within: 20), "telling the board didn't open its thread")
+            XCTAssertTrue(app.descendants(matching: .any)["board-lead"].shows(within: 20), "telling the board didn't open its thread")
             let told = "told-the-board-\(Int.random(in: 1000...9999))"
             let draft = app.textFields["chat-draft"]
             XCTAssertTrue(draft.shows(within: 15))

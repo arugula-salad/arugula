@@ -279,3 +279,19 @@
     padding: var(--space-3) var(--space-5) var(--space-6);
   }
 }
+
+/* A section the page can't fill (Settings › Machines, a machine it can't
+   reach): one note over it saying why and what to do, and the parts it
+   would show dimmed under it. */
+:is(.platform, .settings-place) .settings-away-note {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--warn);
+  border-radius: var(--field-radius);
+  background: var(--surface);
+}
+
+:is(.platform, .settings-place) .settings-away {
+  opacity: 0.45;
+}
