@@ -5,7 +5,9 @@
 // browsers, which a device turns on with its own keys, and its other
 // sections' old links land in the app (Arugula #1110, ./app.tsx). A
 // daemon's own page has no app, so it keeps every section. Help is the
-// command palette's, not a section here.
+// command palette's, not a section here. Appearance draws the dialog's
+// controls in place, with Preferences a part of it (Arugula #1318), so
+// `#settings=preferences` opens at Appearance.
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
@@ -13,6 +15,7 @@ import { platformHref, openPlatform } from "../platform-links";
 import { subscribeSeen } from "../../shared/seen";
 import { useSubscribe } from "../../shared/ui/hooks";
 import type { MenuItem } from "../../shared/ui/menu";
+import { AppearanceControls, ResetAppearance } from "../../shared/ui/appearance";
 import { PageHeader } from "../../shared/ui/page-header";
 import { Section, SectionIndex } from "../../shared/ui/settings-section";
 import { accountHeader, AppBar, useAccount } from "./app-bar";
@@ -107,9 +110,14 @@ export function SettingsPage({ client }: { client: Client }) {
     ) : null;
   };
   // The route's section, once: the hash stays `#settings=…` as you scroll.
-  const opened = useRef(settingsRoute()?.section);
+  // Preferences is Appearance's now.
+  const routed = () => {
+    const s = settingsRoute()?.section;
+    return s === "preferences" ? "appearance" : s;
+  };
+  const opened = useRef(routed());
   useEffect(() => {
-    const fn = () => (opened.current = settingsRoute()?.section);
+    const fn = () => (opened.current = routed());
     addEventListener("hashchange", fn);
     return () => removeEventListener("hashchange", fn);
   }, []);
@@ -144,8 +152,13 @@ export function SettingsPage({ client }: { client: Client }) {
             <div class="settings-body" ref={body}>
               <PageHeader title="Settings" />
               {section("push")}
-              {section("appearance")}
-              {section("preferences")}
+              <Section id="appearance" title="Appearance" lede="Palette, finish, corners and chat density on this device, and your preferences.">
+                <AppearanceControls />
+                <div class="prompt-buttons">
+                  <ResetAppearance />
+                </div>
+                {section("preferences")}
+              </Section>
               {section("machine")}
               <RemoteSessionsSection client={client} />
               {account && (

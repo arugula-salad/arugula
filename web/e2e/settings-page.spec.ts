@@ -5,7 +5,7 @@
 // test, with control made up on the suite's daemon and the app a stand-in.
 
 import { expect, test } from "@playwright/test";
-import { closeContexts, closeSettingsPage, openSettingsPage, reset, settingsRow, sheetTab } from "./helpers";
+import { closeContexts, closeSettingsPage, openSettingsPage, reset, sheetTab } from "./helpers";
 
 test.afterAll(closeContexts);
 
@@ -14,7 +14,7 @@ test("the rail's Settings is a page: every scope's rows, and back to the panes",
   const settings = await openSettingsPage(page);
   await expect(page).toHaveURL(/#settings$/);
   await expect(page).toHaveTitle(/^Settings/);
-  for (const id of ["push", "appearance", "preferences", "machine"]) await expect(settings.locator(`[data-settings-section="${id}"]`)).toBeVisible();
+  for (const id of ["push", "appearance", "machine"]) await expect(settings.locator(`[data-settings-section="${id}"]`)).toBeVisible();
   // Help is the command palette's, not a section here (Arugula #1108).
   await expect(settings.locator('[data-settings-section="help"]')).toHaveCount(0);
 
@@ -22,9 +22,11 @@ test("the rail's Settings is a page: every scope's rows, and back to the panes",
   const machine = settings.locator('[data-settings-section="machine"]');
   await expect(machine.getByRole("button", { name: "Developer settings…" })).toBeVisible();
   await expect(machine.getByRole("button", { name: "Remove arugula.nvim" })).toBeVisible();
-  await expect(settings.locator('[data-settings-section="appearance"]').getByRole("button", { name: "Appearance…" })).toBeVisible();
-  await expect(settings.getByRole("button", { name: "Appearance…" })).toHaveCount(1);
-  await expect(settings.locator('[data-settings-section="preferences"]').getByRole("switch", { name: "Tips", exact: true })).toBeChecked();
+  // Appearance's controls in place (Arugula #1318), Preferences a part of it.
+  const look = settings.locator('[data-settings-section="appearance"]');
+  await expect(look.locator("[data-appearance-controls]")).toBeVisible();
+  await expect(settings.getByRole("button", { name: "Appearance…" })).toHaveCount(0);
+  await expect(look.locator('[data-settings-part="preferences"]').getByRole("switch", { name: "Tips", exact: true })).toBeChecked();
 
   // A daemon's own page has no account, so no second way in.
   await expect(page.locator("[data-account-menu]")).toHaveCount(0);
@@ -38,12 +40,12 @@ test("the rail's Settings is a page: every scope's rows, and back to the panes",
   await tips.click();
   await expect(tips).toBeChecked();
 
-  // A dialog opens over the page, which is still there when it shuts.
-  await settingsRow(page, "Appearance…");
-  await expect(page.locator("[data-appearance]")).toBeVisible();
-  await page.keyboard.press("Escape");
+  // A palette applies at once, and Reset goes back to nothing picked.
+  await look.locator('[data-palette-choice="latte"]').click();
+  await expect(page.locator("html")).toHaveAttribute("data-palette", "latte");
+  await look.getByRole("button", { name: "Reset", exact: true }).click();
+  await expect(page.locator("html")).not.toHaveAttribute("data-palette", "latte");
   await expect(page.locator("[data-appearance]")).toHaveCount(0);
-  await expect(settings).toBeVisible();
 
   await closeSettingsPage(page);
   await expect(page).not.toHaveURL(/#settings/);
@@ -57,7 +59,13 @@ test("#settings=<section> opens at it, and a reload stays there", async ({ page 
   await page.reload();
   await expect(heading).toBeInViewport();
   // The index keeps the page's own address, not a bare `#machine`.
-  await expect(page.locator(".settings-index a", { hasText: "Preferences" })).toHaveAttribute("href", "#settings=preferences");
+  await expect(page.locator(".settings-index a", { hasText: "Appearance" })).toHaveAttribute("href", "#settings=appearance");
+  // Preferences is part of Appearance now: its old link opens there.
+  await expect(page.locator(".settings-index a", { hasText: "Preferences" })).toHaveCount(0);
+  // A fresh load (a hash change alone doesn't reopen the page at a section).
+  await page.goto("/#settings=preferences");
+  await page.reload();
+  await expect(page.locator("#appearance-h")).toBeInViewport();
 });
 
 test("This device and All your devices are one section, Phones and browsers, and their old links land on it", async ({ page }) => {
@@ -142,7 +150,7 @@ test.describe("on a phone", () => {
     await sheetTab(page, "More");
     await page.locator(".sheet [data-open-settings]").click();
     const settings = page.locator("[data-settings-page]");
-    await expect(settings.getByRole("button", { name: "Appearance…" })).toBeVisible();
+    await expect(settings.locator("[data-appearance-controls]")).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await settings.locator("[data-open-panes]").click();
     await expect(settings).toHaveCount(0);
@@ -159,7 +167,7 @@ test("on control's page, old #settings links land on the app's Settings, but Pho
   for (const [hash, path] of [
     ["#settings", "/settings"],
     ["#settings=appearance", "/settings/you/appearance"],
-    ["#settings=preferences", "/settings/you/preferences"],
+    ["#settings=preferences", "/settings/you/appearance"],
     ["#settings=account", "/settings/you/account"],
   ]) {
     await page.goto(`/${hash}`);

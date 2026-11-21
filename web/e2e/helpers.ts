@@ -295,7 +295,7 @@ export async function openSettingsPage(page: Page) {
   return settings;
 }
 
-/** A row of the Settings page that opens or does something: `Appearance…`. */
+/** A row of the Settings page that opens or does something: `Developer settings…`. */
 export async function settingsRow(page: Page, name: string) {
   await (await openSettingsPage(page)).getByRole("button", { name, exact: true }).click();
 }

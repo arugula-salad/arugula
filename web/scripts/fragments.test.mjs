@@ -43,7 +43,7 @@ test("control's old Settings sections land on the app's Settings, but Phones and
   const cases = [
     ["#settings", "/settings"],
     ["#settings=appearance", "/settings/you/appearance"],
-    ["#settings=preferences", "/settings/you/preferences"],
+    ["#settings=preferences", "/settings/you/appearance"],
     ["#settings=account", "/settings/you/account"],
     // Help went to the command palette (Arugula #1108): Settings, at You.
     ["#settings=help", "/settings"],
@@ -53,7 +53,7 @@ test("control's old Settings sections land on the app's Settings, but Phones and
     const r = parse(path, "");
     assert.equal(r.page, "settings", path);
     assert.equal(r.scope, "you", path);
-    assert.equal(r.section, hash.split("=")[1] === "help" ? undefined : hash.split("=")[1], path);
+    assert.equal(r.section, path.split("/")[3], path);
   }
   // Kept on control's page: a device turns its notifications on with its own keys.
   for (const hash of ["#settings=push", "#settings=device", "#settings=all-devices"]) assert.equal(platformPath(hash), null, hash);

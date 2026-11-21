@@ -125,14 +125,12 @@ test.describe("on a computer", () => {
     await expect(page.locator('[data-team-page="tm_1"][data-team-tab="members"]')).toBeVisible();
   });
 
-  test("your picture's menu is your name, Your account…, Send feedback… and Sign out; presence is Chat's (Arugula #1079)", async ({ page }) => {
+  test("your picture's menu is your name, Send feedback… and Sign out; Settings is the rail's; presence is Chat's (Arugula #1079)", async ({ page }) => {
     await openApp(page, () => `/p/${P}/boards`);
     await page.locator(".ws-rail [data-signed-in-as]").click();
     const items = page.locator(".menu-item");
-    await expect(items).toHaveText(["Your account…", "Send feedback…", "Sign out of this page"]);
+    await expect(items).toHaveText(["Send feedback…", "Sign out of this page"]);
     await expect(page.locator(".menu", { hasText: "Your presence" })).toHaveCount(0);
-    await items.first().click();
-    await expect(page).toHaveURL(/\/settings$/);
   });
 
   test("the project tile opens the switcher: Everything, each team's projects, then yours, with what wants you", async ({ page }, info) => {
@@ -361,6 +359,11 @@ test.describe("on a phone", () => {
     await expect(page.locator("[data-platform-bar] [data-project-switcher]")).toContainText("Arugula");
     // The Inbox is a tab, not a bell in the bar; Settings is under your picture.
     await expect(page.locator("[data-platform-bar] [data-signed-in-as]")).toBeVisible();
+    // With no rail, the picture's menu keeps Your account… (Arugula #1319).
+    await page.locator("[data-platform-bar] [data-signed-in-as]").click();
+    await expect(page.locator(".menu-item").first()).toHaveText("Your account…");
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".menu-item")).toHaveCount(0);
     await here(page, "boards");
     await page.screenshot({ path: info.outputPath("frame-phone-boards.png") });
     // The project's name opens the same switcher.

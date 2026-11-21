@@ -56,7 +56,7 @@ export function SettingsList({
   const tell = useCallback((s: ListedSection) => {
     setSecs((was) => {
       const o = was.get(s.id);
-      if (o && o.title === s.title && o.summary === s.summary && o.band === s.band && o.el === s.el) return was;
+      if (o && o.title === s.title && o.summary === s.summary && o.el === s.el) return was;
       return new Map(was).set(s.id, s);
     });
   }, []);
@@ -88,13 +88,6 @@ export function SettingsList({
   const detail = useRef<HTMLDivElement>(null);
   useEffect(() => detail.current?.scrollTo?.({ top: 0 }), [shown]);
 
-  // Rows under their band's heading, where the scope has bands.
-  const groups: { band?: string; rows: ListedSection[] }[] = [];
-  for (const r of rows) {
-    const last = groups[groups.length - 1];
-    if (last && last.band === r.band) last.rows.push(r);
-    else groups.push({ band: r.band, rows: [r] });
-  }
   const shownRow = rows.find((r) => r.id === shown);
   return (
     <div ref={root} class={section ? "list-page settings-list detail" : "list-page settings-list"} data-list-page data-settings-list {...attrs}>
@@ -103,28 +96,19 @@ export function SettingsList({
           <div class="list-head">{header}</div>
           <div class="list-scroll">
             <nav class="list-rows" aria-label={`${label}: sections`}>
-              {groups.map((g, i) => (
-                <div key={g.band ?? `_${i}`} role={g.band ? "group" : undefined} aria-labelledby={g.band ? `settings-band-${i}` : undefined}>
-                  {g.band && (
-                    <div class="list-group" id={`settings-band-${i}`}>
-                      <span class="list-group-title">{g.band}</span>
+              {rows.map((r) => {
+                const href = hrefOf(r.id);
+                return (
+                  <Card as="a" key={r.id} class="list-row" href={href} selected={r.id === marked} data-settings-row={r.id} onClick={(e: MouseEvent) => open(e, href)}>
+                    <div class="list-row-top">
+                      <span class="list-row-title">{r.title}</span>
                     </div>
-                  )}
-                  {g.rows.map((r) => {
-                    const href = hrefOf(r.id);
-                    return (
-                      <Card as="a" key={r.id} class="list-row" href={href} selected={r.id === marked} data-settings-row={r.id} onClick={(e: MouseEvent) => open(e, href)}>
-                        <div class="list-row-top">
-                          <span class="list-row-title">{r.title}</span>
-                        </div>
-                        <div class="list-row-detail" title={r.summary}>
-                          {r.summary ?? " "}
-                        </div>
-                      </Card>
-                    );
-                  })}
-                </div>
-              ))}
+                    <div class="list-row-detail" title={r.summary}>
+                      {r.summary ?? " "}
+                    </div>
+                  </Card>
+                );
+              })}
             </nav>
           </div>
         </section>

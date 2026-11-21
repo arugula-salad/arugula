@@ -9798,7 +9798,8 @@ button.thread-quote:hover {
   text-overflow: ellipsis;
 }
 
-/* ---- appearance: the picker, the finishes and the corners (appearance.ts) */
+/* ---- appearance: the picker, the finishes and the corners (appearance.ts),
+   in its dialog and in place in Settings (.appearance-controls) */
 
 .prompt-backdrop:has(.appearance) {
   padding-top: 5vh;
@@ -9815,7 +9816,7 @@ button.thread-quote:hover {
   margin: 0 0 4px;
 }
 
-.appearance h3 {
+:is(.appearance, .appearance-controls) h3 {
   margin: 16px 0 8px;
   font-size: var(--text-xs);
   font-weight: 600;
@@ -9824,7 +9825,7 @@ button.thread-quote:hover {
   color: var(--dim);
 }
 
-.appearance :is(p, span).dim {
+:is(.appearance, .appearance-controls) :is(p, span).dim {
   margin: 0;
   color: var(--dim);
 }

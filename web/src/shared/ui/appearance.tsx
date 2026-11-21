@@ -1,8 +1,11 @@
-// Appearance…, in the shell's settings menu and on the platform page (its
-// account menu and Settings, M150): this device's palette, finish and
-// corners. Each choice applies at once, so the page behind is the preview.
+// Appearance: this device's palette, finish, corners and messages'
+// density. Each choice applies at once, so the page is the preview. Drawn
+// in place in Settings (You's Appearance, the daemon's `#settings`;
+// Arugula #1318), and as a dialog, Appearance…, where there's no Settings
+// page to go to: the phone's settings menu and the command palette.
 
 import { useEffect, useState } from "preact/hooks";
+import { useSubscribe } from "./hooks";
 import { Modal } from "./modal";
 import { appearance, CORNERS, DENSITIES, darkDefault, FINISHES, legible, onAppearance, palette, PALETTES, setAppearance, type Palette } from "../appearance";
 
@@ -34,11 +37,23 @@ export function AppearanceLayer() {
   return <AppearanceDialog close={close} />;
 }
 
-function AppearanceDialog({ close }: { close: () => void }) {
+/** Back to nothing picked: the default palette, flat, square, cozy. */
+export function ResetAppearance() {
+  useSubscribe(onAppearance);
   const a = appearance();
-  const dark = PALETTES.find((p) => p.id === darkDefault())!.name;
-  // Nothing picked yet: the default's card is the one on.
-  const picked = a.palette === "default" ? darkDefault() : a.palette;
+  return (
+    <button
+      class="secondary"
+      type="button"
+      onClick={() => setAppearance({ palette: "default", finish: "flat", corners: "square", density: "cozy" })}
+      disabled={a.palette === "default" && a.finish === "flat" && a.corners === "square" && a.density === "cozy"}
+    >
+      Reset
+    </button>
+  );
+}
+
+function AppearanceDialog({ close }: { close: () => void }) {
   return (
     <Modal
       class="appearance"
@@ -47,93 +62,96 @@ function AppearanceDialog({ close }: { close: () => void }) {
       root={{ "data-appearance": true }}
       buttons={
         <>
-          <button
-            class="secondary"
-            type="button"
-            onClick={() => setAppearance({ palette: "default", finish: "flat", corners: "square", density: "cozy" })}
-            disabled={a.palette === "default" && a.finish === "flat" && a.corners === "square" && a.density === "cozy"}
-          >
-            Reset
-          </button>
+          <ResetAppearance />
           <button class="secondary" type="button" onClick={close}>
             Done
           </button>
         </>
       }
     >
-        <p class="dim">On this device. The terminals follow the palette.</p>
-        <button class="appearance-control-look" data-control-look onClick={() => setAppearance({ palette: "slate", finish: "flat", corners: "soft" })}>
-          <strong>Use the Slate look</strong>
-          <span>Near-black Slate, cyan focus, soft pane corners</span>
-        </button>
-        <h3>Palette</h3>
-        <div class="appearance-palettes" role="radiogroup" aria-label="Palette">
-          <PaletteCard
-            p={palette({ ...a, palette: "system" })}
-            id="system"
-            name="Match system"
-            hint={`${dark} or Latte`}
-            on={a.palette === "system"}
-          />
-          {PALETTES.map((p) => (
-            <PaletteCard key={p.id} p={p} id={p.id} name={p.name} on={picked === p.id} />
-          ))}
-        </div>
-        <h3>Finish</h3>
-        <div class="appearance-finishes" role="radiogroup" aria-label="Finish">
-          {FINISHES.map((f) => (
-            <button
-              key={f.id}
-              role="radio"
-              aria-checked={a.finish === f.id}
-              class={a.finish === f.id ? "appearance-finish on" : "appearance-finish"}
-              data-finish-choice={f.id}
-              data-look={f.id}
-              onClick={() => setAppearance({ finish: f.id })}
-            >
-              <span class="appearance-finish-sample" aria-hidden="true">
-                <span class="sample-bar" />
-                <span class="sample-button">OK</span>
-              </span>
-              <b>{f.name}</b>
-              <span class="dim">{f.hint}</span>
-            </button>
-          ))}
-        </div>
-        <h3>Corners</h3>
-        <div class="appearance-corners" role="radiogroup" aria-label="Corners">
-          {CORNERS.map((c) => (
-            <button
-              key={c.id}
-              role="radio"
-              aria-checked={a.corners === c.id}
-              class={a.corners === c.id ? "on" : undefined}
-              data-corners-choice={c.id}
-              onClick={() => setAppearance({ corners: c.id })}
-            >
-              <span class={`corner-sample ${c.id}`} aria-hidden="true" />
-              {c.name}
-            </button>
-          ))}
-        </div>
-        <h3>Messages</h3>
-        <div class="appearance-corners appearance-density" role="radiogroup" aria-label="Message density">
-          {DENSITIES.map((d) => (
-            <button
-              key={d.id}
-              role="radio"
-              aria-checked={a.density === d.id}
-              class={a.density === d.id ? "on" : undefined}
-              title={d.hint}
-              data-density-choice={d.id}
-              onClick={() => setAppearance({ density: d.id })}
-            >
-              {d.name}
-            </button>
-          ))}
-        </div>
-        <p class="dim">Chat's rows: {DENSITIES.find((d) => d.id === a.density)?.hint.toLowerCase()}.</p>
+      <AppearanceControls />
     </Modal>
+  );
+}
+
+/** What the dialog holds, drawn in place where Settings is a page (You's
+ * Appearance, the daemon's `#settings`): palette, finish, corners and
+ * messages' density. Each applies at once. */
+export function AppearanceControls() {
+  useSubscribe(onAppearance);
+  const a = appearance();
+  const dark = PALETTES.find((p) => p.id === darkDefault())!.name;
+  // Nothing picked yet: the default's card is the one on.
+  const picked = a.palette === "default" ? darkDefault() : a.palette;
+  return (
+    <div class="appearance-controls" data-appearance-controls>
+      <p class="dim">On this device. The terminals follow the palette.</p>
+      <button class="appearance-control-look" data-control-look onClick={() => setAppearance({ palette: "slate", finish: "flat", corners: "soft" })}>
+        <strong>Use the Slate look</strong>
+        <span>Near-black Slate, cyan focus, soft pane corners</span>
+      </button>
+      <h3>Palette</h3>
+      <div class="appearance-palettes" role="radiogroup" aria-label="Palette">
+        <PaletteCard p={palette({ ...a, palette: "system" })} id="system" name="Match system" hint={`${dark} or Latte`} on={a.palette === "system"} />
+        {PALETTES.map((p) => (
+          <PaletteCard key={p.id} p={p} id={p.id} name={p.name} on={picked === p.id} />
+        ))}
+      </div>
+      <h3>Finish</h3>
+      <div class="appearance-finishes" role="radiogroup" aria-label="Finish">
+        {FINISHES.map((f) => (
+          <button
+            key={f.id}
+            role="radio"
+            aria-checked={a.finish === f.id}
+            class={a.finish === f.id ? "appearance-finish on" : "appearance-finish"}
+            data-finish-choice={f.id}
+            data-look={f.id}
+            onClick={() => setAppearance({ finish: f.id })}
+          >
+            <span class="appearance-finish-sample" aria-hidden="true">
+              <span class="sample-bar" />
+              <span class="sample-button">OK</span>
+            </span>
+            <b>{f.name}</b>
+            <span class="dim">{f.hint}</span>
+          </button>
+        ))}
+      </div>
+      <h3>Corners</h3>
+      <div class="appearance-corners" role="radiogroup" aria-label="Corners">
+        {CORNERS.map((c) => (
+          <button
+            key={c.id}
+            role="radio"
+            aria-checked={a.corners === c.id}
+            class={a.corners === c.id ? "on" : undefined}
+            data-corners-choice={c.id}
+            onClick={() => setAppearance({ corners: c.id })}
+          >
+            <span class={`corner-sample ${c.id}`} aria-hidden="true" />
+            {c.name}
+          </button>
+        ))}
+      </div>
+      <h3>Messages</h3>
+      <div class="appearance-corners appearance-density" role="radiogroup" aria-label="Message density">
+        {DENSITIES.map((d) => (
+          <button
+            key={d.id}
+            role="radio"
+            aria-checked={a.density === d.id}
+            class={a.density === d.id ? "on" : undefined}
+            title={d.hint}
+            data-density-choice={d.id}
+            onClick={() => setAppearance({ density: d.id })}
+          >
+            {d.name}
+          </button>
+        ))}
+      </div>
+      <p class="dim">Chat's rows: {DENSITIES.find((d) => d.id === a.density)?.hint.toLowerCase()}.</p>
+    </div>
   );
 }
 

@@ -90,7 +90,7 @@ async function call<T>(path: string, body?: unknown): Promise<T> {
 /** An owner's Plan and billing section: Personal's (no `team`) or a
  * team's, with Plan and usage… to see it all and upgrade. Shown once
  * billing is on. */
-export function PlanAndBilling({ team, band }: { team?: string; band?: string }) {
+export function PlanAndBilling({ team }: { team?: string }) {
   const [billing, setBilling] = useState<Billing | null>(null);
   const [plan, setPlan] = useState(false);
   useEffect(() => {
@@ -115,7 +115,6 @@ export function PlanAndBilling({ team, band }: { team?: string; band?: string })
     <Section
       id="plan"
       title="Plan and billing"
-      band={band}
       summary={mine ? joined(planWords(billing, team), `${mine.sandbox_minutes} VM minutes this month`) : joined(billing.plan === "paid" ? "Paid plan" : "Free plan", billing.relay.warning && "over the free relay")}
       lede={mine ? `${mine.name}: ${planWords(billing, team)}.` : `You're on ${planWords(billing)}.`} hooks={{ "data-owner-plan": team ?? "personal" }}>
       <ul class="platform-list settings-rows">
