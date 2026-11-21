@@ -3,13 +3,15 @@
 // /api/projects/:project/sessions/settings`). The strongest unless it says
 // (Opus, for Claude Code); an ask's own word ("use sonnet") wins for its
 // session. Codex picks its own model whatever this says. Its owners and
-// editors change it; it counts from the next session on.
+// editors change it; it counts from the next session on. Under its label,
+// whether it follows the team's default or is set here (./team-default).
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import type { SessionSettings } from "../../shared/proto";
 import type { PlatformProject } from "../session";
 import { Section } from "../../shared/ui/settings-section";
+import { reread, TeamDefault } from "./team-default";
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const r = await platformFetch(path, {
@@ -30,6 +32,7 @@ export function AgentModel({ p }: { p: PlatformProject }) {
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState<{ ok: boolean; text: string } | null>(null);
   const path = `/api/projects/${encodeURIComponent(p.id)}/sessions/settings`;
+  const [read, setRead] = useState(0);
   useEffect(() => {
     let live = true;
     call<SessionSettings>("GET", path).then(
@@ -37,7 +40,7 @@ export function AgentModel({ p }: { p: PlatformProject }) {
       () => live && setNow(null),
     );
     return () => void (live = false);
-  }, [path]);
+  }, [path, read]);
   if (!now) return null;
   const changes = !p.team || p.team.role !== "viewer";
   const choose = async (model: string | null) => {
@@ -45,6 +48,7 @@ export function AgentModel({ p }: { p: PlatformProject }) {
     try {
       setNow(await call<SessionSettings>("PUT", path, { model, models: [] }));
       setSaid({ ok: true, text: "Saved: the next session uses it." });
+      void reread(p.id);
     } catch (e) {
       setSaid({ ok: false, text: (e as Error).message });
     } finally {
@@ -64,6 +68,7 @@ export function AgentModel({ p }: { p: PlatformProject }) {
         </p>
       }
     >
+      <TeamDefault p={p} k="agents_model" reset={() => (setSaid(null), setRead((n) => n + 1))} />
       <div class="platform-link-repo" data-agent-model>
         <select
           class="field"

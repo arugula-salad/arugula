@@ -11,6 +11,10 @@
 //   -> e, es, s, ss   (+ payload, encrypted)
 //   <- e, ee, se      (+ payload, encrypted)
 
+// A new key pair, with WebKit's retry: shared/, where invite links' one-time keys are made too.
+import { newKeyPair } from "../../shared/team-roster.ts";
+export { newKeyPair };
+
 const subtle = globalThis.crypto.subtle;
 const NAME = "Noise_IK_25519_AESGCM_SHA256";
 const TAG = 16;
@@ -81,20 +85,6 @@ async function dh(priv: CryptoKey, pub: Uint8Array): Promise<Bytes> {
 
 export async function publicRaw(k: CryptoKey): Promise<Bytes> {
   return new Uint8Array(await subtle.exportKey("raw", k));
-}
-
-/** A new X25519 or Ed25519 key pair. WebKit on Linux (libgcrypt) fails
- * about one generateKey in 200 with an OperationError (#524: 10 to 22 in
- * 3000 for each kind, in Playwright's WebKit); a fresh try succeeds, so
- * try again. */
-export async function newKeyPair(name: "X25519" | "Ed25519", extractable: boolean, usages: KeyUsage[]): Promise<CryptoKeyPair> {
-  for (let attempt = 1; ; attempt++) {
-    try {
-      return (await subtle.generateKey({ name }, extractable, usages)) as CryptoKeyPair;
-    } catch (e) {
-      if (attempt >= 8 || (e as Error).name !== "OperationError") throw e;
-    }
-  }
 }
 
 /** A device key pair: the private half can't be exported. */

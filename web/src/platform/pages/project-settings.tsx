@@ -16,8 +16,10 @@
 // can do what here (Access, Arugula #682, ../settings/access). Each part is a section
 // (shared/ui/settings-section), as every scope's are: listed with what's
 // set, and its controls beside the list.
-// Its Overrides (Arugula #897, ../settings/project-overrides): which of its
-// owner's defaults it follows, and which it sets itself.
+// Each setting its owner has a default for says under its label whether it
+// follows that default or is set here, with Reset (Arugula #1323,
+// ../settings/team-default); the Overrides section that listed them went,
+// and its address lands on the first of them, Issues and boards.
 // The repos are a table, a row each with its switch. With them, the Plane
 // projects connected to it (#356, ../settings/plane), with boards on, and
 // after where its issues go, its CI alerts (native #774, ../settings/ci-alerts).
@@ -44,6 +46,7 @@ import { IssueHomeSetting } from "./issues";
 import { RunGrant } from "../settings/runs";
 import { FinishStep } from "../settings/finish-step";
 import { AgentModel } from "../settings/agent-model";
+import { AgentWorkspace } from "../settings/agent-workspace";
 import { WorkspaceSize } from "../settings/workspace-size";
 import { Environments } from "../settings/environments";
 import { ProjectAgents } from "../settings/project-agents";
@@ -56,7 +59,6 @@ import { Section, SectionListContext } from "../../shared/ui/settings-section";
 import { plural } from "../settings/summary";
 import { Access } from "../settings/access";
 import { General } from "../settings/general";
-import { Overrides } from "../settings/project-overrides";
 import { Chip } from "../../shared/ui/state-chip";
 
 /** A call to the platform: its JSON, or the platform's `{error}` thrown
@@ -295,7 +297,6 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
     <>
       <General p={p} />
       <Access p={p} />
-      <Overrides p={p} />
       <Section id="repos" title="Repos and trackers" lede="Where its code and its work items come from: GitHub repos, and Plane projects.">
         {linkedRepos}
         {boards !== null && <PlaneConnections p={p} />}
@@ -310,8 +311,9 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
         <WorkspaceSize p={p} />
         <FinishStep p={p} />
       </Section>
-      <Section id="agents" title="Agents" lede="The model its agent sessions use, and, for its owners, the agent tokens over it.">
+      <Section id="agents" title="Agents" lede="The model its agent sessions use, the workspace they run on, and, for its owners, the agent tokens over it.">
         <AgentModel p={p} />
+        <AgentWorkspace p={p} />
         <ProjectAgents p={p} show="tokens" />
       </Section>
       <Section id="secrets" title="Secrets and environments" lede="Where it deploys, and the secrets it keeps by name. Their values are never shown.">

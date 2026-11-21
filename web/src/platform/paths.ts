@@ -432,7 +432,9 @@ function withOldSection(r: SettingsRoute | null, hash: string): SettingsRoute | 
 
 /** Sections that are parts of others now: a project's (Arugula #1105),
  * and a machine's, in Machines' four (the Settings Doc's Machines tab).
- * The section each is in now. */
+ * The section each is in now. A project's Overrides went (Arugula #1323):
+ * its address lands on the first setting that says whether it follows a
+ * default. */
 const MOVED: Record<"project" | "machine", Record<string, string>> = {
   project: {
     plane: "repos",
@@ -440,6 +442,8 @@ const MOVED: Record<"project" | "machine", Record<string, string>> = {
     size: "runs",
     finish: "runs",
     "agent-model": "agents",
+    "agent-workspace": "agents",
+    overrides: "issues",
     environments: "secrets",
   },
   machine: {

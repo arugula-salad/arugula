@@ -12,6 +12,8 @@
 # ARUGULA_BOARD names a board home should show, and ARUGULA_ASK its row's
 # question to the person signed in. ARUGULA_AGENT=1: a stand-in agent on
 # MACHINE asks for a permission and a question, for home to answer.
+# ARUGULA_CARD_AGENT=1: that agent works on ARUGULA_BOARD's card, so the
+# Board level shows it on the ticket (Arugula #1306).
 # ARUGULA_STAFF_PROJECT names a team's project where the session
 # ARUGULA_STAFF_LEAD (cos) leads the person's staff room and the board
 # ARUGULA_STAFF_BOARD (Arugula #1279): the test asks the chief of staff, opens
@@ -38,6 +40,7 @@ device=$(xcrun simctl create arugula-ui-test "$type" "$runtime")
 trap 'xcrun simctl shutdown "$device" 2>/dev/null || true; xcrun simctl delete "$device"' EXIT
 TEST_RUNNER_ARUGULA_CONTROL_URL="$url" TEST_RUNNER_ARUGULA_MACHINE="$machine" TEST_RUNNER_ARUGULA_HANDOFF="$handoff" \
   TEST_RUNNER_ARUGULA_BOARD="${ARUGULA_BOARD:-}" TEST_RUNNER_ARUGULA_ASK="${ARUGULA_ASK:-}" TEST_RUNNER_ARUGULA_AGENT="${ARUGULA_AGENT:-}" \
+  TEST_RUNNER_ARUGULA_CARD_AGENT="${ARUGULA_CARD_AGENT:-}" \
   TEST_RUNNER_ARUGULA_DOC="${ARUGULA_DOC:-}" TEST_RUNNER_ARUGULA_DOC_ROOM="${ARUGULA_DOC_ROOM:-}" \
   TEST_RUNNER_ARUGULA_DOC_PARA="${ARUGULA_DOC_PARA:-}" TEST_RUNNER_ARUGULA_DOC_PROTO="${ARUGULA_DOC_PROTO:-}" \
   TEST_RUNNER_ARUGULA_STAFF_PROJECT="${ARUGULA_STAFF_PROJECT:-}" TEST_RUNNER_ARUGULA_STAFF_BOARD="${ARUGULA_STAFF_BOARD:-}" \

@@ -1,9 +1,9 @@
 // Project defaults and overrides (Arugula #897): staging cells, the PUTs
-// Save sends, Cancel, and what each cell and Overrides line shows. Run
+// Save sends, Cancel, and what each cell and a project's line shows. Run
 // with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { OWNER, changes, ownerCell, overrideLine, projectCell, send, stage, valueOf, words, writes } from "../src/platform/settings/overrides.ts";
+import { OWNER, changes, ownerCell, projectCell, teamLine, send, stage, valueOf, words, writes } from "../src/platform/settings/overrides.ts";
 
 const A = "prj_aaaa";
 const B = "prj_bbbb";
@@ -87,13 +87,12 @@ test("a failed PUT stays staged, with why; the rest go", async () => {
   assert.equal(r.failed[0].error, "Viewers can't change it");
 });
 
-test("the Overrides line says whose value it is", () => {
-  const [a, b] = [layers.projects[A], layers.projects[B]];
-  assert.deepEqual(overrideLine(a[1], "agents_model", "Acme"), { overridden: true, text: "Overridden: Sonnet" });
-  assert.deepEqual(overrideLine(a[0], "issue_home", "Acme"), { overridden: false, text: "Using team default: Here, on Arugula" });
-  assert.equal(overrideLine(a[0], "issue_home", null).text, "Using your default: Here, on Arugula");
-  assert.equal(overrideLine(a[3], "stall_minutes", "Acme").text, "Using the default: 30 minutes");
-  assert.equal(overrideLine(b[2], "agents_workspace", "Acme", (id) => (id === "hw_1" ? "big box" : undefined)).text, "Overridden: big box");
+test("a setting's line says it follows the owner's default, or is set here and what the default is", () => {
+  assert.deepEqual(teamLine(layers, A, "agents_model", "Acme"), { own: true, text: "Set here · team default is The strongest" });
+  assert.deepEqual(teamLine(layers, B, "issue_home", "Acme"), { own: true, text: "Set here · team default is Here, on Arugula" });
+  assert.deepEqual(teamLine(layers, A, "issue_home", "Acme"), { own: false, text: "Team default · follows Acme" });
+  assert.equal(teamLine(layers, A, "stall_minutes", null).text, "Your default · follows your defaults");
+  assert.equal(teamLine(layers, B, "agents_workspace", "Acme"), null);
 });
 
 test("values in words, and from a select", () => {
