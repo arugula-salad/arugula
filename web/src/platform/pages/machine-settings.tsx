@@ -12,7 +12,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import { usePlatformApi } from "../../shared/platform-api";
-import { Band, Section } from "../../shared/ui/settings-section";
+import { Section } from "../../shared/ui/settings-section";
 import { names } from "../links";
 import { go, pathOf } from "../router";
 import { controlOrigin } from "../session";
@@ -94,12 +94,12 @@ export function MachineSettings({ machine, section }: { machine?: string; sectio
   ) : (
     <>
       <NotHere m={m} />
-      <Band title="Who and what">
+      <>
         <Section id="agents" title="Agents" lede="What its agents may do on Arugula cloud.">
           {grants}
         </Section>
-      </Band>
-      <Band title="About it">{name}</Band>
+      </>
+      {name}
     </>
   );
 }

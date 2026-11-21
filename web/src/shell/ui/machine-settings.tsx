@@ -20,7 +20,7 @@
 import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
 import { useSubscribe } from "../../shared/ui/hooks";
-import { Band, Section } from "../../shared/ui/settings-section";
+import { Section } from "../../shared/ui/settings-section";
 import type { Client } from "../client";
 import { AccessSection } from "./access";
 import { removePluginSaid } from "../hints/nvim-remove";
@@ -110,7 +110,7 @@ export function MachineSections({ client, away, grants, children }: { client: Cl
   const c = client!;
   return (
     <>
-      <Band title="Who and what">
+      <>
         {why ? (
           <Sec id="access" summary={why.summary}>
             <Unreached id="access" why={why} />
@@ -135,8 +135,8 @@ export function MachineSections({ client, away, grants, children }: { client: Cl
             </>
           )}
         </Sec>
-      </Band>
-      <Band title="About it">
+      </>
+      <>
         {children}
         {why ? (
           <Sec id="advanced" summary={why.summary}>
@@ -149,7 +149,7 @@ export function MachineSections({ client, away, grants, children }: { client: Cl
             <NvimSection client={c} />
           </Sec>
         )}
-      </Band>
+      </>
     </>
   );
 }

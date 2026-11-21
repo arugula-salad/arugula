@@ -65,7 +65,7 @@ test("a machine's own settings, its agents' grants and its name, each a row with
   await expect(page).toHaveURL(new RegExp(`/settings/machine/${SUITE}[^/]*$`));
   await expect(page.locator('[data-settings-pick="machine"]')).toHaveValue(SUITE);
   // Four, in two bands.
-  await expect(page.locator(".settings-list .list-group-title")).toHaveText(["Who and what", "About it"]);
+  await expect(page.locator(".settings-list .list-group-title")).toHaveCount(0);
   await expect(page.locator("[data-settings-row]")).toHaveText([/^Access and sharing/, /^Agents/, /^Name/, /^Advanced/]);
   // What's set, read from the machine: each part's, in a line.
   await expect(said(page, "access")).toHaveText(/^(Only you|You \+ .+) · Guest SSH (on|off)/);
