@@ -75,8 +75,9 @@ export function mentionStatusText(s: ChatMentionStatus): string {
       return s.for_session ? `${named}: ${who} is offline or didn't answer` : `${who} is offline or didn't answer`;
     case "mentions_off":
       return `Not delivered to ${named}: its owner turned agent mentions off`;
+    // The session that answered, not just its machine (#1290): a board's thread reaches its lead by none.
     case "answered":
-      return `${named} answered`;
+      return `${at} answered`;
     case "chain":
       return `Not delivered to ${named}: a chain of agent replies; a person's message restarts it`;
     case "not_granted":

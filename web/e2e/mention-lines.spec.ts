@@ -10,7 +10,7 @@ test("a line per session a post names", async ({ page }) => {
   await page.goto("/mention-lines.html");
   const lines = page.locator(".mention-line");
   await expect(lines).toHaveText([
-    "geek/chat: working…", "Sending to geek/review…", "mini/build answered", "air is offline or didn't answer",
+    "geek/chat: working…", "Sending to geek/review…", "mini/build answered", "studio/launch lead answered", "air is offline or didn't answer",
     "Not delivered to box: its owner turned agent mentions off",
     "Aarons-Mac-mini.local: no session named v1-engineering-done-board",
   ]);

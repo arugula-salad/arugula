@@ -97,12 +97,14 @@ export interface OvBoard {
 
 /** A board's lead: its machine (id and name) and its session's name there;
  * `standing` is how it stands where the machines or the hub tell of it
- * (null: neither does). */
+ * (null: neither does). `peek` is that session as its chip opens it
+ * (#1290): its panes here, else the hub's, else only where it runs. */
 export interface OvLead {
   machine: string;
   machineName: string;
   session: string;
   standing: Standing | null;
+  peek: OvSession;
 }
 
 export interface Overview {
@@ -262,7 +264,15 @@ function boardLead(l: BoardLead, panes: OvPane[], byCard: SessionsByCard | null,
   const mine = panes.filter((p) => on(p) && p.session?.name === l.session);
   const hub = byCard?.groups.flatMap((g) => g.sessions).find((s) => s.on.kind === "machine" && s.on.id === l.machine && s.name === l.session);
   const standing = mine.length ? worst(mine.map((p) => p.standing)) : hub ? hubStanding(hub) : null;
-  return { machine: l.machine, machineName: l.machine_name || hostOf(l.machine) || "", session: l.session, standing };
+  const machineName = l.machine_name || hostOf(l.machine) || "";
+  // Keyed as its tile off a card is, so its peek is the same tab as one opened from its row.
+  const lead = mine.length ? leadOf(mine) : undefined;
+  const peek: OvSession = lead
+    ? { key: `-|${lead.host}#${lead.session!.id}`, name: l.session, where: lead.host, standing: standing!, lead, panes: mine }
+    : hub
+      ? { key: `${hub.kind}:${l.machine}:${hub.id}`, name: l.session, where: hub.on.kind === "machine" ? hub.on.name : machineName, standing: standing!, panes: [], branch: hub.branch }
+      : { key: `lead:${l.machine}:${l.session}`, name: l.session, where: machineName || "its machine", standing: "idle", panes: [] };
+  return { machine: l.machine, machineName, session: l.session, standing, peek };
 }
 
 /** What a row says of itself, besides its sessions: its question for you
