@@ -466,12 +466,12 @@ test.describe("on a computer", () => {
     await expect(pill("project")).toHaveAttribute("aria-current", "true");
     await expect(page.locator("[data-ov-zoom-bar] .ov-zoom-hint")).toHaveCount(0);
 
-    // In: the row's title, to the board, its cards in flight a row each.
+    // In: the row's title, to the board, its open tickets a row each (Done folded).
     await page.locator(`[data-ov-board="${B}"] [data-ov-board-title]`).click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/board/${B}[^/]*$`));
     await expect(page.locator(`[data-ov-level-board="${B}"]`)).toBeVisible();
     await expect(page.locator("[data-ov-boards]")).toHaveCount(0);
-    await expect(page.locator("[data-ov-ticket]")).toHaveCount(3);
+    await expect(page.locator("[data-ov-ticket]")).toHaveCount(4);
     await expect(pill("board")).toHaveAttribute("aria-current", "true");
     await expect(pill("work")).toBeDisabled();
     await expect(page.locator('[data-app-path] [data-path="board"]')).toHaveText("Launch");
@@ -625,6 +625,106 @@ test.describe("on a computer", () => {
     await expect(panel.locator(`[data-ov-talk-open="thread:${B}"] [data-room="room_launch"]`)).toContainText("Release notes are drafted.");
     await expect(panel.locator('[data-ov-who="thread"]')).toHaveText("Talking in Launch's thread: a message goes to the board's thread, where its lead and anyone mentioned read it.");
     await page.screenshot({ path: info.outputPath("overview-lead-thread.png") });
+  });
+
+  test("the Board level: its goal and bar, its lead's card with Talk to the lead and Board thread apart, its open tickets with their word and the agents on them, Done folded; a board no one leads asks the chief of staff for one (Arugula #1288)", async ({ page }, info) => {
+    // Launch is led by the project's scratch session, and #12's agent is on it; Later has no lead.
+    let led: unknown;
+    await overview(page, null, true, () => led);
+    const loose = page.locator("[data-ov-loose] [data-ov-panes]");
+    await expect(loose).toHaveAttribute("data-ov-panes", /:/);
+    const host = (await loose.getAttribute("data-ov-panes"))!.split(":")[0];
+    led = { machine: "m_suite", machine_name: host, session: "scratch", at: 1 };
+    await page.reload();
+    await expect(page.locator("[data-overview]")).toBeVisible({ timeout: 20_000 });
+    await launchRoom(page);
+    await chatOn(page);
+    await page.locator(`[data-ov-board="${B}"] [data-ov-board-title]`).click();
+    const level = page.locator(`[data-ov-level-board="${B}"]`);
+    await expect(level).toBeVisible();
+    await expect(level.getByRole("progressbar")).toBeVisible();
+    const panel = page.locator("[data-ov-panel]");
+    const selected = panel.locator('[role="tab"][aria-selected="true"]');
+
+    // The lead's card: its name, its machine, the one board it leads.
+    const lead = level.locator('[data-ov-lead-card="scratch"]');
+    await expect(lead.locator(".ov-bl-lead-name")).toHaveText("scratch");
+    await expect(lead.locator("[data-ov-lead-sub]")).toContainText(`on ${host}`);
+    await expect(lead.locator("[data-ov-lead-sub]")).toContainText("leads this board");
+
+    // Open tickets in lane order, each with its word; Done folded into one line.
+    const tickets = level.locator("[data-ov-ticket]");
+    await expect(tickets).toHaveCount(4);
+    const word = (row: string) => level.locator(`[data-ov-ticket="${row}"] [data-ov-ticket-word]`);
+    await expect(word("row_b")).toHaveText("working");
+    await expect(word("row_r")).toHaveText("in review");
+    await expect(word("row_a")).toHaveText("next");
+    await expect(level.locator('[data-ov-ticket="row_a"] [data-ov-ticket-pr]')).toHaveText("no agent yet");
+    const done = level.locator("[data-ov-level-done]");
+    await expect(done.locator("summary")).toHaveText("1 done ticket");
+    await expect(level.locator('[data-ov-ticket="row_d"]')).toHaveCount(0);
+    await done.locator("summary").click();
+    await expect(level.locator('[data-ov-ticket="row_d"] [data-ov-ticket-word]')).toHaveText("done");
+    await done.locator("summary").click();
+
+    // #12's agent is a chip; it opens that agent's tab, and the board stays.
+    const chip = level.locator('[data-ov-ticket="row_b"] [data-ov-agent-chip]');
+    await expect(chip).toHaveCount(1);
+    await expect(chip.locator(".ov-lead-name")).toHaveText("Agent");
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: info.outputPath("overview-board-level.png") });
+    await chip.click();
+    await expect(selected).toHaveText("Agent");
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/board/${B}[^/]*$`));
+
+    // Talk to the lead: the lead's own session, not the board's thread.
+    await lead.locator("[data-ov-lead-talk]").click();
+    await expect(selected).toHaveText("scratch");
+    await expect(panel.locator(`[data-ov-tab="thread:${B}"]`)).toHaveCount(0);
+    // Board thread: its own button, its own tab.
+    await lead.locator("[data-ov-lead-thread]").click();
+    await expect(panel.locator(`[data-ov-tab="thread:${B}"]`).getByRole("tab")).toHaveAttribute("aria-selected", "true");
+
+    // A ticket's row (anywhere but a chip) zooms to its Work level.
+    await level.locator('[data-ov-ticket="row_r"] [data-ov-ticket-word]').click();
+    await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/board/${B}[^/]*/card/row_r$`));
+
+    // Later has no lead: it says so, and asks the chief of staff in the staff room once there is one.
+    await page.goto(`/p/${P}/board/${LATER}`);
+    await expect(page.locator("[data-overview]")).toBeVisible({ timeout: 20_000 });
+    const later = page.locator(`[data-ov-level-board="${LATER}"]`);
+    await expect(later).toBeVisible();
+    const none = later.locator('[data-ov-lead-card=""]');
+    await expect(none).toContainText("No lead");
+    await expect(none.locator("[data-ov-lead-talk]")).toHaveCount(0);
+    await chatOn(page);
+    await expect(none.locator("[data-ov-ask-chief]")).toHaveCount(0);
+    await page.evaluate((P) => {
+      const room = { id: "dm_cos", kind: "dm", team: "t", name: "Chief of staff · Arugula", machine: null, machine_name: null, target: null, project: P, with: null, others: [], private: false, last: 0, read: 0, unread: 0, mentions: 0, wants: 0, muted: false, level: "all", level_own: false, archived: false, writable: true, topic: "", description: "", pins: 0, topic_writable: true, staff: true, lead: { machine: "m_geek", machine_name: "geek", session: "cos" } };
+      const posted: string[] = [];
+      (window as unknown as { posted: string[] }).posted = posted;
+      const json = (body: unknown) => new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
+      const before = window.fetch;
+      window.fetch = async (input, init) => {
+        const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.href);
+        if (url.pathname === "/api/chat/rooms/dm_cos/messages") {
+          if (init?.method === "POST") {
+            posted.push((JSON.parse(String(init.body)) as { text: string }).text);
+            return json({ seq: posted.length, mentions: [], unreached: [] });
+          }
+          return json({ room, messages: [], more: false });
+        }
+        return before(input, init);
+      };
+      const c = (window as unknown as { __chat: { rooms: unknown[]; emit(): void } }).__chat;
+      c.rooms = [...c.rooms, room];
+      c.emit();
+    }, P);
+    await expect(none.locator("[data-ov-lead-thread]")).toBeVisible();
+    await page.screenshot({ path: info.outputPath("overview-board-level-no-lead.png") });
+    await none.locator("[data-ov-ask-chief]").click();
+    await expect.poll(() => page.evaluate(() => (window as unknown as { posted: string[] }).posted)).toEqual([`Please start a session to lead the board "Later" (${LATER}): read its goal and open tickets, then lead it.`]);
+    await expect(panel.locator('[data-ov-tab="staff:dm_cos"]').getByRole("tab")).toHaveAttribute("aria-selected", "true");
   });
 
   test("the briefing line counts the event log since the reader last looked, says the chief of staff's latest sentence, opens its tab, and keeps the head it showed when the reader leaves (Arugula #1277)", async ({ page }, info) => {

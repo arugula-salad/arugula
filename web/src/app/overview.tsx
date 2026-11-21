@@ -385,6 +385,15 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
     if (front === chief) talk.pick(`${front.kind}:${front.id}`);
     else talk.open(front);
   }, [zkey, front && `${front.kind}:${front.id}`]);
+  // A board no one leads: ask the chief of staff for one, in the staff room, and bring its tab up to read the answer.
+  async function askChief(t: TalkTab, b: OvBoard) {
+    try {
+      await chat.post(t.id, `Please start a session to lead the board "${b.title}" (${b.id}): read its goal and open tickets, then lead it.`);
+      pickChief(t);
+    } catch (e) {
+      api.toast(`Couldn't ask the chief of staff: ${(e as Error).message}`);
+    }
+  }
   // The lead's tab: its session's peek, as its chip opens it (#1290); a board no one leads, its thread.
   function leadTab(b: OvBoard): TalkTab | null {
     if (b.lead) return peekTab(b.lead.peek);
@@ -450,7 +459,18 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
       !zoomedBoard || !zoomedView ? (
         <EmptyLine data-ov-level-gone>That board isn't open in this project now.</EmptyLine>
       ) : level === 1 ? (
-        <OverviewBoard project={project} board={zoomedBoard} view={zoomedView} fleet={fleet} zoomCard={(row) => zoomTo({ board: zoomedBoard.id, card: row })} />
+        <OverviewBoard
+          project={project}
+          board={zoomedBoard}
+          view={zoomedView}
+          fleet={fleet}
+          zoomCard={(row) => zoomTo({ board: zoomedBoard.id, card: row })}
+          talkTo={openSession}
+          leadWho={zoomedBoard.lead && teammateOf(zoomedBoard.lead.machine)}
+          leads={zoomedBoard.lead ? o.boards.filter((x) => x.lead?.machine === zoomedBoard.lead!.machine && x.lead.session === zoomedBoard.lead!.session).length : 0}
+          thread={chat.on ? () => talkTo({ kind: "thread", id: zoomedBoard.id, title: zoomedBoard.title }) : undefined}
+          askChief={chief ? () => void askChief(chief, zoomedBoard) : undefined}
+        />
       ) : !zoomedRow ? (
         <EmptyLine data-ov-level-gone>That card isn't on this board now.</EmptyLine>
       ) : (
