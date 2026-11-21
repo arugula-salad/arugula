@@ -110,7 +110,7 @@ render(
     {/* Menus and the questions they ask (a new channel's name…). */}
     <MenuLayer />
     <PromptLayer />
-    {/* Appearance…, from the account menu and Settings: the shell's dialog. */}
+    {/* Appearance…, where there's no Settings page to go to (a phone's settings menu, the palette). */}
     <AppearanceLayer />
     {/* Send feedback…, from the account menus and the palette (#1217, #1240). */}
     <FeedbackLayer />

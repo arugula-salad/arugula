@@ -15,6 +15,7 @@ struct HomeView: View {
     let control: Control
     @StateObject private var scope = Scope()
     @ObservedObject private var push = PushCenter.shared
+    @ObservedObject private var zoom = ZoomCenter.shared
     /// What home reads, kept while another tab is open, so coming back is at once.
     @StateObject private var model = HomeModel()
     @StateObject private var fleet = HomeFleet()
@@ -50,14 +51,19 @@ struct HomeView: View {
                 .tag(AppTab.you)
         }
         // A tapped notification (#1260): its tab, whose view opens the thing;
-        // an issue opens beside home.
+        // an issue opens beside home. A pane's opens its Work level on home
+        // (Arugula #1304), else its machine.
         .onChange(of: push.route, initial: true) { _, route in
             switch route {
-            case .pane: tab = .machines
+            case .pane(let machine, let pane): open(machine: machine, pane: pane)
             case .room: tab = .chat
             case .issue: tab = .home
             case nil: break
             }
+        }
+        // An address (Arugula #1304): home zooms to it.
+        .onChange(of: zoom.route, initial: true) { _, route in
+            if route != nil { tab = .home }
         }
         .sheet(isPresented: $issues) {
             IssuesView(control: control) { issues = false }
@@ -69,6 +75,34 @@ struct HomeView: View {
         .environment(\.goHome, { tab = .home })
         .environment(\.showIssues, { issues = true })
         .task { await scope.load(control) }
+    }
+
+    /// A notification about a pane: its card's Work level when it's on one,
+    /// else its own, once the machine is reached; else Machines opens it.
+    private func open(machine: String, pane: UInt32) {
+        tab = .home
+        Task {
+            for _ in 0..<20 {
+                if let r = route(machine: machine, pane: pane) {
+                    if push.route == .pane(machine: machine, pane: pane) { push.route = nil }
+                    zoom.route = r
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(400))
+            }
+            tab = .machines
+        }
+    }
+
+    private func route(machine: String, pane: UInt32) -> ZoomRoute? {
+        guard let m = fleet.machines.first(where: { $0.machine.id == machine }),
+              let p = (m.agents + m.panes).first(where: { $0.id == pane }) else { return nil }
+        let personal = scope.projects.first { $0.team == nil }?.id
+        if let on = p.on_issue, let card = on.boards?.first, let project = on.project ?? personal {
+            return ZoomRoute(project: project, zoom: .card(board: card.board, row: card.row))
+        }
+        guard let project = p.session_project?.id ?? personal else { return nil }
+        return ZoomRoute(project: project, zoom: .work("pane:\(machine):\(pane)"))
     }
 }
 

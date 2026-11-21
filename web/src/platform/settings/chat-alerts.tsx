@@ -140,7 +140,7 @@ function Alerts() {
 
 /** A team's settings, for its owners while chat is on: who in the team
  * may notify a whole room, and set a channel's topic. */
-export function TeamChat({ team, name, role, band }: { team: string; name: string; role: string | undefined; band?: string }) {
+export function TeamChat({ team, name, role }: { team: string; name: string; role: string | undefined }) {
   useSubscribe((fn) => chat.subscribe(fn));
   const [s, setS] = useState<ChatTeamSettings | null>(null);
   const [err, setErr] = useState("");
@@ -153,7 +153,6 @@ export function TeamChat({ team, name, role, band }: { team: string; name: strin
     <Section
       id="team-chat"
       title="Chat"
-      band={band}
       summary={err && !s ? "Couldn't load" : ownersOnlySummary(s)}
       lede={`Who in ${name || "this team"} may notify a whole room, and set a channel's topic.`}
       more={<p>Everyone in the team may, until you turn these on. @channel notifies everyone in a room; @here, those active now.</p>}

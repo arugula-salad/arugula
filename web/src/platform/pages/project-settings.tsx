@@ -22,8 +22,8 @@
 // projects connected to it (#356, ../settings/plane), with boards on, and
 // after where its issues go, its CI alerts (native #774, ../settings/ci-alerts).
 //
-// The 17 are 11 rows in four bands (Arugula #1105, the Settings Doc's
-// Project scope): Basics, Work, Agents and runs, Spend. Where a row merged
+// The 17 are 11 rows in a flat list (Arugula #1105, the Settings Doc's
+// Project scope; no band headings over them). Where a row merged
 // a few ("Repos and trackers": Linked repos and Plane), each is a part of
 // it, under its own heading, and the row says theirs in a line. The old
 // sections' addresses land on the row they're in now (`MOVED`, ../paths).
@@ -52,7 +52,7 @@ import { ClientApps } from "../settings/client-apps";
 import { PlaneConnections } from "../settings/plane";
 import { CiAlertsSetting } from "../settings/ci-alerts";
 import { BoardSettings } from "../settings/board-settings";
-import { Band, Section, SectionListContext } from "../../shared/ui/settings-section";
+import { Section, SectionListContext } from "../../shared/ui/settings-section";
 import { plural } from "../settings/summary";
 import { Access } from "../settings/access";
 import { General } from "../settings/general";
@@ -293,41 +293,33 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
   );
   return (
     <>
-      <Band title="Basics">
-        <General p={p} />
-        <Access p={p} />
-        <Overrides p={p} />
-      </Band>
-      <Band title="Work">
-        <Section id="repos" title="Repos and trackers" lede="Where its code and its work items come from: GitHub repos, and Plane projects.">
-          {linkedRepos}
-          {boards !== null && <PlaneConnections p={p} />}
-        </Section>
-        <Section id="issues" title="Issues and boards" lede="Where its new issues go, and when a board's row is stalled.">
-          <IssueHomeSetting key={linked} p={p} />
-          {boards !== null && <BoardSettings p={p} />}
-        </Section>
-        <CiAlertsSetting p={p} />
-      </Band>
-      <Band title="Agents and runs">
-        <Section id="runs" title="Runs and workspaces" lede="What its runs may do without asking, and its cloud workspaces' size and finish step.">
-          <RunGrant project={p.id} />
-          <WorkspaceSize p={p} />
-          <FinishStep p={p} />
-        </Section>
-        <Section id="agents" title="Agents" lede="The model its agent sessions use, and, for its owners, the agent tokens over it.">
-          <AgentModel p={p} />
-          <ProjectAgents p={p} show="tokens" />
-        </Section>
-        <Section id="secrets" title="Secrets and environments" lede="Where it deploys, and the secrets it keeps by name. Their values are never shown.">
-          <Environments p={p} />
-          <ProjectAgents p={p} show="secrets" />
-        </Section>
-      </Band>
-      <Band title="Spend">
-        <ClaudeSpend p={p} />
-        <ClientApps p={p} />
-      </Band>
+      <General p={p} />
+      <Access p={p} />
+      <Overrides p={p} />
+      <Section id="repos" title="Repos and trackers" lede="Where its code and its work items come from: GitHub repos, and Plane projects.">
+        {linkedRepos}
+        {boards !== null && <PlaneConnections p={p} />}
+      </Section>
+      <Section id="issues" title="Issues and boards" lede="Where its new issues go, and when a board's row is stalled.">
+        <IssueHomeSetting key={linked} p={p} />
+        {boards !== null && <BoardSettings p={p} />}
+      </Section>
+      <CiAlertsSetting p={p} />
+      <Section id="runs" title="Runs and workspaces" lede="What its runs may do without asking, and its cloud workspaces' size and finish step.">
+        <RunGrant project={p.id} />
+        <WorkspaceSize p={p} />
+        <FinishStep p={p} />
+      </Section>
+      <Section id="agents" title="Agents" lede="The model its agent sessions use, and, for its owners, the agent tokens over it.">
+        <AgentModel p={p} />
+        <ProjectAgents p={p} show="tokens" />
+      </Section>
+      <Section id="secrets" title="Secrets and environments" lede="Where it deploys, and the secrets it keeps by name. Their values are never shown.">
+        <Environments p={p} />
+        <ProjectAgents p={p} show="secrets" />
+      </Section>
+      <ClaudeSpend p={p} />
+      <ClientApps p={p} />
     </>
   );
 }

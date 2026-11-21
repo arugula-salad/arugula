@@ -49,6 +49,9 @@ test("each route parses", () => {
   // Your machines' agents are each machine's now (Arugula #1107): the old addresses open Machines'.
   assert.deepEqual(parse("/settings", "", "#agents"), { page: "settings", scope: "machine", section: "agents" });
   assert.deepEqual(parse("/settings/you/agents"), { page: "settings", scope: "machine", section: "agents" });
+  // Preferences is part of Appearance (Arugula #1318): its old addresses land there.
+  assert.deepEqual(parse("/settings/you/preferences"), { page: "settings", scope: "you", section: "appearance" });
+  assert.deepEqual(parse("/settings", "", "#preferences"), { page: "settings", scope: "you", section: "appearance" });
   assert.equal(pathOf({ page: "settings", scope: "machine", section: "agents" }), "/settings/machine#agents");
   assert.deepEqual(parse("/settings/machine", "", "#agents"), { page: "settings", scope: "machine", section: "agents" });
   assert.equal(pathOf({ page: "settings", scope: "machine", machine: "0a1b2c3d", section: "agents" }), "/settings/machine/0a1b2c3d/agents");

@@ -4,7 +4,7 @@
 // link opens it; the old addresses (a project's settings, Personal's, a
 // team's Settings tab, `#section`) land in their scope. On a phone, the
 // list, then a section full width with a way back. The Project scope's 17
-// sections are 11 rows in four bands (Arugula #1105), and an old section's
+// sections are 11 rows in a flat list (Arugula #1105), and an old section's
 // address lands on the row it's part of. You holds control's device and
 // preference rows too (Arugula #1108): what's on control's page is a ↗ row
 // to its dialog there, and Help is the palette's. On #971's fixture page
@@ -86,18 +86,18 @@ test.describe("on a computer", () => {
     await expect(page.locator('[data-settings-scope="machine"]')).toHaveAttribute("aria-selected", "true");
   });
 
-  test("You: control's device and preference rows join it in bands, a device's are ↗ rows to control's page at their dialog, and there's no second index or Help", async ({ page }) => {
+  test("You: control's device and preference rows join it in one flat list, a device's are ↗ rows to control's page at their dialog, and there's no second index or Help", async ({ page }) => {
     await open(page, "/settings");
-    // Notifications, Look and feel, Account: each section under its band.
-    const bands = page.locator(".settings-list .list-group-title");
-    await expect(bands).toHaveText(["Notifications", "Look and feel", "Account"]);
+    // One flat list: no band headings over the sections.
+    await expect(page.locator(".settings-list .list-group-title")).toHaveCount(0);
     const ids = () => page.locator("[data-settings-row]").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.settingsRow));
     // (Chat alerts, after quiet hours, shows once chat is on: it isn't here.)
-    await expect.poll(ids).toEqual(["notifications", "quiet-hours", "push", "appearance", "preferences", "account", "linked", "tokens"]);
-    // Appearance in one place: its own section, and only there.
-    await expect(page.locator("[data-open-appearance]")).toHaveCount(1);
-    await expect(section(page, "appearance").locator("[data-open-appearance]")).toHaveCount(1);
-    await expect(row(page, "appearance").locator(".list-row-detail")).toHaveText(/ on this device$/);
+    await expect.poll(ids).toEqual(["notifications", "quiet-hours", "push", "appearance", "account", "linked", "tokens"]);
+    // Appearance in one place: its controls drawn in its own section, no dialog to open.
+    await expect(page.locator("[data-appearance-controls]")).toHaveCount(1);
+    await expect(section(page, "appearance").locator("[data-appearance-controls]")).toHaveCount(1);
+    await expect(page.getByRole("button", { name: "Appearance…" })).toHaveCount(0);
+    await expect(row(page, "appearance").locator(".list-row-detail")).toHaveText(/ on this device · Tips on · opens in VS Code$/);
     // No index of control's sections, and no Help.
     await expect(section(page, "elsewhere")).toHaveCount(0);
     await expect(page.locator("[data-settings-elsewhere]")).toHaveCount(0);
@@ -133,7 +133,7 @@ test.describe("on a computer", () => {
     await expect(section(page, "account")).toBeVisible();
     await expect(row(page, "status-page")).toHaveCount(0);
     await expect(page.locator("[data-status-page]")).toHaveCount(0);
-    await expect(await menu()).toHaveText(["Your account…", "Send feedback…", "Sign out of this page"]);
+    await expect(await menu()).toHaveText(["Send feedback…", "Sign out of this page"]);
     await page.keyboard.press("Escape");
 
     // Hosted Arugula: control says it's the hub on every answer on the app's host.
@@ -143,17 +143,17 @@ test.describe("on a computer", () => {
         r.fulfill({ contentType: "application/json", headers: { "x-arugula-hub": "https://control.arugula.io" }, body: JSON.stringify({ me: { account: "acct_a", login: "sam", name: "Sam" }, projects, hosted: false }) }),
       ),
     );
-    // Settings › You: a Status row in the Account band, after Sign-in and machines.
+    // Settings › You: a Status row after Sign-in and machines.
     const ids = () => page.locator("[data-settings-row]").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.settingsRow));
-    await expect.poll(ids).toEqual(["notifications", "quiet-hours", "push", "appearance", "preferences", "account", "status-page", "linked", "tokens"]);
+    await expect.poll(ids).toEqual(["notifications", "quiet-hours", "push", "appearance", "account", "status-page", "linked", "tokens"]);
     await expect(row(page, "status-page").locator(".list-row-detail")).toHaveText("status.arugula.io");
     const link = section(page, "status-page").locator("a[data-status-page]");
     await expect(link).toHaveAttribute("href", "https://status.arugula.io");
     await expect(link).toHaveAttribute("target", "_blank");
     await expect(link).toHaveAttribute("rel", "noopener");
-    // The menu: Status after Your account…, opening a tab that can't reach back into this one.
+    // The menu: Status first, opening a tab that can't reach back into this one.
     const items = await menu();
-    await expect(items).toHaveText(["Your account…", /^Status/, "Send feedback…", "Sign out of this page"]);
+    await expect(items).toHaveText([/^Status/, "Send feedback…", "Sign out of this page"]);
     const tab = context.waitForEvent("page");
     await page.locator(".menu-item[data-status-page]").click();
     const status = await tab;
@@ -162,21 +162,34 @@ test.describe("on a computer", () => {
     await expect(page).toHaveURL(/\/settings\/you\/status-page$/);
   });
 
-  test("You: Preferences are drawn here, and their summary says what's set", async ({ page }) => {
+  test("You: Appearance draws its controls in place, Preferences under them, and its summary says what's set", async ({ page }) => {
+    // Preferences' old address lands on Appearance, which holds it now.
     await open(page, "/settings/you/preferences");
-    const prefs = section(page, "preferences");
+    await expect(page).toHaveURL(/\/settings\/you\/appearance$/);
+    const look = section(page, "appearance");
+    await expect(look).toBeVisible();
+    await expect(look.locator("#appearance-h")).toHaveText("Appearance");
+    const detail = row(page, "appearance").locator(".list-row-detail");
+    // A palette applies at once, and the row says it.
+    await look.locator('[data-palette-choice="latte"]').click();
+    await expect(page.locator("html")).toHaveAttribute("data-palette", "latte");
+    await expect(detail).toHaveText(/^Latte, .* on this device · /);
+    await look.getByRole("button", { name: "Reset", exact: true }).click();
+    await expect(page.locator("html")).not.toHaveAttribute("data-palette", "latte");
+    // Preferences, a part of it, below the controls.
+    const prefs = look.locator('[data-settings-part="preferences"]');
     await expect(prefs).toBeVisible();
-    await expect(row(page, "preferences").locator(".list-row-detail")).toHaveText("Tips on · opens in VS Code");
+    await expect(detail).toHaveText(/ · Tips on · opens in VS Code$/);
     const tips = prefs.getByRole("switch", { name: "Tips", exact: true });
     await expect(tips).toBeChecked();
     await tips.click();
     await expect(tips).not.toBeChecked();
     await prefs.locator('[data-pref="editor"]').selectOption("nvim");
-    await expect(row(page, "preferences").locator(".list-row-detail")).toHaveText("Tips off · opens in nvim");
+    await expect(detail).toHaveText(/ · Tips off · opens in nvim$/);
     await prefs.getByRole("switch", { name: "Tips", exact: true }).click();
     await prefs.getByRole("switch", { name: "Big tips" }).click();
     await prefs.locator('[data-pref="editor"]').selectOption("ask");
-    await expect(row(page, "preferences").locator(".list-row-detail")).toHaveText("Tips on, not big ones · asks which editor");
+    await expect(detail).toHaveText(/ · Tips on, not big ones · asks which editor$/);
   });
 
   test("the old addresses land in their scopes, the picker chooses which one, and the scopes' switch goes between them", async ({ page }) => {
@@ -224,9 +237,9 @@ test.describe("a project's settings", () => {
       page.route(/\/api\/projects\/[^/]+\/runs\/grant$/, (r) => json(r, { role: "owner", grant: null, past: [], stale: false, renew: false, workspaces: 0, offer: false })),
     ]);
 
-  test("the rows in four bands, a merged row saying its parts' in a line, each part under its own heading", async ({ page }) => {
+  test("the rows in a flat list, a merged row saying its parts' in a line, each part under its own heading", async ({ page }) => {
     await open(page, `/settings/project/${SITE}`, () => project(page));
-    await expect(page.locator(".settings-list .list-group-title")).toHaveText(["Basics", "Work", "Agents and runs", "Spend"]);
+    await expect(page.locator(".settings-list .list-group-title")).toHaveCount(0);
     await expect(row(page, "spend")).toBeVisible();
     // Apps from products, the eleventh, shows once a product keeps one here.
     const rows = await page.locator("[data-settings-row]").evaluateAll((els) => els.map((e) => e.getAttribute("data-settings-row")));

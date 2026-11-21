@@ -203,9 +203,11 @@ test("a machine's old Settings addresses land on Machines", async ({ page }) => 
   await expect(page).not.toHaveURL(/#settings/);
   await page.goto(`/p/${P}/machines#settings=remote-sessions`);
   await expect(page).toHaveURL(new RegExp(`/settings/machine/${SUITE}[^/]*/access$`));
-  // Another of control's sections: You's, by the same id.
+  // Another of control's sections: You's, by the same id; Preferences is Appearance's now.
+  await page.goto(`/p/${P}/machines#settings=account`);
+  await expect(page).toHaveURL(/\/settings\/you\/account$/);
   await page.goto(`/p/${P}/machines#settings=preferences`);
-  await expect(page).toHaveURL(/\/settings\/you\/preferences$/);
+  await expect(page).toHaveURL(/\/settings\/you\/appearance$/);
   // On a machine's page, the old address lands on the machine shown. (Its menu's Machine
   // settings… goes the same way; with one machine here, the page draws no machine menu.)
   await reset(page);
