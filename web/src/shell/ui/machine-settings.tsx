@@ -6,20 +6,24 @@
 // section saying why in its summary, so the list and its addresses stay.
 //
 // Four sections, in two bands (the Settings Doc's Machines tab): Access
-// and sharing (who reaches it, Guest SSH access, and who reached it through
-// Arugula cloud, ./remote-sessions), Agents (what they may do on Arugula
-// cloud, the page's, and its permission rules), then the page's Name, and
-// Advanced (usage and crash reports, developer settings). The old
+// and sharing (who reaches it, Guest SSH access, Remote typing, read-only,
+// and who reached it through Arugula cloud, ./remote-sessions), Agents
+// (what they may do on Arugula cloud, the page's, and its permission
+// rules), then the page's Name, and Advanced (usage and crash reports,
+// developer settings, and removing arugula.nvim, which only the machine
+// menu had). The old
 // sections' addresses land on the one each is part of now (`MOVED` in
 // platform/paths).
 
 import type { ComponentChildren } from "preact";
+import { useState } from "preact/hooks";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { Band, Section } from "../../shared/ui/settings-section";
 import type { Client } from "../client";
 import { AccessSection } from "./access";
+import { removePluginSaid } from "../hints/nvim-remove";
 import { DeveloperSection } from "./developer";
-import { RemoteSessionsSection } from "./remote-sessions";
+import { RemoteSessionsSection, RemoteTypingSection } from "./remote-sessions";
 import { ReportsSection } from "./machine-telemetry";
 import { RulesSection } from "./rules";
 import { SharingSection } from "./sharing";
@@ -29,7 +33,7 @@ import { SharingSection } from "./sharing";
 export const MACHINE_SECTIONS = {
   access: { title: "Access and sharing", lede: "Who can reach it, how, and who did." },
   agents: { title: "Agents", lede: "What its agents may do on Arugula cloud, and on this machine without asking." },
-  advanced: { title: "Advanced", lede: "Its usage and crash reports, and developer settings." },
+  advanced: { title: "Advanced", lede: "Its usage and crash reports, developer settings, and clean-up." },
 } as const;
 
 /** Why the sections can't show, in a few words for the list and a line
@@ -84,7 +88,8 @@ export function MachineSections({ client, away, grants, children }: { client: Cl
           <Sec id="access">
             <AccessSection client={c} />
             <SharingSection client={c} />
-            <RemoteSessionsSection client={c} />
+            <RemoteTypingSection client={c} />
+            <RemoteSessionsSection client={c} typing={!c.features || c.features.remote_input === undefined} />
           </Sec>
         )}
         <Sec id="agents">
@@ -102,9 +107,45 @@ export function MachineSections({ client, away, grants, children }: { client: Cl
           <Sec id="advanced">
             <ReportsSection client={c} />
             <DeveloperSection client={c} />
+            <NvimSection client={c} />
           </Sec>
         )}
       </Band>
     </>
+  );
+}
+
+/** Remove arugula.nvim (#1733), which was the machine menu's alone: the
+ * copies Arugula installed on the machine go, one a plugin manager
+ * installed stays. */
+function NvimSection({ client }: { client: Client }) {
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState<{ ok: boolean; said: string } | null>(null);
+  return (
+    <Section id="nvim" title="Remove arugula.nvim" lede="Deletes the copies of arugula.nvim that Arugula installed on this machine. One your plugin manager installed stays.">
+      <div class="prompt-buttons">
+        <button
+          type="button"
+          class="secondary"
+          disabled={busy}
+          data-nvim-remove
+          onClick={() => {
+            setBusy(true);
+            setSaid(null);
+            void removePluginSaid(client).then((r) => {
+              setBusy(false);
+              setSaid(r);
+            });
+          }}
+        >
+          Remove
+        </button>
+      </div>
+      {said && (
+        <p class={said.ok ? "dim" : "error"} data-nvim-removed>
+          {said.said}
+        </p>
+      )}
+    </Section>
   );
 }

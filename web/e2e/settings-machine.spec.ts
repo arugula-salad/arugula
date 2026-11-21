@@ -1,8 +1,9 @@
 // Settings › Machines in the app (Arugula #1107): four sections, each
 // saying what's set. Access and sharing (who reaches it, Guest SSH access,
-// who reached it through Arugula cloud) and Agents (its agents' grants, one
-// editable part per machine, and its permission rules), then its name and
-// Advanced (usage and crash reports, developer settings). The machine's
+// Remote typing, read-only, who reached it through Arugula cloud) and
+// Agents (its agents' grants, one editable part per machine, and its
+// permission rules), then its name and Advanced (usage and crash reports,
+// developer settings, removing arugula.nvim). The machine's
 // own are read from it through the app's client to it. A machine the app
 // can't reach says so in its sections' summaries. On the app
 // frame's fixture page (app-frame-page.tsx), served on the suite daemon's
@@ -72,7 +73,13 @@ test("a machine's own settings, its agents' grants and its name, each a row with
   await expect(said(page, "name")).toHaveText("studio-mini");
   await expect(section(page, "access")).toBeVisible();
   await expect(part(page, "who").locator("[data-access-kind]")).toBeVisible();
-  await expect(section(page, "access").locator("[data-settings-part]")).toHaveText([/^Who can reach it/, /^Guest SSH access/, /^Remote sessions/]);
+  await expect(section(page, "access").locator("[data-settings-part]")).toHaveText([/^Who can reach it/, /^Guest SSH access/, /^Remote typing/, /^Remote sessions/]);
+  // Remote typing: the machine menu's read-only row, with the line on the machine that changes it.
+  const typing = part(page, "remote-typing");
+  await expect(typing).toHaveAttribute("data-remote-typing", /^(on|off)$/);
+  await expect(typing).toContainText("read-only");
+  await expect(typing.locator("code")).toHaveText(/^arugulad sharing remote-input (on|off)$/);
+  await expect(typing.locator("input, button")).toHaveCount(0);
 
   // Guest SSH: the dialog's switch, here; its row follows.
   const was = await said(page, "access").textContent();
@@ -86,8 +93,11 @@ test("a machine's own settings, its agents' grants and its name, each a row with
   // Advanced: its reports and developer settings.
   await row(page, "advanced").click();
   await expect(page).toHaveURL(new RegExp(`/settings/machine/${SUITE}[^/]*/advanced$`));
-  await expect(section(page, "advanced").locator("[data-settings-part]")).toHaveText([/^Usage and crash reports/, /^Developer settings/]);
+  await expect(section(page, "advanced").locator("[data-settings-part]")).toHaveText([/^Usage and crash reports/, /^Developer settings/, /^Remove arugula.nvim/]);
   await expect(part(page, "developer").locator("[data-flag]").first()).toBeVisible();
+  // Remove arugula.nvim, which was the machine menu's alone: it says what it did, in place.
+  await part(page, "nvim").locator("[data-nvim-remove]").click();
+  await expect(part(page, "nvim").locator("[data-nvim-removed]")).toHaveText(/^(No copy of arugula.nvim that Arugula installed is on this machine|Removed arugula.nvim from .+)$/);
 
   // Agents: its grants, a row per project and your DMs, then its permission rules; a switch gives, and the row says so.
   await row(page, "agents").click();
@@ -159,9 +169,11 @@ test("who reached the machine through Arugula cloud is a part of Access and shar
   );
   await open(page, `/settings/machine/${SUITE}/remote-sessions`, false);
   await expect(page).toHaveURL(new RegExp(`/settings/machine/${SUITE}[^/]*/access$`));
-  await expect(said(page, "access")).toContainText("2 sessions, 1 open · watch only");
+  await expect(said(page, "access")).toContainText("2 sessions, 1 open");
   await expect(part(page, "remote-sessions").locator("[data-remote-session]")).toHaveCount(2);
-  await expect(part(page, "remote-sessions").locator("[data-remote-input]")).toHaveAttribute("data-remote-input", "off");
+  // Whether they may type is Remote typing's to say, beside it.
+  await expect(part(page, "remote-sessions").locator("[data-remote-input]")).toHaveCount(0);
+  await expect(part(page, "remote-typing")).toBeVisible();
 });
 
 test("a machine's old Settings addresses land on Machines", async ({ page }) => {
