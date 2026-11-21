@@ -51,7 +51,7 @@ use crate::mcp::tools::{Call, Kind, Out, done, parse};
 
 pub(crate) const TOOL: &str = "watch";
 
-pub(crate) const DESCRIPTION: &str = "Wake this session later, when something happens: create a watch, then end your turn (wait instead blocks it until something happens). When it fires, you get a follow-up saying what happened (ids and states only), as a chat mention arrives. It fires once. It expires after 24 hours (expires, at most 7d), with one message saying it ended without firing. Targets, any of which fires it: pr (OWNER/REPO#N or its link) until merged, closed, checks_done, checks_failed or ready (green and mergeable), in a repo linked to Arugula's GitHub App (else use wait with pr); session (a hosted agent session, ses_) until it settles; run (run_ or dep_) until it ends; room (a chat room's id, with parent for one thread and from for one person) until a reply you didn't write; event (a type from kind types, like issue.closed) with match (some of the type's match fields, like {\"issue\": \"#12\"}) and note (why you watch, at most 200 characters, handed back when it fires). This machine's own (agent.idle, pane.exited; match {\"pane\": \"4\"}; pane.output.matched adds pattern, a regex on new output lines) need no account. If it has already happened, create says so and makes no watch. A watch belongs to this Claude Code session: a new session in this pane doesn't get it. Works from a terminal with Arugula's hooks installed, or an agent block.";
+pub(crate) const DESCRIPTION: &str = "Wake this session later, when something happens: create a watch, then end your turn (wait instead blocks it until something happens). When it fires, you get a follow-up saying what happened (ids and states only), as a chat mention arrives. It fires once. It expires after 24 hours (expires, at most 7d), with a message saying it ended without firing. Targets, any of which fires it: pr (OWNER/REPO#N or its link) until merged, closed, checks_done, checks_failed or ready (green and mergeable), in a repo linked to Arugula's GitHub App (else use wait with pr); session (a hosted agent session, ses_) until it settles; run (run_ or dep_) until it ends; room (a chat room's id, with parent for one thread and from for one person) until a reply you didn't write; event (a type from kind types, like issue.closed) with match (some of the type's match fields, like {\"issue\": \"#12\"}). note (any target: why, at most 200 characters) comes back when it fires or expires. This machine's own (agent.idle, pane.exited; match {\"pane\": \"4\"}; pane.output.matched adds pattern, a regex on new output lines) need no account. If it has already happened, create says so and makes no watch. A watch belongs to this Claude Code session: a new session in this pane doesn't get it. Works from a terminal with Arugula's hooks installed, or an agent block.";
 
 /// `watch`'s kinds.
 pub(crate) const KINDS: &[Kind] = &[
@@ -124,8 +124,8 @@ pub struct CreateArgs {
     /// matches on it gets the current project's, so #N is its issue.
     #[serde(default, rename = "match")]
     pub matches: Option<serde_json::Map<String, Value>>,
-    /// With event: why you watch, at most 200 characters: it comes back
-    /// with the event when it fires.
+    /// Why you watch, at most 200 characters: it comes back when the watch
+    /// fires or expires.
     #[serde(default)]
     pub note: Option<String>,
     /// How long to wait before it ends without firing: 30m, 6h, 3d. Default
@@ -806,7 +806,11 @@ mod tests {
         );
         assert!(err(json!({ "event": "issue.closed", "note": "x".repeat(NOTE_MAX + 1) })).contains("at most 200"));
         assert!(create_body(args(json!({ "event": "issue.closed", "note": "é".repeat(NOTE_MAX) }))).is_ok());
-        assert_eq!(err(json!({ "run": "run_1", "note": "why" })), "match and note go with an event");
+        assert_eq!(create_body(args(json!({ "run": "run_1", "note": "why" }))).unwrap().note.as_deref(), Some("why"));
+        let pr = json!({ "pr": "o/r#1", "until": "checks_failed", "note": "squash-merge" });
+        assert_eq!(create_body(args(pr)).unwrap().note.as_deref(), Some("squash-merge"));
+        assert!(err(json!({ "run": "run_1", "note": "x".repeat(NOTE_MAX + 1) })).contains("at most 200"));
+        assert_eq!(err(json!({ "run": "run_1", "match": { "issue": "#1" } })), "match goes with an event");
         assert!(err(json!({})).contains("or event"));
     }
 
