@@ -4,10 +4,11 @@
 // room and who leads it. Then Needs you, merged from every machine's panes,
 // the boards' rows and the hosted sessions, worst first; then one row per open
 // board, with its lane bar, its count, its lead and what's going on in words;
-// then the people, its channels and DMs. A board's row opens the board's
-// thread, whose Board button opens its lanes. Home is the first of the app's
-// tabs (Arugula #1262). On an iPad home is the left column of a split view,
-// and what it opens sits beside it. A row of Needs you is answered where it is
+// then the people, its channels and DMs. Home is the Overview's Project level
+// (Arugula #1304): a board's row zooms to its Board level and a ticket there
+// to its Work level (Zoom.swift), each at an address a link or a notification
+// opens. Home is the first of the app's tabs (Arugula #1262). On an iPad home
+// is the left column of a split view, and what it opens sits beside it. A row of Needs you is answered where it is
 // (Answer.swift), and a session opens a peek. New tells a board or starts a
 // New idea (New.swift), whose conversations are listed under New ideas.
 
@@ -16,7 +17,12 @@ import SwiftUI
 
 /// What home opens beside it (on an iPhone, over it).
 enum Opened: Hashable {
+    /// A board's Board level (Arugula #1304).
     case board(Board)
+    /// A board's thread: telling a board opens it.
+    case thread(Board)
+    /// The Work level of a session on no card, by its key.
+    case work(String)
     case room(ChatRoom)
     /// The reader's staff room in a project (Arugula #1275): where they talk
     /// to their chief of staff.
@@ -134,7 +140,8 @@ final class HomeModel: ObservableObject {
     @Published private(set) var me: String?
     /// When it last asked, to space out what the stream sets off.
     private(set) var loadedAt: Date?
-    private var project: String?
+    /// The project it reads.
+    private(set) var project: String?
 
     func load(_ control: Control, project: String) async {
         loadedAt = Date()
@@ -432,6 +439,8 @@ struct HomeState {
     var boards: [BoardLine] = []
     /// The sessions on each board's cards in flight, by the board's id.
     var sessions: [String: [BoardSession]] = [:]
+    /// The sessions on each open card, by `BOARD/ROW` (Arugula #1304).
+    var cards: [String: [BoardSession]] = [:]
 
     init() {}
 
@@ -505,6 +514,17 @@ struct HomeState {
                 return all.min() ?? .idle
             }
             sessions[b.id] = on.sorted { ($0.standing, $0.name) < ($1.standing, $1.name) }
+            // Every open card's sessions, for its Work level (Arugula #1304).
+            for r in rows where !(r.lane ?? "").hasSuffix("done") {
+                var mine: [BoardSession] = []
+                for (m, p) in panes where Self.on(r, board: b.id, machine: m.machine.id, pane: p) {
+                    mine.append(BoardSession(peeked: .pane(m, p), name: m.conversations[p.id] ?? p.name, card: r.words, standing: p.standing))
+                }
+                for s in model.hosted where s.issue?.id == r.pointer?.id && r.pointer?.kind == "issue" {
+                    mine.append(BoardSession(peeked: .hosted(s), name: "Arugula cloud", card: r.words, standing: s.standing))
+                }
+                cards["\(b.id)/\(r.id)"] = mine.sorted { ($0.standing, $0.name) < ($1.standing, $1.name) }
+            }
             var says = [Standing.needs, .asks, .failed, .checksFailing, .quiet, .working, .checksRunning, .review]
                 .map { st in (st, flight.filter { $0 == st }.count) }
                 .filter { $0.1 > 0 }
@@ -548,9 +568,12 @@ struct PhoneHome: View {
     @ObservedObject var fleet: HomeFleet
     @ObservedObject var live: LiveChat
     @ObservedObject private var push = PushCenter.shared
+    @ObservedObject private var zoomCenter = ZoomCenter.shared
     @EnvironmentObject private var scope: Scope
     @Environment(\.scenePhase) private var phase
     @State private var opened: Opened?
+    /// A card to zoom to once its board has opened.
+    @State private var zoomingTo: ZoomCard?
     @State private var columns = NavigationSplitViewVisibility.all
     @State private var terminal: PaneOpen?
     @State private var path = NavigationPath()
@@ -594,6 +617,7 @@ struct PhoneHome: View {
             }
         }
         .environment(\.openDoc) { d in present(d) }
+        .environment(\.zoom) { z in zoom(z) }
         .fullScreenCover(item: $docOver) { d in DocScreen(ref: d, close: { docOver = nil }, open: follow) }
         .navigationSplitViewStyle(.balanced)
         .fullScreenCover(item: $terminal) { t in TerminalScreen(session: t.session, pane: t.pane) }
@@ -621,16 +645,32 @@ struct PhoneHome: View {
         }
         .onChange(of: opened) { _, _ in
             path = NavigationPath()
+            if let card = zoomingTo { path.append(card) }
+            zoomingTo = nil
             // The Doc was the conversation's: another conversation, no Doc.
             if doc != nil { closeDoc() }
         }
         .onChange(of: scope.current?.id) { _, _ in opened = nil }
-        // A notification about an issue (#1260): that issue, beside home.
+        // A notification about an issue (#1260): its card's Work level when
+        // it's on one of the project's open boards (Arugula #1304), else the
+        // issue, beside home.
         .onChange(of: push.route, initial: true) { _, route in
             guard case .issue(let id)? = route else { return }
             push.route = nil
-            opened = .issue(id)
+            Task {
+                // Opened from a notification, home may not have read yet.
+                for _ in 0..<20 where !model.loaded { try? await Task.sleep(for: .milliseconds(400)) }
+                if let c = card(ofIssue: id) {
+                    zoom(.card(board: c.0.id, row: c.1))
+                } else {
+                    opened = .issue(id)
+                }
+            }
         }
+        // An address (Arugula #1304): a link, or a notification about a pane.
+        .onChange(of: zoomCenter.route, initial: true) { _, _ in follow() }
+        .onChange(of: model.loaded) { _, _ in follow() }
+        .onChange(of: scope.projects) { _, _ in follow() }
         .task {
             live.start()
             await fleet.load(control)
@@ -672,7 +712,17 @@ struct PhoneHome: View {
             Group {
                 switch opened {
                 case .board(let b):
+                    if let p = scope.current {
+                        BoardLevel(control: control, project: p.id, board: b, model: model)
+                    }
+                case .thread(let b):
                     BoardThread(control: control, board: b, model: model, fleet: fleet, live: live, sessions: state.sessions[b.id] ?? []) { peek = $0 }
+                case .work(let key):
+                    if let p = scope.current {
+                        WorkLevel(control: control, project: p, session: key, model: model, fleet: fleet, peek: { peek = $0 }) { m, pane in
+                            terminal = PaneOpen(session: m, pane: pane)
+                        }
+                    }
                 case .room(let r): ChatRoomView(control: control, room: r, live: live)
                 case .staff(let project):
                     StaffRoom(control: control, project: project, model: model, fleet: fleet, live: live) { peek = $0 }
@@ -685,7 +735,22 @@ struct PhoneHome: View {
                 }
             }
             .navigationDestination(for: BoardLanes.self) {
-                BoardScreen(control: control, board: $0.board).backBesideTabs("Thread") { path.removeLast() }
+                BoardScreen(control: control, board: $0.board).backBesideTabs("Back") { path.removeLast() }
+            }
+            .navigationDestination(for: BoardThreadRef.self) { ref in
+                BoardsThread(control: control, board: ref.board, model: model, fleet: fleet, live: live) { peek = $0 }
+                    .backBesideTabs("Board") { path.removeLast() }
+            }
+            .navigationDestination(for: ZoomCard.self) { c in
+                if let p = scope.current {
+                    WorkLevel(
+                        control: control, project: p, board: board(c.board), row: c.row, model: model, fleet: fleet,
+                        peek: { peek = $0 }
+                    ) { m, pane in
+                        terminal = PaneOpen(session: m, pane: pane)
+                    }
+                    .backBesideTabs("Board") { path.removeLast() }
+                }
             }
             .navigationDestination(for: IssueRef.self) { ref in
                 Loaded(load: { try await control.get("/api/issues/\(ref.id)", as: Issue.self) }) { IssueView(issue: $0) }
@@ -727,9 +792,9 @@ struct PhoneHome: View {
         case .doc(let d):
             present(d)
         case .board(_, let id, _):
-            guard let b = model.boards.first(where: { $0.id == id }) else { return link.openOutside() }
+            guard model.boards.contains(where: { $0.id == id }) else { return link.openOutside() }
             docOver = nil
-            opened = .board(b)
+            zoom(.board(id))
         case .room(let id, _):
             guard let r = model.rooms.first(where: { $0.id == id }) else { return link.openOutside() }
             docOver = nil
@@ -738,8 +803,69 @@ struct PhoneHome: View {
             docOver = nil
             if id.hasPrefix("iss_") { path.append(IssueRef(id: id)) } else { path.append(ProjectIssue(project: project, number: id)) }
         case .web(let u):
-            UIApplication.shared.open(u)
+            // An Overview address opens here (Arugula #1304).
+            if zoomCenter.open(u) {
+                docOver = nil
+            } else {
+                UIApplication.shared.open(u)
+            }
         }
+    }
+
+    /// Zoom to a level of the current project (Arugula #1304); nil is the
+    /// Project level, home itself.
+    private func zoom(_ z: Zoom?) {
+        switch z {
+        case nil:
+            opened = nil
+            path = NavigationPath()
+        case .board(let id):
+            if opened == .board(board(id)) { path = NavigationPath() } else { opened = .board(board(id)) }
+        case .card(let id, let row):
+            let card = ZoomCard(board: id, row: row)
+            if opened == .board(board(id)) {
+                path = NavigationPath()
+                path.append(card)
+            } else {
+                zoomingTo = card
+                opened = .board(board(id))
+            }
+        case .work(let key):
+            opened = .work(key)
+        }
+    }
+
+    /// One of the project's boards, by its id; a closed one by its id alone.
+    private func board(_ id: String) -> Board {
+        model.boards.first { $0.id == id } ?? Board(id: id, title: "A board")
+    }
+
+    /// The open card an issue is on, on one of the project's open boards.
+    private func card(ofIssue id: String) -> (Board, String)? {
+        for b in model.boards {
+            for r in model.views[b.id]?.zones.flatMap(\.rows) ?? [] where r.pointer?.kind == "issue" && r.pointer?.id == id {
+                if !(r.lane ?? "").hasSuffix("done") { return (b, r.id) }
+            }
+        }
+        return nil
+    }
+
+    /// Go to the address waiting, once home reads its project: another
+    /// project is picked first, and an address in a project the reader isn't
+    /// in is dropped.
+    private func follow() {
+        guard let r = zoomCenter.route, !scope.projects.isEmpty else { return }
+        guard let p = scope.projects.first(where: { $0.id == r.project }) else {
+            zoomCenter.route = nil
+            return
+        }
+        if scope.current?.id != p.id {
+            scope.pick(p)
+            return
+        }
+        guard model.loaded, model.project == p.id else { return }
+        zoomCenter.route = nil
+        zoom(r.zoom)
     }
 
     private func refresh(soon: Bool = false) async {
@@ -855,7 +981,9 @@ struct PhoneHome: View {
             Button {
                 switch n.target {
                 case .pane(let m, let p): peek = .pane(m, p)
-                case .board(let b, _): opened = .board(b)
+                // A board's row zooms to its card's work (Arugula #1304).
+                case .board(let b, let r):
+                    if let r { zoom(.card(board: b.id, row: r.id)) } else { opened = .board(b) }
                 case .session(let s): peek = .hosted(s)
                 }
             } label: {

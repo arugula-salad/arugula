@@ -191,6 +191,7 @@
 			}; name = Debug; };
 		A00000000000000000000015 /* Release */ = { isa = XCBuildConfiguration; buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				INFOPLIST_FILE = "Arugula-Info.plist";
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = NO;
 				CODE_SIGN_ENTITLEMENTS = Arugula.entitlements;
 				INFOPLIST_KEY_CFBundleDisplayName = Arugula;
