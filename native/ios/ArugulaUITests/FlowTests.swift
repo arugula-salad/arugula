@@ -88,6 +88,14 @@ final class FlowTests: XCTestCase {
         (beside.exists ? beside : named.exists ? named : app.navigationBars.buttons.element(boundBy: 0)).tap()
     }
 
+    /// Back until `there` shows: a tap as a screen settles can be lost.
+    private func goBack(_ app: XCUIApplication, until there: XCUIElement) {
+        for _ in 0..<3 where !there.exists {
+            goBack(app)
+            _ = there.shows(within: 8)
+        }
+    }
+
     /// Pick a project from the switcher heading the tab that's open.
     private func pick(_ app: XCUIApplication, _ name: String) {
         let switcher = app.buttons["project-switcher"].firstMatch
@@ -333,7 +341,7 @@ final class FlowTests: XCTestCase {
             let threadWho = app.staticTexts["who-line"].firstMatch
             XCTAssertTrue(threadWho.label.contains("board's thread"), "the thread's who-line: \(threadWho.label)")
             shot(app, "5-home-thread")
-            if !iPad { goBack(app) }
+            if !iPad { goBack(app, until: app.buttons["home-staff"]) }
             let staff = app.buttons["home-staff"]
             XCTAssertTrue(staff.shows(within: 45), "home has no chief of staff in \(team): \(app.debugDescription)")
             let ledBy = Date().addingTimeInterval(45)
