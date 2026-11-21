@@ -223,7 +223,11 @@ final class TerminalUIView: UIView, UIKeyInput, UITextInputTraits {
         CATransaction.commit()
         accessibilityValue = rowText.prefix(Int(frame.rows)).joined(separator: "\n")
         renders += 1
-        if typeable { accessibilityLabel = "Terminal r\(renders) f\(frame.rows)x\(rowLayers.count) g\(grid.0)x\(grid.1) w\(Int(bounds.width))" }
+        if typeable {
+            MainActor.assumeIsolated {
+                accessibilityLabel = "Terminal r\(renders) g\(grid.0)x\(grid.1) w\(Int(bounds.width)) s\(session.debugSent) t\(session.debugTabbed) d\(session.debugDrawn) n\(session.debugNoLink) c\(session.connected)"
+            }
+        }
     }
     private var renders = 0
 

@@ -118,6 +118,7 @@ final class MachineSession: ObservableObject {
             }
         }
         if flags & 1 != 0 {
+            debugDrawn += 1
             screen?.render()
             for w in watching.values { w.view?.render() }
         }
@@ -190,9 +191,12 @@ final class MachineSession: ObservableObject {
 
     /// Each pane as its tab's watch asks for it: a view of its tab that
     /// claims nothing, so nobody's panes resize, and the pane attached.
+    var debugSent = 0, debugTabbed = 0, debugDrawn = 0, debugNoLink = 0
     private func attachAlone(_ panes: [UInt32]) {
-        guard let l = link else { return }
+        guard let l = link else { debugNoLink += 1; return }
         for pane in panes {
+            debugSent += 1
+            if tabs.contains(where: { $0.cells.contains { $0.pane == pane } }) { debugTabbed += 1 }
             guard let t = tabs.first(where: { $0.cells.contains { $0.pane == pane } }) else {
                 [pane].withUnsafeBufferPointer { aru_link_attach_panes(l, $0.baseAddress, 1) }
                 continue
