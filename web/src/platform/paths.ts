@@ -285,7 +285,7 @@ export function parse(path: string, search = "", hash = ""): Route {
   if (parts[0] === "t" && parts.length === 3) {
     const team = TEAM.exec(parts[1])?.[1];
     // Its Settings tab, from before they were Settings' (Arugula #1104).
-    if (team && parts[2] === "settings") return { page: "settings", scope: "team", owner: team };
+    if (team && parts[2] === "settings") return withOldSection({ page: "settings", scope: "team", owner: team }, hash) ?? missing;
     const tab = TEAM_TABS.find((t) => t === parts[2]);
     return team && tab ? { page: "team", team, tab } : missing;
   }
@@ -426,7 +426,7 @@ function youSection(section?: string): SettingsRoute {
 function withOldSection(r: SettingsRoute | null, hash: string): SettingsRoute | null {
   const section = /^#([a-z][a-z0-9-]{0,47})$/.exec(hash)?.[1];
   const at = r && !r.section && section ? (r.scope === "you" ? youSection(section) : { ...r, section }) : r;
-  const moved = at?.scope === "project" || at?.scope === "machine" ? MOVED[at.scope] : undefined;
+  const moved = at && at.scope !== "you" ? MOVED[at.scope] : undefined;
   return at?.section && moved && Object.hasOwn(moved, at.section) ? ({ ...at, section: moved[at.section] } as SettingsRoute) : at;
 }
 
@@ -434,8 +434,9 @@ function withOldSection(r: SettingsRoute | null, hash: string): SettingsRoute | 
  * and a machine's, in Machines' four (the Settings Doc's Machines tab).
  * The section each is in now. A project's Overrides went (Arugula #1323):
  * its address lands on the first setting that says whether it follows a
- * default. */
-const MOVED: Record<"project" | "machine", Record<string, string>> = {
+ * default. A team's General, its default project, is the top of its
+ * Project defaults now (Arugula #1322). */
+const MOVED: Record<"project" | "machine" | "team", Record<string, string>> = {
   project: {
     plane: "repos",
     boards: "issues",
@@ -453,6 +454,9 @@ const MOVED: Record<"project" | "machine", Record<string, string>> = {
     grants: "agents",
     reports: "advanced",
     developer: "advanced",
+  },
+  team: {
+    general: "defaults",
   },
 };
 

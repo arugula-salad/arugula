@@ -79,9 +79,9 @@ test.use({ viewport: { width: 1280, height: 900 } });
 
 test("a team's owner: a flat list; the roster with a ↗ to change it while the hub doesn't answer its teams here, the team's machines, and its Labs flags", async ({ page }) => {
   await open(page, "/settings/team/tm_1");
-  // The team's own, then what every project starts with, under no band headings.
+  // Its sections in their order, under no band headings: Project defaults before Labs.
   await expect(page.locator(".settings-list .list-group-title")).toHaveCount(0);
-  await expect(page.locator("[data-settings-row]")).toHaveText([/^Members/, /^Machines/, /^Labs/, /^Default project/, /^Project defaults/]);
+  await expect(page.locator("[data-settings-row]")).toHaveText([/^Members/, /^Machines/, /^Project defaults/, /^Labs/]);
   // Members, first: the roster, and what a device signs opens control's Teams.
   await expect(section(page, "members")).toBeVisible();
   await expect(section(page, "members").locator("[data-owner-member]")).toHaveText(["SamOwner", "JoEditor"]);
@@ -128,7 +128,7 @@ test("Labs: yours to set on Just you, a team's to read for its viewers, and none
   await expect(theirs.locator('[data-labs-flag="studio"]')).toContainText("Not set");
   // Strangers never see Labs.
   await open(page, "/settings/team/tm_1", { flags: kept(false) });
-  await expect(page.locator("[data-settings-row]")).toHaveText([/^Members/, /^Machines/, /^Default project/, /^Project defaults/]);
+  await expect(page.locator("[data-settings-row]")).toHaveText([/^Members/, /^Machines/, /^Project defaults/]);
 });
 
 test("Labs from a control that doesn't answer its flags on the app's host: control's page, said plainly", async ({ page }) => {

@@ -311,7 +311,13 @@ test.describe("on a computer", () => {
     await page.locator('[data-settings-scope="team"]').click();
     await expect(page).toHaveURL(/\/settings\/team\/personal$/);
     await expect(page.locator('[data-owner-settings="personal"]')).toBeVisible();
-    await expect(row(page, "general").locator(".list-row-detail")).toHaveText("Default project: None");
+    // The default project is the top of Project defaults, and General's address lands there.
+    await expect(row(page, "defaults").locator(".list-row-detail")).toHaveText(/^Default project: None · /);
+    await expect(row(page, "general")).toHaveCount(0);
+    await page.goto("/settings/team/personal/general");
+    await expect(page).toHaveURL(/\/settings\/team\/personal\/defaults$/);
+    await expect(section(page, "defaults").locator("[data-default-project-form]")).toBeVisible();
+    await page.goto("/settings/team/personal");
     await page.locator('[data-settings-pick="team"]').selectOption("tm_1");
     await expect(page).toHaveURL(/\/settings\/team\/tm_1[^/]*$/);
     await expect(row(page, "members").locator(".list-row-detail")).toHaveText("2 people · 1 owner");
