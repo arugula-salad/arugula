@@ -221,6 +221,14 @@ impl Link {
         self.send(&ClientMsg::Attach { panes, zstd: false, acks: false, kitty_keys: false })
     }
 
+    /// Receive `panes` at the size each already is, from any tab, whatever
+    /// is in view: a view that claims nothing, so nobody's panes resize (a
+    /// card's panes at the Overview's Work level, Arugula #1307).
+    pub fn attach_panes(&self, panes: Vec<u32>) -> Result<()> {
+        let panes = panes.into_iter().map(|p| AttachPane::new(p, None)).collect();
+        self.send(&ClientMsg::Attach { panes, zstd: false, acks: false, kitty_keys: false })
+    }
+
     /// Stop receiving `panes`.
     pub fn detach(&self, panes: Vec<u32>) -> Result<()> {
         self.send(&ClientMsg::Detach { panes })

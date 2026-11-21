@@ -506,6 +506,14 @@ pub unsafe extern "C" fn aru_link_watch(
     let _ = unsafe { &*l }.link.watch(tab, panes, cols, rows);
 }
 
+/// Receive `panes` at their own size, from any tab, resizing nobody's
+/// (Arugula #1307): each one's snapshot, then its output.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn aru_link_attach_panes(l: *const AruLink, panes: *const u32, n: usize) {
+    let panes = if n == 0 { Vec::new() } else { unsafe { std::slice::from_raw_parts(panes, n) }.to_vec() };
+    let _ = unsafe { &*l }.link.attach_panes(panes);
+}
+
 /// Stop receiving `panes`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aru_link_detach(l: *const AruLink, panes: *const u32, n: usize) {
