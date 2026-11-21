@@ -141,7 +141,7 @@ export interface PlatformApi {
    * page can't reach it. `grants`, the platform's part of Agents;
    * `children`, its sections about the machine (Name), go before
    * Advanced. Where the page reaches machines itself (the app); a page
-   * without it links to the machine's page instead. */
+   * without it draws the platform's alone, and says the rest aren't there. */
   MachineSettings?: ComponentType<{ machine: string; name: string; grants?: ComponentChildren; children?: ComponentChildren }>;
 }
 

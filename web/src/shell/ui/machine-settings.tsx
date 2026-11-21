@@ -1,9 +1,12 @@
-// Settings' Machines (Arugula #1107): the machine's own settings, the
+// Settings › Machines (Arugula #1107): the machine's own settings, the
 // ones its menu opens as dialogs (`machineSettingsItems` in ./commands),
 // as parts of the app's Settings, each the dialog's own controls. The
 // daemon keeps them and answers its owner alone, so they're read through a
-// client to it; one that isn't connected, or isn't the owner's, draws each
-// section saying why in its summary, so the list and its addresses stay.
+// client to it. Where that client won't do (the machine is offline, isn't
+// answering, can't be reached from here, or isn't yours), each section
+// still stands, so the list and its addresses stay: its row says why, and
+// over its parts, dimmed, one note says why and what to do. What Arugula
+// cloud keeps (its agents' grants, its name) works either way.
 //
 // Four sections, in two bands (the Settings Doc's Machines tab): Access
 // and sharing (who reaches it, Guest SSH access, Remote typing, read-only,
@@ -11,9 +14,8 @@
 // (what they may do on Arugula cloud, the page's, and its permission
 // rules), then the page's Name, and Advanced (usage and crash reports,
 // developer settings, and removing arugula.nvim, which only the machine
-// menu had). The old
-// sections' addresses land on the one each is part of now (`MOVED` in
-// platform/paths).
+// menu had). The old sections' addresses land on the one each is part of
+// now (`MOVED` in platform/paths).
 
 import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
@@ -36,22 +38,58 @@ export const MACHINE_SECTIONS = {
   advanced: { title: "Advanced", lede: "Its usage and crash reports, developer settings, and clean-up." },
 } as const;
 
-/** Why the sections can't show, in a few words for the list and a line
- * under each heading; `out`, where else to go for them (a row to the
- * machine's page). */
+/** Why the machine's parts can't show: in a few words for the list, and
+ * the note over them, which says what to do where there's something. */
 export interface Away {
   summary: string;
   line: ComponentChildren;
-  out?: ComponentChildren;
+  /** Only a wait (it's being reached): said quietly, not as a note. */
+  wait?: boolean;
 }
 
 type Id = keyof typeof MACHINE_SECTIONS;
 
+/** Each section's parts that are the machine's, by title, as they stand
+ * dimmed while it can't be reached. */
+const PARTS: Record<Id, { id: string; title: string }[]> = {
+  access: [
+    { id: "who", title: "Who can reach it" },
+    { id: "guest-ssh", title: "Guest SSH access" },
+    { id: "remote-typing", title: "Remote typing" },
+    { id: "remote-sessions", title: "Remote sessions" },
+  ],
+  agents: [{ id: "rules", title: "Permission rules" }],
+  advanced: [
+    { id: "reports", title: "Usage and crash reports" },
+    { id: "developer", title: "Developer settings" },
+    { id: "nvim", title: "Remove arugula.nvim" },
+  ],
+};
+
+/** The note over a section, what of it works anyway (`children`, with
+ * `also` said after the note), and its machine's parts, dimmed. */
+function Unreached({ id, why, also, children }: { id: Id; why: Away; also?: string; children?: ComponentChildren }) {
+  return (
+    <>
+      <div class={why.wait ? "dim" : "settings-away-note"} role="status" data-machine-away>
+        {why.line}
+        {also && ` ${also}`}
+      </div>
+      {children}
+      <div class="settings-away" inert data-machine-away-parts>
+        {PARTS[id].map((p) => (
+          <Section key={p.id} id={p.id} title={p.title} />
+        ))}
+      </div>
+    </>
+  );
+}
+
 /** One of the sections, with what it holds. */
-function Sec({ id, summary, hooks, children }: { id: Id; summary?: string; hooks?: Record<`data-${string}`, string>; children: ComponentChildren }) {
+function Sec({ id, summary, children }: { id: Id; summary?: string; children: ComponentChildren }) {
   const s = MACHINE_SECTIONS[id];
   return (
-    <Section id={id} title={s.title} summary={summary} lede={s.lede} hooks={hooks}>
+    <Section id={id} title={s.title} summary={summary} lede={s.lede}>
       {children}
     </Section>
   );
@@ -65,24 +103,17 @@ export function MachineSections({ client, away, grants, children }: { client: Cl
   const why: Away | undefined =
     away ??
     (!client?.connected || !client.state
-      ? { summary: "Reaching it…", line: "Reaching it…" }
+      ? { summary: "Reaching it…", line: "Reaching it…", wait: true }
       : client.state.roles
         ? { summary: "Its owner's", line: "Only its owner sees and changes these." }
         : undefined);
   const c = client!;
-  const said = (
-    <>
-      <p class="dim">{why?.line}</p>
-      {why?.out}
-    </>
-  );
-  const stand = { "data-machine-away": "" } as const;
   return (
     <>
       <Band title="Who and what">
         {why ? (
-          <Sec id="access" summary={why.summary} hooks={stand}>
-            {said}
+          <Sec id="access" summary={why.summary}>
+            <Unreached id="access" why={why} />
           </Sec>
         ) : (
           <Sec id="access">
@@ -93,15 +124,23 @@ export function MachineSections({ client, away, grants, children }: { client: Cl
           </Sec>
         )}
         <Sec id="agents">
-          {grants}
-          {why ? said : <RulesSection client={c} />}
+          {why ? (
+            <Unreached id="agents" why={why} also={why.wait ? undefined : "Its agents' grants are Arugula cloud's, so they work as usual."}>
+              {grants}
+            </Unreached>
+          ) : (
+            <>
+              {grants}
+              <RulesSection client={c} />
+            </>
+          )}
         </Sec>
       </Band>
       <Band title="About it">
         {children}
         {why ? (
-          <Sec id="advanced" summary={why.summary} hooks={stand}>
-            {said}
+          <Sec id="advanced" summary={why.summary}>
+            <Unreached id="advanced" why={why} />
           </Sec>
         ) : (
           <Sec id="advanced">

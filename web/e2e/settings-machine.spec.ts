@@ -5,7 +5,8 @@
 // permission rules), then its name and Advanced (usage and crash reports,
 // developer settings, removing arugula.nvim). The machine's
 // own are read from it through the app's client to it. A machine the app
-// can't reach says so in its sections' summaries. On the app
+// can't reach says so in its rows, and in one note over each section, its
+// parts dimmed under it (Arugula #1314). On the app
 // frame's fixture page (app-frame-page.tsx), served on the suite daemon's
 // origin, which stands for the machine `SUITE`; the platform's grants and
 // the hub's rename are this spec's. Who reached it through Arugula cloud
@@ -116,14 +117,29 @@ test("a machine's own settings, its agents' grants and its name, each a row with
   await expect(page.locator('[data-settings-pick="machine"] option:checked')).toHaveText("studio-mini-2");
 });
 
-test("a machine the app can't reach says so in each of its sections; its grants and name are Arugula cloud's", async ({ page }) => {
+test("a machine the app can't reach explains itself in place, its parts dimmed; its grants and name are Arugula cloud's", async ({ page }) => {
   // Arugula cloud that doesn't rename from the app's host: a bare 404.
   await open(page, `/settings/machine/${AWAY}`, false);
   for (const id of ["access", "advanced"]) await expect(said(page, id)).toHaveText("Can't reach it from here");
-  await expect(section(page, "access")).toContainText("This page can't reach zoo-box yet");
-  // A ↗ row to its own page, where its settings are.
-  await expect(section(page, "access").locator('[data-settings-control="machine"]')).toBeVisible();
+  // One note over the section: why, and what to do. No way off to the machine's page.
+  const note = section(page, "access").locator("[data-machine-away]");
+  await expect(note).toHaveCount(1);
+  await expect(note).toContainText("Can't reach zoo-box from here");
+  await expect(page.locator('[data-settings-control="machine"], [data-machine-settings-open]')).toHaveCount(0);
+  await expect(page.getByText("Open zoo-box's page")).toHaveCount(0);
+  // Its parts stand, dimmed, with nothing to press.
+  const dimmed = section(page, "access").locator("[data-machine-away-parts]");
+  await expect(dimmed).toHaveAttribute("inert", "");
+  await expect(dimmed.locator("[data-settings-part]")).toHaveText(["Who can reach it", "Guest SSH access", "Remote typing", "Remote sessions"]);
+  await row(page, "advanced").click();
+  await expect(section(page, "advanced").locator("[data-machine-away]")).toContainText("Can't reach zoo-box from here");
+  await expect(section(page, "advanced").locator("[data-machine-away-parts] [data-settings-part]")).toHaveText(["Usage and crash reports", "Developer settings", "Remove arugula.nvim"]);
+  // Agents: its grants work as usual; its permission rules are the machine's, dimmed.
   await expect(said(page, "agents")).toHaveText("No grants yet");
+  await row(page, "agents").click();
+  await expect(section(page, "agents").locator("[data-machine-away]")).toContainText("grants are Arugula cloud's");
+  await expect(part(page, "grants").locator("tbody tr")).toHaveCount(4);
+  await expect(section(page, "agents").locator("[data-machine-away-parts] [data-settings-part]")).toHaveText(["Permission rules"]);
   await row(page, "name").click();
   await section(page, "name").locator("[data-machine-rename-name]").fill("near-box");
   await section(page, "name").locator("[data-machine-rename]").click();

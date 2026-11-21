@@ -6,7 +6,7 @@
 // (`PlatformApi.MachineSettings`, the app's). Then what Arugula cloud
 // keeps about it: what its agents may do (../settings/agents), a part of
 // Agents, and its name. A page that doesn't reach machines draws those
-// two, and a way to the machine's page for the rest. The machines are those the platform's grants name
+// two, and says the rest aren't here. The machines are those the platform's grants name
 // (`/api/grants`, which lists every machine of yours).
 
 import { useEffect, useState } from "preact/hooks";
@@ -14,7 +14,7 @@ import { platformFetch } from "../../shared/maintenance";
 import { usePlatformApi } from "../../shared/platform-api";
 import { Band, Section } from "../../shared/ui/settings-section";
 import { names } from "../links";
-import { follow, go, pathOf } from "../router";
+import { go, pathOf } from "../router";
 import { controlOrigin } from "../session";
 import { MachineAgentGrants } from "../settings/agents";
 import { ControlRow } from "../settings/owner-machines";
@@ -93,7 +93,7 @@ export function MachineSettings({ machine, section }: { machine?: string; sectio
     </Own>
   ) : (
     <>
-      <OnItsPage m={m} />
+      <NotHere m={m} />
       <Band title="Who and what">
         <Section id="agents" title="Agents" lede="What its agents may do on Arugula cloud.">
           {grants}
@@ -104,24 +104,15 @@ export function MachineSettings({ machine, section }: { machine?: string; sectio
   );
 }
 
-/** Where the page reaches no machines: the way to the machine's own page, where its settings are. */
-function OnItsPage({ m }: { m: Machine }) {
-  const page = pathOf({ page: "find", what: "machines", at: { at: "machine", machine: m.id } }, names);
+/** Where the page reaches no machines: that the machine's own settings
+ * aren't here, and why. No way off to its page (Arugula #1314). */
+function NotHere({ m }: { m: Machine }) {
   return (
-    <Section
-      id="machine"
-      title="Its own settings"
-      summary="On its own page"
-      lede={`${m.name}'s own settings are on its page, under This machine in its menu: who can reach it, permission rules, reports, guest SSH and developer settings.`}
-      hooks={{ "data-machine-settings": m.id }}
-    >
-      <ul class="platform-list settings-rows">
-        <li>
-          <a class="settings-open" href={page} data-machine-settings-open={m.id} onClick={(e) => follow(e, page)}>
-            <span class="settings-open-name">Open {m.name}'s page</span>
-          </a>
-        </li>
-      </ul>
+    <Section id="machine" title="Its own settings" summary="Not from this page" hooks={{ "data-machine-settings": m.id }}>
+      <p class="settings-away-note" role="status">
+        This page doesn&apos;t reach machines, so {m.name}&apos;s own settings (who can reach it, permission rules, reports, guest SSH and
+        developer settings) aren&apos;t here. Settings in the app has them.
+      </p>
     </Section>
   );
 }
