@@ -375,7 +375,9 @@ struct TypeTerminal: UIViewRepresentable {
         let v = TerminalUIView(session: session, tab: pane.tab, pane: pane.id, fontSize: size, fixed: (cols, rows), typeable: typeable)
         v.accessibilityIdentifier = "work-terminal-\(pane.id)"
         session.register(v)
-        session.drawAlone(pane.id)
+        // Once it's laid out at its grid, as a tab's watch asks.
+        let s = session, id = pane.id
+        DispatchQueue.main.async { s.drawAlone(id) }
         return v
     }
 

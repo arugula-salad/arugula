@@ -188,9 +188,22 @@ final class MachineSession: ObservableObject {
         [pane].withUnsafeBufferPointer { aru_link_detach(l, $0.baseAddress, 1) }
     }
 
+    /// Each pane as its tab's watch asks for it: a view of its tab that
+    /// claims nothing, so nobody's panes resize, and the pane attached.
     private func attachAlone(_ panes: [UInt32]) {
-        guard let l = link, !panes.isEmpty else { return }
-        panes.withUnsafeBufferPointer { aru_link_attach_panes(l, $0.baseAddress, panes.count) }
+        guard let l = link else { return }
+        for pane in panes {
+            guard let t = tabs.first(where: { $0.cells.contains { $0.pane == pane } }) else {
+                [pane].withUnsafeBufferPointer { aru_link_attach_panes(l, $0.baseAddress, 1) }
+                continue
+            }
+            [pane].withUnsafeBufferPointer { aru_link_watch(l, t.id, $0.baseAddress, 1, t.cols, t.rows) }
+        }
+        // The tab being watched is the view again.
+        if let t = watchedTab {
+            let mine = t.terminals.filter { !panes.contains($0) }
+            if !mine.isEmpty { mine.withUnsafeBufferPointer { aru_link_watch(l, t.id, $0.baseAddress, 0, t.cols, t.rows) } }
+        }
     }
 
     /// Where a pane sits in its tab, at the machine's size: its columns and rows.
