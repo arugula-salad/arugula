@@ -618,6 +618,45 @@ test.describe("on a computer", () => {
     await expect(panel.locator("[data-ov-talk-none]")).toBeVisible();
   });
 
+  test("with no ask or one, the page keeps its height and only the open thread's list scrolls (Arugula #1334)", async ({ page }) => {
+    await overview(page);
+    await launchRoom(page);
+    await chatOn(page);
+    await page.evaluate(() => {
+      const said = (window as unknown as { said: { seq: number; at: number; author: string; name: string; text: string; quote: null; pane: null; mentions: never[]; edited: null; deleted: null; imported: null; agent: null; reactions: never[]; files: never[]; pinned: boolean; also: boolean }[] }).said;
+      for (let seq = 2; seq <= 60; seq++) said.push({ seq, at: Date.now() - 60_000 + seq, author: "acct_Jo", name: "Jo", text: `Message ${seq} of a long thread.`, quote: null, pane: null, mentions: [], edited: null, deleted: null, imported: null, agent: null, reactions: [], files: [], pinned: false, also: false });
+    });
+    await page.locator(`[data-ov-board="${B}"] [data-ov-board-talk]`).click();
+    const list = page.locator(`[data-ov-talk-open="thread:${B}"] .thread-list`);
+    await expect(list).toContainText("Message 60 of a long thread.");
+    await expect(page.locator("[data-ov-needs]")).toBeVisible();
+    // Nothing above the list scrolls: not the document, nor any container the Overview sits in.
+    const still = () =>
+      page.evaluate(() => {
+        const root = document.scrollingElement!;
+        const scrolls = [root.scrollHeight > root.clientHeight];
+        for (let e = document.querySelector("[data-overview]") as HTMLElement | null; e; e = e.parentElement) scrolls.push(e.scrollHeight > e.clientHeight && getComputedStyle(e).overflowY !== "visible");
+        return { scrolls: scrolls.some(Boolean), panel: document.querySelector("[data-ov-panel]")!.getBoundingClientRect().height };
+      });
+    const empty = await still();
+    expect(empty.scrolls).toBe(false);
+    const scrollable = async () => {
+      const [over, moved] = await list.evaluate((e) => {
+        e.scrollTop = 40;
+        return [e.scrollHeight > e.clientHeight, e.scrollTop > 0];
+      });
+      expect(over && moved).toBe(true);
+    };
+    await scrollable();
+    // One ask: the same, and the panel as tall as with none.
+    await asking(page, [{ host: "mine", person: ME, ask: "ls mine" }]);
+    await expect(page.locator('[data-ov-needs] [data-ov-ask][data-kind="ask"]')).toHaveCount(1);
+    const one = await still();
+    expect(one.scrolls).toBe(false);
+    expect(one.panel).toBe(empty.panel);
+    await scrollable();
+  });
+
   test("the reader's staff room is the talk panel's first tab, pinned, saying which session hears it (Arugula #1275)", async ({ page }) => {
     await overview(page);
     const panel = page.locator("[data-ov-panel]");

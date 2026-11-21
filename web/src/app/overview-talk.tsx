@@ -192,6 +192,12 @@ function WhoLine({ tab }: { tab: TalkTab }) {
   );
 }
 
+/** The nearest ancestor that scrolls, if the window isn't what does. */
+function scroller(el: HTMLElement): HTMLElement | null {
+  for (let e = el.parentElement; e && e !== document.body; e = e.parentElement) if (/auto|scroll/.test(getComputedStyle(e).overflowY)) return e;
+  return null;
+}
+
 /** While `on`, a panel held beside the field (sticky) reaches from where
  * its top is to the window's foot, as the page scrolls, so the box to write
  * in is always in sight; docked under the field, it keeps its CSS height. */
@@ -203,7 +209,13 @@ function useFitWindow(on: boolean) {
     if (!on) return void el.style.removeProperty("height");
     const size = () => {
       if (getComputedStyle(el).position !== "sticky") return void el.style.removeProperty("height");
-      el.style.height = `${Math.max(320, Math.round(window.innerHeight - Math.max(0, el.getBoundingClientRect().top) - 12))}px`;
+      // To the foot of the box the page scrolls in, less what it keeps under the Overview (its padding):
+      // 12px was less than that, so the page scrolled by the difference with the panel as tall as the Overview.
+      const box = scroller(el);
+      const field = el.parentElement!;
+      const foot = box ? box.getBoundingClientRect().bottom : window.innerHeight;
+      const below = box ? Math.max(0, box.scrollHeight - (field.getBoundingClientRect().bottom - box.getBoundingClientRect().top + box.scrollTop)) : 12;
+      el.style.height = `${Math.max(320, Math.round(foot - Math.max(0, el.getBoundingClientRect().top) - below))}px`;
     };
     size();
     // The page scrolls in the frame's main, not the window: listen in the capture phase.
