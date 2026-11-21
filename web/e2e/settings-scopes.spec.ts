@@ -1,4 +1,4 @@
-// Settings (Arugula #1104): one page, four scopes (You, This machine,
+// Settings (Arugula #1104): one page, four scopes (You, Machines,
 // Project, Team and billing), each a list of its sections with what's set,
 // and the chosen one's controls beside it. The section is the address, so a
 // link opens it; the old addresses (a project's settings, Personal's, a
@@ -63,7 +63,7 @@ test.describe("on a computer", () => {
     await expect(row(page, "quiet-hours").locator(".list-row-detail")).toHaveText("Weeknights 10 PM – 8 AM · New York");
     await expect(row(page, "linked").locator(".list-row-detail")).toHaveText("None");
     await expect(row(page, "tokens").locator(".list-row-detail")).toHaveText("1 token");
-    // Your machines' agents are each machine's, under This machine (Arugula #1107).
+    // Your machines' agents are each machine's, under Machines (Arugula #1107).
     await expect(row(page, "agents")).toHaveCount(0);
     // The first is shown, the rest wait; its help is under its heading, with no More to open.
     await expect(row(page, "notifications")).toHaveAttribute("aria-current", "true");
@@ -81,7 +81,7 @@ test.describe("on a computer", () => {
     await page.goto("/settings#notifications");
     await expect(page).toHaveURL(/\/settings\/you\/notifications$/);
     await expect(section(page, "notifications")).toBeVisible();
-    // The old Agents on your machines' address opens This machine's Agents' grants (Arugula #1107).
+    // The old Agents on your machines' address opens Machines' Agents (Arugula #1107).
     await page.goto("/settings#agents");
     await expect(page.locator('[data-settings-scope="machine"]')).toHaveAttribute("aria-selected", "true");
   });

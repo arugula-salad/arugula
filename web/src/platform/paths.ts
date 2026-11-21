@@ -409,8 +409,8 @@ function settingsRoute(rest: string[], q: URLSearchParams): SettingsRoute | null
 }
 
 /** A section of yours, or where it went: your machines' agents are each
- * machine's now (Arugula #1107), in This machine's Agents' grants, and
- * Preferences is part of Appearance (Arugula #1318). */
+ * machine's now (Arugula #1107), in Machines' Agents, and Preferences
+ * is part of Appearance (Arugula #1318). */
 function youSection(section?: string): SettingsRoute {
   if (section === "agents") return { page: "settings", scope: "machine", section };
   if (section === "preferences") return { page: "settings", scope: "you", section: "appearance" };
@@ -418,23 +418,35 @@ function youSection(section?: string): SettingsRoute {
 }
 
 /** An old link's `#section`, where the path names none: the page puts the
- * section in the path, in its place. A project's section that's part of
- * another now lands on that one. */
+ * section in the path, in its place. A project's or a machine's section
+ * that's part of another now lands on that one. */
 function withOldSection(r: SettingsRoute | null, hash: string): SettingsRoute | null {
   const section = /^#([a-z][a-z0-9-]{0,47})$/.exec(hash)?.[1];
   const at = r && !r.section && section ? (r.scope === "you" ? youSection(section) : { ...r, section }) : r;
-  return at?.scope === "project" && at.section && MOVED[at.section] ? { ...at, section: MOVED[at.section] } : at;
+  const moved = at?.scope === "project" || at?.scope === "machine" ? MOVED[at.scope] : undefined;
+  return at?.section && moved && Object.hasOwn(moved, at.section) ? ({ ...at, section: moved[at.section] } as SettingsRoute) : at;
 }
 
-/** A project's sections that are parts of others (Arugula #1105): the
- * section each is in now. */
-const MOVED: Record<string, string> = {
-  plane: "repos",
-  boards: "issues",
-  size: "runs",
-  finish: "runs",
-  "agent-model": "agents",
-  environments: "secrets",
+/** Sections that are parts of others now: a project's (Arugula #1105),
+ * and a machine's, in Machines' four (the Settings Doc's Machines tab).
+ * The section each is in now. */
+const MOVED: Record<"project" | "machine", Record<string, string>> = {
+  project: {
+    plane: "repos",
+    boards: "issues",
+    size: "runs",
+    finish: "runs",
+    "agent-model": "agents",
+    environments: "secrets",
+  },
+  machine: {
+    "guest-ssh": "access",
+    "remote-sessions": "access",
+    rules: "agents",
+    grants: "agents",
+    reports: "advanced",
+    developer: "advanced",
+  },
 };
 
 /** The path for a settings route, with each id's current slug (`s`). */

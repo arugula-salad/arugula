@@ -38,7 +38,7 @@ async function open(page: Page, path: string, { role = "owner", dir = true }: { 
   await page.route(/\/api\//, (r) => json(r, { error: "not here" }, 404));
   await page.route(/\/api\/projects$/, (r) => json(r, { me: { account: "acct_a", login: "sam", name: "Sam" }, projects: projects(role), hosted: false }));
   await page.route(/\/api\/(projects|owners)\/[^/]+\/settings$/, (r) => json(r, []));
-  // Settings' This machine lists the machines with grants: orchard, not attic.
+  // Settings › Machines lists the machines with grants: orchard, not attic.
   await page.route(/\/api\/grants$/, (r) => json(r, { grants: [{ id: "g1", live: true, power: "threads.read", subject: { kind: "daemon", id: "dmn_orchard", name: "orchard" }, scope: { kind: "account", id: "acct_a" } }] }));
   await page.route(/\/api\/directory$/, (r) => (dir ? json(r, { daemons: directory, offers: [] }) : json(r, { error: "control is down" }, 500)));
   const body = await fixturePage("./move-to-project-page.tsx");
@@ -85,7 +85,7 @@ test("Just you: your machines in no team, a way to move one into a team, and no 
   await expect(row(page, "machines").locator(".list-row-detail")).toHaveText("1 machine · online");
   const machines = section(page, "machines");
   await expect(machines).toBeVisible();
-  // attic has no grants yet, so it opens its own page, not This machine.
+  // attic has no grants yet, so it opens its own page, not Machines.
   await expect(machines.locator('[data-owner-machine-open="dmn_attic"]')).toHaveAttribute("href", /dmn_attic/);
   await expect(machines.locator('[data-owner-machine-open="dmn_attic"]')).not.toHaveAttribute("href", /\/settings\/machine\//);
   await expect(machines.locator('[data-settings-control="machines"]')).toContainText("Move a machine into a team");

@@ -76,11 +76,11 @@ test("a machine's agents' grants in a line (Arugula #1107)", async () => {
   const { machineGrantsSummary } = await import("../src/platform/settings/grants.ts");
   const g = (id, power, scope, live = true, machine = "m1") => ({ id, subject: { kind: "daemon", id: machine, name: "mini" }, power, scope, live });
   const drive = g("g0", "cloud.drive", { kind: "account", id: "acct" });
-  assert.equal(machineGrantsSummary([drive], "m1"), "Nothing yet");
+  assert.equal(machineGrantsSummary([drive], "m1"), "No grants yet");
   assert.equal(machineGrantsSummary([drive, g("g1", "threads.read", { kind: "account", id: "acct" })], "m1"), "Your DMs only");
   const two = [g("g2", "threads.read", { kind: "project", id: "p1" }), g("g3", "runs.read", { kind: "project", id: "p1" }), g("g4", "boards.read", { kind: "project", id: "p2" })];
   assert.equal(machineGrantsSummary(two, "m1"), "2 projects");
   assert.equal(machineGrantsSummary([...two, g("g5", "threads.post", { kind: "account", id: "acct" })], "m1"), "2 projects and your DMs");
   // Revoked ones, and another machine's, don't count.
-  assert.equal(machineGrantsSummary([g("g6", "threads.read", { kind: "project", id: "p1" }, false), g("g7", "threads.read", { kind: "project", id: "p3" }, true, "m2")], "m1"), "Nothing yet");
+  assert.equal(machineGrantsSummary([g("g6", "threads.read", { kind: "project", id: "p1" }, false), g("g7", "threads.read", { kind: "project", id: "p3" }, true, "m2")], "m1"), "No grants yet");
 });

@@ -10,7 +10,7 @@
 //   it's shown there. Not on a read-only link.
 // - **The switch** is *Usage and crash reports…* in the machine's settings
 //   (the machine menu, or the account menu's *This machine*), on the
-//   phone's sheet, and in Settings' This machine (Arugula #1107), with the
+//   phone's sheet, and in Settings › Machines' Advanced (Arugula #1107), with the
 //   same preview.
 // - **Views** this page opens (telemetry.ts) go to that daemon's
 //   `telemetry.note` each minute and as the page goes away, while the
@@ -255,7 +255,7 @@ function MachineTelemetrySettings({ client, close }: { client: Client; close: ()
   );
 }
 
-/** Usage and crash reports as a section of Settings' This machine (Arugula #1107). */
+/** Usage and crash reports as a part of Settings › Machines' Advanced (Arugula #1107). */
 export function ReportsSection({ client }: { client: Client }) {
   const r = useReports(client);
   return (

@@ -102,7 +102,7 @@ export function machineGrantsSummary(grants: Grant[], machine: string): string {
   const live = grants.filter((g) => g.live && g.subject.kind === "daemon" && g.subject.id === machine && g.power !== "cloud.drive");
   const projects = new Set(live.filter((g) => g.scope.kind === "project").map((g) => g.scope.id)).size;
   const dms = live.some((g) => g.scope.kind === "account");
-  if (!projects) return dms ? "Your DMs only" : "Nothing yet";
+  if (!projects) return dms ? "Your DMs only" : "No grants yet";
   return `${projects} ${projects === 1 ? "project" : "projects"}${dms ? " and your DMs" : ""}`;
 }
 

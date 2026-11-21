@@ -1,6 +1,6 @@
 // The app's own client to one of its machines (Arugula #1019, #1107), for
 // the places that draw a machine's things outside its page: a board
-// drawer's live session (./live-pane) and Settings' This machine
+// drawer's live session (./live-pane) and Settings › Machines
 // (./machine-settings). Through the hub with a machine token, or a
 // daemon's own origin; one client per machine, shared while something
 // holds it, closed a little after the last lets go.
