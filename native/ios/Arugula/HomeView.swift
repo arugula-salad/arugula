@@ -371,9 +371,10 @@ struct BoardsThread: View {
     }
 }
 
-/// The current project's boards as cards; a board opens to its lanes, and
-/// its lead (Arugula #1279) to its thread, where a post reaches the lead.
-/// Sessions on its cards and the lead itself open a peek there, as on home.
+/// The current project's boards as cards; a board opens to its lanes, its
+/// lead's name (Arugula #1279) to that agent (Arugula #1305), and Board thread
+/// to its thread, where a post reaches the lead. Sessions on its cards open a
+/// peek there, as on home.
 struct BoardsView: View {
     let control: Control
     /// Home's, for the boards' threads and the sessions on their cards:
@@ -424,7 +425,17 @@ struct BoardsView: View {
             .navigationDestination(for: IssueRef.self) { ref in
                 Loaded(load: { try await control.get("/api/issues/\(ref.id)", as: Issue.self) }) { IssueView(issue: $0) }
             }
+            // A lead's name opens that agent (Arugula #1305), here on Boards.
+            .navigationDestination(for: WorkKey.self) { w in
+                if let p = scope.current {
+                    WorkLevel(control: control, project: p, session: w.key, model: model, fleet: fleet, peek: { peek = $0 }) { m, pane in
+                        terminal = PhoneHome.PaneOpen(session: m, pane: pane)
+                    }
+                    .backBesideTabs("Back") { path.removeLast() }
+                }
+            }
         }
+        .environment(\.talkTo) { key in path.append(WorkKey(key: key)) }
         .sheet(item: $peek) { p in
             SessionPeek(
                 control: control, peeked: p,
@@ -445,27 +456,37 @@ struct BoardsView: View {
         .onChange(of: scope.current?.id) { _, _ in path = NavigationPath() }
     }
 
-    /// A board's card, which opens its lanes, and under it its lead, which
-    /// opens its thread.
+    /// A board's card, which opens its lanes, and under it its lead, whose
+    /// name opens that agent, and its thread, a button of its own (Arugula
+    /// #1305).
     private func boardCard(_ b: Board) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             NavigationLink(value: b) { BoardCard(board: b) }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("board-\(b.title)")
-            if let lead = b.lead {
-                NavigationLink(value: BoardThreadRef(board: b)) {
-                    HStack(spacing: 6) {
-                        LiveLeadChip(lead: lead, fleet: fleet)
-                        Spacer(minLength: 4)
-                        Image(systemName: "bubble.left").font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.accent)
+            HStack(spacing: 6) {
+                if let lead = b.lead {
+                    Button { path.append(WorkKey(key: LeadLine(lead, fleet: fleet).key)) } label: {
+                        LiveLeadChip(lead: lead, fleet: fleet).contentShape(Rectangle())
                     }
-                    .padding(.top, 8)
-                    .overlay(alignment: .top) { Rectangle().fill(Palette.raised).frame(height: 1) }
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("board-lead-\(b.title)")
+                } else {
+                    LeadChip(lead: nil)
+                }
+                Spacer(minLength: 4)
+                NavigationLink(value: BoardThreadRef(board: b)) {
+                    Label("Board thread", systemImage: "bubble.left")
+                        .font(Face.mono(11, "Bold"))
+                        .foregroundStyle(Palette.accent)
+                        .labelStyle(.titleAndIcon)
                 }
                 .buttonStyle(.plain)
-                .accessibilityIdentifier("board-lead-\(b.title)")
+                .accessibilityHint("Its lead and anyone mentioned read it")
+                .accessibilityIdentifier("board-thread-\(b.title)")
             }
+            .padding(.top, 8)
+            .overlay(alignment: .top) { Rectangle().fill(Palette.raised).frame(height: 1) }
         }
         .card(.accent)
     }

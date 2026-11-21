@@ -107,12 +107,43 @@ private struct ZoomKey: EnvironmentKey {
     static let defaultValue: ((Zoom?) -> Void)? = nil
 }
 
+private struct TalkKey: EnvironmentKey {
+    static let defaultValue: ((String) -> Void)? = nil
+}
+
 extension EnvironmentValues {
     /// Zoom Home to a level of the current project; nil is its Project level.
     var zoom: ((Zoom?) -> Void)? {
         get { self[ZoomKey.self] }
         set { self[ZoomKey.self] = newValue }
     }
+
+    /// Open an agent, by its session's key, to talk to it (Arugula #1305):
+    /// Home zooms to its Work level, Boards pushes it. Unset, Home opens it.
+    var talkTo: ((String) -> Void)? {
+        get { self[TalkKey.self] }
+        set { self[TalkKey.self] = newValue }
+    }
+}
+
+/// Open an agent to talk to it: where the view is, by `talkTo`, else on
+/// Home, in the project.
+@MainActor
+func openAgent(_ key: String, talkTo: ((String) -> Void)?, project: String?) {
+    if let talkTo {
+        talkTo(key)
+    } else if let project {
+        ZoomCenter.shared.route = ZoomRoute(project: project, zoom: .work(key))
+    }
+}
+
+/// A session's Work level pushed where Home isn't (Boards, Arugula #1305).
+struct WorkKey: Hashable { let key: String }
+
+extension LeadLine {
+    /// Its session's key: its pane's when a machine here tells of it, else
+    /// `lead:MACHINE:SESSION`, which the Work level says it can't reach.
+    var key: String { peeked?.key ?? "lead:\(lead.machine):\(lead.session)" }
 }
 
 /// A card's Work level, pushed over its board's.
@@ -167,13 +198,13 @@ struct ZoomPath: View {
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
-                part("Overview", id: "zoom-path-overview") { zoom?(nil) }
+                part("Overview", id: "zoom-path-overview") { go(nil) }
                 if let board {
                     sep
                     if work == nil {
                         leaf(board.title)
                     } else {
-                        part(board.title, id: "zoom-path-board") { zoom?(.board(board.id)) }
+                        part(board.title, id: "zoom-path-board") { go(.board(board.id)) }
                     }
                 }
                 if let work {
@@ -194,6 +225,12 @@ struct ZoomPath: View {
         Text(text).font(Face.mono(12, "Bold")).foregroundStyle(Palette.fg).lineLimit(1)
             .accessibilityIdentifier("zoom-path")
             .accessibilityValue(ZoomRoute(project: project, zoom: here).url.absoluteString)
+    }
+
+    /// Zoom out: in Home, in place; anywhere else (a level pushed on
+    /// Boards), on Home.
+    private func go(_ z: Zoom?) {
+        if let zoom { zoom(z) } else { ZoomCenter.shared.route = ZoomRoute(project: project, zoom: z) }
     }
 
     private var sep: some View {
@@ -350,13 +387,13 @@ struct WorkLevel: View {
         } else {
             []
         }
-        let title = card?.words ?? lone?.name ?? (session == nil ? "A card" : "A session")
+        let title = card?.words ?? lone?.name ?? leadName ?? (session == nil ? "A card" : "A session")
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 if sessions.isEmpty {
                     Text(session == nil
                         ? (model.loaded ? "No agent works on this card yet." : "Looking…")
-                        : "This session isn't on a machine this \(device) reaches.")
+                        : away)
                         .font(Face.ui(14)).foregroundStyle(Palette.dim)
                         .accessibilityIdentifier("work-none")
                 }
@@ -376,6 +413,21 @@ struct WorkLevel: View {
         }
         .detailTitle(title)
         .accessibilityIdentifier("work-level")
+    }
+
+    /// A lead's name, from its key, when its machine isn't here.
+    private var leadName: String? {
+        guard let key = session, key.hasPrefix("lead:") else { return nil }
+        return key.dropFirst("lead:".count).split(separator: ":", maxSplits: 1).dropFirst().first.map(String.init)
+    }
+
+    /// Why a session on no card isn't here: a lead's machine, by name.
+    private var away: String {
+        guard let key = session, key.hasPrefix("lead:") else { return "This session isn't on a machine this \(device) reaches." }
+        let parts = key.dropFirst("lead:".count).split(separator: ":", maxSplits: 1).map(String.init)
+        let machine = parts.first.flatMap { m in fleet.directory.first { $0.id == m }?.name } ?? "its machine"
+        let name = parts.count > 1 ? parts[1] : "It"
+        return "\(name) runs on \(machine), which this \(device) doesn't reach now."
     }
 }
 
