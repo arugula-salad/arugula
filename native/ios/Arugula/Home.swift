@@ -618,8 +618,11 @@ struct PhoneHome: View {
         }
         .environment(\.openDoc) { d in present(d) }
         .environment(\.zoom) { z in zoom(z) }
-        // A lead's or an agent's name opens that agent (Arugula #1305).
-        .environment(\.talkTo) { key in zoom(.work(key)) }
+        // A lead's or an agent's name opens that agent (Arugula #1305): over
+        // what's open, so Back comes back to it.
+        .environment(\.talkTo) { key in
+            if opened == nil { opened = .work(key) } else { path.append(WorkKey(key: key)) }
+        }
         .fullScreenCover(item: $docOver) { d in DocScreen(ref: d, close: { docOver = nil }, open: follow) }
         .navigationSplitViewStyle(.balanced)
         .fullScreenCover(item: $terminal) { t in TerminalScreen(session: t.session, pane: t.pane) }
@@ -759,6 +762,14 @@ struct PhoneHome: View {
                         terminal = PaneOpen(session: m, pane: pane)
                     }
                     .backBesideTabs("Board") { path.removeLast() }
+                }
+            }
+            .navigationDestination(for: WorkKey.self) { w in
+                if let p = scope.current {
+                    WorkLevel(control: control, project: p, session: w.key, model: model, fleet: fleet, peek: { peek = $0 }) { m, pane in
+                        terminal = PaneOpen(session: m, pane: pane)
+                    }
+                    .backBesideTabs("Back") { path.removeLast() }
                 }
             }
             .navigationDestination(for: IssueRef.self) { ref in
