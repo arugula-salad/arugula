@@ -107,8 +107,8 @@ pub struct WatchCreate {
     /// of its [`crate::events::EventType::matches`].
     #[serde(default, rename = "match", skip_serializing_if = "Option::is_none")]
     pub matches: Option<serde_json::Map<String, serde_json::Value>>,
-    /// With `event`: why the agent watches, handed back when it fires; at
-    /// most [`NOTE_MAX`] characters.
+    /// Why the agent watches, with any target: handed back when it fires or
+    /// expires; at most [`NOTE_MAX`] characters.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
 }
@@ -306,7 +306,7 @@ pub fn until_word_parse(word: Option<&str>) -> Result<PrUntil, String> {
 
 /// A watch's event target as the `watch` tools check it, for
 /// [`WatchCreate`]'s `event`, `matches` and `note`: each none when it isn't
-/// given, and match and note none without an event.
+/// given, and match none without an event.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct EventTarget {
     pub event: Option<String>,
@@ -325,8 +325,8 @@ pub enum Watcher {
 
 /// An event target, checked before it's sent: the type is in the catalog,
 /// and a daemon's own only for [`Watcher::Machine`], each match key is one
-/// of its match fields, and the note is at most [`NOTE_MAX`] characters.
-/// Match and note need an event.
+/// of its match fields. The note, which goes with any target, is at most
+/// [`NOTE_MAX`] characters. Match needs an event.
 pub fn event_target(
     watcher: Watcher,
     event: Option<String>,
@@ -335,11 +335,16 @@ pub fn event_target(
 ) -> Result<EventTarget, String> {
     let matches = matches.filter(|m| !m.is_empty());
     let note = note.map(|n| n.trim().to_owned()).filter(|n| !n.is_empty());
+    if let Some(n) = &note
+        && n.chars().count() > NOTE_MAX
+    {
+        return Err(format!("note: {} characters, at most {NOTE_MAX}", n.chars().count()));
+    }
     let Some(name) = event.map(|n| n.trim().to_owned()).filter(|n| !n.is_empty()) else {
-        if matches.is_some() || note.is_some() {
-            return Err("match and note go with an event".into());
+        if matches.is_some() {
+            return Err("match goes with an event".into());
         }
-        return Ok(EventTarget::default());
+        return Ok(EventTarget { event: None, matches: None, note });
     };
     let Some(t) = events::lookup(&name) else {
         return Err(format!("event {name}: no such type; watch types lists them"));
@@ -354,11 +359,6 @@ pub fn event_target(
             let fields: Vec<&str> = t.matches.iter().map(|f| f.name).collect();
             return Err(format!("match {k}: {name} matches on {}", fields.join(", ")));
         }
-    }
-    if let Some(n) = &note
-        && n.chars().count() > NOTE_MAX
-    {
-        return Err(format!("note: {} characters, at most {NOTE_MAX}", n.chars().count()));
     }
     Ok(EventTarget { event: Some(name), matches, note })
 }
@@ -417,6 +417,18 @@ mod tests {
         let bad = serde_json::json!({ "issue": "#1" }).as_object().unwrap().clone();
         let e = event_target(Watcher::Machine, Some("pane.exited".into()), Some(bad), None).unwrap_err();
         assert!(e.contains("matches on pane"), "{e}");
+    }
+
+    #[test]
+    fn a_note_goes_with_any_target_and_a_match_with_an_event() {
+        let t = event_target(Watcher::Machine, None, None, Some("  squash-merge  ".into())).unwrap();
+        assert_eq!((t.event, t.matches, t.note.as_deref()), (None, None, Some("squash-merge")));
+        let long = Some("x".repeat(NOTE_MAX + 1));
+        let e = event_target(Watcher::Machine, None, None, long).unwrap_err();
+        assert!(e.contains("at most 200"), "{e}");
+        let m = serde_json::json!({ "issue": "#1" }).as_object().unwrap().clone();
+        let e = event_target(Watcher::Machine, None, Some(m), Some("why".into())).unwrap_err();
+        assert_eq!(e, "match goes with an event");
     }
 
     #[test]

@@ -241,8 +241,8 @@ pub struct WatchArgs {
     /// the type's match fields ({"issue": "#12"}, this project's #12).
     #[serde(default, rename = "match")]
     pub matches: Option<serde_json::Map<String, Value>>,
-    /// create, with event: why you watch, at most 200 characters: it comes
-    /// back with the event when it fires.
+    /// create: why you watch, at most 200 characters: it comes back when the
+    /// watch fires or expires.
     #[serde(default)]
     pub note: Option<String>,
     /// create: how long before it ends without firing: 30m, 6h, 3d. Default
@@ -393,7 +393,7 @@ fn tools() -> Vec<Tool> {
         .with_annotations(post_thread),
         Tool::new(
             WATCH,
-            "Wake this session later, when something happens, without polling or holding your turn open: create a watch (kind create), then end your turn; what happened (ids and states only) comes as your next prompt, from Arugula, once. Targets, any of which fires it: pr (OWNER/REPO#N, in a repo linked to Arugula's GitHub App) until merged, closed, checks_done, checks_failed or ready; agent_session (another ses_) until it settles; run (run_ or dep_) until it ends; room (a chat room's id, with parent for one thread and from for one person) until a reply you didn't write; event (a type from kind types, like issue.closed) with match (some of the type's match fields, like {\"issue\": \"#12\"}, this project's #12) and note (why you watch, at most 200 characters, handed back when it fires). It expires after 24 hours unless you say (expires, at most 7d), and then you're told it ended without firing. If it has happened already, create says so and makes none. kind list shows this session's watches; kind cancel takes one by id, or all; kind types lists the event types and their match fields; kind events reads this project's event log after a number (after), as you could watch it, and says where to read on.",
+            "Wake this session later, when something happens, without polling or holding your turn open: create a watch (kind create), then end your turn; what happened (ids and states only) comes as your next prompt, from Arugula, once. Targets, any of which fires it: pr (OWNER/REPO#N, in a repo linked to Arugula's GitHub App) until merged, closed, checks_done, checks_failed or ready; agent_session (another ses_) until it settles; run (run_ or dep_) until it ends; room (a chat room's id, with parent for one thread and from for one person) until a reply you didn't write; event (a type from kind types, like issue.closed) with match (some of the type's match fields, like {\"issue\": \"#12\"}, this project's #12). note (any target: why you watch, at most 200 characters) comes back when it fires or expires. It expires after 24 hours unless you say (expires, at most 7d), and then you're told it ended without firing. If it has happened already, create says so and makes none. kind list shows this session's watches; kind cancel takes one by id, or all; kind types lists the event types and their match fields; kind events reads this project's event log after a number (after), as you could watch it, and says where to read on.",
             schema_for_type::<WatchArgs>(),
         )
         .with_title("Watch for something to happen")
@@ -953,7 +953,7 @@ mod tests {
             "event pane.exited: a machine's own event, watched by an agent on that machine; a hosted session watches the cloud's types"
         );
         assert!(err(json!({ "event": "issue.closed", "note": "x".repeat(201) })).contains("at most 200"));
-        assert_eq!(err(json!({ "run": "run_1", "match": { "issue": "#1" } })), "match and note go with an event");
+        assert_eq!(err(json!({ "run": "run_1", "match": { "issue": "#1" } })), "match goes with an event");
         assert!(err(json!({ "event": "issue.closed", "match": { "project": "prj_2" } })).starts_with("match project"));
         assert!(err(json!({})).ends_with("room or event"));
     }
