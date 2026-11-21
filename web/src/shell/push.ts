@@ -60,11 +60,8 @@ function key(b64url: string): Uint8Array<ArrayBuffer> {
 }
 
 /** What control pushes an account about (`/api/push/prefs`). */
-export interface PushPrefs {
-  chat: boolean;
-  machines: boolean;
-  projects: boolean;
-}
+import type { PushPrefs } from "../shared/push-kinds";
+export type { PushPrefs };
 
 /** In control mode, subscribing goes to control instead (M21), and the
  * account chooses what it's pushed about. In the desktop app, which has no

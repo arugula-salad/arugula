@@ -9,7 +9,8 @@
 // preference rows too (Arugula #1108): what's on control's page is a ↗ row
 // to its dialog there, and Help is the palette's. Sign-in and security is
 // control's dialog drawn in place (Arugula #1311), a ↗ row while the hub
-// doesn't answer `/api/me/*` on the app's host. On #971's fixture page
+// doesn't answer `/api/me/*` on the app's host; so are what every device
+// is pushed about (Arugula #1310) and `/api/push/prefs`. On #971's fixture page
 // (move-to-project-page.tsx): the platform's answers are this spec's.
 import { devices, expect, test, type Page, type Route } from "@playwright/test";
 import { fixturePage } from "./fixture-page";
@@ -89,7 +90,8 @@ test.describe("on a computer", () => {
   });
 
   test("You: control's device and preference rows join it in one flat list, a device's are ↗ rows to control's page at their dialog, and there's no second index or Help", async ({ page }) => {
-    await open(page, "/settings");
+    // A hub that doesn't answer push's prefs on the app's host yet.
+    await open(page, "/settings", () => page.route(/\/api\/push\/prefs$/, (r) => r.fulfill({ status: 404, body: "" })));
     // One flat list: no band headings over the sections.
     await expect(page.locator(".settings-list .list-group-title")).toHaveCount(0);
     const ids = () => page.locator("[data-settings-row]").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.settingsRow));
@@ -116,7 +118,8 @@ test.describe("on a computer", () => {
     const out = account.locator("[data-settings-control]");
     await expect(out).toHaveText(["Machines", "Teams", "Shared Docs"].map((t) => new RegExp(`^${t}`)));
     expect(await out.evaluateAll((els) => els.map((e) => (e as HTMLAnchorElement).href))).toEqual(["devices", "teams", "shared-docs"].map((h) => `${origin}/#${h}`));
-    // Phones and browsers: This device and All your devices, as one, on control's page.
+    // Phones and browsers, while the hub doesn't answer its prefs here: This
+    // device and All your devices, as one, on control's page.
     await row(page, "push").click();
     const push = section(page, "push").locator("[data-settings-control]");
     await expect(push).toHaveCount(2);
@@ -190,6 +193,35 @@ test.describe("on a computer", () => {
     await expect(out).toHaveText([/^Sign-in and account/]);
     await expect(out).toHaveAttribute("href", `${new URL(page.url()).origin}/#account`);
     await expect(sec.locator("[data-passkeys]")).toHaveCount(0);
+  });
+
+  test("You: Phones and browsers sets what every device is pushed about in place; this device's switch and the test stay on control's page (Arugula #1310)", async ({ page }) => {
+    const sent: unknown[] = [];
+    let prefs = { chat: true, machines: true, projects: false };
+    await open(page, "/settings/you/push", () =>
+      page.route(/\/api\/push\/prefs$/, (r) => {
+        if (r.request().method() === "POST") {
+          const body = r.request().postDataJSON() as Partial<typeof prefs>;
+          sent.push(body);
+          prefs = { ...prefs, ...body };
+        }
+        return json(r, prefs);
+      }),
+    );
+    const push = section(page, "push");
+    await expect(row(page, "push").locator(".list-row-detail")).toHaveText("Pushed: Chat, Machines");
+    const kinds = push.locator("[data-push-kind]");
+    await expect(kinds).toHaveCount(3);
+    await expect(push.locator('[data-push-kind="chat"]')).toBeChecked();
+    await expect(push.locator('[data-push-kind="projects"]')).not.toBeChecked();
+    await push.locator('[data-push-kind="projects"]').click();
+    await expect(push.locator('[data-push-kind="projects"]')).toBeChecked();
+    await expect(row(page, "push").locator(".list-row-detail")).toHaveText("Pushed: Everything");
+    expect(sent).toEqual([{ projects: true }]);
+    // This device: one ↗ row to control's push settings.
+    const out = push.locator("[data-settings-control]");
+    await expect(out).toHaveText([/^Notify this device/]);
+    await expect(out).toHaveAttribute("href", `${new URL(page.url()).origin}/#settings=push`);
   });
 
   test("Status: on hosted Arugula your picture's menu and You link status.arugula.io in a new tab; on a control you run there's none (Arugula #1176)", async ({ page, context }) => {

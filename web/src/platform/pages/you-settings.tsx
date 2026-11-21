@@ -14,9 +14,10 @@
 // spent (M231). Plan and billing are each owner's, in Team and billing.
 // On hosted Arugula, its status page too (Arugula #1176).
 //
-// Push is control's to set: a device subscribes with its own keys, and the
-// hub answers push settings only there. Help isn't a section: it's in the
-// command palette.
+// Push on this device is control's to set: a device subscribes with its
+// own keys, on control's origin (aru-081), so that's a ↗ row; what every
+// device is pushed about is drawn in place (./you-push.tsx, Arugula #1310).
+// Help isn't a section: it's in the command palette.
 
 import { onAppearance, palette, appearance, FINISHES } from "../../shared/appearance";
 import { EDITORS, editorShown, setEditorPref, type Editor } from "../../shared/editor-pref";
@@ -37,6 +38,7 @@ import { ControlRow } from "../settings/owner-machines";
 import { statusPage } from "../status-page";
 import { ExternalIcon } from "../../shared/ui/icons";
 import { joined } from "../settings/summary";
+import { PhonesAndBrowsers } from "./you-push";
 import { SignInAndSecurity } from "./you-security";
 
 export function YouSettings() {
@@ -54,25 +56,6 @@ export function YouSettings() {
       <AgentTokens />
       <ClaudeSettings me={session.me?.account} />
     </>
-  );
-}
-
-/** Whether this device is pushed, and what every device you turned on is
- * pushed about: control's, where the device's keys are. */
-function PhonesAndBrowsers() {
-  return (
-    <Section
-      id="push"
-      title="Phones and browsers"
-      summary="On your machines page"
-      lede="Which of your devices are notified, and what about."
-      more={<p>Each device turns itself on with its own keys, so these open your machines page.</p>}
-    >
-      <ul class="platform-list settings-rows">
-        <ControlRow href={`${controlOrigin()}/#settings=push`} label="Notify this device" why="Turn this browser or phone on or off" hook="push" />
-        <ControlRow href={`${controlOrigin()}/#settings=push`} label="What every device is pushed about" why="Chat, your machines, your projects; and a test notification" hook="push" />
-      </ul>
-    </Section>
   );
 }
 
