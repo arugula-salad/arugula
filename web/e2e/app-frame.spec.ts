@@ -103,26 +103,18 @@ test.describe("on a computer", () => {
     await expect(rail(page, "build").locator(".ws-rail-count")).toHaveText("@4");
   });
 
-  test("a team's settings and members are a click from the project's Overrides: the links in sight", async ({ page }) => {
+  test("a team's defaults are a click from a project's setting that follows them (Arugula #1323)", async ({ page }) => {
     await openApp(page, () => `/p/${P}/boards`);
     // The rail's Settings is Settings' Project scope, at the project you're in (Arugula #1104).
     await rail(page, "settings").click();
     await expect(page).toHaveURL(new RegExp(`/settings/project/${P}[^/]*$`));
-    await page.locator('[data-settings-row="overrides"]').click();
-    await expect(page).toHaveURL(new RegExp(`/settings/project/${P}[^/]*/overrides$`));
-    const settings = page.locator("[data-overrides-team-settings]");
-    await expect(settings).toHaveAttribute("href", /^\/settings\/team\/tm_1[^/]*$/);
-    await settings.click();
+    await page.locator('[data-settings-row="agents"]').click();
+    const line = page.locator('[data-team-default="agents_model"]');
+    await expect(line).toHaveText("Team default · follows Arugula team");
+    const defaults = line.locator("[data-team-default-owner]");
+    await expect(defaults).toHaveAttribute("href", /^\/settings\/team\/tm_1[^/]*\/defaults$/);
+    await defaults.click();
     await expect(page.locator('[data-owner-settings="tm_1"] [data-settings-scope="team"]')).toHaveAttribute("aria-selected", "true");
-    // Back to the project's settings (its old address lands there), for the other.
-    await page.goto(`/p/${P}/settings`);
-    await expect(page).toHaveURL(new RegExp(`/settings/project/${P}[^/]*$`));
-    await page.locator('[data-settings-row="overrides"]').click();
-    const members = page.locator("[data-overrides-members]");
-    await expect(members).toHaveAttribute("href", /^\/t\/tm_1[^/]*\/members$/);
-    await members.click();
-    await expect(page).toHaveURL(/\/t\/tm_1[^/]*\/members$/);
-    await expect(page.locator('[data-team-page="tm_1"][data-team-tab="members"]')).toBeVisible();
   });
 
   test("your picture's menu is your name, Send feedback… and Sign out; Settings is the rail's; presence is Chat's (Arugula #1079)", async ({ page }) => {

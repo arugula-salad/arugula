@@ -4,7 +4,7 @@
 // link opens it; the old addresses (a project's settings, Personal's, a
 // team's Settings tab, `#section`) land in their scope. On a phone, the
 // list, then a section full width with a way back. The Project scope's 17
-// sections are 11 rows in a flat list (Arugula #1105), and an old section's
+// sections are 10 rows in a flat list (Arugula #1105, #1323), and an old section's
 // address lands on the row it's part of. You holds control's device and
 // preference rows too (Arugula #1108): what's on control's page is a ↗ row
 // to its dialog there, and Help is the palette's. On #971's fixture page
@@ -241,11 +241,9 @@ test.describe("a project's settings", () => {
     await open(page, `/settings/project/${SITE}`, () => project(page));
     await expect(page.locator(".settings-list .list-group-title")).toHaveCount(0);
     await expect(row(page, "spend")).toBeVisible();
-    // Apps from products, the eleventh, shows once a product keeps one here.
+    // Apps from products, the tenth, shows once a product keeps one here.
     const rows = await page.locator("[data-settings-row]").evaluateAll((els) => els.map((e) => e.getAttribute("data-settings-row")));
-    expect(rows).toEqual(["general", "access", "overrides", "repos", "issues", "ci-alerts", "runs", "agents", "secrets", "spend"]);
-    // A team's project: its defaults are the team's.
-    await expect(row(page, "overrides").locator(".list-row-title")).toHaveText("Team defaults");
+    expect(rows).toEqual(["general", "access", "repos", "issues", "ci-alerts", "runs", "agents", "secrets", "spend"]);
     await expect(row(page, "repos").locator(".list-row-detail")).toHaveText("acme/site");
     await expect(row(page, "agents").locator(".list-row-detail")).toHaveText("The strongest (Opus) · 1 token");
     await expect(row(page, "secrets").locator(".list-row-detail")).toHaveText("No environments · 1 secret");
@@ -272,6 +270,33 @@ test.describe("a project's settings", () => {
     await expect(section(page, "agents").locator('[data-settings-part="agent-model"]')).toBeVisible();
     await page.goto(`/settings/project/${SITE}/ci-alerts`);
     await expect(section(page, "ci-alerts")).toBeVisible();
+  });
+
+  test("a setting a team default covers says it follows the team or is set here, and Reset clears its own (Arugula #1323)", async ({ page }) => {
+    const sent: unknown[] = [];
+    let mine: unknown[] = [{ key: "agents_model", value: "sonnet", source: "project" }];
+    await open(page, `/settings/project/${SITE}/overrides`, () =>
+      Promise.all([
+        project(page),
+        page.route(/\/api\/owners\/tm_1\/settings$/, (r) => json(r, [{ key: "agents_model", value: "opus", source: "owner" }])),
+        page.route(new RegExp(`/api/projects/${SITE}/settings$`), (r) => {
+          if (r.request().method() === "PUT") {
+            sent.push(r.request().postDataJSON());
+            mine = [{ key: "agents_model", value: "opus", source: "owner" }];
+            return json(r, {});
+          }
+          return json(r, mine);
+        }),
+      ]),
+    );
+    // The Overrides section went: its address lands on the first such setting's section.
+    await expect(page).toHaveURL(new RegExp(`/settings/project/${SITE}[^/]*/issues$`));
+    await row(page, "agents").click();
+    const line = page.locator('[data-team-default="agents_model"]');
+    await expect(line).toHaveText("Set here · team default is Opus · Reset");
+    await line.locator('[data-team-default-reset="agents_model"]').click();
+    await expect(line).toHaveText("Team default · follows Acme");
+    expect(sent).toEqual([{ key: "agents_model", value: null }]);
   });
 });
 

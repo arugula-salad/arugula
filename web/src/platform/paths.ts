@@ -427,13 +427,16 @@ function withOldSection(r: SettingsRoute | null, hash: string): SettingsRoute | 
 }
 
 /** A project's sections that are parts of others (Arugula #1105): the
- * section each is in now. */
+ * section each is in now. Overrides went (Arugula #1323): its address
+ * lands on the first setting that says whether it follows a default. */
 const MOVED: Record<string, string> = {
   plane: "repos",
   boards: "issues",
   size: "runs",
   finish: "runs",
   "agent-model": "agents",
+  "agent-workspace": "agents",
+  overrides: "issues",
   environments: "secrets",
 };
 

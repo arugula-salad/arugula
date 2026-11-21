@@ -202,14 +202,16 @@ export async function send(list: Write[], put: (w: Write) => Promise<unknown>): 
   return { left, failed };
 }
 
-/** A project's Overrides line for a key: "Overridden: …", or which
- * default it's using. `team`: the owner's name, when it's a team. */
-export function overrideLine(s: EffectiveSetting | undefined, key: Key, team: string | null, name?: (id: string) => string | undefined): { overridden: boolean; text: string } {
-  const v = (s?.value ?? infoOf(key).builtin) as Value;
-  const said = words(key, v, name);
-  if (s?.source === "project") return { overridden: true, text: `Overridden: ${said}` };
-  if (s?.source === "owner") return { overridden: false, text: `${team ? "Using team default" : "Using your default"}: ${said}` };
-  return { overridden: false, text: `Using the default: ${said}` };
+/** What a project's setting says under its label (Arugula #1323): it
+ * follows its owner's default, or it's set here, and to what the default
+ * is. `team`: the owner's name, when it's a team. A key no owner sets
+ * (`agents_workspace`) follows nothing: null. */
+export function teamLine(layers: Layers, project: string, key: Key, team: string | null, name?: (id: string) => string | undefined): { own: boolean; text: string } | null {
+  if (!infoOf(key).owner) return null;
+  const whose = team ? "Team default" : "Your default";
+  if (settingOf(layers.projects[project], key)?.source === "project")
+    return { own: true, text: `Set here · ${whose.toLowerCase()} is ${words(key, defaultOf(layers, {}, key), name)}` };
+  return { own: false, text: `${whose} · follows ${team ?? "your defaults"}` };
 }
 
 /** A select's choices: the list, with the value a cell has if the list

@@ -911,19 +911,9 @@
   box-shadow: inset 2px 0 0 var(--warn);
 }
 
-.platform .overrides-rows > li {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-
-.platform .overrides-rows > li > b {
-  width: 160px;
-  flex: none;
-}
-
-.platform .overrides-rows > li > [data-override-line] {
-  flex: 1;
+/* A setting's line under its label: Team default, or Set here (Arugula #1323). */
+.platform .settings-team-default {
+  margin: 0 0 var(--space-2);
 }
 
 /* Hover's tint is see-through: the pinned columns stay opaque over it. */

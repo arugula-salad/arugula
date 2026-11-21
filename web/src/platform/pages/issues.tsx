@@ -30,6 +30,7 @@ import { issueTone } from "../swarm";
 import { ThreadUnread } from "../thread-unread";
 import { SectionHead } from "../../shared/ui/section-head";
 import { Missing } from "./project";
+import { reread, TeamDefault } from "../settings/team-default";
 import { Caret, ExternalIcon } from "../../shared/ui/icons";
 
 /** Who's in a project: its team's roster, or its one person. */
@@ -376,8 +377,9 @@ function IssueRow({ p, i, nameOf, label }: { p: PlatformProject; i: NativeIssue;
 
 /** Where the project's new issues go (M195), in its settings (UI audit
  * #163): kept here, or on its linked repos on GitHub. Owners and editors
- * choose; it starts on GitHub while the project has a linked repo. Nothing
- * while issues are off for the reader. */
+ * choose; it starts on GitHub while the project has a linked repo. Under
+ * it, whether it follows its owner's default or is set here (Arugula #1323,
+ * ../settings/team-default). Nothing while issues are off for the reader. */
 export function IssueHomeSetting({ p }: { p: PlatformProject }) {
   const [home, set] = useHome(p.id);
   if (!home) return null;
@@ -385,6 +387,7 @@ export function IssueHomeSetting({ p }: { p: PlatformProject }) {
   const choose = async (h: string | null) => {
     try {
       set(await issues.setHome(p.id, h));
+      void reread(p.id);
     } catch (e) {
       toast(`Couldn't change it: ${(e as Error).message}`);
     }
@@ -400,6 +403,7 @@ export function IssueHomeSetting({ p }: { p: PlatformProject }) {
         <p class="dim">Kept here: this project has no linked GitHub repo, so its issues are its own.</p>
       ) : (
         <>
+          <TeamDefault p={p} k="issue_home" reset={() => void issues.home(p.id).then(set, () => {})} />
           <label class="control-confirm">
             <input type="radio" name="issue-home" checked={home.home === "native"} disabled={!writer} data-issue-home-native onChange={() => void choose("native")} /> Here, on Arugula
           </label>
@@ -407,20 +411,6 @@ export function IssueHomeSetting({ p }: { p: PlatformProject }) {
             <input type="radio" name="issue-home" checked={home.home === "github"} disabled={!writer} data-issue-home-github onChange={() => void choose("github")} /> On GitHub,
             on {n === 1 ? home.repos[0] : `its ${n} linked repos`}
           </label>
-          <p class="dim">
-            {home.chosen ? (
-              <>
-                Chosen for this project.{" "}
-                {writer && (
-                  <button class="link" data-issue-home-reset onClick={() => void choose(null)}>
-                    Back to the default
-                  </button>
-                )}
-              </>
-            ) : (
-              "The default for a project with a linked repo."
-            )}
-          </p>
         </>
       )}
     </Section>
