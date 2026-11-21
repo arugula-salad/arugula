@@ -1,10 +1,19 @@
 //! Local watches (https://app.arugula.io/issues/iss_ad072f84ac1c0fdffb66fbdb982902e4):
 //! `watch` on the event catalog's daemon types (`agent.idle`,
-//! `agent.needs_input`, `pane.command.ended`, `pane.exited`), held by the
-//! daemon itself, so they work with no account. There is no daemon-side
-//! event log: a watch is matched against the same pane and block states
-//! `wait` reads (`api::attention_of`, a pane's `status`), checked when the
-//! mux says something happened to its pane.
+//! `agent.needs_input`, `pane.command.ended`, `pane.exited`,
+//! `pane.output.matched`), held by the daemon itself, so they work with no
+//! account. There is no daemon-side event log: a watch is matched against
+//! the same pane and block states `wait` reads (`api::attention_of`, a
+//! pane's `status`), checked when the mux says something happened to its
+//! pane.
+//!
+//! `pane.output.matched` is matched against the pane's output instead, not
+//! its state: a watch keeps the stream offset it has read to, which starts
+//! at the pane's end when it's made, so what was on screen or in scrollback
+//! never fires it, and [`scan`] reads the lines past it, ANSI stripped as
+//! `wait`'s `until: match` strips them. The offset is kept in [`FILE`] now
+//! and then; after a restart the lines since are read again, which can't
+//! match, since a watch that matched is gone.
 //!
 //! The rules are a cloud watch's: it belongs to the Claude Code session that
 //! made it, fires once, expires (24 hours unless told, at most 7 days) with
@@ -24,7 +33,10 @@
 
 use std::{
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicI64, Ordering},
+    },
     time::Duration,
 };
 
@@ -33,9 +45,12 @@ use arugula_control_wire::watch::{
     EXPIRES_DEFAULT_MS, EXPIRES_MAX_MS, PER_SESSION, WatchMade, WatchRow, WatchState, WatchTag,
 };
 use arugula_proto::{Attention, EventKind, PaneId};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast::error::RecvError;
 use tracing::warn;
+
+use arugula_mux::store::PaneLog;
 
 use crate::{mux::Api, server::App};
 
@@ -50,8 +65,23 @@ const RETRY: Duration = Duration::from_secs(60);
 /// background work ends, which the mux has no event for.
 const SWEEP: Duration = Duration::from_secs(30);
 
+/// How often the output of a pane with an output watch is read: the mux
+/// says nothing when a pane prints.
+const OUTPUT_POLL: Duration = Duration::from_secs(2);
+
+/// How often a watch's offset in a pane's output is kept, while it moves.
+const CHECKPOINT_MS: i64 = 30_000;
+
+/// The longest a line without its end is held back to be read whole, in
+/// bytes: a longer one (a progress bar that only returns its carriage) is
+/// read as it stands.
+const TAIL_MAX: usize = 64 * 1024;
+
 /// The longest a title is quoted in a message, in characters.
 const TITLE_MAX: usize = 80;
+
+/// The longest a matching line is quoted in a message, in characters.
+const LINE_MAX: usize = 200;
 
 /// The daemon's types in the event catalog, as a watch waits for them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -65,6 +95,8 @@ pub enum On {
     CommandEnded,
     /// `pane.exited`.
     Exited,
+    /// `pane.output.matched`: a new line of its output matches a pattern.
+    Output,
 }
 
 impl On {
@@ -75,6 +107,7 @@ impl On {
             "agent.needs_input" => On::NeedsInput,
             "pane.command.ended" => On::CommandEnded,
             "pane.exited" => On::Exited,
+            "pane.output.matched" => On::Output,
             _ => return None,
         })
     }
@@ -86,6 +119,7 @@ impl On {
             On::NeedsInput => "agent.needs_input",
             On::CommandEnded => "pane.command.ended",
             On::Exited => "pane.exited",
+            On::Output => "pane.output.matched",
         }
     }
 
@@ -105,6 +139,8 @@ pub struct Ask {
     pub pane: PaneId,
     /// Only an exit with this code (`pane.command.ended`, `pane.exited`).
     pub exit: Option<i32>,
+    /// A regex (`pane.output.matched`): a line of new output it matches.
+    pub pattern: Option<String>,
     pub note: Option<String>,
     pub expires_in_ms: Option<u64>,
     /// A `wait`'s: its message goes to the call, not the session's queue.
@@ -125,6 +161,8 @@ pub struct Seen {
     pub exited: Option<Option<i32>>,
     /// It closed, or there's no such pane.
     pub gone: bool,
+    /// Where its output stands: the offset a watch on it reads from.
+    pub out_at: Option<u64>,
 }
 
 /// One watch.
@@ -138,6 +176,12 @@ struct Watch {
     pane: PaneId,
     #[serde(default)]
     exit: Option<i32>,
+    /// The regex of a `pane.output.matched`.
+    #[serde(default)]
+    pattern: Option<String>,
+    /// How far into the pane's output it has read.
+    #[serde(default)]
+    at: Option<u64>,
     #[serde(default)]
     note: Option<String>,
     /// The pane's title, as last seen.
@@ -182,6 +226,10 @@ impl Watch {
     /// What it waits for, as `list` says it.
     fn target(&self) -> String {
         let exit = self.exit.map(|e| format!(" with exit {e}")).unwrap_or_default();
+        let exit = match &self.pattern {
+            Some(p) => format!(" matching {p:?}"),
+            None => exit,
+        };
         format!("{} on pane %{}{exit} (on this machine)", self.on.name(), self.pane)
     }
 
@@ -198,6 +246,8 @@ impl Watch {
                 seen.ended.filter(|c| exit_ok(*c)).map(|c| format!("a command in its shell finished, {}", code(c)))
             }
             On::Exited => seen.exited.filter(|c| exit_ok(*c)).map(|c| format!("its process exited, {}", code(c))),
+            // Its output is read as it comes ([`Store::scanned`]), never as it stands.
+            On::Output => None,
         }
     }
 
@@ -247,6 +297,8 @@ pub struct Store {
     changed: tokio::sync::Notify,
     /// A watch fired or ended: a `wait` on one looks ([`Store::fired`]).
     told: tokio::sync::Notify,
+    /// When an output watch's offset was last kept, in ms.
+    checkpoint: AtomicI64,
 }
 
 impl Store {
@@ -293,6 +345,10 @@ impl Store {
         if seen.gone {
             return Err(format!("pane {}: no such pane or block on this machine", ask.pane));
         }
+        if ask.on == On::Output {
+            let p = ask.pattern.as_deref().ok_or("pane.output.matched needs match pattern: a regex")?;
+            Regex::new(p).map_err(|e| format!("match pattern: {e}"))?;
+        }
         let expires_in = ask.expires_in_ms.unwrap_or(EXPIRES_DEFAULT_MS).min(EXPIRES_MAX_MS);
         let w = Watch {
             id: new_id(),
@@ -301,6 +357,8 @@ impl Store {
             on: ask.on,
             pane: ask.pane,
             exit: ask.exit,
+            pattern: ask.pattern,
+            at: seen.out_at,
             note: ask.note,
             title: title(seen.title.as_deref()),
             created_ms: now,
@@ -388,6 +446,50 @@ impl Store {
             any |= all.len() != before;
             (any, any)
         })
+    }
+
+    /// The output watches that are live: the watch, its pane, how far it
+    /// has read and its pattern.
+    fn outputs(&self) -> Vec<(String, PaneId, u64, String)> {
+        let w = self.watches.lock().unwrap();
+        w.iter()
+            .filter(|w| w.live() && w.on == On::Output)
+            .filter_map(|w| Some((w.id.clone(), w.pane, w.at?, w.pattern.clone()?)))
+            .collect()
+    }
+
+    /// Output watch `id` read its pane's output as far as `at`, and found
+    /// `hit`, a line, or not. A watch that found one fires; a pane's
+    /// `title` as it is now. Whether it fired.
+    fn scanned(&self, id: &str, at: u64, hit: Option<&str>, title_now: Option<&str>, now: i64) -> bool {
+        let fired = self.with(|all| {
+            let Some(w) = all.iter_mut().find(|w| w.id == id && w.live()) else { return (false, false) };
+            if let Some(t) = title(title_now) {
+                w.title = Some(t);
+            }
+            let moved = w.at.is_none_or(|a| at > a);
+            w.at = Some(at);
+            let Some(line) = hit else {
+                // Only now and then kept: read again, a line can't match
+                // that didn't.
+                let due = moved && now.saturating_sub(self.checkpoint.load(Ordering::Relaxed)) >= CHECKPOINT_MS;
+                if due {
+                    self.checkpoint.store(now, Ordering::Relaxed);
+                }
+                return (false, due);
+            };
+            let mut line: String = line.trim().chars().take(LINE_MAX + 1).collect();
+            if line.chars().count() > LINE_MAX {
+                line = line.chars().take(LINE_MAX).collect::<String>() + "…";
+            }
+            let head = format!("{}: {}: {line}", w.on.name(), w.pane_words());
+            w.tell(WatchState::Fired, head, now);
+            (true, true)
+        });
+        if fired {
+            self.told.notify_waiters();
+        }
+        fired
     }
 
     /// When the next live watch expires.
@@ -549,6 +651,7 @@ pub async fn seen_now(app: &App, pane: PaneId, on: On) -> Seen {
     let s = h.status();
     match on {
         On::Exited => seen.exited = s.exited,
+        On::Output => seen.out_at = Some(s.end),
         // A command that ended since the last input, as `wait` takes it.
         _ => {
             if s.current.is_none()
@@ -615,6 +718,36 @@ async fn check_all(app: &App, only_attention: bool) {
     }
 }
 
+/// Read the lines of the pane's output in `dir` from `from` on: how far it
+/// read, and the first line `re` matches, if any. A line without its end
+/// yet is matched as it stands but read again, so one printed in pieces is
+/// seen whole. None when there's nothing new.
+fn scan(dir: PathBuf, from: u64, re: &Regex) -> Option<(u64, Option<String>)> {
+    let log = PaneLog::open(dir).ok()?;
+    // The log can be behind the pane's end: what's past it is read later.
+    if from >= log.end() {
+        return None;
+    }
+    let (start, bytes) = log.read_from(from).ok()?;
+    let hit = crate::osc::strip(&bytes).lines().find(|l| re.is_match(l)).map(str::to_owned);
+    let whole = bytes.iter().rposition(|b| *b == b'\n').map_or(0, |i| i + 1);
+    let whole = if bytes.len() - whole > TAIL_MAX || hit.is_some() { bytes.len() } else { whole };
+    Some((start + whole as u64, hit))
+}
+
+/// Read the new output of every pane an output watch is on.
+async fn scan_outputs(app: &App) {
+    for (id, pane, at, pattern) in app.local_watches.outputs() {
+        let Ok(re) = Regex::new(&pattern) else { continue };
+        let dir = app.mux.store.pane_dir(pane);
+        let Some((to, hit)) = crate::task::spawn_blocking(move || scan(dir, at, &re)).await.ok().flatten() else {
+            continue;
+        };
+        let titled = if hit.is_some() { now_titled(app, pane).await.title } else { None };
+        app.local_watches.scanned(&id, to, hit.as_deref(), titled.as_deref(), now());
+    }
+}
+
 /// Send the messages no session took yet, each to its session's queue as
 /// a cloud watch's goes.
 async fn deliver_all(app: &App) {
@@ -646,6 +779,7 @@ pub async fn keep(app: Arc<App>) {
     loop {
         let at = now();
         app.local_watches.expire(at);
+        scan_outputs(&app).await;
         deliver_all(&app).await;
         let live = app.local_watches.live();
         let mut wait = Duration::from_secs(3600);
@@ -654,6 +788,9 @@ pub async fn keep(app: Arc<App>) {
         }
         if live.iter().any(|(_, on)| on.attention()) {
             wait = wait.min(SWEEP);
+        }
+        if live.iter().any(|(_, on)| *on == On::Output) {
+            wait = wait.min(OUTPUT_POLL);
         }
         if let Some(e) = app.local_watches.next_expiry() {
             wait = wait.min(Duration::from_millis(u64::try_from(e.saturating_sub(at)).unwrap_or(0)));
@@ -692,10 +829,40 @@ mod tests {
             on,
             pane,
             exit: None,
+            pattern: None,
             note: Some("ship it once it's done".into()),
             expires_in_ms: None,
             wait: false,
         }
+    }
+
+    fn output(pattern: &str) -> Ask {
+        Ask { pattern: Some(pattern.into()), note: None, ..ask(On::Output, 4) }
+    }
+
+    /// A pane's log dir with `lines` printed, and where its output stands.
+    fn printed(name: &str, lines: &str) -> (PathBuf, u64) {
+        let dir = std::env::temp_dir().join(format!("local-watches-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut log = PaneLog::open(dir.clone()).unwrap();
+        log.append(lines.as_bytes()).unwrap();
+        (dir, log.end())
+    }
+
+    fn print(dir: &Path, more: &str) {
+        PaneLog::open(dir.to_owned()).unwrap().append(more.as_bytes()).unwrap();
+    }
+
+    /// One read of the log for watch `id`, as `scan_outputs` makes it.
+    fn read(s: &Store, dir: &Path, now: i64) -> bool {
+        let mut fired = false;
+        for (id, _, at, pattern) in s.outputs() {
+            let re = Regex::new(&pattern).unwrap();
+            if let Some((to, hit)) = scan(dir.to_owned(), at, &re) {
+                fired |= s.scanned(&id, to, hit.as_deref(), Some("log stream"), now);
+            }
+        }
+        fired
     }
 
     fn working() -> Seen {
@@ -892,6 +1059,78 @@ mod tests {
         );
         assert!(s.see(4, &idle(), 2));
         assert_eq!(Store::open(&dir).untaken().len(), 2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_output_watch_reads_new_lines_only_and_fires_once() {
+        let (dir, end) = printed("new", "predicate: ERROR boom\nold line\n");
+        let s = Store::default();
+        let seen = Seen { out_at: Some(end), title: Some("log stream".into()), ..Seen::default() };
+        let made = s.make(output("ERROR"), &seen, 0).unwrap();
+        assert_eq!(made.state, WatchState::Live, "old output isn't already met");
+        assert!(!read(&s, &dir, 1), "a line printed before the watch never fires it");
+        print(&dir, "\x1b[31mfine\x1b[0m\nall quiet\n");
+        assert!(!read(&s, &dir, 2));
+        print(&dir, "an \x1b[1mERROR\x1b[0m: it broke\nERROR again\n");
+        assert!(read(&s, &dir, 3));
+        assert_eq!(texts(&s), ["pane.output.matched: pane %4 (\"log stream\"): an ERROR: it broke"]);
+        assert!(s.list(None).is_empty());
+        print(&dir, "ERROR a third\n");
+        assert!(!read(&s, &dir, 4), "once");
+        assert_eq!(texts(&s).len(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_output_watch_sees_a_line_printed_in_pieces_and_quotes_it_short() {
+        let (dir, end) = printed("pieces", "");
+        let s = Store::default();
+        s.make(output("^done: 12$"), &Seen { out_at: Some(end), ..Seen::default() }, 0).unwrap();
+        print(&dir, "done: 1");
+        assert!(!read(&s, &dir, 1), "the line so far isn't it");
+        print(&dir, "2\n");
+        assert!(read(&s, &dir, 2));
+        assert_eq!(texts(&s), ["pane.output.matched: pane %4 (\"log stream\"): done: 12"]);
+        let s = Store::default();
+        s.make(output("x"), &Seen { out_at: Some(end), ..Seen::default() }, 0).unwrap();
+        print(&dir, &format!("  {}  \n", "x".repeat(300)));
+        assert!(read(&s, &dir, 3));
+        let t = &texts(&s)[0];
+        assert_eq!(t.chars().filter(|c| *c == 'x').count(), 200, "{t}");
+        assert!(t.ends_with('…'), "{t}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_bad_regex_is_refused_at_create() {
+        let s = Store::default();
+        let seen = Seen { out_at: Some(0), ..Seen::default() };
+        let e = s.make(output("(unclosed"), &seen, 0).unwrap_err();
+        assert!(e.starts_with("match pattern: regex parse error"), "{e}");
+        assert!(s.make(Ask { pattern: None, ..output("") }, &seen, 0).unwrap_err().contains("needs match pattern"));
+        assert!(s.list(None).is_empty());
+    }
+
+    #[test]
+    fn an_output_watch_resumes_from_where_it_read_after_a_restart() {
+        let state = std::env::temp_dir().join(format!("local-watches-out-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&state);
+        std::fs::create_dir_all(&state).unwrap();
+        let (dir, end) = printed("restart", "ERROR before\n");
+        let s = Store::open(&state);
+        s.make(output("ERROR"), &Seen { out_at: Some(end), ..Seen::default() }, 0).unwrap();
+        print(&dir, "nothing yet\n");
+        assert!(!read(&s, &dir, 1));
+        drop(s);
+        // Down for a while: the daemon's pane printed, and its watch is kept.
+        print(&dir, "ERROR while down\n");
+        let s = Store::open(&state);
+        assert_eq!(s.list(None).len(), 1);
+        assert!(read(&s, &dir, 2), "output since the watch was made counts, kept offset or not");
+        assert_eq!(texts(&s), ["pane.output.matched: pane %4 (\"log stream\"): ERROR while down"]);
+        assert_eq!(Store::open(&state).untaken().len(), 1, "its message is kept");
+        let _ = std::fs::remove_dir_all(&state);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
