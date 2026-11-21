@@ -50,7 +50,14 @@ final class FlowTests: XCTestCase {
         clearAlerts()
         let t = tab(app, name)
         XCTAssertTrue(t.shows(within: 10), "no \(name) tab: \(app.debugDescription)")
-        t.tap()
+        // A tap as a screen slides back can be lost: again until it's picked.
+        for _ in 0..<3 {
+            t.tap()
+            let by = Date().addingTimeInterval(3)
+            while !t.isSelected && Date() < by { usleep(200_000) }
+            if t.isSelected { return }
+            clearAlerts()
+        }
     }
 
     /// Send what's in the room's draft. A tap while the on-screen keyboard is
