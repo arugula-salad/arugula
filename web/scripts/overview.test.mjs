@@ -6,7 +6,7 @@
 // "not yet". Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { asksYou, boardSays, inFlight, overviewOf, STATE_WORD, statsLine } from "../src/shell/swarm/overview.ts";
+import { asksYou, boardSays, groupByOwner, inFlight, overviewOf, STATE_WORD, statsLine } from "../src/shell/swarm/overview.ts";
 import { panesOf, sessionsByCard } from "../src/shared/project-sessions.ts";
 import { BY_CARD, PROJECT } from "./project-sessions.fixture.ts";
 
@@ -220,4 +220,14 @@ test("a board's lead stands as its session's panes on its machine, else as the h
   // Still its own session, only where it runs: never the board's thread.
   assert.deepEqual([gone.peek.key, gone.peek.where, gone.peek.panes.length], ["lead:m_ws:gone", "workstation", 0]);
   assert.equal(overviewOf(P, [view("brd_x", "X", [row("r1", "doing", 1)])], [], null, hostOf).boards[0].lead, undefined);
+});
+
+test("Needs you groups by owner: yours first, then people by how many asks and then name, each in its order", () => {
+  const ask = (id, owner) => ({ id, owner });
+  const groups = groupByOwner([ask(1, "zed"), ask(2, "amy"), ask(3, null), ask(4, "zed"), ask(5, "bo"), ask(6, null), ask(7, "amy"), ask(8, "cy")], (a) => a.owner);
+  assert.deepEqual(groups.map((g) => [g.name, g.items.map((a) => a.id)]), [[null, [3, 6]], ["amy", [2, 7]], ["zed", [1, 4]], ["bo", [5]], ["cy", [8]]]);
+  // Without yours, no group of yours; only yours, one group with no name.
+  assert.deepEqual(groupByOwner([ask(1, "bo")], (a) => a.owner).map((g) => g.name), ["bo"]);
+  assert.deepEqual(groupByOwner([ask(1, null)], (a) => a.owner).map((g) => g.name), [null]);
+  assert.deepEqual(groupByOwner([], (a) => a.owner), []);
 });

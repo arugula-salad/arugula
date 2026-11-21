@@ -223,6 +223,49 @@ async function expectSpaced(page: Page) {
   expect(n!.x + n!.width <= line!.x || n!.y + n!.height <= line!.y || line!.y + line!.height <= n!.y).toBe(true);
 }
 
+type AskSpec = { host: string; person: { id: string; name: string; kind: "me" | "person" | "team" }; owner?: string; ask: string; watch?: boolean };
+/** Asks of made-up panes on the Overview's project, beside the daemon's own: the fleet takes them as it takes a fake one. A `watch` one is a session you only view. */
+async function asking(page: Page, specs: AskSpec[]) {
+  await page.evaluate(
+    ({ specs, P }) => {
+      const fleet = (window as unknown as { __app: { fleet: { inject(p: unknown[]): void; role(p: { host: string }): string } } }).__app.fleet;
+      const watched = new Set(specs.filter((s) => s.watch).map((s) => s.host));
+      const role = fleet.role.bind(fleet);
+      fleet.role = (p) => (watched.has(p.host) ? "viewer" : role(p));
+      fleet.inject(
+        specs.map((s, i) => ({
+          key: `${s.host}:${i + 1}`,
+          host: s.host,
+          id: i + 1,
+          session: { id: 1, name: "main" },
+          stale: false,
+          owner: s.owner,
+          person: s.person,
+          driver: null,
+          watchers: [],
+          unread: 0,
+          mention: false,
+          info: {
+            id: i + 1,
+            title: "claude",
+            kind: "agent",
+            attention: "needs_input",
+            session_project: { id: P, name: "Arugula" },
+            activity: { bps: 0, last_ms: Date.now() },
+            ask: { kind: "permission", id: `perm_${i}`, tool: "Bash", input: { command: s.ask }, message: "", suggestions: [] },
+            reason: { kind: "ask", since_ms: 1000 + i, headline: `Bash wants to run ${s.ask}`, bundle: `ask:${P}:${i}`, ask: { id: `perm_${i}`, what: "approve", agent: "claude", tool: "Bash" }, actions: ["allow", "deny"] },
+          },
+        })),
+      );
+    },
+    { specs, P },
+  );
+}
+const ME = { id: "me", name: "me", kind: "me" as const };
+const SAM = { id: "account:sam", name: "sam", kind: "person" as const };
+const JO = { id: "account:jo", name: "jo", kind: "person" as const };
+const INFRA = { id: "team:infra", name: "infra", kind: "team" as const };
+
 test.describe("on a computer", () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 
@@ -413,14 +456,18 @@ test.describe("on a computer", () => {
     const { term } = await overview(page);
     const needs = page.locator("[data-ov-needs]");
     // The agent finishing may put a Finished card there (Swarm's rail does); nothing asks yet.
-    await expect(needs.locator('.swarm-card[data-kind="ask"]')).toHaveCount(0);
+    await expect(needs.locator('[data-ov-ask][data-kind="ask"]')).toHaveCount(0);
     // Claude Code's question, asked in the agent's terminal.
     await page.evaluate(
       ({ term, line }) => fetch(`/api/panes/${term}/send`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: line, enter: true }) }),
       { term, line: `out=$(${cli} ask < ${hookInput}); echo "ONE[\${#out}]"; echo "$out" | grep -o '"Which [a-z ]*?":"[^"]*"'` },
     );
-    const card = needs.locator('.swarm-card[data-kind="ask"]');
-    await expect(card).toHaveCount(1, { timeout: 20_000 });
+    const row = needs.locator('[data-ov-ask][data-kind="ask"]');
+    await expect(row).toHaveCount(1, { timeout: 20_000 });
+    // A row is two lines until it's opened: its card is the row's body.
+    const card = row.locator(".swarm-card");
+    await expect(card).toHaveCount(0);
+    await row.locator(".ov-ask-row").click();
     // It names its card, and the card waits on you: its board opens by itself.
     await expect(card.locator("[data-card-work]")).toHaveText("#12 · Fix the installer");
     await expect(page.locator(`[data-ov-board="${B}"]`)).toHaveAttribute("data-ov-open", "");
@@ -436,7 +483,7 @@ test.describe("on a computer", () => {
     await page.waitForTimeout(400);
     await page.screenshot({ path: info.outputPath("overview-needs.png") });
     // Its title zooms to the work that asks: #12's (#1287), and Back comes home.
-    await card.locator(".ct").click();
+    await card.locator("[data-card-work]").click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/board/${B}[^/]*/card/row_b$`));
     await expect(page.locator('[data-ov-level-work="row_b"]')).toBeVisible();
     await page.goBack();
@@ -448,6 +495,67 @@ test.describe("on a computer", () => {
     await card.getByRole("button", { name: "Submit" }).click();
     await expect(tile(page, "row_b")).not.toHaveAttribute("data-ov-standing", "needs", { timeout: 20_000 });
     await expect.poll(() => page.evaluate((t) => (window as unknown as { __app: { text(p: number): string } }).__app.text(t), term)).toContain('"Which colour do you prefer?":"Blue"');
+  });
+
+  test("Needs you groups the asks by owner: yours first, then each person with a count, a team's box under its starter else its name (Arugula #1333)", async ({ page }) => {
+    await overview(page);
+    await asking(page, [
+      { host: "jo-box", person: JO, ask: "ls jo" },
+      { host: "sam-box", person: SAM, ask: "ls sam 1" },
+      { host: "sam-box-2", person: SAM, ask: "ls sam 2" },
+      { host: "build-1", person: INFRA, owner: "sam", ask: "make" },
+      { host: "build-2", person: INFRA, ask: "make all" },
+      { host: "mine", person: ME, ask: "ls mine" },
+    ]);
+    // The daemon's own agent may add a Finished row of yours: yours is counted by the asks only.
+    const heads = page.locator("[data-ov-needs] [data-ov-asks-head]");
+    await expect(heads.locator("> span:first-child")).toHaveText(["Yours", "sam", "infra", "jo"]);
+    await expect(heads.locator(".ov-asks-n")).toContainText(["", "3", "1", "1"]);
+    await expect(page.locator('[data-ov-asks="me"] [data-ov-ask][data-kind="ask"]')).toHaveCount(1);
+    await expect(page.locator('[data-ov-asks="sam"] [data-ov-ask]')).toHaveCount(3);
+  });
+
+  test("with every ask yours, Needs you has no heading", async ({ page }) => {
+    await overview(page);
+    await asking(page, [{ host: "mine", person: ME, ask: "ls mine" }]);
+    await expect(page.locator("[data-ov-needs] [data-ov-ask]")).toHaveCount(1);
+    await expect(page.locator("[data-ov-needs] [data-ov-asks-head]")).toHaveCount(0);
+  });
+
+  test("an ask is two lines until it's opened by a click or Enter, and its action exists only while it's open", async ({ page }) => {
+    await overview(page);
+    await asking(page, [{ host: "mine", person: ME, ask: "npm test" }]);
+    const row = page.locator('[data-ov-needs] [data-ov-ask][data-kind="ask"]');
+    const head = row.locator(".ov-ask-row");
+    await expect(head).toHaveAttribute("aria-expanded", "false");
+    await expect(head.locator(".ov-ask-q")).toContainText("npm test");
+    await expect(head.locator(".ov-ask-where")).toBeVisible();
+    const allow = row.getByRole("button", { name: "Allow", exact: true });
+    await expect(allow).toHaveCount(0);
+    await head.click();
+    await expect(head).toHaveAttribute("aria-expanded", "true");
+    await expect(allow).toBeVisible();
+    await head.click();
+    await expect(allow).toHaveCount(0);
+    // The keyboard: focus it, Enter opens, Space closes, Enter and Escape.
+    await head.focus();
+    await page.keyboard.press("Enter");
+    await expect(allow).toBeVisible();
+    await page.keyboard.press("Space");
+    await expect(allow).toHaveCount(0);
+    await page.keyboard.press("Enter");
+    await expect(allow).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(allow).toHaveCount(0);
+  });
+
+  test("a teammate's ask you only watch says an editor answers it, and has no action", async ({ page }) => {
+    await overview(page);
+    await asking(page, [{ host: "sam-box", person: SAM, ask: "ls sam", watch: true }]);
+    const row = page.locator('[data-ov-needs] [data-ov-ask][data-kind="ask"]');
+    await row.locator(".ov-ask-row").click();
+    await expect(row.locator(".ask-viewer")).toHaveText("You're watching this session: an editor answers it.");
+    await expect(row.getByRole("button", { name: /^(Allow|Deny|Answer)/ })).toHaveCount(0);
   });
 
   test("the card's drawer draws its session live, and its question at the top, as on the board", async ({ page }, info) => {
@@ -1069,5 +1177,15 @@ test.describe("on a phone", () => {
   test("on a phone a board's group title and count are apart, and a GitHub pointer is short and on one line", async ({ page }) => {
     await overview(page);
     await expectSpaced(page);
+  });
+
+  test("on a phone an ask's two lines fit the column and open in it (Arugula #1333)", async ({ page }) => {
+    await overview(page);
+    await asking(page, [{ host: "sam-box", person: SAM, ask: "a long command that goes on and on and on and on and on and on and on" }]);
+    const row = page.locator('[data-ov-needs] [data-ov-ask][data-kind="ask"]');
+    await row.locator(".ov-ask-row").click();
+    await expect(row.getByRole("button", { name: "Allow", exact: true })).toBeVisible();
+    const fits = await page.locator("[data-ov-needs]").evaluate((e) => e.scrollWidth <= e.clientWidth);
+    expect(fits).toBe(true);
   });
 });
