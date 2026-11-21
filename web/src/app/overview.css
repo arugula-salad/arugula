@@ -552,6 +552,22 @@ button.ov-peek:disabled {
   display: flex;
   flex-direction: column;
 }
+/* The who-line under the tabs (#1290): who the open tab talks to, and where a message goes. */
+.ov-who {
+  flex: none;
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+  border-bottom: 1px solid var(--line);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
+.ov-who:empty {
+  display: none;
+}
+.ov-who b {
+  color: var(--fg);
+  font-weight: 500;
+}
 .ov-talk-note {
   margin: 0;
   padding: var(--space-2) var(--space-3);

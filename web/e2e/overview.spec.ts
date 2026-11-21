@@ -391,6 +391,7 @@ test.describe("on a computer", () => {
     await expect(tab.locator("[data-ov-tab-close]")).toHaveCount(0);
     await expect(panel.locator("[data-ov-tab]").first()).toHaveAttribute("data-ov-tab", "staff:dm_cos");
     await expect(panel.locator('[data-ov-staff="dm_cos"]')).toContainText("3 boards moved since this morning.");
+    await expect(panel.locator('[data-ov-who="staff"]')).toHaveText("Talking to your chief of staff, cos on geek: a message goes straight to it.");
   });
 
   test("a card's row peeks at its agent, and a session on no card at its shell: last lines, a box that reaches them, Silence and Stop (Arugula #1271)", async ({ page }, info) => {
@@ -405,6 +406,9 @@ test.describe("on a computer", () => {
     await expect(peek.locator("[data-ov-peek-name]")).toHaveText("Agent");
     await expect(peek.locator("[data-ov-peek-where]")).not.toBeEmpty();
     await expect(peek.locator("[data-ov-peek-tail]")).toHaveAttribute("data-ov-peek-live", "");
+    // The who-line says it's that agent, and a message goes straight to it (#1290).
+    await expect(panel.locator('[data-ov-who="peek"]')).toContainText("Talking to Agent on");
+    await expect(panel.locator('[data-ov-who="peek"]')).toContainText("a message goes straight to this agent.");
     // The field stays where it is.
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*$`));
     // Its box goes in as its composer's does: the agent answers it.
@@ -508,7 +512,7 @@ test.describe("on a computer", () => {
     await expect(page.locator("[data-ov-boards]")).toBeVisible();
   });
 
-  test("a board's lead is a chip on its row, with its session's dot, name and machine, that opens the board's thread and doesn't toggle the row (Arugula #1272)", async ({ page }, info) => {
+  test("a board's lead is a chip that opens that agent, never the board's thread, which is the row's own button; the who-line says which (Arugula #1290)", async ({ page }, info) => {
     // Launch is led by the project's scratch session on the suite's daemon, which this page knows by its name; Later has no lead.
     let led: unknown;
     await overview(page, null, false, () => led);
@@ -519,25 +523,39 @@ test.describe("on a computer", () => {
     await page.reload();
     await expect(page.locator("[data-overview]")).toBeVisible({ timeout: 20_000 });
     await launchRoom(page);
-    const lead = page.locator(`[data-ov-board="${B}"] [data-ov-board-lead]`);
+    const row = page.locator(`[data-ov-board="${B}"]`);
+    const lead = row.locator("[data-ov-board-lead]");
     await expect(lead).toHaveAttribute("data-ov-board-lead", "scratch");
     await expect(lead.locator(".ov-lead-name")).toHaveText("scratch");
     await expect(lead.locator(".ov-lead-machine")).toHaveText(host);
     // Its session's panes are on this page, so its dot says how it stands.
     await expect(lead.locator("[data-ov-lead-standing]")).toHaveCount(1);
     await expect(page.locator(`[data-ov-board="${LATER}"] [data-ov-board-lead]`)).toHaveCount(0);
-    // With chat off it's a label, and a click on it doesn't toggle the row.
-    await expect(lead).not.toHaveRole("button");
-    await lead.click();
-    await expect(page.locator(`[data-ov-board="${B}"]`)).not.toHaveAttribute("data-ov-open", "");
+    // With chat on, every row has its thread button, led or not.
     await chatOn(page);
-    await expect(lead).toHaveRole("button");
+    await expect(row.locator("[data-ov-board-talk]")).toBeVisible();
+    await expect(page.locator(`[data-ov-board="${LATER}"] [data-ov-board-talk]`)).toBeVisible();
+    // The chip opens the lead's own session, and doesn't toggle the row.
     await lead.click();
     const panel = page.locator("[data-ov-panel]");
+    const selected = panel.locator('[role="tab"][aria-selected="true"]');
+    await expect(selected).toHaveText("scratch");
+    await expect(panel.locator(`[data-ov-tab="thread:${B}"]`)).toHaveCount(0);
+    // The peek is the scratch session's own: its shell, as its row on no card shows it.
+    await expect(panel.locator("[data-ov-peek]")).toHaveAttribute("data-ov-peek-kind", "shell");
+    await expect(panel.locator('[data-ov-who="peek"]')).toContainText(`scratch on ${host}`);
+    await expect(panel.locator('[data-ov-who="peek"]')).toContainText("typed into this terminal");
+    await expect(row).not.toHaveAttribute("data-ov-open", "");
+    // It's the same tab as the session's own row opens.
+    await page.locator("[data-ov-loose] [data-ov-session] [data-ov-row-open]").click();
+    await expect(panel.locator('[data-ov-tab^="peek:"]')).toHaveCount(1);
+    await page.screenshot({ path: info.outputPath("overview-lead.png") });
+    // The thread is its own button, and the who-line says where a message goes there.
+    await row.locator("[data-ov-board-talk]").click();
     await expect(panel.locator(`[data-ov-tab="thread:${B}"]`).getByRole("tab")).toHaveAttribute("aria-selected", "true");
     await expect(panel.locator(`[data-ov-talk-open="thread:${B}"] [data-room="room_launch"]`)).toContainText("Release notes are drafted.");
-    await expect(page.locator(`[data-ov-board="${B}"]`)).not.toHaveAttribute("data-ov-open", "");
-    await page.screenshot({ path: info.outputPath("overview-lead.png") });
+    await expect(panel.locator('[data-ov-who="thread"]')).toHaveText("Talking in Launch's thread: a message goes to the board's thread, where its lead and anyone mentioned read it.");
+    await page.screenshot({ path: info.outputPath("overview-lead-thread.png") });
   });
 
   test("the briefing line counts the event log since the reader last looked, says the chief of staff's latest sentence, opens its tab, and keeps the head it showed when the reader leaves (Arugula #1277)", async ({ page }, info) => {

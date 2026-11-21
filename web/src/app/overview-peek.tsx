@@ -63,6 +63,30 @@ export function PeekTab({ id }: { id: string }) {
   return <Peek place={place} s={at.s} card={at.card} />;
 }
 
+/** The who-line over a peek (#1290): the session, where it runs, and
+ * where a message goes (named as its tab is: a lead by its session): straight to its agent (its thread, for a cloud
+ * workspace's), typed into a terminal, or nowhere for one you watch. */
+export function PeekWho({ id, title }: { id: string; title: string }) {
+  const place = useContext(PeekContext);
+  useSubscribe((fn) => (place ? place.fleet.subscribe(fn) : () => {}));
+  const at = place?.find(id);
+  if (!place || !at) return null;
+  const { s } = at;
+  const ov = s.panes.find((p) => p.agent) ?? s.lead;
+  const pane = ov && place.fleet.panes.find((p) => p.key === ov.key);
+  const who = (
+    <>
+      <b data-ov-who-name>{title}</b> on {shortHost(s.where)}
+    </>
+  );
+  if (pane && yours(place.fleet, pane)) {
+    if (pane.info.type === "agent" || kindOf(pane) === "agent") return <>Talking to {who}: a message goes straight to this agent.</>;
+    return <>Typing into {who}: a message is typed into this terminal, with Enter.</>;
+  }
+  if (!pane && s.hosted) return <>Talking to {who}: a message goes straight to this agent, in its thread.</>;
+  return <>Watching {who}: it takes nothing from you here{at.card && place.askLead ? "; to ask it something, use its board's thread." : "."}</>;
+}
+
 /** Whose a pane is, as the peek treats it: yours, or a team's box or the
  * project's hosted one where you may steer it, to write to; a teammate's
  * own, to watch. */
@@ -105,7 +129,7 @@ function Peek({ place, s, card }: { place: PeekPlace; s: OvSession; card: OvCard
   );
   const lead = card && place.askLead && (
     <button type="button" class="secondary" data-ov-peek-ask-lead onClick={() => place.askLead!(card.board)}>
-      Ask its lead
+      Board thread
     </button>
   );
   const panes = (

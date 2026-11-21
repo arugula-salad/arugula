@@ -13,6 +13,8 @@ const status: ChatMentionStatus[] = [
   { machine: "mch_geek", machine_name: "geek", for_session: "chat", state: "working", session: "chat" },
   { machine: "mch_geek", machine_name: "geek", for_session: "review", state: "sending" },
   { machine: "mch_mini", machine_name: "mini", for_session: "build", state: "answered", session: "build", reply: 12 },
+  // A board's thread reached its lead with no @mention of it (#1290): the answer names the session.
+  { machine: "mch_studio", machine_name: "studio", state: "answered", session: "launch lead", reply: 14 },
   { machine: "mch_air", machine_name: "air", state: "offline" },
   { machine: "mch_box", machine_name: "box", state: "mentions_off" },
   // Typed by its display name, in another case than the handle (#1167).

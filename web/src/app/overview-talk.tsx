@@ -8,7 +8,8 @@
 // (#1275) adds its own. The chief of staff's tab is pinned first, with no
 // ×, once it has a room; until then its slot is empty (`pinned` null). The
 // tabs a reader opened are kept for the browser tab, per project, as the
-// field's open boards are.
+// field's open boards are. Under the tabs, the who-line (#1290) says who
+// the open tab talks to and where a message there goes.
 
 import type { ComponentChildren, JSX } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
@@ -19,7 +20,7 @@ import { RoomBody } from "../shared/chat/room";
 import { EmptyLine } from "../shared/ui/block-states";
 import { useSubscribe } from "../shared/ui/hooks";
 import { CloseIcon, IconButton } from "../shared/ui/icons";
-import { PeekTab } from "./overview-peek";
+import { PeekTab, PeekWho } from "./overview-peek";
 
 /** A conversation in the panel: what kind it is, what it's on (a board's
  * id for a thread), and what its tab says. */
@@ -34,6 +35,8 @@ interface TabKind {
   Body: (p: { tab: TalkTab; phone: boolean }) => JSX.Element;
   /** Something in it the reader hasn't seen: the tab's dot. */
   unread(tab: TalkTab): boolean;
+  /** The who-line: who it talks to, and where a message goes. */
+  Who: (p: { tab: TalkTab }) => JSX.Element | null;
 }
 
 /** The kinds of tab. */
@@ -42,17 +45,34 @@ export const TAB_KINDS = {
   thread: {
     Body: ({ tab, phone }) => <ThreadTab board={tab.id} title={tab.title} phone={phone} />,
     unread: (tab) => (objectRoom(tab.id)?.unread ?? 0) > 0,
+    Who: ({ tab }) => (
+      <>
+        Talking in <b>{tab.title}</b>'s thread: a message goes to the board's thread, where its lead and anyone mentioned read it.
+      </>
+    ),
   },
   /** The reader's staff room with their own agents (#1275), the chief of
    * staff's: pinned first, by its room's id. */
   staff: {
     Body: ({ tab, phone }) => <StaffTab room={tab.id} title={tab.title} phone={phone} />,
     unread: (tab) => (chat.rooms.find((r) => r.id === tab.id)?.unread ?? 0) > 0,
+    Who: ({ tab }) => {
+      const lead = chat.rooms.find((r) => r.id === tab.id)?.lead;
+      return lead ? (
+        <>
+          Talking to your chief of staff, <b>{lead.session}</b>
+          {lead.machine_name ? ` on ${lead.machine_name}` : ""}: a message goes straight to it.
+        </>
+      ) : (
+        <>Talking to your chief of staff: no session leads it yet, so a message waits here.</>
+      );
+    },
   },
   /** A session's peek (#1271): its last lines, live while open, and a box to write to it. */
   peek: {
     Body: ({ tab }) => <PeekTab id={tab.id} />,
     unread: () => false,
+    Who: ({ tab }) => <PeekWho id={tab.id} title={tab.title} />,
   },
 } satisfies Record<string, TabKind>;
 export type TalkKind = keyof typeof TAB_KINDS;
@@ -149,6 +169,7 @@ export function TalkPanel({ talk, pinned, needs, phone }: { talk: Talk; pinned: 
             })}
           </div>
         )}
+        {open && <WhoLine tab={open} />}
         {open && Body ? (
           <div class="ov-talk-open" id="ov-talk-open" role="tabpanel" data-ov-talk-open={keyOf(open)}>
             <Body key={keyOf(open)} tab={open} phone={phone} />
@@ -158,6 +179,16 @@ export function TalkPanel({ talk, pinned, needs, phone }: { talk: Talk; pinned: 
         )}
       </section>
     </aside>
+  );
+}
+
+/** The who-line under the tabs (#1290): who the open tab talks to, and where a message goes. */
+function WhoLine({ tab }: { tab: TalkTab }) {
+  const Who = TAB_KINDS[tab.kind].Who;
+  return (
+    <p class="ov-who dim" data-ov-who={tab.kind}>
+      <Who tab={tab} />
+    </p>
   );
 }
 

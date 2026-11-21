@@ -192,13 +192,23 @@ test("a board's lead stands as its session's panes on its machine, else as the h
   const panes = [pane("workstation", 1, { machine: "m_ws", session: { id: 3, name: "launch" }, standing: "working" }), pane("workstation", 2, { machine: "m_ws", session: { id: 3, name: "launch" }, standing: "needs" })];
   const byCard = { project: P, groups: [{ card: null, sessions: [{ kind: "machine", id: "s9", name: "docs", on: { kind: "machine", id: "m_ws", name: "workstation" }, panes: [{ pane: 9, kind: "agent", work_item: null, state: "failed" }], updated_at: 1 }] }] };
   // Its machine's panes in its session: the worst of them; its machine named from the fleet when the board can't.
-  assert.deepEqual(overviewOf(P, [led("launch")], panes, byCard, hostOf).boards[0].lead, { machine: "m_ws", machineName: "workstation", session: "launch", standing: "needs" });
+  const { peek, ...lead } = overviewOf(P, [led("launch")], panes, byCard, hostOf).boards[0].lead;
+  assert.deepEqual(lead, { machine: "m_ws", machineName: "workstation", session: "launch", standing: "needs" });
+  // Its chip opens that session (#1290), keyed as its tile off a card is, opening the pane that needs you.
+  assert.equal(peek.key, "-|workstation#3");
+  assert.equal(peek.name, "launch");
+  assert.equal(peek.lead.id, 2);
   // Not here, the hub's session of that name on that machine.
-  assert.equal(overviewOf(P, [led("docs")], panes, byCard, hostOf).boards[0].lead.standing, "failed");
+  const hub = overviewOf(P, [led("docs")], panes, byCard, hostOf).boards[0].lead;
+  assert.equal(hub.standing, "failed");
+  assert.equal(hub.peek.key, "machine:m_ws:s9");
   // A pane whose machine has no id here (a daemon's own page) is matched by the machine's name.
   const named = view("brd_l", "Launch", [row("r1", "doing", 1)], { lead: { machine: "m_ws", machine_name: "workstation", session: "launch", at: 1 } });
   assert.equal(overviewOf(P, [named], [pane("workstation", 1, { session: { id: 3, name: "launch" }, standing: "working" })], null, hostOf).boards[0].lead.standing, "working");
   // Neither tells: no standing. A board no one leads has no lead.
-  assert.equal(overviewOf(P, [led("gone")], panes, byCard, hostOf).boards[0].lead.standing, null);
+  const gone = overviewOf(P, [led("gone")], panes, byCard, hostOf).boards[0].lead;
+  assert.equal(gone.standing, null);
+  // Still its own session, only where it runs: never the board's thread.
+  assert.deepEqual([gone.peek.key, gone.peek.where, gone.peek.panes.length], ["lead:m_ws:gone", "workstation", 0]);
   assert.equal(overviewOf(P, [view("brd_x", "X", [row("r1", "doing", 1)])], [], null, hostOf).boards[0].lead, undefined);
 });

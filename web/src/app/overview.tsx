@@ -311,7 +311,7 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
     fleet,
     find: (key) => {
       for (const c of ovCards) for (const s of c.sessions) if (peekKey(s) === key) return { s, card: c };
-      const s = o.loose.find((x) => peekKey(x) === key);
+      const s = o.loose.find((x) => peekKey(x) === key) ?? o.boards.find((b) => b.lead && peekKey(b.lead.peek) === key)?.lead?.peek;
       return s && { s, card: null };
     },
     openPanes,
@@ -385,11 +385,9 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
     if (front === chief) talk.pick(`${front.kind}:${front.id}`);
     else talk.open(front);
   }, [zkey, front && `${front.kind}:${front.id}`]);
-  // The lead's tab: its session's peek where the machines show it, else the board's thread.
+  // The lead's tab: its session's peek, as its chip opens it (#1290); a board no one leads, its thread.
   function leadTab(b: OvBoard): TalkTab | null {
-    const l = b.lead;
-    const s = l && [...ovCards.flatMap((c) => c.sessions), ...o.loose].find((x) => x.panes.some((p) => (p.machine ? p.machine === l.machine : p.host === l.machineName) && p.session?.name === l.session));
-    if (s) return peekTab(s);
+    if (b.lead) return peekTab(b.lead.peek);
     return chat.on ? { kind: "thread", id: b.id, title: b.title } : null;
   }
 
@@ -418,7 +416,7 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
       {o.boards.length > 0 && (
         <ul class="ov-boards" data-ov-boards>
           {o.boards.map((b) => (
-            <BoardRow key={b.id} b={b} zoom={() => zoomTo({ board: b.id })} leadWho={b.lead && teammateOf(b.lead.machine)} open={isOpen(b)} setOpen={(v) => setOpen(b.id, v)} project={project} fleet={fleet} openCard={openCard} openSession={openSession} opened={card} faceOf={faceOf} talk={chat.on ? () => talkTo({ kind: "thread", id: b.id, title: b.title }) : undefined} />
+            <BoardRow key={b.id} b={b} zoom={() => zoomTo({ board: b.id })} leadWho={b.lead && teammateOf(b.lead.machine)} talkLead={b.lead && (() => openSession(b.lead!.peek))} open={isOpen(b)} setOpen={(v) => setOpen(b.id, v)} project={project} fleet={fleet} openCard={openCard} openSession={openSession} opened={card} faceOf={faceOf} talk={chat.on ? () => talkTo({ kind: "thread", id: b.id, title: b.title }) : undefined} />
           ))}
         </ul>
       )}
@@ -520,9 +518,9 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
 
 /** A board's lead (#414, #1272): a dot for how its session stands (none
  * where no machine or the hub tells), its name, a teammate's with theirs,
- * and its machine. With chat on it opens the board's thread, which reaches
- * the lead. */
-function LeadChip({ lead, who, talk }: { lead: OvLead; who?: string; talk?: () => void }) {
+ * and its machine. It opens that agent's peek (#1290), never the board's
+ * thread, which is the row's own button. */
+function LeadChip({ lead, who, talk }: { lead: OvLead; who?: string; talk: () => void }) {
   const name = who ? `${who}'s ${lead.session}` : lead.session;
   const says = lead.standing ? STATE_WORD[lead.standing] : "";
   const title = `Led by ${name}${lead.machineName ? ` on ${lead.machineName}` : ""}${says ? `, ${says}` : ""}`;
@@ -533,14 +531,10 @@ function LeadChip({ lead, who, talk }: { lead: OvLead; who?: string; talk?: () =
       {lead.machineName && <span class="ov-lead-machine">{lead.machineName}</span>}
     </>
   );
-  return talk ? (
-    <button type="button" class="ov-lead" title={`${title}: talk to it in the board's thread`} aria-label={`${title}: talk to it in the board's thread`} data-ov-board-lead={lead.session} onClick={talk}>
+  return (
+    <button type="button" class="ov-lead" title={`${title}: talk to it`} aria-label={`${title}: talk to it`} data-ov-board-lead={lead.session} onClick={talk}>
       {inner}
     </button>
-  ) : (
-    <span class="ov-lead" title={title} data-ov-board-lead={lead.session}>
-      {inner}
-    </span>
   );
 }
 
@@ -549,7 +543,7 @@ function LeadChip({ lead, who, talk }: { lead: OvLead; who?: string; talk?: () =
  * words; open, its cards in flight, one line each, the worst first, up to
  * eight, and how many more. A click on the row (its title, or anywhere
  * but a button) zooms to the board (#1287). */
-function BoardRow({ b, zoom, leadWho, open, setOpen, project, fleet, openCard, openSession, opened, faceOf, talk }: { b: OvBoard; zoom: () => void; leadWho?: string; open: boolean; setOpen: (open: boolean) => void; project: string; fleet: Fleet; openCard: (c: OvCard) => void; openSession: (s: OvSession) => void; opened?: string; faceOf: (name: string) => string | undefined; talk?: () => void }) {
+function BoardRow({ b, zoom, leadWho, talkLead, open, setOpen, project, fleet, openCard, openSession, opened, faceOf, talk }: { b: OvBoard; zoom: () => void; leadWho?: string; talkLead?: () => void; open: boolean; setOpen: (open: boolean) => void; project: string; fleet: Fleet; openCard: (c: OvCard) => void; openSession: (s: OvSession) => void; opened?: string; faceOf: (name: string) => string | undefined; talk?: () => void }) {
   const to = pathOf({ page: "project", project, zoom: { board: b.id } }, names);
   const e = epicLine({ done: b.done, total: b.total, proven: b.proven, review: b.review.length, doing: b.doing.length });
   const flight = b.doing.length + b.review.length > 0;
@@ -579,10 +573,10 @@ function BoardRow({ b, zoom, leadWho, open, setOpen, project, fleet, openCard, o
             <Word key={x.standing} standing={x.standing} words={x.words} />
           ))}
         </span>
-        <span class="ov-board-lead-cell">{b.lead && <LeadChip lead={b.lead} who={leadWho} talk={talk} />}</span>
-        {/* Its thread, in the talk panel (while chat is on); a led board's chip is the way there. */}
-        {talk && !b.lead && (
-          <button type="button" class="ov-board-talk" aria-label={`Talk in ${b.title}'s thread`} title="Talk in its thread" data-ov-board-talk onClick={talk}>
+        <span class="ov-board-lead-cell">{b.lead && talkLead && <LeadChip lead={b.lead} who={leadWho} talk={talkLead} />}</span>
+        {/* Its thread, in the talk panel (while chat is on): the lead and anyone mentioned read it. */}
+        {talk && (
+          <button type="button" class="ov-board-talk" aria-label={`Board thread: talk in ${b.title}'s thread`} title="Board thread: its lead and anyone mentioned read it" data-ov-board-talk onClick={talk}>
             <ThreadIcon size="sm" />
           </button>
         )}
