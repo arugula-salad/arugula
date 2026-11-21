@@ -104,6 +104,24 @@ test("the Overview names an open card by its board and row, both or neither", ()
   assert.deepEqual(parse(`/p/${P}/overview`, "?board=brd_0a1b&card=row_2c3d"), { page: "project", project: P, board: "brd_0a1b", card: "row_2c3d" });
   assert.deepEqual(parse(`/p/${P}`, "?card=row_2c3d"), { page: "project", project: P });
   assert.deepEqual(parse(`/p/${P}`, "?board=iss_0a1b&card=row_2c3d"), { page: "project", project: P });
+  // The Overview zoomed in (Arugula #1287): a board, a card's work, a session on no card.
+  assert.deepEqual(parse(`/p/${P}/board/brd_0a1b`), { page: "project", project: P, zoom: { board: "brd_0a1b" } });
+  assert.deepEqual(parse(`/p/${P}/board/brd_0a1b-launch`), { page: "project", project: P, zoom: { board: "brd_0a1b" } });
+  assert.deepEqual(parse(`/p/${P}/board/brd_0a1b/card/row_2c3d`), { page: "project", project: P, zoom: { board: "brd_0a1b", card: "row_2c3d" } });
+  assert.deepEqual(parse(`/p/${P}/work/${encodeURIComponent("geek#7")}`), { page: "project", project: P, zoom: { session: "geek#7" } });
+  assert.equal(parse(`/p/${P}/board/iss_0a1b`).page, "missing");
+  assert.equal(parse(`/p/${P}/board/brd_0a1b/card/iss_2c3d`).page, "missing");
+  assert.equal(parse(`/p/${P}/board/brd_0a1b/row/row_2c3d`).page, "missing");
+  for (const zoom of [{ board: "brd_0a1b" }, { board: "brd_0a1b", card: "row_2c3d" }, { session: "geek#7" }, { session: "machine:m_1:ses_2" }]) {
+    const path = pathOf({ page: "project", project: P, zoom }, names);
+    assert.deepEqual(parse(path), { page: "project", project: P, zoom }, path);
+  }
+  assert.equal(pathOf({ page: "project", project: P, zoom: { board: "brd_0a1b", card: "row_2c3d" } }, names), `/p/${P}-arugula-team/board/brd_0a1b/card/row_2c3d`);
+  // A board's slug where its id reads back from it; none where it can't.
+  const boardNames = (id) => (id === "brd_0a1b" || id === "brd_e2e0launch" ? "Launch" : names(id));
+  assert.equal(pathOf({ page: "project", project: P, zoom: { board: "brd_0a1b" } }, boardNames), `/p/${P}-arugula-team/board/brd_0a1b-launch`);
+  assert.equal(pathOf({ page: "project", project: P, zoom: { board: "brd_e2e0launch" } }, boardNames), `/p/${P}-arugula-team/board/brd_e2e0launch`);
+  assert.deepEqual(parse(`/p/${P}/board/brd_e2e0launch`), { page: "project", project: P, zoom: { board: "brd_e2e0launch" } });
 });
 
 test("anything else is missing, never a guess", () => {

@@ -19,10 +19,22 @@
 // back), as its peek's card link does; Open in Panes opens a session on
 // its machine's page, on its pane. The grouping is ../shell/swarm/overview.ts; the machines are
 // the machine page's (./machine-page), booted once.
+//
+// It zooms in place (Arugula #1287): from the Project level (the field
+// above) to a board (./overview-board.tsx), and on to the work on a card
+// or a session on no card (./overview-work.tsx), each at its own address
+// (../platform/paths.ts), so a link, a reload and Back land on it. The
+// bar's path names each level and climbs back; so do the level pill and
+// Esc, a level at a time (a session on no card is a step from Project).
+// The talk panel's tabs stay as you zoom: each level brings its own to
+// the front, the chief of staff's at Project, the lead's at Board, the
+// card's agent's at Work. A Needs you card zooms to the work that asks.
 
 import "./overview.css";
+import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { BoardLane, BoardRow, BoardView } from "../shared/proto";
+import type { OverviewZoom } from "../shared/platform-api";
 import { boards, BoardError } from "../shared/boards/store";
 import { Drawer } from "../shared/boards/card";
 import { epicLine, isCard, pointerLabel } from "../shared/boards/text";
@@ -45,12 +57,14 @@ import { session as platform } from "../platform/session";
 import { where } from "../platform/where";
 import { boot, type Booted } from "./machine-page";
 import { BriefingLine, useBriefing } from "./overview-briefing";
+import { OverviewBoard } from "./overview-board";
 import { CardRow, SessionRow, Word } from "./overview-row";
+import { OverviewWork } from "./overview-work";
 import { PeekContext, peekKey, type PeekPlace } from "./overview-peek";
 import { staffTab, TalkPanel, useTalk, type TalkTab } from "./overview-talk";
 import type { AppSession } from "./session";
 
-export function OverviewPlace({ project, board, card, session }: { project: string; board?: string; card?: string; session: AppSession | null }) {
+export function OverviewPlace({ project, board, card, zoom, session }: { project: string; board?: string; card?: string; zoom?: OverviewZoom; session: AppSession | null }) {
   const [b, setB] = useState<Booted | null>(null);
   useEffect(() => {
     let live = true;
@@ -63,8 +77,19 @@ export function OverviewPlace({ project, board, card, session }: { project: stri
         Reaching your machines…
       </p>
     );
-  return <OverviewBody project={project} board={board} card={card} fleet={b.machines.fleet} />;
+  return <OverviewBody project={project} board={board} card={card} zoom={zoom} fleet={b.machines.fleet} />;
 }
+
+/** The Overview's levels, outermost first (Arugula #1287). */
+const LEVELS = ["Project", "Board", "Work"] as const;
+type Level = 0 | 1 | 2;
+/** How far in `zoom` is: 0 Project, 1 a board, 2 a card's or a session's work. */
+const levelOf = (zoom?: OverviewZoom): Level => (!zoom ? 0 : "session" in zoom || zoom.card ? 2 : 1);
+/** A level out from `zoom`: a card's board, else Project. */
+const outOf = (zoom: OverviewZoom, to: Level = (levelOf(zoom) - 1) as Level): OverviewZoom | undefined => (to === 1 && "board" in zoom ? { board: zoom.board } : undefined);
+const zoomKey = (zoom?: OverviewZoom) => (!zoom ? "" : "session" in zoom ? `s:${zoom.session}` : `b:${zoom.board}/${zoom.card ?? ""}`);
+/** A session's peek, as a tab. */
+const peekTab = (s: OvSession): TalkTab => ({ kind: "peek", id: peekKey(s), title: s.name });
 
 /** A pane as the Overview groups it. */
 function ovPane(fleet: Fleet, p: FleetPane): OvPane {
@@ -183,7 +208,7 @@ function useOpened(project: string): [Map<string, boolean>, (board: string, open
   return [m, set];
 }
 
-function OverviewBody({ project, board, card, fleet }: { project: string; board?: string; card?: string; fleet: Fleet }) {
+function OverviewBody({ project, board, card, zoom, fleet }: { project: string; board?: string; card?: string; zoom?: OverviewZoom; fleet: Fleet }) {
   useSubscribe((fn) => fleet.subscribe(fn));
   useSubscribe((fn) => platform.subscribe(fn));
   // The chief of staff's room shows as the talk panel's first tab once chat lists it.
@@ -294,6 +319,45 @@ function OverviewBody({ project, board, card, fleet }: { project: string; board?
     askLead: chat.on ? (id) => talkTo({ kind: "thread", id, title: o.boards.find((b) => b.id === id)?.title ?? "Board" }) : undefined,
   };
 
+  // Zooming (Arugula #1287): where the address is, and the way in and out.
+  const level = levelOf(zoom);
+  const zkey = zoomKey(zoom);
+  const zoomTo = (z?: OverviewZoom) => go(pathOf({ page: "project", project, ...(z ? { zoom: z } : {}) }, names));
+  const zoomBoard = zoom && "board" in zoom ? zoom.board : undefined;
+  const zoomCard = zoom && "board" in zoom ? zoom.card : undefined;
+  const zoomedBoard = zoomBoard ? o.boards.find((b) => b.id === zoomBoard) : undefined;
+  const zoomedView = zoomBoard ? views?.find((v) => v.board.id === zoomBoard) : undefined;
+  const zoomedRow = zoomCard ? zoomedView?.zones.flatMap((z) => z.rows).find((r) => r.id === zoomCard) : undefined;
+  const zoomedCard = zoomCard ? ovCards.find((c) => c.board === zoomBoard && c.row.id === zoomCard) : undefined;
+  const zoomedSession = zoom && "session" in zoom ? peeks.find(zoom.session)?.s : undefined;
+  const workSessions = zoomedCard ? zoomedCard.sessions : zoomedSession ? [zoomedSession] : [];
+  // A Needs you card's pane: the work it's on, its card's or its own on no card.
+  const zoomToWork = (key: string) => {
+    const at = o.cardOf.get(key);
+    if (at) return zoomTo({ board: at.board, card: at.row.id });
+    const s = o.loose.find((x) => x.panes.some((p) => p.key === key));
+    if (s) zoomTo({ session: peekKey(s) });
+    else show(key);
+  };
+  // The bar's path names the card, or the session, zoomed to.
+  useEffect(() => {
+    if (zoomedRow) where.cardIs(zoomedRow.id, cardWords(zoomedRow));
+    else if (zoomedSession && zoom && "session" in zoom) where.cardIs(zoom.session, zoomedSession.name);
+  }, [zoomedRow && cardWords(zoomedRow), zoomedRow?.id, zoomedSession?.name]);
+  // Esc zooms out a level, unless it's someone else's: a box being typed in, a dialog.
+  useEffect(() => {
+    if (!zoom) return;
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      if ((e.target as Element | null)?.closest?.("input, textarea, select, [contenteditable], dialog, [role=dialog]")) return;
+      if (document.querySelector("dialog[open], [aria-modal=true]")) return;
+      e.preventDefault();
+      zoomTo(outOf(zoom));
+    };
+    document.addEventListener("keydown", key);
+    return () => document.removeEventListener("keydown", key);
+  }, [zkey]);
+
   // A lead on a teammate's machine is named with them (a team's own box has no one to name).
   const teammateOf = (machine: string) => {
     const h = fleet.hostById(machine);
@@ -309,9 +373,29 @@ function OverviewBody({ project, board, card, fleet }: { project: string; board?
     requestAnimationFrame(() => document.querySelector("[data-ov-talk]")?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
   };
 
+  // Each level brings its own tab to the front, once, as it's zoomed to
+  // (the tab the reader had stays at Project on a reload): the chief of
+  // staff's at Project, the lead's at Board, the agent's at Work. The
+  // others stay open.
+  const front: TalkTab | null = level === 0 ? chief : level === 1 ? (zoomedBoard ? leadTab(zoomedBoard) : null) : workSessions.length ? peekTab(workSessions.find((s) => s.panes.some((p) => p.agent)) ?? workSessions[0]) : null;
+  const fronted = useRef<string | null>(zoom ? null : zkey);
+  useEffect(() => {
+    if (fronted.current === zkey || !front) return;
+    fronted.current = zkey;
+    if (front === chief) talk.pick(`${front.kind}:${front.id}`);
+    else talk.open(front);
+  }, [zkey, front && `${front.kind}:${front.id}`]);
+  // The lead's tab: its session's peek where the machines show it, else the board's thread.
+  function leadTab(b: OvBoard): TalkTab | null {
+    const l = b.lead;
+    const s = l && [...ovCards.flatMap((c) => c.sessions), ...o.loose].find((x) => x.panes.some((p) => (p.machine ? p.machine === l.machine : p.host === l.machineName) && p.session?.name === l.session));
+    if (s) return peekTab(s);
+    return chat.on ? { kind: "thread", id: b.id, title: b.title } : null;
+  }
+
   const any = o.boards.length > 0 || o.loose.length > 0;
-  const field = (
-    <div class="ov-field" data-ov-field>
+  const projectLevel = (
+    <>
       <p class="dim ov-stats" data-ov-stats>
         {statsLine(o, needs)}
       </p>
@@ -334,7 +418,7 @@ function OverviewBody({ project, board, card, fleet }: { project: string; board?
       {o.boards.length > 0 && (
         <ul class="ov-boards" data-ov-boards>
           {o.boards.map((b) => (
-            <BoardRow key={b.id} b={b} leadWho={b.lead && teammateOf(b.lead.machine)} open={isOpen(b)} setOpen={(v) => setOpen(b.id, v)} project={project} fleet={fleet} openCard={openCard} openSession={openSession} opened={card} faceOf={faceOf} talk={chat.on ? () => talkTo({ kind: "thread", id: b.id, title: b.title }) : undefined} />
+            <BoardRow key={b.id} b={b} zoom={() => zoomTo({ board: b.id })} leadWho={b.lead && teammateOf(b.lead.machine)} open={isOpen(b)} setOpen={(v) => setOpen(b.id, v)} project={project} fleet={fleet} openCard={openCard} openSession={openSession} opened={card} faceOf={faceOf} talk={chat.on ? () => talkTo({ kind: "thread", id: b.id, title: b.title }) : undefined} />
           ))}
         </ul>
       )}
@@ -351,6 +435,32 @@ function OverviewBody({ project, board, card, fleet }: { project: string; board?
           </ul>
         </section>
       )}
+    </>
+  );
+  // Zoomed in, the field is that level's; at Project, the rows above.
+  const talkingPeek = talk.active?.startsWith("peek:") ? talk.active.slice("peek:".length) : null;
+  const levelView =
+    level === 0 ? null : views === null || (level === 2 && zoom && "session" in zoom && !zoomedSession && fleet.panes.length === 0) ? (
+      <p class="dim">Loading…</p>
+    ) : level === 1 || zoomCard ? (
+      !zoomedBoard || !zoomedView ? (
+        <EmptyLine data-ov-level-gone>That board isn't open in this project now.</EmptyLine>
+      ) : level === 1 ? (
+        <OverviewBoard project={project} board={zoomedBoard} view={zoomedView} fleet={fleet} zoomCard={(row) => zoomTo({ board: zoomedBoard.id, card: row })} />
+      ) : !zoomedRow ? (
+        <EmptyLine data-ov-level-gone>That card isn't on this board now.</EmptyLine>
+      ) : (
+        <OverviewWork project={project} fleet={fleet} card={{ board: zoomedBoard.id, boardTitle: zoomedBoard.title, row: zoomedRow, standing: zoomedCard?.standing ?? "idle" }} sessions={workSessions} talking={talkingPeek} talkTo={(s) => talkTo(peekTab(s))} openPanes={openPanes} />
+      )
+    ) : (
+      <OverviewWork project={project} fleet={fleet} card={null} sessions={workSessions} talking={talkingPeek} talkTo={(s) => talkTo(peekTab(s))} openPanes={openPanes} />
+    );
+  const field = (
+    <div class="ov-field" data-ov-field data-ov-level={LEVELS[level].toLowerCase()}>
+      <ZoomLevels level={level} board={!!zoomBoard} phone={phone} out={(to) => zoom && zoomTo(outOf(zoom, to))} />
+      <Stage zkey={zkey} level={level}>
+        {levelView ?? projectLevel}
+      </Stage>
     </div>
   );
   // Nothing needs you: one quiet line, not a column.
@@ -374,7 +484,7 @@ function OverviewBody({ project, board, card, fleet }: { project: string; board?
               b={b}
               fleet={fleet}
               work={at ? cardWords(at.row) : "Not on a card"}
-              show={() => show(first.key)}
+              show={() => zoomToWork(first.key)}
               open={() => paneAt(first)}
               share={() => paneAt(first, true)}
               follow={() => paneAt(first)}
@@ -435,11 +545,12 @@ function LeadChip({ lead, who, talk }: { lead: OvLead; who?: string; talk?: () =
 }
 
 /** A board, one hairline row: the way to open it (when it has cards in
- * flight), its title (the board), its lane bar, its count and what's going
- * on in words; open, its cards in flight, one line each, the worst first,
- * up to eight, and how many more (to the board). */
-function BoardRow({ b, leadWho, open, setOpen, project, fleet, openCard, openSession, opened, faceOf, talk }: { b: OvBoard; leadWho?: string; open: boolean; setOpen: (open: boolean) => void; project: string; fleet: Fleet; openCard: (c: OvCard) => void; openSession: (s: OvSession) => void; opened?: string; faceOf: (name: string) => string | undefined; talk?: () => void }) {
-  const to = pathOf({ page: "board", project, board: b.id }, names);
+ * flight), its title, its lane bar, its count and what's going on in
+ * words; open, its cards in flight, one line each, the worst first, up to
+ * eight, and how many more. A click on the row (its title, or anywhere
+ * but a button) zooms to the board (#1287). */
+function BoardRow({ b, zoom, leadWho, open, setOpen, project, fleet, openCard, openSession, opened, faceOf, talk }: { b: OvBoard; zoom: () => void; leadWho?: string; open: boolean; setOpen: (open: boolean) => void; project: string; fleet: Fleet; openCard: (c: OvCard) => void; openSession: (s: OvSession) => void; opened?: string; faceOf: (name: string) => string | undefined; talk?: () => void }) {
+  const to = pathOf({ page: "project", project, zoom: { board: b.id } }, names);
   const e = epicLine({ done: b.done, total: b.total, proven: b.proven, review: b.review.length, doing: b.doing.length });
   const flight = b.doing.length + b.review.length > 0;
   const shown = flight && open;
@@ -447,12 +558,12 @@ function BoardRow({ b, leadWho, open, setOpen, project, fleet, openCard, openSes
   const id = `ov-board-${b.id}`;
   return (
     <li class={`ov-board${shown ? " ov-board-open" : ""}${flight ? "" : " ov-board-still"}`} data-ov-board={b.id} data-ov-open={shown ? "" : undefined} data-ov-standing={b.standing} data-ov-panes={[...b.doing, ...b.review].flatMap((c) => c.sessions.flatMap((s) => s.panes.map((p) => p.key))).join(" ")}>
-      {/* The row opens with a click anywhere on it but its title, which is the board. */}
-      <div class="ov-board-line" onClick={(ev) => flight && !(ev.target as Element).closest("a, button, [data-ov-board-lead]") && setOpen(!open)}>
+      {/* A click anywhere on the row zooms to the board; its chevron opens it in place. */}
+      <div class="ov-board-line" onClick={(ev) => !(ev.target as Element).closest("a, button, [data-ov-board-lead]") && !getSelection()?.toString() && zoom()}>
         <button type="button" class="ov-board-toggle" disabled={!flight} aria-expanded={flight ? shown : undefined} aria-controls={shown ? id : undefined} aria-label={shown ? `Close ${b.title}` : `Open ${b.title}`} data-ov-board-toggle onClick={() => setOpen(!open)}>
           {flight && <ChevronIcon dir={shown ? "down" : "right"} size="sm" />}
         </button>
-        <a class="ov-board-title" href={to} onClick={(ev) => follow(ev, to)} data-ov-board-title>
+        <a class="ov-board-title" href={to} onClick={(ev) => follow(ev, to)} title={`Zoom in to ${b.title}`} data-ov-board-title>
           {b.title}
         </a>
         <div class="board-bar" role="progressbar" aria-valuemin={0} aria-valuemax={b.total} aria-valuenow={b.done} aria-label={e.words}>
@@ -491,5 +602,50 @@ function BoardRow({ b, leadWho, open, setOpen, project, fleet, openCard, openSes
         </div>
       )}
     </li>
+  );
+}
+
+/** The level pill (#1287): Project, Board and Work, the one you're at
+ * lit; a level out is a click, a level in isn't (you zoom in by clicking
+ * what's there), and Board isn't on the way out of a session on no card.
+ * Esc says so beside it. */
+function ZoomLevels({ level, board, phone, out }: { level: Level; board: boolean; phone: boolean; out: (to: Level) => void }) {
+  return (
+    <div class="ov-zoom-bar" data-ov-zoom-bar>
+      <div class="ov-levels" role="group" aria-label="Zoom level" data-ov-levels>
+        {LEVELS.map((name, i) => (
+          <button key={name} type="button" class={i === level ? "ov-level-on" : undefined} aria-current={i === level ? "true" : undefined} disabled={i > level || (i === 1 && !board)} data-ov-level-pill={name.toLowerCase()} onClick={() => i < level && out(i as Level)}>
+            {name}
+          </button>
+        ))}
+      </div>
+      {!phone && level > 0 && <span class="dim ov-zoom-hint">Esc to zoom out</span>}
+    </div>
+  );
+}
+
+/** Where the pointer last went down, for the zoom to grow from (#1287). */
+let pressed: { x: number; y: number; at: number } | null = null;
+if (typeof document !== "undefined") document.addEventListener("pointerdown", (e) => void (pressed = { x: e.clientX, y: e.clientY, at: Date.now() }), { capture: true, passive: true });
+
+/** A level's view, drawn anew as the zoom changes: a short scale and fade,
+ * in from where you clicked going in, settling back going out. None on
+ * the first draw (a link, a reload). */
+function Stage({ zkey, level, children }: { zkey: string; level: Level; children: ComponentChildren }) {
+  const was = useRef<{ key: string; level: Level; dir: "in" | "out" | null }>({ key: zkey, level, dir: null });
+  if (was.current.key !== zkey) was.current = { key: zkey, level, dir: level >= was.current.level ? "in" : "out" };
+  const dir = was.current.dir;
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || !dir) return;
+    const r = el.getBoundingClientRect();
+    const p = pressed && Date.now() - pressed.at < 1000 ? pressed : null;
+    el.style.transformOrigin = p ? `${Math.round(p.x - r.left)}px ${Math.round(p.y - r.top)}px` : "50% 0";
+  }, [zkey]);
+  return (
+    <div key={zkey} ref={ref} class={`ov-stage${dir ? ` ov-zoom-${dir}` : ""}`} data-ov-stage>
+      {children}
+    </div>
   );
 }

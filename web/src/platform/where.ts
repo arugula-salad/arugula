@@ -22,7 +22,8 @@ export const where = {
     deploy = { id, project };
     listeners.forEach((fn) => fn());
   },
-  /** The Overview has read the card its address opens: its words in the path. */
+  /** The Overview has read the card its address opens (or the session on
+   * no card it's zoomed to, by its key): its words in the path. */
   cardIs(row: string, label: string) {
     if (card?.row === row && card.label === label) return;
     card = { row, label };

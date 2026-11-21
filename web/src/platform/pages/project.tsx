@@ -37,11 +37,11 @@ import { ProjectDocs } from "./docs";
 import { ProjectIssues } from "./issues";
 import { SessionNumbers } from "../session-stats";
 import { Count } from "../../shared/ui/state-chip";
-import { usePlatformApi } from "../../shared/platform-api";
+import { usePlatformApi, type OverviewZoom } from "../../shared/platform-api";
 
 const ROLE: Record<string, string> = { owner: "Owner", editor: "Editor", viewer: "Viewer" };
 
-export function ProjectHome({ id, board, card }: { id: string; board?: string; card?: string }) {
+export function ProjectHome({ id, board, card, zoom }: { id: string; board?: string; card?: string; zoom?: OverviewZoom }) {
   const { Overview } = usePlatformApi();
   useSubscribe((fn) => session.subscribe(fn));
   useSubscribe((fn) => chat.subscribe(fn));
@@ -57,7 +57,7 @@ export function ProjectHome({ id, board, card }: { id: string; board?: string; c
     <section class="platform-section sw-page" data-project-home={p.id}>
       <PageHeader title={p.name} named actions={chat.on && p.team ? <Faces p={p} /> : undefined} />
       {Overview ? (
-        <Overview project={p.id} board={board} card={card}>
+        <Overview project={p.id} board={board} card={card} zoom={zoom}>
           {sections}
         </Overview>
       ) : (

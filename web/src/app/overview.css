@@ -648,3 +648,150 @@ button.ov-peek:disabled {
 .ov .side-sheet-backdrop {
   top: var(--ov-bar-bottom, 0px);
 }
+
+/* Zooming (#1287): the level pill over the field, and each level's view
+   drawn in with a short scale and fade (in from where you clicked, or
+   settling back as you zoom out). */
+.ov-zoom-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.ov-levels {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.ov-levels button {
+  border: 0;
+  background: none;
+  padding: 1px var(--space-3);
+  font: var(--text-xs) var(--f-ui);
+  color: var(--dim);
+  cursor: pointer;
+}
+.ov-levels button:disabled {
+  cursor: default;
+}
+.ov-levels button:not(:disabled):hover {
+  color: var(--fg);
+}
+.ov-levels button.ov-level-on {
+  background: var(--raised);
+  color: var(--fg);
+  font-weight: 600;
+}
+.ov-zoom-hint {
+  font: var(--text-xs) var(--f-ui);
+}
+.ov-stage {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.ov-zoom-in {
+  animation: ov-zoom-in 0.2s ease-out;
+}
+.ov-zoom-out {
+  animation: ov-zoom-out 0.2s ease-out;
+}
+@keyframes ov-zoom-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+}
+@keyframes ov-zoom-out {
+  from {
+    opacity: 0;
+    transform: scale(1.04);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ov-zoom-in,
+  .ov-zoom-out {
+    animation: none;
+  }
+}
+
+/* A Board or Work level (./overview-board.tsx, ./overview-work.tsx): its
+   head, then its rows. #1288 and #1289 draw them out in full. */
+.ov-level {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.ov-level-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.ov-level-head h2 {
+  margin: 0;
+  font: 600 var(--text-lg) var(--f-ui);
+}
+.ov-level-head p {
+  margin: 0;
+}
+.ov-level-head .board-bar {
+  height: 6px;
+  margin-top: var(--space-1);
+}
+.ov-level-sub {
+  margin: 0;
+  font: var(--text-sm) var(--f-ui);
+}
+.ov-level-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+}
+.ov-level-list > li {
+  border-bottom: 1px solid var(--line);
+}
+.ov-level-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 4rem minmax(0, 1fr) auto auto;
+  gap: var(--space-3);
+  align-items: baseline;
+  padding: var(--space-2);
+  border: 0;
+  background: none;
+  font: var(--text-sm) var(--f-ui);
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+}
+.ov-level-row:hover,
+.ov-level-row:focus-visible {
+  background: var(--raised);
+}
+.ov-level-row-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ov-level-pane {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2);
+  font: var(--text-sm) var(--f-ui);
+}
+/* The session whose tab is in front: the one you're talking to. */
+.ov-level-pane-talking {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.ov-level-pane-acts {
+  margin-left: auto;
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+}

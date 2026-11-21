@@ -7,7 +7,7 @@
 import type { ComponentChildren, ComponentType } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import type { MachineAt } from "../shared/machine-paths";
-import type { PlatformApi } from "../shared/platform-api";
+import type { OverviewZoom, PlatformApi } from "../shared/platform-api";
 import { useSubscribe } from "../shared/ui/hooks";
 import { OnControl } from "../platform/pages/machines";
 import type { AppSession } from "./session";
@@ -73,8 +73,8 @@ export function appMachineDocs(session: () => AppSession | null): NonNullable<Pl
  * project's Overview, in a chunk of its own with the machine page's. While
  * the hub can't reach machines from this host there is no Overview: the
  * project's page as it was (its children) is, and only then (#1088). */
-export function appOverview(session: () => AppSession | null): ComponentType<{ project: string; board?: string; card?: string; children?: ComponentChildren }> {
-  return function Overview({ project, board, card, children }) {
+export function appOverview(session: () => AppSession | null): ComponentType<{ project: string; board?: string; card?: string; zoom?: OverviewZoom; children?: ComponentChildren }> {
+  return function Overview({ project, board, card, zoom, children }) {
     const s = session();
     useSubscribe((fn) => s?.subscribe(fn) ?? (() => {}));
     const [page, setPage] = useState<OverviewPage | null>(null);
@@ -92,6 +92,6 @@ export function appOverview(session: () => AppSession | null): ComponentType<{ p
           Reaching your machines…
         </p>
       );
-    return <page.OverviewPlace project={project} board={board} card={card} session={s} />;
+    return <page.OverviewPlace project={project} board={board} card={card} zoom={zoom} session={s} />;
   };
 }
