@@ -4,7 +4,7 @@
 // deliberate.
 
 import { expect, test, type Page } from "@playwright/test";
-import { active, panes, reset, tab, tabsInSession, settingsRow, closeSettingsPage } from "./helpers";
+import { active, panes, reset, tab, tabsInSession, openSettingsPage, closeSettingsPage } from "./helpers";
 
 async function newWorkspace(page: Page) {
   await reset(page);
@@ -184,7 +184,7 @@ test.describe("on a computer", () => {
 
     // Settings opens its page, marked in the rail, and Build comes back.
     await rail.locator("[data-open-settings]").click();
-    await expect(page.locator("[data-settings-page]").getByRole("button", { name: "Appearance…" })).toBeVisible();
+    await expect(page.locator("[data-settings-page] [data-appearance-controls]")).toBeVisible();
     await expect(rail.locator("[data-open-settings]")).toHaveAttribute("aria-current", "page");
     await closeSettingsPage(page);
   });
@@ -261,8 +261,7 @@ test.describe("on a computer", () => {
     const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("arugula-appearance") ?? "null"));
     expect(saved).toEqual({ palette: "latte", finish: "flat", corners: "square", density: "cozy" });
     // Appearance has no switch any more.
-    await settingsRow(page, "Appearance…");
-    await expect(page.locator("[data-appearance]")).toBeVisible();
+    await expect((await openSettingsPage(page)).locator("[data-appearance-controls]")).toBeVisible();
     await expect(page.locator("[data-workspace-choice]")).toHaveCount(0);
     await page.getByRole("button", { name: "Use the Slate look" }).click();
     await expect(page.locator("html")).toHaveAttribute("data-palette", "slate");
@@ -474,7 +473,7 @@ test.describe("accessibility", () => {
 
   test("on every palette the chrome's words read at 4.5:1", async ({ page }) => {
     await newWorkspace(page);
-    await settingsRow(page, "Appearance…");
+    await openSettingsPage(page);
     const ids = await page.locator("[data-palette-choice]").evaluateAll((els) => els.map((e) => e.getAttribute("data-palette-choice")!));
     expect(ids.length).toBeGreaterThan(5);
     for (const id of ids) {
@@ -502,12 +501,12 @@ test.describe("accessibility", () => {
       expect(worst.min, `${id}: ${worst.at}`).toBeGreaterThanOrEqual(4.5);
     }
     // Back to nothing picked.
-    await page.getByRole("button", { name: "Reset" }).click();
+    await page.locator('[data-settings-section="appearance"]').getByRole("button", { name: "Reset", exact: true }).click();
   });
 
   test("terminal text contrasts with explicit program backgrounds after a palette change", async ({ page }) => {
     await newWorkspace(page);
-    await settingsRow(page, "Appearance…");
+    await openSettingsPage(page);
     for (const palette of ["latte", "slate"]) {
       await page.locator(`[data-palette-choice="${palette}"]`).click();
       await expect(page.locator("html")).toHaveAttribute("data-palette", palette);

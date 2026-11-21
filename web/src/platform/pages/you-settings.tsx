@@ -1,9 +1,10 @@
 // Settings' You scope (Arugula #1104, at `/settings`): what's about you
 // (Arugula #897), in a flat list (Arugula #1108, #1317). First how loud
 // chat is and quiet hours, words that notify you, and which of your phones
-// and browsers are pushed what. Then Appearance (this device's,
-// the shell's dialog; the one place it's in) and your preferences (Tips,
-// the editor), which are the account's. Then what's on control's
+// and browsers are pushed what. Then Appearance: this device's palette,
+// finish, corners and density, the dialog's controls drawn in place, and
+// under them your preferences (Tips, the editor), which are the account's
+// (Arugula #1318; `preferences`' old address lands here). Then what's on control's
 // page (sign-in and passkeys, machines, teams, shared Docs), as ↗ rows that
 // open it at that dialog; the products linked to the account (M229);
 // which machines' agents read and post (M197); agents with no machine
@@ -18,7 +19,7 @@
 import { onAppearance, palette, appearance, FINISHES } from "../../shared/appearance";
 import { EDITORS, editorShown, setEditorPref, type Editor } from "../../shared/editor-pref";
 import { bigTipsOn, setBigTips, setTips, subscribeSeen, tipsOn } from "../../shared/seen";
-import { openAppearance } from "../../shared/ui/appearance";
+import { AppearanceControls, ResetAppearance } from "../../shared/ui/appearance";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { Section } from "../../shared/ui/settings-section";
 import { names } from "../links";
@@ -43,7 +44,6 @@ export function YouSettings() {
       <ChatAlerts />
       <PhonesAndBrowsers />
       <Appearance />
-      <Preferences />
       <Account />
       <Status />
       <LinkedProducts />
@@ -72,21 +72,34 @@ function PhonesAndBrowsers() {
   );
 }
 
-/** How Arugula looks on this device: the shell's dialog. */
+/** How Arugula looks on this device, the controls in place, then your
+ * preferences, a part of it. */
 function Appearance() {
   useSubscribe(onAppearance);
+  useSubscribe(subscribeSeen);
   const finish = FINISHES.find((f) => f.id === appearance().finish)?.name;
   return (
-    <Section id="appearance" title="Appearance" summary={`${palette().name}${finish ? `, ${finish}` : ""} on this device`} lede="Palette, finish, corners and chat density. This device's only.">
-      <ul class="platform-list settings-rows">
-        <li>
-          <button class="settings-open" data-open-appearance onClick={openAppearance}>
-            <span class="settings-open-name">Appearance…</span>
-          </button>
-        </li>
-      </ul>
+    <Section
+      id="appearance"
+      title="Appearance"
+      summary={joined(`${palette().name}${finish ? `, ${finish}` : ""} on this device`, preferencesSaid())}
+      lede="Palette, finish, corners and chat density on this device, and your preferences."
+    >
+      <AppearanceControls />
+      <div class="prompt-buttons">
+        <ResetAppearance />
+      </div>
+      <Preferences />
     </Section>
   );
+}
+
+/** What Preferences has set, in a few words. */
+function preferencesSaid(): string {
+  const editor = editorShown();
+  const tips = tipsOn() ? (bigTipsOn() ? "Tips on" : "Tips on, not big ones") : "Tips off";
+  const opens = editor === "ask" ? "asks which editor" : `opens in ${EDITORS.find(([e]) => e === editor)?.[1]}`;
+  return joined(tips, opens);
 }
 
 /** Tips and what Open in editor opens: your account's, so they follow you
@@ -94,10 +107,8 @@ function Appearance() {
 function Preferences() {
   useSubscribe(subscribeSeen);
   const editor = editorShown();
-  const tips = tipsOn() ? (bigTipsOn() ? "Tips on" : "Tips on, not big ones") : "Tips off";
-  const opens = editor === "ask" ? "asks which editor" : `opens in ${EDITORS.find(([e]) => e === editor)?.[1]}`;
   return (
-    <Section id="preferences" title="Preferences" summary={joined(tips, opens)} lede="These follow your account to every device." hooks={{ "data-preferences": "" }}>
+    <Section id="preferences" title="Preferences" summary={preferencesSaid()} lede="These follow your account to every device." hooks={{ "data-preferences": "" }}>
       <ul class="platform-list settings-rows">
         <li>
           <label class="settings-switch">

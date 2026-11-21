@@ -92,11 +92,12 @@ test.describe("on a computer", () => {
     await expect(page.locator(".settings-list .list-group-title")).toHaveCount(0);
     const ids = () => page.locator("[data-settings-row]").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.settingsRow));
     // (Chat alerts, after quiet hours, shows once chat is on: it isn't here.)
-    await expect.poll(ids).toEqual(["notifications", "quiet-hours", "push", "appearance", "preferences", "account", "linked", "tokens"]);
-    // Appearance in one place: its own section, and only there.
-    await expect(page.locator("[data-open-appearance]")).toHaveCount(1);
-    await expect(section(page, "appearance").locator("[data-open-appearance]")).toHaveCount(1);
-    await expect(row(page, "appearance").locator(".list-row-detail")).toHaveText(/ on this device$/);
+    await expect.poll(ids).toEqual(["notifications", "quiet-hours", "push", "appearance", "account", "linked", "tokens"]);
+    // Appearance in one place: its controls drawn in its own section, no dialog to open.
+    await expect(page.locator("[data-appearance-controls]")).toHaveCount(1);
+    await expect(section(page, "appearance").locator("[data-appearance-controls]")).toHaveCount(1);
+    await expect(page.getByRole("button", { name: "Appearance…" })).toHaveCount(0);
+    await expect(row(page, "appearance").locator(".list-row-detail")).toHaveText(/ on this device · Tips on · opens in VS Code$/);
     // No index of control's sections, and no Help.
     await expect(section(page, "elsewhere")).toHaveCount(0);
     await expect(page.locator("[data-settings-elsewhere]")).toHaveCount(0);
@@ -144,7 +145,7 @@ test.describe("on a computer", () => {
     );
     // Settings › You: a Status row after Sign-in and machines.
     const ids = () => page.locator("[data-settings-row]").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.settingsRow));
-    await expect.poll(ids).toEqual(["notifications", "quiet-hours", "push", "appearance", "preferences", "account", "status-page", "linked", "tokens"]);
+    await expect.poll(ids).toEqual(["notifications", "quiet-hours", "push", "appearance", "account", "status-page", "linked", "tokens"]);
     await expect(row(page, "status-page").locator(".list-row-detail")).toHaveText("status.arugula.io");
     const link = section(page, "status-page").locator("a[data-status-page]");
     await expect(link).toHaveAttribute("href", "https://status.arugula.io");
@@ -161,21 +162,34 @@ test.describe("on a computer", () => {
     await expect(page).toHaveURL(/\/settings\/you\/status-page$/);
   });
 
-  test("You: Preferences are drawn here, and their summary says what's set", async ({ page }) => {
+  test("You: Appearance draws its controls in place, Preferences under them, and its summary says what's set", async ({ page }) => {
+    // Preferences' old address lands on Appearance, which holds it now.
     await open(page, "/settings/you/preferences");
-    const prefs = section(page, "preferences");
+    await expect(page).toHaveURL(/\/settings\/you\/appearance$/);
+    const look = section(page, "appearance");
+    await expect(look).toBeVisible();
+    await expect(look.locator("#appearance-h")).toHaveText("Appearance");
+    const detail = row(page, "appearance").locator(".list-row-detail");
+    // A palette applies at once, and the row says it.
+    await look.locator('[data-palette-choice="latte"]').click();
+    await expect(page.locator("html")).toHaveAttribute("data-palette", "latte");
+    await expect(detail).toHaveText(/^Latte, .* on this device · /);
+    await look.getByRole("button", { name: "Reset", exact: true }).click();
+    await expect(page.locator("html")).not.toHaveAttribute("data-palette", "latte");
+    // Preferences, a part of it, below the controls.
+    const prefs = look.locator('[data-settings-part="preferences"]');
     await expect(prefs).toBeVisible();
-    await expect(row(page, "preferences").locator(".list-row-detail")).toHaveText("Tips on · opens in VS Code");
+    await expect(detail).toHaveText(/ · Tips on · opens in VS Code$/);
     const tips = prefs.getByRole("switch", { name: "Tips", exact: true });
     await expect(tips).toBeChecked();
     await tips.click();
     await expect(tips).not.toBeChecked();
     await prefs.locator('[data-pref="editor"]').selectOption("nvim");
-    await expect(row(page, "preferences").locator(".list-row-detail")).toHaveText("Tips off · opens in nvim");
+    await expect(detail).toHaveText(/ · Tips off · opens in nvim$/);
     await prefs.getByRole("switch", { name: "Tips", exact: true }).click();
     await prefs.getByRole("switch", { name: "Big tips" }).click();
     await prefs.locator('[data-pref="editor"]').selectOption("ask");
-    await expect(row(page, "preferences").locator(".list-row-detail")).toHaveText("Tips on, not big ones · asks which editor");
+    await expect(detail).toHaveText(/ · Tips on, not big ones · asks which editor$/);
   });
 
   test("the old addresses land in their scopes, the picker chooses which one, and the scopes' switch goes between them", async ({ page }) => {

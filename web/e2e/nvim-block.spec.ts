@@ -19,7 +19,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { expect, test, type Page } from "@playwright/test";
-import { active, closeContexts, menuItem, panes, reset, run, openSettingsPage, settingsRow, closeSettingsPage } from "./helpers";
+import { active, closeContexts, menuItem, panes, reset, run, openSettingsPage, closeSettingsPage } from "./helpers";
 import type { PaneId } from "../src/shared/proto";
 import { ANY, blockPort, daemonPort } from "./ports";
 import "./local-token";
@@ -161,9 +161,7 @@ async function choose(page: Page, label: "VS Code" | "nvim" | "Ask each time") {
 
 /** Appearance › a palette. */
 async function paletteTo(page: Page, id: "latte" | "slate") {
-  await settingsRow(page, "Appearance…");
-  await page.locator(`[data-palette-choice="${id}"]`).click();
-  await page.keyboard.press("Escape");
+  await (await openSettingsPage(page)).locator(`[data-palette-choice="${id}"]`).click();
   await closeSettingsPage(page);
 }
 

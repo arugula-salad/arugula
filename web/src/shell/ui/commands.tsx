@@ -384,9 +384,10 @@ export interface SettingsGroup {
 
 /** The Settings page's own sections, the Account section apart (./settings-page
  * reads that from the account). Ones with nothing in them are left out.
- * Phones and browsers, Appearance and Preferences are the app's You scope's
- * too (Arugula #1108): Appearance in one place, and this device's push
- * beside what's pushed to all of them. */
+ * Phones and browsers and Preferences are the app's You scope's too
+ * (Arugula #1108): this device's push beside what's pushed to all of them.
+ * Appearance isn't rows: the page draws its controls, with Preferences as a
+ * part of it (Arugula #1318). */
 export function settingsGroups(client: Client): SettingsGroup[] {
   const push = client.state ? notificationParts(client) : { device: [], everywhere: [] };
   const groups: SettingsGroup[] = [
@@ -395,12 +396,6 @@ export function settingsGroups(client: Client): SettingsGroup[] {
       title: "Phones and browsers",
       lede: "Whether this device is told, and what's pushed to every device you turned on.",
       items: [...push.device, ...push.everywhere],
-    },
-    {
-      id: "appearance",
-      title: "Appearance",
-      lede: "Palette, finish, corners and chat density. This device's only.",
-      items: [{ label: "Appearance…", hint: "This device's palette, finish, corners and chat density", run: openAppearance }],
     },
     { id: "preferences", title: "Preferences", lede: "These follow your account to every device.", items: preferenceItems() },
     {
