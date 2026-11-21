@@ -53,8 +53,9 @@ final class FlowTests: XCTestCase {
         // A tap as a screen slides back can be lost: again until it's picked.
         for _ in 0..<3 {
             t.tap()
-            let by = Date().addingTimeInterval(3)
-            while !t.isSelected && Date() < by { usleep(200_000) }
+            // Once a second: a quicker poll floods XCTest's log on an iPad,
+            // which then takes the app down.
+            for _ in 0..<3 where !t.isSelected { sleep(1) }
             if t.isSelected { return }
             clearAlerts()
         }
