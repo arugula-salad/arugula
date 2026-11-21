@@ -15,9 +15,7 @@ import { usePlatformApi } from "../../shared/platform-api";
 import { Section } from "../../shared/ui/settings-section";
 import { names } from "../links";
 import { go, pathOf } from "../router";
-import { controlOrigin } from "../session";
 import { MachineAgentGrants } from "../settings/agents";
-import { ControlRow } from "../settings/owner-machines";
 import { machinesOf, type Grant } from "../settings/grants";
 
 type Machine = { id: string; name: string };
@@ -121,15 +119,11 @@ function NotHere({ m }: { m: Machine }) {
  * the picker, chat and `@machine` call it. The old one keeps working in
  * mentions. */
 function MachineName({ m }: { m: Machine }) {
-  const api = usePlatformApi();
   const [name, setName] = useState(m.name);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [done, setDone] = useState("");
-  // Arugula cloud doesn't rename from this page's host yet: rename it on its machines page.
-  const [elsewhere, setElsewhere] = useState(false);
   useEffect(() => setName(m.name), [m.name]);
-  const there = api.controlHref?.(`machine=${m.id}`) ?? `${controlOrigin()}/#machine=${m.id}`;
   const rename = async (to: string) => {
     setBusy(true);
     setErr("");
@@ -142,7 +136,6 @@ function MachineName({ m }: { m: Machine }) {
         body: JSON.stringify({ name: to }),
       });
       const v = (await r.json().catch(() => ({}))) as { name?: string; error?: string };
-      if (r.status === 404 && !v.error) return setElsewhere(true);
       if (!r.ok) throw new Error(v.error ?? `Request failed (${r.status})`);
       setDone(`Renamed to ${v.name ?? to}. Its old name still reaches it in mentions.`);
       readAgain();
@@ -154,31 +147,20 @@ function MachineName({ m }: { m: Machine }) {
   };
   return (
     <Section id="name" title="Name" summary={m.name} lede="What the machines list, chat and @mentions call it. Its old name keeps working in mentions." hooks={{ "data-machine-name": m.id }}>
-      {elsewhere ? (
-        <>
-          <p class="dim" data-machine-rename-elsewhere>
-            Arugula cloud doesn't rename machines from this page yet.
-          </p>
-          <ul class="platform-list settings-rows">
-            <ControlRow href={there} label={`Rename ${m.name}`} why="On your machines page: This machine › Rename machine… in its menu." hook="rename" />
-          </ul>
-        </>
-      ) : (
-        <form
-          class="settings-add"
-          aria-label="Rename"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const n = name.trim();
-            if (n && n !== m.name) void rename(n);
-          }}
-        >
-          <input class="field" aria-label="Name" value={name} maxLength={40} data-machine-rename-name onInput={(e) => setName(e.currentTarget.value)} />
-          <button class="primary" type="submit" disabled={busy || !name.trim() || name.trim() === m.name} data-machine-rename>
-            Rename
-          </button>
-        </form>
-      )}
+      <form
+        class="settings-add"
+        aria-label="Rename"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const n = name.trim();
+          if (n && n !== m.name) void rename(n);
+        }}
+      >
+        <input class="field" aria-label="Name" value={name} maxLength={40} data-machine-rename-name onInput={(e) => setName(e.currentTarget.value)} />
+        <button class="primary" type="submit" disabled={busy || !name.trim() || name.trim() === m.name} data-machine-rename>
+          Rename
+        </button>
+      </form>
       {done && <p class="dim">{done}</p>}
       {err && <p class="control-error">{err}</p>}
     </Section>

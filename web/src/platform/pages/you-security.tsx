@@ -1,14 +1,10 @@
 // Settings › You › Sign-in and security (Arugula #1311): control's Sign-in
 // and account dialog (shell/trust/account.tsx), drawn in place through the
 // app's host. Your passkeys (a list: adding or removing one is a ceremony
-// control takes only on its own page, aru-078, so that's a ↗ link there),
-// GitHub (unlinked here; linking it needs the hub's cookie, so ↗ too) and
-// your email, where you're signed in (sign one out, or everywhere), and
-// deleting the account. A control that doesn't answer `/api/me/*` on this
-// host yet (a bare 404) gets the ↗ row to its dialog instead, as before;
-// an action it doesn't answer yet says so, with the same link. At the
-// bottom, while the hub doesn't serve the Docs you shared with a link here
-// (Arugula #1315), a ↗ row to them on control's page (Arugula #1320).
+// control takes only on its own page, aru-078, so that's a ↗ row there
+// until the single origin, aru-141), GitHub (unlinked here; linking it
+// needs the hub's cookie, so ↗ too) and your email, where you're signed in
+// (sign one out, or everywhere), and deleting the account.
 
 import { useEffect, useState } from "preact/hooks";
 import { describeAgent, LINKED, passkeyName, type AccountCall, type Passkeys, type SessionRow } from "../../shared/account";
@@ -16,19 +12,13 @@ import { platformFetch, refusalOf } from "../../shared/maintenance";
 import { EmailSection } from "../../shared/ui/account-email";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { DeleteAccountSteps } from "../../shared/ui/delete-account";
-import { useSubscribe } from "../../shared/ui/hooks";
 import { ExternalIcon } from "../../shared/ui/icons";
 import { Section } from "../../shared/ui/settings-section";
 import { Time } from "../../shared/ui/time";
-import { docLinks } from "../doc-links";
 import { controlOrigin } from "../session";
 import { ControlRow } from "../settings/owner-machines";
 import { joined, plural } from "../settings/summary";
 import { signOut } from "../signin";
-
-/** A route of the hub's this host doesn't serve yet: a 404 with no
- * `{error}` (one with an error is the route's own answer). */
-class NotHere extends Error {}
 
 /** `/api/me/*` through the app's host. */
 const appCall: AccountCall = async <T,>(method: "GET" | "POST" | "DELETE", path: string, body?: unknown): Promise<T> => {
@@ -40,7 +30,6 @@ const appCall: AccountCall = async <T,>(method: "GET" | "POST" | "DELETE", path:
     body: send ? JSON.stringify(body ?? {}) : undefined,
   });
   const v = (await r.json().catch(() => ({}))) as T & { error?: string; reason?: string };
-  if (r.status === 404 && !v.error) throw new NotHere("Your machines page does this for now.");
   if (!r.ok) throw new Error(refusalOf(r.status, v));
   return v;
 };
@@ -51,19 +40,6 @@ const accountHref = () => `${controlOrigin()}/#account`;
 /** Out of this page, and back to signed out: after signing out everywhere
  * or deleting the account, this page's session is gone too. */
 const leave = () => void signOut().then(() => location.reload());
-
-/** The Docs you shared with a link, on control's page while Docs' Shared
- * by you can't list them (the hub answers 404); then the row goes. */
-function SharedDocs() {
-  useSubscribe((fn) => docLinks.subscribe(fn));
-  useEffect(() => void docLinks.load(), []);
-  if (docLinks.served()) return null;
-  return (
-    <ul class="platform-list settings-rows">
-      <ControlRow href={`${controlOrigin()}/#shared-docs`} label="Shared Docs" why="Docs you shared with a link" hook="shared-docs" />
-    </ul>
-  );
-}
 
 function Away({ label, hook }: { label: string; hook: string }) {
   return (
@@ -76,25 +52,16 @@ function Away({ label, hook }: { label: string; hook: string }) {
 export function SignInAndSecurity() {
   const [sessions, setSessions] = useState<SessionRow[] | null>(null);
   const [keys, setKeys] = useState<Passkeys | null>(null);
-  const [elsewhere, setElsewhere] = useState(false);
-  // An action the hub doesn't answer here yet (#1326): say where it's done.
-  const [notHere, setNotHere] = useState(false);
   const [err, setErr] = useState("");
   const [confirming, setConfirming] = useState<string | null>(null);
   const [unlinking, setUnlinking] = useState(false);
   const [deleting, setDeleting] = useState(false);
   // What linking GitHub on control's page came back with, when it came back here.
   const [linked] = useState(() => /^#github-link=([a-z-]+)$/.exec(location.hash)?.[1]);
-  const failed = (e: Error) => (e instanceof NotHere ? setNotHere(true) : setErr(e.message));
-  const call: AccountCall = <T,>(method: "GET" | "POST" | "DELETE", path: string, body?: unknown) =>
-    appCall<T>(method, path, body).catch((e: Error) => {
-      if (e instanceof NotHere) setNotHere(true);
-      throw e;
-    });
+  const failed = (e: Error) => setErr(e.message);
   const load = () => {
-    const read = (e: Error) => (e instanceof NotHere ? setElsewhere(true) : setErr(e.message));
-    appCall<{ sessions: SessionRow[] }>("GET", "/api/me/sessions").then((r) => setSessions(r.sessions), read);
-    appCall<Passkeys>("GET", "/api/me/passkeys").then(setKeys, read);
+    appCall<{ sessions: SessionRow[] }>("GET", "/api/me/sessions").then((r) => setSessions(r.sessions), failed);
+    appCall<Passkeys>("GET", "/api/me/passkeys").then(setKeys, failed);
   };
   useEffect(load, []);
   const act = (f: () => Promise<unknown>) => {
@@ -103,15 +70,6 @@ export function SignInAndSecurity() {
     f().then(load, failed);
   };
   const lede = "How you sign in, and where you're signed in.";
-  if (elsewhere)
-    return (
-      <Section id="security" title="Sign-in and security" summary="On your machines page" lede={lede} hooks={{ "data-settings-security": "" }}>
-        <ul class="platform-list settings-rows">
-          <ControlRow href={accountHref()} label="Sign-in and account" why="Passkeys, GitHub, email and where you're signed in" hook="account" />
-        </ul>
-        <SharedDocs />
-      </Section>
-    );
   // Sign-ins from before control kept the browser all read "An earlier
   // sign-in": folded into a count (UI audit #174).
   const earlier = (x: SessionRow) => !x.current && !x.agent;
@@ -122,11 +80,6 @@ export function SignInAndSecurity() {
     keys && sessions ? joined(plural(keys.passkeys.length, "passkey"), keys.github ? "GitHub linked" : null, plural(sessions.length, "sign-in")) : err ? "Couldn't load" : undefined;
   return (
     <Section id="security" title="Sign-in and security" summary={summary} lede={lede} hooks={{ "data-settings-security": "" }}>
-      {notHere ? (
-        <p class="dim" data-security-not-here>
-          Your machines page does that for now: <Away label="Sign-in and account" hook="not-here" />
-        </p>
-      ) : null}
       <h3 class="control-group">Passkeys</h3>
       {keys && keys.passkeys.length === 0 ? <p class="dim">None.</p> : null}
       <ul class="control-devices control-rows control-passkeys" data-passkeys>
@@ -145,9 +98,9 @@ export function SignInAndSecurity() {
           </li>
         ))}
       </ul>
-      <p class="dim">
-        Adding or removing a passkey asks your browser on your machines page: <Away label="Add or remove a passkey" hook="passkeys" />
-      </p>
+      <ul class="platform-list settings-rows">
+        <ControlRow href={accountHref()} label="Add or remove a passkey" why="It asks your browser, on your machines page" hook="passkeys" />
+      </ul>
 
       <h3 class="control-group">Linked</h3>
       {linked ? (
@@ -185,7 +138,7 @@ export function SignInAndSecurity() {
           cancel={() => setUnlinking(false)}
           go={() => {
             setUnlinking(false);
-            act(() => call("POST", "/api/me/github/unlink"));
+            act(() => appCall("POST", "/api/me/github/unlink"));
           }}
         >
           <p>It stops signing you in at once, and features that use your GitHub account stop until you link it again.</p>
@@ -212,7 +165,7 @@ export function SignInAndSecurity() {
                 <button
                   class={confirming === x.id ? "primary danger small" : "secondary danger small"}
                   data-end-session={x.id}
-                  onClick={() => (confirming === x.id ? act(() => call("POST", `/api/me/sessions/${encodeURIComponent(x.id)}/end`)) : setConfirming(x.id))}
+                  onClick={() => (confirming === x.id ? act(() => appCall("POST", `/api/me/sessions/${encodeURIComponent(x.id)}/end`)) : setConfirming(x.id))}
                 >
                   {confirming === x.id ? "Really sign out?" : "Sign out"}
                 </button>
@@ -230,7 +183,7 @@ export function SignInAndSecurity() {
               if (confirming !== "all") return setConfirming("all");
               setErr("");
               setConfirming(null);
-              call("POST", "/api/me/sessions/end-all").then(leave, failed);
+              appCall("POST", "/api/me/sessions/end-all").then(leave, failed);
             }}
           >
             {confirming === "all" ? "Sign out everywhere, here too?" : "Sign out everywhere"}
@@ -241,7 +194,7 @@ export function SignInAndSecurity() {
       <h3 class="control-group">Delete your account</h3>
       {deleting ? (
         <div data-delete-account-steps>
-          <DeleteAccountSteps call={call} back={() => setDeleting(false)} deleted={leave} />
+          <DeleteAccountSteps call={appCall} back={() => setDeleting(false)} deleted={leave} />
         </div>
       ) : (
         <p class="dim">
@@ -252,7 +205,6 @@ export function SignInAndSecurity() {
         </p>
       )}
       {err ? <p class="control-error">{err}</p> : null}
-      <SharedDocs />
     </Section>
   );
 }

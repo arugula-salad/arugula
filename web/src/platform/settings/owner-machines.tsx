@@ -6,9 +6,8 @@
 // doesn't list it yet. Changes are in place, on control's word (aru-141):
 // removing one of yours, taking one out of a team (yours, or any of its
 // as the team's owner), moving one of yours into a team, and Add a machine,
-// the `arugulad join` command with Copy. Until the hub serves those routes
-// on the app's host (`/api/teams` answers 404 here), moving and taking
-// out stay a ↗ row to control's page (`#teams`), and removing is there too.
+// the `arugulad join` command with Copy. Until the hub's teams are read
+// (`/api/teams`), each is only a link to its settings.
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
@@ -99,7 +98,7 @@ export function machinesSummary(list: DirMachine[], team: boolean): string {
   return joined(plural(list.length, "machine"), on === list.length ? (on === 1 ? "online" : "all online") : `${on} online`);
 }
 
-export function OwnerMachines({ owner, name, role, teams }: { owner: string; name: string; role: string | undefined; teams: boolean }) {
+export function OwnerMachines({ owner, name, role }: { owner: string; name: string; role: string | undefined }) {
   const { all, err } = useDirectory();
   // Those with settings in This machine (#1104's picker reads the same list).
   const { machines: mine } = useMachines();
@@ -226,21 +225,6 @@ export function OwnerMachines({ owner, name, role, teams }: { owner: string; nam
       )}
       {known && t && adds && all && <BringIn all={all} t={t} name={name} busy={busy} bring={(d) => void move(d, t)} />}
       {err2 && <p class="control-error">{err2}</p>}
-      {!known && (team || teams) && (
-        <ul class="platform-list settings-rows">
-          <ControlRow
-            href={`${controlOrigin()}/#teams`}
-            label={team ? `Share a machine with ${name}, or take one out` : "Move a machine into a team"}
-            why="On your machines page."
-            hook="machines"
-          />
-        </ul>
-      )}
-      {!known && hub !== null && (
-        <ul class="platform-list settings-rows">
-          <ControlRow href={`${controlOrigin()}/#devices`} label="Remove a machine" why="On your machines page." hook="devices" />
-        </ul>
-      )}
       {adds && <AddMachine team={team ? owner : null} name={name} />}
       {removing && (
         <ConfirmRemove
@@ -331,8 +315,10 @@ function AddMachine({ team, name }: { team: string | null; name: string }) {
   );
 }
 
-/** A row a device signs (or the app can't reach yet): it opens control's
- * page, marked ↗, with why under it. */
+/** A row a device signs, or that control takes only on its own origin
+ * until the single origin (aru-141): it opens control's page, marked ↗,
+ * with why under it. Three are left: making or removing a team's owner,
+ * this device's push, and adding or removing a passkey (with Link GitHub). */
 export function ControlRow({ href, label, why, hook }: { href: string; label: string; why: string; hook: string }) {
   return (
     <li>

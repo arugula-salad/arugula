@@ -1,7 +1,8 @@
 // The team hint's fact: from what control tells the page about teams
 // (ControlSession.teams): a team this person owns that's new (only them)
 // or whose second member just joined. Inviting with a link and the
-// team's chat are in Teams…
+// team's chat are in the team's Settings, where there's an app (else
+// control's Teams…).
 
 import type { Client } from "../client";
 import type { ControlSession } from "../control";

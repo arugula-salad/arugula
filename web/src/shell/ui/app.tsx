@@ -105,16 +105,17 @@ export function App({ client, cell, frame = "own", onSwarm }: { client: Client; 
   // M113 (#1028): a computer draws the workspace once a machine is shown;
   // a phone keeps its own header.
   const ws = !phone && !!client.state;
-  // The machine menu's "This machine" items are this client's: one row to
-  // where they're a page, the app's Settings in the app or `#settings` on a
-  // daemon's own page (Arugula #695); else the rows. Control's page keeps
-  // the rows, since the app may not reach the machine (Arugula #1110).
+  // The machine menu's "This machine" items are this client's: one
+  // Settings… row to where they're a page, the app's Settings › Machines
+  // wherever there's an app (control's page too: no dialogs there), or
+  // `#settings` on a daemon's own page (Arugula #695); else (a daemon's own
+  // page on a phone) the rows.
   useEffect(
     () =>
       setMachineItems(() => {
         const mine = machineSettingsItems(client);
-        const page = ws && mine.length > 0 && (platformHere() || !platformOrigin());
-        const rows = page ? [{ label: "Machine settings…", run: () => openSettings("machine", machineShown(client)) }] : mine;
+        const page = mine.length > 0 && (ws || !!platformOrigin());
+        const rows = page ? [{ label: "Settings…", run: () => openSettings("machine", machineShown(client)) }] : mine;
         // Arugula #1194: whether people may type here through Arugula cloud.
         return [...remoteInputItems(client), ...rows];
       }),

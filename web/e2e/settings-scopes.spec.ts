@@ -7,13 +7,14 @@
 // sections are 10 rows in a flat list (Arugula #1105, #1323), and an old section's
 // address lands on the row it's part of. You is four sections (Arugula
 // #1320), each old one's address landing on the one that holds it; what's
-// on control's page is a ↗ row to its dialog there, and Help is the
-// palette's. Sign-in and security is
-// control's dialog drawn in place (Arugula #1311), a ↗ row while the hub
-// doesn't answer `/api/me/*` on the app's host; so are what every device
-// is pushed about (Arugula #1310) and `/api/push/prefs`, and your devices'
-// list (Arugula #1327) and `/api/push/subscriptions`. On #971's fixture page
-// (move-to-project-page.tsx): the platform's answers are this spec's.
+// on control's page until the single origin (aru-141) is a ↗ row to it
+// there, and Help is the palette's. Sign-in and security is control's
+// dialog drawn in place (Arugula #1311), adding or removing a passkey a ↗
+// row; what every device is pushed about is set in place (Arugula #1310),
+// this device's push a ↗ row, and your devices' list (Arugula #1327) is
+// `/api/push/subscriptions`. A read that fails says so, with no ↗ row in
+// its place. On #971's fixture page (move-to-project-page.tsx): the
+// platform's answers are this spec's.
 import { devices, expect, test, type Page, type Route } from "@playwright/test";
 import { fixturePage } from "./fixture-page";
 
@@ -95,8 +96,8 @@ test.describe("on a computer", () => {
     await expect(page.locator('[data-settings-scope="machine"]')).toHaveAttribute("aria-selected", "true");
   });
 
-  test("You: control's device and preference rows join it in one flat list, a device's are ↗ rows to control's page at their dialog, and there's no second index or Help", async ({ page }) => {
-    // A hub that doesn't answer push's prefs on the app's host yet.
+  test("You: control's device and preference rows join it in one flat list, only what control's origin keeps is a ↗ row, and there's no second index or Help", async ({ page }) => {
+    // A hub that fails push's prefs.
     await open(page, "/settings", () => page.route(/\/api\/push\/prefs$/, (r) => r.fulfill({ status: 404, body: "" })));
     // One flat list: no band headings over the sections.
     await expect(page.locator(".settings-list .list-group-title")).toHaveCount(0);
@@ -113,23 +114,25 @@ test.describe("on a computer", () => {
     await expect(page.getByText("Getting started")).toHaveCount(0);
     await expect(page.getByText("What's new")).toHaveCount(0);
 
-    // What's on control's page: a ↗ row each, at its dialog there. No Add a
-    // phone or browser (#1004), and no Machines or Teams: Team and billing
-    // has them. Machines and teams' old address lands on Sign-in and
-    // security, which keeps its Shared Docs row, at the bottom.
+    // What's on control's page until the single origin: a ↗ row each, at
+    // its dialog there. No Add a phone or browser (#1004), no Machines or
+    // Teams (Team and billing has them), and no Shared Docs (Docs has
+    // them). Machines and teams' old address lands on Sign-in and security,
+    // whose one ↗ row is adding or removing a passkey.
     const origin = new URL(page.url()).origin;
     await expect(page.locator('[data-settings-control="teams"]')).toHaveCount(0);
     await page.goto("/settings/you/machines-teams");
     await expect(page).toHaveURL(/\/settings\/you\/security$/);
     const out = section(page, "security").locator("[data-settings-control]");
-    await expect(out).toHaveText([/^Shared Docs/]);
-    await expect(out).toHaveAttribute("href", `${origin}/#shared-docs`);
-    // Notifications, while the hub doesn't answer push's prefs here: this
-    // device and what's pushed, each a ↗ row to control's page.
+    await expect(out).toHaveText([/^Add or remove a passkey/]);
+    await expect(out).toHaveAttribute("href", `${origin}/#account`);
+    // Notifications, when the hub fails push's prefs: it says so, and this
+    // device's ↗ row to control's page is the only one.
     await row(page, "notifications").click();
     const push = section(page, "notifications").locator('[data-settings-control="push"]');
-    await expect(push).toHaveCount(2);
-    for (const href of await push.evaluateAll((els) => els.map((e) => (e as HTMLAnchorElement).href))) expect(href).toBe(`${origin}/#settings=push`);
+    await expect(push).toHaveCount(1);
+    await expect(push).toHaveAttribute("href", `${origin}/#settings=push`);
+    await expect(page.locator('[data-settings-part="push"] .control-error')).toHaveText("Request failed (404)");
   });
 
   test("You: Sign-in and security draws control's dialog in place; adding or removing a passkey and linking GitHub open control's page (Arugula #1311)", async ({ page }) => {
@@ -166,7 +169,7 @@ test.describe("on a computer", () => {
     const origin = new URL(page.url()).origin;
     await expect(sec.locator("[data-passkey-name]")).toHaveText(["iCloud Keychain"]);
     await expect(sec.locator("[data-remove-passkey], [data-add-passkey]")).toHaveCount(0);
-    await expect(sec.locator('[data-security-away="passkeys"]')).toHaveAttribute("href", `${origin}/#account`);
+    await expect(sec.locator('[data-settings-control="passkeys"]')).toHaveAttribute("href", `${origin}/#account`);
     // GitHub and email.
     await expect(sec.locator("[data-github-login]")).toHaveText("GitHub: sam");
     await expect(sec.locator("[data-email-address]")).toHaveText("sam@example.test");
@@ -189,18 +192,16 @@ test.describe("on a computer", () => {
     await expect(sec.locator("[data-delete-go]")).toBeDisabled();
     await sec.locator("[data-delete-confirm]").fill("sam");
     await expect(sec.locator("[data-delete-go]")).toBeEnabled();
-    // Last, the Docs you shared with a link, on control's page while Docs can't list them here.
-    await expect(sec.locator("[data-settings-control]").last()).toHaveAttribute("href", `${origin}/#shared-docs`);
+    // The passkey row is its only ↗: no Shared Docs (Docs has them).
+    await expect(sec.locator("[data-settings-control]")).toHaveCount(1);
   });
 
-  test("You: a hub that doesn't answer /api/me/* on the app's host yet gets Sign-in and security as a ↗ row to control's dialog", async ({ page }) => {
+  test("You: a hub that fails /api/me/* says so in Sign-in and security, with no ↗ row to control's dialog in its place", async ({ page }) => {
     await open(page, "/settings/you/security", () => page.route(/\/api\/me\//, (r) => r.fulfill({ status: 404, body: "" })));
     const sec = section(page, "security");
-    await expect(row(page, "security").locator(".list-row-detail")).toHaveText("On your machines page");
-    const out = sec.locator("[data-settings-control]");
-    await expect(out).toHaveText([/^Sign-in and account/, /^Shared Docs/]);
-    await expect(out.first()).toHaveAttribute("href", `${new URL(page.url()).origin}/#account`);
-    await expect(sec.locator("[data-passkeys]")).toHaveCount(0);
+    await expect(row(page, "security").locator(".list-row-detail")).toHaveText("Couldn't load");
+    await expect(sec.locator(".control-error").first()).toContainText("404");
+    await expect(sec.locator("[data-settings-control]")).toHaveText([/^Add or remove a passkey/]);
   });
 
   test("You: Notifications sets what every device is pushed about in place; this device's switch and the test stay on control's page (Arugula #1310)", async ({ page }) => {
@@ -283,7 +284,7 @@ test.describe("on a computer", () => {
     await expect(list.locator("[data-push-device-name]")).toHaveText(["Sam's iPhone"]);
     expect(sent[1]).toEqual({ method: "DELETE", path: "/api/push/subscriptions/sub_mac", body: null });
 
-    // A hub that answers 404 for them on the app's host: no list, This device's ↗ row as before.
+    // A hub that answers 404 for them: no list, This device's ↗ row as before.
     await page.unrouteAll({ behavior: "wait" });
     await open(page, "/settings/you/notifications");
     await expect(page.locator('[data-settings-part="this-device"] [data-settings-control="push"]')).toBeVisible();

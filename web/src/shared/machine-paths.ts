@@ -179,10 +179,13 @@ export const MACHINE_SETTINGS = new Set(["machine", "remote-sessions"]);
 export function settingsPath(section?: string, machine?: string): string | null {
   if (section === "push" || section === "device" || section === "all-devices") return null;
   if (section && MACHINE_SETTINGS.has(section)) {
-    const sub = section === "machine" ? "" : section;
+    // Who reached it through Arugula cloud is part of Access and sharing.
+    const sub = section === "machine" ? "" : "access";
     return machine ? `/settings/machine/${machine}${sub && `/${sub}`}` : `/settings/machine${sub && `#${sub}`}`;
   }
-  // Preferences is part of Appearance (Arugula #1318).
+  // Preferences is part of Appearance (Arugula #1318), and Account is
+  // Sign-in and security (Arugula #1311).
   if (section === "preferences") return "/settings/you/appearance";
-  return section === "appearance" || section === "account" ? `/settings/you/${section}` : "/settings";
+  if (section === "account") return "/settings/you/security";
+  return section === "appearance" ? `/settings/you/${section}` : "/settings";
 }

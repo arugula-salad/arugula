@@ -1,7 +1,6 @@
 // The Docs the reader shared by link (Arugula #1315): the hub's `GET
-// /api/doc-links`, on the app's host once the cloud serves it there. Until
-// it does that answers 404, and the links stay on control's page: Settings
-// keeps its ↗ row to them and the Docs place shows no Shared by you. The
+// /api/doc-links`, on the app's host. A host that answers 404 shows no
+// Shared by you. The
 // hub knows a link's id, the machine that shared it, its size, dates and a
 // rough count of opens, and nothing of what it says (the key is on the
 // machine), so a link's title, its URL and opening it are the machine's

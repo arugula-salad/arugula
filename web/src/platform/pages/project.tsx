@@ -119,25 +119,26 @@ function HomeSections({ p, boards, workspaces, rooms, chatPath, workspacesPath }
   );
 }
 
-/** Chat is off: Turn on chat for a team's owner (Teams, on Control, where
- * a change to the team is signed), Ask an owner for anyone else (a note
- * to send them, copied), and for a personal project, where it comes from. */
+/** Chat is off: Turn on chat for a team's owner (the team's Settings, at
+ * Chat), Ask an owner for anyone else (a note to send them, copied), and
+ * for a personal project, where it comes from: a team, made on control's
+ * page (Teams). */
 function ChatOff({ p }: { p: PlatformProject }) {
-  const teams = `${controlOrigin()}/#teams`;
   if (!p.team)
     return (
       <EmptyState
         where="page"
         data-chat-off
         title="Chat comes with a team."
-        why="A team has channels and direct messages. Make a team, or turn chat on for one you own, under Teams on your machines page."
+        why="A team has channels and direct messages. Make a team under Teams on your machines page, then turn chat on in its settings."
         action={
-          <a class="secondary" href={teams} data-chat-teams>
+          <a class="secondary" href={`${controlOrigin()}/#teams`} data-chat-teams>
             Teams on your machines page
           </a>
         }
       />
     );
+  const settings = pathOf({ page: "settings", scope: "team", owner: p.team.id, section: "team-chat" }, names);
   if (p.team.role === "owner")
     return (
       <EmptyState
@@ -146,7 +147,7 @@ function ChatOff({ p }: { p: PlatformProject }) {
         title={`Chat is off for ${p.team.name}.`}
         why="Turned on, the team gets channels and direct messages, here and on your machines page."
         action={
-          <a class="primary" href={teams} data-chat-turn-on>
+          <a class="primary" href={settings} data-chat-turn-on onClick={(e) => follow(e, settings)}>
             Turn on chat
           </a>
         }
@@ -154,7 +155,7 @@ function ChatOff({ p }: { p: PlatformProject }) {
     );
   const owners = p.team.members.filter((m) => m.role === "owner").map((m) => m.name);
   const ask = async () => {
-    const note = `Could you turn on chat for ${p.team!.name}? It's under Teams on your machines page: ${teams}`;
+    const note = `Could you turn on chat for ${p.team!.name}? It's in Settings, under Team and billing › Chat: ${location.origin}${settings}`;
     try {
       await navigator.clipboard.writeText(note);
       toast(`Copied a note asking for it: send it to ${owners[0] ?? "an owner"}.`);

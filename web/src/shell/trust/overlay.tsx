@@ -4,10 +4,16 @@
 // to say), else the dialog the account menu opened, else the one-time
 // usage counts question. Also the account's and the host menu's items.
 //
-// The platform's settings (plan and usage) are on the platform page
-// (M153); the account menu links out to them, and offers none without one
-// (M155). The usage reports question is the account's, drawn
-// by ../../shared/ui/account-telemetry from what's passed it (M149).
+// Where there's an app, the account's settings are its Settings: the
+// account menu opens none of the dialogs below (its Settings row goes
+// there), and the old addresses of the ones that went land in it. What
+// control takes only on its own origin until the single origin (aru-141)
+// stays: Sign-in and account for passkeys and Link GitHub (`#account`),
+// Teams for making a team or changing its owners (`#teams`), and Settings'
+// Phones and browsers (../ui/settings-page). Without an app (a control
+// from before it), the menu opens them all, as it did. The usage reports
+// question is the account's, drawn by ../../shared/ui/account-telemetry
+// from what's passed it (M149).
 
 import { useEffect, useState } from "preact/hooks";
 import { openPlatform, platformOrigin } from "../platform-links";
@@ -27,12 +33,12 @@ import { AddMachine } from "./machines";
 import { AddPasskeyAgain, AdmitPrompt, AppLoginDone, AppLoginPrompt, ConfirmPasskey, InvitePrompt, Joined, Notice, PresignedPrompt, ShareOfferPrompt } from "./prompts";
 import { Teams } from "./teams";
 
-/** Control's address that opens Teams (where a team's owner turns chat on). */
+/** Control's address that opens Teams (where a team is made, and its
+ * owners changed, which take this device's key). */
 const TEAMS_HASH = "#teams";
 
-/** Control's addresses for the rest of the account's dialogs: the app's
- * Settings opens them here (Arugula #1108). `#account` and `#teams` are
- * above. */
+/** Control's addresses for the rest of the account's dialogs, where
+ * there's no app: where there is, an old link lands in it (../fragments). */
 const PANEL_HASH = /^#(devices|shared-docs)$/;
 
 /** The panel open, held here rather than in the overlay: the overlay
@@ -202,16 +208,19 @@ export function controlMenuItems(s: ControlSession): MenuItem[] {
 }
 
 /** The account's own items, in the account menu on every page (the bar's,
- * and the no-machines screen's, #97). Sign out is the menu's own, last. */
+ * and the no-machines screen's, #97). Sign out is the menu's own, last.
+ * Where there's an app, the menu's Settings row is the way to the
+ * account's settings, so only what isn't one is here. */
 export function accountItems(s: ControlSession): MenuItem[] {
+  const plan: MenuItem[] =
+    platformOrigin() && s.billing?.billing ? [{ label: s.billing.relay.warning ? "Plan and usage… (over the free relay)" : "Plan and usage…", run: () => openPlatform("/settings/personal") }] : [];
+  // #1066; everyone's since Docs left Labs (native #204). Where there's an
+  // app, its Docs' Shared by you (Arugula #1315).
+  if (platformOrigin()) return [{ label: "Shared Docs…", run: () => openPlatform("/docs?shared=1") }, ...plan];
   return [
     { label: "Teams…", run: openPanel("teams") },
     { label: "Machines…", run: openPanel("devices") },
-    // #1066; everyone's since Docs left Labs (native #204). Where there's
-    // an app, its Docs' Shared by you (Arugula #1315), which sends it back
-    // here (`#shared-docs`) while its host doesn't serve the links yet.
-    { label: "Shared Docs…", run: platformOrigin() ? () => openPlatform("/docs?shared=1") : openPanel("shared-docs") },
+    { label: "Shared Docs…", run: openPanel("shared-docs") },
     { label: "Sign-in and account…", run: openPanel("account") },
-    ...(platformOrigin() && s.billing?.billing ? [{ label: s.billing.relay.warning ? "Plan and usage… (over the free relay)" : "Plan and usage…", run: () => openPlatform("/settings/personal") }] : []),
   ];
 }

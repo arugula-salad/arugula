@@ -118,7 +118,7 @@ test("a machine's own settings, its agents' grants and its name, each a row with
 });
 
 test("a machine the app can't reach explains itself in place, its parts dimmed; its grants and name are Arugula cloud's", async ({ page }) => {
-  // Arugula cloud that doesn't rename from the app's host: a bare 404.
+  // Arugula cloud that fails a rename: a bare 404.
   await open(page, `/settings/machine/${AWAY}`, false);
   for (const id of ["access", "advanced"]) await expect(said(page, id)).toHaveText("Can't reach it from here");
   // One note over the section: why, and what to do. No way off to the machine's page.
@@ -143,8 +143,9 @@ test("a machine the app can't reach explains itself in place, its parts dimmed; 
   await row(page, "name").click();
   await section(page, "name").locator("[data-machine-rename-name]").fill("near-box");
   await section(page, "name").locator("[data-machine-rename]").click();
-  await expect(section(page, "name").locator("[data-machine-rename-elsewhere]")).toBeVisible();
-  await expect(section(page, "name").locator('[data-settings-control="rename"]')).toBeVisible();
+  // It says so, with no ↗ row to control's page in its place.
+  await expect(section(page, "name").locator(".control-error")).toHaveText("Request failed (404)");
+  await expect(section(page, "name").locator("[data-settings-control]")).toHaveCount(0);
   await expect(said(page, "name")).toHaveText("zoo-box");
 });
 
@@ -208,8 +209,8 @@ test("a machine's old Settings addresses land on Machines", async ({ page }) => 
   await expect(page).toHaveURL(/\/settings\/you\/security$/);
   await page.goto(`/p/${P}/machines#settings=preferences`);
   await expect(page).toHaveURL(/\/settings\/you\/appearance$/);
-  // On a machine's page, the old address lands on the machine shown. (Its menu's Machine
-  // settings… goes the same way; with one machine here, the page draws no machine menu.)
+  // On a machine's page, the old address lands on the machine shown. (Its menu's
+  // Settings… goes the same way; with one machine here, the page draws no machine menu.)
   await reset(page);
   const [pane] = await panes(page);
   await page.goto(`/p/${P}/machines?pane=${pane}#settings=machine`);

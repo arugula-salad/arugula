@@ -47,8 +47,7 @@ import "../../shared/docs/docs.css";
 import { homes, names } from "../links";
 import { follow, go, pathOf } from "../router";
 import { SectionHead } from "../../shared/ui/section-head";
-import { controlOrigin, session, type PlatformProject } from "../session";
-import { docLinks } from "../doc-links";
+import { session, type PlatformProject } from "../session";
 import { toast } from "../toast";
 import { mayWrite } from "./issues";
 import { currentProject, onCurrentProject } from "../current-project";
@@ -105,17 +104,8 @@ function DocRows({ p, list }: { p: PlatformProject; list: ProjectDoc[] }) {
 export function DocsPage({ project, shared }: { project?: string; all?: boolean; shared?: boolean }) {
   useSubscribe((fn) => session.subscribe(fn));
   useSubscribe((fn) => onCurrentProject(fn));
-  useSubscribe((fn) => docLinks.subscribe(fn));
   // `?shared=1` is control's Shared Docs… (Arugula #1315): My Docs, at
-  // Shared by you. Where this host doesn't serve the links yet, they're
-  // still on control's page, so it goes back there.
-  const links = docLinks.get();
-  useEffect(() => {
-    if (shared) void docLinks.load();
-  }, [shared]);
-  useEffect(() => {
-    if (shared && links === "absent") location.replace(`${controlOrigin()}/#shared-docs`);
-  }, [shared, links]);
+  // Shared by you.
   const one = project ? session.project(project) : undefined;
   if (project && !one) return <Missing what="That project isn't one of yours (or it's gone)." />;
   const at = project || shared ? undefined : scopeOf({ page: "docs" }, currentProject(), (id) => !!session.project(id));

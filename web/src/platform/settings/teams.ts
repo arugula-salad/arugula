@@ -1,9 +1,7 @@
 // The hub's teams as Team and billing changes them in place (Members,
 // Machines): `GET /api/teams`, each with its roster, pin, lock and who
 // waits on an Ask me first link. Every change here is control's word
-// (aru-141), unsigned: no device key is on this page. Until the hub serves
-// these routes on the app's host it answers 404 there, and the sections
-// keep their ↗ row to control's page instead (`elsewhere`).
+// (aru-141), unsigned: no device key is on this page.
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
@@ -36,9 +34,8 @@ export async function hubCall<T>(method: string, path: string, body?: unknown): 
   return v as T;
 }
 
-/** What the read said: the teams, that the hub doesn't answer here yet, or
- * why it failed. */
-type Read = { teams: HubTeam[] } | { elsewhere: true } | { err: string };
+/** What the read said: the teams, or why it failed. */
+type Read = { teams: HubTeam[] } | { err: string };
 
 let known: Promise<Read> | null = null;
 const listeners = new Set<() => void>();
@@ -47,7 +44,6 @@ function read(): Promise<Read> {
   known ??= platformFetch("/api/teams", { credentials: "same-origin" }).then(
     async (r): Promise<Read> => {
       const v = (await r.json().catch(() => ({}))) as { teams?: HubTeam[]; error?: string };
-      if (r.status === 404) return { elsewhere: true };
       if (!r.ok) return { err: v.error ?? `Request failed (${r.status})` };
       return { teams: v.teams ?? [] };
     },

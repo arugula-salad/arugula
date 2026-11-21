@@ -158,7 +158,8 @@ test.describe("on a phone", () => {
 });
 
 // Arugula #1110: on control's page, an old link to a section that's in the
-// app's Settings now lands on it, at once; Phones and browsers stays. A
+// app's Settings now lands on it, at once, as do control's Machines and
+// Shared Docs dialogs' (`#devices`, `#shared-docs`); Phones and browsers stays. A
 // machine's own sections wait for the machine shown (settings-machine.spec.ts).
 test("on control's page, old #settings links land on the app's Settings, but Phones and browsers stays", async ({ page }) => {
   const APP = "http://app.test";
@@ -168,7 +169,10 @@ test("on control's page, old #settings links land on the app's Settings, but Pho
     ["#settings", "/settings"],
     ["#settings=appearance", "/settings/you/appearance"],
     ["#settings=preferences", "/settings/you/appearance"],
-    ["#settings=account", "/settings/you/account"],
+    ["#settings=account", "/settings/you/security"],
+    // Control's Machines… and Shared Docs… dialogs are the app's too.
+    ["#devices", "/settings/team/personal/machines"],
+    ["#shared-docs", "/docs?shared=1"],
   ]) {
     await page.goto(`/${hash}`);
     await expect(page).toHaveURL(`${APP}${path}`);

@@ -2,14 +2,15 @@
 // (Arugula #1104), a team's at `/settings/team/:team`, Personal's at
 // `/settings/team/personal` (they were `/t/:team/settings` and
 // `/settings/personal`). Its six sections, as every scope's are, in a flat
-// list: Members, Machines (../settings/owner-machines), Chat (the team
-// chat's owners-only switches), Plan and billing, Project defaults (what
-// every project starts with, its default project first) and Labs. Members
+// list: Members, Machines (../settings/owner-machines), Chat (the team's
+// chat on or off, and its owners-only switches), Plan and billing, Project
+// defaults (what every project starts with, its default project first) and
+// Labs. Members
 // and Machines change in place on control's word (aru-141), and Labs' flags
 // are control's Teams panel's list (Arugula #1118), read and set through
-// the app's host. What takes a passkey (making or removing an owner), and
-// what the hub doesn't answer on this host yet, is a ↗ row in place,
-// opening control's page (#1106).
+// the app's host. What takes a passkey (making or removing an owner) is a
+// ↗ row in place, opening control's page (#1106), until the single origin
+// (aru-141).
 //
 // Project defaults opens with the default project, which only the owner's
 // owners choose: one select and a Save, so a change isn't one click. Then
@@ -33,7 +34,6 @@ import { changesOwners, expiresIn, makeInvite, nextRoster, word, type MadeInvite
 import { useHoldLeaving } from "../router";
 import { runs, type HostedWorkspace } from "../runs";
 import { controlOrigin, session, type PlatformProject } from "../session";
-import { owners } from "../owners";
 import { TeamChat } from "../settings/chat-alerts";
 import { ControlRow, OwnerMachines } from "../settings/owner-machines";
 import { PlanAndBilling } from "../settings/plan";
@@ -110,7 +110,7 @@ export function OwnerSettings({ owner }: { owner: string }) {
   return (
     <>
       {team && <Members owner={owner} name={name} role={role} members={team.members} />}
-      <OwnerMachines owner={owner} name={name} role={role} teams={owners(session.projects).some((o) => o.kind === "team")} />
+      <OwnerMachines owner={owner} name={name} role={role} />
       {team && <TeamChat team={owner} name={name} role={role} />}
       <PlanAndBilling team={team ? owner : undefined} />
       <ProjectDefaults owner={owner} name={name} projects={projects} role={role} />
@@ -124,18 +124,13 @@ const ROLE: Record<string, string> = { owner: "Owner", editor: "Editor", viewer:
 /** Members: the roster. Its owners change it in place, on control's word
  * (aru-141): invite links, roles and removing someone, and who waits on an
  * Ask me first link. Making or removing an owner takes the owner's passkey,
- * which only control's page asks for (aru-078), so that's a ↗ row there; so
- * is everything while the hub doesn't answer its teams on this host. */
+ * which only control's page asks for (aru-078), so that's a ↗ row there
+ * until the single origin (aru-141). */
 function Members({ owner, name, role, members }: { owner: string; name: string; role: string | undefined; members: ProjectMember[] }) {
   const hub = useTeams();
   const t = hub && "teams" in hub ? hub.teams.find((x) => x.team === owner) : undefined;
   const names = t ? t.roster.members.map((m) => ({ account: m.account, name: t.names?.[m.account] ?? m.name, role: m.role })) : members;
   const here = role === "owner" && t?.role === "owner";
-  const toControl = (label: string, why: string, hook: string) => (
-    <ul class="platform-list settings-rows">
-      <ControlRow href={`${controlOrigin()}/#teams`} label={label} why={why} hook={hook} />
-    </ul>
-  );
   return (
     <Section
       id="members"
@@ -146,7 +141,7 @@ function Members({ owner, name, role, members }: { owner: string; name: string; 
       hooks={{ "data-owner-members": owner }}
     >
       {here && t ? (
-        <TeamRoster t={t} name={name} toControl={toControl} />
+        <TeamRoster t={t} name={name} />
       ) : (
         <>
           <ul class="platform-list settings-rows">
@@ -159,12 +154,9 @@ function Members({ owner, name, role, members }: { owner: string; name: string; 
           </ul>
           {role !== "owner" ? (
             <p class="dim">Its owners invite people and change roles.</p>
-          ) : hub === null ? null : (
-            <>
-              {"err" in hub && <p class="control-error">{hub.err}</p>}
-              {toControl("Invite people, remove them and change roles", "On your machines page, under Teams…", "members")}
-            </>
-          )}
+          ) : hub && "err" in hub ? (
+            <p class="control-error">{hub.err}</p>
+          ) : null}
         </>
       )}
     </Section>
@@ -172,7 +164,7 @@ function Members({ owner, name, role, members }: { owner: string; name: string; 
 }
 
 /** A team's roster as its owner changes it here. */
-function TeamRoster({ t, name, toControl }: { t: HubTeam; name: string; toControl: (label: string, why: string, hook: string) => preact.JSX.Element }) {
+function TeamRoster({ t, name }: { t: HubTeam; name: string }) {
   const me = session.me?.account;
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -236,7 +228,10 @@ function TeamRoster({ t, name, toControl }: { t: HubTeam; name: string; toContro
           </li>
         ))}
       </ul>
-      {toControl("Make someone an owner, or remove an owner", "It takes your passkey, on your machines page", "owners")}
+      {/* Kept on control's page until the single origin (aru-141). */}
+      <ul class="platform-list settings-rows">
+        <ControlRow href={`${controlOrigin()}/#teams`} label="Make someone an owner, or remove an owner" why="It takes your passkey, on your machines page" hook="owners" />
+      </ul>
       <Waiting t={t} busy={busy} act={act} change={change} />
       <Invites t={t} name={name} />
       {err && <p class="control-error">{err}</p>}
@@ -415,39 +410,24 @@ function Invites({ t, name }: { t: HubTeam; name: string }) {
 /** Labs: the flags control sets for the owner's machines (Arugula #1118),
  * as control's Teams panel lists them: yours on Personal, a team's on its
  * own, which its owners set and everyone else reads. Only for someone with
- * a machine that has Developer settings (`dev`): strangers never see Labs.
- * A control that doesn't answer `/api/flags` on this host yet (a bare 404)
- * gets the ↗ row to its Teams panel. */
+ * a machine that has Developer settings (`dev`): strangers never see Labs. */
 function Labs({ owner, name }: { owner: string; name: string }) {
   const team = owner !== "personal";
   const [kept, setKept] = useState<LabsFlags | null>(null);
-  const [elsewhere, setElsewhere] = useState(false);
   const [err, setErr] = useState("");
   useEffect(() => {
     let live = true;
-    platformFetch("/api/flags", { credentials: "same-origin" }).then(
-      async (r) => {
-        const v = (await r.json().catch(() => ({}))) as Partial<LabsFlags> & { error?: string };
-        if (!live) return;
-        if (r.status === 404 && !v.error) return setElsewhere(true);
-        if (!r.ok) return setErr(v.error ?? `Request failed (${r.status})`);
-        setKept(v as LabsFlags);
-      },
+    call<LabsFlags>("GET", "/api/flags").then(
+      (v) => live && setKept(v),
       (e: Error) => live && setErr(e.message),
     );
     return () => void (live = false);
   }, []);
   const lede = team ? `Labs features turned on for ${name}'s machines.` : "Labs features turned on for every machine of yours.";
-  if (elsewhere || err)
+  if (err)
     return (
-      <Section id="labs" title="Labs" summary={err ? "Couldn't load" : "On your machines page"} lede={lede} hooks={{ "data-owner-labs": owner }}>
-        {err ? (
-          <p class="control-error">{err}</p>
-        ) : (
-          <ul class="platform-list settings-rows">
-            <ControlRow href={`${controlOrigin()}/#teams`} label={team ? `Labs for ${name}'s machines` : "Labs for your machines"} why="Only your machines page reaches these for now." hook="labs" />
-          </ul>
-        )}
+      <Section id="labs" title="Labs" summary="Couldn't load" lede={lede} hooks={{ "data-owner-labs": owner }}>
+        <p class="control-error">{err}</p>
       </Section>
     );
   const mine = kept?.dev ? (team ? kept.teams[owner] : { flags: kept.account, owner: true }) : undefined;
