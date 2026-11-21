@@ -31,6 +31,8 @@ struct ArugulaApp: App {
             .onChange(of: phase, initial: true) { _, now in
                 if now == .active { Task { await model.checkApp() } }
             }
+            // An Overview address (Arugula #1304): home zooms to it.
+            .onOpenURL { url in ZoomCenter.shared.open(url) }
         }
     }
 }
