@@ -1,6 +1,8 @@
 // A project's board settings (Arugula #404), a section of its settings after
 // Plane: how long a Doing row's agent blocks may sit idle before the row is
 // marked stalled. Owners and editors change it; a team's viewers read it.
+// Under its label, whether it follows the team's default or is set here
+// (./team-default).
 
 import { useEffect, useState } from "preact/hooks";
 import type { BoardSettings as Settings } from "../../shared/proto.gen";
@@ -8,6 +10,7 @@ import { platformFetch } from "../../shared/maintenance";
 import type { PlatformProject } from "../session";
 import { Section } from "../../shared/ui/settings-section";
 import { span } from "./summary";
+import { reread, TeamDefault } from "./team-default";
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const r = await platformFetch(path, {
@@ -28,6 +31,7 @@ export function BoardSettings({ p }: { p: PlatformProject }) {
   const [busy, setBusy] = useState(false);
   const base = `/api/projects/${encodeURIComponent(p.id)}/board-settings`;
   const changes = !p.team || p.team.role !== "viewer";
+  const [read, setRead] = useState(0);
   useEffect(() => {
     let live = true;
     call<Settings>("GET", base).then(
@@ -35,7 +39,7 @@ export function BoardSettings({ p }: { p: PlatformProject }) {
       (e: Error) => live && setErr(e.message),
     );
     return () => void (live = false);
-  }, [p.id]);
+  }, [p.id, read]);
   const save = async (e: Event) => {
     e.preventDefault();
     setBusy(true);
@@ -44,6 +48,7 @@ export function BoardSettings({ p }: { p: PlatformProject }) {
       const v = await call<Settings>("PUT", base, { stall_minutes: Number(draft) });
       setMinutes(v.stall_minutes);
       setDraft(String(v.stall_minutes));
+      void reread(p.id);
     } catch (x) {
       setErr((x as Error).message);
     } finally {
@@ -60,6 +65,7 @@ export function BoardSettings({ p }: { p: PlatformProject }) {
       more={<p>A row in Doing whose agents have all sat idle for longer than this, with no pull request on it, is marked stalled on its board, and waits in the Needs you of whoever owns the agent.</p>}
       hooks={{ "data-board-settings": p.id }}
     >
+      <TeamDefault p={p} k="stall_minutes" reset={() => setRead((n) => n + 1)} />
       <form class="settings-row" onSubmit={save}>
         <label>
           Stalled after{" "}
