@@ -132,36 +132,113 @@ function cardWords(r: BoardRow): string {
   return [label, title].filter(Boolean).join(" · ") || "A card";
 }
 
-/** The project's open boards' views, each read again when the platform
- * says it changed, and when the page comes back into view. */
+/** The project's open boards' views from one read of the hub, so they paint
+ * together (#1296), each read again when the platform says it changed, and
+ * all of them when the page comes back into view. `views` is null until they
+ * land. */
 function useBoardViews(project: string): { views: BoardView[] | null; put(v: BoardView): void } {
   const list = useBoards(project);
-  const [read, setRead] = useState<Map<string, BoardView>>(new Map());
+  const [read, setRead] = useState<Map<string, BoardView> | null>(null);
+  // The hub makes each open board's thread as it answers the one read: that is what pushes a board's change.
+  // A hub without the route (404) doesn't, so then the page opens the threads and reads each board, as it did
+  // before the route. That fallback goes once every hub answers the route.
+  const [each, setEach] = useState(false);
   const ids = (list ?? []).filter((b) => !b.closed_at).map((b) => b.id);
   const key = ids.join(",");
+  // Boards read alone since the last whole read began: it doesn't write over them with what it saw before.
+  const newer = useRef(new Set<string>());
+  const whole = useRef<() => void>(() => {});
+  const asked = useRef("");
+  const eachNow = useRef(false);
+  eachNow.current = each;
+  useEffect(() => {
+    let live = true;
+    setRead(null);
+    setEach(false);
+    asked.current = "";
+    whole.current = () => {
+      newer.current = new Set();
+      boards.views(project).then(
+        (v) => {
+          if (!live) return;
+          if (!v) return setEach(true);
+          setRead((was) => {
+            const m = new Map(v.map((x) => [x.board.id, x] as const));
+            for (const id of newer.current) if (was?.has(id)) m.set(id, was.get(id)!);
+            return m;
+          });
+        },
+        () => live && setEach(true),
+      );
+    };
+    whole.current();
+    const back = () => document.visibilityState === "visible" && !eachNow.current && whole.current();
+    document.addEventListener("visibilitychange", back);
+    return () => {
+      live = false;
+      document.removeEventListener("visibilitychange", back);
+    };
+  }, [project]);
+  // A board opened since that read (the list says so) is read for.
+  useEffect(() => {
+    if (read && !each && asked.current !== key && ids.some((id) => !read.has(id))) {
+      asked.current = key;
+      whole.current();
+    }
+  }, [key, read]);
   useEffect(() => {
     let live = true;
     const again = (id: string) =>
       boards.get(id).then(
-        (v) => live && setRead((m) => new Map(m).set(id, v)),
+        (v) => {
+          if (!live) return;
+          newer.current.add(id);
+          setRead((m) => new Map(m ?? []).set(id, v));
+        },
         () => {},
       );
-    const offs = ids.map((id) => {
-      void again(id);
-      // The thread is what the platform pushes a change on: open it so there is one.
-      boards.thread(id).catch(() => {});
-      return chat.onObject(id, () => void again(id));
-    });
-    const back = () => document.visibilityState === "visible" && ids.forEach((id) => void again(id));
+    const offs = ids.map((id) => chat.onObject(id, () => void again(id)));
+    if (each && list !== null) {
+      // Together, as the one read paints them.
+      void Promise.all(
+        ids.map((id) => {
+          boards.thread(id).catch(() => {});
+          return boards.get(id).then((v) => [id, v] as const, () => null);
+        }),
+      ).then((got) => live && setRead((m) => new Map([...(m ?? []), ...got.flatMap((g) => (g ? [g] : []))])));
+    }
+    // The refocus re-reads each board here, as the page did (#1297).
+    const back = () => document.visibilityState === "visible" && each && ids.forEach((id) => void again(id));
     document.addEventListener("visibilitychange", back);
     return () => {
       live = false;
       offs.forEach((off) => off());
       document.removeEventListener("visibilitychange", back);
     };
-  }, [key]);
-  const views = list === null ? null : ids.flatMap((id) => (read.has(id) ? [read.get(id)!] : []));
-  return { views, put: (v) => setRead((m) => new Map(m).set(v.board.id, v)) };
+  }, [key, each, list !== null]);
+  const views = list === null || read === null ? null : ids.flatMap((id) => (read.has(id) ? [read.get(id)!] : []));
+  return { views, put: (v) => setRead((m) => new Map(m ?? []).set(v.board.id, v)) };
+}
+
+/** Rows of the board list's own shape, still, until the boards' views land: what comes takes their place without the page moving. */
+function BoardsSkeleton() {
+  return (
+    <ul class="ov-boards ov-skeleton" data-ov-skeleton aria-busy="true" aria-label="Loading the boards">
+      {[0, 1, 2].map((i) => (
+        <li key={i} class="ov-board ov-board-still">
+          <div class="ov-board-line">
+            <span />
+            <i class="ov-skel-bar" />
+            <i class="ov-skel-bar" />
+            <span />
+            <i class="ov-skel-bar" />
+            <i class="ov-skel-bar" />
+            <span />
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 /** The hub's sessions by card, read again a minute later; null where the
@@ -414,7 +491,7 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
       </p>
       {/* Since the reader last looked (#1277), counted from the event log; it opens the chief of staff's tab. */}
       <BriefingLine b={briefing} staffRoom={chief?.id} open={chief ? () => pickChief(chief) : undefined} />
-      {views === null && <p class="dim">Loading…</p>}
+      {views === null && <BoardsSkeleton />}
       {views !== null && !any && (
         <EmptyState
           where="page"

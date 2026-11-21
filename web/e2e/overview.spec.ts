@@ -24,7 +24,9 @@
 // address, the bar's path, the level pill and the talk panel's front tab,
 // and a Needs you card to the work that asks; the Work level's panes live
 // (#1289), a shell and an agent block typed into and a question answered
-// above them; and on a phone, one list
+// above them; the boards' views read in one request, painted together
+// behind a skeleton, with no thread opened by the page, and read one by one
+// from a hub that has no such route yet (#1296); and on a phone, one list
 // with Needs you on top. The platform's boards and the
 // hub's sessions are made up here; the panes are the daemon's own.
 import { fileURLToPath } from "node:url";
@@ -68,9 +70,14 @@ const launch = (live?: number, lead?: unknown) => {
   return lead ? { ...v, board: { ...v.board, lead } } : v;
 };
 
-/** The platform's boards for the project, and the hub's sessions by card (`null`: the route isn't there yet, 404). */
-async function serve(page: Page, byCard: unknown = null, live?: number, lead?: () => unknown) {
+/** The platform's boards for the project, and the hub's sessions by card (`null`: the route isn't there yet, 404). The open boards' views come in one read, after `hold` if it's given; `null`: a hub with no such route (404). */
+async function serve(page: Page, byCard: unknown = null, live?: number, lead?: () => unknown, hold?: Promise<void> | null) {
   await page.route(`**/api/projects/${P}/boards`, (r) => r.fulfill({ json: { project: P, boards: [board(B, "Launch"), board(LATER, "Later")] } }));
+  await page.route(`**/api/projects/${P}/boards/views`, async (r) => {
+    if (hold === null) return r.fulfill({ status: 404, json: { error: "not found" } });
+    await hold;
+    await r.fulfill({ json: [launch(live, lead?.()), view(LATER, "Later", [["row_z", "next", 21, "Someday"]])] });
+  });
   await page.route(`**/api/boards/${B}`, (r) => r.fulfill({ json: launch(live, lead?.()) }));
   await page.route(`**/api/boards/${LATER}`, (r) => r.fulfill({ json: view(LATER, "Later", [["row_z", "next", 21, "Someday"]]) }));
   await page.route(`**/api/projects/${P}/sessions/by-card`, (r) => (byCard ? r.fulfill({ json: byCard }) : r.fulfill({ status: 404, json: { error: "not found" } })));
@@ -78,10 +85,10 @@ async function serve(page: Page, byCard: unknown = null, live?: number, lead?: (
 }
 
 /** The app on the project's Overview, with an agent block on #12 beside the reset's terminal (in its session), and a second session in the project on no card. */
-async function overview(page: Page, byCard: unknown = null, live = false, lead?: () => unknown): Promise<{ term: number; agent: number; scratch: number }> {
+async function overview(page: Page, byCard: unknown = null, live = false, lead?: () => unknown, hold?: Promise<void> | null): Promise<{ term: number; agent: number; scratch: number }> {
   await reset(page);
   const [term] = await panes(page);
-  await serve(page, byCard, live ? term : undefined, lead);
+  await serve(page, byCard, live ? term : undefined, lead, hold);
   const body = await fixturePage("./app-frame-page.tsx");
   await page.route(new RegExp(`/p/${P}`), (r) => r.fulfill({ contentType: "text/html", body }));
   await page.goto(`/p/${P}`);
@@ -160,6 +167,24 @@ async function chatOn(page: Page) {
   });
 }
 
+/** The threads the page opens (`window.__opened`): the fixture page answers chat inside the page, so no request shows it. */
+async function spyOpened(page: Page) {
+  await page.addInitScript(() => {
+    const w = window as unknown as { __chat?: { openObject(t: string): Promise<unknown> }; __opened?: string[] };
+    let held: typeof w.__chat;
+    Object.defineProperty(window, "__chat", {
+      configurable: true,
+      get: () => held,
+      set: (c: NonNullable<typeof w.__chat>) => {
+        const open = c.openObject.bind(c);
+        c.openObject = (t) => ((w.__opened ??= []).push(t), open(t));
+        held = c;
+      },
+    });
+  });
+}
+const opened = (page: Page) => page.evaluate(() => [...((window as unknown as { __opened?: string[] }).__opened ?? [])].sort());
+
 const tile = (page: Page, row: string) => page.locator(`[data-ov-card="${row}"]`);
 /** Open Launch's row, to its cards in flight. */
 async function openLaunch(page: Page) {
@@ -232,6 +257,44 @@ test.describe("on a computer", () => {
     await expect(page.locator(".ws-rail [data-open-plan]")).toHaveAttribute("aria-current", "page");
     await expect(page.locator("[data-space-places=plan] [data-space-overview]")).toHaveAttribute("aria-current", "page");
     await page.screenshot({ path: info.outputPath("overview.png") });
+  });
+
+  test("the boards' views are one read, painted together behind a skeleton, and the page opens no thread (Arugula #1296)", async ({ page }) => {
+    const asked: string[] = [];
+    page.on("request", (r) => {
+      const u = new URL(r.url());
+      if (u.pathname.startsWith("/api/") && r.method() !== "OPTIONS") asked.push(`${r.method()} ${u.pathname}`);
+    });
+    await spyOpened(page);
+    let release!: () => void;
+    const hold = new Promise<void>((done) => (release = done));
+    await overview(page, null, false, undefined, hold);
+    // The hub hasn't answered: a still skeleton, no row, no "Nothing in flight".
+    await expect(page.locator("[data-ov-skeleton]")).toBeVisible();
+    await expect(page.locator("[data-ov-board], [data-ov-empty]")).toHaveCount(0);
+    release();
+    await expect(page.locator("[data-ov-board]")).toHaveCount(2);
+    await expect(page.locator("[data-ov-skeleton]")).toHaveCount(0);
+    await expect(page.locator(`[data-ov-board="${B}"] [data-ov-board-count]`)).toHaveText("1/5");
+    await expect(page.locator(`[data-ov-board="${LATER}"] [data-ov-board-count]`)).toHaveText("0/1");
+    const mine = (path: RegExp) => asked.filter((a) => path.test(a));
+    expect(mine(/^GET \/api\/projects\/[^/]+\/boards\/views$/)).toHaveLength(1);
+    expect(mine(/^GET \/api\/boards\//)).toHaveLength(0);
+    expect(await opened(page)).toEqual([]);
+  });
+
+  test("a hub without the views route (404) is read board by board, each thread opened, the rows still painted together (Arugula #1296)", async ({ page }) => {
+    const asked: string[] = [];
+    page.on("request", (r) => {
+      const u = new URL(r.url());
+      if (u.pathname.startsWith("/api/")) asked.push(`${r.method()} ${u.pathname}`);
+    });
+    await spyOpened(page);
+    await overview(page, null, false, undefined, null);
+    await expect(page.locator("[data-ov-board]")).toHaveCount(2);
+    await expect(page.locator(`[data-ov-board="${B}"] [data-ov-board-count]`)).toHaveText("1/5");
+    expect(asked.filter((a) => a === `GET /api/boards/${B}` || a === `GET /api/boards/${LATER}`).sort()).toEqual([`GET /api/boards/${B}`, `GET /api/boards/${LATER}`].sort());
+    expect(await opened(page)).toEqual([B, LATER].sort());
   });
 
   test("a card opens the board's drawer; Esc and the path climb back; a session opens on its machine", async ({ page }, info) => {
