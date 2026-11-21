@@ -14,13 +14,9 @@ import "../shell/phone-machines.css";
 import "../shell/docs-page.css";
 import "../shell/settings-page.css";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import { machinesPath, type MachineAt } from "../shared/machine-paths";
+import type { MachineAt } from "../shared/machine-paths";
 import { PlatformApiContext } from "../shared/platform-api";
-import { EmptyState } from "../shared/ui/block-states";
-import { Card } from "../shared/ui/card";
 import { usePhone, useSubscribe } from "../shared/ui/hooks";
-import { PageHeader } from "../shared/ui/page-header";
-import { Chip, StateChip } from "../shared/ui/state-chip";
 import { directory } from "../shell/hosts";
 import { followSource, Machines } from "../shell/machines";
 import { shellPlatformApi } from "../shell/platform-api";
@@ -31,19 +27,18 @@ import { installKeys } from "../shell/ui/keys";
 import { MachineView, Swarm } from "../shell/views";
 import { names } from "../platform/links";
 import { session as platform } from "../platform/session";
-import { current, follow, go, pathOf } from "../platform/router";
-import type { Fleet, FleetHost } from "../shell/fleet";
-import { ROLE_WORDS, rowsOf, sessionsLine, sortRows } from "./machine-list";
+import { current, go, pathOf } from "../platform/router";
+import type { FleetHost } from "../shell/fleet";
 import type { AppSession } from "./session";
 import type { Client } from "../shell/client";
 import { OPS, opPath } from "../shell/ops";
 import type { DocLinkUrl, DocMoveRequest, DocOpened, DocOpenRequest, DocRow } from "../shared/proto.gen";
 import { notePane } from "../platform/places-kept";
 import { popOutIn } from "../shell/ui/panes/pop-out";
-import { PanesList } from "./panes-list";
+import { MachinesList } from "./machines-list";
 import { newSessionsIn } from "../shell/new-session";
 import { projectRef } from "../shell/ui/session-project";
-import { inShown, onShownProject, projectOf, showProject } from "../shell/project-view";
+import { inShown, projectOf, showProject } from "../shell/project-view";
 
 export interface Booted {
   machines: Machines;
@@ -235,8 +230,12 @@ function Place({ project, at, b: { machines, cell }, session }: { project: strin
     machines.client.reselect();
   }, [project, shown.name, shown.personal]);
   useEffect(() => () => showProject(null), []);
-  // A list in the platform's panel: the machines, or Build's home, every machine's panes (Arugula #1083).
+  // A list in the platform's panel: the Machines page (Arugula #1346), at its old address too.
   const list = (at.at === "machines" && at.pane === undefined && !at.name) || at.at === "panes";
+  // Build's list of panes (#1083) is the Machines page now: its address goes there.
+  useEffect(() => {
+    if (at.at === "panes") go(pathOf({ page: "machines", project, at: { at: "machines", ...(at.agents ? { agents: true } : {}) } }, names), true);
+  }, [at.at, at.at === "panes" && at.agents]);
   // The shell's keys while a machine's page or Swarm is shown, and only then.
   useEffect(() => (list ? undefined : installKeys(() => machines.client)), [list]);
   const [, tick] = useState(0);
@@ -262,7 +261,7 @@ function Place({ project, at, b: { machines, cell }, session }: { project: strin
   if (at.at === "swarm") {
     const f = at.focus;
     const host = f ? (f.machine ? hostOf(f.machine) : (directory.home ?? directory.names[0])) : undefined;
-    const back = () => go(pathOf({ page: "machines", project, at: { at: "panes" } }, names));
+    const back = () => go(pathOf({ page: "machines", project, at: { at: "machines" } }, names));
     return (
       <div class="app-swarm" data-app-swarm>
         <BesideRail />
@@ -274,7 +273,7 @@ function Place({ project, at, b: { machines, cell }, session }: { project: strin
     return (
       // In the panel the project's other pages sit in.
       <main class="platform-main">
-        {at.at === "panes" ? <PanesList project={project} fleet={machines.fleet} machine={at.machine} agents={!!at.agents} /> : <MachinesList project={project} fleet={machines.fleet} session={session} />}
+        <MachinesList project={project} fleet={machines.fleet} agents={(at.at === "machines" || at.at === "panes") && !!at.agents} session={session} />
       </main>
     );
   const client = machines.client;
@@ -343,82 +342,4 @@ function BesideRail() {
     return () => void delete document.documentElement.dataset.workspace;
   }, [phone]);
   return null;
-}
-
-/** The team's machines: each one's state, whose it is and what you may do
- * there, its sessions and the projects they serve, and its page one click
- * on. Cloud workspaces are among them, marked; the project's Runs and
- * Workspaces are its header's (Arugula #1082). */
-function MachinesList({ project, fleet, session }: { project: string; fleet: Fleet; session: AppSession | null }) {
-  useSubscribe((fn) => directory.subscribe(fn));
-  useSubscribe((fn) => fleet.subscribe(fn));
-  useSubscribe((fn) => session?.subscribe(fn) ?? (() => {}));
-  useSubscribe((fn) => platform.subscribe(fn));
-  const phone = usePhone();
-  useSubscribe(onShownProject);
-  const hosted = (id: string | undefined) => (id ? session?.daemons.find((d) => d.id === id)?.hosted : undefined);
-  const name = platform.project(project)?.name ?? "this project";
-  // This project's (Arugula #1164): your machines, its cloud workspaces,
-  // and any other machine with a session of it you may see.
-  const rows = sortRows(rowsOf(fleet.list, fleet.panes, (id) => hosted(id)?.role, (p, yours) => inShown(p, yours))).filter((r) =>
-    r.cloud ? hosted(r.id)?.project === project || !!r.sessions : !r.owner || !!r.sessions,
-  );
-  // The project's runs and cloud workspaces are here, under Build (Arugula #1082): a run is a session in a cloud workspace.
-  const runs = pathOf({ page: "runs", project }, names);
-  const workspaces = pathOf({ page: "workspaces", project }, names);
-  return (
-    <section class="platform-section sw-page" data-machines-list>
-      <PageHeader
-        title="Machines"
-        actions={
-          <>
-            <a class="secondary" href={runs} data-machines-runs onClick={(e) => follow(e, runs)}>
-              Runs
-            </a>
-            {platform.hosted && (
-              <a class="secondary" href={workspaces} data-machines-workspaces onClick={(e) => follow(e, workspaces)}>
-                Workspaces
-              </a>
-            )}
-          </>
-        }
-      />
-      {directory.list === null ? (
-        <p class="dim">Loading…</p>
-      ) : rows.length ? (
-        <ul class={`platform-list ${phone ? "card-list" : "card-grid"}`}>
-          {rows.map((r) => {
-            const at: MachineAt = r.id ? { at: "machine", machine: r.id } : { at: "machines", name: r.name };
-            const to = `/p/${project}${machinesPath(at)}`;
-            const line = sessionsLine(r, name);
-            return (
-              <li key={r.name}>
-                <Card as="a" tone={r.needsYou ? "accent" : r.online ? "ok" : "muted"} href={to} data-machine-link={r.id ?? r.name} onClick={(e) => follow(e, to)}>
-                  <span class="card-head">
-                    <b class="card-title">{r.name}</b>
-                    <StateChip tone={r.online ? "ok" : "muted"} data-machine-state>
-                      {r.online ? "online" : "offline"}
-                    </StateChip>
-                    {r.cloud && (
-                      <Chip kind="tag" data-machine-cloud>
-                        Cloud
-                      </Chip>
-                    )}
-                  </span>
-                  <p class="card-meta">{[r.owner ? `${r.owner}'s` : "Yours", ROLE_WORDS[r.role]].join(" · ")}</p>
-                  {line && (
-                    <p class="card-meta" data-machine-sessions>
-                      {line}
-                    </p>
-                  )}
-                </Card>
-              </li>
-            );
-          })}
-        </ul>
-      ) : (
-        <EmptyState where="page" title="No machines yet." why="A machine shows here once it has joined your team. Its sessions and who may steer them come with it." data-machines-empty />
-      )}
-    </section>
-  );
 }

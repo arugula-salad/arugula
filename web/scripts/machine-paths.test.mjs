@@ -114,6 +114,14 @@ test("Build's home is every machine's panes, with a machine as its filter (#1083
   assert.equal(controlHash({ at: "panes", machine: D }), `machine=${D}`);
 });
 
+test("the Machines page keeps Agents only in its address (#1346)", () => {
+  assert.deepEqual(parse(`/p/${P}/machines`, "?agents").at, { at: "machines", agents: true });
+  assert.equal(pathOf({ page: "machines", project: P, at: { at: "machines", agents: true } }), `/p/${P}/machines?agents`);
+  // Only on the page itself: not on a pane's or a machine's by name.
+  assert.equal(parse(`/p/${P}/machines`, "?pane=9&agents").at.agents, undefined);
+  assert.equal(parse(`/p/${P}/machines`, "?machine=mini&agents").at.agents, undefined);
+});
+
 test("Pop out opens the pane alone, in the app and on control's page (#1032)", () => {
   // The app names the daemon, even for the home machine: no overview between.
   assert.equal(popAddress(9, D), `/machines/${D}?pane=9&pop`);
