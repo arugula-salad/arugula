@@ -229,7 +229,6 @@ test.describe("on a computer", () => {
     await expect(list.locator("[data-machines-machine-link]")).toHaveCount(1);
     await expect(page.locator("[data-app-path]")).toHaveText(/Arugula team\s*Arugula\s*Machines/);
     await here(page, "machines");
-    await page.goBack();
     await place(page, "swarm").click();
     await expect(page).toHaveURL(new RegExp(`/p/${P}[^/]*/machines/swarm$`));
     await expect(page.locator("[data-app-swarm] .swarm")).toBeVisible();

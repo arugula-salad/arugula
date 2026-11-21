@@ -232,10 +232,6 @@ function Place({ project, at, b: { machines, cell }, session }: { project: strin
   useEffect(() => () => showProject(null), []);
   // A list in the platform's panel: the Machines page (Arugula #1346), at its old address too.
   const list = (at.at === "machines" && at.pane === undefined && !at.name) || at.at === "panes";
-  // Build's list of panes (#1083) is the Machines page now: its address goes there.
-  useEffect(() => {
-    if (at.at === "panes") go(pathOf({ page: "machines", project, at: { at: "machines", ...(at.agents ? { agents: true } : {}) } }, names), true);
-  }, [at.at, at.at === "panes" && at.agents]);
   // The shell's keys while a machine's page or Swarm is shown, and only then.
   useEffect(() => (list ? undefined : installKeys(() => machines.client)), [list]);
   const [, tick] = useState(0);
