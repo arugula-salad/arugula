@@ -19,7 +19,7 @@
 //!   `issue_write`'s) when it names an issue by `#N` or no subject at all; a
 //!   subject named by its id is left anywhere.
 //! - **Local watches.** The daemon's own types (a pane's, an agent's:
-//!   `agent.idle`, `pane.exited`) are held by this daemon
+//!   `agent.idle`, `pane.exited`, `pane.output.matched`) are held by this daemon
 //!   (`arugulad_base::local_watches`), with no account, under the same
 //!   rules. `list` shows them with the cloud's, and `cancel` takes either.
 //! - **Once.** It fires once, or expires (24 hours unless told, at most 7
@@ -51,7 +51,7 @@ use crate::mcp::tools::{Call, Kind, Out, done, parse};
 
 pub(crate) const TOOL: &str = "watch";
 
-pub(crate) const DESCRIPTION: &str = "Wake this session later, when something happens: create a watch, then end your turn (watch ends your turn; wait instead blocks it until something happens). When it fires, you get a follow-up saying what happened (ids and states only), as a chat mention arrives. It fires once. It expires after 24 hours unless you say (expires, at most 7d), and then you get one message saying it ended without firing. Targets, any of which fires it: pr (OWNER/REPO#N or its link) until merged, closed, checks_done, checks_failed or ready (checks green and it can merge cleanly), in a repo linked to Arugula's GitHub App (else use wait with pr); session (a hosted agent session, ses_) until it settles; run (run_ or dep_) until it ends; room (a chat room's id, with parent for one thread and from for one person) until a reply you didn't write; event (a type from kind types, like issue.closed) with match (some of the type's match fields, like {\"issue\": \"#12\"}) and note (why you watch, at most 200 characters, handed back when it fires). This machine's own (agent.idle, pane.exited; match {\"pane\": \"4\"}) need no account. If it has already happened, create says so and makes no watch. A watch belongs to this Claude Code session: a new session in this pane doesn't get it. Works from a terminal with Arugula's hooks installed, or an agent block.";
+pub(crate) const DESCRIPTION: &str = "Wake this session later, when something happens: create a watch, then end your turn (watch ends your turn; wait instead blocks it until something happens). When it fires, you get a follow-up saying what happened (ids and states only), as a chat mention arrives. It fires once. It expires after 24 hours unless you say (expires, at most 7d), and then you get one message saying it ended without firing. Targets, any of which fires it: pr (OWNER/REPO#N or its link) until merged, closed, checks_done, checks_failed or ready (checks green and it can merge cleanly), in a repo linked to Arugula's GitHub App (else use wait with pr); session (a hosted agent session, ses_) until it settles; run (run_ or dep_) until it ends; room (a chat room's id, with parent for one thread and from for one person) until a reply you didn't write; event (a type from kind types, like issue.closed) with match (some of the type's match fields, like {\"issue\": \"#12\"}) and note (why you watch, at most 200 characters, handed back when it fires). This machine's own (agent.idle, pane.exited; match {\"pane\": \"4\"}) need no account. So does pane.output.matched, with match {\"pane\": \"4\", \"pattern\": \"ready|ERROR\"}: it fires when a new line of the pane's output matches the regex (ANSI stripped, as wait's pattern is), never for output already there when you make it, and its message quotes the line. If it has already happened, create says so and makes no watch. A watch belongs to this Claude Code session: a new session in this pane doesn't get it. Works from a terminal with Arugula's hooks installed, or an agent block.";
 
 /// `watch`'s kinds.
 pub(crate) const KINDS: &[Kind] = &[
@@ -186,7 +186,7 @@ fn local(a: &CreateArgs) -> Option<On> {
 }
 
 /// What a local watch asks for, checked here, before the session is known:
-/// its type, a pane, and maybe an exit code, alone.
+/// its type, a pane, and maybe an exit code or a pattern, alone.
 fn local_ask(a: CreateArgs, on: On) -> Result<local_watches::Ask, String> {
     let name = on.name();
     if a.pr.is_some() || a.session.is_some() || a.run.is_some() || a.room.is_some() || a.until.is_some() {
@@ -206,12 +206,23 @@ fn local_ask(a: CreateArgs, on: On) -> Result<local_watches::Ask, String> {
         Some(v) => Some(code_of(&v).ok_or_else(|| format!("match exit: an exit code, like 0, not {v}"))?),
         None => None,
     };
+    let pattern = match matches.remove("pattern") {
+        Some(Value::String(p)) if !p.is_empty() => Some(p),
+        Some(v) => return Err(format!("match pattern: a regex, like \"ERROR|panic\", not {v}")),
+        None => None,
+    };
+    if on == On::Output && pattern.is_none() {
+        return Err(format!(
+            "event {name} needs match pattern: a regex, like {{\"pane\": \"4\", \"pattern\": \"ERROR\"}}"
+        ));
+    }
     Ok(local_watches::Ask {
         session: String::new(),
         session_name: None,
         on,
         pane,
         exit,
+        pattern,
         note,
         expires_in_ms: a.expires.as_deref().map(expires).transpose()?,
         wait: false,
@@ -847,7 +858,7 @@ mod tests {
         );
         // With no account, this machine's own types are still watchable.
         assert!(alone.contains("agent.idle: An agent on this machine finished its turn and waits for a prompt. [watchable now, by this machine]"), "{alone}");
-        assert_eq!(alone.matches("watchable now").count(), 4, "{alone}");
+        assert_eq!(alone.matches("watchable now").count(), 5, "{alone}");
     }
 
     #[test]
@@ -867,6 +878,18 @@ mod tests {
         let ask = exited(json!({ "pane": 7, "exit": "3" })).unwrap();
         assert_eq!((ask.on, ask.pane, ask.exit), (On::Exited, 7, Some(3)));
         assert!(exited(json!({ "exit": 0 })).unwrap_err().contains("needs match pane"));
+        let output = |m: Value| {
+            let a = args(json!({ "event": "pane.output.matched", "match": m }));
+            let on = local(&a).unwrap();
+            local_ask(a, on)
+        };
+        let ask = output(json!({ "pane": "%4", "pattern": "ERROR|panic" })).unwrap();
+        assert_eq!((ask.on, ask.pattern.as_deref()), (On::Output, Some("ERROR|panic")));
+        assert!(output(json!({ "pane": 4 })).unwrap_err().contains("needs match pattern"));
+        assert!(
+            output(json!({ "pane": 4, "pattern": "x", "exit": 1 })).unwrap_err().contains("matches on pane, pattern")
+        );
+
         assert!(exited(json!({ "pane": "build" })).unwrap_err().starts_with("match pane: a pane's"));
         assert_eq!(
             exited(json!({ "pane": 7, "state": "x" })).unwrap_err(),

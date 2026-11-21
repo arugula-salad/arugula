@@ -516,6 +516,13 @@ pub const CATALOG: &[EventType] = &[
         home: Home::Daemon,
         power: None,
     },
+    EventType {
+        name: "pane.output.matched",
+        meaning: "A new line of a pane's output matches a pattern: lines already on screen or in scrollback never do.",
+        matches: &[PANE, m("pattern", "a regex, matched against each new line of its output, ANSI stripped")],
+        home: Home::Daemon,
+        power: None,
+    },
 ];
 
 /// `GET` with [`EventsQuery`]: a project's events after a number, for an
