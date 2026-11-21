@@ -495,7 +495,10 @@ final class FlowTests: XCTestCase {
                     if !seen.contains("Read src/main.rs") { sleep(1) }
                 }
                 XCTAssertTrue(seen.contains("Read src/main.rs"), "the Work level's terminal shows: \(seen)")
-                let allowHere = app.buttons["answer-Allow"]
+                // The ask over the panes: on an iPad home's Needs you, beside
+                // it, has its own Allow.
+                let overPanes = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'work-ask-'")).firstMatch
+                let allowHere = overPanes.buttons["answer-Allow"]
                 XCTAssertTrue(allowHere.shows(within: 60), "no permission prompt over the panes: \(app.debugDescription)")
                 shot(app, "2-work-ask")
                 clearAlerts()
