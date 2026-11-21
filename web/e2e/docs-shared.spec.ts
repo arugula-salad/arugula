@@ -1,10 +1,9 @@
 // Shared by you (Arugula #1315): the Docs you shared with a link, at the
-// foot of My Docs, once the hub serves `GET /api/doc-links` on the app's
-// host. Open and Copy link ask the machine that shared one, and wait while
-// it's offline; Unshare asks it, else takes the link down at the hub. Until
-// the hub answers there (404), Docs shows none, Settings keeps its ↗ row to
-// control's Shared Docs, and `/docs?shared=1` (control's Shared Docs…)
-// goes back to control's. On #971's fixture page (move-to-project-page.tsx):
+// foot of My Docs, from the hub's `GET /api/doc-links` on the app's host.
+// Open and Copy link ask the machine that shared one, and wait while it's
+// offline; Unshare asks it, else takes the link down at the hub. A hub that
+// answers 404 there gets none, and Settings has no ↗ row to control's
+// Shared Docs either way. On #971's fixture page (move-to-project-page.tsx):
 // the platform's answers are this spec's, the machines' the page's.
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { fixturePage } from "./fixture-page";
@@ -86,25 +85,24 @@ test("control's Shared Docs… lands on My Docs' Shared by you", async ({ page }
   await expect(item(page, "lnk_mac")).toBeInViewport();
 });
 
-test("Settings drops its Shared Docs row once Docs has them", async ({ page }) => {
+test("Settings has no Shared Docs row: Docs has them", async ({ page }) => {
   await open(page, "/settings/you/security", []);
   const security = page.locator('[data-settings-section="security"]');
   await expect(security).toBeVisible();
   await expect(security.locator('[data-settings-control="shared-docs"]')).toHaveCount(0);
 });
 
-test("where the hub doesn't serve them here: no Shared by you, Settings keeps its row, and Shared Docs… goes back to control's", async ({ page }) => {
+test("where the hub answers 404 for them: no Shared by you, no row in Settings, and Shared Docs… stays on Docs", async ({ page }) => {
   await open(page, `/p/${ME}/docs`, null);
   await expect(page.locator("[data-docs-none]")).toBeVisible();
   await expect(group(page)).toHaveCount(0);
 
   await page.goto("/settings/you/security");
-  const row = page.locator('[data-settings-section="security"] [data-settings-control="shared-docs"]');
-  await expect(row).toContainText("Docs you shared with a link");
-  const origin = new URL(page.url()).origin;
-  await expect(row).toHaveAttribute("href", `${origin}/#shared-docs`);
+  await expect(page.locator('[data-settings-section="security"]')).toBeVisible();
+  await expect(page.locator('[data-settings-section="security"] [data-settings-control="shared-docs"]')).toHaveCount(0);
 
-  await page.route(`${origin}/`, (r) => r.fulfill({ contentType: "text/html", body: "<title>control</title>" }));
+  // No bounce to control's page, which would send it straight back.
   await page.goto("/docs?shared=1");
-  await expect(page).toHaveURL(`${origin}/#shared-docs`);
+  await expect(page.locator("[data-docs-page]")).toBeVisible();
+  await expect(page).toHaveURL(/\/docs\?shared=1$/);
 });

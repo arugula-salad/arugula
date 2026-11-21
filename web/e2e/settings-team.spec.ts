@@ -2,12 +2,12 @@
 // a flat list (the team's own, then what every project starts with). Members lists the roster;
 // its owners invite people, change roles and remove them in place, on
 // control's word, and making or removing an owner is a ↗ row to control's
-// page, as everything is while the hub answers `/api/teams` here with a
-// 404. Machines lists what control's directory says is the owner's, one of
-// yours opening its settings, and changes them in place the same way. Labs
-// is control's Teams panel's list of flags (Arugula #1118), only with
-// `dev`, and a ↗ row from a control that doesn't answer `/api/flags` on the
-// app's host. On #971's fixture page (move-to-project-page.tsx): the
+// page (aru-141). Machines lists what control's directory says is the
+// owner's, one of yours opening its settings, and changes them in place the
+// same way. Chat is the team's on or off, its owners' to switch (control's
+// Teams panel doesn't have it). Labs is control's Teams panel's list of
+// flags (Arugula #1118), only with `dev`. No other ↗ rows: a read that
+// fails says so. On #971's fixture page (move-to-project-page.tsx): the
 // platform's answers are this spec's.
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { fixturePage } from "./fixture-page";
@@ -47,9 +47,8 @@ const kept = (dev = true) => ({
 });
 
 /** The fixture page at `path`, with the platform's answers. `flags` is
- * `/api/flags`' answer, or null for a control that doesn't answer it here;
- * `hub` adds the hub's answers (else `/api/teams` is a 404, as before the
- * hub serves it on the app's host). */
+ * `/api/flags`' answer, or null for a 404; `hub` adds the hub's answers
+ * (else `/api/teams` is a 404). */
 async function open(
   page: Page,
   path: string,
@@ -77,15 +76,16 @@ const section = (page: Page, id: string) => page.locator(`[data-settings-section
 
 test.use({ viewport: { width: 1280, height: 900 } });
 
-test("a team's owner: a flat list; the roster with a ↗ to change it while the hub doesn't answer its teams here, the team's machines, and its Labs flags", async ({ page }) => {
+test("a team's owner: a flat list; the roster, saying so when the hub's teams fail, the team's machines, and its Labs flags", async ({ page }) => {
   await open(page, "/settings/team/tm_1");
   // Its sections in their order, under no band headings: Project defaults before Labs.
   await expect(page.locator(".settings-list .list-group-title")).toHaveCount(0);
-  await expect(page.locator("[data-settings-row]")).toHaveText([/^Members/, /^Machines/, /^Project defaults/, /^Labs/]);
-  // Members, first: the roster, and what a device signs opens control's Teams.
+  await expect(page.locator("[data-settings-row]")).toHaveText([/^Members/, /^Machines/, /^Chat/, /^Project defaults/, /^Labs/]);
+  // Members, first: the roster, and why it can't be changed here: no ↗ to control's Teams.
   await expect(section(page, "members")).toBeVisible();
   await expect(section(page, "members").locator("[data-owner-member]")).toHaveText(["SamOwner", "JoEditor"]);
-  await expect(section(page, "members").locator('[data-settings-control="members"]')).toHaveAttribute("href", `${HUB}/#teams`);
+  await expect(section(page, "members").locator(".control-error")).toHaveText("not here");
+  await expect(section(page, "members").locator("[data-settings-control]")).toHaveCount(0);
   // Machines: the team's computers, not the Cloud workspace's box, not another team's.
   await expect(row(page, "machines").locator(".list-row-detail")).toHaveText("2 machines · 1 online");
   await row(page, "machines").click();
@@ -94,9 +94,8 @@ test("a team's owner: a flat list; the roster with a ↗ to change it while the 
   await expect(machines.locator("[data-owner-machine]")).toHaveCount(2);
   await expect(machines.locator('[data-owner-machine="dmn_kiln"]')).toContainText("Jo's");
   await expect(machines.locator('[data-owner-machine="dmn_kiln"]')).toContainText("Offline, seen 3h ago");
-  await expect(machines.locator('[data-settings-control="machines"]')).toContainText("Share a machine with Acme, or take one out");
-  // Removing one is on control's page too while the hub doesn't answer here; the join command isn't.
-  await expect(machines.locator('[data-settings-control="devices"]')).toHaveAttribute("href", `${HUB}/#devices`);
+  // No ↗ to control's page while the hub's teams aren't read; the join command.
+  await expect(machines.locator("[data-settings-control]")).toHaveCount(0);
   await expect(machines.locator("[data-join-cmd]")).toHaveText(`arugulad join ${HUB} --team tm_1`);
   // Mine opens its settings.
   await machines.locator('[data-owner-machine-open="dmn_orchard"]').click();
@@ -128,16 +127,39 @@ test("Labs: yours to set on Just you, a team's to read for its viewers, and none
   await expect(theirs.locator('[data-labs-flag="studio"]')).toContainText("Not set");
   // Strangers never see Labs.
   await open(page, "/settings/team/tm_1", { flags: kept(false) });
-  await expect(page.locator("[data-settings-row]")).toHaveText([/^Members/, /^Machines/, /^Project defaults/]);
+  await expect(page.locator("[data-settings-row]")).toHaveText([/^Members/, /^Machines/, /^Chat/, /^Project defaults/]);
 });
 
-test("Labs from a control that doesn't answer its flags on the app's host: control's page, said plainly", async ({ page }) => {
+test("Labs whose flags don't load says so, with no ↗ to control's page", async ({ page }) => {
   await open(page, "/settings/team/tm_1/labs", { flags: null });
-  await expect(section(page, "labs").locator('[data-settings-control="labs"]')).toHaveAttribute("href", /\/#teams$/);
-  await expect(section(page, "labs")).toContainText("Labs for Acme's machines");
+  await expect(row(page, "labs").locator(".list-row-detail")).toHaveText("Couldn't load");
+  await expect(section(page, "labs").locator(".control-error")).toHaveText("Request failed (404)");
+  await expect(section(page, "labs").locator("[data-settings-control]")).toHaveCount(0);
 });
 
-test("Just you: your machines in no team, a way to move one into a team, and no roster", async ({ page }) => {
+test("Chat: a team's owner turns it on here, and a viewer reads it", async ({ page }) => {
+  await open(page, "/settings/team/tm_1/team-chat");
+  const chat = section(page, "team-chat");
+  await expect(row(page, "team-chat").locator(".list-row-detail")).toHaveText("Off");
+  const on = chat.locator('[data-team-chat-on="tm_1"]');
+  await expect(on).not.toBeChecked();
+  await expect(on).toBeEnabled();
+  const sent: unknown[] = [];
+  await page.route(/\/api\/flags$/, (r) =>
+    r.request().method() === "POST" ? (sent.push(r.request().postDataJSON()), json(r, { flags: { "sandbox-providers": false, chat: true } })) : r.fallback(),
+  );
+  await on.click();
+  await expect(on).toBeChecked();
+  await expect(row(page, "team-chat").locator(".list-row-detail")).toHaveText("On");
+  expect(sent).toEqual([{ name: "chat", on: true, team: "tm_1" }]);
+  // Bakery's viewer: the switch, read-only.
+  await page.goto("/settings/team/tm_2/team-chat");
+  const theirs = section(page, "team-chat").locator('[data-team-chat-on="tm_2"]');
+  await expect(theirs).toBeDisabled();
+  await expect(section(page, "team-chat")).toContainText("Its owners turn it on and off");
+});
+
+test("Just you: your machines in no team, and no roster", async ({ page }) => {
   await open(page, "/settings/team/personal");
   await expect(page.locator(".settings-list .list-group-title")).toHaveCount(0);
   await expect(row(page, "members")).toHaveCount(0);
@@ -147,7 +169,7 @@ test("Just you: your machines in no team, a way to move one into a team, and no 
   // attic has no grants yet, so it opens its own page, not Machines.
   await expect(machines.locator('[data-owner-machine-open="dmn_attic"]')).toHaveAttribute("href", /dmn_attic/);
   await expect(machines.locator('[data-owner-machine-open="dmn_attic"]')).not.toHaveAttribute("href", /\/settings\/machine\//);
-  await expect(machines.locator('[data-settings-control="machines"]')).toContainText("Move a machine into a team");
+  await expect(machines.locator("[data-settings-control]")).toHaveCount(0);
 });
 
 test("a team's viewer reads the roster without the ↗; a directory that fails says so in its row", async ({ page }) => {

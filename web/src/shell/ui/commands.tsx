@@ -24,7 +24,6 @@ import { openGettingStarted } from "./welcome";
 import { openDeveloper } from "./developer";
 import { openMachineTelemetry } from "./machine-telemetry";
 import { openSharing } from "./sharing";
-import { agentGrantsShown, openAgentGrants } from "./agent-grants";
 import { openAccess } from "./access";
 import { directory } from "../hosts";
 import { openRules } from "./rules";
@@ -42,6 +41,8 @@ import { bigTipsOn, setBigTips, setTips, tipsOn } from "../../shared/seen";
 import { clientTarget, EDITORS, editorShown, openInEditor, setEditorPref } from "../open-in-editor";
 import { openWhatsNew } from "./whats-new";
 import { openPanel } from "./control-panel";
+import { openPlatform, platformOrigin } from "../platform-links";
+import { openSettings } from "./settings-route";
 import { openFeedback } from "./feedback";
 import { addPlugin, NVIM_DOCS, openHelp, openHelpCard, removePlugin, runsNvim, useNvim } from "../hints/nvim";
 import { type Tone } from "../../shared/ui/state-chip";
@@ -409,12 +410,19 @@ export function settingsGroups(client: Client): SettingsGroup[] {
 }
 
 /** Settings as a menu, where there's no rail to open the page from (a phone,
- * no machine shown), and for the command palette, which lists every row. */
+ * no machine shown), and for the command palette, which lists every row.
+ * Where there's an app, its Settings is one row, with this device's push
+ * beside it (control's own page keeps that, aru-141): no dialogs. */
 export function settingsItems(client: Client | null, opts: { machine?: boolean } = {}): MenuItem[] {
+  const push = client?.state ? notificationParts(client) : { device: [], everywhere: [] };
+  const palette: MenuItem[] = client?.state
+    ? ["separator", { label: "Command palette…", hint: "Help is there too", shortcut: keyHint("palette"), run: () => openPalette(client) }]
+    : [];
+  if (platformOrigin())
+    return [{ label: "Settings", run: () => openSettings() }, ...(push.device.length ? ["separator" as const, { header: "This device" } as MenuItem, ...push.device] : []), ...palette];
   // The machine's own settings are in the machine menu, where there is
   // one; else (a daemon's page with no other machine) here.
   const machine = client && (opts.machine || !hostMenuShown()) ? machineSettingsItems(client) : [];
-  const push = client?.state ? notificationParts(client) : { device: [], everywhere: [] };
   return [
     ...(machine.length ? [{ header: "This machine" } as MenuItem, ...machine, "separator" as const] : []),
     // How the page looks is this device's, with or without a machine.
@@ -426,7 +434,7 @@ export function settingsItems(client: Client | null, opts: { machine?: boolean }
     { header: "Preferences" },
     ...preferenceItems(),
     // Help is the palette's (Arugula #1108).
-    ...(client?.state ? ["separator" as const, { label: "Command palette…", hint: "Help is there too", shortcut: keyHint("palette"), run: () => openPalette(client) } as MenuItem] : []),
+    ...palette,
   ];
 }
 
@@ -482,7 +490,9 @@ export const COMMANDS: Record<string, (client: Client, args: Record<string, stri
   "push.enable": (client) => notifyThisDevice(client),
   /** Follow someone in the session (their client). */
   "people.follow": (client, { client: them }) => client.follow(Number(them)),
-  "control.teams": () => openPanel("teams")(),
+  /** The team's settings: the app's, where there is one (its invite links
+   * and chat are there); else control's Teams. */
+  "control.teams": (_client, { team }) => (platformOrigin() && team ? openPlatform(`/settings/team/${encodeURIComponent(String(team))}`) : openPanel("teams")()),
   "conversations.pick": (client) => {
     const pane = client.active();
     pickConversation(client, pane === undefined ? { session: client.session ?? undefined } : { split: pane, cwd: client.cwd(pane) ?? undefined });
@@ -511,12 +521,6 @@ export function machineSettingsItems(client: Client): MenuItem[] {
     // Arugula #500: its name on control, on control's page, where the shown
     // machine has an id; control refuses anyone but its owner (or its team's).
     ...renameItems(client),
-    // Discovery 10: what its agents may do on control (`arugula grants`),
-    // once it's joined (or the page is control's): in Settings' This
-    // machine, where they're changed (Arugula #1107).
-    ...((directory.control || directory.joined) && agentGrantsShown()
-      ? [{ label: "Agents' grants…", hint: "What its agents may do on Arugula cloud, in Settings", run: () => openAgentGrants(machineShown(client)) }]
-      : []),
     { label: "Developer settings…", run: () => openDeveloper(client) },
     // The menu is built when it opens, so it can't wait on the daemon's list
     // of copies: Remove always runs, and says when there was none.

@@ -4,9 +4,9 @@
 // shared/push-kinds.ts), set in place through the app's host. This
 // device's switch and Send a test stay on your machines page: a push
 // subscription belongs to its service worker's origin, and that's
-// control's (aru-081). A control that doesn't answer `/api/push/prefs` on
-// this host yet (a bare 404) gets both as ↗ rows, as before. Under this
-// device, the list of your devices (./you-devices.tsx, Arugula #1327).
+// control's (aru-081), so that's a ↗ row until the single origin
+// (aru-141). Under this device, the list of your devices
+// (./you-devices.tsx, Arugula #1327).
 
 import { useEffect, useState } from "preact/hooks";
 import { PUSH_KINDS, type PushPrefs } from "../../shared/push-kinds";
@@ -16,9 +16,8 @@ import { controlOrigin } from "../session";
 import { ControlRow } from "../settings/owner-machines";
 import { YourDevices } from "./you-devices";
 
-/** `/api/push/prefs` through the app's host: the prefs, or null for a
- * bare 404 (the hub doesn't serve it here yet). */
-async function prefsCall(body?: Partial<PushPrefs>): Promise<PushPrefs | null> {
+/** `/api/push/prefs` through the app's host. */
+async function prefsCall(body?: Partial<PushPrefs>): Promise<PushPrefs> {
   const r = await platformFetch("/api/push/prefs", {
     method: body ? "POST" : "GET",
     credentials: "same-origin",
@@ -26,7 +25,6 @@ async function prefsCall(body?: Partial<PushPrefs>): Promise<PushPrefs | null> {
     body: body ? JSON.stringify(body) : undefined,
   });
   const v = (await r.json().catch(() => ({}))) as PushPrefs & { error?: string; reason?: string };
-  if (r.status === 404 && !v.error) return null;
   if (!r.ok) throw new Error(refusalOf(r.status, v));
   return v;
 }
@@ -39,49 +37,29 @@ function pushedSaid(p: PushPrefs): string {
 
 export function PhonesAndBrowsers() {
   const [prefs, setPrefs] = useState<PushPrefs | null>(null);
-  const [elsewhere, setElsewhere] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   useEffect(() => {
     let live = true;
     prefsCall().then(
-      (p) => live && (p ? setPrefs(p) : setElsewhere(true)),
+      (p) => live && setPrefs(p),
       (e: Error) => live && setErr(e.message),
     );
     return () => void (live = false);
   }, []);
-  const push = `${controlOrigin()}/#settings=push`;
   const thisDevice = (
     <Section id="this-device" title="This device" more={<p>Each device turns itself on with its own keys, on your machines page.</p>}>
       <ul class="platform-list settings-rows">
-        <ControlRow
-          href={push}
-          label="Notify this device"
-          why={elsewhere ? "Turn this browser or phone on or off" : "Turn this browser or phone on or off, and send a test notification"}
-          hook="push"
-        />
+        <ControlRow href={`${controlOrigin()}/#settings=push`} label="Notify this device" why="Turn this browser or phone on or off, and send a test notification" hook="push" />
       </ul>
       <YourDevices />
     </Section>
   );
-  const title = "What every device is pushed about";
-  if (elsewhere)
-    return (
-      <>
-        {thisDevice}
-        <Section id="push" title={title} summary="On your machines page" hooks={{ "data-settings-push": "" }}>
-          <ul class="platform-list settings-rows">
-            <ControlRow href={push} label="What's pushed" why="Chat, your machines, your projects; and a test notification" hook="push" />
-          </ul>
-        </Section>
-      </>
-    );
   const set = async (key: keyof PushPrefs, on: boolean) => {
     setErr("");
     setBusy(true);
     try {
-      const p = await prefsCall({ [key]: on });
-      if (p) setPrefs(p);
+      setPrefs(await prefsCall({ [key]: on }));
     } catch (e) {
       setErr((e as Error).message);
     }
@@ -92,7 +70,7 @@ export function PhonesAndBrowsers() {
       {thisDevice}
       <Section
         id="push"
-        title={title}
+        title="What every device is pushed about"
         summary={prefs ? `Pushed: ${pushedSaid(prefs)}` : err ? "Couldn't load" : undefined}
         more={<p>Notices about your account, like a device waiting, always go.</p>}
         hooks={{ "data-settings-push": "" }}

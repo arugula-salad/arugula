@@ -44,7 +44,7 @@ test("control's old Settings sections land on the app's Settings, but Phones and
     ["#settings", "/settings"],
     ["#settings=appearance", "/settings/you/appearance"],
     ["#settings=preferences", "/settings/you/appearance"],
-    ["#settings=account", "/settings/you/account"],
+    ["#settings=account", "/settings/you/security"],
     // Help went to the command palette (Arugula #1108): Settings, at You.
     ["#settings=help", "/settings"],
   ];
@@ -61,14 +61,23 @@ test("control's old Settings sections land on the app's Settings, but Phones and
   for (const hash of ["#settings=machine", "#settings=remote-sessions"]) assert.equal(platformPath(hash), null, hash);
   // …and land on This machine, at it.
   assert.equal(settingsPath("machine", D), `/settings/machine/${D}`);
-  assert.equal(settingsPath("remote-sessions", D), `/settings/machine/${D}/remote-sessions`);
-  assert.deepEqual(parse(`/settings/machine/${D}/remote-sessions`, ""), { page: "settings", scope: "machine", machine: D, section: "remote-sessions" });
+  assert.equal(settingsPath("remote-sessions", D), `/settings/machine/${D}/access`);
+  assert.deepEqual(parse(`/settings/machine/${D}/remote-sessions`, ""), { page: "settings", scope: "machine", machine: D, section: "access" });
   // Not known (an older daemon): the page's first machine, the section waiting in the hash.
   assert.equal(settingsPath("machine"), "/settings/machine");
-  assert.equal(settingsPath("remote-sessions"), "/settings/machine#remote-sessions");
+  assert.equal(settingsPath("remote-sessions"), "/settings/machine#access");
   assert.deepEqual(parse("/settings/machine", ""), { page: "settings", scope: "machine" });
   // Not a section: nothing.
   for (const hash of ["#settingsx", "#settings=", "#settings=a b"]) assert.equal(platformPath(hash), null, hash);
+});
+
+// Control's Machines… and Shared Docs… dialogs are the app's now; what
+// takes control's own origin until the single origin (aru-141) stays.
+test("control's old account dialogs land in the app, but Sign-in and account and Teams stay", () => {
+  assert.equal(platformPath("#devices"), "/settings/team/personal/machines");
+  assert.deepEqual(parse("/settings/team/personal/machines", ""), { page: "settings", scope: "team", owner: "personal", section: "machines" });
+  assert.equal(platformPath("#shared-docs"), "/docs?shared=1");
+  for (const hash of ["#account", "#teams"]) assert.equal(platformPath(hash), null, hash);
 });
 
 test("the secret-bearing fragments, and the shell's own, are never redirected", () => {
