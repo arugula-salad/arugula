@@ -6,7 +6,9 @@
 // your email, where you're signed in (sign one out, or everywhere), and
 // deleting the account. A control that doesn't answer `/api/me/*` on this
 // host yet (a bare 404) gets the ↗ row to its dialog instead, as before;
-// an action it doesn't answer yet says so, with the same link.
+// an action it doesn't answer yet says so, with the same link. At the
+// bottom, while the hub doesn't serve the Docs you shared with a link here
+// (Arugula #1315), a ↗ row to them on control's page (Arugula #1320).
 
 import { useEffect, useState } from "preact/hooks";
 import { describeAgent, LINKED, passkeyName, type AccountCall, type Passkeys, type SessionRow } from "../../shared/account";
@@ -14,9 +16,11 @@ import { platformFetch, refusalOf } from "../../shared/maintenance";
 import { EmailSection } from "../../shared/ui/account-email";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { DeleteAccountSteps } from "../../shared/ui/delete-account";
+import { useSubscribe } from "../../shared/ui/hooks";
 import { ExternalIcon } from "../../shared/ui/icons";
 import { Section } from "../../shared/ui/settings-section";
 import { Time } from "../../shared/ui/time";
+import { docLinks } from "../doc-links";
 import { controlOrigin } from "../session";
 import { ControlRow } from "../settings/owner-machines";
 import { joined, plural } from "../settings/summary";
@@ -47,6 +51,19 @@ const accountHref = () => `${controlOrigin()}/#account`;
 /** Out of this page, and back to signed out: after signing out everywhere
  * or deleting the account, this page's session is gone too. */
 const leave = () => void signOut().then(() => location.reload());
+
+/** The Docs you shared with a link, on control's page while Docs' Shared
+ * by you can't list them (the hub answers 404); then the row goes. */
+function SharedDocs() {
+  useSubscribe((fn) => docLinks.subscribe(fn));
+  useEffect(() => void docLinks.load(), []);
+  if (docLinks.served()) return null;
+  return (
+    <ul class="platform-list settings-rows">
+      <ControlRow href={`${controlOrigin()}/#shared-docs`} label="Shared Docs" why="Docs you shared with a link" hook="shared-docs" />
+    </ul>
+  );
+}
 
 function Away({ label, hook }: { label: string; hook: string }) {
   return (
@@ -92,6 +109,7 @@ export function SignInAndSecurity() {
         <ul class="platform-list settings-rows">
           <ControlRow href={accountHref()} label="Sign-in and account" why="Passkeys, GitHub, email and where you're signed in" hook="account" />
         </ul>
+        <SharedDocs />
       </Section>
     );
   // Sign-ins from before control kept the browser all read "An earlier
@@ -234,6 +252,7 @@ export function SignInAndSecurity() {
         </p>
       )}
       {err ? <p class="control-error">{err}</p> : null}
+      <SharedDocs />
     </Section>
   );
 }

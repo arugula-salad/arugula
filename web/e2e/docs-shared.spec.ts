@@ -87,10 +87,10 @@ test("control's Shared Docs… lands on My Docs' Shared by you", async ({ page }
 });
 
 test("Settings drops its Shared Docs row once Docs has them", async ({ page }) => {
-  await open(page, "/settings/you/machines-teams", []);
-  const account = page.locator('[data-settings-section="machines-teams"]');
-  await expect(account.locator('[data-settings-control="teams"]')).toBeVisible();
-  await expect(account.locator('[data-settings-control="shared-docs"]')).toHaveCount(0);
+  await open(page, "/settings/you/security", []);
+  const security = page.locator('[data-settings-section="security"]');
+  await expect(security).toBeVisible();
+  await expect(security.locator('[data-settings-control="shared-docs"]')).toHaveCount(0);
 });
 
 test("where the hub doesn't serve them here: no Shared by you, Settings keeps its row, and Shared Docs… goes back to control's", async ({ page }) => {
@@ -98,8 +98,8 @@ test("where the hub doesn't serve them here: no Shared by you, Settings keeps it
   await expect(page.locator("[data-docs-none]")).toBeVisible();
   await expect(group(page)).toHaveCount(0);
 
-  await page.goto("/settings/you/machines-teams");
-  const row = page.locator('[data-settings-section="machines-teams"] [data-settings-control="shared-docs"]');
+  await page.goto("/settings/you/security");
+  const row = page.locator('[data-settings-section="security"] [data-settings-control="shared-docs"]');
   await expect(row).toContainText("Docs you shared with a link");
   const origin = new URL(page.url()).origin;
   await expect(row).toHaveAttribute("href", `${origin}/#shared-docs`);

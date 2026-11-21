@@ -127,7 +127,7 @@ export function ProjectAgents({ p, show }: { p: PlatformProject; show: "tokens" 
   };
   // Where an owner makes their own tokens: the account's settings, at
   // that section (UI audit #166).
-  const own = pathOf({ page: "settings", scope: "you", section: "tokens" }, names);
+  const own = pathOf({ page: "settings", scope: "you", section: "connected" }, names);
   const failed = err && (show === "tokens" ? tokens : secrets) === null ? "Couldn't load" : undefined;
   if (show === "tokens")
     return (

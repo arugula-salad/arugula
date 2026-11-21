@@ -31,8 +31,8 @@ test("each route parses", () => {
   // Settings (Arugula #1104): four scopes, and a section in each.
   assert.deepEqual(parse("/settings"), { page: "settings", scope: "you" });
   assert.equal(pathOf({ page: "settings", scope: "you" }), "/settings");
-  assert.deepEqual(parse("/settings/you/quiet-hours"), { page: "settings", scope: "you", section: "quiet-hours" });
-  assert.equal(pathOf({ page: "settings", scope: "you", section: "quiet-hours" }), "/settings/you/quiet-hours");
+  assert.deepEqual(parse("/settings/you/notifications"), { page: "settings", scope: "you", section: "notifications" });
+  assert.equal(pathOf({ page: "settings", scope: "you", section: "notifications" }), "/settings/you/notifications");
   assert.deepEqual(parse("/settings/machine"), { page: "settings", scope: "machine" });
   assert.deepEqual(parse("/settings/machine/0a1b2c3d-geek/machine"), { page: "settings", scope: "machine", machine: "0a1b2c3d", section: "machine" });
   assert.deepEqual(parse("/settings/team/personal/plan"), { page: "settings", scope: "team", owner: "personal", section: "plan" });
@@ -46,9 +46,9 @@ test("each route parses", () => {
   assert.deepEqual(parse("/t/team_1/settings"), { page: "settings", scope: "team", owner: "team_1" });
   assert.deepEqual(parse("/settings/personal"), { page: "settings", scope: "team", owner: "personal" });
   // An old link's `#section` is the section, where the path names none.
-  assert.deepEqual(parse("/settings", "", "#tokens"), { page: "settings", scope: "you", section: "tokens" });
+  assert.deepEqual(parse("/settings", "", "#appearance"), { page: "settings", scope: "you", section: "appearance" });
   assert.deepEqual(parse(`/p/${P}/settings`, "", "#ci-alerts"), { page: "settings", scope: "project", project: P, section: "ci-alerts" });
-  assert.deepEqual(parse("/settings/you/linked", "", "#tokens"), { page: "settings", scope: "you", section: "linked" });
+  assert.deepEqual(parse("/settings/you/security", "", "#appearance"), { page: "settings", scope: "you", section: "security" });
   assert.deepEqual(parse("/settings", "", "#Not a section"), { page: "settings", scope: "you" });
   // Your machines' agents are each machine's now (Arugula #1107): the old addresses open Machines'.
   assert.deepEqual(parse("/settings", "", "#agents"), { page: "settings", scope: "machine", section: "agents" });
@@ -56,6 +56,25 @@ test("each route parses", () => {
   // Preferences is part of Appearance (Arugula #1318): its old addresses land there.
   assert.deepEqual(parse("/settings/you/preferences"), { page: "settings", scope: "you", section: "appearance" });
   assert.deepEqual(parse("/settings", "", "#preferences"), { page: "settings", scope: "you", section: "appearance" });
+  // You is four sections (Arugula #1320): each old one's address, by path or by `#`, lands on the one that holds it now.
+  const held = {
+    push: "notifications",
+    "chat-alerts": "notifications",
+    "quiet-hours": "notifications",
+    account: "security",
+    "machines-teams": "security",
+    linked: "connected",
+    tokens: "connected",
+    "agent-tokens": "connected",
+    claude: "connected",
+  };
+  for (const [old, now] of Object.entries(held)) {
+    assert.deepEqual(parse(`/settings/you/${old}`), { page: "settings", scope: "you", section: now }, old);
+    assert.deepEqual(parse("/settings", "", `#${old}`), { page: "settings", scope: "you", section: now }, `#${old}`);
+  }
+  // Status left Settings for the avatar menu: its address is You's.
+  assert.deepEqual(parse("/settings/you/status-page"), { page: "settings", scope: "you" });
+  assert.deepEqual(parse("/settings", "", "#status-page"), { page: "settings", scope: "you" });
   assert.equal(pathOf({ page: "settings", scope: "machine", section: "agents" }), "/settings/machine#agents");
   assert.deepEqual(parse("/settings/machine", "", "#agents"), { page: "settings", scope: "machine", section: "agents" });
   assert.equal(pathOf({ page: "settings", scope: "machine", machine: "0a1b2c3d", section: "agents" }), "/settings/machine/0a1b2c3d/agents");
