@@ -84,7 +84,21 @@ export function PeekWho({ id, title }: { id: string; title: string }) {
     return <>Typing into {who}: a message is typed into this terminal, with Enter.</>;
   }
   if (!pane && s.hosted) return <>Talking to {who}: a message goes straight to this agent, in its thread.</>;
+  const mine = ownFar(place.fleet, s);
+  if (mine) return <>Can't reach {who}: {mine.why}</>;
   return <>Watching {who}: it takes nothing from you here{at.card && place.askLead ? "; to ask it something, use its board's thread." : "."}</>;
+}
+
+/** A session this page can't read that runs on one of your own machines: why,
+ * in words to act on. A machine the page doesn't list, or a teammate's, is
+ * `undefined`: it's watched, or just far. */
+export function ownFar(fleet: Fleet, s: OvSession): { why: string; note: string } | undefined {
+  if (s.hosted) return undefined;
+  const h = fleet.list.find((x) => x.name === s.where);
+  if (!h || h.owner || h.team) return undefined;
+  const name = shortHost(h.name);
+  if (h.state !== "connected") return { why: `${name} isn't connected to this page. Connect it to read and talk to this session.`, note: `${name} is yours, but this page isn't connected to it now.` };
+  return { why: `${name} is connected, but this page doesn't see this session on it.`, note: `${name} is yours and connected, but this page doesn't see this session on it.` };
 }
 
 /** Whose a pane is, as the peek treats it: yours, or a team's box or the
@@ -111,6 +125,7 @@ function Peek({ place, s, card }: { place: PeekPlace; s: OvSession; card: OvCard
   const branch = pane?.info.branch ?? hosted?.card.branch ?? s.branch ?? null;
   const team = !!pane && !yours(fleet, pane);
   const far = !pane && !s.hosted;
+  const own = far ? ownFar(fleet, s) : undefined;
 
   const head = (
     <header class="ov-peek-tab-head" data-ov-peek-head>
@@ -151,7 +166,7 @@ function Peek({ place, s, card }: { place: PeekPlace; s: OvSession; card: OvCard
   if (!read) {
     if (far) {
       tail = null;
-      tailSays = `It runs on ${s.where}, which this page doesn't reach.`;
+      tailSays = own ? own.why : `It runs on ${s.where}, which this page doesn't reach.`;
     } else if (s.hosted) {
       tail = hosted ? lastAnswer(hosted) : null;
       tailSays = hosted ? "Nothing said yet." : "Reading the session…";
@@ -171,7 +186,7 @@ function Peek({ place, s, card }: { place: PeekPlace; s: OvSession; card: OvCard
       <div class="ov-peek-tab" data-ov-peek={s.key} data-ov-peek-readonly="">
         {head}
         <p class="dim ov-peek-why" data-ov-peek-note>
-          {team ? `${pane!.person.name}'s session. You see its state and last lines; ${card ? "to ask it something, write in its board's thread, which its lead reads." : "it takes nothing from you here."}` : "You see where it runs and how it stands."}
+          {team ? `${pane!.person.name}'s session. You see its state and last lines; ${card ? "to ask it something, write in its board's thread, which its lead reads." : "it takes nothing from you here."}` : (own?.note ?? "You see where it runs and how it stands.")}
         </p>
         {tailEl}
         <div class="ov-peek-acts">

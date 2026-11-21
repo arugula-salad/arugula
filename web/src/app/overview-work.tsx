@@ -30,7 +30,7 @@ import type { Fleet } from "../shell/fleet";
 import { shortHost } from "../shell/swarm/model";
 import type { OvPane, OvSession, Standing } from "../shell/swarm/overview";
 import { titleOf } from "./overview-board";
-import { lastAnswer, peekKey, Reply, yours } from "./overview-peek";
+import { lastAnswer, ownFar, peekKey, Reply, yours } from "./overview-peek";
 import { Word } from "./overview-row";
 
 /** Most panes side by side; the rest are tabs. */
@@ -179,7 +179,7 @@ function WorkPane({ i, fleet, Live, at, hosted, outlined, talkTo, openPanes }: {
   let body;
   if (at && Live) body = <Live machine={at.machine} pane={at.pane} watch={watch} />;
   else if (s.hosted) body = <HostedPaused s={s} v={hosted} />;
-  else body = <p class="dim ov-work-note">It runs on {s.where}, which this page doesn't reach.</p>;
+  else body = <p class="dim ov-work-note">{ownFar(fleet, s)?.why ?? `It runs on ${s.where}, which this page doesn't reach.`}</p>;
   return (
     <li class={`ov-work-pane${outlined ? " ov-work-pane-talking" : ""}`} data-ov-work-session={peekKey(s)} data-ov-work-pane={i.key} data-ov-work-kind={kind} data-ov-talking={outlined ? "" : undefined}>
       <header class="ov-work-head">
