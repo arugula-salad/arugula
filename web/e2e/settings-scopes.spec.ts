@@ -105,15 +105,15 @@ test.describe("on a computer", () => {
     await expect(page.getByText("What's new")).toHaveCount(0);
 
     // What's on control's page: a ↗ row each, at its dialog there. No Add a
-    // phone or browser (#1004).
+    // phone or browser (#1004), and no Machines: Team and billing has them.
     const origin = new URL(page.url()).origin;
     await row(page, "account").click();
     await expect(page).toHaveURL(/\/settings\/you\/account$/);
     const account = section(page, "account");
-    await expect(account.locator("h2")).toHaveText("Sign-in and machines");
+    await expect(account.locator("h2")).toHaveText("Sign-in and teams");
     const out = account.locator("[data-settings-control]");
-    await expect(out).toHaveText(["Sign-in and account", "Machines", "Teams", "Shared Docs"].map((t) => new RegExp(`^${t}`)));
-    expect(await out.evaluateAll((els) => els.map((e) => (e as HTMLAnchorElement).href))).toEqual(["account", "devices", "teams", "shared-docs"].map((h) => `${origin}/#${h}`));
+    await expect(out).toHaveText(["Sign-in and account", "Teams", "Shared Docs"].map((t) => new RegExp(`^${t}`)));
+    expect(await out.evaluateAll((els) => els.map((e) => (e as HTMLAnchorElement).href))).toEqual(["account", "teams", "shared-docs"].map((h) => `${origin}/#${h}`));
     // Phones and browsers: This device and All your devices, as one, on control's page.
     await row(page, "push").click();
     const push = section(page, "push").locator("[data-settings-control]");
@@ -143,7 +143,7 @@ test.describe("on a computer", () => {
         r.fulfill({ contentType: "application/json", headers: { "x-arugula-hub": "https://control.arugula.io" }, body: JSON.stringify({ me: { account: "acct_a", login: "sam", name: "Sam" }, projects, hosted: false }) }),
       ),
     );
-    // Settings › You: a Status row after Sign-in and machines.
+    // Settings › You: a Status row after Sign-in and teams.
     const ids = () => page.locator("[data-settings-row]").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.settingsRow));
     await expect.poll(ids).toEqual(["notifications", "quiet-hours", "push", "appearance", "account", "status-page", "linked", "tokens"]);
     await expect(row(page, "status-page").locator(".list-row-detail")).toHaveText("status.arugula.io");

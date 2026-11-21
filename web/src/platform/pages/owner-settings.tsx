@@ -107,7 +107,7 @@ export function OwnerSettings({ owner }: { owner: string }) {
   return (
     <>
       {team && <Members owner={owner} name={name} role={role} members={team.members} />}
-      <OwnerMachines owner={owner} name={name} teams={owners(session.projects).some((o) => o.kind === "team")} />
+      <OwnerMachines owner={owner} name={name} role={role} teams={owners(session.projects).some((o) => o.kind === "team")} />
       {team && <TeamChat team={owner} name={name} role={role} />}
       <PlanAndBilling team={team ? owner : undefined} />
       <Labs owner={owner} name={name} role={role} />

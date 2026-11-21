@@ -13,7 +13,7 @@ import { splitJoinCode } from "../e2e/cert.ts";
 import { AccountButton } from "../ui/app-bar";
 import { MovingNote } from "../ui/moving-note";
 import { DeploysWaitingNote } from "../ui/deploys-waiting";
-import { movesInto } from "../team-adds.ts";
+import { movesInto } from "../../shared/team-adds.ts";
 import { Mark } from "../../shared/ui/icons";
 
 /** Ready, but no machine to show yet: the account's menu (#97), any team

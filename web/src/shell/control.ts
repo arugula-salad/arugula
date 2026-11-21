@@ -62,7 +62,7 @@ import {
   type TeamRole,
 } from "./e2e/team.ts";
 import { makeInvite, nextRoster, type MadeInvite, type PresignedInvite } from "../shared/team-roster.ts";
-import { movesInto } from "./team-adds.ts";
+import { movesInto } from "../shared/team-adds.ts";
 import { checkRoster, ClosureStore, RosterStore, takeLock, TrustStore, withTimeout, type RootChange, type RosterProblem } from "./team-rosters.ts";
 
 export interface ControlInfo {

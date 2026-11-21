@@ -3,7 +3,7 @@
 // has two rules, by how the machine gets there; each function here is one
 // of them, word for word.
 
-import type { TeamRole } from "./e2e/team.ts";
+import type { TeamRole } from "./team-roster.ts";
 
 /** What the rules read of a team: my role in its roster (none when I'm not
  * in it) and whether it's locked. */

@@ -80,6 +80,9 @@ test("a team's owner: a flat list; the roster with a ↗ to change it while the 
   await expect(machines.locator('[data-owner-machine="dmn_kiln"]')).toContainText("Jo's");
   await expect(machines.locator('[data-owner-machine="dmn_kiln"]')).toContainText("Offline, seen 3h ago");
   await expect(machines.locator('[data-settings-control="machines"]')).toContainText("Share a machine with Acme, or take one out");
+  // Removing one is on control's page too while the hub doesn't answer here; the join command isn't.
+  await expect(machines.locator('[data-settings-control="devices"]')).toHaveAttribute("href", `${HUB}/#devices`);
+  await expect(machines.locator("[data-join-cmd]")).toHaveText(`arugulad join ${HUB} --team tm_1`);
   // Mine opens its settings.
   await machines.locator('[data-owner-machine-open="dmn_orchard"]').click();
   await expect(page).toHaveURL(/\/settings\/machine\/dmn_orchard/);
@@ -199,4 +202,70 @@ test("a team's owner changes the roster in place, on control's word; owners stay
   await members.locator('[data-cancel-presigned="k_one"]').click();
   await expect.poll(() => sent.length).toBe(7);
   expect(sent[6]).toMatchObject({ method: "DELETE", path: "/api/teams/tm_1/presigned/k_one" });
+});
+
+/** The hub's answers for Machines: Acme (Sam owns it) and Bakery (Sam
+ * watches), every change kept in `sent`, and a move of `refuse` answered
+ * with control's 409. */
+function machinesHub(sent: { method: string; path: string; body: unknown }[], refuse = "") {
+  return async (p: Page) => {
+    await p.route(/\/api\/teams$/, (r) =>
+      json(r, { teams: [acme(), { ...acme(), team: "tm_2", role: "viewer", pin: { team: "tm_2", founder: "acct_b", founder_root: "-" }, roster: { ...acme().roster, team: "tm_2", name: "Bakery" }, requests: [] }] }),
+    );
+    await p.route(/\/api\/teams\/tm_1\/presigned$/, (r) => json(r, { invites: [] }));
+    await p.route(/\/api\/daemons\//, (r) => {
+      const path = new URL(r.request().url()).pathname;
+      sent.push({ method: r.request().method(), path, body: r.request().postDataJSON() });
+      if (refuse && path === `/api/daemons/${refuse}/team`) return json(r, { error: "attic's Arugula is from before control's moves: update it first" }, 409);
+      return json(r, {});
+    });
+  };
+}
+
+test("a team's Machines in place: Settings, Take out and Remove, bringing in one of yours, and Add a machine", async ({ page }) => {
+  const sent: { method: string; path: string; body: unknown }[] = [];
+  await open(page, "/settings/team/tm_1/machines", { hub: machinesHub(sent, "dmn_attic") });
+  const machines = section(page, "machines");
+  await expect(machines.locator('[data-take-out="dmn_orchard"]')).toHaveText("Take out of team");
+  await expect(machines.locator('[data-owner-machine-open="dmn_orchard"]')).toHaveText("Settings");
+  await expect(machines.locator('[data-owner-machine-open="dmn_orchard"]')).toHaveAttribute("href", /\/settings\/machine\/dmn_orchard/);
+  // Jo's: the team's owner takes it out, never removes it.
+  await expect(machines.locator('[data-remove-machine="dmn_kiln"]')).toHaveCount(0);
+  await expect(machines.locator("[data-settings-control]")).toHaveCount(0);
+  // The join command, for the team, on control's page.
+  await expect(machines.locator("[data-join-cmd]")).toHaveText(`arugulad join ${HUB} --team tm_1`);
+
+  // Take Jo's out: asked first, then a move to no team, unsigned.
+  await machines.locator('[data-take-out="dmn_kiln"]').click();
+  await expect(page.locator("[data-confirm-dialog]")).toContainText("Take kiln out of Acme?");
+  await page.locator("[data-confirm-remove]").click();
+  await expect.poll(() => sent.length).toBe(1);
+  expect(sent[0]).toMatchObject({ method: "POST", path: "/api/daemons/dmn_kiln/team", body: { team: null, by: "", sig: "" } });
+
+  // Remove mine: asked first.
+  await machines.locator('[data-remove-machine="dmn_orchard"]').click();
+  await expect(page.locator("[data-confirm-dialog]")).toContainText("Remove orchard?");
+  await page.locator("[data-confirm-remove]").click();
+  await expect.poll(() => sent.length).toBe(2);
+  expect(sent[1]).toMatchObject({ method: "DELETE", path: "/api/daemons/dmn_orchard" });
+
+  // Bring in attic, which is mine and in no team: a machine from before
+  // control's moves says so.
+  await machines.locator("[data-bring-in-pick]").selectOption("dmn_attic");
+  await machines.locator("[data-bring-in-go]").click();
+  await expect.poll(() => sent.length).toBe(3);
+  expect(sent[2]).toMatchObject({ path: "/api/daemons/dmn_attic/team", body: { team: { team: "tm_1", founder: "acct_a", founder_root: "-" }, by: "", sig: "" } });
+  await expect(machines.locator(".control-error")).toHaveText("attic's Arugula is from before control's moves: update it first");
+});
+
+test("Just you's Machines in place: move one into a team you may add to, and the join command", async ({ page }) => {
+  const sent: { method: string; path: string; body: unknown }[] = [];
+  await open(page, "/settings/team/personal/machines", { hub: machinesHub(sent) });
+  const machines = section(page, "machines");
+  // Acme, which Sam owns; not Bakery, which Sam only watches.
+  await expect(machines.locator('[data-move-into="dmn_attic"] option')).toHaveText(["Move into a team…", "Acme"]);
+  await expect(machines.locator("[data-join-cmd]")).toHaveText(`arugulad join ${HUB}`);
+  await machines.locator('[data-move-into="dmn_attic"]').selectOption("tm_1");
+  await expect.poll(() => sent.length).toBe(1);
+  expect(sent[0]).toMatchObject({ path: "/api/daemons/dmn_attic/team", body: { team: { team: "tm_1" }, by: "", sig: "" } });
 });
