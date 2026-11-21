@@ -1,5 +1,6 @@
 //! A hosted session's MCP (aru-115, amended): the tools a session's agent
-//! has for its project's native issues and Docs (aru-118), on a listener of
+//! has for its project's native issues, Docs (aru-118) and rooms (Arugula
+//! #1276), on a listener of
 //! their own, which `arugulad-mcp`'s `session` serves. Here: their names, and
 //! the entry a session's agent is given ([`entry`]).
 
@@ -14,6 +15,8 @@ pub const CREATE_DOC: &str = "create_session_doc";
 pub const FILL_DOC: &str = "fill_session_doc";
 pub const READ_DOC: &str = "read_project_doc";
 pub const WATCH: &str = "watch";
+pub const READ_THREAD: &str = "read_session_thread";
+pub const POST_THREAD: &str = "post_session_thread";
 
 static URL: OnceLock<String> = OnceLock::new();
 
