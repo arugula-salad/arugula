@@ -9,8 +9,8 @@
 // the Allow tap itself, since phones open the camera and the file picker
 // only from a gesture.
 
-import { Client } from "./client";
-import type { ControlSession } from "./control";
+import { Client, type E2ETarget } from "./client";
+import { lendFromAddress, lending, onLending, setLendReached } from "../shared/lending";
 import type { HandTool, ServerMsg } from "../shared/proto";
 
 type Call = Extract<ServerMsg, { type: "hand_call" }>;
@@ -25,7 +25,18 @@ interface Tool extends HandTool {
   run: (a: Args, card: HTMLElement) => Promise<unknown>;
 }
 
-const KEY = "arugula-hand";
+/** Where the hand finds the account's machines: control's session on its
+ * page, the app's (app/session.ts) on app.arugula.io. */
+export interface HandSource {
+  daemons: { id: string }[];
+  target(id: string): E2ETarget | undefined;
+  subscribe(fn: () => void): () => void;
+  /** Start reading the machines, if the source waits to be told (the app's). */
+  start?(): unknown;
+  /** This device's enrollment, which names it (control's page only). */
+  enrollment?: { cert: { name: string } };
+}
+
 /** How long "for 15 minutes" lasts. */
 const STANDING_MS = 15 * 60_000;
 
@@ -248,31 +259,27 @@ function available(): Tool[] {
   });
 }
 
-export function lending(): boolean {
-  try {
-    return localStorage.getItem(KEY) === "on";
-  } catch {
-    return false;
-  }
-}
-
 class Hand {
   private clients = new Map<string, Client>();
   /** `tool from` → until when it's allowed without asking. */
   private standing = new Map<string, number>();
   private cards: HTMLElement | null = null;
   private unsub: (() => void) | null = null;
-  readonly listeners = new Set<() => void>();
+  /** Between start and stop. */
+  running = false;
 
   /** Without control, the one daemon that served this page. */
-  constructor(private session: ControlSession | null) {}
+  constructor(private session: HandSource | null) {}
 
   start() {
+    this.running = true;
+    this.session?.start?.();
     if (this.session) this.unsub ??= this.session.subscribe(() => this.sync());
     this.sync();
   }
 
   stop() {
+    this.running = false;
     this.unsub?.();
     this.unsub = null;
     for (const c of this.clients.values()) {
@@ -289,7 +296,7 @@ class Hand {
   }
 
   private emit() {
-    for (const fn of this.listeners) fn();
+    setLendReached(this.connected());
   }
 
   /** One connection per machine of the account. */
@@ -304,6 +311,7 @@ class Hand {
       if (!want.has(id)) {
         c.close();
         this.clients.delete(id);
+        this.emit();
       }
     }
     for (const id of want) {
@@ -410,28 +418,27 @@ class Hand {
 }
 
 let hand: Hand | null = null;
+let following = false;
 
-/** Start lending if it's on (at load), or turn it on or off. `#lend=on`
- * or `#lend=off` in the address sets it too. */
-export function setLending(session: ControlSession | null, on?: boolean): Hand | null {
-  const m = /(?:^#|&)lend=(on|off)/.exec(location.hash);
-  if (on === undefined && m) on = m[1] === "on";
-  if (on !== undefined) {
-    try {
-      localStorage.setItem(KEY, on ? "on" : "off");
-    } catch {
-      // The setting just won't stick.
+/** Lend this device's tools from this page while lending is on: now, if
+ * it was turned on (or `#lend=on` says so), and whenever its switch
+ * (shared/lending.ts) turns it on or off. */
+export function lendFrom(session: HandSource | null) {
+  const follow = () => {
+    if (lending()) {
+      hand ??= new Hand(session);
+      hand.start();
+    } else {
+      hand?.stop();
     }
+  };
+  lendFromAddress();
+  follow();
+  if (!following) {
+    following = true;
+    onLending(() => {
+      // The count it reports comes back here: only a turn on or off acts.
+      if (lending() !== !!hand?.running) follow();
+    });
   }
-  if (lending()) {
-    hand ??= new Hand(session);
-    hand.start();
-  } else {
-    hand?.stop();
-  }
-  return hand;
-}
-
-export function currentHand(): Hand | null {
-  return lending() ? hand : null;
 }

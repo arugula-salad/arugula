@@ -293,6 +293,16 @@ test.describe("on a computer", () => {
     await prefs.getByRole("switch", { name: "Big tips" }).click();
     await prefs.locator('[data-pref="editor"]').selectOption("ask");
     await expect(detail).toHaveText(/ · Tips on, not big ones · asks which editor$/);
+    // Lending this device to agents, this browser's alone, between the two.
+    const lend = look.getByRole("switch", { name: "Lend this device to agents" });
+    await expect(lend).not.toBeChecked();
+    await lend.click();
+    await expect(lend).toBeChecked();
+    await expect(detail).toHaveText(/ on this device · lent to agents · Tips on/);
+    expect(await page.evaluate(() => localStorage.getItem("arugula-hand"))).toBe("on");
+    await lend.click();
+    await expect(detail).not.toContainText("lent to agents");
+    expect(await page.evaluate(() => localStorage.getItem("arugula-hand"))).toBe("off");
   });
 
   test("the old addresses land in their scopes, the picker chooses which one, and the scopes' switch goes between them", async ({ page }) => {
