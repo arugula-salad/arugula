@@ -116,6 +116,24 @@ export interface PlatformApi {
    * `move` gives one Doc to a team's project, and says why not when it
    * can't. A page without it sends the person to the machine. */
   machineDocs?: { watch(fn: () => void): () => void; here(machine: string): boolean; move(machine: string, doc: string, project: string): Promise<string | null> };
+  /** The Docs the reader shared by link (Arugula #1315), as the machine
+   * that shared each (control's id) knows them: its title, its URL (which
+   * holds the key) and its pane. Where the page reaches the reader's own
+   * machines (the app). `watch` reads them, calling `fn` as they change,
+   * until its answer is called; `here` says whether `machine` answers now,
+   * and `name` what it's called; `titles` is each link's Doc title, by
+   * link id; `url` and `open` (the pane its Doc opened in) throw why not;
+   * `unshare` is whether the machine took the link down itself. A page
+   * without it shows the links with neither Open nor Copy link. */
+  docLinks?: {
+    watch(fn: () => void): () => void;
+    here(machine: string): boolean;
+    name(machine: string): string | undefined;
+    titles(machine: string): Promise<Map<string, string>>;
+    url(machine: string, link: string): Promise<string>;
+    open(machine: string, link: string): Promise<number>;
+    unshare(machine: string, link: string): Promise<boolean>;
+  };
   /** A live pane in a fixed slot: the shell draws its own PaneSlot; a page that can't draw one leaves it out and the drawer shows the session's state card. */
   LivePane?: ComponentType<{ machine: string; pane: string }>;
   /** A pane at the Overview's Work level (Arugula #1289): the view Panes mounts, filling its slot, typed into unless `watch` (a teammate's session) or the reader only views it. Where the page reaches machines itself (the app). */
@@ -135,14 +153,14 @@ export interface PlatformApi {
    * shown only where there is no Overview (the page doesn't reach
    * machines, #1088). A page without it shows those alone. */
   Overview?: ComponentType<{ project: string; board?: string; card?: string; zoom?: OverviewZoom; children?: ComponentChildren }>;
-  /** A machine's own settings as sections of Settings' This machine
-   * (Arugula #1107): Access, Permission rules, Usage and crash reports,
-   * Guest SSH access and Developer settings, read from the machine through
-   * the page's own client to it, each saying so in its summary when the
-   * page can't reach it. `children`, the platform's sections about the
-   * machine, go after Access. Where the page reaches machines itself (the
-   * app); a page without it links to the machine's page instead. */
-  MachineSettings?: ComponentType<{ machine: string; name: string; children?: ComponentChildren }>;
+  /** Settings › Machines' sections (Arugula #1107): Access and sharing,
+   * Agents and Advanced, whose parts are mostly the machine's own, read
+   * from it through the page's own client to it, each saying so when the
+   * page can't reach it. `grants`, the platform's part of Agents;
+   * `children`, its sections about the machine (Name), go before
+   * Advanced. Where the page reaches machines itself (the app); a page
+   * without it draws the platform's alone, and says the rest aren't there. */
+  MachineSettings?: ComponentType<{ machine: string; name: string; grants?: ComponentChildren; children?: ComponentChildren }>;
 }
 
 const none = () => () => {};
