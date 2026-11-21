@@ -482,7 +482,7 @@ final class FlowTests: XCTestCase {
                     seen = term.value as? String ?? ""
                     if !seen.contains("Read src/main.rs") { sleep(1) }
                 }
-                XCTAssertTrue(seen.contains("Read src/main.rs"), "the Work level's terminal shows: \(seen)")
+                XCTAssertTrue(seen.contains("Read src/main.rs"), "the Work level's terminal shows: \(seen) [\(term.label)]")
                 let allowHere = app.buttons["answer-Allow"]
                 XCTAssertTrue(allowHere.shows(within: 60), "no permission prompt over the panes: \(app.debugDescription)")
                 shot(app, "2-work-ask")
