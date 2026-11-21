@@ -93,6 +93,10 @@ struct ZoomRoute: Equatable {
 final class ZoomCenter: ObservableObject {
     static let shared = ZoomCenter()
     @Published var route: ZoomRoute?
+    /// What a session was called where it was opened from (a lead's chip
+    /// names its session), by its key: until its machine names its
+    /// conversation, the Work level calls it that.
+    var names: [String: String] = [:]
 
     /// An address the app was opened at; false for any other link.
     @discardableResult
@@ -144,6 +148,13 @@ extension LeadLine {
     /// Its session's key: its pane's when a machine here tells of it, else
     /// `lead:MACHINE:SESSION`, which the Work level says it can't reach.
     var key: String { peeked?.key ?? "lead:\(lead.machine):\(lead.session)" }
+
+    /// Its key, with its name kept for the Work level to call it by.
+    @MainActor
+    var opening: String {
+        ZoomCenter.shared.names[key] = lead.session
+        return key
+    }
 }
 
 /// A card's Work level, pushed over its board's.
@@ -469,7 +480,8 @@ extension Peeked {
         // Its conversation's title, an agent block's own, else its session's
         // name (a lead's, as its chip names it), else what the pane shows.
         case .pane(let m, let p):
-            m.conversations[p.id] ?? (p.isAgent ? nil : m.sessions.first { $0.tabs.contains(p.tab) }?.name) ?? p.name
+            m.conversations[p.id] ?? ZoomCenter.shared.names[key]
+                ?? (p.isAgent ? nil : m.sessions.first { $0.tabs.contains(p.tab) }?.name) ?? p.name
         case .hosted(let s): s.issue.map { "#\($0.number) \($0.title)" } ?? "Arugula cloud"
         }
     }

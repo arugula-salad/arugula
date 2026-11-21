@@ -466,7 +466,7 @@ struct BoardsView: View {
                 .accessibilityIdentifier("board-\(b.title)")
             HStack(spacing: 6) {
                 if let lead = b.lead {
-                    Button { path.append(WorkKey(key: LeadLine(lead, fleet: fleet).key)) } label: {
+                    Button { path.append(WorkKey(key: LeadLine(lead, fleet: fleet).opening)) } label: {
                         LiveLeadChip(lead: lead, fleet: fleet).contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)

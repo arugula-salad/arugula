@@ -976,7 +976,7 @@ struct PhoneHome: View {
                     BoardLineRow(
                         line: b,
                         zoom: { zoom(.board(b.board.id)) },
-                        talk: b.lead.map { l in { zoom(.work(l.key)) } },
+                        talk: b.lead.map { l in { zoom(.work(l.opening)) } },
                         thread: { opened = .thread(b.board) })
                     .voidRow()
                 }
@@ -1372,7 +1372,7 @@ struct LeadHeading: View {
 
     private func talk() {
         guard let lead else { return }
-        openAgent(lead.key, talkTo: talkTo, project: scope.current?.id)
+        openAgent(lead.opening, talkTo: talkTo, project: scope.current?.id)
     }
 }
 
