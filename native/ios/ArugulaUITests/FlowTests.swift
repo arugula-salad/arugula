@@ -1,5 +1,6 @@
 // The app as a person takes it, on a simulator against a real control
 // (native/ios/test-sim.sh): sign in, the tab bar, home, the project's issues,
+// the zoom to a board and a card's work and back, by taps and by address,
 // a board's thread and its lanes,
 // an agent's permission prompt and question answered from home, projects,
 // a Doc in a room, chat, a terminal. The script
@@ -92,6 +93,16 @@ final class FlowTests: XCTestCase {
             while !switcher.label.lowercased().contains(name.lowercased()) && Date() < by { usleep(300_000) }
         }
         XCTAssertTrue(switcher.label.lowercased().contains(name.lowercased()), "not in \(name): \(switcher.label)")
+    }
+
+    /// Open an address in the app, as a link from elsewhere would: iOS asks
+    /// once whether to open it in Arugula.
+    private func openAddress(_ app: XCUIApplication, _ address: String) {
+        XCUIDevice.shared.system.open(URL(string: address)!)
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let open = springboard.buttons["Open"]
+        if open.waitForExistence(timeout: 5) { open.tap() }
+        _ = app.wait(for: .runningForeground, timeout: 10)
     }
 
     /// Peek at the lead over the open thread: its session's last lines say
@@ -315,8 +326,12 @@ final class FlowTests: XCTestCase {
             go(app, "Home")
         }
 
-        // Home (Arugula #1255): the board the script made, its row's question
-        // under Needs you, its thread and its lanes, and back.
+        // Home (Arugula #1255) and the zoom (Arugula #1304): the board the
+        // script made, its row's question under Needs you. Its row zooms to
+        // the Board level, a ticket there to its Work level, and the path bar
+        // zooms back out. The board's thread and lanes are a tap away from
+        // the Board level. The Work level's address, opened as a link from
+        // home, lands there again.
         if let title = env["ARUGULA_BOARD"], !title.isEmpty {
             let board = app.buttons["home-board-\(title)"]
             XCTAssertTrue(board.shows(within: 45), "home has no board \(title): \(app.debugDescription)")
@@ -327,17 +342,43 @@ final class FlowTests: XCTestCase {
             clearAlerts()
             shot(app, "2-home")
             // Home reloads its list after the project switch above: a tap as
-            // it does opens nothing, so tap again until the thread is there.
-            var threadOpened = false
-            for _ in 0..<3 where !threadOpened {
+            // it does opens nothing, so tap again until the board is there.
+            let level = app.descendants(matching: .any)["board-level"]
+            var zoomed = false
+            for _ in 0..<3 where !zoomed {
                 guard board.shows(within: 15) else { break }
                 _ = board.waitFor(hittable: true, timeout: 5)
                 clearAlerts()
                 board.tap()
-                threadOpened = app.staticTexts["board-lead"].shows(within: 10)
+                zoomed = level.shows(within: 10)
             }
-            if !threadOpened { shot(app, "fail-board-thread") }
-            XCTAssertTrue(threadOpened, "no board thread: \(app.debugDescription)")
+            if !zoomed { shot(app, "fail-board-level") }
+            XCTAssertTrue(zoomed, "the board's row didn't zoom to its Board level: \(app.debugDescription)")
+            let path = app.descendants(matching: .any)["zoom-path"]
+            if !path.shows(within: 10) { shot(app, "fail-zoom-path") }
+            XCTAssertTrue(path.exists, "no path bar over the Board level: \(app.debugDescription)")
+            XCTAssertTrue((path.value as? String ?? "").contains("/board/brd_"), "the Board level's address: \(path.value ?? "none")")
+            let ticket = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'ticket-'")).firstMatch
+            XCTAssertTrue(ticket.shows(within: 30), "the Board level lists no ticket: \(app.debugDescription)")
+            shot(app, "2-board-level")
+            clearAlerts()
+            ticket.tap()
+            let work = app.descendants(matching: .any)["work-level"]
+            XCTAssertTrue(work.shows(within: 15), "the ticket didn't zoom to its Work level: \(app.debugDescription)")
+            var address = ""
+            let addressBy = Date().addingTimeInterval(10)
+            while !address.contains("/card/row_") && Date() < addressBy {
+                address = path.value as? String ?? ""
+                if !address.contains("/card/row_") { usleep(300_000) }
+            }
+            XCTAssertTrue(address.contains("/card/row_"), "the Work level's address: \(address)")
+            shot(app, "2-work-level")
+            // Out to the board by the path bar, then its thread and its lanes.
+            app.buttons["zoom-path-board"].tap()
+            XCTAssertTrue(level.shows(within: 10), "the path bar didn't zoom out to the board")
+            XCTAssertTrue(app.buttons["board-thread"].shows(within: 10), "no Thread on the Board level")
+            app.buttons["board-thread"].tap()
+            XCTAssertTrue(app.staticTexts["board-lead"].shows(within: 15), "no board thread: \(app.debugDescription)")
             let said = "to-the-board-\(Int.random(in: 1000...9999))"
             let draft = app.textFields["chat-draft"]
             XCTAssertTrue(draft.shows(within: 15))
@@ -352,10 +393,26 @@ final class FlowTests: XCTestCase {
             shot(app, "2-board-lanes")
             goBack(app)
             XCTAssertTrue(app.staticTexts["board-lead"].shows(within: 15), "not back on the thread")
-            if !iPad {
-                goBack(app)
-                XCTAssertTrue(board.shows(within: 15), "not back home")
+            goBack(app)
+            XCTAssertTrue(level.shows(within: 15), "not back on the Board level")
+            // Out to home by the path bar.
+            app.buttons["zoom-path-overview"].tap()
+            if !iPad { XCTAssertTrue(board.shows(within: 15), "the path bar didn't zoom out to home") }
+            // The Work level's address, as a link.
+            openAddress(app, address)
+            let opened = work.shows(within: 20)
+            if !opened { shot(app, "fail-address") }
+            XCTAssertTrue(opened, "\(address) didn't open the Work level: \(app.debugDescription)")
+            var landed = ""
+            let landedBy = Date().addingTimeInterval(10)
+            while landed != address && Date() < landedBy {
+                landed = path.value as? String ?? ""
+                if landed != address { usleep(300_000) }
             }
+            XCTAssertEqual(landed, address, "the link landed elsewhere")
+            shot(app, "2-work-by-address")
+            app.buttons["zoom-path-overview"].tap()
+            if !iPad { XCTAssertTrue(board.shows(within: 15), "not back home") }
         }
 
         // Answered in the row (Arugula #1256): the stand-in agent's permission

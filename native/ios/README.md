@@ -14,6 +14,16 @@ Issues aren't a tab: a board's rows open their issues, and the project's menu
 
 **Home** (`Arugula/Home.swift`, #1255) is the first tab: the current project's
 conversations, sorted by what needs you, as the desktop's Overview reads them.
+It is the Overview's Project level (#1304, the web's #1287): a board's row
+zooms to its **Board level** and a ticket there to its **Work level**
+(`Arugula/Zoom.swift`), pushed on an iPhone and beside home's list on an iPad;
+Back or the path bar over each level zooms out. Each level has the web's
+address under `arugula://`, which the app registers: `arugula://p/PROJECT`,
+`…/board/BOARD`, `…/board/BOARD/card/ROW` and `…/work/SESSION` (a session's
+key: `pane:MACHINE:PANE`, `hosted:SESSION` or the web's `MACHINE#SESSION`). A
+link to one, the web's `https://…/p/…` from a Doc too, opens that level in its
+project; a notification about a pane opens its card's Work level (or its own),
+and one about an issue on a board, its card's.
 In a team's project it starts with the **chief of staff** (#1279): the
 reader's staff room (`POST /api/chat/projects/{project}/staff`), which only
 they and their own agents read, with the session that leads it.
@@ -21,8 +31,8 @@ Needs you merges every online machine's panes that ask or failed (a link to
 each, as the web's fleet opens them), the boards' rows that ask you, fail
 their checks or wait for review, and the hosted sessions that wait on you,
 worst first. Then one row per open board (its lane bar, `done/total`, what's
-going on and who leads it), which opens the board's thread, whose Board
-button opens its lanes; then the channels and DMs. On an iPad home is the
+going on and who leads it), which zooms to the board, whose Thread and
+Lanes buttons open its thread and its lanes; then the channels and DMs. On an iPad home is the
 left column, and what it opens sits beside it. A notification opens its tab:
 a pane's on Machines, a room's on Chat, an issue's beside home.
 

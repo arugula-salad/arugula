@@ -74,7 +74,7 @@ export function machinesSummary(list: DirMachine[], team: boolean): string {
   return joined(plural(list.length, "machine"), on === list.length ? (on === 1 ? "online" : "all online") : `${on} online`);
 }
 
-export function OwnerMachines({ owner, name, band, teams }: { owner: string; name: string; band?: string; teams: boolean }) {
+export function OwnerMachines({ owner, name, teams }: { owner: string; name: string; teams: boolean }) {
   const { all, err } = useDirectory();
   // Those with settings in This machine (#1104's picker reads the same list).
   const { machines: mine } = useMachines();
@@ -84,7 +84,6 @@ export function OwnerMachines({ owner, name, band, teams }: { owner: string; nam
     <Section
       id="machines"
       title="Machines"
-      band={band}
       summary={list ? machinesSummary(list, team) : err ? "Couldn't load" : undefined}
       count={list?.length}
       lede={team ? `The machines shared with ${name}. Its members can open them.` : "Your machines that aren't a team's."}

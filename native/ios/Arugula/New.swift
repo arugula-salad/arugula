@@ -113,7 +113,7 @@ struct NewSheet: View {
                 ForEach(model.boards.sorted { ($0.lead == nil ? 1 : 0, $0.title) < ($1.lead == nil ? 1 : 0, $1.title) }) { b in
                     choice(b.title, BoardLineRow.lead(b.lead), id: "tell-\(b.title)") {
                         dismiss()
-                        open(.board(b))
+                        open(.thread(b))
                     }
                 }
             }

@@ -16,8 +16,8 @@
 // into one row ("Runs and workspaces"), each it holds is a part of it,
 // under a smaller heading, and tells it its summary instead of the list.
 // The row says the parts' summaries in a line, where the section says
-// none of its own. A `Band` names the heading its sections are listed
-// under.
+// none of its own. A scope's sections are listed flat, under no headings
+// of their own (Arugula #1317).
 
 import { createContext, type ComponentChildren, type RefObject } from "preact";
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
@@ -27,8 +27,6 @@ export interface ListedSection {
   id: string;
   title: string;
   summary?: string;
-  /** The heading it's listed under, where a scope groups its sections. */
-  band?: string;
   /** Its element, to put the list in the page's order. */
   el: HTMLElement;
 }
@@ -54,13 +52,6 @@ interface Whole {
 
 const WholeContext = createContext<Whole | null>(null);
 
-const BandContext = createContext<string | undefined>(undefined);
-
-/** Sections listed under one heading: "Basics", "Spend". */
-export function Band({ title, children }: { title: string; children: ComponentChildren }) {
-  return <BandContext.Provider value={title}>{children}</BandContext.Provider>;
-}
-
 /** Parts' summaries, in the page's order, in a line. */
 function partsLine(parts: ReadonlyMap<string, { summary?: string; el: HTMLElement }>): string | undefined {
   const inOrder = [...parts.values()].sort((a, b) => (a.el.compareDocumentPosition(b.el) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
@@ -71,7 +62,6 @@ export function Section({
   id,
   title,
   summary,
-  band,
   count,
   lede,
   more,
@@ -82,8 +72,6 @@ export function Section({
   title: string;
   /** What's set, in a few words, for the list beside it. */
   summary?: string;
-  /** The heading it's listed under, in a scope that groups its sections. */
-  band?: string;
   /** How many it lists, beside the heading. */
   count?: number;
   /** Its help: the one plain line under the heading; left out where the heading says it. */
@@ -96,7 +84,6 @@ export function Section({
 }) {
   const list = useContext(SectionListContext);
   const whole = useContext(WholeContext);
-  const inBand = useContext(BandContext);
   const el = useRef<HTMLElement>(null);
   // The parts it holds, and what each says.
   const [parts, setParts] = useState<ReadonlyMap<string, { summary?: string; el: HTMLElement }>>(new Map());
@@ -121,8 +108,8 @@ export function Section({
   useLayoutEffect(() => {
     if (!el.current) return;
     if (whole) whole.tell(id, said, el.current);
-    else list?.tell({ id, title, summary: said, band: band ?? inBand, el: el.current });
-  }, [list, whole, id, title, said, band, inBand]);
+    else list?.tell({ id, title, summary: said, el: el.current });
+  }, [list, whole, id, title, said]);
   useLayoutEffect(() => {
     const at = el.current;
     return () => void (at && (whole ? whole.forget(id, at) : list?.forget(id, at)));

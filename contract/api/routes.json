@@ -104,6 +104,7 @@
     {"method":"PUT","path":"/api/projects/{project}/board-settings","auth":"session","clients":["page"]},
     {"method":"GET","path":"/api/projects/{project}/boards","auth":"session","clients":["page","cli","native"]},
     {"method":"POST","path":"/api/projects/{project}/boards","auth":"session","clients":["page","cli","native"]},
+    {"method":"GET","path":"/api/projects/{project}/boards/views","auth":"session","clients":["page"]},
     {"method":"GET","path":"/api/projects/{project}/ci-alerts","auth":"cloud_driver","clients":["page","cli","daemon"]},
     {"method":"PATCH","path":"/api/projects/{project}/ci-alerts","auth":"session","clients":["page","cli"]},
     {"method":"POST","path":"/api/projects/{project}/ci-alerts/key","auth":"session","clients":["page","cli"]},

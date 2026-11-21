@@ -107,6 +107,10 @@
       "why": "Not in the first app"
     },
     {
+      "match": "/boards/views",
+      "why": "The web Overview's one read of every open board (Arugula #1296); the app reads boards one by one"
+    },
+    {
       "match": "/board-settings",
       "why": "Board settings are configured on the web"
     },

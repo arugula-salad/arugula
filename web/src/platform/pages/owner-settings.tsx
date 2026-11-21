@@ -1,13 +1,13 @@
 // An owner's settings (Arugula #897): Settings' Team and billing scope
 // (Arugula #1104), a team's at `/settings/team/:team`, Personal's at
 // `/settings/team/personal` (they were `/t/:team/settings` and
-// `/settings/personal`). Its sections, as every scope's are, in two bands.
-// The owner's own: Members, Machines (../settings/owner-machines), Chat
+// `/settings/personal`). Its sections, as every scope's are, in a flat list.
+// First the owner's own: Members, Machines (../settings/owner-machines), Chat
 // (the team chat's owners-only switches), Plan and billing, and Labs. Then
-// Every project: its default project, and Project defaults. What a device
-// signs (the roster, a machine joining a team) is a ↗ row in place, opening
-// control's page (#1106). Labs' flags are control's Teams panel's list
-// (Arugula #1118), read and set through the app's host.
+// what every project starts with: its default project, and Project
+// defaults. What a device signs (the roster, a machine joining a team) is a
+// ↗ row in place, opening control's page (#1106). Labs' flags are control's
+// Teams panel's list (Arugula #1118), read and set through the app's host.
 //
 // Project defaults is a table: a row per key a project overrides, the
 // owner's default first, then a column per project that isn't archived,
@@ -100,18 +100,15 @@ export function OwnerSettings({ owner }: { owner: string }) {
         <p class="dim">That team isn't one of yours (or it's gone).</p>
       </Section>
     );
-  // The prototype's two bands: the owner's own, then what its projects start with.
-  const band = team ? "Team" : "Just you";
-  const every = "Every project";
   return (
     <>
-      {team && <Members owner={owner} name={name} role={role} members={team.members} band={band} />}
-      <OwnerMachines owner={owner} name={name} band={band} teams={owners(session.projects).some((o) => o.kind === "team")} />
-      {team && <TeamChat team={owner} name={name} role={role} band={band} />}
-      <PlanAndBilling team={team ? owner : undefined} band={band} />
-      <Labs owner={owner} name={name} band={band} />
-      <General owner={owner} projects={projects} role={role} band={every} />
-      <ProjectDefaults owner={owner} name={name} projects={projects} role={role} band={every} />
+      {team && <Members owner={owner} name={name} role={role} members={team.members} />}
+      <OwnerMachines owner={owner} name={name} teams={owners(session.projects).some((o) => o.kind === "team")} />
+      {team && <TeamChat team={owner} name={name} role={role} />}
+      <PlanAndBilling team={team ? owner : undefined} />
+      <Labs owner={owner} name={name} />
+      <General owner={owner} projects={projects} role={role} />
+      <ProjectDefaults owner={owner} name={name} projects={projects} role={role} />
     </>
   );
 }
@@ -121,12 +118,11 @@ const ROLE: Record<string, string> = { owner: "Owner", editor: "Editor", viewer:
 /** Members: the roster, as the platform's copy has it. Inviting, removing
  * and changing roles is a new roster, which control's page makes (an
  * owner's device signs it, if they have one), so it opens there (Arugula #1106). */
-function Members({ owner, name, role, members, band }: { owner: string; name: string; role: string | undefined; members: ProjectMember[]; band: string }) {
+function Members({ owner, name, role, members }: { owner: string; name: string; role: string | undefined; members: ProjectMember[] }) {
   return (
     <Section
       id="members"
       title="Members"
-      band={band}
       summary={joined(plural(members.length, "person", "people"), plural(members.filter((m) => m.role === "owner").length, "owner"))}
       count={members.length}
       lede={`Who's in ${name}, and their role.`}
@@ -157,7 +153,7 @@ function Members({ owner, name, role, members, band }: { owner: string; name: st
  * a machine that has Developer settings (`dev`): strangers never see Labs.
  * A control that doesn't answer `/api/flags` on this host yet (a bare 404)
  * gets the ↗ row to its Teams panel. */
-function Labs({ owner, name, band }: { owner: string; name: string; band: string }) {
+function Labs({ owner, name }: { owner: string; name: string }) {
   const team = owner !== "personal";
   const [kept, setKept] = useState<LabsFlags | null>(null);
   const [elsewhere, setElsewhere] = useState(false);
@@ -179,7 +175,7 @@ function Labs({ owner, name, band }: { owner: string; name: string; band: string
   const lede = team ? `Labs features turned on for ${name}'s machines.` : "Labs features turned on for every machine of yours.";
   if (elsewhere || err)
     return (
-      <Section id="labs" title="Labs" band={band} summary={err ? "Couldn't load" : "On your machines page"} lede={lede} hooks={{ "data-owner-labs": owner }}>
+      <Section id="labs" title="Labs" summary={err ? "Couldn't load" : "On your machines page"} lede={lede} hooks={{ "data-owner-labs": owner }}>
         {err ? (
           <p class="control-error">{err}</p>
         ) : (
@@ -205,7 +201,6 @@ function Labs({ owner, name, band }: { owner: string; name: string; band: string
     <Section
       id="labs"
       title="Labs"
-      band={band}
       summary={named ? `${named} set` : "None set"}
       lede={lede}
       more={<p>A machine's own Developer settings win over these, yours over a team's.{team && !mine.owner ? ` ${name}'s owners set its own.` : ""}</p>}
@@ -231,7 +226,7 @@ function Labs({ owner, name, band }: { owner: string; name: string; band: string
 
 /** General: the owner's name, and its default project, which only its
  * owners choose. One select and a Save, so a change isn't one click. */
-function General({ owner, projects, role, band }: { owner: string; projects: PlatformProject[]; role: string | undefined; band: string }) {
+function General({ owner, projects, role }: { owner: string; projects: PlatformProject[]; role: string | undefined }) {
   const [read, setRead] = useState<EffectiveSetting[] | null>(null);
   const [draft, setDraft] = useState<Value>(null);
   const [err, setErr] = useState("");
@@ -266,7 +261,6 @@ function General({ owner, projects, role, band }: { owner: string; projects: Pla
     <Section
       id="general"
       title="Default project"
-      band={band}
       summary={read ? `Default project: ${words("default_project", saved, nameOf)}` : err ? "Couldn't load" : undefined}
       lede="Its default project: where its new things go when nothing says which.">
       {read && (
@@ -303,7 +297,7 @@ function General({ owner, projects, role, band }: { owner: string; projects: Pla
 }
 
 /** Project defaults: the table, its staged changes and the bar above it. */
-function ProjectDefaults({ owner, name, projects, role, band }: { owner: string; name: string; projects: PlatformProject[]; role: string | undefined; band: string }) {
+function ProjectDefaults({ owner, name, projects, role }: { owner: string; name: string; projects: PlatformProject[]; role: string | undefined }) {
   const [layers, setLayers] = useState<Layers | null>(null);
   const [err, setErr] = useState("");
   const [staged, setStaged] = useState<Staged>({});
@@ -362,7 +356,6 @@ function ProjectDefaults({ owner, name, projects, role, band }: { owner: string;
     <Section
       id="defaults"
       title="Project defaults"
-      band={band}
       summary={layers ? defaultsSummary(layers, projects) : err ? "Couldn't load" : undefined}
       lede={`What ${owner === "personal" ? "your projects use" : `every project in ${name} uses`} unless it overrides it.`}
       more={<p>A highlighted cell is a project's own value. Choose Default in it to follow the default again. Changes wait for Save.</p>}

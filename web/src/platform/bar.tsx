@@ -168,14 +168,16 @@ function Path({ r, project }: { r: Route; project: string | undefined }) {
   );
 }
 
-/** You, and your account's menu: your account (Settings), the status page
- * on hosted Arugula (Arugula #1176) and signing out; your presence is
- * Chat's (Arugula #1079). On the rail's foot (`compact`, the picture
- * alone) or a phone's bar. */
+/** You, and your account's menu: the status page on hosted Arugula
+ * (Arugula #1176), feedback and signing out; your presence is Chat's
+ * (Arugula #1079). On the rail's foot (`compact`, the picture alone) or a
+ * phone's bar. The rail has Settings, so the menu has no way there; a
+ * phone has no rail, so its menu keeps Your account… (Arugula #1319). */
 export function AccountButton({ compact = false }: { compact?: boolean }) {
   useSubscribe((fn) => session.subscribe(fn));
   const button = useRef<HTMLButtonElement>(null);
   const open = useMenuFrom(button);
+  const phone = usePhone();
   const me = session.me;
   if (!me) return null;
   const account = (e: MouseEvent) => {
@@ -183,7 +185,7 @@ export function AccountButton({ compact = false }: { compact?: boolean }) {
     const status = statusPage(controlOrigin());
     const items: MenuItem[] = [
       { header: me.login || me.name || "Signed in", name: !!(me.login || me.name) },
-      { label: "Your account…", run: () => go("/settings") },
+      ...(phone ? [{ label: "Your account…", run: () => go("/settings") }] : []),
       ...(status ? [{ label: "Status", external: true, hint: "Whether hosted Arugula is up", attrs: { "data-status-page": "" }, run: () => openStatusPage(status) }] : []),
       // Arugula #1240: straight to control, as the person signed in.
       { label: "Send feedback…", run: openPlatformFeedback },

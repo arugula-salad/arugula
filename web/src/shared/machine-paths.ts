@@ -182,5 +182,7 @@ export function settingsPath(section?: string, machine?: string): string | null 
     const sub = section === "machine" ? "" : section;
     return machine ? `/settings/machine/${machine}${sub && `/${sub}`}` : `/settings/machine${sub && `#${sub}`}`;
   }
-  return section === "appearance" || section === "preferences" || section === "account" ? `/settings/you/${section}` : "/settings";
+  // Preferences is part of Appearance (Arugula #1318).
+  if (section === "preferences") return "/settings/you/appearance";
+  return section === "appearance" || section === "account" ? `/settings/you/${section}` : "/settings";
 }

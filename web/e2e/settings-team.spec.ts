@@ -1,5 +1,5 @@
 // Settings' Team and billing scope (Arugula #1106): the owner's sections in
-// two bands (the team's own, then Every project). Members lists the roster,
+// a flat list (the team's own, then what every project starts with). Members lists the roster,
 // and inviting and roles (signed by an owner's device) is a ↗ row opening
 // control's page; Machines lists what control's directory says is the
 // owner's, one of yours opening its settings; Labs is control's Teams
@@ -62,10 +62,10 @@ const section = (page: Page, id: string) => page.locator(`[data-settings-section
 
 test.use({ viewport: { width: 1280, height: 900 } });
 
-test("a team's owner: two bands, the roster with a ↗ to change it, the team's machines, and its Labs flags", async ({ page }) => {
+test("a team's owner: a flat list, the roster with a ↗ to change it, the team's machines, and its Labs flags", async ({ page }) => {
   await open(page, "/settings/team/tm_1");
-  // The team's own, then what every project starts with.
-  await expect(page.locator(".settings-list .list-group-title")).toHaveText(["Team", "Every project"]);
+  // The team's own, then what every project starts with, under no band headings.
+  await expect(page.locator(".settings-list .list-group-title")).toHaveCount(0);
   await expect(page.locator("[data-settings-row]")).toHaveText([/^Members/, /^Machines/, /^Labs/, /^Default project/, /^Project defaults/]);
   // Members, first: the roster, and what a device signs opens control's Teams.
   await expect(section(page, "members")).toBeVisible();
@@ -121,7 +121,7 @@ test("Labs from a control that doesn't answer its flags on the app's host: contr
 
 test("Just you: your machines in no team, a way to move one into a team, and no roster", async ({ page }) => {
   await open(page, "/settings/team/personal");
-  await expect(page.locator(".settings-list .list-group-title")).toHaveText(["Just you", "Every project"]);
+  await expect(page.locator(".settings-list .list-group-title")).toHaveCount(0);
   await expect(row(page, "members")).toHaveCount(0);
   await expect(row(page, "machines").locator(".list-row-detail")).toHaveText("1 machine · online");
   const machines = section(page, "machines");

@@ -409,9 +409,11 @@ function settingsRoute(rest: string[], q: URLSearchParams): SettingsRoute | null
 }
 
 /** A section of yours, or where it went: your machines' agents are each
- * machine's now (Arugula #1107), in This machine's Agents' grants. */
+ * machine's now (Arugula #1107), in This machine's Agents' grants, and
+ * Preferences is part of Appearance (Arugula #1318). */
 function youSection(section?: string): SettingsRoute {
   if (section === "agents") return { page: "settings", scope: "machine", section };
+  if (section === "preferences") return { page: "settings", scope: "you", section: "appearance" };
   return { page: "settings", scope: "you", ...(section ? { section } : {}) };
 }
 

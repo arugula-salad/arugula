@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Release builds, merged into the generated Info.plist: the app's
+     addresses, arugula://p/… (Arugula #1304), which open a level of the
+     Overview. Arugula-Debug-Info.plist has them too. -->
+<plist version="1.0">
+<dict>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>io.arugula.ios</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>arugula</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

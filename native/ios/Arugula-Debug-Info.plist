@@ -1,11 +1,24 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- Debug builds only, merged into the generated Info.plist: plain http to
-     localhost and its subdomains, so a Doc's prototype frame loads from a
-     local control's proto origin (proto.blocks.localhost, the native-sim
-     testnet claim's, Arugula #1259). Loopback only; Release has none of it. -->
+<!-- Debug builds, merged into the generated Info.plist: the app's addresses,
+     arugula://p/… (Arugula #1304), as Arugula-Info.plist has them; and plain
+     http to localhost and its subdomains, so a Doc's prototype frame loads
+     from a local control's proto origin (proto.blocks.localhost, the
+     native-sim testnet claim's, Arugula #1259). Loopback only; Release has
+     none of that. -->
 <plist version="1.0">
 <dict>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>io.arugula.ios</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>arugula</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSExceptionDomains</key>
