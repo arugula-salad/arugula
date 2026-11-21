@@ -116,6 +116,24 @@ export interface PlatformApi {
    * `move` gives one Doc to a team's project, and says why not when it
    * can't. A page without it sends the person to the machine. */
   machineDocs?: { watch(fn: () => void): () => void; here(machine: string): boolean; move(machine: string, doc: string, project: string): Promise<string | null> };
+  /** The Docs the reader shared by link (Arugula #1315), as the machine
+   * that shared each (control's id) knows them: its title, its URL (which
+   * holds the key) and its pane. Where the page reaches the reader's own
+   * machines (the app). `watch` reads them, calling `fn` as they change,
+   * until its answer is called; `here` says whether `machine` answers now,
+   * and `name` what it's called; `titles` is each link's Doc title, by
+   * link id; `url` and `open` (the pane its Doc opened in) throw why not;
+   * `unshare` is whether the machine took the link down itself. A page
+   * without it shows the links with neither Open nor Copy link. */
+  docLinks?: {
+    watch(fn: () => void): () => void;
+    here(machine: string): boolean;
+    name(machine: string): string | undefined;
+    titles(machine: string): Promise<Map<string, string>>;
+    url(machine: string, link: string): Promise<string>;
+    open(machine: string, link: string): Promise<number>;
+    unshare(machine: string, link: string): Promise<boolean>;
+  };
   /** A live pane in a fixed slot: the shell draws its own PaneSlot; a page that can't draw one leaves it out and the drawer shows the session's state card. */
   LivePane?: ComponentType<{ machine: string; pane: string }>;
   /** A pane at the Overview's Work level (Arugula #1289): the view Panes mounts, filling its slot, typed into unless `watch` (a teammate's session) or the reader only views it. Where the page reaches machines itself (the app). */

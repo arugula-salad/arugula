@@ -34,7 +34,8 @@
 //   /boards                        every project's boards, a group a project
 //   /boards/:board                 the same, that board selected (Arugula #1131)
 //   /docs                          every Doc the reader can read, their own
-//                                  private ones first (#418)
+//                                  private ones first (#418); `?shared=1`:
+//                                  My Docs at Shared by you (Arugula #1315)
 //   /p/:project/docs               its Docs (aru-118)
 //   /p/:project/docs/:doc          a Doc (`pdc_…`)
 //   /p/:project/runs               its runs (M215): `?state=…`, `?trigger=…`,
@@ -116,7 +117,7 @@ export type Route =
   | { page: "triage"; project: string }
   | { page: "boards"; project: string }
   | { page: "board"; project: string; board: string }
-  | { page: "docs"; project?: string; all?: true }
+  | { page: "docs"; project?: string; all?: true; shared?: true }
   | { page: "doc"; project: string; doc: string }
   | { page: "runs"; project: string; state?: string; trigger?: string; spec?: string }
   | { page: "run"; project: string; run: string; msg?: number; thread?: number }
@@ -246,7 +247,7 @@ export function parse(path: string, search = "", hash = ""): Route {
     const board = idOf(parts[1]);
     return board?.startsWith("brd_") ? { page: "all-boards", board, ...all } : missing;
   }
-  if (parts.length === 1 && parts[0] === "docs") return { page: "docs", ...all };
+  if (parts.length === 1 && parts[0] === "docs") return q.get("shared") === "1" ? { page: "docs", shared: true } : { page: "docs", ...all };
   if (parts[0] === "settings") return withOldSection(settingsRoute(parts.slice(1), q), hash) ?? missing;
   if (parts.length === 1 && parts[0] === "design") return { page: "design" };
   if (parts[0] === "chat" && parts.length <= 2) {
@@ -547,7 +548,7 @@ export function pathOf(r: Route, names: Names = () => null): string {
     case "board":
       return `/p/${s(r.project)}/boards/${s(r.board)}`;
     case "docs":
-      return r.project ? `/p/${s(r.project)}/docs` : r.all ? "/docs?all=1" : "/docs";
+      return r.project ? `/p/${s(r.project)}/docs` : r.shared ? "/docs?shared=1" : r.all ? "/docs?all=1" : "/docs";
     case "doc":
       return `/p/${s(r.project)}/docs/${s(r.doc)}`;
     case "runs": {

@@ -37,7 +37,7 @@ import { ROLE_WORDS, rowsOf, sessionsLine, sortRows } from "./machine-list";
 import type { AppSession } from "./session";
 import type { Client } from "../shell/client";
 import { OPS, opPath } from "../shell/ops";
-import type { DocMoveRequest } from "../shared/proto.gen";
+import type { DocLinkUrl, DocMoveRequest, DocOpened, DocOpenRequest, DocRow } from "../shared/proto.gen";
 import { notePane } from "../platform/places-kept";
 import { popOutIn } from "../shell/ui/panes/pop-out";
 import { PanesList } from "./panes-list";
@@ -147,6 +147,49 @@ export async function moveDoc(id: string, doc: string, project: string, session:
     return (e as Error).message;
   }
 }
+
+/** Ask the reader's own machine `id`, which must answer now, for `op`:
+ * its answer, or its `{error}` thrown. */
+async function ask<T>(id: string, session: AppSession | null, op: keyof typeof OPS, path: string, body?: unknown): Promise<T> {
+  const h = hostById(id, session);
+  if (!h || !up || h.owner || h.state !== "connected") throw new Error("its machine is offline");
+  const res = await up.machines.fleet.request(h.name, OPS[op].method, path, body);
+  const v = await res.json<T & { error?: string }>().catch(() => null);
+  if (!res.ok || !v) throw new Error(v?.error ?? `${h.name} said ${res.status}`);
+  return v;
+}
+
+/** What machine `id`'s Docs shared by link are titled, by link id
+ * (`PlatformApi.docLinks`, Arugula #1315). */
+export async function linkTitles(id: string, session: AppSession | null): Promise<Map<string, string>> {
+  const docs = await ask<DocRow[]>(id, session, "docs.list", opPath("docs.list"));
+  return new Map((Array.isArray(docs) ? docs : []).flatMap((d) => (d.shared?.link ? [[d.shared.link, d.title] as const] : [])));
+}
+
+/** A link's URL, key and all, from the machine that shared it. */
+export async function linkUrl(id: string, link: string, session: AppSession | null): Promise<string> {
+  const v = await ask<Partial<DocLinkUrl>>(id, session, "doc_link.get", opPath("doc_link.get", { id: link }));
+  if (!v.url) throw new Error("it has no link");
+  return v.url;
+}
+
+/** The pane machine `id` opens a link's Doc in. */
+export async function openLink(id: string, link: string, session: AppSession | null): Promise<number> {
+  const v = await ask<Partial<DocOpened>>(id, session, "doc.open", opPath("doc.open"), { link } satisfies DocOpenRequest);
+  if (typeof v.pane !== "number") throw new Error("it opened none");
+  return v.pane;
+}
+
+/** Whether machine `id` took a link down itself (clearing its Doc's block). */
+export async function unshareLink(id: string, link: string, session: AppSession | null): Promise<boolean> {
+  const h = hostById(id, session);
+  if (!h || !up || h.owner || h.state !== "connected") return false;
+  const res = await up.machines.fleet.request(h.name, OPS["doc_link.delete"].method, opPath("doc_link.delete", { id: link }));
+  return res.ok;
+}
+
+/** A machine's name, by control's id. */
+export const machineName = (id: string) => hostOf(id);
 
 /** Once the session has first said what it has. */
 function answered(s: AppSession): Promise<void> {

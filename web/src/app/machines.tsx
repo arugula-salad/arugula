@@ -69,6 +69,28 @@ export function appMachineDocs(session: () => AppSession | null): NonNullable<Pl
   };
 }
 
+/** `PlatformApi.docLinks` over `session` (Arugula #1315): the Docs the
+ * reader shared by link, through the machine that shared each, with the
+ * machine page's chunk loaded and its machines booted once a view watches.
+ * While the hub can't reach machines from this host, none is here. */
+export function appDocLinks(session: () => AppSession | null): NonNullable<PlatformApi["docLinks"]> {
+  const docs = appMachineDocs(session);
+  let page: Page | null = null;
+  const loaded = async () => (page = await load());
+  return {
+    watch(fn) {
+      void loaded();
+      return docs.watch(fn);
+    },
+    here: docs.here,
+    name: (machine) => page?.machineName(machine),
+    titles: async (machine) => (await loaded()).linkTitles(machine, session()),
+    url: async (machine, link) => (await loaded()).linkUrl(machine, link, session()),
+    open: async (machine, link) => (await loaded()).openLink(machine, link, session()),
+    unshare: async (machine, link) => (await loaded()).unshareLink(machine, link, session()),
+  };
+}
+
 /** `PlatformApi.Overview` over `session` (Arugula inversion, L6): the
  * project's Overview, in a chunk of its own with the machine page's. While
  * the hub can't reach machines from this host there is no Overview: the
