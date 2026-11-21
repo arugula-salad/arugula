@@ -1280,10 +1280,13 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
             "--managoat-account-stream does nothing: daemon-side Managoat was removed (cloud agents run through Arugula cloud)"
         );
     }
+    // A hosted box looks for a newer daemon before the relay first dials
+    // (Arugula #1284).
+    let first_dial = args.hosted.then(|| control.hold_dial());
     control.start(app.clone());
     session_project::start(app.clone());
-    if args.hosted {
-        hosted::start(&app, state_dir.clone(), args.control_url.clone());
+    if let Some(first_dial) = first_dial {
+        hosted::start(&app, state_dir.clone(), args.control_url.clone(), first_dial);
     }
     if let Some(serve) = mcp_serve
         && let Some(pipe) = mcp::pipe_server(&app)

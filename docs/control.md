@@ -73,6 +73,18 @@ A hosted workspace is `arugulad` in a rented sandbox (packaging/hosted,
 `arugulad --hosted`), joined to a project; its box is built from the E2B
 template of the daemon release it runs (release.yml's `template` job).
 
+A box follows control's daemon release (Arugula #1284): before its daemon
+dials control, at its start and each time the box wakes, it reads the
+release `/control.json` names (`build.daemon`, the one at the cloud's
+`open/` pin), and when that's newer than its own it downloads it,
+checks it against the release's signed `SHA256SUMS`, puts `arugulad` and
+`arugula` in place and starts the new daemon, keeping its panes. A
+session the wake was for gets the release's tools; the disk, with the work
+on it, is untouched. When it can't (the releases out of reach, no sudo, a
+download longer than 40 s), it dials on the daemon it has, and
+`capabilities` tells a session there why and how to try again
+(`crates/daemon/src/hosted/follow.rs`).
+
 ```
 arugula cloud create dev --repo https://github.com/acme/app --setup setup.sh
 arugula cloud ls                          # every project's; --project <id or name>

@@ -65,6 +65,7 @@ use tracing::{info, warn};
 // as it named them when it was the daemon's.
 use arugula_mux::{mux, pane, store};
 use arugulad_base::{api, control, features, hosted, roots, server, subcommands, task, work};
+use arugulad_base::{control::DialHold, hosted::follow};
 
 use crate::server::App;
 
@@ -125,8 +126,8 @@ impl crate::hosted::Hosted for HostedBox {
         snapshot::first_boot(state_dir, &resume::sandbox_id_file(), &snapshot::dir());
     }
 
-    fn start(&self, app: &Arc<App>, state_dir: PathBuf, control_url: String) {
-        start(app, state_dir, control_url);
+    fn start(&self, app: &Arc<App>, state_dir: PathBuf, control_url: String, first_dial: DialHold) {
+        start(app, state_dir, control_url, first_dial);
     }
 
     fn clones(&self, state_dir: &Path) -> Vec<(String, PathBuf)> {
@@ -183,19 +184,27 @@ fn exec_self() -> anyhow::Result<std::convert::Infallible> {
     anyhow::bail!("--hosted runs on Linux")
 }
 
-/// What the box runs beside the daemon's (`hosted::start`): the resume
-/// watch, busy and idle, its setup once it's in control, and, until then,
-/// waiting for its box and enrolling.
-pub fn start(app: &Arc<App>, state_dir: PathBuf, control_url: String) {
+/// What the box runs beside the daemon's (`hosted::start`): following
+/// control's release before each dial (at its start, `first_dial`, and
+/// after each resume, [`follow`]), the resume watch, busy and idle, its
+/// setup once it's in control, and, until then, waiting for its box and
+/// enrolling.
+pub fn start(app: &Arc<App>, state_dir: PathBuf, control_url: String, first_dial: DialHold) {
     match oom_protected() {
         Some(true) => info!("hosted: protected from the OOM killer (oom_score_adj -1000)"),
         Some(false) => warn!("hosted: not protected from the OOM killer: is the template's supervisor running it?"),
         None => {}
     }
     let control = app.control.clone();
-    let c = control.clone();
+    let url = std::env::var(CONTROL_ENV).ok().filter(|u| !u.is_empty()).unwrap_or(control_url);
+    let url = url.trim_end_matches('/').to_owned();
+    crate::task::spawn(follow::follow(control.clone(), url.clone(), first_dial));
+    let (c, u) = (control.clone(), url.clone());
     resume::watch(Arc::new(move || {
+        // Held first, so the redial waits for the look (Arugula #1284).
+        let hold = c.hold_dial();
         c.resumed();
+        crate::task::spawn(follow::follow(c.clone(), u.clone(), hold));
         resolv::after_resume();
     }));
     // Arugula #263: the newline Zig needs at the end of /etc/resolv.conf.
@@ -207,8 +216,6 @@ pub fn start(app: &Arc<App>, state_dir: PathBuf, control_url: String) {
     }
     let id_file = resume::sandbox_id_file();
     let ticket = std::env::var(TICKET_ENV).ok().filter(|t| !t.is_empty());
-    let url = std::env::var(CONTROL_ENV).ok().filter(|u| !u.is_empty()).unwrap_or(control_url);
-    let url = url.trim_end_matches('/').to_owned();
     crate::task::spawn(async move {
         // In the snapshot (or the template's build): wait for a box of our
         // own, then start over in it.

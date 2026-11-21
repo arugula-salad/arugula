@@ -310,6 +310,10 @@ These run only there; a person's machine doesn't send them
 (`crates/arugulad-work/src/run_logs.rs`, module docs, `may_upload`;
 `crates/control-wire/src/work.rs`, module docs).
 
+- **Following control's release:** before it dials, at its start and
+  after each wake, `GET /control.json` from its control; when the daemon
+  release named there is newer than its own, the same download as
+  `arugulad update` from GitHub's releases (`crates/daemon/src/hosted/follow.rs`).
 - **Enrolling, setup and activity:** its new public keys and ticket (`POST
   /api/hosted/enroll`; `crates/arugulad-hosted/src/enroll.rs`); setup's
   step and a fixed reason code, never the setup pane's text (`POST

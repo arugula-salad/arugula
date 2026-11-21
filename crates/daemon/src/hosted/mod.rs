@@ -6,8 +6,8 @@
 //! [`Hosted`]; with none registered, `--hosted` only settles the flags and
 //! takes runs. What the rest of the daemon runs on stays here:
 //!
-//! - **Headless** ([`headless`]): no tailnet, no update checks (the
-//!   template pins the release), no systemd user manager, no Claude Code
+//! - **Headless** ([`headless`]): no tailnet, no update notice (the box
+//!   follows control's release instead, [`follow`]), no systemd user manager, no Claude Code
 //!   IDE relay, no guests' ssh; panes are kept across a daemon restart by
 //!   their shims.
 //! - **What it keeps of control's enrollment, checked** ([`trust`]), at
@@ -20,6 +20,7 @@
 //! It holds nothing else on the platform's behalf.
 
 pub mod archive;
+pub mod follow;
 pub mod runs;
 pub mod trust;
 
@@ -30,7 +31,7 @@ use std::{
 
 use futures_util::future::BoxFuture;
 
-use crate::{args::RunArgs, server::App};
+use crate::{args::RunArgs, control::DialHold, server::App};
 
 /// The hosted box, as the daemon calls it.
 pub trait Hosted: Send + Sync + 'static {
@@ -39,8 +40,10 @@ pub trait Hosted: Send + Sync + 'static {
     fn first_boot(&self, state_dir: &Path);
     /// What a hosted daemon runs beside the usual and its runs: the resume
     /// watch, busy and idle, its box's setup once it's in control, and,
-    /// until then, waiting for its box and enrolling.
-    fn start(&self, app: &Arc<App>, state_dir: PathBuf, control_url: String);
+    /// until then, waiting for its box and enrolling. `first_dial` holds the
+    /// relay's first dial until the box has looked for a newer daemon
+    /// ([`follow`]).
+    fn start(&self, app: &Arc<App>, state_dir: PathBuf, control_url: String, first_dial: DialHold);
     /// The repos its setup cloned: each one's URL and directory.
     fn clones(&self, state_dir: &Path) -> Vec<(String, PathBuf)>;
     /// Ends `/etc/resolv.conf` with a newline (Arugula #263), on a box with
@@ -81,13 +84,14 @@ pub fn first_boot(state_dir: &Path) {
 /// What a hosted daemon runs beside the usual: its runs (M212, once it's in
 /// control), what a session's agent has of Arugula's MCP (its project's
 /// issues), closed agent blocks' archive, and the box's own
-/// ([`Hosted::start`]).
-pub fn start(app: &Arc<App>, state_dir: PathBuf, control_url: String) {
+/// ([`Hosted::start`]), which lets the relay dial once it has looked for a
+/// newer daemon (`first_dial`, taken before the relay started).
+pub fn start(app: &Arc<App>, state_dir: PathBuf, control_url: String, first_dial: DialHold) {
     crate::work::start(app.clone());
     crate::mcp::start_sessions(app.clone());
     archive::start(app.control.clone());
     match hosted() {
-        Some(h) => h.start(app, state_dir, control_url),
+        Some(h) => h.start(app, state_dir, control_url, first_dial),
         None => tracing::warn!("hosted: this build has no hosted box: it won't enroll or set itself up"),
     }
 }
