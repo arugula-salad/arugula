@@ -124,7 +124,7 @@ function body(r: Route, lost: string | null) {
     case "board":
       return <BoardsPage project={r.project} board={r.board} />;
     case "docs":
-      return <DocsPage project={r.project} all={r.all} />;
+      return <DocsPage project={r.project} all={r.all} shared={r.shared} />;
     case "doc":
       return <DocPage project={r.project} doc={r.doc} />;
     case "runs":

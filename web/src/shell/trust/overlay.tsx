@@ -207,8 +207,10 @@ export function accountItems(s: ControlSession): MenuItem[] {
   return [
     { label: "Teams…", run: openPanel("teams") },
     { label: "Machines…", run: openPanel("devices") },
-    // #1066; everyone's since Docs left Labs (native #204).
-    { label: "Shared Docs…", run: openPanel("shared-docs") },
+    // #1066; everyone's since Docs left Labs (native #204). Where there's
+    // an app, its Docs' Shared by you (Arugula #1315), which sends it back
+    // here (`#shared-docs`) while its host doesn't serve the links yet.
+    { label: "Shared Docs…", run: platformOrigin() ? () => openPlatform("/docs?shared=1") : openPanel("shared-docs") },
     { label: "Sign-in and account…", run: openPanel("account") },
     ...(platformOrigin() && s.billing?.billing ? [{ label: s.billing.relay.warning ? "Plan and usage… (over the free relay)" : "Plan and usage…", run: () => openPlatform("/settings/personal") }] : []),
   ];
