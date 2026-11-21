@@ -23,6 +23,7 @@ import {
 } from "../push";
 import { HOME_SCREEN, blockerOf, healthOf, standingSaid, testSaid, type PushStanding } from "../push-health";
 import type { MenuItem } from "../../shared/ui/menu";
+import { PUSH_KINDS } from "../../shared/push-kinds";
 import { CopyText } from "../../shared/ui/copy";
 import { openGettingStarted } from "./welcome";
 import { CloseIcon, DotIcon, IconButton } from "../../shared/ui/icons";
@@ -137,13 +138,6 @@ export function notifyThisDevice(client: Client) {
   if (push === "off") void toggleNotify(client);
 }
 
-/** The kinds of push an account chooses on control, as the menu says them. */
-const KINDS: { key: keyof PushPrefs; label: string; hint: string }[] = [
-  { key: "chat", label: "Chat", hint: "Messages in team channels, DMs and pane threads" },
-  { key: "machines", label: "Machines", hint: "A pane or an agent on your machines that needs you" },
-  { key: "projects", label: "Projects", hint: "Your inbox, deploys, runs and workspaces" },
-];
-
 async function setKind(client: Client, key: keyof PushPrefs, on: boolean) {
   try {
     prefs = (await setPushPrefs({ [key]: on })) ?? prefs;
@@ -179,7 +173,7 @@ function switchItems(client: Client): MenuItem[] {
   if (!p) return [device];
   return [
     device,
-    ...KINDS.map(({ key, label, hint }): MenuItem => ({
+    ...PUSH_KINDS.map(({ key, label, hint }): MenuItem => ({
       label: `Push: ${label}`,
       hint: `${hint}. On every device you turned on.`,
       checked: p[key],

@@ -30,6 +30,7 @@ import { acceptHostedHolding, signDelegation, signRevoke, type Delegation, type 
 import { directUrls } from "../shared/hosted.ts";
 import { expiresIn, grantBody, grantRevokeBody, newGrant, newGrantRevoke, passkeyChallenge, type GrantRevoke, type PasskeyAssertion, type ProjectGrant } from "./e2e/run-grant.ts";
 import type { E2ETarget } from "./client";
+import { agentName } from "../shared/account";
 import type { LabsFlags } from "../shared/ui/labs-flags";
 import { desktopApp } from "../shared/desktop";
 import { platformFetch, refusalOf } from "../shared/maintenance";
@@ -793,45 +794,7 @@ export function deviceName(): string {
   return agentName(navigator.userAgent);
 }
 
-/** "Safari on iPhone", from a User-Agent: what a browser calls itself as a
- * device, and what Sign-in calls a sign-in no device has claimed, so the
- * two lists use the same words. */
-export function agentName(ua: string): string {
-  if (/arugula/i.test(ua) && !/Mozilla/.test(ua)) return "Arugula app";
-  const os = /iPhone/.test(ua)
-    ? "iPhone"
-    : /iPad/.test(ua)
-      ? "iPad"
-      : /Android/.test(ua)
-        ? "Android"
-        : /Mac/.test(ua)
-          ? "Mac"
-          : /Windows/.test(ua)
-            ? "Windows"
-            : /Linux|X11/.test(ua)
-              ? "Linux"
-              : "";
-  const app = /Edg\//.test(ua)
-    ? "Edge"
-    : /Firefox\//.test(ua)
-      ? "Firefox"
-      : /Chrome\//.test(ua)
-        ? "Chrome"
-        : /Epiphany\//.test(ua)
-          ? "GNOME Web"
-          : /Safari\//.test(ua)
-            ? // Safari's token off Apple's systems is WebKitGTK: the Linux
-              // app's window (when it hasn't said its own name) or GNOME
-              // Web, never Safari (#817).
-              os === "Linux"
-              ? "WebKit"
-              : "Safari"
-            : /node|undici|curl|reqwest/i.test(ua)
-              ? "A program"
-              : "";
-  if (!app && !os) return "A browser";
-  return app && os ? `${app} on ${os}` : app || `A browser on ${os}`;
-}
+export { agentName } from "../shared/account";
 
 /** A device's name as the lists show it. The app was called illogical
  * before 0.26: its devices from then keep the old name in their

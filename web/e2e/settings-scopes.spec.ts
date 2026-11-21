@@ -7,7 +7,10 @@
 // sections are 10 rows in a flat list (Arugula #1105, #1323), and an old section's
 // address lands on the row it's part of. You holds control's device and
 // preference rows too (Arugula #1108): what's on control's page is a ↗ row
-// to its dialog there, and Help is the palette's. On #971's fixture page
+// to its dialog there, and Help is the palette's. Sign-in and security is
+// control's dialog drawn in place (Arugula #1311), a ↗ row while the hub
+// doesn't answer `/api/me/*` on the app's host; so are what every device
+// is pushed about (Arugula #1310) and `/api/push/prefs`. On #971's fixture page
 // (move-to-project-page.tsx): the platform's answers are this spec's.
 import { devices, expect, test, type Page, type Route } from "@playwright/test";
 import { fixturePage } from "./fixture-page";
@@ -87,12 +90,13 @@ test.describe("on a computer", () => {
   });
 
   test("You: control's device and preference rows join it in one flat list, a device's are ↗ rows to control's page at their dialog, and there's no second index or Help", async ({ page }) => {
-    await open(page, "/settings");
+    // A hub that doesn't answer push's prefs on the app's host yet.
+    await open(page, "/settings", () => page.route(/\/api\/push\/prefs$/, (r) => r.fulfill({ status: 404, body: "" })));
     // One flat list: no band headings over the sections.
     await expect(page.locator(".settings-list .list-group-title")).toHaveCount(0);
     const ids = () => page.locator("[data-settings-row]").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.settingsRow));
     // (Chat alerts, after quiet hours, shows once chat is on: it isn't here.)
-    await expect.poll(ids).toEqual(["notifications", "quiet-hours", "push", "appearance", "account", "linked", "tokens"]);
+    await expect.poll(ids).toEqual(["notifications", "quiet-hours", "push", "appearance", "security", "machines-teams", "linked", "tokens"]);
     // Appearance in one place: its controls drawn in its own section, no dialog to open.
     await expect(page.locator("[data-appearance-controls]")).toHaveCount(1);
     await expect(section(page, "appearance").locator("[data-appearance-controls]")).toHaveCount(1);
@@ -107,18 +111,117 @@ test.describe("on a computer", () => {
     // What's on control's page: a ↗ row each, at its dialog there. No Add a
     // phone or browser (#1004), and no Machines: Team and billing has them.
     const origin = new URL(page.url()).origin;
-    await row(page, "account").click();
-    await expect(page).toHaveURL(/\/settings\/you\/account$/);
-    const account = section(page, "account");
-    await expect(account.locator("h2")).toHaveText("Sign-in and teams");
+    await row(page, "machines-teams").click();
+    await expect(page).toHaveURL(/\/settings\/you\/machines-teams$/);
+    const account = section(page, "machines-teams");
+    await expect(account.locator("h2")).toHaveText("Machines and teams");
     const out = account.locator("[data-settings-control]");
-    await expect(out).toHaveText(["Sign-in and account", "Teams", "Shared Docs"].map((t) => new RegExp(`^${t}`)));
-    expect(await out.evaluateAll((els) => els.map((e) => (e as HTMLAnchorElement).href))).toEqual(["account", "teams", "shared-docs"].map((h) => `${origin}/#${h}`));
-    // Phones and browsers: This device and All your devices, as one, on control's page.
+    await expect(out).toHaveText(["Teams", "Shared Docs"].map((t) => new RegExp(`^${t}`)));
+    expect(await out.evaluateAll((els) => els.map((e) => (e as HTMLAnchorElement).href))).toEqual(["teams", "shared-docs"].map((h) => `${origin}/#${h}`));
+    // Phones and browsers, while the hub doesn't answer its prefs here: This
+    // device and All your devices, as one, on control's page.
     await row(page, "push").click();
     const push = section(page, "push").locator("[data-settings-control]");
     await expect(push).toHaveCount(2);
     for (const href of await push.evaluateAll((els) => els.map((e) => (e as HTMLAnchorElement).href))) expect(href).toBe(`${origin}/#settings=push`);
+  });
+
+  test("You: Sign-in and security draws control's dialog in place; adding or removing a passkey and linking GitHub open control's page (Arugula #1311)", async ({ page }) => {
+    const posted: string[] = [];
+    const DAY = 86_400_000;
+    await open(page, "/settings/you/account", async () => {
+      await page.route(/\/api\/me\/sessions$/, (r) =>
+        json(r, {
+          sessions: [
+            { id: "s_here", created: Date.now() - DAY, expires: Date.now() + DAY, agent: "Mozilla/5.0 (Macintosh) AppleWebKit Chrome/130 Safari/537", current: true },
+            { id: "s_phone", created: Date.now() - 2 * DAY, expires: Date.now() + DAY, agent: "Mozilla/5.0 (iPhone) AppleWebKit Version/18 Mobile Safari/604", current: false },
+            { id: "s_old", created: Date.now() - 9 * DAY, expires: Date.now() + DAY, agent: "", current: false },
+          ],
+        }),
+      );
+      await page.route(/\/api\/me\/passkeys$/, (r) =>
+        json(r, { passkeys: [{ id: "pk_1", created: Date.now() - 5 * DAY, agent: "", provider: "iCloud Keychain", used: null, prf: null, device: null }], github: "sam", ways: 2 }),
+      );
+      await page.route(/\/api\/me\/email$/, (r) => json(r, { email: "sam@example.test", source: "github", verified: true, pending: null, sends: true }));
+      await page.route(/\/api\/me\/(sessions\/[^/]+\/end|github\/unlink)$/, (r) => {
+        posted.push(new URL(r.request().url()).pathname);
+        return json(r, {});
+      });
+      await page.route(/\/api\/me\/delete$/, (r) =>
+        r.request().method() === "GET" ? json(r, { confirm: "sam", disband: [], blockers: [], pays: [], machines: 2, stays_in: [] }) : json(r, {}),
+      );
+    });
+    // Sign-in and machines' old address lands here.
+    await expect(page).toHaveURL(/\/settings\/you\/security$/);
+    const sec = section(page, "security");
+    await expect(sec.locator("h2")).toHaveText("Sign-in and security");
+    await expect(row(page, "security").locator(".list-row-detail")).toHaveText("1 passkey · GitHub linked · 3 sign-ins");
+    // Passkeys: a list, with nothing to remove here; adding or removing one is on control's page, at the top.
+    const origin = new URL(page.url()).origin;
+    await expect(sec.locator("[data-passkey-name]")).toHaveText(["iCloud Keychain"]);
+    await expect(sec.locator("[data-remove-passkey], [data-add-passkey]")).toHaveCount(0);
+    await expect(sec.locator('[data-security-away="passkeys"]')).toHaveAttribute("href", `${origin}/#account`);
+    // GitHub and email.
+    await expect(sec.locator("[data-github-login]")).toHaveText("GitHub: sam");
+    await expect(sec.locator("[data-email-address]")).toHaveText("sam@example.test");
+    // Where you're signed in: this browser, the phone; the earlier one in the count.
+    await expect(sec.locator("[data-session]")).toHaveText([/^Chrome on Mac \(this browser\)/, /^Safari on iPhone/]);
+    await expect(sec.getByText("2 other sessions, 1 of them from before Arugula kept which browser.")).toBeVisible();
+    await expect(sec.locator('[data-end-session="s_here"]')).toHaveCount(0);
+    await sec.locator('[data-end-session="s_phone"]').click();
+    await expect(sec.locator('[data-end-session="s_phone"]')).toHaveText("Really sign out?");
+    await sec.locator('[data-end-session="s_phone"]').click();
+    await expect.poll(() => posted).toEqual(["/api/me/sessions/s_phone/end"]);
+    // Unlink GitHub asks first.
+    await sec.locator("[data-unlink-github]").click();
+    await expect(page.locator("[data-confirm-remove]")).toBeEnabled();
+    await page.locator("[data-confirm-remove]").click();
+    await expect.poll(() => posted).toEqual(["/api/me/sessions/s_phone/end", "/api/me/github/unlink"]);
+    // Deleting: what goes, then the login typed.
+    await sec.locator("[data-delete-account]").click();
+    await expect(sec.locator("[data-delete-what]")).toContainText("your 2 machines");
+    await expect(sec.locator("[data-delete-go]")).toBeDisabled();
+    await sec.locator("[data-delete-confirm]").fill("sam");
+    await expect(sec.locator("[data-delete-go]")).toBeEnabled();
+  });
+
+  test("You: a hub that doesn't answer /api/me/* on the app's host yet gets Sign-in and security as a ↗ row to control's dialog", async ({ page }) => {
+    await open(page, "/settings/you/security", () => page.route(/\/api\/me\//, (r) => r.fulfill({ status: 404, body: "" })));
+    const sec = section(page, "security");
+    await expect(row(page, "security").locator(".list-row-detail")).toHaveText("On your machines page");
+    const out = sec.locator("[data-settings-control]");
+    await expect(out).toHaveText([/^Sign-in and account/]);
+    await expect(out).toHaveAttribute("href", `${new URL(page.url()).origin}/#account`);
+    await expect(sec.locator("[data-passkeys]")).toHaveCount(0);
+  });
+
+  test("You: Phones and browsers sets what every device is pushed about in place; this device's switch and the test stay on control's page (Arugula #1310)", async ({ page }) => {
+    const sent: unknown[] = [];
+    let prefs = { chat: true, machines: true, projects: false };
+    await open(page, "/settings/you/push", () =>
+      page.route(/\/api\/push\/prefs$/, (r) => {
+        if (r.request().method() === "POST") {
+          const body = r.request().postDataJSON() as Partial<typeof prefs>;
+          sent.push(body);
+          prefs = { ...prefs, ...body };
+        }
+        return json(r, prefs);
+      }),
+    );
+    const push = section(page, "push");
+    await expect(row(page, "push").locator(".list-row-detail")).toHaveText("Pushed: Chat, Machines");
+    const kinds = push.locator("[data-push-kind]");
+    await expect(kinds).toHaveCount(3);
+    await expect(push.locator('[data-push-kind="chat"]')).toBeChecked();
+    await expect(push.locator('[data-push-kind="projects"]')).not.toBeChecked();
+    await push.locator('[data-push-kind="projects"]').click();
+    await expect(push.locator('[data-push-kind="projects"]')).toBeChecked();
+    await expect(row(page, "push").locator(".list-row-detail")).toHaveText("Pushed: Everything");
+    expect(sent).toEqual([{ projects: true }]);
+    // This device: one ↗ row to control's push settings.
+    const out = push.locator("[data-settings-control]");
+    await expect(out).toHaveText([/^Notify this device/]);
+    await expect(out).toHaveAttribute("href", `${new URL(page.url()).origin}/#settings=push`);
   });
 
   test("Status: on hosted Arugula your picture's menu and You link status.arugula.io in a new tab; on a control you run there's none (Arugula #1176)", async ({ page, context }) => {
@@ -129,8 +232,8 @@ test.describe("on a computer", () => {
       return page.locator(".menu-item");
     };
     // A control you run yourself (this page's own hub): no Status anywhere.
-    await open(page, "/settings/you/account");
-    await expect(section(page, "account")).toBeVisible();
+    await open(page, "/settings/you/security");
+    await expect(section(page, "security")).toBeVisible();
     await expect(row(page, "status-page")).toHaveCount(0);
     await expect(page.locator("[data-status-page]")).toHaveCount(0);
     await expect(await menu()).toHaveText(["Send feedback…", "Sign out of this page"]);
@@ -143,9 +246,9 @@ test.describe("on a computer", () => {
         r.fulfill({ contentType: "application/json", headers: { "x-arugula-hub": "https://control.arugula.io" }, body: JSON.stringify({ me: { account: "acct_a", login: "sam", name: "Sam" }, projects, hosted: false }) }),
       ),
     );
-    // Settings › You: a Status row after Sign-in and teams.
+    // Settings › You: a Status row after Machines and teams.
     const ids = () => page.locator("[data-settings-row]").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.settingsRow));
-    await expect.poll(ids).toEqual(["notifications", "quiet-hours", "push", "appearance", "account", "status-page", "linked", "tokens"]);
+    await expect.poll(ids).toEqual(["notifications", "quiet-hours", "push", "appearance", "security", "machines-teams", "status-page", "linked", "tokens"]);
     await expect(row(page, "status-page").locator(".list-row-detail")).toHaveText("status.arugula.io");
     const link = section(page, "status-page").locator("a[data-status-page]");
     await expect(link).toHaveAttribute("href", "https://status.arugula.io");
