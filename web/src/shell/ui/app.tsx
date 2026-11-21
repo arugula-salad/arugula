@@ -423,12 +423,12 @@ function SettingsPageLayer({ client }: { client: Client }) {
 /** Where `#settings=<section>` is in the app's Settings now, "wait" while
  * the machine it's about isn't known yet, or null where it's drawn here: a
  * daemon's own page, and control's Phones and browsers. In the app, that's
- * You's, whose rows lead back to control's. */
+ * You's Notifications, whose row leads back to control's. */
 function movedTo(client: Client, section?: string): string | "wait" | null {
   if (!platformOrigin()) return null;
   const machine = machineShown(client);
   if ((section === "machine" || section === "remote-sessions") && !machine && !client.state) return "wait";
-  return settingsPath(section, machine) ?? (platformHere() ? `/settings/you/push` : null);
+  return settingsPath(section, machine) ?? (platformHere() ? "/settings/you/notifications" : null);
 }
 
 /** The Docs page (#1494): a chunk of its own, fetched while its route is

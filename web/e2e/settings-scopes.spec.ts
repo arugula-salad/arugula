@@ -5,12 +5,14 @@
 // team's Settings tab, `#section`) land in their scope. On a phone, the
 // list, then a section full width with a way back. The Project scope's 17
 // sections are 10 rows in a flat list (Arugula #1105, #1323), and an old section's
-// address lands on the row it's part of. You holds control's device and
-// preference rows too (Arugula #1108): what's on control's page is a ↗ row
-// to its dialog there, and Help is the palette's. Sign-in and security is
+// address lands on the row it's part of. You is four sections (Arugula
+// #1320), each old one's address landing on the one that holds it; what's
+// on control's page is a ↗ row to its dialog there, and Help is the
+// palette's. Sign-in and security is
 // control's dialog drawn in place (Arugula #1311), a ↗ row while the hub
 // doesn't answer `/api/me/*` on the app's host; so are what every device
-// is pushed about (Arugula #1310) and `/api/push/prefs`. On #971's fixture page
+// is pushed about (Arugula #1310) and `/api/push/prefs`, and your devices'
+// list (Arugula #1327) and `/api/push/subscriptions`. On #971's fixture page
 // (move-to-project-page.tsx): the platform's answers are this spec's.
 import { devices, expect, test, type Page, type Route } from "@playwright/test";
 import { fixturePage } from "./fixture-page";
@@ -59,31 +61,35 @@ test.describe("on a computer", () => {
   test.use({ viewport: { width: 1280, height: 900 } });
 
   test("You: each section a row with what's set, the first beside the list, and a row opens its own at its address", async ({ page }) => {
-    await open(page, "/settings");
+    await open(page, "/settings", () => page.route(/\/api\/push\/prefs$/, (r) => json(r, { chat: true, machines: true, projects: false })));
     await expect(page.locator('[data-settings-scope="you"]')).toHaveAttribute("aria-selected", "true");
-    // What's set, read from what each section loads.
-    await expect(row(page, "notifications").locator(".list-row-detail")).toHaveText("Mentions only · not paused");
-    await expect(row(page, "quiet-hours").locator(".list-row-detail")).toHaveText("Weeknights 10 PM – 8 AM · New York");
-    await expect(row(page, "linked").locator(".list-row-detail")).toHaveText("None");
-    await expect(row(page, "tokens").locator(".list-row-detail")).toHaveText("1 token");
+    // What's set, read from what each section's parts load, in their order.
+    await expect(row(page, "notifications").locator(".list-row-detail")).toHaveText("Pushed: Chat, Machines · Mentions only · not paused · Weeknights 10 PM – 8 AM · New York");
+    await expect(row(page, "connected").locator(".list-row-detail")).toHaveText("None · 1 token");
     // Your machines' agents are each machine's, under Machines (Arugula #1107).
     await expect(row(page, "agents")).toHaveCount(0);
     // The first is shown, the rest wait; its help is under its heading, with no More to open.
     await expect(row(page, "notifications")).toHaveAttribute("aria-current", "true");
     await expect(section(page, "notifications")).toBeVisible();
-    await expect(section(page, "quiet-hours")).toBeHidden();
+    await expect(section(page, "connected")).toBeHidden();
     await expect(page.locator("details.settings-more")).toHaveCount(0);
-    await row(page, "quiet-hours").click();
-    await expect(page).toHaveURL(/\/settings\/you\/quiet-hours$/);
-    await expect(section(page, "quiet-hours")).toBeVisible();
+    // Notifications: this device, what's pushed, how loud chat is, quiet hours (words that notify you, once chat is on).
+    await expect(section(page, "notifications").locator("[data-settings-part]")).toHaveCount(4);
+    expect(await section(page, "notifications").locator("[data-settings-part]").evaluateAll((els) => els.map((e) => e.id))).toEqual(["this-device", "push", "chat-notify", "quiet-hours"]);
+    await row(page, "connected").click();
+    await expect(page).toHaveURL(/\/settings\/you\/connected$/);
+    await expect(section(page, "connected")).toBeVisible();
     await expect(section(page, "notifications")).toBeHidden();
-    await expect(row(page, "quiet-hours")).toHaveAttribute("aria-current", "true");
-    // A link opens its section, and an old one's `#section` lands on it.
+    await expect(row(page, "connected")).toHaveAttribute("aria-current", "true");
+    await expect(section(page, "connected").locator("h2")).toHaveText("Connected apps and agents");
+    expect(await section(page, "connected").locator("[data-settings-part]").evaluateAll((els) => els.map((e) => e.id))).toEqual(["linked", "tokens"]);
+    // A link opens its section, and an old one's address, by path or `#section`, lands on the one that holds it now.
     await page.goto("/settings/you/tokens");
-    await expect(section(page, "tokens")).toBeVisible();
-    await page.goto("/settings#notifications");
+    await expect(page).toHaveURL(/\/settings\/you\/connected$/);
+    await expect(section(page, "connected").locator('[data-settings-part="tokens"]')).toBeVisible();
+    await page.goto("/settings#quiet-hours");
     await expect(page).toHaveURL(/\/settings\/you\/notifications$/);
-    await expect(section(page, "notifications")).toBeVisible();
+    await expect(section(page, "notifications").locator('[data-settings-part="quiet-hours"]')).toBeVisible();
     // The old Agents on your machines' address opens Machines' Agents (Arugula #1107).
     await page.goto("/settings#agents");
     await expect(page.locator('[data-settings-scope="machine"]')).toHaveAttribute("aria-selected", "true");
@@ -95,8 +101,7 @@ test.describe("on a computer", () => {
     // One flat list: no band headings over the sections.
     await expect(page.locator(".settings-list .list-group-title")).toHaveCount(0);
     const ids = () => page.locator("[data-settings-row]").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.settingsRow));
-    // (Chat alerts, after quiet hours, shows once chat is on: it isn't here.)
-    await expect.poll(ids).toEqual(["notifications", "quiet-hours", "push", "appearance", "security", "machines-teams", "linked", "tokens"]);
+    await expect.poll(ids).toEqual(["notifications", "appearance", "security", "connected"]);
     // Appearance in one place: its controls drawn in its own section, no dialog to open.
     await expect(page.locator("[data-appearance-controls]")).toHaveCount(1);
     await expect(section(page, "appearance").locator("[data-appearance-controls]")).toHaveCount(1);
@@ -109,19 +114,20 @@ test.describe("on a computer", () => {
     await expect(page.getByText("What's new")).toHaveCount(0);
 
     // What's on control's page: a ↗ row each, at its dialog there. No Add a
-    // phone or browser (#1004), and no Machines: Team and billing has them.
+    // phone or browser (#1004), and no Machines or Teams: Team and billing
+    // has them. Machines and teams' old address lands on Sign-in and
+    // security, which keeps its Shared Docs row, at the bottom.
     const origin = new URL(page.url()).origin;
-    await row(page, "machines-teams").click();
-    await expect(page).toHaveURL(/\/settings\/you\/machines-teams$/);
-    const account = section(page, "machines-teams");
-    await expect(account.locator("h2")).toHaveText("Machines and teams");
-    const out = account.locator("[data-settings-control]");
-    await expect(out).toHaveText(["Teams", "Shared Docs"].map((t) => new RegExp(`^${t}`)));
-    expect(await out.evaluateAll((els) => els.map((e) => (e as HTMLAnchorElement).href))).toEqual(["teams", "shared-docs"].map((h) => `${origin}/#${h}`));
-    // Phones and browsers, while the hub doesn't answer its prefs here: This
-    // device and All your devices, as one, on control's page.
-    await row(page, "push").click();
-    const push = section(page, "push").locator("[data-settings-control]");
+    await expect(page.locator('[data-settings-control="teams"]')).toHaveCount(0);
+    await page.goto("/settings/you/machines-teams");
+    await expect(page).toHaveURL(/\/settings\/you\/security$/);
+    const out = section(page, "security").locator("[data-settings-control]");
+    await expect(out).toHaveText([/^Shared Docs/]);
+    await expect(out).toHaveAttribute("href", `${origin}/#shared-docs`);
+    // Notifications, while the hub doesn't answer push's prefs here: this
+    // device and what's pushed, each a ↗ row to control's page.
+    await row(page, "notifications").click();
+    const push = section(page, "notifications").locator('[data-settings-control="push"]');
     await expect(push).toHaveCount(2);
     for (const href of await push.evaluateAll((els) => els.map((e) => (e as HTMLAnchorElement).href))) expect(href).toBe(`${origin}/#settings=push`);
   });
@@ -183,6 +189,8 @@ test.describe("on a computer", () => {
     await expect(sec.locator("[data-delete-go]")).toBeDisabled();
     await sec.locator("[data-delete-confirm]").fill("sam");
     await expect(sec.locator("[data-delete-go]")).toBeEnabled();
+    // Last, the Docs you shared with a link, on control's page while Docs can't list them here.
+    await expect(sec.locator("[data-settings-control]").last()).toHaveAttribute("href", `${origin}/#shared-docs`);
   });
 
   test("You: a hub that doesn't answer /api/me/* on the app's host yet gets Sign-in and security as a ↗ row to control's dialog", async ({ page }) => {
@@ -190,12 +198,12 @@ test.describe("on a computer", () => {
     const sec = section(page, "security");
     await expect(row(page, "security").locator(".list-row-detail")).toHaveText("On your machines page");
     const out = sec.locator("[data-settings-control]");
-    await expect(out).toHaveText([/^Sign-in and account/]);
-    await expect(out).toHaveAttribute("href", `${new URL(page.url()).origin}/#account`);
+    await expect(out).toHaveText([/^Sign-in and account/, /^Shared Docs/]);
+    await expect(out.first()).toHaveAttribute("href", `${new URL(page.url()).origin}/#account`);
     await expect(sec.locator("[data-passkeys]")).toHaveCount(0);
   });
 
-  test("You: Phones and browsers sets what every device is pushed about in place; this device's switch and the test stay on control's page (Arugula #1310)", async ({ page }) => {
+  test("You: Notifications sets what every device is pushed about in place; this device's switch and the test stay on control's page (Arugula #1310)", async ({ page }) => {
     const sent: unknown[] = [];
     let prefs = { chat: true, machines: true, projects: false };
     await open(page, "/settings/you/push", () =>
@@ -208,23 +216,82 @@ test.describe("on a computer", () => {
         return json(r, prefs);
       }),
     );
-    const push = section(page, "push");
-    await expect(row(page, "push").locator(".list-row-detail")).toHaveText("Pushed: Chat, Machines");
+    // Phones and browsers' old address lands on Notifications, which holds it now.
+    await expect(page).toHaveURL(/\/settings\/you\/notifications$/);
+    const push = page.locator('[data-settings-part="push"]');
+    const detail = row(page, "notifications").locator(".list-row-detail");
+    await expect(detail).toHaveText(/^Pushed: Chat, Machines · /);
     const kinds = push.locator("[data-push-kind]");
     await expect(kinds).toHaveCount(3);
     await expect(push.locator('[data-push-kind="chat"]')).toBeChecked();
     await expect(push.locator('[data-push-kind="projects"]')).not.toBeChecked();
     await push.locator('[data-push-kind="projects"]').click();
     await expect(push.locator('[data-push-kind="projects"]')).toBeChecked();
-    await expect(row(page, "push").locator(".list-row-detail")).toHaveText("Pushed: Everything");
+    await expect(detail).toHaveText(/^Pushed: Everything · /);
     expect(sent).toEqual([{ projects: true }]);
-    // This device: one ↗ row to control's push settings.
-    const out = push.locator("[data-settings-control]");
+    // This device, first: one ↗ row to control's push settings.
+    await expect(push.locator("[data-settings-control]")).toHaveCount(0);
+    const out = page.locator('[data-settings-part="this-device"] [data-settings-control]');
     await expect(out).toHaveText([/^Notify this device/]);
     await expect(out).toHaveAttribute("href", `${new URL(page.url()).origin}/#settings=push`);
   });
 
-  test("Status: on hosted Arugula your picture's menu and You link status.arugula.io in a new tab; on a control you run there's none (Arugula #1176)", async ({ page, context }) => {
+  test("You: Notifications lists your devices under This device, each with a switch and Remove, and none while the hub answers 404 for them (Arugula #1327)", async ({ page }) => {
+    const sent: { method: string; path: string; body: unknown }[] = [];
+    const HOUR = 3_600_000;
+    let rows = [
+      { id: "sub_mac", label: "Chrome on Mac", kind: "browser", created: Date.now() - 48 * HOUR, used: Date.now() - HOUR, on: true },
+      { id: "sub_phone", label: "Sam's iPhone", kind: "iphone", created: Date.now() - 72 * HOUR, used: null, on: true },
+    ];
+    await open(page, "/settings/you/notifications", () =>
+      page.route(/\/api\/push\/subscriptions(\/[^/]+)?$/, (r) => {
+        const req = r.request();
+        const path = new URL(req.url()).pathname;
+        const id = path.split("/")[4];
+        if (req.method() === "GET") return json(r, { subscriptions: rows });
+        sent.push({ method: req.method(), path, body: req.postDataJSON() });
+        if (req.method() === "POST") {
+          rows = rows.map((x) => (x.id === id ? { ...x, on: (req.postDataJSON() as { on: boolean }).on } : x));
+          return json(r, rows.find((x) => x.id === id));
+        }
+        rows = rows.filter((x) => x.id !== id);
+        return json(r, {});
+      }),
+    );
+    const here = page.locator('[data-settings-part="this-device"]');
+    const list = here.locator("[data-push-devices]");
+    // The list, last reached first: its name, kind and when, and what off and Remove mean.
+    await expect(list.locator("h3")).toHaveText("Your devices");
+    await expect(list.locator("[data-push-device-name]")).toHaveText(["Chrome on Mac", "Sam's iPhone"]);
+    await expect(list.locator('[data-push-device="sub_mac"]')).toContainText(/Browser, last used /);
+    await expect(list.locator('[data-push-device="sub_phone"]')).toContainText(/iPhone app, added /);
+    await expect(list).toContainText("Off: nothing is sent to that device, and it stays off if it turns notifications on again.");
+    // The switch: off, then the row as the hub says it.
+    const phone = list.locator('[data-push-device-on="sub_phone"]');
+    await expect(phone).toBeChecked();
+    await phone.click();
+    await expect(phone).not.toBeChecked();
+    expect(sent).toEqual([{ method: "POST", path: "/api/push/subscriptions/sub_phone", body: { on: false } }]);
+    // Remove asks first; Cancel keeps it.
+    await list.locator('[data-push-device-remove="sub_mac"]').click();
+    await page.getByRole("button", { name: "Cancel" }).click();
+    await expect(list.locator('[data-push-device="sub_mac"]')).toBeVisible();
+    expect(sent).toHaveLength(1);
+    await list.locator('[data-push-device-remove="sub_mac"]').click();
+    await expect(page.locator("[data-confirm-remove]")).toBeEnabled();
+    await page.locator("[data-confirm-remove]").click();
+    await expect(list.locator("[data-push-device-name]")).toHaveText(["Sam's iPhone"]);
+    expect(sent[1]).toEqual({ method: "DELETE", path: "/api/push/subscriptions/sub_mac", body: null });
+
+    // A hub that answers 404 for them on the app's host: no list, This device's ↗ row as before.
+    await page.unrouteAll({ behavior: "wait" });
+    await open(page, "/settings/you/notifications");
+    await expect(page.locator('[data-settings-part="this-device"] [data-settings-control="push"]')).toBeVisible();
+    await expect(page.locator("[data-push-devices]")).toHaveCount(0);
+    await expect(page.locator('[data-settings-part="this-device"] .control-error')).toHaveCount(0);
+  });
+
+  test("Status: on hosted Arugula your picture's menu links status.arugula.io in a new tab, and Settings doesn't; on a control you run there's none (Arugula #1176, #1320)", async ({ page, context }) => {
     // Nothing leaves for arugula.io: the status page is this spec's.
     await context.route(/^https:\/\/[^/]*arugula\.io\//, (r) => r.fulfill({ contentType: "text/html", body: "<title>Status</title>" }));
     const menu = async () => {
@@ -246,14 +313,11 @@ test.describe("on a computer", () => {
         r.fulfill({ contentType: "application/json", headers: { "x-arugula-hub": "https://control.arugula.io" }, body: JSON.stringify({ me: { account: "acct_a", login: "sam", name: "Sam" }, projects, hosted: false }) }),
       ),
     );
-    // Settings › You: a Status row after Machines and teams.
+    // Settings › You has no Status: its old address is You's, at its first section.
+    await expect(page).not.toHaveURL(/status-page/);
     const ids = () => page.locator("[data-settings-row]").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.settingsRow));
-    await expect.poll(ids).toEqual(["notifications", "quiet-hours", "push", "appearance", "security", "machines-teams", "status-page", "linked", "tokens"]);
-    await expect(row(page, "status-page").locator(".list-row-detail")).toHaveText("status.arugula.io");
-    const link = section(page, "status-page").locator("a[data-status-page]");
-    await expect(link).toHaveAttribute("href", "https://status.arugula.io");
-    await expect(link).toHaveAttribute("target", "_blank");
-    await expect(link).toHaveAttribute("rel", "noopener");
+    await expect.poll(ids).toEqual(["notifications", "appearance", "security", "connected"]);
+    await expect(page.locator("[data-status-page]")).toHaveCount(0);
     // The menu: Status first, opening a tab that can't reach back into this one.
     const items = await menu();
     await expect(items).toHaveText([/^Status/, "Send feedback…", "Sign out of this page"]);
@@ -262,7 +326,7 @@ test.describe("on a computer", () => {
     const status = await tab;
     await expect(status).toHaveURL("https://status.arugula.io/");
     expect(await status.evaluate(() => window.opener)).toBeNull();
-    await expect(page).toHaveURL(/\/settings\/you\/status-page$/);
+    await expect(page).not.toHaveURL(/status-page/);
   });
 
   test("You: Appearance draws its controls in place, Preferences under them, and its summary says what's set", async ({ page }) => {
@@ -425,17 +489,17 @@ test.describe("on a phone", () => {
 
   test("the list alone, then a section full width with the way back", async ({ page }) => {
     await open(page, "/settings");
-    await expect(row(page, "quiet-hours")).toBeVisible();
+    await expect(row(page, "connected")).toBeVisible();
     await expect(page.locator("[data-settings-detail]")).toBeHidden();
     // Nothing is beside the list, so no row looks chosen.
     await expect(page.locator("[data-settings-row][aria-current]")).toHaveCount(0);
-    await row(page, "quiet-hours").click();
-    await expect(page).toHaveURL(/\/settings\/you\/quiet-hours$/);
-    await expect(section(page, "quiet-hours")).toBeVisible();
-    await expect(row(page, "quiet-hours")).toBeHidden();
+    await row(page, "connected").click();
+    await expect(page).toHaveURL(/\/settings\/you\/connected$/);
+    await expect(section(page, "connected")).toBeVisible();
+    await expect(row(page, "connected")).toBeHidden();
     await page.locator("[data-settings-back]").click();
     await expect(page).toHaveURL(/\/settings$/);
-    await expect(row(page, "quiet-hours")).toBeVisible();
+    await expect(row(page, "connected")).toBeVisible();
     await expect(page.locator("[data-settings-row][aria-current]")).toHaveCount(0);
   });
 });

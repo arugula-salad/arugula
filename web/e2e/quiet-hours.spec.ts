@@ -2,13 +2,14 @@
 // week they make, drawn, with an overnight window running into the next
 // morning. Different times on some days wait behind a link, and "Same times
 // every night" folds them back. What's saved keeps QuietHours' shape. On
-// #971's fixture page (move-to-project-page.tsx), as settings-scopes.spec.ts.
+// #971's fixture page (move-to-project-page.tsx), as settings-scopes.spec.ts;
+// a part of Settings › You's Notifications (Arugula #1320).
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { fixturePage } from "./fixture-page";
 
 type Quiet = { days: number[]; from: number; to: number };
 
-/** /settings/you/quiet-hours with `quiet` saved; what the page saves, as it sends it. */
+/** Quiet hours' old address, which lands on Notifications, with `quiet` saved; what the page saves, as it sends it. */
 async function open(page: Page, quiet: Quiet[]) {
   const saved: { tz?: string; quiet?: Quiet[] }[] = [];
   let prefs = { channels: "mentions", dms: "all", threads: "all", snooze_until: null, tz: "America/New_York", quiet, all_notices: false, paused: false };
@@ -29,7 +30,8 @@ async function open(page: Page, quiet: Quiet[]) {
   const body = await fixturePage("./move-to-project-page.tsx");
   await page.route(/\/settings/, (r) => (r.request().resourceType() === "document" ? r.fulfill({ contentType: "text/html", body }) : r.fallback()));
   await page.goto("/settings/you/quiet-hours");
-  await expect(page.locator('[data-settings-section="quiet-hours"]')).toBeVisible();
+  await expect(page).toHaveURL(/\/settings\/you\/notifications$/);
+  await expect(page.locator('[data-settings-section="notifications"] [data-settings-part="quiet-hours"]')).toBeVisible();
   return saved;
 }
 
@@ -81,7 +83,7 @@ test("different times on some days: a window of their own, saved as QuietHours, 
       { days: [5, 6], from: 23 * 60 + 30, to: 10 * 60 },
     ],
   });
-  await expect(page.locator('[data-settings-row="quiet-hours"] .list-row-detail')).toHaveText("Mon–Sat, times vary · New York");
+  await expect(page.locator('[data-settings-part="quiet-hours"]')).toHaveAttribute("data-settings-summary", "Mon–Sat, times vary · New York");
   // Back to one window: every night they covered, at the first one's times.
   await page.locator("[data-notify-same-times]").click();
   await expect(page.locator("[data-notify-window]")).toHaveCount(1);
@@ -89,12 +91,12 @@ test("different times on some days: a window of their own, saved as QuietHours, 
   await page.locator("[data-notify-save]").click();
   await expect.poll(() => saved.length).toBe(2);
   expect(saved[1].quiet).toEqual([{ days: [1, 2, 3, 4, 5, 6], from: 22 * 60, to: 8 * 60 }]);
-  await expect(page.locator('[data-settings-row="quiet-hours"] .list-row-detail')).toHaveText("Mon–Sat 10 PM – 8 AM · New York");
+  await expect(page.locator('[data-settings-part="quiet-hours"]')).toHaveAttribute("data-settings-summary", "Mon–Sat 10 PM – 8 AM · New York");
 });
 
 test("off: an empty week and no link until a night is picked", async ({ page }) => {
   await open(page, []);
-  await expect(page.locator('[data-settings-row="quiet-hours"] .list-row-detail')).toHaveText("Off");
+  await expect(page.locator('[data-settings-part="quiet-hours"]')).toHaveAttribute("data-settings-summary", "Off");
   await expect(page.locator("[data-notify-week] i")).toHaveCount(0);
   await expect(page.locator("[data-notify-add-window]")).toHaveCount(0);
   await page.getByRole("group", { name: "Quiet days", exact: true }).getByRole("button", { name: "Wednesday" }).click();

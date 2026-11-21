@@ -1,28 +1,25 @@
 // Settings' You scope (Arugula #1104, at `/settings`): what's about you
-// (Arugula #897), in a flat list (Arugula #1108, #1317). First how loud
-// chat is and quiet hours, words that notify you, and which of your phones
-// and browsers are pushed what. Then Appearance: this device's palette,
-// finish, corners and density, the dialog's controls drawn in place,
-// whether this device is lent to agents (its hand runs in the app,
-// shared/lending.ts), and under them your preferences (Tips, the editor),
-// which are the account's
-// (Arugula #1318; `preferences`' old address lands here). Then Sign-in and
-// security, control's dialog drawn in place (./you-security.tsx, Arugula
-// #1311; `account`'s old address lands there), and what's still only on
-// control's page (teams, shared Docs until Docs has them, Arugula #1315),
-// as ↗ rows that open it at that dialog (your machines are in Team and
-// billing's Machines); the products linked to the account (M229);
-// which machines' agents read and post (M197); agents with no machine
-// (M230); and the apps that may use Claude for you, with what your own key
-// spent (M231). Plan and billing are each owner's, in Team and billing.
-// On hosted Arugula, its status page too (Arugula #1176).
+// (Arugula #897), four sections in a flat list (Arugula #1108, #1317,
+// #1320). Notifications: this device (a ↗ row: push on this device is
+// control's to set, since a device subscribes with its own keys on
+// control's origin, aru-081), what every device is pushed about, drawn in
+// place (./you-push.tsx, Arugula #1310), how loud chat is, words that
+// notify you, and quiet hours. Appearance: this device's palette, finish,
+// corners and density, the dialog's controls drawn in place, whether this
+// device is lent to agents (its hand runs in the app, shared/lending.ts),
+// and under them your preferences (Tips, the editor), which are the
+// account's (Arugula #1318). Sign-in and security, control's dialog drawn
+// in place (./you-security.tsx, Arugula #1311), with the Docs you shared
+// with a link as a ↗ row under it until Docs has them (Arugula #1315).
+// Connected apps and agents: the products linked to the account (M229),
+// agents with no machine (M230), and the apps that may use Claude for you,
+// with what your own key spent (M231). Each merged section's old address
+// lands on it (paths.ts, MOVED).
 //
-// Push on this device is control's to set: a device subscribes with its
-// own keys, on control's origin (aru-081), so that's a ↗ row; what every
-// device is pushed about is drawn in place (./you-push.tsx, Arugula #1310).
-// Help isn't a section: it's in the command palette.
+// Elsewhere: your machines and teams are in Team and billing, as are plan
+// and billing, each owner's; hosted Arugula's status page is in the avatar
+// menu (bar.tsx); Help is in the command palette.
 
-import { useEffect } from "preact/hooks";
 import { onAppearance, palette, appearance, FINISHES } from "../../shared/appearance";
 import { lendReached, lending, onLending, setLend } from "../../shared/lending";
 import { EDITORS, editorShown, setEditorPref, type Editor } from "../../shared/editor-pref";
@@ -30,19 +27,12 @@ import { bigTipsOn, setBigTips, setTips, subscribeSeen, tipsOn } from "../../sha
 import { AppearanceControls, ResetAppearance } from "../../shared/ui/appearance";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { Section } from "../../shared/ui/settings-section";
-import { names } from "../links";
-import { owners } from "../owners";
-import { follow, pathOf } from "../router";
-import { controlOrigin, session } from "../session";
-import { docLinks } from "../doc-links";
+import { session } from "../session";
 import { AgentTokens } from "../settings/agent-tokens";
 import { ChatAlerts } from "../settings/chat-alerts";
 import { ClaudeSettings } from "../settings/claude";
 import { LinkedProducts } from "../settings/linked";
-import { NotificationSettings } from "../settings/notifications";
-import { ControlRow } from "../settings/owner-machines";
-import { statusPage } from "../status-page";
-import { ExternalIcon } from "../../shared/ui/icons";
+import { ChatNotifications, QuietHoursSettings } from "../settings/notifications";
 import { joined } from "../settings/summary";
 import { PhonesAndBrowsers } from "./you-push";
 import { SignInAndSecurity } from "./you-security";
@@ -51,16 +41,23 @@ export function YouSettings() {
   useSubscribe((fn) => session.subscribe(fn));
   return (
     <>
-      <NotificationSettings />
-      <ChatAlerts />
-      <PhonesAndBrowsers />
+      <Section id="notifications" title="Notifications" lede="Which devices are told, what about, and when to stay quiet.">
+        <PhonesAndBrowsers />
+        <ChatNotifications />
+        <ChatAlerts />
+        <QuietHoursSettings />
+      </Section>
       <Appearance />
       <SignInAndSecurity />
-      <MachinesAndTeams />
-      <Status />
-      <LinkedProducts />
-      <AgentTokens />
-      <ClaudeSettings me={session.me?.account} />
+      <Section
+        id="connected"
+        title="Connected apps and agents"
+        lede="What else acts for you: products you sign in to with Arugula, agents with no machine, and apps that use Claude."
+      >
+        <LinkedProducts />
+        <AgentTokens />
+        <ClaudeSettings me={session.me?.account} />
+      </Section>
     </>
   );
 }
@@ -152,68 +149,6 @@ function Preferences() {
               ))}
             </select>
           </label>
-        </li>
-      </ul>
-    </Section>
-  );
-}
-
-/** What's still only on control's page: teams and the Docs you shared
- * with a link, each a ↗ row to its dialog there. The Docs are in Docs'
- * Shared by you once the hub serves them here (Arugula #1315), and their
- * row goes. Your machines are in Team and billing's Machines, each
- * owner's; sign-in is in place, in Sign-in and security. Adding a phone
- * or browser went with device approvals (#1004). */
-function MachinesAndTeams() {
-  useSubscribe((fn) => docLinks.subscribe(fn));
-  useEffect(() => void docLinks.load(), []);
-  // Plan and billing are each owner's, in Team and billing.
-  const plans = owners(session.projects).map((o) => ({ ...o, href: pathOf({ page: "settings", scope: "team", owner: o.key, section: "plan" }, names) }));
-  return (
-    <Section
-      id="machines-teams"
-      title="Machines and teams"
-      summary="On your machines page"
-      lede="These are on your machines page, so each opens it at that dialog."
-      hooks={{ "data-settings-account": "" }}
-    >
-      <ul class="platform-list settings-rows">
-        <ControlRow href={`${controlOrigin()}/#teams`} label="Teams" why="The teams you're in, and inviting people" hook="teams" />
-        {!docLinks.served() && <ControlRow href={`${controlOrigin()}/#shared-docs`} label="Shared Docs" why="Docs you shared with a link" hook="shared-docs" />}
-      </ul>
-      <p class="dim" data-plan-moved>
-        Plan and billing are in each owner's settings:{" "}
-        {plans.map((o, i) => (
-          <span key={o.key}>
-            {i > 0 && " · "}
-            <a href={o.href} data-owner-settings-link={o.key} onClick={(e) => follow(e, o.href)}>
-              {o.name}
-            </a>
-          </span>
-        ))}
-        .
-      </p>
-    </Section>
-  );
-}
-
-/** Whether hosted Arugula is up: its status page, in a new tab. Only on
- * hosted Arugula's page (status-page.ts); a control you run yourself has
- * none of ours. Its id isn't `status`: that's the shell's status pill's
- * (style.css `#status`). */
-function Status() {
-  const url = statusPage(controlOrigin());
-  if (!url) return null;
-  return (
-    <Section id="status-page" title="Status" summary={new URL(url).host} lede="Whether hosted Arugula is up right now, and any incident we're working on." hooks={{ "data-settings-status": "" }}>
-      <ul class="platform-list settings-rows">
-        <li>
-          <a class="settings-open" href={url} target="_blank" rel="noopener" data-status-page>
-            <span class="settings-open-name">
-              Status <ExternalIcon size="xs" />
-            </span>
-            <span class="dim">Control, the platform, installs and downloads</span>
-          </a>
         </li>
       </ul>
     </Section>

@@ -410,14 +410,12 @@ function settingsRoute(rest: string[], q: URLSearchParams): SettingsRoute | null
 }
 
 /** A section of yours, or where it went: your machines' agents are each
- * machine's now (Arugula #1107), in Machines' Agents, Preferences is
- * part of Appearance (Arugula #1318), and Sign-in and machines' address
- * is Sign-in and security's (Arugula #1311). */
+ * machine's now (Arugula #1107), in Machines' Agents; one that's part of
+ * another of yours lands on that one (MOVED). */
 function youSection(section?: string): SettingsRoute {
   if (section === "agents") return { page: "settings", scope: "machine", section };
-  if (section === "preferences") return { page: "settings", scope: "you", section: "appearance" };
-  if (section === "account") return { page: "settings", scope: "you", section: "security" };
-  return { page: "settings", scope: "you", ...(section ? { section } : {}) };
+  const at = section && Object.hasOwn(MOVED.you, section) ? MOVED.you[section] : section;
+  return { page: "settings", scope: "you", ...(at ? { section: at } : {}) };
 }
 
 /** An old link's `#section`, where the path names none: the page puts the
@@ -430,13 +428,30 @@ function withOldSection(r: SettingsRoute | null, hash: string): SettingsRoute | 
   return at?.section && moved && Object.hasOwn(moved, at.section) ? ({ ...at, section: moved[at.section] } as SettingsRoute) : at;
 }
 
-/** Sections that are parts of others now: a project's (Arugula #1105),
- * and a machine's, in Machines' four (the Settings Doc's Machines tab).
+/** Sections that are parts of others now: yours, in You's four (Arugula
+ * #1320; Preferences is part of Appearance, #1318, and Sign-in and
+ * machines' address is Sign-in and security's, #1311), a project's
+ * (Arugula #1105), and a machine's, in Machines' four (the Settings Doc's
+ * Machines tab). Status left Settings for the avatar menu, so its address
+ * is You's, at no section ("").
  * The section each is in now. A project's Overrides went (Arugula #1323):
  * its address lands on the first setting that says whether it follows a
  * default. A team's General, its default project, is the top of its
  * Project defaults now (Arugula #1322). */
-const MOVED: Record<"project" | "machine" | "team", Record<string, string>> = {
+const MOVED: Record<"you" | "project" | "machine" | "team", Record<string, string>> = {
+  you: {
+    preferences: "appearance",
+    account: "security",
+    push: "notifications",
+    "chat-alerts": "notifications",
+    "quiet-hours": "notifications",
+    "machines-teams": "security",
+    linked: "connected",
+    tokens: "connected",
+    "agent-tokens": "connected",
+    claude: "connected",
+    "status-page": "",
+  },
   project: {
     plane: "repos",
     boards: "issues",

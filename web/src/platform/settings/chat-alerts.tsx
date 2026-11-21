@@ -1,8 +1,9 @@
 // Chat's alerts (#114): the words that notify you in chat as if you were
-// mentioned, on /settings; and, for a team you own, whether `@channel` and
-// `@here` and a channel's topic are for owners only, which is the team's,
-// so it's in the team's settings, as Chat (UI audit #168, Arugula #897).
-// Control keeps both (`/api/chat/keywords`, `/api/chat/teams/{team}/settings`).
+// mentioned, a part of Settings › You's Notifications (Arugula #1320);
+// and, for a team you own, whether `@channel` and `@here` and a channel's
+// topic are for owners only, which is the team's, so it's in the team's
+// settings, as Chat (UI audit #168, Arugula #897). Control keeps both
+// (`/api/chat/keywords`, `/api/chat/teams/{team}/settings`).
 
 import { useEffect, useState } from "preact/hooks";
 import { chat } from "../../shared/chat-store";
@@ -120,14 +121,14 @@ function Alerts() {
   }, []);
   if (words === null)
     return err ? (
-      <Section id="chat-alerts" title="Chat alerts" summary="Couldn't load">
+      <Section id="chat-alerts" title="Words that notify you" summary="Couldn't load">
         <p class="control-error">{err}</p>
       </Section>
     ) : null;
   return (
     <Section
       id="chat-alerts"
-      title="Chat alerts"
+      title="Words that notify you"
       summary={words.length ? some(words) : "No words"}
       count={words.length}
       more={<p class="dim">A word counts when a message has it whole, in any case: "deploy" doesn't match "redeployed". Rooms you muted stay quiet.</p>}

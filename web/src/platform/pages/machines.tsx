@@ -22,10 +22,11 @@ export function MachinesPage({ project, at }: { project: string; at: MachineAt }
 
 /** Where `#settings=<section>` over the machines is in Settings: a
  * machine's own at This machine's first (the list names no machine), and
- * Phones and browsers at You's, whose rows lead to control's page. */
+ * Phones and browsers at You's Notifications, whose row leads to
+ * control's page. */
 function inSettings(hash: string): string | null {
   const m = /^#settings(?:=([\w-]+))?$/.exec(hash);
-  return m ? (settingsPath(m[1]) ?? "/settings/you/push") : null;
+  return m ? (settingsPath(m[1]) ?? "/settings/you/notifications") : null;
 }
 
 /** Control's page at `at`, in this window. */
