@@ -1,23 +1,24 @@
 // An owner's settings (Arugula #897): Settings' Team and billing scope
 // (Arugula #1104), a team's at `/settings/team/:team`, Personal's at
 // `/settings/team/personal` (they were `/t/:team/settings` and
-// `/settings/personal`). Its sections, as every scope's are, in a flat list.
-// First the owner's own: Members, Machines (../settings/owner-machines), Chat
-// (the team chat's owners-only switches), Plan and billing, and Labs. Then
-// what every project starts with: its default project, and Project
-// defaults. Members and Machines change in place on control's word
-// (aru-141), and Labs' flags are control's Teams panel's list (Arugula
-// #1118), read and set through the app's host. What takes a passkey
-// (making or removing an owner), and what the hub doesn't answer on this
-// host yet, is a ↗ row in place, opening control's page (#1106).
+// `/settings/personal`). Its six sections, as every scope's are, in a flat
+// list: Members, Machines (../settings/owner-machines), Chat (the team
+// chat's owners-only switches), Plan and billing, Project defaults (what
+// every project starts with, its default project first) and Labs. Members
+// and Machines change in place on control's word (aru-141), and Labs' flags
+// are control's Teams panel's list (Arugula #1118), read and set through
+// the app's host. What takes a passkey (making or removing an owner), and
+// what the hub doesn't answer on this host yet, is a ↗ row in place,
+// opening control's page (#1106).
 //
-// Project defaults is a table: a row per key a project overrides, the
-// owner's default first, then a column per project that isn't archived,
-// sideways when it's wide with the key and the default kept in place.
-// Every cell is a select, and a change is staged (../settings/overrides):
-// a bar above the table counts them, Save sends one PUT each and says
-// which failed, Cancel drops them, and leaving asks first. A team's
-// viewers read it; only its owners choose its default project.
+// Project defaults opens with the default project, which only the owner's
+// owners choose: one select and a Save, so a change isn't one click. Then
+// a table: a row per key a project overrides, the owner's default first,
+// then a column per project that isn't archived, sideways when it's wide
+// with the key and the default kept in place. Every cell is a select, and
+// a change is staged (../settings/overrides): a bar above the table counts
+// them, Save sends one PUT each and says which failed, Cancel drops them,
+// and leaving asks first. A team's viewers read it.
 
 import { useEffect, useState } from "preact/hooks";
 import type { ProjectMember, SessionSettings } from "../../shared/proto";
@@ -112,9 +113,8 @@ export function OwnerSettings({ owner }: { owner: string }) {
       <OwnerMachines owner={owner} name={name} role={role} teams={owners(session.projects).some((o) => o.kind === "team")} />
       {team && <TeamChat team={owner} name={name} role={role} />}
       <PlanAndBilling team={team ? owner : undefined} />
-      <Labs owner={owner} name={name} />
-      <General owner={owner} projects={projects} role={role} />
       <ProjectDefaults owner={owner} name={name} projects={projects} role={role} />
+      <Labs owner={owner} name={name} />
     </>
   );
 }
@@ -489,32 +489,22 @@ function Labs({ owner, name }: { owner: string; name: string }) {
   );
 }
 
-/** General: the owner's name, and its default project, which only its
- * owners choose. One select and a Save, so a change isn't one click. */
-function General({ owner, projects, role }: { owner: string; projects: PlatformProject[]; role: string | undefined }) {
-  const [read, setRead] = useState<EffectiveSetting[] | null>(null);
-  const [draft, setDraft] = useState<Value>(null);
+/** The default project, at the top of Project defaults: one select and a
+ * Save, from the owner's settings the section already loads. */
+function DefaultProject({ owner, own, projects, role, reload }: { owner: string; own: EffectiveSetting[]; projects: PlatformProject[]; role: string | undefined; reload: () => Promise<void> }) {
+  const saved = ownOf(settingOf(own, "default_project"), "owner");
+  const [draft, setDraft] = useState<Value>(saved);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
-  const path = `/api/owners/${enc(owner)}/settings`;
-  const load = () =>
-    call<EffectiveSetting[]>("GET", path).then(
-      (v) => {
-        setRead(v);
-        setDraft(ownOf(settingOf(v, "default_project"), "owner"));
-      },
-      (e: Error) => setErr(e.message),
-    );
-  useEffect(() => void load(), [owner]);
-  const saved = read ? ownOf(settingOf(read, "default_project"), "owner") : null;
+  useEffect(() => setDraft(saved), [owner, saved]);
   const changes = role === "owner";
   const save = async (e: Event) => {
     e.preventDefault();
     setBusy(true);
     setErr("");
     try {
-      await call("PUT", path, { key: "default_project", value: draft });
-      await load();
+      await call("PUT", `/api/owners/${enc(owner)}/settings`, { key: "default_project", value: draft });
+      await reload();
     } catch (x) {
       setErr((x as Error).message);
     } finally {
@@ -523,41 +513,35 @@ function General({ owner, projects, role }: { owner: string; projects: PlatformP
   };
   const nameOf = (id: string) => session.project(id)?.name;
   return (
-    <Section
-      id="general"
-      title="Default project"
-      summary={read ? `Default project: ${words("default_project", saved, nameOf)}` : err ? "Couldn't load" : undefined}
-      lede="Its default project: where its new things go when nothing says which.">
-      {read && (
-        <form class="settings-row" onSubmit={save} data-default-project-form>
-          <label>
-            Default project{" "}
-            {changes ? (
-              <select class="field" value={optionOf(draft)} disabled={busy} data-default-project onChange={(e) => setDraft(e.currentTarget.value || null)}>
-                <option value="">None</option>
-                {choicesWith(
-                  projects.map((p) => p.id),
-                  draft,
-                ).map((id) => (
-                  <option key={String(id)} value={String(id)}>
-                    {words("default_project", id, nameOf)}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <b data-default-project>{words("default_project", saved, nameOf)}</b>
-            )}
-          </label>
-          {changes && (
-            <button type="submit" class="secondary small" data-default-project-save disabled={busy || draft === saved}>
-              Save
-            </button>
+    <>
+      <form class="settings-row" onSubmit={save} data-default-project-form>
+        <label>
+          Default project{" "}
+          {changes ? (
+            <select class="field" value={optionOf(draft)} disabled={busy} data-default-project onChange={(e) => setDraft(e.currentTarget.value || null)}>
+              <option value="">None</option>
+              {choicesWith(
+                projects.map((p) => p.id),
+                draft,
+              ).map((id) => (
+                <option key={String(id)} value={String(id)}>
+                  {words("default_project", id, nameOf)}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <b data-default-project>{words("default_project", saved, nameOf)}</b>
           )}
-        </form>
-      )}
-      {read && !changes && <p class="dim">Its owners choose it.</p>}
+        </label>
+        {changes && (
+          <button type="submit" class="secondary small" data-default-project-save disabled={busy || draft === saved}>
+            Save
+          </button>
+        )}
+      </form>
+      <p class="dim">Where its new things go when nothing says which.{changes ? "" : " Its owners choose it."}</p>
       {err && <p class="control-error">{err}</p>}
-    </Section>
+    </>
   );
 }
 
@@ -621,7 +605,7 @@ function ProjectDefaults({ owner, name, projects, role }: { owner: string; name:
     <Section
       id="defaults"
       title="Project defaults"
-      summary={layers ? defaultsSummary(layers, projects) : err ? "Couldn't load" : undefined}
+      summary={layers ? defaultsSummary(layers, projects, (id) => session.project(id)?.name) : err ? "Couldn't load" : undefined}
       lede={`What ${owner === "personal" ? "your projects use" : `every project in ${name} uses`} unless it overrides it.`}
       more={<p>A highlighted cell is a project's own value. Choose Default in it to follow the default again. Changes wait for Save.</p>}
       hooks={{ "data-project-defaults": owner }}
@@ -629,6 +613,7 @@ function ProjectDefaults({ owner, name, projects, role }: { owner: string; name:
       {err && <p class="control-error">{err}</p>}
       {layers && (
         <>
+          <DefaultProject owner={owner} own={layers.owner} projects={projects} role={role} reload={load} />
           {n > 0 && (
             <div class="defaults-bar" role="status" data-defaults-bar>
               <span data-defaults-count>{n === 1 ? "1 change" : `${n} changes`}</span>
@@ -725,12 +710,13 @@ function ProjectDefaults({ owner, name, projects, role }: { owner: string; name:
   );
 }
 
-/** What the list says of the defaults: how many are set, and how many
- * projects set their own. */
-function defaultsSummary(layers: Layers, projects: PlatformProject[]): string {
+/** What the list says of the defaults: the default project, how many are
+ * set, and how many projects set their own. */
+function defaultsSummary(layers: Layers, projects: PlatformProject[], nameOf: (id: string) => string | undefined): string {
+  const home = `Default project: ${words("default_project", ownOf(settingOf(layers.owner, "default_project"), "owner"), nameOf)}`;
   const set = KEYS.filter((info) => ownerCell(layers, {}, info.key).overridden).length;
   const own = projects.filter((p) => KEYS.some((info) => projectCell(layers, {}, p.id, info.key).overridden)).length;
-  return joined(set ? `${set} set here` : "Built-in defaults", own > 0 && `${plural(own, "project")} set their own`);
+  return joined(home, set ? `${set} set here` : "Built-in defaults", own > 0 && `${plural(own, "project")} set their own`);
 }
 
 const cellClass = (c: Cell) => ["defaults-cell", c.overridden && "defaults-own", c.staged && "defaults-staged"].filter(Boolean).join(" ");

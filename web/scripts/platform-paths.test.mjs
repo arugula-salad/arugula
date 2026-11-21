@@ -38,6 +38,10 @@ test("each route parses", () => {
   assert.deepEqual(parse("/settings/team/personal/plan"), { page: "settings", scope: "team", owner: "personal", section: "plan" });
   assert.equal(pathOf({ page: "settings", scope: "team", owner: "team_1" }), "/settings/team/team_1");
   assert.equal(pathOf({ page: "settings", scope: "team", owner: "personal", section: "defaults" }), "/settings/team/personal/defaults");
+  // A team's General is the top of its Project defaults now.
+  assert.deepEqual(parse("/settings/team/personal/general"), { page: "settings", scope: "team", owner: "personal", section: "defaults" });
+  assert.deepEqual(parse("/t/team_1/settings", "", "#general"), { page: "settings", scope: "team", owner: "team_1", section: "defaults" });
+  assert.deepEqual(parse("/settings/personal", "", "#general"), { page: "settings", scope: "team", owner: "personal", section: "defaults" });
   // The old addresses land in their scopes: a team's Settings tab, Personal's.
   assert.deepEqual(parse("/t/team_1/settings"), { page: "settings", scope: "team", owner: "team_1" });
   assert.deepEqual(parse("/settings/personal"), { page: "settings", scope: "team", owner: "personal" });
