@@ -4,7 +4,7 @@
 // link opens it; the old addresses (a project's settings, Personal's, a
 // team's Settings tab, `#section`) land in their scope. On a phone, the
 // list, then a section full width with a way back. The Project scope's 17
-// sections are 11 rows in four bands (Arugula #1105), and an old section's
+// sections are 11 rows in a flat list (Arugula #1105), and an old section's
 // address lands on the row it's part of. You holds control's device and
 // preference rows too (Arugula #1108): what's on control's page is a ↗ row
 // to its dialog there, and Help is the palette's. On #971's fixture page
@@ -86,11 +86,10 @@ test.describe("on a computer", () => {
     await expect(page.locator('[data-settings-scope="machine"]')).toHaveAttribute("aria-selected", "true");
   });
 
-  test("You: control's device and preference rows join it in bands, a device's are ↗ rows to control's page at their dialog, and there's no second index or Help", async ({ page }) => {
+  test("You: control's device and preference rows join it in one flat list, a device's are ↗ rows to control's page at their dialog, and there's no second index or Help", async ({ page }) => {
     await open(page, "/settings");
-    // Notifications, Look and feel, Account: each section under its band.
-    const bands = page.locator(".settings-list .list-group-title");
-    await expect(bands).toHaveText(["Notifications", "Look and feel", "Account"]);
+    // One flat list: no band headings over the sections.
+    await expect(page.locator(".settings-list .list-group-title")).toHaveCount(0);
     const ids = () => page.locator("[data-settings-row]").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.settingsRow));
     // (Chat alerts, after quiet hours, shows once chat is on: it isn't here.)
     await expect.poll(ids).toEqual(["notifications", "quiet-hours", "push", "appearance", "preferences", "account", "linked", "tokens"]);
@@ -143,7 +142,7 @@ test.describe("on a computer", () => {
         r.fulfill({ contentType: "application/json", headers: { "x-arugula-hub": "https://control.arugula.io" }, body: JSON.stringify({ me: { account: "acct_a", login: "sam", name: "Sam" }, projects, hosted: false }) }),
       ),
     );
-    // Settings › You: a Status row in the Account band, after Sign-in and machines.
+    // Settings › You: a Status row after Sign-in and machines.
     const ids = () => page.locator("[data-settings-row]").evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.settingsRow));
     await expect.poll(ids).toEqual(["notifications", "quiet-hours", "push", "appearance", "preferences", "account", "status-page", "linked", "tokens"]);
     await expect(row(page, "status-page").locator(".list-row-detail")).toHaveText("status.arugula.io");
@@ -224,9 +223,9 @@ test.describe("a project's settings", () => {
       page.route(/\/api\/projects\/[^/]+\/runs\/grant$/, (r) => json(r, { role: "owner", grant: null, past: [], stale: false, renew: false, workspaces: 0, offer: false })),
     ]);
 
-  test("the rows in four bands, a merged row saying its parts' in a line, each part under its own heading", async ({ page }) => {
+  test("the rows in a flat list, a merged row saying its parts' in a line, each part under its own heading", async ({ page }) => {
     await open(page, `/settings/project/${SITE}`, () => project(page));
-    await expect(page.locator(".settings-list .list-group-title")).toHaveText(["Basics", "Work", "Agents and runs", "Spend"]);
+    await expect(page.locator(".settings-list .list-group-title")).toHaveCount(0);
     await expect(row(page, "spend")).toBeVisible();
     // Apps from products, the eleventh, shows once a product keeps one here.
     const rows = await page.locator("[data-settings-row]").evaluateAll((els) => els.map((e) => e.getAttribute("data-settings-row")));

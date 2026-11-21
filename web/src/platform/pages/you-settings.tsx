@@ -1,9 +1,9 @@
 // Settings' You scope (Arugula #1104, at `/settings`): what's about you
-// (Arugula #897), in three bands (Arugula #1108). Notifications: how loud
+// (Arugula #897), in a flat list (Arugula #1108, #1317). First how loud
 // chat is and quiet hours, words that notify you, and which of your phones
-// and browsers are pushed what. Look and feel: Appearance (this device's,
+// and browsers are pushed what. Then Appearance (this device's,
 // the shell's dialog; the one place it's in) and your preferences (Tips,
-// the editor), which are the account's. Account: what's on control's
+// the editor), which are the account's. Then what's on control's
 // page (sign-in and passkeys, machines, teams, shared Docs), as ↗ rows that
 // open it at that dialog; the products linked to the account (M229);
 // which machines' agents read and post (M197); agents with no machine
@@ -20,7 +20,7 @@ import { EDITORS, editorShown, setEditorPref, type Editor } from "../../shared/e
 import { bigTipsOn, setBigTips, setTips, subscribeSeen, tipsOn } from "../../shared/seen";
 import { openAppearance } from "../../shared/ui/appearance";
 import { useSubscribe } from "../../shared/ui/hooks";
-import { Band, Section } from "../../shared/ui/settings-section";
+import { Section } from "../../shared/ui/settings-section";
 import { names } from "../links";
 import { owners } from "../owners";
 import { follow, pathOf } from "../router";
@@ -39,22 +39,16 @@ export function YouSettings() {
   useSubscribe((fn) => session.subscribe(fn));
   return (
     <>
-      <Band title="Notifications">
-        <NotificationSettings />
-        <ChatAlerts />
-        <PhonesAndBrowsers />
-      </Band>
-      <Band title="Look and feel">
-        <Appearance />
-        <Preferences />
-      </Band>
-      <Band title="Account">
-        <Account />
-        <Status />
-        <LinkedProducts />
-        <AgentTokens />
-        <ClaudeSettings me={session.me?.account} />
-      </Band>
+      <NotificationSettings />
+      <ChatAlerts />
+      <PhonesAndBrowsers />
+      <Appearance />
+      <Preferences />
+      <Account />
+      <Status />
+      <LinkedProducts />
+      <AgentTokens />
+      <ClaudeSettings me={session.me?.account} />
     </>
   );
 }
