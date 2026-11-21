@@ -801,13 +801,105 @@ button.ov-peek:disabled {
   padding: var(--space-2);
   font: var(--text-sm) var(--f-ui);
 }
-/* The session whose tab is in front: the one you're talking to. */
-.ov-level-pane-talking {
-  box-shadow: inset 2px 0 0 var(--accent);
+/* The Work level (./overview-work.tsx, #1289): its panes live, side by
+   side, up to four; the rest as tabs above them. Each terminal keeps its
+   size in cells and its slot scrolls, as a board drawer's does. */
+.ov-work-asks:empty {
+  display: none;
 }
-.ov-level-pane-acts {
+.ov-work-asks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.ov-work-noagent {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0;
+  font: var(--text-sm) var(--f-ui);
+}
+.ov-work-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  font: var(--text-sm) var(--f-ui);
+}
+.ov-work-tab {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  padding: 2px var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+.ov-work-tab-on {
+  border-color: var(--accent);
+}
+.ov-work-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  gap: var(--space-3);
+}
+.ov-work-pane {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
+}
+/* The pane whose agent you're talking to. */
+.ov-work-pane-talking {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.ov-work-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+  font: var(--text-sm) var(--f-ui);
+}
+.ov-work-name {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ov-work-acts {
   margin-left: auto;
   display: flex;
   gap: var(--space-2);
   align-items: baseline;
+}
+.ov-work-note {
+  margin: 0;
+  font: var(--text-sm) var(--f-ui);
+}
+.ov-work-slot {
+  position: relative;
+  height: min(68vh, 640px);
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
+  background: var(--bg);
+}
+.ov-work-slot .term-host,
+.ov-work-slot .xterm {
+  height: 100%;
+}
+.ov-work-paused .ov-peek-tail {
+  max-height: 40vh;
 }

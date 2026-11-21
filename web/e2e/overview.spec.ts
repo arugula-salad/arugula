@@ -22,7 +22,9 @@
 // (#1277); zooming in place (#1287): a board's row to its Board level, a
 // ticket to its Work level, Esc out a level at a time, each with its
 // address, the bar's path, the level pill and the talk panel's front tab,
-// and a Needs you card to the work that asks; and on a phone, one list
+// and a Needs you card to the work that asks; the Work level's panes live
+// (#1289), a shell and an agent block typed into and a question answered
+// above them; and on a phone, one list
 // with Needs you on top. The platform's boards and the
 // hub's sessions are made up here; the panes are the daemon's own.
 import { fileURLToPath } from "node:url";
@@ -510,6 +512,73 @@ test.describe("on a computer", () => {
     await expect(page.locator(`[data-ov-level-board="${B}"]`)).toBeVisible();
     await pill("project").click();
     await expect(page.locator("[data-ov-boards]")).toBeVisible();
+  });
+
+  test("the Work level draws the card's panes live side by side: a shell and an agent block typed into, its question answered above them; a card with no agent offers its lead (Arugula #1289)", async ({ page }, info) => {
+    // The suite's daemon is the machine `m_suite` here, as control would name it, so the page reaches its panes as the app does.
+    await page.route("**/api/hosts", async (r) => {
+      const list = (await (await r.fetch()).json()) as { this: string; hosts: unknown[] };
+      // The daemon itself, by its id only: no address, so it isn't listed twice.
+      await r.fulfill({ json: { ...list, hosts: [...list.hosts, { name: list.this, id: "m_suite", urls: [], transport: "tailnet", added_ms: 0, last_seen_ms: null }] } });
+    });
+    const { term, agent } = await overview(page, null, true);
+    await page.goto(`/p/${P}/board/${B}/card/row_b`);
+    const work = page.locator('[data-ov-level-work="row_b"]');
+    await expect(work).toBeVisible({ timeout: 20_000 });
+    // #12's session: its agent block and the terminal beside it, each live, its agent's outlined (its tab is in front).
+    const pane = (id: number) => work.locator(`[data-ov-work-pane$=":${id}"]`);
+    await expect(work.locator("[data-ov-work-pane]")).toHaveCount(2);
+    await expect(pane(agent)).toHaveAttribute("data-ov-work-kind", "block");
+    await expect(pane(term)).toHaveAttribute("data-ov-work-kind", "shell");
+    await expect(pane(agent)).toHaveAttribute("data-ov-talking", "");
+    await expect(pane(term)).not.toHaveAttribute("data-ov-talking", "");
+    await expect(pane(term).locator(`[data-live-slot="${term}"] .xterm`)).toBeVisible({ timeout: 20_000 });
+    await expect(pane(agent).locator(".agent-composer textarea")).toBeVisible();
+    await expect(work.locator("[data-ov-work-noagent]")).toHaveCount(0);
+
+    // Typed straight into the shell.
+    await pane(term).locator(".xterm").click();
+    await page.keyboard.type("echo WORK$((40+2))");
+    await page.keyboard.press("Enter");
+    await expect.poll(() => page.evaluate(async (p) => (await fetch(`/api/panes/${p}/capture?format=text`)).text(), term), { timeout: 20_000 }).toContain("WORK42");
+    // Esc in a terminal is the terminal's, not a zoom out.
+    await page.keyboard.press("Escape");
+    await expect(work).toBeVisible();
+    // (Ctrl-C drops the half-read Escape, so readline takes the next line whole.)
+    await page.keyboard.press("Control+c");
+
+    // And into the agent block's composer.
+    await pane(agent).locator(".agent-composer textarea").fill("hello");
+    await pane(agent).locator(".agent-composer textarea").press("Enter");
+    await expect(pane(agent).locator(".agent-msg").last()).toHaveText("Hello! I am fake.", { timeout: 20_000 });
+    await page.screenshot({ path: info.outputPath("overview-work-panes.png") });
+
+    // Talk brings the session's tab to the front.
+    await pane(term).locator("[data-ov-work-talk]").click();
+    await expect(page.locator("[data-ov-tabs] .ov-tab-on")).toHaveAttribute("data-ov-tab", /^peek:/);
+
+    // A question in the terminal sits above the panes, answered there as Needs you answers it.
+    await page.evaluate(
+      ({ term, line }) => fetch(`/api/panes/${term}/send`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: line, enter: true }) }),
+      { term, line: `out=$(${cli} ask < ${hookInput}); echo "$out" | grep -o '"Which [a-z ]*?":"[^"]*"'` },
+    );
+    const ask = work.locator("[data-ov-work-asks] [data-board-drawer-ask]");
+    await expect(ask).toBeVisible({ timeout: 20_000 });
+    await expect(ask.locator("h3")).toHaveText("Claude Code asks");
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: info.outputPath("overview-work-live.png") });
+    await ask.locator('[data-question="0"]').getByRole("radio", { name: /^Blue/ }).click();
+    await ask.locator('[data-question="1"]').getByRole("checkbox", { name: /Pear/ }).check();
+    await ask.locator('[data-question="2"]').getByRole("radio", { name: /^Cat/ }).click();
+    await ask.getByRole("button", { name: "Submit" }).click();
+    await expect(ask).toHaveCount(0);
+    await expect.poll(() => page.evaluate(async (p) => (await fetch(`/api/panes/${p}/capture?format=text`)).text(), term)).toContain('"Which colour do you prefer?":"Blue"');
+
+    // #13 has no one on it: it says so, and offers the lead.
+    await page.goto(`/p/${P}/board/${B}/card/row_c`);
+    const none = page.locator('[data-ov-level-work="row_c"]');
+    await expect(none.locator("[data-ov-work-noagent]")).toBeVisible({ timeout: 20_000 });
+    await expect(none.locator("[data-ov-work-pane]")).toHaveCount(0);
   });
 
   test("a board's lead is a chip that opens that agent, never the board's thread, which is the row's own button; the who-line says which (Arugula #1290)", async ({ page }, info) => {

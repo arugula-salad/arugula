@@ -90,7 +90,7 @@ export function PeekWho({ id, title }: { id: string; title: string }) {
 /** Whose a pane is, as the peek treats it: yours, or a team's box or the
  * project's hosted one where you may steer it, to write to; a teammate's
  * own, to watch. */
-function yours(fleet: Fleet, p: FleetPane): boolean {
+export function yours(fleet: Fleet, p: FleetPane): boolean {
   if (p.person.kind === "me") return true;
   if (p.person.kind === "team" || fleet.host(p.host)?.hosted) return fleet.role(p) !== "viewer";
   return false;
@@ -287,7 +287,7 @@ function HostedPeek({ s, v, head, tail, panes }: { s: OvSession; v: SessionView 
 }
 
 /** The box to write to it. */
-function Reply({ placeholder, disabled, send }: { placeholder: string; disabled?: boolean; send: (text: string) => Promise<boolean> }) {
+export function Reply({ placeholder, disabled, send }: { placeholder: string; disabled?: boolean; send: (text: string) => Promise<boolean> }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const go = async () => {
@@ -345,7 +345,7 @@ function useLines(fleet: Fleet, at: { host: string; id: number } | null): string
 }
 
 /** A cloud workspace's session as the platform has it, read again while the peek is open. */
-function useHosted(ses: string | null): SessionView | null {
+export function useHosted(ses: string | null): SessionView | null {
   const [v, setV] = useState<SessionView | null>(null);
   useEffect(() => {
     setV(null);
@@ -372,7 +372,7 @@ function useHosted(ses: string | null): SessionView | null {
 
 /** What a paused session last said: its last answer in its thread, else
  * (chat off, or none yet) the last of its history. */
-function lastAnswer(v: SessionView): string[] {
+export function lastAnswer(v: SessionView): string[] {
   const t = chat.on ? chat.threads.get(v.card.room, v.card.parent) : undefined;
   const answer = t?.replies.findLast((m) => saidOf(m) === v.card.session);
   if (answer) return answer.text.split("\n").slice(-LINES);

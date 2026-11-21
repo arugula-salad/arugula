@@ -1555,7 +1555,27 @@ export class Client {
   private nextBehindQueued = false;
 
   private isShown(pane: PaneId): boolean {
-    return this.tab !== null && this.tabOfPane(pane)?.id === this.tab;
+    return this.drawnAlone.has(pane) || (this.tab !== null && this.tabOfPane(pane)?.id === this.tab);
+  }
+
+  /** Panes drawn outside the tab on screen, each by how many hold it: the
+   * Overview's Work level shows a card's panes from any tab (Arugula
+   * #1289), so they stream as the tab's do, even on a thin link. */
+  private drawnAlone = new Map<PaneId, number>();
+
+  /** Draw `pane` though its tab isn't shown, until the answer is called. */
+  drawAlone(pane: PaneId): () => void {
+    this.drawnAlone.set(pane, (this.drawnAlone.get(pane) ?? 0) + 1);
+    this.emit();
+    let held = true;
+    return () => {
+      if (!held) return;
+      held = false;
+      const n = (this.drawnAlone.get(pane) ?? 1) - 1;
+      if (n > 0) this.drawnAlone.set(pane, n);
+      else this.drawnAlone.delete(pane);
+      this.emit();
+    };
   }
 
   /** Ask for panes, counting those that bring a snapshot. */
@@ -1596,7 +1616,7 @@ export class Client {
     if (!this.connected || this.summary) return;
     const thin = this.thin;
     const view = this.tab === null ? undefined : this.tabView(this.tab);
-    const shown = new Set(view ? paneIds(view) : []);
+    const shown = new Set([...(view ? paneIds(view) : []), ...this.drawnAlone.keys()]);
     const resume: AttachPane[] = [];
     for (const pane of this.parked) {
       if (thin && !shown.has(pane)) continue;
