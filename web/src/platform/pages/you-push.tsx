@@ -5,7 +5,8 @@
 // device's switch and Send a test stay on your machines page: a push
 // subscription belongs to its service worker's origin, and that's
 // control's (aru-081). A control that doesn't answer `/api/push/prefs` on
-// this host yet (a bare 404) gets both as ↗ rows, as before.
+// this host yet (a bare 404) gets both as ↗ rows, as before. Under this
+// device, the list of your devices (./you-devices.tsx, Arugula #1327).
 
 import { useEffect, useState } from "preact/hooks";
 import { PUSH_KINDS, type PushPrefs } from "../../shared/push-kinds";
@@ -13,6 +14,7 @@ import { platformFetch, refusalOf } from "../../shared/maintenance";
 import { Section } from "../../shared/ui/settings-section";
 import { controlOrigin } from "../session";
 import { ControlRow } from "../settings/owner-machines";
+import { YourDevices } from "./you-devices";
 
 /** `/api/push/prefs` through the app's host: the prefs, or null for a
  * bare 404 (the hub doesn't serve it here yet). */
@@ -59,6 +61,7 @@ export function PhonesAndBrowsers() {
           hook="push"
         />
       </ul>
+      <YourDevices />
     </Section>
   );
   const title = "What every device is pushed about";

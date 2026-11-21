@@ -11,7 +11,8 @@
 // palette's. Sign-in and security is
 // control's dialog drawn in place (Arugula #1311), a ↗ row while the hub
 // doesn't answer `/api/me/*` on the app's host; so are what every device
-// is pushed about (Arugula #1310) and `/api/push/prefs`. On #971's fixture page
+// is pushed about (Arugula #1310) and `/api/push/prefs`, and your devices'
+// list (Arugula #1327) and `/api/push/subscriptions`. On #971's fixture page
 // (move-to-project-page.tsx): the platform's answers are this spec's.
 import { devices, expect, test, type Page, type Route } from "@playwright/test";
 import { fixturePage } from "./fixture-page";
@@ -233,6 +234,61 @@ test.describe("on a computer", () => {
     const out = page.locator('[data-settings-part="this-device"] [data-settings-control]');
     await expect(out).toHaveText([/^Notify this device/]);
     await expect(out).toHaveAttribute("href", `${new URL(page.url()).origin}/#settings=push`);
+  });
+
+  test("You: Notifications lists your devices under This device, each with a switch and Remove, and none while the hub answers 404 for them (Arugula #1327)", async ({ page }) => {
+    const sent: { method: string; path: string; body: unknown }[] = [];
+    const HOUR = 3_600_000;
+    let rows = [
+      { id: "sub_mac", label: "Chrome on Mac", kind: "browser", created: Date.now() - 48 * HOUR, used: Date.now() - HOUR, on: true },
+      { id: "sub_phone", label: "Sam's iPhone", kind: "iphone", created: Date.now() - 72 * HOUR, used: null, on: true },
+    ];
+    await open(page, "/settings/you/notifications", () =>
+      page.route(/\/api\/push\/subscriptions(\/[^/]+)?$/, (r) => {
+        const req = r.request();
+        const path = new URL(req.url()).pathname;
+        const id = path.split("/")[4];
+        if (req.method() === "GET") return json(r, { subscriptions: rows });
+        sent.push({ method: req.method(), path, body: req.postDataJSON() });
+        if (req.method() === "POST") {
+          rows = rows.map((x) => (x.id === id ? { ...x, on: (req.postDataJSON() as { on: boolean }).on } : x));
+          return json(r, rows.find((x) => x.id === id));
+        }
+        rows = rows.filter((x) => x.id !== id);
+        return json(r, {});
+      }),
+    );
+    const here = page.locator('[data-settings-part="this-device"]');
+    const list = here.locator("[data-push-devices]");
+    // The list, last reached first: its name, kind and when, and what off and Remove mean.
+    await expect(list.locator("h3")).toHaveText("Your devices");
+    await expect(list.locator("[data-push-device-name]")).toHaveText(["Chrome on Mac", "Sam's iPhone"]);
+    await expect(list.locator('[data-push-device="sub_mac"]')).toContainText(/Browser, last used /);
+    await expect(list.locator('[data-push-device="sub_phone"]')).toContainText(/iPhone app, added /);
+    await expect(list).toContainText("Off: nothing is sent to that device, and it stays off if it turns notifications on again.");
+    // The switch: off, then the row as the hub says it.
+    const phone = list.locator('[data-push-device-on="sub_phone"]');
+    await expect(phone).toBeChecked();
+    await phone.click();
+    await expect(phone).not.toBeChecked();
+    expect(sent).toEqual([{ method: "POST", path: "/api/push/subscriptions/sub_phone", body: { on: false } }]);
+    // Remove asks first; Cancel keeps it.
+    await list.locator('[data-push-device-remove="sub_mac"]').click();
+    await page.getByRole("button", { name: "Cancel" }).click();
+    await expect(list.locator('[data-push-device="sub_mac"]')).toBeVisible();
+    expect(sent).toHaveLength(1);
+    await list.locator('[data-push-device-remove="sub_mac"]').click();
+    await expect(page.locator("[data-confirm-remove]")).toBeEnabled();
+    await page.locator("[data-confirm-remove]").click();
+    await expect(list.locator("[data-push-device-name]")).toHaveText(["Sam's iPhone"]);
+    expect(sent[1]).toEqual({ method: "DELETE", path: "/api/push/subscriptions/sub_mac", body: null });
+
+    // A hub that answers 404 for them on the app's host: no list, This device's ↗ row as before.
+    await page.unrouteAll({ behavior: "wait" });
+    await open(page, "/settings/you/notifications");
+    await expect(page.locator('[data-settings-part="this-device"] [data-settings-control="push"]')).toBeVisible();
+    await expect(page.locator("[data-push-devices]")).toHaveCount(0);
+    await expect(page.locator('[data-settings-part="this-device"] .control-error')).toHaveCount(0);
   });
 
   test("Status: on hosted Arugula your picture's menu links status.arugula.io in a new tab, and Settings doesn't; on a control you run there's none (Arugula #1176, #1320)", async ({ page, context }) => {
