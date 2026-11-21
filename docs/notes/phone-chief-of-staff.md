@@ -1,6 +1,6 @@
 ---
 section: Added
-title: Your chief of staff and boards' leads in the iPhone and iPad app
+title: Your chief of staff and board leads in the iPhone app
 line: Home opens with your chief of staff in each team project, and on Boards a board's lead opens the board's thread; both peek at the lead's session.
 ---
 In a team's project, Home starts with "Ask your chief of staff": your staff
