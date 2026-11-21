@@ -32,11 +32,11 @@
 
 use std::time::{Duration, Instant};
 
+use arugula_control_wire::chat::agent_staff_room;
 use arugula_control_wire::sessions::{
     AGENT_SESSIONS, AGENT_SESSIONS_WAIT, AgentSessionStart, AgentSessionStop, SESSION_WAIT_MAX, STOP_REASON_MAX,
     agent_project_sessions, agent_session, agent_session_reply, agent_session_stop,
 };
-use arugula_control_wire::chat::agent_staff_room;
 use arugula_control_wire::watch::WatchTarget;
 use reqwest::Method;
 use schemars::JsonSchema;

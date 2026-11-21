@@ -328,7 +328,8 @@ fn tools() -> Vec<Tool> {
         ToolAnnotations::with_title("Write a section of a Doc").read_only(false).destructive(false).open_world(false);
     let read_doc = ToolAnnotations::with_title("Read the project's Docs").read_only(true).open_world(false);
     let read_thread = ToolAnnotations::with_title("Read a room").read_only(true).open_world(false);
-    let post_thread = ToolAnnotations::with_title("Post in a room").read_only(false).destructive(false).open_world(false);
+    let post_thread =
+        ToolAnnotations::with_title("Post in a room").read_only(false).destructive(false).open_world(false);
     let watch = ToolAnnotations::with_title("Watch for something to happen")
         .read_only(false)
         .destructive(false)
@@ -646,9 +647,10 @@ impl Server {
             return Err("say something".into());
         }
         match self.ask(session, SessionIssuesOp::ThreadPost { room: a.room, text: a.text, parent: a.parent }).await? {
-            SessionIssuesGiven::Posted { room, seq } => {
-                done(format!("Posted in room {room} (message {seq})"), json!({ "room": room, "seq": seq, "session": session }))
-            }
+            SessionIssuesGiven::Posted { room, seq } => done(
+                format!("Posted in room {room} (message {seq})"),
+                json!({ "room": room, "seq": seq, "session": session }),
+            ),
             _ => Err("control answered something else".into()),
         }
     }
