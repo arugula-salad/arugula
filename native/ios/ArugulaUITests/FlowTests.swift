@@ -470,6 +470,40 @@ final class FlowTests: XCTestCase {
             }
             XCTAssertTrue(address.contains("/card/row_"), "the Work level's address: \(address)")
             shot(app, "2-work-level")
+            // The Work level (Arugula #1307): the stand-in's terminal, live
+            // at its own size; its permission prompt over it, answered
+            // there; and the terminal typed into where it is.
+            if env["ARUGULA_CARD_AGENT"] == "1" {
+                let term = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'work-terminal-'")).firstMatch
+                XCTAssertTrue(term.shows(within: 30), "no live terminal on the Work level: \(app.debugDescription)")
+                var seen = ""
+                let seenBy = Date().addingTimeInterval(30)
+                while !seen.contains("Read src/main.rs") && Date() < seenBy {
+                    seen = term.value as? String ?? ""
+                    if !seen.contains("Read src/main.rs") { sleep(1) }
+                }
+                XCTAssertTrue(seen.contains("Read src/main.rs"), "the Work level's terminal shows: \(seen)")
+                let allowHere = app.buttons["answer-Allow"]
+                XCTAssertTrue(allowHere.shows(within: 60), "no permission prompt over the panes: \(app.debugDescription)")
+                shot(app, "2-work-ask")
+                clearAlerts()
+                allowHere.tap()
+                let allowGone = Date().addingTimeInterval(20)
+                while allowHere.exists && Date() < allowGone { usleep(300_000) }
+                XCTAssertFalse(allowHere.exists, "the permission over the panes didn't fold away")
+                clearAlerts()
+                term.tap()
+                _ = app.keyboards.firstMatch.shows(within: 5)
+                term.typeText("zoom-typed")
+                var typed = ""
+                let typedBy = Date().addingTimeInterval(20)
+                while !typed.contains("zoom-typed") && Date() < typedBy {
+                    typed = term.value as? String ?? ""
+                    if !typed.contains("zoom-typed") { sleep(1) }
+                }
+                shot(app, "2-work-typed")
+                XCTAssertTrue(typed.contains("zoom-typed"), "what was typed at the Work level didn't show: \(typed)")
+            }
             // Out to the board by the path bar, then its thread and its lanes.
             app.buttons["zoom-path-board"].tap()
             XCTAssertTrue(level.shows(within: 10), "the path bar didn't zoom out to the board")
@@ -515,26 +549,30 @@ final class FlowTests: XCTestCase {
         // Answered in the row (Arugula #1256): the stand-in agent's permission
         // prompt (after a peek at it) and its question, then the board's ask.
         // The script checks that the agent went on with the answers.
+        // With the agent on the board's card, its permission was answered at
+        // the Work level (Arugula #1307): home answers its question.
         if env["ARUGULA_AGENT"] == "1" {
-            let asking = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "phone-allowed")).firstMatch
-            XCTAssertTrue(asking.shows(within: 60), "no permission prompt on home: \(app.debugDescription)")
-            clearAlerts()
-            asking.tap()
-            let lines = app.descendants(matching: .any)["peek-lines"]
-            XCTAssertTrue(lines.shows(within: 20), "no peek")
-            let peekBy = Date().addingTimeInterval(20)
-            while !lines.label.contains("Read src/main.rs") && Date() < peekBy { sleep(1) }
-            XCTAssertTrue(lines.label.contains("Read src/main.rs"), "the peek shows: \(lines.label)")
-            shot(app, "3-peek")
-            app.buttons["peek-close"].tap()
-            // The sheet goes before its row is tapped.
-            let closedBy = Date().addingTimeInterval(10)
-            while lines.exists && Date() < closedBy { usleep(200_000) }
-            let allow = app.buttons["answer-Allow"]
-            XCTAssertTrue(allow.shows(within: 15), "no Allow in the row")
-            clearAlerts()
-            allow.tap()
-            XCTAssertTrue(app.staticTexts["toast"].shows(within: 15) || !allow.exists, "Allow wasn't taken")
+            if env["ARUGULA_CARD_AGENT"] != "1" {
+                let asking = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "phone-allowed")).firstMatch
+                XCTAssertTrue(asking.shows(within: 60), "no permission prompt on home: \(app.debugDescription)")
+                clearAlerts()
+                asking.tap()
+                let lines = app.descendants(matching: .any)["peek-lines"]
+                XCTAssertTrue(lines.shows(within: 20), "no peek")
+                let peekBy = Date().addingTimeInterval(20)
+                while !lines.label.contains("Read src/main.rs") && Date() < peekBy { sleep(1) }
+                XCTAssertTrue(lines.label.contains("Read src/main.rs"), "the peek shows: \(lines.label)")
+                shot(app, "3-peek")
+                app.buttons["peek-close"].tap()
+                // The sheet goes before its row is tapped.
+                let closedBy = Date().addingTimeInterval(10)
+                while lines.exists && Date() < closedBy { usleep(200_000) }
+                let allow = app.buttons["answer-Allow"]
+                XCTAssertTrue(allow.shows(within: 15), "no Allow in the row")
+                clearAlerts()
+                allow.tap()
+                XCTAssertTrue(app.staticTexts["toast"].shows(within: 15) || !allow.exists, "Allow wasn't taken")
+            }
             let green = app.buttons["answer-Green"]
             XCTAssertTrue(green.shows(within: 45), "the agent's question didn't come after the Allow")
             clearAlerts()
