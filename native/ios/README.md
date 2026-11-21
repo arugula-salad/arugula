@@ -24,6 +24,12 @@ key: `pane:MACHINE:PANE`, `hosted:SESSION` or the web's `MACHINE#SESSION`). A
 link to one, the web's `https://…/p/…` from a Doc too, opens that level in its
 project; a notification about a pane opens its card's Work level (or its own),
 and one about an issue on a board, its card's.
+The **Board level** (`Arugula/BoardLevel.swift`, #1306) shows the board's goal
+and progress (All lanes opens its lanes), its lead's card with **Talk to the
+lead** (that agent) and **Board thread** as two buttons (or, with no lead in a
+team's project, a way to ask the chief of staff to start one), and its open
+tickets as the board groups them, each with its PR or checks, a word (working,
+in review, next, asks you) and the agents on it, whose names open them.
 In a team's project it starts with the **chief of staff** (#1279): the
 reader's staff room (`POST /api/chat/projects/{project}/staff`), which only
 they and their own agents read, with the session that leads it.

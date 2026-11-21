@@ -60,6 +60,8 @@ window.fetch = async (input, init) => {
   if (url.pathname === "/api/deploys/waiting") return json({ deploys: [] });
   // A project's settings and its owner's defaults: none set.
   if (/^\/api\/(projects|owners)\/[^/]+\/settings$/.test(url.pathname)) return json([]);
+  // The model its agent sessions use: the strongest, which follows the team's default.
+  if (/^\/api\/projects\/[^/]+\/sessions\/settings$/.test(url.pathname)) return json({ model: null, models: ["opus", "sonnet"] });
   // The platform's chat and settings aren't this page's to show.
   if (url.pathname.startsWith("/api/chat") || url.pathname.startsWith("/api/notify")) return json({ error: "not here" }, 404);
   return realFetch(input, init);

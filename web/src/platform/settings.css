@@ -275,6 +275,15 @@
   white-space: nowrap;
 }
 
+/* A settings row's own actions (a member's role and Remove, a machine's
+   Take out): at its end, together. */
+.platform .settings-rows > li > .settings-row-act {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
 .platform .settings-table tbody tr:hover > * {
   background: color-mix(in srgb, var(--raised) 45%, transparent);
 }
@@ -911,19 +920,9 @@
   box-shadow: inset 2px 0 0 var(--warn);
 }
 
-.platform .overrides-rows > li {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-
-.platform .overrides-rows > li > b {
-  width: 160px;
-  flex: none;
-}
-
-.platform .overrides-rows > li > [data-override-line] {
-  flex: 1;
+/* A setting's line under its label: Team default, or Set here (Arugula #1323). */
+.platform .settings-team-default {
+  margin: 0 0 var(--space-2);
 }
 
 /* Hover's tint is see-through: the pinned columns stay opaque over it. */

@@ -4,18 +4,23 @@
 // and browsers are pushed what. Then Appearance: this device's palette,
 // finish, corners and density, the dialog's controls drawn in place,
 // whether this device is lent to agents (its hand runs in the app,
-// shared/lending.ts), and under them your preferences (Tips, the editor), which are the account's
-// (Arugula #1318; `preferences`' old address lands here). Then what's on control's
-// page (sign-in and passkeys, machines, teams, shared Docs until Docs has
-// them, Arugula #1315), as ↗ rows that open it at that dialog; the products linked to the account (M229);
+// shared/lending.ts), and under them your preferences (Tips, the editor),
+// which are the account's
+// (Arugula #1318; `preferences`' old address lands here). Then Sign-in and
+// security, control's dialog drawn in place (./you-security.tsx, Arugula
+// #1311; `account`'s old address lands there), and what's still only on
+// control's page (teams, shared Docs until Docs has them, Arugula #1315),
+// as ↗ rows that open it at that dialog (your machines are in Team and
+// billing's Machines); the products linked to the account (M229);
 // which machines' agents read and post (M197); agents with no machine
 // (M230); and the apps that may use Claude for you, with what your own key
 // spent (M231). Plan and billing are each owner's, in Team and billing.
 // On hosted Arugula, its status page too (Arugula #1176).
 //
-// Push is control's to set: a device subscribes with its own keys, and the
-// hub answers push settings only there. Help isn't a section: it's in the
-// command palette.
+// Push on this device is control's to set: a device subscribes with its
+// own keys, on control's origin (aru-081), so that's a ↗ row; what every
+// device is pushed about is drawn in place (./you-push.tsx, Arugula #1310).
+// Help isn't a section: it's in the command palette.
 
 import { useEffect } from "preact/hooks";
 import { onAppearance, palette, appearance, FINISHES } from "../../shared/appearance";
@@ -39,6 +44,8 @@ import { ControlRow } from "../settings/owner-machines";
 import { statusPage } from "../status-page";
 import { ExternalIcon } from "../../shared/ui/icons";
 import { joined } from "../settings/summary";
+import { PhonesAndBrowsers } from "./you-push";
+import { SignInAndSecurity } from "./you-security";
 
 export function YouSettings() {
   useSubscribe((fn) => session.subscribe(fn));
@@ -48,31 +55,13 @@ export function YouSettings() {
       <ChatAlerts />
       <PhonesAndBrowsers />
       <Appearance />
-      <Account />
+      <SignInAndSecurity />
+      <MachinesAndTeams />
       <Status />
       <LinkedProducts />
       <AgentTokens />
       <ClaudeSettings me={session.me?.account} />
     </>
-  );
-}
-
-/** Whether this device is pushed, and what every device you turned on is
- * pushed about: control's, where the device's keys are. */
-function PhonesAndBrowsers() {
-  return (
-    <Section
-      id="push"
-      title="Phones and browsers"
-      summary="On your machines page"
-      lede="Which of your devices are notified, and what about."
-      more={<p>Each device turns itself on with its own keys, so these open your machines page.</p>}
-    >
-      <ul class="platform-list settings-rows">
-        <ControlRow href={`${controlOrigin()}/#settings=push`} label="Notify this device" why="Turn this browser or phone on or off" hook="push" />
-        <ControlRow href={`${controlOrigin()}/#settings=push`} label="What every device is pushed about" why="Chat, your machines, your projects; and a test notification" hook="push" />
-      </ul>
-    </Section>
   );
 }
 
@@ -169,27 +158,26 @@ function Preferences() {
   );
 }
 
-/** What's on control's page: sign-in and passkeys, your machines, teams
- * and the Docs you shared with a link, each a ↗ row to its dialog there.
- * The Docs are in Docs' Shared by you once the hub serves them here
- * (Arugula #1315), and their row goes. Adding a phone or browser went with
- * device approvals (#1004). */
-function Account() {
+/** What's still only on control's page: teams and the Docs you shared
+ * with a link, each a ↗ row to its dialog there. The Docs are in Docs'
+ * Shared by you once the hub serves them here (Arugula #1315), and their
+ * row goes. Your machines are in Team and billing's Machines, each
+ * owner's; sign-in is in place, in Sign-in and security. Adding a phone
+ * or browser went with device approvals (#1004). */
+function MachinesAndTeams() {
   useSubscribe((fn) => docLinks.subscribe(fn));
   useEffect(() => void docLinks.load(), []);
   // Plan and billing are each owner's, in Team and billing.
   const plans = owners(session.projects).map((o) => ({ ...o, href: pathOf({ page: "settings", scope: "team", owner: o.key, section: "plan" }, names) }));
   return (
     <Section
-      id="account"
-      title="Sign-in and machines"
+      id="machines-teams"
+      title="Machines and teams"
       summary="On your machines page"
       lede="These are on your machines page, so each opens it at that dialog."
       hooks={{ "data-settings-account": "" }}
     >
       <ul class="platform-list settings-rows">
-        <ControlRow href={`${controlOrigin()}/#account`} label="Sign-in and account" why="Passkeys, GitHub, email and where you're signed in" hook="account" />
-        <ControlRow href={`${controlOrigin()}/#devices`} label="Machines" why="Your machines, and removing one" hook="devices" />
         <ControlRow href={`${controlOrigin()}/#teams`} label="Teams" why="The teams you're in, and inviting people" hook="teams" />
         {!docLinks.served() && <ControlRow href={`${controlOrigin()}/#shared-docs`} label="Shared Docs" why="Docs you shared with a link" hook="shared-docs" />}
       </ul>

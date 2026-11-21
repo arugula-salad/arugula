@@ -30,6 +30,7 @@ import { acceptHostedHolding, signDelegation, signRevoke, type Delegation, type 
 import { directUrls } from "../shared/hosted.ts";
 import { expiresIn, grantBody, grantRevokeBody, newGrant, newGrantRevoke, passkeyChallenge, type GrantRevoke, type PasskeyAssertion, type ProjectGrant } from "./e2e/run-grant.ts";
 import type { E2ETarget } from "./client";
+import { agentName } from "../shared/account";
 import type { LabsFlags } from "../shared/ui/labs-flags";
 import { desktopApp } from "../shared/desktop";
 import { platformFetch, refusalOf } from "../shared/maintenance";
@@ -40,7 +41,6 @@ import {
   follows,
   inviteKey,
   moveBody,
-  newInviteKey,
   redeemInvite,
   askBody,
   askOk,
@@ -63,7 +63,8 @@ import {
   type TeamPin,
   type TeamRole,
 } from "./e2e/team.ts";
-import { movesInto } from "./team-adds.ts";
+import { makeInvite, nextRoster, type MadeInvite, type PresignedInvite } from "../shared/team-roster.ts";
+import { movesInto } from "../shared/team-adds.ts";
 import { checkRoster, ClosureStore, RosterStore, takeLock, TrustStore, withTimeout, type RootChange, type RosterProblem } from "./team-rosters.ts";
 
 export interface ControlInfo {
@@ -198,13 +199,7 @@ export interface Team {
 }
 
 /** A one-click invite link control still holds (#134). */
-export interface PresignedInvite {
-  key: string;
-  role: TeamRole;
-  expires: number;
-  by: string;
-  by_name: string;
-}
+export type { PresignedInvite };
 
 const PINS_KEY = "arugula.control.pins";
 
@@ -723,12 +718,6 @@ export function restoreInvite() {
   }
 }
 
-/** How long a presigned invite lasts unless the owner says otherwise. */
-const PRESIGNED_TTL_MS = 24 * 3600_000;
-
-/** How long an Ask me first link lasts. */
-const ASK_TTL_MS = 7 * 24 * 3600_000;
-
 /** Where the page is: aru-141 (#1004) took out every phase in which a
  * browser waits to be approved, or was turned down, lost its key or stopped
  * being trusted. */
@@ -805,45 +794,7 @@ export function deviceName(): string {
   return agentName(navigator.userAgent);
 }
 
-/** "Safari on iPhone", from a User-Agent: what a browser calls itself as a
- * device, and what Sign-in calls a sign-in no device has claimed, so the
- * two lists use the same words. */
-export function agentName(ua: string): string {
-  if (/arugula/i.test(ua) && !/Mozilla/.test(ua)) return "Arugula app";
-  const os = /iPhone/.test(ua)
-    ? "iPhone"
-    : /iPad/.test(ua)
-      ? "iPad"
-      : /Android/.test(ua)
-        ? "Android"
-        : /Mac/.test(ua)
-          ? "Mac"
-          : /Windows/.test(ua)
-            ? "Windows"
-            : /Linux|X11/.test(ua)
-              ? "Linux"
-              : "";
-  const app = /Edg\//.test(ua)
-    ? "Edge"
-    : /Firefox\//.test(ua)
-      ? "Firefox"
-      : /Chrome\//.test(ua)
-        ? "Chrome"
-        : /Epiphany\//.test(ua)
-          ? "GNOME Web"
-          : /Safari\//.test(ua)
-            ? // Safari's token off Apple's systems is WebKitGTK: the Linux
-              // app's window (when it hasn't said its own name) or GNOME
-              // Web, never Safari (#817).
-              os === "Linux"
-              ? "WebKit"
-              : "Safari"
-            : /node|undici|curl|reqwest/i.test(ua)
-              ? "A program"
-              : "";
-  if (!app && !os) return "A browser";
-  return app && os ? `${app} on ${os}` : app || `A browser on ${os}`;
-}
+export { agentName } from "../shared/account";
 
 /** A device's name as the lists show it. The app was called illogical
  * before 0.26: its devices from then keep the old name in their
@@ -1583,19 +1534,7 @@ export class ControlSession {
     const t = this.teams.find((x) => x.team === team);
     if (!t) throw new Error("no such team");
     const prev = t.roster;
-    // Used presigned invites stay listed until they'd have expired anyway,
-    // so none works twice.
-    const now = Date.now();
-    const spent = (prev.spent ?? []).filter((x) => x.expires > now);
-    const draft: Omit<Roster, "by" | "sig"> = {
-      v: spent.length ? 2 : 1,
-      team,
-      name: name ?? prev.name,
-      version: prev.version + 1,
-      at: now,
-      members: change(prev.members.map((m) => ({ ...m }))),
-      ...(spent.length ? { spent } : {}),
-    };
+    const draft = nextRoster(prev, change, name);
     let next: Roster = { ...draft, by: "", sig: "" };
     if (this.signs(t)) {
       const signed = await signRoster(draft, this.keys);
@@ -1659,32 +1598,12 @@ export class ControlSession {
   /** As `invite`, saying whether the link asks an owner first, and why
    * when it does though it wasn't asked to: control makes a presigned one
    * only once every machine checking the team's rosters understands it. */
-  async makeInvite(team: string, role: TeamRole, askFirst = false): Promise<{ link: string; asks: boolean; why?: string }> {
+  async makeInvite(team: string, role: TeamRole, askFirst = false): Promise<MadeInvite> {
     // Signed by this device when it signs for the team, else on control's
     // word (aru-141): control takes it from an owner signed in here.
     const t = this.teams.find((x) => x.team === team);
-    const signs = !!t && this.signs(t);
-    // #762: an Ask me first link carries a one-time key too, so a request
-    // to join proves it came from the link.
-    const old = async (why?: string) => {
-      const { seed, key } = await newInviteKey();
-      const made = Date.now();
-      const draft = { team, role, made, expires: made + ASK_TTL_MS, key };
-      const ask = signs ? await signAskInvite(draft, this.keys) : { ...draft, by: "", sig: "" };
-      await api(`/api/teams/${team}/invites`, { role, ask });
-      return { link: `${location.origin}/#askinvite=${team}.${seed}`, asks: true, why };
-    };
-    if (askFirst || role === "owner") return old();
-    const { seed, key } = await newInviteKey();
-    const draft = { team, role, expires: Date.now() + PRESIGNED_TTL_MS, key };
-    const presigned = signs ? await signInvite(draft, this.keys) : { ...draft, by: "", sig: "" };
-    try {
-      await api(`/api/teams/${team}/invites`, { role, presigned });
-    } catch (e) {
-      if (e instanceof HttpError && e.status === 409) return old(e.message);
-      throw e;
-    }
-    return { link: `${location.origin}/#pinvite=${team}.${seed}`, asks: false };
+    const sign = t && this.signs(t) ? { invite: (i: Omit<Invite, "by" | "sig">) => signInvite(i, this.keys), ask: (i: Omit<AskInvite, "by" | "sig">) => signAskInvite(i, this.keys) } : undefined;
+    return makeInvite({ team, role, askFirst, origin: location.origin, post: (path, body) => api(path, body), sign });
   }
 
   /** What a presigned invite link says, as control has it. */

@@ -10,7 +10,7 @@ import { type AppLogin, type ControlSession, type ShareOffer, type Team } from "
 import type { TeamRole } from "../e2e/team.ts";
 import { roleAs, roleLabel } from "../ui/roles";
 import { when } from "../../shared/time";
-import { describeAgent } from "./account";
+import { describeAgent } from "../../shared/account";
 import { addingPasskey } from "./adding-passkey";
 import { AddedAt, clearHash, dropHash } from "./common";
 

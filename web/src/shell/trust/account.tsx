@@ -5,7 +5,7 @@
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import { UsageReports } from "../../shared/ui/account-telemetry";
-import { agentName, api, passkeyRemoval, passkeyRemove, shownName, type ControlSession, type PasskeyRemoval } from "../control";
+import { api, passkeyRemoval, passkeyRemove, shownName, type ControlSession, type PasskeyRemoval } from "../control";
 import { desktopApp } from "../../shared/desktop";
 import { BrowserStep, browserButton } from "../../shared/ui/browser-step";
 import { lendReached, lending, onLending, setLend } from "../../shared/lending";
@@ -13,64 +13,16 @@ import { useSubscribe } from "../../shared/ui/hooks";
 import { appOrigin, type PagesFlag } from "../app-redirect";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { Time } from "../../shared/ui/time";
-import { EmailSection } from "./email";
+import { EmailSection, shellCall } from "./email";
+import { describeAgent, LINKED, passkeyName, type Passkeys, type SessionRow } from "../../shared/account";
+import { DeleteAccountSteps } from "../../shared/ui/delete-account";
 import { PasskeyResetOffer } from "./reset";
-
-export interface SessionRow {
-  id: string;
-  created: number;
-  expires: number;
-  agent: string;
-  /** The account's device it is, once its page said (null before). */
-  device?: string | null;
-  current: boolean;
-}
-
-interface Passkeys {
-  passkeys: { id: string; created: number; agent: string; provider: string | null; used: number | null; prf: boolean | null; device: string | null }[];
-  github: string | null;
-  ways: number;
-}
-
-interface DeletePreview {
-  confirm: string;
-  disband: { team: string; name: string; others: number }[];
-  blockers: string[];
-  pays: string[];
-  machines: number;
-  stays_in: string[];
-}
-
-
-/** What a sign-in or passkey came from, in the words Devices uses for a
- * browser ("Safari on iPhone"). Sign-ins from before control kept the
- * browser have none. */
-export function describeAgent(ua: string): string {
-  if (!ua) return "An earlier sign-in";
-  const name = agentName(ua);
-  // UI audit #195: a sign-in from no browser, named by what it is. The CLI
-  // keeps none (it signs each call with its device key), and the desktop
-  // app's window names its device once its page loads (sessionName), so
-  // what's left signed in without a browser is a headless device (the
-  // tests' and dev-control's) or a script: named by its runtime's word.
-  const runtime = name === "A program" ? /\b(node|undici|curl|reqwest)\b/i.exec(ua)?.[1] : null;
-  return runtime ? `A headless device (${runtime.toLowerCase()})` : name;
-}
 
 /** A sign-in's name: its device's, once its page said which it is, so
  * the same browser has one name in both lists. */
 export function sessionName(s: ControlSession, x: SessionRow): string {
   const c = x.device ? s.trusted.get(x.device) : undefined;
   return c ? shownName(c.name) : describeAgent(x.agent);
-}
-
-/** What keeps a passkey (iCloud Keychain, Windows Hello...) when control
- * knows its maker, else the browser that added it (#208). Ones added
- * before either was kept are numbered. */
-export function passkeyName(k: Passkeys["passkeys"][number], i: number): string {
-  if (k.provider) return k.provider;
-  if (k.agent) return `Passkey from ${describeAgent(k.agent)}`;
-  return `Passkey ${i + 1}`;
 }
 
 /** Why the only passkey's Remove waits (DK10, #393). */
@@ -91,17 +43,6 @@ type Away = "end-all" | "remove-passkey" | "add-passkey" | "link-github" | "unli
  * GitHub link. Not the sign-ins: signing that browser in adds one, and
  * signing out everywhere or deleting ends this window's too. */
 const fingerprint = (keys: Passkeys | null) => JSON.stringify([keys?.passkeys.map((k) => k.id), keys?.github ?? null]);
-
-/** What linking GitHub came back with, for the dialog to say. */
-const LINKED: Record<string, string> = {
-  linked: "GitHub is linked: you can sign in with it too.",
-  taken: "That GitHub account already signs in to another Arugula account. Nothing changed.",
-  "has-other": "This account has another GitHub account linked: unlink it first.",
-  elsewhere: "That link was started in another browser or sign-in: press Link GitHub again here.",
-  expired: "That link took too long or was used already: press Link GitHub again.",
-  declined: "GitHub didn't link: it was declined on GitHub.",
-  failed: "Linking GitHub failed: try again.",
-};
 
 /** What other people see (#102), changed in place: Sign-in and account's
  * own row under its title (UI audit #174: it sat under Recovery codes). */
@@ -443,87 +384,10 @@ export function AccountPanel({ s, close, linked, emailBack }: { s: ControlSessio
 }
 
 function DeleteAccount({ s, back }: { s: ControlSession; back: () => void }) {
-  const [p, setP] = useState<DeletePreview | null>(null);
-  const [typed, setTyped] = useState("");
-  const [err, setErr] = useState("");
-  const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    api<DeletePreview>("/api/me/delete").then(setP, (e: Error) => setErr(e.message));
-  }, []);
-  const blocked = !p || p.blockers.length > 0 || p.pays.length > 0;
-  const matches = !!p && typed.trim().toLowerCase() === p.confirm.trim().toLowerCase();
   return (
     <>
       <h2>Delete your account</h2>
-      {p ? (
-        <>
-          <p>This can't be undone. Arugula cloud forgets:</p>
-          <ul class="control-steps" data-delete-what>
-            <li>your account, your passkeys, its link to your GitHub account, and every session;</li>
-            <li>
-              your {p.machines} machine{p.machines === 1 ? "" : "s"}: they stop reaching Arugula cloud (Arugula keeps running on them, reachable only locally);
-            </li>
-            {p.disband.map((t) => (
-              <li key={t.team} data-disband={t.team}>
-                the team <b>{t.name}</b>, which you founded{t.others ? `: its ${t.others} other member${t.others === 1 ? " loses" : "s lose"} it, and its machines go back to their owners` : ""};
-              </li>
-            ))}
-            <li>your push subscriptions, usage counts and team requests.</li>
-          </ul>
-          {p.stays_in.length ? (
-            <p class="dim">
-              You stay listed in {p.stays_in.join(", ")} until an owner removes you; with no devices behind your name, it lets nothing in. Its owners are told.
-            </p>
-          ) : null}
-          {p.blockers.length || p.pays.length ? (
-            <div class="control-error" data-delete-blocked>
-              <p>First:</p>
-              <ul>
-                {p.blockers.map((b) => (
-                  <li key={b}>{b}.</li>
-                ))}
-                {p.pays.map((b) => (
-                  <li key={b}>Cancel {b}.</li>
-                ))}
-              </ul>
-            </div>
-          ) : (
-            <label class="control-confirm">
-              Type <b>{p.confirm}</b> to confirm:
-              <input
-                type="text"
-                data-delete-confirm
-                autocomplete="off"
-                spellcheck={false}
-                value={typed}
-                onInput={(e) => setTyped((e.target as HTMLInputElement).value)}
-              />
-            </label>
-          )}
-        </>
-      ) : null}
-      {err ? <p class="control-error">{err}</p> : null}
-      <div class="prompt-buttons">
-        <button class="secondary" onClick={back}>Back</button>
-        <button
-          class="primary danger"
-          data-delete-go
-          disabled={blocked || !matches || busy}
-          onClick={() => {
-            setBusy(true);
-            setErr("");
-            api("/api/me/delete", { confirm: typed }).then(
-              () => void s.signOut(true),
-              (e: Error) => {
-                setBusy(false);
-                setErr(e.message);
-              },
-            );
-          }}
-        >
-          Delete my account
-        </button>
-      </div>
+      <DeleteAccountSteps call={shellCall} back={back} deleted={() => void s.signOut(true)} />
     </>
   );
 }

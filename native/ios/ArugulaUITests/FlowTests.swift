@@ -287,6 +287,25 @@ final class FlowTests: XCTestCase {
             XCTAssertFalse(app.descendants(matching: .any)["board-lead"].exists, "the lead's name opened the board's thread")
             shot(app, "5-home-lead")
             app.buttons["zoom-path-overview"].tap()
+            // Its Board level: the lead's card names it, and Talk to the
+            // lead opens it over the board (Arugula #1306).
+            let ledRow = app.buttons["home-board-\(led)"]
+            XCTAssertTrue(ledRow.shows(within: 15), "not back home")
+            let leadCard = app.staticTexts["lead-card-name"]
+            for _ in 0..<3 where !leadCard.exists {
+                _ = ledRow.waitFor(hittable: true, timeout: 5)
+                clearAlerts()
+                ledRow.tap()
+                _ = leadCard.shows(within: 10)
+            }
+            XCTAssertTrue(leadCard.exists, "no lead card on the led board: \(app.debugDescription)")
+            XCTAssertTrue(leadCard.label.contains(lead), "the lead card says: \(leadCard.label)")
+            shot(app, "5-board-level-led")
+            app.buttons["lead-talk"].tap()
+            XCTAssertTrue(leadNamed.shows(within: 30), "Talk to the lead didn't open the lead: \(app.debugDescription)")
+            goBack(app)
+            XCTAssertTrue(leadCard.shows(within: 15), "not back on the led board")
+            app.buttons["zoom-path-overview"].tap()
             let homeThread = app.buttons["home-thread-\(led)"]
             XCTAssertTrue(homeThread.shows(within: 15), "no Board thread on home's row")
             // Home slides back in: a tap as it settles opens nothing, so again.
@@ -416,9 +435,29 @@ final class FlowTests: XCTestCase {
             if !path.shows(within: 10) { shot(app, "fail-zoom-path") }
             XCTAssertTrue(path.exists, "no path bar over the Board level: \(app.debugDescription)")
             XCTAssertTrue((path.value as? String ?? "").contains("/board/brd_"), "the Board level's address: \(path.value ?? "none")")
-            let ticket = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'ticket-'")).firstMatch
+            let ticket = app.buttons.matching(NSPredicate(format: "identifier MATCHES 'ticket-([0-9]+|row_.*)'")).firstMatch
             XCTAssertTrue(ticket.shows(within: 30), "the Board level lists no ticket: \(app.debugDescription)")
-            shot(app, "2-board-level")
+            // The Board level (Arugula #1306): a lead card (no one leads this
+            // board) with Board thread beside, and the ticket with its word
+            // (its question is the reader's) and the stand-in agent on it,
+            // whose name opens it over the board.
+            XCTAssertTrue(app.descendants(matching: .any)["lead-card"].shows(within: 10), "no lead card: \(app.debugDescription)")
+            XCTAssertEqual(app.staticTexts["lead-card-name"].label, "No lead")
+            XCTAssertTrue(ticket.label.contains("asks you"), "the ticket's word: \(ticket.label)")
+            if env["ARUGULA_CARD_AGENT"] == "1" {
+                let agentChip = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'ticket-agent-'")).firstMatch
+                XCTAssertTrue(agentChip.shows(within: 45), "the ticket has no agent on it: \(app.debugDescription)")
+                shot(app, "2-board-level")
+                clearAlerts()
+                agentChip.tap()
+                let agentWork = app.descendants(matching: .any)["work-level"]
+                XCTAssertTrue(agentWork.shows(within: 15), "the agent's name didn't open it: \(app.debugDescription)")
+                shot(app, "2-board-agent")
+                goBack(app)
+                XCTAssertTrue(ticket.shows(within: 15), "not back on the Board level")
+            } else {
+                shot(app, "2-board-level")
+            }
             clearAlerts()
             ticket.tap()
             let work = app.descendants(matching: .any)["work-level"]

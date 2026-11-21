@@ -5,7 +5,7 @@
 // never adds a machine. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { addsInOneClick, cantAdd, movesInto } from "../src/shell/team-adds.ts";
+import { addsInOneClick, cantAdd, movesInto } from "../src/shared/team-adds.ts";
 
 const roles = ["owner", "editor", "viewer", null];
 const offered = (rule, locked) => roles.filter((role) => rule({ role, locked }));

@@ -410,11 +410,13 @@ function settingsRoute(rest: string[], q: URLSearchParams): SettingsRoute | null
 }
 
 /** A section of yours, or where it went: your machines' agents are each
- * machine's now (Arugula #1107), in Machines' Agents, and Preferences
- * is part of Appearance (Arugula #1318). */
+ * machine's now (Arugula #1107), in Machines' Agents, Preferences is
+ * part of Appearance (Arugula #1318), and Sign-in and machines' address
+ * is Sign-in and security's (Arugula #1311). */
 function youSection(section?: string): SettingsRoute {
   if (section === "agents") return { page: "settings", scope: "machine", section };
   if (section === "preferences") return { page: "settings", scope: "you", section: "appearance" };
+  if (section === "account") return { page: "settings", scope: "you", section: "security" };
   return { page: "settings", scope: "you", ...(section ? { section } : {}) };
 }
 
@@ -430,7 +432,9 @@ function withOldSection(r: SettingsRoute | null, hash: string): SettingsRoute | 
 
 /** Sections that are parts of others now: a project's (Arugula #1105),
  * and a machine's, in Machines' four (the Settings Doc's Machines tab).
- * The section each is in now. */
+ * The section each is in now. A project's Overrides went (Arugula #1323):
+ * its address lands on the first setting that says whether it follows a
+ * default. */
 const MOVED: Record<"project" | "machine", Record<string, string>> = {
   project: {
     plane: "repos",
@@ -438,6 +442,8 @@ const MOVED: Record<"project" | "machine", Record<string, string>> = {
     size: "runs",
     finish: "runs",
     "agent-model": "agents",
+    "agent-workspace": "agents",
+    overrides: "issues",
     environments: "secrets",
   },
   machine: {
