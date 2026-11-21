@@ -484,17 +484,23 @@ button.ov-peek:disabled {
 
 /* Needs you's asks (#1333), by owner: a heading with a count, then a
  * two-line row each (the question, then whose and where) that opens to
- * the card's body. It opens on hover only where there is hover. */
+ * the card's body. It opens on hover only where there is hover. Each row
+ * keeps the rail card's colour: its kind's outline and left edge. */
 .ov-needs .swarm-cards {
   gap: 0;
-  padding: 0 0 var(--space-3);
+  padding: 0 var(--space-3) var(--space-3);
+}
+.ov-asks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
 }
 .ov-asks-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   margin: 0;
-  padding: var(--space-3) var(--space-3) var(--space-1);
+  padding: var(--space-3) 0 0;
   font: 600 var(--text-xs) var(--f-ui);
   color: var(--subtle);
 }
@@ -504,7 +510,20 @@ button.ov-peek:disabled {
 .ov-ask {
   --c: var(--s-ask);
   position: relative;
-  border-bottom: 1px solid var(--line);
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--c) 45%, transparent);
+  border-radius: var(--card-radius);
+  background: color-mix(in srgb, var(--c) 7%, var(--surface));
+}
+.ov-ask::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--c);
 }
 .ov-ask.gone {
   opacity: 0.45;
@@ -520,7 +539,7 @@ button.ov-peek:disabled {
 }
 .ov-ask-row:hover,
 .ov-ask.open .ov-ask-row {
-  background: color-mix(in srgb, var(--c) 7%, transparent);
+  background: color-mix(in srgb, var(--c) 8%, transparent);
 }
 .ov-ask-row:focus-visible {
   outline: 2px solid var(--c);
