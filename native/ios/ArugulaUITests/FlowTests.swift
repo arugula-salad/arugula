@@ -95,6 +95,16 @@ final class FlowTests: XCTestCase {
         XCTAssertTrue(switcher.label.lowercased().contains(name.lowercased()), "not in \(name): \(switcher.label)")
     }
 
+    /// Open an address in the app, as a link from elsewhere would: iOS asks
+    /// once whether to open it in Arugula.
+    private func openAddress(_ app: XCUIApplication, _ address: String) {
+        XCUIDevice.shared.system.open(URL(string: address)!)
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let open = springboard.buttons["Open"]
+        if open.waitForExistence(timeout: 5) { open.tap() }
+        _ = app.wait(for: .runningForeground, timeout: 10)
+    }
+
     /// Peek at the lead over the open thread: its session's last lines say
     /// the stand-in is ready. Then close the peek.
     private func peekAtLead(_ app: XCUIApplication, _ name: String) {
@@ -389,8 +399,10 @@ final class FlowTests: XCTestCase {
             app.buttons["zoom-path-overview"].tap()
             if !iPad { XCTAssertTrue(board.shows(within: 15), "the path bar didn't zoom out to home") }
             // The Work level's address, as a link.
-            app.open(URL(string: address)!)
-            XCTAssertTrue(work.shows(within: 20), "\(address) didn't open the Work level: \(app.debugDescription)")
+            openAddress(app, address)
+            let opened = work.shows(within: 20)
+            if !opened { shot(app, "fail-address") }
+            XCTAssertTrue(opened, "\(address) didn't open the Work level: \(app.debugDescription)")
             var landed = ""
             let landedBy = Date().addingTimeInterval(10)
             while landed != address && Date() < landedBy {
