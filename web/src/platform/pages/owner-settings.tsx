@@ -4,9 +4,11 @@
 // `/settings/personal`). Its sections, as every scope's are, in a flat list.
 // First the owner's own: Members, Machines (../settings/owner-machines), Chat
 // (the team chat's owners-only switches), Plan and billing, and Labs. Then
-// what every project starts with: its default project, and Project defaults. What a device
-// signs (the roster, a machine joining a team) and what the app can't reach
-// yet (Labs' flags) is a ↗ row in place, opening control's page (#1106).
+// what every project starts with: its default project, and Project defaults. Members
+// and Machines change in place on control's word (aru-141); what takes a
+// passkey (making or removing an owner), what the hub doesn't answer on
+// this host yet, and Labs' flags are a ↗ row in place, opening control's
+// page (#1106).
 //
 // Project defaults is a table: a row per key a project overrides, the
 // owner's default first, then a column per project that isn't archived,
@@ -22,6 +24,9 @@ import { platformFetch } from "../../shared/maintenance";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { Section } from "../../shared/ui/settings-section";
 import { Chip } from "../../shared/ui/state-chip";
+import { ConfirmRemove } from "../../shared/ui/confirm";
+import { CopyText } from "../../shared/ui/copy";
+import { changesOwners, expiresIn, makeInvite, nextRoster, word, type MadeInvite, type Member, type PresignedInvite, type TeamRole } from "../../shared/team-roster";
 import { useHoldLeaving } from "../router";
 import { runs, type HostedWorkspace } from "../runs";
 import { controlOrigin, session, type PlatformProject } from "../session";
@@ -29,6 +34,7 @@ import { owners } from "../owners";
 import { TeamChat } from "../settings/chat-alerts";
 import { ControlRow, OwnerMachines } from "../settings/owner-machines";
 import { PlanAndBilling } from "../settings/plan";
+import { hubCall, reloadTeams, useTeams, type HubTeam } from "../settings/teams";
 import {
   ISSUE_HOMES,
   KEYS,
@@ -113,35 +119,294 @@ export function OwnerSettings({ owner }: { owner: string }) {
 
 const ROLE: Record<string, string> = { owner: "Owner", editor: "Editor", viewer: "Viewer" };
 
-/** Members: the roster, as the platform's copy has it. Inviting, removing
- * and changing roles is a new roster, which control's page makes (an
- * owner's device signs it, if they have one), so it opens there (Arugula #1106). */
+/** Members: the roster. Its owners change it in place, on control's word
+ * (aru-141): invite links, roles and removing someone, and who waits on an
+ * Ask me first link. Making or removing an owner takes the owner's passkey,
+ * which only control's page asks for (aru-078), so that's a ↗ row there; so
+ * is everything while the hub doesn't answer its teams on this host. */
 function Members({ owner, name, role, members }: { owner: string; name: string; role: string | undefined; members: ProjectMember[] }) {
+  const hub = useTeams();
+  const t = hub && "teams" in hub ? hub.teams.find((x) => x.team === owner) : undefined;
+  const names = t ? t.roster.members.map((m) => ({ account: m.account, name: t.names?.[m.account] ?? m.name, role: m.role })) : members;
+  const here = role === "owner" && t?.role === "owner";
+  const toControl = (label: string, why: string, hook: string) => (
+    <ul class="platform-list settings-rows">
+      <ControlRow href={`${controlOrigin()}/#teams`} label={label} why={why} hook={hook} />
+    </ul>
+  );
   return (
     <Section
       id="members"
       title="Members"
-      summary={joined(plural(members.length, "person", "people"), plural(members.filter((m) => m.role === "owner").length, "owner"))}
-      count={members.length}
+      summary={joined(plural(names.length, "person", "people"), plural(names.filter((m) => m.role === "owner").length, "owner"))}
+      count={names.length}
       lede={`Who's in ${name}, and their role.`}
       hooks={{ "data-owner-members": owner }}
     >
-      <ul class="platform-list settings-rows">
-        {members.map((m) => (
+      {here && t ? (
+        <TeamRoster t={t} name={name} toControl={toControl} />
+      ) : (
+        <>
+          <ul class="platform-list settings-rows">
+            {names.map((m) => (
+              <li key={m.account} data-owner-member={m.account}>
+                <b>{m.name || m.account}</b>
+                <Chip kind="tag">{ROLE[m.role] ?? m.role}</Chip>
+              </li>
+            ))}
+          </ul>
+          {role !== "owner" ? (
+            <p class="dim">Its owners invite people and change roles.</p>
+          ) : hub === null ? null : (
+            <>
+              {"err" in hub && <p class="control-error">{hub.err}</p>}
+              {toControl("Invite people, remove them and change roles", "On your machines page, under Teams…", "members")}
+            </>
+          )}
+        </>
+      )}
+    </Section>
+  );
+}
+
+/** A team's roster as its owner changes it here. */
+function TeamRoster({ t, name, toControl }: { t: HubTeam; name: string; toControl: (label: string, why: string, hook: string) => preact.JSX.Element }) {
+  const me = session.me?.account;
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [removing, setRemoving] = useState<Member | null>(null);
+  const act = async (f: () => Promise<unknown>) => {
+    setBusy(true);
+    setErr("");
+    try {
+      await f();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  // The next version, on control's word. One that changes who the owners
+  // are needs a passkey (DK7), which this page doesn't ask for.
+  const change = (fn: (ms: Member[]) => Member[]) =>
+    act(async () => {
+      const next = nextRoster(t.roster, fn);
+      if (changesOwners(next, t.roster)) throw new Error("Making or removing an owner is on your machines page.");
+      await hubCall("POST", `/api/teams/${enc(t.team)}/roster`, { roster: { ...next, by: "", sig: "" } });
+      reloadTeams();
+      await session.load();
+    });
+  const who = (m: Member) => t.names?.[m.account] ?? m.name;
+  return (
+    <>
+      <ul class="platform-list settings-rows" data-team-roster={t.team}>
+        {t.roster.members.map((m) => (
           <li key={m.account} data-owner-member={m.account}>
-            <b>{m.name || m.account}</b>
-            <Chip kind="tag">{ROLE[m.role] ?? m.role}</Chip>
+            <b>
+              {who(m)}
+              {m.account === me ? " (you)" : ""}
+            </b>
+            <span class="settings-row-act">
+              {m.role === "owner" || m.account === me ? (
+                <Chip kind="tag">{ROLE[m.role] ?? m.role}</Chip>
+              ) : (
+                <>
+                  <select
+                    class="field"
+                    value={m.role}
+                    disabled={busy}
+                    aria-label={`${who(m)}'s role`}
+                    data-member-role={m.account}
+                    onChange={(e) => {
+                      const r = e.currentTarget.value as TeamRole;
+                      void change((ms) => ms.map((x) => (x.account === m.account ? { ...x, role: r } : x)));
+                    }}
+                  >
+                    <option value="editor">{ROLE.editor}</option>
+                    <option value="viewer">{ROLE.viewer}</option>
+                  </select>
+                  <button class="secondary danger small" disabled={busy} data-remove-member={m.account} onClick={() => setRemoving(m)}>
+                    Remove
+                  </button>
+                </>
+              )}
+            </span>
           </li>
         ))}
       </ul>
-      {role === "owner" ? (
-        <ul class="platform-list settings-rows">
-          <ControlRow href={`${controlOrigin()}/#teams`} label="Invite people, remove them and change roles" why="On your machines page, under Teams…" hook="members" />
-        </ul>
-      ) : (
-        <p class="dim">Its owners invite people and change roles.</p>
+      {toControl("Make someone an owner, or remove an owner", "It takes your passkey, on your machines page", "owners")}
+      <Waiting t={t} busy={busy} act={act} change={change} />
+      <Invites t={t} name={name} />
+      {err && <p class="control-error">{err}</p>}
+      {removing && (
+        <ConfirmRemove
+          title={`Remove ${who(removing)} from ${name}?`}
+          cancel={() => setRemoving(null)}
+          go={() => {
+            const gone = removing.account;
+            setRemoving(null);
+            void change((ms) => ms.filter((x) => x.account !== gone));
+          }}
+        >
+          <p>They lose the team's machines at once. To come back, they need a new invite.</p>
+        </ConfirmRemove>
       )}
-    </Section>
+    </>
+  );
+}
+
+/** Who used an Ask me first link and waits for an owner's yes. Letting in
+ * someone the link makes an owner changes who the owners are, so that one
+ * is control's page's. */
+function Waiting({ t, busy, act, change }: { t: HubTeam; busy: boolean; act: (f: () => Promise<unknown>) => Promise<void>; change: (fn: (ms: Member[]) => Member[]) => Promise<void> }) {
+  const waiting = t.requests ?? [];
+  if (!waiting.length) return null;
+  return (
+    <>
+      <h3>Waiting to join</h3>
+      <ul class="platform-list settings-rows" data-team-waiting={t.team}>
+        {waiting.map((q) => (
+          <li key={q.account} data-team-request={q.account}>
+            <b>{q.name}</b>
+            <span class="dim">as {ROLE[q.invite.role] ?? q.invite.role}</span>
+            <span class="settings-row-act">
+              {q.invite.role !== "owner" && (
+                <button
+                  class="primary small"
+                  disabled={busy}
+                  data-admit={q.account}
+                  onClick={() =>
+                    void change((ms) => [...ms.filter((m) => m.account !== q.account), { account: q.account, root: q.root, role: q.invite.role, name: word(q.name) }])
+                  }
+                >
+                  Let in
+                </button>
+              )}
+              <button
+                class="secondary danger small"
+                disabled={busy}
+                data-reject={q.account}
+                onClick={() =>
+                  void act(async () => {
+                    await hubCall("POST", `/api/teams/${enc(t.team)}/requests/${enc(q.account)}/reject`, {});
+                    reloadTeams();
+                  })
+                }
+              >
+                Turn down
+              </button>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+/** Make an invite link, and the one-click links nobody has used yet, each
+ * with Revoke. A link opens on control's page, which signs its person in;
+ * its one-time key is only in the link, so a link can be copied only when
+ * it's made. An owner invite asks first and is let in on control's page. */
+function Invites({ t, name }: { t: HubTeam; name: string }) {
+  const [role, setRole] = useState<TeamRole>("editor");
+  const [askFirst, setAskFirst] = useState(false);
+  const [made, setMade] = useState<MadeInvite | null>(null);
+  const [unused, setUnused] = useState<PresignedInvite[]>([]);
+  const [reload, setReload] = useState(0);
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const base = `/api/teams/${enc(t.team)}`;
+  useEffect(() => {
+    let live = true;
+    hubCall<{ invites: PresignedInvite[] }>("GET", `${base}/presigned`).then(
+      (v) => live && setUnused(v.invites),
+      () => live && setUnused([]),
+    );
+    return () => void (live = false);
+  }, [base, t.roster.version, t.locked, made, reload]);
+  const act = async (f: () => Promise<unknown>) => {
+    setBusy(true);
+    setErr("");
+    try {
+      await f();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <h3>Invite</h3>
+      <form
+        class="settings-add"
+        data-invite={t.team}
+        onSubmit={(e) => {
+          e.preventDefault();
+          void act(async () => setMade(await makeInvite({ team: t.team, role, askFirst, origin: controlOrigin(), post: (path, body) => hubCall("POST", path, body) })));
+        }}
+      >
+        <label class="settings-field">
+          Role
+          <select class="field" value={role} data-invite-role={t.team} onChange={(e) => setRole(e.currentTarget.value as TeamRole)}>
+            <option value="editor">{ROLE.editor}</option>
+            <option value="viewer">{ROLE.viewer}</option>
+          </select>
+        </label>
+        <label class="settings-field" title="Each person waits for an owner's yes">
+          <input type="checkbox" checked={askFirst} data-invite-ask-first onChange={(e) => setAskFirst(e.currentTarget.checked)} /> Ask me first
+        </label>
+        <button class="primary" disabled={busy || t.locked} data-invite-make>
+          Make a link
+        </button>
+      </form>
+      {t.locked && <p class="dim">{name} is locked: unlock it on your machines page to invite people.</p>}
+      {made && (
+        <p data-invite-made>
+          {made.why ? `${made.why}, so this link asks you first. ` : ""}
+          {made.asks
+            ? "Anyone with this link can ask to join (for a week); you approve each:"
+            : "One person can join with this link, within a day, and you're told when they do. Send it only to them:"}
+          <CopyText text={made.link} share data-invite-link />
+        </p>
+      )}
+      {unused.length > 0 && (
+        <>
+          <p class="dim">One-click links nobody has used yet:</p>
+          <ul class="platform-list settings-rows" data-presigned-list>
+            {unused.map((i) => (
+              <li key={i.key} data-presigned={i.key}>
+                <span>
+                  For {ROLE[i.role] ?? i.role}
+                  {i.by === session.me?.account ? "" : `, from ${i.by_name}`}
+                </span>
+                <span class="dim">{expiresIn(i.expires)}</span>
+                <span class="settings-row-act">
+                  <button
+                    class="secondary danger small"
+                    disabled={busy}
+                    data-cancel-presigned={i.key}
+                    title="Nobody can join with this link any more"
+                    onClick={() =>
+                      void act(async () => {
+                        // Already gone is gone.
+                        await hubCall("DELETE", `${base}/presigned/${enc(i.key)}`).catch((e: { status?: number }) => {
+                          if (e.status !== 404) throw e;
+                        });
+                        setReload((n) => n + 1);
+                      })
+                    }
+                  >
+                    Revoke
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {err && <p class="control-error">{err}</p>}
+    </>
   );
 }
 

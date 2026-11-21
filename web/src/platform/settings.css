@@ -275,6 +275,15 @@
   white-space: nowrap;
 }
 
+/* A settings row's own actions (a member's role and Remove, a machine's
+   Take out): at its end, together. */
+.platform .settings-rows > li > .settings-row-act {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
 .platform .settings-table tbody tr:hover > * {
   background: color-mix(in srgb, var(--raised) 45%, transparent);
 }

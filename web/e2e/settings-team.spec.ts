@@ -1,7 +1,9 @@
 // Settings' Team and billing scope (Arugula #1106): the owner's sections in
-// a flat list (the team's own, then what every project starts with). Members lists the roster,
-// and inviting and roles (signed by an owner's device) is a ↗ row opening
-// control's page; Machines lists what control's directory says is the
+// a flat list (the team's own, then what every project starts with). Members lists the roster;
+// its owners invite people, change roles and remove them in place, on
+// control's word, and making or removing an owner is a ↗ row to control's
+// page, as everything is while the hub answers `/api/teams` here with a
+// 404. Machines lists what control's directory says is the
 // owner's, one of yours opening its settings; Labs is a ↗ row until the app
 // reaches its flags. On #971's fixture page (move-to-project-page.tsx): the
 // platform's answers are this spec's.
@@ -31,16 +33,25 @@ const directory = [
   { id: "dmn_mill", name: "mill", urls: [], online: true, last_seen: Date.now(), team: "tm_2", account: "acct_b", owner_name: "Jo" },
 ];
 
-/** The fixture page at `path`, with the platform's answers. */
-async function open(page: Page, path: string, { role = "owner", dir = true }: { role?: string; dir?: boolean } = {}) {
-  const json = (r: Route, body: unknown, status = 200) => r.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+const HUB = "https://control.test";
+
+const json = (r: Route, body: unknown, status = 200) => r.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+
+/** The fixture page at `path`, with the platform's answers, and the hub's
+ * that `hub` adds (else `/api/teams` is a 404, as before the hub serves it
+ * on the app's host). */
+async function open(page: Page, path: string, { role = "owner", dir = true, hub }: { role?: string; dir?: boolean; hub?: (page: Page) => Promise<void> } = {}) {
   // What this spec doesn't answer, nobody does.
   await page.route(/\/api\//, (r) => json(r, { error: "not here" }, 404));
-  await page.route(/\/api\/projects$/, (r) => json(r, { me: { account: "acct_a", login: "sam", name: "Sam" }, projects: projects(role), hosted: false }));
+  // Control's page, as the hub says (`x-arugula-hub`).
+  await page.route(/\/api\/projects$/, (r) =>
+    r.fulfill({ contentType: "application/json", headers: { "x-arugula-hub": HUB }, body: JSON.stringify({ me: { account: "acct_a", login: "sam", name: "Sam" }, projects: projects(role), hosted: false }) }),
+  );
   await page.route(/\/api\/(projects|owners)\/[^/]+\/settings$/, (r) => json(r, []));
   // Settings' This machine lists the machines with grants: orchard, not attic.
   await page.route(/\/api\/grants$/, (r) => json(r, { grants: [{ id: "g1", live: true, power: "threads.read", subject: { kind: "daemon", id: "dmn_orchard", name: "orchard" }, scope: { kind: "account", id: "acct_a" } }] }));
   await page.route(/\/api\/directory$/, (r) => (dir ? json(r, { daemons: directory, offers: [] }) : json(r, { error: "control is down" }, 500)));
+  await hub?.(page);
   const body = await fixturePage("./move-to-project-page.tsx");
   await page.route(/\/(p\/prj_|settings|t\/)/, (r) => (r.request().resourceType() === "document" ? r.fulfill({ contentType: "text/html", body }) : r.fallback()));
   await page.goto(path);
@@ -51,7 +62,7 @@ const section = (page: Page, id: string) => page.locator(`[data-settings-section
 
 test.use({ viewport: { width: 1280, height: 900 } });
 
-test("a team's owner: a flat list, the roster with a ↗ to change it, the team's machines, and Labs on control's page", async ({ page }) => {
+test("a team's owner: a flat list; the roster with a ↗ to change it while the hub doesn't answer its teams here, the team's machines, and Labs on control's page", async ({ page }) => {
   await open(page, "/settings/team/tm_1");
   // The team's own, then what every project starts with, under no band headings.
   await expect(page.locator(".settings-list .list-group-title")).toHaveCount(0);
@@ -59,7 +70,7 @@ test("a team's owner: a flat list, the roster with a ↗ to change it, the team'
   // Members, first: the roster, and what a device signs opens control's Teams.
   await expect(section(page, "members")).toBeVisible();
   await expect(section(page, "members").locator("[data-owner-member]")).toHaveText(["SamOwner", "JoEditor"]);
-  await expect(section(page, "members").locator('[data-settings-control="members"]')).toHaveAttribute("href", /\/#teams$/);
+  await expect(section(page, "members").locator('[data-settings-control="members"]')).toHaveAttribute("href", `${HUB}/#teams`);
   // Machines: the team's computers, not the Cloud workspace's box, not another team's.
   await expect(row(page, "machines").locator(".list-row-detail")).toHaveText("2 machines · 1 online");
   await row(page, "machines").click();
@@ -74,7 +85,7 @@ test("a team's owner: a flat list, the roster with a ↗ to change it, the team'
   await expect(page).toHaveURL(/\/settings\/machine\/dmn_orchard/);
   // Labs: control's page, said plainly.
   await page.goto("/settings/team/tm_1/labs");
-  await expect(section(page, "labs").locator('[data-settings-control="labs"]')).toHaveAttribute("href", /\/#teams$/);
+  await expect(section(page, "labs").locator('[data-settings-control="labs"]')).toHaveAttribute("href", `${HUB}/#teams`);
   await expect(section(page, "labs")).toContainText("Labs for Acme's machines");
 });
 
@@ -98,4 +109,94 @@ test("a team's viewer reads the roster without the ↗; a directory that fails s
   await expect(members.locator("[data-settings-control]")).toHaveCount(0);
   await expect(members).toContainText("Its owners invite people and change roles");
   await expect(row(page, "machines").locator(".list-row-detail")).toHaveText("Couldn't load");
+});
+
+/** Acme as the hub has it: Sam owns it, Jo drives, Ann watches, and Dee
+ * waits on an Ask me first link. */
+const acme = (version = 4) => ({
+  team: "tm_1",
+  pin: { team: "tm_1", founder: "acct_a", founder_root: "-" },
+  locked: false,
+  role: "owner",
+  roster: {
+    v: 1,
+    team: "tm_1",
+    name: "Acme",
+    version,
+    at: 1,
+    members: [
+      { account: "acct_a", root: "-", role: "owner", name: "Sam" },
+      { account: "acct_b", root: "-", role: "editor", name: "Jo" },
+      { account: "acct_c", root: "-", role: "viewer", name: "Ann" },
+    ],
+    by: "",
+    sig: "",
+  },
+  requests: [{ account: "acct_d", root: "r_d", name: "Dee Doe", created: 1, invite: { team: "tm_1", role: "viewer", made: 1, expires: Date.now() + 3600_000, key: "k_ask", by: "", sig: "" } }],
+  names: { acct_a: "Sam", acct_b: "Jo", acct_c: "Ann" },
+});
+
+test("a team's owner changes the roster in place, on control's word; owners stay control's page's", async ({ page }) => {
+  const sent: { method: string; path: string; body: unknown }[] = [];
+  const hub = async (p: Page) => {
+    await p.route(/\/api\/teams(\/|$)/, async (r) => {
+      const path = new URL(r.request().url()).pathname;
+      const method = r.request().method();
+      if (method === "GET" && path === "/api/teams") return json(r, { teams: [acme()] });
+      if (method === "GET" && path === "/api/teams/tm_1/presigned")
+        return json(r, { invites: [{ key: "k_one", role: "viewer", expires: Date.now() + 3 * 3600_000, by: "acct_b", by_name: "Jo" }] });
+      sent.push({ method, path, body: r.request().postDataJSON() });
+      return json(r, {});
+    });
+  };
+  await open(page, "/settings/team/tm_1/members", { hub });
+  const members = section(page, "members");
+  // Sam (you) and owners: a chip. The rest: a role and Remove.
+  await expect(members.locator('[data-owner-member="acct_a"]')).toContainText("Sam (you)");
+  await expect(members.locator('[data-owner-member="acct_a"] select')).toHaveCount(0);
+  await expect(members.locator('[data-member-role="acct_b"]')).toHaveValue("editor");
+  await expect(members.locator('[data-member-role="acct_c"]')).toHaveValue("viewer");
+  await expect(members.locator('[data-member-role="acct_b"] option')).toHaveText(["Editor", "Viewer"]);
+  await expect(members.locator('[data-settings-control="members"]')).toHaveCount(0);
+  await expect(members.locator('[data-settings-control="owners"]')).toHaveAttribute("href", `${HUB}/#teams`);
+
+  // A role: the next version, unsigned.
+  await members.locator('[data-member-role="acct_c"]').selectOption("editor");
+  await expect.poll(() => sent.length).toBe(1);
+  const roster = (n: number) => (sent[n].body as { roster: { version: number; by: string; sig: string; members: { account: string; role: string; name: string; root: string }[] } }).roster;
+  expect(sent[0].path).toBe("/api/teams/tm_1/roster");
+  expect(roster(0)).toMatchObject({ version: 5, by: "", sig: "" });
+  expect(roster(0).members.find((m) => m.account === "acct_c")?.role).toBe("editor");
+
+  // Remove asks first.
+  await members.locator('[data-remove-member="acct_b"]').click();
+  await expect(page.locator("[data-confirm-dialog]")).toContainText("Remove Jo from Acme?");
+  await page.locator("[data-confirm-remove]").click();
+  await expect.poll(() => sent.length).toBe(2);
+  expect(roster(1).members.map((m) => m.account)).toEqual(["acct_a", "acct_c"]);
+
+  // Who waits: let in with the link's role and their root, or turned down.
+  await members.locator('[data-admit="acct_d"]').click();
+  await expect.poll(() => sent.length).toBe(3);
+  expect(roster(2).members.at(-1)).toEqual({ account: "acct_d", root: "r_d", role: "viewer", name: "Dee-Doe" });
+  await members.locator('[data-reject="acct_d"]').click();
+  await expect.poll(() => sent.length).toBe(4);
+  expect(sent[3].path).toBe("/api/teams/tm_1/requests/acct_d/reject");
+
+  // An invite link: control's word, opening on control's page.
+  await members.locator("[data-invite-role]").selectOption("viewer");
+  await members.locator("[data-invite-make]").click();
+  await expect(members.locator("[data-invite-link]")).toHaveText(/^https:\/\/control\.test\/#pinvite=tm_1\.[0-9a-f]{64}$/);
+  expect(sent[4]).toMatchObject({ path: "/api/teams/tm_1/invites", body: { role: "viewer", presigned: { team: "tm_1", role: "viewer", by: "", sig: "" } } });
+  // Ask me first: the other kind of link.
+  await members.locator("[data-invite-ask-first]").check();
+  await members.locator("[data-invite-make]").click();
+  await expect(members.locator("[data-invite-link]")).toHaveText(/^https:\/\/control\.test\/#askinvite=tm_1\.[0-9a-f]{64}$/);
+  expect(sent[5]).toMatchObject({ path: "/api/teams/tm_1/invites", body: { role: "viewer", ask: { team: "tm_1", by: "", sig: "" } } });
+
+  // One-click links nobody used yet, each revoked.
+  await expect(members.locator('[data-presigned="k_one"]')).toContainText("For Viewer, from Jo");
+  await members.locator('[data-cancel-presigned="k_one"]').click();
+  await expect.poll(() => sent.length).toBe(7);
+  expect(sent[6]).toMatchObject({ method: "DELETE", path: "/api/teams/tm_1/presigned/k_one" });
 });

@@ -7,71 +7,10 @@
 
 import { approves, browserChained, evaluate, fromApp, hex, unhex, type Cert, type Revocation } from "./cert.ts";
 import { signText, type DeviceKeys } from "./keys.ts";
-import { newKeyPair } from "./noise.ts";
+import { changesOwners, PKCS8_ED25519, type AskInvite, type Invite, type Member, type Roster, type TeamPin, type TeamRole } from "../../shared/team-roster.ts";
 
-export type TeamRole = "owner" | "editor" | "viewer";
-
-export interface Member {
-  account: string;
-  root: string;
-  role: TeamRole;
-  name: string;
-}
-
-export interface Roster {
-  v: number;
-  team: string;
-  name: string;
-  version: number;
-  at: number;
-  members: Member[];
-  /** Invites already redeemed (v2), so each works once. */
-  spent?: Spent[];
-  /** The presigned invite this version redeems (v2). */
-  redeem?: Redeem;
-  by: string;
-  sig: string;
-}
-
-/** An invite an owner's device signed ahead of time (`team::Invite`):
- * whoever holds the one-time key's private half adds themselves, once. */
-export interface Invite {
-  team: string;
-  role: TeamRole;
-  expires: number;
-  key: string;
-  by: string;
-  sig: string;
-}
-
-/** An *Ask me first* invite (`team::AskInvite`, #762): signed by an
- * owner's device like a presigned one, with its own one-time key, but an
- * owner still says yes to each person who uses it. */
-export interface AskInvite {
-  team: string;
-  role: TeamRole;
-  made: number;
-  expires: number;
-  key: string;
-  by: string;
-  sig: string;
-}
-
-export interface Spent {
-  key: string;
-  expires: number;
-}
-
-export interface Redeem {
-  invite: Invite;
-  proof: string;
-}
-
-export interface TeamPin {
-  team: string;
-  founder: string;
-  founder_root: string;
-}
+export type { AskInvite, Invite, Member, Redeem, Roster, Spent, TeamPin, TeamRole } from "../../shared/team-roster.ts";
+export { changesOwners, newInviteKey, word } from "../../shared/team-roster.ts";
 
 export type AccountCerts = Record<string, [Cert[], Revocation[]]>;
 
@@ -111,18 +50,6 @@ export const askInviteBody = (i: AskInvite) =>
  * and its root (`AskInvite::ask_body`). */
 export const askBody = (i: Pick<AskInvite, "team" | "key">, account: string, root: string) =>
   `arugula team ask v1\nteam ${i.team}\naccount ${account}\nroot ${root}\nkey ${i.key}\n`;
-
-// An Ed25519 private key as PKCS#8 is this prefix and the 32-byte seed, so
-// the link carries only the seed.
-const PKCS8_ED25519 = "302e020100300506032b657004220420";
-
-/** A one-time invite key: its seed (for the link's fragment only) and
- * public half (the invite's `key`). */
-export async function newInviteKey(): Promise<{ seed: string; key: string }> {
-  const k = await newKeyPair("Ed25519", true, ["sign", "verify"]);
-  const pkcs8 = hex(new Uint8Array(await crypto.subtle.exportKey("pkcs8", k.privateKey)));
-  return { seed: pkcs8.slice(PKCS8_ED25519.length), key: hex(new Uint8Array(await crypto.subtle.exportKey("raw", k.publicKey))) };
-}
 
 /** The one-time key from a link's seed: its public half, and a signer. */
 export async function inviteKey(seed: string): Promise<{ key: string; sign: (text: string) => Promise<string> }> {
@@ -213,8 +140,6 @@ export const teamJoinBody = (daemon: string, p: TeamPin) =>
 export const moveBody = (daemon: string, p: TeamPin | null, at: number) =>
   `illogical machine move v1\ndaemon ${daemon}\nteam ${p?.team ?? "-"}\nfounder ${p?.founder ?? "-"}\nfounder_root ${p?.founder_root ?? "-"}\nat ${at}\n`;
 
-/** A name in a roster: no spaces or control characters. */
-export const word = (s: string) => s.replace(/[\s\u0000-\u001f\u007f-\u009f]+/g, "-").slice(0, 120) || "someone";
 
 export async function signRoster(r: Omit<Roster, "by" | "sig">, keys: DeviceKeys): Promise<Roster> {
   const out: Roster = { ...r, by: keys.id, sig: "" };
@@ -296,20 +221,6 @@ export async function raiseOk(role: TeamRole | null, signer: Cert, chained: () =
   if (!role || role === "viewer") return true;
   if (fromApp(signer)) return true;
   return chained();
-}
-
-/** Whether `r` changes who the team's owners are since `prev`
- * (`Roster::changes_owners`): someone made an owner or no longer one, or an
- * owner's entry moved to another root. Control takes such a version only
- * with an owner's passkey over it (DK7). */
-export function changesOwners(r: Roster, prev: Roster): boolean {
-  const owners = (x: Roster) =>
-    x.members
-      .filter((m) => m.role === "owner")
-      .map((m) => `${m.account} ${m.root}`)
-      .sort()
-      .join("\n");
-  return owners(r) !== owners(prev);
 }
 
 /** What an owner's passkey signs for a version that changes the owners

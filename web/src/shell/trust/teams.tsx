@@ -10,6 +10,7 @@ import { FLAGS } from "../../shared/proto.gen";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { CopyText } from "../../shared/ui/copy";
 import { Modal } from "../../shared/ui/modal";
+import { expiresIn } from "../../shared/team-roster";
 import type { ControlSession, LabsFlags, PresignedInvite, Team } from "../control";
 import { fingerprint } from "../e2e/cert.ts";
 import type { TeamRole } from "../e2e/team.ts";
@@ -552,12 +553,6 @@ function TeamSection({
       ) : null}
     </section>
   );
-}
-
-/** How long a link has left, roughly. */
-function expiresIn(at: number): string {
-  const min = Math.max(1, Math.round((at - Date.now()) / 60_000));
-  return min < 90 ? `expires in ${min} min` : `expires in ${Math.round(min / 60)} h`;
 }
 
 function RoleOptions() {
