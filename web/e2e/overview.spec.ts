@@ -976,6 +976,60 @@ test.describe("on a computer", () => {
     await expect(panel.locator("[data-ov-peek-tail]")).not.toContainText("doesn't reach");
   });
 
+  test("a lead found by its pane is that pane alone, not the session's worst: another pane of its session that needs input leaves its peek and its standing as its own (Arugula #1368)", async ({ page }) => {
+    let led: unknown;
+    await overview(page, null, false, () => led);
+    const tile = page.locator("[data-ov-loose] [data-ov-panes]");
+    await expect(tile).toHaveAttribute("data-ov-panes", /:/);
+    const host = (await tile.getAttribute("data-ov-panes"))!.split(":")[0];
+    const scratch = Number((await tile.getAttribute("data-ov-panes"))!.split(":").pop());
+    led = { machine: "m_suite", machine_name: host, session: "Product Improvements", pane: scratch, at: 1 };
+    await page.reload();
+    await expect(page.locator("[data-overview]")).toBeVisible({ timeout: 20_000 });
+    await launchRoom(page);
+    // Another pane in the lead's own session asks for input.
+    await page.evaluate(
+      ({ host, scratch, P }) => {
+        const fleet = (window as unknown as { __app: { fleet: { panes: { host: string; id: number; session: unknown }[]; inject(p: unknown[]): void } } }).__app.fleet;
+        const mine = fleet.panes.find((p) => p.host === host && p.id === scratch)!;
+        fleet.inject([
+          {
+            key: `${host}:9999`,
+            host,
+            id: 9999,
+            session: mine.session,
+            stale: false,
+            person: { id: "me", name: "me", kind: "me" },
+            driver: null,
+            watchers: [],
+            unread: 0,
+            mention: false,
+            info: {
+              id: 9999,
+              title: "Board",
+              kind: "agent",
+              attention: "needs_input",
+              session_project: { id: P, name: "Arugula" },
+              activity: { bps: 0, last_ms: Date.now() },
+              ask: { kind: "permission", id: "perm_x", tool: "Bash", input: { command: "ls" }, message: "", suggestions: [] },
+              reason: { kind: "ask", since_ms: 1000, headline: "Bash wants to run ls", bundle: `ask:${P}:x`, ask: { id: "perm_x", what: "approve", agent: "claude", tool: "Bash" }, actions: ["allow", "deny"] },
+            },
+          },
+        ]);
+      },
+      { host, scratch, P },
+    );
+    const chip = page.locator(`[data-ov-board="${B}"] [data-ov-board-lead]`);
+    await expect(chip.locator("[data-ov-lead-standing]")).not.toHaveAttribute("data-ov-lead-standing", "needs");
+    await chip.click();
+    const panel = page.locator("[data-ov-panel]");
+    const peek = panel.locator("[data-ov-peek]");
+    await expect(peek).toHaveAttribute("data-ov-peek", new RegExp(`:${scratch}$`));
+    await expect(peek).toHaveAttribute("data-ov-peek-kind", "shell");
+    await expect(panel.locator("[data-ov-peek-tail]")).toHaveAttribute("data-ov-peek-live", "");
+    await expect(panel.locator("[data-ov-peek-state]")).not.toHaveText(/needs/i);
+  });
+
   /** A board led from geek, a teammate's machine, by its pane 77. */
   async function geekLead(page: Page) {
     let led: unknown;

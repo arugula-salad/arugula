@@ -267,16 +267,16 @@ function boardLead(l: BoardLead, panes: OvPane[], byCard: SessionsByCard | null,
   const named = panes.filter((p) => on(p) && p.session?.name === l.session);
   const titled = new Set(panes.filter((p) => on(p) && p.session && p.title === l.session).map((p) => `${p.host}#${p.session!.id}`));
   const guessed = named.length ? named : panes.filter((p) => p.session && titled.has(`${p.host}#${p.session.id}`));
-  // A lead that carries its pane (#1368) is found by it, with the rest of its session: a name or a title can be missing or changed. Only a lead from an older daemon, or one whose pane isn't in this fleet, is guessed from them.
+  // A lead that carries its pane (#1368) is that pane alone, standing and all: a terminal's session is its whole tab group, and the rest of it isn't the lead. Only a lead from an older daemon, or one whose pane isn't in this fleet, is guessed from the name or title, by its session.
   const pinned = l.pane === undefined ? undefined : panes.find((p) => on(p) && p.id === l.pane);
-  const mine = pinned ? (pinned.session ? panes.filter((p) => p.host === pinned.host && p.session?.id === pinned.session!.id) : [pinned]) : guessed;
+  const mine = pinned ? [pinned] : guessed;
   const hub = byCard?.groups.flatMap((g) => g.sessions).find((s) => s.on.kind === "machine" && s.on.id === l.machine && s.name === l.session);
   const standing = mine.length ? worst(mine.map((p) => p.standing)) : hub ? hubStanding(hub) : null;
   const machineName = l.machine_name || hostOf(l.machine) || "";
   // Keyed as its tile off a card is, so its peek is the same tab as one opened from its row.
-  const lead = mine.length ? leadOf(mine) : undefined;
+  const lead = pinned ?? (mine.length ? leadOf(mine) : undefined);
   const peek: OvSession = lead
-    ? { key: `-|${lead.host}${lead.session ? `#${lead.session.id}` : `:${lead.id}`}`, name: l.session, where: lead.host, standing: standing!, lead, panes: mine }
+    ? { key: pinned ? `-|${lead.host}:${lead.id}` : `-|${lead.host}#${lead.session!.id}`, name: l.session, where: lead.host, standing: standing!, lead, panes: mine }
     : hub
       ? { key: `${hub.kind}:${l.machine}:${hub.id}`, name: l.session, where: hub.on.kind === "machine" ? hub.on.name : machineName, standing: standing!, panes: [], branch: hub.branch }
       : { key: `lead:${l.machine}:${l.session}`, name: l.session, where: machineName || "its machine", standing: "idle", panes: [] };
