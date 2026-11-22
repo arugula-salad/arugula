@@ -93,8 +93,8 @@ Start alone. When your team joins, through
   *Review*, and the merge moves it to *Done*. When an agent needs a
   person to decide something, it asks on the row.
 - **Watch a session, or answer its agent.** Share a session or a whole
-  machine, and choose who watches and who types. A teammate who can type
-  also answers
+  machine, and choose who watches and who drives. A teammate who drives
+  can answer
   your agent's card from the Overview or their phone.
 - **Everyone sees who did what.** An answered card names who answered,
   a board keeps who answered each ask, and an issue's timeline says
