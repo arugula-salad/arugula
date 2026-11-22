@@ -3,7 +3,7 @@
 // the board routes' paths. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { closedWithLine, heldChip, holdsRow, stalledFor, settledFacts, LANE_GLYPH, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, waitingOf, notFinishedLine, readyCount, relationLine, UNSEEN_BLOCKER, needsDot, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip, onIssueChip, boardGroup, clusterOrder, NO_BOARD, sourceLine, sourceLinked, leftOutLine, docWords, docHref, onBoardWords, pointerText, doneRefusal, laneOfZone, laneSetLine, closeName, rowMatches, findLine, boardMatches, rowHasLabel, rowHasPerson, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, groupChoices, NO_GROUP, topAndMore, initialsOf, liveSessions } from "../src/shared/boards/text.ts";
+import { closedWithLine, heldChip, holdsRow, stalledFor, settledFacts, LANE_GLYPH, cardTone, checkTone, checkWord, groupMove, liveTone, prsOf, answerReady, askWaitingLine, assigneesLine, chipOf, counted, debounced, earlierLine, epicLine, firstLine, groupLine, isCard, laneCount, liveWord, marksOf, waitingOf, notFinishedLine, readyCount, relationLine, UNSEEN_BLOCKER, needsDot, needsYou, needsYouLine, parsePointer, pointerHref, pointerLabel, pointerToSend, proofMark, rowGlyph, sections, stepActive, workLabel, workChip, onIssueChip, boardGroup, clusterOrder, NO_BOARD, sourceLine, sourceLinked, leftOutLine, docWords, docHref, onBoardWords, pointerText, rowMatches, findLine, boardMatches, rowHasLabel, rowHasPerson, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, groupChoices, NO_GROUP, topAndMore, initialsOf, liveSessions, LANES } from "../src/shared/boards/text.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
@@ -467,18 +467,9 @@ test("a Doc's chip says its written sections, or the machine it is on; only work
   assert.deepEqual(prsOf(row).map((p) => p.id), ["fi_1"]);
 });
 
-test("moving a row by hand: Done closes a native issue only, and a set lane says who set it", () => {
-  assert.equal(doneRefusal({ pointer: { kind: "issue", id: "iss_1" } }), null);
-  assert.equal(doneRefusal({ pointer: { kind: "forge_item", id: "fi_1" } }), "Close it in GitHub/Plane to move it to Done.");
-  assert.equal(doneRefusal({ pointer: { kind: "none" } }), "A row with no issue can't be moved to Done.");
-  assert.equal(laneOfZone("lane_review"), "review");
-  assert.equal(laneOfZone("zon_abc"), null);
-  assert.equal(closeName({ live: { number: 12 } }), "#12");
-  assert.equal(closeName({}), "this issue");
-  const set = { lane_set: { lane: "next", by: "acc_1", at: 1 } };
-  assert.equal(laneSetLine(set, () => "Kim"), "set by Kim");
-  assert.equal(laneSetLine(set, () => undefined), "set by someone who left");
-  assert.equal(laneSetLine({}, () => "Kim"), null);
+test("the lanes are the board's four, in order, and none is a place a person puts a row (Arugula #1383)", () => {
+  assert.deepEqual(LANES.map((l) => l.lane), ["next", "doing", "review", "done"]);
+  assert.deepEqual(LANES.map((l) => l.title), ["Next", "Doing", "Review", "Done"]);
 });
 
 test("a find box matches a row by number, tracker key or words, and every word has to hold (#546)", () => {

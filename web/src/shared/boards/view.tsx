@@ -29,7 +29,7 @@
 // to make again.
 
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "preact/hooks";
-import type { BoardLane, BoardLead, BoardAsk, BoardAnsweredAsk, BoardGroup, BoardPointer, ProjectBoard, BoardRow, BoardView, BoardWorkItem, BoardZone } from "../proto";
+import type { BoardLead, BoardAsk, BoardAnsweredAsk, BoardGroup, BoardPointer, ProjectBoard, BoardRow, BoardView, BoardWorkItem, BoardZone } from "../proto";
 import { chat } from "../chat-store";
 import { usePlatformApi } from "../platform-api";
 import { Card } from "../ui/card";
@@ -57,11 +57,11 @@ import { useLiveRowSessions } from "./live-sessions";
 import "./bar.css";
 import "./boards.css";
 import { groupFold, groupLaneFold, isFolded, laneFold, loadFolds, saveFolds, type Folds } from "./folds";
-import { MOVE_LANES, closeName, closedWithLine, doneRefusal, laneOfZone, laneSetLine, PICK_DELAY_MS, cardTone, groupMove, PICK_LIMIT, GOAL_MAX, answerReady, askWaitingLine, debounced, earlierLine, epicLine, holdsRow, heldChip, groupLine, isCard, laneCount, marksOf, waitingOf, notFinishedLine, needsDot, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, sections, sourceLine, sourceLinked, leftOutLine, stepActive, workLabel, findLine, type BoardFilter, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, groupChoices } from "./text";
+import { closedWithLine, PICK_DELAY_MS, cardTone, groupMove, PICK_LIMIT, GOAL_MAX, answerReady, askWaitingLine, debounced, earlierLine, epicLine, holdsRow, heldChip, groupLine, isCard, laneCount, marksOf, waitingOf, notFinishedLine, needsDot, needsYou, pointerHref, pointerLabel, pointerText, pointerToSend, proofMark, sections, sourceLine, sourceLinked, leftOutLine, stepActive, workLabel, findLine, type BoardFilter, rowPasses, filtering, filterChoices, filterHash, parseFilterHash, groupChoices } from "./text";
 
 const STALE_SAID = "That changed while you were editing, so the board is read again. Make your change again if it still applies.";
 
-/** What a card carries while it's dragged to another lane (#494). */
+/** What a card carries while it's dragged to another group (#664). No lane takes it: a row's lane follows its work (Arugula #1383). */
 const ROW_DRAG = "text/x-arugula-board-row";
 // The dragged row's group rides in the type's name, since a drop target can read only `types` while the drag is over it (types are lowercased).
 const ROW_GROUP = "text/x-arugula-board-row-group-";
@@ -113,8 +113,7 @@ export function BoardPanel({
   /** The page's own links (Workers): in the aside's Board section, else over the title. */
   tools?: preact.ComponentChildren;
 }) {
-  const { toast, teams } = usePlatformApi();
-  const nameOf = (account: string) => teams().flatMap((t) => t.roster.members).find((m) => m.account === account)?.name;
+  const { toast } = usePlatformApi();
   const [view, setView] = useState<BoardView | null>(null);
   const [missing, setMissing] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
@@ -147,12 +146,9 @@ export function BoardPanel({
   };
   /** The group a Delete waits on. */
   const [dropping, setDropping] = useState<BoardGroup | null>(null);
-  /** The row a move to Done waits on: its issue is closed once the person confirms (#494). */
-  const [closing, setClosing] = useState<BoardRow | null>(null);
   /** The close-epic form is open and what it has been given: the trigger is in the view switch's row, the form under the progress bar. */
   const [epicClosing, setEpicClosing] = useState(false);
   const [epicNote, setEpicNote] = useState("");
-  const [closeReason, setCloseReason] = useState("completed");
   /** The find box's text (#546); the bar is always there (#614), so empty is no find. */
   const [find, setFind] = useState<string>(() => (keepInUrl ? (parseFilterHash(location.hash)?.q ?? "") : ""));
   /** The Label and Person menus' values (#547): any of a menu's matches, and every menu and the text have to. */
@@ -321,16 +317,6 @@ export function BoardPanel({
     const r = view.zones.flatMap((z) => z.rows).find((x) => x.id === row);
     if (r && (r.group ?? null) !== group) moveRow(r, group);
   };
-  /** Move a row to a lane by hand (#494). Done closes its native issue after a confirm; any other item is closed where it lives, and the row says so. */
-  const moveLane = (row: string, lane: BoardLane) => {
-    const r = view.zones.flatMap((z) => z.rows).find((x) => x.id === row);
-    if (!r || r.lane === lane) return;
-    if (lane !== "done") return void act(() => boards.setLane(id, r.id, lane));
-    const why = doneRefusal(r);
-    if (why) return void toast(why);
-    setCloseReason("completed");
-    setClosing(r);
-  };
   const groupMenu = (e: MouseEvent, g: BoardGroup) => {
     const all = view.groups ?? [];
     const at = all.findIndex((x) => x.id === g.id);
@@ -449,8 +435,6 @@ export function BoardPanel({
       write={write}
       act={act}
       id={id}
-      moveLane={moveLane}
-      nameOf={nameOf}
     />
   );
 
@@ -494,7 +478,7 @@ export function BoardPanel({
           where="page"
           data-board-empty
           title="No rows yet."
-          why={`A row is one piece of work: an issue or a PR. Its lane follows the work, so you never move it.${write ? "" : " Its writers add rows."}`}
+          why={`A row is one piece of work: an issue or a PR. Its lane follows that work, so nobody sets it.${write ? "" : " Its writers add rows."}`}
           action={
             write && (
               <button type="button" class="secondary small" data-board-add-row onClick={() => setEditing("new")}>
@@ -523,7 +507,7 @@ export function BoardPanel({
               if (narrows && z.rows.length === 0) return null;
               const laneKey = grouped ? groupLaneFold(s.group?.id ?? null, z.id) : laneFold(z.id);
               return (
-              <Lane key={z.id} z={z} fold={{ key: laneKey, folded: !narrows && isFolded(folds, laneKey), toggle: () => toggleFold(laneKey) }} project={view.board.project} editing={editing} setEditing={setEditing} act={act} id={id} platform={platform} groups={write ? (view.groups ?? []) : []} group={s.group?.id ?? null} moveRow={moveRow} moveLane={write ? moveLane : undefined} open={setDrawer} opened={drawer} />
+              <Lane key={z.id} z={z} fold={{ key: laneKey, folded: !narrows && isFolded(folds, laneKey), toggle: () => toggleFold(laneKey) }} project={view.board.project} editing={editing} setEditing={setEditing} act={act} id={id} platform={platform} groups={write ? (view.groups ?? []) : []} moveRow={moveRow} open={setDrawer} opened={drawer} />
               );
             })}
           </div>
@@ -578,24 +562,6 @@ export function BoardPanel({
           cancel={() => setDropping(null)}
         >
           <p>Its rows go with it. Their issues and PRs stay where they are.</p>
-        </ConfirmRemove>
-      )}
-      {closing && (
-        <ConfirmRemove
-          title={`Close ${closeName(closing)}?`}
-          label="Close"
-          go={() => (setClosing(null), void act(() => boards.setLane(id, closing.id, "done", closeReason)))}
-          cancel={() => setClosing(null)}
-        >
-          <p>Moving a row to Done closes its issue. Moving it out of Done opens it again.</p>
-          <label class="dim">
-            Reason{" "}
-            <select data-board-close-reason value={closeReason} onChange={(e) => setCloseReason(e.currentTarget.value)}>
-              <option value="completed">Completed</option>
-              <option value="not_planned">Not planned</option>
-              <option value="duplicate">Duplicate</option>
-            </select>
-          </label>
         </ConfirmRemove>
       )}
       {!inColumn && drawn}
@@ -1023,9 +989,7 @@ function Lane({
   id,
   platform,
   groups,
-  group,
   moveRow,
-  moveLane,
   open,
   opened,
 }: {
@@ -1038,44 +1002,17 @@ function Lane({
   act: Act;
   id: string;
   platform: (path: string) => string | undefined;
-  /** The groups a row may move to; none for a reader who can't write. */
+  /** The groups a row may move to, by its menu or by dragging; none for a reader who can't write. */
   groups: BoardGroup[];
-  /** The group this lane sits in (null: no group). */
-  group: string | null;
   moveRow: (r: BoardRow, zone: string | null) => void;
-  /** Move a row to a lane by hand (#494); none for a reader who can't write. */
-  moveLane?: (row: string, lane: BoardLane) => void;
   open: (row: string) => void;
   /** The row whose drawer is open: its card is the selected one. */
   opened: string | null;
 }) {
   const n = laneCount(z);
-  // A card dragged over the lane (#494): the lane takes it, unless it comes from another group, which takes it whole (#664).
-  const [over, setOver] = useState(false);
-  const lane = laneOfZone(z.id);
-  const takes = (e: DragEvent) => !!moveLane && !!lane && dragFrom(e, group) === true;
-  const drop = (e: DragEvent) => {
-    if (!takes(e)) return;
-    e.preventDefault();
-    setOver(false);
-    const row = e.dataTransfer?.getData(ROW_DRAG);
-    if (row && lane) moveLane!(row, lane);
-  };
+  // No lane takes a dropped card: a row's lane follows its work (Arugula #1383). A card dragged to another group drops on the group (#664).
   return (
-    <section
-      class={`board-zone drop-target${over ? " drop-over" : ""}`}
-      data-board-zone={z.id}
-      data-zone-kind={z.kind ?? undefined}
-      data-drop-over={over ? "" : undefined}
-      onDragOver={(e) => {
-        if (!takes(e)) return;
-        e.preventDefault();
-        if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
-        setOver(true);
-      }}
-      onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && setOver(false)}
-      onDrop={drop}
-    >
+    <section class="board-zone" data-board-zone={z.id} data-zone-kind={z.kind ?? undefined}>
       <header class="board-zone-head">
         <h2>
           <button type="button" class="board-fold" aria-expanded={!fold.folded} data-board-fold={fold.key} onClick={fold.toggle}>
@@ -1091,7 +1028,7 @@ function Lane({
       {!fold.folded && (
         <ul class="board-rows card-list">
           {z.rows.map((r) => (
-            <Row key={r.id} r={r} editing={editing === r.id} setEditing={setEditing} act={act} id={id} project={project} platform={platform} groups={groups} moveRow={moveRow} moveLane={moveLane} open={open} opened={opened} />
+            <Row key={r.id} r={r} editing={editing === r.id} setEditing={setEditing} act={act} id={id} project={project} platform={platform} groups={groups} moveRow={moveRow} open={open} opened={opened} />
           ))}
         </ul>
       )}
@@ -1159,7 +1096,6 @@ function Row({
   platform,
   groups,
   moveRow,
-  moveLane,
   open,
   opened,
 }: {
@@ -1172,13 +1108,10 @@ function Row({
   platform: (path: string) => string | undefined;
   groups: BoardGroup[];
   moveRow: (r: BoardRow, zone: string | null) => void;
-  moveLane?: (row: string, lane: BoardLane) => void;
   open: (row: string) => void;
   opened: string | null;
 }) {
   const phone = usePhone();
-  const { teams } = usePlatformApi();
-  const setBy = laneSetLine(r, (a) => teams().flatMap((t) => t.roster.members).find((m) => m.account === a)?.name);
   const label = pointerLabel(r.pointer, r.live);
   const href = pointerHref(r, platform);
   const card = isCard(r.live);
@@ -1217,9 +1150,6 @@ function Row({
             },
           ]
         : []),
-      ...(moveLane
-        ? [{ label: "Move to", submenu: MOVE_LANES.filter((l) => l.lane !== r.lane).map((l) => ({ label: l.title, run: () => moveLane(r.id, l.lane) })) }]
-        : []),
       "separator",
       { label: "Delete the row", danger: true, run: () => void act(() => boards.remove(id, r.id)) },
     ]);
@@ -1235,7 +1165,7 @@ function Row({
   const title = card ? r.live!.title : label || "Note";
   const external = r.pointer.kind === "forge_item" || r.pointer.kind === "link";
   return (
-    <Card as="li" tone={tone} class="board-row" data-board-row={r.id} data-lane={r.lane} data-status={r.status} data-tone={tone} data-needs-you={needsDot(r) ? "" : undefined} aria-current={opened === r.id ? "true" : undefined} data-lane-set={r.lane_set ? r.lane_set.lane : undefined} draggable={!!moveLane && !phone && !editing} onDragStart={(e) => {
+    <Card as="li" tone={tone} class="board-row" data-board-row={r.id} data-lane={r.lane} data-status={r.status} data-tone={tone} data-needs-you={needsDot(r) ? "" : undefined} aria-current={opened === r.id ? "true" : undefined} draggable={groups.length > 0 && !phone && !editing} onDragStart={(e) => {
       e.dataTransfer?.setData(ROW_DRAG, r.id);
       e.dataTransfer?.setData(dragGroupType(r.group ?? null), r.group ?? "none"); // a type with no data is dropped
     }} tabIndex={editing ? undefined : 0} onClick={editing ? undefined : body} onKeyDown={editing ? undefined : key}>
@@ -1274,11 +1204,6 @@ function Row({
               </span>
             )}
             {proofLink}
-            {setBy && (
-              <Chip kind="tag" data-board-lane-set title="A person moved this row. It follows its work again once the work changes.">
-                {setBy}
-              </Chip>
-            )}
           </div>
           {card && <Labels labels={r.live!.labels ?? []} />}
           {(marks.notFinished || marks.cancelled || marks.after || stalledMark || waitingMark || marks.blocked.length > 0) && (

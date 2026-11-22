@@ -5,7 +5,7 @@
 // and the shell's board block read through it. A write that names a stale
 // `rev` is refused with 409 (`stale_rev`): the view reads the board again.
 
-import type { BoardAttachRole, BoardLane, BoardsOfDoc, ForgeContent, ProjectDocList, NativeIssue, BoardList, BoardPointer, BoardPutEntry, BoardView, BoardWorkItems, RelationKind, TrackerConnections, TrackerWriteDone } from "../proto";
+import type { BoardAttachRole, BoardsOfDoc, ForgeContent, ProjectDocList, NativeIssue, BoardList, BoardPointer, BoardPutEntry, BoardView, BoardWorkItems, RelationKind, TrackerConnections, TrackerWriteDone } from "../proto";
 import { chat } from "../chat-store";
 import { platformFetch, refusalOf } from "../maintenance";
 
@@ -116,9 +116,6 @@ export const boards = {
   /** A row goes before `before` (last in its group for null) in the group whose rows `seen` lists, in the order they were read; refused `stale_order` if they have moved. */
   reorder: (id: string, entry: string, before: string | null, seen: string[]) =>
     call<BoardView>("POST", `/api/boards/${enc(id)}/entries/${enc(entry)}/move`, { before, seen }),
-  /** Move a row to a lane by hand (#494; owners and editors). Next, Doing and Review hold until the row's work changes its lane; Done closes the row's native issue (`reason`: completed, not_planned or duplicate), and moving out of Done reopens it. */
-  setLane: (id: string, row: string, lane: BoardLane, reason?: string) =>
-    call<BoardView>("PUT", `/api/boards/${enc(id)}/rows/${enc(row)}/lane`, { lane, reason: reason ?? null }),
   /** Mark a row's issue (a native issue or a Plane item) Not finished with what is left, so a merged PR doesn't close it (#841; owners and editors). */
   hold: (id: string, row: string, reason: string) => call<BoardView>("PUT", `/api/boards/${enc(id)}/rows/${enc(row)}/hold`, { reason }),
   /** Take the mark off: the issue closes now if a PR that names it has merged. */

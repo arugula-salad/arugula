@@ -82,11 +82,10 @@ pub const BOARD_ROW_ASK: &str = "/api/boards/{id}/rows/{row}/ask";
 /// and editors. Only a row whose item is a native issue or a Plane item
 /// (422); the mark is on the issue, so every board it is on shows it.
 pub const BOARD_ROW_HOLD: &str = "/api/boards/{id}/rows/{row}/hold";
-/// `PUT` [`SetLane`]: a person moves a row to another lane (#494), answered
-/// [`BoardView`]. Next, Doing and Review set a lane that holds until the
-/// row's work changes it; Done closes a native issue, and moving out of
-/// Done reopens it. Owners and editors (and issues.write for the close); an
-/// agent never does, so there is no daemon twin.
+/// `PUT` [`SetLane`]: refused (422, "lanes follow the work"). Nobody sets a
+/// row's lane: its work does (Arugula #1383, which took back #494's move by
+/// hand). Deprecated: no client from 0.70.86 sends it, and it goes once 0.70.85
+/// is past the window (contract/README.md, "Compatibility").
 pub const BOARD_ROW_LANE: &str = "/api/boards/{id}/rows/{row}/lane";
 /// `POST` [`AnswerAsk`]: the person an ask names answers it, or an owner or
 /// editor for them. A machine and its agents never do.
@@ -280,7 +279,7 @@ pub fn board_row_hold(id: &str, row: &str) -> String {
     format!("/api/boards/{id}/rows/{row}/hold")
 }
 
-/// [`BOARD_ROW_LANE`] for `row` of `id`.
+/// [`BOARD_ROW_LANE`] for `row` of `id`. Deprecated with it.
 pub fn board_row_lane(id: &str, row: &str) -> String {
     format!("/api/boards/{id}/rows/{row}/lane")
 }
@@ -1985,7 +1984,8 @@ pub struct BlockAttached {
     pub on: Vec<BlockOn>,
 }
 
-/// A lane a person set on a row ([`Row::lane_set`]).
+/// A lane a person set on a row ([`Row::lane_set`]). Deprecated with
+/// [`BOARD_ROW_LANE`]: nothing sets one, and no board sends one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardLaneSet"))]
@@ -1997,8 +1997,7 @@ pub struct LaneSet {
     pub at: u64,
 }
 
-/// [`BOARD_ROW_LANE`]'s body. `reason` goes with `done` on a native issue:
-/// `completed` (when not given), `not_planned` or `duplicate`.
+/// [`BOARD_ROW_LANE`]'s body, which is refused. Deprecated with it.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "BoardSetLane"))]
@@ -2023,8 +2022,9 @@ pub struct Row {
     /// Where the row is, from the live state of its items.
     #[serde(default)]
     pub lane: Lane,
-    /// Set when a person moved the row and the work hasn't changed its
-    /// derived lane since (#494): `lane` is then the row's lane.
+    /// Never sent: a row's lane follows its work, and nobody sets it
+    /// (Arugula #1383). Deprecated with [`BOARD_ROW_LANE`]; a client from
+    /// 0.70.86 doesn't read it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub lane_set: Option<LaneSet>,

@@ -485,7 +485,8 @@ progress: BoardProgress, };
 export type BoardLane = "next" | "doing" | "review" | "done";
 
 /**
- * A lane a person set on a row ([`Row::lane_set`]).
+ * A lane a person set on a row ([`Row::lane_set`]). Deprecated with
+ * [`BOARD_ROW_LANE`]: nothing sets one, and no board sends one.
  */
 export type BoardLaneSet = { 
 /**
@@ -741,8 +742,9 @@ status: BoardStatus,
  */
 lane: BoardLane, 
 /**
- * Set when a person moved the row and the work hasn't changed its
- * derived lane since (#494): `lane` is then the row's lane.
+ * Never sent: a row's lane follows its work, and nobody sets it
+ * (Arugula #1383). Deprecated with [`BOARD_ROW_LANE`]; a client from
+ * 0.70.86 doesn't read it.
  */
 lane_set?: BoardLaneSet, 
 /**
@@ -870,8 +872,7 @@ branch: string,
 pr?: string, };
 
 /**
- * [`BOARD_ROW_LANE`]'s body. `reason` goes with `done` on a native issue:
- * `completed` (when not given), `not_planned` or `duplicate`.
+ * [`BOARD_ROW_LANE`]'s body, which is refused. Deprecated with it.
  */
 export type BoardSetLane = { lane: BoardLane, reason: string | null, };
 

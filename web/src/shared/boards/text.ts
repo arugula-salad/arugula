@@ -261,35 +261,13 @@ export function laneCount(z: Pick<BoardZone, "rows">): { total: number; proven: 
   return { total: z.rows.length, proven: z.rows.filter((r) => r.proof).length };
 }
 
-/** The lanes a person moves a row to by hand, in the board's order (#494). */
-export const MOVE_LANES: { lane: BoardLane; title: string }[] = [
+/** The lanes, in the board's order, by name. Nobody puts a row in one: its work does (Arugula #1383). */
+export const LANES: { lane: BoardLane; title: string }[] = [
   { lane: "next", title: "Next" },
   { lane: "doing", title: "Doing" },
   { lane: "review", title: "Review" },
   { lane: "done", title: "Done" },
 ];
-
-/** A lane's id (`lane_done`) as the lane. */
-export function laneOfZone(zone: string): BoardLane | null {
-  return MOVE_LANES.find((l) => `lane_${l.lane}` === zone)?.lane ?? null;
-}
-
-/** Why a row can't be moved to Done from here, or null when it can (a native issue is closed). */
-export function doneRefusal(r: Pick<BoardRow, "pointer">): string | null {
-  if (r.pointer.kind === "issue") return null;
-  if (r.pointer.kind === "forge_item") return "Close it in GitHub/Plane to move it to Done.";
-  return "A row with no issue can't be moved to Done.";
-}
-
-/** The issue a Done move closes, as the dialog names it: `#12`, or "this issue". */
-export function closeName(r: Pick<BoardRow, "live">): string {
-  return r.live?.number ? `#${r.live.number}` : "this issue";
-}
-
-/** The mark of a lane a person set: `set by kim`, null on a row that follows its work. */
-export function laneSetLine(r: Pick<BoardRow, "lane_set">, nameOf: (account: string) => string | undefined): string | null {
-  return r.lane_set ? `set by ${nameOf(r.lane_set.by) || "someone who left"}` : null;
-}
 
 /** The words of a PR's chip: its repo's short name and number, `cloud#16`, since `#16` alone doesn't say which repo (#903). The board doesn't tell the project's own linked repo from another, so it is always short. */
 function prLabel(live: BoardLive): string {

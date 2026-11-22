@@ -79,6 +79,14 @@ runs (aru-122, aru-123). This makes them follow those, not a hand.
     and the next read clears it. Lanes following the work stays the default:
     this is the escape hatch, not a chore. Asks replaced `needs_input`
     (Arugula #367).
+  - **Taken back: nobody moves a row (Arugula #1383, Aaron, 2026-11-22).**
+    The move by hand contradicted the board's own words and the agents'
+    guidance, and one clean behaviour beats an escape hatch. The page has no
+    drag into a lane, no Move to, no lane select in the drawer and no "set
+    by" mark; `PUT /api/boards/{id}/rows/{row}/lane` is refused (422) and
+    deprecated, and `lane_set` is never sent, until the compatibility
+    window lets both go. A row stuck in Review is finished at its source:
+    close its issue. Moving a row between groups stays.
 - **No duplicates.** A PR that names the issue of a row (`Arugula #N`,
   `Closes #N`, `(#N)`, a branch `feat/N-…`, `IDENT-N` for Plane) is attached to
   that row; an issue that PR rows name takes them in; an item already on the
