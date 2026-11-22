@@ -16,6 +16,10 @@
 #   reads it to know its box (M180). For 10 s at most: at the template's
 #   build there may be none yet, and the daemon starts without it there
 #   (it takes its box from the id when one appears).
+# - NODE_EXTRA_CA_CERTS: E2B's egress proxy re-signs TLS with a CA that's
+#   in the system store, which Node doesn't read; its agents (Claude Code,
+#   the ACP adapters) are Node (#1379). The daemon sets it too, for boxes
+#   made before this.
 [Unit]
 Description=Arugula's hosted daemon (arugulad --hosted)
 StartLimitIntervalSec=0
@@ -27,6 +31,7 @@ Group=user
 WorkingDirectory=/home/user
 Environment=HOME=/home/user USER=user LOGNAME=user SHELL=/bin/bash
 Environment=PATH=/opt/arugula/tools/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
 ExecStartPre=/bin/sh -c 'i=0; until [ -s /run/e2b/.E2B_SANDBOX_ID ] || [ "$$i" -ge 100 ]; do sleep 0.1; i=$$((i + 1)); done'
 ExecStart=/usr/local/bin/arugulad --hosted
 TimeoutStartSec=infinity

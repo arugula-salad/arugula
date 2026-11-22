@@ -953,7 +953,7 @@ async fn take(app: &Arc<App>, item: ReadyRun) {
             Some(g) => match g.start("claude", None).await {
                 Ok(given) => {
                     l.turn = Some(given.turn);
-                    let env = crate::agent::hosted::env_here(crate::agent::defs::Kind::Claude, given.auth);
+                    let env = crate::agent::hosted::env(crate::agent::defs::Kind::Claude, given.auth);
                     Ok((op, src, as_, login, env))
                 }
                 Err(why) => Err(Refused("inference", why)),

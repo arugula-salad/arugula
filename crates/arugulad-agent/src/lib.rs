@@ -2169,7 +2169,7 @@ impl Agent {
                         env.retain(|(n, _)| n != k);
                         remove.push((*k).to_owned());
                     }
-                    env.extend(hosted::env_here(inner.cfg.def.agent, auth));
+                    env.extend(hosted::env(inner.cfg.def.agent, auth));
                     let _ = std::fs::write(self.ctx.dir.join(AUTH_IN_ENV), auth.as_str());
                 }
                 let marker = self.ctx.dir.join(TOKEN_IN_ENV);
@@ -2217,7 +2217,7 @@ impl Agent {
                         let mut theirs = launch.env.clone();
                         if hosted::gate().is_some() {
                             let auth = inner.hosted_auth.unwrap_or_else(hosted::claude_auth);
-                            theirs.extend(hosted::env_here(inner.cfg.def.agent, auth));
+                            theirs.extend(hosted::env(inner.cfg.def.agent, auth));
                         }
                         u.wrap(&theirs, &hosted::AsUser::reachable(&launch.argv))
                     }
