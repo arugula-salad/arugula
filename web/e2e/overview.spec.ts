@@ -422,6 +422,13 @@ test.describe("on a computer", () => {
 
   test("a card opens the board's drawer; Esc and the path climb back; a session opens on its machine", async ({ page }, info) => {
     const { agent } = await overview(page);
+    // The agent's session (the reset's) in the project, as one made on its machine page is: placed in
+    // none (the suite's daemon has no control to place it), it's the reader's Default, and the machine's
+    // page moves to that project the moment it knows (#1161, decision 3), after the address said this one.
+    type Client = { intent(i: unknown): void; sessionOfPane(p: number): number | null; state: { sessions: { id: number; project?: { id: string } | null }[] } };
+    const session = await page.evaluate((agent) => (window as unknown as { __app: { client: Client } }).__app.client.sessionOfPane(agent)!, agent);
+    await page.evaluate(({ session, P }) => (window as unknown as { __app: { client: Client } }).__app.client.intent({ op: "set_session_project", session, project: { id: P, name: "Arugula" } }), { session, P });
+    await expect.poll(() => page.evaluate((session) => (window as unknown as { __app: { client: Client } }).__app.client.state.sessions.find((s) => s.id === session)?.project?.id, session)).toBe(P);
     await openLaunch(page);
     // #12 has a session: its row peeks at it, and the peek's card link is the drawer.
     await tile(page, "row_b").locator("[data-ov-row-open]").click();
