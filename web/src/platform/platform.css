@@ -1740,3 +1740,14 @@ span.untri-title {
   top: 2px;
   right: 0;
 }
+
+/* Swarm, the Overview's view (Arugula #1348): under the bar, beside the
+   rail, filling the rest. Wall mode's swarm still fills the screen. */
+.app-swarm {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+.app-swarm > .swarm:not([data-wall]) {
+  position: absolute;
+}

@@ -204,12 +204,13 @@ function Shell({ page, children }: { page?: string; children: preact.ComponentCh
  * views (Arugula #1345); a machine's page and Swarm draw their own heads,
  * and on a phone keep the bottom (a pane's key bar, Swarm's field). */
 function MachinesShell({ project, at, page }: { project: string; at: MachineAt; page: string }) {
-  // The lists (the machines, their panes) sit under the platform's bar.
-  const list = (at.at === "machines" && at.pane === undefined && !at.name) || at.at === "panes";
+  // The lists (the machines, their panes) and Swarm, the Overview's view
+  // (Arugula #1348), sit under the platform's bar; a machine's page has its own.
+  const barred = (at.at === "machines" && at.pane === undefined && !at.name) || at.at === "panes" || at.at === "swarm";
   return (
     <div class="platform platform-machines" data-platform data-platform-machines>
-      <WithRail tabs={list}>
-        {list && (
+      <WithRail tabs={barred}>
+        {barred && (
           <PlatformBar>
             <PlaceViews />
           </PlatformBar>

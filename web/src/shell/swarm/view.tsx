@@ -113,15 +113,16 @@ interface Done {
 export function SwarmView({
   fleet,
   back,
+  leave = back,
   focus,
   board,
   inBar,
-  backTo = "Panes",
 }: {
   fleet: Fleet;
   back: () => void;
-  /** Where `back` goes, for its button: the panes, or the app's Overview (Arugula #1345). */
-  backTo?: "Panes" | "Overview";
+  /** Leaves the swarm for a pane it opens: `back`, unless opening the pane
+   * goes to its own page (the app's, Arugula #1348), so Back comes here. */
+  leave?: () => void;
   /** Under the bar every place shares, whose Panes goes back: no button
    * of its own for that. */
   inBar?: boolean;
@@ -394,14 +395,14 @@ export function SwarmView({
     if (!p) return;
     // An editor that joined has no tab: follow it.
     if (isPresence(p)) return setFollowing(key);
-    back();
+    leave();
     fleet.open(p.host, p.id);
   };
   // #237: the pane, with its session's share picker open over it.
   const shareKey = (key: string) => {
     const p = byKey(key);
     if (!p || isPresence(p)) return;
-    back();
+    leave();
     fleet.open(p.host, p.id, true);
   };
 
@@ -434,9 +435,9 @@ export function SwarmView({
       ...(isPresence(p) ? [] : [{ label: "Open", run: () => openKey(key) }]),
       ...(followable(p) ? [{ label: "Follow", run: () => setFollowing(key) }] : []),
       // #1731: or its nvim, as the Editor preference says.
-      ...(canEdit(fleet, p) ? [{ label: "Open in editor", run: () => void openInEditor(fleetTarget(fleet, p.host, p.id, back, () => void editIn(fleet, p, back))) }] : []),
+      ...(canEdit(fleet, p) ? [{ label: "Open in editor", run: () => void openInEditor(fleetTarget(fleet, p.host, p.id, leave, () => void editIn(fleet, p, leave))) }] : []),
       // M11: what changed in its project, beside it.
-      ...(p.info.project && fleet.role(p) === "owner" && !p.stale && !isPresence(p) ? [{ label: "Changes", run: () => void changesOf(fleet, p, back) }] : []),
+      ...(p.info.project && fleet.role(p) === "owner" && !p.stale && !isPresence(p) ? [{ label: "Changes", run: () => void changesOf(fleet, p, leave) }] : []),
     ]);
   };
 
@@ -544,8 +545,8 @@ export function SwarmView({
             </button>
           )}
           {!inBar && (
-            <button data-swarm-back title={`Back to the ${backTo.toLowerCase()} (Escape)`} onClick={back}>
-              {backTo}
+            <button data-swarm-back title="Back to the panes (Escape)" onClick={back}>
+              Panes
             </button>
           )}
           {tipGone && (
@@ -608,7 +609,7 @@ export function SwarmView({
               share={() => shareKey(b.panes[0].key)}
               follow={() => setFollowing(b.panes[0].key)}
               acted={() => acted.current.add(b.key)}
-              back={back}
+              back={leave}
             />
           ))}
           {answered.map((d) => (
@@ -654,7 +655,7 @@ export function SwarmView({
         </div>
       )}
 
-      {following && <FollowView fleet={fleet} pkey={following} close={() => setFollowing(null)} back={back} />}
+      {following && <FollowView fleet={fleet} pkey={following} close={() => setFollowing(null)} back={leave} />}
       <MenuLayer />
       {peek && (
         <div class="swarm-peek" style={{ left: `${Math.min(peek.x + 16, innerWidth - 700)}px`, top: `${Math.min(peek.y + 16, innerHeight - 160)}px` }}>
