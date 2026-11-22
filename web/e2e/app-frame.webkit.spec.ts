@@ -33,9 +33,9 @@ test.describe("on a computer", () => {
     expect(await hooks(page, ".ws-rail > *", "open")).toEqual(["overview", "boards", "docs", "machines", "chat", "inbox", "settings"]);
     const lit = page.locator(".ws-rail [aria-current=page]");
     // By the rail's buttons: the app's own moves, no page load. Not the
-    // Overview or Machines' panes on a computer: WebKit stops on those pages
-    // on main too, apart from the rail; app-frame.spec.ts has them, and the
-    // iPhone's below.
+    // Overview or Machines on a computer: WebKit stopped on those pages on
+    // main too, apart from the rail (seen before #1346 rebuilt Machines);
+    // app-frame.spec.ts has them, and the iPhone's below.
     for (const [key, url] of [
       ["docs", "/docs$"],
       ["boards", "/boards$"],
@@ -50,7 +50,7 @@ test.describe("on a computer", () => {
       await expect(page.locator("[data-place-views]"), key).toHaveCount(0);
     }
     await expect(page.locator(".ws-rail [data-open-overview]")).toHaveAttribute("href", new RegExp(`/p/${P}[^/]*$`));
-    await expect(page.locator(".ws-rail [data-open-machines]")).toHaveAttribute("href", new RegExp(`/p/${P}[^/]*/machines/panes$`));
+    await expect(page.locator(".ws-rail [data-open-machines]")).toHaveAttribute("href", new RegExp(`/p/${P}[^/]*/machines$`));
     // Runs are Machines': lit, with its views.
     await page.goto(`/p/${P}/runs`);
     await expect(page.locator(".ws-rail [data-open-machines]")).toHaveAttribute("aria-current", "page");
@@ -75,7 +75,7 @@ test.describe("on an iPhone", () => {
     const bell = page.locator("[data-platform-bar] [data-phone-inbox]");
     await expect(bell.locator(".ws-rail-count")).toHaveText("4");
     const sideways = () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-    for (const path of ["", "/boards", "/docs", "/chat", "/machines/panes", "/machines", "/runs"]) {
+    for (const path of ["", "/boards", "/docs", "/chat", "/machines", "/runs"]) {
       await page.goto(`/p/${P}${path}`, { waitUntil: "domcontentloaded" });
       await expect(page.locator("[data-platform-bar]")).toBeVisible();
       // No Swarm on a phone's Overview.
