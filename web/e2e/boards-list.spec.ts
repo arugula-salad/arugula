@@ -25,8 +25,9 @@ const board = (id: string, title: string, p: ReturnType<typeof progress>, more: 
 const plane = (key: string, started: boolean) => ({ source: { provider: "plane", key, url: "", connection: "ARUGU", left_out: 0, started } });
 
 const BOARDS = [
-  board("brd_0a01", "Launch", progress(13, 18, 2, 1)),
-  board("brd_0a02", "Someday", progress(0, 0)),
+  // Launch was touched last, Someday made last: Updated puts Launch first, Created Someday.
+  board("brd_0a01", "Launch", progress(13, 18, 2, 1), { created_at: 10, updated_at: 30 }),
+  board("brd_0a02", "Someday", progress(0, 0), { created_at: 20, updated_at: 15 }),
   board("brd_0a03", "Epic: search", progress(2, 5, 1, 0), plane("ARUGU-10", true)),
   board("brd_0a04", "Epic: billing", progress(0, 3), plane("ARUGU-11", false)),
   board("brd_0a05", "Last year", progress(4, 4), { closed_at: 2, done_note: "Shipped." }),
@@ -74,6 +75,20 @@ const item = (page: Page, id: string) => page.locator(`[data-board-item="${id}"]
 
 test.describe("on a computer", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("boards sort by Updated, newest first, or by Created; the choice stays (Arugula #1369)", async ({ page }) => {
+    await openApp(page, `/p/${P}/boards`);
+    const titles = () => page.locator("[data-boards-page] [data-board-item] [data-board-title]").allTextContents();
+    const sort = page.locator("[data-boards-page] [data-list-sort]");
+    await expect(sort).toHaveValue("updated");
+    await expect.poll(titles).toEqual(["Launch", "Someday", "Epic: search", "Epic: billing"]);
+    await sort.selectOption("created");
+    await expect.poll(titles).toEqual(["Someday", "Launch", "Epic: search", "Epic: billing"]);
+    expect(await page.evaluate(() => localStorage.getItem("boards-sort"))).toBe("created");
+    await page.reload();
+    await expect(sort).toHaveValue("created");
+    await expect.poll(titles).toEqual(["Someday", "Launch", "Epic: search", "Epic: billing"]);
+  });
 
   test("boards are rows; the selected one draws in the middle and its address follows", async ({ page }) => {
     await openApp(page, `/p/${P}/boards`);

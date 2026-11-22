@@ -139,6 +139,15 @@ export interface ListSort<K extends string = string> {
   onSort(key: K): void;
 }
 
+/** The sort a list of things with a time they were changed and one they were
+ * made offers (Docs, Boards): Updated, the default, or Created, newest first. */
+export type TimeSort = "updated" | "created";
+
+export const TIME_SORTS: ListSortOption<TimeSort>[] = [
+  { key: "updated", label: "Updated" },
+  { key: "created", label: "Created" },
+];
+
 /** A list's sort, kept in this browser under `storeKey`: the first option
  * until someone chooses. */
 export function useListSort<K extends string>(storeKey: string, options: ListSortOption<K>[]): [K, (key: K) => void] {
