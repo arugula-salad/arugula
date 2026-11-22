@@ -167,9 +167,10 @@ pub fn node_ca(given: Option<&std::ffi::OsStr>, bundle: bool) -> Option<&'static
     (given.is_none_or(|v| v.is_empty()) && bundle).then_some(SYSTEM_CA)
 }
 
-/// On a hosted box, let Node trust what the system does: every pane and
-/// agent inherits the daemon's environment, and a session user's gets it
-/// from [`AsUser::wrap`]. E2B's egress proxy re-signs TLS with a CA only
+/// On a hosted box, let Node trust what the system does, in the panes and
+/// agents the daemon starts as itself, which inherit its environment. A
+/// session user's agent starts from an empty one: [`AsUser::wrap`] names
+/// it there. E2B's egress proxy re-signs TLS with a CA only
 /// the system store has, so without it Claude Code and the ACP adapters
 /// fail with UNABLE_TO_VERIFY_LEAF_SIGNATURE (#1379, #975).
 ///
@@ -320,11 +321,16 @@ impl AsUser {
 
     /// The command line that runs `argv` as this user, with `env` (nothing
     /// secret: [`env`]'s placeholder is fine), the user's own `HOME`,
-    /// `USER`, `LOGNAME` and [`SESSION_PATH`], the daemon's
-    /// `NODE_EXTRA_CA_CERTS` ([`trust_system_ca`]), and the setup's
-    /// [`SESSION_ENV`] (`env`'s where both name a variable).
+    /// `USER`, `LOGNAME` and [`SESSION_PATH`], `NODE_EXTRA_CA_CERTS` (the
+    /// daemon's, else the system's bundle when the box has it), and the
+    /// setup's [`SESSION_ENV`] (`env`'s where both name a variable).
     pub fn wrap(&self, env: &[(String, String)], argv: &[String]) -> Vec<String> {
-        self.wrap_with(&session_env_text(), &with_node_ca(env, std::env::var(NODE_CA_ENV).ok()), argv)
+        // #1379: `env -i` drops the daemon's own, so it's named here.
+        let ca = std::env::var(NODE_CA_ENV)
+            .ok()
+            .filter(|c| !c.is_empty())
+            .or_else(|| node_ca(None, std::path::Path::new(SYSTEM_CA).exists()).map(str::to_owned));
+        self.wrap_with(&session_env_text(), &with_node_ca(env, ca), argv)
     }
 
     /// [`AsUser::wrap`], with `setup` as [`SESSION_ENV`]'s text.
