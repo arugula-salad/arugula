@@ -507,6 +507,13 @@ export type BoardLead = { machine: string,
  */
 machine_name: string, session: string, 
 /**
+ * The leading session's pane on its machine, the one the lead was taken
+ * from: the page finds the pane by it, not by the name, which a renamed
+ * conversation or a pane without a title doesn't match. Absent for a
+ * lead an older daemon took.
+ */
+pane?: number, 
+/**
  * When the session took the lead.
  */
 at: number, };
@@ -4164,7 +4171,11 @@ goal?: string,
  * With an agent's write: the session that makes it leads the new board
  * (#414). A person's write ignores it.
  */
-lead_session?: string, };
+lead_session?: string, 
+/**
+ * The pane of `lead_session` on its machine, the one it leads from.
+ */
+lead_pane?: number, };
 
 /**
  * A new issue, before and after it reached the forge.

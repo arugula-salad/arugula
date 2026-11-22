@@ -7512,6 +7512,15 @@
             "description": "The machine's name now; empty while it can't be told.",
             "type": "string"
           },
+          "pane": {
+            "description": "The leading session's pane on its machine, the one the lead was taken\nfrom: the page finds the pane by it, not by the name, which a renamed\nconversation or a pane without a title doesn't match. Absent for a\nlead an older daemon took.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "session": {
             "type": "string"
           }
@@ -12222,6 +12231,15 @@
             "description": "What the board is for; left out: none.",
             "type": [
               "string",
+              "null"
+            ]
+          },
+          "lead_pane": {
+            "description": "The pane of `lead_session` on its machine, the one it leads from.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
               "null"
             ]
           },

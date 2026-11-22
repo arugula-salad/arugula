@@ -1543,6 +1543,17 @@ async fn own_session(c: &Call<'_>) -> Option<String> {
     arugulad_base::agent_mentions::session_name(c.app(), c.own_pane()?).await
 }
 
+/// What `lead_board` sends: the session's name and the pane it leads from, so
+/// the page finds that pane without guessing from the name. A release names
+/// neither, and a pane with no name sends no pane.
+fn lead_request(session: Option<String>, pane: Option<u32>, release: bool) -> LeadBoard {
+    if release {
+        return LeadBoard { session, pane: None, release };
+    }
+    let pane = session.as_ref().and(pane);
+    LeadBoard { session, pane, release }
+}
+
 /// `board_write`.
 pub(crate) async fn board_write(c: &Call<'_>, kind: &str, a: Value) -> Out {
     owners_boards(c, WRITE_TOOL).await?;
@@ -1565,7 +1576,12 @@ pub(crate) async fn board_write(c: &Call<'_>, kind: &str, a: Value) -> Out {
             let project = super::plane_home::home(c, a.project.as_deref(), &planned_items).await?;
             let chosen = c.chosen_project(project.as_deref().or(a.project.as_deref())).await?;
             let session = own_session(c).await;
-            let new = NewBoard { title: a.title, goal: a.goal, lead_session: session.clone() };
+            let new = NewBoard {
+                title: a.title,
+                goal: a.goal,
+                lead_session: session.clone(),
+                lead_pane: session.as_ref().and(c.own_pane()),
+            };
             let v = boards_call(c, Method::POST, &agent_project_boards(&chosen.id), Some(given(new)?)).await?;
             let mut view = view_of(v)?;
             let planned = plan(c, &mut view, a.groups).await;
@@ -1605,7 +1621,7 @@ pub(crate) async fn board_write(c: &Call<'_>, kind: &str, a: Value) -> Out {
             if !a.release && session.is_none() {
                 return Err(format!("{NO_SESSION_NAME} The board stays as it was."));
             }
-            let body = given(LeadBoard { session, release: a.release })?;
+            let body = given(lead_request(session, c.own_pane(), a.release))?;
             let v = boards_call(c, Method::POST, &agent_board_lead(&a.board), Some(body)).await?;
             board_done(if a.release { "Let go of a board's lead" } else { "Took the lead of a board" }, v, a.verbose)
         }
@@ -2014,9 +2030,22 @@ mod tests {
         let a: CreateBoardArgs = serde_json::from_value(json!({ "title": "Epic" })).unwrap();
         assert!(a.goal.is_none() && a.project.is_none() && !a.verbose);
         assert_eq!(
-            given(NewBoard { title: a.title, goal: a.goal, lead_session: None }).unwrap(),
+            given(NewBoard { title: a.title, goal: a.goal, lead_session: None, lead_pane: None }).unwrap(),
             json!({ "title": "Epic" })
         );
+    }
+
+    /// Taking the lead sends the caller's pane with its name (#1368), so the
+    /// page finds the pane by it; a release sends neither pane, and a pane
+    /// with no name none.
+    #[test]
+    fn taking_the_lead_sends_the_callers_pane() {
+        let took = given(lead_request(Some("Product Improvements".into()), Some(1177), false)).unwrap();
+        assert_eq!(took, json!({ "session": "Product Improvements", "pane": 1177, "release": false }));
+        let nameless = given(lead_request(None, Some(1177), false)).unwrap();
+        assert_eq!(nameless, json!({ "release": false }));
+        let released = given(lead_request(Some("Product Improvements".into()), Some(1177), true)).unwrap();
+        assert_eq!(released, json!({ "session": "Product Improvements", "release": true }));
     }
 
     /// The tool offers the verbs of #366 and none of the old ones; a row is

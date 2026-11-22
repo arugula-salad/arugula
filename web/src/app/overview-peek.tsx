@@ -101,6 +101,14 @@ export function ownFar(fleet: Fleet, s: OvSession): { why: string; note: string 
   return { why: `${name} is connected, but this page doesn't see this session on it.`, note: `${name} is yours and connected, but this page doesn't see this session on it.` };
 }
 
+/** A session this page can't read on a teammate's machine, which the fleet lists but shares no panes of: whose it is, in words. */
+function theirsFar(fleet: Fleet, s: OvSession): string | undefined {
+  if (s.hosted) return undefined;
+  const h = fleet.list.find((x) => x.name === s.where);
+  if (!h?.owner) return undefined;
+  return `It runs on ${s.where}, ${h.owner}'s machine, whose panes aren't shared with you.`;
+}
+
 /** Whose a pane is, as the peek treats it: yours, or a team's box or the
  * project's hosted one where you may steer it, to write to; a teammate's
  * own, to watch. */
@@ -166,7 +174,7 @@ function Peek({ place, s, card }: { place: PeekPlace; s: OvSession; card: OvCard
   if (!read) {
     if (far) {
       tail = null;
-      tailSays = own ? own.why : `It runs on ${s.where}, which this page doesn't reach.`;
+      tailSays = own ? own.why : (theirsFar(fleet, s) ?? `It runs on ${s.where}, which this page doesn't reach.`);
     } else if (s.hosted) {
       tail = hosted ? lastAnswer(hosted) : null;
       tailSays = hosted ? "Nothing said yet." : "Reading the session…";
