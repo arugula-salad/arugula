@@ -53,18 +53,28 @@ printf 'ok %s/%s %s\n' "$top" "$w" "$base"
 
 /// What closing a block does to its worktree (AR-2): `$1` the clone, `$2`
 /// the worktree, `$3` its branch, `$4` the base. Fetches, then removes the
-/// worktree (never with `--force`) and the local branch only if nothing
-/// is uncommitted, HEAD is on a remote branch, and HEAD and the branch
-/// are in `origin/BASE`. A squash merge isn't in `origin/BASE`: for a
-/// clean, pushed worktree on a github.com origin, `gh` may say a merged PR
-/// from the branch had exactly HEAD as its head, which counts. Never
+/// worktree and the local branch only if nothing is uncommitted, HEAD is on
+/// a remote branch, and HEAD and the branch are in `origin/BASE`. The same
+/// goes for each initialised submodule (nothing uncommitted, HEAD on one of
+/// its remote branches); `--force` is used only past git's refusal of any
+/// worktree with a submodule, once all that has been checked. A squash
+/// merge isn't in `origin/BASE`: for a clean, pushed worktree on a
+/// github.com origin, `gh` may say a merged PR from the branch had exactly
+/// HEAD as its head, which counts. Never
 /// touches a remote branch. A base that origin no longer has (deleted when
 /// its PR merged) is replaced by origin's default branch. Says `removed`, `kept WHY` or `err WHY` last.
 pub const CLOSE: &str = r#"repo=$1; w=$2; branch=$3; base=$4
 [ -e "$w/.git" ] || { printf 'gone\n'; exit 0; }
 why=
-n=$(git -C "$w" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+# A submodule at another commit counts here; what's inside one is checked below.
+n=$(git -C "$w" status --porcelain --ignore-submodules=dirty 2>/dev/null | wc -l | tr -d ' ')
 [ "$n" -eq 0 ] || why="$n uncommitted file$([ "$n" -eq 1 ] || echo s)"
+# Each initialised submodule, nested ones too: nothing uncommitted in it, and
+# its HEAD on one of its remote branches.
+subs=$(git -C "$w" submodule foreach --quiet --recursive '[ -z "$(git status --porcelain --ignore-submodules=dirty 2>/dev/null)" ] || echo "uncommitted changes in submodule $displaypath"
+  [ -n "$(git branch -r --contains "$(git rev-parse HEAD 2>/dev/null)" 2>/dev/null)" ] || echo "commits not pushed in submodule $displaypath"
+  true' 2>/dev/null) || subs="couldn't check its submodules"
+[ -z "$subs" ] || why="${why:+$why, }$(printf '%s\n' "$subs" | awk 'NR > 1 { printf ", " } { printf "%s", $0 }')"
 head=$(git -C "$w" rev-parse HEAD 2>/dev/null) || { printf 'kept cannot read its HEAD\n'; exit 0; }
 [ -n "$(git -C "$w" branch -r --contains "$head" 2>/dev/null)" ] || why="${why:+$why, }commits not pushed"
 fetched=1
@@ -108,7 +118,11 @@ if [ -z "$merged" ]; then
   else why="${why:+$why, }not merged into origin/$base"; fi
 fi
 [ -z "$why" ] || { printf 'kept %s\n' "$why"; exit 0; }
-out=$(git -C "$repo" worktree remove "$w" 2>&1) || { printf 'kept git worktree remove: %s\n' "$(printf '%s' "$out" | tail -n 1)"; exit 0; }
+# git refuses any worktree with a submodule in it, however clean: every
+# submodule was checked above, so only that refusal is forced past.
+out=$(LC_ALL=C git -C "$repo" worktree remove "$w" 2>&1) || {
+  case $out in *"containing submodules cannot be moved or removed"*) out=$(git -C "$repo" worktree remove --force "$w" 2>&1) ;; *) false ;; esac
+} || { printf 'kept git worktree remove: %s\n' "$(printf '%s' "$out" | tail -n 1)"; exit 0; }
 # Merged (into origin/BASE, or the PR's head is HEAD) above, so -D (-d would judge it against the clone's HEAD).
 if git -C "$repo" show-ref --verify -q "refs/heads/$branch"; then
   out=$(git -C "$repo" branch -q -D "$branch" 2>&1) || { printf 'removed worktree, kept branch: %s\n' "$(printf '%s' "$out" | tail -n 1)"; exit 0; }
@@ -197,6 +211,59 @@ mod tests {
 
         assert!(!dir.join("squashed").exists());
         assert!(sh("cd clone && git branch --list squashed").is_empty());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// git won't remove a worktree with a submodule in it: a merged, clean
+    /// one is removed all the same, and one with a change inside the
+    /// submodule is kept, saying so.
+    #[test]
+    fn close_removes_a_worktree_with_a_submodule() {
+        let dir = std::env::temp_dir().join(format!("arugula-close-sub-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let dir = dir.canonicalize().unwrap();
+        let sh = |script: &str| {
+            let out = std::process::Command::new("sh").arg("-c").arg(script).current_dir(&dir).output().unwrap();
+            assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+            String::from_utf8_lossy(&out.stdout).trim().to_owned()
+        };
+        // Local submodules need the file protocol allowed.
+        let g = "git -c user.name=t -c user.email=t@t -c protocol.file.allow=always";
+        sh(&format!(
+            "git init -q --bare -b main sub.git && git clone -q sub.git s 2>/dev/null \
+             && {g} -C s commit -q --allow-empty -m one && git -C s push -q origin main \
+             && git init -q --bare -b main up.git && git clone -q up.git clone 2>/dev/null && cd clone \
+             && {g} submodule add -q \"$PWD/../sub.git\" open && {g} commit -q -m sub && git push -q origin main"
+        ));
+        // `then` runs in the worktree once it's merged.
+        let close = |name: &str, then: &str| {
+            sh(&format!(
+                "cd clone && git fetch -q && git worktree add -q -b {name} ../{name} origin/main && cd ../{name} \
+                 && {g} submodule update -q --init && {g} commit -q --allow-empty -m w \
+                 && git push -q origin {name} {name}:main {then}"
+            ));
+            let out = std::process::Command::new("sh")
+                .args(["-c", super::CLOSE, "sh"])
+                .args([dir.join("clone").to_str().unwrap(), dir.join(name).to_str().unwrap(), name, "main"])
+                .output()
+                .unwrap();
+            String::from_utf8_lossy(&out.stdout).lines().last().unwrap_or_default().to_owned()
+        };
+        assert_eq!(close("merged", ""), "removed");
+        assert!(!dir.join("merged").exists());
+        let dirty = close("dirty", "&& echo x > open/new");
+        assert_eq!(dirty, "kept uncommitted changes in submodule open");
+        assert!(dir.join("dirty/open/new").exists());
+        // The submodule's commit is in the merged branch, but not on its own remote.
+        let unpushed = close(
+            "unpushed",
+            &format!(
+                "&& {g} -C open commit -q --allow-empty -m s && {g} commit -q -am s && git push -q origin unpushed unpushed:main"
+            ),
+        );
+        assert_eq!(unpushed, "kept commits not pushed in submodule open");
+        assert!(dir.join("unpushed").exists());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }
