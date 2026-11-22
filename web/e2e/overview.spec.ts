@@ -26,7 +26,9 @@
 // (#1289), a shell and an agent block typed into and a question answered
 // above them; the boards' views read in one request, painted together
 // behind a skeleton, with no thread opened by the page, and read one by one
-// from a hub that has no such route yet (#1296); coming back to the page
+// from a hub that has no such route yet (#1296), the stats line saying
+// so until they land, not 0 in flight, and a session's Work address by the
+// hub's id (#1380); coming back to the page
 // after 30 seconds reading the boards once and the briefing once, and after
 // less reading nothing (#1297); and on a phone, one list
 // with Needs you on top. The platform's boards and the
@@ -360,6 +362,20 @@ test.describe("on a computer", () => {
     expect(mine(/^GET \/api\/projects\/[^/]+\/boards\/views$/)).toHaveLength(1);
     expect(mine(/^GET \/api\/boards\//)).toHaveLength(0);
     expect(await opened(page)).toEqual([]);
+  });
+
+  test("until the boards' views land the stats line says it's reading them, never 0 in flight (Arugula #1380)", async ({ page }) => {
+    let release!: () => void;
+    const hold = new Promise<void>((done) => (release = done));
+    await overview(page, null, false, undefined, hold);
+    const stats = page.locator("[data-ov-stats]");
+    await expect(page.locator("[data-ov-skeleton]")).toBeVisible();
+    await expect(stats).toHaveText("Reading the boards…");
+    await expect(stats).toHaveAttribute("aria-busy", "true");
+    release();
+    // #12 and #13 in Doing, #14 in Review.
+    await expect(stats).toHaveText(/^3 cards in flight · /);
+    await expect(stats).not.toHaveAttribute("aria-busy");
   });
 
   test("a hub without the views route (404) is read board by board, each thread opened, the rows still painted together (Arugula #1296)", async ({ page }) => {
@@ -898,6 +914,60 @@ test.describe("on a computer", () => {
     const none = page.locator('[data-ov-level-work="row_c"]');
     await expect(none.locator("[data-ov-work-noagent]")).toBeVisible({ timeout: 20_000 });
     await expect(none.locator("[data-ov-work-pane]")).toHaveCount(0);
+  });
+
+  test("a session's Work address by the hub's id opens it: a cloud workspace's, and one on a machine here; one not in the project says so (Arugula #1380)", async ({ page }) => {
+    // The suite's daemon is the machine `m_suite`, as control names it, so the hub's session names its pane.
+    await page.route("**/api/hosts", async (r) => {
+      const list = (await (await r.fetch()).json()) as { this: string; hosts: unknown[] };
+      await r.fulfill({ json: { ...list, hosts: [...list.hosts, { name: list.this, id: "m_suite", urls: [], transport: "tailnet", added_ms: 0, last_seen_ms: null }] } });
+    });
+    await overview(page);
+    // The scratch session's pane, from its row on no card (`host:id`).
+    const loose = page.locator("[data-ov-loose] [data-ov-panes]");
+    await expect(loose).toHaveAttribute("data-ov-panes", /:\d+$/);
+    const scratch = Number((await loose.getAttribute("data-ov-panes"))!.split(":").pop());
+    // The hub's sessions on no card: the scratch session's pane, as the hub names its session, and a cloud workspace's.
+    let answer!: () => void;
+    const answered = new Promise<void>((done) => (answer = done));
+    await page.route(`**/api/projects/${P}/sessions/by-card`, async (r) => {
+      await answered;
+      await r.fulfill({
+        json: {
+          project: P,
+          groups: [
+            {
+              card: null,
+              sessions: [
+                { kind: "machine", id: "ses_e2escratch", name: "scratch", on: { kind: "machine", id: "m_suite", name: "suite" }, panes: [{ pane: scratch, kind: "terminal", work_item: null, state: null }], updated_at: 0 },
+                { kind: "hosted", id: "ses_e2ehosted", name: "arugula/tidy", on: { kind: "hosted" }, state: "working", branch: "arugula/tidy", updated_at: 0 },
+              ],
+            },
+          ],
+        },
+      });
+    });
+    await page.route("**/api/sessions/ses_e2ehosted", (r) =>
+      r.fulfill({ json: { card: { session: "ses_e2ehosted", project: P, room: "room_hs", parent: 1, state: "working", branch: "arugula/tidy", machine: null, block: null, parked: false }, may: true, asked: true, now: Date.now(), events: [{ seq: 1, kind: "turn", from: null, to: "working", at: 1, signed: true, text: "Tidied it." }] } }),
+    );
+
+    // The machine's session: loading while the hub hasn't answered, never "isn't in the project"; then its pane.
+    await page.goto(`/p/${P}/work/ses_e2escratch`);
+    await expect(page.locator("[data-ov-field]")).toHaveAttribute("data-ov-level", "work", { timeout: 20_000 });
+    await expect(page.locator("[data-ov-level-empty]")).toHaveCount(0);
+    answer();
+    const work = page.locator("[data-ov-level-work]");
+    await expect(work.locator(`[data-ov-work-pane$=":${scratch}"]`)).toBeVisible({ timeout: 20_000 });
+    await expect(work.locator("[data-ov-level-empty]")).toHaveCount(0);
+
+    // The cloud workspace's: its last answer, as the Work level has a paused box's.
+    await page.goto(`/p/${P}/work/ses_e2ehosted`);
+    await expect(work.locator('[data-ov-work-paused="ses_e2ehosted"]')).toContainText("Tidied it.", { timeout: 20_000 });
+    await expect(work.locator("h2")).toContainText("arugula/tidy");
+
+    // A session the hub doesn't list in the project.
+    await page.goto(`/p/${P}/work/ses_e2enotours`);
+    await expect(page.locator("[data-ov-level-empty]")).toHaveText("This session isn't in the project now.", { timeout: 20_000 });
   });
 
   test("a board's lead is a chip that opens that agent, never the board's thread, which is the row's own button; the who-line says which (Arugula #1290)", async ({ page }, info) => {

@@ -272,15 +272,16 @@ function BoardsSkeleton() {
 }
 
 /** The hub's sessions by card, read again a minute later; null where the
- * hub has no such route yet, or it couldn't answer. */
-function useByCard(project: string): SessionsByCard | null {
-  const [v, setV] = useState<SessionsByCard | null>(null);
+ * hub has no such route yet, or it couldn't answer, and undefined until
+ * it first answers (or doesn't). */
+function useByCard(project: string): SessionsByCard | null | undefined {
+  const [v, setV] = useState<SessionsByCard | null | undefined>(undefined);
   useEffect(() => {
     let live = true;
     const read = () =>
       sessionsByCard(project).then(
         (x) => live && setV(x),
-        () => {},
+        () => live && setV((was) => was ?? null),
       );
     void read();
     const t = setInterval(() => document.visibilityState === "visible" && void read(), BY_CARD_EVERY_MS);
@@ -324,7 +325,8 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
   const phone = usePhone();
   const refocus = useRefocus();
   const { views, put } = useBoardViews(project, refocus);
-  const byCard = useByCard(project);
+  const byCardRead = useByCard(project);
+  const byCard = byCardRead ?? null;
   const briefing = useBriefing(project, byCard, refocus);
   const hostOf = (m: string) => fleet.hostById(m)?.name ?? fleet.host(m)?.name;
   const o = overviewOf(project, views ?? [], fleet.panes.map((p) => ovPane(fleet, p)), byCard, hostOf);
@@ -422,8 +424,10 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
   const peeks: PeekPlace = {
     fleet,
     find: (key) => {
-      for (const c of ovCards) for (const s of c.sessions) if (peekKey(s) === key) return { s, card: c };
-      const s = o.loose.find((x) => peekKey(x) === key) ?? o.boards.find((b) => b.lead && peekKey(b.lead.peek) === key)?.lead?.peek;
+      // A session by its tile's key, or by the hub's id for it (`/work/ses_…`, #1380).
+      const is = (s: OvSession) => peekKey(s) === key || s.hub === key;
+      for (const c of ovCards) for (const s of c.sessions) if (is(s)) return { s, card: c };
+      const s = o.loose.find(is) ?? o.boards.find((b) => b.lead && peekKey(b.lead.peek) === key)?.lead?.peek;
       return s && { s, card: null };
     },
     openPanes,
@@ -521,8 +525,9 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
   const any = o.boards.length > 0 || o.loose.length > 0;
   const projectLevel = (
     <>
-      <p class="dim ov-stats" data-ov-stats>
-        {statsLine(o, needs)}
+      {/* Counted once the boards land: before that it would say 0 in flight (#1380). */}
+      <p class="dim ov-stats" data-ov-stats aria-busy={views === null || undefined}>
+        {views === null ? "Reading the boards…" : statsLine(o, needs)}
       </p>
       {/* Since the reader last looked (#1277), counted from the event log; it opens the chief of staff's tab. */}
       <BriefingLine b={briefing} staffRoom={chief?.id} open={chief ? () => pickChief(chief) : undefined} />
@@ -565,7 +570,7 @@ function OverviewBody({ project, board, card, zoom, fleet }: { project: string; 
   // Zoomed in, the field is that level's; at Project, the rows above.
   const talkingPeek = talk.active?.startsWith("peek:") ? talk.active.slice("peek:".length) : null;
   const levelView =
-    level === 0 ? null : views === null || (level === 2 && zoom && "session" in zoom && !zoomedSession && fleet.panes.length === 0) ? (
+    level === 0 ? null : views === null || (level === 2 && zoom && "session" in zoom && !zoomedSession && (fleet.panes.length === 0 || byCardRead === undefined)) ? (
       <p class="dim">Loading…</p>
     ) : level === 1 || zoomCard ? (
       !zoomedBoard || !zoomedView ? (
