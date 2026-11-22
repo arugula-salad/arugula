@@ -94,8 +94,7 @@ Start alone. When your team joins, through
   person to decide something, it asks on the row.
 - **Watch a session, or answer its agent.** Share a session or a whole
   machine, and choose who watches and who drives. A teammate who drives
-  can answer
-  your agent's card from the Overview or their phone.
+  can answer your agent's card from the Overview or their phone.
 - **Everyone sees who did what.** An answered card names who answered,
   a board keeps who answered each ask, and an issue's timeline says
   which person or whose agent did each thing.
