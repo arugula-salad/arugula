@@ -7,6 +7,9 @@ Thanks for wanting to help.
   expected and what happened, plus `arugula --version` and your OS.
 - **Security problems:** see [SECURITY.md](SECURITY.md). Please don't
   file those as issues.
+- **Where else to get help:** [SUPPORT.md](SUPPORT.md).
+
+Everyone here keeps to the [code of conduct](CODE_OF_CONDUCT.md).
 
 ## Changes
 
