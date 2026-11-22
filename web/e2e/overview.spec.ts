@@ -1032,7 +1032,14 @@ test.describe("on a computer", () => {
   });
 
   test("a lead with no pane (from an older daemon) is still found by its session's name (Arugula #1368)", async ({ page }) => {
-    await overview(page, null, false, () => ({ machine: "m_suite", machine_name: "", session: "scratch", at: 1 }));
+    let led: unknown;
+    await overview(page, null, false, () => led);
+    const tile = page.locator("[data-ov-loose] [data-ov-panes]");
+    await expect(tile).toHaveAttribute("data-ov-panes", /:/);
+    const host = (await tile.getAttribute("data-ov-panes"))!.split(":")[0];
+    led = { machine: "m_suite", machine_name: host, session: "scratch", at: 1 };
+    await page.reload();
+    await expect(page.locator("[data-overview]")).toBeVisible({ timeout: 20_000 });
     await launchRoom(page);
     await page.locator(`[data-ov-board="${B}"] [data-ov-board-lead]`).click();
     const panel = page.locator("[data-ov-panel]");
